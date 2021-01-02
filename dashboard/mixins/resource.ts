@@ -32,6 +32,7 @@ function generateFormPatch(el: any) {
   let patch: any = null
   el.querySelectorAll('input, select, checkbox, textarea').forEach(
     (node: HTMLInputElement) => {
+      if (node.disabled) return
       if (
         node.value !== node.defaultValue ||
         node.checked !== node.defaultChecked
@@ -85,6 +86,9 @@ export default {
     }
 
     document.addEventListener('keydown', this._keyListener.bind(this))
+  },
+  updated() {
+    this.storeDefaultValues()
   },
   beforeDestroy() {
     document.removeEventListener('keydown', this._keyListener)

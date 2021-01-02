@@ -23,13 +23,16 @@ UPDATE tenant_domains SET verified=$3 WHERE domain=$1 AND tenant_id=$2;
 -- name: DeleteDomain :exec
 DELETE FROM tenant_domains WHERE domain=$1 AND tenant_id=$2;
 
+-- name: UpdateTenant :exec
+UPDATE tenants SET display_name=COALESCE($2, display_name), email=COALESCE($3, email), phone=COALESCE($4, phone) WHERE id=$1;
+
 -------- User
 
 -- name: NewUser :exec
 INSERT INTO users(upn, fullname, password, tenant_id) VALUES ($1, $2, $3, $4);
 
 -- name: NewGlobalUser :exec
-INSERT INTO users(upn, fullname, password) VALUES ($1, $2, $3);
+INSERT INTO users(upn, fullname, password, password_expiry) VALUES ($1, $2, $3, $4);
 
 -- name: GetUser :one
 SELECT upn, fullname, disabled, azuread_oid FROM users WHERE upn = $1 LIMIT 1;
@@ -42,7 +45,13 @@ SELECT upn, fullname, azuread_oid FROM users WHERE tenant_id = $1 LIMIT $2 OFFSE
 SELECT upn, fullname, azuread_oid FROM users WHERE tenant_id = $1 AND (upn || fullname || azuread_oid) LIKE $4 LIMIT $2 OFFSET $3;
 
 -- name: GetUserSecure :one
-SELECT fullname, disabled, password, mfa_token, tenant_id FROM users WHERE upn = $1 LIMIT 1;
+SELECT fullname, disabled, password, password_expiry, mfa_token, tenant_id FROM users WHERE upn = $1 LIMIT 1;
+
+-- name: UpdateUser :exec
+UPDATE users SET fullname=COALESCE($2, fullname), password=COALESCE($3, password), password_expiry=COALESCE($4, password_expiry) WHERE upn=$1;
+
+-- name: UpdateUserInTenant :one
+UPDATE users SET fullname=COALESCE($3, fullname), disabled=COALESCE($4, disabled), password=COALESCE($5, password) WHERE upn=$1 AND tenant_id=$2 RETURNING upn;
 
 -- name: DeleteUser :exec
 DELETE FROM users WHERE upn=$1;
@@ -111,6 +120,9 @@ INSERT INTO group_policies(group_id, policy_id) VALUES ($1, $2);
 -- name: RemovePolicyFromGroup :exec
 DELETE FROM group_policies WHERE group_id = $1 AND policy_id = $2;
 
+-- name: UpdateGroup :exec
+UPDATE groups SET name=COALESCE($3, name) WHERE id=$1 AND tenant_id=$2;
+
 -------- Policy Actions
 
 -- name: NewPolicy :one
@@ -123,10 +135,13 @@ SELECT id, name, type, description FROM policies WHERE tenant_id = $1 LIMIT $2 O
 SELECT name, type, payload, description FROM policies WHERE id = $1 AND tenant_id = $2 LIMIT 1;
 
 -- name: GetPolicyGroups :many
-SELECT groups.id, groups.name FROM groups INNER JOIN group_policies ON group_policies.group_id=groups.id WHERE group_policies.policy_id = $1;
+SELECT groups.id, groups.name FROM groups INNER JOIN group_policies ON group_policies.group_id=groups.id WHERE group_policies.policy_id = $1 AND groups.tenant_id = $2;
 
 -- name: GetDevicesWithPolicy :many
 SELECT DISTINCT device_id FROM group_devices INNER JOIN group_policies ON group_policies.group_id=group_devices.group_id WHERE group_policies.policy_id = $1;
+
+-- name: UpdatePolicy :exec
+UPDATE policies SET name=COALESCE($3, name), payload=payload||$4 WHERE id=$1 AND tenant_id=$2;
 
 -- name: DeletePolicy :exec
 DELETE FROM policies WHERE id = $1 AND tenant_id = $2;
@@ -166,10 +181,13 @@ SELECT id, protocol, name, model FROM devices WHERE tenant_id = $1 LIMIT $2 OFFS
 SELECT id, protocol, scope, state, name, serial_number, model_manufacturer, model, os_major, os_minor, owner, ownership, azure_did, enrolled_at, lastseen FROM devices WHERE id = $1 AND tenant_id = $2 LIMIT 1;
 
 -- name: GetDeviceGroups :many
-SELECT groups.id, groups.name FROM groups INNER JOIN group_devices ON group_devices.group_id=groups.id WHERE group_devices.device_id = $1;
+SELECT groups.id, groups.name FROM groups INNER JOIN group_devices ON group_devices.group_id=groups.id WHERE group_devices.device_id = $1 AND groups.tenant_id = $2;
 
 -- name: GetDevicePolicies :many
 SELECT DISTINCT ON (id) id, name, description, policy_id, group_devices.group_id FROM policies INNER JOIN group_policies ON group_policies.policy_id = policies.id INNER JOIN group_devices ON group_devices.group_id=group_policies.group_id WHERE group_devices.device_id = $1;
+
+-- name: UpdateDevice :exec
+UPDATE devices SET name=COALESCE($3, name) WHERE id = $1 AND tenant_id=$2;
 
 -------- Certificates
 

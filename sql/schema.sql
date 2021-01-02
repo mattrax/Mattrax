@@ -33,6 +33,7 @@ CREATE TABLE users (
     fullname TEXT NOT NULL,
     disabled BOOLEAN NOT NULL DEFAULT False,
     password TEXT,
+    password_expiry TIMESTAMP WITH TIME ZONE,
     mfa_token TEXT,
     azuread_oid TEXT UNIQUE,
     tenant_id TEXT REFERENCES tenants(id),

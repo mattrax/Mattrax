@@ -107,7 +107,7 @@ func main() {
 	if userCount, err := srv.DB.GetUserCount(context.Background()); err != nil {
 		log.Fatal().Err(err).Msg("Error getting user count")
 	} else if userCount == 0 {
-		password := RandStringBytes(6)
+		password := RandStringBytes(10)
 
 		passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), 15)
 		if err != nil {
@@ -115,11 +115,18 @@ func main() {
 		}
 
 		if err := srv.DB.NewGlobalUser(context.Background(), db.NewGlobalUserParams{
-			UPN:      "admin@mattrax.app",
-			Fullname: "Mattrax Admin",
+			UPN: "admin@mattrax.app",
+			Fullname: null.String{
+				String: "Mattrax Admin",
+				Valid:  true,
+			},
 			Password: null.String{
 				String: string(passwordHash),
 				Valid:  true,
+			},
+			PasswordExpiry: sql.NullTime{
+				Time:  time.Now(),
+				Valid: true,
 			},
 		}); err != nil {
 			log.Fatal().Err(err).Msg("Error creating default user")

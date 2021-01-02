@@ -2,7 +2,7 @@ package authentication
 
 import (
 	"crypto/rsa"
-	"errors"
+	"fmt"
 	"net/url"
 	"time"
 
@@ -45,7 +45,7 @@ func (as Service) Token(rawToken string) (AuthClaims, error) {
 	}
 
 	if time.Now().After(basicClaims.Expiry.Time()) {
-		return AuthClaims{}, errors.New("the token has expired")
+		return AuthClaims{}, fmt.Errorf("the token has expired")
 	}
 
 	if basicClaims.Issuer == as.issuer {
@@ -65,9 +65,9 @@ func (as Service) Token(rawToken string) (AuthClaims, error) {
 
 	if err != nil {
 		log.Error().Err(err).Msg("Error getting AAD Tenant ID from settings")
-		return AuthClaims{}, errors.New("the tokens legitimacy could not be verified due to an internal error")
+		return AuthClaims{}, fmt.Errorf("the tokens legitimacy could not be verified due to an internal error")
 	} //else if settings.TenantAzureid == "" {
-	// 	return AuthClaims{}, errors.New("the token was signed with an untrusted certificate")
+	// 	return AuthClaims{}, fmt.Errorf("the token was signed with an untrusted certificate")
 	// }
 
 	var microsoftJWKS jose.JSONWebKeySet
@@ -75,7 +75,7 @@ func (as Service) Token(rawToken string) (AuthClaims, error) {
 		microsoftJWKS = GetMicrosoftOpenIDJWKS()
 		if len(microsoftJWKS.Keys) == 0 {
 			log.Error().Msg("No Microsoft OpenID Keys were returned. These are required for AzureAD logins to succeed")
-			return AuthClaims{}, errors.New("error retrieving Microsoft Open ID JWKS")
+			return AuthClaims{}, fmt.Errorf("error retrieving Microsoft Open ID JWKS")
 		}
 		as.cache.Set("microsoft-jwks", microsoftJWKS, cache.DefaultExpiration)
 		log.Debug().Msg("updated Microsoft Graph Open ID tokens!")
@@ -89,7 +89,7 @@ func (as Service) Token(rawToken string) (AuthClaims, error) {
 	}
 
 	if len(issuerCerts) == 0 {
-		return AuthClaims{}, errors.New("the token was signed with an untrusted certificate")
+		return AuthClaims{}, fmt.Errorf("the token was signed with an untrusted certificate")
 	}
 
 	var msClaims MicrosoftSpecificAuthClaims
@@ -98,7 +98,7 @@ func (as Service) Token(rawToken string) (AuthClaims, error) {
 	}
 
 	// if msClaims.TenantID != settings.TenantAzureid {
-	// 	return AuthClaims{}, errors.New("the user token was issued for another Azure Active Directory tenant")
+	// 	return AuthClaims{}, fmt.Errorf("the user token was issued for another Azure Active Directory tenant")
 	// }
 
 	return AuthClaims{

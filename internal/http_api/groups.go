@@ -1,18 +1,14 @@
 package http_api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/gorilla/mux"
-	"github.com/lib/pq"
 	mattrax "github.com/mattrax/Mattrax/internal"
 	"github.com/mattrax/Mattrax/internal/db"
-	"github.com/mattrax/Mattrax/internal/middleware"
-	"github.com/openzipkin/zipkin-go"
+	"github.com/mattrax/Mattrax/pkg/null"
 )
 
 func Groups(srv *mattrax.Server) http.HandlerFunc {
@@ -24,159 +20,83 @@ func Groups(srv *mattrax.Server) http.HandlerFunc {
 		GroupID string `json:"group_id"`
 	}
 
-	return func(w http.ResponseWriter, r *http.Request) {
-		tx := middleware.DBTxFromContext(r.Context())
-		span := zipkin.SpanOrNoopFromContext(r.Context())
-		vars := mux.Vars(r)
-		if r.Method == http.MethodGet {
-			limit, offset, err := middleware.GetPaginationParams(r.URL.Query())
-			if err != nil {
-				span.Tag("warn", fmt.Sprintf("%s", err))
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			span.Tag("limit", fmt.Sprintf("%v", limit))
-			span.Tag("offset", fmt.Sprintf("%v", offset))
+	return Endpoint{
+		GetAll: func(r *http.Request, DB *db.Queries, limit int32, offset int32) (interface{}, error) {
+			vars := mux.Vars(r)
 
-			groups, err := srv.DB.WithTx(tx).GetGroups(r.Context(), db.GetGroupsParams{
+			groups, err := DB.GetGroups(r.Context(), db.GetGroupsParams{
 				TenantID: vars["tenant"],
 				Limit:    limit,
 				Offset:   offset,
 			})
-			if err != nil {
-				log.Printf("[GetGroups Error]: %s\n", err)
-				span.Tag("err", fmt.Sprintf("error retrieving groups: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
 
 			if groups == nil {
 				groups = make([]db.GetGroupsRow, 0)
 			}
 
-			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-			if err := json.NewEncoder(w).Encode(groups); err != nil {
-				span.Tag("warn", fmt.Sprintf("error encoding JSON response: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		} else if r.Method == http.MethodPost {
-			var cmd CreateRequest
-			if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
-				log.Printf("[JsonDecode Error]: %s\n", err)
-				span.Tag("warn", fmt.Sprintf("JSON decode error: %s", err))
-				w.WriteHeader(http.StatusBadRequest)
-				return
+			return groups, err
+		},
+		PostType: func(r *http.Request) interface{} {
+			return &CreateRequest{}
+		},
+		Post: func(r *http.Request, DB *db.Queries, cmd interface{}) (interface{}, error) {
+			vars := mux.Vars(r)
+			group, ok := cmd.(*CreateRequest)
+			if !ok {
+				return nil, fmt.Errorf("invalid patch type. This error is a mistake made by a developer")
 			}
 
-			if err := validate.Struct(cmd); err != nil {
-				span.Tag("err", fmt.Sprintf("error validing CreateGroupRequest: %s", err))
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			if vars["tenant"] == "" {
-				span.Tag("err", "no tenant was specified")
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-
-			groupID, err := srv.DB.WithTx(tx).NewGroup(r.Context(), db.NewGroupParams{
-				Name:     cmd.Name,
+			groupID, err := DB.NewGroup(r.Context(), db.NewGroupParams{
 				TenantID: vars["tenant"],
+				Name: null.String{
+					String: group.Name,
+					Valid:  true,
+				},
 			})
-			if err != nil {
-				if pqe, ok := err.(*pq.Error); ok && string(pqe.Code) == "23505" {
-					span.Tag("warn", fmt.Sprintf("error creating new user due to unique constraint violation: %s", err))
-					w.WriteHeader(http.StatusUnprocessableEntity)
-					return
-				}
-				log.Printf("[CreateGroup Error]: %s\n", err)
-				span.Tag("err", fmt.Sprintf("error creating new group: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
 
-			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-			if err := json.NewEncoder(w).Encode(CreateResponse{
+			return CreateResponse{
 				GroupID: groupID,
-			}); err != nil {
-				span.Tag("warn", fmt.Sprintf("error encoding JSON response: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		}
-	}
+			}, err
+		},
+	}.Handler(srv.DB)
 }
 
 func Group(srv *mattrax.Server) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		tx := middleware.DBTxFromContext(r.Context())
-		span := zipkin.SpanOrNoopFromContext(r.Context())
-		vars := mux.Vars(r)
-		if r.Method == http.MethodGet {
-			user, err := srv.DB.WithTx(tx).GetGroup(r.Context(), db.GetGroupParams{
+	return Endpoint{
+		Get: func(r *http.Request, DB *db.Queries) (interface{}, error) {
+			vars := mux.Vars(r)
+
+			return DB.GetGroup(r.Context(), db.GetGroupParams{
 				ID:       vars["gid"],
 				TenantID: vars["tenant"],
 			})
-			if err == sql.ErrNoRows {
-				span.Tag("warn", "group not found")
-				w.WriteHeader(http.StatusNotFound)
-				return
-			} else if err != nil {
-				log.Printf("[GetGroup Error]: %s\n", err)
-				span.Tag("warn", fmt.Sprintf("error retrieving group: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
+		},
+		PatchType: func(r *http.Request) interface{} {
+			return &db.Group{}
+		},
+		Patch: func(r *http.Request, DB *db.Queries, cmd interface{}) (interface{}, error) {
+			vars := mux.Vars(r)
+			group, ok := cmd.(*db.Group)
+			if !ok {
+				return nil, fmt.Errorf("invalid patch type. This error is a mistake made by a developer")
 			}
 
-			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-			if err := json.NewEncoder(w).Encode(user); err != nil {
-				span.Tag("warn", fmt.Sprintf("error encoding JSON response: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		} else if r.Method == http.MethodPatch {
-			var cmd db.Group
-			if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
-				log.Printf("[JsonDecode Error]: %s\n", err)
-				span.Tag("warn", fmt.Sprintf("JSON decode error: %s", err))
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
+			err := DB.UpdateGroup(r.Context(), db.UpdateGroupParams{
+				ID:       vars["gid"],
+				TenantID: vars["tenant"],
+				Name:     group.Name,
+			})
 
-			query := `UPDATE groups SET name=COALESCE(NULLIF($3, ''), name) WHERE id = $1 AND tenant_id=$2;`
-			if _, err := tx.Exec(query, vars["gid"], vars["tenant"], cmd.Name); err == sql.ErrNoRows {
-				span.Tag("warn", "group not found")
-				w.WriteHeader(http.StatusNotFound)
-				return
-			} else if err != nil {
-				log.Printf("[UpdateGroup Error]: %s\n", err)
-				span.Tag("err", fmt.Sprintf("error updating group: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			w.WriteHeader(http.StatusNoContent)
-		} else if r.Method == http.MethodDelete {
-			err := srv.DB.WithTx(tx).DeleteGroup(r.Context(), db.DeleteGroupParams{
+			return nil, err
+		},
+		Delete: func(r *http.Request, DB *db.Queries) error {
+			vars := mux.Vars(r)
+			return DB.DeleteGroup(r.Context(), db.DeleteGroupParams{
 				ID:       vars["gid"],
 				TenantID: vars["tenant"],
 			})
-			if err == sql.ErrNoRows {
-				span.Tag("warn", "group not found")
-				w.WriteHeader(http.StatusNotFound)
-				return
-			} else if err != nil {
-				log.Printf("[DeleteGroup Error]: %s\n", err)
-				span.Tag("warn", fmt.Sprintf("error deleting group: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			w.WriteHeader(http.StatusNoContent)
-		}
-	}
+		},
+	}.Handler(srv.DB)
 }
 
 func GroupPolicies(srv *mattrax.Server) http.HandlerFunc {
@@ -184,91 +104,65 @@ func GroupPolicies(srv *mattrax.Server) http.HandlerFunc {
 		Policies []string `json:"policies"`
 	}
 
-	return func(w http.ResponseWriter, r *http.Request) {
-		tx := middleware.DBTxFromContext(r.Context())
-		span := zipkin.SpanOrNoopFromContext(r.Context())
-		vars := mux.Vars(r)
-		if r.Method == http.MethodGet {
-			devices, err := srv.DB.WithTx(tx).GetPoliciesInGroup(r.Context(), db.GetPoliciesInGroupParams{
+	return Endpoint{
+		GetAll: func(r *http.Request, DB *db.Queries, limit int32, offset int32) (interface{}, error) {
+			vars := mux.Vars(r)
+
+			policies, err := DB.GetPoliciesInGroup(r.Context(), db.GetPoliciesInGroupParams{
 				TenantID: vars["tenant"],
 				GroupID:  vars["gid"],
-				// TODO: Pagination
-				Limit:  100,
-				Offset: 0,
+				Limit:    100,
+				Offset:   0,
 			})
-			if err == sql.ErrNoRows {
-				span.Tag("warn", "group not found")
-				w.WriteHeader(http.StatusNotFound)
-				return
-			} else if err != nil {
-				log.Printf("[GetPoliciesInGroup Error]: %s\n", err)
-				span.Tag("warn", fmt.Sprintf("error retrieving policies in groups: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
+
+			if policies == nil {
+				policies = make([]db.GetPoliciesInGroupRow, 0)
 			}
 
-			if devices == nil {
-				devices = make([]db.GetPoliciesInGroupRow, 0)
+			return policies, err
+		},
+		PostType: func(r *http.Request) interface{} {
+			return &Request{}
+		},
+		Post: func(r *http.Request, DB *db.Queries, cmd interface{}) (interface{}, error) {
+			vars := mux.Vars(r)
+			req, ok := cmd.(*Request)
+			if !ok {
+				return nil, fmt.Errorf("invalid patch type. This error is a mistake made by a developer")
 			}
 
-			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-			if err := json.NewEncoder(w).Encode(devices); err != nil {
-				span.Tag("warn", fmt.Sprintf("error encoding JSON response: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		} else if r.Method == http.MethodPost {
-			var cmd Request
-			if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
-				log.Printf("[JsonDecode Error]: %s\n", err)
-				span.Tag("warn", fmt.Sprintf("JSON decode error: %s", err))
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			for _, policyID := range cmd.Policies {
-				fmt.Println(vars["gid"], policyID)
-				if err := srv.DB.WithTx(tx).AddPolicyToGroup(r.Context(), db.AddPolicyToGroupParams{
+			for _, policyID := range req.Policies {
+				if err := DB.AddPolicyToGroup(r.Context(), db.AddPolicyToGroupParams{
 					GroupID:  vars["gid"],
 					PolicyID: policyID,
 				}); err != nil {
-					log.Printf("[AddPolicyToGroup Error]: %s\n", err)
-					span.Tag("warn", fmt.Sprintf("error adding policy to group: %s", err))
-					w.WriteHeader(http.StatusInternalServerError)
-					return
+					return nil, fmt.Errorf("error adding policy to group: %w", err)
 				}
 			}
 
-			w.WriteHeader(http.StatusNoContent)
-		} else if r.Method == http.MethodDelete {
+			return nil, nil
+		},
+		Delete: func(r *http.Request, DB *db.Queries) error {
+			vars := mux.Vars(r)
+
 			var cmd Request
 			if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
-				log.Printf("[JsonDecode Error]: %s\n", err)
-				span.Tag("warn", fmt.Sprintf("JSON decode error: %s", err))
-				w.WriteHeader(http.StatusBadRequest)
-				return
+				// TODO: 400: Bad Request return status
+				return fmt.Errorf("error decoding JSON body: %w", err)
 			}
 
 			for _, policyID := range cmd.Policies {
-				if err := srv.DB.WithTx(tx).RemovePolicyFromGroup(r.Context(), db.RemovePolicyFromGroupParams{
+				if err := DB.RemovePolicyFromGroup(r.Context(), db.RemovePolicyFromGroupParams{
 					GroupID:  vars["gid"],
 					PolicyID: policyID,
-				}); err == sql.ErrNoRows {
-					// TODO: Does this need to be handled
-					span.Tag("warn", "policy group not found")
-					w.WriteHeader(http.StatusNotFound)
-					return
-				} else if err != nil {
-					log.Printf("[RemoveDeviceFromGroup Error]: %s\n", err)
-					span.Tag("warn", fmt.Sprintf("error removing policy from group: %s", err))
-					w.WriteHeader(http.StatusInternalServerError)
-					return
+				}); err != nil {
+					return fmt.Errorf("error removing policy from group: %w", err)
 				}
 			}
 
-			w.WriteHeader(http.StatusNoContent)
-		}
-	}
+			return nil
+		},
+	}.Handler(srv.DB)
 }
 
 func GroupDevices(srv *mattrax.Server) http.HandlerFunc {
@@ -276,88 +170,63 @@ func GroupDevices(srv *mattrax.Server) http.HandlerFunc {
 		Devices []string `json:"devices"`
 	}
 
-	return func(w http.ResponseWriter, r *http.Request) {
-		tx := middleware.DBTxFromContext(r.Context())
-		span := zipkin.SpanOrNoopFromContext(r.Context())
-		vars := mux.Vars(r)
-		if r.Method == http.MethodGet {
-			devices, err := srv.DB.WithTx(tx).GetDevicesInGroup(r.Context(), db.GetDevicesInGroupParams{
+	return Endpoint{
+		GetAll: func(r *http.Request, DB *db.Queries, limit int32, offset int32) (interface{}, error) {
+			vars := mux.Vars(r)
+
+			devices, err := DB.GetDevicesInGroup(r.Context(), db.GetDevicesInGroupParams{
 				TenantID: vars["tenant"],
 				GroupID:  vars["gid"],
-				// TODO: Pagination
-				Limit:  100,
-				Offset: 0,
+				Limit:    100,
+				Offset:   0,
 			})
-			if err == sql.ErrNoRows {
-				span.Tag("warn", "group not found")
-				w.WriteHeader(http.StatusNotFound)
-				return
-			} else if err != nil {
-				log.Printf("[GetDevicesInGroup Error]: %s\n", err)
-				span.Tag("warn", fmt.Sprintf("error retrieving devices in groups: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
 
 			if devices == nil {
 				devices = make([]db.GetDevicesInGroupRow, 0)
 			}
 
-			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-			if err := json.NewEncoder(w).Encode(devices); err != nil {
-				span.Tag("warn", fmt.Sprintf("error encoding JSON response: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		} else if r.Method == http.MethodPost {
-			var cmd Request
-			if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
-				log.Printf("[JsonDecode Error]: %s\n", err)
-				span.Tag("warn", fmt.Sprintf("JSON decode error: %s", err))
-				w.WriteHeader(http.StatusBadRequest)
-				return
+			return devices, err
+		},
+		PostType: func(r *http.Request) interface{} {
+			return &Request{}
+		},
+		Post: func(r *http.Request, DB *db.Queries, cmd interface{}) (interface{}, error) {
+			vars := mux.Vars(r)
+			req, ok := cmd.(*Request)
+			if !ok {
+				return nil, fmt.Errorf("invalid patch type. This error is a mistake made by a developer")
 			}
 
-			for _, deviceID := range cmd.Devices {
-				if err := srv.DB.WithTx(tx).AddDeviceToGroup(r.Context(), db.AddDeviceToGroupParams{
+			for _, deviceID := range req.Devices {
+				if err := DB.AddDeviceToGroup(r.Context(), db.AddDeviceToGroupParams{
 					GroupID:  vars["gid"],
 					DeviceID: deviceID,
 				}); err != nil {
-					log.Printf("[AddDevicesToGroup Error]: %s\n", err)
-					span.Tag("warn", fmt.Sprintf("error adding device to group: %s", err))
-					w.WriteHeader(http.StatusInternalServerError)
-					return
+					return nil, fmt.Errorf("error adding device to group: %w", err)
 				}
 			}
 
-			w.WriteHeader(http.StatusNoContent)
-		} else if r.Method == http.MethodDelete {
+			return nil, nil
+		},
+		Delete: func(r *http.Request, DB *db.Queries) error {
+			vars := mux.Vars(r)
+
 			var cmd Request
 			if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
-				log.Printf("[JsonDecode Error]: %s\n", err)
-				span.Tag("warn", fmt.Sprintf("JSON decode error: %s", err))
-				w.WriteHeader(http.StatusBadRequest)
-				return
+				// TODO: 400: Bad Request return status
+				return fmt.Errorf("error decoding JSON body: %w", err)
 			}
 
 			for _, deviceID := range cmd.Devices {
-				if err := srv.DB.WithTx(tx).RemoveDeviceFromGroup(r.Context(), db.RemoveDeviceFromGroupParams{
+				if err := DB.RemoveDeviceFromGroup(r.Context(), db.RemoveDeviceFromGroupParams{
 					GroupID:  vars["gid"],
 					DeviceID: deviceID,
-				}); err == sql.ErrNoRows {
-					// TODO: Does this need to be handled
-					span.Tag("warn", "device group not found")
-					w.WriteHeader(http.StatusNotFound)
-					return
-				} else if err != nil {
-					log.Printf("[RemoveDeviceFromGroup Error]: %s\n", err)
-					span.Tag("warn", fmt.Sprintf("error removing device from group: %s", err))
-					w.WriteHeader(http.StatusInternalServerError)
-					return
+				}); err != nil {
+					return fmt.Errorf("error removing device from group: %w", err)
 				}
 			}
 
-			w.WriteHeader(http.StatusNoContent)
-		}
-	}
+			return nil
+		},
+	}.Handler(srv.DB)
 }

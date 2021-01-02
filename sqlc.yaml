@@ -15,3 +15,13 @@ overrides:
     nullable: true
   - column: "applications.name"
     go_type: "github.com/mattrax/Mattrax/pkg/null.String"
+  - column: "devices.name"
+    go_type: "github.com/mattrax/Mattrax/pkg/null.String"
+  - column: "groups.name"
+    go_type: "github.com/mattrax/Mattrax/pkg/null.String"
+  - column: "policies.name"
+    go_type: "github.com/mattrax/Mattrax/pkg/null.String"
+  - column: "tenants.display_name"
+    go_type: "github.com/mattrax/Mattrax/pkg/null.String"
+  - column: "users.fullname"
+    go_type: "github.com/mattrax/Mattrax/pkg/null.String"

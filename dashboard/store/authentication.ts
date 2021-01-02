@@ -90,9 +90,8 @@ export const actions = {
           const data = await res.json()
           sessionStorage.setItem('authToken', data.token)
           context.commit('setAuthToken', data.token)
-          context.commit('tenants/setTenants', data.tenants, { root: true })
           context.dispatch('populateUserInfomation')
-          resolve()
+          resolve(data.passwordExpired)
         })
         .catch((err) => {
           console.error(err)

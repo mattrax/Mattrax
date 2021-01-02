@@ -1,6 +1,8 @@
 package pkg
 
 import (
+	"fmt"
+
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 )
@@ -9,7 +11,7 @@ import (
 func GetNamedRouteURL(r *mux.Router, name string, pairs ...string) (string, error) {
 	route := r.GetRoute(name)
 	if route == nil {
-		return "", errors.New("Error acquiring named route")
+		return "", fmt.Errorf("Error acquiring named route")
 	}
 
 	url, err := route.URL(pairs...)

@@ -44,7 +44,7 @@ export const mutations = {
 export const actions = {
   create(context: any, tenant: CreateTenantRequest) {
     return new Promise((resolve, reject) => {
-      fetch(process.env.baseUrl + '/tenants', {
+      fetch(process.env.baseUrl + '/me/tenants', {
         method: 'POST',
         headers: new Headers({
           'Content-Type': 'application/json',
@@ -81,7 +81,7 @@ export const actions = {
   },
   getAll(context: any) {
     return new Promise((resolve, reject) => {
-      fetch(process.env.baseUrl + '/tenants', {
+      fetch(process.env.baseUrl + '/me/tenants', {
         headers: new Headers({
           Authorization: 'Bearer ' + context.rootState.authentication.authToken,
         }),

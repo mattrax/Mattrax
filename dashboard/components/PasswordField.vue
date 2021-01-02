@@ -1,13 +1,28 @@
 <template>
   <div class="password-field">
     <input
+      v-if="value !== undefined"
+      :name="name"
       :value="value"
       :type="passwordVisible ? 'text' : 'password'"
       placeholder="password"
       minlength="8"
       maxlength="100"
       :disabled="disabled"
+      :required="required"
+      :autocomplete="autocomplete"
       @input="(e) => $emit('update:value', e.target.value)"
+    />
+    <input
+      v-else
+      :name="name"
+      :type="passwordVisible ? 'text' : 'password'"
+      placeholder="password"
+      minlength="8"
+      maxlength="100"
+      :disabled="disabled"
+      :required="required"
+      :autocomplete="autocomplete"
     />
     <span
       @mousedown="passwordVisible = true"
@@ -21,11 +36,20 @@
 <script lang="ts">
 export default {
   props: {
+    name: {
+      type: String,
+    },
     value: {
-      required: true,
+      type: String,
     },
     disabled: {
       type: Boolean,
+    },
+    required: {
+      type: Boolean,
+    },
+    autocomplete: {
+      type: String,
     },
   },
   data() {

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	mattrax "github.com/mattrax/Mattrax/internal"
 	"github.com/mattrax/Mattrax/internal/api"
 	"github.com/mattrax/Mattrax/internal/authentication"
-	"github.com/mattrax/Mattrax/internal/db"
 	"github.com/openzipkin/zipkin-go"
 )
 
@@ -20,8 +20,8 @@ func Login(srv *mattrax.Server) http.HandlerFunc {
 	}
 
 	type Response struct {
-		Token   string                 `json:"token"`
-		Tenants []db.GetUserTenantsRow `json:"tenants,notnull"`
+		Token           string `json:"token"`
+		PasswordExpired bool   `json:"passwordExpired"`
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +52,11 @@ func Login(srv *mattrax.Server) http.HandlerFunc {
 			return
 		}
 
+		var expired = false
+		if user.PasswordExpiry.Valid && time.Now().After(user.PasswordExpiry.Time) {
+			expired = true
+		}
+
 		if audience != "enrollment" && user.TenantID.Valid == true {
 			span.Tag("err", fmt.Sprintf("user does not have tenant permission to login to dashboard"))
 			w.WriteHeader(http.StatusUnauthorized)
@@ -68,7 +73,7 @@ func Login(srv *mattrax.Server) http.HandlerFunc {
 
 		authToken, _, err := srv.Auth.IssueToken(audience, authentication.AuthClaims{
 			Subject:  cmd.UPN,
-			FullName: user.Fullname,
+			FullName: user.Fullname.String,
 		})
 		if err != nil {
 			log.Printf("[IssueToken Error]: %s\n", err)
@@ -77,22 +82,10 @@ func Login(srv *mattrax.Server) http.HandlerFunc {
 			return
 		}
 
-		tenants, err := srv.DB.GetUserTenants(r.Context(), cmd.UPN)
-		if err != nil {
-			log.Printf("[GetUserTenants Error]: %s\n", err)
-			span.Tag("err", fmt.Sprintf("error retrieving users tenants: %s", err))
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		if tenants == nil {
-			tenants = make([]db.GetUserTenantsRow, 0)
-		}
-
 		w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 		if err := json.NewEncoder(w).Encode(Response{
-			Token:   authToken,
-			Tenants: tenants,
+			Token:           authToken,
+			PasswordExpired: expired,
 		}); err != nil {
 			span.Tag("warn", fmt.Sprintf("error encoding JSON response: %s", err))
 			w.WriteHeader(http.StatusInternalServerError)

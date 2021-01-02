@@ -1,18 +1,17 @@
 <template>
   <div class="page-content">
-    <p class="title">Password Reset Email:</p>
+    <p class="title">Set New Password:</p>
+    <p>Your password has expired and must be changed!</p>
     <form class="form" @submit.prevent="submit">
       <p v-if="errorTxt" class="error-msg">{{ errorTxt }}</p>
-      <input
-        v-model="email"
+
+      <PasswordField
+        name="password"
         required
-        type="text"
-        placeholder="chris@mattrax.app"
-        maxlength="100"
         autocomplete="new-password"
         @input="errorTxt = null"
       />
-      <button>SEND PASSWORD RESET EMAIL</button>
+      <button>CHANGE PASSWORD</button>
     </form>
   </div>
 </template>
@@ -24,22 +23,34 @@ export default Vue.extend({
   data() {
     return {
       errorTxt: null,
-      email: '',
     }
   },
-  async created() {
-    if (await this.$store.dispatch('authentication/isAuthenticated')) {
-      this.$router.push({ path: '/login/tenants', query: this.$route.query })
-    }
-  },
+  // async created() {
+  //   if (await this.$store.dispatch('authentication/isAuthenticated')) {
+  //     this.$router.push({ path: '/login/tenants', query: this.$route.query })
+  //   }
+  // },
   methods: {
-    submit() {},
+    async submit(e: any) {
+      await this.$store.dispatch('settings/updateUser', {
+        id: this.$route.params.id,
+        patch: {
+          password: e.srcElement.elements.namedItem('password').value,
+        },
+      })
+
+      // TODO: Handle directly going to dashboard if only has one tenant.
+      this.$router.push({
+        path: '/login/tenants',
+        query: this.$route.query,
+      })
+    },
   },
 })
 </script>
 
 <style scoped>
-.form input {
+/deep/ .form input {
   outline: 0;
   background: #f2f2f2;
   width: 100%;

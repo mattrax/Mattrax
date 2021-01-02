@@ -14,7 +14,8 @@
 
     <p class="field-title">Password:</p>
     <PasswordField
-      :value.sync="user_settings.password"
+      name="password"
+      :value="user_settings.password"
       :disabled="!$store.state.dashboard.editting"
     />
 

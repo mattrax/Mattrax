@@ -46,7 +46,10 @@ func recieve(p *Protocol) func(ctx context.Context, m *pubsub2.Message) {
 				Scope:    MattraxManagementScope(device.ManagementMode),
 				State:    MattraxDeviceState(device.State),
 				Udid:     device.Name,
-				Name:     device.HardwareInfo.SerialNumber,
+				Name: null.String{
+					String: device.HardwareInfo.SerialNumber,
+					Valid:  true,
+				},
 				SerialNumber: null.String{
 					String: device.HardwareInfo.SerialNumber,
 					Valid:  true,

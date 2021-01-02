@@ -166,7 +166,7 @@ type Device struct {
 	Scope             ManagementScope    `json:"scope"`
 	State             DeviceState        `json:"state"`
 	Udid              string             `json:"udid"`
-	Name              string             `json:"name"`
+	Name              null.String        `json:"name"`
 	Description       null.String        `json:"description"`
 	SerialNumber      null.String        `json:"serial_number"`
 	ModelManufacturer null.String        `json:"model_manufacturer"`
@@ -194,7 +194,7 @@ type EventLog struct {
 type Group struct {
 	ID          string      `json:"id"`
 	TenantID    string      `json:"tenant_id"`
-	Name        string      `json:"name"`
+	Name        null.String `json:"name"`
 	Description null.String `json:"description"`
 }
 
@@ -218,7 +218,7 @@ type Object struct {
 type Policy struct {
 	ID          string          `json:"id"`
 	TenantID    string          `json:"tenant_id"`
-	Name        string          `json:"name"`
+	Name        null.String     `json:"name"`
 	Type        string          `json:"type"`
 	Payload     json.RawMessage `json:"payload"`
 	Description null.String     `json:"description"`
@@ -226,7 +226,7 @@ type Policy struct {
 
 type Tenant struct {
 	ID              string      `json:"id"`
-	DisplayName     string      `json:"display_name"`
+	DisplayName     null.String `json:"display_name"`
 	PrimaryDomain   string      `json:"primary_domain"`
 	Email           null.String `json:"email"`
 	Phone           null.String `json:"phone"`
@@ -248,11 +248,12 @@ type TenantUser struct {
 }
 
 type User struct {
-	UPN        string      `json:"upn"`
-	Fullname   string      `json:"fullname"`
-	Disabled   bool        `json:"disabled"`
-	Password   null.String `json:"password"`
-	MfaToken   null.String `json:"mfa_token"`
-	AzureadOid null.String `json:"azuread_oid"`
-	TenantID   null.String `json:"tenant_id"`
+	UPN            string       `json:"upn"`
+	Fullname       null.String  `json:"fullname"`
+	Disabled       bool         `json:"disabled"`
+	Password       null.String  `json:"password"`
+	PasswordExpiry sql.NullTime `json:"password_expiry"`
+	MfaToken       null.String  `json:"mfa_token"`
+	AzureadOid     null.String  `json:"azuread_oid"`
+	TenantID       null.String  `json:"tenant_id"`
 }

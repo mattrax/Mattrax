@@ -206,7 +206,10 @@ func Enrollment(p *Protocol) http.HandlerFunc {
 				Scope:    MattraxManagementScope(certStore),
 				State:    db.DeviceStateDeploying,
 				Udid:     deviceID,
-				Name:     name,
+				Name: null.String{
+					String: name,
+					Valid:  true,
+				},
 				SerialNumber: null.String{
 					String: cmd.GetAdditionalContextItem("HWDevID"),
 					Valid:  cmd.GetAdditionalContextItem("HWDevID") != "",
@@ -262,7 +265,7 @@ func Enrollment(p *Protocol) http.HandlerFunc {
 				})
 			}
 
-			wapProvisioningDoc.NewW7Application(ProviderID, tenant.DisplayName, managementServiceURL, certStore, signedClientCertificate.Subject.String())
+			wapProvisioningDoc.NewW7Application(ProviderID, tenant.DisplayName.String, managementServiceURL, certStore, signedClientCertificate.Subject.String())
 			wapProvisioningDoc.NewDMClient(ProviderID, dmClientParams, []wap.Characteristic{
 				wap.DefaultPollCharacteristic,
 				{
@@ -275,7 +278,7 @@ func Enrollment(p *Protocol) http.HandlerFunc {
 						},
 						{
 							Name:     "BodyText",
-							Value:    "Welcome " + cmd.Header.WSSESecurity.Username + ", Your device is now being managed by '" + tenant.DisplayName + "'. Please contact your IT administrators for support if you have any problems.",
+							Value:    "Welcome " + cmd.Header.WSSESecurity.Username + ", Your device is now being managed by '" + tenant.DisplayName.String + "'. Please contact your IT administrators for support if you have any problems.",
 							DataType: "string",
 						},
 					},

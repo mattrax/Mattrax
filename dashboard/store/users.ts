@@ -35,11 +35,19 @@ export const actions = {
   },
   getByID(context: any, userID: string) {
     return new Promise((resolve, reject) => {
-      fetch(process.env.baseUrl + '/user/' + encodeURI(userID), {
-        headers: new Headers({
-          Authorization: 'Bearer ' + context.rootState.authentication.authToken,
-        }),
-      })
+      fetch(
+        process.env.baseUrl +
+          '/' +
+          context.rootState.tenants.tenant.id +
+          '/user/' +
+          encodeURI(userID),
+        {
+          headers: new Headers({
+            Authorization:
+              'Bearer ' + context.rootState.authentication.authToken,
+          }),
+        }
+      )
         .then(async (res) => {
           if (res.status !== 200) {
             reject(
@@ -91,14 +99,22 @@ export const actions = {
   },
   patchUser(context: any, params: any) {
     return new Promise((resolve, reject) => {
-      fetch(process.env.baseUrl + '/user/' + encodeURI(params.upn), {
-        method: 'PATCH',
-        headers: new Headers({
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + context.rootState.authentication.authToken,
-        }),
-        body: JSON.stringify(params.patch),
-      })
+      fetch(
+        process.env.baseUrl +
+          '/' +
+          context.rootState.tenants.tenant.id +
+          '/user/' +
+          encodeURI(params.upn),
+        {
+          method: 'PATCH',
+          headers: new Headers({
+            'Content-Type': 'application/json',
+            Authorization:
+              'Bearer ' + context.rootState.authentication.authToken,
+          }),
+          body: JSON.stringify(params.patch),
+        }
+      )
         .then(async (res) => {
           if (res.status !== 200 && res.status !== 204) {
             reject(

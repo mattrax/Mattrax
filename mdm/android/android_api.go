@@ -149,7 +149,7 @@ func AndroidOrganisationCallback(srv *mattrax.Server, p *Protocol) http.HandlerF
 		}
 
 		enterprise, err := p.ams.Enterprises.Create(&androidmanagement.Enterprise{
-			EnterpriseDisplayName: tenant.DisplayName,
+			EnterpriseDisplayName: tenant.DisplayName.String,
 			// Logo: &androidmanagement.ExternalData{
 			// 	Url: "",
 			// 	Sha256Hash: "",

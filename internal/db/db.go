@@ -190,11 +190,29 @@ func Prepare(ctx context.Context, db DBTX) (*Queries, error) {
 	if q.updateApplicationStmt, err = db.PrepareContext(ctx, updateApplication); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateApplication: %w", err)
 	}
+	if q.updateDeviceStmt, err = db.PrepareContext(ctx, updateDevice); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateDevice: %w", err)
+	}
 	if q.updateDomainStmt, err = db.PrepareContext(ctx, updateDomain); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateDomain: %w", err)
 	}
+	if q.updateGroupStmt, err = db.PrepareContext(ctx, updateGroup); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateGroup: %w", err)
+	}
 	if q.updateObjectStmt, err = db.PrepareContext(ctx, updateObject); err != nil {
 		return nil, fmt.Errorf("error preparing query UpdateObject: %w", err)
+	}
+	if q.updatePolicyStmt, err = db.PrepareContext(ctx, updatePolicy); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdatePolicy: %w", err)
+	}
+	if q.updateTenantStmt, err = db.PrepareContext(ctx, updateTenant); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateTenant: %w", err)
+	}
+	if q.updateUserStmt, err = db.PrepareContext(ctx, updateUser); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateUser: %w", err)
+	}
+	if q.updateUserInTenantStmt, err = db.PrepareContext(ctx, updateUserInTenant); err != nil {
+		return nil, fmt.Errorf("error preparing query UpdateUserInTenant: %w", err)
 	}
 	return &q, nil
 }
@@ -481,14 +499,44 @@ func (q *Queries) Close() error {
 			err = fmt.Errorf("error closing updateApplicationStmt: %w", cerr)
 		}
 	}
+	if q.updateDeviceStmt != nil {
+		if cerr := q.updateDeviceStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateDeviceStmt: %w", cerr)
+		}
+	}
 	if q.updateDomainStmt != nil {
 		if cerr := q.updateDomainStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateDomainStmt: %w", cerr)
 		}
 	}
+	if q.updateGroupStmt != nil {
+		if cerr := q.updateGroupStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateGroupStmt: %w", cerr)
+		}
+	}
 	if q.updateObjectStmt != nil {
 		if cerr := q.updateObjectStmt.Close(); cerr != nil {
 			err = fmt.Errorf("error closing updateObjectStmt: %w", cerr)
+		}
+	}
+	if q.updatePolicyStmt != nil {
+		if cerr := q.updatePolicyStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updatePolicyStmt: %w", cerr)
+		}
+	}
+	if q.updateTenantStmt != nil {
+		if cerr := q.updateTenantStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateTenantStmt: %w", cerr)
+		}
+	}
+	if q.updateUserStmt != nil {
+		if cerr := q.updateUserStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateUserStmt: %w", cerr)
+		}
+	}
+	if q.updateUserInTenantStmt != nil {
+		if cerr := q.updateUserInTenantStmt.Close(); cerr != nil {
+			err = fmt.Errorf("error closing updateUserInTenantStmt: %w", cerr)
 		}
 	}
 	return err
@@ -586,8 +634,14 @@ type Queries struct {
 	removeUserFromTenantStmt            *sql.Stmt
 	scopeUserToTenantStmt               *sql.Stmt
 	updateApplicationStmt               *sql.Stmt
+	updateDeviceStmt                    *sql.Stmt
 	updateDomainStmt                    *sql.Stmt
+	updateGroupStmt                     *sql.Stmt
 	updateObjectStmt                    *sql.Stmt
+	updatePolicyStmt                    *sql.Stmt
+	updateTenantStmt                    *sql.Stmt
+	updateUserStmt                      *sql.Stmt
+	updateUserInTenantStmt              *sql.Stmt
 }
 
 func (q *Queries) WithTx(tx *sql.Tx) *Queries {
@@ -650,7 +704,13 @@ func (q *Queries) WithTx(tx *sql.Tx) *Queries {
 		removeUserFromTenantStmt:            q.removeUserFromTenantStmt,
 		scopeUserToTenantStmt:               q.scopeUserToTenantStmt,
 		updateApplicationStmt:               q.updateApplicationStmt,
+		updateDeviceStmt:                    q.updateDeviceStmt,
 		updateDomainStmt:                    q.updateDomainStmt,
+		updateGroupStmt:                     q.updateGroupStmt,
 		updateObjectStmt:                    q.updateObjectStmt,
+		updatePolicyStmt:                    q.updatePolicyStmt,
+		updateTenantStmt:                    q.updateTenantStmt,
+		updateUserStmt:                      q.updateUserStmt,
+		updateUserInTenantStmt:              q.updateUserInTenantStmt,
 	}
 }

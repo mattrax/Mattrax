@@ -38,21 +38,28 @@ export default Vue.extend({
   middleware: ['auth'],
   data() {
     return {
-      loading: false,
+      loading: true,
       errorTxt: null,
     }
   },
   created() {
-    if (this.$store.state.tenants.tenants === null) {
-      this.loading = true
-      this.$store
-        .dispatch('tenants/getAll', this.user)
-        .then(() => (this.loading = false))
-        .catch((err) => {
-          this.loading = false
-          this.errorTxt = err
-        })
-    }
+    this.$store
+      .dispatch('tenants/getAll', this.user)
+      .then(() => {
+        if (
+          this.$route.query.autologin === 'true' &&
+          this.$store.state.tenants.tenants.length === 1
+        ) {
+          this.setTenant(this.$store.state.tenants.tenants[0])
+          return
+        }
+
+        this.loading = false
+      })
+      .catch((err) => {
+        this.loading = false
+        this.errorTxt = err
+      })
   },
   methods: {
     setTenant(tenant: object) {

@@ -2,17 +2,15 @@ package http_api
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 	mattrax "github.com/mattrax/Mattrax/internal"
 	"github.com/mattrax/Mattrax/internal/db"
 	"github.com/mattrax/Mattrax/internal/middleware"
 	"github.com/mattrax/Mattrax/mdm"
-	"github.com/openzipkin/zipkin-go"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -29,9 +27,8 @@ func SettingsOverview(srv *mattrax.Server) http.HandlerFunc {
 		VersionDate    string                 `json:"version_date"`
 	}
 
-	return func(w http.ResponseWriter, r *http.Request) {
-		span := zipkin.SpanOrNoopFromContext(r.Context())
-		if r.Method == http.MethodGet {
+	return Endpoint{
+		Get: func(r *http.Request, DB *db.Queries) (interface{}, error) {
 			var cmd = Response{
 				DebugMode:      srv.Args.Debug,
 				CloudMode:      srv.Args.MattraxCloud,
@@ -47,156 +44,106 @@ func SettingsOverview(srv *mattrax.Server) http.HandlerFunc {
 			for _, p := range mdm.Protocols {
 				status, err := p.Status()
 				if err != nil {
-					panic(err) // TODO
+					return nil, fmt.Errorf("error checking status of protocol '%s': %w", p.ID(), err)
 				}
 
 				cmd.Protocols[p.ID()] = status
 			}
 
-			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-			if err := json.NewEncoder(w).Encode(cmd); err != nil {
-				span.Tag("warn", fmt.Sprintf("error encoding JSON response: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		}
-	}
+			return cmd, nil
+		},
+	}.Handler(srv.DB)
 }
 
 func SettingsTenant(srv *mattrax.Server) http.HandlerFunc {
-	// TODO: Replace with db.Tenant once sql.NullString fixed
-	type PatchRequest struct {
-		ID            string  `json:"id"`
-		DisplayName   *string `json:"display_name"`
-		PrimaryDomain *string `json:"primary_domain"`
-		Email         *string `json:"email"`
-		Phone         *string `json:"phone"`
-		Description   *string `json:"description"`
-	}
+	return Endpoint{
+		Get: func(r *http.Request, DB *db.Queries) (interface{}, error) {
+			vars := mux.Vars(r)
 
-	return func(w http.ResponseWriter, r *http.Request) {
-		tx := middleware.DBTxFromContext(r.Context())
-		span := zipkin.SpanOrNoopFromContext(r.Context())
-		vars := mux.Vars(r)
-		if r.Method == http.MethodGet {
-			tenant, err := srv.DB.WithTx(tx).GetTenant(r.Context(), vars["tenant"])
-			if err == sql.ErrNoRows {
-				span.Tag("warn", "tenant not found")
-				w.WriteHeader(http.StatusNotFound)
-				return
-			} else if err != nil {
-				log.Printf("[GetTenant Error]: %s\n", err)
-				span.Tag("err", fmt.Sprintf("error retrieving tenant: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-
-			domains, err := srv.DB.WithTx(tx).GetTenantDomains(r.Context(), vars["tenant"])
+			tenant, err := DB.GetTenant(r.Context(), vars["tenant"])
 			if err != nil {
-				log.Printf("[GetTenantDomains Error]: %s\n", err)
-				span.Tag("err", fmt.Sprintf("error retrieving tenant domains: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
+				return nil, fmt.Errorf("error getting tenant: %w", err)
 			}
 
-			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-			if err := json.NewEncoder(w).Encode(map[string]interface{}{
+			domains, err := DB.GetTenantDomains(r.Context(), vars["tenant"])
+			if err != nil {
+				return nil, fmt.Errorf("error getting tenant domains: %w", err)
+			}
+
+			return map[string]interface{}{
 				"tenant":  tenant,
 				"domains": domains,
-			}); err != nil {
-				span.Tag("warn", fmt.Sprintf("error encoding JSON response: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		} else if r.Method == http.MethodPatch {
-			var cmd PatchRequest
-			if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
-				log.Printf("[JsonDecode Error]: %s\n", err)
-				span.Tag("warn", fmt.Sprintf("JSON decode error: %s", err))
-				w.WriteHeader(http.StatusBadRequest)
-				return
+			}, nil
+		},
+		PatchType: func(r *http.Request) interface{} {
+			return &db.Tenant{}
+		},
+		Patch: func(r *http.Request, DB *db.Queries, cmd interface{}) (interface{}, error) {
+			vars := mux.Vars(r)
+			policy, ok := cmd.(*db.Tenant)
+			if !ok {
+				return nil, fmt.Errorf("invalid patch type. This error is a mistake made by a developer")
 			}
 
-			query := `UPDATE tenants SET display_name=NULLIF(COALESCE($2, display_name), ''), email=NULLIF(COALESCE($3, email), ''), phone=NULLIF(COALESCE($4, phone), '') WHERE id = $1;`
-			if _, err := tx.Exec(query, vars["tenant"], cmd.DisplayName, cmd.Email, cmd.Phone); err == sql.ErrNoRows {
-				span.Tag("warn", "tenant not found")
-				w.WriteHeader(http.StatusNotFound)
-				return
-			} else if err != nil {
-				log.Printf("[UpdateTenant Error]: %s\n", err)
-				span.Tag("err", fmt.Sprintf("error updating tenant: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
+			err := DB.UpdateTenant(r.Context(), db.UpdateTenantParams{
+				ID:          vars["tenant"],
+				DisplayName: policy.DisplayName,
+				Email:       policy.Email,
+				Phone:       policy.Phone,
+			})
 
-			w.WriteHeader(http.StatusNoContent)
-		}
-	}
+			return nil, err
+		},
+	}.Handler(srv.DB)
 }
 
 func SettingsMe(srv *mattrax.Server) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		tx := middleware.DBTxFromContext(r.Context())
-		span := zipkin.SpanOrNoopFromContext(r.Context())
-		claims := middleware.AuthClaimsFromContext(r.Context())
-		if claims == nil {
-			span.Tag("warn", "authentication claims are not set")
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		if r.Method == http.MethodGet {
-			user, err := srv.DB.WithTx(tx).GetUser(r.Context(), claims.Subject)
-			if err == sql.ErrNoRows {
-				span.Tag("warn", "user not found")
-				w.WriteHeader(http.StatusNotFound)
-				return
-			} else if err != nil {
-				log.Printf("[GetUser Error]: %s\n", err)
-				span.Tag("err", fmt.Sprintf("error retrieving user: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
+	return Endpoint{
+		Get: func(r *http.Request, DB *db.Queries) (interface{}, error) {
+			claims := middleware.AuthClaimsFromContext(r.Context())
+			if claims == nil {
+				// TODO: w.WriteHeader(http.StatusUnauthorized)
+				return nil, fmt.Errorf("authentication claims are not on the request. Developer caused bug")
 			}
 
-			w.Header().Set("Content-Type", "application/json; charset=UTF-8")
-			if err := json.NewEncoder(w).Encode(user); err != nil {
-				span.Tag("warn", fmt.Sprintf("error encoding JSON response: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-		} else if r.Method == http.MethodPatch {
-			var cmd db.User
-			if err := json.NewDecoder(r.Body).Decode(&cmd); err != nil {
-				log.Printf("[JsonDecode Error]: %s\n", err)
-				span.Tag("warn", fmt.Sprintf("JSON decode error: %s", err))
-				w.WriteHeader(http.StatusBadRequest)
-				return
+			return DB.GetUser(r.Context(), claims.Subject)
+		},
+		PatchType: func(r *http.Request) interface{} {
+			return &db.User{}
+		},
+		Patch: func(r *http.Request, DB *db.Queries, cmd interface{}) (interface{}, error) {
+			user, ok := cmd.(*db.User)
+			if !ok {
+				return nil, fmt.Errorf("invalid patch type. This error is a mistake made by a developer")
 			}
 
-			if cmd.Password.Valid {
-				passwordHash, err := bcrypt.GenerateFromPassword([]byte(cmd.Password.String), 15)
+			claims := middleware.AuthClaimsFromContext(r.Context())
+			if claims == nil {
+				// TODO: w.WriteHeader(http.StatusUnauthorized)
+				return nil, fmt.Errorf("authentication claims are not on the request. Developer caused bug")
+			}
+
+			if user.Password.Valid {
+				passwordHash, err := bcrypt.GenerateFromPassword([]byte(user.Password.String), 15)
 				if err != nil {
-					log.Printf("[bcrypt.GenerateFromPassword Error]: %s\n", err)
-					span.Tag("warn", fmt.Sprintf("Error hashing user password: %s", err))
-					w.WriteHeader(http.StatusBadRequest)
-					return
+					return nil, fmt.Errorf("error generating bcrypt hash of users new password: %w", err)
 				}
-				cmd.Password.String = string(passwordHash)
+				user.Password.String = string(passwordHash)
+
+				user.PasswordExpiry = sql.NullTime{
+					Time:  time.Now().Add(time.Hour * 24 * 365 * 10 /* 10 Years */),
+					Valid: true,
+				}
 			}
 
-			query := `UPDATE users SET fullname=COALESCE(NULLIF($2, ''), fullname), password=COALESCE($3, password) WHERE upn = $1;`
-			if _, err := tx.Exec(query, claims.Subject, cmd.Fullname, cmd.Password); err == sql.ErrNoRows {
-				span.Tag("warn", "user not found")
-				w.WriteHeader(http.StatusNotFound)
-				return
-			} else if err != nil {
-				log.Printf("[UpdateTenant Error]: %s\n", err)
-				span.Tag("err", fmt.Sprintf("error updating user: %s", err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
+			err := DB.UpdateUser(r.Context(), db.UpdateUserParams{
+				UPN:            claims.Subject,
+				Fullname:       user.Fullname,
+				Password:       user.Password,
+				PasswordExpiry: user.PasswordExpiry,
+			})
 
-			w.WriteHeader(http.StatusNoContent)
-		}
-	}
+			return nil, err
+		},
+	}.Handler(srv.DB)
 }

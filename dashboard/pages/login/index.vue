@@ -50,28 +50,20 @@ export default Vue.extend({
       this.loading = true
       this.$store
         .dispatch('authentication/login', this.user)
-        .then(() => {
+        .then((expired) => {
+          if (expired) {
+            this.$router.push({
+              path: '/login/reset-password',
+              query: this.$route.query,
+            })
+            return
+          }
+
           if (this.$store.state.authentication.user.aud === 'dashboard') {
-            if (this.$store.state.tenants.tenants.length === 1) {
-              this.$store.commit(
-                'tenants/set',
-                this.$store.state.tenants.tenants[0]
-              )
-              this.$router.push(
-                this.$route.query?.redirect_to !== undefined
-                  ? Array.isArray(this.$route.query.redirect_to)
-                    ? this.$route.query.redirect_to[0] !== null
-                      ? this.$route.query.redirect_to[0]
-                      : '/'
-                    : this.$route.query.redirect_to
-                  : '/'
-              )
-            } else {
-              this.$router.push({
-                path: '/login/tenants',
-                query: this.$route.query,
-              })
-            }
+            this.$router.push({
+              path: '/login/tenants',
+              query: { ...this.$route.query, autologin: true },
+            })
           } else if (
             this.$store.state.authentication.user.aud === 'enrollment'
           ) {

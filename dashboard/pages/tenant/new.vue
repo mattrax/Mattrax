@@ -49,15 +49,10 @@ export default Vue.extend({
       this.$store
         .dispatch('tenants/create', this.tenant)
         .then(() =>
-          this.$router.push(
-            this.$route.query?.redirect_to !== undefined
-              ? Array.isArray(this.$route.query.redirect_to)
-                ? this.$route.query.redirect_to[0] !== null
-                  ? this.$route.query.redirect_to[0]
-                  : '/'
-                : this.$route.query.redirect_to
-              : '/'
-          )
+          this.$router.push({
+            path: '/login/tenants',
+            query: { ...this.$route.query, autologin: true },
+          })
         )
         .catch((err) => {
           this.loading = false
