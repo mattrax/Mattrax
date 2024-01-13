@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "vinxi dev",
     "build": "vinxi build",
+    "vbuild": "NITRO_PRESET=vercel_edge vinxi build",
     "start": "vinxi start"
   },
   "dependencies": {
