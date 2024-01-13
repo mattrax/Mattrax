@@ -1,31 +1,42 @@
-import { A } from "@solidjs/router";
-import Counter from "~/components/Counter";
+import { For } from "solid-js";
+
+const demo = async (deviceId: string) => {
+  "use server";
+  return "Hello From The Server!";
+};
+
+// TODO: Proper input validation using Valibot
+const toggleProfileOnDevice = async (deviceId: string) => {
+  "use server";
+
+  console.log(deviceId);
+
+  return "Hello From The Server!";
+};
 
 export default function Home() {
+  const devices: { id: string; name: string }[] = []; // TODO: Get from Microsoft
+
   return (
-    <main class="text-center mx-auto text-gray-700 p-4">
-      <h1 class="max-6-xs text-6xl text-sky-700 font-thin uppercase my-16">
-        Hello world!
-      </h1>
-      <Counter />
-      <p class="mt-8">
-        Visit{" "}
-        <a
-          href="https://solidjs.com"
-          target="_blank"
-          class="text-sky-600 hover:underline"
-        >
-          solidjs.com
-        </a>{" "}
-        to learn how to build Solid apps.
-      </p>
-      <p class="my-4">
-        <span>Home</span>
-        {" - "}
-        <A href="/about" class="text-sky-600 hover:underline">
-          About Page
-        </A>{" "}
-      </p>
+    <main class="text-center mx-auto text-gray-700 p-4 flex flex-col">
+      <button onClick={() => alert("todo")}>Enroll</button>
+
+      <For each={devices}>
+        {(device) => (
+          <div>
+            <h1>{device.name}</h1>
+            <button onClick={() => alert("todo")}>Sync</button>
+            <button onClick={() => toggleProfileOnDevice("todo")}>
+              Toggle restriction
+            </button>
+            <button onClick={() => alert("todo")}>Unenroll</button>
+          </div>
+        )}
+      </For>
+
+      <button onClick={() => demo("hello").then(console.log)}>
+        Test Server Actions
+      </button>
     </main>
   );
 }
