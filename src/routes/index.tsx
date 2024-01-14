@@ -6,7 +6,16 @@ import { getDevices } from "~/server/microsoft";
 const demo = async (deviceId: string) => {
   "use server";
 
-  return JSON.stringify(await getDevices());
+  console.log("HIT");
+
+  try {
+    const resp = JSON.stringify(await getDevices());
+    console.log("DONE", resp);
+    return resp;
+  } catch (err) {
+    console.error("ERROR");
+    return `Error: ${(err as any).toString()}`;
+  }
 };
 
 // TODO: Proper input validation using Valibot

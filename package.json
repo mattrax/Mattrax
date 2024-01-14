@@ -5,7 +5,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "dev": "vinxi dev",
+    "dev": "vinxi dev --host 0.0.0.0",
     "build": "vinxi build",
     "vbuild": "NITRO_PRESET=vercel_edge vinxi build",
     "start": "vinxi start"
