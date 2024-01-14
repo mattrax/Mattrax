@@ -14,7 +14,7 @@ export const loginAction = validatedAction(loginSchema, async (input) => {
   const session = await getSession();
 
   // TODO: Check credentials
-  // TODO: Create session
+  // TODO: Create session in DB
 
   await session.update({ email: input["email"] });
 

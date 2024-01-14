@@ -1,7 +1,6 @@
-import { cache, createAsync } from "@solidjs/router";
-import { For } from "solid-js";
+import { cache, createAsync, redirect } from "@solidjs/router";
 import { getSession } from "~/server/session";
-import { getDevices } from "~/server/microsoft";
+import { getDeviceConfigurations, getDevices } from "~/server/microsoft";
 
 const demoAction = async (name: string) => {
   "use server";
@@ -9,44 +8,42 @@ const demoAction = async (name: string) => {
   return `Hello, ${name}`;
 };
 
-const getDevicesAction = async (deviceId: string) => {
+const getInfo = async () => {
   "use server";
 
+  const [devices, policies] = await Promise.allSettled([
+    getDevices(),
+    getDeviceConfigurations(),
+  ]);
+
   try {
-    return JSON.stringify(await getDevices());
+    return JSON.stringify({
+      devices,
+      policies,
+    });
   } catch (err) {
     return `Error: ${(err as any).toString()}`;
   }
 };
 
-// TODO: Proper input validation using Valibot
-const toggleProfileOnDevice = async (deviceId: string) => {
-  "use server";
-
-  console.log(deviceId);
-
-  return "Hello From The Server!";
-};
-
 const getName = cache(async () => {
   "use server";
 
-  try {
-    const session = await getSession();
-    return session?.data?.email ?? "Not authenticated";
-  } catch (err) {
-    return "Error";
-  }
+  const session = await getSession();
+  if (!session.data.email) throw redirect("/login");
+  return session.data.email;
 }, "getName");
 
 export const route = {
   load: () => getName(),
 };
 
-export default function Home() {
+export default function Page() {
   const devices: { id: string; name: string }[] = []; // TODO: Get from Microsoft
 
   const name = createAsync(getName);
+
+  // TODO: Render tenant ID + Select default one
 
   return (
     <main class="text-center mx-auto text-gray-700 p-4 flex flex-col">
@@ -54,7 +51,7 @@ export default function Home() {
 
       <button onClick={() => alert("todo")}>Enroll</button>
 
-      <For each={devices}>
+      {/* <For each={devices}>
         {(device) => (
           <div>
             <h1>{device.name}</h1>
@@ -65,14 +62,14 @@ export default function Home() {
             <button onClick={() => alert("todo")}>Unenroll</button>
           </div>
         )}
-      </For>
+      </For> */}
 
       <button onClick={() => demoAction("Oscar").then(console.log)}>
         Demo
       </button>
 
-      <button onClick={() => getDevicesAction("hello").then(console.log)}>
-        Fetch Devices
+      <button onClick={() => getInfo().then((d) => console.log(JSON.parse(d)))}>
+        Fetch Data
       </button>
 
       <a href="/profile.mobileconfig" rel="external">
