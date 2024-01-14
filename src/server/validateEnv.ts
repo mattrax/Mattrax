@@ -6,10 +6,24 @@ type ObjectFieldsOptional<T> = {
 
 export function validateEnv<T extends BaseSchema>(
   schema: T,
-  env: ObjectFieldsOptional<Input<T>>
+  env: ObjectFieldsOptional<Input<T>>,
+  context: "server" | "client" = "server"
 ): Output<T> {
   // if (process.env.SKIP_ENV_VALIDATION) {}
   // TODO: skip validation if SKIP_ENV_VALIDATION is set
+
+  if (!import.meta.env.SSR) {
+    if (context === "server") {
+      return new Proxy(
+        {},
+        {
+          get: () => {
+            throw new Error("Cannot access env on the client");
+          },
+        }
+      );
+    }
+  }
 
   const result = safeParse(schema, env);
 

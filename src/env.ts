@@ -15,10 +15,11 @@ const env = validateEnv(
     MSFT_CLIENT_SECRET: process.env.MSFT_CLIENT_SECRET,
     MSFT_ADMIN_TENANT: process.env.MSFT_ADMIN_TENANT,
     DATABASE_URL: process.env.DATABASE_URL,
-  }
+  },
+  "server"
 );
 
-const clientEnv = validateEnv(object({}), {});
+const clientEnv = validateEnv(object({}), {}, "client");
 
 // TODO: Error when importing `env` onto the client
 

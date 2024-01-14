@@ -1,29 +1,26 @@
-import { createAsync, redirect } from "@solidjs/router";
+import { createAsync } from "@solidjs/router";
 import { ParentProps, Show, Suspense } from "solid-js";
 import LeftSidebar from "~/components/LeftSidebar";
-import { getSession } from "~/server/session";
+import { dashboardLayoutLoader } from "~/server/session";
+import { sessionCtx } from "~/server/session";
 
 export default function Layout(props: ParentProps) {
-  const session = createAsync(
-    async () => {
-      "use server";
+  const session = createAsync(dashboardLayoutLoader, {
+    // TODO: This is required for the `throw redirect` to work, however it blocks the page load on loading the tenants
+    // deferStream: true,
+  });
 
-      const session = await getSession();
-      if (!session?.data?.email) throw redirect("/login");
-      return {};
-    },
-    {
-      deferStream: true,
-    }
-  );
+  // TODO: Render sidebar in loading state while waiting for session
 
   return (
     <Suspense>
-      <Show when={() => session()} fallback={<h1>Not Authed</h1>}>
-        {(email) => (
+      <Show when={session()} fallback={<h1>Not Authed</h1>}>
+        {(session) => (
           <>
-            <LeftSidebar />
-            {props.children}
+            <sessionCtx.Provider value={session()}>
+              <LeftSidebar />
+              {props.children}
+            </sessionCtx.Provider>
           </>
         )}
       </Show>

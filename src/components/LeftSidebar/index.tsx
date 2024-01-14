@@ -29,6 +29,11 @@ const items: NavbarItem[] = [
     href: "/policies",
   },
   {
+    icon: IconPhAppWindowDuotone,
+    title: "Applications",
+    href: "/apps",
+  },
+  {
     icon: IconPhBookDuotone,
     title: "Scripts",
     href: "/scripts",

@@ -1,5 +1,5 @@
 import { cache, createAsync, redirect } from "@solidjs/router";
-import { getSession } from "~/server/session";
+import { getServerSession } from "~/server/session";
 import { getDeviceConfigurations, getDevices } from "~/server/microsoft";
 
 const demoAction = async (name: string) => {
@@ -29,7 +29,7 @@ const getInfo = async () => {
 const getName = cache(async () => {
   "use server";
 
-  const session = await getSession();
+  const session = await getServerSession();
   if (!session.data.email) throw redirect("/login");
   return session.data.email;
 }, "getName");
@@ -50,19 +50,6 @@ export default function Page() {
       <h1>{name()}</h1>
 
       <button onClick={() => alert("todo")}>Enroll</button>
-
-      {/* <For each={devices}>
-        {(device) => (
-          <div>
-            <h1>{device.name}</h1>
-            <button onClick={() => alert("todo")}>Sync</button>
-            <button onClick={() => toggleProfileOnDevice("todo")}>
-              Toggle restriction
-            </button>
-            <button onClick={() => alert("todo")}>Unenroll</button>
-          </div>
-        )}
-      </For> */}
 
       <button onClick={() => demoAction("Oscar").then(console.log)}>
         Demo
