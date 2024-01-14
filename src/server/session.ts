@@ -7,6 +7,6 @@ export const getSession = () => {
   if (!event) throw new Error("Unable to get 'getRequestEvent'");
   return useSession(event, {
     name: "s",
-    password: env.SESSION_SECRET,
+    password: env.AUTH_SECRET,
   });
 };
