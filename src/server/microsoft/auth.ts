@@ -21,6 +21,10 @@ async function authenticate() {
     )}/oauth2/v2.0/token`,
     {
       method: "POST",
+      headers: new Headers({
+        // This is implied by `URLSearchParams` but Vercel Edge Runtime is stupid
+        "Content-Type": "application/x-www-form-urlencoded",
+      }),
       body: params,
     }
   );
