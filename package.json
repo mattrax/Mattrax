@@ -1,5 +1,5 @@
 {
-  "name": "mdmm",
+  "name": "@mattrax/forge",
   "type": "module",
   "engines": {
     "node": ">=18"
@@ -11,8 +11,6 @@
     "start": "vinxi start"
   },
   "dependencies": {
-    "@azure/identity": "^4.0.0",
-    "@microsoft/microsoft-graph-client": "^3.0.7",
     "@solidjs/router": "^0.10.9",
     "@solidjs/start": "^0.4.9",
     "autoprefixer": "^10.4.16",

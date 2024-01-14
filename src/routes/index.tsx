@@ -1,40 +1,12 @@
 import { cache, createAsync } from "@solidjs/router";
 import { For } from "solid-js";
 import { getSession } from "~/server/session";
-import { Client } from "@microsoft/microsoft-graph-client";
-import {
-  TokenCredentialAuthenticationProvider,
-  TokenCredentialAuthenticationProviderOptions,
-} from "@microsoft/microsoft-graph-client/authProviders/azureTokenCredentials";
-import { env } from "~/env";
-import { ClientSecretCredential } from "@azure/identity";
+import { getDevices } from "~/server/microsoft";
 
 const demo = async (deviceId: string) => {
   "use server";
 
-  const tokenCredential = new ClientSecretCredential(
-    env.MSFT_ADMIN_TENANT,
-    env.MSFT_CLIENT_ID,
-    env.MSFT_CLIENT_SECRET
-  );
-
-  const client = Client.initWithMiddleware({
-    debugLogging: true,
-    authProvider: new TokenCredentialAuthenticationProvider(tokenCredential, {
-      scopes: ["https://graph.microsoft.com/.default"],
-      getTokenOptions: {},
-    }),
-  });
-
-  try {
-    let userDetails = await client.api("/me").get();
-    console.log(userDetails);
-
-    return "Hello From The Server!";
-  } catch (error) {
-    console.error(error);
-    return error.toString();
-  }
+  return JSON.stringify(await getDevices());
 };
 
 // TODO: Proper input validation using Valibot
@@ -86,10 +58,12 @@ export default function Home() {
       </For>
 
       <button onClick={() => demo("hello").then(console.log)}>
-        Test Server Actions
+        Fetch Devices
       </button>
 
-      <a href="/profile.mobileconfig">Enroll Profile</a>
+      <a href="/profile.mobileconfig" rel="external">
+        Enroll Profile
+      </a>
     </main>
   );
 }
