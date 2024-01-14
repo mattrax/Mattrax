@@ -1,6 +1,9 @@
 {
   "name": "mdmm",
   "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "dev": "vinxi dev",
     "build": "vinxi build",
@@ -8,6 +11,8 @@
     "start": "vinxi start"
   },
   "dependencies": {
+    "@azure/identity": "^4.0.0",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
     "@solidjs/router": "^0.10.9",
     "@solidjs/start": "^0.4.9",
     "autoprefixer": "^10.4.16",
@@ -17,7 +22,8 @@
     "valibot": "^0.25.0",
     "vinxi": "^0.1.2"
   },
-  "engines": {
-    "node": ">=18"
+  "devDependencies": {
+    "@microsoft/microsoft-graph-types": "^2.40.0",
+    "@tailwindcss/forms": "^0.5.7"
   }
 }
