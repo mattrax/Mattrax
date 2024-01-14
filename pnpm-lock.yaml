@@ -23,6 +23,9 @@ dependencies:
   tailwindcss:
     specifier: ^3.4.1
     version: 3.4.1
+  valibot:
+    specifier: ^0.25.0
+    version: 0.25.0
   vinxi:
     specifier: ^0.1.2
     version: 0.1.2(preact@10.19.3)
@@ -4777,6 +4780,10 @@ packages:
       is-generator-function: 1.0.10
       is-typed-array: 1.1.12
       which-typed-array: 1.1.13
+    dev: false
+
+  /valibot@0.25.0:
+    resolution: {integrity: sha512-cmD0ca15oyAbT75iYLNW6uU6doAeIwYfOshpXka/E1Bx4frzbkrgb7gvkI7K0YK/DVOksei4FfxWfRoBP3NFTg==}
     dev: false
 
   /validate-html-nesting@1.2.2:
