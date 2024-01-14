@@ -40,12 +40,14 @@ async function authenticate() {
 
 // TODO: On unauthorised refresh token
 
-let cachedAuthentication: AuthenticateResponse | undefined = undefined;
+// let cachedAuthentication: AuthenticateResponse | undefined = undefined;
 async function authenticatedFetchInner<T>(
   url: string,
   init?: RequestInit,
   retrying = false
 ) {
+  let cachedAuthentication: AuthenticateResponse | undefined = undefined;
+
   if (!cachedAuthentication) cachedAuthentication = await authenticate();
 
   const headers = new Headers(init?.headers);
