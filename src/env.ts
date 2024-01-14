@@ -7,12 +7,14 @@ const env = validateEnv(
     MSFT_CLIENT_ID: string([]),
     MSFT_CLIENT_SECRET: string([]),
     MSFT_ADMIN_TENANT: string([]),
+    DATABASE_URL: string([]),
   }),
   {
     AUTH_SECRET: process.env.AUTH_SECRET,
     MSFT_CLIENT_ID: process.env.MSFT_CLIENT_ID,
     MSFT_CLIENT_SECRET: process.env.MSFT_CLIENT_SECRET,
     MSFT_ADMIN_TENANT: process.env.MSFT_ADMIN_TENANT,
+    DATABASE_URL: process.env.DATABASE_URL,
   }
 );
 

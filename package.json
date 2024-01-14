@@ -8,7 +8,9 @@
     "dev": "vinxi dev --host 0.0.0.0",
     "build": "vinxi build",
     "vbuild": "NITRO_PRESET=vercel_edge vinxi build",
-    "start": "vinxi start"
+    "start": "vinxi start",
+    "db:push": "drizzle-kit push:mysql",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@planetscale/database": "^1.13.0",
@@ -25,6 +27,7 @@
   "devDependencies": {
     "@microsoft/microsoft-graph-types": "^2.40.0",
     "@tailwindcss/forms": "^0.5.7",
+    "dotenv": "^16.3.1",
     "drizzle-kit": "^0.20.12"
   },
   "pnpm": {
