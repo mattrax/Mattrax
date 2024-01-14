@@ -3,7 +3,13 @@ import { For } from "solid-js";
 import { getSession } from "~/server/session";
 import { getDevices } from "~/server/microsoft";
 
-const demo = async (deviceId: string) => {
+const demo1 = async (name: string) => {
+  "use server";
+
+  return `Hello, ${name}`;
+};
+
+const getDevicesAction = async (deviceId: string) => {
   "use server";
 
   console.log("HIT");
@@ -66,7 +72,9 @@ export default function Home() {
         )}
       </For>
 
-      <button onClick={() => demo("hello").then(console.log)}>
+      <button onClick={() => demo1("Oscar").then(console.log)}>Demo</button>
+
+      <button onClick={() => getDevicesAction("hello").then(console.log)}>
         Fetch Devices
       </button>
 
