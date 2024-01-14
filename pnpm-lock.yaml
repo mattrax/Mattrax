@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 dependencies:
+  '@enalmada/env-valibot':
+    specifier: ^0.0.14
+    version: 0.0.14
   '@solidjs/router':
     specifier: ^0.10.9
     version: 0.10.9(solid-js@1.8.11)
@@ -397,6 +400,12 @@ packages:
     resolution: {integrity: sha512-9CB/MKf/wdvbfkUdfrj+OkEwZ5b7rws0eogJ4293h+7b6KX5toPwym+VQKmILafNB9YiehqY0DlNrDcDhdWHSQ==}
     dependencies:
       mime: 3.0.0
+    dev: false
+
+  /@enalmada/env-valibot@0.0.14:
+    resolution: {integrity: sha512-21hcNLwnD50ESIoUgjjcLuXol5hLaVyne63z41UHkkvOjIy0NUJaFn8l6CPCNBC2ul9NvInpqjDXdg6oe660Jw==}
+    dependencies:
+      valibot: 0.25.0
     dev: false
 
   /@esbuild/aix-ppc64@0.19.11:

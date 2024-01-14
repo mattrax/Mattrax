@@ -1,10 +1,12 @@
 import { useSession } from "@solidjs/start/server";
 import { getRequestEvent } from "solid-js/web";
+import { env } from "~/env";
 
 export const getSession = () => {
   const event = getRequestEvent();
-  if (!event) throw new Error("No request event");
+  if (!event) throw new Error("Unable to get 'getRequestEvent'");
   return useSession(event, {
-    password: "areallylongsecretthatyoushouldreplace", // TODO: T3 env process.env.SESSION_SECRET,
+    name: "s",
+    password: env.SESSION_SECRET,
   });
 };
