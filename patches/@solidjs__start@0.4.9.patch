@@ -1,0 +1,105 @@
+diff --git a/server/middleware.ts b/server/middleware.ts
+index de88c05550dedaf36e396527825ac6ae3e3e126f..1d19ae228ffef78df884c233c8dd189c03728268 100644
+--- a/server/middleware.ts
++++ b/server/middleware.ts
+@@ -4,8 +4,8 @@ import {
+   getRequestIP,
+   getRequestURL,
+   H3Event,
++  getRequestWebStream,
+   sendWebResponse,
+-  toWebRequest
+ } from "vinxi/server";
+ import { FetchEvent } from "./types";
+ 
+@@ -15,14 +15,50 @@ const eventTraps = {
+   get(target, prop) {
+     if (prop === fetchEventSymbol) return target;
+     return target[prop] ?? target[h3EventSymbol][prop];
+-  }
++  },
+ };
+ 
+-export function createFetchEvent(event: H3Event<EventHandlerRequest>): FetchEvent {
++function toWebRequest(/** @type {H3Event} */ event) {
++  /**
++   * @type {ReadableStream | undefined}
++   */
++  let readableStream;
++
++  const url = getRequestURL(event);
++  const base = {
++    // @ts-ignore Undici option
++    duplex: "half",
++    method: event.method,
++    headers: event.headers,
++  };
++
++  if (event.node.req.body instanceof ArrayBuffer) {
++    return new Request(url, {
++      ...base,
++      body: event.node.req.body,
++    });
++  }
++
++  return new Request(getRequestURL(event), {
++    ...base,
++    get body() {
++      if (readableStream) {
++        return readableStream;
++      }
++      readableStream = getRequestWebStream(event);
++      console.log(readableStream);
++      return readableStream;
++    },
++  });
++}
++
++export function createFetchEvent(
++  event: H3Event<EventHandlerRequest>
++): FetchEvent {
+   event.web ||
+     (event.web = {
+       url: getRequestURL(event),
+-      request: toWebRequest(event)
++      request: toWebRequest(event),
+     });
+   return new Proxy(
+     {
+@@ -30,7 +66,7 @@ export function createFetchEvent(event: H3Event<EventHandlerRequest>): FetchEven
+       clientAddress: getRequestIP(event),
+       locals: {},
+       // @ts-ignore
+-      [h3EventSymbol]: event
++      [h3EventSymbol]: event,
+     },
+     eventTraps
+   ) as unknown as FetchEvent;
+@@ -55,7 +91,9 @@ export function getFetchEvent(h3Event: H3Event): FetchEvent {
+ export type MiddlewareFn = (event: FetchEvent) => Promise<unknown> | unknown;
+ /** This composes an array of Exchanges into a single ExchangeIO function */
+ 
+-type RequestMiddleware = (event: FetchEvent) => Response | Promise<Response> | void | Promise<void>;
++type RequestMiddleware = (
++  event: FetchEvent
++) => Response | Promise<Response> | void | Promise<void>;
+ 
+ type ResponseMiddleware = (
+   event: FetchEvent,
+@@ -88,7 +126,7 @@ function wrapResponseMiddleware(onBeforeResponse: ResponseMiddleware) {
+ 
+ export function createMiddleware({
+   onRequest,
+-  onBeforeResponse
++  onBeforeResponse,
+ }: {
+   onRequest?: RequestMiddleware | RequestMiddleware[] | undefined;
+   onBeforeResponse?: ResponseMiddleware | ResponseMiddleware[] | undefined;
+@@ -105,6 +143,6 @@ export function createMiddleware({
+         ? wrapResponseMiddleware(onBeforeResponse)
+         : Array.isArray(onBeforeResponse)
+         ? onBeforeResponse.map(wrapResponseMiddleware)
+-        : undefined
++        : undefined,
+   });
+ }

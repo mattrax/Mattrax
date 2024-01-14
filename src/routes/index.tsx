@@ -1,7 +1,7 @@
 import { cache, createAsync } from "@solidjs/router";
 import { For } from "solid-js";
 import { getSession } from "~/server/session";
-// import { getDevices } from "~/server/microsoft";
+import { getDevices } from "~/server/microsoft";
 
 const demo1 = async (name: string) => {
   "use server";
@@ -12,18 +12,11 @@ const demo1 = async (name: string) => {
 const getDevicesAction = async (deviceId: string) => {
   "use server";
 
-  console.log("HIT");
-
-  // try {
-  //   const resp = JSON.stringify(await getDevices());
-  //   console.log("DONE", resp);
-  //   return resp;
-  // } catch (err) {
-  //   console.error("ERROR");
-  //   return `Error: ${(err as any).toString()}`;
-  // }
-
-  return "TODO";
+  try {
+    return JSON.stringify(await getDevices());
+  } catch (err) {
+    return `Error: ${(err as any).toString()}`;
+  }
 };
 
 // TODO: Proper input validation using Valibot
