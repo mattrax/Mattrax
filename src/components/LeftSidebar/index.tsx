@@ -1,4 +1,4 @@
-import { A } from "@solidjs/router";
+import { useLocation } from "@solidjs/router";
 import { For, JSX } from "solid-js";
 
 type NavbarItem = {
@@ -50,7 +50,35 @@ const items: NavbarItem[] = [
   },
 ];
 
-export default function Component(): JSX.Element {
+export default function Component(props: {
+  activeTenantId?: string;
+  tenantsLength: number;
+}): JSX.Element {
+  const location = useLocation();
+
+  const itemProps = (item: NavbarItem, activeClass: string) => {
+    const isRouteActive =
+      // "Dashboard" route is special as `/` (when no tenants) and `/:tenantId/` are both valid
+      (item.href === "/" && location.pathname === "/") ||
+      // All other routes are prefixed with the tenant.
+      (props.activeTenantId !== undefined &&
+        location.pathname === `/tenant/${props.activeTenantId}/${item.href}`);
+
+    let href = props.activeTenantId
+      ? `/tenant/${props.activeTenantId}${item.href}`
+      : undefined;
+    // Dashboard route is an exception
+    if (!href && item.href === "/") href = "/"; // If a tenant is selected, this link will go to `/:tenantId/` instead.
+
+    return {
+      href,
+      classList: {
+        [activeClass]: isRouteActive,
+        "cursor-not-allowed opacity-50": href === undefined,
+      },
+    };
+  };
+
   return (
     <aside class="h-full w-64 flex flex-col" aria-label="Sidebar">
       <div class="h-28 bg-brand relative">
@@ -66,19 +94,18 @@ export default function Component(): JSX.Element {
 
       <div class="flex-1 bg-brandDark text-white">
         <div class="flex-row space-y-1 mt-4 mx-3">
+          {/* TODO: Tooltip when disabled */}
           <For each={items}>
             {(item) => (
-              <A
+              <a
                 class="py-1.5 px-4 h-full w-full flex space-x-4 text-center align-middle rounded-lg"
-                activeClass="bg-brandDark-secondary"
-                href={item.href}
-                end={true}
+                {...itemProps(item, "bg-brandDark-secondary")}
               >
                 <span>
                   <item.icon class="h-full w-5 text-xl block" />
                 </span>
                 <p class="text-lg">{item.title}</p>
-              </A>
+              </a>
             )}
           </For>
         </div>

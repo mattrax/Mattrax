@@ -1,5 +1,3 @@
-import { cache, createAsync, redirect } from "@solidjs/router";
-import { getServerSession } from "~/server/session";
 import { getDeviceConfigurations, getDevices } from "~/server/microsoft";
 
 const demoAction = async (name: string) => {
@@ -26,29 +24,9 @@ const getInfo = async () => {
   }
 };
 
-const getName = cache(async () => {
-  "use server";
-
-  const session = await getServerSession();
-  if (!session.data.email) throw redirect("/login");
-  return session.data.email;
-}, "getName");
-
-export const route = {
-  load: () => getName(),
-};
-
 export default function Page() {
-  const devices: { id: string; name: string }[] = []; // TODO: Get from Microsoft
-
-  const name = createAsync(getName);
-
-  // TODO: Render tenant ID + Select default one
-
   return (
     <main class="text-center mx-auto text-gray-700 p-4 flex flex-col">
-      <h1>{name()}</h1>
-
       <button onClick={() => alert("todo")}>Enroll</button>
 
       <button onClick={() => demoAction("Oscar").then(console.log)}>
