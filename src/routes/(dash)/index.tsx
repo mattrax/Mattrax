@@ -1,45 +1,16 @@
-import { getDeviceConfigurations, getDevices } from "~/server/microsoft";
-
-const demoAction = async (name: string) => {
-  "use server";
-
-  return `Hello, ${name}`;
-};
-
-const getInfo = async () => {
-  "use server";
-
-  const [devices, policies] = await Promise.allSettled([
-    getDevices(),
-    getDeviceConfigurations(),
-  ]);
-
-  try {
-    return JSON.stringify({
-      devices,
-      policies,
-    });
-  } catch (err) {
-    return `Error: ${(err as any).toString()}`;
-  }
-};
+import { Navigate } from "@solidjs/router";
+import { useGlobalCtx } from "~/utils/globalCtx";
 
 export default function Page() {
+  const ctx = useGlobalCtx();
+
+  // If we have an active tenant, send the user to it
+  if (ctx.tenants[0]) {
+    ctx.setActiveTenant(ctx.tenants[0].id);
+    return <Navigate href={`/tenant/${ctx.tenants}`} />;
+  }
+
   return (
-    <main class="text-center mx-auto text-gray-700 p-4 flex flex-col">
-      <button onClick={() => alert("todo")}>Enroll</button>
-
-      <button onClick={() => demoAction("Oscar").then(console.log)}>
-        Demo
-      </button>
-
-      <button onClick={() => getInfo().then((d) => console.log(JSON.parse(d)))}>
-        Fetch Data
-      </button>
-
-      <a href="/profile.mobileconfig" rel="external">
-        Enroll Profile
-      </a>
-    </main>
+    <h1 class="p-4">No tenant selected. Please create one to get started!</h1>
   );
 }

@@ -25,4 +25,7 @@ export default defineConfig({
       emitFile: !process.env.VERCEL,
     }),
   ],
+  ssr: {
+    noExternal: ["@kobalte/core"],
+  },
 });

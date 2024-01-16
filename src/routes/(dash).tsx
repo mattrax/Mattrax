@@ -11,7 +11,11 @@ export default function Layout(props: ParentProps) {
   const location = useLocation();
 
   // These loaders are separate so we can render the `Redirect` without needing to wait for the tenants for better UX.
-  const session = createAsync(sessionLoader);
+  const session = createAsync(sessionLoader, {
+    // This triggers a redirect so it *must* be deferred
+    deferStream: true,
+  });
+  // TODO: Load from `localStorage` and use while waiting to render???
   const tenants = createAsync(async () => {
     const s = session();
     if (!s || s === "unauthenticated") return undefined;
@@ -38,10 +42,7 @@ export default function Layout(props: ParentProps) {
 
   return (
     <>
-      <LeftSidebar
-        activeTenantId={activeTenant()?.id}
-        tenantsLength={tenants()?.length || 0}
-      />
+      <LeftSidebar activeTenant={activeTenant()} tenants={tenants() || []} />
 
       <Suspense fallback={<h1>TODO: Loading...</h1>}>
         <Switch fallback={<div>TODO: Loading match...</div>}>

@@ -7,6 +7,9 @@ export {}
 declare global {
   const IconPhAppDuotone: typeof import('~icons/ph/app-duotone.jsx')['default']
   const IconPhAppWindowDuotone: typeof import('~icons/ph/app-window-duotone.jsx')['default']
+  const IconPhArrow: typeof import('~icons/ph/arrow.jsx')['default']
+  const IconPhArrowDown: typeof import('~icons/ph/arrow-down.jsx')['default']
+  const IconPhArrowDownBold: typeof import('~icons/ph/arrow-down-bold.jsx')['default']
   const IconPhBookDuotone: typeof import('~icons/ph/book-duotone.jsx')['default']
   const IconPhBoundingBoxDuotone: typeof import('~icons/ph/bounding-box-duotone.jsx')['default']
   const IconPhClipboardDuotone: typeof import('~icons/ph/clipboard-duotone.jsx')['default']

@@ -8,9 +8,16 @@ export type SessionData = {
   email: string;
 };
 
-type GetSessionResult = {
+export type GetSessionResult = {
   readonly id: string | undefined;
   readonly data: SessionData | undefined;
+  update: (data: SessionData) => Promise<void>;
+  clear: () => Promise<void>;
+};
+
+export type GetSessionResultWithData = {
+  readonly id: string | undefined;
+  readonly data: SessionData;
   update: (data: SessionData) => Promise<void>;
   clear: () => Promise<void>;
 };

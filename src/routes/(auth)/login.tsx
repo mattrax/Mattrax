@@ -6,6 +6,8 @@ const login = action(loginAction, "login");
 export default function Page() {
   // TODO: Autocomplete attributes
 
+  // TODO: Use Mattrax colors on this page
+
   return (
     <div class="w-full h-full">
       <div class="flex min-h-full flex-col justify-center py-12 sm:px-6 lg:px-8">
@@ -18,12 +20,13 @@ export default function Page() {
           </span>
         </div>
 
+        {/* // TODO: Loading state */}
         <form
           action={login}
           method="post"
           class="mt-10 sm:mx-auto sm:w-full sm:max-w-[480px]"
         >
-          {/* TODO: Hook up proper login */}
+          {/* // TODO: Hook up proper login */}
           <input
             type="email"
             name="email"

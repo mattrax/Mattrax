@@ -12,7 +12,7 @@ export function validateEnv<T extends BaseSchema>(
   // if (process.env.SKIP_ENV_VALIDATION) {}
   // TODO: skip validation if SKIP_ENV_VALIDATION is set
 
-  if (!import.meta.env.SSR) {
+  if (import.meta.env && !import.meta.env.SSR) {
     if (context === "server") {
       return new Proxy(
         {},

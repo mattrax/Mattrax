@@ -1,5 +1,7 @@
 import { useLocation } from "@solidjs/router";
 import { For, JSX } from "solid-js";
+import { TenantSwitcher } from "./TenantSwitcher";
+import { Tenant } from "~/utils/globalCtx";
 
 type NavbarItem = {
   icon: (props: { class: string }) => JSX.Element;
@@ -51,8 +53,8 @@ const items: NavbarItem[] = [
 ];
 
 export default function Component(props: {
-  activeTenantId?: string;
-  tenantsLength: number;
+  activeTenant: Tenant | null;
+  tenants: Tenant[];
 }): JSX.Element {
   const location = useLocation();
 
@@ -61,11 +63,11 @@ export default function Component(props: {
       // "Dashboard" route is special as `/` (when no tenants) and `/:tenantId/` are both valid
       (item.href === "/" && location.pathname === "/") ||
       // All other routes are prefixed with the tenant.
-      (props.activeTenantId !== undefined &&
-        location.pathname === `/tenant/${props.activeTenantId}/${item.href}`);
+      (props.activeTenant?.id !== undefined &&
+        location.pathname === `/tenant/${props.activeTenant?.id}/${item.href}`);
 
-    let href = props.activeTenantId
-      ? `/tenant/${props.activeTenantId}${item.href}`
+    let href = props.activeTenant?.id
+      ? `/tenant/${props.activeTenant?.id}${item.href}`
       : undefined;
     // Dashboard route is an exception
     if (!href && item.href === "/") href = "/"; // If a tenant is selected, this link will go to `/:tenantId/` instead.
@@ -88,13 +90,17 @@ export default function Component(props: {
 
         <div class="absolute inset-0">
           <h1 class="pt-3 pb-1 text-white text-center text-4xl">MATTRAX</h1>
-          <div class="mx-4">{/* <TenantSwitcher /> */}</div>
+          <div class="mx-4">
+            <TenantSwitcher
+              activeTenant={props.activeTenant}
+              tenants={props.tenants}
+            />
+          </div>
         </div>
       </div>
 
       <div class="flex-1 bg-brandDark text-white">
         <div class="flex-row space-y-1 mt-4 mx-3">
-          {/* TODO: Tooltip when disabled */}
           <For each={items}>
             {(item) => (
               <a
