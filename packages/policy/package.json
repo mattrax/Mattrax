@@ -1,0 +1,7 @@
+{
+  "name": "@mattrax/policy",
+  "type": "module",
+  "description": "Mattrax's policy engine",
+  "private": true,
+  "scripts": {}
+}

@@ -1,18 +1,20 @@
-
+# Derived
+*.tsbuildinfo
+stats.html
 dist
 .solid
 .output
 .vinxi
+
+# Provider
 .vercel
-.netlify
-netlify
 
 # Environment
 .env
 .env*.local
 
 # dependencies
-/node_modules
+node_modules
 
 # IDEs and editors
 /.idea
@@ -21,12 +23,6 @@ netlify
 *.launch
 .settings/
 
-# Temp
-gitignore
-
 # System Files
 .DS_Store
 Thumbs.db
-
-# Vite plugin analyser
-stats.html

@@ -1,0 +1,46 @@
+{
+  "name": "@mattrax/forge",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "vinxi dev --host 0.0.0.0",
+    "build": "vinxi build",
+    "typecheck": "tsc-silent -p tsconfig.json --suppress @/node_modules/",
+    "start": "vinxi start",
+    "db:push": "drizzle-kit push:mysql",
+    "db:studio": "drizzle-kit studio",
+    "vbuild": "NITRO_PRESET=vercel_edge vinxi build"
+  },
+  "dependencies": {
+    "@kobalte/core": "^0.12.0",
+    "@kobalte/tailwindcss": "^0.9.0",
+    "@planetscale/database": "^1.13.0",
+    "@solidjs/router": "^0.10.9",
+    "@solidjs/start": "^0.4.9",
+    "base58": "^2.0.1",
+    "clsx": "^2.1.0",
+    "drizzle-orm": "^0.29.3",
+    "solid-js": "^1.8.11",
+    "tailwindcss": "^3.4.1",
+    "tiny-invariant": "^1.3.1",
+    "valibot": "^0.25.0",
+    "vinxi": "^0.1.4"
+  },
+  "devDependencies": {
+    "@iconify/json": "^2.2.169",
+    "@microsoft/microsoft-graph-types": "^2.40.0",
+    "@tailwindcss/forms": "^0.5.7",
+    "autoprefixer": "^10.4.16",
+    "dotenv": "^16.3.1",
+    "drizzle-kit": "^0.20.12",
+    "postcss": "^8.4.33",
+    "rollup-plugin-visualizer": "^5.12.0",
+    "tsc-silent": "^1.2.2",
+    "typescript": "^5.3.3",
+    "unplugin-auto-import": "^0.17.3",
+    "unplugin-icons": "^0.18.2"
+  }
+}

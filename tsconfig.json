@@ -1,24 +1,21 @@
 {
+  "files": [],
+  "references": [{ "path": "./forge" }, { "path": "./packages/policy" }],
   "compilerOptions": {
+    "incremental": true,
+    "strict": true,
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "node",
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
-    "allowJs": true,
-    "noEmit": true,
-    "strict": true,
-    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
     "strictNullChecks": true,
     "noUncheckedIndexedAccess": true,
-    "types": ["vinxi/client", "unplugin-icons/types/solid"],
+    "noEmit": true,
     "isolatedModules": true,
-    "paths": {
-      "~/*": ["./src/*"]
-    }
-  },
-  "include": ["src/"],
-  "exclude": ["node_modules", "dist"]
+    "composite": true,
+    "skipLibCheck": true
+  }
 }
