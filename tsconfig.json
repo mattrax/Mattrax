@@ -1,18 +1,25 @@
 {
   "files": [],
-  "references": [{ "path": "./forge" }, { "path": "./packages/policy" }],
+  "references": [
+    { "path": "./api" },
+    { "path": "./forge" },
+    { "path": "./packages/policy" }
+  ],
   "compilerOptions": {
     "incremental": true,
     "strict": true,
     "target": "ESNext",
     "module": "ESNext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "strictNullChecks": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
     "noEmit": true,
     "isolatedModules": true,
     "composite": true,

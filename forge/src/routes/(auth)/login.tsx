@@ -1,5 +1,5 @@
 import { action } from "@solidjs/router";
-import { loginAction } from "./login.server";
+import { loginAction } from "../../../../_/login.server";
 
 const login = action(loginAction, "login");
 

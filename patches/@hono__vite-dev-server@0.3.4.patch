@@ -1,0 +1,142 @@
+diff --git a/dist/dev-server.cjs b/dist/dev-server.cjs
+index 825b39400e4f9d17b2c42986c94163a4216dc931..9085d8deb3f18588d670aeca307ffc322fbbf761 100644
+--- a/dist/dev-server.cjs
++++ b/dist/dev-server.cjs
+@@ -44,6 +44,25 @@ function devServer(options) {
+     configureServer: async (server) => {
+       async function createMiddleware(server2) {
+         return async function(req, res, next) {
++          if (options?.include) {
++            let matched = false;
++            for (const pattern of options.include) {
++              if (req.url) {
++                if (pattern instanceof RegExp) {
++                  if (pattern.test(req.originalUrl || req.url)) {
++                    matched = true;
++                    break;
++                  }
++                } else if ((0, import_minimatch.minimatch)(req.url?.toString(), pattern)) {
++                  matched = true;
++                  break;
++                }
++              }
++            }
++            if (!matched) {
++              return next();
++            }
++          }
+           const exclude = options?.exclude ?? defaultOptions.exclude;
+           for (const pattern of exclude) {
+             if (req.url) {
+@@ -77,7 +96,22 @@ function devServer(options) {
+             } else if (options?.cf) {
+               env = await (0, import_cloudflare_pages.getEnv)(options.cf)();
+             }
+-            let response = await app.fetch(request, env, {
++
++            console.log(req.originalUrl, req.url, request.url); process.exit(); const adjustedRequest = new Request(
++              new URL(req.originalUrl || req.url, request.url),
++              {
++                method: request.method,
++                headers: request.headers,
++                body: request.body,
++                cache: request.cache,
++                credentials: request.credentials,
++              }
++            );
++
++            const result = options?.middleware?.(adjustedRequest);
++            if (result instanceof Response)
++              return result;
++            let response = await app.fetch(adjustedRequest, env, {
+               waitUntil: async (fn) => fn,
+               passThroughOnException: () => {
+                 throw new Error("`passThroughOnException` is not supported");
+diff --git a/dist/dev-server.d.cts b/dist/dev-server.d.cts
+index 5d1571e7c503b66db35c338b78afb97ae1a4c58a..229c265684ecfaa1e2dcf1ca9908d58509b6161a 100644
+--- a/dist/dev-server.d.cts
++++ b/dist/dev-server.d.cts
+@@ -6,8 +6,10 @@ import 'miniflare';
+ type DevServerOptions = {
+     entry?: string;
+     injectClientScript?: boolean;
++    include?: (string | RegExp)[];
+     exclude?: (string | RegExp)[];
+     env?: Env | EnvFunc;
++    middleware?: (req: Request) => Response | undefined;
+ } & {
+     /**
+      * @deprecated
+@@ -16,7 +18,7 @@ type DevServerOptions = {
+      */
+     cf?: Parameters<typeof getEnv>[0];
+ };
+-declare const defaultOptions: Required<Omit<DevServerOptions, 'env' | 'cf'>>;
++declare const defaultOptions: Required<Omit<DevServerOptions, 'env' | 'cf' | 'include' | 'middleware'>>;
+ declare function devServer(options?: DevServerOptions): Plugin;
+ 
+ export { DevServerOptions, defaultOptions, devServer };
+diff --git a/dist/dev-server.d.ts b/dist/dev-server.d.ts
+index b383796e3db191dcee1713e4b143f1194d9528bd..f98c4b96c4ca05d213e4cb56762d87fb2e26a609 100644
+--- a/dist/dev-server.d.ts
++++ b/dist/dev-server.d.ts
+@@ -6,8 +6,10 @@ import 'miniflare';
+ type DevServerOptions = {
+     entry?: string;
+     injectClientScript?: boolean;
++    include?: (string | RegExp)[];
+     exclude?: (string | RegExp)[];
+     env?: Env | EnvFunc;
++    middleware?: (req: Request) => Response | undefined;
+ } & {
+     /**
+      * @deprecated
+@@ -16,7 +18,7 @@ type DevServerOptions = {
+      */
+     cf?: Parameters<typeof getEnv>[0];
+ };
+-declare const defaultOptions: Required<Omit<DevServerOptions, 'env' | 'cf'>>;
++declare const defaultOptions: Required<Omit<DevServerOptions, 'env' | 'cf' | 'include' | 'middleware'>>;
+ declare function devServer(options?: DevServerOptions): Plugin;
+ 
+ export { DevServerOptions, defaultOptions, devServer };
+diff --git a/dist/dev-server.js b/dist/dev-server.js
+index 13c97bde391267a49efe1258b98d5ade68beccb6..3f0f28bb784d709da77370c831e3ed515d578412 100644
+--- a/dist/dev-server.js
++++ b/dist/dev-server.js
+@@ -20,6 +20,25 @@ function devServer(options) {
+     configureServer: async (server) => {
+       async function createMiddleware(server2) {
+         return async function(req, res, next) {
++          if (options?.include) {
++            let matched = false;
++            for (const pattern of options.include) {
++              if (req.url) {
++                if (pattern instanceof RegExp) {
++                  if (pattern.test(req.originalUrl || req.url)) {
++                    matched = true;
++                    break;
++                  }
++                } else if (minimatch(req.url?.toString(), pattern)) {
++                  matched = true;
++                  break;
++                }
++              }
++            }
++            if (!matched) {
++              return next();
++            }
++          }
+           const exclude = options?.exclude ?? defaultOptions.exclude;
+           for (const pattern of exclude) {
+             if (req.url) {
+@@ -53,6 +72,9 @@ function devServer(options) {
+             } else if (options?.cf) {
+               env = await cloudflarePagesGetEnv(options.cf)();
+             }
++            const result = options?.middleware?.(request);
++            if (result instanceof Response)
++              return result;
+             let response = await app.fetch(request, env, {
+               waitUntil: async (fn) => fn,
+               passThroughOnException: () => {

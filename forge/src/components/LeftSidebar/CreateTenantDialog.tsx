@@ -2,14 +2,15 @@
 // TODO: Make this no look like shit
 // TODO: Proper loading state
 
-import { createTenant } from "./CreateTenantDialog.server";
+// import { createTenant } from "../../../../_/CreateTenantDialog.server";
 
 export function CreateTenantDialog() {
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        createTenant(new FormData(e.currentTarget));
+        // createTenant(new FormData(e.currentTarget));
+        alert("TODO");
         // TODO: Close dialog
       }}
       method="post"

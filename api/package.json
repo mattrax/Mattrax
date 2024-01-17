@@ -1,0 +1,22 @@
+{
+  "name": "@mattrax/api",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {},
+  "dependencies": {
+    "@planetscale/database": "^1.13.0",
+    "@t3-oss/env-core": "^0.7.3",
+    "base58": "^2.0.1",
+    "drizzle-orm": "^0.29.3",
+    "hono": "^3.12.5",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@microsoft/microsoft-graph-types": "^2.40.0",
+    "@types/node": "^20.11.4",
+    "drizzle-kit": "^0.20.12"
+  }
+}
