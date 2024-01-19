@@ -1,6 +1,6 @@
 import { cache, createAsync, redirect, useParams } from "@solidjs/router";
 import { Suspense } from "solid-js";
-import { getDevice, syncDevice } from "~/server/microsoft";
+import { getDevice, syncDevice } from "@mattrax/api";
 
 const fetchDevice = cache(async (deviceId: string) => {
   "use server";

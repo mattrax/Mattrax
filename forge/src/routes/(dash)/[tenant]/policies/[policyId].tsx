@@ -1,15 +1,16 @@
 import { cache, createAsync, redirect, useParams } from "@solidjs/router";
 import { eq } from "drizzle-orm";
 import { Suspense } from "solid-js";
-import { db } from "~/server/db";
-import { policies } from "~/server/db/schema";
+
 import {
+  db,
+  policies,
   assignDeviceConfiguration,
   createDeviceConfiguration,
   getDeviceConfiguration,
   updateDeviceConfiguration,
-} from "~/server/microsoft";
-import { decodeId } from "~/server/utils";
+  decodeId,
+} from "@mattrax/api";
 import { buildApplePolicy } from "@mattrax/policy";
 
 const fetchPolicy = cache(async (policyId: string) => {

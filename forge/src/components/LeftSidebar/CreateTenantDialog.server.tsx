@@ -2,9 +2,7 @@
 
 import { maxLength, minLength, object, string } from "valibot";
 import { validatedAction } from "~/server/action";
-import { db } from "~/server/db";
-import { tenants } from "~/server/db/schema";
-import { encodeId } from "~/server/utils";
+import { db, tenants, encodeId } from "@mattrax/api";
 
 const createTenantSchema = object({
   name: string([minLength(1), maxLength(100)]),

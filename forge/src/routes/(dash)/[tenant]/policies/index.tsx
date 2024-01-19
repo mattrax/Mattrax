@@ -2,10 +2,14 @@
 
 import { cache, createAsync, useNavigate } from "@solidjs/router";
 import { For, Suspense } from "solid-js";
-import { db } from "~/server/db";
-import { policies } from "~/server/db/schema";
-import { getDeviceConfigurations, getDevices } from "~/server/microsoft";
-import { decodeId, encodeId } from "~/server/utils";
+import {
+  db,
+  policies,
+  getDeviceConfigurations,
+  getDevices,
+  decodeId,
+  encodeId,
+} from "@mattrax/api";
 import { useGlobalCtx } from "~/utils/globalCtx";
 
 const fetchPolicies = cache(async () => {

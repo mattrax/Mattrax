@@ -1,6 +1,6 @@
 import { useSession as useSolidSession } from "@solidjs/start/server";
 import { getRequestEvent } from "solid-js/web";
-import { env } from "~/env";
+import { env } from "@mattrax/api";
 
 export type SessionData = {
   id: number;

@@ -1,5 +1,5 @@
 import { Output, number, object, safeParse, string } from "valibot";
-import { env } from "~/env";
+import { env } from "../env";
 
 const authenticateResponse = object({
   token_type: string(),
