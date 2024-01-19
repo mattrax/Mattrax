@@ -38,7 +38,6 @@ export function validatedAction<TSchema extends BaseSchema, T>(
     if (session.data === undefined) throw new Error("Not authenticated"); // TODO: Proper results + handle on frontend
 
     const input = safeParse(schema, rawInput);
-    console.log(session.data.id, input);
     if (input.success) {
       try {
         return func(

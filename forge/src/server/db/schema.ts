@@ -18,7 +18,6 @@ export const users = mysqlTable("users", {
 
 export const tenants = mysqlTable("tenant", {
   id: serial("id").primaryKey(),
-  email: varchar("email", { length: 100 }).default("deprecated").notNull(), // TODO: Remove this once Planetscale is happy
   name: varchar("name", { length: 100 }).notNull(),
   description: varchar("description", { length: 256 }),
   owner_id: int("owner_id")
