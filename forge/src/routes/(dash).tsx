@@ -1,7 +1,14 @@
 import { Navigate, createAsync, useNavigate, useParams } from "@solidjs/router";
 import invariant from "tiny-invariant";
 import { useLocation } from "@solidjs/router";
-import { Match, ParentProps, Suspense, Switch, createMemo } from "solid-js";
+import {
+  ErrorBoundary,
+  Match,
+  ParentProps,
+  Suspense,
+  Switch,
+  createMemo,
+} from "solid-js";
 import LeftSidebar from "~/components/LeftSidebar";
 import { sessionLoader, globalCtx, tenantLoader } from "~/utils/globalCtx";
 
@@ -84,7 +91,16 @@ export default function Layout(props: ParentProps) {
                   ...data(),
                 }}
               >
-                {props.children}
+                <ErrorBoundary
+                  fallback={(err) => (
+                    <div class="p-2">
+                      <h1>Error</h1>
+                      <pre>{err.message}</pre>
+                    </div>
+                  )}
+                >
+                  {props.children}
+                </ErrorBoundary>
               </globalCtx.Provider>
             )}
           </Match>

@@ -2,7 +2,15 @@ import { Device, DeviceConfiguration } from "@microsoft/microsoft-graph-types";
 import { authenticatedFetch } from "./auth";
 
 export const getDevices = () =>
-  authenticatedFetch<Device[]>("/deviceManagement/managedDevices");
+  authenticatedFetch<{
+    "@odata.count": number;
+    value: Device[];
+  }>("/deviceManagement/managedDevices");
+
+export const getDevice = (id: string) =>
+  authenticatedFetch<Device>(
+    `/deviceManagement/managedDevices/${encodeURIComponent(id)}`
+  );
 
 export const getApplications = (deviceId: string) =>
   authenticatedFetch<void>(`/deviceManagement/mobileApps`);

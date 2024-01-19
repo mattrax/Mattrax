@@ -1,4 +1,4 @@
-import { useLocation } from "@solidjs/router";
+import { useLocation, useNavigate } from "@solidjs/router";
 import { For, JSX } from "solid-js";
 import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
 import { Tenant } from "~/utils/globalCtx";
@@ -54,6 +54,7 @@ const items: NavbarItem[] = [
 
 export default function Component(props: TenantSwitcherProps): JSX.Element {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const itemProps = (item: NavbarItem, activeClass: string) => {
     const isRouteActive =
@@ -82,7 +83,16 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
     <aside class="h-full w-64 flex flex-col" aria-label="Sidebar">
       <div class="h-28 bg-brand relative">
         {import.meta.env.MODE === "development" && (
-          <div class="absolute inset-0 h-1.5 bg-orange-400"></div>
+          <div
+            class="absolute inset-0 h-1.5 bg-orange-400"
+            onClick={() => {
+              if (!props.activeTenant) {
+                alert("No active tenant");
+                return;
+              }
+              navigate(`/${props.activeTenant.id}/debug`);
+            }}
+          ></div>
         )}
 
         <div class="absolute inset-0">

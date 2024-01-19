@@ -81,4 +81,4 @@ async function authenticatedFetchInner<T>(
 }
 
 export const authenticatedFetch = <T>(url: string, init?: RequestInit) =>
-  authenticatedFetchInner<T>(url, init);
+  authenticatedFetchInner<T & { "@odata.context": string }>(url, init);
