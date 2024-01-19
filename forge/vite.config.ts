@@ -36,4 +36,9 @@ export default defineConfig({
   ssr: {
     noExternal: ["@kobalte/core"],
   },
+  start: {
+    // Solid Start SSR is soooooo broken.
+    // From router context errors on HMR to constant hydration mismatches.
+    ssr: false,
+  },
 });

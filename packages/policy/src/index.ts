@@ -1,14 +1,19 @@
-import { Input, boolean, object, optional, safeParse } from "valibot";
+import { z } from "zod";
 
-export const policySchema = object({
-  camera: optional(boolean()),
+export const configurationSchema = z.object({
+  camera: z.boolean().optional(),
 });
 
-export function validatePolicy(policy: Input<typeof policySchema>) {
-  const data = safeParse(policySchema, policy);
+export type Policy = any; // TODO: Infer this from Zod
 
-  console.log(data);
-}
+// TODO: Fractional indexing
+// export const policySchema = z.array(configurationSchema);
+
+// export function validatePolicy(policy: Input<typeof policySchema>) {
+//   const data = safeParse(policySchema, policy);
+
+//   console.log(data);
+// }
 
 // export function applyPolicy() {}
 

@@ -1,4 +1,8 @@
-import { Device, DeviceConfiguration } from "@microsoft/microsoft-graph-types";
+import {
+  Device,
+  DeviceConfiguration,
+  IosCustomConfiguration,
+} from "@microsoft/microsoft-graph-types";
 import { authenticatedFetch } from "./auth";
 
 export const getDevices = () =>
@@ -47,7 +51,28 @@ export const getDeviceConfiguration = (id: string) =>
     `/deviceManagement/deviceConfigurations/${encodeURIComponent(id)}`
   );
 
-// TODO: Get IOS policy
-// TODO: Create IOS policy
-// TODO: Update IOS policy
-// TODO: Delete IOS policy
+// TODO: The input to this can be an enum of many possible types???
+export const createDeviceConfiguration = (policy: IosCustomConfiguration) =>
+  authenticatedFetch<unknown>(`/deviceManagement/deviceConfigurations`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(policy),
+  });
+
+// TODO: The input to this can be an enum of many possible types???
+export const updateDeviceConfiguration = (
+  id: string,
+  policy: IosCustomConfiguration
+) =>
+  authenticatedFetch<unknown>(
+    `/deviceManagement/deviceConfigurations/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(policy),
+    }
+  );

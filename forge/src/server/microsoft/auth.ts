@@ -77,6 +77,7 @@ async function authenticatedFetchInner<T>(
       }': ${await resp.text()}`
     );
 
+  if (resp.status === 204) return undefined;
   return (await resp.json()) as T; // TODO: Doing proper validation
 }
 

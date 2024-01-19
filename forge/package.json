@@ -17,6 +17,7 @@
   "dependencies": {
     "@kobalte/core": "^0.12.0",
     "@kobalte/tailwindcss": "^0.9.0",
+    "@mattrax/policy": "workspace:^",
     "@planetscale/database": "^1.13.0",
     "@solidjs/router": "^0.10.9",
     "@solidjs/start": "^0.4.9",

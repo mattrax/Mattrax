@@ -1,12 +1,15 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import { defineConfig } from "drizzle-kit";
-import { env } from "~/env";
+
+dotenv.config({
+  path: "../.env",
+});
 
 export default defineConfig({
   schema: "./src/server/db/schema.ts",
   driver: "mysql2",
   dbCredentials: {
-    uri: env.DATABASE_URL,
+    uri: process.env.DATABASE_URL!, // TODO: use t3 env
   },
   tablesFilter: ["forge_"],
   verbose: true,

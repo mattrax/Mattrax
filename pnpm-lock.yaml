@@ -16,6 +16,9 @@ importers:
       '@kobalte/tailwindcss':
         specifier: ^0.9.0
         version: 0.9.0(tailwindcss@3.4.1)
+      '@mattrax/policy':
+        specifier: workspace:^
+        version: link:../packages/policy
       '@planetscale/database':
         specifier: ^1.13.0
         version: 1.13.0
@@ -90,7 +93,11 @@ importers:
         specifier: ^5.0.11
         version: 5.0.11
 
-  packages/policy: {}
+  packages/policy:
+    dependencies:
+      zod:
+        specifier: ^3.22.4
+        version: 3.22.4
 
 packages:
 
