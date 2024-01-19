@@ -37,8 +37,14 @@ export const syncDevice = (deviceId: string) =>
 // TODO: Unenroll device
 
 export const getDeviceConfigurations = () =>
-  authenticatedFetch<DeviceConfiguration[]>(
-    `/deviceManagement/deviceConfigurations`
+  authenticatedFetch<{
+    "@odata.count": number;
+    value: DeviceConfiguration[];
+  }>(`/deviceManagement/deviceConfigurations`);
+
+export const getDeviceConfiguration = (id: string) =>
+  authenticatedFetch<DeviceConfiguration>(
+    `/deviceManagement/deviceConfigurations/${encodeURIComponent(id)}`
   );
 
 // TODO: Get IOS policy
