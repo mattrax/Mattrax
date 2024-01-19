@@ -1,4 +1,4 @@
-import { getDeviceConfigurations, getDevices } from "~/server/microsoft";
+import { getDeviceConfigurations, getDevices } from "@mattrax/api";
 
 const demoAction = async (name: string) => {
   "use server";

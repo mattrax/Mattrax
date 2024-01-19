@@ -1,4 +1,4 @@
-import { GetSessionResult } from "./session";
+import { GetSessionResult } from "../../forge/src/server/session";
 import { Hono, type MiddlewareHandler } from "hono";
 // @ts-expect-error: No types :(
 import { int_to_base58, base58_to_int } from "base58";

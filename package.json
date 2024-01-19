@@ -4,6 +4,9 @@
   "scripts": {
     "forge": "pnpm --filter @mattrax/forge --",
     "policy": "pnpm --filter @mattrax/policy --",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

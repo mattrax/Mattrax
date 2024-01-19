@@ -1,5 +1,5 @@
 import { object, string } from "valibot";
-import { validateEnv } from "./server/validateEnv";
+import { validateEnv } from "./validateEnv";
 
 const env = validateEnv(
   object({

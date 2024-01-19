@@ -1,15 +1,14 @@
 {
-  "name": "@mattrax/forge",
+  "name": "@mattrax/api",
   "type": "module",
   "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
-    "dev": "vinxi dev --host 0.0.0.0",
-    "build": "vinxi build",
-    "typecheck": "tsc-silent -p tsconfig.json --suppress @/node_modules/",
-    "start": "vinxi start",
+    "typecheck": "echo 'todo'",
     "db:push": "drizzle-kit push:mysql",
-    "db:studio": "drizzle-kit studio",
-    "vbuild": "NITRO_PRESET=vercel_edge vinxi build"
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.1.11",

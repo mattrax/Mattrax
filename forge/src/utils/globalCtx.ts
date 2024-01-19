@@ -1,9 +1,7 @@
 import { createContext, useContext } from "solid-js";
 import { eq } from "drizzle-orm";
 import { SessionData, getServerSession } from "~/server/session";
-import { tenants } from "~/server/db/schema";
-import { db } from "~/server/db";
-import { encodeId } from "~/server/utils";
+import { tenants, db, encodeId } from "@mattrax/api";
 
 export async function sessionLoader() {
   "use server";

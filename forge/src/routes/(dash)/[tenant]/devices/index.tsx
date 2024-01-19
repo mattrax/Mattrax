@@ -2,7 +2,7 @@
 
 import { cache, createAsync } from "@solidjs/router";
 import { For, Suspense } from "solid-js";
-import { getDevices } from "~/server/microsoft";
+import { getDevices } from "@mattrax/api";
 import { useGlobalCtx } from "~/utils/globalCtx";
 
 const fetchDevices = cache(async () => {

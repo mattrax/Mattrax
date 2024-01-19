@@ -4,8 +4,7 @@ import { redirect } from "@solidjs/router";
 import { eq } from "drizzle-orm";
 import { email, object, string } from "valibot";
 import { unauthenticatedValidatedAction } from "~/server/action";
-import { db } from "~/server/db";
-import { users } from "~/server/db/schema";
+import { db, users } from "@mattrax/api";
 import { getServerSession } from "~/server/session";
 
 const loginSchema = object({
