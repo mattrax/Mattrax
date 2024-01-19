@@ -1,9 +1,3 @@
-import { z } from "zod";
-
-export const configurationSchema = z.object({
-  camera: z.boolean().optional(),
-});
-
 export type Policy = any; // TODO: Infer this from Zod
 
 // TODO: Fractional indexing
@@ -17,4 +11,8 @@ export type Policy = any; // TODO: Infer this from Zod
 
 // export function applyPolicy() {}
 
-// TODO: XML builder
+export { buildApplePolicy } from "./buildApple";
+export {
+  configurationSchema,
+  type ConfigurationSchema,
+} from "./configurationSchema";

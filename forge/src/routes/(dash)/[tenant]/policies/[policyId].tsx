@@ -4,12 +4,13 @@ import { Suspense } from "solid-js";
 import { db } from "~/server/db";
 import { policies } from "~/server/db/schema";
 import {
+  assignDeviceConfiguration,
   createDeviceConfiguration,
   getDeviceConfiguration,
   updateDeviceConfiguration,
 } from "~/server/microsoft";
 import { decodeId } from "~/server/utils";
-import { demoPolicy } from "./todoCameraPolicy";
+import { buildApplePolicy } from "@mattrax/policy";
 
 const fetchPolicy = cache(async (policyId: string) => {
   "use server";
@@ -57,6 +58,14 @@ const pushPolicyToIntune = async (policyId: string) => {
     return;
   }
 
+  let policyBody: string;
+  try {
+    policyBody = buildApplePolicy(policy.policy);
+  } catch (err) {
+    console.error("ERROR BUILDING POLICY", err);
+    return;
+  }
+
   // TODO: Support Window's & Android policies
 
   if (!policy.intuneId) {
@@ -71,7 +80,7 @@ const pushPolicyToIntune = async (policyId: string) => {
         "@odata.type": "#microsoft.graph.iosCustomConfiguration",
         displayName: policy.id.toString(),
         version: 1,
-        payload: btoa(demoPolicy),
+        payload: btoa(policyBody),
         payloadName: "todo",
       });
       console.log(result);
@@ -102,9 +111,12 @@ const pushPolicyToIntune = async (policyId: string) => {
         "@odata.type": "#microsoft.graph.iosCustomConfiguration",
         displayName: policy.id.toString(),
         // version: intunePolicy.version! + 1,
-        payload: btoa(demoPolicy),
+        payload: btoa(policyBody),
         payloadName: "todo",
       });
+
+      // TODO: If policy actually doesn't exist then just create it
+
       // console.log(result);
     } catch (err) {
       console.error(err);
@@ -112,6 +124,62 @@ const pushPolicyToIntune = async (policyId: string) => {
   }
 
   return undefined;
+};
+
+const tempAssignToEveryone = async (
+  policyId: string,
+  assignOrUnassigned: boolean
+) => {
+  "use server";
+  // TODO: This assigns a policy to devices outside it's own tenant. That's bad!
+
+  // TODO: Authentication
+  // TODO: Authorisation to this tenant?
+
+  const id = decodeId("policy", policyId);
+  const policy = (
+    await db.select().from(policies).where(eq(policies.id, id))
+  )?.[0];
+  if (!policy) throw new Error("Policy not found");
+
+  if (!policy.intuneId) throw new Error("Policy not synced with Intune"); // TODO: Do this automatically in this case
+
+  try {
+    const assignments = assignOrUnassigned
+      ? [
+          {
+            target: {
+              "@odata.type": "#microsoft.graph.allDevicesAssignmentTarget",
+            },
+          },
+        ]
+      : [];
+
+    await assignDeviceConfiguration(policy.intuneId, {
+      assignments,
+    });
+  } catch (err) {
+    console.error(err);
+  }
+};
+
+const updatePolicy = async (policyId: string, policyData: any[]) => {
+  "use server";
+
+  // TODO: Check auth
+  // TODO: Check user is authorised to policy
+
+  // TODO: Validate incoming `policy`
+
+  const id = decodeId("policy", policyId);
+
+  // TODO: Error if id is not found by catching error
+  await db
+    .update(policies)
+    .set({
+      policy: policyData,
+    })
+    .where(eq(policies.id, id));
 };
 
 export const route = {
@@ -134,10 +202,20 @@ export default function Page() {
         </h1>
 
         <h2>Configuration:</h2>
-        <div>
+        <div class="flex">
           <p>Disable Camera:</p>
 
-          <input checked={false} type="checkbox" />
+          <input
+            checked={false}
+            type="checkbox"
+            onChange={(e) => {
+              updatePolicy(params.policyId!, [
+                {
+                  camera: e.currentTarget.checked,
+                },
+              ]).then(() => alert("Updated!"));
+            }}
+          />
         </div>
 
         <h2>Intune:</h2>
@@ -152,7 +230,24 @@ export default function Page() {
         </button>
 
         <h2>Assign Devices</h2>
-        {/* TODO */}
+        <button
+          onClick={() => {
+            tempAssignToEveryone(params.policyId!, true).then(() => {
+              alert("Assigned!");
+            });
+          }}
+        >
+          Assign
+        </button>
+        <button
+          onClick={() => {
+            tempAssignToEveryone(params.policyId!, false).then(() => {
+              alert("Unassigned!");
+            });
+          }}
+        >
+          Unassign
+        </button>
       </Suspense>
     </div>
   );

@@ -4,7 +4,14 @@
   "description": "Mattrax's policy engine",
   "private": true,
   "scripts": {},
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
+    "plist": "^3.1.0",
     "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2"
   }
 }

@@ -9,6 +9,8 @@ const authenticateResponse = object({
 });
 type AuthenticateResponse = Output<typeof authenticateResponse>;
 
+type Init = RequestInit & { skipBodyParse?: boolean };
+
 async function authenticate() {
   const params = new URLSearchParams();
   params.set("client_id", env.MSFT_CLIENT_ID);
@@ -47,7 +49,7 @@ async function authenticate() {
 // let cachedAuthentication: AuthenticateResponse | undefined = undefined;
 async function authenticatedFetchInner<T>(
   url: string,
-  init?: RequestInit,
+  init?: Init,
   retrying = false
 ) {
   let cachedAuthentication: AuthenticateResponse | undefined = undefined;
@@ -77,9 +79,11 @@ async function authenticatedFetchInner<T>(
       }': ${await resp.text()}`
     );
 
+  if (init?.skipBodyParse) return undefined;
+
   if (resp.status === 204) return undefined;
   return (await resp.json()) as T; // TODO: Doing proper validation
 }
 
-export const authenticatedFetch = <T>(url: string, init?: RequestInit) =>
+export const authenticatedFetch = <T>(url: string, init?: Init) =>
   authenticatedFetchInner<T & { "@odata.context": string }>(url, init);

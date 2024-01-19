@@ -35,7 +35,10 @@ export const shutdownDevice = (deviceId: string) =>
 
 export const syncDevice = (deviceId: string) =>
   authenticatedFetch<void>(
-    `/deviceManagement/managedDevices/${deviceId}/syncDevice`
+    `/deviceManagement/managedDevices/${deviceId}/syncDevice`,
+    {
+      method: "POST",
+    }
   );
 
 // TODO: Unenroll device
@@ -74,5 +77,21 @@ export const updateDeviceConfiguration = (
         "Content-Type": "application/json",
       },
       body: JSON.stringify(policy),
+    }
+  );
+
+export const assignDeviceConfiguration = (
+  id: string,
+  data: any // TODO: Typescript
+) =>
+  authenticatedFetch<unknown>(
+    `/deviceManagement/deviceConfigurations/${encodeURIComponent(id)}/assign`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+      skipBodyParse: true,
     }
   );
