@@ -1,3 +1,7 @@
+import { useGlobalCtx } from "~/utils/globalCtx";
+
 export default function Page() {
-  return <h1>Tenant: TODO</h1>;
+  const ctx = useGlobalCtx();
+
+  return <h1>Tenant: {ctx.activeTenant?.name}</h1>;
 }

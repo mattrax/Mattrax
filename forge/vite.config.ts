@@ -1,12 +1,20 @@
-import "dotenv/config";
+import * as path from "node:path";
 import { defineConfig } from "@solidjs/start/config";
+import { loadEnv } from "vite";
 import Icons from "unplugin-icons/vite";
 import IconsResolver from "unplugin-icons/resolver";
 import AutoImport from "unplugin-auto-import/vite";
 import { visualizer } from "rollup-plugin-visualizer";
-import "./src/env";
+
+const monorepoRoot = path.join(__dirname, "..");
+
+process.env = {
+  ...process.env,
+  ...loadEnv("production", monorepoRoot, ""),
+};
 
 export default defineConfig({
+  envDir: monorepoRoot,
   plugins: [
     AutoImport({
       resolvers: [

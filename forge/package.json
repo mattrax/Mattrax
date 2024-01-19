@@ -41,6 +41,7 @@
     "tsc-silent": "^1.2.2",
     "typescript": "^5.3.3",
     "unplugin-auto-import": "^0.17.3",
-    "unplugin-icons": "^0.18.2"
+    "unplugin-icons": "^0.18.2",
+    "vite": "^5.0.11"
   }
 }

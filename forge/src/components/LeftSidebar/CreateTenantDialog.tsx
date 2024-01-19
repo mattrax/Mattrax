@@ -9,7 +9,9 @@ export function CreateTenantDialog() {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        createTenant(new FormData(e.currentTarget));
+        createTenant(new FormData(e.currentTarget)).then(() => {
+          location.reload(); // TODO: Properly invalidate data/update the cache
+        });
         // TODO: Close dialog
       }}
       method="post"

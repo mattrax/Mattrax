@@ -7,10 +7,13 @@ import { CreateTenantDialog } from "./CreateTenantDialog";
 // TODO: When shrinking window and scrolling to move the trigger offscreen the popover comes with it. This is Kolate behavior but I don't like it.
 // TODO: Transition on dropdown open/close
 
-export function TenantSwitcher(props: {
+export type TenantSwitcherProps = {
   activeTenant: Tenant | null;
   tenants: Tenant[];
-}) {
+  setActiveTenant: (id: string) => void;
+};
+
+export function TenantSwitcher(props: TenantSwitcherProps) {
   const controller = createDialogController();
 
   return (
@@ -40,9 +43,7 @@ export function TenantSwitcher(props: {
                   class={
                     "block px-4 py-2 text-sm text-left w-full truncate hover:bg-gray-200"
                   }
-                  onClick={() => {
-                    alert("TODO: Change tenant.");
-                  }}
+                  onSelect={() => props.setActiveTenant(tenant.id)}
                 >
                   {tenant.name}
                 </DropdownMenu.Item>

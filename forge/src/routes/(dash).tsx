@@ -22,32 +22,51 @@ export default function Layout(props: ParentProps) {
     return await tenantLoader(s.id);
   });
 
+  const activeTenantForJsx = createMemo(() => {
+    const t = tenants();
+    if (tenants() === undefined) return null; // Tenants still fetching
+    if (!params.tenant) return null; // We are probs on a 404 page
+
+    const tenant = t?.find((t) => t.id === params.tenant);
+    // If the tenant doesn't exist, we clear it as active
+    return tenant || "not_found";
+  });
   const activeTenant = createMemo(() => {
-    const tenant = tenants()?.find((t) => t.id === params.tenant);
-    // If the tenant is removed, we clear it as active
-    if (!tenant) {
-      const t = tenants();
-      navigate(t?.[0] !== undefined ? `/tenants/${t[0].id}` : "/");
-      return null;
-    }
-    return tenant;
+    const t = activeTenantForJsx();
+    if (t === "not_found") return null;
+    return t;
   });
 
   const setActiveTenant = (id: string) => {
     // TODO: It would be sick if `useParams` had a setter to avoid this manual URL manipulation
-    const path = location.pathname.split("/");
-    path[1] = id;
+    let path = location.pathname.split("/");
+
+    if (params.tenant) path[1] = id;
+    else path = ["", id];
+
     navigate(path.join("/"));
   };
 
   return (
     <>
-      <LeftSidebar activeTenant={activeTenant()} tenants={tenants() || []} />
+      <LeftSidebar
+        activeTenant={activeTenant()}
+        tenants={tenants() || []}
+        setActiveTenant={setActiveTenant}
+      />
 
       <Suspense fallback={<h1>TODO: Loading...</h1>}>
         <Switch fallback={<div>TODO: Loading match...</div>}>
           <Match when={session() === "unauthenticated"}>
             <Navigate href="/login" />
+          </Match>
+          <Match when={activeTenantForJsx() === "not_found"}>
+            <Navigate
+              href={() => {
+                const t = tenants();
+                return t?.[0] !== undefined ? `/${t[0].id}` : "/";
+              }}
+            />
           </Match>
           <Match
             when={(() => {
