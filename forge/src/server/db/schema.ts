@@ -18,6 +18,7 @@ export const users = mysqlTable("users", {
 
 export const tenants = mysqlTable("tenant", {
   id: serial("id").primaryKey(),
+  email: varchar("email", { length: 100 }).default("deprecated").notNull(), // TODO: Remove this once Planetscale is happy
   name: varchar("name", { length: 100 }).notNull(),
   description: varchar("description", { length: 256 }),
   owner_id: int("owner_id")
@@ -39,6 +40,9 @@ export const policies = mysqlTable("policies", {
   // When a policy is uploaded to Intune this will be set to the `policyHash` column.
   // If this doesn't match `policyHash` the policy should be re-uploaded to Intune.
   intunePolicyHash: varchar("intunePolicyHash", { length: 256 }),
+  tenantId: int("tenantId")
+    .references(() => tenants.id)
+    .notNull(),
 });
 
 // export const devices = mysqlTable("devices", {

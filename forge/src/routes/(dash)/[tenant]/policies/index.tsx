@@ -5,7 +5,7 @@ import { For, Suspense } from "solid-js";
 import { db } from "~/server/db";
 import { policies } from "~/server/db/schema";
 import { getDeviceConfigurations, getDevices } from "~/server/microsoft";
-import { encodeId } from "~/server/utils";
+import { decodeId, encodeId } from "~/server/utils";
 import { useGlobalCtx } from "~/utils/globalCtx";
 
 const fetchPolicies = cache(async () => {
@@ -26,13 +26,18 @@ const fetchPolicies = cache(async () => {
   }));
 }, "policies");
 
-const createPolicy = async (name: string) => {
+const createPolicy = async (name: string, tenantId: string) => {
   "use server";
 
   // TODO: Input validation
 
+  // TODO: Check the user is authenticated + authorised to `tenantId`
+
+  const id = decodeId("tenant", tenantId);
+
   const result = await db.insert(policies).values({
     name,
+    tenantId: id,
   });
 
   return encodeId("policy", parseInt(result.insertId));
@@ -60,8 +65,9 @@ export default function Page() {
         onSubmit={(e) => {
           e.preventDefault();
           const formData = new FormData(e.currentTarget);
-          createPolicy(formData.get("name")!).then((policyId) =>
-            navigate(`/${ctx.activeTenant.id}/policies/${policyId}`)
+          createPolicy(formData.get("name")!, ctx.activeTenant!.id).then(
+            (policyId) =>
+              navigate(`/${ctx.activeTenant.id}/policies/${policyId}`)
           );
         }}
       >
