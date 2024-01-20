@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Outputs:
+  VercelAccessKeyId:
+    Description: AWS_ACCESS_KEY_ID
+    Value: !Ref VercelAccessKey
+
+  VercelAccessKeySecret:
+    Description: AWS_SECRET_ACCESS_KEY
+    Value: !GetAtt VercelAccessKey.SecretAccessKey
+
+Resources:
+  ForgeData:
+    Type: AWS::S3::Bucket
+
+  VercelUser:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+        - PolicyName: S3
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub arn:aws:s3:::${ForgeData}/*
+        
+        - PolicyName: SES
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                Resource: "*" # TODO: Props restrict this down to the correct domain
+                # TODO: Restrict `ses:FromAddress` and `ses:FromDisplayName` for better security
+
+  VercelAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName:
+        !Ref VercelUser
