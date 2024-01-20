@@ -50,6 +50,7 @@ async function authenticate() {
 async function authenticatedFetchInner<T>(
   url: string,
   init?: Init,
+  beta = false,
   retrying = false
 ) {
   let cachedAuthentication: AuthenticateResponse | undefined = undefined;
@@ -57,10 +58,11 @@ async function authenticatedFetchInner<T>(
   if (!cachedAuthentication) cachedAuthentication = await authenticate();
 
   const headers = new Headers(init?.headers);
-  headers.set("Authorization", `Bearer ${cachedAuthentication.access_token}`);
+  if (!headers.has("Authorization"))
+    headers.set("Authorization", `Bearer ${cachedAuthentication.access_token}`);
 
   const resp = await fetch(
-    `https://graph.microsoft.com/v1.0${url}`,
+    `https://graph.microsoft.com/${beta ? "beta" : "v1.0"}${url}`,
     Object.assign({}, init, { headers })
   );
   if (resp.status === 401) {
@@ -69,7 +71,7 @@ async function authenticatedFetchInner<T>(
         "Failed to authenticate with Microsoft after attempting to reauthenticate"
       );
     cachedAuthentication = await authenticate();
-    return await authenticatedFetchInner(url, init, true);
+    return await authenticatedFetchInner(url, init, beta, true);
   }
 
   if (!resp.ok)
@@ -87,3 +89,7 @@ async function authenticatedFetchInner<T>(
 
 export const authenticatedFetch = <T>(url: string, init?: Init) =>
   authenticatedFetchInner<T & { "@odata.context": string }>(url, init);
+
+// TODO: Remove this and remove version prefix from hardcoded URL
+export const authenticatedFetchBeta = <T>(url: string, init?: Init) =>
+  authenticatedFetchInner<T & { "@odata.context": string }>(url, init, true);

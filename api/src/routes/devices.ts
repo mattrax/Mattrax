@@ -1,7 +1,16 @@
-import { getDevice, getDevices, syncDevice } from "../microsoft";
-import { newAuthedApp } from "../utils";
+import { z } from "zod";
+import {
+  createEnrollmentProfile,
+  exportEnrollmentProfile,
+  getDevice,
+  getDevices,
+  getFrankAccessToken,
+  syncDevice,
+} from "../microsoft";
+import { newApp, newAuthedApp } from "../utils";
+import { zValidator } from "@hono/zod-validator";
 
-export const app = newAuthedApp()
+export const authenticatedApp = newAuthedApp()
   .get("/", async (c) => {
     // TODO: Is the user authorised to the current tenant???
     // TODO: Only return devices in the current tenant
@@ -38,3 +47,42 @@ export const app = newAuthedApp()
     await syncDevice(deviceId);
     return c.json({});
   });
+
+type EnrollmentProfileDescription = {
+  data: string;
+  createdAt: number;
+};
+
+// TODO: Remove unauthenticated app
+export const app = newApp()
+  .post(
+    "/enroll/ios",
+    zValidator(
+      "json",
+      z.object({
+        // TODO: For now data is meant to replicate what auth would be
+        data: z.string(),
+      })
+    ),
+    async (c) => {
+      const input = c.req.valid("json");
+
+      // TODO: Use existing enrollment profile if it exists
+      const enrollmentProfile = await createEnrollmentProfile(
+        `enrollment-${Date.now()}`,
+        JSON.stringify({
+          data: input.data,
+          createdAt: Date.now(),
+        } satisfies EnrollmentProfileDescription)
+      );
+
+      const result = await exportEnrollmentProfile(enrollmentProfile!.id); // TODO: Why can `enrollmentProfile` be `undefined`???
+
+      return c.json({
+        value: result?.value,
+      });
+    }
+  )
+  // TODO: macOS enrollment
+  // TODO: Windows enrollment
+  .route("/", authenticatedApp);

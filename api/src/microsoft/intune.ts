@@ -3,7 +3,11 @@ import {
   DeviceConfiguration,
   IosCustomConfiguration,
 } from "@microsoft/microsoft-graph-types";
-import { authenticatedFetch } from "./auth";
+import { authenticatedFetch, authenticatedFetchBeta } from "./auth";
+import { db, intuneAccessToken } from "../db";
+import { eq } from "drizzle-orm";
+import { franksScopes } from "../routes/internal";
+import { env } from "../env";
 
 export const getDevices = () =>
   authenticatedFetch<{
@@ -93,5 +97,93 @@ export const assignDeviceConfiguration = (
       },
       body: JSON.stringify(data),
       skipBodyParse: true,
+    }
+  );
+
+// This is what the Intune dashboard uses.
+// I double checked and no `depOnboardingSettings` are returned from the list query.
+const depOnboardingSettingId = "0449db8b-e7a4-42f2-a547-1c1cfaff21c5";
+
+export const createEnrollmentProfile = (name: string, description?: string) =>
+  authenticatedFetchBeta<{
+    id: string;
+    // TODO: Proper type
+  }>(
+    `/deviceManagement/depOnboardingSettings/${depOnboardingSettingId}/enrollmentProfiles`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        "@odata.context": `https://graph.microsoft.com/beta/$metadata#deviceManagement/depOnboardingSettings('${depOnboardingSettingId}')/enrollmentProfiles/$entity`,
+        displayName: name,
+        description: description,
+      }),
+    }
+  );
+
+// Frank is the bot account
+export const getFrankAccessToken = async () => {
+  const refreshToken = (
+    await db.select().from(intuneAccessToken).where(eq(intuneAccessToken.id, 1))
+  )?.[0]?.refresh_token;
+  if (!refreshToken) throw new Error("No refresh token found for Frank");
+
+  const reqBody = new URLSearchParams();
+  reqBody.set("client_id", env.MSFT_CLIENT_ID!);
+  reqBody.set("scope", franksScopes);
+  reqBody.set("refresh_token", refreshToken);
+  reqBody.set("grant_type", "refresh_token");
+  reqBody.set("client_secret", env.MSFT_CLIENT_SECRET!);
+
+  const resp = await fetch(
+    `https://login.microsoftonline.com/${env.MSFT_ADMIN_TENANT!}/oauth2/v2.0/token`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: reqBody,
+    }
+  );
+  if (!resp.ok) throw new Error(`Failed to get access token from Microsoft`);
+
+  const body: {
+    token_type: string;
+    scope: string;
+    expires_in: number;
+    ext_expires_in: number;
+    access_token: string;
+    refresh_token: string;
+  } = await resp.json();
+
+  // TODO: Is the fact that a new refresh token comes back going to cause race conditions???
+  await db
+    .insert(intuneAccessToken)
+    .values({
+      id: 1,
+      refresh_token: body.refresh_token,
+    })
+    .onDuplicateKeyUpdate({
+      set: {
+        refresh_token: body.refresh_token,
+      },
+    });
+
+  return body;
+};
+
+export const exportEnrollmentProfile = async (id: string) =>
+  authenticatedFetchBeta<{
+    value: string;
+  }>(
+    `/deviceManagement/depOnboardingSettings/${depOnboardingSettingId}/enrollmentProfiles/${id}/exportMobileConfig`,
+    {
+      headers: {
+        // TODO: Microsoft lied, people died
+        // TODO: This endpoint doesn't seem to support an application token.
+        Authorization: `Bearer ${(await getFrankAccessToken()).access_token}`,
+      },
     }
   );

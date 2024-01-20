@@ -55,3 +55,10 @@ export const policies = mysqlTable("policies", {
 //   // name: varchar("name", { length: 256 }).notNull(),
 //   // description: varchar("description", { length: 256 }),
 // });
+
+// A table used to hold a single value which is used for accessing the Intune API as Frank.
+export const intuneAccessToken = mysqlTable("intune_access_token", {
+  id: serial("id").primaryKey(),
+  // TODO: Cache proper access token too
+  refresh_token: varchar("refresh_token", { length: 1000 }).notNull(),
+});

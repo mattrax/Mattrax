@@ -40,12 +40,14 @@ export default function Page() {
             type="email"
             name="email"
             placeholder="oscar@otbeaumont.me"
+            value="oscar@otbeaumont.me"
             class="hidden"
           />
           <input
             type="password"
             name="password"
             placeholder="password"
+            value="password"
             class="hidden"
           />
 
