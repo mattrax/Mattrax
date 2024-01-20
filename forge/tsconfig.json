@@ -1,6 +1,7 @@
 {
-  "extends": "../tsconfig.base.json",
+  "extends": "../tsconfig.json",
   "compilerOptions": {
+    "outDir": "./dist",
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
     "types": ["vinxi/client", "unplugin-icons/types/solid"],

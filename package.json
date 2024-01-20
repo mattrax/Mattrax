@@ -2,11 +2,19 @@
   "name": "@mattrax/monorepo",
   "private": true,
   "scripts": {
-    "forge": "pnpm --filter @mattrax/forge --",
-    "policy": "pnpm --filter @mattrax/policy --",
-    "typecheck": "tsc -b --noEmit"
+    "postinstall": "node patches/solid-start-ts-nocheck",
+    "dev": "pnpm --filter @mattrax/forge dev",
+    "db:push": "drizzle-kit push:mysql",
+    "db:studio": "drizzle-kit studio",
+    "typecheck": "tsc -b"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "dotenv": "^16.3.2",
+    "drizzle-kit": "^0.20.13",
+    "mysql2": "^3.7.1",
+    "typescript": "^5.3.3"
   }
 }

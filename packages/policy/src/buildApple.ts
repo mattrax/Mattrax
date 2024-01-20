@@ -1,10 +1,8 @@
-// @ts-nocheck // TODO: Reenable this
-
 import { ConfigurationSchema } from ".";
 import plist from "plist";
 
 export function buildApplePolicy(policies: ConfigurationSchema[]) {
-  const data = {};
+  const data: Record<string, any> = {};
 
   for (const policy of policies) {
     if ("camera" in policy && policy.camera === true) {

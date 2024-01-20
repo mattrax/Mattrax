@@ -1,10 +1,9 @@
 {
-  "extends": "../tsconfig.base.json",
+  "extends": "../tsconfig.json",
   "compilerOptions": {
-    "paths": {
-      "~/*": ["./src/*"]
-    }
+    "outDir": "./dist"
   },
   "include": ["src/"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": ["node_modules", "dist"],
+  "references": [{ "path": "../packages/policy" }]
 }

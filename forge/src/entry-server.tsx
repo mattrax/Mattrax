@@ -1,7 +1,7 @@
 import { createHandler } from "@solidjs/start/entry";
 import { StartServer } from "@solidjs/start/server";
 
-export default createHandler(() => (
+const handler: unknown = createHandler(() => (
   <StartServer
     document={({ assets, children, scripts }) => (
       <html lang="en" class="h-full">
@@ -21,3 +21,5 @@ export default createHandler(() => (
     )}
   />
 ));
+
+export default handler;

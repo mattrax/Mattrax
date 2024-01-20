@@ -1,7 +1,6 @@
+import { tempTenantLoader, type SessionData } from "@mattrax/api";
 import { createContext, useContext } from "solid-js";
-import { eq } from "drizzle-orm";
-import { SessionData, getServerSession } from "~/server/session";
-import { tenants, db, encodeId } from "@mattrax/api";
+import { getServerSession } from "~/routes/api/getServerSession";
 
 export async function sessionLoader() {
   "use server";
@@ -22,19 +21,7 @@ export type Tenant = Awaited<ReturnType<typeof tenantLoader>>[number];
 
 export async function tenantLoader(session_id: number) {
   "use server";
-
-  return (
-    await db
-      .select({
-        id: tenants.id,
-        name: tenants.name,
-      })
-      .from(tenants)
-      .where(eq(tenants.owner_id, session_id))
-  ).map((tenant) => ({
-    ...tenant,
-    id: encodeId("tenant", tenant.id),
-  }));
+  return await tempTenantLoader(session_id);
 }
 
 type GlobalCtx = {

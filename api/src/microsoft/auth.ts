@@ -1,13 +1,13 @@
-import { Output, number, object, safeParse, string } from "valibot";
+import { z } from "zod";
 import { env } from "../env";
 
-const authenticateResponse = object({
-  token_type: string(),
-  expires_in: number(),
-  ext_expires_in: number(),
-  access_token: string(),
+const authenticateResponse = z.object({
+  token_type: z.string(),
+  expires_in: z.number(),
+  ext_expires_in: z.number(),
+  access_token: z.string(),
 });
-type AuthenticateResponse = Output<typeof authenticateResponse>;
+type AuthenticateResponse = z.infer<typeof authenticateResponse>;
 
 type Init = RequestInit & { skipBodyParse?: boolean };
 
@@ -36,12 +36,12 @@ async function authenticate() {
         resp.status
       }': ${await resp.text()}`
     );
-  const result = safeParse(authenticateResponse, await resp.json());
+  const result = authenticateResponse.safeParse(await resp.json());
   if (!result.success)
     throw new Error(
-      `Failed to parse Microsoft authenticate response: ${result.issues}`
+      `Failed to parse Microsoft authenticate response: ${result.error}`
     );
-  return result.output;
+  return result.data;
 }
 
 // TODO: On unauthorised refresh token

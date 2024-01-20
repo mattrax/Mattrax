@@ -1,6 +1,10 @@
 {
   "files": [],
-  "references": [{ "path": "./forge" }, { "path": "./packages/policy" }],
+  "references": [
+    { "path": "./api" },
+    { "path": "./forge" },
+    { "path": "./packages/policy" }
+  ],
   "compilerOptions": {
     "incremental": true,
     "strict": true,

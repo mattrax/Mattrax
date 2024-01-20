@@ -1,27 +1,13 @@
-// import { useSession } from "~/utils/session";
-
 import { cache, createAsync } from "@solidjs/router";
 import { For, Suspense } from "solid-js";
-import { getDevices } from "@mattrax/api";
+import { client } from "~/utils";
 import { useGlobalCtx } from "~/utils/globalCtx";
 
-const fetchDevices = cache(async () => {
-  "use server";
-
-  // TODO: Check auth
-
-  // TODO: Serve from our DB
-  // TODO: Pagination with Microsoft
-
-  const devices = await getDevices();
-
-  // TODO: Filter to only devices in current tenant
-  return devices.value.map((d) => ({
-    id: d.id,
-    // TODO: Fix Typescript type
-    name: d.deviceName,
-  }));
-}, "devices");
+const fetchDevices = cache(
+  // TODO: Unauthorised/error state in response
+  () => client.api.devices.$get().then((res) => res.json()),
+  "device"
+);
 
 export const route = {
   load: () => fetchDevices(),
@@ -46,7 +32,7 @@ export default function Page() {
             {(device) => (
               <div class="flex">
                 <p>{device.name}</p>
-                <a href={`/${ctx.activeTenant.id}/devices/${device.id}`}>
+                <a href={`/${ctx.activeTenant!.id}/devices/${device.id}`}>
                   Open
                 </a>
               </div>

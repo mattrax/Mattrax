@@ -1,55 +1,22 @@
-// import { useSession } from "~/utils/session";
-
-import { cache, createAsync, useNavigate } from "@solidjs/router";
-import { For, Suspense } from "solid-js";
 import {
-  db,
-  policies,
-  getDeviceConfigurations,
-  getDevices,
-  decodeId,
-  encodeId,
-} from "@mattrax/api";
+  RouteDefinition,
+  cache,
+  createAsync,
+  useNavigate,
+} from "@solidjs/router";
+import { For, Suspense } from "solid-js";
+import { client } from "~/utils";
 import { useGlobalCtx } from "~/utils/globalCtx";
 
-const fetchPolicies = cache(async () => {
-  "use server";
-
-  // TODO: Check auth
-
-  // TODO: Serve from our DB
-  // TODO: Pagination with Microsoft
-
-  // TODO: Filter to only entities in current tenant
-  const p = await db.select().from(policies);
-
-  // TODO: Do filtering in DB + add helper for the ID encoding
-  return p.map((d) => ({
-    id: encodeId("policy", d.id),
-    name: d.name,
-  }));
-}, "policies");
-
-const createPolicy = async (name: string, tenantId: string) => {
-  "use server";
-
-  // TODO: Input validation
-
-  // TODO: Check the user is authenticated + authorised to `tenantId`
-
-  const id = decodeId("tenant", tenantId);
-
-  const result = await db.insert(policies).values({
-    name,
-    tenantId: id,
-  });
-
-  return encodeId("policy", parseInt(result.insertId));
-};
+const fetchPolicies = cache(
+  // TODO: Unauthorised/error state in response
+  () => client.api.policies.$get().then((res) => res.json()),
+  "policies"
+);
 
 export const route = {
   load: () => fetchPolicies(),
-};
+} satisfies RouteDefinition;
 
 export default function Page() {
   const ctx = useGlobalCtx();
@@ -69,10 +36,20 @@ export default function Page() {
         onSubmit={(e) => {
           e.preventDefault();
           const formData = new FormData(e.currentTarget);
-          createPolicy(formData.get("name")!, ctx.activeTenant!.id).then(
-            (policyId) =>
-              navigate(`/${ctx.activeTenant.id}/policies/${policyId}`)
-          );
+          // TODO: Unauthorised/error state in response
+
+          client.api.policies
+            .$post({
+              json: {
+                // @ts-expect-error
+                name: formData.get("name")!,
+                tenantId: ctx.activeTenant!.id,
+              },
+            })
+            .then((res) => res.json())
+            .then((policyId) =>
+              navigate(`/${ctx.activeTenant!.id}/policies/${policyId}`)
+            );
         }}
       >
         {/* TODO: Loading state */}
@@ -88,7 +65,7 @@ export default function Page() {
             {(policy) => (
               <div class="flex">
                 <p>{policy.name}</p>
-                <a href={`/${ctx.activeTenant.id}/policies/${policy.id}`}>
+                <a href={`/${ctx.activeTenant!.id}/policies/${policy.id}`}>
                   Open
                 </a>
               </div>
