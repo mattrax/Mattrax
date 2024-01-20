@@ -1,7 +1,16 @@
-import { action } from "@solidjs/router";
-import { loginAction } from "./login.server";
+import { action, redirect } from "@solidjs/router";
+import { client } from "~/utils";
 
-const login = action(loginAction, "login");
+const login = action(async (formData) => {
+  const data = Object.fromEntries(formData);
+  await client.api.auth.login.$post({
+    json: {
+      email: data.email,
+      password: data.password,
+    },
+  });
+  throw redirect("/");
+}, "login");
 
 export default function Page() {
   // TODO: Autocomplete attributes

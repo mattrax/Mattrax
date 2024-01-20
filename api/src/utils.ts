@@ -1,4 +1,4 @@
-import { GetSessionResult } from "../../forge/src/server/session";
+import { GetSessionResult, GetSessionResultWithData } from "./session";
 import { Hono, type MiddlewareHandler } from "hono";
 // @ts-expect-error: No types :(
 import { int_to_base58, base58_to_int } from "base58";
@@ -6,6 +6,13 @@ import { int_to_base58, base58_to_int } from "base58";
 export type HonoType = { Bindings: { session: GetSessionResult } };
 
 export const newApp = () => new Hono<HonoType>();
+
+export const newAuthedApp = () =>
+  new Hono<{
+    Bindings: {
+      session: GetSessionResultWithData;
+    };
+  }>().use("*", withAuth);
 
 export const withAuth: MiddlewareHandler<HonoType> = async (c, next) => {
   if (c.env.session.data?.id === undefined) {

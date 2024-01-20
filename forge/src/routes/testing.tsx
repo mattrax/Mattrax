@@ -1,9 +1,6 @@
 import { createAsync } from "@solidjs/router";
 import { Suspense } from "solid-js";
-import { hc } from "hono/client";
-import { type AppType } from "./api/[...api]";
-
-const client = hc<AppType>("");
+import { client } from "~/utils";
 
 export default function Page() {
   const demo = createAsync(async () =>

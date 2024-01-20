@@ -2,17 +2,24 @@
 // TODO: Make this no look like shit
 // TODO: Proper loading state
 
-import { createTenant } from "./CreateTenantDialog.server";
+import { client } from "~/utils";
 
 export function CreateTenantDialog() {
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        createTenant(new FormData(e.currentTarget)).then(() => {
-          location.reload(); // TODO: Properly invalidate data/update the cache
-        });
-        // TODO: Close dialog
+        const formData = new FormData(e.currentTarget);
+        client.api.tenants.create
+          .$post({
+            json: {
+              name: formData.get("name") as any,
+            },
+          })
+          .then((resp) => {
+            if (resp.ok) location.reload(); // TODO: Properly invalidate data/update the cache
+            // TODO: Close dialog
+          });
       }}
       method="post"
     >

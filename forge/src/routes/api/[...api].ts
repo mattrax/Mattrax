@@ -1,6 +1,6 @@
 import { APIEvent } from "@solidjs/start/server";
-import { getServerSession } from "~/server/session";
 import { newApp, mountRoutes } from "@mattrax/api";
+import { getServerSession } from "./getServerSession";
 
 const app = newApp()
   .basePath("/api")

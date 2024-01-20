@@ -1,36 +1,25 @@
-import { cache, createAsync, redirect, useParams } from "@solidjs/router";
+import {
+  RouteDefinition,
+  cache,
+  createAsync,
+  redirect,
+  useParams,
+} from "@solidjs/router";
 import { Suspense } from "solid-js";
-import { getDevice, syncDevice } from "@mattrax/api";
+import { client } from "~/utils";
 
-const fetchDevice = cache(async (deviceId: string) => {
-  "use server";
-
-  // TODO: Check auth
-  // TODO: Check user is authorised to access tenant which owns the device
-
-  const device = await getDevice(deviceId);
-
-  return {
-    name: device.deviceName,
-  };
-}, "device");
-
-const doSyncDevice = async (deviceId: string) => {
-  "use server";
-
-  // TODO: Check auth
-  // TODO: Check user is authorised to access tenant which owns the device
-
-  try {
-    await syncDevice(deviceId);
-  } catch (err) {
-    console.error(err);
-  }
-};
+const fetchDevice = cache(
+  (deviceId: string) =>
+    // TODO: Handle error or unauthorised responses
+    client.api.devices[":deviceId"]
+      .$get({ param: { deviceId } })
+      .then((res) => res.json()),
+  "device"
+);
 
 export const route = {
-  load: ({ params }) => fetchDevice(params.deviceId),
-};
+  load: ({ params }) => fetchDevice(params.deviceId!),
+} satisfies RouteDefinition;
 
 export default function Page() {
   const params = useParams();
@@ -44,7 +33,10 @@ export default function Page() {
         <p>Name: {device()?.name}</p>
         <button
           onClick={() =>
-            doSyncDevice(params.deviceId!).then(() => alert("Synced!"))
+            // TODO: Handle error responses
+            client.api.devices[":deviceId"].sync
+              .$post({ param: { deviceId: params.deviceId! } })
+              .then(() => alert("Synced!"))
           }
         >
           Sync
