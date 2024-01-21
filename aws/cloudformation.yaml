@@ -15,6 +15,12 @@ Outputs:
     Description: AWS_SECRET_ACCESS_KEY
     Value: !GetAtt VercelAccessKey.SecretAccessKey
 
+Conditions:
+  ShouldSetCallbackURL: !Not
+    - !Equals 
+      - !Ref IntuneEmailCallbackURL
+      - ""
+
 Resources:
   ForgeData:
     Type: AWS::S3::Bucket
@@ -58,14 +64,12 @@ Resources:
     Type: AWS::SNS::Topic
     Properties:
       Subscription:
-        - !If
-          - !Not [ !Equals [!Ref IntuneEmailCallbackURL, ""] ]
-          -
-            Protocol: https
-            Endpoint: !Ref IntuneEmailCallbackURL
+        !If
+          - ShouldSetCallbackURL
+          - 
+            - Protocol: https
+              Endpoint: !Ref IntuneEmailCallbackURL
           - !Ref "AWS::NoValue"
-      
-      # !If [condition_name, [ Protocol: https Endpoint:  ] , value_if_false]
 
   IntuneCallbackReceiptRule:
     Type: AWS::SES::ReceiptRule
