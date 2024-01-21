@@ -1,10 +1,8 @@
-import { z } from "zod";
 import { env } from "../env";
 import { newApp } from "../utils";
 import { db, devices, kvStore } from "../db";
 import { eq } from "drizzle-orm";
-import { subscriptionRenew } from "../microsoft/graph";
-import { getDevice } from "../microsoft";
+import { getEntraIDDevice, subscriptionRenew } from "../microsoft/graph";
 
 export const app = newApp()
   .post("/ms", async (c) => {
@@ -34,11 +32,13 @@ export const app = newApp()
           .delete(devices)
           .where(eq(devices.intuneId, value.resourceData.id));
       } else {
-        const device = await getDevice(value.resourceData.id);
+        const device = await getEntraIDDevice(value.resourceData.id);
+
+        // TODO: device.enrollmentProfileName
 
         await db.insert(devices).values({
           name: device!.displayName as string,
-          intuneId: value.resourceData.id,
+          intuneId: device!.deviceId,
         });
       }
     }

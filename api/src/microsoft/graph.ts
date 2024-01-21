@@ -54,6 +54,14 @@ export const subscriptionRenew = (id: string) =>
     }),
   });
 
+export const getEntraIDDevice = (id: string) =>
+  authenticatedFetch<{
+    id: string;
+    displayName: string;
+    deviceId: string;
+    //  More properties that aren't important
+  }>(`/devices/${id}`);
+
 function addMinutes(date: Date, minutes: number) {
   return new Date(date.getTime() + minutes * 60000);
 }
