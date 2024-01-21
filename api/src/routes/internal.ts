@@ -51,7 +51,7 @@ export const app = newAuthedApp()
     const reqBody = new URLSearchParams();
     reqBody.set("client_id", env.MSFT_CLIENT_ID);
     reqBody.set("scope", franksScopes);
-    reqBody.set("code", code);
+    reqBody.set("code", code!);
     reqBody.set(
       "redirect_uri",
       `${env.PROD_URL}/api/internal/authorisefrank/callback`

@@ -30,13 +30,15 @@ export const app = newApp()
 
       if (value.changeType === "deleted") {
         // TODO: Handle this properly! We should unlink and notify the administrator instead of just deleting the data.
-        await db.delete(devices).where(eq(devices.intuneId, value.id));
+        await db
+          .delete(devices)
+          .where(eq(devices.intuneId, value.resourceData.id));
       } else {
-        const device = await getDevice(value.id);
+        const device = await getDevice(value.resourceData.id);
 
         await db.insert(devices).values({
           name: device!.displayName as string,
-          intuneId: value.id,
+          intuneId: value.resourceData.id,
         });
       }
     }
@@ -64,6 +66,7 @@ export const app = newApp()
           continue;
         }
 
+        console.log(value.clientState, env.INTERNAL_SECRET); // TODO
         if (value.clientState !== env.INTERNAL_SECRET) {
           console.error("Client state mismatch. Not renewing!");
           continue;
