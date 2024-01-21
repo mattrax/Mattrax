@@ -27,7 +27,7 @@ export default function Page() {
             .then((data) => {
               if (!data.value) throw new Error("No value"); // TODO: How is this possible?
               download(
-                data.value,
+                base64Decode(data.value),
                 "application/octet-stream",
                 "enroll.mobileconfig"
               );
@@ -40,7 +40,7 @@ export default function Page() {
   );
 }
 
-function download(content: string, type: string, filename: string) {
+function download(content: Uint8Array, type: string, filename: string) {
   const a = document.createElement("a");
   const blob = new Blob([content], {
     type: "application/octet-stream",
@@ -48,4 +48,16 @@ function download(content: string, type: string, filename: string) {
   a.href = window.URL.createObjectURL(blob);
   a.download = filename;
   a.click();
+}
+
+// The implementation of this function was taken from Intune's minified code
+// It's required for the code signing data to not get corrupted
+function base64Decode(encoded: string) {
+  for (
+    var n = window.atob(encoded), r = n.length, o = new Uint8Array(r), i = 0;
+    i < r;
+    i++
+  )
+    o[i] = n.charCodeAt(i);
+  return o;
 }

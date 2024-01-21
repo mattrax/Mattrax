@@ -8,6 +8,10 @@ export const getServerSession = async () => {
   const session = await useSolidSession(event, {
     name: "s",
     password: env.AUTH_SECRET,
+    cookie: {
+      // Safari gets unhappy
+      secure: !import.meta.env.DEV,
+    },
   });
 
   var obj: Record<string, unknown> = {};

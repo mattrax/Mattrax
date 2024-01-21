@@ -79,7 +79,7 @@ export const app = newApp()
       const result = await exportEnrollmentProfile(enrollmentProfile!.id); // TODO: Why can `enrollmentProfile` be `undefined`???
 
       return c.json({
-        value: result?.value,
+        value: result!.value,
       });
     }
   )

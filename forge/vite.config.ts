@@ -15,6 +15,10 @@ process.env = {
 
 export default defineConfig({
   envDir: monorepoRoot,
+  build: {
+    // Safari mobile has problems with newer syntax
+    target: "es2015",
+  },
   plugins: [
     AutoImport({
       resolvers: [
