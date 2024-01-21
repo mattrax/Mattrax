@@ -66,7 +66,6 @@ export const app = newApp()
           continue;
         }
 
-        console.log(value.clientState, env.INTERNAL_SECRET); // TODO
         if (value.clientState !== env.INTERNAL_SECRET) {
           console.error("Client state mismatch. Not renewing!");
           continue;
