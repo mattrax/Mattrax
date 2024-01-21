@@ -58,9 +58,11 @@ export const devices = mysqlTable("devices", {
 //   // description: varchar("description", { length: 256 }),
 // });
 
-// A table used to hold a single value which is used for accessing the Intune API as Frank.
-export const intuneAccessToken = mysqlTable("intune_access_token", {
-  id: serial("id").primaryKey(),
-  // TODO: Cache proper access token too
-  refresh_token: varchar("refresh_token", { length: 1000 }).notNull(),
+type Keys = "intune_refresh_token" | "devices_subscription_id";
+
+// A table used to store key-value pairs.
+// This will probs be moved to Redis in the future.
+export const kvStore = mysqlTable("kv", {
+  key: varchar("key", { length: 200 }).$type<Keys>().primaryKey(),
+  value: varchar("value", { length: 1000 }).notNull(),
 });

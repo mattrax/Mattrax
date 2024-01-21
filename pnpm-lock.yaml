@@ -44,9 +44,6 @@ importers:
       hono:
         specifier: ^3.12.6
         version: 3.12.6
-      sns-validator:
-        specifier: ^0.3.5
-        version: 0.3.5
       zod:
         specifier: ^3.22.4
         version: 3.22.4
@@ -54,9 +51,6 @@ importers:
       '@microsoft/microsoft-graph-types':
         specifier: ^2.40.0
         version: 2.40.0
-      '@types/sns-validator':
-        specifier: ^0.3.3
-        version: 0.3.3
 
   forge:
     dependencies:
@@ -1794,10 +1788,6 @@ packages:
       '@types/mime': 3.0.4
       '@types/node': 20.11.5
     dev: false
-
-  /@types/sns-validator@0.3.3:
-    resolution: {integrity: sha512-v/3bN5dak8aDXn7bgTGu+1oGc+PQCP0qnfzUM6gzo7FnxiW4wpppkaIptPhRhJaiDItbUDK+YA4yDQuVs5Cq1Q==}
-    dev: true
 
   /@types/ws@8.5.10:
     resolution: {integrity: sha512-vmQSUcfalpIq0R9q7uTo2lXs6eGIpt9wtnLdMv9LVpIjCA/+ufZRozlVoVelIYixx1ugCBKDhn89vnsEGOCx9A==}
@@ -4821,10 +4811,6 @@ packages:
 
   /smob@1.4.1:
     resolution: {integrity: sha512-9LK+E7Hv5R9u4g4C3p+jjLstaLe11MDsL21UpYaCNmapvMkYhqCV4A/f/3gyH8QjMyh6l68q9xC85vihY9ahMQ==}
-    dev: false
-
-  /sns-validator@0.3.5:
-    resolution: {integrity: sha512-lapYNmezLsltnt2fcQyhmYnC41mYZ7EjU7f2oR/hrhpbD/LemryclRpApwxO84gOyDIQ7MWe/h4HvkdunFzSKg==}
     dev: false
 
   /solid-js@1.8.11:

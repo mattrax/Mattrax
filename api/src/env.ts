@@ -14,7 +14,8 @@ export const env = createEnv({
     MSFT_CLIENT_SECRET: z.string(),
     MSFT_ADMIN_TENANT: z.string(),
     DATABASE_URL: z.string(),
-    SNS_SHARED_SECRET: z.string(),
+    INTERNAL_SECRET: z.string(),
+    VERCEL_URL: z.string(),
     // Get these values from the output of the Cloudformation template
     AWS_ACCESS_KEY_ID: optional_in_dev(z.string()),
     AWS_SECRET_ACCESS_KEY: optional_in_dev(z.string()),

@@ -1,6 +1,9 @@
-import { db, intuneAccessToken } from "../db";
+import { db, kvStore } from "../db";
 import { env } from "../env";
+import { eq } from "drizzle-orm";
+import { getSubscription, subscribe } from "../microsoft/graph";
 import { newAuthedApp } from "../utils";
+import { FetchError } from "../microsoft";
 
 export const franksScopes =
   "offline_access DeviceManagementServiceConfig.Read.All DeviceManagementServiceConfig.ReadWrite.All DeviceManagementConfiguration.Read.All DeviceManagementConfiguration.ReadWrite.All";
@@ -28,7 +31,10 @@ export const app = newAuthedApp()
     params.set("client_id", env.MSFT_CLIENT_ID);
     params.set("response_type", "code");
     // TODO: Implement the callback for this
-    params.set("redirect_uri", "https://mattrax-forge.vercel.app"); // TODO: Use incoming URL
+    params.set(
+      "redirect_uri",
+      `${env.VERCEL_URL}/api/internal/authorisefrank/callback`
+    );
     params.set("response_mode", "query");
     params.set("scope", franksScopes);
     // params.set("state", "12345");
@@ -46,7 +52,10 @@ export const app = newAuthedApp()
     reqBody.set("client_id", env.MSFT_CLIENT_ID);
     reqBody.set("scope", franksScopes);
     reqBody.set("code", code);
-    reqBody.set("redirect_uri", "https://mattrax-forge.vercel.app"); // TODO: Use incoming URL
+    reqBody.set(
+      "redirect_uri",
+      `${env.VERCEL_URL}/api/internal/authorisefrank/callback`
+    );
     reqBody.set("grant_type", "authorization_code");
     reqBody.set("client_secret", env.MSFT_CLIENT_SECRET);
 
@@ -73,16 +82,61 @@ export const app = newAuthedApp()
     } = await resp.json();
 
     await db
-      .insert(intuneAccessToken)
+      .insert(kvStore)
       .values({
-        id: 1,
-        refresh_token: body.refresh_token,
+        key: "intune_refresh_token",
+        value: body.refresh_token,
       })
       .onDuplicateKeyUpdate({
         set: {
-          refresh_token: body.refresh_token,
+          value: body.refresh_token,
         },
       });
 
-    return c.json({}); // TODO: Redirect once we turn this into a proper flow
+    return c.redirect("/internal");
+  })
+  .post("/setup", async (c) => {
+    const subscriptionId = (
+      await db
+        .select()
+        .from(kvStore)
+        .where(eq(kvStore.key, "devices_subscription_id"))
+    )?.[0];
+
+    if (subscriptionId) {
+      try {
+        await getSubscription(subscriptionId.value);
+        return c.json({});
+      } catch (err) {
+        // If the subscription has expired we wanna recreate it, regardless of if it's in the DB.
+        if (!(err instanceof FetchError && err.status === 404)) {
+          throw err;
+        }
+      }
+    }
+
+    try {
+      const result = await subscribe(
+        "/devices",
+        ["created", "updated", "deleted"],
+        env.INTERNAL_SECRET
+      );
+
+      await db
+        .insert(kvStore)
+        .values({
+          key: "devices_subscription_id",
+          value: result!.id,
+        })
+        .onDuplicateKeyUpdate({
+          set: {
+            value: result!.id,
+          },
+        });
+
+      return c.json({});
+    } catch (err) {
+      console.error(err);
+      return c.json({ error: (err as any).toString() }, 500);
+    }
   });

@@ -31,10 +31,10 @@ async function authenticate() {
     }
   );
   if (!resp.ok)
-    throw new Error(
-      `Failed to get access token from Microsoft with status '${
-        resp.status
-      }': ${await resp.text()}`
+    throw new FetchError(
+      resp.status,
+      await resp.text(),
+      `Failed to get access token from Microsoft`
     );
   const result = authenticateResponse.safeParse(await resp.json());
   if (!result.success)
@@ -75,10 +75,10 @@ async function authenticatedFetchInner<T>(
   }
 
   if (!resp.ok)
-    throw new Error(
-      `Failed to fetch ${url} with status '${
-        resp.status
-      }': ${await resp.text()}`
+    throw new FetchError(
+      resp.status,
+      await resp.text(),
+      `Failed to fetch ${url}`
     );
 
   if (init?.skipBodyParse) return undefined;
@@ -93,3 +93,21 @@ export const authenticatedFetch = <T>(url: string, init?: Init) =>
 // TODO: Remove this and remove version prefix from hardcoded URL
 export const authenticatedFetchBeta = <T>(url: string, init?: Init) =>
   authenticatedFetchInner<T & { "@odata.context": string }>(url, init, true);
+
+export class FetchError {
+  status: number = 0;
+  body: string | undefined = undefined;
+  msg: string | undefined = undefined;
+
+  constructor(status: number, body: string | undefined, msg?: string) {
+    this.status = status;
+    this.body = body;
+    this.msg = msg;
+  }
+
+  toString() {
+    return `FetchError: ${this.msg}; status=${
+      this.status
+    } body='${JSON.stringify(this.body)}'`;
+  }
+}

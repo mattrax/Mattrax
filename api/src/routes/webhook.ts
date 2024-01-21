@@ -1,42 +1,78 @@
 import { z } from "zod";
 import { env } from "../env";
 import { newApp } from "../utils";
-import { basicAuth } from "hono/basic-auth";
-import MessageValidator from "sns-validator";
-
-const validator = new MessageValidator();
-
-const asyncSnsValidator = (body: string | Record<string, unknown>) =>
-  new Promise<Record<string, unknown> | undefined>((resolve, reject) =>
-    validator.validate(body, async (err, message) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-
-      resolve(message);
-    })
-  );
+import { db, devices, kvStore } from "../db";
+import { eq } from "drizzle-orm";
+import { subscriptionRenew } from "../microsoft/graph";
+import { getDevice } from "../microsoft";
 
 export const app = newApp()
-  .use(
-    "*",
-    // Look this isn't "super" secure but we don't trust the request body anyway.
-    basicAuth({
-      username: "sns",
-      password: env.SNS_SHARED_SECRET,
-    })
-  )
-  .post("/sns", async (c) => {
-    const message = await asyncSnsValidator(await c.req.json());
-    if (!message) throw new Error("Invalid SNS message");
+  .post("/ms", async (c) => {
+    const validationToken = c.req.query("validationToken");
+    if (validationToken) {
+      return c.text(validationToken);
+    }
 
-    if (message?.["Type"] === "SubscriptionConfirmation") {
-      await fetch(message["SubscribeURL"] as string);
-    } else if (message?.["Type"] === "Notification") {
-      console.log("SNS NOTIFICATION", message);
-      console.log(message.Subject, message.Message);
+    const data = await c.req.json();
+
+    for (const value of data.value) {
+      if (value.clientState !== env.INTERNAL_SECRET) {
+        console.error("Client state mismatch. Not processing!");
+        continue;
+      }
+
+      if (!value.resource.startsWith("Devices/")) {
+        console.error(
+          `Found resource '${value.resource}' which is not a device. Not processing!`
+        );
+        continue;
+      }
+
+      if (value.changeType === "deleted") {
+        // TODO: Handle this properly! We should unlink and notify the administrator instead of just deleting the data.
+        await db.delete(devices).where(eq(devices.intuneId, value.id));
+      } else {
+        const device = await getDevice(value.id);
+
+        await db.insert(devices).values({
+          name: device!.displayName as string,
+          intuneId: value.id,
+        });
+      }
     }
 
     return c.json({});
+  })
+  .post("/msLifecycle", async (c) => {
+    const validationToken = c.req.query("validationToken");
+    if (validationToken) {
+      return c.text(validationToken);
+    }
+
+    const data = await c.req.json();
+    for (const value of data.value) {
+      if (value.lifecycleEvent === "reauthorizationRequired") {
+        const activeSubscription = (
+          await db
+            .select()
+            .from(kvStore)
+            .where(eq(kvStore.key, "devices_subscription_id"))
+        )?.[0];
+
+        if (value.subscriptionId !== activeSubscription?.value) {
+          console.error("Subscription ID mismatch. Not renewing!");
+          continue;
+        }
+
+        if (value.clientState !== env.INTERNAL_SECRET) {
+          console.error("Client state mismatch. Not renewing!");
+          continue;
+        }
+
+        await subscriptionRenew(value.subscriptionId);
+      }
+    }
+
+    c.status(202);
+    return c.text("");
   });

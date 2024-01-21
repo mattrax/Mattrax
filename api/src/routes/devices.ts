@@ -2,49 +2,59 @@ import { z } from "zod";
 import {
   createEnrollmentProfile,
   exportEnrollmentProfile,
-  getDevice,
-  getDevices,
-  getFrankAccessToken,
   syncDevice,
 } from "../microsoft";
 import { newApp, newAuthedApp } from "../utils";
 import { zValidator } from "@hono/zod-validator";
+import { db, devices } from "../db";
 
 export const authenticatedApp = newAuthedApp()
   .get("/", async (c) => {
     // TODO: Is the user authorised to the current tenant???
-    // TODO: Only return devices in the current tenant
-    // TODO: Serve from DB
 
-    const devices = await getDevices();
     // TODO: Filter to only devices in current tenant
-
+    // TODO: .where(eq(devices.tenantId, todo))
     return c.json(
-      // @ts-expect-error // TODO: Fix types
-      devices.value.map((d) => ({
-        id: d.id,
-        // @ts-expect-error // TODO: Fix types
-        name: d.deviceName,
-      }))
+      await db
+        .select({
+          id: devices.id,
+          name: devices.name,
+        })
+        .from(devices)
     );
   })
   .get("/:deviceId", async (c) => {
     const deviceId = c.req.param("deviceId");
     // TODO: Check user is authorised to access tenant which owns the device
 
-    // TODO: Serve from DB instead
-    const device = await getDevice(deviceId);
-
-    return c.json({
-      // @ts-expect-error // TODO: Fix incorrect types
-      name: device.deviceName,
-    });
+    // TODO: Filter to only devices in current tenant
+    // TODO: .where(eq(devices.tenantId, todo))
+    return c.json(
+      (
+        await db
+          .select({
+            name: devices.name,
+          })
+          .from(devices)
+      )?.[0]
+    );
   })
   .post("/:deviceId/sync", async (c) => {
     const deviceId = c.req.param("deviceId");
     // TODO: Check user is authorised to access tenant which owns the device
 
-    await syncDevice(deviceId);
+    // TODO: Filter to only devices in current tenant
+    // TODO: .where(eq(devices.tenantId, todo))
+    const device = (
+      await db
+        .select({
+          intuneId: devices.intuneId,
+        })
+        .from(devices)
+    )?.[0];
+    if (!device) throw new Error("Device not found"); // TODO: Properly handle this error on frontend
+
+    await syncDevice(device.intuneId);
     return c.json({});
   });
 

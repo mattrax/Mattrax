@@ -1,11 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
 
-Parameters:
-  IntuneEmailCallbackURL:
-    Type: String
-    Default: ""
-    Description: The URL of the webhook callback for Intune events. In the form 'https://sns:todo@domain.com/api/webhook/sns'
-
 Outputs:
   VercelAccessKeyId:
     Description: AWS_ACCESS_KEY_ID
@@ -14,12 +8,6 @@ Outputs:
   VercelAccessKeySecret:
     Description: AWS_SECRET_ACCESS_KEY
     Value: !GetAtt VercelAccessKey.SecretAccessKey
-
-Conditions:
-  ShouldSetCallbackURL: !Not
-    - !Equals 
-      - !Ref IntuneEmailCallbackURL
-      - ""
 
 Resources:
   ForgeData:
@@ -54,36 +42,3 @@ Resources:
     Properties:
       UserName:
         !Ref VercelUser
-  
-  # Intune doesn't have a "subscribe to devices" endpoint so we abuse it's email callback feature.
-
-  IntuneCallbackReceiptRuleSet: # TODO: This has to be manually set as enabled in the dashboard
-    Type: 'AWS::SES::ReceiptRuleSet'
-
-  IntuneCallbackQueue:
-    Type: AWS::SNS::Topic
-    Properties:
-      Subscription:
-        !If
-          - ShouldSetCallbackURL
-          - 
-            - Protocol: https
-              Endpoint: !Ref IntuneEmailCallbackURL
-          - !Ref "AWS::NoValue"
-
-  IntuneCallbackReceiptRule:
-    Type: AWS::SES::ReceiptRule
-    Properties:
-      RuleSetName: !Ref IntuneCallbackReceiptRuleSet
-      Rule:
-        Name: bridge-to-sns
-        Enabled: true
-        ScanEnabled: false
-        TlsPolicy: Optional
-        Recipients:
-         - intune@internal.mattrax.app
-        Actions:
-         - SNSAction:
-            Encoding: UTF-8
-            TopicArn: !Ref IntuneCallbackQueue
-

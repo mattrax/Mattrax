@@ -4,7 +4,7 @@ import {
   IosCustomConfiguration,
 } from "@microsoft/microsoft-graph-types";
 import { authenticatedFetch, authenticatedFetchBeta } from "./auth";
-import { db, intuneAccessToken } from "../db";
+import { db, kvStore } from "../db";
 import { eq } from "drizzle-orm";
 import { franksScopes } from "../routes/internal";
 import { env } from "../env";
@@ -126,8 +126,11 @@ export const createEnrollmentProfile = (name: string, description?: string) =>
 // Frank is the bot account
 export const getFrankAccessToken = async () => {
   const refreshToken = (
-    await db.select().from(intuneAccessToken).where(eq(intuneAccessToken.id, 1))
-  )?.[0]?.refresh_token;
+    await db
+      .select()
+      .from(kvStore)
+      .where(eq(kvStore.key, "intune_refresh_token"))
+  )?.[0]?.value;
   if (!refreshToken) throw new Error("No refresh token found for Frank");
 
   const reqBody = new URLSearchParams();
@@ -160,14 +163,14 @@ export const getFrankAccessToken = async () => {
 
   // TODO: Is the fact that a new refresh token comes back going to cause race conditions???
   await db
-    .insert(intuneAccessToken)
+    .insert(kvStore)
     .values({
-      id: 1,
-      refresh_token: body.refresh_token,
+      key: "intune_refresh_token",
+      value: body.refresh_token,
     })
     .onDuplicateKeyUpdate({
       set: {
-        refresh_token: body.refresh_token,
+        value: body.refresh_token,
       },
     });
 
