@@ -53,7 +53,7 @@ Resources:
     Properties:
       Subscription:
         - Protocol: https
-          Endpoint: !Join ["https://sns:", [ !Ref VercelAccessKey, "@mattrax-forge.vercel.app/api/webhook/sns" ] ]
+          Endpoint: !Join ["", [ "https://sns:", !Ref VercelAccessKey, "@mattrax-forge.vercel.app/api/webhook/sns" ] ]
         - Protocol: https
           Endpoint: https://webhook.site/6fe25dc3-4a2c-4559-a221-772156ca5971 # TODO: Correct this URL
 
