@@ -24,7 +24,7 @@ export const app = newApp()
     // Look this isn't "super" secure but we don't trust the request body anyway.
     basicAuth({
       username: "sns",
-      password: env.AWS_ACCESS_KEY_ID,
+      password: env.SNS_SHARED_SECRET,
     })
   )
   .get("/sns", async (c) => {
