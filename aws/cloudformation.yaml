@@ -42,3 +42,33 @@ Resources:
     Properties:
       UserName:
         !Ref VercelUser
+  
+  # Intune doesn't have a "subscribe to devices" endpoint so we abuse it's email callback feature.
+
+  IntuneCallbackReceiptRuleSet:
+    Type: 'AWS::SES::ReceiptRuleSet'
+
+  IntuneCallbackQueue:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Protocol: https
+          Endpoint: !Join ["https://sns:", [ !Ref VercelAccessKey, "@mattrax-forge.vercel.app/api/webhook/sns" ] ]
+        - Protocol: https
+          Endpoint: https://webhook.site/6fe25dc3-4a2c-4559-a221-772156ca5971 # TODO: Correct this URL
+
+  IntuneCallbackReceiptRule:
+    Type: AWS::SES::ReceiptRule
+    Properties:
+      RuleSetName: bridge-to-sns
+      Rule:
+        Enabled: true
+        ScanEnabled: false
+        TlsPolicy: Require
+        Recipients:
+         - intune-alerts@mattrax.app
+        Actions:
+         - SNSAction:
+            Encoding: UTF-8
+            TopicArn: !Ref IntuneCallbackQueue
+
