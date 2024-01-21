@@ -57,7 +57,7 @@ Resources:
   
   # Intune doesn't have a "subscribe to devices" endpoint so we abuse it's email callback feature.
 
-  IntuneCallbackReceiptRuleSet:
+  IntuneCallbackReceiptRuleSet: # TODO: This has to be manually set as enabled in the dashboard
     Type: 'AWS::SES::ReceiptRuleSet'
 
   IntuneCallbackQueue:
@@ -79,9 +79,9 @@ Resources:
         Name: bridge-to-sns
         Enabled: true
         ScanEnabled: false
-        TlsPolicy: Require
+        TlsPolicy: Optional
         Recipients:
-         - intune-alerts@mattrax.app
+         - intune@internal.mattrax.app
         Actions:
          - SNSAction:
             Encoding: UTF-8

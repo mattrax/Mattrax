@@ -27,41 +27,15 @@ export const app = newApp()
       password: env.SNS_SHARED_SECRET,
     })
   )
-  .get("/sns", async (c) => {
-    const body = await c.req.json();
+  .post("/sns", async (c) => {
+    const message = await asyncSnsValidator(await c.req.json());
+    if (!message) throw new Error("Invalid SNS message");
 
-    // TODO: Finish this
-    await fetch("https://webhook.site/6fe25dc3-4a2c-4559-a221-772156ca5971", {
-      method: "POST",
-      body: JSON.stringify("HIT"),
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-
-    try {
-      const input = await asyncSnsValidator(body);
-
-      // TODO: Finish this
-      await fetch("https://webhook.site/6fe25dc3-4a2c-4559-a221-772156ca5971", {
-        method: "POST",
-        body: JSON.stringify(input),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-    } catch (e) {
-      console.error(e);
-
-      await fetch("https://webhook.site/6fe25dc3-4a2c-4559-a221-772156ca5971", {
-        method: "POST",
-        body: JSON.stringify({
-          error: e.toString(),
-        }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
+    if (message?.["Type"] === "SubscriptionConfirmation") {
+      await fetch(message["SubscribeURL"] as string);
+    } else if (message?.["Type"] === "Notification") {
+      console.log("SNS NOTIFICATION", message);
+      console.log(message.Subject, message.Message);
     }
 
     return c.json({});
