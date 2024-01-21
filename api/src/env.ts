@@ -15,12 +15,7 @@ export const env = createEnv({
     MSFT_ADMIN_TENANT: z.string(),
     DATABASE_URL: z.string(),
     INTERNAL_SECRET: z.string(),
-    VERCEL_URL: z.string().transform((v) => {
-      if (process.env.VERCEL === "1") {
-        return `https://${v}`;
-      }
-      return v;
-    }),
+    PROD_URL: z.string(),
     // Get these values from the output of the Cloudformation template
     AWS_ACCESS_KEY_ID: optional_in_dev(z.string()),
     AWS_SECRET_ACCESS_KEY: optional_in_dev(z.string()),

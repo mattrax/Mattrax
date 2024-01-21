@@ -20,8 +20,8 @@ export const subscribe = (
     },
     body: JSON.stringify({
       changeType: changeType.join(","),
-      notificationUrl: `${env.VERCEL_URL}/api/webhook/ms`,
-      lifecycleNotificationUrl: `${env.VERCEL_URL}/api/webhook/msLifecycle`,
+      notificationUrl: `${env.PROD_URL}/api/webhook/ms`,
+      lifecycleNotificationUrl: `${env.PROD_URL}/api/webhook/msLifecycle`,
       resource: resource,
       expirationDateTime: addMinutes(
         new Date(),

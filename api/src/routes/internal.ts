@@ -33,7 +33,7 @@ export const app = newAuthedApp()
     // TODO: Implement the callback for this
     params.set(
       "redirect_uri",
-      `${env.VERCEL_URL}/api/internal/authorisefrank/callback`
+      `${env.PROD_URL}/api/internal/authorisefrank/callback`
     );
     params.set("response_mode", "query");
     params.set("scope", franksScopes);
@@ -54,7 +54,7 @@ export const app = newAuthedApp()
     reqBody.set("code", code);
     reqBody.set(
       "redirect_uri",
-      `${env.VERCEL_URL}/api/internal/authorisefrank/callback`
+      `${env.PROD_URL}/api/internal/authorisefrank/callback`
     );
     reqBody.set("grant_type", "authorization_code");
     reqBody.set("client_secret", env.MSFT_CLIENT_SECRET);
