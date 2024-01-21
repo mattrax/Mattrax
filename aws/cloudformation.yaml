@@ -1,5 +1,10 @@
 AWSTemplateFormatVersion: 2010-09-09
 
+Parameters:
+  IntuneEmailCallbackURL:
+    Type: String
+    Description: The URL of the webhook callback for Intune events. In the form 'https://sns:todo@domain.com/api/webhook/sns'
+
 Outputs:
   VercelAccessKeyId:
     Description: AWS_ACCESS_KEY_ID
@@ -51,11 +56,14 @@ Resources:
   IntuneCallbackQueue:
     Type: AWS::SNS::Topic
     Properties:
-      Subscription:
-        - Protocol: https
-          Endpoint: !Join ["", [ "https://sns:", !Ref VercelAccessKey, "@mattrax-forge.vercel.app/api/webhook/sns" ] ]
-        - Protocol: https
-          Endpoint: https://webhook.site/6fe25dc3-4a2c-4559-a221-772156ca5971 # TODO: Correct this URL
+      Subscription: !If 
+        - !Not [ !Equals [!Ref IntuneEmailCallbackURL, ""] ]
+        -
+          Protocol: https
+          Endpoint: !Ref IntuneEmailCallbackURL
+        - !Ref "AWS::NoValue"
+      
+      # !If [condition_name, [ Protocol: https Endpoint:  ] , value_if_false]
 
   IntuneCallbackReceiptRule:
     Type: AWS::SES::ReceiptRule
