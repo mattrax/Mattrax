@@ -60,8 +60,9 @@ Resources:
   IntuneCallbackReceiptRule:
     Type: AWS::SES::ReceiptRule
     Properties:
-      RuleSetName: bridge-to-sns
+      RuleSetName: !Ref IntuneCallbackReceiptRuleSet
       Rule:
+        Name: bridge-to-sns
         Enabled: true
         ScanEnabled: false
         TlsPolicy: Require

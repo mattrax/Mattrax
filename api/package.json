@@ -18,9 +18,11 @@
     "base58": "^2.0.1",
     "drizzle-orm": "^0.29.3",
     "hono": "^3.12.6",
+    "sns-validator": "^0.3.5",
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@microsoft/microsoft-graph-types": "^2.40.0"
+    "@microsoft/microsoft-graph-types": "^2.40.0",
+    "@types/sns-validator": "^0.3.3"
   }
 }
