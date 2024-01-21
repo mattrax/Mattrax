@@ -44,11 +44,13 @@ export const policies = mysqlTable("policies", {
     .notNull(),
 });
 
-// export const devices = mysqlTable("devices", {
-//   id: serial("id").primaryKey(),
-//   // name: varchar("name", { length: 256 }).notNull(),
-//   // description: varchar("description", { length: 256 }),
-// });
+export const devices = mysqlTable("devices", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 256 }).notNull(),
+  description: varchar("description", { length: 256 }),
+  // TODO: Sync device information from Intune
+  intuneId: varchar("intuneId", { length: 256 }).notNull().unique(),
+});
 
 // export const applications = mysqlTable("apps", {
 //   id: serial("id").primaryKey(),
