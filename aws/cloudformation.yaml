@@ -57,12 +57,13 @@ Resources:
   IntuneCallbackQueue:
     Type: AWS::SNS::Topic
     Properties:
-      Subscription: !If 
-        - !Not [ !Equals [!Ref IntuneEmailCallbackURL, ""] ]
-        -
-          Protocol: https
-          Endpoint: !Ref IntuneEmailCallbackURL
-        - !Ref "AWS::NoValue"
+      Subscription:
+        - !If
+          - !Not [ !Equals [!Ref IntuneEmailCallbackURL, ""] ]
+          -
+            Protocol: https
+            Endpoint: !Ref IntuneEmailCallbackURL
+          - !Ref "AWS::NoValue"
       
       # !If [condition_name, [ Protocol: https Endpoint:  ] , value_if_false]
 
