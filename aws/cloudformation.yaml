@@ -3,6 +3,7 @@ AWSTemplateFormatVersion: 2010-09-09
 Parameters:
   IntuneEmailCallbackURL:
     Type: String
+    Default: ""
     Description: The URL of the webhook callback for Intune events. In the form 'https://sns:todo@domain.com/api/webhook/sns'
 
 Outputs:
