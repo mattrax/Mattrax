@@ -58,7 +58,7 @@ export const authenticatedApp = newAuthedApp()
     return c.json({});
   });
 
-type EnrollmentProfileDescription = {
+export type EnrollmentProfileDescription = {
   data: string;
   createdAt: number;
 };

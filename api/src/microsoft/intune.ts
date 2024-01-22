@@ -123,6 +123,16 @@ export const createEnrollmentProfile = (name: string, description?: string) =>
     }
   );
 
+export const getEnrollmentProfile = (id: string) =>
+  authenticatedFetchBeta<{
+    id: string;
+    displayName: string;
+    description: string;
+    // TODO: Proper type
+  }>(
+    `/deviceManagement/depOnboardingSettings/${depOnboardingSettingId}/enrollmentProfiles/${id}`
+  );
+
 // Frank is the bot account
 export const getFrankAccessToken = async () => {
   const refreshToken = (
