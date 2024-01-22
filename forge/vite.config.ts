@@ -43,7 +43,7 @@ export default defineConfig({
   start: {
     // Solid Start SSR is soooooo broken.
     // From router context errors on HMR to constant hydration mismatches.
-    ssr: false,
+    ssr: "async", // TODO: Change to false
     server: {
       vercel: {
         regions: ["iad1"],
