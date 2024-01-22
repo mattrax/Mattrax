@@ -78,6 +78,7 @@ process.on("exit", () => {
       continue: true,
     }));
 
+  if ("overrides" in data) delete data.overrides;
   data.routes = [
     ...staticAssetsCacheHeaders,
     {
