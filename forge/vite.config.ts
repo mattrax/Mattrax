@@ -91,7 +91,13 @@ process.on("exit", () => {
       src: "/_server",
       dest: "/__nitro",
     },
-    { src: "/(.*)", dest: "/index.html" },
+    {
+      src: "/(.*)",
+      dest: "/index.html",
+      headers: {
+        "cache-control": "public,max-age=31536000,immutable",
+      },
+    },
   ];
 
   fs.writeFileSync(configPath, JSON.stringify(data, null, 2));
