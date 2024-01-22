@@ -1,4 +1,5 @@
-import * as path from "node:path";
+import path from "node:path";
+import fs from "node:fs";
 import { defineConfig } from "@solidjs/start/config";
 import { loadEnv } from "vite";
 import Icons from "unplugin-icons/vite";
@@ -43,12 +44,31 @@ export default defineConfig({
   start: {
     // Solid Start SSR is soooooo broken.
     // From router context errors on HMR to constant hydration mismatches.
-    ssr: "async", // TODO: Change to false
+    ssr: false,
     server: {
       vercel: {
         regions: ["iad1"],
       },
-      prerender: { crawlLinks: true },
+      hooks: {
+        compiled: () => {
+          const vercelConfigPath = "./.vercel/output/config.json";
+
+          const data = JSON.parse(fs.readFileSync(vercelConfigPath, "utf8"));
+
+          data.routes = [
+            {
+              handle: "filesystem",
+            },
+            {
+              src: "/api/(.*)",
+              dest: "/__nitro",
+            },
+            { src: "/(.*)", dest: "/index.html" },
+          ];
+
+          fs.writeFileSync(vercelConfigPath, JSON.stringify(data, null, 2));
+        },
+      },
     },
   },
 });
