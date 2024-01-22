@@ -51,7 +51,7 @@ export default defineConfig({
       },
       hooks: {
         compiled: () => {
-          const vercelConfigPath = "./forge/.vercel/output/config.json";
+          const vercelConfigPath = "../.vercel/output/config.json";
 
           console.log(path.resolve(vercelConfigPath));
 
