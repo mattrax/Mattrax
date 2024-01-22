@@ -48,6 +48,7 @@ export default defineConfig({
       vercel: {
         regions: ["iad1"],
       },
+      prerender: { crawlLinks: true },
     },
   },
 });
