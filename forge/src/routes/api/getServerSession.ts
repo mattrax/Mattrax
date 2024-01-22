@@ -1,11 +1,8 @@
-import { useSession as useSolidSession } from "@solidjs/start/server";
 import { GetSessionResult, env } from "@mattrax/api";
-import { getRequestEvent } from "solid-js/web";
+import { type H3Event, useSession } from "vinxi/server";
 
-export const getServerSession = async () => {
-  const event = getRequestEvent();
-  if (!event) throw new Error("Unable to get 'getRequestEvent'");
-  const session = await useSolidSession(event, {
+export const getServerSession = async (event: H3Event) => {
+  const session = await useSession(event, {
     name: "s",
     password: env.AUTH_SECRET,
     cookie: {

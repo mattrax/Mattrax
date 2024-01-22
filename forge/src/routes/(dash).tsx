@@ -10,24 +10,30 @@ import {
   createMemo,
 } from "solid-js";
 import LeftSidebar from "~/components/LeftSidebar";
-import { sessionLoader, globalCtx, tenantLoader } from "~/utils/globalCtx";
+import { globalCtx } from "~/utils/globalCtx";
+import { client } from "~/utils";
 
 export default function Layout(props: ParentProps) {
   const params = useParams<{ tenant?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // These loaders are separate so we can render the `Redirect` without needing to wait for the tenants for better UX.
-  const session = createAsync(sessionLoader, {
-    // This triggers a redirect so it *must* be deferred
-    deferStream: true,
-  });
-  // TODO: Load from `localStorage` and use while waiting to render???
-  const tenants = createAsync(async () => {
+  // TODO: Caching this so it doesn't block page load (use the cookie trick for better UX)
+  const session = createAsync(() =>
+    // TODO: Loading states + error handling
+    client.api.auth.me
+      .$get()
+      .then(async (r) =>
+        r.status === 401 ? "unauthenticated" : await r.json()
+      )
+  );
+
+  // TODO: Probally removing this now that it's on `session`???
+  const tenants = () => {
     const s = session();
-    if (!s || s === "unauthenticated") return undefined;
-    return await tenantLoader(s.id);
-  });
+    if (s === "unauthenticated") return undefined;
+    return s?.tenants || [];
+  };
 
   const activeTenantForJsx = createMemo(() => {
     const t = tenants();

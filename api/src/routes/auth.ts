@@ -2,22 +2,38 @@ import { encodeId, newApp, newAuthedApp, withAuth } from "../utils";
 import z from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { db } from "../db";
-import { users } from "../db/schema";
+import { tenants, users } from "../db/schema";
 import { eq } from "drizzle-orm";
 
 type UserResult = {
   id: string;
   name: string;
   email: string;
+  tenants: Awaited<ReturnType<typeof fetchTenants>>;
 };
 
+const fetchTenants = async (session_id: number) =>
+  (
+    await db
+      .select({
+        id: tenants.id,
+        name: tenants.name,
+      })
+      .from(tenants)
+      .where(eq(tenants.owner_id, session_id))
+  ).map((tenant) => ({
+    ...tenant,
+    id: encodeId("tenant", tenant.id),
+  }));
+
 const authenticatedApp = newAuthedApp()
-  .get("/me", (c) => {
+  .get("/me", async (c) => {
     const session = c.env.session.data;
     return c.json({
       id: encodeId("user", session.id),
       name: session.name,
       email: session.email,
+      tenants: await fetchTenants(session.id),
     } satisfies UserResult);
   })
   .post(
@@ -51,6 +67,7 @@ const authenticatedApp = newAuthedApp()
         id: encodeId("user", session.id),
         name: input.name || session.name,
         email: session.email,
+        tenants: await fetchTenants(session.id),
       } satisfies UserResult);
     }
   )

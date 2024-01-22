@@ -6,4 +6,3 @@ export {
   type GetSessionResult,
   type GetSessionResultWithData,
 } from "./session";
-export * from "./temp";

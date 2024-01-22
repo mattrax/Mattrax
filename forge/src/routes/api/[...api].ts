@@ -1,4 +1,4 @@
-import { APIEvent } from "@solidjs/start/server";
+import { defineEventHandler, toWebRequest } from "vinxi/server";
 import { newApp, mountRoutes } from "@mattrax/api";
 import { getServerSession } from "./getServerSession";
 
@@ -14,14 +14,10 @@ const app = newApp()
     return c.text("404: Not Found");
   });
 
-const handler = async (event: APIEvent) =>
-  app.fetch(event.request, {
-    session: await getServerSession(),
-  });
-export const GET = handler;
-export const POST = handler;
-export const PATCH = handler;
-export const PUT = handler;
-export const DELETE = handler;
+export default defineEventHandler(async (event) =>
+  app.fetch(toWebRequest(event), {
+    session: await getServerSession(event),
+  })
+);
 
 export type AppType = typeof app;

@@ -14,7 +14,6 @@
     "@kobalte/tailwindcss": "^0.9.0",
     "@mattrax/api": "workspace:^",
     "@solidjs/router": "^0.10.9",
-    "@solidjs/start": "^0.4.10",
     "clsx": "^2.1.0",
     "hono": "^3.12.6",
     "solid-js": "^1.8.11",
@@ -24,13 +23,16 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@iconify/json": "^2.2.171",
+    "@iconify/json": "^2.2.172",
     "@tailwindcss/forms": "^0.5.7",
     "autoprefixer": "^10.4.17",
     "postcss": "^8.4.33",
     "rollup-plugin-visualizer": "^5.12.0",
     "unplugin-auto-import": "^0.17.3",
     "unplugin-icons": "^0.18.2",
-    "vite": "^5.0.12"
+    "vite": "^5.0.12",
+    "vite-plugin-html": "^3.2.2",
+    "vite-plugin-solid": "^2.8.3",
+    "vite-tsconfig-paths": "^4.3.1"
   }
 }
