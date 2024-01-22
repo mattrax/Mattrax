@@ -1,8 +1,8 @@
 // @refresh reload
 import { Router } from "@solidjs/router";
-import { FileRoutes } from "@solidjs/start";
 import { ErrorBoundary, Suspense } from "solid-js";
 import "./app.css";
+import { routes } from "./routes";
 
 export default function App() {
   return (
@@ -31,7 +31,7 @@ export default function App() {
       }}
     >
       <Router root={(props) => <Suspense>{props.children}</Suspense>}>
-        <FileRoutes />
+        {routes}
       </Router>
     </ErrorBoundary>
   );
