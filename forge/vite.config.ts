@@ -51,7 +51,9 @@ export default defineConfig({
       },
       hooks: {
         compiled: () => {
-          const vercelConfigPath = "./.vercel/output/config.json";
+          const vercelConfigPath = "./forge/.vercel/output/config.json";
+
+          console.log(path.resolve(vercelConfigPath));
 
           const data = JSON.parse(fs.readFileSync(vercelConfigPath, "utf8"));
 
