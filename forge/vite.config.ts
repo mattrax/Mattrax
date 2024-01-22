@@ -87,6 +87,10 @@ process.on("exit", () => {
       src: "/api/(.*)",
       dest: "/__nitro",
     },
+    {
+      src: "/_server",
+      dest: "/__nitro",
+    },
     { src: "/(.*)", dest: "/index.html" },
   ];
 
