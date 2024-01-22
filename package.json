@@ -2,7 +2,6 @@
   "name": "@mattrax/monorepo",
   "private": true,
   "scripts": {
-    "postinstall": "node patches/solid-start-ts-nocheck",
     "dev": "pnpm --filter @mattrax/forge dev",
     "db:push": "drizzle-kit push:mysql",
     "db:studio": "drizzle-kit studio",
