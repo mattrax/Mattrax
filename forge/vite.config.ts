@@ -49,28 +49,32 @@ export default defineConfig({
       vercel: {
         regions: ["iad1"],
       },
-      hooks: {
-        compiled: () => {
-          const vercelConfigPath = "../.vercel/output/config.json";
-
-          console.log(path.resolve(vercelConfigPath));
-
-          const data = JSON.parse(fs.readFileSync(vercelConfigPath, "utf8"));
-
-          data.routes = [
-            {
-              handle: "filesystem",
-            },
-            {
-              src: "/api/(.*)",
-              dest: "/__nitro",
-            },
-            { src: "/(.*)", dest: "/index.html" },
-          ];
-
-          fs.writeFileSync(vercelConfigPath, JSON.stringify(data, null, 2));
-        },
-      },
     },
   },
+});
+
+process.on("exit", () => {
+  const vercelConfigPath = "./.vercel/output/config.json";
+  const data = JSON.parse(fs.readFileSync(vercelConfigPath, "utf8"));
+
+  data.routes = [
+    // TODO: Cache headers for static assets
+    // {
+    //   src: baseURL + "(.*)",
+    //   headers: {
+    //     "cache-control": "public,max-age=31536000,immutable",
+    //   },
+    //   continue: true,
+    // },
+    {
+      handle: "filesystem",
+    },
+    {
+      src: "/api/(.*)",
+      dest: "/__nitro",
+    },
+    { src: "/(.*)", dest: "/index.html" },
+  ];
+
+  fs.writeFileSync(vercelConfigPath, JSON.stringify(data, null, 2));
 });
