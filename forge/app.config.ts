@@ -76,9 +76,9 @@ process.on("exit", () => {
       const p = path.join(path.join(basePath, "static"), entry);
       const meta = fs.lstatSync(p);
       if (meta.isFile()) {
-        return entry;
+        return `/${entry}`;
       } else if (meta.isDirectory()) {
-        return `${entry}/(.*)`;
+        return `/${entry}/(.*)`;
       } else {
         throw new Error(`Unexpected file type for file '${p}'!`);
       }
