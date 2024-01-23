@@ -1,4 +1,4 @@
-import { redirect, useNavigate, useParams } from "@solidjs/router";
+import { useNavigate, useParams } from "@solidjs/router";
 import { useLocation } from "@solidjs/router";
 import {
   ErrorBoundary,
@@ -33,10 +33,12 @@ export default function Layout(props: ParentProps) {
   const [session] = createResource(
     () =>
       // TODO: Loading states + error handling
-      client.api.auth.me.$get().then((r) => {
-        console.log(r.status);
-        if (r.status === 401) throw redirect("/login");
-        return r.json();
+      client.api.auth.me.$get().then(async (r) => {
+        if (r.status === 401) {
+          navigate("/login");
+          return undefined;
+        }
+        return await r.json();
       }),
     {
       initialValue: initialSession as InferResponseType<
@@ -57,8 +59,12 @@ export default function Layout(props: ParentProps) {
     const tenant = tenants.find((t) => t.id === params.tenant);
 
     // If the tenant doesn't exist, we clear it as active
-    if (!tenant)
-      throw redirect(tenants?.[0] !== undefined ? `/${tenants[0].id}` : "/");
+    if (!tenant) {
+      // We only fire the redirect if the server has responded
+      if (session.latest !== undefined)
+        navigate(tenants?.[0] !== undefined ? `/${tenants[0].id}` : "/");
+      return null;
+    }
 
     return tenant;
   });
