@@ -1,8 +1,10 @@
 // @refresh reload
 import { Router } from "@solidjs/router";
 import { ErrorBoundary, Suspense } from "solid-js";
-import "./app.css";
 import { routes } from "./routes";
+import { Toaster } from "solid-sonner";
+import "./app.css";
+import "./sonner.css";
 
 export default function App() {
   return (
@@ -30,6 +32,7 @@ export default function App() {
         );
       }}
     >
+      <Toaster />
       <Router root={(props) => <Suspense>{props.children}</Suspense>}>
         {routes}
       </Router>
