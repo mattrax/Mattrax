@@ -77,6 +77,10 @@ export const routes: RouteDefinition[] = [
     component: lazy(() => import("./routes/internal")),
   },
   {
+    path: "/playground",
+    component: lazy(() => import("./routes/playground")),
+  },
+  {
     path: "/testing",
     component: lazy(() => import("./routes/testing")),
   },
