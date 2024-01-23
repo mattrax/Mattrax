@@ -23,6 +23,8 @@ export default function App() {
           reset();
         }
 
+        console.error(err);
+
         return (
           <div>
             <div>Error:</div>

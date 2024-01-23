@@ -1,53 +1,66 @@
-import { Navigate, createAsync, useNavigate, useParams } from "@solidjs/router";
-import invariant from "tiny-invariant";
+import { redirect, useNavigate, useParams } from "@solidjs/router";
 import { useLocation } from "@solidjs/router";
 import {
   ErrorBoundary,
-  Match,
   ParentProps,
   Suspense,
-  Switch,
+  createEffect,
   createMemo,
+  createResource,
 } from "solid-js";
 import LeftSidebar from "~/components/LeftSidebar";
 import { globalCtx } from "~/utils/globalCtx";
 import { client } from "~/utils";
+import { InferResponseType } from "hono/client";
 
 export default function Layout(props: ParentProps) {
   const params = useParams<{ tenant?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // TODO: Caching this so it doesn't block page load (use the cookie trick for better UX)
-  const session = createAsync(() =>
-    // TODO: Loading states + error handling
-    client.api.auth.me
-      .$get()
-      .then(async (r) =>
-        r.status === 401 ? "unauthenticated" : await r.json()
-      )
+  // TODO: Use indexedDB + move to cache abstraction
+
+  let initialSession = undefined;
+  const raw = localStorage.getItem("session");
+  if (raw)
+    try {
+      initialSession = JSON.parse(raw);
+    } catch (err) {
+      console.warn("Error decoding session from localStorage", err);
+    }
+
+  // TODO: Use the auth cookie trick for better UX
+  const [session] = createResource(
+    () =>
+      // TODO: Loading states + error handling
+      client.api.auth.me.$get().then((r) => {
+        console.log(r.status);
+        if (r.status === 401) throw redirect("/login");
+        return r.json();
+      }),
+    {
+      initialValue: initialSession as InferResponseType<
+        typeof client.api.auth.me
+      >,
+    }
   );
 
-  // TODO: Probally removing this now that it's on `session`???
-  const tenants = () => {
-    const s = session();
-    if (s === "unauthenticated") return undefined;
-    return s?.tenants || [];
-  };
+  createEffect(() => {
+    if (session.latest === undefined) return;
+    localStorage.setItem("session", JSON.stringify(session.latest));
+  });
 
-  const activeTenantForJsx = createMemo(() => {
-    const t = tenants();
-    if (tenants() === undefined) return null; // Tenants still fetching
+  const activeTenant = createMemo(() => {
     if (!params.tenant) return null; // We are probs on a 404 page
 
-    const tenant = t?.find((t) => t.id === params.tenant);
+    const tenants = session.latest?.tenants || [];
+    const tenant = tenants.find((t) => t.id === params.tenant);
+
     // If the tenant doesn't exist, we clear it as active
-    return tenant || "not_found";
-  });
-  const activeTenant = createMemo(() => {
-    const t = activeTenantForJsx();
-    if (t === "not_found") return null;
-    return t;
+    if (!tenant)
+      throw redirect(tenants?.[0] !== undefined ? `/${tenants[0].id}` : "/");
+
+    return tenant;
   });
 
   const setActiveTenant = (id: string) => {
@@ -64,53 +77,37 @@ export default function Layout(props: ParentProps) {
     <>
       <LeftSidebar
         activeTenant={activeTenant()}
-        tenants={tenants() || []}
+        tenants={session.latest.tenants || []}
         setActiveTenant={setActiveTenant}
       />
 
       <Suspense fallback={<h1>TODO: Loading...</h1>}>
-        <Switch fallback={<div>TODO: Loading match...</div>}>
-          <Match when={session() === "unauthenticated"}>
-            <Navigate href="/login" />
-          </Match>
-          <Match when={activeTenantForJsx() === "not_found"}>
-            <Navigate
-              href={() => {
-                const t = tenants();
-                return t?.[0] !== undefined ? `/${t[0].id}` : "/";
-              }}
-            />
-          </Match>
-          <Match
-            when={(() => {
-              const s = session();
-              const t = tenants();
-              invariant(s !== "unauthenticated", "session not authed");
-              return s && t ? { session: s, tenants: t } : undefined;
-            })()}
+        <globalCtx.Provider
+          value={{
+            get activeTenant() {
+              return activeTenant();
+            },
+            setActiveTenant,
+            get session() {
+              return session();
+            },
+          }}
+        >
+          <ErrorBoundary
+            fallback={(err) => {
+              console.error(err);
+
+              return (
+                <div class="p-2">
+                  <h1>Error</h1>
+                  <pre>{err.message}</pre>
+                </div>
+              );
+            }}
           >
-            {(data) => (
-              <globalCtx.Provider
-                value={{
-                  activeTenant: activeTenant(),
-                  setActiveTenant,
-                  ...data(),
-                }}
-              >
-                <ErrorBoundary
-                  fallback={(err) => (
-                    <div class="p-2">
-                      <h1>Error</h1>
-                      <pre>{err.message}</pre>
-                    </div>
-                  )}
-                >
-                  {props.children}
-                </ErrorBoundary>
-              </globalCtx.Provider>
-            )}
-          </Match>
-        </Switch>
+            {props.children}
+          </ErrorBoundary>
+        </globalCtx.Provider>
       </Suspense>
     </>
   );
