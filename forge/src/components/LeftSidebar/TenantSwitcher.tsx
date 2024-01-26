@@ -10,6 +10,7 @@ import { CreateTenantDialog } from "./CreateTenantDialog";
 export type TenantSwitcherProps = {
   activeTenant: Tenant | null;
   tenants: Tenant[];
+  refetchSession: () => Promise<void>;
   setActiveTenant: (id: string) => void;
 };
 
@@ -66,7 +67,7 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
       </DropdownMenu.Root>
 
       <Dialog controller={controller}>
-        <CreateTenantDialog />
+        <CreateTenantDialog {...props} />
       </Dialog>
     </div>
   );

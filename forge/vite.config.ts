@@ -47,10 +47,12 @@ export default defineConfig((config) => ({
     Icons({
       compiler: "solid",
     }),
-    visualizer({
-      // TODO: Different file for server vs client builds
-      emitFile: !process.env.VERCEL,
-    }),
+    !(process.env.VERCEL === "1")
+      ? visualizer({
+          brotliSize: true,
+          gzipSize: true,
+        })
+      : undefined,
   ],
   ssr: {
     noExternal: ["@kobalte/core"],

@@ -69,6 +69,9 @@ importers:
       '@solidjs/router':
         specifier: ^0.10.9
         version: 0.10.9(solid-js@1.8.12)
+      '@tanstack/solid-query':
+        specifier: ^5.17.19
+        version: 5.17.19(solid-js@1.8.12)
       '@tanstack/solid-table':
         specifier: ^8.11.7
         version: 8.11.7(solid-js@1.8.12)
@@ -1688,6 +1691,19 @@ packages:
       mini-svg-data-uri: 1.4.4
       tailwindcss: 3.4.1
     dev: true
+
+  /@tanstack/query-core@5.17.19:
+    resolution: {integrity: sha512-Lzw8FUtnLCc9Jwz0sw9xOjZB+/mCCmJev38v2wHMUl/ioXNIhnNWeMxu0NKUjIhAd62IRB3eAtvxAGDJ55UkyA==}
+    dev: false
+
+  /@tanstack/solid-query@5.17.19(solid-js@1.8.12):
+    resolution: {integrity: sha512-MKvmksjpF91mfjFJ/QnvA3onSObl0mg/Gn8TS5LI+hNJbPy+X1qbDjt1/OrOSwmrnh5nGdEvjJbinoGpLPFLSg==}
+    peerDependencies:
+      solid-js: ^1.6.0
+    dependencies:
+      '@tanstack/query-core': 5.17.19
+      solid-js: 1.8.12
+    dev: false
 
   /@tanstack/solid-table@8.11.7(solid-js@1.8.12):
     resolution: {integrity: sha512-xjDi+bpD1GHj2pCV5OCnXpA801san3uk9JBm558m+/O+Mjay1zAo3f6eakN/281xagC88AigMdPrt2HssOdzGA==}

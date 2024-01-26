@@ -1,14 +1,15 @@
-import type { Component, ComponentProps } from "solid-js";
-import { createContext, createSignal, splitProps } from "solid-js";
+import type { Component, ComponentProps, JSX, ParentProps } from "solid-js";
+import { createContext, createSignal, splitProps, useContext } from "solid-js";
 
 import { Dialog as DialogPrimitive } from "@kobalte/core";
 import { TbX } from "solid-icons/tb";
 
 import { cn } from "~/lib/utils";
 
-const dialogContext = createContext();
+const dialogContext =
+  createContext<ReturnType<typeof createDialogController>>();
 
-export function createDialogController() {
+function createDialogController() {
   const [open, setOpen] = createSignal(false);
   return {
     open,
@@ -16,7 +17,29 @@ export function createDialogController() {
   };
 }
 
+function useDialogController() {
+  const ctx = useContext(dialogContext);
+  if (!ctx)
+    throw new Error("'useDialogController' must be used within a Dialog");
+  return ctx;
+}
+
+// An easy wrapper on the dialog primitives
 const Dialog: Component<
+  ParentProps<{
+    controller?: ReturnType<typeof createDialogController>;
+    trigger?: JSX.Element;
+  }>
+> = (props) => (
+  <DialogRoot controller={props.controller}>
+    {props.trigger && <DialogTrigger>{props.trigger}</DialogTrigger>}
+    <DialogContent>
+      <DialogHeader>{props.children}</DialogHeader>
+    </DialogContent>
+  </DialogRoot>
+);
+
+const DialogRoot: Component<
   Omit<DialogPrimitive.DialogRootProps, "open"> &
     (
       | {
@@ -27,13 +50,18 @@ const Dialog: Component<
         }
     )
 > = (props) => {
+  const controller =
+    "controller" in props && props.controller
+      ? props.controller
+      : createDialogController();
+
   return (
-    <dialogContext.Provider
-      value={
-        "controller" in props ? props.controller : createDialogController()
-      }
-    >
-      <DialogPrimitive.Root {...props} />
+    <dialogContext.Provider value={controller}>
+      <DialogPrimitive.Root
+        open={controller.open()}
+        onOpenChange={controller.setOpen}
+        {...props}
+      />
     </dialogContext.Provider>
   );
 };
@@ -151,7 +179,10 @@ const DialogDescription: Component<DialogPrimitive.DialogDescriptionProps> = (
 };
 
 export {
+  createDialogController,
+  useDialogController,
   Dialog,
+  DialogRoot,
   DialogTrigger,
   DialogContent,
   DialogHeader,

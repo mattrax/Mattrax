@@ -1,4 +1,4 @@
-import { GetSessionResult, env } from "@mattrax/api";
+import { type GetSessionResult, env } from "@mattrax/api";
 import { type H3Event, useSession } from "vinxi/server";
 
 export const getServerSession = async (event: H3Event) => {

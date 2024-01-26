@@ -30,7 +30,8 @@ export default function Layout(props: ParentProps) {
     }
 
   // TODO: Use the auth cookie trick for better UX
-  const [session] = createResource(
+  // TODO: Error handling
+  const [session, { refetch }] = createResource(
     () =>
       // TODO: Loading states + error handling
       client.api.auth.me.$get().then(async (r) => {
@@ -79,12 +80,19 @@ export default function Layout(props: ParentProps) {
     navigate(path.join("/"));
   };
 
+  const refetchSession = async () => {
+    const r = refetch();
+    if (!r) return;
+    await r;
+  };
+
   return (
     <>
       <LeftSidebar
         activeTenant={activeTenant()}
         tenants={session.latest.tenants || []}
         setActiveTenant={setActiveTenant}
+        refetchSession={refetchSession}
       />
 
       <Suspense fallback={<h1>TODO: Loading...</h1>}>
@@ -94,6 +102,7 @@ export default function Layout(props: ParentProps) {
               return activeTenant();
             },
             setActiveTenant,
+            refetchSession,
             get session() {
               return session();
             },

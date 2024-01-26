@@ -1,6 +1,6 @@
-export { newApp } from "./utils";
+// Client-side exports
+
 export { env } from "./env";
-export { mountRoutes } from "./routes";
 export {
   type SessionData,
   type GetSessionResult,

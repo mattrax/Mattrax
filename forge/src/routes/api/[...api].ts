@@ -1,5 +1,5 @@
 import { defineEventHandler, toWebRequest } from "vinxi/server";
-import { newApp, mountRoutes } from "@mattrax/api";
+import { newApp, mountRoutes } from "@mattrax/api/server";
 import { getServerSession } from "./getServerSession";
 
 const app = newApp()

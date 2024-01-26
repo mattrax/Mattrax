@@ -7,6 +7,7 @@
     "dev": "vinxi dev --host 0.0.0.0",
     "build": "vinxi build",
     "start": "vinxi start",
+    "stats": "pnpm build && open stats.html",
     "vbuild": "NITRO_PRESET=vercel_edge vinxi build"
   },
   "dependencies": {
@@ -15,6 +16,7 @@
     "@mattrax/api": "workspace:^",
     "@solid-primitives/pagination": "^0.2.10",
     "@solidjs/router": "^0.10.9",
+    "@tanstack/solid-query": "^5.17.19",
     "@tanstack/solid-table": "^8.11.7",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",

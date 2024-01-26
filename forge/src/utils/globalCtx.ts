@@ -16,6 +16,7 @@ type GlobalCtx = {
   activeTenant: Tenant | null;
   setActiveTenant: (tenant: string) => void;
   session: PublicSessionData;
+  refetchSession: () => Promise<void>;
 };
 
 export const globalCtx = createContext<GlobalCtx>(undefined!);
