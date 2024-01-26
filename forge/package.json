@@ -16,10 +16,12 @@
     "@solid-primitives/pagination": "^0.2.10",
     "@solidjs/router": "^0.10.9",
     "@tanstack/solid-virtual": "^3.0.2",
+    "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "hono": "^3.12.6",
     "solid-js": "^1.8.12",
     "solid-sonner": "^0.2.2",
+    "tailwind-merge": "^2.2.1",
     "tailwindcss": "^3.4.1",
     "vinxi": "^0.1.4",
     "zod": "^3.22.4"
