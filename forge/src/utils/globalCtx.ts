@@ -1,11 +1,10 @@
-import { type SessionData } from "@mattrax/api";
 import { createContext, useContext } from "solid-js";
 
 export type PublicSessionData = {
   id: string;
   name: string;
   email: string;
-  // tenants: Tenant[];
+  tenants: Tenant[];
 };
 
 export type Tenant = {
@@ -16,8 +15,7 @@ export type Tenant = {
 type GlobalCtx = {
   activeTenant: Tenant | null;
   setActiveTenant: (tenant: string) => void;
-  session: SessionData;
-  tenants: Tenant[];
+  session: PublicSessionData;
 };
 
 export const globalCtx = createContext<GlobalCtx>(undefined!);

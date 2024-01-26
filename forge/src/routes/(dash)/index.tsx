@@ -4,8 +4,8 @@ export default function Page() {
   const ctx = useGlobalCtx();
 
   // If we have an active tenant, send the user to it
-  if (ctx.tenants[0]) {
-    ctx.setActiveTenant(ctx.tenants[0].id);
+  if (ctx.session.tenants[0]) {
+    ctx.setActiveTenant(ctx.session.tenants[0].id);
     return null; // Redirect done by `setActiveTenant`
   }
 
