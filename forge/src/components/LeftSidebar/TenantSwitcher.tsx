@@ -1,7 +1,7 @@
 import { DropdownMenu } from "@kobalte/core";
 import { For } from "solid-js";
 import { Tenant } from "~/utils/globalCtx";
-import { Dialog, Button, createDialogController } from "../ui";
+import { Dialog, createDialogController } from "~/components/ui";
 import { CreateTenantDialog } from "./CreateTenantDialog";
 
 // TODO: When shrinking window and scrolling to move the trigger offscreen the popover comes with it. This is Kolate behavior but I don't like it.

@@ -5,13 +5,37 @@
 // TODO: Abstract into reusable components
 // TODO: Skeleton loading state
 
-import { createVirtualizer } from "@tanstack/solid-virtual";
 import { createPagination } from "@solid-primitives/pagination";
 import { useZodParams } from "~/utils/useZodParams";
 import { z } from "zod";
 import { createAsync } from "@solidjs/router";
 import { client } from "~/utils";
-import { Suspense } from "solid-js";
+import { Show, Suspense } from "solid-js";
+import { createSolidTable } from "@tanstack/solid-table";
+import { DataTable } from "./_table";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "~/components/ui";
+
+export const columns: ColumnDef<any>[] = [
+  {
+    accessorKey: "name",
+    header: "Name",
+  },
+  {
+    accessorKey: "email",
+    header: "Email",
+  },
+  // TODO: Link to OAuth provider
+  // TODO: Actions
+];
 
 export default function Page() {
   const params = useZodParams({
@@ -37,58 +61,90 @@ export default function Page() {
       .then((res) => res.json())
   );
 
-  let parentRef!: HTMLDivElement;
-  const columnVirtualizer = createVirtualizer({
-    horizontal: true,
-    count: 10000,
-    getScrollElement: () => parentRef,
-    estimateSize: () => 100,
-    overscan: 5,
-  });
-
   return (
-    <>
+    <div class="flex flex-col">
       <h1>Users page!</h1>
 
-      <Suspense fallback={<div>Loading...</div>}>
-        <p>{JSON.stringify(data())}</p>
-      </Suspense>
+      {/* <DataTable columns={columns} data={() => data() || []} /> */}
+      <TableDemo />
+    </div>
+  );
+}
 
-      {/* TODO: Tailwind */}
-      <div
-        ref={parentRef}
-        class="List"
-        style={{
-          width: `400px`,
-          height: `100px`,
-          overflow: "auto",
-        }}
-      >
-        <div
-          style={{
-            width: `${columnVirtualizer.getTotalSize()}px`,
-            height: "100%",
-            position: "relative",
-          }}
-        >
-          {/* TODO: For elements */}
-          {columnVirtualizer.getVirtualItems().map((virtualColumn) => (
-            <div
-              class={virtualColumn.index % 2 ? "ListItemOdd" : "ListItemEven"}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                height: "100%",
-                width: `${virtualColumn.size}px`,
-                transform: `translateX(${virtualColumn.start}px)`,
-              }}
-            >
-              Column {virtualColumn.index}
-            </div>
-          ))}
-        </div>
-      </div>
-    </>
+const invoices = [
+  {
+    invoice: "INV001",
+    paymentStatus: "Paid",
+    totalAmount: "$250.00",
+    paymentMethod: "Credit Card",
+  },
+  {
+    invoice: "INV002",
+    paymentStatus: "Pending",
+    totalAmount: "$150.00",
+    paymentMethod: "PayPal",
+  },
+  {
+    invoice: "INV003",
+    paymentStatus: "Unpaid",
+    totalAmount: "$350.00",
+    paymentMethod: "Bank Transfer",
+  },
+  {
+    invoice: "INV004",
+    paymentStatus: "Paid",
+    totalAmount: "$450.00",
+    paymentMethod: "Credit Card",
+  },
+  {
+    invoice: "INV005",
+    paymentStatus: "Paid",
+    totalAmount: "$550.00",
+    paymentMethod: "PayPal",
+  },
+  {
+    invoice: "INV006",
+    paymentStatus: "Pending",
+    totalAmount: "$200.00",
+    paymentMethod: "Bank Transfer",
+  },
+  {
+    invoice: "INV007",
+    paymentStatus: "Unpaid",
+    totalAmount: "$300.00",
+    paymentMethod: "Credit Card",
+  },
+];
+
+export function TableDemo() {
+  return (
+    <Table>
+      <TableCaption>A list of your recent invoices.</TableCaption>
+      <TableHeader>
+        <TableRow>
+          <TableHead class="w-[100px]">Invoice</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Method</TableHead>
+          <TableHead class="text-right">Amount</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {/* TODO: For */}
+        {invoices.map((invoice) => (
+          <TableRow>
+            <TableCell class="font-medium">{invoice.invoice}</TableCell>
+            <TableCell>{invoice.paymentStatus}</TableCell>
+            <TableCell>{invoice.paymentMethod}</TableCell>
+            <TableCell class="text-right">{invoice.totalAmount}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+      <TableFooter>
+        <TableRow>
+          <TableCell colSpan={3}>Total</TableCell>
+          <TableCell class="text-right">$2,500.00</TableCell>
+        </TableRow>
+      </TableFooter>
+    </Table>
   );
 }

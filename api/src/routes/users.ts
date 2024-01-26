@@ -12,5 +12,8 @@ export const app = newAuthedApp().get("/", async (c) => {
 
   // .slice(offset, offset + limit) // TODO
 
+  // TODO: Remove this
+  await new Promise((r) => setTimeout(r, 1000));
+
   return c.json(mockUserData);
 });

@@ -7,6 +7,7 @@ for (let i = 0; i < 1000; i++) {
   users.push({
     id: i,
     name: faker.person.fullName(),
+    email: faker.internet.email(),
   });
 }
 
