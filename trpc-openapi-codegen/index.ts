@@ -75,17 +75,46 @@ function generateDocumentation(
 
           const ty = type.getCallSignatures()[0].getReturnType();
 
-          for (const prop of ty.getProperties()) {
-            const url = prop.getName();
-            const value = checker.getTypeOfSymbol(prop);
+          const def = ty.getProperty("_def");
+          if (!def)
+            throw new Error(
+              "Missing '_def' property. Are you sure this is a tRPC router?"
+            );
 
-            for (const prop of value.getProperties()) {
-              const method = prop.getName();
-              const value = checker.getTypeOfSymbol(prop);
+          const procedures = checker
+            .getTypeOfSymbol(def)
+            .getProperty("procedures");
+          if (!procedures) throw new Error("Missing 'procedures' property.");
 
-              console.log("ENDPOINT", method, url, checker.typeToString(value));
-            }
-          }
+          checker
+            .getTypeOfSymbol(procedures)
+            .getProperties()
+            .forEach((prop) => {
+              const procedureName = prop.getName();
+              const procedureDefSymbol = checker
+                .getTypeOfSymbol(prop)
+                .getProperty("_def");
+              if (!procedureDefSymbol)
+                throw new Error("Missing '_def' property.");
+              const procedureDef = checker.getTypeOfSymbol(procedureDefSymbol);
+
+              const outputTySymbol = procedureDef.getProperty("_output_out");
+              if (!outputTySymbol)
+                throw new Error("Missing '_output_out' property.");
+              const outputTy = checker.getTypeOfSymbol(outputTySymbol);
+
+              const inputTySymbol = procedureDef.getProperty("_input_in");
+              if (!inputTySymbol)
+                throw new Error("Missing '_input_in' property.");
+              const inputTy = checker.getTypeOfSymbol(inputTySymbol);
+
+              console.log(
+                "PROCEDURE",
+                procedureName,
+                checker.typeToString(inputTy),
+                checker.typeToString(outputTy)
+              );
+            });
         }
         output.push(serializeClass(symbol));
       }

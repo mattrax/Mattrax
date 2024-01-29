@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "tsc --build && node ./index.js"
+    "start": "tsc --build && node ./index.js",
+    "api": "tsc --build && node ./api.js"
   },
   "keywords": [],
   "author": "",
@@ -12,6 +13,7 @@
   "dependencies": {
     "@trpc/server": "^10.45.0",
     "hono": "^3.12.8",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "zod": "^3.22.4"
   }
 }

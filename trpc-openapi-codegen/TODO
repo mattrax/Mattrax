@@ -1,0 +1,14 @@
+ - Meta can't be parsed using TS compiler API. 
+  - How do we work out the path and method???
+ - Convert TS compiler API type into OpenAPI type
+
+ - create actual runtime REST endpoints
+
+ - Generate OpenAPI Json
+ - Bundle Swagger UI
+
+
+
+Why not `trpc-openapi`:
+ - No need for `.output` validators
+ - Edge-function support

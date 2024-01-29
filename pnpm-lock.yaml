@@ -159,6 +159,21 @@ importers:
         specifier: ^3.0.5
         version: 3.0.5
 
+  trpc-openapi-codegen:
+    dependencies:
+      '@trpc/server':
+        specifier: ^10.45.0
+        version: 10.45.0
+      hono:
+        specifier: ^3.12.8
+        version: 3.12.8
+      typescript:
+        specifier: ^5.3.3
+        version: 5.3.3
+      zod:
+        specifier: ^3.22.4
+        version: 3.22.4
+
 packages:
 
   /@alloc/quick-lru@5.2.0:
@@ -1649,6 +1664,10 @@ packages:
   /@tanstack/table-core@8.11.7:
     resolution: {integrity: sha512-N3ksnkbPbsF3PjubuZCB/etTqvctpXWRHIXTmYfJFnhynQKjeZu8BCuHvdlLPpumKbA+bjY4Ay9AELYLOXPWBg==}
     engines: {node: '>=12'}
+    dev: false
+
+  /@trpc/server@10.45.0:
+    resolution: {integrity: sha512-2Fwzv6nqpE0Ie/G7PeS0EVR89zLm+c1Mw7T+RAGtU807j4oaUx0zGkBXTu5u9AI+j+BYNN2GZxJcuDTAecbr1A==}
     dev: false
 
   /@types/babel__core@7.20.5:
