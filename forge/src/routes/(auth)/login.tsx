@@ -1,5 +1,5 @@
 import { action, redirect } from "@solidjs/router";
-import { client } from "~/utils";
+import { client } from "~/lib";
 
 const login = action(async (formData) => {
   const data = Object.fromEntries(formData);

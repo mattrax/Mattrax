@@ -1,7 +1,7 @@
 import { cache, createAsync } from "@solidjs/router";
 import { For, Suspense } from "solid-js";
-import { client } from "~/utils";
-import { useGlobalCtx } from "~/utils/globalCtx";
+import { client } from "~/lib";
+import { useGlobalCtx } from "~/lib/globalCtx";
 
 const fetchDevices = cache(
   // TODO: Unauthorised/error state in response

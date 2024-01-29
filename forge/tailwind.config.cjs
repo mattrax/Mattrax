@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
+  darkMode: ["class"],
   content: ["./src/**/*.{html,js,jsx,ts,tsx}"],
   theme: {
     extend: {
@@ -25,4 +26,5 @@ module.exports = {
     },
   },
   plugins: [require("@tailwindcss/forms"), require("@kobalte/tailwindcss")],
+  presets: [require("./ui.preset.js")],
 };

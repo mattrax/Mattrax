@@ -1,4 +1,4 @@
-import { client } from "~/utils";
+import { client } from "~/lib";
 
 export default function Page() {
   let ref!: HTMLInputElement;

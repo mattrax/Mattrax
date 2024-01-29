@@ -1,7 +1,6 @@
 import { useLocation, useNavigate } from "@solidjs/router";
 import { For, JSX } from "solid-js";
 import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
-import { Tenant } from "~/utils/globalCtx";
 
 type NavbarItem = {
   icon: (props: { class: string }) => JSX.Element;
@@ -62,7 +61,11 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
       (item.href === "/" && location.pathname === "/") ||
       // All other routes are prefixed with the tenant.
       (props.activeTenant?.id !== undefined &&
-        location.pathname === `/${props.activeTenant?.id}/${item.href}`);
+        // Handle `/:tenantId` (no trailing slash)
+        ((item.href === "/" &&
+          location.pathname === `/${props.activeTenant.id}`) ||
+          // Handle `/:tenantId/*route*`
+          location.pathname === `/${props.activeTenant.id}${item.href}`));
 
     let href = props.activeTenant?.id
       ? `/${props.activeTenant?.id}${item.href}`

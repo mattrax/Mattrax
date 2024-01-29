@@ -1,10 +1,12 @@
-import * as path from "node:path";
-import { defineConfig } from "@solidjs/start/config";
-import { loadEnv } from "vite";
+import path from "node:path";
+import { defineConfig, loadEnv } from "vite";
 import Icons from "unplugin-icons/vite";
 import IconsResolver from "unplugin-icons/resolver";
 import AutoImport from "unplugin-auto-import/vite";
 import { visualizer } from "rollup-plugin-visualizer";
+import solid from "vite-plugin-solid";
+import { createHtmlPlugin } from "vite-plugin-html";
+import tsconfigPaths from "vite-tsconfig-paths";
 
 const monorepoRoot = path.join(__dirname, "..");
 
@@ -13,13 +15,26 @@ process.env = {
   ...loadEnv("production", monorepoRoot, ""),
 };
 
-export default defineConfig({
+export default defineConfig((config) => ({
   envDir: monorepoRoot,
   build: {
     // Safari mobile has problems with newer syntax
     target: "es2015",
   },
   plugins: [
+    solid(),
+    tsconfigPaths({
+      // If this isn't set Vinxi hangs on startup
+      root: ".",
+    }),
+    // Vinxi/Nitro doesn't play nice with this plugin
+    ...(config.mode === "development"
+      ? [
+          createHtmlPlugin({
+            minify: true,
+          }),
+        ]
+      : []),
     AutoImport({
       resolvers: [
         IconsResolver({
@@ -32,22 +47,14 @@ export default defineConfig({
     Icons({
       compiler: "solid",
     }),
-    visualizer({
-      // TODO: Different file for server vs client builds
-      emitFile: !process.env.VERCEL,
-    }),
+    !(process.env.VERCEL === "1")
+      ? visualizer({
+          brotliSize: true,
+          gzipSize: true,
+        })
+      : undefined,
   ],
   ssr: {
     noExternal: ["@kobalte/core"],
   },
-  start: {
-    // Solid Start SSR is soooooo broken.
-    // From router context errors on HMR to constant hydration mismatches.
-    ssr: false,
-    server: {
-      vercel: {
-        regions: ["iad1"],
-      },
-    },
-  },
-});
+}));

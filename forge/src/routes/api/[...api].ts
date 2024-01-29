@@ -1,8 +1,8 @@
-import { APIEvent } from "@solidjs/start/server";
-import { newApp, mountRoutes } from "@mattrax/api";
+import { defineEventHandler, toWebRequest } from "vinxi/server";
+import { newUnauthenticatedApp, mountRoutes } from "@mattrax/api/server";
 import { getServerSession } from "./getServerSession";
 
-const app = newApp()
+const app = newUnauthenticatedApp()
   .basePath("/api")
   .get("/", (c) => c.json({ message: "Mattrax Forge!" }))
   .route("/", mountRoutes())
@@ -14,14 +14,10 @@ const app = newApp()
     return c.text("404: Not Found");
   });
 
-const handler = async (event: APIEvent) =>
-  app.fetch(event.request, {
-    session: await getServerSession(),
-  });
-export const GET = handler;
-export const POST = handler;
-export const PATCH = handler;
-export const PUT = handler;
-export const DELETE = handler;
+export default defineEventHandler(async (event) =>
+  app.fetch(toWebRequest(event), {
+    session: await getServerSession(event),
+  })
+);
 
 export type AppType = typeof app;

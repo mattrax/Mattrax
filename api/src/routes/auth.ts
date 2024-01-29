@@ -1,23 +1,39 @@
-import { encodeId, newApp, newAuthedApp, withAuth } from "../utils";
+import { encodeId, newUnauthenticatedApp, newApp, withAuth } from "../utils";
 import z from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { db } from "../db";
-import { users } from "../db/schema";
+import { tenants, accounts } from "../db/schema";
 import { eq } from "drizzle-orm";
 
 type UserResult = {
   id: string;
   name: string;
   email: string;
+  tenants: Awaited<ReturnType<typeof fetchTenants>>;
 };
 
-const authenticatedApp = newAuthedApp()
-  .get("/me", (c) => {
+const fetchTenants = async (session_id: number) =>
+  (
+    await db
+      .select({
+        id: tenants.id,
+        name: tenants.name,
+      })
+      .from(tenants)
+      .where(eq(tenants.owner_id, session_id))
+  ).map((tenant) => ({
+    ...tenant,
+    id: encodeId("tenant", tenant.id),
+  }));
+
+const authenticatedApp = newApp()
+  .get("/me", async (c) => {
     const session = c.env.session.data;
     return c.json({
       id: encodeId("user", session.id),
       name: session.name,
       email: session.email,
+      tenants: await fetchTenants(session.id),
     } satisfies UserResult);
   })
   .post(
@@ -35,11 +51,11 @@ const authenticatedApp = newAuthedApp()
       // Skip DB if we have nothing to update
       if (input.name !== undefined) {
         const result = await db
-          .update(users)
+          .update(accounts)
           .set({
             name: input.name,
           })
-          .where(eq(users.id, session.id));
+          .where(eq(accounts.id, session.id));
 
         await c.env.session.update({
           ...session,
@@ -51,6 +67,7 @@ const authenticatedApp = newAuthedApp()
         id: encodeId("user", session.id),
         name: input.name || session.name,
         email: session.email,
+        tenants: await fetchTenants(session.id),
       } satisfies UserResult);
     }
   )
@@ -61,7 +78,7 @@ const authenticatedApp = newAuthedApp()
     return c.json({});
   });
 
-export const app = newApp()
+export const app = newUnauthenticatedApp()
   .post(
     "/login",
     zValidator(
@@ -76,7 +93,7 @@ export const app = newApp()
       // TODO: Validate email and don't just auto create new accounts
 
       const result = await db
-        .insert(users)
+        .insert(accounts)
         .values({ name, email: input.email })
         .onDuplicateKeyUpdate({ set: { email: input.email } });
 
@@ -85,9 +102,9 @@ export const app = newApp()
       if (result.insertId === "0") {
         const user = (
           await db
-            .select({ id: users.id })
-            .from(users)
-            .where(eq(users.email, input.email))
+            .select({ id: accounts.id })
+            .from(accounts)
+            .where(eq(accounts.email, input.email))
         )?.[0];
         if (!user) throw new Error("Error getting user we just inserted!");
         userId = user.id;

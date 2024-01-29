@@ -1,3 +1,5 @@
+import { toast } from "solid-sonner";
+
 export default function Page() {
   return (
     <div class="flex flex-col">
@@ -22,6 +24,8 @@ export default function Page() {
       >
         Setup Intune Subscription
       </button>
+
+      <button onClick={() => toast("My first toast")}>Give me a toast</button>
     </div>
   );
 }

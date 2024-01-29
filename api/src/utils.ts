@@ -5,9 +5,10 @@ import { int_to_base58, base58_to_int } from "base58";
 
 export type HonoType = { Bindings: { session: GetSessionResult } };
 
-export const newApp = () => new Hono<HonoType>();
+export const newUnauthenticatedApp = () => new Hono<HonoType>();
 
-export const newAuthedApp = () =>
+// TODO: Can we apply auth at the `routes/index.ts` level so it can't be forgotten???
+export const newApp = () =>
   new Hono<{
     Bindings: {
       session: GetSessionResultWithData;

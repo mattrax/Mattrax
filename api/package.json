@@ -8,16 +8,30 @@
     ".": {
       "import": "./src/index.ts",
       "types": "./src/index.ts"
+    },
+    "./server": {
+      "import": "./src/server.ts",
+      "types": "./src/server.ts"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      ".": [
+        "./src/index.ts"
+      ],
+      "server": [
+        "./src/server.ts"
+      ]
     }
   },
   "dependencies": {
     "@hono/zod-validator": "^0.1.11",
     "@mattrax/policy": "workspace:^",
     "@planetscale/database": "^1.14.0",
-    "@t3-oss/env-core": "^0.7.3",
+    "@t3-oss/env-core": "^0.8.0",
     "base58": "^2.0.1",
     "drizzle-orm": "^0.29.3",
-    "hono": "^3.12.6",
+    "hono": "^3.12.8",
     "zod": "^3.22.4"
   },
   "devDependencies": {
