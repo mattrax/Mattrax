@@ -5,6 +5,7 @@ import {
   int,
   json,
   customType,
+  timestamp,
   mysqlEnum,
   unique,
 } from "drizzle-orm/mysql-core";
@@ -68,8 +69,25 @@ export const devices = mysqlTable("devices", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 256 }).notNull(),
   description: varchar("description", { length: 256 }),
-  // TODO: Sync device information from Intune
+
+  manufacturer: varchar("manufacturer", { length: 256 }).notNull(),
+  model: varchar("model", { length: 256 }).notNull(),
+  operatingSystem: varchar("operatingSystem", { length: 256 }).notNull(), // TODO: Enum maybe?
+  osVersion: varchar("osVersion", { length: 256 }).notNull(),
+  serialNumber: varchar("serialNumber", { length: 256 }).notNull(),
+
+  freeStorageSpaceInBytes: int("freeStorageSpaceInBytes"),
+  totalStorageSpaceInBytes: int("totalStorageSpaceInBytes"),
+
+  owner: int("owner").references(() => users.email),
+
+  azureADDeviceId: varchar("azureADDeviceId", { length: 256 })
+    .notNull()
+    .unique(),
   intuneId: varchar("intuneId", { length: 256 }).notNull().unique(),
+
+  enrolledAt: timestamp("enrolledAt").notNull().defaultNow(),
+  lastSynced: timestamp("lastSynced").notNull().defaultNow(),
 });
 
 // export const applications = mysqlTable("apps", {
