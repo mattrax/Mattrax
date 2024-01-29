@@ -11,9 +11,9 @@
     "node": ">=18"
   },
   "devDependencies": {
-    "dotenv": "^16.3.2",
+    "dotenv": "^16.4.1",
     "drizzle-kit": "^0.20.13",
-    "mysql2": "^3.7.1",
+    "mysql2": "^3.9.0",
     "typescript": "^5.3.3"
   }
 }

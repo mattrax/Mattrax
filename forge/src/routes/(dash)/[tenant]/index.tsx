@@ -1,4 +1,4 @@
-import { useGlobalCtx } from "~/utils/globalCtx";
+import { useGlobalCtx } from "~/lib/globalCtx";
 
 export default function Page() {
   const ctx = useGlobalCtx();

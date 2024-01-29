@@ -6,7 +6,7 @@ import {
   useParams,
 } from "@solidjs/router";
 import { Suspense } from "solid-js";
-import { client } from "~/utils";
+import { client } from "~/lib";
 
 const fetchDevice = cache(
   (deviceId: string) =>

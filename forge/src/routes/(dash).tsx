@@ -6,12 +6,11 @@ import {
   Suspense,
   createEffect,
   createMemo,
-  createResource,
 } from "solid-js";
 import LeftSidebar from "~/components/LeftSidebar";
-import { globalCtx } from "~/utils/globalCtx";
-import { client } from "~/utils";
-import { InferResponseType } from "hono/client";
+import { globalCtx } from "~/lib/globalCtx";
+import { client } from "~/lib";
+import { createResource } from "~/lib/resource";
 
 export default function Layout(props: ParentProps) {
   const params = useParams<{ tenant?: string }>();
@@ -30,23 +29,10 @@ export default function Layout(props: ParentProps) {
     }
 
   // TODO: Use the auth cookie trick for better UX
-  // TODO: Error handling
-  const [session, { refetch }] = createResource(
-    () =>
-      // TODO: Loading states + error handling
-      client.api.auth.me.$get().then(async (r) => {
-        if (r.status === 401) {
-          navigate("/login");
-          return undefined;
-        }
-        return await r.json();
-      }),
-    {
-      initialValue: initialSession as InferResponseType<
-        typeof client.api.auth.me
-      >,
-    }
-  );
+  const session = createResource(client.api.auth.me, {
+    initialValue: initialSession,
+    onError: (_err, e) => e.preventDefault(),
+  });
 
   createEffect(() => {
     if (session.latest === undefined) return;
@@ -81,7 +67,7 @@ export default function Layout(props: ParentProps) {
   };
 
   const refetchSession = async () => {
-    const r = refetch();
+    const r = session.refetch();
     if (!r) return;
     await r;
   };

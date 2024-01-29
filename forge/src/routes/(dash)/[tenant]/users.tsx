@@ -6,10 +6,10 @@
 // TODO: Skeleton loading state
 
 import { createPagination } from "@solid-primitives/pagination";
-import { useZodParams } from "~/utils/useZodParams";
+import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
 import { createAsync } from "@solidjs/router";
-import { client } from "~/utils";
+import { client } from "~/lib";
 import { Show, Suspense } from "solid-js";
 import { createSolidTable } from "@tanstack/solid-table";
 import { DataTable } from "./_table";
