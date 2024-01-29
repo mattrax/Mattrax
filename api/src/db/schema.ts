@@ -5,12 +5,14 @@ import {
   int,
   json,
   customType,
+  mysqlEnum,
+  unique,
 } from "drizzle-orm/mysql-core";
 import { Policy } from "@mattrax/policy";
 
 const mysqlTable = mysqlTableCreator((name) => `forge_${name}`);
 
-export const users = mysqlTable("users", {
+export const accounts = mysqlTable("accounts", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 256 }).notNull(),
   email: varchar("email", { length: 256 }).unique().notNull(),
@@ -21,9 +23,27 @@ export const tenants = mysqlTable("tenant", {
   name: varchar("name", { length: 100 }).notNull(),
   description: varchar("description", { length: 256 }),
   owner_id: int("owner_id")
-    .references(() => users.id)
+    .references(() => accounts.id)
     .notNull(),
 });
+
+export const users = mysqlTable(
+  "users",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 256 }).notNull(),
+    email: varchar("email", { length: 256 }).notNull(),
+    tenantId: int("tenantId")
+      .references(() => tenants.id)
+      .notNull(),
+    provider: mysqlEnum("provider", ["mock", "entraId", "gsuite"]).notNull(),
+    // This is the unique ID for the user in the provider's system.
+    providerId: varchar("providerId", { length: 256 }).notNull(),
+  },
+  (t) => ({
+    emailUnq: unique().on(t.email, t.tenantId),
+  })
+);
 
 export const policies = mysqlTable("policies", {
   id: serial("id").primaryKey(),

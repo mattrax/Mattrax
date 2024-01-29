@@ -3,6 +3,7 @@ import { useLocation } from "@solidjs/router";
 import {
   ErrorBoundary,
   ParentProps,
+  Show,
   Suspense,
   createEffect,
   createMemo,
@@ -76,39 +77,45 @@ export default function Layout(props: ParentProps) {
     <>
       <LeftSidebar
         activeTenant={activeTenant()}
-        tenants={session.latest.tenants || []}
+        tenants={session.latest?.tenants || []}
         setActiveTenant={setActiveTenant}
         refetchSession={refetchSession}
       />
 
       <Suspense fallback={<h1>TODO: Loading...</h1>}>
-        <globalCtx.Provider
-          value={{
-            get activeTenant() {
-              return activeTenant();
-            },
-            setActiveTenant,
-            refetchSession,
-            get session() {
-              return session();
-            },
-          }}
-        >
-          <ErrorBoundary
-            fallback={(err) => {
-              console.error(err);
+        {/* TODO: Why does this always suspend even with an `initialValue` avaiable */}
+        <Show when={session.latest} keyed>
+          {(session2) => (
+            <globalCtx.Provider
+              value={{
+                get activeTenant() {
+                  return activeTenant();
+                },
+                setActiveTenant,
+                refetchSession,
+                get session() {
+                  console.log("session getter", session2); // TODO: , session.latest
+                  return session2;
+                },
+              }}
+            >
+              <ErrorBoundary
+                fallback={(err) => {
+                  console.error(err);
 
-              return (
-                <div class="p-2">
-                  <h1>Error</h1>
-                  <pre>{err.message}</pre>
-                </div>
-              );
-            }}
-          >
-            {props.children}
-          </ErrorBoundary>
-        </globalCtx.Provider>
+                  return (
+                    <div class="p-2">
+                      <h1>Error</h1>
+                      <pre>{err.message}</pre>
+                    </div>
+                  );
+                }}
+              >
+                {props.children}
+              </ErrorBoundary>
+            </globalCtx.Provider>
+          )}
+        </Show>
       </Suspense>
     </>
   );

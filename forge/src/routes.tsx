@@ -20,6 +20,12 @@ const dash: RouteDefinition[] = [
         component: lazy(() => import("./routes/(dash)/[tenant]/users")),
       },
       {
+        path: "/users/:userId",
+        component: lazy(
+          () => import("./routes/(dash)/[tenant]/users/[userId]")
+        ),
+      },
+      {
         path: "/apps",
         component: lazy(() => import("./routes/(dash)/[tenant]/apps")),
       },
@@ -46,6 +52,30 @@ const dash: RouteDefinition[] = [
         component: lazy(
           () => import("./routes/(dash)/[tenant]/policies/[policyId]")
         ),
+      },
+      {
+        path: "/scripts",
+        component: lazy(() => import("./routes/(dash)/[tenant]/scripts")),
+      },
+      {
+        path: "/scripts/:scriptId",
+        component: lazy(
+          () => import("./routes/(dash)/[tenant]/scripts/[scriptId]")
+        ),
+      },
+      {
+        path: "/groups",
+        component: lazy(() => import("./routes/(dash)/[tenant]/groups")),
+      },
+      {
+        path: "/groups/:groupId",
+        component: lazy(
+          () => import("./routes/(dash)/[tenant]/groups/[groupId]")
+        ),
+      },
+      {
+        path: "/settings",
+        component: lazy(() => import("./routes/(dash)/[tenant]/settings")),
       },
       {
         path: "/*all",

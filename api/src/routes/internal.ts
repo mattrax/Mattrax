@@ -1,14 +1,14 @@
-import { db, kvStore } from "../db";
+import { db, kvStore, users } from "../db";
 import { env } from "../env";
 import { eq } from "drizzle-orm";
 import { getSubscription, subscribe } from "../microsoft/graph";
-import { newAuthedApp } from "../utils";
+import { decodeId, newApp } from "../utils";
 import { FetchError } from "../microsoft";
 
 export const franksScopes =
   "offline_access DeviceManagementServiceConfig.Read.All DeviceManagementServiceConfig.ReadWrite.All DeviceManagementConfiguration.Read.All DeviceManagementConfiguration.ReadWrite.All";
 
-export const app = newAuthedApp()
+export const app = newApp()
   .use("*", async (c, next) => {
     if (c.env.session.data.email !== "oscar@otbeaumont.me") {
       return c.json({ error: "Unauthorised", reason: "Not superadmin!" }, 401);
@@ -139,4 +139,25 @@ export const app = newAuthedApp()
       console.error(err);
       return c.json({ error: (err as any).toString() }, 500);
     }
+  })
+  .get("/seed/:tenantId", async (c) => {
+    const tenantId = c.req.param("tenantId");
+    const id = decodeId("tenant", tenantId);
+
+    await db.insert(users).values(
+      (
+        await import("./users.json")
+      ).map(
+        (user) =>
+          ({
+            name: user.name,
+            email: user.email,
+            tenantId: id,
+            provider: "mock",
+            providerId: user.id.toString(),
+          } as const)
+      )
+    );
+
+    return c.text("ok");
   });

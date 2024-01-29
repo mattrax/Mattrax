@@ -12,7 +12,7 @@ import { createAsync } from "@solidjs/router";
 import { client } from "~/lib";
 import { Show, Suspense } from "solid-js";
 import { createSolidTable } from "@tanstack/solid-table";
-import { DataTable } from "./_table";
+import { DataTable } from "../_table";
 import {
   Table,
   TableBody,
@@ -62,7 +62,7 @@ export default function Page() {
   );
 
   return (
-    <div class="flex flex-col">
+    <div class="flex flex-col p-4 w-full">
       <h1>Users page!</h1>
 
       {/* <DataTable columns={columns} data={() => data() || []} /> */}

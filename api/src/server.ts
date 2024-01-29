@@ -1,4 +1,4 @@
 // Side-side exports (we don't want these shipped to the client)
 
-export { newApp } from "./utils";
+export { newUnauthenticatedApp } from "./utils";
 export { mountRoutes } from "./routes";

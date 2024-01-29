@@ -1,6 +1,6 @@
 import { db, policies } from "../db";
 import { eq } from "drizzle-orm";
-import { decodeId, encodeId, newAuthedApp } from "../utils";
+import { decodeId, encodeId, newApp } from "../utils";
 import { buildApplePolicy } from "@mattrax/policy";
 import {
   assignDeviceConfiguration,
@@ -11,7 +11,7 @@ import {
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 
-export const app = newAuthedApp()
+export const app = newApp()
   .get("/", async (c) => {
     // TODO: Is the user authorised to the current tenant???
     // TODO: Only return devices in the current tenant

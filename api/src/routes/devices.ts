@@ -4,11 +4,11 @@ import {
   exportEnrollmentProfile,
   syncDevice,
 } from "../microsoft";
-import { newApp, newAuthedApp } from "../utils";
+import { newUnauthenticatedApp, newApp } from "../utils";
 import { zValidator } from "@hono/zod-validator";
 import { db, devices } from "../db";
 
-export const authenticatedApp = newAuthedApp()
+export const authenticatedApp = newApp()
   .get("/", async (c) => {
     // TODO: Is the user authorised to the current tenant???
 
@@ -64,7 +64,7 @@ type EnrollmentProfileDescription = {
 };
 
 // TODO: Remove unauthenticated app
-export const app = newApp()
+export const app = newUnauthenticatedApp()
   .post(
     "/enroll/ios",
     zValidator(

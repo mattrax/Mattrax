@@ -1,10 +1,10 @@
 import { env } from "../env";
-import { newApp } from "../utils";
+import { newUnauthenticatedApp } from "../utils";
 import { db, devices, kvStore } from "../db";
 import { eq } from "drizzle-orm";
 import { getEntraIDDevice, subscriptionRenew } from "../microsoft/graph";
 
-export const app = newApp()
+export const app = newUnauthenticatedApp()
   .post("/ms", async (c) => {
     const validationToken = c.req.query("validationToken");
     if (validationToken) {

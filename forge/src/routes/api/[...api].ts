@@ -1,8 +1,8 @@
 import { defineEventHandler, toWebRequest } from "vinxi/server";
-import { newApp, mountRoutes } from "@mattrax/api/server";
+import { newUnauthenticatedApp, mountRoutes } from "@mattrax/api/server";
 import { getServerSession } from "./getServerSession";
 
-const app = newApp()
+const app = newUnauthenticatedApp()
   .basePath("/api")
   .get("/", (c) => c.json({ message: "Mattrax Forge!" }))
   .route("/", mountRoutes())

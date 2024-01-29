@@ -1,10 +1,10 @@
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { tenants, db } from "../db";
-import { encodeId, newAuthedApp } from "../utils";
+import { encodeId, newApp } from "../utils";
 
-export const app = newAuthedApp().post(
-  "/create",
+export const createTenantRoute = newApp().post(
+  "/",
   zValidator(
     "json",
     z.object({
@@ -23,5 +23,16 @@ export const app = newAuthedApp().post(
     return c.json({
       id: encodeId("tenant", parseInt(result.insertId)),
     });
+  }
+);
+
+// These endpoints are relative to `/tenant/:tenantId`
+export const tenantApp = newApp().post(
+  "/settings",
+  zValidator("json", z.object({})),
+  async (c) => {
+    // TODO: Make this work
+
+    return c.json({});
   }
 );

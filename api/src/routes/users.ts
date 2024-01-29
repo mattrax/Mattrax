@@ -1,7 +1,9 @@
-import { newAuthedApp } from "../utils";
+import { newApp } from "../utils";
 import mockUserData from "./users.json";
 
-export const app = newAuthedApp().get("/", async (c) => {
+export const app = newApp().get("/", async (c) => {
+  // TODO: Full-text search???
+
   // TODO: Pagination abstraction
 
   const offset = parseInt(c.req.query("offset")!);
@@ -13,7 +15,9 @@ export const app = newAuthedApp().get("/", async (c) => {
   // .slice(offset, offset + limit) // TODO
 
   // TODO: Remove this
-  await new Promise((r) => setTimeout(r, 1000));
+  // await new Promise((r) => setTimeout(r, 1000));
+
+  // TODO: Switch to DB
 
   return c.json(mockUserData);
 });
