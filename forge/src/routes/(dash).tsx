@@ -5,54 +5,51 @@ import {
   ParentProps,
   Show,
   Suspense,
-  createEffect,
   createMemo,
 } from "solid-js";
 import LeftSidebar from "~/components/LeftSidebar";
+import {
+  SuspenseError,
+  setXTenantId,
+  trpc,
+  untrackScopeFromSuspense,
+} from "~/lib";
 import { globalCtx } from "~/lib/globalCtx";
-import { client } from "~/lib";
-import { createResource } from "~/lib/resource";
 
 export default function Layout(props: ParentProps) {
   const params = useParams<{ tenant?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // TODO: Use indexedDB + move to cache abstraction
-
-  let initialSession = undefined;
-  const raw = localStorage.getItem("session");
-  if (raw)
-    try {
-      initialSession = JSON.parse(raw);
-    } catch (err) {
-      console.warn("Error decoding session from localStorage", err);
-    }
-
   // TODO: Use the auth cookie trick for better UX
-  const session = createResource(client.api.auth.me, {
-    initialValue: initialSession,
-    onError: (_err, e) => e.preventDefault(),
-  });
+  const session = trpc.auth.me.useQuery(void 0, () => ({
+    // This will *always* stay in the cache. Avoids need for `localStorage` shenanigans.
+    gcTime: Infinity,
+  }));
 
-  createEffect(() => {
-    if (session.latest === undefined) return;
-    localStorage.setItem("session", JSON.stringify(session.latest));
-  });
+  // This is not needed for `/` but it is for `/:tenantID`.
+  // I assume it's something to do with the route being lazy loaded
+  const untrackedSessionData = untrackScopeFromSuspense(() => session.data);
 
   const activeTenant = createMemo(() => {
     if (!params.tenant) return null; // We are probs on a 404 page
 
-    const tenants = session.latest?.tenants || [];
+    const session = untrackedSessionData();
+
+    const tenants = session?.tenants || [];
     const tenant = tenants.find((t) => t.id === params.tenant);
 
     // If the tenant doesn't exist, we clear it as active
     if (!tenant) {
       // We only fire the redirect if the server has responded
-      if (session.latest !== undefined)
+      if (session !== undefined)
         navigate(tenants?.[0] !== undefined ? `/${tenants[0].id}` : "/");
+
       return null;
     }
+
+    // The tRPC link can't use `useGlobalCtx` so we need to leak the tenant id into the global scope
+    setXTenantId(tenant.id);
 
     return tenant;
   });
@@ -75,16 +72,18 @@ export default function Layout(props: ParentProps) {
 
   return (
     <>
-      <LeftSidebar
-        activeTenant={activeTenant()}
-        tenants={session.latest?.tenants || []}
-        setActiveTenant={setActiveTenant}
-        refetchSession={refetchSession}
-      />
+      <Suspense fallback={<SuspenseError name="Sidebar" />}>
+        <LeftSidebar
+          activeTenant={activeTenant()}
+          tenants={session.data?.tenants || []}
+          setActiveTenant={setActiveTenant}
+          refetchSession={refetchSession}
+        />
+      </Suspense>
 
       <Suspense fallback={<h1>TODO: Loading...</h1>}>
-        {/* TODO: Why does this always suspend even with an `initialValue` avaiable */}
-        <Show when={session.latest} keyed>
+        {/* TODO: Why does this always suspend even with an `initialValue` available */}
+        <Show when={session.data} keyed>
           {(session2) => (
             <globalCtx.Provider
               value={{
@@ -94,7 +93,6 @@ export default function Layout(props: ParentProps) {
                 setActiveTenant,
                 refetchSession,
                 get session() {
-                  console.log("session getter", session2); // TODO: , session.latest
                   return session2;
                 },
               }}
@@ -111,7 +109,9 @@ export default function Layout(props: ParentProps) {
                   );
                 }}
               >
-                {props.children}
+                <Suspense fallback={<h1>Loading...</h1>}>
+                  {props.children}
+                </Suspense>
               </ErrorBoundary>
             </globalCtx.Provider>
           )}

@@ -14,13 +14,17 @@ export default function Page() {
 function AppleAppStore() {
   const [search, setSearch] = createSignal();
 
+  // TODO: Debounce on input + cancel previous request
+
+  // TODO: Typescript types
+  // TODO: Move to Tanstack Query
   const data = createAsync(() => {
-    // TODO: Typescript types
     // TODO: Pagination support
     return fetch(
       `https://itunes.apple.com/search?term=${search()}&entity=software`
     ).then((res) => res.json());
   });
+
   return (
     <>
       <input
@@ -32,7 +36,7 @@ function AppleAppStore() {
       <div class="grid grid-cols-3 gap-4">
         {/* TODO: Empty and error states */}
         <Suspense fallback={<div>Loading...</div>}>
-          {data()?.results.map((app) => (
+          {data()?.results.map((app: any) => (
             <div class="flex flex-col">
               <img src={app.artworkUrl100} />
               <div class="text-sm">{app.trackName}</div>

@@ -1,3 +1,9 @@
+export type HonoEnv = {
+  Bindings: {
+    session: GetSessionResult;
+  };
+};
+
 export type SessionData = {
   id: number;
   name: string;

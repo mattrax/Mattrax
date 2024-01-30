@@ -1,0 +1,21 @@
+diff --git a/dist/index.jsx b/dist/index.jsx
+index 1cf66a11fba9c8f2b736e4e7f6fed8040e571cb4..16c8b2d65e81fc857abcac36d20c3654366f65e2 100644
+--- a/dist/index.jsx
++++ b/dist/index.jsx
+@@ -4,7 +4,6 @@ import { createRecursiveProxy, createFlatProxy } from '@trpc/server/shared';
+ import { createContext, useContext, createEffect, on, onCleanup, mergeProps } from 'solid-js';
+ import { createQuery, createMutation, createInfiniteQuery } from '@tanstack/solid-query';
+ import { isServer } from 'solid-js/web';
+-import { useRequest } from 'solid-start/server';
+ 
+ /**
+  * We treat `undefined` as an input the same as omitting an `input`
+@@ -119,7 +118,7 @@ function createHooksInternal(config) {
+     const SolidQueryContext = config?.solidQueryContext;
+     const TRPCProvider = (props) => {
+         const { abortOnUnmount = false, queryClient } = props;
+-        const event = isServer ? useRequest() : undefined;
++        const event = undefined; // isServer ? useRequest() : undefined;
+         return (<Context.Provider value={{
+                 abortOnUnmount,
+                 queryClient,

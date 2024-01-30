@@ -1,28 +1,21 @@
-import { db, kvStore, users } from "../db";
+import { db, kvStore } from "../db";
 import { env } from "../env";
-import { eq } from "drizzle-orm";
-import { getSubscription, subscribe } from "../microsoft/graph";
-import { decodeId, newApp } from "../utils";
-import { FetchError } from "../microsoft";
+import { isSuperAdmin } from "../trpc";
+import { Hono } from "hono";
+import { HonoEnv } from "../types";
 
 export const franksScopes =
   "offline_access DeviceManagementServiceConfig.Read.All DeviceManagementServiceConfig.ReadWrite.All DeviceManagementConfiguration.Read.All DeviceManagementConfiguration.ReadWrite.All";
 
-export const app = newApp()
+export const internalRouter = new Hono<HonoEnv>()
   .use("*", async (c, next) => {
-    if (c.env.session.data.email !== "oscar@otbeaumont.me") {
-      return c.json({ error: "Unauthorised", reason: "Not superadmin!" }, 401);
+    if (c.env.session.data?.id === undefined)
+      return c.json({ error: "UNAUTHORISED" }, 401);
+
+    if (isSuperAdmin(c.env.session.data)) {
+      return c.json({ error: "FORBIDDEN" }, 403);
     }
     await next();
-  })
-  .get("/stats", async (c) => {
-    return c.json({
-      tenants: 0,
-      devices: 0,
-      users: 0,
-      policies: 0,
-      applications: 0,
-    });
   })
   .get("/authorisefrank", async (c) => {
     // TODO: Require being superadmin
@@ -94,70 +87,4 @@ export const app = newApp()
       });
 
     return c.redirect("/internal");
-  })
-  .post("/setup", async (c) => {
-    const subscriptionId = (
-      await db
-        .select()
-        .from(kvStore)
-        .where(eq(kvStore.key, "devices_subscription_id"))
-    )?.[0];
-
-    if (subscriptionId) {
-      try {
-        await getSubscription(subscriptionId.value);
-        return c.json({});
-      } catch (err) {
-        // If the subscription has expired we wanna recreate it, regardless of if it's in the DB.
-        if (!(err instanceof FetchError && err.status === 404)) {
-          throw err;
-        }
-      }
-    }
-
-    try {
-      const result = await subscribe(
-        "/devices",
-        ["created", "updated", "deleted"],
-        env.INTERNAL_SECRET
-      );
-
-      await db
-        .insert(kvStore)
-        .values({
-          key: "devices_subscription_id",
-          value: result!.id,
-        })
-        .onDuplicateKeyUpdate({
-          set: {
-            value: result!.id,
-          },
-        });
-
-      return c.json({});
-    } catch (err) {
-      console.error(err);
-      return c.json({ error: (err as any).toString() }, 500);
-    }
-  })
-  .get("/seed/:tenantId", async (c) => {
-    const tenantId = c.req.param("tenantId");
-    const id = decodeId("tenant", tenantId);
-
-    await db.insert(users).values(
-      (
-        await import("./users.json")
-      ).map(
-        (user) =>
-          ({
-            name: user.name,
-            email: user.email,
-            tenantId: id,
-            provider: "mock",
-            providerId: user.id.toString(),
-          } as const)
-      )
-    );
-
-    return c.text("ok");
   });

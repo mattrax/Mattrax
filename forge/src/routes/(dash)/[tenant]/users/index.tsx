@@ -9,9 +9,8 @@ import { createPagination } from "@solid-primitives/pagination";
 import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
 import { createAsync } from "@solidjs/router";
-import { client } from "~/lib";
 import { Show, Suspense } from "solid-js";
-import { createSolidTable } from "@tanstack/solid-table";
+import { type ColumnDef, createSolidTable } from "@tanstack/solid-table";
 import { DataTable } from "../_table";
 import {
   Table,
@@ -51,16 +50,6 @@ export default function Page() {
   // });
 
   // console.log(paginationProps());
-
-  const data = createAsync(() =>
-    // TODO: Unauthorised error + Error toast on issues
-    client.api.users
-      .$get({
-        // TODO: Query params
-      })
-      .then((res) => res.json())
-  );
-
   return (
     <div class="flex flex-col p-4 w-full">
       <h1>Users page!</h1>

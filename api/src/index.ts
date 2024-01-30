@@ -1,8 +1,9 @@
 // Client-side exports
 
 export { env } from "./env";
-export {
-  type SessionData,
-  type GetSessionResult,
-  type GetSessionResultWithData,
-} from "./session";
+export type {
+  SessionData,
+  GetSessionResult,
+  GetSessionResultWithData,
+} from "./types";
+export type { AppRouter } from "./root";

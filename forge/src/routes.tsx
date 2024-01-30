@@ -3,10 +3,13 @@ import { lazy } from "solid-js";
 
 // TODO: Split defs across files like Brendan's app router idea in Spacedrive
 
+import dashboardLayout from "./routes/(dash)";
+import dashIndex from "./routes/(dash)/index";
+
 const dash: RouteDefinition[] = [
   {
     path: "/",
-    component: lazy(() => import("./routes/(dash)/index")),
+    component: dashIndex,
   },
   {
     path: "/:tenant",
@@ -90,11 +93,13 @@ const dash: RouteDefinition[] = [
 ];
 
 export const routes: RouteDefinition[] = [
+  // TODO: Don't lazy load modal layout but lazy load inside content. So the user never ends up with a white page.
   {
     path: "/login",
     component: lazy(() => import("./routes/(auth)/login")),
   },
   {
+    // TODO: Prerender this page. End-users will touch it so it needs to be rock solid.
     path: "/enroll",
     component: lazy(() => import("./routes/enroll")),
   },
@@ -103,15 +108,7 @@ export const routes: RouteDefinition[] = [
     component: lazy(() => import("./routes/internal")),
   },
   {
-    path: "/internal",
-    component: lazy(() => import("./routes/internal")),
-  },
-  {
-    path: "/testing",
-    component: lazy(() => import("./routes/testing")),
-  },
-  {
-    component: lazy(() => import("./routes/(dash)")),
+    component: dashboardLayout,
     children: dash,
   },
 ];

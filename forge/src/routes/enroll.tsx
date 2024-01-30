@@ -1,4 +1,5 @@
-import { client } from "~/lib";
+// TODO: Prerender this flow
+// TODO: Make this flow work without JS
 
 export default function Page() {
   let ref!: HTMLInputElement;
@@ -13,13 +14,13 @@ export default function Page() {
       <input ref={ref} placeholder="some data" value="abc" />
       <button
         onClick={() => {
-          // TODO: Deal with response
-          client.api.devices.enroll.ios
-            .$post({
-              json: {
-                data: ref.value,
-              },
-            })
+          // TODO: Deal with response errors
+          fetch("/api/enrollment/apple", {
+            method: "POST",
+            body: JSON.stringify({
+              data: ref.value,
+            }),
+          })
             .then((res) => {
               if (!res.ok) alert("Error");
               return res.json();

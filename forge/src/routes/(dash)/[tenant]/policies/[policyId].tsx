@@ -1,39 +1,44 @@
-import {
-  RouteDefinition,
-  cache,
-  createAsync,
-  redirect,
-  useParams,
-} from "@solidjs/router";
+import { redirect, useParams } from "@solidjs/router";
 import { Suspense } from "solid-js";
-import { client } from "~/lib";
+import { trpc } from "~/lib";
 
-const fetchPolicy = cache(
-  async (policyId: string) =>
-    // TODO: Handle error or unauthorised responses
-    client.api.policies[":policyId"]
-      .$get({ param: { policyId } })
-      .then((res) => res.json()),
-  "policy"
-);
+// TODO: Bring this back
+// const fetchPolicy = cache(
+//   async (policyId: string) =>
+//     // TODO: Handle error or unauthorised responses
+//     trpcClient.policy.get.query({ policyId }),
+//   "policy"
+// );
 
-export const route = {
-  load: ({ params }) => fetchPolicy(params.policyId!),
-} satisfies RouteDefinition;
+// export const route = {
+//   load: ({ params }) => fetchPolicy(params.policyId!),
+// } satisfies RouteDefinition;
 
 export default function Page() {
   const params = useParams();
   if (!params.policyId) redirect("/"); // TODO: Use a tenant relative redirect instead
-  const policy = createAsync(() => fetchPolicy(params.policyId!));
+  const policy = trpc.policy.get.useQuery(() => ({
+    policyId: params.policyId!,
+  }));
+  const policyUpdate = trpc.policy.update.useMutation(() => ({
+    onSuccess: () => alert("Updated!"),
+  }));
+  const policyPush = trpc.policy.update.useMutation(() => ({
+    onSuccess: () => alert("Policy pushed!"),
+  }));
+  const policyAssign = trpc.policy.assign.useMutation(() => ({
+    onSuccess: (_, input) =>
+      alert(input.assignOrUnassign ? "Assigned!" : "Unassigned!"),
+  }));
 
   return (
     <div class="flex flex-col">
       <h1>Policy Page</h1>
       <Suspense fallback={<div>Loading...</div>}>
-        <h1>Name: {policy()?.name}</h1>
+        <h1>Name: {policy.data?.name}</h1>
         <h1>
           Has Synced With Intune:{" "}
-          {JSON.stringify(policy()?.hasSyncedWithIntune)}
+          {JSON.stringify(policy.data?.hasSyncedWithIntune)}
         </h1>
 
         <h2>Configuration:</h2>
@@ -43,64 +48,48 @@ export default function Page() {
           <input
             checked={false}
             type="checkbox"
-            onChange={(e) => {
-              // TODO: handle unauthorised or error response
-              client.api.policies[":policyId"]
-                .$patch({
-                  param: { policyId: params.policyId! },
-                  json: [
-                    {
-                      camera: e.currentTarget.checked,
-                    },
-                  ],
-                })
-                .then(() => alert("Updated!"));
-            }}
+            onChange={(e) =>
+              policyUpdate.mutate({
+                policyId: params.policyId!,
+                policy: [
+                  {
+                    camera: e.currentTarget.checked,
+                  },
+                ],
+              })
+            }
           />
         </div>
 
         <h2>Intune:</h2>
         <button
-          onClick={() => {
-            // TODO: handle unauthorised or error response
-            client.api.policies[":policyId"].push
-              .$post({
-                param: { policyId: params.policyId! },
-              })
-              .then(() => alert("Policy pushed!"));
-          }}
+          onClick={() =>
+            policyPush.mutate({
+              policyId: params.policyId!,
+            })
+          }
         >
           Sync
         </button>
 
         <h2>Assign Devices</h2>
         <button
-          onClick={() => {
-            // TODO: handle unauthorised or error response
-            client.api.policies[":policyId"].assign
-              .$post({
-                param: { policyId: params.policyId! },
-                json: {
-                  assignOrUnassign: true,
-                },
-              })
-              .then(() => alert("Assigned!"));
-          }}
+          onClick={() =>
+            policyAssign.mutate({
+              policyId: params.policyId!,
+              assignOrUnassign: true,
+            })
+          }
         >
           Assign
         </button>
         <button
-          onClick={() => {
-            // TODO: handle unauthorised or error response
-            client.api.policies[":policyId"].assign
-              .$post({
-                param: { policyId: params.policyId! },
-                json: {
-                  assignOrUnassign: false,
-                },
-              })
-              .then(() => alert("Unassigned!"));
-          }}
+          onClick={() =>
+            policyAssign.mutate({
+              policyId: params.policyId!,
+              assignOrUnassign: false,
+            })
+          }
         >
           Unassign
         </button>

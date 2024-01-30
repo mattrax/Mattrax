@@ -1,12 +1,10 @@
-import { env } from "../env";
-import { newUnauthenticatedApp } from "../utils";
-import { db, devices, kvStore } from "../db";
+import { Hono } from "hono";
 import { eq } from "drizzle-orm";
+import { env } from "../env";
 import { getEntraIDDevice, subscriptionRenew } from "../microsoft/graph";
-import { getEnrollmentProfile } from "../microsoft";
-import { EnrollmentProfileDescription } from "./devices";
+import { db, devices, kvStore } from "../db";
 
-export const app = newUnauthenticatedApp()
+export const webhookRouter = new Hono()
   .post("/ms", async (c) => {
     const validationToken = c.req.query("validationToken");
     if (validationToken) {
@@ -56,19 +54,20 @@ export const app = newUnauthenticatedApp()
         // }
 
         // TODO: Upsert & relink by serial number
-        await db.insert(devices).values({
-          name: device!.displayName as string,
-          manufacturer: device!.manufacturer as string,
-          model: device!.model as string,
-          operatingSystem: device!.operatingSystem as string,
-          osVersion: device!.osVersion as string,
-          serialNumber: device!.serialNumber as string,
-          freeStorageSpaceInBytes: device!.freeStorageSpaceInBytes,
-          totalStorageSpaceInBytes: device!.totalStorageSpaceInBytes,
-          owner: undefined, // TODO: Try and find the owner
-          azureADDeviceId: device!.azureADDeviceId,
-          intuneId: device!.deviceId,
-        });
+        // await db.insert(devices).values({
+        //   name: device!.displayName as string,
+        //   manufacturer: device!.manufacturer as string,
+        //   model: device!.model as string,
+        //   operatingSystem: device!.operatingSystem as string,
+        //   osVersion: device!.osVersion as string,
+        //   serialNumber: device!.serialNumber as string,
+        //   freeStorageSpaceInBytes: device!.freeStorageSpaceInBytes,
+        //   totalStorageSpaceInBytes: device!.totalStorageSpaceInBytes,
+        //   owner: undefined, // TODO: Try and find the owner
+        //   azureADDeviceId: device!.azureADDeviceId,
+        //   intuneId: device!.deviceId,
+        //   tenantId: 0, // TODO: Get this from the enrollment profile
+        // });
       }
     }
 

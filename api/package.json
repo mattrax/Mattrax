@@ -25,13 +25,14 @@
     }
   },
   "dependencies": {
-    "@hono/zod-validator": "^0.1.11",
     "@mattrax/policy": "workspace:^",
     "@planetscale/database": "^1.14.0",
     "@t3-oss/env-core": "^0.8.0",
+    "@trpc/server": "^10.45.0",
     "base58": "^2.0.1",
     "drizzle-orm": "^0.29.3",
     "hono": "^3.12.8",
+    "superjson": "^2.2.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {

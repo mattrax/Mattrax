@@ -15,5 +15,10 @@
     "drizzle-kit": "^0.20.13",
     "mysql2": "^3.9.1",
     "typescript": "^5.3.3"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "@solid-mediakit/trpc@1.0.2": "patches/@solid-mediakit__trpc@1.0.2.patch"
+    }
   }
 }

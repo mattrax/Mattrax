@@ -8,11 +8,13 @@ import {
   timestamp,
   mysqlEnum,
   unique,
+  primaryKey,
 } from "drizzle-orm/mysql-core";
 import { Policy } from "@mattrax/policy";
 
 const mysqlTable = mysqlTableCreator((name) => `forge_${name}`);
 
+// An account represents the login of an *administrator*.
 export const accounts = mysqlTable("accounts", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 256 }).notNull(),
@@ -28,6 +30,25 @@ export const tenants = mysqlTable("tenant", {
     .notNull(),
 });
 
+export const tenantAccounts = mysqlTable(
+  "tenant_account",
+  {
+    tenantId: int("tenantId")
+      .references(() => tenants.id)
+      .notNull(),
+    accountId: int("accountId")
+      .references(() => accounts.id)
+      .notNull(),
+  },
+  (table) => {
+    return {
+      pk: primaryKey({ columns: [table.tenantId, table.accountId] }),
+    };
+  }
+);
+
+// An account represents the login of an *end-user*.
+// These are scoped to a tenant and can't login to the Mattrax dashboard.
 export const users = mysqlTable(
   "users",
   {
@@ -88,6 +109,10 @@ export const devices = mysqlTable("devices", {
 
   enrolledAt: timestamp("enrolledAt").notNull().defaultNow(),
   lastSynced: timestamp("lastSynced").notNull().defaultNow(),
+
+  tenantId: int("tenantId")
+    .references(() => tenants.id)
+    .notNull(),
 });
 
 // export const applications = mysqlTable("apps", {
