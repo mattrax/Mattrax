@@ -20,6 +20,9 @@ export default defineConfig((config) => ({
   build: {
     // Safari mobile has problems with newer syntax
     target: "es2015",
+    rollupOptions: {
+      external: ["solid-start"],
+    },
   },
   plugins: [
     solid(),
