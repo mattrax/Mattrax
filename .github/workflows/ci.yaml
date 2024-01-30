@@ -1,26 +1,20 @@
 name: CI
 
 on:
+  push:
   pull_request:
-    paths:
-      - "aws/**"
   merge_group:
-    paths:
-      - "aws/**"
 
 jobs:
-  cloudformation:
-    name: Validate CloudFormation Template
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
-      # TODO: Can this be cached? It's slow AF
-      - name: Setup Cloud Formation Linter with Latest Version
-        uses: scottbrenner/cfn-lint-action@v2
+      - name: Install dependencies
+        run: pnpm i
 
-      - name: Print the Cloud Formation Linter Version & run Linter.
-        run: |
-          cfn-lint --version
-          cfn-lint -t ./aws/cloudformation.yaml
+      - name: Typecheck
+        run: pnpm typecheck
