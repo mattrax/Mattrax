@@ -19,3 +19,63 @@ index 1cf66a11fba9c8f2b736e4e7f6fed8040e571cb4..16c8b2d65e81fc857abcac36d20c3654
          return (<Context.Provider value={{
                  abortOnUnmount,
                  queryClient,
+diff --git a/dist/shared/hooks/createHooksInternal.d.ts b/dist/shared/hooks/createHooksInternal.d.ts
+index 21e54d78dbfc6959b770324144d78d21fdc96831..83ca4ac4ff0564512f501bc1e14cd17f4dfb78d3 100644
+--- a/dist/shared/hooks/createHooksInternal.d.ts
++++ b/dist/shared/hooks/createHooksInternal.d.ts
+@@ -3,7 +3,6 @@ import { type CreateTRPCClientOptions, type TRPCClient, type TRPCClientErrorLike
+ import type { AnyRouter, ProcedureRecord, inferHandlerInput, inferProcedureClientError, inferProcedureInput, inferProcedureOutput } from '@trpc/server';
+ import { type inferObservableValue } from '@trpc/server/observable';
+ import { type Accessor, type JSX } from 'solid-js';
+-import { useRequest } from 'solid-start/server';
+ import { type TRPCContextProps, type TRPCContextState } from '../../internals/context';
+ import { type CreateTRPCSolidOptions } from '../types';
+ import { type UseTRPCQueryOptions, type UseTRPCInfiniteQueryOptions, type TRPCUseQueryBaseOptions } from './types';
+@@ -38,7 +37,7 @@ export type TRPCProvider<TRouter extends AnyRouter> = (props: Omit<TRPCProviderP
+     queryClientOpts?: Omit<QueryClientProviderProps, 'client'>;
+ }) => JSX.Element;
+ export type UseDehydratedState<TRouter extends AnyRouter> = (client: TRPCClient<TRouter>, trpcState: DehydratedState | undefined) => Accessor<DehydratedState | undefined>;
+-export type CreateClient<TRouter extends AnyRouter> = (opts: (event?: ReturnType<typeof useRequest>) => CreateTRPCClientOptions<TRouter>) => TRPCClient<TRouter>;
++export type CreateClient<TRouter extends AnyRouter> = (opts: (event?: unknown) => CreateTRPCClientOptions<TRouter>) => TRPCClient<TRouter>;
+ interface TRPCHookResult {
+     trpc: {
+         path: string;
+diff --git a/dist/shared/types.d.ts b/dist/shared/types.d.ts
+index 6b9e1e8cae1e38d12c0a5ddd3a696b3a08b55ebd..5de55fe2d4ef3a789d96920a94c2ee43c83469bc 100644
+--- a/dist/shared/types.d.ts
++++ b/dist/shared/types.d.ts
+@@ -2,7 +2,6 @@ import { type QueryClient } from "@tanstack/solid-query";
+ import { type CreateTRPCClientOptions } from "@trpc/client";
+ import { type AnyRouter, type MaybePromise } from "@trpc/server";
+ import type Solid from "solid-js";
+-import { type PageEvent } from "solid-start";
+ /**
+  * @internal
+  */
+@@ -35,5 +34,5 @@ export interface CreateTRPCSolidOptions<TRouter extends AnyRouter> {
+      * @default undefined
+      */
+     solidQueryContext?: Solid.Context<QueryClient | undefined>;
+-    config: (event?: PageEvent) => CreateTRPCClientOptions<TRouter>;
++    config: (event?: unknown) => CreateTRPCClientOptions<TRouter>;
+ }
+diff --git a/package.json b/package.json
+index d71081a6bb1efd38b65d1016a382f5be78161f0c..677fb96691ab1686e5b832cef8355ce3d6747db4 100644
+--- a/package.json
++++ b/package.json
+@@ -20,7 +20,6 @@
+     "@typescript-eslint/parser": "^5.44.0",
+     "solid-js": "^1.8.3",
+     "typescript": "^4.8.2",
+-    "solid-start": "^0.3.7",
+     "@tanstack/solid-query": "^5.0.0",
+     "@trpc/client": "^10.41.0",
+     "@trpc/server": "^10.41.0",
+@@ -30,7 +29,6 @@
+   },
+   "peerDependencies": {
+     "solid-js": "^1.8.3",
+-    "solid-start": "^0.3.7",
+     "@tanstack/solid-query": "^5.0.0",
+     "@trpc/client": "^10.41.0",
+     "@trpc/server": "^10.41.0"
