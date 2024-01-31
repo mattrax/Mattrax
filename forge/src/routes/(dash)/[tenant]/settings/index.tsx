@@ -202,6 +202,16 @@ function MigrateCard() {
 }
 
 function BillingCard() {
+  const stripePortalUrl = trpc.tenant.stripePortalUrl.useMutation(() => ({
+    onSuccess: async (url) => {
+      // @ts-expect-error
+      window.location = url;
+
+      // Make sure the button is disabled until the user is in the new tab
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    },
+  }));
+
   return (
     <Card class="w-[350px]">
       <CardHeader>
@@ -210,7 +220,13 @@ function BillingCard() {
       </CardHeader>
       <CardContent class="flex flex-col space-y-2">
         <p>Devices: 0</p>
-        <Button disabled class="w-full">
+        {/* TODO: How much is owed and when it's due */}
+
+        <Button
+          class="w-full"
+          onClick={() => stripePortalUrl.mutate()}
+          disabled={stripePortalUrl.isPending}
+        >
           Go to Stipe
         </Button>
       </CardContent>

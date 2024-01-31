@@ -32,10 +32,12 @@
     "base58": "^2.0.1",
     "drizzle-orm": "^0.29.3",
     "hono": "^3.12.8",
+    "stripe": "^14.14.0",
     "superjson": "^2.2.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@microsoft/microsoft-graph-types": "^2.40.0"
+    "@microsoft/microsoft-graph-types": "^2.40.0",
+    "@types/stripe": "^8.0.417"
   }
 }

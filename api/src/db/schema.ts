@@ -25,6 +25,8 @@ export const tenants = mysqlTable("tenant", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 100 }).notNull(),
   description: varchar("description", { length: 256 }),
+  billingEmail: varchar("billingEmail", { length: 256 }),
+  stripeCustomerId: varchar("stripeCustomerId", { length: 256 }),
   owner_id: int("owner_id")
     .references(() => accounts.id)
     .notNull(),

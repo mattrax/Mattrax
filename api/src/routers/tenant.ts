@@ -11,6 +11,8 @@ import {
   users,
 } from "../db";
 import { eq } from "drizzle-orm";
+import { stripe } from "../stripe";
+import { env } from "../env";
 
 export const tenantRouter = createTRPCRouter({
   create: authedProcedure
@@ -82,5 +84,46 @@ export const tenantRouter = createTRPCRouter({
         ownerId.status === "fulfilled" ? row.id === ownerId.value : false,
       id: encodeId("account", row.id),
     }));
+  }),
+
+  stripePortalUrl: tenantProcedure.mutation(async ({ ctx }) => {
+    const tenant = (
+      await db
+        .select({
+          name: tenants.name,
+          billingEmail: tenants.billingEmail,
+          stripeCustomerId: tenants.stripeCustomerId,
+        })
+        .from(tenants)
+        .where(eq(tenants.id, ctx.tenantId))
+    )?.[0];
+    if (!tenant) throw new Error("Tenant not found!"); // TODO: Proper error code which the frontend knows how to handle
+
+    let customerId: string;
+    if (!tenant.stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        name: tenant.name,
+        email: tenant.billingEmail || undefined,
+      });
+
+      await db
+        .update(tenants)
+        .set({ stripeCustomerId: customer.id })
+        .where(eq(tenants.id, ctx.tenantId));
+
+      customerId = customer.id;
+    } else {
+      customerId = tenant.stripeCustomerId;
+    }
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${env.PROD_URL}/${encodeId(
+        "tenant",
+        ctx.tenantId
+      )}/settings`,
+    });
+
+    return session.url;
   }),
 });
