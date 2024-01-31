@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui";
+import { DeleteTenantButton } from "./DeleteTenantButton";
 
 export default function Page() {
   return (
@@ -22,10 +23,7 @@ export default function Page() {
 
       <Card class="w-[350px]">
         <CardHeader>
-          <CardTitle>Create project</CardTitle>
-          <CardDescription>
-            Deploy your new project in one-click.
-          </CardDescription>
+          <CardTitle>Tenant Settings</CardTitle>
         </CardHeader>
         <CardContent>
           <form>
@@ -50,12 +48,16 @@ export default function Page() {
               </div>
             </div>
           </form>
+
+          <DeleteTenantButton />
         </CardContent>
-        <CardFooter class="flex justify-between">
-          <Button variant="outline">Cancel</Button>
-          <Button>Deploy</Button>
-        </CardFooter>
       </Card>
     </div>
   );
 }
+
+// TODO: Rename tenant
+
+// TODO: Tenant user management
+// TODO: Link with AzureAD
+// TODO: Import devices from Intune/Jamf
