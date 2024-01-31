@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { For, Suspense } from "solid-js";
 import { Tenant } from "~/lib/globalCtx";
 import {
   DropdownMenu,
@@ -35,10 +35,7 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
       {/* DialogRoot must be outside the dropdown menu so it's not unrendered when the menu is closed */}
       <DialogRoot>
         <DropdownMenu controller={controller}>
-          <DropdownMenuTrigger
-            class="mt-1 inline-flex w-full justify-between rounded-md bg-brand-secondary text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-brand-tertiary focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-80 disabled:cursor-not-allowed"
-            disabled={tenantCount() === 0}
-          >
+          <DropdownMenuTrigger class="mt-1 inline-flex w-full justify-between rounded-md bg-brand-secondary text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-brand-tertiary focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-80 disabled:cursor-not-allowed">
             {/* // TODO: Tooltip when truncated */}
             <span
               class="truncate"
@@ -54,21 +51,23 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
             </KDropdownMenu.Icon>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <For each={props.tenants}>
-              {(tenant) => (
-                <DropdownMenuItem
-                  class={
-                    "block px-4 py-2 text-sm text-left w-full truncate hover:bg-gray-200"
-                  }
-                  onSelect={() => props.setActiveTenant(tenant.id)}
-                >
-                  {/* TODO: Use a link here instead of JS for accessibility */}
-                  {tenant.name}
-                </DropdownMenuItem>
-              )}
-            </For>
+            <Suspense fallback={<></>}>
+              <For each={props.tenants}>
+                {(tenant) => (
+                  <DropdownMenuItem
+                    class={
+                      "block px-4 py-2 text-sm text-left w-full truncate hover:bg-gray-200"
+                    }
+                    onSelect={() => props.setActiveTenant(tenant.id)}
+                  >
+                    {/* TODO: Use a link here instead of JS for accessibility */}
+                    {tenant.name}
+                  </DropdownMenuItem>
+                )}
+              </For>
 
-            <DropdownMenuSeparator />
+              {props.tenants.length !== 0 && <DropdownMenuSeparator />}
+            </Suspense>
 
             <DialogTrigger asChild>
               <As

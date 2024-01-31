@@ -62,6 +62,15 @@ export default function Layout(props: ParentProps) {
     else path = ["", id];
 
     navigate(path.join("/"));
+
+    // TODO: Why is this timeout required??? After tenant create it doesn't redirect without it.
+    setTimeout(
+      () =>
+        navigate(path.join("/"), {
+          replace: true,
+        }),
+      250
+    );
   };
 
   const refetchSession = async () => {

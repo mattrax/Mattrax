@@ -14,3 +14,4 @@ export * from "./textarea";
 export * from "./tooltip";
 export * from "./dropdown-menu";
 export * from "./controller";
+export * from "./label";

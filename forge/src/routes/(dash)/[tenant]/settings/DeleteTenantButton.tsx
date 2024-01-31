@@ -19,8 +19,8 @@ export function DeleteTenantButton() {
   return (
     <DialogRoot>
       <DialogTrigger asChild>
-        <As component={Button} variant="destructive">
-          Delete
+        <As component={Button} variant="destructive" class="w-full">
+          Delete Tenant
         </As>
       </DialogTrigger>
 

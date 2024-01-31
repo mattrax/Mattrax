@@ -21,6 +21,9 @@ export function CreateTenantDialog(props: {
       await props.refetchSession();
       props.setActiveTenant(data.id);
       dialog.setOpen(false);
+
+      // Ensure the form stays disabled until the dialog is closed
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     },
   }));
 
