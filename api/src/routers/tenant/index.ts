@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { authedProcedure, createTRPCRouter, tenantProcedure } from "../trpc";
-import { encodeId } from "../utils";
+import { authedProcedure, createTRPCRouter, tenantProcedure } from "../../trpc";
+import { encodeId } from "../../utils";
 import {
   accounts,
   db,
@@ -9,10 +9,10 @@ import {
   tenantAccounts,
   tenants,
   users,
-} from "../db";
+} from "../../db";
 import { eq } from "drizzle-orm";
-import { stripe } from "../stripe";
-import { env } from "../env";
+import { billingRouter } from "./billing";
+import { tenantAuthRouter } from "./auth";
 
 export const tenantRouter = createTRPCRouter({
   create: authedProcedure
@@ -43,7 +43,7 @@ export const tenantRouter = createTRPCRouter({
   delete: tenantProcedure.mutation(async ({ ctx }) => {
     // TODO: Ensure no outstanding bills
 
-    await db.transaction(async (tx) => {
+    await db.transaction(async (db) => {
       await db.delete(tenants).where(eq(tenants.id, ctx.tenantId));
       await db
         .delete(tenantAccounts)
@@ -86,44 +86,6 @@ export const tenantRouter = createTRPCRouter({
     }));
   }),
 
-  stripePortalUrl: tenantProcedure.mutation(async ({ ctx }) => {
-    const tenant = (
-      await db
-        .select({
-          name: tenants.name,
-          billingEmail: tenants.billingEmail,
-          stripeCustomerId: tenants.stripeCustomerId,
-        })
-        .from(tenants)
-        .where(eq(tenants.id, ctx.tenantId))
-    )?.[0];
-    if (!tenant) throw new Error("Tenant not found!"); // TODO: Proper error code which the frontend knows how to handle
-
-    let customerId: string;
-    if (!tenant.stripeCustomerId) {
-      const customer = await stripe.customers.create({
-        name: tenant.name,
-        email: tenant.billingEmail || undefined,
-      });
-
-      await db
-        .update(tenants)
-        .set({ stripeCustomerId: customer.id })
-        .where(eq(tenants.id, ctx.tenantId));
-
-      customerId = customer.id;
-    } else {
-      customerId = tenant.stripeCustomerId;
-    }
-
-    const session = await stripe.billingPortal.sessions.create({
-      customer: customerId,
-      return_url: `${env.PROD_URL}/${encodeId(
-        "tenant",
-        ctx.tenantId
-      )}/settings`,
-    });
-
-    return session.url;
-  }),
+  billing: billingRouter,
+  auth: tenantAuthRouter,
 });

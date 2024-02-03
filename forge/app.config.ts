@@ -11,13 +11,13 @@ export default createApp({
   routers: [
     {
       name: "public",
-      mode: "static",
+      type: "static",
       dir: "./public",
       base: "/",
     },
     {
       name: "client",
-      mode: "spa",
+      type: "spa",
       handler: "./index.html",
       target: "browser",
       plugins: (configEnv) => {
@@ -41,8 +41,8 @@ export default createApp({
     },
     {
       name: "server",
+      type: "http",
       base: "/api",
-      mode: "handler",
       handler: fileURLToPath(
         new URL("./src/routes/api/[...api].ts", import.meta.url)
       ),
@@ -52,6 +52,13 @@ export default createApp({
   server: {
     vercel: {
       regions: ["iad1"],
+    },
+    esbuild: {
+      options: {
+        /// Required for `@paralleldrive/cuid2` to work.
+        /// https://github.com/paralleldrive/cuid2/issues/62
+        target: "es2020",
+      },
     },
   },
 });

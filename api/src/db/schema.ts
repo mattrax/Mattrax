@@ -49,6 +49,30 @@ export const tenantAccounts = mysqlTable(
   }
 );
 
+const userProviders = ["entraId", "gsuite"] as const;
+
+export type UserProvider = (typeof userProviders)[number];
+
+// A link between a tenant and an external authentication provider.
+export const tenantUserProvider = mysqlTable(
+  "tenant_user_provider",
+  {
+    id: serial("id").primaryKey(),
+    name: mysqlEnum("provider", userProviders).notNull(),
+    // This is the unique ID for the user in the provider's system.
+    resourceId: varchar("resourceId", { length: 256 }).notNull(),
+    tenantId: int("tenantId")
+      .notNull()
+      .references(() => tenants.id),
+    lastSynced: timestamp("lastSynced"),
+  },
+  (table) => {
+    return {
+      unique: unique().on(table.tenantId, table.name, table.resourceId),
+    };
+  }
+);
+
 // An account represents the login of an *end-user*.
 // These are scoped to a tenant and can't login to the Mattrax dashboard.
 export const users = mysqlTable(
@@ -60,9 +84,9 @@ export const users = mysqlTable(
     tenantId: int("tenantId")
       .references(() => tenants.id)
       .notNull(),
-    provider: mysqlEnum("provider", ["mock", "entraId", "gsuite"]).notNull(),
-    // This is the unique ID for the user in the provider's system.
-    providerId: varchar("providerId", { length: 256 }).notNull(),
+    provider: int("provider")
+      .references(() => tenantUserProvider.id)
+      .notNull(),
   },
   (t) => ({
     emailUnq: unique().on(t.email, t.tenantId),
@@ -102,7 +126,7 @@ export const devices = mysqlTable("devices", {
   freeStorageSpaceInBytes: int("freeStorageSpaceInBytes"),
   totalStorageSpaceInBytes: int("totalStorageSpaceInBytes"),
 
-  owner: int("owner").references(() => users.email),
+  owner: int("owner").references(() => users.id),
 
   azureADDeviceId: varchar("azureADDeviceId", { length: 256 })
     .notNull()
@@ -122,12 +146,3 @@ export const devices = mysqlTable("devices", {
 //   // name: varchar("name", { length: 256 }).notNull(),
 //   // description: varchar("description", { length: 256 }),
 // });
-
-type Keys = "intune_refresh_token" | "devices_subscription_id";
-
-// A table used to store key-value pairs.
-// This will probs be moved to Redis in the future.
-export const kvStore = mysqlTable("kv", {
-  key: varchar("key", { length: 200 }).$type<Keys>().primaryKey(),
-  value: varchar("value", { length: 1000 }).notNull(),
-});

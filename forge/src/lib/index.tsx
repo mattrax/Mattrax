@@ -3,6 +3,7 @@ import {
   type CreateTRPCProxyClient as CreateTRPCClient,
   createTRPCProxyClient as createTRPCClient,
   httpBatchLink,
+  TRPCClientError,
 } from "@trpc/client";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -61,4 +62,16 @@ export function SuspenseError(props: { name: string }) {
   // Hitting the certain higher-level suspense boundaries means we don't have a UI to show which is a bad UI so we log the warning.
   console.warn(`${props.name}Suspense triggered!`);
   return <></>;
+}
+
+export function tRPCErrorCode(error: unknown) {
+  if (
+    error &&
+    error instanceof TRPCClientError &&
+    error.data &&
+    "code" in error.data
+  ) {
+    return error.data.code;
+  }
+  return undefined;
 }

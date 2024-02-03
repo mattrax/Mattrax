@@ -28,7 +28,6 @@ export type TenantSwitcherProps = {
 export function TenantSwitcher(props: TenantSwitcherProps) {
   const controller = createController();
   const activeTenant = untrackScopeFromSuspense(() => props.activeTenant);
-  const tenantCount = untrackScopeFromSuspense(() => props.tenants.length);
 
   return (
     <div class="w-full relative inline-block text-left">

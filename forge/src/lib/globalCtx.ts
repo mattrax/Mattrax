@@ -13,7 +13,7 @@ export type Tenant = {
 }; // TODO: Infer this from backend
 
 type GlobalCtx = {
-  activeTenant: Tenant | null;
+  activeTenant: Tenant | null; // TODO: Make this required
   setActiveTenant: (tenant: string) => void;
   session: PublicSessionData;
   refetchSession: () => Promise<void>;

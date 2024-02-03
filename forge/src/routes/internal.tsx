@@ -1,31 +1,29 @@
-import { toast } from "solid-sonner";
+import { useNavigate } from "@solidjs/router";
+import { For, createEffect } from "solid-js";
+import { Button } from "~/components/ui";
+import { tRPCErrorCode, trpc } from "~/lib";
 
 export default function Page() {
-  return (
-    <div class="flex flex-col">
-      <h1>Internal Admin Dashboard</h1>
-      {/* TODO: Typesafe URL */}
-      <a href="/api/internal/authorisefrank" rel="external">
-        Authorise Frank
-      </a>
-      <button
-        onClick={() => {
-          // TODO: Typesafe fetch
-          fetch("/api/internal/setup", {
-            method: "POST",
-          })
-            .then((res) => {
-              if (!res.ok) throw new Error(res.statusText);
-              return res.json();
-            })
-            .then((data) => alert("Success!"))
-            .catch((data) => alert("Error!"));
-        }}
-      >
-        Setup Intune Subscription
-      </button>
+  const stats = trpc.internal.stats.useQuery();
 
-      <button onClick={() => toast("My first toast")}>Give me a toast</button>
+  const navigate = useNavigate();
+  createEffect(() => {
+    const error = tRPCErrorCode(stats.error);
+    if (error === "FORBIDDEN") navigate("/");
+  });
+
+  return (
+    <div class="p-2">
+      <h1 class="text-4xl pb-4">Top-secret dashboard</h1>
+      <div class="flex flex-col space-y-2">
+        <For each={Object.entries(stats.data || {})}>
+          {([name, value]) => (
+            <p>
+              {name}: {value}
+            </p>
+          )}
+        </For>
+      </div>
     </div>
   );
 }

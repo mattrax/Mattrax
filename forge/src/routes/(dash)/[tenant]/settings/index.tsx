@@ -1,5 +1,4 @@
 import { For, Suspense, createEffect, createSignal, untrack } from "solid-js";
-import { useBeforeLeave } from "@solidjs/router";
 import {
   Button,
   Card,
@@ -7,12 +6,20 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   Input,
   Label,
+  Switch,
 } from "~/components/ui";
+import dayjs from "dayjs";
 import { useGlobalCtx } from "~/lib/globalCtx";
 import { trpc } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
+import { authProviderDisplayName, authProviderUrl } from "~/lib/values";
+import { toast } from "solid-sonner";
 
 export default function Page() {
   return (
@@ -21,6 +28,7 @@ export default function Page() {
       <AdministratorsCard />
       <BillingCard />
       <AuthenticationCard />
+      <ConfigureEnrollmentCard />
       <MigrateCard />
     </div>
   );
@@ -146,35 +154,134 @@ function AdministratorsCard() {
 }
 
 function AuthenticationCard() {
+  const linkedProviders = trpc.tenant.auth.query.useQuery();
+  const linkEntra = trpc.tenant.auth.linkEntra.useMutation(() => ({
+    onSuccess: async (url) => {
+      window.open(url, "_self");
+
+      // Make sure the button is disabled until the user is in the new tab
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    },
+  }));
+  const unlinkProvider = trpc.tenant.auth.unlink.useMutation(() => ({
+    onSuccess: async () => {
+      await linkedProviders.refetch();
+    },
+  }));
+  const sync = trpc.tenant.auth.sync.useMutation(() => ({
+    onSuccess: async () =>
+      toast.success("Sync complete!", {
+        id: "tenant-user-sync",
+      }),
+  }));
+
+  const isPending = () =>
+    linkedProviders.isPending || linkEntra.isPending || sync.isPending;
+
   return (
-    <Card class="w-[350px]">
+    <Card class="w-[350px] flex flex-col">
       <CardHeader>
         <CardTitle>Tenant Authentication</CardTitle>
         <CardDescription>
           Manage external authentication providers.
         </CardDescription>
       </CardHeader>
-      <CardContent class="flex flex-col space-y-2">
-        {/* <Button class="w-full">Link with EntraID</Button> */}
+      <CardContent class="flex-grow flex flex-col justify-between space-y-2">
+        <div>
+          <Suspense fallback={<p>Loading...</p>}>
+            {linkedProviders.data?.length === 0 ? (
+              <p>No linked providers...</p>
+            ) : null}
 
-        <p>Linked with: Entra ID</p>
-        {/* TODO: Link to the Microsoft dashboard in the correct tenant */}
-        <p>
-          Last Synced: <span>Wed Jan 31 2024 11:42:16</span>
-        </p>
+            <For each={linkedProviders.data}>
+              {(provider) => {
+                return (
+                  <div class="border-b">
+                    <h1 class="text-xl">
+                      {authProviderDisplayName(provider.name)}
+                    </h1>
+                    <p>
+                      <a
+                        href={authProviderUrl(
+                          provider.name,
+                          provider.resourceId
+                        )}
+                        target="_blank"
+                        rel="external"
+                        class="hover:opacity-85 hover:underline"
+                      >
+                        {provider.resourceId}
+                      </a>
+                    </p>
 
-        <Button class="w-full" onClick={() => alert("TODO: Trigger sync")}>
-          Force Sync
-        </Button>
-        <Button
-          class="w-full"
-          variant="destructive"
-          onClick={() =>
-            alert("Unlinking not supported, yet! Please contact support!")
-          }
-        >
-          Unlink
-        </Button>
+                    <p>
+                      Last Synced:{" "}
+                      <span>
+                        {provider.lastSynced
+                          ? dayjs(provider.lastSynced).fromNow()
+                          : "Never synced"}
+                      </span>
+                    </p>
+
+                    {/* // TODO: Delete button confirmation */}
+                    <Button
+                      class="w-full"
+                      variant="destructive"
+                      onClick={() =>
+                        unlinkProvider.mutate({
+                          id: provider.id,
+                        })
+                      }
+                    >
+                      Unlink
+                    </Button>
+                  </div>
+                );
+              }}
+            </For>
+          </Suspense>
+        </div>
+
+        <div class="flex flex-col space-y-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              as={Button}
+              disabled={isPending()}
+              class="w-full"
+            >
+              Link Provider
+            </DropdownMenuTrigger>
+            {/* TODO: Make dropdown width the same as the button */}
+            <DropdownMenuContent>
+              {/* TODO: Warning about double login */}
+              <DropdownMenuItem
+                onClick={() => {
+                  if (
+                    confirm(
+                      "You will be asked to provide consent twice. This is expected and is to ensure your data is kept secure though the process!"
+                    )
+                  )
+                    linkEntra.mutate();
+                }}
+              >
+                <IconLogosMicrosoftAzure class="mr-3" />
+                Microsoft Entra ID
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled>
+                <IconLogosGoogleIcon class="mr-3" />
+                Google Workspaces
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button
+            class="w-full"
+            onClick={() => sync.mutate()}
+            disabled={isPending() || linkedProviders.data?.length === 0}
+          >
+            Sync
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
@@ -202,10 +309,9 @@ function MigrateCard() {
 }
 
 function BillingCard() {
-  const stripePortalUrl = trpc.tenant.stripePortalUrl.useMutation(() => ({
+  const stripePortalUrl = trpc.tenant.billing.portalUrl.useMutation(() => ({
     onSuccess: async (url) => {
-      // @ts-expect-error
-      window.location = url;
+      window.open(url, "_self");
 
       // Make sure the button is disabled until the user is in the new tab
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -229,6 +335,28 @@ function BillingCard() {
         >
           Go to Stipe
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ConfigureEnrollmentCard() {
+  return (
+    <Card class="w-[350px]">
+      <CardHeader>
+        <CardTitle>Enrollment</CardTitle>
+        <CardDescription>Configure how devices can enrollment</CardDescription>
+      </CardHeader>
+      <CardContent class="flex flex-col space-y-2">
+        <div class="flex justify-between">
+          <p>Enable enrollment</p>
+          <Switch checked={true} />
+        </div>
+
+        {/* // TODO: Integrate with Apple DEP */}
+        {/* // TODO: Integrate with Apple user-initiated enrollment */}
+        {/* // TODO: Integrate with Microsoft user-initiated enrollment */}
+        {/* // TODO: Integrate with Android user-initiated enrollment */}
       </CardContent>
     </Card>
   );

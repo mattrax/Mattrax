@@ -6,36 +6,39 @@ import { Toaster, toast } from "solid-sonner";
 import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
 import { PersistQueryClientProvider } from "@tanstack/solid-query-persist-client";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
-import { TRPCClientError } from "@trpc/client";
 import { routes } from "./routes";
-import { SuspenseError } from "./lib";
+import { SuspenseError, tRPCErrorCode } from "./lib";
+import * as dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
 import "./app.css";
 import "./sonner.css";
+
+dayjs.extend(relativeTime);
 
 const createQueryClient = (navigate: (to: string) => void) => {
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
       onError: (error, query) => {
-        if (
-          error instanceof TRPCClientError &&
-          "code" in error.data &&
-          error.data.code === "UNAUTHORIZED"
-        ) {
-          navigate("/login");
-          return;
+        let errorMsg = [
+          "Error fetching data from server!",
+          document.createElement("br"),
+          "Please reload to try again!",
+        ];
+
+        const trpcErrorCode = tRPCErrorCode(error);
+        if (trpcErrorCode) {
+          if (trpcErrorCode === "UNAUTHORIZED") {
+            navigate("/login");
+            return;
+          } else if (trpcErrorCode === "FORBIDDEN") {
+            errorMsg = ["You are not allowed to access this resource!"];
+          }
         }
 
         // TODO: Prevent this for auth errors
-        toast.error(
-          [
-            "Error fetching data from server!",
-            document.createElement("br"),
-            "Please reload to try again!",
-          ],
-          {
-            id: "network-error",
-          }
-        );
+        toast.error(errorMsg, {
+          id: "network-error",
+        });
       },
     }),
     defaultOptions: {

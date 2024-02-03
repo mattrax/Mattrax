@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "~/components/ui";
+import { trpc } from "~/lib";
 
 export const columns: ColumnDef<any>[] = [
   {
@@ -37,6 +38,10 @@ export const columns: ColumnDef<any>[] = [
 ];
 
 export default function Page() {
+  const users = trpc.user.list.useQuery();
+
+  return <p>{JSON.stringify(users.data)}</p>;
+
   const params = useZodParams({
     // TODO: Max and min validation
     offset: z.number().default(0),

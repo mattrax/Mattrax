@@ -8,7 +8,7 @@ import { createTRPCContext } from "./trpc";
 import { HonoEnv } from "./types";
 import { webhookRouter } from "./routes/webhook";
 import { enrollmentRouter } from "./routes/enrollment";
-import { internalRouter } from "./routes/internal";
+import { msRouter } from "./routes/ms";
 
 export const app = new Hono<HonoEnv>()
   .basePath("/api")
@@ -27,7 +27,7 @@ export const app = new Hono<HonoEnv>()
   )
   .route("/enrollment", enrollmentRouter)
   .route("/webhook", webhookRouter)
-  .route("/internal", internalRouter)
+  .route("/ms", msRouter)
   .all("*", (c) => {
     c.status(404);
     if (c.req.raw.headers.get("Accept")?.includes("application/json")) {

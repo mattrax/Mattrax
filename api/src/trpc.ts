@@ -60,7 +60,7 @@ export const isSuperAdmin = (session: SessionData) =>
 // Authenticated procedure requiring a superadmin (Mattrax employee)
 export const superAdminProcedure = authedProcedure.use(async (opts) => {
   const { ctx } = opts;
-  if (isSuperAdmin(ctx.session.data))
+  if (!isSuperAdmin(ctx.session.data))
     throw new TRPCError({ code: "FORBIDDEN" });
 
   return opts.next({ ctx });

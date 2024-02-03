@@ -8,6 +8,15 @@ export type SessionData = {
   id: number;
   name: string;
   email: string;
+  // Data for OAuth flow
+  oauthData?: {
+    // Mattrax tenant to send the user back to
+    tenant: number;
+    // EntraID tenant. The ownership of this must be verified before putting it here.
+    entraIdTenant?: string;
+    // Used for CSRF protection
+    state: string;
+  };
 };
 
 export type GetSessionResult = {

@@ -6,4 +6,5 @@ export type {
   GetSessionResult,
   GetSessionResultWithData,
 } from "./types";
+export type { UserProvider } from "./db";
 export type { AppRouter } from "./root";

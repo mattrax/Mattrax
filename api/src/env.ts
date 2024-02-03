@@ -10,17 +10,23 @@ function optional_in_dev<T extends z.ZodTypeAny>(
 export const env = createEnv({
   server: {
     AUTH_SECRET: z.string(),
-    MSFT_CLIENT_ID: z.string(),
-    MSFT_CLIENT_SECRET: z.string(),
-    MSFT_ADMIN_TENANT: z.string(),
     DATABASE_URL: z.string(),
     INTERNAL_SECRET: z.string(),
     PROD_URL: z.string(),
+    // Emails and other AWS services
     // Get these values from the output of the Cloudformation template
     AWS_ACCESS_KEY_ID: optional_in_dev(z.string()),
     AWS_SECRET_ACCESS_KEY: optional_in_dev(z.string()),
+    // Stipe billing
     STRIPE_PUBLISHABLE_KEY: z.string(),
     STRIPE_SECRET_KEY: z.string(),
+    // Used for syncing users from Entra to Mattrax
+    ENTRA_CLIENT_ID: z.string(),
+    ENTRA_CLIENT_SECRET: z.string(),
+    // Used to communicate with Mattrax's Intune data
+    INTUNE_CLIENT_ID: z.string(),
+    INTUNE_CLIENT_SECRET: z.string(),
+    INTUNE_TENANT: z.string(),
   },
   clientPrefix: "VITE_",
   client: {},
