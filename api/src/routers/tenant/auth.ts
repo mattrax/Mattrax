@@ -103,8 +103,6 @@ export const tenantAuthRouter = createTRPCRouter({
 
     const result = await client.api("/users").get();
 
-    console.log("START", result.value);
-
     // TODO: This will cause users to build up. Really we want to upsert on `resourceId` but idk how to do that with a bulk-insert using Drizzle ORM.
     // TODO: Ensure `values` contains more than one value or skip the insert so it doesn't error out.
     await db.insert(users).values(
@@ -119,7 +117,5 @@ export const tenantAuthRouter = createTRPCRouter({
           // resourceId: u.id, // TODO: Add this column
         }))
     );
-
-    console.log("DONE");
   }),
 });

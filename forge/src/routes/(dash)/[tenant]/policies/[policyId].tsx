@@ -1,6 +1,8 @@
 import { redirect, useParams } from "@solidjs/router";
-import { Suspense } from "solid-js";
+import { Suspense, lazy } from "solid-js";
 import { trpc } from "~/lib";
+
+// TODO: If the policy is not found redirect back to `/policies`
 
 // TODO: Bring this back
 // const fetchPolicy = cache(
@@ -13,6 +15,8 @@ import { trpc } from "~/lib";
 // export const route = {
 //   load: ({ params }) => fetchPolicy(params.policyId!),
 // } satisfies RouteDefinition;
+
+const PolicyBuilder = lazy(() => import("./builder"));
 
 export default function Page() {
   const params = useParams();
@@ -93,6 +97,9 @@ export default function Page() {
         >
           Unassign
         </button>
+      </Suspense>
+      <Suspense fallback={<div>Loading...</div>}>
+        <PolicyBuilder />
       </Suspense>
     </div>
   );
