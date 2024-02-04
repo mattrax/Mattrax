@@ -24,6 +24,7 @@
     "@tanstack/solid-query-devtools": "^5.18.1",
     "@tanstack/solid-query-persist-client": "^5.18.1",
     "@tanstack/solid-table": "^8.11.8",
+    "@thisbeyond/solid-dnd": "^0.7.5",
     "@trpc/client": "^10.45.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",

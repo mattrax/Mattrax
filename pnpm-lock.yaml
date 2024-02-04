@@ -8,6 +8,9 @@ patchedDependencies:
   '@solid-mediakit/trpc@1.0.2':
     hash: r6nbrusfvpo72bwpxibomub2o4
     path: patches/@solid-mediakit__trpc@1.0.2.patch
+  drizzle-kit@0.20.14:
+    hash: fd5wnhu3lnq6ol4deipldttfry
+    path: patches/drizzle-kit@0.20.14.patch
 
 importers:
 
@@ -18,7 +21,7 @@ importers:
         version: 16.4.1
       drizzle-kit:
         specifier: ^0.20.14
-        version: 0.20.14
+        version: 0.20.14(patch_hash=fd5wnhu3lnq6ol4deipldttfry)
       mysql2:
         specifier: ^3.9.1
         version: 3.9.1
@@ -110,6 +113,9 @@ importers:
       '@tanstack/solid-table':
         specifier: ^8.11.8
         version: 8.11.8(solid-js@1.8.12)
+      '@thisbeyond/solid-dnd':
+        specifier: ^0.7.5
+        version: 0.7.5(solid-js@1.8.12)
       '@trpc/client':
         specifier: ^10.45.0
         version: 10.45.0(@trpc/server@10.45.0)
@@ -3013,6 +3019,15 @@ packages:
     engines: {node: '>=12'}
     dev: false
 
+  /@thisbeyond/solid-dnd@0.7.5(solid-js@1.8.12):
+    resolution: {integrity: sha512-DfI5ff+yYGpK9M21LhYwIPlbP2msKxN2ARwuu6GF8tT1GgNVDTI8VCQvH4TJFoVApP9d44izmAcTh/iTCH2UUw==}
+    engines: {node: '>=18.0.0', pnpm: '>=8.6.0'}
+    peerDependencies:
+      solid-js: ^1.5
+    dependencies:
+      solid-js: 1.8.12
+    dev: false
+
   /@trpc/client@10.45.0(@trpc/server@10.45.0):
     resolution: {integrity: sha512-m091R1qte9rvkvL8N1e/mzrbb8S4gb+Q4ZNJnEGDgd7kic/6a8DFgSciBTiCoSp0YwOTVhyQzSrrA/sZI6PhBg==}
     peerDependencies:
@@ -4069,7 +4084,7 @@ packages:
       wordwrap: 1.0.0
     dev: true
 
-  /drizzle-kit@0.20.14:
+  /drizzle-kit@0.20.14(patch_hash=fd5wnhu3lnq6ol4deipldttfry):
     resolution: {integrity: sha512-0fHv3YIEaUcSVPSGyaaBfOi9bmpajjhbJNdPsRMIUvYdLVxBu9eGjH8mRc3Qk7HVmEidFc/lhG1YyJhoXrn5yA==}
     hasBin: true
     dependencies:
@@ -4090,6 +4105,7 @@ packages:
     transitivePeerDependencies:
       - supports-color
     dev: true
+    patched: true
 
   /drizzle-orm@0.29.3(@planetscale/database@1.14.0)(mysql2@3.9.1):
     resolution: {integrity: sha512-uSE027csliGSGYD0pqtM+SAQATMREb3eSM/U8s6r+Y0RFwTKwftnwwSkqx3oS65UBgqDOM0gMTl5UGNpt6lW0A==}

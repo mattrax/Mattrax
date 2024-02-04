@@ -1,0 +1,35 @@
+diff --git a/bin.cjs b/bin.cjs
+index 0edfed8ed6f8f56c408bedcdf2ec4f139641772f..fa31da5cbf1b9e1f129216b8ab2aac2c73b9658d 100755
+--- a/bin.cjs
++++ b/bin.cjs
+@@ -15743,7 +15743,7 @@ var init_sqlgenerator = __esm({
+         const notNullStatement = `${notNull ? " NOT NULL" : ""}`;
+         const primaryKeyStatement = `${primaryKey ? " PRIMARY KEY" : ""}`;
+         const referenceAsObject = referenceData ? SQLiteSquasher.unsquashFK(referenceData) : void 0;
+-        const referenceStatement = `${referenceAsObject ? ` REFERENCES ${referenceAsObject.tableTo}(${referenceAsObject.columnsTo})` : ""}`;
++        const referenceStatement = ``; // `${referenceAsObject ? ` REFERENCES ${referenceAsObject.tableTo}(${referenceAsObject.columnsTo})` : ""}`;
+         return `ALTER TABLE ${tableName} ADD \`${name}\` ${type}${primaryKeyStatement}${defaultStatement}${notNullStatement}${referenceStatement};`;
+       }
+     };
+@@ -16228,7 +16228,7 @@ ${BREAKPOINT}ALTER TABLE ${tableNameWithSchema} ADD CONSTRAINT ${statement.newCo
+         const onUpdateStatement = onUpdate ? ` ON UPDATE ${onUpdate}` : "";
+         const fromColumnsString = columnsFrom.map((it) => `\`${it}\``).join(",");
+         const toColumnsString = columnsTo.map((it) => `\`${it}\``).join(",");
+-        return `ALTER TABLE \`${tableFrom}\` ADD CONSTRAINT \`${name}\` FOREIGN KEY (${fromColumnsString}) REFERENCES \`${tableTo}\`(${toColumnsString})${onDeleteStatement}${onUpdateStatement};`;
++        return `SELECT 1`; // `ALTER TABLE \`${tableFrom}\` ADD CONSTRAINT \`${name}\` FOREIGN KEY (${fromColumnsString}) REFERENCES \`${tableTo}\`(${toColumnsString})${onDeleteStatement}${onUpdateStatement};`;
+       }
+     };
+     PgAlterForeignKeyConvertor = class extends Convertor {
+diff --git a/utils.js b/utils.js
+index b24644e0ed75af0a88187ce3802b5c8691daad64..d3a9216df5faee6da09f120ac10580b4154175f4 100644
+--- a/utils.js
++++ b/utils.js
+@@ -15945,7 +15945,7 @@ ${BREAKPOINT}ALTER TABLE ${tableNameWithSchema} ADD CONSTRAINT ${statement.newCo
+         const onUpdateStatement = onUpdate ? ` ON UPDATE ${onUpdate}` : "";
+         const fromColumnsString = columnsFrom.map((it) => `\`${it}\``).join(",");
+         const toColumnsString = columnsTo.map((it) => `\`${it}\``).join(",");
+-        return `ALTER TABLE \`${tableFrom}\` ADD CONSTRAINT \`${name}\` FOREIGN KEY (${fromColumnsString}) REFERENCES \`${tableTo}\`(${toColumnsString})${onDeleteStatement}${onUpdateStatement};`;
++        return `SELECT 1`; // `ALTER TABLE \`${tableFrom}\` ADD CONSTRAINT \`${name}\` FOREIGN KEY (${fromColumnsString}) REFERENCES \`${tableTo}\`(${toColumnsString})${onDeleteStatement}${onUpdateStatement};`;
+       }
+     };
+     PgAlterForeignKeyConvertor = class extends Convertor {

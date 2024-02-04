@@ -86,16 +86,30 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
     <aside class="h-full w-64 flex flex-col" aria-label="Sidebar">
       <div class="h-28 bg-brand relative">
         {import.meta.env.MODE === "development" && (
-          <div
-            class="absolute inset-0 h-1.5 bg-orange-400"
-            onClick={() => {
-              if (!props.activeTenant) {
-                alert("No active tenant");
-                return;
-              }
-              navigate(`/${props.activeTenant.id}/debug`);
-            }}
-          ></div>
+          <div class="absolute insert-0 h-1.5 flex z-10 w-full">
+            <div
+              class="bg-orange-500 w-1/2"
+              onClick={() => navigate("/internal")}
+            ></div>
+            <div
+              class="bg-orange-400 w-1/2"
+              onClick={() => {
+                alert(
+                  `Debug mode ${
+                    localStorage.getItem("debug") === "1"
+                      ? "disabled"
+                      : "enabled"
+                  }!`
+                );
+                if (localStorage.getItem("debug") === "1") {
+                  localStorage.removeItem("debug");
+                } else {
+                  localStorage.setItem("debug", "1");
+                }
+                globalThis.location.reload();
+              }}
+            ></div>
+          </div>
         )}
 
         <div class="absolute inset-0">

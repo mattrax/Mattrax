@@ -42,7 +42,12 @@ export function CreateTenantDialog(props: {
         }}
       >
         <fieldset class="flex flex-col space-y-4" disabled={mutation.isPending}>
-          <Input type="text" name="name" placeholder="Acme School Inc" />
+          <Input
+            type="text"
+            name="name"
+            placeholder="Acme School Inc"
+            autocomplete="off"
+          />
           <Button type="submit">Create</Button>
         </fieldset>
       </form>

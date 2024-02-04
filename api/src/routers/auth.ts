@@ -33,14 +33,15 @@ export const authRouter = createTRPCRouter({
 
       // TODO: Validate email and don't just auto create new accounts
 
-      const result = await db
+      const [result] = await db
         .insert(accounts)
         .values({ name, email: input.email })
         .onDuplicateKeyUpdate({ set: { email: input.email } });
+      let userId = result.insertId;
 
-      // The upsert didn't insert a value and MySQL has no `RETURNING`
-      let userId = parseInt(result.insertId);
-      if (result.insertId === "0") {
+      // The upsert didn't insert a value.
+      // MySQL has no `RETURNING` so this is the best we are gonna get.
+      if (userId === 0) {
         const user = (
           await db
             .select({ id: accounts.id })

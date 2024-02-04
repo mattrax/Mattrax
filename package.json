@@ -18,7 +18,8 @@
   },
   "pnpm": {
     "patchedDependencies": {
-      "@solid-mediakit/trpc@1.0.2": "patches/@solid-mediakit__trpc@1.0.2.patch"
+      "@solid-mediakit/trpc@1.0.2": "patches/@solid-mediakit__trpc@1.0.2.patch",
+      "drizzle-kit@0.20.14": "patches/drizzle-kit@0.20.14.patch"
     }
   }
 }

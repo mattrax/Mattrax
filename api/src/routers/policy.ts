@@ -93,12 +93,12 @@ export const policyRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const result = await db.insert(policies).values({
+      const [result] = await db.insert(policies).values({
         name: input.name,
         tenantId: ctx.tenantId,
       });
 
-      return encodeId("policy", parseInt(result.insertId));
+      return encodeId("policy", result.insertId);
     }),
 
   push: tenantProcedure

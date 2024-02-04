@@ -9,10 +9,14 @@ import {
   mysqlEnum,
   unique,
   primaryKey,
+  bigint,
 } from "drizzle-orm/mysql-core";
 import { Policy } from "@mattrax/policy";
 
 const mysqlTable = mysqlTableCreator((name) => `forge_${name}`);
+
+const serialRelation = (name: string) =>
+  bigint(name, { mode: "number", unsigned: true });
 
 // An account represents the login of an *administrator*.
 export const accounts = mysqlTable("accounts", {
@@ -27,7 +31,7 @@ export const tenants = mysqlTable("tenant", {
   description: varchar("description", { length: 256 }),
   billingEmail: varchar("billingEmail", { length: 256 }),
   stripeCustomerId: varchar("stripeCustomerId", { length: 256 }),
-  owner_id: int("owner_id")
+  owner_id: serialRelation("ownerId")
     .references(() => accounts.id)
     .notNull(),
 });
@@ -35,10 +39,10 @@ export const tenants = mysqlTable("tenant", {
 export const tenantAccounts = mysqlTable(
   "tenant_account",
   {
-    tenantId: int("tenantId")
+    tenantId: serialRelation("tenantId")
       .references(() => tenants.id)
       .notNull(),
-    accountId: int("accountId")
+    accountId: serialRelation("accountId")
       .references(() => accounts.id)
       .notNull(),
   },
@@ -61,9 +65,9 @@ export const tenantUserProvider = mysqlTable(
     name: mysqlEnum("provider", userProviders).notNull(),
     // This is the unique ID for the user in the provider's system.
     resourceId: varchar("resourceId", { length: 256 }).notNull(),
-    tenantId: int("tenantId")
-      .notNull()
-      .references(() => tenants.id),
+    tenantId: serialRelation("tenantId")
+      .references(() => tenants.id)
+      .notNull(),
     lastSynced: timestamp("lastSynced"),
   },
   (table) => {
@@ -81,12 +85,14 @@ export const users = mysqlTable(
     id: serial("id").primaryKey(),
     name: varchar("name", { length: 256 }).notNull(),
     email: varchar("email", { length: 256 }).notNull(),
-    tenantId: int("tenantId")
+    tenantId: serialRelation("tenantId")
       .references(() => tenants.id)
       .notNull(),
-    provider: int("provider")
+    provider: serialRelation("provider")
       .references(() => tenantUserProvider.id)
       .notNull(),
+    // Resource ID within the provider's system.
+    // resourceId: varchar("resourceId", { length: 256 }).notNull(),
   },
   (t) => ({
     emailUnq: unique().on(t.email, t.tenantId),
@@ -107,7 +113,7 @@ export const policies = mysqlTable("policies", {
   // When a policy is uploaded to Intune this will be set to the `policyHash` column.
   // If this doesn't match `policyHash` the policy should be re-uploaded to Intune.
   intunePolicyHash: varchar("intunePolicyHash", { length: 256 }),
-  tenantId: int("tenantId")
+  tenantId: serialRelation("tenantId")
     .references(() => tenants.id)
     .notNull(),
 });
@@ -126,7 +132,7 @@ export const devices = mysqlTable("devices", {
   freeStorageSpaceInBytes: int("freeStorageSpaceInBytes"),
   totalStorageSpaceInBytes: int("totalStorageSpaceInBytes"),
 
-  owner: int("owner").references(() => users.id),
+  owner: serialRelation("owner").references(() => users.id),
 
   azureADDeviceId: varchar("azureADDeviceId", { length: 256 })
     .notNull()
@@ -136,7 +142,7 @@ export const devices = mysqlTable("devices", {
   enrolledAt: timestamp("enrolledAt").notNull().defaultNow(),
   lastSynced: timestamp("lastSynced").notNull().defaultNow(),
 
-  tenantId: int("tenantId")
+  tenantId: serialRelation("tenantId")
     .references(() => tenants.id)
     .notNull(),
 });
