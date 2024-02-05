@@ -1,0 +1,68 @@
+diff --git a/dist-cjs/index.js b/dist-cjs/index.js
+index 0b968b249c7f6a24ae5df7441933e9584e51f6b6..d609be67eecb7a9ee70f4ad8b651beaf54dbdbbf 100644
+--- a/dist-cjs/index.js
++++ b/dist-cjs/index.js
+@@ -28,7 +28,6 @@ __export(src_exports, {
+ module.exports = __toCommonJS(src_exports);
+ var import_node_config_provider = require("@smithy/node-config-provider");
+ var import_os = require("os");
+-var import_process = require("process");
+ 
+ // src/crt-availability.ts
+ var crtAvailability = {
+@@ -57,7 +56,7 @@ var defaultUserAgent = /* @__PURE__ */ __name(({ serviceId, clientVersion }) =>
+     // language-metadata
+     // ECMAScript edition doesn't matter in JS, so no version needed.
+     ["lang/js"],
+-    ["md/nodejs", `${import_process.versions.node}`]
++    // ["md/nodejs", `${import_process.versions.node}`]
+   ];
+   const crtAvailable = isCrtAvailable();
+   if (crtAvailable) {
+@@ -66,9 +65,9 @@ var defaultUserAgent = /* @__PURE__ */ __name(({ serviceId, clientVersion }) =>
+   if (serviceId) {
+     sections.push([`api/${serviceId}`, clientVersion]);
+   }
+-  if (import_process.env.AWS_EXECUTION_ENV) {
+-    sections.push([`exec-env/${import_process.env.AWS_EXECUTION_ENV}`]);
+-  }
++  // if (import_process.env.AWS_EXECUTION_ENV) {
++  //   sections.push([`exec-env/${import_process.env.AWS_EXECUTION_ENV}`]);
++  // }
+   const appIdPromise = (0, import_node_config_provider.loadConfig)({
+     environmentVariableSelector: (env2) => env2[UA_APP_ID_ENV_NAME],
+     configFileSelector: (profile) => profile[UA_APP_ID_INI_NAME],
+diff --git a/dist-es/index.js b/dist-es/index.js
+index fd3b99fc79c6d2f12b4c3a9416e1bac503fa20ab..093c4fbc75099b8f1404455d55885ee67ac2d845 100644
+--- a/dist-es/index.js
++++ b/dist-es/index.js
+@@ -1,6 +1,6 @@
+ import { loadConfig } from "@smithy/node-config-provider";
+ import { platform, release } from "os";
+-import { env, versions } from "process";
++// import { env, versions } from "process";
+ import { isCrtAvailable } from "./is-crt-available";
+ export { crtAvailability } from "./crt-availability";
+ export const UA_APP_ID_ENV_NAME = "AWS_SDK_UA_APP_ID";
+@@ -11,7 +11,7 @@ export const defaultUserAgent = ({ serviceId, clientVersion }) => {
+         ["ua", "2.0"],
+         [`os/${platform()}`, release()],
+         ["lang/js"],
+-        ["md/nodejs", `${versions.node}`],
++        // ["md/nodejs", `${versions.node}`],
+     ];
+     const crtAvailable = isCrtAvailable();
+     if (crtAvailable) {
+@@ -20,9 +20,9 @@ export const defaultUserAgent = ({ serviceId, clientVersion }) => {
+     if (serviceId) {
+         sections.push([`api/${serviceId}`, clientVersion]);
+     }
+-    if (env.AWS_EXECUTION_ENV) {
+-        sections.push([`exec-env/${env.AWS_EXECUTION_ENV}`]);
+-    }
++    // if (env.AWS_EXECUTION_ENV) {
++    //     sections.push([`exec-env/${env.AWS_EXECUTION_ENV}`]);
++    // }
+     const appIdPromise = loadConfig({
+         environmentVariableSelector: (env) => env[UA_APP_ID_ENV_NAME],
+         configFileSelector: (profile) => profile[UA_APP_ID_INI_NAME],

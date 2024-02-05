@@ -28,7 +28,6 @@ export async function sendEmail(args: SendEmailArgs) {
   }
 
   const emailHtml = render(args.component);
-
   const cmd = new SendEmailCommand({
     Destination: {
       ToAddresses: [args.to],
