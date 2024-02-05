@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "pnpm --filter @mattrax/forge dev",
+    "landing": "pnpm --filter @mattrax/landing --",
     "db:push": "drizzle-kit push:mysql",
     "db:studio": "drizzle-kit studio",
     "typecheck": "tsc -b"

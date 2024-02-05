@@ -2,3 +2,4 @@ packages:
   - api
   - forge
   - packages/*
+  - landing

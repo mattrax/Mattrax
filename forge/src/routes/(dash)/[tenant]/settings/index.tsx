@@ -166,13 +166,16 @@ function AuthenticationCard() {
   const unlinkProvider = trpc.tenant.auth.unlink.useMutation(() => ({
     onSuccess: async () => {
       await linkedProviders.refetch();
+      // TODO: Refetch user's if the query is active
     },
   }));
   const sync = trpc.tenant.auth.sync.useMutation(() => ({
-    onSuccess: async () =>
+    onSuccess: async () => {
       toast.success("Sync complete!", {
         id: "tenant-user-sync",
-      }),
+      });
+      // TODO: Refetch user's if the query is active
+    },
   }));
 
   const isPending = () =>
