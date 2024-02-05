@@ -11,7 +11,7 @@ Outputs:
 
   BrendanDevUserAccessKeyId:
     Description: AWS_ACCESS_KEY_ID
-    Value: !Ref BrendanDevUser
+    Value: !Ref BrendanDevAccessKey
 
   BrendanDevUserAccessKeySecret:
     Description: AWS_SECRET_ACCESS_KEY
