@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@aws-sdk/client-ses@3.504.0':
+    hash: p52knnlzs4j6qwwtk4ngfunag4
+    path: patches/@aws-sdk__client-ses@3.504.0.patch
   '@aws-sdk/util-user-agent-node@3.502.0':
     hash: i3uvij4t5ah7acrft4xmyadv3i
     path: patches/@aws-sdk__util-user-agent-node@3.502.0.patch
@@ -36,7 +39,7 @@ importers:
     dependencies:
       '@aws-sdk/client-ses':
         specifier: ^3.504.0
-        version: 3.504.0
+        version: 3.504.0(patch_hash=p52knnlzs4j6qwwtk4ngfunag4)
       '@mattrax/email':
         specifier: workspace:^
         version: link:../packages/email
@@ -369,7 +372,7 @@ packages:
       tslib: 1.14.1
     dev: false
 
-  /@aws-sdk/client-ses@3.504.0:
+  /@aws-sdk/client-ses@3.504.0(patch_hash=p52knnlzs4j6qwwtk4ngfunag4):
     resolution: {integrity: sha512-6ElUJBP+dxIAjd403GWv6YKLLmC7fbGGDVlcUvlC19V/ETyv5gcw6RMSf5HNMVaIpb0XDADogBsKg5uLy404SA==}
     engines: {node: '>=14.0.0'}
     dependencies:
@@ -418,6 +421,7 @@ packages:
     transitivePeerDependencies:
       - aws-crt
     dev: false
+    patched: true
 
   /@aws-sdk/client-sso-oidc@3.504.0(@aws-sdk/credential-provider-node@3.504.0):
     resolution: {integrity: sha512-ODA33/nm2srhV08EW0KZAP577UgV0qjyr7Xp2yEo8MXWL4ZqQZprk1c+QKBhjr4Djesrm0VPmSD/np0mtYP68A==}
