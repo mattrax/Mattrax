@@ -53,10 +53,11 @@ export const groupRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const [{ insertId }] = await db.insert(groups).values({
+      const result = await db.insert(groups).values({
         name: input.name,
         tenantId: ctx.tenantId,
       });
+      const insertId = parseInt(result.insertId);
 
       return insertId;
     }),
