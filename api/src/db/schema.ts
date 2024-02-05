@@ -10,10 +10,9 @@ import {
   unique,
   primaryKey,
   bigint,
+  mysqlTable,
 } from "drizzle-orm/mysql-core";
 import { Policy } from "@mattrax/policy";
-
-const mysqlTable = mysqlTableCreator((name) => `forge_${name}`);
 
 const serialRelation = (name: string) =>
   bigint(name, { mode: "number", unsigned: true });
