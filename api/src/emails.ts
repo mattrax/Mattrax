@@ -1,5 +1,5 @@
 import type { JSX as ReactJSX } from "react";
-// import { render } from "@react-email/render";
+import { render } from "@react-email/render";
 import { AwsClient } from "aws4fetch";
 import { env } from "./env";
 
@@ -30,7 +30,7 @@ export async function sendEmail(args: SendEmailArgs) {
     throw new Error(msg);
   }
 
-  // const emailHtml = render(args.component);
+  const emailHtml = render(args.component);
   const resp = await aws.fetch(
     "https://email.us-east-1.amazonaws.com/v2/email/outbound-emails",
     {
