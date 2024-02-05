@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "PORT=3001 vinxi dev",
     "build": "vinxi build",
-    "start": "vinxi start"
+    "start": "vinxi start",
+    "vbuild": "NITRO_PRESET=vercel_edge vinxi build"
   },
   "dependencies": {
     "@fontsource/inter": "^5.0.16",
