@@ -46,7 +46,7 @@ export async function sendEmail(args: SendEmailArgs) {
             Body: {
               Html: {
                 Charset: "UTF-8",
-                Data: "todo", // emailHtml,
+                Data: emailHtml,
               },
             },
             Subject: {
