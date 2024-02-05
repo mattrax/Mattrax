@@ -2,7 +2,7 @@ import { count } from "drizzle-orm";
 import { db, devices, policies, tenants, users } from "../db";
 import { createTRPCRouter, superAdminProcedure } from "../trpc";
 import { sendEmail } from "../emails";
-// import { DemoEmail } from "@mattrax/email";
+import { DemoEmail } from "@mattrax/email";
 
 export const internalRouter = createTRPCRouter({
   stats: superAdminProcedure.query(async ({ ctx }) =>
@@ -38,7 +38,7 @@ export const internalRouter = createTRPCRouter({
     await sendEmail({
       to: "oscar@otbeaumont.me",
       subject: "Syncing tenant",
-      component: "", // DemoEmail({ url: "https://mattrax-forge.vercel.app" }),
+      component: DemoEmail({ url: "https://mattrax-forge.vercel.app" }),
     });
   }),
 });
