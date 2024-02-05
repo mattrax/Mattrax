@@ -7,6 +7,7 @@ import { env } from "../../env";
 
 export const billingRouter = createTRPCRouter({
   portalUrl: tenantProcedure.mutation(async ({ ctx }) => {
+    console.log("A");
     const tenant = (
       await db
         .select({
@@ -19,22 +20,30 @@ export const billingRouter = createTRPCRouter({
     )?.[0];
     if (!tenant) throw new Error("Tenant not found!"); // TODO: Proper error code which the frontend knows how to handle
 
+    console.log("B");
+
     let customerId: string;
     if (!tenant.stripeCustomerId) {
+      console.log("C");
       const customer = await stripe.customers.create({
         name: tenant.name,
         email: tenant.billingEmail || undefined,
       });
+      console.log("D");
 
       await db
         .update(tenants)
         .set({ stripeCustomerId: customer.id })
         .where(eq(tenants.id, ctx.tenantId));
 
+      console.log("E");
+
       customerId = customer.id;
     } else {
       customerId = tenant.stripeCustomerId;
     }
+
+    console.log("F", customerId);
 
     const session = await stripe.billingPortal.sessions.create({
       customer: customerId,
@@ -43,6 +52,8 @@ export const billingRouter = createTRPCRouter({
         ctx.tenantId
       )}/settings`,
     });
+
+    console.log("G");
 
     return session.url;
   }),
