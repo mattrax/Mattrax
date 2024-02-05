@@ -53,6 +53,8 @@ export default createApp({
     vercel: {
       regions: ["iad1"],
     },
+    // This is super odd but it's required to make Amazon SES build for Vercel Edge.
+    node: true,
     esbuild: {
       options: {
         /// Required for `@paralleldrive/cuid2` to work.
