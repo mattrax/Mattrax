@@ -6,5 +6,8 @@
   },
   "include": ["src/", "src/**/*.json"],
   "exclude": ["node_modules", "dist"],
-  "references": [{ "path": "../packages/policy" }]
+  "references": [
+    { "path": "../packages/policy" },
+    { "path": "../packages/email" }
+  ]
 }

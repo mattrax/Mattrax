@@ -15,6 +15,15 @@ import "./sonner.css";
 
 dayjs.extend(relativeTime);
 
+// TODO: Maybe PR this back to Solid DND???
+declare module "solid-js" {
+  namespace JSX {
+    interface Directives {
+      sortable: true;
+    }
+  }
+}
+
 const createQueryClient = (navigate: (to: string) => void) => {
   const queryClient = new QueryClient({
     queryCache: new QueryCache({

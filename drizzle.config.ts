@@ -14,7 +14,6 @@ export default defineConfig({
   dbCredentials: {
     uri: process.env.DATABASE_URL!,
   },
-  tablesFilter: ["forge_"],
   verbose: true,
   strict: true,
 });

@@ -16,7 +16,7 @@ import {
 } from "~/components/ui";
 import dayjs from "dayjs";
 import { useGlobalCtx } from "~/lib/globalCtx";
-import { trpc } from "~/lib";
+import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
 import { authProviderDisplayName, authProviderUrl } from "~/lib/values";
 import { toast } from "solid-sonner";
@@ -166,17 +166,24 @@ function AuthenticationCard() {
   const unlinkProvider = trpc.tenant.auth.unlink.useMutation(() => ({
     onSuccess: async () => {
       await linkedProviders.refetch();
+      // TODO: Refetch user's if the query is active
     },
   }));
   const sync = trpc.tenant.auth.sync.useMutation(() => ({
-    onSuccess: async () =>
+    onSuccess: async () => {
       toast.success("Sync complete!", {
         id: "tenant-user-sync",
-      }),
+      });
+      // TODO: Refetch user's if the query is active
+    },
   }));
 
   const isPending = () =>
     linkedProviders.isPending || linkEntra.isPending || sync.isPending;
+
+  const hasLinkedProviders = untrackScopeFromSuspense(
+    () => linkedProviders.data?.length === 0
+  );
 
   return (
     <Card class="w-[350px] flex flex-col">
@@ -277,7 +284,7 @@ function AuthenticationCard() {
           <Button
             class="w-full"
             onClick={() => sync.mutate()}
-            disabled={isPending() || linkedProviders.data?.length === 0}
+            // disabled={isPending() || hasLinkedProviders()}
           >
             Sync
           </Button>

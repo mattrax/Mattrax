@@ -45,9 +45,9 @@ export const columns: ColumnDef<any>[] = [
     header: ({ table }) => (
       <Checkbox
         checked={
-          table.getIsAllPageRowsSelected() ||
-          (table.getIsSomePageRowsSelected() && "indeterminate")
+          table.getIsAllPageRowsSelected() || table.getIsSomePageRowsSelected()
         }
+        indeterminate={table.getIsSomePageRowsSelected()}
         onChange={(value) => table.toggleAllPageRowsSelected(!!value)}
         aria-label="Select all"
       />
@@ -161,7 +161,7 @@ export default function Page() {
               <IconCarbonCaretDown class="ml-2 h-4 w-4" />
             </As>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent>
             <For
               each={table
                 .getAllColumns()

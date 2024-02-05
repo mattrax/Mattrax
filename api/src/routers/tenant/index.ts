@@ -19,17 +19,18 @@ export const tenantRouter = createTRPCRouter({
     .input(z.object({ name: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const lastInsertId = await db.transaction(async (tx) => {
-        const [result] = await db.insert(tenants).values({
+        const result = await db.insert(tenants).values({
           name: input.name,
           owner_id: ctx.session.data.id,
         });
+        const tenantId = parseInt(result.insertId);
 
         await db.insert(tenantAccounts).values({
-          tenantId: result.insertId,
+          tenantId,
           accountId: ctx.session.data.id,
         });
 
-        return result.insertId;
+        return tenantId;
       });
 
       // TODO: Invalidate `tenants`

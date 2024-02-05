@@ -9,6 +9,15 @@ Outputs:
     Description: AWS_SECRET_ACCESS_KEY
     Value: !GetAtt VercelAccessKey.SecretAccessKey
 
+  BrendanDevUserAccessKeyId:
+    Description: AWS_ACCESS_KEY_ID
+    Value: !Ref BrendanDevAccessKey
+
+  BrendanDevUserAccessKeySecret:
+    Description: AWS_SECRET_ACCESS_KEY
+    Value: !GetAtt BrendanDevAccessKey.SecretAccessKey
+
+
 Resources:
   ForgeData:
     Type: AWS::S3::Bucket
@@ -42,3 +51,33 @@ Resources:
     Properties:
       UserName:
         !Ref VercelUser
+
+  BrendanDevUser:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+        - PolicyName: S3
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub arn:aws:s3:::${ForgeData}/*
+        
+        - PolicyName: SES
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                Resource: "*" # TODO: Props restrict this down to the correct domain
+                # TODO: Restrict `ses:FromAddress` and `ses:FromDisplayName` for better security
+
+  BrendanDevAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName:
+        !Ref BrendanDevUser
