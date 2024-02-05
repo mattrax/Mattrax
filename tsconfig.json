@@ -3,7 +3,8 @@
   "references": [
     { "path": "./api" },
     { "path": "./forge" },
-    { "path": "./packages/policy" }
+    { "path": "./packages/policy" },
+    { "path": "./packages/email" }
   ],
   "compilerOptions": {
     "incremental": true,

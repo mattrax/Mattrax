@@ -27,6 +27,8 @@ export const env = createEnv({
     INTUNE_CLIENT_ID: z.string(),
     INTUNE_CLIENT_SECRET: z.string(),
     INTUNE_TENANT: z.string(),
+    // Email
+    FROM_ADDRESS: z.string(),
   },
   clientPrefix: "VITE_",
   client: {},

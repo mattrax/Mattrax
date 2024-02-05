@@ -1,9 +1,11 @@
 import { useNavigate } from "@solidjs/router";
 import { For, createEffect } from "solid-js";
+import { Button } from "~/components/ui";
 import { tRPCErrorCode, trpc } from "~/lib";
 
 export default function Page() {
   const stats = trpc.internal.stats.useQuery();
+  const sendEmail = trpc.internal.emailDemo.useMutation();
 
   const navigate = useNavigate();
   createEffect(() => {
@@ -25,6 +27,8 @@ export default function Page() {
             </p>
           )}
         </For>
+
+        <Button onClick={() => sendEmail.mutateAsync()}>Test email</Button>
       </div>
     </div>
   );

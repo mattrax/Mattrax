@@ -15,6 +15,7 @@ dist
 
 # dependencies
 node_modules
+.react-email
 
 # IDEs and editors
 /.idea
