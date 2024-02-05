@@ -2,14 +2,7 @@ import { For, ParentProps, Show, Suspense, createSignal } from "solid-js";
 import { z } from "zod";
 import { As } from "@kobalte/core";
 
-import {
-  Button,
-  Checkbox,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "~/components/ui";
+import { Button, Checkbox, Tabs, TabsList, TabsTrigger } from "~/components/ui";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 
@@ -19,21 +12,19 @@ export default function Page() {
   const group = trpc.group.get.useQuery(() => ({ id: routeParams().groupId }));
 
   return (
-    <Suspense>
-      <Show when={group.data}>
-        {(group) => (
-          <div class="flex-1 m-4">
-            <h1 class="text-xl font-bold">{group().name}</h1>
-            <div class="mt-4 mb-2">
-              <AddMemberSheet groupId={group().id}>
-                <As component={Button}>Add Members</As>
-              </AddMemberSheet>
-            </div>
-            <MembersTable groupId={group().id} />
+    <Show when={group.data}>
+      {(group) => (
+        <div class="flex-1 m-4">
+          <h1 class="text-xl font-bold">{group().name}</h1>
+          <div class="mt-4 mb-2">
+            <AddMemberSheet groupId={routeParams().groupId}>
+              <As component={Button}>Add Members</As>
+            </AddMemberSheet>
           </div>
-        )}
-      </Show>
-    </Suspense>
+          <MembersTable groupId={group().id} />
+        </div>
+      )}
+    </Show>
   );
 }
 
@@ -99,9 +90,10 @@ import {
 } from "~/components/ui";
 
 function MembersTable(props: { groupId: number }) {
-  const members = trpc.group.members.useQuery(() => ({
-    id: props.groupId,
-  }));
+  const members = trpc.group.members.useQuery(
+    () => ({ id: props.groupId }),
+    () => ({ placeholderData: keepPreviousData })
+  );
 
   const table = createSolidTable({
     get data() {
@@ -187,6 +179,7 @@ import {
   SheetTrigger,
 } from "~/components/ui/sheet";
 import { Badge } from "~/components/ui/badge";
+import { keepPreviousData } from "@tanstack/solid-query";
 
 const AddMemberTableOptions = {
   all: "All",
@@ -263,10 +256,12 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
               ))}
             </TabsList>
           </Tabs>
-          <Button disabled={!table.getIsSomeRowsSelected()}>
-            Add {table.getSelectedRowModel().rows.length} Member
-            {table.getSelectedRowModel().rows.length !== 1 && "s"}
-          </Button>
+          <Suspense fallback={<Button disabled>Add 0 Members</Button>}>
+            <Button disabled={!table.getIsSomeRowsSelected()}>
+              Add {table.getSelectedRowModel().rows.length} Member
+              {table.getSelectedRowModel().rows.length !== 1 && "s"}
+            </Button>
+          </Suspense>
         </div>
         <Suspense>
           <div class="rounded-md border mt-2">
@@ -299,6 +294,7 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
                             <TableCell
                               onClick={(e) => {
                                 e.preventDefault();
+                                e.stopPropagation();
                                 row.toggleSelected();
                               }}
                             >

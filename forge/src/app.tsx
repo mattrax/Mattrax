@@ -1,7 +1,13 @@
 // @refresh reload
 import { Router, useNavigate } from "@solidjs/router";
 import { ErrorBoundary, Suspense, lazy, onCleanup } from "solid-js";
-import { QueryCache, QueryClient, onlineManager } from "@tanstack/solid-query";
+import {
+  QueryCache,
+  QueryClient,
+  QueryClientProvider,
+  keepPreviousData,
+  onlineManager,
+} from "@tanstack/solid-query";
 import { Toaster, toast } from "solid-sonner";
 import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
 import { PersistQueryClientProvider } from "@tanstack/solid-query-persist-client";
@@ -55,6 +61,7 @@ const createQueryClient = (navigate: (to: string) => void) => {
         retry: false,
         gcTime: 1000 * 60 * 60 * 24, // 24 hours
         refetchInterval: 1000 * 60, // 1 minute
+        placeholderData: keepPreviousData,
       },
     },
   });
@@ -107,10 +114,11 @@ export default function App() {
         onCleanup(() => unsubscribe());
 
         return (
-          <PersistQueryClientProvider
-            client={queryClient}
-            persistOptions={{ persister }}
-          >
+          // <PersistQueryClientProvider
+          //   client={queryClient}
+          //   persistOptions={{ persister }}
+          // >
+          <QueryClientProvider client={queryClient}>
             {import.meta.env.DEV && localStorage.getItem("debug") !== null ? (
               <SolidQueryDevtools />
             ) : null}
@@ -145,7 +153,8 @@ export default function App() {
                 {props.children}
               </Suspense>
             </ErrorBoundary>
-          </PersistQueryClientProvider>
+          </QueryClientProvider>
+          // </PersistQueryClientProvider>
         );
       }}
     >
