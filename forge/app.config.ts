@@ -53,8 +53,10 @@ export default createApp({
     vercel: {
       regions: ["iad1"],
     },
+    minify: false, // TODO
     esbuild: {
       options: {
+        minify: false, // TODO
         /// Required for `@paralleldrive/cuid2` to work.
         /// https://github.com/paralleldrive/cuid2/issues/62
         target: "es2020",
