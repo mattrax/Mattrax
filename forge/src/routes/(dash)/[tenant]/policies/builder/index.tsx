@@ -97,7 +97,7 @@ function ConfigurationItem(props: {
   createConfiguration: () => {};
 }) {
   const sortable = createSortable(props.config.id);
-  const [state] = useDragDropContext();
+  const [state] = useDragDropContext()!;
 
   return (
     <div
