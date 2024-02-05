@@ -64,6 +64,9 @@ importers:
       '@trpc/server':
         specifier: ^10.45.0
         version: 10.45.0
+      aws4fetch:
+        specifier: ^1.0.17
+        version: 1.0.17
       base58:
         specifier: ^2.0.1
         version: 2.0.1
@@ -143,6 +146,9 @@ importers:
       '@trpc/client':
         specifier: ^10.45.0
         version: 10.45.0(@trpc/server@10.45.0)
+      aws4fetch:
+        specifier: ^1.0.17
+        version: 1.0.17
       class-variance-authority:
         specifier: ^0.7.0
         version: 0.7.0
@@ -6287,6 +6293,10 @@ packages:
   /available-typed-arrays@1.0.6:
     resolution: {integrity: sha512-j1QzY8iPNPG4o4xmO3ptzpRxTciqD3MgEHtifP/YnJpIo58Xu+ne4BejlbkuaLfXn/nz6HFiw29bLpj2PNMdGg==}
     engines: {node: '>= 0.4'}
+    dev: false
+
+  /aws4fetch@1.0.17:
+    resolution: {integrity: sha512-4IbOvsxqxeOSxI4oA+8xEO8SzBMVlzbSTgGy/EF83rHnQ/aKtP6Sc6YV/k0oiW0mqrcxuThlbDosnvetGOuO+g==}
     dev: false
 
   /axios@0.25.0(debug@4.3.4):

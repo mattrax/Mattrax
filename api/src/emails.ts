@@ -1,19 +1,16 @@
 import type { JSX as ReactJSX } from "react";
 import { render } from "@react-email/render";
-import { SES, SendEmailCommand } from "@aws-sdk/client-ses";
+import { AwsClient } from "aws4fetch";
 import { env } from "./env";
 
-const ses = new SES({
-  region: "us-east-1",
-  ...(env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
-    ? {
-        credentials: {
-          accessKeyId: env.AWS_ACCESS_KEY_ID,
-          secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-        },
-      }
-    : {}),
-});
+const aws =
+  env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
+    ? new AwsClient({
+        region: "us-east-1",
+        accessKeyId: env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+      })
+    : undefined;
 
 type SendEmailArgs = {
   to: string;
@@ -27,31 +24,46 @@ export async function sendEmail(args: SendEmailArgs) {
     return;
   }
 
-  const emailHtml = render(args.component);
-  const cmd = new SendEmailCommand({
-    Destination: {
-      ToAddresses: [args.to],
-    },
-    Message: {
-      Body: {
-        Html: {
-          Charset: "UTF-8",
-          Data: emailHtml,
-        },
-      },
-      Subject: {
-        Charset: "UTF-8",
-        Data: args.subject,
-      },
-    },
-    Source: env.FROM_ADDRESS,
-    ReplyToAddresses: [],
-  });
+  if (!aws) {
+    const msg = "AWS client not setup but 'FROM_ADDRESS' provided!";
+    console.error(msg);
+    throw new Error(msg);
+  }
 
-  try {
-    return await ses.send(cmd);
-  } catch (err) {
-    console.error("Failed to send email.", err);
-    return err;
+  const emailHtml = render(args.component);
+  const resp = await aws.fetch(
+    "https://email.us-east-1.amazonaws.com/v2/email/outbound-emails",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        FromEmailAddress: env.FROM_ADDRESS,
+        Destination: {
+          ToAddresses: [args.to],
+        },
+        Content: {
+          Simple: {
+            Body: {
+              Html: {
+                Charset: "UTF-8",
+                Data: emailHtml,
+              },
+            },
+            Subject: {
+              Charset: "UTF-8",
+              Data: args.subject,
+            },
+          },
+        },
+      }),
+    }
+  );
+  if (!resp.ok) {
+    console.error(
+      `Error sending email with SES status '${
+        resp.status
+      }': ${await resp.text()}`
+    );
+    throw new Error("Failed to send email.");
   }
 }
