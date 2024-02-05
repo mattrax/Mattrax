@@ -167,7 +167,7 @@ export const devicesRelations = relations(devices, ({ one }) => ({
   }),
 }));
 
-const groupableVariants = ["user", "device", "policy"] as const;
+export const groupableVariants = ["user", "device", "policy"] as const;
 
 export const groupables = mysqlTable(
   "groupables",

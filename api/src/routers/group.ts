@@ -7,6 +7,7 @@ import {
   db,
   devices,
   groupGroupables,
+  groupableVariants,
   groupables,
   groups,
   policies,
@@ -77,9 +78,50 @@ export const groupRouter = createTRPCRouter({
       if (!group)
         throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
 
-      return await db.query.groupGroupables.findMany({
-        where: eq(groupGroupables.groupId, group.id),
-      });
+      const results = await Promise.all([
+        db
+          .select({ id: users.id, name: users.name })
+          .from(users)
+          .leftJoin(groupGroupables, eq(users.id, groupGroupables.groupableId))
+          .where(
+            and(
+              eq(groupGroupables.groupableVariant, "user"),
+              eq(groupGroupables.groupId, group.id)
+            )
+          ),
+        db
+          .select({ id: devices.id, name: devices.name })
+          .from(devices)
+          .leftJoin(
+            groupGroupables,
+            eq(devices.id, groupGroupables.groupableId)
+          )
+          .where(
+            and(
+              eq(groupGroupables.groupableVariant, "device"),
+              eq(groupGroupables.groupId, group.id)
+            )
+          ),
+        db
+          .select({ id: policies.id, name: policies.name })
+          .from(policies)
+          .leftJoin(
+            groupGroupables,
+            eq(policies.id, groupGroupables.groupableId)
+          )
+          .where(
+            and(
+              eq(groupGroupables.groupableVariant, "policy"),
+              eq(groupGroupables.groupId, group.id)
+            )
+          ),
+      ]);
+
+      return {
+        users: results[0],
+        devices: results[1],
+        policies: results[2],
+      };
     }),
   possibleMembers: tenantProcedure
     .input(z.object({ id: z.number() }))
@@ -100,5 +142,44 @@ export const groupRouter = createTRPCRouter({
       ]);
 
       return { users: results[0], devices: results[1], policies: results[2] };
+    }),
+  addMembers: tenantProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        members: z.array(
+          z.object({
+            id: z.number(),
+            variant: z.enum(groupableVariants),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const group = await getGroup({
+        groupId: input.id,
+        tenantId: ctx.tenantId,
+      });
+      if (!group)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
+
+      await db
+        .insert(groupables)
+        .values(
+          input.members.map((member) => ({
+            id: member.id,
+            variant: member.variant,
+            tenantId: ctx.tenantId,
+          }))
+        )
+        .onDuplicateKeyUpdate({ set: { id: sql`id` } });
+
+      await db.insert(groupGroupables).values(
+        input.members.map((member) => ({
+          groupId: group.id,
+          groupableId: member.id,
+          groupableVariant: member.variant,
+        }))
+      );
     }),
 });

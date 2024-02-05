@@ -99,14 +99,30 @@ import {
 } from "~/components/ui";
 
 function MembersTable(props: { groupId: number }) {
-  const members = trpc.group.members.useQuery(
-    () => ({ id: props.groupId }),
-    () => ({ placeholderData: keepPreviousData })
-  );
+  const members = trpc.group.members.useQuery(() => ({ id: props.groupId }));
 
   const table = createSolidTable({
     get data() {
-      return members.data || [];
+      if (!members.data) return [];
+
+      const res = [
+        ...members.data.users.map((user) => ({
+          ...user,
+          variant: "user" as const,
+        })),
+        ...members.data.devices.map((device) => ({
+          ...device,
+          variant: "device" as const,
+        })),
+        ...members.data.policies.map((policy) => ({
+          ...policy,
+          variant: "policy" as const,
+        })),
+      ];
+
+      res.sort((a, b) => a.name.localeCompare(b.name));
+
+      return res;
     },
     get columns() {
       return columns;
@@ -188,7 +204,7 @@ import {
   SheetTrigger,
 } from "~/components/ui/sheet";
 import { Badge } from "~/components/ui/badge";
-import { keepPreviousData } from "@tanstack/solid-query";
+import { useQueryClient } from "@tanstack/solid-query";
 
 const AddMemberTableOptions = {
   all: "All",
@@ -240,6 +256,10 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
     getFilteredRowModel: getFilteredRowModel(),
   });
 
+  const addMembers = trpc.group.addMembers.useMutation();
+
+  const queryClient = useQueryClient();
+
   return (
     <Sheet open={open()} onOpenChange={setOpen}>
       <SheetTrigger asChild>{props.children}</SheetTrigger>
@@ -270,7 +290,23 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
                 ))}
               </TabsList>
             </Tabs>
-            <Button disabled={!table.getSelectedRowModel().rows.length}>
+            <Button
+              disabled={
+                !table.getSelectedRowModel().rows.length || addMembers.isPending
+              }
+              onClick={async () => {
+                await addMembers.mutateAsync({
+                  id: props.groupId,
+                  members: table.getSelectedRowModel().rows.map((row) => ({
+                    id: row.original.id,
+                    variant: row.original.variant,
+                  })),
+                });
+
+                setOpen(false);
+                queryClient.invalidateQueries();
+              }}
+            >
               Add {table.getSelectedRowModel().rows.length} Member
               {table.getSelectedRowModel().rows.length !== 1 && "s"}
             </Button>
