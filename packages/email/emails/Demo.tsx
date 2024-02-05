@@ -1,3 +1,4 @@
+import * as React from "react"; // < required for JSX
 import { Html } from "@react-email/html";
 import { Button } from "@react-email/button";
 
