@@ -11,12 +11,15 @@ import {
   primaryKey,
   bigint,
 } from "drizzle-orm/mysql-core";
+import { relations } from "drizzle-orm";
 import { Policy } from "@mattrax/policy";
 
 const mysqlTable = mysqlTableCreator((name) => `forge_${name}`);
 
 const serialRelation = (name: string) =>
   bigint(name, { mode: "number", unsigned: true });
+
+export type TableID<Table extends string> = number & { __table: Table };
 
 // An account represents the login of an *administrator*.
 export const accounts = mysqlTable("accounts", {
@@ -93,6 +96,9 @@ export const users = mysqlTable(
       .notNull(),
     // Resource ID within the provider's system.
     // resourceId: varchar("resourceId", { length: 256 }).notNull(),
+    groupableVariant: mysqlEnum("groupableVariant", ["user"])
+      .notNull()
+      .default("user"),
   },
   (t) => ({
     emailUnq: unique().on(t.email, t.tenantId),
@@ -102,7 +108,7 @@ export const users = mysqlTable(
 export const policies = mysqlTable("policies", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 256 }).notNull(),
-  policy: json("policy").$type<Policy>().default([]).notNull(),
+  policy: json("policy").default([]).notNull(),
   policyHash: customType<{
     data: string;
   }>({
@@ -116,6 +122,10 @@ export const policies = mysqlTable("policies", {
   tenantId: serialRelation("tenantId")
     .references(() => tenants.id)
     .notNull(),
+
+  groupableVariant: mysqlEnum("groupableVariant", ["policy"])
+    .notNull()
+    .default("policy"),
 });
 
 export const devices = mysqlTable("devices", {
@@ -145,7 +155,58 @@ export const devices = mysqlTable("devices", {
   tenantId: serialRelation("tenantId")
     .references(() => tenants.id)
     .notNull(),
+
+  groupableVariant: mysqlEnum("groupableVariant", ["device"])
+    .notNull()
+    .default("device"),
 });
+
+export const devicesRelations = relations(devices, ({ one }) => ({
+  groupable: one(groupables, {
+    fields: [devices.id, devices.groupableVariant],
+    references: [groupables.id, groupables.variant],
+  }),
+}));
+
+const groupableVariants = ["user", "device", "policy"] as const;
+
+export const groupables = mysqlTable(
+  "groupables",
+  {
+    id: serial("id"),
+    variant: mysqlEnum("variant", groupableVariants),
+    tenantId: serialRelation("tenantId")
+      .references(() => tenants.id)
+      .notNull(),
+  },
+  (table) => ({ pk: primaryKey({ columns: [table.id, table.variant] }) })
+);
+
+export const groupGroupables = mysqlTable(
+  "group_groupables",
+  {
+    groupId: int("groupId").references(() => groups.id),
+    groupableId: serial("groupableId"),
+    groupableVariant: mysqlEnum("groupableVariant", groupableVariants),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.groupId, table.groupableId, table.groupableVariant],
+    }),
+  })
+);
+
+export const groups = mysqlTable("groups", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 256 }),
+  tenantId: serialRelation("tenantId")
+    .references(() => tenants.id)
+    .notNull(),
+});
+
+export const groupRelations = relations(groups, ({ many }) => ({
+  groupables: many(groupGroupables),
+}));
 
 // export const applications = mysqlTable("apps", {
 //   id: serial("id").primaryKey(),

@@ -19,7 +19,6 @@ import {
   getSortedRowModel,
   getFilteredRowModel,
 } from "@tanstack/solid-table";
-import { DataTable } from "../_table";
 import {
   Button,
   Checkbox,
@@ -141,7 +140,7 @@ export default function Page() {
   });
 
   return (
-    <div class="w-full px-4 py-8">
+    <div class="flex-1 px-4 py-8">
       <div class="flex items-center py-4">
         <Input
           placeholder="Filter emails..."
