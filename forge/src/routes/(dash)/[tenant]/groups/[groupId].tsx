@@ -1,4 +1,11 @@
-import { For, ParentProps, Show, Suspense, createSignal } from "solid-js";
+import {
+  For,
+  ParentProps,
+  Show,
+  Suspense,
+  createMemo,
+  createSignal,
+} from "solid-js";
 import { z } from "zod";
 import { As } from "@kobalte/core";
 
@@ -38,17 +45,19 @@ import {
   createColumnHelper,
 } from "@tanstack/solid-table";
 
-const columnHelper = createColumnHelper<{
-  id: number;
-  name: string;
-  variant: "user" | "device" | "policy";
-}>();
-
 const VariantDisplay = {
   user: "User",
   device: "Device",
   policy: "Policy",
-};
+} as const;
+
+type Variant = keyof typeof VariantDisplay;
+
+const columnHelper = createColumnHelper<{
+  id: number;
+  name: string;
+  variant: Variant;
+}>();
 
 const columns = [
   columnHelper.display({
@@ -192,9 +201,7 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
   const [open, setOpen] = createSignal(false);
 
   const possibleMembers = trpc.group.possibleMembers.useQuery(
-    () => ({
-      id: props.groupId,
-    }),
+    () => ({ id: props.groupId }),
     () => ({ enabled: open() })
   );
 
@@ -222,12 +229,9 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
       return res;
     },
     columns,
-    state: {
-      get columnFilters() {
-        const t = tab();
-        if (t === "all") return [];
-
-        return [{ id: "variant", value: t }];
+    initialState: {
+      pagination: {
+        pageSize: 9999,
       },
     },
     getCoreRowModel: getCoreRowModel(),
@@ -236,36 +240,43 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
     getFilteredRowModel: getFilteredRowModel(),
   });
 
-  const [tab, setTab] = createSignal<keyof typeof AddMemberTableOptions>("all");
-
   return (
     <Sheet open={open()} onOpenChange={setOpen}>
       <SheetTrigger asChild>{props.children}</SheetTrigger>
-      <SheetContent transparent size="lg">
+      <SheetContent transparent size="lg" class="overflow-y-auto">
         <SheetHeader>
           <SheetTitle>Add Member</SheetTitle>
           <SheetDescription>
             Add users, devices, and policies to this group
           </SheetDescription>
         </SheetHeader>
-        <div class="flex flex-row justify-between w-full items-center mt-4">
-          <Tabs onChange={setTab}>
-            <TabsList>
-              {Object.entries(AddMemberTableOptions).map(([value, name]) => (
-                <TabsTrigger value={value}>{name}</TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-          <Suspense fallback={<Button disabled>Add 0 Members</Button>}>
-            <Button disabled={!table.getIsSomeRowsSelected()}>
+        <Suspense>
+          <div class="flex flex-row justify-between w-full items-center mt-4">
+            <Tabs
+              value={
+                (table.getColumn("variant")!.getFilterValue() as
+                  | Variant
+                  | undefined) ?? "all"
+              }
+              onChange={(t) =>
+                table
+                  .getColumn("variant")!
+                  .setFilterValue(t === "all" ? undefined : t)
+              }
+            >
+              <TabsList>
+                {Object.entries(AddMemberTableOptions).map(([value, name]) => (
+                  <TabsTrigger value={value}>{name}</TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+            <Button disabled={!table.getSelectedRowModel().rows.length}>
               Add {table.getSelectedRowModel().rows.length} Member
               {table.getSelectedRowModel().rows.length !== 1 && "s"}
             </Button>
-          </Suspense>
-        </div>
-        <Suspense>
+          </div>
           <div class="rounded-md border mt-2">
-            <Table>
+            <Table class="h-full flex-1">
               <TableHeader>
                 <For each={table.getHeaderGroups()}>
                   {(headerGroup) => (
