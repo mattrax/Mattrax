@@ -10,7 +10,10 @@ import {
 } from "@tanstack/solid-query";
 import { Toaster, toast } from "solid-sonner";
 import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
-import { PersistQueryClientProvider } from "@tanstack/solid-query-persist-client";
+import {
+  PersistQueryClientOptions,
+  PersistQueryClientProvider,
+} from "@tanstack/solid-query-persist-client";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { routes } from "./routes";
 import { SuspenseError, tRPCErrorCode } from "./lib";
@@ -29,6 +32,9 @@ declare module "solid-js" {
     }
   }
 }
+
+// Which Tanstack Query keys to persist to `localStorage`
+const keysToPersist = [`[["auth","me"]]`];
 
 const createQueryClient = (navigate: (to: string) => void) => {
   const queryClient = new QueryClient({
@@ -76,7 +82,15 @@ const createQueryClient = (navigate: (to: string) => void) => {
     storage: window.localStorage,
   });
 
-  return [queryClient, persister] as const;
+  return [
+    queryClient,
+    {
+      persister,
+      dehydrateOptions: {
+        shouldDehydrateQuery: (q) => keysToPersist.includes(q.queryHash),
+      },
+    } satisfies Omit<PersistQueryClientOptions, "queryClient">,
+  ] as const;
 };
 
 const SolidQueryDevtools = lazy(() =>
@@ -90,7 +104,7 @@ export default function App() {
     <Router
       root={(props) => {
         const navigate = useNavigate();
-        const [queryClient, persister] = createQueryClient(navigate);
+        const [queryClient, persistOptions] = createQueryClient(navigate);
 
         const unsubscribe = onlineManager.subscribe((isOnline) => {
           if (isOnline) {
