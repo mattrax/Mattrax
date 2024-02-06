@@ -1,7 +1,6 @@
 import {
   varchar,
   serial,
-  mysqlTableCreator,
   int,
   json,
   customType,
@@ -12,7 +11,7 @@ import {
   bigint,
   mysqlTable,
 } from "drizzle-orm/mysql-core";
-import { Policy } from "@mattrax/policy";
+import type { Policy } from "../../../packages/policy/src";
 
 const serialRelation = (name: string) =>
   bigint(name, { mode: "number", unsigned: true });
