@@ -56,12 +56,12 @@ export const columns: ColumnDef<any>[] = [
   {
     accessorKey: "lastSynced",
     header: "Last Synced",
-    cell: ({ value }) => dayjs(value).toNow(),
+    cell: (cell) => dayjs(cell.getValue()).fromNow(),
   },
   {
     accessorKey: "enrolledAt",
     header: "Enrolled At",
-    cell: ({ value }) => dayjs(value).toNow(),
+    cell: (cell) => dayjs(cell.getValue()).fromNow(),
   },
 ];
 

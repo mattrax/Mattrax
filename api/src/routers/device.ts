@@ -74,13 +74,13 @@ export const deviceRouter = createTRPCRouter({
 
     for (const d of resp.value as ManagedDevice[]) {
       // TODO: Removing all null checks
-      console.log(d.freeStorageSpaceInBytes);
       const upsert = {
         manufacturer: d.manufacturer!,
         model: d.model!,
         operatingSystem: d.operatingSystem!,
         osVersion: d.osVersion!,
         serialNumber: d.serialNumber!,
+        imei: d.imei,
         freeStorageSpaceInBytes: d.freeStorageSpaceInBytes!,
         totalStorageSpaceInBytes: d.totalStorageSpaceInBytes!,
 

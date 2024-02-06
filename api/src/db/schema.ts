@@ -135,6 +135,7 @@ export const devices = mysqlTable("devices", {
   operatingSystem: varchar("operatingSystem", { length: 256 }).notNull(), // TODO: Enum maybe?
   osVersion: varchar("osVersion", { length: 256 }).notNull(),
   serialNumber: varchar("serialNumber", { length: 256 }).notNull(),
+  imei: varchar("imei", { length: 256 }),
 
   freeStorageSpaceInBytes: bigint("freeStorageSpaceInBytes", {
     mode: "number",
