@@ -3,7 +3,7 @@ import { Router } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start";
 import { Suspense } from "solid-js";
 import "./app.css";
-import "@fontsource/inter/latin-200.css";
+import "@fontsource/inter/latin-400.css";
 
 export default function App() {
   return (
