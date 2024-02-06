@@ -41,7 +41,7 @@ export default function Page() {
                 <As component={Button}>Add Members</As>
               </AddMemberSheet>
             </div>
-            <Suspense>
+            <Suspense fallback="goddmamit">
               <MembersTable table={table} />
             </Suspense>
           </div>
@@ -107,32 +107,28 @@ const columns = [
 function createMembersTable(groupId: Accessor<number>) {
   const members = trpc.group.members.useQuery(() => ({ id: groupId() }));
 
-  const data = createLazyMemo(() => {
-    if (!members.data) return [];
-
-    const res = [
-      ...members.data.users.map((user) => ({
-        ...user,
-        variant: "user" as const,
-      })),
-      ...members.data.devices.map((device) => ({
-        ...device,
-        variant: "device" as const,
-      })),
-      ...members.data.policies.map((policy) => ({
-        ...policy,
-        variant: "policy" as const,
-      })),
-    ];
-
-    res.sort((a, b) => a.name.localeCompare(b.name));
-
-    return res;
-  });
-
   return createSolidTable({
     get data() {
-      return data();
+      if (!members.data) return [];
+
+      const res = [
+        ...members.data.users.map((user) => ({
+          ...user,
+          variant: "user" as const,
+        })),
+        ...members.data.devices.map((device) => ({
+          ...device,
+          variant: "device" as const,
+        })),
+        ...members.data.policies.map((policy) => ({
+          ...policy,
+          variant: "policy" as const,
+        })),
+      ];
+
+      res.sort((a, b) => a.name.localeCompare(b.name));
+
+      return res;
     },
     get columns() {
       return columns;
