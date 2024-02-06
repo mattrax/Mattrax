@@ -11,9 +11,6 @@ patchedDependencies:
   drizzle-kit@0.20.14:
     hash: fd5wnhu3lnq6ol4deipldttfry
     path: patches/drizzle-kit@0.20.14.patch
-  stripe@14.15.0:
-    hash: o35kshgxg3ku2srbayuuk74sqe
-    path: patches/stripe@14.15.0.patch
 
 importers:
 
@@ -75,7 +72,7 @@ importers:
         version: 18.2.0
       stripe:
         specifier: ^14.15.0
-        version: 14.15.0(patch_hash=o35kshgxg3ku2srbayuuk74sqe)
+        version: 14.15.0
       superjson:
         specifier: ^2.2.1
         version: 2.2.1
@@ -10856,14 +10853,13 @@ packages:
     dependencies:
       acorn: 8.11.3
 
-  /stripe@14.15.0(patch_hash=o35kshgxg3ku2srbayuuk74sqe):
+  /stripe@14.15.0:
     resolution: {integrity: sha512-KPxNcf0iFWA38pkzeJyJklK9qQJo/6FEBDcLsZxDCVHfn8yT+uP9p1JSYiOhIxCyh+6BD5XEVOMnnBJnVeEnfA==}
     engines: {node: '>=12.*'}
     dependencies:
       '@types/node': 20.11.16
       qs: 6.11.2
     dev: false
-    patched: true
 
   /style-to-object@0.4.4:
     resolution: {integrity: sha512-HYNoHZa2GorYNyqiCaBgsxvcJIn7OHq6inEga+E6Ke3m5JkoqpQbnFssk4jwe+K7AhGa2fcha4wSOf1Kn01dMg==}

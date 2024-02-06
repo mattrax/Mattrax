@@ -14,6 +14,12 @@ import {
   Button,
   Checkbox,
   Input,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogRoot,
+  DialogTitle,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -286,130 +292,192 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
     },
   });
 
-  const addMembers = trpc.group.addMembers.useMutation();
+  const addMembers = trpc.group.addMembers.useMutation(() => ({
+    onSuccess: () => {
+      setOpen(false);
+    },
+  }));
 
   const queryClient = useQueryClient();
 
   return (
-    <Sheet open={open()} onOpenChange={setOpen}>
-      <SheetTrigger asChild>{props.children}</SheetTrigger>
-      <SheetContent transparent size="lg" class="overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>Add Member</SheetTitle>
-          <SheetDescription>
-            Add users, devices, and policies to this group
-          </SheetDescription>
-        </SheetHeader>
-        <Suspense>
-          <div class="flex flex-row justify-between w-full items-center mt-4">
-            <Tabs
-              value={
-                (table.getColumn("variant")!.getFilterValue() as
-                  | Variant
-                  | undefined) ?? "all"
-              }
-              onChange={(t) =>
-                table
-                  .getColumn("variant")!
-                  .setFilterValue(t === "all" ? undefined : t)
-              }
-            >
-              <TabsList>
-                {Object.entries(AddMemberTableOptions).map(([value, name]) => (
-                  <TabsTrigger value={value}>{name}</TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-            <Input
-              placeholder="Search..."
-              value={
-                (table.getColumn("name")?.getFilterValue() as string) ?? ""
-              }
-              onInput={(event) =>
-                table.getColumn("name")?.setFilterValue(event.target.value)
-              }
-              class="max-w-sm flex-1 px-4"
-            />
-            <Button
-              disabled={
-                !table.getSelectedRowModel().rows.length || addMembers.isPending
-              }
-              onClick={async () => {
-                await addMembers.mutateAsync({
-                  id: props.groupId,
-                  members: table.getSelectedRowModel().rows.map((row) => ({
-                    id: row.original.id,
-                    variant: row.original.variant,
-                  })),
-                });
+    <AreYouSureDialog description="You still have members selected">
+      {(makeSure) => (
+        <Sheet
+          open={open()}
+          onOpenChange={async (o) => {
+            if (
+              o === false &&
+              table.getIsSomeRowsSelected() &&
+              !(await makeSure())
+            )
+              return;
 
-                setOpen(false);
-                queryClient.invalidateQueries();
-              }}
-            >
-              Add {table.getSelectedRowModel().rows.length} Member
-              {table.getSelectedRowModel().rows.length !== 1 && "s"}
-            </Button>
-          </div>
-          <div class="rounded-md border mt-2">
-            <Table class="h-full flex-1">
-              <TableHeader>
-                <For each={table.getHeaderGroups()}>
-                  {(headerGroup) => (
-                    <TableRow>
-                      {headerGroup.headers.map((header) => (
-                        <TableHead style={{ width: `${header.getSize()}px` }}>
-                          {header.isPlaceholder
-                            ? null
-                            : flexRender(
-                                header.column.columnDef.header,
-                                header.getContext()
+            setOpen(o);
+          }}
+        >
+          <SheetTrigger asChild>{props.children}</SheetTrigger>
+          <SheetContent transparent size="lg" class="overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Add Member</SheetTitle>
+              <SheetDescription>
+                Add users, devices, and policies to this group
+              </SheetDescription>
+            </SheetHeader>
+            <Suspense>
+              <div class="flex flex-row justify-between w-full items-center mt-4">
+                <Tabs
+                  value={
+                    (table.getColumn("variant")!.getFilterValue() as
+                      | Variant
+                      | undefined) ?? "all"
+                  }
+                  onChange={(t) =>
+                    table
+                      .getColumn("variant")!
+                      .setFilterValue(t === "all" ? undefined : t)
+                  }
+                >
+                  <TabsList>
+                    {Object.entries(AddMemberTableOptions).map(
+                      ([value, name]) => (
+                        <TabsTrigger value={value}>{name}</TabsTrigger>
+                      )
+                    )}
+                  </TabsList>
+                </Tabs>
+                <Button
+                  disabled={
+                    !table.getSelectedRowModel().rows.length ||
+                    addMembers.isPending
+                  }
+                  onClick={async () => {
+                    await addMembers.mutateAsync({
+                      id: props.groupId,
+                      members: table.getSelectedRowModel().rows.map((row) => ({
+                        id: row.original.id,
+                        variant: row.original.variant,
+                      })),
+                    });
+
+                    setOpen(false);
+                    queryClient.invalidateQueries();
+                  }}
+                >
+                  Add {table.getSelectedRowModel().rows.length} Member
+                  {table.getSelectedRowModel().rows.length !== 1 && "s"}
+                </Button>
+              </div>
+              <div class="rounded-md border mt-2">
+                <Table class="h-full flex-1">
+                  <TableHeader>
+                    <For each={table.getHeaderGroups()}>
+                      {(headerGroup) => (
+                        <TableRow>
+                          {headerGroup.headers.map((header) => (
+                            <TableHead>
+                              {header.isPlaceholder
+                                ? null
+                                : flexRender(
+                                    header.column.columnDef.header,
+                                    header.getContext()
+                                  )}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      )}
+                    </For>
+                  </TableHeader>
+                  <TableBody>
+                    {table.getRowModel().rows?.length ? (
+                      <For each={table.getRowModel().rows}>
+                        {(row) => (
+                          <TableRow
+                            data-state={row.getIsSelected() && "selected"}
+                          >
+                            <For each={row.getVisibleCells()}>
+                              {(cell) => (
+                                <TableCell
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    row.toggleSelected();
+                                  }}
+                                >
+                                  {flexRender(
+                                    cell.column.columnDef.cell,
+                                    cell.getContext()
+                                  )}
+                                </TableCell>
                               )}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  )}
-                </For>
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel().rows?.length ? (
-                  <For each={table.getRowModel().rows}>
-                    {(row) => (
-                      <TableRow data-state={row.getIsSelected() && "selected"}>
-                        <For each={row.getVisibleCells()}>
-                          {(cell) => (
-                            <TableCell
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                row.toggleSelected();
-                              }}
-                            >
-                              {flexRender(
-                                cell.column.columnDef.cell,
-                                cell.getContext()
-                              )}
-                            </TableCell>
-                          )}
-                        </For>
+                            </For>
+                          </TableRow>
+                        )}
+                      </For>
+                    ) : (
+                      <TableRow>
+                        <TableCell
+                          colSpan={columns.length}
+                          class="h-24 text-center"
+                        >
+                          No results.
+                        </TableCell>
                       </TableRow>
                     )}
-                  </For>
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={columns.length}
-                      class="h-24 text-center"
-                    >
-                      No results.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Suspense>
-      </SheetContent>
-    </Sheet>
+                  </TableBody>
+                </Table>
+              </div>
+            </Suspense>
+          </SheetContent>
+        </Sheet>
+      )}
+    </AreYouSureDialog>
+  );
+}
+
+function AreYouSureDialog(props: {
+  children?: (makeSure: () => Promise<boolean>) => JSX.Element;
+  description?: string;
+}) {
+  const [areYouSureOpen, setAreYouSureOpen] = createSignal(false);
+  let res: (value: boolean) => void;
+
+  return (
+    <DialogRoot open={areYouSureOpen()} onOpenChange={setAreYouSureOpen}>
+      {props.children?.(
+        () =>
+          new Promise<boolean>((resolve) => {
+            res = resolve;
+            setAreYouSureOpen(true);
+          })
+      )}
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Are You Sure?</DialogTitle>
+          {props.description && (
+            <DialogDescription>{props.description}</DialogDescription>
+          )}
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              res(false);
+              setAreYouSureOpen(false);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              res(true);
+              setAreYouSureOpen(false);
+            }}
+          >
+            Continue
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </DialogRoot>
   );
 }
