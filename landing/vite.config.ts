@@ -5,8 +5,12 @@ import pkg from "@vinxi/plugin-mdx";
 const { default: mdx } = pkg;
 export default defineConfig({
   start: {
-    // Be careful enabling this. It was broke in prod so I disabled it.
-    ssr: false,
+    server: {
+      prerender: {
+        // We don't do this the output is `index` not `index.html`
+        routes: ["/index.html", "/404.html"],
+      },
+    },
     extensions: ["mdx", "md"],
   },
   plugins: [
