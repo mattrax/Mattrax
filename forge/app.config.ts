@@ -54,6 +54,7 @@ export default createApp({
       regions: ["iad1"],
     },
     minify: false, // TODO
+    exportConditions: ["worker"],
     esbuild: {
       options: {
         minify: false, // TODO
