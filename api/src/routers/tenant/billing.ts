@@ -3,7 +3,7 @@ import { db, tenants } from "../../db";
 import { createTRPCRouter, tenantProcedure } from "../../trpc";
 import { encodeId } from "../../utils";
 import { env } from "../../env";
-import Stripe from "stripe";
+import Stripe from "stripe/esm/stripe.esm.worker.js";
 
 export const billingRouter = createTRPCRouter({
   portalUrl: tenantProcedure.mutation(async ({ ctx }) => {
