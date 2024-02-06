@@ -31,6 +31,8 @@ export default function Page() {
       {(group) => {
         const table = createMembersTable(() => group().id);
 
+        const isRouting = useIsRouting();
+
         return (
           <div class="flex-1 px-4 py-8">
             <h1 class="text-3xl font-bold focus:outline-none" contentEditable>
@@ -41,9 +43,11 @@ export default function Page() {
                 <As component={Button}>Add Members</As>
               </AddMemberSheet>
             </div>
-            <Suspense fallback="goddmamit">
-              <MembersTable table={table} />
-            </Suspense>
+            <Show when={!isRouting()}>
+              <Suspense>
+                <MembersTable table={table} />
+              </Suspense>
+            </Show>
           </div>
         );
       }}
@@ -226,6 +230,7 @@ import {
 } from "~/components/ui/sheet";
 import { Badge } from "~/components/ui/badge";
 import { useQueryClient } from "@tanstack/solid-query";
+import { useIsRouting } from "@solidjs/router";
 
 const AddMemberTableOptions = {
   all: "All",
