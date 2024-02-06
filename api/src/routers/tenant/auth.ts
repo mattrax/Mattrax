@@ -83,8 +83,6 @@ export const tenantAuthRouter = createTRPCRouter({
     }),
 
   sync: tenantProcedure.mutation(async ({ ctx }) => {
-    console.log(`Syncing tenant '${ctx.tenantId}'`);
-
     // TODO: Check user has permission to the tenant
 
     const tenantProvider = (

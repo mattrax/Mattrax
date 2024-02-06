@@ -3,6 +3,7 @@ import { createTRPCRouter, tenantProcedure } from "../trpc";
 import { db, devices, tenantAccounts } from "../db";
 import { and, eq } from "drizzle-orm";
 import { encodeId } from "../utils";
+import { graphClient } from "../microsoft";
 
 export const deviceRouter = createTRPCRouter({
   list: tenantProcedure.query(async ({ ctx }) => {
@@ -57,4 +58,38 @@ export const deviceRouter = createTRPCRouter({
 
       return {};
     }),
+
+  // TODO: Remove this once we have the full MDM pairing process in place as this will be automatic, not synced.
+  // TODO: This will pull *all* Intune devices into the current tenant. That's obviously not how it should work in prod.
+  forcePullFromIntune: tenantProcedure.mutation(async ({ ctx }) => {
+    const resp = await graphClient
+      .api("/deviceManagement/managedDevices")
+      .get();
+
+    for (const d of resp.value) {
+      // .enrolledDateTime
+
+      await db.insert(devices).values({
+        name: d.displayName,
+        manufacturer: "",
+        model: "",
+        operatingSystem: "",
+        osVersion: "",
+        serialNumber: "",
+        freeStorageSpaceInBytes: 0,
+        totalStorageSpaceInBytes: 0,
+
+        azureADDeviceId: "",
+        intuneId: "",
+
+        // enrolledAt: d.enrolledDateTime,
+        // lastSynced: new Date(),
+
+        tenantId: ctx.tenantId,
+        groupableVariant: "device",
+      });
+    }
+
+    return {};
+  }),
 });

@@ -76,9 +76,6 @@ importers:
       stripe:
         specifier: ^14.15.0
         version: 14.15.0(patch_hash=o35kshgxg3ku2srbayuuk74sqe)
-      stripe-cloudflare:
-        specifier: ^9.13.4
-        version: 9.13.4
       superjson:
         specifier: ^2.2.1
         version: 2.2.1
@@ -87,6 +84,9 @@ importers:
         version: 3.22.4
     devDependencies:
       '@microsoft/microsoft-graph-types':
+        specifier: ^2.40.0
+        version: 2.40.0
+      '@types/microsoft-graph':
         specifier: ^2.40.0
         version: 2.40.0
       '@types/react':
@@ -4829,6 +4829,10 @@ packages:
     dependencies:
       '@types/braces': 3.0.4
     dev: false
+
+  /@types/microsoft-graph@2.40.0:
+    resolution: {integrity: sha512-voPv+EBFV1eeVTwUN68Mff4TYmAavxOtMqzatLvoUUkUZzilbAydSxTrdE3WDh5TQTM1jgCJH9/JF2CSTqi3CQ==}
+    dev: true
 
   /@types/mime@3.0.4:
     resolution: {integrity: sha512-iJt33IQnVRkqeqC7PzBHPTC6fDlRNRW8vjrgqtScAhrmMwe8c4Eo7+fUGTa+XdWrpEgpyKWMYmi2dIwMAYRzPw==}
@@ -10858,14 +10862,6 @@ packages:
     resolution: {integrity: sha512-PugKzOsyXpArk0yWmUwqOZecSO0GH0bPoctLcqNDH9J04pVW3lflYE0ujElBGTloevcxF5MofAOZ7C5l2b+wLg==}
     dependencies:
       acorn: 8.11.3
-
-  /stripe-cloudflare@9.13.4:
-    resolution: {integrity: sha512-m5An9AW5yzLekO/JX00wYYiRxGrnHtpojem+If+PU99XQQCrSCcWHsoiNqbexfCfKapMCX7mRMFVjiybIsmUWw==}
-    engines: {node: ^8.1 || >=10.*}
-    dependencies:
-      '@types/node': 20.11.16
-      qs: 6.11.2
-    dev: false
 
   /stripe@14.15.0(patch_hash=o35kshgxg3ku2srbayuuk74sqe):
     resolution: {integrity: sha512-KPxNcf0iFWA38pkzeJyJklK9qQJo/6FEBDcLsZxDCVHfn8yT+uP9p1JSYiOhIxCyh+6BD5XEVOMnnBJnVeEnfA==}

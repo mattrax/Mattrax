@@ -53,11 +53,11 @@ export default createApp({
     vercel: {
       regions: ["iad1"],
     },
-    minify: false, // TODO
+    // This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
+    // TODO: We could probs PR this to the Vercel Edge preset in Nitro.
     exportConditions: ["worker"],
     esbuild: {
       options: {
-        minify: false, // TODO
         /// Required for `@paralleldrive/cuid2` to work.
         /// https://github.com/paralleldrive/cuid2/issues/62
         target: "es2020",

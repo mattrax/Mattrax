@@ -37,30 +37,32 @@ declare module "solid-js" {
 const keysToPersist = [`[["auth","me"]]`];
 
 const createQueryClient = (navigate: (to: string) => void) => {
+  const onError = (scopeMsg: string) => (error: unknown) => {
+    let errorMsg = [
+      scopeMsg,
+      document.createElement("br"),
+      "Please reload to try again!",
+    ];
+
+    const trpcErrorCode = tRPCErrorCode(error);
+    if (trpcErrorCode) {
+      if (trpcErrorCode === "UNAUTHORIZED") {
+        navigate("/login");
+        return;
+      } else if (trpcErrorCode === "FORBIDDEN") {
+        errorMsg = ["You are not allowed to access this resource!"];
+      }
+    }
+
+    // TODO: Prevent this for auth errors
+    toast.error(errorMsg, {
+      id: "network-error",
+    });
+  };
+
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
-      onError: (error, query) => {
-        let errorMsg = [
-          "Error fetching data from server!",
-          document.createElement("br"),
-          "Please reload to try again!",
-        ];
-
-        const trpcErrorCode = tRPCErrorCode(error);
-        if (trpcErrorCode) {
-          if (trpcErrorCode === "UNAUTHORIZED") {
-            navigate("/login");
-            return;
-          } else if (trpcErrorCode === "FORBIDDEN") {
-            errorMsg = ["You are not allowed to access this resource!"];
-          }
-        }
-
-        // TODO: Prevent this for auth errors
-        toast.error(errorMsg, {
-          id: "network-error",
-        });
-      },
+      onError: onError("Error fetching data from server!"),
     }),
     defaultOptions: {
       queries: {
@@ -68,6 +70,9 @@ const createQueryClient = (navigate: (to: string) => void) => {
         gcTime: 1000 * 60 * 60 * 24, // 24 hours
         refetchInterval: 1000 * 60, // 1 minute
         placeholderData: keepPreviousData,
+      },
+      mutations: {
+        onError: onError("Error sending operation to the server!"),
       },
     },
   });
@@ -128,47 +133,47 @@ export default function App() {
         onCleanup(() => unsubscribe());
 
         return (
-          // <PersistQueryClientProvider
-          //   client={queryClient}
-          //   persistOptions={{ persister }}
-          // >
-          <QueryClientProvider client={queryClient}>
-            {import.meta.env.DEV && localStorage.getItem("debug") !== null ? (
-              <SolidQueryDevtools />
-            ) : null}
-            <ErrorBoundary
-              fallback={(err, reset) => {
-                // Solid Start + HMR is buggy as all hell so this hacks around it.
-                if (
-                  import.meta.env.DEV &&
-                  err.toString() ===
-                    "Error: Make sure your app is wrapped in a <Router />" &&
-                  typeof document !== "undefined"
-                ) {
-                  console.error(
-                    "Automatically resetting error boundary due to HMR-related router context error."
+          <PersistQueryClientProvider
+            client={queryClient}
+            persistOptions={persistOptions}
+          >
+            <QueryClientProvider client={queryClient}>
+              {import.meta.env.DEV && localStorage.getItem("debug") !== null ? (
+                <SolidQueryDevtools />
+              ) : null}
+              <ErrorBoundary
+                fallback={(err, reset) => {
+                  // Solid Start + HMR is buggy as all hell so this hacks around it.
+                  if (
+                    import.meta.env.DEV &&
+                    err.toString() ===
+                      "Error: Make sure your app is wrapped in a <Router />" &&
+                    typeof document !== "undefined"
+                  ) {
+                    console.error(
+                      "Automatically resetting error boundary due to HMR-related router context error."
+                    );
+                    reset();
+                  }
+
+                  console.error(err);
+
+                  return (
+                    <div>
+                      <div>Error:</div>
+                      <p>{err.toString()}</p>
+                      <button onClick={reset}>Reset</button>
+                    </div>
                   );
-                  reset();
-                }
-
-                console.error(err);
-
-                return (
-                  <div>
-                    <div>Error:</div>
-                    <p>{err.toString()}</p>
-                    <button onClick={reset}>Reset</button>
-                  </div>
-                );
-              }}
-            >
-              <Toaster />
-              <Suspense fallback={<SuspenseError name="Root" />}>
-                {props.children}
-              </Suspense>
-            </ErrorBoundary>
-          </QueryClientProvider>
-          // </PersistQueryClientProvider>
+                }}
+              >
+                <Toaster />
+                <Suspense fallback={<SuspenseError name="Root" />}>
+                  {props.children}
+                </Suspense>
+              </ErrorBoundary>
+            </QueryClientProvider>
+          </PersistQueryClientProvider>
         );
       }}
     >

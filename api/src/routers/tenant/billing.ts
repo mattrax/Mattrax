@@ -3,15 +3,10 @@ import { db, tenants } from "../../db";
 import { createTRPCRouter, tenantProcedure } from "../../trpc";
 import { encodeId } from "../../utils";
 import { env } from "../../env";
-import Stripe from "stripe";
+import { stripe } from "../../stripe";
 
 export const billingRouter = createTRPCRouter({
   portalUrl: tenantProcedure.mutation(async ({ ctx }) => {
-    const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
-      apiVersion: "2023-10-16",
-      httpClient: Stripe.createFetchHttpClient(),
-    });
-
     const tenant = (
       await db
         .select({
