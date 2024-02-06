@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../../trpc";
-import { encodeId } from "../../utils";
+import { encodeId, promiseObjectAll } from "../../utils";
 import {
   accounts,
   db,
@@ -10,7 +10,7 @@ import {
   tenants,
   users,
 } from "../../db";
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { billingRouter } from "./billing";
 import { tenantAuthRouter } from "./auth";
 
@@ -39,6 +39,38 @@ export const tenantRouter = createTRPCRouter({
         id: encodeId("tenant", lastInsertId),
       };
     }),
+
+  stats: tenantProcedure.query(({ ctx }) =>
+    promiseObjectAll({
+      devices: db
+        .select({ count: count() })
+        .from(devices)
+        .where(eq(devices.tenantId, ctx.session.data.id))
+        .then((rows) => rows[0]!.count),
+      users: db
+        .select({ count: count() })
+        .from(users)
+        .where(eq(users.tenantId, ctx.session.data.id))
+        .then((rows) => rows[0]!.count),
+      policies: db
+        .select({ count: count() })
+        .from(policies)
+        .where(eq(policies.tenantId, ctx.session.data.id))
+        .then((rows) => rows[0]!.count),
+      apps: Promise.resolve(420), // TODO: Enable this query
+      groups: Promise.resolve(69), // TODO: Enable this query
+      // applications: db
+      //   .select({ count: count() })
+      //   .from(apps)
+      //   .where(eq(tenants.owner_id, ctx.session.data.id))
+      //   .then((rows) => rows[0]!.count),
+      // groups: db
+      //   .select({ count: count() })
+      //   .from(groups)
+      //   .where(eq(groups.tenantId, ctx.session.data.id))
+      //   .then((rows) => rows[0]!.count),
+    })
+  ),
 
   delete: tenantProcedure.mutation(async ({ ctx }) => {
     // TODO: Ensure no outstanding bills

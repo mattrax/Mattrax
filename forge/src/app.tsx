@@ -1,10 +1,19 @@
 // @refresh reload
 import { Router, useNavigate } from "@solidjs/router";
 import { ErrorBoundary, Suspense, lazy, onCleanup } from "solid-js";
-import { QueryCache, QueryClient, onlineManager } from "@tanstack/solid-query";
+import {
+  QueryCache,
+  QueryClient,
+  QueryClientProvider,
+  keepPreviousData,
+  onlineManager,
+} from "@tanstack/solid-query";
 import { Toaster, toast } from "solid-sonner";
 import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
-import { PersistQueryClientProvider } from "@tanstack/solid-query-persist-client";
+import {
+  PersistQueryClientOptions,
+  PersistQueryClientProvider,
+} from "@tanstack/solid-query-persist-client";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { routes } from "./routes";
 import { SuspenseError, tRPCErrorCode } from "./lib";
@@ -23,6 +32,9 @@ declare module "solid-js" {
     }
   }
 }
+
+// Which Tanstack Query keys to persist to `localStorage`
+const keysToPersist = [`[["auth","me"]]`];
 
 const createQueryClient = (navigate: (to: string) => void) => {
   const queryClient = new QueryClient({
@@ -55,6 +67,7 @@ const createQueryClient = (navigate: (to: string) => void) => {
         retry: false,
         gcTime: 1000 * 60 * 60 * 24, // 24 hours
         refetchInterval: 1000 * 60, // 1 minute
+        placeholderData: keepPreviousData,
       },
     },
   });
@@ -69,7 +82,15 @@ const createQueryClient = (navigate: (to: string) => void) => {
     storage: window.localStorage,
   });
 
-  return [queryClient, persister] as const;
+  return [
+    queryClient,
+    {
+      persister,
+      dehydrateOptions: {
+        shouldDehydrateQuery: (q) => keysToPersist.includes(q.queryHash),
+      },
+    } satisfies Omit<PersistQueryClientOptions, "queryClient">,
+  ] as const;
 };
 
 const SolidQueryDevtools = lazy(() =>
@@ -83,7 +104,7 @@ export default function App() {
     <Router
       root={(props) => {
         const navigate = useNavigate();
-        const [queryClient, persister] = createQueryClient(navigate);
+        const [queryClient, persistOptions] = createQueryClient(navigate);
 
         const unsubscribe = onlineManager.subscribe((isOnline) => {
           if (isOnline) {
@@ -107,10 +128,11 @@ export default function App() {
         onCleanup(() => unsubscribe());
 
         return (
-          <PersistQueryClientProvider
-            client={queryClient}
-            persistOptions={{ persister }}
-          >
+          // <PersistQueryClientProvider
+          //   client={queryClient}
+          //   persistOptions={{ persister }}
+          // >
+          <QueryClientProvider client={queryClient}>
             {import.meta.env.DEV && localStorage.getItem("debug") !== null ? (
               <SolidQueryDevtools />
             ) : null}
@@ -145,7 +167,8 @@ export default function App() {
                 {props.children}
               </Suspense>
             </ErrorBoundary>
-          </PersistQueryClientProvider>
+          </QueryClientProvider>
+          // </PersistQueryClientProvider>
         );
       }}
     >

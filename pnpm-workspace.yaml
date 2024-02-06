@@ -1,6 +1,6 @@
 packages:
   - api
   - forge
+  - landing
   - packages/*
   - packages/email/.react-email
-  - landing

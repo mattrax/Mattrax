@@ -1,24 +1,31 @@
 // @refresh reload
-import { Router } from "@solidjs/router";
-import { FileRoutes } from "@solidjs/start";
-import { Suspense } from "solid-js";
+import { RouteDefinition, Router } from "@solidjs/router";
+import { Suspense, lazy } from "solid-js";
 import "./app.css";
-import "@fontsource/inter/latin-200.css";
+import "@fontsource/inter/latin-400.css"; // `normal`
+import "@fontsource/inter/latin-500.css"; // `medium`
+import "@fontsource/inter/latin-600.css"; // `semibold`
+import "@fontsource/inter/latin-700.css"; // `bold`
+
+const routes = [
+  {
+    path: "/index.html",
+    component: lazy(() => import("./routes/index")),
+  },
+  {
+    path: "/company/index.html",
+    component: lazy(() => import("./routes/company")),
+  },
+  {
+    path: "/*all",
+    component: () => <h1>Not Found!</h1>,
+  },
+] satisfies RouteDefinition[];
 
 export default function App() {
   return (
-    <Router
-      root={(props) => (
-        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div class="mx-auto max-w-3xl pt-2 lg:pt-8">
-            <article class="prose prose-slate lg:prose-lg whitespace-normal">
-              <Suspense>{props.children}</Suspense>
-            </article>
-          </div>
-        </div>
-      )}
-    >
-      <FileRoutes />
+    <Router root={(props) => <Suspense>{props.children}</Suspense>}>
+      {routes}
     </Router>
   );
 }

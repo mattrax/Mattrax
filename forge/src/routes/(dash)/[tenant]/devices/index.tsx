@@ -1,6 +1,7 @@
 import { For, Suspense } from "solid-js";
 import { trpc } from "~/lib";
 import { useGlobalCtx } from "~/lib/globalCtx";
+import { OutlineLayout } from "../OutlineLayout";
 
 // TODO: Bring this back
 // const fetchDevices = cache(
@@ -23,8 +24,7 @@ export default function Page() {
   // TODO: Proper table view
 
   return (
-    <div class="flex flex-col">
-      <h1>Devices page!</h1>
+    <OutlineLayout title="Devices">
       <div>
         <Suspense fallback={<div>Loading...</div>}>
           {devices.data?.length ? <p>No Devices Found</p> : null}
@@ -40,6 +40,6 @@ export default function Page() {
           </For>
         </Suspense>
       </div>
-    </div>
+    </OutlineLayout>
   );
 }

@@ -14,3 +14,13 @@ export const decodeId = (prefix: string, id: string): number => {
   if (parts[0] !== prefix) throw new Error(`Invalid ID: ${id}`);
   return base58_to_int(parts[1]);
 };
+
+export type PromiseValues<TO> = {
+  [TK in keyof TO]: Promise<TO[TK]>;
+};
+
+export const promiseObjectAll = <T>(obj: PromiseValues<T>): Promise<T> => {
+  return Promise.all(
+    Object.entries(obj).map(async ([k, v]) => [k, await v])
+  ).then(Object.fromEntries);
+};
