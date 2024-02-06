@@ -15,3 +15,4 @@ export * from "./tooltip";
 export * from "./dropdown-menu";
 export * from "./controller";
 export * from "./label";
+export * from "./flat-tabs";

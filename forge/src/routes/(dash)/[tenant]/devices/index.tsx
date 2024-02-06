@@ -40,7 +40,29 @@ export const columns: ColumnDef<any>[] = [
     accessorKey: "name",
     header: "Name",
   },
-  // TODO: Fill out more info - type, serial number, imei, linked users, etc
+  {
+    accessorKey: "operatingSystem",
+    header: "Operating System",
+  },
+  {
+    accessorKey: "serialNumber",
+    header: "Serial Number",
+  },
+  {
+    accessorKey: "owner",
+    header: "Owner",
+    // TODO: Render as link with the user's name
+  },
+  {
+    accessorKey: "lastSynced",
+    header: "Last Synced",
+    cell: ({ value }) => dayjs(value).toNow(),
+  },
+  {
+    accessorKey: "enrolledAt",
+    header: "Enrolled At",
+    cell: ({ value }) => dayjs(value).toNow(),
+  },
 ];
 
 function createGroupsTable() {
@@ -70,7 +92,11 @@ function createGroupsTable() {
 
 export default function Page() {
   const groupsTable = createGroupsTable();
-  const forcePullFromIntune = trpc.device.forcePullFromIntune.useMutation();
+  const forcePullFromIntune = trpc.device.forcePullFromIntune.useMutation(
+    () => ({
+      onSuccess: () => toast.success("Successfully synced devices from Intune"),
+    })
+  );
 
   return (
     <OutlineLayout title="Devices">
@@ -203,6 +229,8 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui";
 import { OutlineLayout } from "../OutlineLayout";
+import { toast } from "solid-sonner";
+import dayjs from "dayjs";
 
 function ColumnsDropdown(
   props: ParentProps & { table: ReturnType<typeof createGroupsTable> }

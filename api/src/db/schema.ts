@@ -136,8 +136,14 @@ export const devices = mysqlTable("devices", {
   osVersion: varchar("osVersion", { length: 256 }).notNull(),
   serialNumber: varchar("serialNumber", { length: 256 }).notNull(),
 
-  freeStorageSpaceInBytes: int("freeStorageSpaceInBytes"),
-  totalStorageSpaceInBytes: int("totalStorageSpaceInBytes"),
+  freeStorageSpaceInBytes: bigint("freeStorageSpaceInBytes", {
+    mode: "number",
+    unsigned: true,
+  }),
+  totalStorageSpaceInBytes: bigint("totalStorageSpaceInBytes", {
+    mode: "number",
+    unsigned: true,
+  }),
 
   owner: serialRelation("owner").references(() => users.id),
 

@@ -13,6 +13,11 @@ export const deviceRouter = createTRPCRouter({
         .select({
           id: devices.id,
           name: devices.name,
+          operatingSystem: devices.operatingSystem,
+          serialNumber: devices.serialNumber,
+          lastSynced: devices.lastSynced,
+          owner: devices.owner, // TODO: Fetch `owner` name
+          enrolledAt: devices.enrolledAt,
         })
         .from(devices)
         .leftJoin(tenantAccounts, eq(devices.tenantId, tenantAccounts.tenantId))
@@ -68,25 +73,37 @@ export const deviceRouter = createTRPCRouter({
       .get();
 
     for (const d of resp.value as ManagedDevice[]) {
-      await db.insert(devices).values({
-        name: d.deviceName || "Device 1", // TODO: Better default
-        manufacturer: "",
-        model: "",
-        operatingSystem: "",
-        osVersion: "",
-        serialNumber: "",
-        freeStorageSpaceInBytes: 0,
-        totalStorageSpaceInBytes: 0,
+      // TODO: Removing all null checks
+      console.log(d.freeStorageSpaceInBytes);
+      const upsert = {
+        manufacturer: d.manufacturer!,
+        model: d.model!,
+        operatingSystem: d.operatingSystem!,
+        osVersion: d.osVersion!,
+        serialNumber: d.serialNumber!,
+        freeStorageSpaceInBytes: d.freeStorageSpaceInBytes!,
+        totalStorageSpaceInBytes: d.totalStorageSpaceInBytes!,
 
-        azureADDeviceId: "",
-        intuneId: "",
+        azureADDeviceId: d.azureADDeviceId!,
+        intuneId: d.id!,
 
-        // enrolledAt: d.enrolledDateTime,
-        // lastSynced: new Date(),
+        enrolledAt: new Date(d.enrolledDateTime!),
+        lastSynced: new Date(d.lastSyncDateTime!),
+      };
 
-        tenantId: ctx.tenantId,
-        groupableVariant: "device",
-      });
+      await db
+        .insert(devices)
+        .values({
+          name: d.deviceName || d.model ? `${d.model}` : `Device`,
+          tenantId: ctx.tenantId,
+          groupableVariant: "device",
+          ...upsert,
+        })
+        .onDuplicateKeyUpdate({
+          set: {
+            ...upsert,
+          },
+        });
     }
 
     return {};

@@ -45,6 +45,36 @@ const dash: RouteDefinition[] = [
         component: lazy(
           () => import("./routes/(dash)/[tenant]/devices/[deviceId]")
         ),
+        children: [
+          {
+            path: "/",
+            component: lazy(
+              () => import("./routes/(dash)/[tenant]/devices/[deviceId]/index")
+            ),
+          },
+          {
+            path: "/scoped",
+            component: lazy(
+              () => import("./routes/(dash)/[tenant]/devices/[deviceId]/scoped")
+            ),
+          },
+          {
+            path: "/applications",
+            component: lazy(
+              () =>
+                import(
+                  "./routes/(dash)/[tenant]/devices/[deviceId]/applications"
+                )
+            ),
+          },
+          {
+            path: "/settings",
+            component: lazy(
+              () =>
+                import("./routes/(dash)/[tenant]/devices/[deviceId]/settings")
+            ),
+          },
+        ],
       },
       {
         path: "/policies",
