@@ -203,7 +203,6 @@ function GroupsTable(props: { table: ReturnType<typeof createGroupsTable> }) {
                 <TableRow
                   data-state={row.getIsSelected() && "selected"}
                   onClick={() => {
-                    alert(1);
                     navigate(`./${row.original.id}`);
                   }}
                 >
