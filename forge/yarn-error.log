@@ -1,0 +1,91 @@
+Arguments: 
+  /Users/brendonovich/Library/pnpm/nodejs/20.11.0/bin/node /opt/homebrew/Cellar/yarn/1.22.19/libexec/bin/yarn.js add @kobalte/core solid-icons
+
+PATH: 
+  /Users/brendonovich/.npm/_npx/ee21f74023e4584f/node_modules/.bin:/Users/brendonovich/github.com/oscartbeaumont/forge/forge/node_modules/.bin:/Users/brendonovich/github.com/oscartbeaumont/forge/node_modules/.bin:/Users/brendonovich/github.com/oscartbeaumont/node_modules/.bin:/Users/brendonovich/github.com/node_modules/.bin:/Users/brendonovich/node_modules/.bin:/Users/node_modules/.bin:/node_modules/.bin:/Users/brendonovich/Library/pnpm/nodejs/20.11.0/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin:/Users/brendonovich/.bun/bin:/Users/brendonovich/Library/pnpm:/Users/brendonovich/.local/bin:/Users/brendonovich/Library/pnpm:/Users/brendonovich/Library/Caches/fnm_multishells/53862_1707148091129/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Apple/usr/bin:/Users/brendonovich/Library/Android/sdk/platform-tools:/Users/brendonovich/.bun/bin:/Users/brendonovich/Library/pnpm:/Users/brendonovich/.local/bin:/Users/brendonovich/Library/Caches/fnm_multishells/21606_1707117427410/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/brendonovich/.cargo/bin:/Users/brendonovich/Library/Android/sdk/emulator:/Users/brendonovich/Library/Android/sdk/emulator:/Users/brendonovich/Library/Android/sdk/platform-tools
+
+Yarn version: 
+  1.22.19
+
+Node version: 
+  20.11.0
+
+Platform: 
+  darwin arm64
+
+Trace: 
+  Error: https://registry.yarnpkg.com/@mattrax%2fapi: Not found
+      at params.callback [as _callback] (/opt/homebrew/Cellar/yarn/1.22.19/libexec/lib/cli.js:66145:18)
+      at self.callback (/opt/homebrew/Cellar/yarn/1.22.19/libexec/lib/cli.js:140890:22)
+      at Request.emit (node:events:518:28)
+      at Request.<anonymous> (/opt/homebrew/Cellar/yarn/1.22.19/libexec/lib/cli.js:141862:10)
+      at Request.emit (node:events:518:28)
+      at IncomingMessage.<anonymous> (/opt/homebrew/Cellar/yarn/1.22.19/libexec/lib/cli.js:141784:12)
+      at Object.onceWrapper (node:events:632:28)
+      at IncomingMessage.emit (node:events:530:35)
+      at endReadableNT (node:internal/streams/readable:1696:12)
+      at process.processTicksAndRejections (node:internal/process/task_queues:82:21)
+
+npm manifest: 
+  {
+    "name": "@mattrax/forge",
+    "type": "module",
+    "private": true,
+    "sideEffects": false,
+    "scripts": {
+      "dev": "vinxi dev --host 0.0.0.0",
+      "build": "vinxi build",
+      "start": "vinxi start",
+      "stats": "pnpm build && open stats.html",
+      "vbuild": "NITRO_PRESET=vercel_edge vinxi build"
+    },
+    "dependencies": {
+      "@kobalte/core": "^0.12.1",
+      "@kobalte/tailwindcss": "^0.9.0",
+      "@mattrax/api": "workspace:^",
+      "@solid-mediakit/trpc": "^1.0.2",
+      "@solid-primitives/event-listener": "^2.3.1",
+      "@solid-primitives/pagination": "^0.2.10",
+      "@solidjs/router": "^0.11.3",
+      "@tanstack/query-broadcast-client-experimental": "^5.18.1",
+      "@tanstack/query-sync-storage-persister": "^5.18.1",
+      "@tanstack/solid-query": "^5.18.1",
+      "@tanstack/solid-query-devtools": "^5.18.1",
+      "@tanstack/solid-query-persist-client": "^5.18.1",
+      "@tanstack/solid-table": "^8.11.8",
+      "@thisbeyond/solid-dnd": "^0.7.5",
+      "@trpc/client": "^10.45.0",
+      "class-variance-authority": "^0.7.0",
+      "clsx": "^2.1.0",
+      "dayjs": "^1.11.10",
+      "solid-icons": "^1.1.0",
+      "solid-js": "^1.8.12",
+      "solid-sonner": "^0.2.2",
+      "superjson": "^2.2.1",
+      "tailwind-merge": "^2.2.1",
+      "tailwindcss": "^3.4.1",
+      "ts-pattern": "^5.0.6",
+      "vinxi": "^0.2.1",
+      "zod": "^3.22.4"
+    },
+    "devDependencies": {
+      "@iconify/json": "^2.2.178",
+      "@tailwindcss/forms": "^0.5.7",
+      "autoprefixer": "^10.4.17",
+      "postcss": "^8.4.33",
+      "rollup-plugin-visualizer": "^5.12.0",
+      "tailwindcss-animate": "^1.0.7",
+      "unplugin-auto-import": "^0.17.5",
+      "unplugin-icons": "^0.18.3",
+      "vite": "^5.0.12",
+      "vite-plugin-html": "^3.2.2",
+      "vite-plugin-solid": "^2.9.1",
+      "vite-tsconfig-paths": "^4.3.1"
+    }
+  }
+
+yarn manifest: 
+  No manifest
+
+Lockfile: 
+  No lockfile

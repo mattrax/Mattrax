@@ -20,24 +20,30 @@ import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
 import { authProviderDisplayName, authProviderUrl } from "~/lib/values";
 import { toast } from "solid-sonner";
+import { OutlineLayout } from "../OutlineLayout";
 
 export default function Page() {
   return (
-    <div class="p-4 grid grid-rows-3 grid-cols-3 gap-4">
-      <SettingsCard />
-      <AdministratorsCard />
-      <BillingCard />
-      <AuthenticationCard />
-      <ConfigureEnrollmentCard />
-      <MigrateCard />
-    </div>
+    <OutlineLayout title="Settings">
+      <div class="flex flex-row">
+        <div class="grid grid-cols-3 gap-4">
+          <SettingsCard />
+          <AdministratorsCard />
+          <BillingCard />
+          <AuthenticationCard />
+          <ConfigureEnrollmentCard />
+          <MigrateCard />
+        </div>
+        <div class="flex-1" />
+      </div>
+    </OutlineLayout>
   );
 }
 
 function SettingsCard() {
   const globalCtx = useGlobalCtx();
   const [defaultValue, setDefaultValue] = createSignal(
-    globalCtx.activeTenant!.name
+    globalCtx.activeTenant?.name
   );
   const [input, setInput] = createSignal(defaultValue());
 

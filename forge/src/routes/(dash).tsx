@@ -5,6 +5,7 @@ import {
   ParentProps,
   Show,
   Suspense,
+  createEffect,
   createMemo,
 } from "solid-js";
 import LeftSidebar from "~/components/LeftSidebar";
@@ -92,7 +93,7 @@ export default function Layout(props: ParentProps) {
 
       <Suspense fallback={<h1>TODO: Loading...</h1>}>
         {/* TODO: Why does this always suspend even with an `initialValue` available */}
-        <Show when={session.data} keyed>
+        <Show when={session.data}>
           {(session2) => (
             <globalCtx.Provider
               value={{
@@ -102,7 +103,7 @@ export default function Layout(props: ParentProps) {
                 setActiveTenant,
                 refetchSession,
                 get session() {
-                  return session2;
+                  return session2();
                 },
               }}
             >

@@ -2,6 +2,8 @@ import { useNavigate } from "@solidjs/router";
 import { For, Suspense } from "solid-js";
 import { trpc } from "~/lib";
 import { useGlobalCtx } from "~/lib/globalCtx";
+import { OutlineLayout } from "../OutlineLayout";
+import { Button, Input, Label } from "~/components/ui";
 
 // TODO: Bring this back
 // const fetchPolicies = cache(
@@ -28,10 +30,11 @@ export default function Page() {
   // TODO: Proper table view
 
   return (
-    <div class="flex flex-col">
-      <h1>Policies page!</h1>
-      <h1>Create Policy</h1>
+    <OutlineLayout title="Policies">
+      <Label for="form">Create a new policy</Label>
       <form
+        id="form"
+        class="flex flex-row gap-4 max-w-md mt-1"
         onSubmit={(e) => {
           e.preventDefault();
           const formData = new FormData(e.currentTarget);
@@ -41,8 +44,10 @@ export default function Page() {
         }}
       >
         {/* TODO: Loading state */}
-        <input type="text" name="name" placeholder="My Policy" />
-        <input type="submit" value="Create" />
+        <Input type="text" name="name" placeholder="My Policy" />
+        <Button class="shrink-0" type="submit">
+          Create Policy
+        </Button>
       </form>
 
       <div>
@@ -61,6 +66,6 @@ export default function Page() {
           </For>
         </Suspense>
       </div>
-    </div>
+    </OutlineLayout>
   );
 }
