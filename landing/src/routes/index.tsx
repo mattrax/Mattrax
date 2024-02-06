@@ -95,7 +95,11 @@ export default function Page() {
       <div class="flex justify-center items-center pt-4">
         <p>
           Developed by{" "}
-          <a href="/company" class="text-center w-full underline">
+          <a
+            href="/company"
+            class="text-center w-full underline"
+            rel="external"
+          >
             Mattrax Technologies Inc.
           </a>
         </p>
