@@ -12,7 +12,7 @@ const items: NavbarItem[] = [
   {
     icon: IconPhHouseDuotone,
     title: "Dashboard",
-    href: "/",
+    href: "",
   },
   {
     icon: IconPhUserDuotone,
@@ -97,7 +97,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
           <For each={items}>
             {(item) => (
               <A
-                end={item.href === "/"}
+                end={item.href === ""}
                 href={`${props.activeTenant?.id}${item.href}`}
                 activeClass="bg-brandDark-secondary"
                 classList={{
