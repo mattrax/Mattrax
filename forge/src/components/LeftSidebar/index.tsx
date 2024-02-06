@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from "@solidjs/router";
+import { A, useLocation, useNavigate } from "@solidjs/router";
 import { For, JSX } from "solid-js";
 import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
 
@@ -52,35 +52,7 @@ const items: NavbarItem[] = [
 ];
 
 export default function Component(props: TenantSwitcherProps): JSX.Element {
-  const location = useLocation();
   const navigate = useNavigate();
-
-  const itemProps = (item: NavbarItem, activeClass: string) => {
-    const isRouteActive =
-      // "Dashboard" route is special as `/` (when no tenants) and `/:tenantId/` are both valid
-      (item.href === "/" && location.pathname === "/") ||
-      // All other routes are prefixed with the tenant.
-      (props.activeTenant?.id !== undefined &&
-        // Handle `/:tenantId` (no trailing slash)
-        ((item.href === "/" &&
-          location.pathname === `/${props.activeTenant.id}`) ||
-          // Handle `/:tenantId/*route*`
-          location.pathname === `/${props.activeTenant.id}${item.href}`));
-
-    let href = props.activeTenant?.id
-      ? `/${props.activeTenant?.id}${item.href}`
-      : undefined;
-    // Dashboard route is an exception
-    if (!href && item.href === "/") href = "/"; // If a tenant is selected, this link will go to `/:tenantId/` instead.
-
-    return {
-      href,
-      classList: {
-        [activeClass]: isRouteActive,
-        "cursor-not-allowed opacity-50": href === undefined,
-      },
-    };
-  };
 
   return (
     <aside class="h-full w-64 flex flex-col" aria-label="Sidebar">
@@ -124,15 +96,21 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
         <div class="flex-row space-y-1 mt-4 mx-3">
           <For each={items}>
             {(item) => (
-              <a
+              <A
+                end={item.href === "/"}
+                href={`${props.activeTenant?.id}${item.href}`}
+                activeClass="bg-brandDark-secondary"
+                classList={{
+                  "cursor-not-allowed opacity-50":
+                    props.activeTenant?.id === undefined,
+                }}
                 class="py-1.5 px-4 h-full w-full flex space-x-4 text-center align-middle rounded-lg"
-                {...itemProps(item, "bg-brandDark-secondary")}
               >
                 <span>
                   <item.icon class="h-full w-5 text-xl block" />
                 </span>
                 <p class="text-lg">{item.title}</p>
-              </a>
+              </A>
             )}
           </For>
         </div>
