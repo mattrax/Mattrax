@@ -4,6 +4,7 @@ import { createTRPCRouter, tenantProcedure } from "../../trpc";
 import { encodeId } from "../../utils";
 import { env } from "../../env";
 import { stripe } from "../../stripe";
+import type Stripe from "stripe";
 
 export const billingRouter = createTRPCRouter({
   portalUrl: tenantProcedure.mutation(async ({ ctx }) => {
@@ -21,28 +22,56 @@ export const billingRouter = createTRPCRouter({
 
     let customerId: string;
     if (!tenant.stripeCustomerId) {
-      const customer = await stripe.customers.create({
-        name: tenant.name,
-        email: tenant.billingEmail || undefined,
-      });
+      try {
+        const customer = await stripe.customers.create({
+          name: tenant.name,
+          email: tenant.billingEmail || undefined,
+        });
 
-      await db
-        .update(tenants)
-        .set({ stripeCustomerId: customer.id })
-        .where(eq(tenants.id, ctx.tenantId));
+        await db
+          .update(tenants)
+          .set({ stripeCustomerId: customer.id })
+          .where(eq(tenants.id, ctx.tenantId));
 
-      customerId = customer.id;
+        customerId = customer.id;
+      } catch (err) {
+        console.error("Error creating customer", err);
+        throw new Error("Error creating customer");
+      }
     } else {
       customerId = tenant.stripeCustomerId;
     }
 
-    const session = await stripe.billingPortal.sessions.create({
-      customer: customerId,
-      return_url: `${env.PROD_URL}/${encodeId(
-        "tenant",
-        ctx.tenantId
-      )}/settings`,
-    });
+    // TODO: When using the official Stripe SDK, this endpoint causes the entire Edge Function to hang and i'm at a loss to why.
+    // TODO: This will do for now but we should try and fix it.
+
+    const body = new URLSearchParams();
+    body.set("customer", customerId);
+    body.set(
+      "return_url",
+      `${env.PROD_URL}/${encodeId("tenant", ctx.tenantId)}/settings`
+    );
+
+    const resp = await fetch(
+      "https://api.stripe.com/v1/billing_portal/sessions",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: body.toString(),
+      }
+    );
+    if (!resp.ok) {
+      const body = await resp.text();
+      console.error("Error creating billing portal session", resp.status, body);
+      throw new Error(
+        `Error creating billing portal session: '${resp.status}' '${body}'`
+      );
+    }
+    const session: Stripe.Response<Stripe.BillingPortal.Session> =
+      await resp.json();
 
     return session.url;
   }),

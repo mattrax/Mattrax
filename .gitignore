@@ -5,6 +5,7 @@ dist
 .solid
 .output
 .vinxi
+.yarn-error.log
 
 # Provider
 .vercel
