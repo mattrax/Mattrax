@@ -55,17 +55,25 @@ class AuthProvider implements AuthenticationProvider {
         body: params,
       }
     );
-    if (!resp.ok)
+    if (!resp.ok) {
+      const body = await resp.text();
+      console.error(resp.status, body);
       throw new FetchError(
         resp.status,
-        await resp.text(),
+        body,
         `Failed to get access token from Microsoft`
       );
+    }
     const result = authenticateResponse.safeParse(await resp.json());
-    if (!result.success)
+    if (!result.success) {
+      console.error(
+        `Failed to parse Microsoft authenticate response: ${result.error}`
+      );
       throw new Error(
         `Failed to parse Microsoft authenticate response: ${result.error}`
       );
+    }
+
     return result.data.access_token;
   }
 }

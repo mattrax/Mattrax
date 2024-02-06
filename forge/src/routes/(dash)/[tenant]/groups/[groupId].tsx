@@ -1,10 +1,19 @@
-import { For, ParentProps, Show, Suspense, createSignal, JSX } from "solid-js";
+import {
+  Accessor,
+  For,
+  ParentProps,
+  Show,
+  Suspense,
+  createSignal,
+} from "solid-js";
 import { z } from "zod";
 import { As } from "@kobalte/core";
+import { createLazyMemo } from "@solid-primitives/memo";
 
 import {
   Button,
   Checkbox,
+  Input,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -25,21 +34,29 @@ export default function Page() {
 
   return (
     <Show when={group.data}>
-      {(group) => (
-        <div class="flex-1 px-4 py-8">
-          <h1 class="text-3xl font-bold focus:outline-none" contentEditable>
-            {group().name}
-          </h1>
-          <div class="my-4">
-            <AddMemberSheet groupId={routeParams.groupId}>
-              <As component={Button}>Add Members</As>
-            </AddMemberSheet>
+      {(group) => {
+        const table = createMembersTable(() => group().id);
+
+        const isRouting = useIsRouting();
+
+        return (
+          <div class="flex-1 px-4 py-8">
+            <h1 class="text-3xl font-bold focus:outline-none" contentEditable>
+              {group().name}
+            </h1>
+            <div class="my-4">
+              <AddMemberSheet groupId={routeParams.groupId}>
+                <As component={Button}>Add Members</As>
+              </AddMemberSheet>
+            </div>
+            <Show when={!isRouting()}>
+              <Suspense>
+                <MembersTable table={table} />
+              </Suspense>
+            </Show>
           </div>
-          <Suspense>
-            <MembersTable groupId={group().id} />
-          </Suspense>
-        </div>
-      )}
+        );
+      }}
     </Show>
   );
 }
@@ -86,6 +103,7 @@ const columns = [
         aria-label="Select row"
       />
     ),
+    size: 1,
     enableSorting: false,
     enableHiding: false,
   }),
@@ -96,19 +114,10 @@ const columns = [
   }),
 ];
 
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "~/components/ui";
+function createMembersTable(groupId: Accessor<number>) {
+  const members = trpc.group.members.useQuery(() => ({ id: groupId() }));
 
-function MembersTable(props: { groupId: number }) {
-  const members = trpc.group.members.useQuery(() => ({ id: props.groupId }));
-
-  const table = createSolidTable({
+  return createSolidTable({
     get data() {
       if (!members.data) return [];
 
@@ -148,17 +157,32 @@ function MembersTable(props: { groupId: number }) {
     //   columnVisibility,
     //   rowSelection,
     // },
+    defaultColumn: {
+      // @ts-expect-error // TODO: This property's value should be a number but setting it to string works ¯\_(ツ)_/¯
+      size: "auto",
+    },
   });
+}
 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "~/components/ui";
+
+function MembersTable(props: { table: ReturnType<typeof createMembersTable> }) {
   return (
     <div class="rounded-md border">
       <Table>
         <TableHeader>
-          <For each={table.getHeaderGroups()}>
+          <For each={props.table.getHeaderGroups()}>
             {(headerGroup) => (
               <TableRow>
                 {headerGroup.headers.map((header) => (
-                  <TableHead>
+                  <TableHead style={{ width: `${header.getSize()}px` }}>
                     {header.isPlaceholder
                       ? null
                       : flexRender(
@@ -172,8 +196,8 @@ function MembersTable(props: { groupId: number }) {
           </For>
         </TableHeader>
         <TableBody>
-          {table.getRowModel().rows?.length ? (
-            <For each={table.getRowModel().rows}>
+          {props.table.getRowModel().rows?.length ? (
+            <For each={props.table.getRowModel().rows}>
               {(row) => (
                 <TableRow data-state={row.getIsSelected() && "selected"}>
                   <For each={row.getVisibleCells()}>
@@ -212,6 +236,7 @@ import {
 } from "~/components/ui/sheet";
 import { Badge } from "~/components/ui/badge";
 import { useQueryClient } from "@tanstack/solid-query";
+import { useIsRouting } from "@solidjs/router";
 
 const AddMemberTableOptions = {
   all: "All",
@@ -261,6 +286,10 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    defaultColumn: {
+      // @ts-expect-error // TODO: This property's value should be a number but setting it to string works ¯\_(ツ)_/¯
+      size: "auto",
+    },
   });
 
   const addMembers = trpc.group.addMembers.useMutation(() => ({

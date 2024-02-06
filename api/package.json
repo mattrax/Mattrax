@@ -25,7 +25,6 @@
     }
   },
   "dependencies": {
-    "@aws-sdk/client-ses": "^3.507.0",
     "@mattrax/email": "workspace:^",
     "@mattrax/policy": "workspace:^",
     "@microsoft/microsoft-graph-client": "^3.0.7",
@@ -34,6 +33,7 @@
     "@react-email/render": "^0.0.12",
     "@t3-oss/env-core": "^0.8.0",
     "@trpc/server": "^10.45.0",
+    "aws4fetch": "^1.0.17",
     "base58": "^2.0.1",
     "drizzle-orm": "^0.29.3",
     "hono": "^3.12.11",
@@ -43,7 +43,6 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@aws-sdk/util-user-agent-node": "^3.502.0",
     "@microsoft/microsoft-graph-types": "^2.40.0",
     "@types/react": "^18.2.54"
   }

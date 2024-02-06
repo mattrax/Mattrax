@@ -16,6 +16,7 @@
     "@mattrax/api": "workspace:^",
     "@solid-mediakit/trpc": "^1.0.2",
     "@solid-primitives/event-listener": "^2.3.1",
+    "@solid-primitives/memo": "^1.3.6",
     "@solid-primitives/pagination": "^0.2.10",
     "@solidjs/router": "^0.11.3",
     "@tanstack/query-broadcast-client-experimental": "^5.18.1",

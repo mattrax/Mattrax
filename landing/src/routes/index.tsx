@@ -92,7 +92,7 @@ export default function Page() {
           </div>
         </div>
       </div>
-      <div class="flex justify-center items-center pt-4">
+      <div class="flex justify-center items-center pt-4 mb-5">
         <p>
           Developed by{" "}
           <a

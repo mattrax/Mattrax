@@ -2,8 +2,8 @@ import { eq } from "drizzle-orm";
 import { db, tenants } from "../../db";
 import { createTRPCRouter, tenantProcedure } from "../../trpc";
 import { encodeId } from "../../utils";
-import { stripe } from "../../stripe";
 import { env } from "../../env";
+import { stripe } from "../../stripe";
 
 export const billingRouter = createTRPCRouter({
   portalUrl: tenantProcedure.mutation(async ({ ctx }) => {

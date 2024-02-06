@@ -1,5 +1,4 @@
 // TODO: Paginated fetch
-// TODO: Search
 // TODO: Filtering
 // TODO: Virtialisation
 // TODO: Abstract into reusable components
@@ -26,6 +25,7 @@ export const columns: ColumnDef<any>[] = [
     id: "select",
     header: ({ table }) => (
       <Checkbox
+        class="w-4"
         checked={table.getIsAllPageRowsSelected()}
         indeterminate={table.getIsSomePageRowsSelected()}
         onChange={(value) => table.toggleAllPageRowsSelected(!!value)}
@@ -34,11 +34,13 @@ export const columns: ColumnDef<any>[] = [
     ),
     cell: ({ row }) => (
       <Checkbox
+        class="w-4"
         checked={row.getIsSelected()}
         onChange={(value) => row.toggleSelected(!!value)}
         aria-label="Select row"
       />
     ),
+    size: 1,
     enableSorting: false,
     enableHiding: false,
   },
@@ -76,6 +78,10 @@ function createGroupsTable() {
     //   columnVisibility,
     //   rowSelection,
     // },
+    defaultColumn: {
+      // @ts-expect-error // TODO: This property's value should be a number but setting it to string works ¯\_(ツ)_/¯
+      size: "auto",
+    },
   });
 }
 
@@ -116,7 +122,7 @@ export default function Page() {
           value={
             (groupsTable.getColumn("name")?.getFilterValue() as string) ?? ""
           }
-          onChange={(event) =>
+          onInput={(event) =>
             groupsTable.getColumn("name")?.setFilterValue(event.target.value)
           }
           class="max-w-sm ml-4"
@@ -177,7 +183,7 @@ function GroupsTable(props: { table: ReturnType<typeof createGroupsTable> }) {
             {(headerGroup) => (
               <TableRow>
                 {headerGroup.headers.map((header) => (
-                  <TableHead>
+                  <TableHead style={{ width: `${header.getSize()}px` }}>
                     {header.isPlaceholder
                       ? null
                       : flexRender(
