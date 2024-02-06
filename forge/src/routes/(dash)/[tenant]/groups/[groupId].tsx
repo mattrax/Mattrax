@@ -2,7 +2,14 @@ import { For, ParentProps, Show, Suspense, createSignal } from "solid-js";
 import { z } from "zod";
 import { As } from "@kobalte/core";
 
-import { Button, Checkbox, Tabs, TabsList, TabsTrigger } from "~/components/ui";
+import {
+  Button,
+  Checkbox,
+  Input,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from "~/components/ui";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 
@@ -74,6 +81,7 @@ const columns = [
         aria-label="Select row"
       />
     ),
+    size: 1,
     enableSorting: false,
     enableHiding: false,
   }),
@@ -136,6 +144,10 @@ function MembersTable(props: { groupId: number }) {
     //   columnVisibility,
     //   rowSelection,
     // },
+    defaultColumn: {
+      // @ts-expect-error // TODO: This property's value should be a number but setting it to string works ¯\_(ツ)_/¯
+      size: "auto",
+    },
   });
 
   return (
@@ -146,7 +158,7 @@ function MembersTable(props: { groupId: number }) {
             {(headerGroup) => (
               <TableRow>
                 {headerGroup.headers.map((header) => (
-                  <TableHead>
+                  <TableHead style={{ width: `${header.getSize()}px` }}>
                     {header.isPlaceholder
                       ? null
                       : flexRender(
@@ -249,6 +261,10 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    defaultColumn: {
+      // @ts-expect-error // TODO: This property's value should be a number but setting it to string works ¯\_(ツ)_/¯
+      size: "auto",
+    },
   });
 
   const addMembers = trpc.group.addMembers.useMutation();
@@ -285,6 +301,16 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
                 ))}
               </TabsList>
             </Tabs>
+            <Input
+              placeholder="Search..."
+              value={
+                (table.getColumn("name")?.getFilterValue() as string) ?? ""
+              }
+              onInput={(event) =>
+                table.getColumn("name")?.setFilterValue(event.target.value)
+              }
+              class="max-w-sm flex-1 px-4"
+            />
             <Button
               disabled={
                 !table.getSelectedRowModel().rows.length || addMembers.isPending
@@ -313,7 +339,7 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
                   {(headerGroup) => (
                     <TableRow>
                       {headerGroup.headers.map((header) => (
-                        <TableHead>
+                        <TableHead style={{ width: `${header.getSize()}px` }}>
                           {header.isPlaceholder
                             ? null
                             : flexRender(
