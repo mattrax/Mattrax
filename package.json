@@ -2,6 +2,7 @@
   "name": "@mattrax/monorepo",
   "private": true,
   "scripts": {
+    "postinstall": "node patches/solid-start-ts-nocheck",
     "dev": "pnpm --filter @mattrax/forge dev",
     "landing": "pnpm --filter @mattrax/landing --",
     "email": "pnpm --filter @mattrax/email --",

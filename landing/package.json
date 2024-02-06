@@ -24,6 +24,7 @@
     "node": ">=18"
   },
   "devDependencies": {
-    "tailwindcss": "^3.4.1"
+    "tailwindcss": "^3.4.1",
+    "vite": "^5.0.12"
   }
 }

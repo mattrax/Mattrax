@@ -3,6 +3,7 @@
   "references": [
     { "path": "./api" },
     { "path": "./forge" },
+    { "path": "./landing" },
     { "path": "./packages/policy" },
     { "path": "./packages/email" }
   ],
