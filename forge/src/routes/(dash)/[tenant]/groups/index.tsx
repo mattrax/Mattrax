@@ -26,10 +26,8 @@ export const columns: ColumnDef<any>[] = [
     id: "select",
     header: ({ table }) => (
       <Checkbox
-        checked={
-          table.getIsAllPageRowsSelected() ||
-          (table.getIsSomePageRowsSelected() && "indeterminate")
-        }
+        checked={table.getIsAllPageRowsSelected()}
+        indeterminate={table.getIsSomePageRowsSelected()}
         onChange={(value) => table.toggleAllPageRowsSelected(!!value)}
         aria-label="Select all"
       />
@@ -296,9 +294,9 @@ function ColumnsDropdown(
   props: ParentProps & { table: ReturnType<typeof createGroupsTable> }
 ) {
   return (
-    <DropdownMenu>
+    <DropdownMenu placement="bottom-end">
       <DropdownMenuTrigger asChild>{props.children}</DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent>
         <For
           each={props.table
             .getAllColumns()
