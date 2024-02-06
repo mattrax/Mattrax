@@ -38,6 +38,7 @@ import {
 } from "~/components/ui";
 import { trpc } from "~/lib";
 import { As } from "@kobalte/core";
+import { ParentProps } from "solid-js";
 
 export const columns: ColumnDef<any>[] = [
   {
@@ -93,30 +94,10 @@ export const columns: ColumnDef<any>[] = [
 
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
-export default function Page() {
+function createUsersTable() {
   const users = trpc.user.list.useQuery();
 
-  // return <p>{JSON.stringify(users.data)}</p>;
-
-  const params = useZodParams({
-    // TODO: Max and min validation
-    offset: z.number().default(0),
-    limit: z.number().default(50),
-  });
-
-  // TODO: Data fetching
-
-  // console.log(paginationProps());
-  // return (
-  //   <div class="flex flex-col p-4 w-full">
-  //     <h1>Users page!</h1>
-
-  //     {/* <DataTable columns={columns} data={() => data() || []} /> */}
-  //     <TableDemo />
-  //   </div>
-  // );
-
-  const table = createSolidTable({
+  return createSolidTable({
     get data() {
       return users.data || [];
     },
@@ -138,9 +119,33 @@ export default function Page() {
     //   rowSelection,
     // },
   });
+}
+
+export default function Page() {
+  const table = createUsersTable();
+  // return <p>{JSON.stringify(users.data)}</p>;
+
+  const params = useZodParams({
+    // TODO: Max and min validation
+    offset: z.number().default(0),
+    limit: z.number().default(50),
+  });
+
+  // TODO: Data fetching
+
+  // console.log(paginationProps());
+  // return (
+  //   <div class="flex flex-col p-4 w-full">
+  //     <h1>Users page!</h1>
+
+  //     {/* <DataTable columns={columns} data={() => data() || []} /> */}
+  //     <TableDemo />
+  //   </div>
+  // );
 
   return (
     <div class="flex-1 px-4 py-8">
+      <h1 class="text-3xl font-bold">Users</h1>
       <div class="flex items-center py-4">
         <Input
           placeholder="Filter emails..."
@@ -150,84 +155,14 @@ export default function Page() {
           }
           class="max-w-sm"
         />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <As
-              component={Button}
-              variant="outline"
-              class="ml-auto select-none"
-            >
-              Columns
-              <IconCarbonCaretDown class="ml-2 h-4 w-4" />
-            </As>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <For
-              each={table
-                .getAllColumns()
-                .filter((column) => column.getCanHide())}
-            >
-              {(column) => (
-                <DropdownMenuCheckboxItem
-                  class="capitalize"
-                  checked={column.getIsVisible()}
-                  onChange={(value) => column.toggleVisibility(!!value)}
-                >
-                  {column.id}
-                </DropdownMenuCheckboxItem>
-              )}
-            </For>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <ColumnsDropdown table={table}>
+          <As component={Button} variant="outline" class="ml-auto select-none">
+            Columns
+            <IconCarbonCaretDown class="ml-2 h-4 w-4" />
+          </As>
+        </ColumnsDropdown>
       </div>
-      <div class="rounded-md border">
-        <Table>
-          <TableHeader>
-            <For each={table.getHeaderGroups()}>
-              {(headerGroup) => (
-                <TableRow>
-                  {headerGroup.headers.map((header) => (
-                    <TableHead>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              )}
-            </For>
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
-              <For each={table.getRowModel().rows}>
-                {(row) => (
-                  <TableRow data-state={row.getIsSelected() && "selected"}>
-                    <For each={row.getVisibleCells()}>
-                      {(cell) => (
-                        <TableCell>
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
-                        </TableCell>
-                      )}
-                    </For>
-                  </TableRow>
-                )}
-              </For>
-            ) : (
-              <TableRow>
-                <TableCell colSpan={columns.length} class="h-24 text-center">
-                  No results.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <UsersTable table={table} />
       <div class="flex items-center justify-end space-x-2 py-4">
         <div class="flex-1 text-sm text-muted-foreground">
           {table.getFilteredSelectedRowModel().rows.length} of{" "}
@@ -252,6 +187,86 @@ export default function Page() {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ColumnsDropdown(
+  props: ParentProps & { table: ReturnType<typeof createUsersTable> }
+) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>{props.children}</DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <For
+          each={props.table
+            .getAllColumns()
+            .filter((column) => column.getCanHide())}
+        >
+          {(column) => (
+            <DropdownMenuCheckboxItem
+              class="capitalize"
+              checked={column.getIsVisible()}
+              onChange={(value) => column.toggleVisibility(!!value)}
+            >
+              {column.id}
+            </DropdownMenuCheckboxItem>
+          )}
+        </For>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function UsersTable(props: { table: ReturnType<typeof createUsersTable> }) {
+  return (
+    <div class="rounded-md border">
+      <Table>
+        <TableHeader>
+          <For each={props.table.getHeaderGroups()}>
+            {(headerGroup) => (
+              <TableRow>
+                {headerGroup.headers.map((header) => (
+                  <TableHead>
+                    {header.isPlaceholder
+                      ? null
+                      : flexRender(
+                          header.column.columnDef.header,
+                          header.getContext()
+                        )}
+                  </TableHead>
+                ))}
+              </TableRow>
+            )}
+          </For>
+        </TableHeader>
+        <TableBody>
+          {props.table.getRowModel().rows.length ? (
+            <For each={props.table.getRowModel().rows}>
+              {(row) => (
+                <TableRow data-state={row.getIsSelected() && "selected"}>
+                  <For each={row.getVisibleCells()}>
+                    {(cell) => (
+                      <TableCell>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    )}
+                  </For>
+                </TableRow>
+              )}
+            </For>
+          ) : (
+            <TableRow>
+              <TableCell colSpan={columns.length} class="h-24 text-center">
+                No results.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
     </div>
   );
 }

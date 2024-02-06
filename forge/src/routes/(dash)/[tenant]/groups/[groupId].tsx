@@ -1,11 +1,4 @@
-import {
-  For,
-  ParentProps,
-  Show,
-  Suspense,
-  createMemo,
-  createSignal,
-} from "solid-js";
+import { For, ParentProps, Show, Suspense, createSignal } from "solid-js";
 import { z } from "zod";
 import { As } from "@kobalte/core";
 
@@ -16,19 +9,23 @@ import { useZodParams } from "~/lib/useZodParams";
 export default function Page() {
   const routeParams = useZodParams({ groupId: z.coerce.number() });
 
-  const group = trpc.group.get.useQuery(() => ({ id: routeParams().groupId }));
+  const group = trpc.group.get.useQuery(() => ({ id: routeParams.groupId }));
 
   return (
     <Show when={group.data}>
       {(group) => (
-        <div class="flex-1 m-4">
-          <h1 class="text-xl font-bold">{group().name}</h1>
-          <div class="mt-4 mb-2">
-            <AddMemberSheet groupId={routeParams().groupId}>
+        <div class="flex-1 px-4 py-8">
+          <h1 class="text-3xl font-bold focus:outline-none" contentEditable>
+            {group().name}
+          </h1>
+          <div class="my-4">
+            <AddMemberSheet groupId={routeParams.groupId}>
               <As component={Button}>Add Members</As>
             </AddMemberSheet>
           </div>
-          <MembersTable groupId={group().id} />
+          <Suspense>
+            <MembersTable groupId={group().id} />
+          </Suspense>
         </div>
       )}
     </Show>

@@ -108,8 +108,8 @@ export default function Page() {
   // );
 
   return (
-    <div class="flex-1 px-4 py-8">
-      <div class="flex items-center py-4">
+    <OutlineLayout title="Groups">
+      <div class="flex items-center mb-4">
         <CreateGroupDialog>
           <As component={Button}>Create New Group</As>
         </CreateGroupDialog>
@@ -155,7 +155,7 @@ export default function Page() {
           </Button>
         </div>
       </div>
-    </div>
+    </OutlineLayout>
   );
 }
 
@@ -290,6 +290,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "~/components/ui";
+import { OutlineLayout } from "../OutlineLayout";
 
 function ColumnsDropdown(
   props: ParentProps & { table: ReturnType<typeof createGroupsTable> }

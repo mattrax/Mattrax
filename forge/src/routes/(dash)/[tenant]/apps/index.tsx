@@ -1,5 +1,6 @@
 import { createAsync } from "@solidjs/router";
 import { Suspense, createSignal } from "solid-js";
+import { OutlineLayout } from "../OutlineLayout";
 
 export default function Page() {
   // TODO: Proper page with DB. This is more of a tech demo.
@@ -26,7 +27,7 @@ function AppleAppStore() {
   });
 
   return (
-    <>
+    <OutlineLayout title="Applications">
       <input
         type="text"
         class="border border-gray-300 rounded-md p-2"
@@ -45,6 +46,6 @@ function AppleAppStore() {
           ))}
         </Suspense>
       </div>
-    </>
+    </OutlineLayout>
   );
 }

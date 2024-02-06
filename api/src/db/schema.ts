@@ -172,8 +172,8 @@ export const groupableVariants = ["user", "device", "policy"] as const;
 export const groupables = mysqlTable(
   "groupables",
   {
-    id: serial("id"),
-    variant: mysqlEnum("variant", groupableVariants),
+    id: serialRelation("id").notNull(),
+    variant: mysqlEnum("variant", groupableVariants).notNull(),
     tenantId: serialRelation("tenantId")
       .references(() => tenants.id)
       .notNull(),
@@ -184,9 +184,14 @@ export const groupables = mysqlTable(
 export const groupGroupables = mysqlTable(
   "group_groupables",
   {
-    groupId: int("groupId").references(() => groups.id),
-    groupableId: serial("groupableId"),
-    groupableVariant: mysqlEnum("groupableVariant", groupableVariants),
+    groupId: serialRelation("groupId")
+      .references(() => groups.id)
+      .notNull(),
+    groupableId: serialRelation("groupableId").notNull(),
+    groupableVariant: mysqlEnum(
+      "groupableVariant",
+      groupableVariants
+    ).notNull(),
   },
   (table) => ({
     pk: primaryKey({
