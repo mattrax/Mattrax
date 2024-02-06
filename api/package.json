@@ -39,6 +39,7 @@
     "hono": "^3.12.11",
     "react": "^18.2.0",
     "stripe": "^14.15.0",
+    "stripe-cloudflare": "^9.13.4",
     "superjson": "^2.2.1",
     "zod": "^3.22.4"
   },

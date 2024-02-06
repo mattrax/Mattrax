@@ -76,6 +76,9 @@ importers:
       stripe:
         specifier: ^14.15.0
         version: 14.15.0(patch_hash=o35kshgxg3ku2srbayuuk74sqe)
+      stripe-cloudflare:
+        specifier: ^9.13.4
+        version: 9.13.4
       superjson:
         specifier: ^2.2.1
         version: 2.2.1
@@ -10828,6 +10831,14 @@ packages:
     resolution: {integrity: sha512-PugKzOsyXpArk0yWmUwqOZecSO0GH0bPoctLcqNDH9J04pVW3lflYE0ujElBGTloevcxF5MofAOZ7C5l2b+wLg==}
     dependencies:
       acorn: 8.11.3
+
+  /stripe-cloudflare@9.13.4:
+    resolution: {integrity: sha512-m5An9AW5yzLekO/JX00wYYiRxGrnHtpojem+If+PU99XQQCrSCcWHsoiNqbexfCfKapMCX7mRMFVjiybIsmUWw==}
+    engines: {node: ^8.1 || >=10.*}
+    dependencies:
+      '@types/node': 20.11.16
+      qs: 6.11.2
+    dev: false
 
   /stripe@14.15.0(patch_hash=o35kshgxg3ku2srbayuuk74sqe):
     resolution: {integrity: sha512-KPxNcf0iFWA38pkzeJyJklK9qQJo/6FEBDcLsZxDCVHfn8yT+uP9p1JSYiOhIxCyh+6BD5XEVOMnnBJnVeEnfA==}
