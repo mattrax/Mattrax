@@ -44,7 +44,6 @@
   },
   "devDependencies": {
     "@microsoft/microsoft-graph-types": "^2.40.0",
-    "@types/microsoft-graph": "^2.40.0",
     "@types/react": "^18.2.54"
   }
 }

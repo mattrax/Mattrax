@@ -4,6 +4,7 @@ import { db, devices, tenantAccounts } from "../db";
 import { and, eq } from "drizzle-orm";
 import { encodeId } from "../utils";
 import { graphClient } from "../microsoft";
+import type { ManagedDevice } from "@microsoft/microsoft-graph-types";
 
 export const deviceRouter = createTRPCRouter({
   list: tenantProcedure.query(async ({ ctx }) => {
@@ -66,11 +67,9 @@ export const deviceRouter = createTRPCRouter({
       .api("/deviceManagement/managedDevices")
       .get();
 
-    for (const d of resp.value) {
-      // .enrolledDateTime
-
+    for (const d of resp.value as ManagedDevice[]) {
       await db.insert(devices).values({
-        name: d.displayName,
+        name: d.deviceName || "Device 1", // TODO: Better default
         manufacturer: "",
         model: "",
         operatingSystem: "",
