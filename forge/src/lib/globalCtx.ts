@@ -10,6 +10,7 @@ export type PublicSessionData = {
 export type Tenant = {
   id: string;
   name: string;
+  description: string;
 }; // TODO: Infer this from backend
 
 type GlobalCtx = {

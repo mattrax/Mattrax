@@ -8,7 +8,7 @@ import { z } from "zod";
 
 // TODO: Take in Zod schema
 
-export function Form(props: ParentProps) {
+export function Form(props: ParentProps<{ validator: z.AnyZodObject }>) {
   const form = createForm(() => ({
     defaultValues: {
       fullName: "",
@@ -19,13 +19,24 @@ export function Form(props: ParentProps) {
     },
     validatorAdapter: zodValidator,
     validators: {
-      onChange: z.object({
-        fullName: z.string(),
-      }), // TODO: From props
+      onChange: props.validator,
     },
   }));
 
   const disabled = () => false; // TODO: Finish this
+
+  // useBeforeLeave((e) => {
+  //   if (form.isDirty && !e.defaultPrevented) {
+  //     // preventDefault to block immediately and prompt user async
+  //     e.preventDefault();
+  //     setTimeout(() => {
+  //       if (window.confirm("Discard unsaved changes - are you sure?")) {
+  //         // user wants to proceed anyway so retry with force=true
+  //         e.retry(true);
+  //       }
+  //     }, 100);
+  //   }
+  // });
 
   return (
     <form.Provider>

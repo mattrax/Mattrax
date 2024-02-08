@@ -42,6 +42,33 @@ export const tenantRouter = createTRPCRouter({
       };
     }),
 
+  edit: tenantProcedure
+    .input(
+      z.object({
+        name: z.string().min(1).max(100).optional(),
+        description: z.string().min(1).max(256).optional().nullable(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (input.name === undefined && input.description === undefined) return;
+
+      await db
+        .update(tenants)
+        .set({
+          ...(input.name !== undefined
+            ? {
+                name: input.name,
+              }
+            : {}),
+          ...(input.description !== undefined
+            ? {
+                description: input.description,
+              }
+            : {}),
+        })
+        .where(eq(tenants.id, ctx.tenantId));
+    }),
+
   stats: tenantProcedure.query(({ ctx }) =>
     promiseObjectAll({
       devices: db

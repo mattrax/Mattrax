@@ -47,6 +47,16 @@ function SettingsCard() {
   );
   const [input, setInput] = createSignal(defaultValue());
 
+  const [defaultValue2, setDefaultValue2] = createSignal(
+    globalCtx.activeTenant?.description
+  );
+  const [input2, setInput2] = createSignal(defaultValue2());
+
+  // TODO: rollback form on failure
+  const updateTenant = trpc.tenant.edit.useMutation(() => ({
+    onSuccess: () => globalCtx.refetchSession(),
+  }));
+
   createEffect(() => {
     const tenantName = globalCtx.activeTenant!.name;
     if (tenantName !== untrack(() => defaultValue())) {
@@ -55,21 +65,15 @@ function SettingsCard() {
     } else {
       // TODO: Handle this
     }
-  });
 
-  // TODO: Build into form abstraction
-  // useBeforeLeave((e) => {
-  //   if (form.isDirty && !e.defaultPrevented) {
-  //     // preventDefault to block immediately and prompt user async
-  //     e.preventDefault();
-  //     setTimeout(() => {
-  //       if (window.confirm("Discard unsaved changes - are you sure?")) {
-  //         // user wants to proceed anyway so retry with force=true
-  //         e.retry(true);
-  //       }
-  //     }, 100);
-  //   }
-  // });
+    const tenantDescription = globalCtx.activeTenant!.description;
+    if (tenantDescription !== untrack(() => defaultValue2())) {
+      setDefaultValue2(tenantName);
+      setInput2(tenantDescription);
+    } else {
+      // TODO: Handle this
+    }
+  });
 
   return (
     <Card class="w-[350px] flex flex-col">
@@ -92,14 +96,26 @@ function SettingsCard() {
               <Label for="description">Description</Label>
               <Input
                 id="description"
-                // value={input()}
-                // onInput={(e) => setInput(e.currentTarget.value)}
-                disabled
+                placeholder="My cool organization"
+                value={input2()}
+                onInput={(e) => setInput2(e.currentTarget.value)}
               />
             </div>
           </div>
 
-          <Button class="mt-4 w-full">Save</Button>
+          <Button
+            class="mt-4 w-full mb-2"
+            onClick={() => {
+              const data = {};
+              if (input() !== untrack(() => defaultValue()))
+                data["name"] = input();
+              if (input2() !== untrack(() => defaultValue2()))
+                data["description"] = input2() === "" ? null : input2();
+              updateTenant.mutate(data);
+            }}
+          >
+            Save
+          </Button>
         </div>
 
         <DeleteTenantButton />
@@ -340,16 +356,17 @@ function BillingCard() {
         <CardDescription>The lights don't power themselves</CardDescription>
       </CardHeader>
       <CardContent class="flex flex-col space-y-2">
-        <p>Devices: 0</p>
+        <p>While Mattrax is beta, it's free!</p>
+        {/* <p>Devices: 0</p> */}
         {/* TODO: How much is owed and when it's due */}
 
-        <Button
+        {/* <Button
           class="w-full"
           onClick={() => stripePortalUrl.mutate()}
           disabled={stripePortalUrl.isPending}
         >
           Go to Stipe
-        </Button>
+        </Button> */}
       </CardContent>
     </Card>
   );

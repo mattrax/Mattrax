@@ -17,6 +17,7 @@ const fetchTenants = async (session_id: number) =>
       .select({
         id: tenants.id,
         name: tenants.name,
+        description: tenants.description,
       })
       .from(tenants)
       .where(eq(tenants.owner_id, session_id))
