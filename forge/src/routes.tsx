@@ -87,6 +87,30 @@ const dash: RouteDefinition[] = [
         component: lazy(
           () => import("./routes/(dash)/[tenant]/policies/[policyId]")
         ),
+        children: [
+          {
+            path: "/",
+            component: lazy(
+              () => import("./routes/(dash)/[tenant]/policies/[policyId]/index")
+            ),
+          },
+          {
+            path: "/restrictions",
+            component: lazy(
+              () =>
+                import(
+                  "./routes/(dash)/[tenant]/policies/[policyId]/restrictions"
+                )
+            ),
+          },
+          {
+            path: "/scripts",
+            component: lazy(
+              () =>
+                import("./routes/(dash)/[tenant]/policies/[policyId]/scripts")
+            ),
+          },
+        ],
       },
       {
         path: "/groups",
