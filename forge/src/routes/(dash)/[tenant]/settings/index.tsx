@@ -10,8 +10,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  Input,
-  Label,
   Switch,
 } from "~/components/ui";
 import dayjs from "dayjs";
@@ -23,6 +21,9 @@ import { toast } from "solid-sonner";
 import { OutlineLayout } from "../OutlineLayout";
 import { AreYouSureModal } from "~/components/AreYouSureModal";
 import { As } from "@kobalte/core";
+import { Form, createZodForm } from "~/components/forms";
+import { z } from "zod";
+import { InputField } from "~/components/forms/InputField";
 
 export default function Page() {
   return (
@@ -44,37 +45,17 @@ export default function Page() {
 
 function SettingsCard() {
   const globalCtx = useGlobalCtx();
-  const [defaultValue, setDefaultValue] = createSignal(
-    globalCtx.activeTenant?.name
-  );
-  const [input, setInput] = createSignal(defaultValue());
-
-  const [defaultValue2, setDefaultValue2] = createSignal(
-    globalCtx.activeTenant?.description
-  );
-  const [input2, setInput2] = createSignal(defaultValue2());
-
   // TODO: rollback form on failure
   const updateTenant = trpc.tenant.edit.useMutation(() => ({
     onSuccess: () => globalCtx.refetchSession(),
   }));
 
-  createEffect(() => {
-    const tenantName = globalCtx.activeTenant!.name;
-    if (tenantName !== untrack(() => defaultValue())) {
-      setDefaultValue(tenantName);
-      setInput(tenantName);
-    } else {
-      // TODO: Handle this
-    }
-
-    const tenantDescription = globalCtx.activeTenant!.description;
-    if (tenantDescription !== untrack(() => defaultValue2())) {
-      setDefaultValue2(tenantName);
-      setInput2(tenantDescription);
-    } else {
-      // TODO: Handle this
-    }
+  const form = createZodForm({
+    schema: z.object({ name: z.string(), description: z.string() }),
+    defaultValues: globalCtx.activeTenant ?? undefined,
+    async onSubmit(props) {
+      await updateTenant.mutateAsync(props.value);
+    },
   });
 
   return (
@@ -84,41 +65,21 @@ function SettingsCard() {
         <CardDescription>Basic tenant configuration.</CardDescription>
       </CardHeader>
       <CardContent class="flex-grow flex flex-col justify-between">
-        <div>
+        <Form form={form}>
           <div class="grid w-full items-center gap-4">
-            <div class="flex flex-col space-y-1.5">
-              <Label for="name">Name</Label>
-              <Input
-                id="name"
-                value={input()}
-                onInput={(e) => setInput(e.currentTarget.value)}
-              />
-            </div>
-            <div class="flex flex-col space-y-1.5">
-              <Label for="description">Description</Label>
-              <Input
-                id="description"
-                placeholder="My cool organization"
-                value={input2()}
-                onInput={(e) => setInput2(e.currentTarget.value)}
-              />
-            </div>
+            <InputField form={form} name="name" label="Name" />
+            <InputField
+              form={form}
+              name="description"
+              label="Description"
+              placeholder="My cool organization"
+            />
           </div>
 
-          <Button
-            class="mt-4 w-full mb-2"
-            onClick={() => {
-              const data = {};
-              if (input() !== untrack(() => defaultValue()))
-                data["name"] = input();
-              if (input2() !== untrack(() => defaultValue2()))
-                data["description"] = input2() === "" ? null : input2();
-              updateTenant.mutate(data);
-            }}
-          >
+          <Button type="submit" class="mt-4 w-full mb-2">
             Save
           </Button>
-        </div>
+        </Form>
 
         <DeleteTenantButton />
       </CardContent>
