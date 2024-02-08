@@ -21,6 +21,8 @@ import { DeleteTenantButton } from "./DeleteTenantButton";
 import { authProviderDisplayName, authProviderUrl } from "~/lib/values";
 import { toast } from "solid-sonner";
 import { OutlineLayout } from "../OutlineLayout";
+import { AreYouSureModal } from "~/components/AreYouSureModal";
+import { As } from "@kobalte/core";
 
 export default function Page() {
   return (
@@ -254,18 +256,29 @@ function AuthenticationCard() {
                       </span>
                     </p>
 
-                    {/* // TODO: Delete button confirmation */}
-                    <Button
-                      class="w-full"
-                      variant="destructive"
-                      onClick={() =>
-                        unlinkProvider.mutate({
+                    <AreYouSureModal
+                      stringToType="Unlink Entra"
+                      description={
+                        <>
+                          Are you sure you want to unlink your auth provider
+                          along with all <b>users</b> and <b>groups</b> assigned
+                          to it?
+                        </>
+                      }
+                      mutate={() =>
+                        unlinkProvider.mutateAsync({
                           id: provider.id,
                         })
                       }
                     >
-                      Unlink
-                    </Button>
+                      <As
+                        component={Button}
+                        variant="destructive"
+                        class="w-full"
+                      >
+                        Unlink
+                      </As>
+                    </AreYouSureModal>
                   </div>
                 );
               }}
