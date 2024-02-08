@@ -5,15 +5,14 @@ import {
   Show,
   Suspense,
   createSignal,
+  JSX,
 } from "solid-js";
 import { z } from "zod";
 import { As } from "@kobalte/core";
-import { createLazyMemo } from "@solid-primitives/memo";
 
 import {
   Button,
   Checkbox,
-  Input,
   DialogContent,
   DialogDescription,
   DialogFooter,
