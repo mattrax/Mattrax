@@ -1,10 +1,8 @@
-import { useNavigate } from "@solidjs/router";
 import { For, ParentProps, startTransition } from "solid-js";
 import {
   type ColumnDef,
   createSolidTable,
   getCoreRowModel,
-  flexRender,
   getPaginationRowModel,
   getSortedRowModel,
   getFilteredRowModel,
@@ -91,6 +89,7 @@ function createGroupsTable() {
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
 export default function Page() {
+  const navigate = useNavigate();
   const groupsTable = createGroupsTable();
   const forcePullFromIntune = trpc.device.forcePullFromIntune.useMutation(
     () => ({
@@ -121,7 +120,10 @@ export default function Page() {
           </As>
         </ColumnsDropdown>
       </div>
-      <GroupsTable table={groupsTable} />
+      <StandardTable
+        table={groupsTable}
+        onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}
+      />
       <div class="flex items-center justify-end space-x-2 py-4">
         <div class="flex-1 text-sm text-muted-foreground">
           {groupsTable.getFilteredSelectedRowModel().rows.length} of{" "}
@@ -151,86 +153,19 @@ export default function Page() {
 }
 
 import {
-  Input,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "~/components/ui";
-
-function GroupsTable(props: { table: ReturnType<typeof createGroupsTable> }) {
-  const navigate = useNavigate();
-
-  return (
-    <div class="rounded-md border">
-      <Table>
-        <TableHeader>
-          <For each={props.table.getHeaderGroups()}>
-            {(headerGroup) => (
-              <TableRow>
-                {headerGroup.headers.map((header) => (
-                  <TableHead style={{ width: `${header.getSize()}px` }}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext()
-                        )}
-                  </TableHead>
-                ))}
-              </TableRow>
-            )}
-          </For>
-        </TableHeader>
-        <TableBody>
-          {props.table.getRowModel().rows?.length ? (
-            <For each={props.table.getRowModel().rows}>
-              {(row) => (
-                <TableRow
-                  data-state={row.getIsSelected() && "selected"}
-                  onClick={() => {
-                    navigate(`./${row.original.id}`);
-                  }}
-                >
-                  <For each={row.getVisibleCells()}>
-                    {(cell) => (
-                      <TableCell>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </TableCell>
-                    )}
-                  </For>
-                </TableRow>
-              )}
-            </For>
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} class="h-24 text-center">
-                No results.
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
-
-import {
   Button,
   Checkbox,
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
+  Input,
 } from "~/components/ui";
 import { OutlineLayout } from "../OutlineLayout";
 import { toast } from "solid-sonner";
 import dayjs from "dayjs";
+import { StandardTable } from "~/components/StandardTable";
+import { useNavigate } from "@solidjs/router";
 
 function ColumnsDropdown(
   props: ParentProps & { table: ReturnType<typeof createGroupsTable> }

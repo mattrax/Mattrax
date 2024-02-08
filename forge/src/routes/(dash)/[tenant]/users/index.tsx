@@ -1,11 +1,8 @@
-import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
-import { For } from "solid-js";
+import { For, startTransition } from "solid-js";
 import {
   type ColumnDef,
   createSolidTable,
   getCoreRowModel,
-  flexRender,
   getPaginationRowModel,
   getSortedRowModel,
   getFilteredRowModel,
@@ -18,24 +15,19 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
   Input,
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
 } from "~/components/ui";
 import { trpc } from "~/lib";
 import { As } from "@kobalte/core";
 import { ParentProps } from "solid-js";
+import { StandardTable } from "~/components/StandardTable";
+import { useNavigate } from "@solidjs/router";
 
 export const columns: ColumnDef<any>[] = [
   {
     id: "select",
     header: ({ table }) => (
       <Checkbox
+        class="w-4"
         checked={
           table.getIsAllPageRowsSelected() || table.getIsSomePageRowsSelected()
         }
@@ -46,11 +38,13 @@ export const columns: ColumnDef<any>[] = [
     ),
     cell: ({ row }) => (
       <Checkbox
+        class="w-4"
         checked={row.getIsSelected()}
         onChange={(value) => row.toggleSelected(!!value)}
         aria-label="Select row"
       />
     ),
+    size: 1,
     enableSorting: false,
     enableHiding: false,
   },
@@ -80,8 +74,6 @@ export const columns: ColumnDef<any>[] = [
   // TODO: Link to OAuth provider
   // TODO: Actions
 ];
-
-// TODO: Infinite scroll
 
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
@@ -113,35 +105,17 @@ function createUsersTable() {
 }
 
 export default function Page() {
+  const navigate = useNavigate();
   const table = createUsersTable();
-  // return <p>{JSON.stringify(users.data)}</p>;
-
-  const params = useZodParams({
-    // TODO: Max and min validation
-    offset: z.number().default(0),
-    limit: z.number().default(50),
-  });
-
-  // TODO: Data fetching
-
-  // console.log(paginationProps());
-  // return (
-  //   <div class="flex flex-col p-4 w-full">
-  //     <h1>Users page!</h1>
-
-  //     {/* <DataTable columns={columns} data={() => data() || []} /> */}
-  //     <TableDemo />
-  //   </div>
-  // );
 
   return (
     <div class="flex-1 px-4 py-8">
       <h1 class="text-3xl font-bold">Users</h1>
       <div class="flex items-center py-4">
         <Input
-          placeholder="Filter emails..."
+          placeholder="Search..."
           value={(table.getColumn("email")?.getFilterValue() as string) ?? ""}
-          onChange={(event) =>
+          onInput={(event) =>
             table.getColumn("email")?.setFilterValue(event.target.value)
           }
           class="max-w-sm"
@@ -153,7 +127,10 @@ export default function Page() {
           </As>
         </ColumnsDropdown>
       </div>
-      <UsersTable table={table} />
+      <StandardTable
+        table={table}
+        onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}
+      />
       <div class="flex items-center justify-end space-x-2 py-4">
         <div class="flex-1 text-sm text-muted-foreground">
           {table.getFilteredSelectedRowModel().rows.length} of{" "}
@@ -206,58 +183,5 @@ function ColumnsDropdown(
         </For>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function UsersTable(props: { table: ReturnType<typeof createUsersTable> }) {
-  return (
-    <div class="rounded-md border">
-      <Table>
-        <TableHeader>
-          <For each={props.table.getHeaderGroups()}>
-            {(headerGroup) => (
-              <TableRow>
-                {headerGroup.headers.map((header) => (
-                  <TableHead>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext()
-                        )}
-                  </TableHead>
-                ))}
-              </TableRow>
-            )}
-          </For>
-        </TableHeader>
-        <TableBody>
-          {props.table.getRowModel().rows.length ? (
-            <For each={props.table.getRowModel().rows}>
-              {(row) => (
-                <TableRow data-state={row.getIsSelected() && "selected"}>
-                  <For each={row.getVisibleCells()}>
-                    {(cell) => (
-                      <TableCell>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </TableCell>
-                    )}
-                  </For>
-                </TableRow>
-              )}
-            </For>
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} class="h-24 text-center">
-                No results.
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </div>
   );
 }
