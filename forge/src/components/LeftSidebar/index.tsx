@@ -1,4 +1,4 @@
-import { A, useLocation, useNavigate } from "@solidjs/router";
+import { A, useNavigate } from "@solidjs/router";
 import { For, JSX } from "solid-js";
 import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
 
@@ -33,11 +33,6 @@ const items: NavbarItem[] = [
     icon: IconPhAppWindowDuotone,
     title: "Applications",
     href: "/apps",
-  },
-  {
-    icon: IconPhBookDuotone,
-    title: "Scripts",
-    href: "/scripts",
   },
   {
     icon: IconPhBoundingBoxDuotone,

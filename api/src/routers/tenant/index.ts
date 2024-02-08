@@ -3,8 +3,10 @@ import { authedProcedure, createTRPCRouter, tenantProcedure } from "../../trpc";
 import { encodeId, promiseObjectAll } from "../../utils";
 import {
   accounts,
+  applications,
   db,
   devices,
+  groups,
   policies,
   tenantAccounts,
   tenants,
@@ -57,18 +59,16 @@ export const tenantRouter = createTRPCRouter({
         .from(policies)
         .where(eq(policies.tenantId, ctx.session.data.id))
         .then((rows) => rows[0]!.count),
-      apps: Promise.resolve(420), // TODO: Enable this query
-      groups: Promise.resolve(69), // TODO: Enable this query
-      // applications: db
-      //   .select({ count: count() })
-      //   .from(apps)
-      //   .where(eq(tenants.owner_id, ctx.session.data.id))
-      //   .then((rows) => rows[0]!.count),
-      // groups: db
-      //   .select({ count: count() })
-      //   .from(groups)
-      //   .where(eq(groups.tenantId, ctx.session.data.id))
-      //   .then((rows) => rows[0]!.count),
+      applications: db
+        .select({ count: count() })
+        .from(applications)
+        .where(eq(applications.tenantId, ctx.session.data.id))
+        .then((rows) => rows[0]!.count),
+      groups: db
+        .select({ count: count() })
+        .from(groups)
+        .where(eq(groups.tenantId, ctx.session.data.id))
+        .then((rows) => rows[0]!.count),
     })
   ),
 

@@ -1,15 +1,6 @@
-// TODO: Paginated fetch
-// TODO: Search
-// TODO: Filtering
-// TODO: Virtialisation
-// TODO: Abstract into reusable components
-// TODO: Skeleton loading state
-
-import { createPagination } from "@solid-primitives/pagination";
 import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
-import { createAsync } from "@solidjs/router";
-import { For, Show, Suspense } from "solid-js";
+import { For } from "solid-js";
 import {
   type ColumnDef,
   createSolidTable,

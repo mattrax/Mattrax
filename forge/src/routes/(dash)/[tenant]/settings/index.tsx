@@ -117,7 +117,9 @@ function AdministratorsCard() {
         <CardTitle>Tenant Administrators</CardTitle>
         <CardDescription>Manage administrator users.</CardDescription>
       </CardHeader>
-      <CardContent class="flex-grow flex flex-col justify-between">
+      <CardContent
+        class={"flex-grow flex flex-col justify-between" + " blur-sm p-8"}
+      >
         <Suspense fallback={<p>Loading...</p>}>
           <div>
             <For each={administrators.data}>
@@ -134,7 +136,7 @@ function AdministratorsCard() {
                     <Button
                       variant="destructive"
                       onClick={() => alert("TODO")}
-                      disabled={administrator.isOwner}
+                      disabled={true && administrator.isOwner}
                     >
                       Remove
                     </Button>
@@ -146,7 +148,7 @@ function AdministratorsCard() {
         </Suspense>
 
         <div>
-          <Button class="w-full" onClick={() => alert("TODO")}>
+          <Button class="w-full" onClick={() => alert("TODO")} disabled>
             Invite
           </Button>
         </div>

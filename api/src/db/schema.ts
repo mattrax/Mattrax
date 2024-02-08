@@ -217,8 +217,11 @@ export const groupRelations = relations(groups, ({ many }) => ({
   groupables: many(groupGroupables),
 }));
 
-// export const applications = mysqlTable("apps", {
-//   id: serial("id").primaryKey(),
-//   // name: varchar("name", { length: 256 }).notNull(),
-//   // description: varchar("description", { length: 256 }),
-// });
+export const applications = mysqlTable("apps", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 256 }).notNull(),
+  description: varchar("description", { length: 256 }),
+  tenantId: serialRelation("tenantId")
+    .references(() => tenants.id)
+    .notNull(),
+});
