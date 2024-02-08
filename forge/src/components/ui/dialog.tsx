@@ -24,13 +24,8 @@ const Dialog: Component<
 const DialogRoot: Component<
   Omit<DialogPrimitive.DialogRootProps, "open"> &
     (
-      | {
-          open: boolean;
-          setOpen: (open: boolean) => void;
-        }
-      | {
-          controller?: Controller;
-        }
+      | { open: boolean; setOpen: (open: boolean) => void }
+      | { controller?: Controller }
     )
 > = (props) => {
   const controller =

@@ -35,7 +35,11 @@ export function Form<S extends z.ZodSchema>(props: FormProps<S>) {
   const [_, formProps] = splitProps(props, ["form"]);
 
   useBeforeLeave((e) => {
-    if (props.form.state.isTouched && !e.defaultPrevented) {
+    if (
+      props.form.state.isTouched &&
+      !props.form.state.isSubmitting &&
+      !e.defaultPrevented
+    ) {
       // preventDefault to block immediately and prompt user async
       e.preventDefault();
       setTimeout(() => {

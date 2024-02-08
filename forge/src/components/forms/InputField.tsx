@@ -10,7 +10,7 @@ export function InputField<TData extends Record<string, any>, TName>(
   > & {
     form: FormApi<TData, any>;
     name: DeepKeys<TData>;
-    label: string;
+    label?: string;
   }
 ) {
   const [_, inputProps] = splitProps(props, ["form", "name", "label"]);
@@ -20,7 +20,7 @@ export function InputField<TData extends Record<string, any>, TName>(
     <props.form.Field name={props.name}>
       {(field) => (
         <div class="flex flex-col space-y-1.5">
-          <Label for={id}>{props.label}</Label>
+          {props.label !== undefined && <Label for={id}>{props.label}</Label>}
           <Input
             {...inputProps}
             id={id}
