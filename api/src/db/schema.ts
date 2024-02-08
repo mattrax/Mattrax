@@ -10,6 +10,7 @@ import {
   primaryKey,
   bigint,
   mysqlTable,
+  boolean,
 } from "drizzle-orm/mysql-core";
 import { relations } from "drizzle-orm";
 
@@ -31,6 +32,7 @@ export const tenants = mysqlTable("tenant", {
   description: varchar("description", { length: 256 }),
   billingEmail: varchar("billingEmail", { length: 256 }),
   stripeCustomerId: varchar("stripeCustomerId", { length: 256 }),
+  enrollmentEnabled: boolean("enrollmentEnabled").notNull().default(true),
   owner_id: serialRelation("ownerId")
     .references(() => accounts.id)
     .notNull(),

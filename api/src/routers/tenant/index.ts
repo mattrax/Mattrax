@@ -69,6 +69,27 @@ export const tenantRouter = createTRPCRouter({
         .where(eq(tenants.id, ctx.tenantId));
     }),
 
+  enrollmentInfo: tenantProcedure.query(async ({ ctx }) =>
+    db
+      .select({
+        enrollmentEnabled: tenants.enrollmentEnabled,
+      })
+      .from(tenants)
+      .where(eq(tenants.id, ctx.tenantId))
+      .then((rows) => rows[0])
+  ),
+
+  setEnrollmentInfo: tenantProcedure
+    .input(z.object({ enrollmentEnabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) =>
+      db
+        .update(tenants)
+        .set({
+          enrollmentEnabled: input.enrollmentEnabled,
+        })
+        .where(eq(tenants.id, ctx.tenantId))
+    ),
+
   stats: tenantProcedure.query(({ ctx }) =>
     promiseObjectAll({
       devices: db

@@ -308,7 +308,7 @@ function AuthenticationCard() {
           <Button
             class="w-full"
             onClick={() => sync.mutate()}
-            // disabled={isPending() || hasLinkedProviders()}
+            disabled={isPending() || hasLinkedProviders()}
           >
             Sync
           </Button>
@@ -373,6 +373,15 @@ function BillingCard() {
 }
 
 function ConfigureEnrollmentCard() {
+  const enrollmentInfo = trpc.tenant.enrollmentInfo.useQuery();
+  // TODO: Show correct state on the UI while the mutation is pending but keep fields disabled.
+  const setEnrollmentInfo = trpc.tenant.setEnrollmentInfo.useMutation(() => ({
+    onSuccess: () => enrollmentInfo.refetch(),
+  }));
+  const enrollmentEnabled = untrackScopeFromSuspense(
+    () => enrollmentInfo.data?.enrollmentEnabled
+  );
+
   return (
     <Card class="w-[350px]">
       <CardHeader>
@@ -382,7 +391,15 @@ function ConfigureEnrollmentCard() {
       <CardContent class="flex flex-col space-y-2">
         <div class="flex justify-between">
           <p>Enable enrollment</p>
-          <Switch checked={true} />
+          <Switch
+            checked={enrollmentEnabled() ?? true}
+            disabled={enrollmentEnabled() === undefined}
+            onChange={(state) =>
+              setEnrollmentInfo.mutate({
+                enrollmentEnabled: state,
+              })
+            }
+          />
         </div>
 
         {/* // TODO: Integrate with Apple DEP */}
