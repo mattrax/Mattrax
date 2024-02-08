@@ -30,6 +30,12 @@ const navigation = [
     href: "/scripts",
     icon: IconPhClipboardDuotone,
   },
+  {
+    // TODO: Only for Mattrax employee's
+    name: "Debug",
+    href: "/debug",
+    icon: IconPhCookingPotDuotone,
+  },
 ];
 
 export default function Page(props: ParentProps) {
@@ -127,7 +133,7 @@ export default function Page(props: ParentProps) {
           </div>
         </div>
         <div class="w-full">
-          <main class="p-4 w-full h-full">{props.children}</main>
+          <main class="px-4 w-full h-full">{props.children}</main>
         </div>
       </div>
     </div>

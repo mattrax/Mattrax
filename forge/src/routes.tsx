@@ -110,6 +110,12 @@ const dash: RouteDefinition[] = [
                 import("./routes/(dash)/[tenant]/policies/[policyId]/scripts")
             ),
           },
+          {
+            path: "/debug",
+            component: lazy(
+              () => import("./routes/(dash)/[tenant]/policies/[policyId]/debug")
+            ),
+          },
         ],
       },
       {
