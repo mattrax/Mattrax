@@ -50,7 +50,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
   const navigate = useNavigate();
 
   return (
-    <aside class="h-full w-64 flex flex-col" aria-label="Sidebar">
+    <aside class="shrink-0 h-full w-64 flex flex-col" aria-label="Sidebar">
       <div class="h-28 bg-brand relative">
         {import.meta.env.MODE === "development" && (
           <div class="absolute insert-0 h-1.5 flex z-10 w-full">
