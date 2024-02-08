@@ -59,6 +59,26 @@ export const policyRouter = createTRPCRouter({
       };
     }),
 
+  duplicate: tenantProcedure
+    .input(z.object({ policyId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const id = decodeId("policy", input.policyId);
+      let row = (
+        await db.select().from(policies).where(eq(policies.id, id))
+      )?.[0];
+      if (!row) throw new Error("todo: error handling");
+
+      // @ts-expect-error
+      delete row.id;
+      // @ts-expect-error
+      delete row.intuneId;
+      // @ts-expect-error
+      delete row.policyHash;
+
+      const result = await db.insert(policies).values(row);
+      return encodeId("policy", parseInt(result.insertId));
+    }),
+
   update: tenantProcedure
     .input(
       z.object({
@@ -99,6 +119,13 @@ export const policyRouter = createTRPCRouter({
       const insertId = parseInt(result.insertId);
 
       return encodeId("policy", insertId);
+    }),
+
+  delete: tenantProcedure
+    .input(z.object({ policyId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const id = decodeId("policy", input.policyId);
+      await db.delete(policies).where(eq(policies.id, id));
     }),
 
   push: tenantProcedure

@@ -1,5 +1,5 @@
-import { A, redirect, useParams } from "@solidjs/router";
-import { For, ParentProps, Suspense, lazy } from "solid-js";
+import { A, redirect, useNavigate, useParams } from "@solidjs/router";
+import { For, ParentProps, startTransition } from "solid-js";
 import { trpc } from "~/lib";
 import {
   Button,
@@ -15,6 +15,8 @@ import {
   ProgressLabel,
   ProgressValueLabel,
 } from "~/components/ui/progress";
+import { toast } from "solid-sonner";
+import { AreYouSureModal } from "~/components/AreYouSureModal";
 
 // TODO: If the policy is not found redirect back to `/policies`
 
@@ -39,10 +41,25 @@ const navigation = [
 ];
 
 export default function Page(props: ParentProps) {
+  const navigate = useNavigate();
   const params = useParams();
   if (!params.policyId) redirect("/"); // TODO: Use a tenant relative redirect instead
   const policy = trpc.policy.get.useQuery(() => ({
     policyId: params.policyId!,
+  }));
+  const duplicatePolicy = trpc.policy.duplicate.useMutation(() => ({
+    onSuccess: async (policyId) => {
+      await startTransition(() =>
+        navigate(`/${params.tenant}/policies/${policyId}`)
+      );
+      toast.success("Policy duplicated");
+    },
+  }));
+  const deletePolicy = trpc.policy.delete.useMutation(() => ({
+    onSuccess: async () => {
+      await startTransition(() => navigate(`/${params.tenant}/policies`));
+      toast.success("Policy deleted");
+    },
   }));
 
   const href = (suffix: string) =>
@@ -79,12 +96,27 @@ export default function Page(props: ParentProps) {
               </As>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => alert("TODO")}>
+              <DropdownMenuItem
+                onClick={() =>
+                  duplicatePolicy.mutate({
+                    policyId: params.policyId!,
+                  })
+                }
+              >
                 Duplicate
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => alert("TODO")}>
-                Delete
-              </DropdownMenuItem>
+              {/* TODO: Fix this modal */}
+              <AreYouSureModal
+                stringToType={policy.data?.name || ""}
+                description="This will permanently delete the policy and cannot be undone."
+                mutate={() =>
+                  deletePolicy.mutateAsync({
+                    policyId: params.policyId!,
+                  })
+                }
+              >
+                <As component={DropdownMenuItem}>Delete</As>
+              </AreYouSureModal>
               <DropdownMenuItem onClick={() => alert("TODO")} disabled>
                 Export
               </DropdownMenuItem>
