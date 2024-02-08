@@ -76,7 +76,7 @@ export default function Page() {
     <OutlineLayout title="Policies">
       <div class="flex items-center mb-4">
         <CreatePolicyDialog>
-          <As component={Button}>Create New Policy</As>
+          <As component={Button}>Create Policy</As>
         </CreatePolicyDialog>
         <Input
           placeholder="Search..."

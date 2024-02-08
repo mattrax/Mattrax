@@ -152,9 +152,21 @@ importers:
       clsx:
         specifier: ^2.1.0
         version: 2.1.0
+      codejar:
+        specifier: ^4.2.0
+        version: 4.2.0
       dayjs:
         specifier: ^1.11.10
         version: 1.11.10
+      prism-code-editor:
+        specifier: ^2.4.1
+        version: 2.4.1
+      prism-themes:
+        specifier: ^1.9.0
+        version: 1.9.0
+      prismjs:
+        specifier: ^1.29.0
+        version: 1.29.0
       solid-icons:
         specifier: ^1.1.0
         version: 1.1.0(solid-js@1.8.14)
@@ -189,6 +201,9 @@ importers:
       '@tailwindcss/forms':
         specifier: ^0.5.7
         version: 0.5.7(tailwindcss@3.4.1)
+      '@types/prismjs':
+        specifier: ^1.26.3
+        version: 1.26.3
       autoprefixer:
         specifier: ^10.4.17
         version: 10.4.17(postcss@8.4.35)
@@ -4930,7 +4945,6 @@ packages:
 
   /@types/prismjs@1.26.3:
     resolution: {integrity: sha512-A0D0aTXvjlqJ5ZILMz3rNfDBOx9hHxLZYv2by47Sm/pqW35zzjusrZTryatjN/Rf8Us2gZrJD+KeHbUSTux1Cw==}
-    dev: false
 
   /@types/prop-types@15.7.11:
     resolution: {integrity: sha512-ga8y9v9uyeiLdpKddhxYQkxNDrfvuPrlFb0N1qnZZByvcElJaXthF1UhvCh9TLWJBEHeNtdnbysW7Y6Uq8CVng==}
@@ -6001,6 +6015,10 @@ packages:
   /cluster-key-slot@1.1.2:
     resolution: {integrity: sha512-RMr0FhtfXemyinomL4hrWcYJxmX6deFdCxpJzhDttxgO1+bcCnkk+9drydLVDmAMG7NE6aN/fl4F7ucU/90gAA==}
     engines: {node: '>=0.10.0'}
+    dev: false
+
+  /codejar@4.2.0:
+    resolution: {integrity: sha512-U8OZe+2B400W5nSSbXxaoboBN5i1hxWdBZJ9kcTy0DBuc4muwkPE/ph/MGX4yooIE8hztfNLPNU1CbcNYch69A==}
     dev: false
 
   /collapse-white-space@2.1.0:
@@ -9909,6 +9927,12 @@ packages:
     engines: {node: ^14.13.1 || >=16.0.0}
     dev: false
 
+  /prism-code-editor@2.4.1:
+    resolution: {integrity: sha512-ifz8BQhBz1q0eRe1rr4DwQ37y+MCT069n9Rohc4TGTyhfrx5BW4OxvgwjgFeU1ZWhM9pczxYQva4B1z9DBVT6Q==}
+    dependencies:
+      '@types/prismjs': 1.26.3
+    dev: false
+
   /prism-react-renderer@2.1.0(react@18.2.0):
     resolution: {integrity: sha512-I5cvXHjA1PVGbGm1MsWCpvBCRrYyxEri0MC7/JbfIfYfcXAxHyO5PaUjs3A8H5GW6kJcLhTHxxMaOZZpRZD2iQ==}
     peerDependencies:
@@ -9917,6 +9941,10 @@ packages:
       '@types/prismjs': 1.26.3
       clsx: 1.2.1
       react: 18.2.0
+    dev: false
+
+  /prism-themes@1.9.0:
+    resolution: {integrity: sha512-tX2AYsehKDw1EORwBps+WhBFKc2kxfoFpQAjxBndbZKr4fRmMkv47XN0BghC/K1qwodB1otbe4oF23vUTFDokw==}
     dev: false
 
   /prismjs@1.29.0:
