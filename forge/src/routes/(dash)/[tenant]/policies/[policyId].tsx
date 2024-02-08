@@ -27,7 +27,7 @@ export default function Page() {
   const policyUpdate = trpc.policy.update.useMutation(() => ({
     onSuccess: () => alert("Updated!"),
   }));
-  const policyPush = trpc.policy.update.useMutation(() => ({
+  const policyPush = trpc.policy.push.useMutation(() => ({
     onSuccess: () => alert("Policy pushed!"),
   }));
   const policyAssign = trpc.policy.assign.useMutation(() => ({

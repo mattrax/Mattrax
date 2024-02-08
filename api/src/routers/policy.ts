@@ -2,7 +2,9 @@ import { z } from "zod";
 import { createTRPCRouter, tenantProcedure } from "../trpc";
 import { db, devices, policies, tenantAccounts } from "../db";
 import { and, eq } from "drizzle-orm";
-import { encodeId } from "../utils";
+import { decodeId, encodeId } from "../utils";
+import { getMdm } from "../mdm";
+import { buildApplePolicy } from "@mattrax/policy";
 
 export const policyRouter = createTRPCRouter({
   // TODO: Copy after `devicesRouter`.
@@ -66,23 +68,20 @@ export const policyRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // const input = c.req.valid("json");
-      // const policyId = c.req.param("policyId");
-      // // TODO: Check user is authorised to access tenant which owns the device
+      // TODO: Check user is authorised to access tenant which owns the device
 
-      // // TODO: Validate incoming `policy`
+      // TODO: Validate incoming `policy`
 
-      // const id = decodeId("policy", policyId);
+      const id = decodeId("policy", input.policyId);
 
-      // // TODO: Error if id is not found by catching error
-      // await db
-      //   .update(policies)
-      //   .set({
-      //     policy: input,
-      //   })
-      //   .where(eq(policies.id, id));
+      // TODO: Error if id is not found by catching error
+      await db
+        .update(policies)
+        .set({
+          policy: input,
+        })
+        .where(eq(policies.id, id));
 
-      // return c.json({});
       return {};
     }),
 
@@ -109,28 +108,29 @@ export const policyRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // const policyId = c.req.param("policyId");
-      // // TODO: Check user is authorised to access tenant which owns the device
+      // TODO: Check user is authorised to access tenant which owns the device
 
-      // const id = decodeId("policy", policyId);
+      const id = decodeId("policy", input.policyId);
 
-      // const policy = (
-      //   await db.select().from(policies).where(eq(policies.id, id))
-      // )?.[0];
-      // if (!policy) {
-      //   console.error("policy not found");
-      //   return;
-      // }
+      const policy = (
+        await db.select().from(policies).where(eq(policies.id, id))
+      )?.[0];
+      if (!policy) {
+        console.error("policy not found");
+        return;
+      }
 
-      // let policyBody: string;
-      // try {
-      //   policyBody = buildApplePolicy(policy.policy);
-      // } catch (err) {
-      //   console.error("ERROR BUILDING POLICY", err);
-      //   return;
-      // }
+      // TODO: Support Window's & Android policies
+      let policyBody: string;
+      try {
+        // @ts-expect-error // TODO
+        policyBody = buildApplePolicy([policy.policy]);
+      } catch (err) {
+        console.error("ERROR BUILDING POLICY", err);
+        return;
+      }
 
-      // // TODO: Support Window's & Android policies
+      await getMdm().pushPolicy(policyBody);
 
       // if (!policy.intuneId) {
       //   console.log("CREATE ON INTUNE");
@@ -189,6 +189,7 @@ export const policyRouter = createTRPCRouter({
       //     console.error(err);
       //   }
       // }
+
       return {};
     }),
 

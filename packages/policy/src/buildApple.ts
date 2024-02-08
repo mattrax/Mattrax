@@ -19,7 +19,7 @@ export function buildApplePolicy(policies: ConfigurationSchema[]) {
           "com.apple.applicationaccess.B3385932-CAD9-4E5F-A40C-483BE79F0AAE",
         PayloadType: "com.apple.applicationaccess",
         PayloadUUID: "B3385932-CAD9-4E5F-A40C-483BE79F0AAE",
-        PayloadVersion: 2, // TODO: Ensure this is being updated
+        PayloadVersion: 1, // TODO: Ensure this is being updated
         ...data,
       },
     ],
@@ -29,7 +29,7 @@ export function buildApplePolicy(policies: ConfigurationSchema[]) {
     PayloadRemovalDisallowed: false,
     PayloadType: "Configuration",
     PayloadUUID: "332219C0-E04A-4661-8A17-1FDF50521250",
-    PayloadVersion: 2, // TODO: Ensure this is being updated
+    PayloadVersion: 1, // TODO: Ensure this is being updated
   };
 
   // TODO: Sign the plist

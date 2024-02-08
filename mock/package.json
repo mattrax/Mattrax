@@ -1,18 +1,14 @@
 {
   "name": "mock",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.0.0",
+  "main": "index.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "run": "bun run index.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "@faker-js/faker": "^8.3.1"
-  },
-  "dependencies": {
-    "@solid-primitives/pagination": "^0.2.10"
   }
 }

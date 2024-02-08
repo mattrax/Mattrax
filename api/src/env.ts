@@ -23,10 +23,11 @@ export const env = createEnv({
     // Used for syncing users from Entra to Mattrax
     ENTRA_CLIENT_ID: z.string(),
     ENTRA_CLIENT_SECRET: z.string(),
-    // Used to communicate with Mattrax's Intune data
+    // Intune/SimpleMDM MDM Backend
     INTUNE_CLIENT_ID: z.string(),
     INTUNE_CLIENT_SECRET: z.string(),
     INTUNE_TENANT: z.string(),
+    SIMPLEMDM_API_KEY: z.string(),
     // Email
     FROM_ADDRESS: z.string(),
   },

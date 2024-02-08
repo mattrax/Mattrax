@@ -11,8 +11,8 @@
   "dependencies": {
     "@fontsource/inter": "^5.0.16",
     "@mdx-js/mdx": "^3.0.0",
-    "@solidjs/router": "^0.11.3",
-    "@solidjs/start": "^0.5.1",
+    "@solidjs/router": "^0.11.5",
+    "@solidjs/start": "^0.5.2",
     "@tailwindcss/forms": "^0.5.7",
     "@tailwindcss/typography": "^0.5.10",
     "@vinxi/plugin-mdx": "^3.7.1",
