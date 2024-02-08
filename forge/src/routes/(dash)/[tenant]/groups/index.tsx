@@ -200,31 +200,4 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui";
 import { OutlineLayout } from "../OutlineLayout";
-import { StandardTable } from "~/components/StandardTable";
-
-function ColumnsDropdown(
-  props: ParentProps & { table: ReturnType<typeof createGroupsTable> }
-) {
-  return (
-    <DropdownMenu placement="bottom-end">
-      <DropdownMenuTrigger asChild>{props.children}</DropdownMenuTrigger>
-      <DropdownMenuContent>
-        <For
-          each={props.table
-            .getAllColumns()
-            .filter((column) => column.getCanHide())}
-        >
-          {(column) => (
-            <DropdownMenuCheckboxItem
-              class="capitalize"
-              checked={column.getIsVisible()}
-              onChange={(value) => column.toggleVisibility(!!value)}
-            >
-              {column.id}
-            </DropdownMenuCheckboxItem>
-          )}
-        </For>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";

@@ -1,10 +1,4 @@
-import {
-  For,
-  ParentProps,
-  Suspense,
-  createSignal,
-  startTransition,
-} from "solid-js";
+import { ParentProps, Suspense, createSignal, startTransition } from "solid-js";
 import {
   type ColumnDef,
   createSolidTable,
@@ -129,47 +123,10 @@ export default function Page() {
   );
 }
 
-import {
-  Button,
-  Checkbox,
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  Input,
-} from "~/components/ui";
+import { Button, Checkbox, Input } from "~/components/ui";
 import { OutlineLayout } from "../OutlineLayout";
-import { toast } from "solid-sonner";
-import dayjs from "dayjs";
-import { StandardTable } from "~/components/StandardTable";
+import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { createAsync, useNavigate } from "@solidjs/router";
-
-function ColumnsDropdown(
-  props: ParentProps & { table: ReturnType<typeof createGroupsTable> }
-) {
-  return (
-    <DropdownMenu placement="bottom-end">
-      <DropdownMenuTrigger asChild>{props.children}</DropdownMenuTrigger>
-      <DropdownMenuContent>
-        <For
-          each={props.table
-            .getAllColumns()
-            .filter((column) => column.getCanHide())}
-        >
-          {(column) => (
-            <DropdownMenuCheckboxItem
-              class="capitalize"
-              checked={column.getIsVisible()}
-              onChange={(value) => column.toggleVisibility(!!value)}
-            >
-              {column.id}
-            </DropdownMenuCheckboxItem>
-          )}
-        </For>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 import {
   DialogContent,

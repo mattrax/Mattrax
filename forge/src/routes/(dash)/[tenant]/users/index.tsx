@@ -19,7 +19,7 @@ import {
 import { trpc } from "~/lib";
 import { As } from "@kobalte/core";
 import { ParentProps } from "solid-js";
-import { StandardTable } from "~/components/StandardTable";
+import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { useNavigate } from "@solidjs/router";
 
 export const columns: ColumnDef<any>[] = [
@@ -156,32 +156,5 @@ export default function Page() {
         </div>
       </div>
     </div>
-  );
-}
-
-function ColumnsDropdown(
-  props: ParentProps & { table: ReturnType<typeof createUsersTable> }
-) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>{props.children}</DropdownMenuTrigger>
-      <DropdownMenuContent>
-        <For
-          each={props.table
-            .getAllColumns()
-            .filter((column) => column.getCanHide())}
-        >
-          {(column) => (
-            <DropdownMenuCheckboxItem
-              class="capitalize"
-              checked={column.getIsVisible()}
-              onChange={(value) => column.toggleVisibility(!!value)}
-            >
-              {column.id}
-            </DropdownMenuCheckboxItem>
-          )}
-        </For>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }

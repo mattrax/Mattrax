@@ -1,5 +1,5 @@
 import { flexRender, type Table as TTable } from "@tanstack/solid-table";
-import { For } from "solid-js";
+import { For, ParentProps } from "solid-js";
 import { columns } from "~/routes/(dash)/[tenant]/users";
 import {
   Table,
@@ -8,6 +8,10 @@ import {
   TableHead,
   TableBody,
   TableCell,
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
 } from "./ui";
 
 export function StandardTable<TData>(props: {
@@ -66,5 +70,32 @@ export function StandardTable<TData>(props: {
         </TableBody>
       </Table>
     </div>
+  );
+}
+
+export function ColumnsDropdown<TData>(
+  props: ParentProps & { table: TTable<TData> }
+) {
+  return (
+    <DropdownMenu placement="bottom-end">
+      <DropdownMenuTrigger asChild>{props.children}</DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <For
+          each={props.table
+            .getAllColumns()
+            .filter((column) => column.getCanHide())}
+        >
+          {(column) => (
+            <DropdownMenuCheckboxItem
+              class="capitalize"
+              checked={column.getIsVisible()}
+              onChange={(value) => column.toggleVisibility(!!value)}
+            >
+              {column.id.split(/(?=[A-Z])/).join(" ")}
+            </DropdownMenuCheckboxItem>
+          )}
+        </For>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
