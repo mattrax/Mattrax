@@ -43,10 +43,8 @@ export default function Layout(props: ParentProps) {
     return ownedTenant;
   });
 
-  const match = useMatch(() => "/:tenant/*rest");
-
   function setTenantId(id: string) {
-    startTransition(() => navigate(`/${id}/${match()!.params.rest}`));
+    startTransition(() => navigate(`/${id}`));
   }
 
   return (
