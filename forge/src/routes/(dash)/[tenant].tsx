@@ -50,16 +50,16 @@ export default function Layout(props: ParentProps) {
   }
 
   return (
-    // we key here on purpose - tenants are the root-most unit of isolation
-    <Show when={activeTenant()} keyed>
+    <Show when={activeTenant()}>
       {(activeTenant) => (
         <TenantContextProvider
-          activeTenant={activeTenant}
+          activeTenant={activeTenant()}
           setTenantId={setTenantId}
         >
+          {/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
           <Suspense fallback={<SuspenseError name="Sidebar" />}>
             <LeftSidebar
-              activeTenant={activeTenant}
+              activeTenant={activeTenant()}
               tenants={auth.me.tenants}
               setActiveTenant={setTenantId}
               refetchSession={async () => {
@@ -67,7 +67,10 @@ export default function Layout(props: ParentProps) {
               }}
             />
           </Suspense>
-          {props.children}
+          {/* we key here on purpose - tenants are the root-most unit of isolation */}
+          <Show when={activeTenant()} keyed>
+            {props.children}
+          </Show>
         </TenantContextProvider>
       )}
     </Show>
