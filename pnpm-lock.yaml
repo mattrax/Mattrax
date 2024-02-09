@@ -119,6 +119,9 @@ importers:
       '@solid-primitives/pagination':
         specifier: ^0.2.10
         version: 0.2.10(solid-js@1.8.14)
+      '@solid-primitives/storage':
+        specifier: ^2.1.2
+        version: 2.1.2(solid-js@1.8.14)(solid-start@0.3.10)
       '@solidjs/router':
         specifier: ^0.11.5
         version: 0.11.5(solid-js@1.8.14)
@@ -4453,6 +4456,20 @@ packages:
     dependencies:
       '@solid-primitives/utils': 6.2.2(solid-js@1.8.14)
       solid-js: 1.8.14
+    dev: false
+
+  /@solid-primitives/storage@2.1.2(solid-js@1.8.14)(solid-start@0.3.10):
+    resolution: {integrity: sha512-qgw89bnclvsOkA+Cm8VKSpuBjYZxd4BvEJNlztV+pyzdJaMv+/s18/apLgSfmS+cOkWP8Phuo4uCBNjFVFXPRg==}
+    peerDependencies:
+      solid-js: ^1.6.12
+      solid-start: '>=0.2.26'
+    peerDependenciesMeta:
+      solid-start:
+        optional: true
+    dependencies:
+      '@solid-primitives/utils': 6.2.2(solid-js@1.8.14)
+      solid-js: 1.8.14
+      solid-start: 0.3.10(@solidjs/meta@0.29.3)(@solidjs/router@0.11.5)(solid-js@1.8.14)(vite@5.0.12)
     dev: false
 
   /@solid-primitives/trigger@1.0.9(solid-js@1.8.14):

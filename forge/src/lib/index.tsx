@@ -13,11 +13,11 @@ import {
 } from "@solid-mediakit/trpc";
 import superjson from "superjson";
 import { Accessor, createEffect, createSignal } from "solid-js";
+import { makePersisted } from "@solid-primitives/storage";
 
-// This is just for tRPC and should not be used for anything else!
-// Refer to `useGlobalCtx` instead.
-export const [xTenantId, setXTenantId] = createSignal<string | undefined>(
-  undefined
+export const [xTenantId, setXTenantId] = makePersisted(
+  createSignal<string | undefined>(undefined),
+  { name: "x-tenant-id" }
 );
 
 const headers = () =>

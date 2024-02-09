@@ -7,13 +7,23 @@ import { Form, createZodForm } from "~/components/forms";
 import { useAuthContext } from "../(dash)";
 import { InputField } from "~/components/forms";
 import { Button } from "~/components/ui";
-import { trpc } from "~/lib";
+import { trpc, xTenantId } from "~/lib";
 
 export default function Page() {
   const auth = useAuthContext();
 
+  const defaultTenant = () => {
+    const tenants = auth.me.tenants;
+    if (tenants.length < 1) return;
+
+    const persistedTenant = tenants.find((t) => t.id === xTenantId());
+    if (persistedTenant) return persistedTenant;
+
+    return tenants[0];
+  };
+
   return (
-    <Show when={auth.me.tenants[0]} fallback={<CreateTenant />}>
+    <Show when={defaultTenant()} fallback={<CreateTenant />}>
       {(
         tenant // If we have an active tenant, send the user to it
       ) => <Navigate href={tenant().id} />}
