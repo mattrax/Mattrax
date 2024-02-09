@@ -28,7 +28,9 @@ export default function Layout(props: ParentProps) {
 
     if (!ownedTenant) {
       const firstTenant = auth.me.tenants[0];
-      navigate(firstTenant?.id ?? "/", { replace: true });
+      navigate(firstTenant?.id ? `../${firstTenant.id}` : "/", {
+        replace: true,
+      });
       return;
     }
 
