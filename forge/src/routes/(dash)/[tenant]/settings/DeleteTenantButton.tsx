@@ -72,7 +72,7 @@ function Body() {
   return (
     <>
       <p class="text-muted-foreground text-sm">
-        To confirm, type "{tenantName}" in the box below
+        To confirm, type <b>{tenantName}</b> in the box below
       </p>
       <Input
         value={input()}

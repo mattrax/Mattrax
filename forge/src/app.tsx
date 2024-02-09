@@ -111,26 +111,27 @@ export default function App() {
         const navigate = useNavigate();
         const [queryClient, persistOptions] = createQueryClient(navigate);
 
-        const unsubscribe = onlineManager.subscribe((isOnline) => {
-          if (isOnline) {
-            // TODO: This dismiss doesn't animate the toast close which is ugly.
-            toast.dismiss("network-offline");
-            return;
-          }
-
-          toast.error(
-            [
-              "You are offline!",
-              document.createElement("br"),
-              "Please reconnect to continue!",
-            ],
-            {
-              id: "network-offline",
-              duration: Infinity,
+        onCleanup(
+          onlineManager.subscribe((isOnline) => {
+            if (isOnline) {
+              // TODO: This dismiss doesn't animate the toast close which is ugly.
+              toast.dismiss("network-offline");
+              return;
             }
-          );
-        });
-        onCleanup(() => unsubscribe());
+
+            toast.error(
+              [
+                "You are offline!",
+                document.createElement("br"),
+                "Please reconnect to continue!",
+              ],
+              {
+                id: "network-offline",
+                duration: Infinity,
+              }
+            );
+          })
+        );
 
         return (
           <PersistQueryClientProvider

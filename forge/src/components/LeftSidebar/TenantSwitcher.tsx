@@ -13,7 +13,6 @@ import {
   createController,
 } from "~/components/ui";
 import { CreateTenantDialog } from "./CreateTenantDialog";
-import { untrackScopeFromSuspense } from "~/lib";
 
 // TODO: When shrinking window and scrolling to move the trigger offscreen the popover comes with it. This is Kolate behavior but I don't like it.
 // TODO: Transition on dropdown open/close
