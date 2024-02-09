@@ -1,4 +1,4 @@
-import { Suspense, ErrorBoundary, ParentProps, Show } from "solid-js";
+import { ErrorBoundary, ParentProps, Show } from "solid-js";
 import { createContextProvider } from "@solid-primitives/context";
 import { RouterOutput } from "@mattrax/api";
 
