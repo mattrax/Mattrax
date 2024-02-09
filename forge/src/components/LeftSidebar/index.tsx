@@ -17,32 +17,32 @@ const items: NavbarItem[] = [
   {
     icon: IconPhUserDuotone,
     title: "Users",
-    href: "/users",
+    href: "users",
   },
   {
     icon: IconPhLaptopDuotone,
     title: "Devices",
-    href: "/devices",
+    href: "devices",
   },
   {
     icon: IconPhClipboardDuotone,
     title: "Policies",
-    href: "/policies",
+    href: "policies",
   },
   {
     icon: IconPhAppWindowDuotone,
     title: "Applications",
-    href: "/apps",
+    href: "apps",
   },
   {
     icon: IconPhBoundingBoxDuotone,
     title: "Groups",
-    href: "/groups",
+    href: "groups",
   },
   {
     icon: IconPhGearDuotone,
     title: "Settings",
-    href: "/settings",
+    href: "settings",
   },
 ];
 
@@ -93,7 +93,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
             {(item) => (
               <A
                 end={item.href === ""}
-                href={`${props.activeTenant?.id}${item.href}`}
+                href={item.href}
                 activeClass="bg-brandDark-secondary"
                 classList={{
                   "cursor-not-allowed opacity-50":

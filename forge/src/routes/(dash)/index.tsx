@@ -1,12 +1,13 @@
-import { useGlobalCtx } from "~/lib/globalCtx";
+import { useAuthContext } from "../(dash)";
+
+import { Navigate } from "@solidjs/router";
 
 export default function Page() {
-  const ctx = useGlobalCtx();
+  const auth = useAuthContext();
 
   // If we have an active tenant, send the user to it
-  if (ctx.session.tenants[0]) {
-    ctx.setActiveTenant(ctx.session.tenants[0].id);
-    return null; // Redirect done by `setActiveTenant`
+  if (auth.me.tenants[0]) {
+    return <Navigate href={auth.me.tenants[0].id} />;
   }
 
   return (

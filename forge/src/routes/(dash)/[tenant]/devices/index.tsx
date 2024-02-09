@@ -122,7 +122,7 @@ export default function Page() {
       </div>
       <StandardTable
         table={groupsTable}
-        onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}
+        onRowClick={(row) => startTransition(() => navigate(row.id))}
       />
       <div class="flex items-center justify-end space-x-2 py-4">
         <div class="flex-1 text-sm text-muted-foreground">
