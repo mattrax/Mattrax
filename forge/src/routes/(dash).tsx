@@ -1,4 +1,4 @@
-import { ErrorBoundary, ParentProps, Show } from "solid-js";
+import { Suspense, ErrorBoundary, ParentProps, Show } from "solid-js";
 import { createContextProvider } from "@solid-primitives/context";
 import { RouterOutput } from "@mattrax/api";
 
@@ -22,25 +22,25 @@ export default function Layout(props: ParentProps) {
   }));
 
   return (
-    <Show when={me.data}>
-      {(meData) => (
-        <AuthContextProvider me={meData()} meQuery={me}>
-          <ErrorBoundary
-            fallback={(err) => {
-              console.error(err);
+    <ErrorBoundary
+      fallback={(err) => {
+        console.error(err);
 
-              return (
-                <div class="p-2">
-                  <h1>Error</h1>
-                  <pre>{err.message}</pre>
-                </div>
-              );
-            }}
-          >
+        return (
+          <div class="p-2">
+            <h1>Error</h1>
+            <pre>{err.message}</pre>
+          </div>
+        );
+      }}
+    >
+      <Show when={me.data}>
+        {(meData) => (
+          <AuthContextProvider me={meData()} meQuery={me}>
             {props.children}
-          </ErrorBoundary>
-        </AuthContextProvider>
-      )}
-    </Show>
+          </AuthContextProvider>
+        )}
+      </Show>
+    </ErrorBoundary>
   );
 }

@@ -1,7 +1,7 @@
 // TODO: Do this properly copying Brendan's blog post
 // TODO: Input validation built into the components
 
-import { ComponentProps, createEffect, createMemo, splitProps } from "solid-js";
+import { ComponentProps, createMemo, splitProps } from "solid-js";
 import { FormOptions, createForm } from "@tanstack/solid-form";
 import { zodValidator } from "@tanstack/zod-form-adapter";
 import { z } from "zod";
