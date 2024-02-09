@@ -25,10 +25,6 @@ export default {
       },
     },
   },
-  plugins: [
-    require("@tailwindcss/forms"),
-    require("@kobalte/tailwindcss"),
-    require("tailwindcss-animate"),
-  ],
+  plugins: [require("@tailwindcss/forms"), require("@kobalte/tailwindcss")],
   presets: [require("./ui.preset.js")],
 };

@@ -1,5 +1,11 @@
 import { useMatch, useNavigate, useParams } from "@solidjs/router";
-import { createMemo, ParentProps, Show, Suspense } from "solid-js";
+import {
+  createMemo,
+  ParentProps,
+  Show,
+  startTransition,
+  Suspense,
+} from "solid-js";
 import { createContextProvider } from "@solid-primitives/context";
 import { RouterOutput } from "@mattrax/api";
 import { createComputed } from "solid-js";
@@ -40,19 +46,20 @@ export default function Layout(props: ParentProps) {
   const match = useMatch(() => "/:tenant/*rest");
 
   function setTenantId(id: string) {
-    navigate(`/${id}/${match()!.params.rest}`);
+    startTransition(() => navigate(`/${id}/${match()!.params.rest}`));
   }
 
   return (
-    <Show when={activeTenant()}>
+    // we key here on purpose - tenants are the root-most unit of isolation
+    <Show when={activeTenant()} keyed>
       {(activeTenant) => (
         <TenantContextProvider
-          activeTenant={activeTenant()}
+          activeTenant={activeTenant}
           setTenantId={setTenantId}
         >
           <Suspense fallback={<SuspenseError name="Sidebar" />}>
             <LeftSidebar
-              activeTenant={activeTenant()}
+              activeTenant={activeTenant}
               tenants={auth.me.tenants}
               setActiveTenant={setTenantId}
               refetchSession={async () => {
