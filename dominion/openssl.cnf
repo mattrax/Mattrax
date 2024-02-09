@@ -1,0 +1,17 @@
+# Usage specified in README
+
+[ req ]
+prompt = no
+utf8 = yes
+
+distinguished_name = my_distinguished_name
+x509_extensions = my_extensions
+
+[ my_distinguished_name ]
+O = Mattrax
+CN = Mattrax Device Authority
+
+[ my_extensions ]
+keyUsage=critical, keyCertSign, cRLSign
+basicConstraints=critical,CA:TRUE
+subjectKeyIdentifier = hash

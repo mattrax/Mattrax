@@ -7,6 +7,19 @@ dist
 .vinxi
 .yarn-error.log
 
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
 # Provider
 .vercel
 
@@ -18,6 +31,7 @@ dist
 node_modules
 .react-email
 /target
+vendor/
 
 # IDEs and editors
 /.idea
@@ -32,3 +46,9 @@ Thumbs.db
 
 # Temp
 result.mobileconfig
+/dominion/certs
+/dominion/*.key
+/dominion/*.crt
+/dominion/*.csr
+/dominion/*.key
+/dominion/*.pfx
