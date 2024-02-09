@@ -13,6 +13,7 @@ const dash: RouteDefinition[] = [
   },
   {
     path: "/:tenant",
+    component: lazy(() => import("./routes/(dash)/[tenant]")),
     children: [
       {
         path: "/",

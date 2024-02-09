@@ -1,4 +1,4 @@
-import { For, Suspense, createEffect, createSignal, untrack } from "solid-js";
+import { For, Suspense } from "solid-js";
 import {
   Button,
   Card,
@@ -13,7 +13,6 @@ import {
   Switch,
 } from "~/components/ui";
 import dayjs from "dayjs";
-import { useGlobalCtx } from "~/lib/globalCtx";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
 import { authProviderDisplayName, authProviderUrl } from "~/lib/values";
@@ -24,6 +23,8 @@ import { As } from "@kobalte/core";
 import { Form, createZodForm } from "~/components/forms";
 import { z } from "zod";
 import { InputField } from "~/components/forms/InputField";
+import { useAuthContext } from "~/routes/(dash)";
+import { useTenantContext } from "../../[tenant]";
 
 export default function Page() {
   return (
@@ -44,15 +45,20 @@ export default function Page() {
 }
 
 function SettingsCard() {
-  const globalCtx = useGlobalCtx();
+  const auth = useAuthContext();
+  const tenantCtx = useTenantContext();
+
   // TODO: rollback form on failure
   const updateTenant = trpc.tenant.edit.useMutation(() => ({
-    onSuccess: () => globalCtx.refetchSession(),
+    onSuccess: () => auth.meQuery.refetch(),
   }));
 
   const form = createZodForm({
     schema: z.object({ name: z.string(), description: z.string() }),
-    defaultValues: globalCtx.activeTenant ?? undefined,
+    defaultValues: {
+      name: tenantCtx.activeTenant.name,
+      description: tenantCtx.activeTenant.description ?? "",
+    },
     async onSubmit(props) {
       await updateTenant.mutateAsync(props.value);
     },

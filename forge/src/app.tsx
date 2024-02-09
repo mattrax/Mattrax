@@ -16,8 +16,8 @@ import {
 } from "@tanstack/solid-query-persist-client";
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { routes } from "./routes";
-import { SuspenseError, tRPCErrorCode } from "./lib";
-import * as dayjs from "dayjs";
+import { tRPCErrorCode } from "./lib";
+import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "./app.css";
 import "./sonner.css";
@@ -168,9 +168,7 @@ export default function App() {
                 }}
               >
                 <Toaster />
-                <Suspense fallback={<SuspenseError name="Root" />}>
-                  {props.children}
-                </Suspense>
+                <Suspense>{props.children}</Suspense>
               </ErrorBoundary>
             </QueryClientProvider>
           </PersistQueryClientProvider>

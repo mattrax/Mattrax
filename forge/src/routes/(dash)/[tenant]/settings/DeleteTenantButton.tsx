@@ -13,7 +13,8 @@ import {
   useController,
 } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useGlobalCtx } from "~/lib/globalCtx";
+import { useAuthContext } from "~/routes/(dash)";
+import { useTenantContext } from "../../[tenant]";
 
 export function DeleteTenantButton() {
   return (
@@ -42,21 +43,23 @@ export function DeleteTenantButton() {
 
 // `DialogContent` is only rendered when open. We split this out so the `activeTenantName` works.
 function Body() {
-  const globalCtx = useGlobalCtx();
+  const auth = useAuthContext();
+  const tenantCtx = useTenantContext();
   const controller = useController();
   const navigate = useNavigate();
 
-  const [activeTenantName] = createSignal(globalCtx.activeTenant!.name); // We cache this so it doesn't change before the dialog closes
+  const tenantName = tenantCtx.activeTenant.name;
+
   const [input, setInput] = createSignal<string>();
   const deleteTenant = trpc.tenant.delete.useMutation(() => ({
     onSuccess: async () => {
       // Session also holds tenants
-      await globalCtx.refetchSession();
+      await auth.meQuery.refetch();
 
-      const nextTenant = globalCtx.session.tenants?.[0]?.id;
+      const nextTenant = auth.me.tenants[0]?.id;
       controller.setOpen(false);
       if (nextTenant) {
-        globalCtx.setActiveTenant(nextTenant);
+        tenantCtx.setTenantId(nextTenant);
       } else {
         navigate(`/`);
       }
@@ -69,7 +72,7 @@ function Body() {
   return (
     <>
       <p class="text-muted-foreground text-sm">
-        To confirm, type "{activeTenantName()}" in the box below
+        To confirm, type "{tenantName}" in the box below
       </p>
       <Input
         value={input()}
@@ -78,10 +81,10 @@ function Body() {
       />
       <Button
         variant="destructive"
-        disabled={deleteTenant.isPending || input() !== activeTenantName()}
+        disabled={deleteTenant.isPending || input() !== tenantName}
         onClick={() => deleteTenant.mutate()}
       >
-        Delete "{activeTenantName()}"
+        Delete "{tenantName}"
       </Button>
     </>
   );

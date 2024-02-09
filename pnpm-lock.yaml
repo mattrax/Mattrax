@@ -104,6 +104,9 @@ importers:
       '@solid-mediakit/trpc':
         specifier: ^1.0.2
         version: 1.0.2(patch_hash=r6nbrusfvpo72bwpxibomub2o4)(@tanstack/solid-query@5.18.1)(@trpc/client@10.45.1)(@trpc/server@10.45.1)(solid-js@1.8.14)(solid-start@0.3.10)
+      '@solid-primitives/context':
+        specifier: ^0.2.2
+        version: 0.2.2(solid-js@1.8.14)
       '@solid-primitives/event-listener':
         specifier: ^2.3.1
         version: 2.3.1(solid-js@1.8.14)
@@ -4330,6 +4333,14 @@ packages:
       solid-start: 0.3.10(@solidjs/meta@0.29.3)(@solidjs/router@0.11.5)(solid-js@1.8.14)(vite@5.0.12)
     dev: false
     patched: true
+
+  /@solid-primitives/context@0.2.2(solid-js@1.8.14):
+    resolution: {integrity: sha512-HwI039pxwlB992T/B9YpKACIQTuJQiguV9vLuUBPEVg8Esbxwl8H3je3Ir1jKuxU4Yc5pkgJNojF1Ylw9pLo/A==}
+    peerDependencies:
+      solid-js: ^1.6.12
+    dependencies:
+      solid-js: 1.8.14
+    dev: false
 
   /@solid-primitives/event-listener@2.3.1(solid-js@1.8.14):
     resolution: {integrity: sha512-S1AfFYatOJ3g/ZUbGDoKplSGLTTfarQ3Mfd3F/fXb9SnzGtROtd+Y6yLkPVzK4AVw83r2wUSaS0GS6dg8izTEQ==}
