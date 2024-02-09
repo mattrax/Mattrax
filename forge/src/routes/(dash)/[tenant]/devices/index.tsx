@@ -1,17 +1,20 @@
-import { For, ParentProps, startTransition } from "solid-js";
+import { startTransition } from "solid-js";
 import {
-  type ColumnDef,
   createSolidTable,
   getCoreRowModel,
   getPaginationRowModel,
   getSortedRowModel,
   getFilteredRowModel,
+  createColumnHelper,
 } from "@tanstack/solid-table";
-import { trpc } from "~/lib";
 import { As } from "@kobalte/core";
+import { trpc } from "~/lib";
 
-export const columns: ColumnDef<any>[] = [
-  {
+const columnHelper =
+  createColumnHelper<RouterOutput["device"]["list"][number]>();
+
+export const columns = [
+  columnHelper.display({
     id: "select",
     header: ({ table }) => (
       <Checkbox
@@ -33,34 +36,28 @@ export const columns: ColumnDef<any>[] = [
     size: 1,
     enableSorting: false,
     enableHiding: false,
-  },
-  {
-    accessorKey: "name",
+  }),
+  columnHelper.accessor("name", {
     header: "Name",
-  },
-  {
-    accessorKey: "operatingSystem",
+  }),
+  columnHelper.accessor("operatingSystem", {
     header: "Operating System",
-  },
-  {
-    accessorKey: "serialNumber",
+  }),
+  columnHelper.accessor("serialNumber", {
     header: "Serial Number",
-  },
-  {
-    accessorKey: "owner",
+  }),
+  columnHelper.accessor("owner", {
     header: "Owner",
     // TODO: Render as link with the user's name
-  },
-  {
-    accessorKey: "lastSynced",
+  }),
+  columnHelper.accessor("lastSynced", {
     header: "Last Synced",
     cell: (cell) => dayjs(cell.getValue()).fromNow(),
-  },
-  {
-    accessorKey: "enrolledAt",
+  }),
+  columnHelper.accessor("enrolledAt", {
     header: "Enrolled At",
     cell: (cell) => dayjs(cell.getValue()).fromNow(),
-  },
+  }),
 ];
 
 function createGroupsTable() {
@@ -158,3 +155,4 @@ import { toast } from "solid-sonner";
 import dayjs from "dayjs";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { useNavigate } from "@solidjs/router";
+import { RouterOutput } from "@mattrax/api";
