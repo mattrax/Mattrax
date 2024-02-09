@@ -1,0 +1,9 @@
+[package]
+name = "mattrax-utils"
+version = "0.0.0"
+edition = "2021"
+private = true
+
+[dependencies]
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
