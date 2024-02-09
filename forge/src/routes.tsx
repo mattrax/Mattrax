@@ -117,6 +117,26 @@ const dash: RouteDefinition[] = [
               () => import("./routes/(dash)/[tenant]/policies/[policyId]/debug")
             ),
           },
+          {
+            path: "/slack",
+            component: lazy(
+              () => import("./routes/(dash)/[tenant]/policies/[policyId]/slack")
+            ),
+          },
+          {
+            path: "/chrome",
+            component: lazy(
+              () =>
+                import("./routes/(dash)/[tenant]/policies/[policyId]/chrome")
+            ),
+          },
+          {
+            path: "/office",
+            component: lazy(
+              () =>
+                import("./routes/(dash)/[tenant]/policies/[policyId]/office")
+            ),
+          },
         ],
       },
       {

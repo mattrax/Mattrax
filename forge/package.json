@@ -14,6 +14,7 @@
     "@kobalte/core": "^0.12.1",
     "@kobalte/tailwindcss": "^0.9.0",
     "@mattrax/api": "workspace:^",
+    "@mattrax/policies": "workspace:^",
     "@solid-mediakit/trpc": "^1.0.2",
     "@solid-primitives/context": "^0.2.2",
     "@solid-primitives/event-listener": "^2.3.1",

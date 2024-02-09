@@ -1,5 +1,12 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { For, Match, ParentProps, Show, startTransition } from "solid-js";
+import {
+  type JSX,
+  For,
+  Match,
+  ParentProps,
+  Show,
+  startTransition,
+} from "solid-js";
 import { trpc } from "~/lib";
 import {
   Button,
@@ -174,29 +181,37 @@ export default function Page(props: ParentProps) {
                     <ul role="list" class="flex flex-1 flex-col gap-y-7">
                       <li>
                         <ul role="list" class="-mx-2 space-y-1">
+                          <div class="text-xs font-semibold leading-6 text-brand">
+                            Standard
+                          </div>
                           <For each={navigation}>
                             {(item) => (
-                              <li>
-                                <A
-                                  end
-                                  href={item.href}
-                                  class={
-                                    "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
-                                  }
-                                  activeClass="bg-gray-50 text-brand active-page"
-                                  inactiveClass="text-gray-700 hover:text-brand hover:bg-gray-50 inactive-page"
-                                >
-                                  <item.icon
-                                    class={
-                                      "h-6 w-6 shrink-0 group-[.active-page]:text-brand group-[.inactive-page]:text-gray-400 group-[.inactive-page]:group-hover:text-brand"
-                                    }
-                                    aria-hidden="true"
-                                  />
-                                  {item.name}
-                                </A>
-                              </li>
+                              <SidebarItem href={item.href} icon={item.icon}>
+                                {item.name}
+                              </SidebarItem>
                             )}
                           </For>
+                        </ul>
+                        <ul role="list" class="-mx-2 space-y-1">
+                          <div class="text-xs font-semibold leading-6 text-brand pt-2">
+                            3rd Party Software
+                          </div>
+
+                          <li>
+                            <SidebarItem href="chrome" icon={IconLogosChrome}>
+                              Chrome
+                            </SidebarItem>
+                            <SidebarItem href="slack" icon={IconLogosSlackIcon}>
+                              Slack
+                            </SidebarItem>
+                            {/* // TODO: Use a proper Office suite icon */}
+                            <SidebarItem
+                              href="office"
+                              icon={IconLogosMicrosoftIcon}
+                            >
+                              Microsoft Office
+                            </SidebarItem>
+                          </li>
                         </ul>
                       </li>
                     </ul>
@@ -213,6 +228,31 @@ export default function Page(props: ParentProps) {
     </Show>
   );
 }
+
+const SidebarItem = (
+  props: ParentProps & {
+    href: string;
+    icon?: (props: JSX.SvgSVGAttributes<SVGSVGElement>) => JSX.Element;
+  }
+) => (
+  <A
+    end
+    href={props.href}
+    class={"group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+    activeClass="bg-gray-50 text-brand active-page"
+    inactiveClass="text-gray-700 hover:text-brand hover:bg-gray-50 inactive-page"
+  >
+    {props.icon && (
+      <props.icon
+        class={
+          "h-6 w-6 shrink-0 group-[.active-page]:text-brand group-[.inactive-page]:text-gray-400 group-[.inactive-page]:group-hover:text-brand"
+        }
+        aria-hidden="true"
+      />
+    )}
+    {props.children}
+  </A>
+);
 
 function ActionsDropdown(
   props: ParentProps & { onSelect(item: "delete"): void }
