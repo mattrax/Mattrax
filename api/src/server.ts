@@ -39,9 +39,11 @@ export const app = new Hono<HonoEnv>()
 // TODO: Remove this and hook it up to the MDM
 import { slackImplementation } from "@mattrax/policy";
 import * as fs from "fs";
+import { fileURLToPath } from "url";
+import * as path from "path";
 
 fs.writeFileSync(
-  "/Users/oscar/Desktop/forge/result.mobileconfig",
+  path.join(fileURLToPath(import.meta.url), `../../result.mobileconfig`),
   slackImplementation.renderAppleProfile({
     DefaultSignInTeam: "T01FU78A0UC",
   })
