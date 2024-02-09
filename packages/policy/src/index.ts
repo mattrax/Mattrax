@@ -16,3 +16,5 @@ export {
   configurationSchema,
   type ConfigurationSchema,
 } from "./configurationSchema";
+
+export { slackImplementation } from "./implementations/slack";

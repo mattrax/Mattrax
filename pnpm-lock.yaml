@@ -340,6 +340,9 @@ importers:
 
   packages/policy:
     dependencies:
+      '@mattrax/policies':
+        specifier: workspace:^
+        version: link:../policies
       plist:
         specifier: ^3.1.0
         version: 3.1.0

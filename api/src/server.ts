@@ -35,3 +35,14 @@ export const app = new Hono<HonoEnv>()
     }
     return c.text("404: Not Found");
   });
+
+// TODO: Remove this and hook it up to the MDM
+import { slackImplementation } from "@mattrax/policy";
+import * as fs from "fs";
+
+fs.writeFileSync(
+  "/Users/oscar/Desktop/forge/result.mobileconfig",
+  slackImplementation.renderAppleProfile({
+    DefaultSignInTeam: "T01FU78A0UC",
+  })
+);

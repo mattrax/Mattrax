@@ -1,10 +1,11 @@
 import { z } from "zod";
-import { definePolicy } from "./definition";
+import { definePolicy } from "../definition";
 
 export const chrome = definePolicy({
   AutoFillEnabled: {
     title: "AutoFillEnabled",
     description: "",
+    supported: ["macOS", "Windows", "Linux"],
     schema: z.boolean(),
   },
   // CookiesAllowedForUrls
