@@ -7,6 +7,8 @@ export {}
 declare global {
   const IconCarbonCaretDown: typeof import('~icons/carbon/caret-down.jsx')['default']
   const IconCarbonCaretSort: typeof import('~icons/carbon/caret-sort.jsx')['default']
+  const IconClarityEyeHideLine: typeof import('~icons/clarity/eye-hide-line.jsx')['default']
+  const IconClarityEyeShowLine: typeof import('~icons/clarity/eye-show-line.jsx')['default']
   const IconLogosChrome: typeof import('~icons/logos/chrome.jsx')['default']
   const IconLogosGoogleIcon: typeof import('~icons/logos/google-icon.jsx')['default']
   const IconLogosMicrosoftAzure: typeof import('~icons/logos/microsoft-azure.jsx')['default']

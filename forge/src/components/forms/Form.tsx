@@ -31,12 +31,17 @@ export type FormProps<S extends z.ZodSchema> = Omit<
   "onSubmit"
 > & {
   form: ReturnType<typeof createZodForm<S>>;
+  fieldsetClass?: string;
   /** @defaultValue `true` */
   guardBeforeLeave?: boolean;
 };
 
 export function Form<S extends z.ZodSchema>(props: FormProps<S>) {
-  const [_, formProps] = splitProps(props, ["form", "guardBeforeLeave"]);
+  const [_, formProps] = splitProps(props, [
+    "form",
+    "guardBeforeLeave",
+    "fieldsetClass",
+  ]);
 
   useBeforeLeave((e) => {
     if (!props.guardBeforeLeave) return;
@@ -69,7 +74,10 @@ export function Form<S extends z.ZodSchema>(props: FormProps<S>) {
       >
         <props.form.Subscribe>
           {(state) => (
-            <fieldset disabled={state().isSubmitting}>
+            <fieldset
+              disabled={state().isSubmitting}
+              class={props.fieldsetClass}
+            >
               {props.children}
             </fieldset>
           )}

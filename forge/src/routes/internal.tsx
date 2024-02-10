@@ -1,7 +1,7 @@
 import { useNavigate } from "@solidjs/router";
 import { For, createEffect } from "solid-js";
 import { Button } from "~/components/ui";
-import { tRPCErrorCode, trpc } from "~/lib";
+import { isTRPCClientError, trpc } from "~/lib";
 
 export default function Page() {
   const stats = trpc.internal.stats.useQuery();
@@ -9,8 +9,11 @@ export default function Page() {
 
   const navigate = useNavigate();
   createEffect(() => {
-    const error = tRPCErrorCode(stats.error);
-    if (error === "FORBIDDEN") navigate("/");
+    if (
+      isTRPCClientError(stats.error) &&
+      stats.error.data?.code === "FORBIDDEN"
+    )
+      navigate("/");
   });
 
   return (

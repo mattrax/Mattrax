@@ -38,25 +38,48 @@ export const domainsRouter = createTRPCRouter({
         });
 
       // TODO: rate limit w/ lastVerificationTime
-      return await verifyDomain(input.domain);
+      const verified = await verifyDomain(domain.domain, domain.secret);
+
+      await db
+        .update(domains)
+        .set({
+          verified,
+          lastVerificationTime: new Date(),
+        })
+        .where(eq(domains.domain, domain.domain));
+
+      return verified;
     }),
 });
 
-const CLOUDFLARE_DNS_API = "https://cloudflare-dns.com/dns-query";
+const CF_DNS_API = "https://cloudflare-dns.com/dns-query";
 
-async function verifyDomain(domain: string) {
-  const resp = await fetch(CLOUDFLARE_DNS_API, {
-    method: "GET",
-    body: new URLSearchParams({
-      name: domain,
-      type: "TXT",
-    }),
-    headers: {
-      Accept: "application/dns-json",
-    },
-  }).then((r) => r.json());
+const CF_DNS_RESPONSE_SCHEMA = z.object({
+  Answer: z.array(
+    z.object({
+      name: z.string(),
+      type: z.number(),
+      TTL: z.number(),
+      data: z.string().transform((j) => JSON.parse(j)),
+    })
+  ),
+});
 
-  console.log({ resp });
+const DNS_RECORD_TYPE_IDS = {
+  TXT: 16,
+};
 
-  return false;
+async function verifyDomain(domain: string, secret: string) {
+  const params = new URLSearchParams({
+    name: domain,
+    type: DNS_RECORD_TYPE_IDS.TXT.toString(),
+  });
+
+  const txtRecords = await fetch(new URL(`${CF_DNS_API}?${params}`), {
+    headers: { Accept: "application/dns-json" },
+  })
+    .then((r) => r.json())
+    .then((j) => CF_DNS_RESPONSE_SCHEMA.parse(j));
+
+  return txtRecords.Answer.some((r) => r.data === secret);
 }

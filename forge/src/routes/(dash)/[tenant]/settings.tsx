@@ -13,8 +13,8 @@ const navigation = [
 export default function Layout(props: ParentProps) {
   return (
     <OutlineLayout title="Settings">
-      <div class="flex flex-row flex-1 space-x-4 w-full relative overflow-hidden flex-1">
-        <nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white">
+      <div class="flex flex-row flex-1 w-full relative overflow-hidden">
+        <nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pt-4 pl-4">
           <ul role="list" class="space-y-1">
             <For each={navigation}>
               {(item) => (
@@ -23,7 +23,7 @@ export default function Layout(props: ParentProps) {
             </For>
           </ul>
         </nav>
-        <main class="flex-1 overflow-y-auto">{props.children}</main>
+        <main class="flex-1 overflow-y-auto px-4 pt-4">{props.children}</main>
       </div>
     </OutlineLayout>
   );
