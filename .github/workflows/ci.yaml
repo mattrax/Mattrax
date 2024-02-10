@@ -53,7 +53,7 @@ jobs:
       - name: Install Cargo Lambda
         run: |
           curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-          cargo binstall --force cargo-lambda
+          cargo binstall --no-confirm cargo-lambda
 
       - name: Build Go
         run: cd dominion && GOOS=linux GOARCH=arm64 go build -o dominion ./cmd
