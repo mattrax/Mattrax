@@ -37,14 +37,14 @@ export const app = new Hono<HonoEnv>()
   });
 
 // TODO: Remove this and hook it up to the MDM
-import { slackImplementation } from "@mattrax/policy";
-import * as fs from "fs";
-import { fileURLToPath } from "url";
-import * as path from "path";
+// import { slackImplementation } from "@mattrax/policy";
+// import * as fs from "fs";
+// import { fileURLToPath } from "url";
+// import * as path from "path";
 
-fs.writeFileSync(
-  path.join(fileURLToPath(import.meta.url), `../../result.mobileconfig`),
-  slackImplementation.renderAppleProfile({
-    DefaultSignInTeam: "T01FU78A0UC",
-  })
-);
+// fs.writeFileSync(
+//   path.join(fileURLToPath(import.meta.url), `../../result.mobileconfig`),
+//   slackImplementation.renderAppleProfile({
+//     DefaultSignInTeam: "T01FU78A0UC",
+//   })
+// );
