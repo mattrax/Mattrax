@@ -1,10 +1,6 @@
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
 
-console.log("A");
-console.log(process);
-console.log(process.env);
-
 function optional_in_dev<T extends z.ZodTypeAny>(
   schema: T
 ): z.ZodOptional<T> | T {
