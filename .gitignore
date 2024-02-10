@@ -52,3 +52,6 @@ result.mobileconfig
 /dominion/*.csr
 /dominion/*.key
 /dominion/*.pfx
+
+# Data directory
+/data

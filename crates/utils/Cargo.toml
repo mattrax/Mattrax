@@ -2,8 +2,10 @@
 name = "mattrax-utils"
 version = "0.0.0"
 edition = "2021"
-private = true
+publish = false
 
 [dependencies]
+hex = "0.4.3"
+serde = "1.0.196"
 tracing-appender = "0.2.3"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }

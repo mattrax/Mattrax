@@ -1,0 +1,23 @@
+[package]
+name = "mattrax"
+description = "Mattrax MDM"
+version = "0.0.1"
+edition = "2021"
+publish = false
+default-run = "mattrax"
+
+[dependencies]
+mattrax-utils = { path = "../utils" }
+
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+axum = { version = "0.6.20", features = ["http2", "macros", "ws"] }
+axum-server = { version = "0.5.1", features = ["tokio-rustls", "rustls"] }
+clap = { version = "4.4.8", features = ["derive"] }
+rustls-acme = { version = "0.7.7", features = ["axum"] }
+tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
+thiserror = "1.0.56"
+serde = { version = "1.0.196", features = ["derive"] }
+serde_json = "1.0.113"
+tokio-stream = "0.1.14"
+getrandom = "0.2.12"
