@@ -77,7 +77,7 @@ process.on("exit", () => {
 
   fs.writeFileSync(
     workerCode,
-    `process={env:${JSON.stringify(process.env)}};${fs.readFileSync(
+    `const process={env:${JSON.stringify(process.env)}};${fs.readFileSync(
       workerCode
     )}`
   );
