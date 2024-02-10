@@ -91,13 +91,14 @@ process.on("exit", () => {
   );
 
   // Replace Nitro's config so Cloudflare will serve the HTML from the CDN instead of the worker (they can do "304 Not Modified" & ETag caching).
-  fs.writeFileSync(
-    routesJson,
-    JSON.stringify({
-      version: 1,
-      include: ["/api/*"],
-    })
-  );
+  // fs.writeFileSync(
+  //   routesJson,
+  //   JSON.stringify({
+  //     version: 1,
+  //     include: ["/api/*"],
+  //     exclude: [],
+  //   })
+  // );
 });
 
 // TODO: Remove this hack.
