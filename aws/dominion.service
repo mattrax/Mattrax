@@ -1,9 +1,22 @@
+[Unit]
+ConditionPathExists=/var/lib/mattrax/config.json
+
 [Service]
 WorkingDirectory=/home/ec2-user
 ExecStart=/home/ec2-user/dominion
 Restart=always
 PrivateTmp=true
 NoNewPrivileges=true
+
+Environment=DOMAIN=mdm.mattrax.app
+Environment=MANAGEMENT_DOMAIN=mdm.mattrax.app:8443
+Environment=API_DOMAIN=https://cloud.mattrax.app/api/mdm
+Environment=TLS_CERT_PATH=./certs/tls.crt
+Environment=TLS_KEY_PATH=./certs/tls.crt
+# Environment=IDENTITY_CERT_POOL_PATH=./certs/tls.crt
+# Environment=IDENTITY_CERT_PATH=./certs/tls.crt
+# Environment=IDENTITY_KEY_PATH=./certs/tls.crt
+# Environment=IDENTITY_KEY_PASSWORD=changeit
 
 [Install]
 Alias=dominion

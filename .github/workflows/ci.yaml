@@ -78,6 +78,7 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           source: "server-dist/*"
           target: /home/ec2-user
+          strip_components: 1
 
       - name: executing remote ssh commands using password
         uses: appleboy/ssh-action@v1.0.3
