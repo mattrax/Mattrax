@@ -13,18 +13,19 @@ import {
   Switch,
 } from "~/components/ui";
 import dayjs from "dayjs";
+import { toast } from "solid-sonner";
+import { As } from "@kobalte/core";
+import { z } from "zod";
+
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
 import { authProviderDisplayName, authProviderUrl } from "~/lib/values";
-import { toast } from "solid-sonner";
 import { OutlineLayout } from "../OutlineLayout";
-import { AreYouSureModal } from "~/components/AreYouSureModal";
-import { As } from "@kobalte/core";
 import { Form, createZodForm } from "~/components/forms";
-import { z } from "zod";
 import { InputField } from "~/components/forms/InputField";
 import { useAuthContext } from "~/routes/(dash)";
 import { useTenantContext } from "../../[tenant]";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
 
 export default function Page() {
   return (
@@ -156,12 +157,6 @@ function AuthenticationCard() {
       await new Promise((resolve) => setTimeout(resolve, 500));
     },
   }));
-  const unlinkProvider = trpc.tenant.auth.unlink.useMutation(() => ({
-    onSuccess: async () => {
-      await linkedProviders.refetch();
-      // TODO: Refetch user's if the query is active
-    },
-  }));
   const sync = trpc.tenant.auth.sync.useMutation(() => ({
     onSuccess: async () => {
       toast.success("Sync complete!", {
@@ -194,61 +189,72 @@ function AuthenticationCard() {
             ) : null}
 
             <For each={linkedProviders.data}>
-              {(provider) => {
-                return (
-                  <div class="border-b">
-                    <h1 class="text-xl">
-                      {authProviderDisplayName(provider.name)}
-                    </h1>
-                    <p>
-                      <a
-                        href={authProviderUrl(
-                          provider.name,
-                          provider.resourceId
-                        )}
-                        target="_blank"
-                        rel="external"
-                        class="hover:opacity-85 hover:underline"
-                      >
-                        {provider.resourceId}
-                      </a>
-                    </p>
-
-                    <p>
-                      Last Synced:{" "}
-                      <span>
-                        {provider.lastSynced
-                          ? dayjs(provider.lastSynced).fromNow()
-                          : "Never synced"}
-                      </span>
-                    </p>
-
-                    <AreYouSureModal
-                      stringToType="Unlink Entra"
-                      description={
-                        <>
-                          Are you sure you want to unlink your auth provider
-                          along with all <b>users</b> and <b>groups</b> assigned
-                          to it?
-                        </>
-                      }
-                      mutate={() =>
-                        unlinkProvider.mutateAsync({
-                          id: provider.id,
-                        })
-                      }
+              {(provider) => (
+                <div class="border-b">
+                  <h1 class="text-xl">
+                    {authProviderDisplayName(provider.name)}
+                  </h1>
+                  <p>
+                    <a
+                      href={authProviderUrl(provider.name, provider.resourceId)}
+                      target="_blank"
+                      rel="external"
+                      class="hover:opacity-85 hover:underline"
                     >
-                      <As
-                        component={Button}
-                        variant="destructive"
-                        class="w-full"
-                      >
-                        Unlink
-                      </As>
-                    </AreYouSureModal>
-                  </div>
-                );
-              }}
+                      {provider.resourceId}
+                    </a>
+                  </p>
+
+                  <p>
+                    Last Synced:{" "}
+                    <span>
+                      {provider.lastSynced
+                        ? dayjs(provider.lastSynced).fromNow()
+                        : "Never synced"}
+                    </span>
+                  </p>
+
+                  <ConfirmDialog>
+                    {(confirm) => {
+                      const unlinkProvider =
+                        trpc.tenant.auth.unlink.useMutation(() => ({
+                          onSuccess: async () => {
+                            await linkedProviders.refetch();
+                            // TODO: Refetch user's if the query is active
+                          },
+                        }));
+
+                      return (
+                        <Button
+                          variant="destructive"
+                          class="w-full"
+                          onClick={() =>
+                            confirm({
+                              title: "Unlink Entra",
+                              inputText: "Unlink Entra",
+                              action: "Unlink Entra",
+                              description: (
+                                <>
+                                  Are you sure you want to unlink your auth
+                                  provider along with all <b>users</b> and{" "}
+                                  <b>groups</b> assigned to it?
+                                </>
+                              ),
+                              async onConfirm() {
+                                await unlinkProvider.mutateAsync({
+                                  id: provider.id,
+                                });
+                              },
+                            })
+                          }
+                        >
+                          Unlink
+                        </Button>
+                      );
+                    }}
+                  </ConfirmDialog>
+                </div>
+              )}
             </For>
           </Suspense>
         </div>

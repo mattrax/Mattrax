@@ -236,6 +236,7 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { useQueryClient } from "@tanstack/solid-query";
 import { useIsRouting } from "@solidjs/router";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
 
 const AddMemberTableOptions = {
   all: "All",
@@ -300,15 +301,21 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
   const queryClient = useQueryClient();
 
   return (
-    <AreYouSureDialog description="You still have members selected">
-      {(makeSure) => (
+    <ConfirmDialog>
+      {(confirm) => (
         <Sheet
           open={open()}
           onOpenChange={async (o) => {
+            if (o) table.resetRowSelection(true);
+
             if (
               o === false &&
               table.getIsSomeRowsSelected() &&
-              !(await makeSure())
+              !(await confirm({
+                title: "Are You Sure?",
+                description: "You still have members selected",
+                action: "Continue",
+              }))
             )
               return;
 
@@ -430,53 +437,6 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
           </SheetContent>
         </Sheet>
       )}
-    </AreYouSureDialog>
-  );
-}
-
-function AreYouSureDialog(props: {
-  children?: (makeSure: () => Promise<boolean>) => JSX.Element;
-  description?: string;
-}) {
-  const [areYouSureOpen, setAreYouSureOpen] = createSignal(false);
-  let res: (value: boolean) => void;
-
-  return (
-    <DialogRoot open={areYouSureOpen()} onOpenChange={setAreYouSureOpen}>
-      {props.children?.(
-        () =>
-          new Promise<boolean>((resolve) => {
-            res = resolve;
-            setAreYouSureOpen(true);
-          })
-      )}
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Are You Sure?</DialogTitle>
-          {props.description && (
-            <DialogDescription>{props.description}</DialogDescription>
-          )}
-        </DialogHeader>
-        <DialogFooter>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              res(false);
-              setAreYouSureOpen(false);
-            }}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              res(true);
-              setAreYouSureOpen(false);
-            }}
-          >
-            Continue
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </DialogRoot>
+    </ConfirmDialog>
   );
 }

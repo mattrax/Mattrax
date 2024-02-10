@@ -29,12 +29,17 @@ export function createZodForm<S extends z.ZodSchema>(
 export type FormProps<S extends z.ZodSchema> = Omit<
   ComponentProps<"form">,
   "onSubmit"
-> & { form: ReturnType<typeof createZodForm<S>> };
+> & {
+  form: ReturnType<typeof createZodForm<S>>;
+  /** @defaultValue `true` */
+  guardBeforeLeave?: boolean;
+};
 
 export function Form<S extends z.ZodSchema>(props: FormProps<S>) {
-  const [_, formProps] = splitProps(props, ["form"]);
+  const [_, formProps] = splitProps(props, ["form", "guardBeforeLeave"]);
 
   useBeforeLeave((e) => {
+    if (!props.guardBeforeLeave) return;
     // TODO: isDirty
     if (
       props.form.state.isTouched &&

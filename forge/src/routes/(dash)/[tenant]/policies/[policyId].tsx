@@ -27,6 +27,7 @@ import { Switch } from "solid-js";
 import { Form, createZodForm } from "~/components/forms";
 import { z } from "zod";
 import { InputField } from "~/components/forms/InputField";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
 
 // TODO: If the policy is not found redirect back to `/policies`
 
@@ -79,62 +80,6 @@ export default function Page(props: ParentProps) {
         // TODO: Bring back `OutlineLayout` but with a region for actions
         return (
           <div class="flex-1 px-4 py-8">
-            <DialogRoot
-              open={modal.open}
-              setOpen={() => setModal("open", false)}
-            >
-              <DialogContent>
-                <Switch>
-                  <Match when={modal.type === "delete" && modal}>
-                    {(_) => {
-                      const form = createZodForm({
-                        schema: z.object({ input: z.string() }),
-                        async onSubmit() {
-                          await deletePolicy.mutateAsync({
-                            policyId: params.policyId,
-                          });
-                        },
-                      });
-
-                      return (
-                        <>
-                          <DialogHeader>
-                            <DialogTitle>Delete Policy?</DialogTitle>
-                            <DialogDescription>
-                              This will permanently delete the policy and cannot
-                              be undone.
-                            </DialogDescription>
-                          </DialogHeader>
-
-                          <p class="text-muted-foreground text-sm">
-                            To confirm, type <b>{policy().name}</b> in the box
-                            below
-                          </p>
-                          <Form form={form}>
-                            <div class="space-y-4">
-                              <InputField form={form} name="input" />
-                              <form.Subscribe>
-                                {(form) => (
-                                  <Button
-                                    type="submit"
-                                    variant="destructive"
-                                    disabled={
-                                      form().values.input !== policy().name
-                                    }
-                                  >
-                                    Delete '{policy().name}'
-                                  </Button>
-                                )}
-                              </form.Subscribe>
-                            </div>
-                          </Form>
-                        </>
-                      );
-                    }}
-                  </Match>
-                </Switch>
-              </DialogContent>
-            </DialogRoot>
             <div class="flex justify-between">
               <h1 class="text-3xl font-bold mb-4">{`Policy - ${
                 policy().name
@@ -156,18 +101,35 @@ export default function Page(props: ParentProps) {
           </Progress> */}
                 {/* // TODO: Dropdown, quick deploy or staged rollout */}
                 <Button onClick={() => alert("TODO")}>Deploy</Button>
-                <ActionsDropdown
-                  onSelect={(item) => {
-                    switch (item) {
-                      case "delete":
-                        return setModal({ open: true, type: "delete" });
-                    }
-                  }}
-                >
-                  <As component={Button} variant="outline">
-                    Actions
-                  </As>
-                </ActionsDropdown>
+                <ConfirmDialog>
+                  {(confirm) => (
+                    <ActionsDropdown
+                      onSelect={async (item) => {
+                        switch (item) {
+                          case "delete":
+                            confirm({
+                              title: "Delete Policy?",
+                              description:
+                                "This will permanently delete the policy and cannot be undone.",
+                              action: `Delete '${policy().name}'`,
+                              inputText: policy().name,
+                              async onConfirm() {
+                                await deletePolicy.mutateAsync({
+                                  policyId: params.policyId,
+                                });
+                              },
+                            });
+
+                            break;
+                        }
+                      }}
+                    >
+                      <As component={Button} variant="outline">
+                        Actions
+                      </As>
+                    </ActionsDropdown>
+                  )}
+                </ConfirmDialog>
               </div>
             </div>
 
@@ -281,15 +243,6 @@ function ActionsDropdown(
         <DropdownMenuItem onSelect={() => props.onSelect("delete")}>
           Delete
         </DropdownMenuItem>
-        {/* <AreYouSureModal
-                stringToType={policy.data?.name || ""}
-                description=
-                mutate={() =>
-
-                }
-              >
-                <As component={DropdownMenuItem}>Delete</As>
-              </AreYouSureModal> */}
         <DropdownMenuItem onClick={() => alert("TODO")} disabled>
           Export
         </DropdownMenuItem>
