@@ -19,7 +19,7 @@ fn main() {
     // Only some commands need file-based logging
     // TODO: `matches!(cli.command, Commands::Serve { .. })`
     let _guard = if false {
-        Some(file_logger::setup(&data_dir))
+        Some(file_logger::setup(&data_dir, env!("CARGO_PKG_NAME")))
     } else {
         tracing_subscriber::fmt().init();
         None

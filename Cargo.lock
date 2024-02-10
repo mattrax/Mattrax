@@ -1129,6 +1129,7 @@ dependencies = [
  "clap",
  "getrandom",
  "mattrax-utils",
+ "rcgen 0.12.1",
  "rustls-acme",
  "serde",
  "serde_json",
@@ -1308,6 +1309,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pem"
+version = "3.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b8fcc794035347fb64beda2d3b462595dd2753e3f268d89c5aae77e8cf2c310"
+dependencies = [
+ "base64 0.21.7",
+ "serde",
+]
+
+[[package]]
 name = "percent-encoding"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1438,8 +1449,20 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ffbe84efe2f38dea12e9bfc1f65377fdf03e53a18cb3b995faedf7934c7e785b"
 dependencies = [
- "pem",
+ "pem 1.1.1",
  "ring 0.16.20",
+ "time",
+ "yasna",
+]
+
+[[package]]
+name = "rcgen"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48406db8ac1f3cbc7dcdb56ec355343817958a356ff430259bb07baf7607e1e1"
+dependencies = [
+ "pem 3.0.3",
+ "ring 0.17.7",
  "time",
  "yasna",
 ]
@@ -1575,8 +1598,8 @@ dependencies = [
  "futures-rustls",
  "http",
  "log",
- "pem",
- "rcgen",
+ "pem 1.1.1",
+ "rcgen 0.10.0",
  "ring 0.16.20",
  "rustls",
  "serde",

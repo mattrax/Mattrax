@@ -6,7 +6,7 @@ use tracing_appender::{
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
-pub fn setup(data_dir: &PathBuf) -> WorkerGuard {
+pub fn setup(data_dir: &PathBuf, crate_name: &'static str) -> WorkerGuard {
     // Set a default if the user hasn't set an override
     if std::env::var("RUST_LOG") == Err(std::env::VarError::NotPresent) {
         let level = if cfg!(debug_assertions) {
@@ -15,10 +15,7 @@ pub fn setup(data_dir: &PathBuf) -> WorkerGuard {
             "info"
         };
 
-        std::env::set_var(
-            "RUST_LOG",
-            format!(concat!("info,", env!("CARGO_PKG_NAME"), "={}"), level),
-        );
+        std::env::set_var("RUST_LOG", format!("info,{crate_name}={level}"));
     }
 
     let (logfile, guard) = NonBlocking::new(
