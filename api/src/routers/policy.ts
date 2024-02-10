@@ -17,16 +17,7 @@ export const policyRouter = createTRPCRouter({
           name: policies.name,
         })
         .from(policies)
-        .leftJoin(
-          tenantAccounts,
-          eq(policies.tenantId, tenantAccounts.tenantId)
-        )
-        .where(
-          and(
-            eq(policies.tenantId, ctx.tenantId),
-            eq(tenantAccounts.accountId, ctx.session.data.id)
-          )
-        )
+        .where(eq(policies.tenantId, ctx.tenantId))
     ).map((d) => ({
       ...d,
       id: encodeId("policy", d.id),

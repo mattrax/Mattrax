@@ -20,13 +20,7 @@ export const deviceRouter = createTRPCRouter({
           enrolledAt: devices.enrolledAt,
         })
         .from(devices)
-        .leftJoin(tenantAccounts, eq(devices.tenantId, tenantAccounts.tenantId))
-        .where(
-          and(
-            eq(devices.tenantId, ctx.tenantId),
-            eq(tenantAccounts.accountId, ctx.session.data.id)
-          )
-        )
+        .where(and(eq(devices.tenantId, ctx.tenantId)))
     ).map((d) => ({
       ...d,
       id: encodeId("device", d.id),
