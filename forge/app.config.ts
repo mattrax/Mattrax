@@ -77,9 +77,10 @@ process.on("exit", () => {
 
   fs.writeFileSync(
     workerCode,
-    `const process={env:${JSON.stringify(
-      process.env
-    )}};globalThis.process=process.env;${fs.readFileSync(workerCode)}`
+    `const process={env:${JSON.stringify({
+      NITRO_ENV_PREFIX: "",
+      ...process.env,
+    })}};globalThis.process=process.env;${fs.readFileSync(workerCode)}`
   );
 });
 
