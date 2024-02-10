@@ -50,9 +50,9 @@ export default createApp({
     },
   ],
   server: {
-    vercel: {
-      regions: ["iad1"],
-    },
+    // vercel: {
+    //   regions: ["iad1"],
+    // },
     // This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
     // TODO: We could probs PR this to the Vercel Edge preset in Nitro.
     exportConditions: ["worker"],
