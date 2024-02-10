@@ -52,10 +52,9 @@ jobs:
 
       - name: Install Cargo Lambda
         uses: jaxxstorm/action-install-gh-release@v1.9.0
-        with:
-          repo: cargo-lambda/cargo-lambda
-          platform: linux
-          arch: aarch64
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          cargo binstall cargo-lambda
 
       - name: Build Go
         run: cd dominion && GOOS=linux GOARCH=arm64 go build -o dominion ./cmd
