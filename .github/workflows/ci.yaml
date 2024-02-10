@@ -22,3 +22,64 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+  # TODO: Rust tests + Clippy (maybe in separate jobs)
+
+  # TODO: Remove all Go from this and cleanup
+  build-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+
+      - name: Install Zig toolchain
+        uses: korandoru/setup-zig@v1
+        with:
+          zig-version: 0.11.0
+
+      - name: Install Cargo Lambda
+        uses: jaxxstorm/action-install-gh-release@v1.9.0
+        with:
+          repo: cargo-lambda/cargo-lambda
+          platform: linux
+          arch: aarch64
+
+      - name: Build Go
+        run: GOOS=linux GOARCH=arm64 go build -o dominion ./dominion
+
+      - name: Build Rust
+        run: cargo lambda build -p mattrax --locked --release
+
+      - name: Copy files to production server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "target/release/mattrax,dominion,aws/dominion.service,aws/mattrax.service"
+          target: /home/ec2-user
+
+      - name: executing remote ssh commands using password
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cp /home/ec2-user/dominion.service /etc/systemd/system/dominion.service
+            cp /home/ec2-user/mattrax.service /etc/systemd/system/mattrax.service
+            systemctl daemon-reload
+
+            systemctl enabled dominion
+            systemctl enabled mattrax
+
+            systemctl restart dominion
+            systemctl restart mattrax

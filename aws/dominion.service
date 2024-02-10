@@ -1,0 +1,10 @@
+[Service]
+WorkingDirectory=/home/ec2-user
+ExecStart=/home/ec2-user/dominion
+Restart=always
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+Alias=dominion
+WantedBy=default.target

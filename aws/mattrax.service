@@ -1,0 +1,10 @@
+[Service]
+WorkingDirectory=/home/ec2-user
+ExecStart=/home/ec2-user/mattrax
+Restart=always
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+Alias=mattrax
+WantedBy=default.target
