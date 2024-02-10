@@ -1,6 +1,12 @@
 // @refresh reload
-import { Router, useNavigate } from "@solidjs/router";
-import { ErrorBoundary, Suspense, lazy, onCleanup } from "solid-js";
+import { Router, useNavigate, Navigator } from "@solidjs/router";
+import {
+  ErrorBoundary,
+  Suspense,
+  lazy,
+  onCleanup,
+  startTransition,
+} from "solid-js";
 import {
   QueryCache,
   QueryClient,
@@ -16,7 +22,7 @@ import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimen
 // } from "@tanstack/solid-query-persist-client";
 // import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { routes } from "./routes";
-import { tRPCErrorCode } from "./lib";
+import { isTRPCClientError, tRPCErrorCode, trpc } from "./lib";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "./app.css";
@@ -36,7 +42,9 @@ declare module "solid-js" {
 // Which Tanstack Query keys to persist to `localStorage`
 const keysToPersist = [`[["auth","me"]]`];
 
-const createQueryClient = (navigate: (to: string) => void) => {
+function createQueryClient() {
+  const navigate = useNavigate();
+
   const onError = (scopeMsg: string) => (error: unknown) => {
     let errorMsg = [
       scopeMsg,
@@ -44,13 +52,13 @@ const createQueryClient = (navigate: (to: string) => void) => {
       "Please reload to try again!",
     ];
 
-    const trpcErrorCode = tRPCErrorCode(error);
-    if (trpcErrorCode) {
-      if (trpcErrorCode === "UNAUTHORIZED") {
-        navigate("/login");
+    if (isTRPCClientError(error)) {
+      if (error.data?.code === "UNAUTHORIZED") {
+        startTransition(() => navigate("/login"));
         return;
-      } else if (trpcErrorCode === "FORBIDDEN") {
-        errorMsg = ["You are not allowed to access this resource!"];
+      } else if (error.data?.code === "FORBIDDEN") {
+        if (error.message === "tenant") navigate("/");
+        else errorMsg = ["You are not allowed to access this resource!"];
       }
     }
 
@@ -96,7 +104,7 @@ const createQueryClient = (navigate: (to: string) => void) => {
     //   },
     // } satisfies Omit<PersistQueryClientOptions, "queryClient">,
   ] as const;
-};
+}
 
 const SolidQueryDevtools = lazy(() =>
   import("@tanstack/solid-query-devtools").then((m) => ({
@@ -108,8 +116,7 @@ export default function App() {
   return (
     <Router
       root={(props) => {
-        const navigate = useNavigate();
-        const [queryClient, persistOptions] = createQueryClient(navigate);
+        const [queryClient /* persistOptions */] = createQueryClient();
 
         onCleanup(
           onlineManager.subscribe((isOnline) => {

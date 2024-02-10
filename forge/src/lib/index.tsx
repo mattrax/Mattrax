@@ -1,10 +1,5 @@
 import type { AppRouter } from "@mattrax/api";
-import {
-  type CreateTRPCProxyClient as CreateTRPCClient,
-  createTRPCProxyClient as createTRPCClient,
-  httpBatchLink,
-  TRPCClientError,
-} from "@trpc/client";
+import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import {
@@ -22,17 +17,6 @@ export const [xTenantId, setXTenantId] = makePersisted(
 
 const headers = () =>
   xTenantId() !== undefined ? { "x-tenant-id": xTenantId() } : {};
-
-export const trpcClient: CreateTRPCClient<AppRouter> =
-  createTRPCClient<AppRouter>({
-    links: [
-      httpBatchLink({
-        url: `${location.origin}/api/trpc`,
-        headers,
-      }),
-    ],
-    transformer: superjson,
-  });
 
 // TODO: Error handling + unauthorised
 export const trpc: CreateTRPCSolidStart<AppRouter> = createTRPCSolidStart({
@@ -64,14 +48,9 @@ export function SuspenseError(props: { name: string }) {
   return <></>;
 }
 
-export function tRPCErrorCode(error: unknown) {
-  if (
-    error &&
-    error instanceof TRPCClientError &&
-    error.data &&
-    "code" in error.data
-  ) {
-    return error.data.code;
-  }
-  return undefined;
+// https://trpc.io/docs/client/vanilla/infer-types#infer-trpcclienterror-types
+export function isTRPCClientError(
+  cause: unknown
+): cause is TRPCClientError<AppRouter> {
+  return cause instanceof TRPCClientError;
 }
