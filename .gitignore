@@ -6,6 +6,7 @@ dist
 .output
 .vinxi
 .yarn-error.log
+/dominion/dominion
 
 # Binaries for programs and plugins
 *.exe

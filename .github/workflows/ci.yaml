@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   merge_group:
 
@@ -53,7 +55,7 @@ jobs:
           arch: aarch64
 
       - name: Build Go
-        run: GOOS=linux GOARCH=arm64 go build ./dominion/cmd -o dominion ./dominion
+        run: cd dominion && GOOS=linux GOARCH=arm64 go build -o dominion ./cmd
 
       - name: Build Rust
         run: cargo lambda build -p mattrax --locked --release
@@ -65,7 +67,7 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_KEY }}
-          source: "target/release/mattrax,dominion,aws/dominion.service,aws/mattrax.service"
+          source: "target/release/mattrax,dominion/dominion,aws/dominion.service,aws/mattrax.service"
           target: /home/ec2-user
 
       - name: executing remote ssh commands using password
