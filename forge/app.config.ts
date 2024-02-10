@@ -66,6 +66,21 @@ export default createApp({
   },
 });
 
+// TODO: Remove this hackery
+
+const workerCode = path.join("dist", "_worker.js", "index.js");
+process.on("exit", () => {
+  if (!fs.existsSync(workerCode)) {
+    console.warn("Skipping Cloudflare env patching...");
+    return;
+  }
+
+  fs.writeFileSync(
+    workerCode,
+    `process.env=${JSON.stringify(process.env)}${fs.readFileSync(workerCode)}`
+  );
+});
+
 // TODO: Remove this hack.
 // TODO: It's to serve the SPA from the CDN while only routing API redirects to the Edge Functions.
 // TODO: This issue comes down to a limitation in Nitro only allowing one present/adapter but it could possible by worked around in Vinxi.
