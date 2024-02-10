@@ -65,7 +65,7 @@ jobs:
         run: |
           mkdir server-dist
           cp dominion/dominion server-dist/dominion
-          cp target/lambda/release/mattrax server-dist/mattrax
+          cp target/lambda/mattrax/bootstrap server-dist/mattrax
           cp aws/dominion.service server-dist/dominion.service
           cp aws/mattrax.service server-dist/mattrax.service
 
