@@ -1,10 +1,10 @@
-import { type GetSessionResult, env } from "@mattrax/api";
+import { type GetSessionResult } from "@mattrax/api";
 import { type H3Event, useSession } from "vinxi/server";
 
 export const getServerSession = async (event: H3Event) => {
   const session = await useSession(event, {
     name: "s",
-    password: env.AUTH_SECRET,
+    password: "todo", // env.AUTH_SECRET, // TODO
     cookie: {
       // Safari gets unhappy
       secure: !import.meta.env.DEV,
