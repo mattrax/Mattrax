@@ -69,6 +69,8 @@ jobs:
           cp aws/dominion.service server-dist/dominion.service
           cp aws/mattrax.service server-dist/mattrax.service
 
+      # TODO: We should probs have concurrency 1 for these steps
+
       - name: Copy files to production server
         uses: appleboy/scp-action@v0.1.7
         # if: github.ref == 'refs/heads/main'
@@ -88,12 +90,12 @@ jobs:
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            cp /home/ec2-user/dominion.service /etc/systemd/system/dominion.service
-            cp /home/ec2-user/mattrax.service /etc/systemd/system/mattrax.service
-            systemctl daemon-reload
+            sudo cp /home/ec2-user/dominion.service /etc/systemd/system/dominion.service
+            sudo cp /home/ec2-user/mattrax.service /etc/systemd/system/mattrax.service
+            sudo systemctl daemon-reload
 
-            systemctl enabled dominion
-            systemctl enabled mattrax
+            sudo systemctl enabled dominion
+            sudo systemctl enabled mattrax
 
-            systemctl restart dominion
-            systemctl restart mattrax
+            sudo systemctl restart dominion
+            sudo systemctl restart mattrax
