@@ -67,11 +67,14 @@ export default function Page() {
   const groupsTable = createGroupsTable();
 
   return (
-    <OutlineLayout title="Applications">
-      <div class="flex items-center mb-4">
+    <div class="px-4 py-8 w-full max-w-5xl mx-auto gap-4 flex flex-col">
+      <div class="flex flex-row justify-between">
+        <h1 class="text-3xl font-bold mb-4">Applications</h1>
         <CreatePolicyDialog>
           <As component={Button}>Create Application</As>
         </CreatePolicyDialog>
+      </div>
+      <div class="flex flex-row items-center gap-4">
         <Input
           placeholder="Search..."
           value={
@@ -80,7 +83,6 @@ export default function Page() {
           onInput={(event) =>
             groupsTable.getColumn("name")?.setFilterValue(event.target.value)
           }
-          class="max-w-sm ml-4"
         />
         <ColumnsDropdown table={groupsTable}>
           <As component={Button} variant="outline" class="ml-auto select-none">
@@ -93,7 +95,7 @@ export default function Page() {
         table={groupsTable}
         onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}
       />
-      <div class="flex items-center justify-end space-x-2 py-4">
+      <div class="flex items-center justify-end space-x-2">
         <div class="flex-1 text-sm text-muted-foreground">
           {groupsTable.getFilteredSelectedRowModel().rows.length} of{" "}
           {groupsTable.getFilteredRowModel().rows.length} row(s) selected.
@@ -118,7 +120,7 @@ export default function Page() {
         </div>
       </div>
       <AppleAppStoreDemo />
-    </OutlineLayout>
+    </div>
   );
 }
 
@@ -134,6 +136,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "~/components/ui";
+import { createQuery } from "@tanstack/solid-query";
 
 function CreatePolicyDialog(props: ParentProps) {
   const navigate = useNavigate();
@@ -186,15 +189,19 @@ function AppleAppStoreDemo() {
 
   // TODO: Typescript types
   // TODO: Move to Tanstack Query
-  const data = createAsync(() => {
-    // TODO: Pagination support
-    return fetch(
-      `https://itunes.apple.com/search?term=${search()}&entity=software`
-    ).then((res) => res.json());
-  });
+  const searchQuery = createQuery(() => ({
+    queryKey: ["appStoreSearch", search()],
+    queryFn: async () => {
+      // TODO: Pagination support
+      const res = await fetch(
+        `https://itunes.apple.com/search?term=${search()}&entity=software`
+      );
+      return await res.json();
+    },
+  }));
 
   return (
-    <OutlineLayout title="Applications">
+    <>
       <input
         type="text"
         class="border border-gray-300 rounded-md p-2"
@@ -204,7 +211,7 @@ function AppleAppStoreDemo() {
       <div class="grid grid-cols-3 gap-4">
         {/* TODO: Empty and error states */}
         <Suspense fallback={<div>Loading...</div>}>
-          {data()?.results.map((app: any) => (
+          {searchQuery.data?.results.map((app: any) => (
             <div class="flex flex-col">
               <img src={app.artworkUrl100} />
               <div class="text-sm">{app.trackName}</div>
@@ -213,6 +220,6 @@ function AppleAppStoreDemo() {
           ))}
         </Suspense>
       </div>
-    </OutlineLayout>
+    </>
   );
 }

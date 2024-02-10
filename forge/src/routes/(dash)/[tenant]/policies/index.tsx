@@ -9,6 +9,21 @@ import {
 } from "@tanstack/solid-table";
 import { trpc } from "~/lib";
 import { As } from "@kobalte/core";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Checkbox,
+  Input,
+} from "~/components/ui";
+import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
+import { useNavigate } from "@solidjs/router";
+import { Separator } from "~/components/ui";
+import { Form, InputField, createZodForm } from "~/components/forms";
+import { z } from "zod";
 
 export const columns: ColumnDef<any>[] = [
   {
@@ -73,11 +88,11 @@ export default function Page() {
   const groupsTable = createGroupsTable();
 
   return (
-    <OutlineLayout title="Policies">
-      <div class="flex items-center mb-4">
-        <CreatePolicyDialog>
-          <As component={Button}>Create Policy</As>
-        </CreatePolicyDialog>
+    <div class="px-4 py-8 w-full max-w-5xl mx-auto space-y-4">
+      <h1 class="text-3xl font-bold">Policies</h1>
+      <CreatePolicyCard />
+      <Separator />
+      <div class="flex flex-row gap-4">
         <Input
           placeholder="Search..."
           value={
@@ -86,7 +101,7 @@ export default function Page() {
           onInput={(event) =>
             groupsTable.getColumn("name")?.setFilterValue(event.target.value)
           }
-          class="max-w-sm ml-4"
+          class="flex-1"
         />
         <ColumnsDropdown table={groupsTable}>
           <As component={Button} variant="outline" class="ml-auto select-none">
@@ -123,72 +138,46 @@ export default function Page() {
           </Button>
         </div>
       </div>
-    </OutlineLayout>
+    </div>
   );
 }
 
-import {
-  Button,
-  Checkbox,
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  Input,
-} from "~/components/ui";
-import { OutlineLayout } from "../OutlineLayout";
-import { toast } from "solid-sonner";
-import dayjs from "dayjs";
-import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
-import { useNavigate } from "@solidjs/router";
-
-import {
-  DialogContent,
-  DialogHeader,
-  DialogRoot,
-  DialogTitle,
-  DialogTrigger,
-} from "~/components/ui";
-
-function CreatePolicyDialog(props: ParentProps) {
+function CreatePolicyCard() {
   const navigate = useNavigate();
 
-  const mutation = trpc.policy.create.useMutation(() => ({
-    onSuccess: async (id) => {
-      await startTransition(() => navigate(`./${id}`));
-    },
+  const createPolicy = trpc.policy.create.useMutation(() => ({
+    onSuccess: (id) => startTransition(() => navigate(id)),
   }));
 
+  const form = createZodForm({
+    schema: z.object({ name: z.string() }),
+    onSubmit: ({ value }) => createPolicy.mutateAsync(value),
+  });
+
   return (
-    <DialogRoot>
-      <DialogTrigger asChild>{props.children}</DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Create Group</DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const formData = new FormData(e.currentTarget);
-            mutation.mutate({
-              name: formData.get("name") as any,
-            });
-          }}
+    <Card>
+      <CardHeader>
+        <CardTitle>Create Policy</CardTitle>
+        <CardDescription>
+          Once a new policy is created, you will be taken to assign
+          configurations to it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Form
+          form={form}
+          class="w-full"
+          fieldsetClass="flex items-center gap-4"
         >
-          <fieldset
-            class="flex flex-col space-y-4"
-            disabled={mutation.isPending}
-          >
-            <Input
-              type="text"
-              name="name"
-              placeholder="New Policy"
-              autocomplete="off"
-            />
-            <Button type="submit">Create</Button>
-          </fieldset>
-        </form>
-      </DialogContent>
-    </DialogRoot>
+          <InputField
+            placeholder="Policy Name"
+            fieldClass="flex-1"
+            form={form}
+            name="name"
+          />
+          <Button type="submit">Create Policy</Button>
+        </Form>
+      </CardContent>
+    </Card>
   );
 }

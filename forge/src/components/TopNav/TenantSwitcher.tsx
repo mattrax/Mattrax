@@ -33,7 +33,7 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
       {/* DialogRoot must be outside the dropdown menu so it's not unrendered when the menu is closed */}
       <DialogRoot>
         <DropdownMenu controller={controller} sameWidth>
-          <DropdownMenuTrigger class="mt-1 inline-flex w-full justify-between rounded-md bg-brand-secondary text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-brand-tertiary focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-80 disabled:cursor-not-allowed">
+          <DropdownMenuTrigger class="inline-flex w-full justify-between rounded-md bg-brand-secondary text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-brand-tertiary focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-80 disabled:cursor-not-allowed">
             {/* // TODO: Tooltip when truncated */}
             <span class="truncate">{props.activeTenant.name}</span>
 

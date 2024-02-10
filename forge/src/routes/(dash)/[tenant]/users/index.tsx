@@ -7,18 +7,9 @@ import {
   getSortedRowModel,
   getFilteredRowModel,
 } from "@tanstack/solid-table";
-import {
-  Button,
-  Checkbox,
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  Input,
-} from "~/components/ui";
+import { Button, Checkbox, Input } from "~/components/ui";
 import { trpc } from "~/lib";
 import { As } from "@kobalte/core";
-import { ParentProps } from "solid-js";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { useNavigate } from "@solidjs/router";
 
@@ -109,16 +100,16 @@ export default function Page() {
   const table = createUsersTable();
 
   return (
-    <div class="flex-1 px-4 py-8">
-      <h1 class="text-3xl font-bold">Users</h1>
-      <div class="flex items-center py-4">
+    <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
+      <h1 class="text-3xl font-bold mb-4">Users</h1>
+      <div class="flex flex-row items-center gap-4">
         <Input
           placeholder="Search..."
           value={(table.getColumn("email")?.getFilterValue() as string) ?? ""}
           onInput={(event) =>
             table.getColumn("email")?.setFilterValue(event.target.value)
           }
-          class="max-w-sm"
+          class="flex-1"
         />
         <ColumnsDropdown table={table}>
           <As component={Button} variant="outline" class="ml-auto select-none">
@@ -131,7 +122,7 @@ export default function Page() {
         table={table}
         onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}
       />
-      <div class="flex items-center justify-end space-x-2 py-4">
+      <div class="flex items-center justify-end space-x-2">
         <div class="flex-1 text-sm text-muted-foreground">
           {table.getFilteredSelectedRowModel().rows.length} of{" "}
           {table.getFilteredRowModel().rows.length} row(s) selected.

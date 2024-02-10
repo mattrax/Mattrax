@@ -1,6 +1,5 @@
 import { type JSX, For, ParentProps } from "solid-js";
 
-import { OutlineLayout } from "./OutlineLayout";
 import { A } from "@solidjs/router";
 
 const navigation = [
@@ -12,8 +11,11 @@ const navigation = [
 
 export default function Layout(props: ParentProps) {
   return (
-    <OutlineLayout title="Settings">
-      <div class="flex flex-row flex-1 w-full relative overflow-hidden">
+    <>
+      <h1 class="w-full relative max-w-6xl mx-auto pt-8 pb-4 text-3xl font-bold ">
+        Tenant Settings
+      </h1>
+      <div class="flex flex-row flex-1 w-full relative max-w-6xl mx-auto">
         <nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pt-4 pl-4">
           <ul role="list" class="space-y-1">
             <For each={navigation}>
@@ -25,7 +27,7 @@ export default function Layout(props: ParentProps) {
         </nav>
         <main class="flex-1 overflow-y-auto px-4 pt-4">{props.children}</main>
       </div>
-    </OutlineLayout>
+    </>
   );
 }
 
@@ -39,7 +41,7 @@ const SidebarItem = (
   <A
     end
     href={props.href}
-    class="block group space-x-3 rounded-md p-2 text-sm leading-6 font-semibold"
+    class="block group rounded-md p-2 text-sm leading-6 font-semibold"
     activeClass="bg-gray-50 text-brand active-page"
     inactiveClass="text-gray-700 hover:text-brand hover:bg-gray-50 inactive-page"
   >

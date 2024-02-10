@@ -13,13 +13,15 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "./ui";
+import clsx from "clsx";
 
 export function StandardTable<TData>(props: {
   table: TTable<TData>;
   onRowClick?: (row: TData) => void;
+  class?: string;
 }) {
   return (
-    <div class="rounded-md border">
+    <div class={clsx("rounded-md border", props.class)}>
       <Table>
         <TableHeader>
           <For each={props.table.getHeaderGroups()}>

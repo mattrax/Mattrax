@@ -55,24 +55,24 @@ export default function Page(props: ParentProps) {
 
         // TODO: Bring back `OutlineLayout` but with a region for actions
         return (
-          <OutlineLayout
-            title={`Policy - ${policy().name}`}
-            topRight={
+          <div class="px-4 py-8 w-full max-w-6xl mx-auto space-y-4">
+            <div class="flex flex-row items-center justify-between">
+              <h1 class="text-3xl font-bold mb-4">{policy().name}</h1>
               <div class="flex space-x-4">
                 {/* <Progress
-          value={3}
-          minValue={0}
-          maxValue={10}
-          getValueLabel={({ value, max }) =>
-            `${value} of ${max} devices completed`
-          }
-          class="w-[300px] space-y-1"
-        >
-          <div class="flex justify-between">
-            <ProgressLabel>Deploying...</ProgressLabel>
-            <ProgressValueLabel />
-          </div>
-        </Progress> */}
+                  value={3}
+                  minValue={0}
+                  maxValue={10}
+                  getValueLabel={({ value, max }) =>
+                    `${value} of ${max} devices completed`
+                  }
+                  class="w-[300px] space-y-1"
+                >
+                  <div class="flex justify-between">
+                    <ProgressLabel>Deploying...</ProgressLabel>
+                    <ProgressValueLabel />
+                  </div>
+                </Progress> */}
                 {/* // TODO: Dropdown, quick deploy or staged rollout */}
                 <Button onClick={() => alert("TODO")}>Deploy</Button>
                 <ConfirmDialog>
@@ -105,60 +105,57 @@ export default function Page(props: ParentProps) {
                   )}
                 </ConfirmDialog>
               </div>
-            }
-          >
+            </div>
             {/* TODO: Description + editable name */}
             {/* TODO: Area for assigning it to devices/users */}
 
             <div class="flex h-full mb-4">
-              <div class="lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col">
-                <div class="flex grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white px-6 pb-4">
-                  <nav class="flex flex-1 flex-col">
-                    <ul role="list" class="flex flex-1 flex-col gap-y-7">
-                      <li>
-                        <ul role="list" class="-mx-2 space-y-1">
-                          <div class="text-xs font-semibold leading-6 text-brand">
-                            Standard
-                          </div>
-                          <For each={navigation}>
-                            {(item) => (
-                              <SidebarItem href={item.href} icon={item.icon}>
-                                {item.name}
-                              </SidebarItem>
-                            )}
-                          </For>
-                        </ul>
-                        <ul role="list" class="-mx-2 space-y-1">
-                          <div class="text-xs font-semibold leading-6 text-brand pt-2">
-                            3rd Party Software
-                          </div>
+              <nav class="flex flex-col min-w-48">
+                <ul role="list" class="flex flex-1 flex-col gap-y-7">
+                  <li>
+                    <ul role="list" class="space-y-1">
+                      <div class="text-xs font-semibold leading-6 text-brand">
+                        Standard
+                      </div>
+                      <For each={navigation}>
+                        {(item) => (
+                          <SidebarItem href={item.href} icon={item.icon}>
+                            {item.name}
+                          </SidebarItem>
+                        )}
+                      </For>
+                    </ul>
+                  </li>
+                  <li>
+                    <ul role="list" class="space-y-1">
+                      <div class="text-xs font-semibold leading-6 text-brand pt-2">
+                        3rd Party Software
+                      </div>
 
-                          <li>
-                            <SidebarItem href="chrome" icon={IconLogosChrome}>
-                              Chrome
-                            </SidebarItem>
-                            <SidebarItem href="slack" icon={IconLogosSlackIcon}>
-                              Slack
-                            </SidebarItem>
-                            {/* // TODO: Use a proper Office suite icon */}
-                            <SidebarItem
-                              href="office"
-                              icon={IconLogosMicrosoftIcon}
-                            >
-                              Microsoft Office
-                            </SidebarItem>
-                          </li>
-                        </ul>
+                      <li>
+                        <SidebarItem href="chrome" icon={IconLogosChrome}>
+                          Chrome
+                        </SidebarItem>
+                        <SidebarItem href="slack" icon={IconLogosSlackIcon}>
+                          Slack
+                        </SidebarItem>
+                        {/* // TODO: Use a proper Office suite icon */}
+                        <SidebarItem
+                          href="office"
+                          icon={IconLogosMicrosoftIcon}
+                        >
+                          Microsoft Office
+                        </SidebarItem>
                       </li>
                     </ul>
-                  </nav>
-                </div>
-              </div>
-              <div class="w-full">
+                  </li>
+                </ul>
+              </nav>
+              <div class="flex-1">
                 <main class="px-4 w-full h-full">{props.children}</main>
               </div>
             </div>
-          </OutlineLayout>
+          </div>
         );
       }}
     </Show>
@@ -168,25 +165,28 @@ export default function Page(props: ParentProps) {
 const SidebarItem = (
   props: ParentProps & {
     href: string;
+    disabled?: boolean;
     icon?: (props: JSX.SvgSVGAttributes<SVGSVGElement>) => JSX.Element;
   }
 ) => (
   <A
     end
     href={props.href}
-    class={"group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold"}
+    class="block group rounded-md p-2 text-sm leading-6 font-semibold"
     activeClass="bg-gray-50 text-brand active-page"
     inactiveClass="text-gray-700 hover:text-brand hover:bg-gray-50 inactive-page"
   >
-    {props.icon && (
-      <props.icon
-        class={
-          "h-6 w-6 shrink-0 group-[.active-page]:text-brand group-[.inactive-page]:text-gray-400 group-[.inactive-page]:group-hover:text-brand"
-        }
-        aria-hidden="true"
-      />
-    )}
-    {props.children}
+    <div class="flex flex-row gap-3">
+      {props.icon && (
+        <props.icon
+          class={
+            "h-6 w-6 shrink-0 group-[.active-page]:text-brand group-[.inactive-page]:text-gray-400 group-[.inactive-page]:group-hover:text-brand"
+          }
+          aria-hidden="true"
+        />
+      )}
+      {props.children}
+    </div>
   </A>
 );
 

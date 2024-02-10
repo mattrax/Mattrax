@@ -39,15 +39,14 @@ export default function Page() {
         const isRouting = useIsRouting();
 
         return (
-          <div class="flex-1 px-4 py-8">
-            <h1 class="text-3xl font-bold focus:outline-none" contentEditable>
-              {group().name}
-            </h1>
-            <div class="my-4">
+          <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
+            <div class="flex flex-row justify-between">
+              <h1 class="text-3xl font-bold mb-4">{group().name}</h1>
               <AddMemberSheet groupId={routeParams.groupId}>
                 <As component={Button}>Add Members</As>
               </AddMemberSheet>
             </div>
+
             <Show when={!isRouting()}>
               <Suspense>
                 <MembersTable table={table} />
