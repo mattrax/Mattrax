@@ -29,6 +29,7 @@ jobs:
 
   # TODO: Remove all Go from this and cleanup
   build-server:
+    name: Build and deploy server
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -60,21 +61,29 @@ jobs:
         run: cd dominion && GOOS=linux GOARCH=arm64 go build -o dominion ./cmd
 
       - name: Build Rust
-        run: cargo lambda build -p mattrax --locked --release
+        run: cargo lambda build -p mattrax --locked --release --arm64
+
+      - name: Bundle all server files to push to server
+        run: |
+          mkdir server-dist
+          cp dominion/dominion server-dist/dominion
+          cp target/lambda/release/mattrax server-dist/mattrax
+          cp aws/dominion.service server-dist/dominion.service
+          cp aws/mattrax.service server-dist/mattrax.service
 
       - name: Copy files to production server
         uses: appleboy/scp-action@v0.1.7
-        if: github.ref == 'refs/heads/main'
+        # if: github.ref == 'refs/heads/main'
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_KEY }}
-          source: "target/release/mattrax,dominion/dominion,aws/dominion.service,aws/mattrax.service"
+          source: "server-dist/*"
           target: /home/ec2-user
 
       - name: executing remote ssh commands using password
         uses: appleboy/ssh-action@v1.0.3
-        if: github.ref == 'refs/heads/main'
+        # if: github.ref == 'refs/heads/main'
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
