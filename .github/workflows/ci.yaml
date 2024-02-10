@@ -2,8 +2,6 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
   pull_request:
   merge_group:
 
@@ -73,7 +71,7 @@ jobs:
 
       - name: Copy files to production server
         uses: appleboy/scp-action@v0.1.7
-        # if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
@@ -84,7 +82,7 @@ jobs:
 
       - name: executing remote ssh commands using password
         uses: appleboy/ssh-action@v1.0.3
-        # if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
@@ -94,8 +92,8 @@ jobs:
             sudo cp /home/ec2-user/mattrax.service /etc/systemd/system/mattrax.service
             sudo systemctl daemon-reload
 
-            sudo systemctl enabled dominion
-            sudo systemctl enabled mattrax
+            sudo systemctl enable dominion
+            sudo systemctl enable mattrax
 
             sudo systemctl restart dominion
             sudo systemctl restart mattrax

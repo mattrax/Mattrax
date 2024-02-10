@@ -8,3 +8,7 @@
 ssh-keygen -t ed25519 -a 200 -C "gh-actions"
 cat .ssh/id_ed25519.pub >> .ssh/authorized_keys
 cat .ssh/id_ed25519 # Copy and paste into GH secrets as `SSH_KEY`
+
+# TODO: Wait for CI
+# sudo ./mattrax init
+# sudo systemctl restart mattrax
