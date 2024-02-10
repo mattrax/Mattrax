@@ -22,7 +22,7 @@ import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimen
 // } from "@tanstack/solid-query-persist-client";
 // import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { routes } from "./routes";
-import { isTRPCClientError, tRPCErrorCode, trpc } from "./lib";
+import { isTRPCClientError } from "./lib";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "./app.css";
