@@ -14,8 +14,10 @@ export const slackImplementation = implementPolicy(slack, {
       PayloadVersion: 1,
     };
 
+    // @ts-expect-error
     if ("AutoUpdate" in data) policy["AutoUpdate"] = data.AutoUpdate;
     if ("DefaultSignInTeam" in data)
+      // @ts-expect-error
       policy["DefaultSignInTeam"] = data.DefaultSignInTeam;
 
     return policy;
