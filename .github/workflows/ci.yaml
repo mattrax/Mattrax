@@ -53,13 +53,14 @@ jobs:
           arch: aarch64
 
       - name: Build Go
-        run: GOOS=linux GOARCH=arm64 go build -o dominion ./dominion
+        run: GOOS=linux GOARCH=arm64 go build ./dominion/cmd -o dominion ./dominion
 
       - name: Build Rust
         run: cargo lambda build -p mattrax --locked --release
 
       - name: Copy files to production server
         uses: appleboy/scp-action@v0.1.7
+        if: github.ref == 'refs/heads/main'
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
@@ -69,6 +70,7 @@ jobs:
 
       - name: executing remote ssh commands using password
         uses: appleboy/ssh-action@v1.0.3
+        if: github.ref == 'refs/heads/main'
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}

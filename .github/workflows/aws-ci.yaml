@@ -3,10 +3,10 @@ name: AWS CI
 on:
   pull_request:
     paths:
-      - "aws/**"
+      - "aws/cloudformation.yaml"
   merge_group:
     paths:
-      - "aws/**"
+      - "aws/cloudformation.yaml"
 
 jobs:
   cloudformation:
