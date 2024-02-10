@@ -9,7 +9,7 @@
     "start": "vinxi start",
     "stats": "pnpm build && open stats.html",
     "vbuild": "NITRO_PRESET=vercel_edge vinxi build",
-    "cbuild": "NITRO_PRESET=cloudflare_edge vinxi build"
+    "cbuild": "NITRO_PRESET=cloudflare_pages vinxi build"
   },
   "dependencies": {
     "@kobalte/core": "^0.12.1",
