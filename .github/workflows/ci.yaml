@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   merge_group:
 
@@ -22,3 +24,78 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+  # TODO: Rust tests + Clippy (maybe in separate jobs)
+
+  # TODO: Remove all Go from this and cleanup
+  build-server:
+    name: Build and deploy server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: "true"
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.22.0"
+
+      - name: Install Zig toolchain
+        uses: korandoru/setup-zig@v1
+        with:
+          zig-version: 0.11.0
+
+      - name: Install Cargo Lambda
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          cargo binstall --no-confirm cargo-lambda
+
+      - name: Build Go
+        run: cd dominion && GOOS=linux GOARCH=arm64 go build -o dominion ./cmd
+
+      - name: Build Rust
+        run: cargo lambda build -p mattrax --locked --release --arm64
+
+      - name: Bundle all server files to push to server
+        run: |
+          mkdir server-dist
+          cp dominion/dominion server-dist/dominion
+          cp target/lambda/mattrax/bootstrap server-dist/mattrax
+          cp aws/dominion.service server-dist/dominion.service
+          cp aws/mattrax.service server-dist/mattrax.service
+
+      # TODO: We should probs have concurrency 1 for these steps
+
+      - name: Copy files to production server
+        uses: appleboy/scp-action@v0.1.7
+        # if: github.ref == 'refs/heads/main'
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "server-dist/*"
+          target: /home/ec2-user
+          strip_components: 1
+
+      - name: executing remote ssh commands using password
+        uses: appleboy/ssh-action@v1.0.3
+        # if: github.ref == 'refs/heads/main'
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            sudo cp /home/ec2-user/dominion.service /etc/systemd/system/dominion.service
+            sudo cp /home/ec2-user/mattrax.service /etc/systemd/system/mattrax.service
+            sudo systemctl daemon-reload
+
+            sudo systemctl enabled dominion
+            sudo systemctl enabled mattrax
+
+            sudo systemctl restart dominion
+            sudo systemctl restart mattrax

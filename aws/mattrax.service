@@ -1,0 +1,13 @@
+[Unit]
+ConditionPathExists=/var/lib/mattrax/config.json
+
+[Service]
+WorkingDirectory=/home/ec2-user
+ExecStart=/home/ec2-user/mattrax serve
+Restart=always
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+Alias=mattrax
+WantedBy=default.target
