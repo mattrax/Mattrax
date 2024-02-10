@@ -13,10 +13,8 @@ import { msRouter } from "./routes/ms";
 export const app = new Hono<HonoEnv>()
   .basePath("/api")
   .get("/", (c) => c.json({ message: "Mattrax Forge!" }))
-  .all("/trpc/*", (c) => {
-    console.log(c.req, c.req.raw); // TODO
-
-    return fetchRequestHandler({
+  .all("/trpc/*", (c) =>
+    fetchRequestHandler({
       endpoint: "/api/trpc",
       req: c.req.raw,
       router: appRouter,
@@ -25,8 +23,8 @@ export const app = new Hono<HonoEnv>()
           session: c.env.session,
           tenantId: c.req.header("x-tenant-id"),
         }),
-    });
-  })
+    })
+  )
   .route("/enrollment", enrollmentRouter)
   .route("/webhook", webhookRouter)
   .route("/ms", msRouter)
