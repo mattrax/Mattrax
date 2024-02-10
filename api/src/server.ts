@@ -16,7 +16,7 @@ export const app = new Hono<HonoEnv>()
   .all("/trpc/*", (c) =>
     fetchRequestHandler({
       endpoint: "/api/trpc",
-      req: c.req as any,
+      req: c.req.raw,
       router: appRouter,
       createContext: (opts) =>
         createTRPCContext({

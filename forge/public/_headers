@@ -1,0 +1,8 @@
+# These rules don't apply to the Worker, so the API is auto-excluded
+
+/*
+    Cache-Control: public, max-age=0, must-revalidate
+
+/assets/*
+    ! Cache-Control
+    Cache-Control: public,max-age=31536000,immutable
