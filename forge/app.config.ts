@@ -56,6 +56,11 @@ export default createApp({
     // This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
     // TODO: We could probs PR this to the Vercel Edge preset in Nitro.
     exportConditions: ["worker"],
+    unenv: {
+      inject: {
+        process: undefined,
+      },
+    },
     esbuild: {
       options: {
         /// Required for `@paralleldrive/cuid2` to work.
@@ -78,7 +83,7 @@ process.on("exit", () => {
   fs.writeFileSync(
     workerCode,
     `const process={env:${JSON.stringify({
-      NITRO_ENV_PREFIX: "",
+      NITRO_ENV_PREFIX: undefined,
       ...process.env,
     })}};globalThis.process=process.env;${fs.readFileSync(workerCode)}`
   );
