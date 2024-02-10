@@ -95,11 +95,8 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
                 end={item.href === ""}
                 href={item.href}
                 activeClass="bg-brandDark-secondary"
-                classList={{
-                  "cursor-not-allowed opacity-50":
-                    props.activeTenant?.id === undefined,
-                }}
-                class="py-1.5 px-4 h-full w-full flex space-x-4 text-center align-middle rounded-lg"
+                inactiveClass="hover:bg-white/10"
+                class="py-1.5 px-4 h-full w-full flex space-x-4 text-center align-middle rounded-lg transition duration-[16ms]"
               >
                 <span>
                   <item.icon class="h-full w-5 text-xl block" />

@@ -22,7 +22,7 @@ import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimen
 // } from "@tanstack/solid-query-persist-client";
 // import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { routes } from "./routes";
-import { isTRPCClientError, tRPCErrorCode, trpc } from "./lib";
+import { isTRPCClientError, trpc } from "./lib";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "./app.css";
@@ -145,40 +145,42 @@ export default function App() {
           //   client={queryClient}
           //   persistOptions={persistOptions}
           // >
-          <QueryClientProvider client={queryClient}>
-            {import.meta.env.DEV && localStorage.getItem("debug") !== null ? (
-              <SolidQueryDevtools />
-            ) : null}
-            <ErrorBoundary
-              fallback={(err, reset) => {
-                // Solid Start + HMR is buggy as all hell so this hacks around it.
-                if (
-                  import.meta.env.DEV &&
-                  err.toString() ===
-                    "Error: Make sure your app is wrapped in a <Router />" &&
-                  typeof document !== "undefined"
-                ) {
-                  console.error(
-                    "Automatically resetting error boundary due to HMR-related router context error."
+          <trpc.Provider queryClient={queryClient}>
+            <QueryClientProvider client={queryClient}>
+              {import.meta.env.DEV && localStorage.getItem("debug") !== null ? (
+                <SolidQueryDevtools />
+              ) : null}
+              <ErrorBoundary
+                fallback={(err, reset) => {
+                  // Solid Start + HMR is buggy as all hell so this hacks around it.
+                  if (
+                    import.meta.env.DEV &&
+                    err.toString() ===
+                      "Error: Make sure your app is wrapped in a <Router />" &&
+                    typeof document !== "undefined"
+                  ) {
+                    console.error(
+                      "Automatically resetting error boundary due to HMR-related router context error."
+                    );
+                    reset();
+                  }
+
+                  console.error(err);
+
+                  return (
+                    <div>
+                      <div>Error:</div>
+                      <p>{err.toString()}</p>
+                      <button onClick={reset}>Reset</button>
+                    </div>
                   );
-                  reset();
-                }
-
-                console.error(err);
-
-                return (
-                  <div>
-                    <div>Error:</div>
-                    <p>{err.toString()}</p>
-                    <button onClick={reset}>Reset</button>
-                  </div>
-                );
-              }}
-            >
-              <Toaster />
-              <Suspense>{props.children}</Suspense>
-            </ErrorBoundary>
-          </QueryClientProvider>
+                }}
+              >
+                <Toaster />
+                <Suspense>{props.children}</Suspense>
+              </ErrorBoundary>
+            </QueryClientProvider>
+          </trpc.Provider>
           // </PersistQueryClientProvider>
         );
       }}

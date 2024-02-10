@@ -7,7 +7,6 @@ import {
   getSortedRowModel,
   getFilteredRowModel,
 } from "@tanstack/solid-table";
-import { trpc } from "~/lib";
 import { As } from "@kobalte/core";
 
 export const columns: ColumnDef<any>[] = [

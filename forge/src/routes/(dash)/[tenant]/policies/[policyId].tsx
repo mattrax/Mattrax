@@ -1,20 +1,8 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import {
-  type JSX,
-  For,
-  Match,
-  ParentProps,
-  Show,
-  startTransition,
-} from "solid-js";
+import { type JSX, For, ParentProps, Show, startTransition } from "solid-js";
 import { trpc } from "~/lib";
 import {
   Button,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogRoot,
-  DialogTitle,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -22,12 +10,8 @@ import {
 } from "~/components/ui";
 import { As } from "@kobalte/core";
 import { toast } from "solid-sonner";
-import { createStore } from "solid-js/store";
-import { Switch } from "solid-js";
-import { Form, createZodForm } from "~/components/forms";
-import { z } from "zod";
-import { InputField } from "~/components/forms/InputField";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
+import { OutlineLayout } from "../OutlineLayout";
 
 // TODO: If the policy is not found redirect back to `/policies`
 
@@ -69,36 +53,26 @@ export default function Page(props: ParentProps) {
           },
         }));
 
-        const [modal, setModal] = createStore<{
-          open: boolean;
-          type: "delete";
-        }>({
-          open: false,
-          type: "delete",
-        });
-
         // TODO: Bring back `OutlineLayout` but with a region for actions
         return (
-          <div class="flex-1 px-4 py-8">
-            <div class="flex justify-between">
-              <h1 class="text-3xl font-bold mb-4">{`Policy - ${
-                policy().name
-              }`}</h1>
+          <OutlineLayout
+            title={`Policy - ${policy().name}`}
+            topRight={
               <div class="flex space-x-4">
                 {/* <Progress
-            value={3}
-            minValue={0}
-            maxValue={10}
-            getValueLabel={({ value, max }) =>
-              `${value} of ${max} devices completed`
-            }
-            class="w-[300px] space-y-1"
-          >
-            <div class="flex justify-between">
-              <ProgressLabel>Deploying...</ProgressLabel>
-              <ProgressValueLabel />
-            </div>
-          </Progress> */}
+          value={3}
+          minValue={0}
+          maxValue={10}
+          getValueLabel={({ value, max }) =>
+            `${value} of ${max} devices completed`
+          }
+          class="w-[300px] space-y-1"
+        >
+          <div class="flex justify-between">
+            <ProgressLabel>Deploying...</ProgressLabel>
+            <ProgressValueLabel />
+          </div>
+        </Progress> */}
                 {/* // TODO: Dropdown, quick deploy or staged rollout */}
                 <Button onClick={() => alert("TODO")}>Deploy</Button>
                 <ConfirmDialog>
@@ -131,8 +105,8 @@ export default function Page(props: ParentProps) {
                   )}
                 </ConfirmDialog>
               </div>
-            </div>
-
+            }
+          >
             {/* TODO: Description + editable name */}
             {/* TODO: Area for assigning it to devices/users */}
 
@@ -184,7 +158,7 @@ export default function Page(props: ParentProps) {
                 <main class="px-4 w-full h-full">{props.children}</main>
               </div>
             </div>
-          </div>
+          </OutlineLayout>
         );
       }}
     </Show>
