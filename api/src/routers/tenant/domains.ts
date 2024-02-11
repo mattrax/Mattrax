@@ -1,8 +1,9 @@
 import { and, eq } from "drizzle-orm";
-import { db, domains } from "../../db";
-import { createTRPCRouter, tenantProcedure } from "../../trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+
+import { db, domains } from "../../db";
+import { createTRPCRouter, tenantProcedure } from "../../trpc";
 
 export const domainsRouter = createTRPCRouter({
   list: tenantProcedure.query(({ ctx }) =>
@@ -38,19 +39,44 @@ export const domainsRouter = createTRPCRouter({
         });
 
       // TODO: rate limit w/ lastVerificationTime
-      const verified = await verifyDomain(domain.domain, domain.secret);
+      const [verified, enterpriseEnrollmentAvailable] = await Promise.all([
+        isDomainVerified(domain.domain, domain.secret),
+        isEnterpriseEnrollmentAvailable(domain.domain),
+      ]);
 
       await db
         .update(domains)
         .set({
           verified,
+          enterpriseEnrollmentAvailable,
           lastVerificationTime: new Date(),
         })
         .where(eq(domains.domain, domain.domain));
 
-      return verified;
+      return {
+        verified,
+        enterpriseEnrollmentAvailable,
+      };
     }),
 });
+
+async function isDomainVerified(domain: string, secret: string) {
+  const txtRecords = await cloudflareDnsQuery({
+    name: domain,
+    type: "TXT",
+  }).catch(() => ({ Answer: [] }));
+
+  return txtRecords.Answer.some((r) => JSON.parse(r.data) === secret);
+}
+
+async function isEnterpriseEnrollmentAvailable(domain: string) {
+  const cnameRecords = await cloudflareDnsQuery({
+    name: `enterpriseenrollment.${domain}`,
+    type: "CNAME",
+  }).catch(() => ({ Answer: [] }));
+
+  return cnameRecords.Answer.some((r) => r.data === "mdm.mattrax.app.");
+}
 
 const CF_DNS_API = "https://cloudflare-dns.com/dns-query";
 
@@ -60,26 +86,22 @@ const CF_DNS_RESPONSE_SCHEMA = z.object({
       name: z.string(),
       type: z.number(),
       TTL: z.number(),
-      data: z.string().transform((j) => JSON.parse(j)),
+      data: z.string(),
     })
   ),
 });
 
-const DNS_RECORD_TYPE_IDS = {
-  TXT: 16,
-};
+async function cloudflareDnsQuery(args: {
+  name: string;
+  type: "TXT" | "A" | "AAAA" | "CNAME";
+}) {
+  const params = new URLSearchParams(args);
 
-async function verifyDomain(domain: string, secret: string) {
-  const params = new URLSearchParams({
-    name: domain,
-    type: DNS_RECORD_TYPE_IDS.TXT.toString(),
+  const resp = await fetch(new URL(`${CF_DNS_API}?${params}`), {
+    headers: { Accept: "application/dns-json" },
   });
 
-  const txtRecords = await fetch(new URL(`${CF_DNS_API}?${params}`), {
-    headers: { Accept: "application/dns-json" },
-  })
-    .then((r) => r.json())
-    .then((j) => CF_DNS_RESPONSE_SCHEMA.parse(j));
+  const json = await resp.json();
 
-  return txtRecords.Answer.some((r) => r.data === secret);
+  return CF_DNS_RESPONSE_SCHEMA.parse(json);
 }

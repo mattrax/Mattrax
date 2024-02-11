@@ -15,7 +15,16 @@ import { Dynamic } from "solid-js/web";
 import { StandardTable } from "~/components/StandardTable";
 import {
   Button,
-  Input,
+  Card,
+  CardContent,
+  CardHeader,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogRoot,
+  DialogTitle,
+  DialogTrigger,
+  Label,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -24,6 +33,7 @@ import { Badge } from "~/components/ui/badge";
 import { trpc } from "~/lib";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { z } from "zod";
+import { As } from "@kobalte/core";
 
 const column =
   createColumnHelper<RouterOutput["tenant"]["domains"]["list"][number]>();
@@ -47,58 +57,7 @@ const columns = [
   column.accessor("secret", {
     header: "Secret",
     cell: (props) => {
-      const [show, setShow] = createSignal(false);
-
-      return (
-        <div class="flex flex-row items-center gap-2">
-          <Button
-            onClick={() => setShow(!show())}
-            variant="ghost"
-            size="iconSmall"
-          >
-            <Dynamic
-              component={
-                show() ? IconClarityEyeHideLine : IconClarityEyeShowLine
-              }
-              class="w-5 h-5"
-            />
-          </Button>
-          <Show when={show()} fallback="•••••••••••••••">
-            {(_) => {
-              const [copied, setCopied] = createSignal(false);
-
-              return (
-                <Tooltip
-                  onOpenChange={(o) => {
-                    if (o) setCopied(false);
-                  }}
-                  openDelay={0}
-                  closeDelay={0}
-                  placement="top"
-                >
-                  <TooltipTrigger>
-                    <code
-                      class="cursor-pointer bg-gray-100 p-1 rounded"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigator.clipboard.writeText(props.getValue());
-                        setCopied(true);
-                      }}
-                    >
-                      {props.getValue()}
-                    </code>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    onPointerDownOutside={(e) => e.preventDefault()}
-                  >
-                    {copied() ? "Copied!" : "Click to copy"}
-                  </TooltipContent>
-                </Tooltip>
-              );
-            }}
-          </Show>
-        </div>
-      );
+      return <div class="flex flex-row items-center gap-2"></div>;
     },
   }),
   column.display({
@@ -153,7 +112,144 @@ export default function Page() {
     <>
       <AddDomainForm />
       <Suspense>
-        <StandardTable table={table} />
+        <ul class="space-y-4">
+          {domains.data?.map((domain) => {
+            const trpcCtx = trpc.useContext();
+            const verifyDomain = trpc.tenant.domains.verify.useMutation(() => ({
+              onSuccess() {
+                trpcCtx.tenant.domains.list.refetch();
+              },
+            }));
+
+            const [showSecret, setShowSecret] = createSignal(false);
+
+            return (
+              <li>
+                <Card>
+                  <CardHeader>
+                    <div class="flex flex-row items-center gap-2 pb-2">
+                      <h4 class="text-xl font-semibold">{domain.domain}</h4>
+                      {domain.verified ? (
+                        <Badge variant="default">Verified</Badge>
+                      ) : (
+                        <Badge variant="destructive">Unverified</Badge>
+                      )}
+                      <Button
+                        class="ml-auto"
+                        disabled={verifyDomain.isPending}
+                        onClick={() => {
+                          verifyDomain.mutate({ domain: domain.domain });
+                        }}
+                      >
+                        Refresh
+                      </Button>
+                      <Button variant="destructive">Delete</Button>
+                    </div>
+
+                    <Label>Verification Secret</Label>
+                    <div class="flex flex-row items-center gap-2 h-8">
+                      <Button
+                        onClick={() => setShowSecret(!showSecret())}
+                        variant="ghost"
+                        size="iconSmall"
+                      >
+                        <Dynamic
+                          component={
+                            showSecret()
+                              ? IconClarityEyeHideLine
+                              : IconClarityEyeShowLine
+                          }
+                          class="w-5 h-5"
+                        />
+                      </Button>
+                      <Show when={showSecret()} fallback="•••••••••••••••">
+                        {(_) => {
+                          const [copied, setCopied] = createSignal(false);
+
+                          return (
+                            <Tooltip
+                              onOpenChange={(o) => {
+                                if (o) setCopied(false);
+                              }}
+                              openDelay={0}
+                              closeDelay={0}
+                              placement="top"
+                            >
+                              <TooltipTrigger>
+                                <code
+                                  class="cursor-pointer bg-gray-100 p-1 rounded"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigator.clipboard.writeText(
+                                      domain.secret
+                                    );
+                                    setCopied(true);
+                                  }}
+                                >
+                                  {domain.secret}
+                                </code>
+                              </TooltipTrigger>
+                              <TooltipContent
+                                onPointerDownOutside={(e) => e.preventDefault()}
+                              >
+                                {copied() ? "Copied!" : "Click to copy"}
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        }}
+                      </Show>
+                    </div>
+
+                    <Label>Windows Automatic Enrollment</Label>
+                    <div class="text-gray-700 flex flex-row items-center gap-2 text-sm h-8">
+                      {domain.enterpriseEnrollmentAvailable ? (
+                        <>
+                          <div class="p-1 rounded-full bg-green-600">
+                            <IconIcRoundCheck class="w-4 h-4 text-white" />
+                          </div>
+                          CNAME Found
+                        </>
+                      ) : (
+                        <>
+                          <div class="p-1 rounded-full bg-red-600">
+                            <IconIcOutlineClose class="w-4 h-4 text-white" />
+                          </div>
+                          CNAME Not Found
+                          <DialogRoot>
+                            <DialogTrigger asChild>
+                              <As
+                                component={Button}
+                                variant="outline"
+                                size="iconSmall"
+                              >
+                                ?
+                              </As>
+                            </DialogTrigger>
+                            <DialogContent class="max-w-auto">
+                              <DialogHeader>
+                                <DialogTitle>
+                                  Windows Automatic Enrollment
+                                </DialogTitle>
+                                <DialogDescription>
+                                  For <code>{domain.domain}</code> to be
+                                  supported by Windows Automatic Enrollment, you
+                                  need to add a CNAME record to it.
+                                </DialogDescription>
+                              </DialogHeader>
+                              <code>
+                                {`CNAME enterpriseenrollment.${domain.domain} mdm.mattrax.app`}
+                              </code>
+                            </DialogContent>
+                          </DialogRoot>
+                        </>
+                      )}
+                    </div>
+                  </CardHeader>
+                </Card>
+              </li>
+            );
+          })}
+        </ul>
       </Suspense>
     </>
   );

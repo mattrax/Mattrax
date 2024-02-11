@@ -236,4 +236,7 @@ export const domains = mysqlTable("domains", {
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   lastVerificationTime: timestamp("lastVerificationTime"),
   verified: boolean("verified").notNull().default(false),
+  enterpriseEnrollmentAvailable: boolean("enterpriseEnrollmentAvailable")
+    .notNull()
+    .default(false),
 });

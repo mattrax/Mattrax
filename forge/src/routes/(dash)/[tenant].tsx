@@ -66,9 +66,7 @@ export default function Layout(props: ParentProps) {
             />
           </Suspense>
           {/* we key here on purpose - tenants are the root-most unit of isolation */}
-          <Show when={activeTenant()} keyed>
-            {props.children}
-          </Show>
+          <Show when={activeTenant().id}>{props.children}</Show>
         </TenantContextProvider>
       )}
     </Show>
