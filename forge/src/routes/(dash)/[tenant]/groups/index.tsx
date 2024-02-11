@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router";
-import { ParentProps, startTransition } from "solid-js";
+import { ParentProps, Suspense, startTransition } from "solid-js";
 import {
   type ColumnDef,
   createSolidTable,
@@ -8,7 +8,7 @@ import {
   getSortedRowModel,
   getFilteredRowModel,
 } from "@tanstack/solid-table";
-import { trpc } from "~/lib";
+import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { As } from "@kobalte/core";
 
 export const columns: ColumnDef<any>[] = [
@@ -48,7 +48,7 @@ export const columns: ColumnDef<any>[] = [
 function createGroupsTable() {
   const groups = trpc.group.list.useQuery();
 
-  return createSolidTable({
+  const table = createSolidTable({
     get data() {
       return groups.data || [];
     },
@@ -74,13 +74,17 @@ function createGroupsTable() {
       size: "auto",
     },
   });
+
+  return { groups, table };
 }
 
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
 export default function Page() {
   const navigate = useNavigate();
-  const groupsTable = createGroupsTable();
+  const { table, groups } = createGroupsTable();
+
+  const isLoading = untrackScopeFromSuspense(() => groups.isLoading);
 
   return (
     <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
@@ -92,49 +96,50 @@ export default function Page() {
       </div>
       <div class="flex items-center gap-4">
         <Input
-          placeholder="Filter groups..."
-          value={
-            (groupsTable.getColumn("name")?.getFilterValue() as string) ?? ""
-          }
+          placeholder={isLoading() ? "Loading..." : "Search..."}
+          disabled={isLoading()}
+          value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
           onInput={(event) =>
-            groupsTable.getColumn("name")?.setFilterValue(event.target.value)
+            table.getColumn("name")?.setFilterValue(event.target.value)
           }
         />
-        <ColumnsDropdown table={groupsTable}>
+        <ColumnsDropdown table={table}>
           <As component={Button} variant="outline" class="ml-auto select-none">
             Columns
             <IconCarbonCaretDown class="ml-2 h-4 w-4" />
           </As>
         </ColumnsDropdown>
       </div>
-      <StandardTable
-        table={groupsTable}
-        onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}
-      />
-      <div class="flex items-center justify-end space-x-2">
-        <div class="flex-1 text-sm text-muted-foreground">
-          {groupsTable.getFilteredSelectedRowModel().rows.length} of{" "}
-          {groupsTable.getFilteredRowModel().rows.length} row(s) selected.
+      <Suspense>
+        <StandardTable
+          table={table}
+          onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}
+        />
+        <div class="flex items-center justify-end space-x-2">
+          <div class="flex-1 text-sm text-muted-foreground">
+            {table.getFilteredSelectedRowModel().rows.length} of{" "}
+            {table.getFilteredRowModel().rows.length} row(s) selected.
+          </div>
+          <div class="space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              Next
+            </Button>
+          </div>
         </div>
-        <div class="space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => groupsTable.previousPage()}
-            disabled={!groupsTable.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => groupsTable.nextPage()}
-            disabled={!groupsTable.getCanNextPage()}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      </Suspense>
     </div>
   );
 }

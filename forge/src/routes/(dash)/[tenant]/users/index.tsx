@@ -8,7 +8,7 @@ import {
   getFilteredRowModel,
 } from "@tanstack/solid-table";
 import { Button, Checkbox, Input } from "~/components/ui";
-import { trpc } from "~/lib";
+import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { As } from "@kobalte/core";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { useNavigate } from "@solidjs/router";
@@ -71,7 +71,7 @@ export const columns: ColumnDef<any>[] = [
 function createUsersTable() {
   const users = trpc.user.list.useQuery();
 
-  return createSolidTable({
+  const table = createSolidTable({
     get data() {
       return users.data || [];
     },
@@ -93,36 +93,37 @@ function createUsersTable() {
     //   rowSelection,
     // },
   });
+
+  return { table, users };
 }
 
 export default function Page() {
   const navigate = useNavigate();
-  const table = createUsersTable();
+  const { table, users } = createUsersTable();
+
+  const isLoading = untrackScopeFromSuspense(() => users.isLoading);
 
   return (
     <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
       <h1 class="text-3xl font-bold mb-4">Users</h1>
+      <div class="flex flex-row items-center gap-4">
+        <Input
+          placeholder={isLoading() ? "Loading..." : "Search..."}
+          disabled={isLoading()}
+          value={(table.getColumn("email")?.getFilterValue() as string) ?? ""}
+          onInput={(event) =>
+            table.getColumn("email")?.setFilterValue(event.target.value)
+          }
+          class="flex-1"
+        />
+        <ColumnsDropdown table={table}>
+          <As component={Button} variant="outline" class="ml-auto select-none">
+            Columns
+            <IconCarbonCaretDown class="ml-2 h-4 w-4" />
+          </As>
+        </ColumnsDropdown>
+      </div>
       <Suspense>
-        <div class="flex flex-row items-center gap-4">
-          <Input
-            placeholder="Search..."
-            value={(table.getColumn("email")?.getFilterValue() as string) ?? ""}
-            onInput={(event) =>
-              table.getColumn("email")?.setFilterValue(event.target.value)
-            }
-            class="flex-1"
-          />
-          <ColumnsDropdown table={table}>
-            <As
-              component={Button}
-              variant="outline"
-              class="ml-auto select-none"
-            >
-              Columns
-              <IconCarbonCaretDown class="ml-2 h-4 w-4" />
-            </As>
-          </ColumnsDropdown>
-        </div>
         <StandardTable
           table={table}
           onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}

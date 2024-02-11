@@ -1,7 +1,6 @@
 import {
   varchar,
   serial,
-  int,
   json,
   customType,
   timestamp,

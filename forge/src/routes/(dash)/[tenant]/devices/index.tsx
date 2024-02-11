@@ -1,4 +1,4 @@
-import { startTransition } from "solid-js";
+import { Suspense, startTransition } from "solid-js";
 import {
   createSolidTable,
   getCoreRowModel,
@@ -8,7 +8,14 @@ import {
   createColumnHelper,
 } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
-import { trpc } from "~/lib";
+import { toast } from "solid-sonner";
+import { useNavigate } from "@solidjs/router";
+import { RouterOutput } from "@mattrax/api";
+import dayjs from "dayjs";
+
+import { Button, Checkbox, Input } from "~/components/ui";
+import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
+import { trpc, untrackScopeFromSuspense } from "~/lib";
 
 const columnHelper =
   createColumnHelper<RouterOutput["device"]["list"][number]>();
@@ -60,12 +67,12 @@ export const columns = [
   }),
 ];
 
-function createGroupsTable() {
-  const groups = trpc.device.list.useQuery();
+function createDevicesTable() {
+  const devices = trpc.device.list.useQuery();
 
-  return createSolidTable({
+  const table = createSolidTable({
     get data() {
-      return groups.data || [];
+      return devices.data || [];
     },
     get columns() {
       return columns;
@@ -79,6 +86,8 @@ function createGroupsTable() {
       size: "auto",
     },
   });
+
+  return { devices, table };
 }
 
 // TODO: Infinite scroll
@@ -87,12 +96,14 @@ function createGroupsTable() {
 
 export default function Page() {
   const navigate = useNavigate();
-  const groupsTable = createGroupsTable();
+  const { table, devices } = createDevicesTable();
   const forcePullFromIntune = trpc.device.forcePullFromIntune.useMutation(
     () => ({
       onSuccess: () => toast.success("Successfully synced devices from Intune"),
     })
   );
+
+  const isLoading = untrackScopeFromSuspense(() => devices.isLoading);
 
   return (
     <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
@@ -105,58 +116,50 @@ export default function Page() {
       <div class="flex flex-row items-center gap-4">
         <Input
           class="flex-1"
-          placeholder="Search..."
-          value={
-            (groupsTable.getColumn("name")?.getFilterValue() as string) ?? ""
-          }
+          placeholder={isLoading() ? "Loading..." : "Search..."}
+          disabled={isLoading()}
+          value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
           onInput={(event) =>
-            groupsTable.getColumn("name")?.setFilterValue(event.target.value)
+            table.getColumn("name")?.setFilterValue(event.target.value)
           }
         />
-        <ColumnsDropdown table={groupsTable}>
+        <ColumnsDropdown table={table}>
           <As component={Button} variant="outline" class="ml-auto select-none">
             Columns
             <IconCarbonCaretDown class="ml-2 h-4 w-4" />
           </As>
         </ColumnsDropdown>
       </div>
-      <StandardTable
-        table={groupsTable}
-        onRowClick={(row) => startTransition(() => navigate(row.id))}
-      />
-      <div class="flex items-center justify-end space-x-2">
-        <div class="flex-1 text-sm text-muted-foreground">
-          {groupsTable.getFilteredSelectedRowModel().rows.length} of{" "}
-          {groupsTable.getFilteredRowModel().rows.length} row(s) selected.
+      <Suspense>
+        <StandardTable
+          table={table}
+          onRowClick={(row) => startTransition(() => navigate(row.id))}
+        />
+        <div class="flex items-center justify-end space-x-2">
+          <div class="flex-1 text-sm text-muted-foreground">
+            {table.getFilteredSelectedRowModel().rows.length} of{" "}
+            {table.getFilteredRowModel().rows.length} row(s) selected.
+          </div>
+          <div class="space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              Next
+            </Button>
+          </div>
         </div>
-        <div class="space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => groupsTable.previousPage()}
-            disabled={!groupsTable.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => groupsTable.nextPage()}
-            disabled={!groupsTable.getCanNextPage()}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      </Suspense>
     </div>
   );
 }
-function CreatePolicySection() {}
-
-import { Button, Checkbox, Input } from "~/components/ui";
-import { OutlineLayout } from "../OutlineLayout";
-import { toast } from "solid-sonner";
-import dayjs from "dayjs";
-import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
-import { useNavigate } from "@solidjs/router";
-import { RouterOutput } from "@mattrax/api";

@@ -58,6 +58,18 @@ export const domainsRouter = createTRPCRouter({
         enterpriseEnrollmentAvailable,
       };
     }),
+  delete: tenantProcedure
+    .input(z.object({ domain: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      await db
+        .delete(domains)
+        .where(
+          and(
+            eq(domains.domain, input.domain),
+            eq(domains.tenantId, ctx.tenantId)
+          )
+        );
+    }),
 });
 
 async function isDomainVerified(domain: string, secret: string) {
