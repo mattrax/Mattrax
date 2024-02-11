@@ -53,6 +53,15 @@ export const tenantAccounts = mysqlTable(
   }
 );
 
+export const tenantAccountInvites = mysqlTable("tenant_account_invites", {
+  tenantId: serialRelation("tenantId")
+    .references(() => tenants.id)
+    .notNull(),
+  email: varchar("email", { length: 256 }).notNull(),
+  code: varchar("code", { length: 256 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow(),
+});
+
 const userProviders = ["entraId", "gsuite"] as const;
 
 export type UserProvider = (typeof userProviders)[number];

@@ -16,6 +16,7 @@ import { count, eq } from "drizzle-orm";
 import { billingRouter } from "./billing";
 import { tenantAuthRouter } from "./auth";
 import { domainsRouter } from "./domains";
+import { adminsRouter } from "./admins";
 
 export const tenantRouter = createTRPCRouter({
   create: authedProcedure
@@ -129,36 +130,7 @@ export const tenantRouter = createTRPCRouter({
     // TODO: Schedule all devices for unenrolment
   }),
 
-  administrators: tenantProcedure.query(async ({ ctx }) => {
-    const [ownerId, rows] = await Promise.allSettled([
-      db
-        .select({
-          ownerId: tenants.owner_id,
-        })
-        .from(tenants)
-        .where(eq(tenants.id, ctx.tenantId))
-        .then((v) => v?.[0]?.ownerId),
-      db
-        .select({
-          id: accounts.id,
-          name: accounts.name,
-          email: accounts.email,
-        })
-        .from(accounts)
-        .leftJoin(tenantAccounts, eq(tenantAccounts.accountId, accounts.id))
-        .where(eq(tenantAccounts.tenantId, ctx.tenantId)),
-    ]);
-    // This is required. If the owner is not found, we gracefully continue.
-    if (rows.status === "rejected") throw rows.reason;
-
-    return rows.value.map((row) => ({
-      ...row,
-      isOwner:
-        ownerId.status === "fulfilled" ? row.id === ownerId.value : false,
-      id: encodeId("account", row.id),
-    }));
-  }),
-
+  administrators: adminsRouter,
   billing: billingRouter,
   auth: tenantAuthRouter,
   domains: domainsRouter,

@@ -1,4 +1,4 @@
-import { Show, Suspense, createEffect, onCleanup, onMount } from "solid-js";
+import { Show, Suspense, createEffect, onCleanup } from "solid-js";
 import { createSignal } from "solid-js";
 import { Dynamic } from "solid-js/web";
 

@@ -1,9 +1,10 @@
 import { count } from "drizzle-orm";
+import { DemoEmail } from "@mattrax/email";
+import { MySqlTable } from "drizzle-orm/mysql-core";
+
 import { db, devices, policies, tenants, users } from "../db";
 import { createTRPCRouter, superAdminProcedure } from "../trpc";
 import { sendEmail } from "../emails";
-import { DemoEmail } from "@mattrax/email";
-import { MySqlTable } from "drizzle-orm/mysql-core";
 import { promiseObjectAll } from "../utils";
 
 export const dbCount = <TFrom extends MySqlTable>(table: TFrom) =>
