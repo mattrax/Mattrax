@@ -5,24 +5,11 @@ import {
   Show,
   Suspense,
   createSignal,
-  JSX,
 } from "solid-js";
 import { z } from "zod";
 import { As } from "@kobalte/core";
 
-import {
-  Button,
-  Checkbox,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogRoot,
-  DialogTitle,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-} from "~/components/ui";
+import { Button, Checkbox, Tabs, TabsList, TabsTrigger } from "~/components/ui";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 
@@ -36,8 +23,6 @@ export default function Page() {
       {(group) => {
         const table = createMembersTable(() => group().id);
 
-        const isRouting = useIsRouting();
-
         return (
           <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
             <div class="flex flex-row justify-between">
@@ -47,11 +32,9 @@ export default function Page() {
               </AddMemberSheet>
             </div>
 
-            <Show when={!isRouting()}>
-              <Suspense>
-                <MembersTable table={table} />
-              </Suspense>
-            </Show>
+            <Suspense>
+              <MembersTable table={table} />
+            </Suspense>
           </div>
         );
       }}

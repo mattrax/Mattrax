@@ -1,22 +1,10 @@
-import { RouterOutput } from "@mattrax/api";
-import {
-  createSolidTable,
-  getCoreRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  getFilteredRowModel,
-  createColumnHelper,
-} from "@tanstack/solid-table";
-import { Show, Suspense } from "solid-js";
-import { toast } from "solid-sonner";
+import { Show, Suspense, createEffect, onCleanup, onMount } from "solid-js";
 import { createSignal } from "solid-js";
 import { Dynamic } from "solid-js/web";
 
-import { StandardTable } from "~/components/StandardTable";
 import {
   Button,
   Card,
-  CardContent,
   CardHeader,
   DialogContent,
   DialogDescription,
@@ -34,79 +22,10 @@ import { trpc } from "~/lib";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { z } from "zod";
 import { As } from "@kobalte/core";
-
-const column =
-  createColumnHelper<RouterOutput["tenant"]["domains"]["list"][number]>();
-
-const columns = [
-  column.accessor("domain", {
-    header: "Domain",
-    size: 1,
-  }),
-  column.accessor("verified", {
-    header: "Status",
-    size: 1,
-    cell: (row) => {
-      return (
-        <Badge variant={row.getValue() ? "default" : "secondary"}>
-          {row.getValue() ? "Verified" : "Unverified"}
-        </Badge>
-      );
-    },
-  }),
-  column.accessor("secret", {
-    header: "Secret",
-    cell: (props) => {
-      return <div class="flex flex-row items-center gap-2"></div>;
-    },
-  }),
-  column.display({
-    id: "verify",
-    size: 1,
-    cell: ({ row }) => {
-      const trpcCtx = trpc.useContext();
-      const verifyDomain = trpc.tenant.domains.verify.useMutation(() => ({
-        onSuccess(verified) {
-          if (verified) {
-            trpcCtx.tenant.domains.list.refetch();
-            toast.success("Domain verified");
-          } else toast.error("Domain not configured properly");
-        },
-      }));
-
-      return (
-        <Button
-          disabled={verifyDomain.isPending}
-          onClick={() =>
-            verifyDomain.mutate({ domain: row.getValue("domain") })
-          }
-        >
-          Verify
-        </Button>
-      );
-    },
-  }),
-];
+import { ConfirmDialog } from "~/components/ConfirmDialog";
 
 export default function Page() {
   const domains = trpc.tenant.domains.list.useQuery();
-
-  const table = createSolidTable({
-    get data() {
-      return domains.data || [];
-    },
-    get columns() {
-      return columns;
-    },
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    defaultColumn: {
-      // @ts-expect-error // TODO: This property's value should be a number but setting it to string works ¯\_(ツ)_/¯
-      size: "auto",
-    },
-  });
 
   return (
     <>
@@ -120,6 +39,16 @@ export default function Page() {
                 trpcCtx.tenant.domains.list.refetch();
               },
             }));
+
+            createEffect(() => {
+              if (domain.verified) return;
+
+              const i = setInterval(
+                () => verifyDomain.mutate({ domain: domain.domain }),
+                5000
+              );
+              onCleanup(() => clearInterval(i));
+            });
 
             const [showSecret, setShowSecret] = createSignal(false);
 
@@ -143,7 +72,40 @@ export default function Page() {
                       >
                         Refresh
                       </Button>
-                      <Button variant="destructive">Delete</Button>
+                      <ConfirmDialog>
+                        {(confirm) => {
+                          const deleteDomain =
+                            trpc.tenant.domains.delete.useMutation(() => ({
+                              onSuccess() {
+                                trpcCtx.tenant.domains.list.refetch();
+                              },
+                            }));
+
+                          return (
+                            <Button
+                              variant="destructive"
+                              onClick={() =>
+                                confirm({
+                                  title: "Delete Domain",
+                                  description: (
+                                    <>
+                                      Are you sure you want to delete{" "}
+                                      <b>{domain.domain}</b>?
+                                    </>
+                                  ),
+                                  action: "Delete",
+                                  onConfirm: () =>
+                                    deleteDomain.mutateAsync({
+                                      domain: domain.domain,
+                                    }),
+                                })
+                              }
+                            >
+                              Delete
+                            </Button>
+                          );
+                        }}
+                      </ConfirmDialog>
                     </div>
 
                     <Label>Verification Secret</Label>
