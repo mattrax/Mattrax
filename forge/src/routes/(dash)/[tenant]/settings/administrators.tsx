@@ -7,6 +7,8 @@ import {
   getPaginationRowModel,
   getSortedRowModel,
 } from "@tanstack/solid-table";
+import { Suspense } from "solid-js";
+
 import { StandardTable } from "~/components/StandardTable";
 import { trpc } from "~/lib";
 
@@ -36,5 +38,9 @@ export default function Page() {
     getFilteredRowModel: getFilteredRowModel(),
   });
 
-  return <StandardTable table={table} />;
+  return (
+    <Suspense>
+      <StandardTable table={table} />
+    </Suspense>
+  );
 }

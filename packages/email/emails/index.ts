@@ -1,1 +1,1 @@
-export * from "./Demo";
+export { default as DemoEmail } from "./Demo";
