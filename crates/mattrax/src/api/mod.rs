@@ -8,6 +8,8 @@ use axum::{
     routing::get,
     Router,
 };
+use mattrax_utils::debug;
+use rcgen::{Certificate, KeyPair};
 
 use crate::config::ConfigManager;
 
@@ -18,6 +20,9 @@ pub struct Context {
     pub config: ConfigManager,
     pub server_port: u16,
     pub is_dev: bool,
+
+    pub identity_cert: debug::Wrapper<Certificate>,
+    pub identity_key: KeyPair,
 }
 
 impl Context {

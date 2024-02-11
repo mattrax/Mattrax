@@ -1,6 +1,8 @@
 use std::{fs, path::PathBuf};
 
-use rcgen::{BasicConstraints, Certificate, CertificateParams, DnType, IsCa, KeyUsagePurpose};
+use rcgen::{
+    BasicConstraints, Certificate, CertificateParams, DnType, IsCa, KeyPair, KeyUsagePurpose,
+};
 use tracing::warn;
 
 use crate::config;
@@ -18,7 +20,7 @@ impl Command {
 
         // TODO: Go through all params
         // TODO: This keypair is tiny compared to the old stuff, why is that????
-        let mut params = CertificateParams::new(vec![]);
+        let mut params = CertificateParams::new(vec![]).unwrap();
         params
             .distinguished_name
             .push(DnType::OrganizationName, "Mattrax");
@@ -28,25 +30,14 @@ impl Command {
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained); // TODO: critical: true
         params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign]; // TODO: critical: true
 
-        let cert = Certificate::from_params(params).unwrap();
+        let key_pair = KeyPair::generate().unwrap();
+        let cert = Certificate::generate_self_signed(params, &key_pair).unwrap();
         let certs_dir = data_dir.join("certs");
         fs::create_dir_all(&certs_dir).unwrap();
 
-        fs::write(
-            certs_dir.join("identity.der"),
-            cert.serialize_der().unwrap(),
-        )
-        .unwrap();
-        fs::write(
-            certs_dir.join("identity-key.der"),
-            cert.serialize_private_key_der(),
-        )
-        .unwrap();
-        fs::write(
-            certs_dir.join("identity.pool"),
-            cert.serialize_pem().unwrap(),
-        )
-        .unwrap();
+        fs::write(certs_dir.join("identity.der"), cert.der()).unwrap();
+        fs::write(certs_dir.join("identity-key.der"), key_pair.serialize_der()).unwrap();
+        fs::write(certs_dir.join("identity.pool"), cert.pem()).unwrap();
 
         let acme_server = if cfg!(debug_assertions) {
             config::AcmeServer::Staging
