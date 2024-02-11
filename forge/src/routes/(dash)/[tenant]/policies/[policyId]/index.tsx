@@ -1,5 +1,4 @@
 import { useParams } from "@solidjs/router";
-import { Suspense } from "solid-js";
 import { Input, Label } from "~/components/ui";
 import { trpc } from "~/lib";
 

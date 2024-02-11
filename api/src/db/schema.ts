@@ -29,7 +29,6 @@ export const accounts = mysqlTable("accounts", {
 export const tenants = mysqlTable("tenant", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 100 }).notNull(),
-  description: varchar("description", { length: 256 }),
   billingEmail: varchar("billingEmail", { length: 256 }),
   stripeCustomerId: varchar("stripeCustomerId", { length: 256 }),
   enrollmentEnabled: boolean("enrollmentEnabled").notNull().default(true),
@@ -226,4 +225,18 @@ export const applications = mysqlTable("apps", {
   tenantId: serialRelation("tenantId")
     .references(() => tenants.id)
     .notNull(),
+});
+
+export const domains = mysqlTable("domains", {
+  domain: varchar("domain", { length: 256 }).primaryKey(),
+  secret: varchar("secret", { length: 256 }).notNull().unique(),
+  tenantId: serialRelation("tenantId")
+    .references(() => tenants.id)
+    .notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+  lastVerificationTime: timestamp("lastVerificationTime"),
+  verified: boolean("verified").notNull().default(false),
+  enterpriseEnrollmentAvailable: boolean("enterpriseEnrollmentAvailable")
+    .notNull()
+    .default(false),
 });

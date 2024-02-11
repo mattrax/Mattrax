@@ -9,6 +9,7 @@ import {
 import { DeepKeys, FieldApi, FormApi } from "@tanstack/solid-form";
 
 import { Input, Label } from "../ui";
+import { clsx } from "clsx";
 
 export function InputField<
   TData extends Record<string, any>,
@@ -19,11 +20,17 @@ export function InputField<
     "id" | "value" | "onInput" | "onBlur" | "form"
   > & {
     form: FormApi<TData, any>;
+    fieldClass?: string;
     name: TName;
     label?: string;
   }
 ) {
-  const [_, inputProps] = splitProps(props, ["form", "name", "label"]);
+  const [_, inputProps] = splitProps(props, [
+    "form",
+    "name",
+    "label",
+    "fieldClass",
+  ]);
   const id = createUniqueId();
 
   const form = {
@@ -38,7 +45,7 @@ export function InputField<
   return (
     <form.Field name={props.name}>
       {(field) => (
-        <div class="flex flex-col space-y-1.5">
+        <div class={clsx("flex flex-col space-y-1.5", props.fieldClass)}>
           {props.label !== undefined && <Label for={id}>{props.label}</Label>}
           <Input
             {...inputProps}

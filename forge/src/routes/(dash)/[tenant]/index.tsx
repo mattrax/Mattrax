@@ -26,7 +26,7 @@ export default function Page() {
 
 function StatItem(props: { title: string; value: number }) {
   return (
-    <div class="overflow-hidden rounded-lg bg-gray-100 dark:bg-brandDark px-4 py-5 shadow sm:p-6">
+    <div class="rounded-lg bg-gray-100 dark:bg-brandDark px-4 py-5 shadow sm:p-6">
       <span class="truncate text-sm font-medium ">{props.title}</span>
       <Counter value={props.value} duration={1700}>
         {(count) => (

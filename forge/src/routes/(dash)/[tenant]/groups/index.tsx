@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router";
-import { For, ParentProps, startTransition } from "solid-js";
+import { ParentProps, startTransition } from "solid-js";
 import {
   type ColumnDef,
   createSolidTable,
@@ -83,11 +83,14 @@ export default function Page() {
   const groupsTable = createGroupsTable();
 
   return (
-    <OutlineLayout title="Groups">
-      <div class="flex items-center mb-4">
+    <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
+      <div class="flex flex-row justify-between">
+        <h1 class="text-3xl font-bold mb-4">Groups</h1>
         <CreateGroupDialog>
           <As component={Button}>Create New Group</As>
         </CreateGroupDialog>
+      </div>
+      <div class="flex items-center gap-4">
         <Input
           placeholder="Filter groups..."
           value={
@@ -96,7 +99,6 @@ export default function Page() {
           onInput={(event) =>
             groupsTable.getColumn("name")?.setFilterValue(event.target.value)
           }
-          class="max-w-sm ml-4"
         />
         <ColumnsDropdown table={groupsTable}>
           <As component={Button} variant="outline" class="ml-auto select-none">
@@ -109,7 +111,7 @@ export default function Page() {
         table={groupsTable}
         onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}
       />
-      <div class="flex items-center justify-end space-x-2 py-4">
+      <div class="flex items-center justify-end space-x-2">
         <div class="flex-1 text-sm text-muted-foreground">
           {groupsTable.getFilteredSelectedRowModel().rows.length} of{" "}
           {groupsTable.getFilteredRowModel().rows.length} row(s) selected.
@@ -133,7 +135,7 @@ export default function Page() {
           </Button>
         </div>
       </div>
-    </OutlineLayout>
+    </div>
   );
 }
 

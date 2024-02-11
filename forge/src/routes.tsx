@@ -6,7 +6,7 @@ import { lazy } from "solid-js";
 import dashboardLayout from "./routes/(dash)";
 import dashIndex from "./routes/(dash)/index";
 
-const dash: RouteDefinition[] = [
+const dash = [
   {
     path: "/",
     component: dashIndex,
@@ -152,6 +152,32 @@ const dash: RouteDefinition[] = [
       {
         path: "/settings",
         component: lazy(() => import("./routes/(dash)/[tenant]/settings")),
+        children: [
+          {
+            path: "/",
+            component: lazy(
+              () => import("./routes/(dash)/[tenant]/settings/index")
+            ),
+          },
+          {
+            path: "/administrators",
+            component: lazy(
+              () => import("./routes/(dash)/[tenant]/settings/administrators")
+            ),
+          },
+          {
+            path: "/domains",
+            component: lazy(
+              () => import("./routes/(dash)/[tenant]/settings/domains")
+            ),
+          },
+          {
+            path: "/billing",
+            component: lazy(
+              () => import("./routes/(dash)/[tenant]/settings/billing")
+            ),
+          },
+        ],
       },
       {
         path: "/*all",
@@ -163,9 +189,9 @@ const dash: RouteDefinition[] = [
     path: "/*all",
     component: lazy(() => import("./routes/(dash)/[...404]")),
   },
-];
+] satisfies RouteDefinition[];
 
-export const routes: RouteDefinition[] = [
+export const routes = [
   // TODO: Don't lazy load modal layout but lazy load inside content. So the user never ends up with a white page.
   {
     path: "/login",
@@ -184,4 +210,4 @@ export const routes: RouteDefinition[] = [
     component: dashboardLayout,
     children: dash,
   },
-];
+] satisfies RouteDefinition[];

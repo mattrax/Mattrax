@@ -15,6 +15,7 @@ import {
 import { count, eq } from "drizzle-orm";
 import { billingRouter } from "./billing";
 import { tenantAuthRouter } from "./auth";
+import { domainsRouter } from "./domains";
 
 export const tenantRouter = createTRPCRouter({
   create: authedProcedure
@@ -46,25 +47,17 @@ export const tenantRouter = createTRPCRouter({
     .input(
       z.object({
         name: z.string().min(1).max(100).optional(),
-        description: z.string().min(1).max(256).optional().nullable(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      if (input.name === undefined && input.description === undefined) return;
+      if (input.name === undefined) return;
 
       await db
         .update(tenants)
         .set({
-          ...(input.name !== undefined
-            ? {
-                name: input.name,
-              }
-            : {}),
-          ...(input.description !== undefined
-            ? {
-                description: input.description,
-              }
-            : {}),
+          ...(input.name !== undefined && {
+            name: input.name,
+          }),
         })
         .where(eq(tenants.id, ctx.tenantId));
     }),
@@ -168,4 +161,5 @@ export const tenantRouter = createTRPCRouter({
 
   billing: billingRouter,
   auth: tenantAuthRouter,
+  domains: domainsRouter,
 });

@@ -1,4 +1,4 @@
-import { useMatch, useNavigate, useParams } from "@solidjs/router";
+import { useNavigate, useParams } from "@solidjs/router";
 import {
   createMemo,
   ParentProps,
@@ -12,7 +12,7 @@ import { createComputed } from "solid-js";
 
 import { SuspenseError, setXTenantId } from "~/lib";
 import { useAuthContext } from "../(dash)";
-import LeftSidebar from "~/components/LeftSidebar";
+import TopNav from "~/components/TopNav";
 
 export const [TenantContextProvider, useTenantContext] = createContextProvider(
   (props: {
@@ -56,7 +56,7 @@ export default function Layout(props: ParentProps) {
         >
           {/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
           <Suspense fallback={<SuspenseError name="Sidebar" />}>
-            <LeftSidebar
+            <TopNav
               activeTenant={activeTenant()}
               tenants={auth.me.tenants}
               setActiveTenant={setTenantId}
@@ -66,9 +66,7 @@ export default function Layout(props: ParentProps) {
             />
           </Suspense>
           {/* we key here on purpose - tenants are the root-most unit of isolation */}
-          <Show when={activeTenant()} keyed>
-            {props.children}
-          </Show>
+          <Show when={activeTenant().id}>{props.children}</Show>
         </TenantContextProvider>
       )}
     </Show>

@@ -8,6 +8,7 @@ export default function Page() {
   const sendEmail = trpc.internal.emailDemo.useMutation();
 
   const navigate = useNavigate();
+
   createEffect(() => {
     if (isTRPCClientError(stats.error)) {
       if (stats.error.data?.code === "FORBIDDEN") navigate("/");

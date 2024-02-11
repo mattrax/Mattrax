@@ -1,9 +1,14 @@
 import { For, Suspense } from "solid-js";
+import dayjs from "dayjs";
+import { toast } from "solid-sonner";
+import { z } from "zod";
+
 import {
   Button,
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
   DropdownMenu,
@@ -12,15 +17,9 @@ import {
   DropdownMenuTrigger,
   Switch,
 } from "~/components/ui";
-import dayjs from "dayjs";
-import { toast } from "solid-sonner";
-import { As } from "@kobalte/core";
-import { z } from "zod";
-
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
 import { authProviderDisplayName, authProviderUrl } from "~/lib/values";
-import { OutlineLayout } from "../OutlineLayout";
 import { Form, createZodForm } from "~/components/forms";
 import { InputField } from "~/components/forms/InputField";
 import { useAuthContext } from "~/routes/(dash)";
@@ -29,19 +28,13 @@ import { ConfirmDialog } from "~/components/ConfirmDialog";
 
 export default function Page() {
   return (
-    <OutlineLayout title="Settings">
-      <div class="flex flex-row">
-        <div class="grid grid-cols-3 gap-4">
-          <SettingsCard />
-          <AdministratorsCard />
-          <BillingCard />
-          <AuthenticationCard />
-          <ConfigureEnrollmentCard />
-          <MigrateCard />
-        </div>
-        <div class="flex-1" />
-      </div>
-    </OutlineLayout>
+    <div class="flex flex-col gap-4">
+      <SettingsCard />
+      <AuthenticationCard />
+      <ConfigureEnrollmentCard />
+      <MigrateCard />
+      <DeleteTenantCard />
+    </div>
   );
 }
 
@@ -55,10 +48,9 @@ function SettingsCard() {
   }));
 
   const form = createZodForm({
-    schema: z.object({ name: z.string(), description: z.string() }),
+    schema: z.object({ name: z.string() }),
     defaultValues: {
       name: tenantCtx.activeTenant.name,
-      description: tenantCtx.activeTenant.description ?? "",
     },
     async onSubmit(props) {
       await updateTenant.mutateAsync(props.value);
@@ -66,83 +58,19 @@ function SettingsCard() {
   });
 
   return (
-    <Card class="w-[350px] flex flex-col">
+    <Card class="flex flex-col">
       <CardHeader>
         <CardTitle>Tenant Settings</CardTitle>
         <CardDescription>Basic tenant configuration.</CardDescription>
       </CardHeader>
-      <CardContent class="flex-grow flex flex-col justify-between">
-        <Form form={form}>
-          <div class="grid w-full items-center gap-4">
-            <InputField form={form} name="name" label="Name" />
-            <InputField
-              form={form}
-              name="description"
-              label="Description"
-              placeholder="My cool organization"
-            />
-          </div>
-
-          <Button type="submit" class="mt-4 w-full mb-2">
-            Save
-          </Button>
-        </Form>
-
-        <DeleteTenantButton />
-      </CardContent>
-    </Card>
-  );
-}
-
-function AdministratorsCard() {
-  const administrators = trpc.tenant.administrators.useQuery();
-
-  return (
-    <Card class="w-[350px] flex flex-col">
-      <CardHeader>
-        <CardTitle>Tenant Administrators</CardTitle>
-        <CardDescription>Manage administrator users.</CardDescription>
-      </CardHeader>
-      <CardContent
-        class={"flex-grow flex flex-col justify-between" + " blur-sm p-8"}
-      >
-        <Suspense fallback={<p>Loading...</p>}>
-          <div>
-            <For each={administrators.data}>
-              {(administrator) => (
-                <div class="flex justify-between">
-                  <div>
-                    <p class="text-sm">{administrator.name}</p>
-                    <p class="text-sm text-muted-foreground">
-                      {administrator.email}
-                    </p>
-                  </div>
-                  <div>
-                    {/* TODO: Tooltip when disabled */}
-                    <Button
-                      variant="destructive"
-                      onClick={() => alert("TODO")}
-                      disabled={true && administrator.isOwner}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </For>
-          </div>
-        </Suspense>
-
-        <div>
-          <Button class="w-full" onClick={() => alert("TODO")} disabled>
-            Invite
-          </Button>
-        </div>
-
-        {/* // TODO: Promote new owner */}
-
-        {/* // TODO: Show & allow deleting in-progress invitation */}
-      </CardContent>
+      <Form form={form}>
+        <CardContent class="flex-grow flex flex-col justify-between">
+          <InputField form={form} name="name" label="Name" />
+        </CardContent>
+        <CardFooter>
+          <Button type="submit">Save</Button>
+        </CardFooter>
+      </Form>
     </Card>
   );
 }
@@ -174,7 +102,7 @@ function AuthenticationCard() {
   );
 
   return (
-    <Card class="w-[350px] flex flex-col">
+    <Card>
       <CardHeader>
         <CardTitle>Tenant Authentication</CardTitle>
         <CardDescription>
@@ -306,7 +234,7 @@ function AuthenticationCard() {
 
 function MigrateCard() {
   return (
-    <Card class="w-[350px]">
+    <Card>
       <CardHeader>
         <CardTitle>Migrate to Mattrax</CardTitle>
         <CardDescription>
@@ -325,39 +253,6 @@ function MigrateCard() {
   );
 }
 
-function BillingCard() {
-  const stripePortalUrl = trpc.tenant.billing.portalUrl.useMutation(() => ({
-    onSuccess: async (url) => {
-      window.open(url, "_self");
-
-      // Make sure the button is disabled until the user is in the new tab
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    },
-  }));
-
-  return (
-    <Card class="w-[350px]">
-      <CardHeader>
-        <CardTitle>Billing</CardTitle>
-        <CardDescription>The lights don't power themselves</CardDescription>
-      </CardHeader>
-      <CardContent class="flex flex-col space-y-2">
-        <p>While Mattrax is beta, it's free!</p>
-        {/* <p>Devices: 0</p> */}
-        {/* TODO: How much is owed and when it's due */}
-
-        {/* <Button
-          class="w-full"
-          onClick={() => stripePortalUrl.mutate()}
-          disabled={stripePortalUrl.isPending}
-        >
-          Go to Stipe
-        </Button> */}
-      </CardContent>
-    </Card>
-  );
-}
-
 function ConfigureEnrollmentCard() {
   const enrollmentInfo = trpc.tenant.enrollmentInfo.useQuery();
   // TODO: Show correct state on the UI while the mutation is pending but keep fields disabled.
@@ -369,7 +264,7 @@ function ConfigureEnrollmentCard() {
   );
 
   return (
-    <Card class="w-[350px]">
+    <Card>
       <CardHeader>
         <CardTitle>Enrollment</CardTitle>
         <CardDescription>Configure how devices can enrollment</CardDescription>
@@ -393,6 +288,22 @@ function ConfigureEnrollmentCard() {
         {/* // TODO: Integrate with Microsoft user-initiated enrollment */}
         {/* // TODO: Integrate with Android user-initiated enrollment */}
       </CardContent>
+    </Card>
+  );
+}
+
+function DeleteTenantCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Delete Tenant</CardTitle>
+        <CardDescription>
+          Permanently delete your tenant and all its data.
+        </CardDescription>
+      </CardHeader>
+      <CardFooter>
+        <DeleteTenantButton />
+      </CardFooter>
     </Card>
   );
 }
