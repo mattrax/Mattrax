@@ -29,13 +29,14 @@ export const msRouter = new Hono<HonoEnv>()
     if (!c.env.session.data?.id) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
     if (!c.env.session.data.oauthData) return new Response(`Conflict!`); // TODO: Proper error UI as the user may land here
 
-    const body = new URLSearchParams();
-    body.set("client_id", env.ENTRA_CLIENT_ID);
-    body.set("client_secret", env.ENTRA_CLIENT_SECRET);
-    body.set("scope", "https://graph.microsoft.com/.default");
-    body.set("code", code);
-    body.set("redirect_uri", `${env.PROD_URL}/api/ms/link`);
-    body.set("grant_type", "authorization_code");
+    const body = new URLSearchParams({
+      client_id: env.ENTRA_CLIENT_ID,
+      client_secret: env.ENTRA_CLIENT_SECRET,
+      scope: "https://graph.microsoft.com/.default",
+      code: code,
+      redirect_uri: `${env.PROD_URL}/api/ms/link`,
+      grant_type: "authorization_code",
+    });
 
     const tokenReq = await fetch(
       `https://login.microsoftonline.com/organizations/oauth2/v2.0/token`,
@@ -77,13 +78,15 @@ export const msRouter = new Hono<HonoEnv>()
       },
     });
 
-    const params = new URLSearchParams();
-    params.set("client_id", env.ENTRA_CLIENT_ID);
-    params.set("scope", "https://graph.microsoft.com/.default");
-    params.set("redirect_uri", `${env.PROD_URL}/api/ms/permissions`);
-    // params.set("response_type", "code");
-    // params.set("response_mode", "query");
-    params.set("state", c.env.session.data.oauthData.state);
+    const params = new URLSearchParams({
+      client_id: env.ENTRA_CLIENT_ID,
+      scope: "https://graph.microsoft.com/.default",
+      redirect_uri: `${env.PROD_URL}/api/ms/permissions`,
+      state: c.env.session.data.oauthData.state,
+      // params.set("response_type", "code");
+      // params.set("response_mode", "query");
+    });
+
     return c.redirect(
       `https://login.microsoftonline.com/organizations/v2.0/adminconsent?${params.toString()}`
     );

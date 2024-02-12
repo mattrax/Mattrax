@@ -22,11 +22,13 @@ export class AuthProvider implements AuthenticationProvider {
 
   // TODO: Properly implement refresh when the token expires
   public async getAccessToken(): Promise<string> {
-    const params = new URLSearchParams();
-    params.set("client_id", this.clientId);
-    params.set("client_secret", this.clientSecret);
-    params.set("scope", "https://graph.microsoft.com/.default");
-    params.set("grant_type", "client_credentials");
+    const params = new URLSearchParams({
+      client_id: this.clientId,
+      client_secret: this.clientSecret,
+      scope: "https://graph.microsoft.com/.default",
+      grant_type: "client_credentials",
+    });
+
     const resp = await fetch(
       `https://login.microsoftonline.com/${encodeURIComponent(
         this.tenant

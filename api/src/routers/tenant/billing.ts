@@ -45,12 +45,13 @@ export const billingRouter = createTRPCRouter({
     // TODO: When using the official Stripe SDK, this endpoint causes the entire Edge Function to hang and i'm at a loss to why.
     // TODO: This will do for now but we should try and fix it.
 
-    const body = new URLSearchParams();
-    body.set("customer", customerId);
-    body.set(
-      "return_url",
-      `${env.PROD_URL}/${encodeId("tenant", ctx.tenantId)}/settings`
-    );
+    const body = new URLSearchParams({
+      customer: customerId,
+      return_url: `${env.PROD_URL}/${encodeId(
+        "tenant",
+        ctx.tenantId
+      )}/settings`,
+    });
 
     const resp = await fetch(
       "https://api.stripe.com/v1/billing_portal/sessions",

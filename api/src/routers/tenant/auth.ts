@@ -37,13 +37,15 @@ export const tenantAuthRouter = createTRPCRouter({
       },
     });
 
-    const params = new URLSearchParams();
-    params.set("client_id", env.ENTRA_CLIENT_ID);
-    params.set("scope", "https://graph.microsoft.com/.default");
-    params.set("redirect_uri", `${env.PROD_URL}/api/ms/link`);
-    params.set("response_type", "code");
-    params.set("response_mode", "query");
-    params.set("state", state);
+    const params = new URLSearchParams({
+      client_id: env.ENTRA_CLIENT_ID,
+      scope: "https://graph.microsoft.com/.default",
+      redirect_uri: `${env.PROD_URL}/api/ms/link`,
+      response_type: "code",
+      response_mode: "query",
+      state: state,
+    });
+
     return `https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?${params.toString()}`;
   }),
 
