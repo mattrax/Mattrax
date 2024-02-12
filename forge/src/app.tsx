@@ -1,5 +1,5 @@
 // @refresh reload
-import { Router, useNavigate, Navigator } from "@solidjs/router";
+import { Router, useNavigate } from "@solidjs/router";
 import {
   ErrorBoundary,
   Suspense,
@@ -25,7 +25,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 //   PersistQueryClientProvider,
 // } from "@tanstack/solid-query-persist-client";
 // import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
-import { routes } from "./routes";
+import routes from "./app/routes";
 import { isTRPCClientError, trpc } from "./lib";
 import "./app.css";
 import "./sonner.css";

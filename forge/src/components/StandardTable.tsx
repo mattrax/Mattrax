@@ -1,6 +1,6 @@
 import { flexRender, type Table as TTable } from "@tanstack/solid-table";
 import { For, ParentProps } from "solid-js";
-import { columns } from "~/routes/(dash)/[tenant]/users";
+import { columns } from "~/app/(dash)/[tenant]/users";
 import {
   Table,
   TableHeader,

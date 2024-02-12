@@ -44,7 +44,7 @@ export default createApp({
       type: "http",
       base: "/api",
       handler: fileURLToPath(
-        new URL("./src/routes/api/[...api].ts", import.meta.url)
+        new URL("./src/app/api/[...api].ts", import.meta.url)
       ),
       target: "server",
     },

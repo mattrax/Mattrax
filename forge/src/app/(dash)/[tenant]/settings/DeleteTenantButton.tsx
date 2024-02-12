@@ -4,7 +4,7 @@ import { startTransition } from "solid-js";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { Button } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useAuthContext } from "~/routes/(dash)";
+import { useAuthContext } from "~/app/(dash)";
 import { useTenantContext } from "../../[tenant]";
 
 export function DeleteTenantButton() {
