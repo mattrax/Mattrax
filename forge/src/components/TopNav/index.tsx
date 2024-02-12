@@ -1,6 +1,7 @@
-import { A } from "@solidjs/router";
-import { For, JSX } from "solid-js";
+import { A, useMatch, useResolvedPath } from "@solidjs/router";
+import { For, JSX, createEffect } from "solid-js";
 import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
+import { As, Tabs } from "@kobalte/core";
 
 type NavbarItem = {
   icon: (props: { class: string }) => JSX.Element;
@@ -47,6 +48,9 @@ const items: NavbarItem[] = [
 ];
 
 export default function Component(props: TenantSwitcherProps): JSX.Element {
+  const path = useResolvedPath(() => "");
+  const value = useMatch(() => `${path()}/*rest`);
+
   return (
     <>
       <div class="relative flex flex-row">
@@ -88,26 +92,36 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
         </div>
       </div>
 
-      <div class="text-white sticky border-b border-gray-300 top-0 z-10 bg-white">
-        <div class="flex flex-row px-2">
-          <For each={items}>
-            {(item) => (
-              <A
-                end={item.href === ""}
-                href={item.href}
-                activeClass="text-black selected"
-                inactiveClass="text-gray-500"
-                class="py-2 flex text-center align-middle transition duration-[16ms] relative group"
-              >
-                <div class="text-sm hover:bg-black/5 hover:text-black rounded px-3 py-1.5">
-                  {item.title}
-                </div>
-                <div class="absolute h-[2px] left-1.5 right-1.5 -bottom-px mt-auto bg-brand hidden group-[.selected]:block" />
-              </A>
-            )}
-          </For>
-        </div>
-      </div>
+      <nav class="text-white sticky border-b border-gray-300 top-0 z-10 bg-white">
+        <Tabs.Root
+          value={value()?.params.rest?.split("/")[0]}
+          class="mx-2 relative"
+        >
+          <Tabs.List class="flex flex-row">
+            <For each={items}>
+              {(item) => (
+                <Tabs.Trigger asChild value={item.href}>
+                  <As
+                    component={A}
+                    end={item.href === ""}
+                    href={item.href}
+                    activeClass="text-black selected"
+                    inactiveClass="text-gray-500"
+                    class="py-2 flex text-center align-middle transition duration-[16ms] relative group"
+                  >
+                    <div class="text-sm hover:bg-black/5 hover:text-black rounded px-3 py-1.5">
+                      {item.title}
+                    </div>
+                  </As>
+                </Tabs.Trigger>
+              )}
+            </For>
+            <Tabs.Indicator class="absolute transition-all duration-200 -bottom-px flex flex-row px-2 h-[2px]">
+              <div class="bg-brand flex-1" />
+            </Tabs.Indicator>
+          </Tabs.List>
+        </Tabs.Root>
+      </nav>
     </>
   );
 }
