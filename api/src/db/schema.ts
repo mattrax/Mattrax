@@ -54,11 +54,11 @@ export const tenantAccounts = mysqlTable(
 );
 
 export const tenantAccountInvites = mysqlTable("tenant_account_invites", {
+  code: varchar("code", { length: 256 }).primaryKey(),
   tenantId: serialRelation("tenantId")
     .references(() => tenants.id)
     .notNull(),
   email: varchar("email", { length: 256 }).notNull(),
-  code: varchar("code", { length: 256 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow(),
 });
 

@@ -104,8 +104,6 @@ export default function App() {
           root={(props) => {
             const navigate = useNavigate();
 
-            trpc.useContext().user.list.prefetch().then(console.log);
-
             onCleanup(
               errorBus.listen(([scopeMsg, error]) => {
                 let errorMsg = [
