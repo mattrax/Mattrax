@@ -77,6 +77,7 @@ function SettingsCard() {
 
 function AuthenticationCard() {
   const linkedProviders = trpc.tenant.auth.query.useQuery();
+
   const linkEntra = trpc.tenant.auth.linkEntra.useMutation(() => ({
     onSuccess: async (url) => {
       window.open(url, "_self");
@@ -94,8 +95,11 @@ function AuthenticationCard() {
     },
   }));
 
+  const isQueryPending = untrackScopeFromSuspense(
+    () => linkedProviders.isPending
+  );
   const isPending = () =>
-    linkedProviders.isPending || linkEntra.isPending || sync.isPending;
+    isQueryPending() || linkEntra.isPending || sync.isPending;
 
   const hasLinkedProviders = untrackScopeFromSuspense(
     () => linkedProviders.data?.length === 0
