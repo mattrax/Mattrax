@@ -9,7 +9,7 @@ export default function Page() {
     policyId: params.policyId!,
   }));
 
-  const policyUpdate = trpc.policy.update.useMutation(() => ({
+  const policyUpdate = trpc.policy.updateVersion.useMutation(() => ({
     onSuccess: () => alert("Updated!"),
   }));
 

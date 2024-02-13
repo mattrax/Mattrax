@@ -130,7 +130,11 @@ export default function Page(props: ParentProps) {
                         }
                       }}
                     >
-                      <As component={Button} variant="outline">
+                      <As
+                        component={Button}
+                        variant="outline"
+                        class="select-none"
+                      >
                         Actions
                       </As>
                     </ActionsDropdown>

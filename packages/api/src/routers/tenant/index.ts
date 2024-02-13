@@ -22,7 +22,7 @@ export const tenantRouter = createTRPCRouter({
   create: authedProcedure
     .input(z.object({ name: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const lastInsertId = await db.transaction(async (tx) => {
+      const lastInsertId = await db.transaction(async (db) => {
         const result = await db.insert(tenants).values({
           name: input.name,
           owner_id: ctx.session.data.id,

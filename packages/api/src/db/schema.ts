@@ -114,24 +114,28 @@ export const users = mysqlTable(
 export const policies = mysqlTable("policies", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 256 }).notNull(),
-  policy: json("policy").default([]).notNull(),
-  policyHash: customType<{
-    data: string;
-  }>({
-    dataType: () =>
-      "VARCHAR(32) GENERATED ALWAYS AS (md5(JSON_EXTRACT(policy, '$'))) STORED",
-  })("policyHash"),
-  intuneId: varchar("intuneId", { length: 256 }).unique(),
-  // When a policy is uploaded to Intune this will be set to the `policyHash` column.
-  // If this doesn't match `policyHash` the policy should be re-uploaded to Intune.
-  intunePolicyHash: varchar("intunePolicyHash", { length: 256 }),
+  activeVersion: serialRelation("activeVersion").references(
+    () => policyVersions.id
+  ),
   tenantId: serialRelation("tenantId")
     .references(() => tenants.id)
     .notNull(),
-
   groupableVariant: mysqlEnum("groupableVariant", ["policy"])
     .notNull()
     .default("policy"),
+});
+
+export const policyVersions = mysqlTable("policy_versions", {
+  id: serial("id").primaryKey(),
+  policyId: serialRelation("policyId")
+    // .references(() => policies.id) // This creates a circular reference so is let uncommented
+    .notNull(),
+  // status: mysqlEnum("status", ["open", "staged", "deployed"])
+  //   .notNull()
+  //   .default("open"),
+  data: json("data").notNull(),
+  // deployedAt: timestamp("deployedAt"),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
 export const devices = mysqlTable("devices", {

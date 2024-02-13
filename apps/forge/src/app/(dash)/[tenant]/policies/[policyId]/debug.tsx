@@ -7,13 +7,13 @@ export default function Page() {
   const policy = trpc.policy.get.useQuery(() => ({
     policyId: params.policyId!,
   }));
-  const policyPush = trpc.policy.push.useMutation(() => ({
-    onSuccess: () => alert("Policy pushed!"),
-  }));
-  const policyAssign = trpc.policy.assign.useMutation(() => ({
-    onSuccess: (_, input) =>
-      alert(input.assignOrUnassign ? "Assigned!" : "Unassigned!"),
-  }));
+  // const policyPush = trpc.policy.push.useMutation(() => ({
+  //   onSuccess: () => alert("Policy pushed!"),
+  // }));
+  // const policyAssign = trpc.policy.assign.useMutation(() => ({
+  //   onSuccess: (_, input) =>
+  //     alert(input.assignOrUnassign ? "Assigned!" : "Unassigned!"),
+  // }));
 
   return (
     <div class="flex flex-col space-y-2">
@@ -22,7 +22,7 @@ export default function Page() {
       <pre>{JSON.stringify(policy.data, null, 2)}</pre>
 
       <div class="flex flex-col space-y-4 w-72">
-        <Button
+        {/* <Button
           onClick={() =>
             policyPush.mutate({
               policyId: params.policyId!,
@@ -30,9 +30,9 @@ export default function Page() {
           }
         >
           Sync w/ Intune
-        </Button>
+        </Button> */}
 
-        <Button
+        {/* <Button
           onClick={() =>
             policyAssign.mutate({
               policyId: params.policyId!,
@@ -41,8 +41,8 @@ export default function Page() {
           }
         >
           Assign All Devices
-        </Button>
-        <Button
+        </Button> */}
+        {/* <Button
           onClick={() =>
             policyAssign.mutate({
               policyId: params.policyId!,
@@ -51,7 +51,7 @@ export default function Page() {
           }
         >
           Unassign All Devices
-        </Button>
+        </Button> */}
       </div>
     </div>
   );
