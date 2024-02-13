@@ -32,5 +32,7 @@ declare global {
   const IconPhLaptopDuotone: typeof import('~icons/ph/laptop-duotone.jsx')['default']
   const IconPhLockDuotone: typeof import('~icons/ph/lock-duotone.jsx')['default']
   const IconPhPhoneDuotone: typeof import("~icons/ph/phone-duotone.jsx")["default"]
+  const IconPhPlusCircleBold: typeof import('~icons/ph/plus-circle-bold.jsx')['default']
+  const IconPhPlusCircleDuotone: typeof import('~icons/ph/plus-circle-duotone.jsx')['default']
   const IconPhUserDuotone: typeof import('~icons/ph/user-duotone.jsx')['default']
 }
