@@ -82,8 +82,8 @@ pub fn mount(state: Arc<Context>) -> Router {
             axum::response::Html(r#"<a href="ms-device-enrollment:?mode=mdm&username=oscar@otbeaumont.me&servername=https://mdm.mattrax.app">Enroll</a>"#)
         }))
         .nest("/internal", internal::mount(state.clone()))
-        .nest("/EnrollmentServer", mdm::mount_enrollment(state.clone()))
-        .nest("/ManagementServer", mdm::mount(state.clone()))
+        .nest("/EnrollmentServer", mdm::enrollment::mount(state.clone()))
+        .nest("/ManagementServer", mdm::manage::mount(state.clone()))
         .layer(middleware::from_fn_with_state(state.clone(), headers))
         .with_state(state)
 }
