@@ -23,7 +23,8 @@
   "pnpm": {
     "patchedDependencies": {
       "@solid-mediakit/trpc@1.0.2": "patches/@solid-mediakit__trpc@1.0.2.patch",
-      "drizzle-kit@0.20.14": "patches/drizzle-kit@0.20.14.patch"
+      "drizzle-kit@0.20.14": "patches/drizzle-kit@0.20.14.patch",
+      "@solidjs/router@0.12.0": "patches/@solidjs__router@0.12.0.patch"
     }
   }
 }

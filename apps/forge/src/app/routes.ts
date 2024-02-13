@@ -3,6 +3,7 @@ import { lazy } from "solid-js";
 
 import dashboardLayout from "./(dash)";
 import dashboardRoutes from "./(dash)/routes";
+import { trpc } from "~/lib";
 
 export default [
   {
@@ -25,5 +26,8 @@ export default [
   {
     component: dashboardLayout,
     children: dashboardRoutes,
+    load: () => {
+      trpc.useContext().auth.me.ensureData();
+    },
   },
 ] satisfies RouteDefinition[];

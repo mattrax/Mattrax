@@ -5,11 +5,15 @@ import deviceRoutes from "./devices/[deviceId]/routes";
 import settingsRoutes from "./settings/routes";
 import policyRoutes from "./policies/[policyId]/routes";
 import groupsRoutes from "./groups/routes";
+import { trpc } from "~/lib";
 
 export default [
   {
     path: "/",
     component: lazy(() => import("./index")),
+    load: () => {
+      trpc.useContext().tenant.stats.ensureData();
+    },
   },
   {
     path: "/users",
@@ -17,9 +21,12 @@ export default [
       {
         path: "/",
         component: lazy(() => import("./users")),
+        load: () => {
+          trpc.useContext().user.list.ensureData();
+        },
       },
       {
-        path: "/userId",
+        path: "/:userId",
         component: lazy(() => import("./users/[userId]")),
       },
     ],
@@ -43,6 +50,9 @@ export default [
       {
         path: "/",
         component: lazy(() => import("./devices")),
+        load: () => {
+          trpc.useContext().device.list.ensureData();
+        },
       },
       {
         path: "/:deviceId",
@@ -57,10 +67,17 @@ export default [
       {
         path: "/",
         component: lazy(() => import("./policies")),
+        load: () => {
+          trpc.useContext().policy.list.ensureData();
+        },
       },
       {
         path: "/:policyId",
         component: lazy(() => import("./policies/[policyId]")),
+        load: ({ params }) =>
+          trpc
+            .useContext()
+            .policy.get.ensureData({ policyId: params.policyId! }),
         children: policyRoutes,
       },
     ],
