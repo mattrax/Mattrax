@@ -4,10 +4,8 @@ import { Button } from "~/components/ui";
 import { isTRPCClientError, trpc } from "~/lib";
 
 export default function Page() {
-  const stats = trpc.internal.stats.useQuery();
-  const sendEmail = trpc.internal.emailDemo.useMutation();
-
   const navigate = useNavigate();
+  const stats = trpc.internal.stats.useQuery();
 
   createEffect(() => {
     if (isTRPCClientError(stats.error)) {
@@ -29,8 +27,6 @@ export default function Page() {
             </p>
           )}
         </For>
-
-        <Button onClick={() => sendEmail.mutateAsync()}>Test email</Button>
       </div>
     </div>
   );

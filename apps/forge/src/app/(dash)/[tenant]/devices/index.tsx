@@ -97,22 +97,11 @@ function createDevicesTable() {
 export default function Page() {
   const navigate = useNavigate();
   const { table, devices } = createDevicesTable();
-  const forcePullFromIntune = trpc.device.forcePullFromIntune.useMutation(
-    () => ({
-      onSuccess: () => toast.success("Successfully synced devices from Intune"),
-    })
-  );
-
   const isLoading = untrackScopeFromSuspense(() => devices.isLoading);
 
   return (
     <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
-      <div class="flex flex-row justify-between">
-        <h1 class="text-3xl font-bold mb-4">Devices</h1>
-        <Button class="ml-4" onClick={() => forcePullFromIntune.mutate()}>
-          Force Pull From Intune
-        </Button>
-      </div>
+      <h1 class="text-3xl font-bold mb-4">Devices</h1>
       <div class="flex flex-row items-center gap-4">
         <Input
           class="flex-1"

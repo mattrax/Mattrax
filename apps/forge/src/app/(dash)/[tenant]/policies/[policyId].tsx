@@ -7,6 +7,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "~/components/ui";
 import { As } from "@kobalte/core";
 import { toast } from "solid-sonner";
@@ -59,6 +64,33 @@ export default function Page(props: ParentProps) {
             <div class="flex flex-row items-center justify-between">
               <h1 class="text-3xl font-bold mb-4">{policy().name}</h1>
               <div class="flex space-x-4">
+                {/* // TODO: Version management */}
+                {/* // TODO: Require at least one item to be selected */}
+                <Select
+                  // value={value()}
+                  // onChange={setValue}
+                  options={[
+                    "Apple",
+                    "Banana",
+                    "Blueberry",
+                    "Grapes",
+                    "Pineapple",
+                  ]}
+                  placeholder="Select a fruit…"
+                  itemComponent={(props) => (
+                    <SelectItem item={props.item}>
+                      {props.item.rawValue}
+                    </SelectItem>
+                  )}
+                >
+                  <SelectTrigger aria-label="Fruit" class="w-[180px]">
+                    <SelectValue<string>>
+                      {(state) => state.selectedOption()}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent />
+                </Select>
+
                 {/* <Progress
                   value={3}
                   minValue={0}
@@ -98,7 +130,11 @@ export default function Page(props: ParentProps) {
                         }
                       }}
                     >
-                      <As component={Button} variant="outline">
+                      <As
+                        component={Button}
+                        variant="outline"
+                        class="select-none"
+                      >
                         Actions
                       </As>
                     </ActionsDropdown>

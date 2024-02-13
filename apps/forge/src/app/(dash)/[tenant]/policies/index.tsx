@@ -1,4 +1,4 @@
-import { startTransition } from "solid-js";
+import { Suspense, startTransition } from "solid-js";
 import {
   type ColumnDef,
   createSolidTable,

@@ -4,7 +4,7 @@ import { lazy } from "solid-js";
 export default [
   {
     path: "/",
-    component: lazy(() => import(".")),
+    component: lazy(() => import("./index")),
   },
   {
     path: "/restrictions",

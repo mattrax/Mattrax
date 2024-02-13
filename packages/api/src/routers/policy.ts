@@ -1,97 +1,121 @@
 import { z } from "zod";
 import { createTRPCRouter, tenantProcedure } from "../trpc";
-import { db, devices, policies, tenantAccounts } from "../db";
+import { db, devices, policies, policyVersions, tenantAccounts } from "../db";
 import { and, eq } from "drizzle-orm";
 import { decodeId, encodeId } from "../utils";
 import { getMdm } from "../mdm";
 import { buildApplePolicy } from "@mattrax/policy";
 
 export const policyRouter = createTRPCRouter({
-  // TODO: Copy after `devicesRouter`.
-
   list: tenantProcedure.query(async ({ ctx }) => {
     return (
-      await db
-        .select({
-          id: policies.id,
-          name: policies.name,
-        })
-        .from(policies)
-        .where(eq(policies.tenantId, ctx.tenantId))
-    ).map((d) => ({
-      ...d,
-      id: encodeId("policy", d.id),
-    }));
+      (
+        await db
+          .select({
+            id: policies.id,
+            name: policies.name,
+            // activeVersion: {
+            //   id: policyVersions.id,
+            //   data: policyVersions.data,
+            //   createdAt: policyVersions.createdAt,
+            // },
+          })
+          .from(policies)
+          // .leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.id))
+          .where(eq(policies.tenantId, ctx.tenantId))
+      ).map((d) => ({
+        ...d,
+        id: encodeId("policy", d.id),
+      }))
+    );
   }),
 
   get: tenantProcedure
     .input(z.object({ policyId: z.string() }))
     .query(async ({ ctx, input }) => {
-      // TODO: Check user is authorised to access tenant which owns the device
+      const policyId = decodeId("policy", input.policyId);
+      const [policy, versions] = await Promise.all([
+        db
+          .select({
+            id: policies.id,
+            name: policies.name,
+            activeVersion: {
+              id: policyVersions.id,
+              data: policyVersions.data,
+              createdAt: policyVersions.createdAt,
+            },
+          })
+          .from(policies)
+          .leftJoin(
+            policyVersions,
+            eq(policies.activeVersion, policyVersions.id)
+          )
+          .where(eq(policies.id, policyId))
+          .then((v) => v?.[0]),
+        db
+          .select({
+            id: policyVersions.id,
+            data: policyVersions.data,
+            createdAt: policyVersions.createdAt,
+          })
+          .from(policyVersions)
+          .where(eq(policyVersions.policyId, policyId))
+          .then((v) => v?.[0]),
+      ]);
 
-      // const id = decodeId("policy", policyId);
-
-      // const policy = (
-      //   await db.select().from(policies).where(eq(policies.id, id))
-      // )?.[0];
-      // if (!policy) {
-      //   throw new Error("todo: error handling"); // TODO: Error handling on the frontend too
-      // }
-
-      // return c.json({
-      //   name: policy.name,
-      //   hasSyncedWithIntune: policy.intuneId !== null,
-      // });
-
-      // TODO
       return {
-        name: "todo",
-        hasSyncedWithIntune: false,
+        ...(policy && {
+          ...policy,
+          id: encodeId("policy", policy.id),
+        }),
+        versions,
       };
     }),
 
   duplicate: tenantProcedure
     .input(z.object({ policyId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const id = decodeId("policy", input.policyId);
-      let row = (
-        await db.select().from(policies).where(eq(policies.id, id))
-      )?.[0];
-      if (!row) throw new Error("todo: error handling");
+      throw new Error("TODO: Bring this back!");
+      // const id = decodeId("policy", input.policyId);
+      // let row = (
+      //   await db.select().from(policies).where(eq(policies.id, id))
+      // )?.[0];
+      // if (!row) throw new Error("todo: error handling");
 
-      // @ts-expect-error
-      delete row.id;
-      // @ts-expect-error
-      delete row.intuneId;
-      // @ts-expect-error
-      delete row.policyHash;
+      // // @ts-expect-error
+      // delete row.id;
+      // // @ts-expect-error
+      // delete row.intuneId;
+      // // @ts-expect-error
+      // delete row.policyHash;
 
-      const result = await db.insert(policies).values(row);
-      return encodeId("policy", parseInt(result.insertId));
+      // const result = await db.insert(policies).values(row);
+      // return encodeId("policy", parseInt(result.insertId));
     }),
 
-  update: tenantProcedure
+  updateVersion: tenantProcedure
     .input(
       z.object({
         policyId: z.string(),
+        versionId: z.number(),
         // TODO: Proper Zod type here
-        policy: z.any(),
+        data: z.any(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // TODO: Check user is authorised to access tenant which owns the device
+      const policyId = decodeId("policy", input.policyId);
 
-      // TODO: Validate incoming `policy`
-
-      const id = decodeId("policy", input.policyId);
-
-      // TODO: Error if id is not found by catching error
       await db
-        .update(policies)
+        .update(policyVersions)
         .set({
-          policy: input,
+          data: input.data,
         })
-        .where(eq(policies.id, id));
+        .where(
+          and(
+            eq(policyVersions.id, input.versionId),
+            eq(policyVersions.policyId, policyId)
+          )
+        );
 
       return {};
     }),
@@ -102,15 +126,31 @@ export const policyRouter = createTRPCRouter({
         name: z.string().min(1).max(100),
       })
     )
-    .mutation(async ({ ctx, input }) => {
-      const result = await db.insert(policies).values({
-        name: input.name,
-        tenantId: ctx.tenantId,
-      });
-      const insertId = parseInt(result.insertId);
+    .mutation(({ ctx, input }) =>
+      db.transaction(async (db) => {
+        const result = await db.insert(policies).values({
+          name: input.name,
+          tenantId: ctx.tenantId,
+        });
+        const policyInsertId = parseInt(result.insertId);
+        await db.insert(policyVersions).values({
+          policyId: policyInsertId,
+        });
+        const result2 = await db.insert(policyVersions).values({
+          policyId: policyInsertId,
+          data: {},
+        });
+        const activeVersionId = parseInt(result2.insertId);
+        await db
+          .update(policies)
+          .set({
+            activeVersion: activeVersionId,
+          })
+          .where(eq(policies.id, policyInsertId));
 
-      return encodeId("policy", insertId);
-    }),
+        return encodeId("policy", policyInsertId);
+      })
+    ),
 
   delete: tenantProcedure
     .input(z.object({ policyId: z.string() }))
@@ -119,137 +159,137 @@ export const policyRouter = createTRPCRouter({
       await db.delete(policies).where(eq(policies.id, id));
     }),
 
-  push: tenantProcedure
-    .input(
-      z.object({
-        policyId: z.string(),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      // TODO: Check user is authorised to access tenant which owns the device
+  // push: tenantProcedure
+  //   .input(
+  //     z.object({
+  //       policyId: z.string(),
+  //     })
+  //   )
+  //   .mutation(async ({ ctx, input }) => {
+  //     // TODO: Check user is authorised to access tenant which owns the device
 
-      const id = decodeId("policy", input.policyId);
+  //     const id = decodeId("policy", input.policyId);
 
-      const policy = (
-        await db.select().from(policies).where(eq(policies.id, id))
-      )?.[0];
-      if (!policy) {
-        console.error("policy not found");
-        return;
-      }
+  //     const policy = (
+  //       await db.select().from(policies).where(eq(policies.id, id))
+  //     )?.[0];
+  //     if (!policy) {
+  //       console.error("policy not found");
+  //       return;
+  //     }
 
-      // TODO: Support Window's & Android policies
-      let policyBody: string;
-      try {
-        // @ts-expect-error // TODO
-        policyBody = buildApplePolicy([policy.policy]);
-      } catch (err) {
-        console.error("ERROR BUILDING POLICY", err);
-        return;
-      }
+  //     // TODO: Support Window's & Android policies
+  //     let policyBody: string;
+  //     try {
+  //       // @ts-expect-error // TODO
+  //       policyBody = buildApplePolicy([policy.policy]);
+  //     } catch (err) {
+  //       console.error("ERROR BUILDING POLICY", err);
+  //       return;
+  //     }
 
-      await getMdm().pushPolicy(policyBody);
+  //     await getMdm().pushPolicy(policyBody);
 
-      // if (!policy.intuneId) {
-      //   console.log("CREATE ON INTUNE");
+  //     // if (!policy.intuneId) {
+  //     //   console.log("CREATE ON INTUNE");
 
-      //   // TODO: We probs need to create a Intune policy for each platform we wanna target
+  //     //   // TODO: We probs need to create a Intune policy for each platform we wanna target
 
-      //   try {
-      //     const result = await createDeviceConfiguration({
-      //       // @ts-expect-error // TODO: Fix types
-      //       "@odata.context":
-      //         "https://graph.microsoft.com/v1.0/$metadata#deviceManagement/deviceConfigurations/$entity",
-      //       "@odata.type": "#microsoft.graph.iosCustomConfiguration",
-      //       displayName: policy.id.toString(),
-      //       version: 1,
-      //       payload: btoa(policyBody),
-      //       payloadName: "todo",
-      //     });
-      //     console.log(result);
+  //     //   try {
+  //     //     const result = await createDeviceConfiguration({
+  //     //       // @ts-expect-error // TODO: Fix types
+  //     //       "@odata.context":
+  //     //         "https://graph.microsoft.com/v1.0/$metadata#deviceManagement/deviceConfigurations/$entity",
+  //     //       "@odata.type": "#microsoft.graph.iosCustomConfiguration",
+  //     //       displayName: policy.id.toString(),
+  //     //       version: 1,
+  //     //       payload: btoa(policyBody),
+  //     //       payloadName: "todo",
+  //     //     });
+  //     //     console.log(result);
 
-      //     await db
-      //       .update(policies)
-      //       .set({
-      //         // @ts-expect-error // TODO: Fix types
-      //         intuneId: result.id,
-      //         intunePolicyHash: policy.policyHash,
-      //       })
-      //       .where(eq(policies.id, id));
-      //   } catch (err) {
-      //     console.error(err);
-      //   }
+  //     //     await db
+  //     //       .update(policies)
+  //     //       .set({
+  //     //         // @ts-expect-error // TODO: Fix types
+  //     //         intuneId: result.id,
+  //     //         intunePolicyHash: policy.policyHash,
+  //     //       })
+  //     //       .where(eq(policies.id, id));
+  //     //   } catch (err) {
+  //     //     console.error(err);
+  //     //   }
 
-      //   // TODO: Assign this back into the DB
-      // } else {
-      //   console.log("UPDATE POLICY");
+  //     //   // TODO: Assign this back into the DB
+  //     // } else {
+  //     //   console.log("UPDATE POLICY");
 
-      //   const intunePolicy = await getDeviceConfiguration(policy.intuneId);
+  //     //   const intunePolicy = await getDeviceConfiguration(policy.intuneId);
 
-      //   // TODO: Check if the policy has actually changed
+  //     //   // TODO: Check if the policy has actually changed
 
-      //   try {
-      //     const result = await updateDeviceConfiguration(policy.intuneId, {
-      //       // @ts-expect-error // TODO: Fix types
-      //       "@odata.context":
-      //         "https://graph.microsoft.com/v1.0/$metadata#deviceManagement/deviceConfigurations/$entity",
-      //       "@odata.type": "#microsoft.graph.iosCustomConfiguration",
-      //       displayName: policy.id.toString(),
-      //       // version: intunePolicy.version! + 1,
-      //       payload: btoa(policyBody),
-      //       payloadName: "todo",
-      //     });
+  //     //   try {
+  //     //     const result = await updateDeviceConfiguration(policy.intuneId, {
+  //     //       // @ts-expect-error // TODO: Fix types
+  //     //       "@odata.context":
+  //     //         "https://graph.microsoft.com/v1.0/$metadata#deviceManagement/deviceConfigurations/$entity",
+  //     //       "@odata.type": "#microsoft.graph.iosCustomConfiguration",
+  //     //       displayName: policy.id.toString(),
+  //     //       // version: intunePolicy.version! + 1,
+  //     //       payload: btoa(policyBody),
+  //     //       payloadName: "todo",
+  //     //     });
 
-      //     // TODO: If policy actually doesn't exist then just create it
+  //     //     // TODO: If policy actually doesn't exist then just create it
 
-      //     // console.log(result);
-      //   } catch (err) {
-      //     console.error(err);
-      //   }
-      // }
+  //     //     // console.log(result);
+  //     //   } catch (err) {
+  //     //     console.error(err);
+  //     //   }
+  //     // }
 
-      return {};
-    }),
+  //     return {};
+  //   }),
 
-  assign: tenantProcedure
-    .input(
-      z.object({
-        policyId: z.string(),
-        assignOrUnassign: z.boolean(),
-      })
-    )
-    .mutation(async ({ ctx, input }) => {
-      // const policyId = c.req.param("policyId");
-      // const input = c.req.valid("json");
-      // // TODO: Check user is authorised to access tenant which owns the device
+  // assign: tenantProcedure
+  //   .input(
+  //     z.object({
+  //       policyId: z.string(),
+  //       assignOrUnassign: z.boolean(),
+  //     })
+  //   )
+  //   .mutation(async ({ ctx, input }) => {
+  //     // const policyId = c.req.param("policyId");
+  //     // const input = c.req.valid("json");
+  //     // // TODO: Check user is authorised to access tenant which owns the device
 
-      // const id = decodeId("policy", policyId);
-      // const policy = (
-      //   await db.select().from(policies).where(eq(policies.id, id))
-      // )?.[0];
-      // if (!policy) throw new Error("Policy not found");
+  //     // const id = decodeId("policy", policyId);
+  //     // const policy = (
+  //     //   await db.select().from(policies).where(eq(policies.id, id))
+  //     // )?.[0];
+  //     // if (!policy) throw new Error("Policy not found");
 
-      // if (!policy.intuneId) throw new Error("Policy not synced with Intune"); // TODO: Do this automatically in this case
+  //     // if (!policy.intuneId) throw new Error("Policy not synced with Intune"); // TODO: Do this automatically in this case
 
-      // try {
-      //   const assignments = input.assignOrUnassign
-      //     ? [
-      //         {
-      //           target: {
-      //             "@odata.type": "#microsoft.graph.allDevicesAssignmentTarget",
-      //           },
-      //         },
-      //       ]
-      //     : [];
+  //     // try {
+  //     //   const assignments = input.assignOrUnassign
+  //     //     ? [
+  //     //         {
+  //     //           target: {
+  //     //             "@odata.type": "#microsoft.graph.allDevicesAssignmentTarget",
+  //     //           },
+  //     //         },
+  //     //       ]
+  //     //     : [];
 
-      //   await assignDeviceConfiguration(policy.intuneId, {
-      //     assignments,
-      //   });
-      // } catch (err) {
-      //   console.error(err);
-      // }
+  //     //   await assignDeviceConfiguration(policy.intuneId, {
+  //     //     assignments,
+  //     //   });
+  //     // } catch (err) {
+  //     //   console.error(err);
+  //     // }
 
-      // return c.json({});
-      return {};
-    }),
+  //     // return c.json({});
+  //     return {};
+  //   }),
 });

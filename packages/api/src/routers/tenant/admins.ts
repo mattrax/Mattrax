@@ -1,5 +1,4 @@
 import { eq } from "drizzle-orm";
-import { TenantAdminInviteEmail } from "@mattrax/email";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 
