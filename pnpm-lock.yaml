@@ -8,6 +8,9 @@ patchedDependencies:
   '@solid-mediakit/trpc@1.0.2':
     hash: r6nbrusfvpo72bwpxibomub2o4
     path: patches/@solid-mediakit__trpc@1.0.2.patch
+  '@solidjs/router@0.12.0':
+    hash: begoeivocdmxsj4ipspvonddt4
+    path: patches/@solidjs__router@0.12.0.patch
   drizzle-kit@0.20.14:
     hash: fd5wnhu3lnq6ol4deipldttfry
     path: patches/drizzle-kit@0.20.14.patch
@@ -118,7 +121,7 @@ importers:
         version: 2.1.2(solid-js@1.8.14)(solid-start@0.3.10)
       '@solidjs/router':
         specifier: ^0.12.0
-        version: 0.12.0(solid-js@1.8.14)
+        version: 0.12.0(patch_hash=begoeivocdmxsj4ipspvonddt4)(solid-js@1.8.14)
       '@tanstack/query-broadcast-client-experimental':
         specifier: ^5.20.2
         version: 5.20.2
@@ -248,7 +251,7 @@ importers:
         version: 3.0.1
       '@solidjs/router':
         specifier: ^0.12.0
-        version: 0.12.0(solid-js@1.8.14)
+        version: 0.12.0(patch_hash=begoeivocdmxsj4ipspvonddt4)(solid-js@1.8.14)
       '@solidjs/start':
         specifier: ^0.5.5
         version: 0.5.5(solid-js@1.8.14)(vinxi@0.3.0)(vite@5.1.1)
@@ -4657,13 +4660,14 @@ packages:
       solid-js: 1.8.14
     dev: false
 
-  /@solidjs/router@0.12.0(solid-js@1.8.14):
+  /@solidjs/router@0.12.0(patch_hash=begoeivocdmxsj4ipspvonddt4)(solid-js@1.8.14):
     resolution: {integrity: sha512-9dyBL35T7x86RBSJBMu9jLGytBTmWQehb0uxez7TfzYtwI+v9poo2fzRbcCCrWVTQkwGD/rWvqmxUvczp2at3A==}
     peerDependencies:
       solid-js: ^1.8.6
     dependencies:
       solid-js: 1.8.14
     dev: false
+    patched: true
 
   /@solidjs/router@0.8.4(solid-js@1.8.14):
     resolution: {integrity: sha512-Gi/WVoVseGMKS1DBdT3pNAMgOzEOp6Q3dpgNd2mW9GUEnVocPmtyBjDvXwN6m7tjSGsqqfqJFXk7bm1hxabSRw==}
@@ -11068,7 +11072,7 @@ packages:
       '@babel/preset-typescript': 7.23.3(@babel/core@7.23.9)
       '@babel/template': 7.23.9
       '@solidjs/meta': 0.29.3(solid-js@1.8.14)
-      '@solidjs/router': 0.12.0(solid-js@1.8.14)
+      '@solidjs/router': 0.12.0(patch_hash=begoeivocdmxsj4ipspvonddt4)(solid-js@1.8.14)
       '@types/cookie': 0.5.4
       '@types/debug': 4.1.12
       chokidar: 3.6.0

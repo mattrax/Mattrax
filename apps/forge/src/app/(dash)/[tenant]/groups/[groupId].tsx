@@ -217,7 +217,6 @@ import {
 } from "~/components/ui/sheet";
 import { Badge } from "~/components/ui/badge";
 import { useQueryClient } from "@tanstack/solid-query";
-import { useIsRouting } from "@solidjs/router";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 
 const AddMemberTableOptions = {

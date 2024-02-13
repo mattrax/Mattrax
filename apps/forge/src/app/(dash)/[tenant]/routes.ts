@@ -5,11 +5,15 @@ import deviceRoutes from "./devices/[deviceId]/routes";
 import settingsRoutes from "./settings/routes";
 import policyRoutes from "./policies/[policyId]/routes";
 import groupsRoutes from "./groups/routes";
+import { trpc } from "~/lib";
 
 export default [
   {
     path: "/",
     component: lazy(() => import("./index")),
+    load: () => {
+      trpc.useContext().tenant.stats.prefetch();
+    },
   },
   {
     path: "/users",
@@ -17,9 +21,12 @@ export default [
       {
         path: "/",
         component: lazy(() => import("./users")),
+        load: () => {
+          trpc.useContext().user.list.prefetch();
+        },
       },
       {
-        path: "/userId",
+        path: "/:userId",
         component: lazy(() => import("./users/[userId]")),
       },
     ],
@@ -43,6 +50,9 @@ export default [
       {
         path: "/",
         component: lazy(() => import("./devices")),
+        load: () => {
+          trpc.useContext().device.list.prefetch();
+        },
       },
       {
         path: "/:deviceId",
@@ -57,10 +67,15 @@ export default [
       {
         path: "/",
         component: lazy(() => import("./policies")),
+        load: () => {
+          trpc.useContext().policy.list.prefetch();
+        },
       },
       {
         path: "/:policyId",
         component: lazy(() => import("./policies/[policyId]")),
+        load: ({ params }) =>
+          trpc.useContext().policy.get.prefetch({ policyId: params.policyId! }),
         children: policyRoutes,
       },
     ],

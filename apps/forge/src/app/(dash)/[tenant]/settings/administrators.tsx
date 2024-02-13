@@ -35,7 +35,7 @@ const columns = [
 ];
 
 export default function Page() {
-  const administrators = trpc.tenant.administrators.useQuery();
+  const administrators = trpc.tenant.administrators.list.useQuery();
 
   const table = createSolidTable({
     get data() {
