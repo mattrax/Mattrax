@@ -89,27 +89,27 @@ export const tenantRouter = createTRPCRouter({
       devices: db
         .select({ count: count() })
         .from(devices)
-        .where(eq(devices.tenantId, ctx.session.data.id))
+        .where(eq(devices.tenantId, ctx.tenantId))
         .then((rows) => rows[0]!.count),
       users: db
         .select({ count: count() })
         .from(users)
-        .where(eq(users.tenantId, ctx.session.data.id))
+        .where(eq(users.tenantId, ctx.tenantId))
         .then((rows) => rows[0]!.count),
       policies: db
         .select({ count: count() })
         .from(policies)
-        .where(eq(policies.tenantId, ctx.session.data.id))
+        .where(eq(policies.tenantId, ctx.tenantId))
         .then((rows) => rows[0]!.count),
       applications: db
         .select({ count: count() })
         .from(applications)
-        .where(eq(applications.tenantId, ctx.session.data.id))
+        .where(eq(applications.tenantId, ctx.tenantId))
         .then((rows) => rows[0]!.count),
       groups: db
         .select({ count: count() })
         .from(groups)
-        .where(eq(groups.tenantId, ctx.session.data.id))
+        .where(eq(groups.tenantId, ctx.tenantId))
         .then((rows) => rows[0]!.count),
     })
   ),
