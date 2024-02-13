@@ -56,6 +56,8 @@ impl Command {
             acme_email: "hello@mattrax.app".to_string(),
             acme_server,
             secret,
+            db_url: "mysql://user:password@aws.connect.psdb.cloud/mattrax?require_ssl=true".into(),
+            internal_secret: "areallylongsecretthatyoushouldreplace".to_string(),
         };
 
         fs::write(

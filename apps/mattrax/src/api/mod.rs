@@ -4,24 +4,24 @@ use axum::{
     extract::State,
     http::{HeaderValue, Request},
     middleware::{self, Next},
-    response::{Redirect, Response},
+    response::Response,
     routing::get,
     Router,
 };
-use mattrax_utils::debug;
 use rcgen::{Certificate, KeyPair};
 
-use crate::config::ConfigManager;
+use crate::{config::ConfigManager, db::Db};
 
+mod internal;
 mod mdm;
 
-#[derive(Debug)]
 pub struct Context {
     pub config: ConfigManager,
     pub server_port: u16,
     pub is_dev: bool,
+    pub db: Db,
 
-    pub identity_cert: debug::Wrapper<Certificate>,
+    pub identity_cert: Certificate,
     pub identity_key: KeyPair,
 }
 
@@ -81,7 +81,7 @@ pub fn mount(state: Arc<Context>) -> Router {
         .route("/test", get(|| async move {
             axum::response::Html(r#"<a href="ms-device-enrollment:?mode=mdm&username=oscar@otbeaumont.me&servername=https://mdm.mattrax.app">Enroll</a>"#)
         }))
-        // allows
+        .nest("/internal", internal::mount(state.clone()))
         .nest("/EnrollmentServer", mdm::mount_enrollment(state.clone()))
         .nest("/ManagementServer", mdm::mount(state.clone()))
         .layer(middleware::from_fn_with_state(state.clone(), headers))

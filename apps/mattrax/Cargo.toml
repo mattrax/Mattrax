@@ -21,7 +21,16 @@ serde = { version = "1.0.196", features = ["derive"] }
 serde_json = "1.0.113"
 tokio-stream = "0.1.14"
 getrandom = "0.2.12"
-rcgen = { version = "0.12.1", features = ["x509-parser"] }
+rcgen = { version = "0.13.0", features = ["x509-parser"] }
 base64 = "0.21.7"
 sha1 = "0.10.6"
 hex = "0.4.3"
+mysql_async = { version = "0.33.0", default-features = false, features = [
+    "default-rustls",
+    "derive",
+    "tracing",
+] }
+mysql_common = { version = "=0.31.0", features = [
+    "chrono",
+] } # This is a dependency of `mysql_async`
+chrono = { version = "0.4.34", features = ["serde"] }

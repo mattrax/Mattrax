@@ -133,7 +133,7 @@ pub fn mount_enrollment(state: Arc<Context>) -> Router<Arc<Context>> {
             // 	certStore = "System"
             // }
 
-            let domain = "https://mattrax.app"; // TODO: Don't hardcode it
+            let domain = "https://mattrax.app:8443"; // TODO: Don't hardcode it
 
             let mut hasher = Sha1::new();
             hasher.update(state.identity_cert.der());
@@ -172,7 +172,7 @@ pub fn mount_enrollment(state: Arc<Context>) -> Router<Arc<Context>> {
                     <parm name="APPID" value="w7" />
                     <parm name="PROVIDER-ID" value="DEMO MDM" />
                     <parm name="NAME" value="Windows MDM Demo Server" />
-                    <parm name="ADDR" value="{domain}/ManagementServer/MDM.svc" />
+                    <parm name="ADDR" value="{domain}/ManagementServer/Manage.svc" />
                     <parm name="ServerList" value="{domain}/ManagementServer/ServerList.svc" />
                     <parm name="ROLE" value="4294967295" />
                     <parm name="BACKCOMPATRETRYDISABLED" />
@@ -247,8 +247,11 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
         post(|| async move {
             // TODO: Mutual TLS authentication
 
+            // TODO: application/vnd.syncml.dm+xml
+            // TODO: application/vnd.syncml.dm+wbxml
+
             todo!();
         }),
     )
-    // .route("/manage", get(terms_of_service))
+    // TODO: `ManagementServer/ServerList.svc` -> What does this do again???
 }

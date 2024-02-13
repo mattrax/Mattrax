@@ -5,4 +5,4 @@ members = ["apps/mattrax", "apps/mattraxd", "crates/*"]
 [patch.crates-io]
 # TODO: This is likely a security risk, will fix it properly once the MVP is out.
 # TODO: This patch is from the unreleased `0.13.0` but I patched it to lie and pretend to be `0.21.1`
-rcgen = { git = "https://github.com/oscartbeaumont/rcgen", branch = "insecure-skip-invalid-attrs" }
+rcgen = { git = "https://github.com/oscartbeaumont/rcgen", rev = "718f072790b36667eb84b1604f11dd279a448923" }

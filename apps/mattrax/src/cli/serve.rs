@@ -5,7 +5,6 @@ use std::{
     sync::Arc,
 };
 
-use mattrax_utils::debug;
 use rcgen::{Certificate, CertificateParams, KeyPair};
 use rustls_acme::{
     caches::DirCache,
@@ -20,6 +19,7 @@ use tracing::{debug, error, info, warn};
 use crate::{
     api,
     config::{AcmeServer, ConfigManager},
+    db::Db,
 };
 
 #[derive(clap::Args)]
@@ -73,14 +73,14 @@ impl Command {
         let key_pair =
             KeyPair::from_der(&fs::read(data_dir.join("certs").join("identity-key.der")).unwrap())
                 .unwrap();
+        let db = Db::new(&config_manager.get().db_url);
         let state = Arc::new(api::Context {
             config: config_manager,
             is_dev: cfg!(debug_assertions),
             server_port: port,
-            identity_cert: debug::Wrapper(
-                // TODO: Is calling generate each time, okay????
-                Certificate::generate_self_signed(params, &key_pair).unwrap(),
-            ),
+            db,
+            // TODO: Is calling generate each time, okay????
+            identity_cert: Certificate::generate_self_signed(params, &key_pair).unwrap(),
             identity_key: key_pair,
         });
 
