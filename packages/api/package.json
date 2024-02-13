@@ -22,6 +22,7 @@
     }
   },
   "dependencies": {
+    "@mattrax/drizzle-to-rs": "workspace:^",
     "@mattrax/email": "workspace:^",
     "@mattrax/mdm": "workspace:^",
     "@mattrax/ms-graph": "workspace:^",

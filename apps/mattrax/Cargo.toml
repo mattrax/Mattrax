@@ -7,7 +7,7 @@ publish = false
 default-run = "mattrax"
 
 [dependencies]
-mattrax-utils = { path = "../utils" }
+mattrax-utils = { path = "../../crates/utils" }
 
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"

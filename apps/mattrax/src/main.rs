@@ -6,6 +6,7 @@ use mattrax_utils::file_logger;
 pub(crate) mod api;
 mod cli;
 pub(crate) mod config;
+// pub(crate) mod db;
 
 #[tokio::main]
 async fn main() {

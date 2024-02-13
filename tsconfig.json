@@ -5,6 +5,7 @@
     { "path": "./apps/landing" },
     { "path": "./apps/email" },
     { "path": "./packages/api" },
+    { "path": "./packages/drizzle-to-rs" },
     { "path": "./packages/mdm" },
     { "path": "./packages/policy" },
     { "path": "./packages/policies" }
