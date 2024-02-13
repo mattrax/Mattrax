@@ -7,7 +7,8 @@ export default function Page() {
   const data = untrackScopeFromSuspense(() => ({ ...stats.data }));
 
   return (
-    <div class="px-6 flex flex-col space-y-4">
+    <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
+      <h1 class="text-3xl font-bold mb-4">Dashboard</h1>
       <dl class="mt-5 gap-5 flex">
         <StatItem title="Users" value={data().users ?? 0} />
         <StatItem title="Devices" value={data().devices ?? 0} />
