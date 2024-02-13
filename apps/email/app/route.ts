@@ -12,7 +12,7 @@ function optional_in_dev<T extends z.ZodTypeAny>(
   return process.env.NODE_ENV === "development" ? schema.optional() : schema;
 }
 
-export const env = createEnv({
+const env = createEnv({
   server: {
     // Emails and other AWS services
     // Get these values from the output of the Cloudformation template
