@@ -17,7 +17,9 @@ const tsFilesForPath = (pathname) =>
   );
 
 const ADDED_STR = "// @ts-nocheck\n\n";
-const FILES = [...tsFilesForPath("../landing/node_modules/@solidjs/start")];
+const FILES = [
+  ...tsFilesForPath("../apps/landing/node_modules/@solidjs/start"),
+];
 
 Promise.allSettled(FILES.map(addTsNoCheck)).then((results) => {
   let hasErrors = false;

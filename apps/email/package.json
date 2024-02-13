@@ -1,0 +1,35 @@
+{
+  "name": "@mattrax/email",
+  "version": "0.1.0",
+  "types": "index.ts",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3005",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "email:build": "email build",
+    "email:dev": "email dev --port 3002",
+    "email:export": "email export"
+  },
+  "dependencies": {
+    "@react-email/button": "^0.0.13",
+    "@react-email/components": "0.0.14",
+    "@react-email/html": "^0.0.7",
+    "@react-email/render": "^0.0.12",
+    "@react-email/tailwind": "^0.0.14",
+    "@t3-oss/env-core": "^0.9.2",
+    "aws4fetch": "^1.0.17",
+    "next": "14.1.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "react-email": "2.0.0",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "typescript": "^5"
+  }
+}

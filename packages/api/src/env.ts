@@ -14,6 +14,8 @@ export const env = createEnv({
     DATABASE_URL: z.string(),
     INTERNAL_SECRET: z.string(),
     PROD_URL: z.string(),
+    EMAIL_URL: z.string(),
+    FROM_ADDRESS: z.string(),
     // Emails and other AWS services
     // Get these values from the output of the Cloudformation template
     AWS_ACCESS_KEY_ID: optional_in_dev(z.string()),
@@ -29,8 +31,6 @@ export const env = createEnv({
     INTUNE_CLIENT_SECRET: z.string(),
     INTUNE_TENANT: z.string(),
     SIMPLEMDM_API_KEY: z.string(),
-    // Email
-    FROM_ADDRESS: z.string(),
   },
   clientPrefix: "VITE_",
   client: {},

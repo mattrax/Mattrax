@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["./crates/*"]
+members = ["crates/*", "apps/*"]
 
 [patch.crates-io]
 # TODO: This is likely a security risk, will fix it properly once the MVP is out.

@@ -1,13 +1,13 @@
 {
   "files": [],
   "references": [
-    { "path": "./api" },
-    { "path": "./forge" },
-    { "path": "./landing" },
+    { "path": "./apps/forge" },
+    { "path": "./apps/landing" },
+    { "path": "./apps/email" },
+    { "path": "./packages/api" },
     { "path": "./packages/mdm" },
     { "path": "./packages/policy" },
-    { "path": "./packages/policies" },
-    { "path": "./packages/email" }
+    { "path": "./packages/policies" }
   ],
   "compilerOptions": {
     "incremental": true,

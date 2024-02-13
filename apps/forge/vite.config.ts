@@ -8,7 +8,7 @@ import solid from "vite-plugin-solid";
 import { createHtmlPlugin } from "vite-plugin-html";
 import tsconfigPaths from "vite-tsconfig-paths";
 
-const monorepoRoot = path.join(__dirname, "..");
+const monorepoRoot = path.join(__dirname, "../..");
 
 process.env = {
   ...process.env,
