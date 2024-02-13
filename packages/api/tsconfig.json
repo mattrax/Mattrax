@@ -1,13 +1,10 @@
 {
-  "extends": "../tsconfig.json",
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
     "resolveJsonModule": true
   },
   "include": ["src/", "src/**/*.json"],
   "exclude": ["node_modules", "dist"],
-  "references": [
-    { "path": "../packages/policy" },
-    { "path": "../packages/email" }
-  ]
+  "references": [{ "path": "../policy" }, { "path": "../../apps/email" }]
 }

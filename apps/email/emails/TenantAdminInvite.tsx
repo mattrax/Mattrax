@@ -14,9 +14,9 @@ import { Tailwind } from "@react-email/tailwind";
 import * as React from "react";
 
 interface VercelInviteUserEmailProps {
-  invitedByEmail?: string;
-  tenantName?: string;
-  inviteLink?: string;
+  invitedByEmail: string;
+  tenantName: string;
+  inviteLink: string;
 }
 
 export const VercelInviteUserEmail = ({

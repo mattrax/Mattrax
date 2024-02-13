@@ -1,5 +1,5 @@
 {
-  "extends": "../tsconfig.json",
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "./dist",
     "jsx": "preserve",
@@ -11,5 +11,5 @@
   },
   "include": ["src/"],
   "exclude": ["node_modules", "dist"],
-  "references": [{ "path": "../api" }]
+  "references": [{ "path": "../../packages/api" }]
 }

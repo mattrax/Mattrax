@@ -72,11 +72,10 @@ export const adminsRouter = createTRPCRouter({
       await sendEmail({
         to: input.email,
         subject: "Invitation to Mattrax Tenant",
-        component: TenantAdminInviteEmail({
-          invitedByEmail: ctx.session.data.email,
-          tenantName: tenant.name,
-          inviteLink: `${env.PROD_URL}/invite/tenant/${code}`,
-        }),
+        type: "tenantAdminInvite",
+        invitedByEmail: ctx.session.data.email,
+        tenantName: tenant.name,
+        inviteLink: `${env.PROD_URL}/invite/tenant/${code}`,
       });
     }),
 });
