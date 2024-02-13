@@ -33,8 +33,9 @@ export const policyRouter = createTRPCRouter({
   get: tenantProcedure
     .input(z.object({ policyId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const p = (
-        await db
+      const policyId = decodeId("policy", input.policyId);
+      const [policy, versions] = await Promise.all([
+        db
           .select({
             id: policies.id,
             name: policies.name,
@@ -49,15 +50,26 @@ export const policyRouter = createTRPCRouter({
             policyVersions,
             eq(policies.activeVersion, policyVersions.id)
           )
-          .where(eq(policies.tenantId, ctx.tenantId))
-      )?.[0];
+          .where(eq(policies.id, policyId))
+          .then((v) => v?.[0]),
+        db
+          .select({
+            id: policyVersions.id,
+            data: policyVersions.data,
+            createdAt: policyVersions.createdAt,
+          })
+          .from(policyVersions)
+          .where(eq(policyVersions.policyId, policyId))
+          .then((v) => v?.[0]),
+      ]);
 
-      return (
-        p && {
-          ...p,
-          id: encodeId("policy", p.id),
-        }
-      );
+      return {
+        ...(policy && {
+          ...policy,
+          id: encodeId("policy", policy.id),
+        }),
+        versions,
+      };
     }),
 
   duplicate: tenantProcedure
@@ -123,7 +135,6 @@ export const policyRouter = createTRPCRouter({
         const policyInsertId = parseInt(result.insertId);
         await db.insert(policyVersions).values({
           policyId: policyInsertId,
-          data: {},
         });
         const result2 = await db.insert(policyVersions).values({
           policyId: policyInsertId,

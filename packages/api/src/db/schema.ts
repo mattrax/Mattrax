@@ -133,7 +133,7 @@ export const policyVersions = mysqlTable("policy_versions", {
   // status: mysqlEnum("status", ["open", "staged", "deployed"])
   //   .notNull()
   //   .default("open"),
-  data: json("data").notNull(),
+  data: json("data").notNull().default([]),
   // deployedAt: timestamp("deployedAt"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
