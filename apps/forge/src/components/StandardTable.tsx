@@ -1,6 +1,5 @@
 import { flexRender, type Table as TTable } from "@tanstack/solid-table";
 import { For, ParentProps } from "solid-js";
-import { columns } from "~/app/(dash)/[tenant]/users";
 import {
   Table,
   TableHeader,
@@ -20,6 +19,12 @@ export function StandardTable<TData>(props: {
   onRowClick?: (row: TData) => void;
   class?: string;
 }) {
+  const numCols = () =>
+    props.table
+      .getHeaderGroups()
+      .map((c) => c.headers.length)
+      .reduce((a, b) => a + b);
+
   return (
     <div class={clsx("rounded-md border", props.class)}>
       <Table>
@@ -64,7 +69,7 @@ export function StandardTable<TData>(props: {
             </For>
           ) : (
             <TableRow>
-              <TableCell colSpan={columns.length} class="h-24 text-center">
+              <TableCell colSpan={numCols()} class="h-24 text-center">
                 No results.
               </TableCell>
             </TableRow>
