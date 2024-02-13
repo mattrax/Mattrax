@@ -1,5 +1,5 @@
 diff --git a/dist/index.jsx b/dist/index.jsx
-index 1cf66a11fba9c8f2b736e4e7f6fed8040e571cb4..16c8b2d65e81fc857abcac36d20c3654366f65e2 100644
+index 1cf66a11fba9c8f2b736e4e7f6fed8040e571cb4..8217ebc789b4fdb52d5d0a6da9ab8eebbeda405b 100644
 --- a/dist/index.jsx
 +++ b/dist/index.jsx
 @@ -4,7 +4,6 @@ import { createRecursiveProxy, createFlatProxy } from '@trpc/server/shared';
@@ -10,7 +10,15 @@ index 1cf66a11fba9c8f2b736e4e7f6fed8040e571cb4..16c8b2d65e81fc857abcac36d20c3654
  
  /**
   * We treat `undefined` as an input the same as omitting an `input`
-@@ -119,7 +118,7 @@ function createHooksInternal(config) {
+@@ -75,6 +74,7 @@ function createSolidQueryUtilsProxy(context) {
+                 fetchInfinite: () => context.fetchInfiniteQuery(queryKey, ...rest),
+                 prefetch: () => context.prefetchQuery(queryKey, ...rest),
+                 prefetchInfinite: () => context.prefetchInfiniteQuery(queryKey, ...rest),
++                ensureData: () => context.ensureQueryData(queryKey, ...rest),
+                 invalidate: () => context.invalidateQueries(queryKey, ...rest),
+                 refetch: () => context.refetchQueries(queryKey, ...rest),
+                 cancel: () => context.cancelQuery(queryKey, ...rest),
+@@ -119,7 +119,7 @@ function createHooksInternal(config) {
      const SolidQueryContext = config?.solidQueryContext;
      const TRPCProvider = (props) => {
          const { abortOnUnmount = false, queryClient } = props;
@@ -19,6 +27,34 @@ index 1cf66a11fba9c8f2b736e4e7f6fed8040e571cb4..16c8b2d65e81fc857abcac36d20c3654
          return (<Context.Provider value={{
                  abortOnUnmount,
                  queryClient,
+@@ -159,6 +159,12 @@ function createHooksInternal(config) {
+                         },
+                     });
+                 },
++                ensureQueryData: (pathAndInput, opts) => {
++                    return queryClient.ensureQueryData({
++                        queryKey: getArrayQueryKey(pathAndInput),
++                        queryFn: () => createTRPCClient(config?.config(event)).query(...getClientArgs(pathAndInput, opts)),
++                    });
++                },
+                 invalidateQueries: (...args) => {
+                     const [queryKey, ...rest] = args;
+                     return queryClient.invalidateQueries({
+diff --git a/dist/internals/context.d.ts b/dist/internals/context.d.ts
+index c8ae87cc9b35c2f76ed470f5355f2dc37d9cd8ab..8290a9683a147d78ac8f045d04bd143cb0c3a5e0 100644
+--- a/dist/internals/context.d.ts
++++ b/dist/internals/context.d.ts
+@@ -36,6 +36,10 @@ export interface TRPCContextState<TRouter extends AnyRouter> extends Required<TR
+      * @link https://tanstack.com/query/v4/docs/reference/QueryClient#queryclientprefetchinfinitequery
+      */
+     prefetchInfiniteQuery<TPath extends keyof TRouter["_def"]["queries"] & string, TProcedure extends TRouter["_def"]["queries"][TPath], TOutput extends inferProcedureOutput<TProcedure>, TInput extends inferProcedureInput<TProcedure>>(pathAndInput: [path: TPath, ...args: inferHandlerInput<TProcedure>], opts?: TRPCFetchInfiniteQueryOptions<TInput, TRPCClientError<TRouter>, TOutput>): Promise<void>;
++    /**
++     * @link https://react-query.tanstack.com/guides/prefetching
++     */
++    ensureQueryData<TPath extends keyof TRouter["_def"]["queries"] & string, TProcedure extends TRouter["_def"]["queries"][TPath], TOutput extends inferProcedureOutput<TProcedure>, TInput extends inferProcedureInput<TProcedure>>(pathAndInput: [path: TPath, ...args: inferHandlerInput<TProcedure>], opts?: TRPCFetchQueryOptions<TInput, TRPCClientError<TRouter>, TOutput>): Promise<TOutput>;
+     /**
+      * @link https://react-query.tanstack.com/guides/query-invalidation
+      */
 diff --git a/dist/shared/hooks/createHooksInternal.d.ts b/dist/shared/hooks/createHooksInternal.d.ts
 index 21e54d78dbfc6959b770324144d78d21fdc96831..83ca4ac4ff0564512f501bc1e14cd17f4dfb78d3 100644
 --- a/dist/shared/hooks/createHooksInternal.d.ts
@@ -40,6 +76,21 @@ index 21e54d78dbfc6959b770324144d78d21fdc96831..83ca4ac4ff0564512f501bc1e14cd17f
  interface TRPCHookResult {
      trpc: {
          path: string;
+diff --git a/dist/shared/proxy/utilsProxy.d.ts b/dist/shared/proxy/utilsProxy.d.ts
+index 522eeb805ff4f8f0b156f5031c14d2790696fe43..b49830ae67e16065562ec1686952e5e22456333f 100644
+--- a/dist/shared/proxy/utilsProxy.d.ts
++++ b/dist/shared/proxy/utilsProxy.d.ts
+@@ -19,6 +19,10 @@ type DecorateProcedure<TRouter extends AnyRouter, TProcedure extends AnyQueryPro
+      * @link https://react-query.tanstack.com/guides/prefetching
+      */
+     prefetchInfinite(input: inferProcedureInput<TProcedure>, procedureOpts?: ProcedureOptions, opts?: TRPCFetchInfiniteQueryOptions<inferProcedureInput<TProcedure>, TRPCClientError<TRouter>, inferProcedureOutput<TProcedure>>): Promise<void>;
++    /**
++     * @link https://react-query.tanstack.com/guides/prefetching
++     */
++    ensureData(input: inferProcedureInput<TProcedure>, opts?: TRPCFetchQueryOptions<inferProcedureInput<TProcedure>, TRPCClientError<TRouter>, inferProcedureOutput<TProcedure>>): Promise<inferProcedureOutput<TProcedure>>;
+     /**
+      * @link https://react-query.tanstack.com/guides/query-invalidation
+      */
 diff --git a/dist/shared/types.d.ts b/dist/shared/types.d.ts
 index 6b9e1e8cae1e38d12c0a5ddd3a696b3a08b55ebd..5de55fe2d4ef3a789d96920a94c2ee43c83469bc 100644
 --- a/dist/shared/types.d.ts
@@ -60,7 +111,7 @@ index 6b9e1e8cae1e38d12c0a5ddd3a696b3a08b55ebd..5de55fe2d4ef3a789d96920a94c2ee43
 +    config: (event?: unknown) => CreateTRPCClientOptions<TRouter>;
  }
 diff --git a/package.json b/package.json
-index d71081a6bb1efd38b65d1016a382f5be78161f0c..677fb96691ab1686e5b832cef8355ce3d6747db4 100644
+index d71081a6bb1efd38b65d1016a382f5be78161f0c..1f60c3330041e95429e74406c2b8ff16c03c31bc 100644
 --- a/package.json
 +++ b/package.json
 @@ -20,7 +20,6 @@

@@ -12,7 +12,7 @@ export default [
     path: "/",
     component: lazy(() => import("./index")),
     load: () => {
-      trpc.useContext().tenant.stats.prefetch();
+      trpc.useContext().tenant.stats.ensureData();
     },
   },
   {
@@ -22,7 +22,7 @@ export default [
         path: "/",
         component: lazy(() => import("./users")),
         load: () => {
-          trpc.useContext().user.list.prefetch();
+          trpc.useContext().user.list.ensureData();
         },
       },
       {
@@ -51,7 +51,7 @@ export default [
         path: "/",
         component: lazy(() => import("./devices")),
         load: () => {
-          trpc.useContext().device.list.prefetch();
+          trpc.useContext().device.list.ensureData();
         },
       },
       {
@@ -68,14 +68,16 @@ export default [
         path: "/",
         component: lazy(() => import("./policies")),
         load: () => {
-          trpc.useContext().policy.list.prefetch();
+          trpc.useContext().policy.list.ensureData();
         },
       },
       {
         path: "/:policyId",
         component: lazy(() => import("./policies/[policyId]")),
         load: ({ params }) =>
-          trpc.useContext().policy.get.prefetch({ policyId: params.policyId! }),
+          trpc
+            .useContext()
+            .policy.get.ensureData({ policyId: params.policyId! }),
         children: policyRoutes,
       },
     ],

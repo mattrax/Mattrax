@@ -27,7 +27,7 @@ export default [
     component: dashboardLayout,
     children: dashboardRoutes,
     load: () => {
-      trpc.useContext().auth.me.prefetch();
+      trpc.useContext().auth.me.ensureData();
     },
   },
 ] satisfies RouteDefinition[];
