@@ -1,6 +1,6 @@
 import { restrictions } from "@mattrax/policies";
 import { useParams } from "@solidjs/router";
-import { For } from "solid-js";
+import { For, createSignal } from "solid-js";
 import {
   Button,
   Card,
@@ -58,6 +58,7 @@ export default function Page() {
           {/* <InputField form={form} name="name" label="Name" /> */}
         </CardContent>
       </Card>
+      <PolicyFlowControl />
       <Card class="flex flex-col">
         <CardHeader>
           <CardTitle>Script</CardTitle>
@@ -75,6 +76,27 @@ export default function Page() {
           <NewPolicyPopover />
         </Popover>
       </div>
+    </div>
+  );
+}
+
+function PolicyFlowControl() {
+  const [state, setState] = createSignal(false);
+  const onClick = () => setState((s) => !s);
+
+  return (
+    <div class="flex w-full justify-center">
+      {state() ? (
+        <IconPhAlarmBold
+          class="text-2xl hover:scale-110 transition"
+          onClick={onClick}
+        />
+      ) : (
+        <IconPhArrowCircleDownBold
+          class="text-2xl hover:scale-110 transition"
+          onClick={onClick}
+        />
+      )}
     </div>
   );
 }
