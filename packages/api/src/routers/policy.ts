@@ -34,42 +34,46 @@ export const policyRouter = createTRPCRouter({
     .input(z.object({ policyId: z.string() }))
     .query(async ({ ctx, input }) => {
       const policyId = decodeId("policy", input.policyId);
-      const [policy, versions] = await Promise.all([
-        db
-          .select({
-            id: policies.id,
-            name: policies.name,
-            activeVersion: {
-              id: policyVersions.id,
-              data: policyVersions.data,
-              createdAt: policyVersions.createdAt,
-            },
-          })
-          .from(policies)
-          .leftJoin(
-            policyVersions,
-            eq(policies.activeVersion, policyVersions.id)
-          )
-          .where(eq(policies.id, policyId))
-          .then((v) => v?.[0]),
-        db
-          .select({
+      const policy = await db
+        .select({
+          id: policies.id,
+          name: policies.name,
+          activeVersion: {
             id: policyVersions.id,
             data: policyVersions.data,
             createdAt: policyVersions.createdAt,
-          })
-          .from(policyVersions)
-          .where(eq(policyVersions.policyId, policyId))
-          .then((v) => v?.[0]),
-      ]);
+          },
+        })
+        .from(policies)
+        .leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.id))
+        .where(eq(policies.id, policyId))
+        .then((v) => v?.[0]);
 
       return {
         ...(policy && {
           ...policy,
           id: encodeId("policy", policy.id),
         }),
-        versions,
       };
+    }),
+
+  getVersions: tenantProcedure
+    .input(z.object({ policyId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const policyId = decodeId("policy", input.policyId);
+      const versions = await db
+        .select({
+          id: policyVersions.id,
+          data: policyVersions.data,
+          createdAt: policyVersions.createdAt,
+        })
+        .from(policyVersions)
+        .where(eq(policyVersions.policyId, policyId));
+
+      return versions.map((v) => ({
+        ...v,
+        id: encodeId("policyVersion", v.id),
+      }));
     }),
 
   duplicate: tenantProcedure

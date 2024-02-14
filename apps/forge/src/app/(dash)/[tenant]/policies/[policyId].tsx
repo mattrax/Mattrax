@@ -1,5 +1,13 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
-import { type JSX, For, ParentProps, Show, startTransition } from "solid-js";
+import {
+  type JSX,
+  For,
+  ParentProps,
+  Show,
+  startTransition,
+  useTransition,
+  createEffect,
+} from "solid-js";
 import { trpc } from "~/lib";
 import {
   Button,
@@ -17,6 +25,7 @@ import { As } from "@kobalte/core";
 import { toast } from "solid-sonner";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { OutlineLayout } from "../OutlineLayout";
+import dayjs from "dayjs";
 
 // TODO: If the policy is not found redirect back to `/policies`
 
@@ -42,6 +51,7 @@ const navigation = [
 
 export default function Page(props: ParentProps) {
   const navigate = useNavigate();
+  const [transitionPending] = useTransition();
   const params = useParams<{ policyId: string }>();
 
   const policy = trpc.policy.get.useQuery(() => ({
@@ -64,32 +74,7 @@ export default function Page(props: ParentProps) {
             <div class="flex flex-row items-center justify-between">
               <h1 class="text-3xl font-bold mb-4">{policy().name}</h1>
               <div class="flex space-x-4">
-                {/* // TODO: Version management */}
-                {/* // TODO: Require at least one item to be selected */}
-                <Select
-                  // value={value()}
-                  // onChange={setValue}
-                  options={[
-                    "Apple",
-                    "Banana",
-                    "Blueberry",
-                    "Grapes",
-                    "Pineapple",
-                  ]}
-                  placeholder="Select a fruit…"
-                  itemComponent={(props) => (
-                    <SelectItem item={props.item}>
-                      {props.item.rawValue}
-                    </SelectItem>
-                  )}
-                >
-                  <SelectTrigger aria-label="Fruit" class="w-[180px]">
-                    <SelectValue<string>>
-                      {(state) => state.selectedOption()}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent />
-                </Select>
+                {!transitionPending() && <PolicyVersionSwitcher />}
 
                 {/* <Progress
                   value={3}
@@ -195,6 +180,40 @@ export default function Page(props: ParentProps) {
         );
       }}
     </Show>
+  );
+}
+
+function PolicyVersionSwitcher() {
+  const params = useParams<{ policyId: string }>();
+  const versions = trpc.policy.getVersions.useQuery(() => ({
+    policyId: params.policyId!,
+  }));
+
+  createEffect(() => console.log(versions.data));
+
+  return (
+    <Select
+      options={versions.data || []}
+      placeholder="Select a fruit…"
+      itemComponent={(props) => (
+        <SelectItem item={props.item}>
+          {dayjs(props.item.rawValue.createdAt).fromNow()}
+        </SelectItem>
+      )}
+      disabled={versions.isPending}
+      multiple={false}
+      disallowEmptySelection={true}
+      // value={value()}
+      onChange={(v) => {
+        // TODO: Finish this
+        // alert("TODO");
+      }}
+    >
+      <SelectTrigger aria-label="Fruit" class="w-[180px]">
+        <SelectValue<string>>{(state) => state.selectedOption()}</SelectValue>
+      </SelectTrigger>
+      <SelectContent />
+    </Select>
   );
 }
 
