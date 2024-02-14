@@ -19,3 +19,4 @@ export * from "./label";
 export * from "./flat-tabs";
 export * from "./badge";
 export * from "./popover";
+export * from "./avatar";
