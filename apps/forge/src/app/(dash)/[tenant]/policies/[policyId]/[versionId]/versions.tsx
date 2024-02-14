@@ -16,7 +16,7 @@ export default function Page() {
   // TODO: Show scope and deploy progress
 
   const deploy = {
-    description: "Modify the policy!",
+    description: "I fixed a boo boo",
     by: "Oscar",
     when: new Date(),
   };
@@ -29,12 +29,11 @@ export default function Page() {
       <Card class="flex flex-col">
         <CardHeader class="flex-row w-full justify-between space-y-0">
           <div>
-            <CardTitle>{deploy.description}</CardTitle>
-            <CardDescription>
-              {/* {timeSince(deploy.when)} */}
+            <CardTitle>
               Deployed by <span class="font-medium">{deploy.by}</span>{" "}
               {timeago()}
-            </CardDescription>
+            </CardTitle>
+            <CardDescription>{deploy.description}</CardDescription>
           </div>
           <div>
             <Progress

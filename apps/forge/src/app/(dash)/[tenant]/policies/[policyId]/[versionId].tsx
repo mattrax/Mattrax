@@ -6,10 +6,16 @@ import {
   startTransition,
   useTransition,
   createEffect,
+  createSignal,
+  Accessor,
 } from "solid-js";
 import { isDebugMode, trpc } from "~/lib";
 import {
   Button,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -19,12 +25,16 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Badge,
+  DialogDescription,
+  DialogRoot,
+  Textarea,
+  createController,
 } from "~/components/ui";
 import { As } from "@kobalte/core";
 import { toast } from "solid-sonner";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import dayjs from "dayjs";
-import { Badge } from "~/components/ui/badge";
 
 // TODO: If the policy or version is not found redirect back to `/policies`
 
@@ -47,6 +57,9 @@ export default function Page(props: ParentProps) {
           },
         }));
 
+        const [policyState, setPolicyState] =
+          createSignal<TempPolicyState>("unchanged"); // TODO: From backend
+
         // TODO: Bring back `OutlineLayout` but with a region for actions
         return (
           <div class="px-4 py-8 w-full max-w-6xl mx-auto space-y-4">
@@ -56,18 +69,34 @@ export default function Page(props: ParentProps) {
                 {/* // TODO: Get from backend */}
                 <div class="flex-1 pl-3">
                   <div class="h-full flex justify-center items-center content-center">
-                    <Badge onClick={() => navigate("./versions")}>
-                      Deploy in Progress
-                    </Badge>
+                    {policyState() === "changed" && (
+                      <Badge
+                        onClick={() => {
+                          // TODO: Open the deploy dialog
+                          alert("TODO");
+                        }}
+                      >
+                        Changes Pending
+                      </Badge>
+                    )}
+                    {policyState() === "deploying" && (
+                      <Badge
+                        onClick={() => navigate("./versions")}
+                        class="bg-brand animate-pulse"
+                      >
+                        Deploy in Progress
+                      </Badge>
+                    )}
                   </div>
                 </div>
               </div>
 
               <div class="flex space-x-4">
                 {!transitionPending() && <PolicyVersionSwitcher />}
-
-                {/* // TODO: Dropdown, quick deploy or staged rollout */}
-                <Button onClick={() => alert("TODO")}>Deploy</Button>
+                <DeployButton
+                  policyState={policyState}
+                  setPolicyState={setPolicyState}
+                />
                 <ConfirmDialog>
                   {(confirm) => (
                     <ActionsDropdown
@@ -136,7 +165,16 @@ export default function Page(props: ParentProps) {
                 </ul>
               </nav>
               <div class="flex-1">
-                <main class="px-4 w-full h-full">{props.children}</main>
+                <main class="px-4 w-full h-full">
+                  {props.children}
+                  {/* // TODO: Remove this */}
+                  <Button
+                    onClick={() => setPolicyState("changed")}
+                    class="mt-4"
+                  >
+                    I changed something in the policy
+                  </Button>
+                </main>
               </div>
             </div>
           </div>
@@ -243,5 +281,70 @@ function ActionsDropdown(
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+type TempPolicyState = "unchanged" | "changed" | "deploying" | "deployed";
+
+function DeployButton(props: {
+  policyState: Accessor<TempPolicyState>;
+  setPolicyState: (state: TempPolicyState) => void;
+}) {
+  const navigate = useNavigate();
+  const controller = createController();
+  const [page, setPage] = createSignal(0);
+  // TODO: Dropdown, quick deploy or staged rollout
+
+  createEffect(() => controller.open() && setPage(0));
+
+  return (
+    <DialogRoot controller={controller}>
+      <DialogTrigger asChild>
+        <As component={Button} disabled={props.policyState() !== "changed"}>
+          Deploy
+        </As>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Deploy changes</DialogTitle>
+          <DialogDescription>
+            Would you like to deploy the following changes to <b>0</b> devices?
+          </DialogDescription>
+        </DialogHeader>
+
+        {page() === 0 && (
+          <>
+            <ul class="list-disc pl-4 text-md leading-none tracking-tight text-semibold flex flex-col space-y-2">
+              <li>
+                <p>Modified script 'Punish bad users'</p>
+              </li>
+              <li>
+                <p>Added Slack configuration</p>
+              </li>
+            </ul>
+
+            <Button type="button" onClick={() => setPage(1)}>
+              Confirm Changes
+            </Button>
+          </>
+        )}
+        {page() === 1 && (
+          <>
+            <Textarea placeholder="Provide some context to your team!" />
+            <Button
+              variant="destructive"
+              onClick={() => {
+                // alert("TODO");
+                props.setPolicyState("deploying");
+                controller.setOpen(false);
+                navigate("./versions");
+              }}
+            >
+              Deploy to {5} devices
+            </Button>
+          </>
+        )}
+      </DialogContent>
+    </DialogRoot>
   );
 }

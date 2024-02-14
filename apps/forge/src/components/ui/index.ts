@@ -17,3 +17,5 @@ export * from "./dropdown-menu";
 export * from "./controller";
 export * from "./label";
 export * from "./flat-tabs";
+export * from "./badge";
+export * from "./popover";
