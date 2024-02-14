@@ -76,15 +76,15 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
                 onClick={() => {
                   alert(
                     `Debug mode ${
-                      localStorage.getItem("debug") === "1"
+                      localStorage.getItem("mttxDebug") === "1"
                         ? "disabled"
                         : "enabled"
                     }!`
                   );
-                  if (localStorage.getItem("debug") === "1") {
-                    localStorage.removeItem("debug");
+                  if (localStorage.getItem("mttxDebug") === "1") {
+                    localStorage.removeItem("mttxDebug");
                   } else {
-                    localStorage.setItem("debug", "1");
+                    localStorage.setItem("mttxDebug", "1");
                   }
                   globalThis.location.reload();
                 }}

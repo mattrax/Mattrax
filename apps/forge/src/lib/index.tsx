@@ -54,3 +54,5 @@ export function isTRPCClientError(
 ): cause is TRPCClientError<AppRouter> {
   return cause instanceof TRPCClientError;
 }
+
+export const isDebugMode = () => localStorage.getItem("mttxDebug") === "1";

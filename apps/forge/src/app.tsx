@@ -26,7 +26,7 @@ import relativeTime from "dayjs/plugin/relativeTime";
 // } from "@tanstack/solid-query-persist-client";
 // import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import routes from "./app/routes";
-import { isTRPCClientError, trpc } from "./lib";
+import { isDebugMode, isTRPCClientError, trpc } from "./lib";
 import "./app.css";
 import "./sonner.css";
 
@@ -161,10 +161,7 @@ export default function App() {
               // >
 
               <>
-                {import.meta.env.DEV &&
-                localStorage.getItem("debug") !== null ? (
-                  <SolidQueryDevtools />
-                ) : null}
+                {isDebugMode() ? <SolidQueryDevtools /> : null}
                 <ErrorBoundary
                   fallback={(err, reset) => {
                     // Solid Start + HMR is buggy as all hell so this hacks around it.

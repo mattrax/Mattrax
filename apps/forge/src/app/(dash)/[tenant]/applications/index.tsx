@@ -70,6 +70,17 @@ export default function Page() {
 
   const isLoading = untrackScopeFromSuspense(() => false);
 
+  if (!isDebugMode()) {
+    return (
+      <div class="px-4 py-8 w-full max-w-5xl mx-auto gap-4 flex flex-col">
+        <div class="flex flex-row justify-between">
+          <h1 class="text-3xl font-bold mb-4">Applications</h1>
+        </div>
+        <h1 class="text-muted-foreground opacity-70">Coming soon...</h1>
+      </div>
+    );
+  }
+
   return (
     <div class="px-4 py-8 w-full max-w-5xl mx-auto gap-4 flex flex-col">
       <div class="flex flex-row justify-between">
@@ -142,7 +153,7 @@ import {
   DialogTrigger,
 } from "~/components/ui";
 import { createQuery } from "@tanstack/solid-query";
-import { untrackScopeFromSuspense } from "~/lib";
+import { isDebugMode, untrackScopeFromSuspense } from "~/lib";
 
 function CreatePolicyDialog(props: ParentProps) {
   const navigate = useNavigate();

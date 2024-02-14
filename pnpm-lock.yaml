@@ -104,6 +104,9 @@ importers:
       '@solid-primitives/context':
         specifier: ^0.2.2
         version: 0.2.2(solid-js@1.8.14)
+      '@solid-primitives/date':
+        specifier: ^2.0.19
+        version: 2.0.19(solid-js@1.8.14)
       '@solid-primitives/event-bus':
         specifier: ^1.0.9
         version: 1.0.9(solid-js@1.8.14)
@@ -4511,6 +4514,17 @@ packages:
       solid-js: 1.8.14
     dev: false
 
+  /@solid-primitives/date@2.0.19(solid-js@1.8.14):
+    resolution: {integrity: sha512-1zY3gQszqJgwrt3zt9uj8HlDVm6TAuv04YpJ9Rf6H+Zn20vHZnfLsECQz5HVvuGuIZnU89fCFsF/6p78iMLQqw==}
+    peerDependencies:
+      solid-js: ^1.6.12
+    dependencies:
+      '@solid-primitives/memo': 1.3.6(solid-js@1.8.14)
+      '@solid-primitives/timer': 1.3.8(solid-js@1.8.14)
+      '@solid-primitives/utils': 6.2.2(solid-js@1.8.14)
+      solid-js: 1.8.14
+    dev: false
+
   /@solid-primitives/event-bus@1.0.9(solid-js@1.8.14):
     resolution: {integrity: sha512-BI9dla3GQzINsufEzr/CV3B/9e0D1pyk7Ig6kPI6s4geUkiVgFadY5V8R95PEeHH1NagOny7AHpw+RaRIuBpkA==}
     peerDependencies:
@@ -4633,6 +4647,14 @@ packages:
       '@solid-primitives/utils': 6.2.2(solid-js@1.8.14)
       solid-js: 1.8.14
       solid-start: 0.3.10(@solidjs/meta@0.29.3)(@solidjs/router@0.12.0)(solid-js@1.8.14)(vite@5.1.1)
+    dev: false
+
+  /@solid-primitives/timer@1.3.8(solid-js@1.8.14):
+    resolution: {integrity: sha512-NTOoKAYXDkNkrpZvu7svCzIlAGy/XCbz4rToJaMtqf3BOK0YOJ8t2l2JwikFOTZW3MLH553VjEGFZjJwVHOzHg==}
+    peerDependencies:
+      solid-js: ^1.6.12
+    dependencies:
+      solid-js: 1.8.14
     dev: false
 
   /@solid-primitives/trigger@1.0.9(solid-js@1.8.14):

@@ -73,7 +73,6 @@ export default [
       },
       {
         path: "/:policyId",
-        component: lazy(() => import("./policies/[policyId]")),
         load: ({ params }) =>
           trpc
             .useContext()

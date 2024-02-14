@@ -59,10 +59,12 @@ export const columns = [
   }),
   columnHelper.accessor("lastSynced", {
     header: "Last Synced",
+    // TODO: Make time automatically update
     cell: (cell) => dayjs(cell.getValue()).fromNow(),
   }),
   columnHelper.accessor("enrolledAt", {
     header: "Enrolled At",
+    // TODO: Make time automatically update
     cell: (cell) => dayjs(cell.getValue()).fromNow(),
   }),
 ];

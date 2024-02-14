@@ -1,14 +1,13 @@
 import { A, useNavigate, useParams } from "@solidjs/router";
 import {
   type JSX,
-  For,
   ParentProps,
   Show,
   startTransition,
   useTransition,
   createEffect,
 } from "solid-js";
-import { trpc } from "~/lib";
+import { isDebugMode, trpc } from "~/lib";
 import {
   Button,
   DropdownMenu,
@@ -24,30 +23,10 @@ import {
 import { As } from "@kobalte/core";
 import { toast } from "solid-sonner";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
-import { OutlineLayout } from "../OutlineLayout";
 import dayjs from "dayjs";
+import { Badge } from "~/components/ui/badge";
 
-// TODO: If the policy is not found redirect back to `/policies`
-
-const navigation = [
-  { name: "General", href: "", icon: IconPhGearDuotone },
-  {
-    name: "Restrictions",
-    href: "restrictions",
-    icon: IconPhLockDuotone,
-  },
-  {
-    name: "Script",
-    href: "scripts",
-    icon: IconPhClipboardDuotone,
-  },
-  {
-    // TODO: Only for Mattrax employee's
-    name: "Debug",
-    href: "debug",
-    icon: IconPhCookingPotDuotone,
-  },
-];
+// TODO: If the policy or version is not found redirect back to `/policies`
 
 export default function Page(props: ParentProps) {
   const navigate = useNavigate();
@@ -72,24 +51,21 @@ export default function Page(props: ParentProps) {
         return (
           <div class="px-4 py-8 w-full max-w-6xl mx-auto space-y-4">
             <div class="flex flex-row items-center justify-between">
-              <h1 class="text-3xl font-bold mb-4">{policy().name}</h1>
+              <div class="flex mb-4">
+                <h1 class="text-3xl font-bold text-center">{policy().name}</h1>
+                {/* // TODO: Get from backend */}
+                <div class="flex-1 pl-3">
+                  <div class="h-full flex justify-center items-center content-center">
+                    <Badge onClick={() => navigate("./versions")}>
+                      Deploy in Progress
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
               <div class="flex space-x-4">
                 {!transitionPending() && <PolicyVersionSwitcher />}
 
-                {/* <Progress
-                  value={3}
-                  minValue={0}
-                  maxValue={10}
-                  getValueLabel={({ value, max }) =>
-                    `${value} of ${max} devices completed`
-                  }
-                  class="w-[300px] space-y-1"
-                >
-                  <div class="flex justify-between">
-                    <ProgressLabel>Deploying...</ProgressLabel>
-                    <ProgressValueLabel />
-                  </div>
-                </Progress> */}
                 {/* // TODO: Dropdown, quick deploy or staged rollout */}
                 <Button onClick={() => alert("TODO")}>Deploy</Button>
                 <ConfirmDialog>
@@ -135,39 +111,26 @@ export default function Page(props: ParentProps) {
                 <ul role="list" class="flex flex-1 flex-col gap-y-7">
                   <li>
                     <ul role="list" class="space-y-1">
-                      <div class="text-xs font-semibold leading-6 text-brand">
-                        Standard
-                      </div>
-                      <For each={navigation}>
-                        {(item) => (
-                          <SidebarItem href={item.href} icon={item.icon}>
-                            {item.name}
-                          </SidebarItem>
-                        )}
-                      </For>
-                    </ul>
-                  </li>
-                  <li>
-                    <ul role="list" class="space-y-1">
-                      <div class="text-xs font-semibold leading-6 text-brand pt-2">
-                        3rd Party Software
-                      </div>
-
-                      <li>
-                        <SidebarItem href="chrome" icon={IconLogosChrome}>
-                          Chrome
-                        </SidebarItem>
-                        <SidebarItem href="slack" icon={IconLogosSlackIcon}>
-                          Slack
-                        </SidebarItem>
-                        {/* // TODO: Use a proper Office suite icon */}
+                      <SidebarItem href="" icon={IconPhGearDuotone}>
+                        General
+                      </SidebarItem>
+                      <SidebarItem href="builder" icon={IconPhStackDuotone}>
+                        Builder
+                      </SidebarItem>
+                      <SidebarItem
+                        href="versions"
+                        icon={IconPhSelectionDuotone}
+                      >
+                        Versions
+                      </SidebarItem>
+                      {isDebugMode() && (
                         <SidebarItem
-                          href="office"
-                          icon={IconLogosMicrosoftIcon}
+                          href="debug"
+                          icon={IconPhCookingPotDuotone}
                         >
-                          Microsoft Office
+                          Debug
                         </SidebarItem>
-                      </li>
+                      )}
                     </ul>
                   </li>
                 </ul>
@@ -184,12 +147,15 @@ export default function Page(props: ParentProps) {
 }
 
 function PolicyVersionSwitcher() {
-  const params = useParams<{ policyId: string }>();
+  const params = useParams<{ policyId: string; versionId: string }>();
   const versions = trpc.policy.getVersions.useQuery(() => ({
     policyId: params.policyId!,
   }));
 
-  createEffect(() => console.log(versions.data));
+  createEffect(() => console.log(versions.data, activeVersion()));
+
+  const activeVersion = () =>
+    versions.data?.find((v) => v.id === params.versionId);
 
   return (
     <Select
@@ -200,10 +166,10 @@ function PolicyVersionSwitcher() {
           {dayjs(props.item.rawValue.createdAt).fromNow()}
         </SelectItem>
       )}
-      disabled={versions.isPending}
+      disabled={versions.isPending || !activeVersion()}
       multiple={false}
       disallowEmptySelection={true}
-      // value={value()}
+      value={activeVersion()}
       onChange={(v) => {
         // TODO: Finish this
         // alert("TODO");

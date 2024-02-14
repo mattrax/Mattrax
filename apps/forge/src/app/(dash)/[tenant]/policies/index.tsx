@@ -117,7 +117,7 @@ export default function Page() {
       <Suspense>
         <StandardTable
           table={table}
-          onRowClick={(row) => navigate(`./${row.id}`)}
+          onRowClick={(row) => navigate(`./${row.id}/${row.activeVersionId}`)}
         />
         <div class="flex items-center justify-end space-x-2 py-4">
           <div class="flex-1 text-sm text-muted-foreground">

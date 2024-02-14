@@ -14,6 +14,7 @@ export const policyRouter = createTRPCRouter({
           .select({
             id: policies.id,
             name: policies.name,
+            activeVersionId: policies.activeVersion,
             // activeVersion: {
             //   id: policyVersions.id,
             //   data: policyVersions.data,
@@ -26,6 +27,9 @@ export const policyRouter = createTRPCRouter({
       ).map((d) => ({
         ...d,
         id: encodeId("policy", d.id),
+        activeVersionId: d.activeVersionId
+          ? encodeId("policyVersion", d.activeVersionId)
+          : undefined,
       }))
     );
   }),
