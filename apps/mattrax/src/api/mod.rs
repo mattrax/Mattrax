@@ -9,6 +9,7 @@ use axum::{
     Router,
 };
 use rcgen::{Certificate, KeyPair};
+use tokio::sync::mpsc;
 
 use crate::{config::ConfigManager, db::Db};
 
@@ -23,6 +24,8 @@ pub struct Context {
 
     pub identity_cert: Certificate,
     pub identity_key: KeyPair,
+
+    pub acme_tx: mpsc::Sender<Vec<String>>,
 }
 
 impl Context {

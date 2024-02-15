@@ -4,7 +4,7 @@ use axum::{routing::post, Router};
 
 use crate::api::Context;
 
-pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
+pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
     Router::new().route(
         "/Manage.svc",
         post(|| async move {
@@ -22,3 +22,8 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
     )
     // TODO: `ManagementServer/ServerList.svc` -> What does this do again???
 }
+
+// TODO:
+// - Sync device information if it's changed
+// - Push to Mattrax agent if it's not installed
+// - Push policies

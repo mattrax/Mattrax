@@ -1467,6 +1467,7 @@ dependencies = [
  "base64",
  "chrono",
  "clap",
+ "futures",
  "getrandom",
  "hex",
  "hyper",
@@ -2167,8 +2168,7 @@ dependencies = [
 [[package]]
 name = "rustls-acme"
 version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f6de93ea3b4a88a9048f753f6db50242d2bd2633d12e06394a3ee41472bbb08"
+source = "git+https://github.com/oscartbeaumont/rustls-acme?rev=f97fef46ed4ba6480f97719dc3a06181bc8ebea3#f97fef46ed4ba6480f97719dc3a06181bc8ebea3"
 dependencies = [
  "async-io",
  "async-trait",

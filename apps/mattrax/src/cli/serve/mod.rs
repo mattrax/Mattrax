@@ -5,13 +5,17 @@ use std::{
     sync::Arc,
 };
 
+use futures::{
+    future::{select, Either},
+    pin_mut,
+};
 use rcgen::{Certificate, CertificateParams, KeyPair};
 use rustls::{pki_types::CertificateDer, server::WebPkiClientVerifier};
 use rustls_acme::{
     futures_rustls::rustls::{RootCertStore, ServerConfig},
     AcmeConfig,
 };
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::mpsc};
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
 
@@ -77,6 +81,7 @@ impl Command {
             KeyPair::from_der(&fs::read(data_dir.join("certs").join("identity-key.der")).unwrap())
                 .unwrap();
         let db = Db::new(&config_manager.get().db_url);
+        let (acme_tx, acme_rx) = mpsc::channel(25);
         let state = Arc::new(api::Context {
             config: config_manager,
             is_dev: cfg!(debug_assertions),
@@ -85,6 +90,7 @@ impl Command {
             // TODO: Is calling generate each time, okay????
             identity_cert: Certificate::generate_self_signed(params, &key_pair).unwrap(),
             identity_key: key_pair,
+            acme_tx,
         });
 
         let router = api::mount(state.clone());
@@ -113,10 +119,26 @@ impl Command {
             let resolver = acme.resolver();
             let challenge_rustls_config = acme.challenge_rustls_config();
             tokio::spawn(async move {
+                let mut acme_rx = acme_rx;
                 loop {
-                    match acme.next().await.unwrap() {
-                        Ok(ok) => debug!("event: {:?}", ok),
-                        Err(err) => error!("error: {:?}", err),
+                    let f1 = acme.next();
+                    pin_mut!(f1);
+
+                    let f2 = acme_rx.recv();
+                    pin_mut!(f2);
+
+                    match select(f1, f2).await {
+                        Either::Left((result, _)) => match result.unwrap() {
+                            Ok(ok) => debug!("event: {:?}", ok),
+                            Err(err) => error!("error: {:?}", err),
+                        },
+                        Either::Right((result, _)) => match result {
+                            Some(domains) => {
+                                debug!("Starting new ACME order for: {domains:?}");
+                                let _ = acme.order(domains).await;
+                            }
+                            None => error!("Acme channel closed!"),
+                        },
                     }
                 }
             });
