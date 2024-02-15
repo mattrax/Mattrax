@@ -11,7 +11,7 @@ const snakeToCamel = (str: string) => {
   const a = str
     .toLowerCase()
     .replace(/([-_][a-z])/g, (group) =>
-      group.toUpperCase().replace("-", "").replace("_", "")
+      group.toUpperCase().replace("-", "").replace("_", ""),
     );
   return a[0]?.toUpperCase() + a.slice(1);
 };
@@ -39,7 +39,7 @@ type Query = {
 };
 
 export function defineQuery<const T extends RustArgs = never>(
-  query: QueryDefinition<T>
+  query: QueryDefinition<T>,
 ): Query {
   // TODO: Bun is broken if this is a global
   const sqlDatatypeToRust = {
@@ -54,8 +54,8 @@ export function defineQuery<const T extends RustArgs = never>(
       {},
       {
         get: (_, prop) => prop,
-      }
-    ) as any
+      },
+    ) as any,
   );
   // @ts-expect-error
   const sql: { sql: string; params: string[] } = op.toSQL();
@@ -127,7 +127,8 @@ export function defineQuery<const T extends RustArgs = never>(
 export function exportQueries(queries: Query[], path: string) {
   console.log(`Exporting ${queries.length} queries...`);
 
-  const dbStruct = `pub struct Db {
+  const dbStruct = `#[derive(Clone)]
+  pub struct Db {
     pool: mysql_async::Pool,
   }`;
   const dbStructConstructor = `impl Db {
@@ -148,7 +149,7 @@ export function exportQueries(queries: Query[], path: string) {
       dbStruct,
       dbStructConstructor,
       queries.map((q) => q.renderedFn).join("\n"),
-    ].join("\n")
+    ].join("\n"),
   );
 
   execSync(`rustfmt --edition 2021 ${path}`);

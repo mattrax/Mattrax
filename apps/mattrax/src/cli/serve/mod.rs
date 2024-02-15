@@ -13,14 +13,19 @@ use rustls_acme::{
     },
     AcmeConfig,
 };
+use tokio::net::TcpListener;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, warn};
 
 use crate::{
     api,
+    cli::serve::acme::MattraxAcmeStore,
     config::{AcmeServer, ConfigManager},
     db::Db,
 };
+
+mod acme;
+mod server;
 
 #[derive(clap::Args)]
 #[command(about = "Serve Mattrax.")]
@@ -91,74 +96,67 @@ impl Command {
         let config = state.config.get().clone();
         if config.domain == "localhost" {
             let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
-            info!("Listening on http://{addr}");
-            axum_server::bind(addr)
-                .serve(router.into_make_service())
-                .await
-                .unwrap();
+            let listener = TcpListener::bind(addr).await.unwrap();
+            info!(
+                "Listening on http://{}",
+                listener.local_addr().unwrap_or(addr)
+            );
+            axum::serve(listener, router).await.unwrap();
         } else {
-            let mut state = AcmeConfig::new(&[config.domain.clone()])
+            let mut acme = AcmeConfig::new(&[config.domain.clone()])
                 .contact(&[format!("mailto:{}", config.acme_email)])
-                .cache_option(Some(DirCache::new(data_dir.join("acme"))))
+                .cache_option(Some(MattraxAcmeStore::new(
+                    state.db.clone(),
+                    data_dir.join("acme"),
+                )))
                 .directory_lets_encrypt(matches!(config.acme_server, AcmeServer::Production))
                 .state();
 
-            let acceptor = state.axum_acceptor(Arc::new(
-                ServerConfig::builder()
-                    .with_safe_defaults()
-                    .with_no_client_auth()
-                    .with_cert_resolver(state.resolver()),
-            ));
-
-            let acceptor2 = state.axum_acceptor(Arc::new(
-                ServerConfig::builder()
-                    .with_safe_defaults()
-                    .with_client_cert_verifier(
-                        AllowAnyAnonymousOrAuthenticatedClient::new({
-                            // TODO: Allow this to be rotated at runtime for renewal
-                            let mut root = RootCertStore::empty();
-                            let _ = root.add_parsable_certificates(&[fs::read(
-                                data_dir.join("certs").join("identity.der"),
-                            )
-                            .unwrap()]); // TODO: Check result that the cert was valid
-
-                            root
-                        })
-                        .boxed(),
-                    )
-                    .with_cert_resolver(state.resolver()),
-            ));
-
+            let resolver = acme.resolver();
+            let challenge_rustls_config = acme.challenge_rustls_config();
             tokio::spawn(async move {
                 loop {
-                    match state.next().await.unwrap() {
+                    match acme.next().await.unwrap() {
                         Ok(ok) => debug!("event: {:?}", ok),
                         Err(err) => error!("error: {:?}", err),
                     }
                 }
             });
 
-            // TODO: Mutual-TLS is breaking the Windows enrollment flow so an extra port. Fix this so they can be on the same port.
-            tokio::spawn({
-                let router = router.clone();
-                async move {
-                    let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, 8443)); // TODO: Configurable port
-                    info!("Listening on https://{addr}");
-                    axum_server::bind(addr)
-                        .acceptor(acceptor2)
-                        .serve(router.into_make_service())
-                        .await
-                        .unwrap();
-                }
-            });
+            let server = server::Server::new(router, challenge_rustls_config);
 
-            let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
-            info!("Listening on https://{addr}");
-            axum_server::bind(addr)
-                .acceptor(acceptor)
-                .serve(router.into_make_service())
-                .await
-                .unwrap();
+            // TODO: Mutual-TLS is breaking the Windows enrollment flow so an extra port for now. Fix this so they can be on the same port (even on different domains if absolutely required).
+            tokio::spawn(
+                server.clone().start(
+                    SocketAddr::from((Ipv6Addr::UNSPECIFIED, 8443)),
+                    ServerConfig::builder()
+                        .with_safe_defaults()
+                        .with_client_cert_verifier(
+                            AllowAnyAnonymousOrAuthenticatedClient::new({
+                                // TODO: Allow this to be rotated at runtime for renewal
+                                let mut root = RootCertStore::empty();
+                                let _ = root.add_parsable_certificates(&[fs::read(
+                                    data_dir.join("certs").join("identity.der"),
+                                )
+                                .unwrap()]); // TODO: Check result that the cert was valid
+
+                                root
+                            })
+                            .boxed(),
+                        )
+                        .with_cert_resolver(resolver.clone()),
+                ),
+            );
+
+            server
+                .start(
+                    SocketAddr::from((Ipv6Addr::UNSPECIFIED, port)),
+                    ServerConfig::builder()
+                        .with_safe_defaults()
+                        .with_no_client_auth()
+                        .with_cert_resolver(resolver),
+                )
+                .await;
         }
     }
 }

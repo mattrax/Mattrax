@@ -1,20 +1,20 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::State,
-    http::{Request, StatusCode},
+    extract::{Request, State},
+    http::StatusCode,
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Router,
 };
 
 use super::Context;
 
-async fn internal_auth<B>(
+async fn internal_auth(
     State(state): State<Arc<Context>>,
-    request: Request<B>,
-    next: Next<B>,
+    request: Request,
+    next: Next,
 ) -> Response {
     if request
         .headers()
@@ -32,5 +32,6 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
     Router::new()
         .route("/", get(|| async move { "Hello World" }))
         .layer(middleware::from_fn_with_state(state.clone(), internal_auth))
+        // .post("/issue-cert", post(|| {}))
         .with_state(state)
 }

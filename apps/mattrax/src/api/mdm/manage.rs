@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
-use axum::Router;
+use axum::{routing::post, Router};
 
 use crate::api::Context;
 
 pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
     Router::new().route(
         "/Manage.svc",
-        post(|body: String| async move {
-            println!("{:?}", body);
+        post(|| async move {
+            // println!("{:?}", body);
+
+            // body: String
 
             // TODO: Mutual TLS authentication
 

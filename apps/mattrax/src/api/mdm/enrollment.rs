@@ -1,19 +1,22 @@
 use std::sync::Arc;
 
 use axum::{
-    body::Full,
+    body::Bytes,
     extract::{Query, State},
     http::StatusCode,
     response::{Html, Response},
     routing::{get, post},
     Router,
 };
-use sha1::{Sha1, Digest};
 use base64::prelude::*;
-use rcgen::{Certificate, CertificateSigningRequestParams, ExtendedKeyUsagePurpose, KeyUsagePurpose, SerialNumber};
+use rcgen::{
+    Certificate, CertificateSigningRequestParams, ExtendedKeyUsagePurpose, KeyUsagePurpose,
+    SerialNumber,
+};
 use serde::Deserialize;
+use sha1::{Digest, Sha1};
 
-use super::Context;
+use crate::api::Context;
 
 #[derive(Deserialize)]
 pub struct AuthQueryParams {
@@ -83,7 +86,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 .header("Content-Type", "application/soap+xml; charset=utf-8")
                 // This header is important. The Windows MDM client doesn't like chunked encodings.
                 .header("Content-Length", body.len())
-                .body(Full::from(body))
+                .body(body)
                 .unwrap()
         }))
         .route("/Policy.svc", post(|body: String| async move {
@@ -101,7 +104,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 .header("Content-Type", "application/soap+xml; charset=utf-8")
                 // This header is important. The Windows MDM client doesn't like chunked encodings.
                 .header("Content-Length", body.len())
-                .body(Full::from(body))
+                .body(body)
                 .unwrap()
         }))
         .route("/Enrollment.svc", post(|State(state): State<Arc<Context>>, body: String| async move {
@@ -141,7 +144,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             let identity_cert_fingerprint =  hex::encode(&identity_cert_fingerprint).to_uppercase();
 
             let root_certificate_der = BASE64_STANDARD.encode(state.identity_cert.der());
-            
+
             let mut hasher = Sha1::new();
             hasher.update(certificate.der());
             let signed_client_cert_fingerprint = hasher.finalize();
@@ -236,7 +239,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 .header("Content-Type", "application/soap+xml; charset=utf-8")
                 // This header is important. The Windows MDM client doesn't like chunked encodings.
                 .header("Content-Length", body.len())
-                .body(Full::from(body))
+                .body(body)
                 .unwrap()
         }))
 }

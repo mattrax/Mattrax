@@ -17,6 +17,7 @@ pub struct GetDomainResult {
 pub struct GetDomainsResult {
     domain: String,
 }
+#[derive(Clone)]
 pub struct Db {
     pool: mysql_async::Pool,
 }

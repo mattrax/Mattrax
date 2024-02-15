@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::State,
-    http::{HeaderValue, Request},
+    extract::{Request, State},
+    http::HeaderValue,
     middleware::{self, Next},
     response::Response,
     routing::get,
@@ -42,11 +42,7 @@ impl Context {
     }
 }
 
-async fn headers<B>(
-    State(state): State<Arc<Context>>,
-    request: Request<B>,
-    next: Next<B>,
-) -> Response {
+async fn headers(State(state): State<Arc<Context>>, request: Request, next: Next) -> Response {
     let (method, uri) = (request.method().clone(), request.uri().clone());
     let mut response = next.run(request).await;
 
