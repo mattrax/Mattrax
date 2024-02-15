@@ -6,11 +6,9 @@ use std::{
 };
 
 use rcgen::{Certificate, CertificateParams, KeyPair};
+use rustls::{pki_types::CertificateDer, server::WebPkiClientVerifier};
 use rustls_acme::{
-    caches::DirCache,
-    futures_rustls::rustls::{
-        server::AllowAnyAnonymousOrAuthenticatedClient, RootCertStore, ServerConfig,
-    },
+    futures_rustls::rustls::{RootCertStore, ServerConfig},
     AcmeConfig,
 };
 use tokio::net::TcpListener;
@@ -130,19 +128,22 @@ impl Command {
                 server.clone().start(
                     SocketAddr::from((Ipv6Addr::UNSPECIFIED, 8443)),
                     ServerConfig::builder()
-                        .with_safe_defaults()
                         .with_client_cert_verifier(
-                            AllowAnyAnonymousOrAuthenticatedClient::new({
+                            WebPkiClientVerifier::builder({
                                 // TODO: Allow this to be rotated at runtime for renewal
                                 let mut root = RootCertStore::empty();
-                                let _ = root.add_parsable_certificates(&[fs::read(
-                                    data_dir.join("certs").join("identity.der"),
-                                )
-                                .unwrap()]); // TODO: Check result that the cert was valid
+                                let cert: CertificateDer =
+                                    fs::read(data_dir.join("certs").join("identity.der"))
+                                        .unwrap()
+                                        .into();
+                                // TODO: Check result of `add_parsable_certificates` that the cert was valid
+                                let _ = root.add_parsable_certificates([cert]);
 
-                                root
+                                Arc::new(root)
                             })
-                            .boxed(),
+                            .allow_unauthenticated()
+                            .build()
+                            .unwrap(),
                         )
                         .with_cert_resolver(resolver.clone()),
                 ),
@@ -152,7 +153,6 @@ impl Command {
                 .start(
                     SocketAddr::from((Ipv6Addr::UNSPECIFIED, port)),
                     ServerConfig::builder()
-                        .with_safe_defaults()
                         .with_no_client_auth()
                         .with_cert_resolver(resolver),
                 )
