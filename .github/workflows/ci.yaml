@@ -46,10 +46,10 @@ jobs:
       - name: Install Cargo Lambda
         run: |
           curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-          cargo binstall --no-confirm cargo-lambda
+          cargo binstall --no-confirm cargo-zigbuild
 
       - name: Build Rust
-        run: cargo lambda build -p mattrax --locked --release --arm64
+        run: cargo zigbuild --locked --release -p mattrax --target aarch64-unknown-linux-gnu
 
       - name: Bundle all server files to push to server
         run: |
