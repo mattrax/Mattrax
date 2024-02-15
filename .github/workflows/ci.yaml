@@ -57,7 +57,7 @@ jobs:
       - name: Bundle all server files to push to server
         run: |
           mkdir server-dist
-          cp target/lambda/mattrax/bootstrap server-dist/mattrax
+          cp target/aarch64-unknown-linux-gnu/release/mattrax server-dist/mattrax
           cp aws/mattrax.service server-dist/mattrax.service
 
       # TODO: We should probs have concurrency 1 for these steps
