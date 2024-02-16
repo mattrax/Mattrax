@@ -1,5 +1,6 @@
 // @refresh reload
-import { RouteDefinition, Router } from "@solidjs/router";
+import { Router } from "@solidjs/router";
+import type { RouteDefinition } from "@solidjs/router";
 import { Suspense, lazy } from "solid-js";
 import "@fontsource/inter/latin-400.css"; // `normal`
 import "@fontsource/inter/latin-500.css"; // `medium`
