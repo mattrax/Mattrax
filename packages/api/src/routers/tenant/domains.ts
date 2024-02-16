@@ -52,7 +52,7 @@ export const domainsRouter = createTRPCRouter({
       const domain = await db.query.domains.findFirst({
         where: and(
           eq(domains.domain, input.domain),
-          eq(domains.tenantId, ctx.tenantId)
+          eq(domains.tenantId, ctx.tenantId),
         ),
         // TODO: be aware this is not typesafe.
         // TODO: It will return `null`'s and Typescript won't save you.
@@ -93,8 +93,8 @@ export const domainsRouter = createTRPCRouter({
         // If ownership has been verified
         (domain.verified || verified) &&
         // and a CNAME for enterprise enrollment is available
-        enterpriseEnrollmentAvailable &&
-        !domain.enterpriseEnrollmentAvailable &&
+        (domain.enterpriseEnrollmentAvailable ||
+          enterpriseEnrollmentAvailable) &&
         // and if the domain has no certificate
         !domain.certificate?.lastModified
       ) {
@@ -102,21 +102,21 @@ export const domainsRouter = createTRPCRouter({
         try {
           const result = await fetch(
             `${env.MDM_URL}/internal/issue-cert?domain=${encodeURIComponent(
-              `enterpriseenrollment.${domain.domain}`
+              `enterpriseenrollment.${domain.domain}`,
             )}`,
             {
               method: "POST",
               headers: {
                 Authorization: `Bearer ${env.INTERNAL_SECRET}`,
               },
-            }
+            },
           );
           if (!result.ok)
             throw new Error(`request failed with status: ${result.status}`);
         } catch (err) {
           console.error(
             "Failed to contact MDM, to trigger certificate order: ",
-            err
+            err,
           );
         }
       }
@@ -129,8 +129,8 @@ export const domainsRouter = createTRPCRouter({
         .where(
           and(
             eq(domains.domain, input.domain),
-            eq(domains.tenantId, ctx.tenantId)
-          )
+            eq(domains.tenantId, ctx.tenantId),
+          ),
         );
     }),
 });
@@ -162,7 +162,7 @@ const CF_DNS_RESPONSE_SCHEMA = z.object({
       type: z.number(),
       TTL: z.number(),
       data: z.string(),
-    })
+    }),
   ),
 });
 
