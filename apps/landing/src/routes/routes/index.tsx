@@ -52,7 +52,7 @@ export default function Page() {
             </p>
             <p class="mt-6 text-xl leading-8 text-gray-600">
               Mattrax MDM is a full device management solution with the ability
-              to managed your organisations entire fleet from a single,
+              to manage your organisations entire fleet from a single,
               well-crafted dashboard.
             </p>
 

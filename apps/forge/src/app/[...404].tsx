@@ -5,7 +5,7 @@ export default function NotFound() {
   const navigate = useNavigate();
   return (
     <div class="p-4 flex flex-col justify-center items-center">
-      <OscarTriedToDesignAMattraxLogoButFailedPrettyHard />
+      <OscarTriedToDesignAMattraxLogoButFailedPrettyHard class="w-60" />
       <h1 class="text-3xl font-bold mb-4">404 Not Found</h1>
       <h2>Oh no, the page you requested was not found</h2>
       <Button onClick={() => navigate("/")} class="mt-4">
@@ -15,14 +15,15 @@ export default function NotFound() {
   );
 }
 
-function OscarTriedToDesignAMattraxLogoButFailedPrettyHard() {
+function OscarTriedToDesignAMattraxLogoButFailedPrettyHard(props: {
+  class?: string;
+}) {
   return (
     <svg
-      width="500"
-      height="500"
       viewBox="0 0 500 500"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
+      class={props.class}
     >
       <rect
         width="500"

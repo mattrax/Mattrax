@@ -1,30 +1,23 @@
 {
   "name": "@mattrax/landing",
   "type": "module",
-  "private": true,
+  "version": "0.0.1",
   "scripts": {
-    "dev": "PORT=3001 vinxi dev",
-    "build": "vinxi build",
-    "start": "vinxi start",
-    "vbuild": "NITRO_PRESET=vercel_static vinxi build"
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro check && astro build",
+    "preview": "astro preview",
+    "astro": "astro"
   },
   "dependencies": {
+    "@astrojs/check": "^0.5.4",
+    "@astrojs/solid-js": "^4.0.1",
+    "@astrojs/tailwind": "^5.1.0",
     "@fontsource/inter": "^5.0.16",
-    "@mdx-js/mdx": "^3.0.1",
     "@solidjs/router": "^0.12.0",
-    "@solidjs/start": "^0.5.5",
-    "@tailwindcss/forms": "^0.5.7",
-    "@tailwindcss/typography": "^0.5.10",
-    "@vinxi/plugin-mdx": "^3.7.1",
-    "solid-js": "^1.8.14",
-    "solid-mdx": "^0.0.7",
-    "vinxi": "^0.3.0"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "devDependencies": {
+    "astro": "^4.4.0",
+    "solid-js": "^1.8.15",
     "tailwindcss": "^3.4.1",
-    "vite": "^5.1.1"
+    "typescript": "^5.3.3"
   }
 }

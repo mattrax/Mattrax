@@ -1,0 +1,23 @@
+---
+import App from "../routes/app";
+
+export function getStaticPaths() {
+  return [
+    { params: { path: undefined } },
+    { params: { path: "company" } },
+  ];
+}
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width" />
+        <link rel="icon" href="/favicon.ico" />
+		<meta name="generator" content={Astro.generator} />
+		<title>Mattrax</title>
+	</head>
+	<body>
+        <App client:load url={Astro.url.pathname} />
+	</body>
+</html>
