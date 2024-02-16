@@ -76,6 +76,7 @@ impl CertCache for MattraxAcmeStore {
         directory_url: &str,
         cert: &[u8],
     ) -> Result<(), Self::EC> {
+        println!("STORE LEN: {:?}", cert.len()); // TODO
         for domain in domains {
             self.db
                 .store_certificate(domain.clone(), cert.to_vec(), Utc::now().naive_utc())
@@ -143,6 +144,7 @@ impl AccountCache for MattraxAcmeStore {
         directory_url: &str,
         account: &[u8],
     ) -> Result<(), Self::EA> {
+        println!("ACCOUNT LEN: {:?}", account.len()); // TODO
         for contact in contact {
             self.db
                 .store_certificate(contact.clone(), account.to_vec(), Utc::now().naive_utc())

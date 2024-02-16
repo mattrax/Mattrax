@@ -265,6 +265,6 @@ export const domainToCertificateRelation = relations(domains, ({ one }) => ({
 // The `key` will either be a domain (for a certificate) or an email address (for an ACME account).
 export const certificates = mysqlTable("certificates", {
   key: varchar("key", { length: 256 }).primaryKey(),
-  certificate: varbinary("certificate", { length: 2048 }).notNull(),
+  certificate: varbinary("certificate", { length: 9068 }).notNull(),
   lastModified: timestamp("lastModified").notNull().defaultNow(),
 });
