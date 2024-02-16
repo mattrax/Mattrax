@@ -6,19 +6,19 @@ const path = require("path");
 const readdirSync = (p, a = []) => {
   if (fs.statSync(p).isDirectory())
     fs.readdirSync(p).map((f) =>
-      readdirSync(a[a.push(path.join(p, f)) - 1], a)
+      readdirSync(a[a.push(path.join(p, f)) - 1], a),
     );
   return a;
 };
 
 const tsFilesForPath = (pathname) =>
   readdirSync(path.resolve(__dirname, pathname)).filter(
-    (f) => f.endsWith(".ts") || f.endsWith(".tsx")
+    (f) => f.endsWith(".ts") || f.endsWith(".tsx"),
   );
 
 const ADDED_STR = "// @ts-nocheck\n\n";
 const FILES = [
-  ...tsFilesForPath("../apps/landing/node_modules/@solidjs/start"),
+  // ...tsFilesForPath("../apps/landing/node_modules/@solidjs/start"),
 ];
 
 Promise.allSettled(FILES.map(addTsNoCheck)).then((results) => {
