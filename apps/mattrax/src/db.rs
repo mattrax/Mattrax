@@ -44,7 +44,7 @@ impl Db {
             .with(mysql_async::Params::Positional(vec![
                 key.into(),
                 certificate.into(),
-                last_modifie.into(),
+                last_modified.into(),
             ]))
             .run(&self.pool)
             .await

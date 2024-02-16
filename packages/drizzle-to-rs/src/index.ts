@@ -60,7 +60,7 @@ export function defineOperation<const T extends RustArgs = never>(
           // TODO: Use a custom class here instead of patching the `String` prototype
           // @ts-expect-error
           String.prototype.toISOString = function (this) {
-            return this;
+            return `${this}_`; // TODO: I have no idea why this `_` is required but it prevents the string missing the last char
           };
 
           return result;

@@ -1,6 +1,7 @@
 use std::{io::ErrorKind, path::PathBuf};
 
 use axum::async_trait;
+use chrono::Utc;
 use rustls_acme::{caches::DirCache, AccountCache, CertCache};
 
 use crate::db::Db;
@@ -77,7 +78,7 @@ impl CertCache for MattraxAcmeStore {
     ) -> Result<(), Self::EC> {
         for domain in domains {
             self.db
-                .store_certificate(domain.clone(), cert.to_vec())
+                .store_certificate(domain.clone(), cert.to_vec(), Utc::now().naive_utc())
                 .await
                 .map_err(|err| std::io::Error::new(ErrorKind::Other, err))?;
         }
@@ -144,7 +145,7 @@ impl AccountCache for MattraxAcmeStore {
     ) -> Result<(), Self::EA> {
         for contact in contact {
             self.db
-                .store_certificate(contact.clone(), account.to_vec())
+                .store_certificate(contact.clone(), account.to_vec(), Utc::now().naive_utc())
                 .await
                 .map_err(|err| std::io::Error::new(ErrorKind::Other, err))?;
         }
