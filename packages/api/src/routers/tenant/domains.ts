@@ -89,12 +89,20 @@ export const domainsRouter = createTRPCRouter({
           })
           .where(eq(domains.domain, domain.domain));
 
-      // If domain just become verified or if it has no certificate, trigger certificate order
-      if ((verified && !domain.verified) || !domain.certificate?.lastModified) {
+      if (
+        // If ownership has been verified
+        (domain.verified || verified) &&
+        // and a CNAME for enterprise enrollment is available
+        enterpriseEnrollmentAvailable &&
+        !domain.enterpriseEnrollmentAvailable &&
+        // and if the domain has no certificate
+        !domain.certificate?.lastModified
+      ) {
+        // ask Rust to issue one
         try {
           const result = await fetch(
             `${env.MDM_URL}/internal/issue-cert?domain=${encodeURIComponent(
-              domain.domain
+              `enterpriseenrollment.${domain.domain}`
             )}`,
             {
               method: "POST",
