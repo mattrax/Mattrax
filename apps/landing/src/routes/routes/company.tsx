@@ -1,4 +1,4 @@
-import { JSX } from "solid-js";
+import type { JSX } from "solid-js";
 
 // TODO: Setup unplugin icons
 function PhLaptop(props: JSX.IntrinsicElements["svg"], key: string) {
