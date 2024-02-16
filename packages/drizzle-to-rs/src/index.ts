@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { execSync } from "node:child_process";
 import { TypedQueryBuilder } from "drizzle-orm/query-builders/query-builder";
+import { SQLWrapper } from "drizzle-orm";
 
 // TODO: Allow array of arguments (insert many)
 
@@ -16,7 +17,7 @@ const snakeToCamel = (str: string) => {
   return a[0]?.toUpperCase() + a.slice(1);
 };
 
-type RustType = "String" | "i32"; // TODO: Rest of types
+type RustType = "String" | "NaiveDateTime" | "Vec<u8>" | "i32"; // TODO: Rest of types
 type RustArgs = Record<string, RustType>;
 
 type MapArgsToTs<T> = {
@@ -30,7 +31,7 @@ type MapArgsToTs<T> = {
 type QueryDefinition<T> = {
   name: string;
   args?: T;
-  query: (args: MapArgsToTs<T>) => TypedQueryBuilder<any, any>;
+  query: (args: MapArgsToTs<T>) => TypedQueryBuilder<any, any> | SQLWrapper;
 };
 
 type Query = {
@@ -38,14 +39,14 @@ type Query = {
   renderedFn: string;
 };
 
-export function defineQuery<const T extends RustArgs = never>(
+export function defineOperation<const T extends RustArgs = never>(
   query: QueryDefinition<T>,
 ): Query {
   // TODO: Bun is broken if this is a global
   const sqlDatatypeToRust = {
     string: "String",
     number: "u64",
-    date: "chrono::NaiveDateTime",
+    date: "NaiveDateTime",
     boolean: "bool",
   };
 
@@ -53,12 +54,23 @@ export function defineQuery<const T extends RustArgs = never>(
     new Proxy(
       {},
       {
-        get: (_, prop) => prop,
+        get: (_, prop) => {
+          let result = prop;
+
+          // TODO: Use a custom class here instead of patching the `String` prototype
+          // @ts-expect-error
+          String.prototype.toISOString = function (this) {
+            return this;
+          };
+
+          return result;
+        },
       },
     ) as any,
   );
   // @ts-expect-error
   const sql: { sql: string; params: string[] } = op.toSQL();
+  const isQuery = "_" in op;
 
   const resultTyName = `${snakeToCamel(query.name)}Result`;
 
@@ -72,7 +84,9 @@ export function defineQuery<const T extends RustArgs = never>(
   }
 
   return {
-    renderedResultType: `#[derive(Debug)]\npub struct ${resultTyName} {
+    renderedResultType: !isQuery
+      ? ""
+      : `#[derive(Debug)]\npub struct ${resultTyName} {
     ${Object.entries(op._.selectedFields)
       .map(([k, v]) => {
         const v2 = v as any;
@@ -80,45 +94,61 @@ export function defineQuery<const T extends RustArgs = never>(
           throw new Error(`Unknown datatype: ${v2.dataType}`);
         }
 
-        let ty = (sqlDatatypeToRust as any)[v2.dataType];
+        let ty =
+          v2.columnType === "MySqlVarBinary"
+            ? "Vec<u8>"
+            : (sqlDatatypeToRust as any)[v2.dataType];
         if (!v2.notNull) {
           ty = `Option<${ty}>`;
         }
 
-        return `${camelToSnakeCase(k)}: ${ty}`;
+        return `pub ${camelToSnakeCase(k)}: ${ty}`;
       })
       .join(",")}
 }`,
-    renderedFn: `impl Db {
-        pub async fn ${
-          query.name
-        }(&self${fn_args}) -> Result<Vec<${resultTyName}>, mysql_async::Error> {
+    renderedFn:
+      `impl Db {
+        pub async fn ${query.name}(&self${fn_args}) -> Result<` +
+      (!isQuery ? "()" : `Vec<${resultTyName}>`) +
+      `, mysql_async::Error> {
           r#"${sql.sql}"#
             .with(mysql_async::Params::Positional(vec![${sql.params
-              .map((p) => `${p}.into()`)
+              // TODO: If the user puts a static value, this will snake case it.
+              // We should detect a special suffix which the `Proxy` will return.
+              .map((p) => `${camelToSnakeCase(p)}.into()`)
               .join(",")}]))
-            .map(&self.pool, |p: (${Object.entries(op._.selectedFields)
-              .map(([k, v]) => {
-                const v2 = v as any;
-                if (!(v2.dataType in sqlDatatypeToRust)) {
-                  throw new Error(`Unknown datatype: ${v2.dataType}`);
-                }
+            ` +
+      (!isQuery
+        ? ".run(&self.pool)"
+        : `.map(&self.pool, |p: (${Object.entries(op._.selectedFields)
+            .map(([k, v]) => {
+              const v2 = v as any;
+              if (!(v2.dataType in sqlDatatypeToRust)) {
+                throw new Error(`Unknown datatype: ${v2.dataType}`);
+              }
 
-                let ty = (sqlDatatypeToRust as any)[v2.dataType];
-                if (!v2.notNull) {
-                  ty = `Option<${ty}>`;
-                }
+              let ty =
+                v2.columnType === "MySqlVarBinary"
+                  ? "Vec<u8>"
+                  : (sqlDatatypeToRust as any)[v2.dataType];
+              if (!v2.notNull) {
+                ty = `Option<${ty}>`;
+              }
 
-                return `${ty}`;
-              })
-              .join(",")},)| ${resultTyName} {
+              return `${ty}`;
+            })
+            .join(",")},)| ${resultTyName} {
                 ${Object.entries(op._.selectedFields)
                   .map(([k, v], i) => {
                     return `${camelToSnakeCase(k)}: p.${i}`;
                   })
                   .join(",")}
-              })
+              })`) +
+      `
             .await
+            ` +
+      (!isQuery ? ".map(|_| ())" : "") +
+      `
         }
     }`,
   };
@@ -144,7 +174,7 @@ export function exportQueries(queries: Query[], path: string) {
     [
       "// This file was generated by '@mattrax/drizzle-to-rs'",
       "#![allow(unused)]\n",
-      "use mysql_async::prelude::*;\n",
+      "use mysql_async::prelude::*;\nuse chrono::NaiveDateTime;\n",
       queries.map((q) => q.renderedResultType).join("\n"),
       dbStruct,
       dbStructConstructor,

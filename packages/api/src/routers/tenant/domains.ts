@@ -2,17 +2,41 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 
-import { db, domains } from "../../db";
+import { certificates, db, domains } from "../../db";
 import { createTRPCRouter, tenantProcedure } from "../../trpc";
+import { env } from "../../env";
+
+const validDomainRegex = /^[a-zA-Z0-9-\.]+$/;
 
 export const domainsRouter = createTRPCRouter({
-  list: tenantProcedure.query(({ ctx }) =>
-    db.query.domains.findMany({
-      where: eq(domains.tenantId, ctx.tenantId),
-    })
-  ),
+  // TODO: Blocked on: https://github.com/drizzle-team/drizzle-orm/issues/1066
+  // list: tenantProcedure.query(({ ctx }) =>
+  //   db.query.domains.findMany({
+  //     where: eq(domains.tenantId, ctx.tenantId),
+  //     with: {
+  //       certificate: {
+  //         columns: {
+  //           lastModified: true,
+  //         },
+  //       },
+  //     },
+  //   })
+  // ),
+  list: tenantProcedure.query(async ({ ctx }) => {
+    const results = await db
+      .select()
+      .from(domains)
+      .leftJoin(certificates, eq(domains.domain, certificates.key))
+      .where(eq(domains.tenantId, ctx.tenantId));
+
+    return results.map(({ certificates, domains }) => ({
+      ...domains,
+      certificateLastModified: certificates?.lastModified,
+    }));
+  }),
+
   create: tenantProcedure
-    .input(z.object({ domain: z.string() }))
+    .input(z.object({ domain: z.string().regex(validDomainRegex) }))
     .mutation(async ({ input, ctx }) => {
       const secret = `mattrax:${crypto.randomUUID()}`;
 
@@ -30,6 +54,15 @@ export const domainsRouter = createTRPCRouter({
           eq(domains.domain, input.domain),
           eq(domains.tenantId, ctx.tenantId)
         ),
+        // TODO: be aware this is not typesafe.
+        // TODO: It will return `null`'s and Typescript won't save you.
+        with: {
+          certificate: {
+            columns: {
+              lastModified: true,
+            },
+          },
+        },
       });
 
       if (!domain)
@@ -38,25 +71,47 @@ export const domainsRouter = createTRPCRouter({
           message: "Domain not found",
         });
 
-      // TODO: rate limit w/ lastVerificationTime
       const [verified, enterpriseEnrollmentAvailable] = await Promise.all([
         isDomainVerified(domain.domain, domain.secret),
         isEnterpriseEnrollmentAvailable(domain.domain),
       ]);
 
-      await db
-        .update(domains)
-        .set({
-          verified,
-          enterpriseEnrollmentAvailable,
-          lastVerificationTime: new Date(),
-        })
-        .where(eq(domains.domain, domain.domain));
+      if (
+        domain.verified !== verified ||
+        domain.enterpriseEnrollmentAvailable !== enterpriseEnrollmentAvailable
+      )
+        await db
+          .update(domains)
+          .set({
+            verified,
+            enterpriseEnrollmentAvailable,
+            lastVerificationTime: new Date(),
+          })
+          .where(eq(domains.domain, domain.domain));
 
-      return {
-        verified,
-        enterpriseEnrollmentAvailable,
-      };
+      // If domain just become verified or if it has no certificate, trigger certificate order
+      if ((verified && !domain.verified) || !domain.certificate?.lastModified) {
+        try {
+          const result = await fetch(
+            `${env.MDM_URL}/internal/issue-cert?domain=${encodeURIComponent(
+              domain.domain
+            )}`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${env.INTERNAL_SECRET}`,
+              },
+            }
+          );
+          if (!result.ok)
+            throw new Error(`request failed with status: ${result.status}`);
+        } catch (err) {
+          console.error(
+            "Failed to contact MDM, to trigger certificate order: ",
+            err
+          );
+        }
+      }
     }),
   delete: tenantProcedure
     .input(z.object({ domain: z.string() }))

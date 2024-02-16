@@ -2,7 +2,6 @@ import {
   varchar,
   serial,
   json,
-  customType,
   timestamp,
   mysqlEnum,
   unique,
@@ -10,6 +9,7 @@ import {
   bigint,
   mysqlTable,
   boolean,
+  varbinary,
 } from "drizzle-orm/mysql-core";
 import { relations } from "drizzle-orm";
 
@@ -251,4 +251,20 @@ export const domains = mysqlTable("domains", {
   enterpriseEnrollmentAvailable: boolean("enterpriseEnrollmentAvailable")
     .notNull()
     .default(false),
+});
+
+export const domainToCertificateRelation = relations(domains, ({ one }) => ({
+  certificate: one(certificates, {
+    fields: [domains.domain],
+    references: [certificates.key],
+  }),
+}));
+
+// The backend for Rust's ACME.
+// This will contain the certificate for the primary server domain and any user-provided via `domains`.
+// The `key` will either be a domain (for a certificate) or an email address (for an ACME account).
+export const certificates = mysqlTable("certificates", {
+  key: varchar("key", { length: 256 }).primaryKey(),
+  certificate: varbinary("certificate", { length: 2048 }).notNull(),
+  lastModified: timestamp("lastModified").notNull().defaultNow(),
 });

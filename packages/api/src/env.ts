@@ -1,3 +1,4 @@
+// @ts-expect-error
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
 import "dotenv/config";
@@ -14,6 +15,7 @@ export const env = createEnv({
     DATABASE_URL: z.string(),
     INTERNAL_SECRET: z.string(),
     PROD_URL: z.string(),
+    MDM_URL: z.string(),
     EMAIL_URL: z.string(),
     FROM_ADDRESS: z.string(),
     // Emails and other AWS services

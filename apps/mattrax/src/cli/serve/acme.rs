@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{io::ErrorKind, path::PathBuf};
 
 use axum::async_trait;
 use rustls_acme::{caches::DirCache, AccountCache, CertCache};
@@ -30,9 +30,41 @@ impl CertCache for MattraxAcmeStore {
         domains: &[String],
         directory_url: &str,
     ) -> Result<Option<Vec<u8>>, Self::EC> {
-        let result = self.file_cache.load_cert(domains, directory_url).await?;
+        if domains.len() > 1 {
+            return Err(std::io::Error::new(
+                ErrorKind::Other,
+                "MattraxAcmeStore: only one domain per certificate is supported",
+            ));
+        }
 
-        // TODO: Get from the DB & store into disk cache, and return
+        let result = self.file_cache.load_cert(domains, directory_url).await?;
+        let result = match result {
+            Some(cert) => Some(cert),
+            None => {
+                let mut cert = None;
+                if let Some(domain) = domains.first() {
+                    cert = self
+                        .db
+                        .get_certificate(domain.clone())
+                        .await
+                        .map_err(|err| {
+                            std::io::Error::new(
+                                ErrorKind::Other,
+                                format!("MattraxAcmeStore: {err:?}"),
+                            )
+                        })?
+                        .into_iter()
+                        .next()
+                        .map(|v| v.certificate);
+
+                    if let Some(cert) = &cert {
+                        self.store_cert(domains, directory_url, cert).await?;
+                    }
+                }
+
+                cert
+            }
+        };
 
         return Ok(result);
     }
@@ -43,7 +75,12 @@ impl CertCache for MattraxAcmeStore {
         directory_url: &str,
         cert: &[u8],
     ) -> Result<(), Self::EC> {
-        // TODO: Update DB
+        for domain in domains {
+            self.db
+                .store_certificate(domain.clone(), cert.to_vec())
+                .await
+                .map_err(|err| std::io::Error::new(ErrorKind::Other, err))?;
+        }
 
         self.file_cache
             .store_cert(domains, directory_url, cert)
@@ -57,12 +94,46 @@ impl AccountCache for MattraxAcmeStore {
 
     async fn load_account(
         &self,
-        contact: &[String],
+        contacts: &[String],
         directory_url: &str,
     ) -> Result<Option<Vec<u8>>, Self::EA> {
-        // TODO: Load from the DB if found and cache on the FS
+        if contacts.len() > 1 {
+            return Err(std::io::Error::new(
+                ErrorKind::Other,
+                "MattraxAcmeStore: only one contact per certificate is supported",
+            ));
+        }
 
-        self.file_cache.load_account(contact, directory_url).await
+        let result = self.file_cache.load_cert(contacts, directory_url).await?;
+        let result = match result {
+            Some(cert) => Some(cert),
+            None => {
+                let mut cert = None;
+                if let Some(contact) = contacts.first() {
+                    cert = self
+                        .db
+                        .get_certificate(contact.clone())
+                        .await
+                        .map_err(|err| {
+                            std::io::Error::new(
+                                ErrorKind::Other,
+                                format!("MattraxAcmeStore: {err:?}"),
+                            )
+                        })?
+                        .into_iter()
+                        .next()
+                        .map(|v| v.certificate);
+
+                    if let Some(cert) = &cert {
+                        self.store_cert(contacts, directory_url, cert).await?;
+                    }
+                }
+
+                cert
+            }
+        };
+
+        return Ok(result);
     }
 
     async fn store_account(
@@ -71,7 +142,12 @@ impl AccountCache for MattraxAcmeStore {
         directory_url: &str,
         account: &[u8],
     ) -> Result<(), Self::EA> {
-        // TODO: Store into the DB
+        for contact in contact {
+            self.db
+                .store_certificate(contact.clone(), account.to_vec())
+                .await
+                .map_err(|err| std::io::Error::new(ErrorKind::Other, err))?;
+        }
 
         self.file_cache
             .store_account(contact, directory_url, account)

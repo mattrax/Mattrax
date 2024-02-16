@@ -43,6 +43,9 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             "/issue-cert",
             post(
                 |State(state): State<Arc<Context>>, Query(query): Query<IssueCertParams>| async move {
+                    // TODO: Rate limit all requests -> The cron job should trigger it again once Let's Encrypt rate limits have been reset
+                    // TODO: Rate limit requests for a specific domain
+
                     match state.acme_tx.send(vec![query.domain]).await {
                         Ok(()) => StatusCode::OK,
                         Err(_) => {
