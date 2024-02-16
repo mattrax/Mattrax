@@ -31,11 +31,19 @@ exportQueries(
         last_modified: "NaiveDateTime",
       },
       query: (args) =>
-        db.insert(certificates).values({
-          key: args.key,
-          certificate: args.certificate,
-          lastModified: args.last_modified, // TODO: A system for automatic `new Date()`
-        }),
+        db
+          .insert(certificates)
+          .values({
+            key: args.key,
+            certificate: args.certificate,
+            lastModified: args.last_modified, // TODO: A system for automatic `new Date()`
+          })
+          .onDuplicateKeyUpdate({
+            set: {
+              certificate: args.certificate,
+              lastModified: args.last_modified,
+            },
+          }),
     }),
   ],
   path.join(__dirname, "../../../../apps/mattrax/src/db.rs"),

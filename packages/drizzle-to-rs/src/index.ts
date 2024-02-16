@@ -115,7 +115,7 @@ export function defineOperation<const T extends RustArgs = never>(
             .with(mysql_async::Params::Positional(vec![${sql.params
               // TODO: If the user puts a static value, this will snake case it.
               // We should detect a special suffix which the `Proxy` will return.
-              .map((p) => `${camelToSnakeCase(p)}.into()`)
+              .map((p) => `${camelToSnakeCase(p)}.clone().into()`) // TODO: Only call `.clone()` when the value is used multiple times
               .join(",")}]))
             ` +
       (!isQuery

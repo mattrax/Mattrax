@@ -26,7 +26,7 @@ impl Db {
         key: String,
     ) -> Result<Vec<GetCertificateResult>, mysql_async::Error> {
         r#"select `certificate` from `certificates` where `certificates`.`key` = ?"#
-            .with(mysql_async::Params::Positional(vec![key.into()]))
+            .with(mysql_async::Params::Positional(vec![key.clone().into()]))
             .map(&self.pool, |p: (Vec<u8>,)| GetCertificateResult {
                 certificate: p.0,
             })
@@ -40,12 +40,8 @@ impl Db {
         certificate: Vec<u8>,
         last_modified: NaiveDateTime,
     ) -> Result<(), mysql_async::Error> {
-        r#"insert into `certificates` (`key`, `certificate`, `lastModified`) values (?, ?, ?)"#
-            .with(mysql_async::Params::Positional(vec![
-                key.into(),
-                certificate.into(),
-                last_modified.into(),
-            ]))
+        r#"insert into `certificates` (`key`, `certificate`, `lastModified`) values (?, ?, ?) on duplicate key update `certificate` = ?, `lastModified` = ?"#
+            .with(mysql_async::Params::Positional(vec![key.clone().into(),certificate.clone().into(),last_modified.clone().into(),certificate.clone().into(),last_modified.clone().into()]))
             .run(&self.pool)
             .await
             .map(|_| ())
