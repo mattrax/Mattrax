@@ -48,8 +48,6 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
             Html(r#"<h3>AzureAD Term Of Service</h3><button onClick="acceptBtn()">Accept</button><script>function acceptBtn(){var urlParams=new URLSearchParams(window.location.search);if (!urlParams.has('redirect_uri')){alert('Redirect url not found. Did you open this in your broswer?');}else{window.location=urlParams.get('redirect_uri') + "?IsAccepted=true&OpaqueBlob=TODOCustomDataFromAzureAD";}}</script>"#)
         }))
         .route("/Auth.svc", get(|Query(query): Query<AuthQueryParams>| async move {
-
-
             let auto_submit_form = "<script>document.getElementById('loginForm').submit()</script>";
             Html(format!(r#"<h3>MDM Federated Login</h3><form id="loginForm" method="post" action="{}"><p><input type="hidden" name="wresult" value="TODOSpecialTokenWhichVerifiesAuth" /></p><input type="submit" value="Login" /></form>{}"#, query.appru, auto_submit_form))
         }))
@@ -196,6 +194,7 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                 <characteristic type="DMClient">
                     <characteristic type="Provider">
                         <characteristic type="DEMO MDM">
+                            <parm name="SyncApplicationVersion" value="5.0" datatype="string" />
                             <characteristic type="Poll">
                                 <parm name="NumberOfFirstRetries" value="8" datatype="integer" />
                             </characteristic>
