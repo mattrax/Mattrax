@@ -48,7 +48,7 @@ jobs:
           # The Rust cache action is not happy with `cargo bininstall` so we do a manual install.
         run: |
           curl -s https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/latest \
-              | grep "browser_download_url.*.aarch64-unknown-linux-musl.tar.gz\"" \
+              | grep "browser_download_url.*.x86_64-unknown-linux-musl.tar.gz\"" \
               | cut -d : -f 2,3 \
               | tr -d \" \
               | wget -qi -
