@@ -19,6 +19,7 @@ import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimen
 import { createEventBus, EventBus } from "@solid-primitives/event-bus";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
+import { TrpcProvider } from "./lib";
 
 // import {
 //   PersistQueryClientOptions,
@@ -99,106 +100,108 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <trpc.Provider queryClient={queryClient}>
-        <Router
-          root={(props) => {
-            const navigate = useNavigate();
+      <TrpcProvider>
+        <trpc.Provider queryClient={queryClient}>
+          <Router
+            root={(props) => {
+              const navigate = useNavigate();
 
-            onCleanup(
-              errorBus.listen(([scopeMsg, error]) => {
-                let errorMsg = [
-                  scopeMsg,
-                  document.createElement("br"),
-                  "Please reload to try again!",
-                ];
-
-                if (isTRPCClientError(error)) {
-                  if (error.data?.code === "UNAUTHORIZED") {
-                    startTransition(() => navigate("/login"));
-                    return;
-                  } else if (error.data?.code === "FORBIDDEN") {
-                    if (error.message === "tenant") navigate("/");
-                    else
-                      errorMsg = [
-                        "You are not allowed to access this resource!",
-                      ];
-                  }
-                }
-
-                // TODO: Prevent this for auth errors
-                toast.error(errorMsg, {
-                  id: "network-error",
-                });
-              })
-            );
-
-            onCleanup(
-              onlineManager.subscribe((isOnline) => {
-                if (isOnline) {
-                  // TODO: This dismiss doesn't animate the toast close which is ugly.
-                  toast.dismiss("network-offline");
-                  return;
-                }
-
-                toast.error(
-                  [
-                    "You are offline!",
+              onCleanup(
+                errorBus.listen(([scopeMsg, error]) => {
+                  let errorMsg = [
+                    scopeMsg,
                     document.createElement("br"),
-                    "Please reconnect to continue!",
-                  ],
-                  {
-                    id: "network-offline",
-                    duration: Infinity,
-                  }
-                );
-              })
-            );
+                    "Please reload to try again!",
+                  ];
 
-            return (
-              // <PersistQueryClientProvider
-              //   client={queryClient}
-              //   persistOptions={persistOptions}
-              // >
-
-              <>
-                {isDebugMode() ? <SolidQueryDevtools /> : null}
-                <ErrorBoundary
-                  fallback={(err, reset) => {
-                    // Solid Start + HMR is buggy as all hell so this hacks around it.
-                    if (
-                      import.meta.env.DEV &&
-                      err.toString() ===
-                        "Error: Make sure your app is wrapped in a <Router />" &&
-                      typeof document !== "undefined"
-                    ) {
-                      console.error(
-                        "Automatically resetting error boundary due to HMR-related router context error."
-                      );
-                      reset();
+                  if (isTRPCClientError(error)) {
+                    if (error.data?.code === "UNAUTHORIZED") {
+                      startTransition(() => navigate("/login"));
+                      return;
+                    } else if (error.data?.code === "FORBIDDEN") {
+                      if (error.message === "tenant") navigate("/");
+                      else
+                        errorMsg = [
+                          "You are not allowed to access this resource!",
+                        ];
                     }
+                  }
 
-                    console.error(err);
+                  // TODO: Prevent this for auth errors
+                  toast.error(errorMsg, {
+                    id: "network-error",
+                  });
+                })
+              );
 
-                    return (
-                      <div>
-                        <div>Error:</div>
-                        <p>{err.toString()}</p>
-                        <button onClick={reset}>Reset</button>
-                      </div>
-                    );
-                  }}
-                >
-                  <Toaster />
-                  {props.children}
-                </ErrorBoundary>
-              </>
-              // </PersistQueryClientProvider>
-            );
-          }}
-        >
-          {routes}
-        </Router>
-      </trpc.Provider>
+              onCleanup(
+                onlineManager.subscribe((isOnline) => {
+                  if (isOnline) {
+                    // TODO: This dismiss doesn't animate the toast close which is ugly.
+                    toast.dismiss("network-offline");
+                    return;
+                  }
+
+                  toast.error(
+                    [
+                      "You are offline!",
+                      document.createElement("br"),
+                      "Please reconnect to continue!",
+                    ],
+                    {
+                      id: "network-offline",
+                      duration: Infinity,
+                    }
+                  );
+                })
+              );
+
+              return (
+                // <PersistQueryClientProvider
+                //   client={queryClient}
+                //   persistOptions={persistOptions}
+                // >
+
+                <>
+                  {isDebugMode() ? <SolidQueryDevtools /> : null}
+                  <ErrorBoundary
+                    fallback={(err, reset) => {
+                      // Solid Start + HMR is buggy as all hell so this hacks around it.
+                      if (
+                        import.meta.env.DEV &&
+                        err.toString() ===
+                          "Error: Make sure your app is wrapped in a <Router />" &&
+                        typeof document !== "undefined"
+                      ) {
+                        console.error(
+                          "Automatically resetting error boundary due to HMR-related router context error."
+                        );
+                        reset();
+                      }
+
+                      console.error(err);
+
+                      return (
+                        <div>
+                          <div>Error:</div>
+                          <p>{err.toString()}</p>
+                          <button onClick={reset}>Reset</button>
+                        </div>
+                      );
+                    }}
+                  >
+                    <Toaster />
+                    {props.children}
+                  </ErrorBoundary>
+                </>
+                // </PersistQueryClientProvider>
+              );
+            }}
+          >
+            {routes}
+          </Router>
+        </trpc.Provider>
+      </TrpcProvider>
     </QueryClientProvider>
   );
 }

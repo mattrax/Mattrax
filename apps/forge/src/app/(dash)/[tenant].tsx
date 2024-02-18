@@ -10,7 +10,7 @@ import { createContextProvider } from "@solid-primitives/context";
 import { RouterOutput } from "@mattrax/api";
 import { createComputed } from "solid-js";
 
-import { SuspenseError, setXTenantId } from "~/lib";
+import { SuspenseError } from "~/lib";
 import { useAuthContext } from "../(dash)";
 import TopNav from "~/components/TopNav";
 
@@ -27,7 +27,7 @@ export default function Layout(props: ParentProps) {
   const auth = useAuthContext();
   const navigate = useNavigate();
 
-  createComputed(() => setXTenantId(params.tenant));
+  createComputed(() => setTenantId(params.tenant));
 
   const activeTenant = createMemo(() => {
     const ownedTenant = auth.me.tenants.find((t) => t.id === params.tenant);

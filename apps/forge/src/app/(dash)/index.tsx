@@ -7,16 +7,17 @@ import { Form, createZodForm } from "~/components/forms";
 import { useAuthContext } from "../(dash)";
 import { InputField } from "~/components/forms";
 import { Button, Card, CardContent, CardHeader } from "~/components/ui";
-import { trpc, xTenantId } from "~/lib";
+import { trpc, useTenantId } from "~/lib";
 
 export default function Page() {
   const auth = useAuthContext();
+  const tenantId = useTenantId();
 
   const defaultTenant = () => {
     const tenants = auth.me.tenants;
     if (tenants.length < 1) return;
 
-    const persistedTenant = tenants.find((t) => t.id === xTenantId());
+    const persistedTenant = tenants.find((t) => t.id === tenantId());
     if (persistedTenant) return persistedTenant;
 
     return tenants[0];

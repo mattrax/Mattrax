@@ -274,7 +274,7 @@ export const domainToCertificateRelation = relations(domains, ({ one }) => ({
 
 // The backend for Rust's ACME.
 // This will contain the certificate for the primary server domain and any user-provided via `domains`.
-// The `key` will either be a domain (for a certificate) or an email address (for an ACME account).
+// The `key` will either be a comma separated list of domains (for a certificate) or comma separated list of email address (for an ACME account).
 export const certificates = mysqlTable("certificates", {
   key: varchar("key", { length: 256 }).primaryKey(),
   certificate: varbinary("certificate", { length: 9068 }).notNull(),
