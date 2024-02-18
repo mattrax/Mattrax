@@ -50,7 +50,6 @@ export default createApp({
     },
   ],
   server: {
-    preset: "cloudflare",
     // vercel: {
     //   regions: ["iad1"],
     // },
