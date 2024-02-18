@@ -3,6 +3,7 @@ use std::{
     net::{Ipv6Addr, SocketAddr},
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 
 use futures::{
@@ -119,7 +120,7 @@ impl Command {
 
             let resolver = acme.resolver();
             let challenge_rustls_config = acme.challenge_rustls_config();
-            tokio::spawn(async move {
+            let handle = tokio::spawn(async move {
                 let mut acme_rx = acme_rx;
                 loop {
                     let f1 = acme.next();
@@ -144,6 +145,11 @@ impl Command {
                 }
             });
 
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                handle.abort();
+            });
+
             // Served for `enterpriseenrollment.*` domains.
             // Doesn't allow client auth because Microsoft MDM client's enrollment system breaks with it.
             let enrollment_config = Arc::new(
@@ -164,8 +170,11 @@ impl Command {
                                 fs::read(data_dir.join("certs").join("identity.der"))
                                     .unwrap()
                                     .into();
-                            // TODO: Check result of `add_parsable_certificates` that the cert was valid
-                            let _ = root.add_parsable_certificates([cert]);
+                            let (added_certs, invalid_certs) =
+                                root.add_parsable_certificates([cert]);
+                            if added_certs != 1 && invalid_certs != 0 {
+                                panic!("Failed to add identity certificate to root store");
+                            }
 
                             Arc::new(root)
                         })
@@ -180,7 +189,10 @@ impl Command {
             server::Server::new(router, challenge_rustls_config, {
                 let primary_domain = state.config.get().domain.clone();
                 move |domain| match domain {
-                    d if d == primary_domain => management_config.clone(),
+                    d if d == primary_domain => {
+                        println!("YES");
+                        management_config.clone()
+                    }
                     _ => enrollment_config.clone(),
                 }
             })

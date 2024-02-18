@@ -77,7 +77,7 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                     </DiscoverResult>
                 </DiscoverResponse>
             </s:Body>
-        </s:Envelope>"#, message_id, "https://mdm.mattrax.app:443");
+        </s:Envelope>"#, message_id, "https://enterpriseenrollment.mattrax.app");
 
             Response::builder()
                 .header("Content-Type", "application/soap+xml; charset=utf-8")
@@ -133,7 +133,7 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
             // 	certStore = "System"
             // }
 
-            let domain = "https://mattrax.app:8443"; // TODO: Don't hardcode it
+            let domain = "https://mdm.mattrax.app"; // TODO: Don't hardcode it
 
             let mut hasher = Sha1::new();
             hasher.update(state.identity_cert.der());

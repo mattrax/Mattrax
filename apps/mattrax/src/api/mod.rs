@@ -78,7 +78,7 @@ pub fn mount(state: Arc<Context>) -> Router {
     Router::new()
         .route("/", get(|| async move { "Mattrax MDM!".to_string() }))
         .route("/test", get(|| async move {
-            axum::response::Html(r#"<a href="ms-device-enrollment:?mode=mdm&username=oscar@otbeaumont.me&servername=https://mdm.mattrax.app">Enroll</a>"#)
+            axum::response::Html(r#"<a href="ms-device-enrollment:?mode=mdm&username=oscar@otbeaumont.me&servername=https://enterpriseenrollment.mattrax.app">Enroll</a>"#)
         }))
         .nest("/internal", internal::mount(state.clone()))
         .nest("/EnrollmentServer", mdm::enrollment::mount(state.clone()))

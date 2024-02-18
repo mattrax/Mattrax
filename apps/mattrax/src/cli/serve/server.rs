@@ -68,7 +68,7 @@ impl Server {
                     match LazyConfigAcceptor::new(Default::default(), stream).await {
                         Ok(v) => v,
                         Err(err) => {
-                            warn!("Error starting TLS handshake with '{remote_addr}': {err:?}");
+                            warn!("Error starting TLS handshake with {remote_addr}: {err:?}");
                             return;
                         }
                     };
@@ -76,7 +76,7 @@ impl Server {
                 let client_hello = start_handshake.client_hello();
                 let server_name = client_hello.server_name().map(ToString::to_string);
                 if is_tls_alpn_challenge(&client_hello) {
-                    debug!("received TLS-ALPN-01 validation request for '{server_name:?}'",);
+                    debug!("received TLS-ALPN-01 validation request for {server_name:?}",);
                     match start_handshake
                         .into_stream(this.challenge_rustls_config.clone())
                         .await
@@ -84,14 +84,14 @@ impl Server {
                         Ok(tls) => {
                             let _ = tls.into_inner().0.into_inner().shutdown().await;
                         }
-                        Err(err) => warn!("Error completing TLS-ALPN-01 validation request for '{server_name:?}': {err:?}"),
+                        Err(err) => warn!("Error completing TLS-ALPN-01 validation request for {server_name:?}: {err:?}"),
                     }
                     return;
                 }
 
                 // TODO: Should we fallback to the main cert??? I don't think we could do this without forking rustls.
                 let Some(server_name) = server_name else {
-                    warn!("Error: no server name in client hello from '{remote_addr}'");
+                    warn!("Error: no server name in client hello from {remote_addr}");
                     return;
                 };
 
@@ -101,7 +101,7 @@ impl Server {
                 {
                     Ok(v) => v,
                     Err(err) => {
-                        warn!("Error doing TLS handshake with '{remote_addr}' for '{server_name:?}': {err:?}");
+                        warn!("Error doing TLS handshake with {remote_addr} for {server_name:?}: {err:?}");
                         return;
                     }
                 };
@@ -118,7 +118,7 @@ impl Server {
                     )
                     .await
                 {
-                    warn!("Error serving connection with '{remote_addr}': {err:?}");
+                    warn!("Error serving connection with {remote_addr}: {err:?}");
                 };
             });
         }
