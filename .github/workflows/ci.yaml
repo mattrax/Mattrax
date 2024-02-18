@@ -45,14 +45,15 @@ jobs:
 
       - name: Install 'cargo-zigbuild'
         run: |
+          # The Rust cache action is not happy with `cargo bininstall` for some reason and this is quick enough we don't care about caching it
+          export CARGO_HOME=$HOME/.cargo2
+          mkdir -p $CARGO_HOME
+          echo "Starting installation..."
           curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
           echo ""
           echo "Installed 'cargo-binstall'"
           echo ""
           cargo binstall --no-confirm cargo-zigbuild
-        env:
-          # The Rust cache action is not happy with `cargo bininstall` for some reason and this is quick enough we don't care about caching it
-          CARGO_HOME: ${{ runner.workspace }}/.cargo2
 
       - name: Add 'aarch64-unknown-linux-gnu' target
         run: rustup target add aarch64-unknown-linux-gnu
