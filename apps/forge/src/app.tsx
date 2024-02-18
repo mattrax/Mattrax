@@ -189,7 +189,7 @@ export default function App() {
                   }}
                 >
                   <Toaster />
-                  <Suspense>{props.children}</Suspense>
+                  {props.children}
                 </ErrorBoundary>
               </>
               // </PersistQueryClientProvider>
