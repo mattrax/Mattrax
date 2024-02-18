@@ -1,9 +1,12 @@
 import { Hono } from "hono";
-import { HonoEnv } from "../types";
+import { getCookie } from "vinxi/server";
+
 import { db, tenantUserProvider } from "../db";
 import { encodeId } from "../utils";
 import { env } from "../env";
 import { z } from "zod";
+import { lucia } from "../auth";
+import { HonoEnv } from "../types";
 
 const tokenEndpointResponse = z.object({ access_token: z.string() });
 const organizationResponse = z.object({
@@ -26,8 +29,14 @@ export const msRouter = new Hono<HonoEnv>()
     const code = c.req.query("code");
     if (!code) return new Response(`No code!`); // TODO: Proper error UI as the user may land here
 
-    if (!c.env.session.data?.id) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
-    if (!c.env.session.data.oauthData) return new Response(`Conflict!`); // TODO: Proper error UI as the user may land here
+    const sessionId = getCookie(c.event, lucia.sessionCookieName) ?? null;
+    if (sessionId === null) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
+
+    const { session } = await lucia.validateSession(sessionId);
+
+    if (!session) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
+    if (c.env.session.data?.oauthData === undefined)
+      return new Response(`Conflict!`); // TODO: Proper error UI as the user may land here
 
     const body = new URLSearchParams({
       client_id: env.ENTRA_CLIENT_ID,
@@ -42,9 +51,7 @@ export const msRouter = new Hono<HonoEnv>()
       `https://login.microsoftonline.com/organizations/oauth2/v2.0/token`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body,
       }
     );
@@ -57,11 +64,7 @@ export const msRouter = new Hono<HonoEnv>()
     // > returns a 200 OK response code and a collection of one organization object in the response body.
     const tenantReq = await fetch(
       `https://graph.microsoft.com/v1.0/organization?$select=id`,
-      {
-        headers: {
-          Authorization: `Bearer ${tokenData.data.access_token}`,
-        },
-      }
+      { headers: { Authorization: `Bearer ${tokenData.data.access_token}` } }
     );
     if (!tenantReq.ok)
       return new Response(`Failed to get tenant ID from Microsoft`); // TODO: Proper error UI as the user may land here
@@ -95,9 +98,14 @@ export const msRouter = new Hono<HonoEnv>()
     const error = c.req.query("error");
     if (error) return new Response(`Error from Microsoft: ${error}`); // TODO: Proper error UI as the user may land here
 
-    if (!c.env.session.data?.id) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
-    if (!c.env.session.data.oauthData) return new Response(`Conflict!`); // TODO: Proper error UI as the user may land here
-    if (!c.env.session.data.oauthData.entraIdTenant)
+    const sessionId = getCookie(c.event, lucia.sessionCookieName) ?? null;
+    if (sessionId === null) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
+
+    const { session } = await lucia.validateSession(sessionId);
+
+    if (!session) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
+    if (!c.env.session.data?.oauthData) return new Response(`Conflict!`); // TODO: Proper error UI as the user may land here
+    if (!c.env.session.data?.oauthData.entraIdTenant)
       return new Response(`Conflict!`); // TODO: Proper error UI as the user may land here
     const mttxTenantId = c.env.session.data.oauthData.tenant;
     const entraTenantId = c.env.session.data.oauthData.entraIdTenant;

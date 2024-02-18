@@ -1,9 +1,10 @@
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
+import { createId } from "@paralleldrive/cuid2";
+
 import { db, tenantUserProvider, users } from "../../db";
 import { createTRPCRouter, tenantProcedure } from "../../trpc";
-import { z } from "zod";
 import { encodeId, decodeId } from "../../utils";
-import { createId } from "@paralleldrive/cuid2";
 import { env } from "../..";
 import { msGraphClient } from "../../microsoft";
 
@@ -29,8 +30,8 @@ export const tenantAuthRouter = createTRPCRouter({
     // This will cause all in-progress linking to hit the CSRF error.
     // Due to this being an infrequent operation, I think this is fine.
     const state = createId();
-    await ctx.session.update({
-      ...ctx.session.data,
+    await ctx.env.session.update({
+      ...ctx.env.session.data,
       oauthData: {
         tenant: ctx.tenantId,
         state,

@@ -68,6 +68,9 @@ export default createApp({
         target: "es2020",
       },
     },
+    experimental: {
+      asyncContext: true,
+    },
   },
 });
 

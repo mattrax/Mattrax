@@ -1,8 +1,15 @@
 import { z } from "zod";
 import { eq } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
+import { alphabet, generateRandomString } from "oslo/crypto";
+import { appendResponseHeader } from "vinxi/server";
+import { generateId } from "lucia";
+
 import { authedProcedure, createTRPCRouter, publicProcedure } from "../trpc";
-import { accounts, db, tenants } from "../db";
+import { accounts, db, accountLoginCodes, tenants } from "../db";
 import { encodeId } from "../utils";
+import { sendEmail } from "../emails";
+import { lucia } from "../auth";
 
 type UserResult = {
   id: string;
@@ -19,91 +26,118 @@ const fetchTenants = async (session_id: number) =>
         name: tenants.name,
       })
       .from(tenants)
-      .where(eq(tenants.owner_id, session_id))
+      .where(eq(tenants.ownerPk, session_id))
   ).map((tenant) => ({
     ...tenant,
     id: encodeId("tenant", tenant.id),
   }));
 
 export const authRouter = createTRPCRouter({
-  login: publicProcedure
-    .input(z.object({ email: z.string().email(), password: z.string() }))
-    .mutation(async ({ ctx, input }) => {
+  sendLoginCode: publicProcedure
+    .input(z.object({ email: z.string().email() }))
+    .mutation(async ({ input }) => {
       const name = input.email.split("@")[0] ?? "";
+      const code = generateRandomString(8, alphabet("0-9"));
 
-      // TODO: Validate email and don't just auto create new accounts
-
+      const id = generateId(16);
       const result = await db
         .insert(accounts)
-        .values({ name, email: input.email })
-        .onDuplicateKeyUpdate({ set: { email: input.email } });
-      let userId = parseInt(result.insertId);
+        .values({ name, email: input.email, id })
+        .onDuplicateKeyUpdate({
+          set: { email: input.email },
+        });
 
-      // The upsert didn't insert a value.
-      // MySQL has no `RETURNING` so this is the best we are gonna get.
-      if (userId === 0) {
-        const user = (
-          await db
-            .select({ id: accounts.id })
-            .from(accounts)
-            .where(eq(accounts.email, input.email))
-        )?.[0];
-        if (!user) throw new Error("Error getting user we just inserted!");
-        userId = user.id;
+      let accountPk = parseInt(result.insertId);
+      let accountId = id;
+
+      if (accountPk === 0) {
+        const account = await db.query.accounts.findFirst({
+          where: eq(accounts.email, input.email),
+        });
+        if (!account)
+          throw new Error("Error getting account we just inserted!");
+        accountPk = account.pk;
+        accountId = account.id;
       }
 
-      // TODO: Check credentials with DB
-      // TODO: Create session in DB
+      await db.insert(accountLoginCodes).values({ accountPk, code });
 
-      await ctx.session.update({ id: userId, name, email: input.email });
-      return {};
+      await sendEmail({
+        type: "loginCode",
+        to: input.email,
+        subject: "Mattrax Login Code",
+        code,
+      });
+
+      return { accountId };
     }),
+  verifyLoginCode: publicProcedure
+    .input(z.object({ code: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const code = await db.query.accountLoginCodes.findFirst({
+        where: eq(accountLoginCodes.code, input.code),
+      });
 
-  me: authedProcedure.query(async ({ ctx }) => {
-    const session = ctx.session.data;
+      if (!code)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Invalid code" });
+
+      await db
+        .delete(accountLoginCodes)
+        .where(eq(accountLoginCodes.code, input.code));
+
+      const account = await db.query.accounts.findFirst({
+        where: eq(accounts.pk, code.accountPk),
+      });
+
+      if (!account)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Account not found",
+        });
+
+      const session = await lucia.createSession(account.id, {});
+      appendResponseHeader(
+        ctx.event,
+        "Set-Cookie",
+        lucia.createSessionCookie(session.id).serialize()
+      );
+
+      return true;
+    }),
+  me: authedProcedure.query(async ({ ctx: { account } }) => {
     return {
-      id: encodeId("user", session.id),
-      name: session.name,
-      email: session.email,
-      tenants: await fetchTenants(session.id),
-    } satisfies UserResult;
+      id: encodeId("user", account.pk),
+      name: account.name,
+      email: account.email,
+      tenants: await fetchTenants(account.pk),
+    };
   }),
-
   update: authedProcedure
     .input(
       z.object({
         name: z.string().optional(),
       })
     )
-    .mutation(async ({ ctx, input }) => {
-      const session = ctx.session.data;
-
+    .mutation(async ({ ctx: { account }, input }) => {
       // Skip DB if we have nothing to update
       if (input.name !== undefined) {
-        const result = await db
+        await db
           .update(accounts)
-          .set({
-            name: input.name,
-          })
-          .where(eq(accounts.id, session.id));
-
-        await ctx.session.update({
-          ...session,
-          name: input.name,
-        });
+          .set({ name: input.name })
+          .where(eq(accounts.pk, account.pk));
       }
 
       return {
-        id: encodeId("user", session.id),
-        name: input.name || session.name,
-        email: session.email,
-        tenants: await fetchTenants(session.id),
+        id: encodeId("user", account.pk),
+        name: input.name || account.name,
+        email: account.email,
+        tenants: await fetchTenants(account.pk),
       } satisfies UserResult;
     }),
 
-  logout: authedProcedure.mutation(async ({ ctx }) => {
+  logout: authedProcedure.mutation(async ({ ctx: { session } }) => {
     // TODO: Delete session from the DB
-    await ctx.session.clear();
+    await lucia.invalidateSession(session.id);
     return {};
   }),
 

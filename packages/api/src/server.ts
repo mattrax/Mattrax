@@ -18,9 +18,10 @@ export const app = new Hono<HonoEnv>()
       endpoint: "/api/trpc",
       req: c.req.raw,
       router: appRouter,
-      createContext: (opts) =>
+      createContext: () =>
         createTRPCContext({
-          session: c.env.session,
+          env: c.env,
+          event: c.env.h3Event,
           tenantId: c.req.header("x-tenant-id"),
         }),
     })

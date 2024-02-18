@@ -10,6 +10,7 @@ import {
   mysqlTable,
   boolean,
   varbinary,
+  datetime,
 } from "drizzle-orm/mysql-core";
 import { relations } from "drizzle-orm";
 
@@ -20,9 +21,22 @@ export type TableID<Table extends string> = number & { __table: Table };
 
 // An account represents the login of an *administrator*.
 export const accounts = mysqlTable("accounts", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 256 }).notNull(),
+  pk: serial("id").primaryKey(),
+  id: varchar("luciaId", { length: 16 }).notNull().unique(),
   email: varchar("email", { length: 256 }).unique().notNull(),
+  name: varchar("name", { length: 256 }).notNull(),
+});
+
+export const sessions = mysqlTable("session", {
+  id: varchar("id", {
+    length: 255,
+  }).primaryKey(),
+  userId: varchar("accountPk", {
+    length: 255,
+  })
+    .notNull()
+    .references(() => accounts.id),
+  expiresAt: datetime("expires_at").notNull(),
 });
 
 export const tenants = mysqlTable("tenant", {
@@ -31,8 +45,8 @@ export const tenants = mysqlTable("tenant", {
   billingEmail: varchar("billingEmail", { length: 256 }),
   stripeCustomerId: varchar("stripeCustomerId", { length: 256 }),
   enrollmentEnabled: boolean("enrollmentEnabled").notNull().default(true),
-  owner_id: serialRelation("ownerId")
-    .references(() => accounts.id)
+  ownerPk: serialRelation("ownerPk")
+    .references(() => accounts.pk)
     .notNull(),
 });
 
@@ -42,15 +56,13 @@ export const tenantAccounts = mysqlTable(
     tenantId: serialRelation("tenantId")
       .references(() => tenants.id)
       .notNull(),
-    accountId: serialRelation("accountId")
-      .references(() => accounts.id)
+    accountPk: serialRelation("accountPk")
+      .references(() => accounts.pk)
       .notNull(),
   },
-  (table) => {
-    return {
-      pk: primaryKey({ columns: [table.tenantId, table.accountId] }),
-    };
-  }
+  (table) => ({
+    pk: primaryKey({ columns: [table.tenantId, table.accountPk] }),
+  })
 );
 
 export const tenantAccountInvites = mysqlTable("tenant_account_invites", {
@@ -267,4 +279,12 @@ export const certificates = mysqlTable("certificates", {
   key: varchar("key", { length: 256 }).primaryKey(),
   certificate: varbinary("certificate", { length: 9068 }).notNull(),
   lastModified: timestamp("lastModified").notNull().defaultNow(),
+});
+
+export const accountLoginCodes = mysqlTable("account_login_codes", {
+  accountPk: serialRelation("accountPk")
+    .references(() => accounts.pk)
+    .notNull(),
+  code: varchar("code", { length: 8 }).notNull().primaryKey(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
 });

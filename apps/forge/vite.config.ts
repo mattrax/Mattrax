@@ -29,32 +29,16 @@ export default defineConfig((config) => ({
     }),
     // Vinxi/Nitro doesn't play nice with this plugin
     ...(config.mode === "development"
-      ? [
-          createHtmlPlugin({
-            minify: true,
-          }),
-        ]
+      ? [createHtmlPlugin({ minify: true })]
       : []),
     AutoImport({
-      resolvers: [
-        IconsResolver({
-          prefix: "Icon",
-          extension: "jsx",
-        }),
-      ],
+      resolvers: [IconsResolver({ prefix: "Icon", extension: "jsx" })],
       dts: "./src/auto-imports.d.ts",
     }),
-    Icons({
-      compiler: "solid",
-    }),
+    Icons({ compiler: "solid" }),
     !(process.env.VERCEL === "1")
-      ? visualizer({
-          brotliSize: true,
-          gzipSize: true,
-        })
+      ? visualizer({ brotliSize: true, gzipSize: true })
       : undefined,
   ],
-  ssr: {
-    noExternal: ["@kobalte/core"],
-  },
+  ssr: { noExternal: ["@kobalte/core"] },
 }));

@@ -22,6 +22,7 @@
     }
   },
   "dependencies": {
+    "@lucia-auth/adapter-drizzle": "^1.0.2",
     "@mattrax/drizzle-to-rs": "workspace:^",
     "@mattrax/email": "workspace:^",
     "@mattrax/mdm": "workspace:^",
@@ -35,10 +36,14 @@
     "aws4fetch": "^1.0.17",
     "base58": "^2.0.1",
     "drizzle-orm": "^0.29.3",
+    "h3": "^1.10.1",
     "hono": "^4.0.1",
+    "lucia": "^3.0.1",
+    "oslo": "^1.1.2",
     "react": "^18.2.0",
     "stripe": "^14.16.0",
     "superjson": "^2.2.1",
+    "vinxi": "^0.3.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {

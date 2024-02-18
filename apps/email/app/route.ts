@@ -5,7 +5,7 @@ import { render } from "@react-email/render";
 import { AwsClient } from "aws4fetch";
 import { z } from "zod";
 
-import { TenantAdminInviteEmail } from "~/emails";
+import { TenantAdminInviteEmail, LoginCodeEmail } from "~/emails";
 
 function optional_in_dev<T extends z.ZodTypeAny>(
   schema: T
@@ -42,12 +42,18 @@ const REQUEST_SCHEMA = z
     subject: z.string(),
   })
   .and(
-    z.object({
-      type: z.literal("tenantAdminInvite"),
-      invitedByEmail: z.string(),
-      tenantName: z.string(),
-      inviteLink: z.string(),
-    })
+    z.union([
+      z.object({
+        type: z.literal("tenantAdminInvite"),
+        invitedByEmail: z.string(),
+        tenantName: z.string(),
+        inviteLink: z.string(),
+      }),
+      z.object({
+        type: z.literal("loginCode"),
+        code: z.string(),
+      }),
+    ])
   );
 
 export type RequestSchema = z.infer<typeof REQUEST_SCHEMA>;
@@ -73,11 +79,12 @@ export async function POST(req: NextRequest) {
 
   let component: JSX.Element;
 
-  const { type, ...props } = args;
-  if (type === "tenantAdminInvite") {
-    component = TenantAdminInviteEmail(props);
+  if (args.type === "tenantAdminInvite") {
+    component = TenantAdminInviteEmail(args);
+  } else if (args.type === "loginCode") {
+    component = LoginCodeEmail(args);
   } else {
-    throw new Error(`Unknown email type: ${type}`);
+    throw new Error(`Unknown email type`);
   }
 
   const emailHtml = render(component);

@@ -1,17 +1,18 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
-import { db, tenantAccounts } from "./db";
-import type {
-  GetSessionResultWithData,
-  GetSessionResult,
-  SessionData,
-} from "./types";
-import { decodeId } from "./utils";
+import { getCookie, appendResponseHeader, H3Event } from "vinxi/server";
+import { User } from "lucia";
 import { and, eq } from "drizzle-orm";
 
+import { db, tenantAccounts } from "./db";
+import { decodeId } from "./utils";
+import { lucia } from "./auth";
+import { HonoEnv } from "./types";
+
 export const createTRPCContext = async (opts: {
-  session: GetSessionResult;
+  env: HonoEnv["Bindings"];
+  event: H3Event;
   tenantId: string | undefined;
 }) => {
   return {
@@ -41,28 +42,50 @@ export const publicProcedure = t.procedure;
 
 // Authenticated procedure
 export const authedProcedure = t.procedure.use(async (opts) => {
-  const { ctx } = opts;
-  if (ctx.session.data?.id === undefined)
-    throw new TRPCError({ code: "UNAUTHORIZED" });
+  const sessionId = getCookie(opts.ctx.event, lucia.sessionCookieName) ?? null;
+
+  const data = await (async () => {
+    if (sessionId === null) return;
+
+    const { session, user: account } = await lucia.validateSession(sessionId);
+
+    if (session && session.fresh) {
+      appendResponseHeader(
+        opts.ctx.event,
+        "Set-Cookie",
+        lucia.createSessionCookie(session.id).serialize()
+      );
+    }
+    if (!session) {
+      appendResponseHeader(
+        opts.ctx.event,
+        "Set-Cookie",
+        lucia.createBlankSessionCookie().serialize()
+      );
+    }
+
+    if (session && account) return { session, account };
+  })();
+
+  if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
   return opts.next({
     ctx: {
-      ...ctx,
-      session: ctx.session as GetSessionResultWithData,
+      ...opts.ctx,
+      ...data,
     },
   });
 });
 
-export const isSuperAdmin = (session: SessionData) =>
+export const isSuperAdmin = (account: User) =>
   // TODO: Make sure this check is only run if the email is verified
-  session.email.endsWith("@otbeaumont.me") ||
-  session.email.endsWith("@mattrax.app");
+  account.email.endsWith("@otbeaumont.me") ||
+  account.email.endsWith("@mattrax.app");
 
 // Authenticated procedure requiring a superadmin (Mattrax employee)
 export const superAdminProcedure = authedProcedure.use((opts) => {
   const { ctx } = opts;
-  if (!isSuperAdmin(ctx.session.data))
-    throw new TRPCError({ code: "FORBIDDEN" });
+  if (!isSuperAdmin(ctx.account)) throw new TRPCError({ code: "FORBIDDEN" });
 
   return opts.next({ ctx });
 });
@@ -81,7 +104,7 @@ export const tenantProcedure = authedProcedure.use(async (opts) => {
   const tenantAccount = await db.query.tenantAccounts.findFirst({
     where: and(
       eq(tenantAccounts.tenantId, tenantId),
-      eq(tenantAccounts.accountId, ctx.session.data.id)
+      eq(tenantAccounts.accountPk, ctx.account.pk)
     ),
   });
 

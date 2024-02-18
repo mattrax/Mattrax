@@ -1,13 +1,13 @@
+import { H3Event } from "h3";
+
 export type HonoEnv = {
   Bindings: {
+    h3Event: H3Event;
     session: GetSessionResult;
   };
 };
 
 export type SessionData = {
-  id: number;
-  name: string;
-  email: string;
   // Data for OAuth flow
   oauthData?: {
     // Mattrax tenant to send the user back to
