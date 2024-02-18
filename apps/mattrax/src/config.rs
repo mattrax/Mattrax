@@ -27,6 +27,7 @@ impl AcmeServer {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub domain: String,
+    pub enrollment_domain: String,
     pub acme_email: String,
     #[serde(default, skip_serializing_if = "AcmeServer::is_default")]
     pub acme_server: AcmeServer,

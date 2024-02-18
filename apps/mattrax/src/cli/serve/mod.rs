@@ -107,14 +107,15 @@ impl Command {
             );
             axum::serve(listener, router).await.unwrap();
         } else {
-            let mut acme = AcmeConfig::new(&[config.domain.clone()])
-                .contact(&[format!("mailto:{}", config.acme_email)])
-                .cache_option(Some(MattraxAcmeStore::new(
-                    state.db.clone(),
-                    data_dir.join("acme"),
-                )))
-                .directory_lets_encrypt(matches!(config.acme_server, AcmeServer::Production))
-                .state();
+            let mut acme =
+                AcmeConfig::new(&[config.domain.clone(), config.enrollment_domain.clone()])
+                    .contact(&[format!("mailto:{}", config.acme_email)])
+                    .cache_option(Some(MattraxAcmeStore::new(
+                        state.db.clone(),
+                        data_dir.join("acme"),
+                    )))
+                    .directory_lets_encrypt(matches!(config.acme_server, AcmeServer::Production))
+                    .state();
 
             let resolver = acme.resolver();
             let challenge_rustls_config = acme.challenge_rustls_config();
@@ -143,42 +144,48 @@ impl Command {
                 }
             });
 
-            let server = server::Server::new(router, challenge_rustls_config);
-
-            // TODO: Mutual-TLS is breaking the Windows enrollment flow so an extra port for now. Fix this so they can be on the same port (even on different domains if absolutely required).
-            tokio::spawn(
-                server.clone().start(
-                    SocketAddr::from((Ipv6Addr::UNSPECIFIED, 8443)),
-                    ServerConfig::builder()
-                        .with_client_cert_verifier(
-                            WebPkiClientVerifier::builder({
-                                // TODO: Allow this to be rotated at runtime for renewal
-                                let mut root = RootCertStore::empty();
-                                let cert: CertificateDer =
-                                    fs::read(data_dir.join("certs").join("identity.der"))
-                                        .unwrap()
-                                        .into();
-                                // TODO: Check result of `add_parsable_certificates` that the cert was valid
-                                let _ = root.add_parsable_certificates([cert]);
-
-                                Arc::new(root)
-                            })
-                            .allow_unauthenticated()
-                            .build()
-                            .unwrap(),
-                        )
-                        .with_cert_resolver(resolver.clone()),
-                ),
+            // Served for `enterpriseenrollment.*` domains.
+            // Doesn't allow client auth because Microsoft MDM client's enrollment system breaks with it.
+            let enrollment_config = Arc::new(
+                ServerConfig::builder()
+                    .with_no_client_auth()
+                    .with_cert_resolver(resolver.clone()),
             );
 
-            server
-                .start(
-                    SocketAddr::from((Ipv6Addr::UNSPECIFIED, port)),
-                    ServerConfig::builder()
-                        .with_no_client_auth()
-                        .with_cert_resolver(resolver),
-                )
-                .await;
+            // Served for the configured domain name.
+            // Allows client auth for MDM clients but doesn't require it for other requests.
+            let management_config = Arc::new(
+                ServerConfig::builder()
+                    .with_client_cert_verifier(
+                        WebPkiClientVerifier::builder({
+                            // TODO: Allow this to be rotated at runtime for renewal
+                            let mut root = RootCertStore::empty();
+                            let cert: CertificateDer =
+                                fs::read(data_dir.join("certs").join("identity.der"))
+                                    .unwrap()
+                                    .into();
+                            // TODO: Check result of `add_parsable_certificates` that the cert was valid
+                            let _ = root.add_parsable_certificates([cert]);
+
+                            Arc::new(root)
+                        })
+                        // We check for the cert in the handler
+                        .allow_unauthenticated()
+                        .build()
+                        .unwrap(),
+                    )
+                    .with_cert_resolver(resolver),
+            );
+
+            server::Server::new(router, challenge_rustls_config, {
+                let primary_domain = state.config.get().domain.clone();
+                move |domain| match domain {
+                    d if d == primary_domain => management_config.clone(),
+                    _ => enrollment_config.clone(),
+                }
+            })
+            .start(SocketAddr::from((Ipv6Addr::UNSPECIFIED, port)))
+            .await;
         }
     }
 }

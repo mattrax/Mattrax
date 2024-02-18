@@ -45,14 +45,21 @@ impl Command {
             config::AcmeServer::Production
         };
 
-        let domain = if cfg!(debug_assertions) {
-            "localhost".to_string()
+        let (domain, enrollment_domain) = if cfg!(debug_assertions) {
+            (
+                "localhost".to_string(),
+                "enterpriseenrollment.localhost".to_string(), // TODO: this is invalid but ehhh
+            )
         } else {
-            "mdm.mattrax.app".to_string()
+            (
+                "mdm.mattrax.app".to_string(),
+                "enterpriseenrollment.mattrax.app".to_string(),
+            )
         };
 
         let config = config::Config {
             domain,
+            enrollment_domain,
             acme_email: "hello@mattrax.app".to_string(),
             acme_server,
             secret,

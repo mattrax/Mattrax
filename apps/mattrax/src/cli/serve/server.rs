@@ -28,30 +28,31 @@ pub struct Server {
     // Used for connections from Let's Encrypt for the TLS-ALPN challenge.
     challenge_rustls_config: Arc<ServerConfig>,
     // Used for all other connections.
-    // This is `Option` so it can be lazily set in `Self::start`.
-    default_rustls_config: Option<Arc<ServerConfig>>,
+    // This should return a pre-ared value not construct a new one each time.
+    get_tls_config: Arc<dyn Fn(&str) -> Arc<ServerConfig> + Send + Sync + 'static>,
 }
 
 impl Server {
-    pub fn new(router: Router, challenge_rustls_config: Arc<ServerConfig>) -> Self {
+    pub fn new(
+        router: Router,
+        challenge_rustls_config: Arc<ServerConfig>,
+        get_tls_config: impl Fn(&str) -> Arc<ServerConfig> + Send + Sync + 'static,
+    ) -> Self {
         Self {
             router,
             challenge_rustls_config,
-            default_rustls_config: None,
+            get_tls_config: Arc::new(get_tls_config),
         }
     }
 
-    pub async fn start(self, addr: SocketAddr, config: ServerConfig) {
+    pub async fn start(self, addr: SocketAddr) {
         let listener = TcpListener::bind(addr).await.unwrap();
         info!(
             "Starting server listening on https://{}",
             listener.local_addr().unwrap_or(addr)
         );
 
-        let this = Arc::new(Self {
-            default_rustls_config: Some(Arc::new(config)),
-            ..self
-        });
+        let this = Arc::new(self);
 
         let mut make_service = this
             .router
@@ -89,13 +90,13 @@ impl Server {
                 }
 
                 // TODO: Should we fallback to the main cert??? I don't think we could do this without forking rustls.
-                if server_name.is_none() {
+                let Some(server_name) = server_name else {
                     warn!("Error: no server name in client hello from '{remote_addr}'");
                     return;
-                }
+                };
 
                 let stream = match start_handshake
-                    .into_stream(this.default_rustls_config.clone().expect("trust me bro"))
+                    .into_stream((this.get_tls_config)(&server_name))
                     .await
                 {
                     Ok(v) => v,
