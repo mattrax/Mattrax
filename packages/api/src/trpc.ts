@@ -1,7 +1,7 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
-import { getCookie, appendResponseHeader } from "vinxi/server";
+import { getCookie, appendResponseHeader, H3Event } from "vinxi/server";
 import { User } from "lucia";
 import { and, eq } from "drizzle-orm";
 
@@ -12,6 +12,7 @@ import { HonoEnv } from "./types";
 
 export const createTRPCContext = async (opts: {
   env: HonoEnv["Bindings"];
+  event: H3Event;
   tenantId: string | undefined;
 }) => {
   return {
@@ -41,7 +42,7 @@ export const publicProcedure = t.procedure;
 
 // Authenticated procedure
 export const authedProcedure = t.procedure.use(async (opts) => {
-  const sessionId = getCookie(lucia.sessionCookieName) ?? null;
+  const sessionId = getCookie(opts.ctx.event, lucia.sessionCookieName) ?? null;
 
   const data = await (async () => {
     if (sessionId === null) return;
@@ -50,12 +51,14 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 
     if (session && session.fresh) {
       appendResponseHeader(
+        opts.ctx.event,
         "Set-Cookie",
         lucia.createSessionCookie(session.id).serialize()
       );
     }
     if (!session) {
       appendResponseHeader(
+        opts.ctx.event,
         "Set-Cookie",
         lucia.createBlankSessionCookie().serialize()
       );

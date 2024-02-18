@@ -29,7 +29,7 @@ export const msRouter = new Hono<HonoEnv>()
     const code = c.req.query("code");
     if (!code) return new Response(`No code!`); // TODO: Proper error UI as the user may land here
 
-    const sessionId = getCookie(lucia.sessionCookieName) ?? null;
+    const sessionId = getCookie(c.event, lucia.sessionCookieName) ?? null;
     if (sessionId === null) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
 
     const { session } = await lucia.validateSession(sessionId);
@@ -98,7 +98,7 @@ export const msRouter = new Hono<HonoEnv>()
     const error = c.req.query("error");
     if (error) return new Response(`Error from Microsoft: ${error}`); // TODO: Proper error UI as the user may land here
 
-    const sessionId = getCookie(lucia.sessionCookieName) ?? null;
+    const sessionId = getCookie(c.event, lucia.sessionCookieName) ?? null;
     if (sessionId === null) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
 
     const { session } = await lucia.validateSession(sessionId);

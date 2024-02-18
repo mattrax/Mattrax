@@ -73,7 +73,7 @@ export const authRouter = createTRPCRouter({
     }),
   verifyLoginCode: publicProcedure
     .input(z.object({ code: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const code = await db.query.accountLoginCodes.findFirst({
         where: eq(accountLoginCodes.code, input.code),
       });
@@ -97,6 +97,7 @@ export const authRouter = createTRPCRouter({
 
       const session = await lucia.createSession(account.id, {});
       appendResponseHeader(
+        ctx.event,
         "Set-Cookie",
         lucia.createSessionCookie(session.id).serialize()
       );
