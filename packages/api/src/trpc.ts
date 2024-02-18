@@ -39,8 +39,6 @@ export const createTRPCRouter = t.router;
 // Public (unauthenticated) procedure
 export const publicProcedure = t.procedure;
 
-export async function ensureAuthenticated() {}
-
 // Authenticated procedure
 export const authedProcedure = t.procedure.use(async (opts) => {
   const sessionId = getCookie(lucia.sessionCookieName) ?? null;
