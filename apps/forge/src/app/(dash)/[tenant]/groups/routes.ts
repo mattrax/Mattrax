@@ -6,14 +6,21 @@ export default [
   {
     path: "/",
     component: lazy(() => import("./index")),
-    load: () => {
-      trpc.useContext().group.list.ensureData();
+    load: ({ params }) => {
+      trpc.useContext().group.list.ensureData({
+        tenantId: params.tenant!,
+      });
     },
   },
   {
     path: "/:groupId",
     component: lazy(() => import("./[groupId]")),
     load: ({ params }) =>
-      trpc.useContext().group.get.ensureData({ id: parseInt(params.groupId!) }),
+      trpc
+        .useContext()
+        .group.get.ensureData({
+          id: parseInt(params.groupId!),
+          tenantId: params.tenant!,
+        }),
   },
 ] satisfies RouteDefinition[];

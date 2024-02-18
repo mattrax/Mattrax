@@ -12,6 +12,7 @@ import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { As } from "@kobalte/core";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { useNavigate } from "@solidjs/router";
+import { useTenantContext } from "../../[tenant]";
 
 export const columns: ColumnDef<any>[] = [
   {
@@ -69,7 +70,10 @@ export const columns: ColumnDef<any>[] = [
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
 function createUsersTable() {
-  const users = trpc.user.list.useQuery();
+  const tenant = useTenantContext();
+  const users = trpc.user.list.useQuery(() => ({
+    tenantId: tenant.activeTenant.id,
+  }));
 
   const table = createSolidTable({
     get data() {

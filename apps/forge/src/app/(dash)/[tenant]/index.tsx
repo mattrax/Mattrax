@@ -6,14 +6,17 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "~/components/ui";
 import { isDebugMode, trpc, untrackScopeFromSuspense } from "~/lib";
+import { useTenantContext } from "../[tenant]";
 
 export default function Page() {
-  const stats = trpc.tenant.stats.useQuery();
+  const tenant = useTenantContext();
+  const stats = trpc.tenant.stats.useQuery(() => ({
+    tenantId: tenant.activeTenant.id,
+  }));
 
   const data = untrackScopeFromSuspense(() => ({ ...stats.data }));
 

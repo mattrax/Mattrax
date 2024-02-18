@@ -21,9 +21,12 @@ import {
   CardTitle,
 } from "~/components/ui";
 import { trpc } from "~/lib";
+import { useTenantContext } from "../../[tenant]";
 
 const column =
-  createColumnHelper<RouterOutput["tenant"]["administrators"][number]>();
+  createColumnHelper<
+    RouterOutput["tenant"]["administrators"]["list"][number]
+  >();
 
 const columns = [
   column.accessor("name", {
@@ -35,7 +38,10 @@ const columns = [
 ];
 
 export default function Page() {
-  const administrators = trpc.tenant.administrators.list.useQuery();
+  const tenant = useTenantContext();
+  const administrators = trpc.tenant.administrators.list.useQuery(() => ({
+    tenantId: tenant.activeTenant.id,
+  }));
 
   const table = createSolidTable({
     get data() {
@@ -59,11 +65,16 @@ export default function Page() {
 }
 
 function InviteAdminForm() {
+  const tenant = useTenantContext();
   const inviteAdmin = trpc.tenant.administrators.sendInvite.useMutation();
 
   const form = createZodForm({
     schema: z.object({ email: z.string().email() }),
-    onSubmit: ({ value }) => inviteAdmin.mutateAsync(value),
+    onSubmit: ({ value }) =>
+      inviteAdmin.mutateAsync({
+        email: value.email,
+        tenantId: tenant.activeTenant.id,
+      }),
   });
 
   return (

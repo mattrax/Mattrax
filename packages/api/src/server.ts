@@ -22,7 +22,6 @@ export const app = new Hono<HonoEnv>()
         createTRPCContext({
           env: c.env,
           event: c.env.h3Event,
-          tenantId: c.req.header("x-tenant-id"),
         }),
     })
   )

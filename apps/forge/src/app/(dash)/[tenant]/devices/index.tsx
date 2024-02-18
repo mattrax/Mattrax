@@ -8,7 +8,6 @@ import {
   createColumnHelper,
 } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
-import { toast } from "solid-sonner";
 import { useNavigate } from "@solidjs/router";
 import { RouterOutput } from "@mattrax/api";
 import dayjs from "dayjs";
@@ -16,6 +15,7 @@ import dayjs from "dayjs";
 import { Button, Checkbox, Input } from "~/components/ui";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
+import { useTenantContext } from "../../[tenant]";
 
 const columnHelper =
   createColumnHelper<RouterOutput["device"]["list"][number]>();
@@ -70,7 +70,10 @@ export const columns = [
 ];
 
 function createDevicesTable() {
-  const devices = trpc.device.list.useQuery();
+  const tenant = useTenantContext();
+  const devices = trpc.device.list.useQuery(() => ({
+    tenantId: tenant.activeTenant.id,
+  }));
 
   const table = createSolidTable({
     get data() {

@@ -1,11 +1,14 @@
 import { useParams } from "@solidjs/router";
+import { useTenantContext } from "~/app/(dash)/[tenant]";
 import { Input, Label } from "~/components/ui";
 import { trpc } from "~/lib";
 
 export default function Page() {
   const params = useParams();
+  const tenant = useTenantContext();
   const policy = trpc.policy.get.useQuery(() => ({
     policyId: params.policyId!,
+    tenantId: tenant.activeTenant.id,
   }));
 
   return (

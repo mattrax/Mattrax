@@ -1,24 +1,23 @@
 import { startTransition, Show } from "solid-js";
 import { Navigate, useNavigate } from "@solidjs/router";
-import { useQueryClient } from "@tanstack/solid-query";
 import { z } from "zod";
 
 import { Form, createZodForm } from "~/components/forms";
 import { useAuthContext } from "../(dash)";
 import { InputField } from "~/components/forms";
 import { Button, Card, CardContent, CardHeader } from "~/components/ui";
-import { trpc, useTenantId } from "~/lib";
+import { trpc } from "~/lib";
 
 export default function Page() {
   const auth = useAuthContext();
-  const tenantId = useTenantId();
 
   const defaultTenant = () => {
     const tenants = auth.me.tenants;
+    console.log(tenants);
     if (tenants.length < 1) return;
 
-    const persistedTenant = tenants.find((t) => t.id === tenantId());
-    if (persistedTenant) return persistedTenant;
+    // const persistedTenant = tenants.find((t) => t.id === tenantId());
+    // if (persistedTenant) return persistedTenant;
 
     return tenants[0];
   };
@@ -33,19 +32,20 @@ export default function Page() {
 }
 
 function CreateTenant() {
+  const auth = useAuthContext();
   const createTenant = trpc.tenant.create.useMutation();
 
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
 
   const form = createZodForm({
     schema: z.object({ name: z.string() }),
     async onSubmit(data) {
       const tenant = await createTenant.mutateAsync(data.value);
 
+      await auth.meQuery.refetch();
+
       await startTransition(() => {
         navigate(`/${tenant.id}`);
-        queryClient.invalidateQueries();
       });
     },
   });

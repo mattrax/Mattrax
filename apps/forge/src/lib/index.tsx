@@ -7,80 +7,18 @@ import {
   type CreateTRPCSolidStart,
 } from "@solid-mediakit/trpc";
 import superjson from "superjson";
-import {
-  Accessor,
-  createContext,
-  createEffect,
-  createSignal,
-  ParentProps,
-  useContext,
-} from "solid-js";
-import { makePersisted } from "@solid-primitives/storage";
+import { Accessor, createEffect, createSignal } from "solid-js";
 
-const Context = createContext<{
-  client: CreateTRPCSolidStart<AppRouter>;
-  tenantId: Accessor<string | undefined>;
-  setTenantId: (id: string | undefined) => void;
-}>(undefined!);
-
-// TODO: I am guessing this approach will still not work well with Suspense but it's better than what we had before.
-// TODO: When tenant switches in a transition I assume Solid "clones" only the suspending area but it will call `setTenantId` which will modify both tree's causing invalid state.
-export function TrpcProvider(props: ParentProps) {
-  const [tenantId, setTenantId] = makePersisted(
-    createSignal<string | undefined>(undefined),
-    { name: "x-tenant-id" }
-  );
-
-  const trpc = createTRPCSolidStart({
-    config: () => ({
-      links: [
-        httpBatchLink({
-          url: `${location.origin}/api/trpc`,
-          headers: () =>
-            tenantId() !== undefined ? { "x-tenant-id": tenantId() } : {},
-        }),
-      ],
-      transformer: superjson,
-    }),
-  });
-
-  return (
-    <Context.Provider
-      value={{
-        client: trpc as any,
-        tenantId,
-        setTenantId,
-      }}
-    >
-      {props.children}
-    </Context.Provider>
-  );
-}
-
-export const trpc: CreateTRPCSolidStart<AppRouter> = new Proxy<any>(
-  {},
-  {
-    get(_, prop) {
-      const ctx = useContext(Context);
-      if (!ctx) throw new Error("Forgot `TrpcProvider`?");
-      // @ts-expect-error
-      return ctx.client[prop];
-    },
-  }
-);
-
-export function useTenantId() {
-  const ctx = useContext(Context);
-  if (!ctx) throw new Error("Forgot `TrpcProvider`?");
-  return ctx.tenantId;
-}
-
-export function setTenantId(id: string | undefined) {
-  console.log(id);
-  const ctx = useContext(Context);
-  if (!ctx) throw new Error("Forgot `TrpcProvider`?");
-  ctx.setTenantId(id);
-}
+export const trpc: CreateTRPCSolidStart<AppRouter> = createTRPCSolidStart({
+  config: () => ({
+    links: [
+      httpBatchLink({
+        url: `${location.origin}/api/trpc`,
+      }),
+    ],
+    transformer: superjson,
+  }),
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

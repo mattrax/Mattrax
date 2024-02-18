@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { createTRPCRouter, tenantProcedure } from "../trpc";
-import { db, devices, tenantAccounts } from "../db";
 import { and, eq } from "drizzle-orm";
+
+import { createTRPCRouter, tenantProcedure } from "../trpc";
+import { db, devices } from "../db";
 import { encodeId } from "../utils";
 // import { graphClient } from "../microsoft";
 // import type { ManagedDevice } from "@microsoft/microsoft-graph-types";

@@ -53,8 +53,6 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 
   const tabValue = () => value()?.params.rest?.split("/")[0];
 
-  console.log(tabValue());
-
   return (
     <>
       <div class="relative flex flex-row">

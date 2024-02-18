@@ -1,11 +1,14 @@
 import { useParams } from "@solidjs/router";
-import { Button } from "~/components/ui";
+
+import { useTenantContext } from "~/app/(dash)/[tenant]";
 import { trpc } from "~/lib";
 
 export default function Page() {
   const params = useParams();
+  const tenant = useTenantContext();
   const policy = trpc.policy.get.useQuery(() => ({
     policyId: params.policyId!,
+    tenantId: tenant.activeTenant.id,
   }));
   // const policyPush = trpc.policy.push.useMutation(() => ({
   //   onSuccess: () => alert("Policy pushed!"),

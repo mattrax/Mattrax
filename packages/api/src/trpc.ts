@@ -1,6 +1,6 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import { getCookie, appendResponseHeader, H3Event } from "vinxi/server";
 import { User } from "lucia";
 import { and, eq } from "drizzle-orm";
@@ -13,7 +13,6 @@ import { HonoEnv } from "./types";
 export const createTRPCContext = async (opts: {
   env: HonoEnv["Bindings"];
   event: H3Event;
-  tenantId: string | undefined;
 }) => {
   return {
     db,
@@ -91,33 +90,33 @@ export const superAdminProcedure = authedProcedure.use((opts) => {
 });
 
 // Authenticated procedure w/ a tenant
-export const tenantProcedure = authedProcedure.use(async (opts) => {
-  const { ctx } = opts;
-  if (ctx.tenantId === undefined)
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "'x-tenant-id' required",
+export const tenantProcedure = authedProcedure
+  .input(
+    z.object({
+      tenantId: z.string(),
+    })
+  )
+  .use(async (opts) => {
+    const { ctx, input } = opts;
+    const tenantId = decodeId("tenant", input.tenantId);
+
+    const tenantAccount = await db.query.tenantAccounts.findFirst({
+      where: and(
+        eq(tenantAccounts.tenantId, tenantId),
+        eq(tenantAccounts.accountPk, ctx.account.pk)
+      ),
     });
 
-  const tenantId = decodeId("tenant", ctx.tenantId);
+    if (tenantAccount === undefined)
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "tenant",
+      });
 
-  const tenantAccount = await db.query.tenantAccounts.findFirst({
-    where: and(
-      eq(tenantAccounts.tenantId, tenantId),
-      eq(tenantAccounts.accountPk, ctx.account.pk)
-    ),
-  });
-
-  if (tenantAccount === undefined)
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "tenant",
+    return opts.next({
+      ctx: {
+        ...ctx,
+        tenantId,
+      },
     });
-
-  return opts.next({
-    ctx: {
-      ...ctx,
-      tenantId,
-    },
   });
-});

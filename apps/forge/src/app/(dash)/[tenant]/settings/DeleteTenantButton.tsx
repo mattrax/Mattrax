@@ -9,9 +9,9 @@ import { useTenantContext } from "../../[tenant]";
 
 export function DeleteTenantButton() {
   const deleteTenant = trpc.tenant.delete.useMutation();
-  const auth = useAuthContext();
   const navigate = useNavigate();
-  const tenantCtx = useTenantContext();
+  const tenant = useTenantContext();
+  const trpcCtx = trpc.useContext();
 
   return (
     <ConfirmDialog>
@@ -21,7 +21,7 @@ export function DeleteTenantButton() {
           onClick={() =>
             confirm({
               title: "Delete tenant?",
-              action: `Delete '${tenantCtx.activeTenant.name}'`,
+              action: `Delete '${tenant.activeTenant.name}'`,
               description: (
                 <>
                   Are you sure you want to delete your tenant along with all{" "}
@@ -29,12 +29,16 @@ export function DeleteTenantButton() {
                   <b>applications</b> and <b>groups</b>?
                 </>
               ),
-              inputText: tenantCtx.activeTenant.name,
+              inputText: tenant.activeTenant.name,
               async onConfirm() {
-                await deleteTenant.mutateAsync();
-                await auth.meQuery.refetch();
+                await deleteTenant.mutateAsync({
+                  tenantId: tenant.activeTenant.id,
+                });
 
-                await startTransition(() => navigate("/"));
+                await startTransition(() => {
+                  trpcCtx.auth.me.invalidate();
+                  navigate("/");
+                });
               },
             })
           }

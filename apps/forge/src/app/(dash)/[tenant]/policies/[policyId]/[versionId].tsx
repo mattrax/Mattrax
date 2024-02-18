@@ -35,6 +35,7 @@ import { As } from "@kobalte/core";
 import { toast } from "solid-sonner";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import dayjs from "dayjs";
+import { useTenantContext } from "~/app/(dash)/[tenant]";
 
 // TODO: If the policy or version is not found redirect back to `/policies`
 
@@ -43,8 +44,10 @@ export default function Page(props: ParentProps) {
   const [transitionPending] = useTransition();
   const params = useParams<{ policyId: string }>();
 
+  const tenant = useTenantContext();
   const policy = trpc.policy.get.useQuery(() => ({
     policyId: params.policyId!,
+    tenantId: tenant.activeTenant.id,
   }));
 
   return (
@@ -112,6 +115,7 @@ export default function Page(props: ParentProps) {
                               async onConfirm() {
                                 await deletePolicy.mutateAsync({
                                   policyId: params.policyId,
+                                  tenantId: tenant.activeTenant.id,
                                 });
                               },
                             });
@@ -186,8 +190,10 @@ export default function Page(props: ParentProps) {
 
 function PolicyVersionSwitcher() {
   const params = useParams<{ policyId: string; versionId: string }>();
+  const tenant = useTenantContext();
   const versions = trpc.policy.getVersions.useQuery(() => ({
     policyId: params.policyId!,
+    tenantId: tenant.activeTenant.id,
   }));
 
   createEffect(() => console.log(versions.data, activeVersion()));
@@ -253,6 +259,7 @@ function ActionsDropdown(
   props: ParentProps & { onSelect(item: "delete"): void }
 ) {
   const navigate = useNavigate();
+  const tenant = useTenantContext();
   const params = useParams<{ policyId: string }>();
 
   const duplicatePolicy = trpc.policy.duplicate.useMutation(() => ({
@@ -268,7 +275,12 @@ function ActionsDropdown(
       <DropdownMenuContent>
         <DropdownMenuItem
           disabled={duplicatePolicy.isPending}
-          onSelect={() => duplicatePolicy.mutate({ policyId: params.policyId })}
+          onSelect={() =>
+            duplicatePolicy.mutate({
+              policyId: params.policyId,
+              tenantId: tenant.activeTenant.id,
+            })
+          }
         >
           Duplicate
         </DropdownMenuItem>

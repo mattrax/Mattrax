@@ -6,23 +6,31 @@ export default [
   {
     path: "/",
     component: lazy(() => import("./index")),
-    load: () => {
-      trpc.useContext().tenant.auth.query.ensureData();
-      trpc.useContext().tenant.enrollmentInfo.ensureData();
+    load: ({ params }) => {
+      trpc
+        .useContext()
+        .tenant.auth.query.ensureData({ tenantId: params.tenant! });
+      trpc
+        .useContext()
+        .tenant.enrollmentInfo.ensureData({ tenantId: params.tenant! });
     },
   },
   {
     path: "/administrators",
     component: lazy(() => import("./administrators")),
-    load: () => {
-      trpc.useContext().tenant.administrators.list.ensureData();
+    load: ({ params }) => {
+      trpc
+        .useContext()
+        .tenant.administrators.list.ensureData({ tenantId: params.tenant! });
     },
   },
   {
     path: "/domains",
     component: lazy(() => import("./domains")),
-    load: () => {
-      trpc.useContext().tenant.domains.list.ensureData();
+    load: ({ params }) => {
+      trpc.useContext().tenant.domains.list.ensureData({
+        tenantId: params.tenant!,
+      });
     },
   },
   {

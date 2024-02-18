@@ -8,9 +8,7 @@ export const [AuthContextProvider, useAuthContext] = createContextProvider(
   (props: {
     meQuery: ReturnType<typeof trpc.auth.me.useQuery>;
     me: RouterOutput["auth"]["me"];
-  }) => {
-    return props;
-  },
+  }) => props,
   null!
 );
 
@@ -18,7 +16,7 @@ export default function Layout(props: ParentProps) {
   // TODO: Use the auth cookie trick for better UX
   const me = trpc.auth.me.useQuery(void 0, () => ({
     // This will *always* stay in the cache. Avoids need for `localStorage` shenanigans.
-    gcTime: Infinity,
+    // gcTime: Infinity,
   }));
 
   return (

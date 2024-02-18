@@ -11,8 +11,10 @@ export default [
   {
     path: "/",
     component: lazy(() => import("./index")),
-    load: () => {
-      trpc.useContext().tenant.stats.ensureData();
+    load: ({ params }) => {
+      trpc.useContext().tenant.stats.ensureData({
+        tenantId: params.tenant!,
+      });
     },
   },
   {
@@ -21,8 +23,10 @@ export default [
       {
         path: "/",
         component: lazy(() => import("./users")),
-        load: () => {
-          trpc.useContext().user.list.ensureData();
+        load: ({ params }) => {
+          trpc.useContext().user.list.ensureData({
+            tenantId: params.tenant!,
+          });
         },
       },
       {
@@ -50,8 +54,10 @@ export default [
       {
         path: "/",
         component: lazy(() => import("./devices")),
-        load: () => {
-          trpc.useContext().device.list.ensureData();
+        load: ({ params }) => {
+          trpc.useContext().device.list.ensureData({
+            tenantId: params.tenant!,
+          });
         },
       },
       {
@@ -67,16 +73,19 @@ export default [
       {
         path: "/",
         component: lazy(() => import("./policies")),
-        load: () => {
-          trpc.useContext().policy.list.ensureData();
+        load: ({ params }) => {
+          trpc.useContext().policy.list.ensureData({
+            tenantId: params.tenant!,
+          });
         },
       },
       {
         path: "/:policyId",
         load: ({ params }) =>
-          trpc
-            .useContext()
-            .policy.get.ensureData({ policyId: params.policyId! }),
+          trpc.useContext().policy.get.ensureData({
+            policyId: params.policyId!,
+            tenantId: params.tenant!,
+          }),
         children: policyRoutes,
       },
     ],

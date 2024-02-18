@@ -16,7 +16,11 @@ import { useZodParams } from "~/lib/useZodParams";
 export default function Page() {
   const routeParams = useZodParams({ groupId: z.coerce.number() });
 
-  const group = trpc.group.get.useQuery(() => ({ id: routeParams.groupId }));
+  const tenant = useTenantContext();
+  const group = trpc.group.get.useQuery(() => ({
+    id: routeParams.groupId,
+    tenantId: tenant.activeTenant.id,
+  }));
 
   return (
     <Show when={group.data}>
@@ -96,7 +100,11 @@ const columns = [
 ];
 
 function createMembersTable(groupId: Accessor<number>) {
-  const members = trpc.group.members.useQuery(() => ({ id: groupId() }));
+  const tenant = useTenantContext();
+  const members = trpc.group.members.useQuery(() => ({
+    id: groupId(),
+    tenantId: tenant.activeTenant.id,
+  }));
 
   return createSolidTable({
     get data() {
@@ -218,6 +226,7 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { useQueryClient } from "@tanstack/solid-query";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
+import { useTenantContext } from "../../[tenant]";
 
 const AddMemberTableOptions = {
   all: "All",
@@ -229,8 +238,9 @@ const AddMemberTableOptions = {
 function AddMemberSheet(props: ParentProps & { groupId: number }) {
   const [open, setOpen] = createSignal(false);
 
+  const tenant = useTenantContext();
   const possibleMembers = trpc.group.possibleMembers.useQuery(
-    () => ({ id: props.groupId }),
+    () => ({ id: props.groupId, tenantId: tenant.activeTenant.id }),
     () => ({ enabled: open() })
   );
 
@@ -341,6 +351,7 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
                   onClick={async () => {
                     await addMembers.mutateAsync({
                       id: props.groupId,
+                      tenantId: tenant.activeTenant.id,
                       members: table.getSelectedRowModel().rows.map((row) => ({
                         id: row.original.id,
                         variant: row.original.variant,

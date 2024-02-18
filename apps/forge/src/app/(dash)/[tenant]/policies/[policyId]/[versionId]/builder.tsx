@@ -1,6 +1,7 @@
 import { restrictions } from "@mattrax/policies";
 import { useParams } from "@solidjs/router";
 import { For, createSignal } from "solid-js";
+
 import {
   Button,
   Card,
@@ -22,11 +23,14 @@ import {
 } from "~/components/ui/popover";
 import { trpc } from "~/lib";
 import { RenderPolicy } from "./RenderPolicy";
+import { useTenantContext } from "~/app/(dash)/[tenant]";
 
 export default function Page() {
   const params = useParams();
+  const tenant = useTenantContext();
   const policy = trpc.policy.get.useQuery(() => ({
     policyId: params.policyId!,
+    tenantId: tenant.activeTenant.id,
   }));
 
   console.log(policy.data);

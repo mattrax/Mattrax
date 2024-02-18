@@ -8,17 +8,14 @@ import {
 } from "solid-js";
 import { createContextProvider } from "@solid-primitives/context";
 import { RouterOutput } from "@mattrax/api";
-import { createComputed } from "solid-js";
 
 import { SuspenseError } from "~/lib";
 import { useAuthContext } from "../(dash)";
 import TopNav from "~/components/TopNav";
 
 export const [TenantContextProvider, useTenantContext] = createContextProvider(
-  (props: {
-    activeTenant: RouterOutput["auth"]["me"]["tenants"][number];
-    setTenantId: (id: string) => void;
-  }) => props,
+  (props: { activeTenant: RouterOutput["auth"]["me"]["tenants"][number] }) =>
+    props,
   null!
 );
 
@@ -26,8 +23,6 @@ export default function Layout(props: ParentProps) {
   const params = useParams<{ tenant: string }>();
   const auth = useAuthContext();
   const navigate = useNavigate();
-
-  createComputed(() => setTenantId(params.tenant));
 
   const activeTenant = createMemo(() => {
     const ownedTenant = auth.me.tenants.find((t) => t.id === params.tenant);
@@ -50,10 +45,7 @@ export default function Layout(props: ParentProps) {
   return (
     <Show when={activeTenant()}>
       {(activeTenant) => (
-        <TenantContextProvider
-          activeTenant={activeTenant()}
-          setTenantId={setTenantId}
-        >
+        <TenantContextProvider activeTenant={activeTenant()}>
           {/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
           <Suspense fallback={<SuspenseError name="Sidebar" />}>
             <TopNav
@@ -66,7 +58,9 @@ export default function Layout(props: ParentProps) {
             />
           </Suspense>
           {/* we key here on purpose - tenants are the root-most unit of isolation */}
-          <Show when={activeTenant().id}>{props.children}</Show>
+          <Show when={activeTenant().id} keyed>
+            {props.children}
+          </Show>
         </TenantContextProvider>
       )}
     </Show>

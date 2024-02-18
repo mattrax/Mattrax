@@ -25,6 +25,7 @@ import {
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { Separator } from "~/components/ui";
 import { Form, InputField, createZodForm } from "~/components/forms";
+import { useTenantContext } from "../../[tenant]";
 
 export const columns: ColumnDef<any>[] = [
   {
@@ -60,7 +61,10 @@ export const columns: ColumnDef<any>[] = [
 ];
 
 function createGroupsTable() {
-  const groups = trpc.policy.list.useQuery();
+  const tenant = useTenantContext();
+  const groups = trpc.policy.list.useQuery(() => ({
+    tenantId: tenant.activeTenant.id,
+  }));
 
   const table = createSolidTable({
     get data() {
@@ -149,6 +153,7 @@ export default function Page() {
 }
 
 function CreatePolicyCard() {
+  const tenant = useTenantContext();
   const navigate = useNavigate();
 
   const createPolicy = trpc.policy.create.useMutation(() => ({
@@ -157,7 +162,11 @@ function CreatePolicyCard() {
 
   const form = createZodForm({
     schema: z.object({ name: z.string() }),
-    onSubmit: ({ value }) => createPolicy.mutateAsync(value),
+    onSubmit: ({ value }) =>
+      createPolicy.mutateAsync({
+        name: value.name,
+        tenantId: tenant.activeTenant.id,
+      }),
   });
 
   return (

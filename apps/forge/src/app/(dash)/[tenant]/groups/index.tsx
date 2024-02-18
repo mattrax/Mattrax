@@ -8,8 +8,9 @@ import {
   getSortedRowModel,
   getFilteredRowModel,
 } from "@tanstack/solid-table";
-import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { As } from "@kobalte/core";
+
+import { trpc, untrackScopeFromSuspense } from "~/lib";
 
 export const columns: ColumnDef<any>[] = [
   {
@@ -46,7 +47,10 @@ export const columns: ColumnDef<any>[] = [
 ];
 
 function createGroupsTable() {
-  const groups = trpc.group.list.useQuery();
+  const tenant = useTenantContext();
+  const groups = trpc.group.list.useQuery(() => ({
+    tenantId: tenant.activeTenant.id,
+  }));
 
   const table = createSolidTable({
     get data() {
@@ -154,6 +158,7 @@ import {
 } from "~/components/ui";
 
 function CreateGroupDialog(props: ParentProps) {
+  const tenant = useTenantContext();
   const navigate = useNavigate();
 
   const mutation = trpc.group.create.useMutation(() => ({
@@ -177,6 +182,7 @@ function CreateGroupDialog(props: ParentProps) {
             const formData = new FormData(e.currentTarget);
             mutation.mutate({
               name: formData.get("name") as any,
+              tenantId: tenant.activeTenant.id,
             });
           }}
         >
@@ -208,3 +214,4 @@ import {
 } from "~/components/ui";
 import { OutlineLayout } from "../OutlineLayout";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
+import { useTenantContext } from "../../[tenant]";

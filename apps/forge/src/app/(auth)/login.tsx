@@ -99,9 +99,7 @@ export default function Page() {
                     />
 
                     <Button type="submit" class="w-full">
-                      <span class="text-sm font-semibold leading-6">
-                        Send Login Code
-                      </span>
+                      <span class="text-sm font-semibold leading-6">Login</span>
                     </Button>
                   </Form>
                 );

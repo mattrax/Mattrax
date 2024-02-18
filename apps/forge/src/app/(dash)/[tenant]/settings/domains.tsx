@@ -24,9 +24,13 @@ import { z } from "zod";
 import { As } from "@kobalte/core";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { createTimeAgo } from "@solid-primitives/date";
+import { useTenantContext } from "../../[tenant]";
 
 export default function Page() {
-  const domains = trpc.tenant.domains.list.useQuery();
+  const tenant = useTenantContext();
+  const domains = trpc.tenant.domains.list.useQuery(() => ({
+    tenantId: tenant.activeTenant.id,
+  }));
 
   return (
     <>
@@ -53,7 +57,11 @@ export default function Page() {
                   return;
 
                 const i = setInterval(
-                  () => verifyDomain.mutate({ domain: domain.domain }),
+                  () =>
+                    verifyDomain.mutate({
+                      domain: domain.domain,
+                      tenantId: tenant.activeTenant.id,
+                    }),
                   5000
                 );
                 onCleanup(() => clearInterval(i));
@@ -82,7 +90,10 @@ export default function Page() {
                             class="ml-auto"
                             disabled={verifyDomain.isPending}
                             onClick={() => {
-                              verifyDomain.mutate({ domain: domain.domain });
+                              verifyDomain.mutate({
+                                domain: domain.domain,
+                                tenantId: tenant.activeTenant.id,
+                              });
                             }}
                           >
                             Refresh
@@ -112,6 +123,7 @@ export default function Page() {
                                       onConfirm: () =>
                                         deleteDomain.mutateAsync({
                                           domain: domain.domain,
+                                          tenantId: tenant.activeTenant.id,
                                         }),
                                     })
                                   }
@@ -259,10 +271,14 @@ function AddDomainForm() {
   const createDomain = trpc.tenant.domains.create.useMutation();
   const trpcCtx = trpc.useContext();
 
+  const tenant = useTenantContext();
   const form = createZodForm({
     schema: z.object({ domain: z.string() }),
     async onSubmit({ value }) {
-      await createDomain.mutateAsync(value);
+      await createDomain.mutateAsync({
+        domain: value.domain,
+        tenantId: tenant.activeTenant.id,
+      });
       await trpcCtx.tenant.domains.list.refetch();
       form.setFieldValue("domain", "");
     },

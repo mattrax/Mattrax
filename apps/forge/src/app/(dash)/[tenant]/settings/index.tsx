@@ -40,7 +40,7 @@ export default function Page() {
 
 function SettingsCard() {
   const auth = useAuthContext();
-  const tenantCtx = useTenantContext();
+  const tenant = useTenantContext();
 
   // TODO: rollback form on failure
   const updateTenant = trpc.tenant.edit.useMutation(() => ({
@@ -50,10 +50,13 @@ function SettingsCard() {
   const form = createZodForm({
     schema: z.object({ name: z.string() }),
     defaultValues: {
-      name: tenantCtx.activeTenant.name,
+      name: tenant.activeTenant.name,
     },
-    async onSubmit(props) {
-      await updateTenant.mutateAsync(props.value);
+    async onSubmit({ value }) {
+      await updateTenant.mutateAsync({
+        name: value.name,
+        tenantId: tenant.activeTenant.id,
+      });
     },
   });
 
@@ -76,7 +79,10 @@ function SettingsCard() {
 }
 
 function AuthenticationCard() {
-  const linkedProviders = trpc.tenant.auth.query.useQuery();
+  const tenant = useTenantContext();
+  const linkedProviders = trpc.tenant.auth.query.useQuery(() => ({
+    tenantId: tenant.activeTenant.id,
+  }));
 
   const linkEntra = trpc.tenant.auth.linkEntra.useMutation(() => ({
     onSuccess: async (url) => {
@@ -175,6 +181,7 @@ function AuthenticationCard() {
                               async onConfirm() {
                                 await unlinkProvider.mutateAsync({
                                   id: provider.id,
+                                  tenantId: tenant.activeTenant.id,
                                 });
                               },
                             })
@@ -210,7 +217,7 @@ function AuthenticationCard() {
                       "You will be asked to provide consent twice. This is expected and is to ensure your data is kept secure though the process!"
                     )
                   )
-                    linkEntra.mutate();
+                    linkEntra.mutate({ tenantId: tenant.activeTenant.id });
                 }}
               >
                 <IconLogosMicrosoftAzure class="mr-3" />
@@ -225,7 +232,11 @@ function AuthenticationCard() {
 
           <Button
             class="w-full"
-            onClick={() => sync.mutate()}
+            onClick={() =>
+              sync.mutate({
+                tenantId: tenant.activeTenant.id,
+              })
+            }
             disabled={isPending() || hasLinkedProviders()}
           >
             Sync
@@ -258,7 +269,11 @@ function MigrateCard() {
 }
 
 function ConfigureEnrollmentCard() {
-  const enrollmentInfo = trpc.tenant.enrollmentInfo.useQuery();
+  const tenant = useTenantContext();
+
+  const enrollmentInfo = trpc.tenant.enrollmentInfo.useQuery(() => ({
+    tenantId: tenant.activeTenant.id,
+  }));
   // TODO: Show correct state on the UI while the mutation is pending but keep fields disabled.
   const setEnrollmentInfo = trpc.tenant.setEnrollmentInfo.useMutation(() => ({
     onSuccess: () => enrollmentInfo.refetch(),
@@ -282,6 +297,7 @@ function ConfigureEnrollmentCard() {
             onChange={(state) =>
               setEnrollmentInfo.mutate({
                 enrollmentEnabled: state,
+                tenantId: tenant.activeTenant.id,
               })
             }
           />
