@@ -1,11 +1,10 @@
-use yaserde::{YaDeserialize, YaSerialize};
+use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 /// The CmdID element type specifies a unique command identifier for the SyncML message.
 /// CmdID MUST be unique within the SyncML message and MUST NOT be the string "0".
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub struct CmdId {
-    // TODO: Tuple structs are broken
-    #[yaserde(child)]
+    #[easy_xml(flatten)]
     child: String,
 }
 

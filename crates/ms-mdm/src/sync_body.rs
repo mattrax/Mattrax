@@ -1,39 +1,33 @@
-use yaserde::{YaDeserialize, YaSerialize};
+use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 use crate::{Add, Alert, Atomic, Delete, Exec, Final, Get, Replace, Results, Status};
 
-/// Namespace for the 'xmlns:msft' attribute of the [SyncBody] element.
-pub const MSFT_XMLNS: &str = "http://schemas.microsoft.com/MobileDevice/MDM";
-
 /// The SyncBody element type serves as the container for the body or contents of the SyncML message.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
-#[yaserde(namespace = "msft: http://schemas.microsoft.com/MobileDevice/MDM")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
+/// This *SHOULD* be set when 'SyncApplicationVersion' is greater than '3.0' in the DMCLient CSP but we just set it regardless.
+#[easy_xml(namespace = { "msft": "http://schemas.microsoft.com/MobileDevice/MDM" })]
 pub struct SyncBody {
-    // /// This should be set to [MSFT_XMLNS].
-    // /// This *SHOULD* be set when 'SyncApplicationVersion' is greater than '3.0' in the DMCLient CSP but we just require it regardless.
-    // #[yaserde(attribute, rename = "xmlns:msft")]
-    // pub xmlns_msft: Option<String>, // TODO: Use a `Cow` so this can be `MSFT_XMLNS` without an allocation. Yaserde doesn't suppot COWs yet.
-    #[yaserde(flatten)]
+    #[easy_xml(
+        rename = "Atomic|Exec|Get|Results|Status|Add|Replace|Delete|Alert",
+        enum
+    )]
     pub children: Vec<SyncBodyChild>,
-    #[yaserde(rename = "Final")]
-    pub r#final: Option<Final>,
+    #[easy_xml(rename = "Final")]
+    pub _final: Option<Final>, // TODO: `r#final` is not supported by `easy_xml`.
 }
 
 /// All the valid children of a [SyncBody] element (minus `Final` which is handled specially).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
-#[yaserde(flatten)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub enum SyncBodyChild {
-    Atomic(Atomic),
-    Exec(Exec),
-    Get(Get),
-    Results(Results),
-    Status(Status),
-    Add(Add),
-    Replace(Replace),
-    Delete(Delete),
-    Alert(Alert),
-    #[default] // TODO: Remove this variant. I think it's a limitation of `yaserde`.
-    _Unreachable,
+    Atomic(#[easy_xml(flatten)] Atomic),
+    Exec(#[easy_xml(flatten)] Exec),
+    Get(#[easy_xml(flatten)] Get),
+    Results(#[easy_xml(flatten)] Results),
+    Status(#[easy_xml(flatten)] Status),
+    Add(#[easy_xml(flatten)] Add),
+    Replace(#[easy_xml(flatten)] Replace),
+    Delete(#[easy_xml(flatten)] Delete),
+    Alert(#[easy_xml(flatten)] Alert),
 }
 
 impl From<Atomic> for SyncBodyChild {

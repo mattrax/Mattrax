@@ -1,4 +1,4 @@
-use yaserde::{YaDeserialize, YaSerialize};
+use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 use crate::{CmdId, Data, Item};
 
@@ -52,13 +52,13 @@ impl AlertType {
 ///
 /// Alert provides a mechanism for communicating content information, such as state
 /// information or notifications to an application on the recipient device.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlSerialize, XmlDeserialize)]
 pub struct Alert {
-    #[yaserde(rename = "CmdID")]
+    #[easy_xml(rename = "CmdID")]
     cmd_id: CmdId,
-    #[yaserde(rename = "Data")]
+    #[easy_xml(rename = "Data")]
     data: Data,
-    #[yaserde(rename = "Item")]
+    #[easy_xml(rename = "Item")]
     item: Item,
 }
 

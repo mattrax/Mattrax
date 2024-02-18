@@ -1,22 +1,19 @@
-use yaserde::{YaDeserialize, YaSerialize};
+use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 use crate::Target;
 
 /// An enum to represent all possible children for `Item`.
 /// This would be better represeted as `serde_json::Value` like type but `yaserde` doesn't have one I can find. // TODO: Maybe upstream PR?
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
-pub enum Value {
-    Target(Target),
-
-    #[default] // TODO: Yaserde is cringe
-    _Unreachable,
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
+enum Value {
+    Target(#[easy_xml(flatten)] Target), // TODO: Is this rename as intended???
 }
 
 /// The Item element type provides a container for item data.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub struct Item {
     // TODO: Tuple structs are broken
-    #[yaserde(child)]
+    #[easy_xml(flatten)] // TODO: I have a feeling this won't work how I want it to.
     child: Value,
 }
 

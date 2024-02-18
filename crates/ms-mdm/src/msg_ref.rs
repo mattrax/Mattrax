@@ -1,12 +1,11 @@
-use yaserde::{YaDeserialize, YaSerialize};
+use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 use crate::SyncHdr;
 
 /// The MsgRef element type specifies a reference to a MsgID (section 2.2.3.6) that is used by a SyncML Results (section 2.2.7.8) or response Status (section 2.2.6.1).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub struct MsgRef {
-    // TODO: Tuple structs are broken
-    #[yaserde(child)]
+    #[easy_xml(flatten)]
     child: String,
 }
 

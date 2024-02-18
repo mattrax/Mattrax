@@ -1,14 +1,14 @@
-use yaserde::{YaDeserialize, YaSerialize};
+use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 use crate::{CmdId, Item, Meta};
 
 /// The Exec element specifies the WMI class method to execute on the recipient’s device.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub struct Exec {
-    #[yaserde(rename = "CmdID")]
+    #[easy_xml(rename = "CmdID")]
     pub cmd_id: CmdId,
-    #[yaserde(rename = "Meta")]
+    #[easy_xml(rename = "Meta")]
     pub meta: Option<Meta>,
-    #[yaserde(rename = "Item")]
+    #[easy_xml(rename = "Item")]
     pub item: Item,
 }

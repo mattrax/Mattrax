@@ -1,17 +1,14 @@
-use yaserde::{YaDeserialize, YaSerialize};
+use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 use crate::{SyncBody, SyncHdr};
 
-/// Namespace for the 'xmlns' attribute of the [SyncML] element.
-pub const SYNCML_XMLNS: &str = "SYNCML:SYNCML1.2";
-
 /// The SyncML element type serves as the container for a SyncML Message.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
-#[yaserde(namespace = SYNCML_XMLNS)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
+#[easy_xml(namespace = { "": "SYNCML:SYNCML1.2" })]
 pub struct SyncML {
-    #[yaserde(rename = "SyncHdr")]
+    #[easy_xml(rename = "SyncHdr")]
     pub hdr: SyncHdr,
-    #[yaserde(rename = "SyncBody")]
+    #[easy_xml(rename = "SyncBody")]
     pub child: SyncBody,
 }
 

@@ -1,12 +1,11 @@
-use yaserde::{YaDeserialize, YaSerialize};
+use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 use crate::CmdId;
 
 /// The CmdRef element type specifies a reference to a CmdID that is used by the Status (section 2.2.6.1) element type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub struct CmdRef {
-    // TODO: Tuple structs are broken
-    #[yaserde(child)]
+    #[easy_xml(flatten)]
     child: String,
 }
 

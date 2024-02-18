@@ -1,27 +1,25 @@
-use yaserde::{YaDeserialize, YaSerialize};
+use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 use crate::{Add, CmdId, Delete, Exec, Get, Replace};
 
 /// The Atomic element specifies the SyncML command to request that subordinate commands be executed as a set or not at all.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlSerialize, XmlDeserialize)]
 pub struct Atomic {
-    #[yaserde(rename = "CmdID")]
+    #[easy_xml(rename = "CmdID")]
     pub cmd_id: CmdId,
-    #[yaserde(rename = "Meta")]
+    #[easy_xml(rename = "Meta")]
     pub meta: Option<crate::Meta>,
-    #[yaserde(child)]
+    #[easy_xml(rename = "Add|Delete|Atomic|Replace|Get|Exec", enum)]
     children: Vec<AtomicChild>, // TODO: One or more items
 }
 
 /// All the valid children of a [Atomic] element.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlSerialize, XmlDeserialize)]
 pub enum AtomicChild {
-    Add(Add),
-    Delete(Delete),
-    Atomic(Atomic),
-    Replace(Replace),
-    Get(Get),
-    Exec(Exec),
-    #[default] // TODO: Remove this variant. I think it's a limitation of `yaserde`.
-    _Unreachable,
+    Add(#[easy_xml(flatten)] Add),
+    Delete(#[easy_xml(flatten)] Delete),
+    Atomic(#[easy_xml(flatten)] Atomic),
+    Replace(#[easy_xml(flatten)] Replace),
+    Get(#[easy_xml(flatten)] Get),
+    Exec(#[easy_xml(flatten)] Exec),
 }

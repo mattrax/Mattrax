@@ -1,4 +1,4 @@
-use yaserde::{YaDeserialize, YaSerialize};
+use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 // TODO: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-mdm/b6272c46-f152-481f-afa9-e05b96baf661
 
@@ -11,5 +11,5 @@ use yaserde::{YaDeserialize, YaSerialize};
 // - Type
 
 /// The Meta element type provides a container for meta-information about the parent element type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub struct Meta {}

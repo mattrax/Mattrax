@@ -8,3 +8,6 @@ members = ["apps/mattrax", "apps/mattraxd", "crates/*"]
 rcgen = { git = "https://github.com/oscartbeaumont/rcgen", rev = "718f072790b36667eb84b1604f11dd279a448923" }
 # TODO: Waiting for https://github.com/FlorianUekermann/rustls-acme/pull/49 or my own PR cause that one is stale.
 rustls-acme = { git = "https://github.com/oscartbeaumont/rustls-acme", rev = "f97fef46ed4ba6480f97719dc3a06181bc8ebea3" }
+# Some minor improvements
+easy-xml = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }
+easy-xml-derive = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }

@@ -1,9 +1,9 @@
-use yaserde::{YaDeserialize, YaSerialize};
+use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 /// The Source element type specifies source routing or mapping information.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub struct Source {
-    #[yaserde(rename = "LocURI")]
+    #[easy_xml(rename = "LocURI")]
     pub loc_uri: String,
 }
 
@@ -16,9 +16,9 @@ impl Source {
 }
 
 /// The Target element type specifies target routing information.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub struct Target {
-    #[yaserde(rename = "LocURI")]
+    #[easy_xml(rename = "LocURI")]
     pub loc_uri: String,
 }
 
@@ -31,9 +31,9 @@ impl Target {
 }
 
 /// The SourceRef element type specifies the Source (section 2.2.3.9) referenced by a Status (section 2.2.6.1) element type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub struct SourceRef {
-    #[yaserde(rename = "LocURI")]
+    #[easy_xml(rename = "LocURI")]
     loc_uri: String,
 }
 
@@ -46,9 +46,9 @@ impl SourceRef {
 }
 
 /// The TargetRef element type specifies the Target (section 2.2.3.11) referenced by a Status (section 2.2.6.1) element type.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, YaSerialize, YaDeserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub struct TargetRef {
-    #[yaserde(rename = "LocURI")]
+    #[easy_xml(rename = "LocURI")]
     loc_uri: String,
 }
 

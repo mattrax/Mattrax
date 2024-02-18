@@ -1,9 +1,6 @@
-use std::{
-    io::{Read, Write},
-    str::FromStr,
-};
+use std::str::FromStr;
 
-use yaserde::{YaDeserialize, YaSerialize};
+use easy_xml::{XmlDeserialize, XmlSerialize};
 
 /// The SessionID element type specifies the identifier of the SyncML session that is associated with the SyncML message.
 /// The SessionID can remain valid across the exchange of many SyncML messages between the client and server.
@@ -11,8 +8,11 @@ use yaserde::{YaDeserialize, YaSerialize};
 pub struct SessionId([u8; 8 * 4]);
 
 impl SessionId {
-    pub fn as_str(&self) -> &str {
-        std::str::from_utf8(&self.0).expect("validated in 'YaDeserialize'")
+    pub fn as_str(&self) -> String {
+        std::str::from_utf8(&self.0)
+            .expect("validated in 'YaDeserialize'")
+            // TODO: Do this properly + return `&str` not `String`
+            .replace("\0", "")
     }
 }
 
@@ -34,42 +34,25 @@ impl FromStr for SessionId {
     }
 }
 
-impl YaSerialize for SessionId {
-    fn serialize<W: Write>(&self, writer: &mut yaserde::ser::Serializer<W>) -> Result<(), String> {
-        writer.write(self.as_str()).map_err(|err| err.to_string())
-    }
-
-    fn serialize_attributes(
-        &self,
-        attributes: Vec<xml::attribute::OwnedAttribute>,
-        namespace: xml::namespace::Namespace,
-    ) -> Result<
-        (
-            Vec<xml::attribute::OwnedAttribute>,
-            xml::namespace::Namespace,
-        ),
-        String,
-    > {
-        Ok((attributes, namespace))
+impl XmlSerialize for SessionId {
+    fn serialize(&self, element: &mut easy_xml::XmlElement)
+    where
+        Self: Sized,
+    {
+        *element = easy_xml::XmlElement::Text(self.as_str().into());
     }
 }
 
-impl YaDeserialize for SessionId {
-    fn deserialize<R: Read>(reader: &mut yaserde::de::Deserializer<R>) -> Result<Self, String> {
-        loop {
-            match reader.next_event()? {
-                xml::reader::XmlEvent::StartElement { .. } => {}
-                xml::reader::XmlEvent::Characters(ref s) => {
-                    return Ok(Self(
-                        try_into_or_pad(s.as_bytes()).ok_or(format!("Invalid SessionId: '{s}'"))?,
-                    ));
-                }
-                _ => {
-                    break;
-                }
-            }
-        }
-        Err("Unable to parse attribute".to_string())
+impl XmlDeserialize for SessionId {
+    fn deserialize(element: &easy_xml::XmlElement) -> Result<Self, easy_xml::de::Error>
+    where
+        Self: Sized,
+    {
+        let mut s = String::new();
+        element.text(&mut s);
+        Ok(Self(try_into_or_pad(s.as_bytes()).ok_or(
+            easy_xml::de::Error::Other(format!("Invalid SessionId: '{s}'")),
+        )?))
     }
 }
 

@@ -5,8 +5,9 @@ edition = "2021"
 publish = false
 
 [dependencies]
+easy-xml = "0.1.4"
+easy-xml-derive = "0.1.4"
 xml = "0.8.10"
-yaserde = { version = "0.10.0", features = ["yaserde_derive"] }
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"

@@ -28,6 +28,8 @@ mod sync_body;
 mod sync_hdr;
 mod sync_ml;
 
+pub mod util;
+
 pub use add::Add;
 pub use alert::{Alert, AlertType};
 pub use atomic::Atomic;
@@ -38,7 +40,7 @@ pub use data::Data;
 pub use delete::Delete;
 pub use exec::Exec;
 pub use get::Get;
-pub use item::{Item, Value};
+pub use item::Item;
 pub use meta::Meta;
 pub use mode::Mode;
 pub use msg_ref::MsgRef;
@@ -48,6 +50,6 @@ pub use results::Results;
 pub use routing::{Source, Target};
 pub use session_id::SessionId;
 pub use status::Status;
-pub use sync_body::{SyncBody, SyncBodyChild, MSFT_XMLNS};
+pub use sync_body::{SyncBody, SyncBodyChild};
 pub use sync_hdr::SyncHdr;
-pub use sync_ml::{SyncML, SYNCML_XMLNS};
+pub use sync_ml::SyncML;
