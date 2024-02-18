@@ -43,18 +43,17 @@ jobs:
         with:
           zig-version: 0.11.0
 
-      - name: Install 'cargo-zigbuild'
+      - name:
+          Install 'cargo-zigbuild'
+          # The Rust cache action is not happy with `cargo bininstall` so we do a manual install.
         run: |
-          # The Rust cache action is not happy with `cargo bininstall` for some reason and this is quick enough we don't care about caching it
-          export CARGO_HOME=$HOME/.cargo2
-          export PATH=$CARGO_HOME/bin:$PATH
-          mkdir -p $CARGO_HOME
-          echo "Starting installation..."
-          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-          echo ""
-          echo "Installed 'cargo-binstall'"
-          echo ""
-          cargo binstall --no-confirm cargo-zigbuild
+          curl -s https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/latest \
+              | grep "browser_download_url.*.aarch64-unknown-linux-musl.tar.gz\"" \
+              | cut -d : -f 2,3 \
+              | tr -d \" \
+              | wget -qi -
+          tar -xf cargo-zigbuild-*.tar.gz
+          mv cargo-zigbuild /usr/local/bin
 
       - name: Add 'aarch64-unknown-linux-gnu' target
         run: rustup target add aarch64-unknown-linux-gnu
