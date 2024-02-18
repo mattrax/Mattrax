@@ -19,19 +19,19 @@ export const adminsRouter = createTRPCRouter({
     const [ownerId, rows] = await Promise.allSettled([
       db
         .select({
-          ownerId: tenants.owner_id,
+          ownerId: tenants.ownerPk,
         })
         .from(tenants)
         .where(eq(tenants.id, ctx.tenantId))
         .then((v) => v?.[0]?.ownerId),
       db
         .select({
-          id: accounts.id,
+          id: accounts.pk,
           name: accounts.name,
           email: accounts.email,
         })
         .from(accounts)
-        .leftJoin(tenantAccounts, eq(tenantAccounts.accountId, accounts.id))
+        .leftJoin(tenantAccounts, eq(tenantAccounts.accountPk, accounts.pk))
         .where(eq(tenantAccounts.tenantId, ctx.tenantId)),
     ]);
     // This is required. If the owner is not found, we gracefully continue.
@@ -72,7 +72,7 @@ export const adminsRouter = createTRPCRouter({
         to: input.email,
         subject: "Invitation to Mattrax Tenant",
         type: "tenantAdminInvite",
-        invitedByEmail: ctx.session.data.email,
+        invitedByEmail: ctx.account.email,
         tenantName: tenant.name,
         inviteLink: `${env.PROD_URL}/invite/tenant/${code}`,
       });

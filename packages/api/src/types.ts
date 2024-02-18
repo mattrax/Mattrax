@@ -5,9 +5,6 @@ export type HonoEnv = {
 };
 
 export type SessionData = {
-  id: number;
-  name: string;
-  email: string;
   // Data for OAuth flow
   oauthData?: {
     // Mattrax tenant to send the user back to

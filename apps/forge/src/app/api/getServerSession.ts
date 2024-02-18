@@ -3,7 +3,7 @@ import { type H3Event, useSession } from "vinxi/server";
 
 export const getServerSession = async (event: H3Event) => {
   const session = await useSession(event, {
-    name: "s",
+    name: "mattrax-state",
     password: env.AUTH_SECRET,
     cookie: {
       // Safari gets unhappy
@@ -11,13 +11,11 @@ export const getServerSession = async (event: H3Event) => {
     },
   });
 
-  var obj: Record<string, unknown> = {};
-  Object.defineProperty(obj, "id", {
-    get: () => session.id,
-  });
-  Object.defineProperty(obj, "data", {
-    get: () => {
-      // We don't wanna return an empty object `{}`
+  return {
+    get id() {
+      return session.id;
+    },
+    get data() {
       if (
         typeof session.data === "object" &&
         !Array.isArray(session.data) &&
@@ -26,9 +24,7 @@ export const getServerSession = async (event: H3Event) => {
         return undefined;
       return session.data;
     },
-  });
-  obj.update = session.update;
-  obj.clear = session.clear;
-
-  return obj as any as GetSessionResult;
+    update: session.update,
+    clear: session.clear,
+  } satisfies GetSessionResult;
 };

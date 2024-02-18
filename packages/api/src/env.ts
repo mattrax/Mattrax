@@ -33,6 +33,7 @@ export const env = createEnv({
     INTUNE_CLIENT_SECRET: z.string(),
     INTUNE_TENANT: z.string(),
     SIMPLEMDM_API_KEY: z.string(),
+    NODE_ENV: z.enum(["development", "production"]).default("development"),
   },
   clientPrefix: "VITE_",
   client: {},

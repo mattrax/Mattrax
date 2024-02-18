@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { count, eq } from "drizzle-orm";
+
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../../trpc";
 import { encodeId, promiseObjectAll } from "../../utils";
 import {
-  accounts,
   applications,
   db,
   devices,
@@ -12,7 +13,6 @@ import {
   tenants,
   users,
 } from "../../db";
-import { count, eq } from "drizzle-orm";
 import { billingRouter } from "./billing";
 import { tenantAuthRouter } from "./auth";
 import { domainsRouter } from "./domains";
@@ -25,13 +25,13 @@ export const tenantRouter = createTRPCRouter({
       const lastInsertId = await db.transaction(async (db) => {
         const result = await db.insert(tenants).values({
           name: input.name,
-          owner_id: ctx.session.data.id,
+          ownerPk: ctx.account.pk,
         });
         const tenantId = parseInt(result.insertId);
 
         await db.insert(tenantAccounts).values({
           tenantId,
-          accountId: ctx.session.data.id,
+          accountPk: ctx.account.pk,
         });
 
         return tenantId;
