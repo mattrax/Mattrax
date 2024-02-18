@@ -45,7 +45,7 @@ export const tenants = mysqlTable("tenant", {
   billingEmail: varchar("billingEmail", { length: 256 }),
   stripeCustomerId: varchar("stripeCustomerId", { length: 256 }),
   enrollmentEnabled: boolean("enrollmentEnabled").notNull().default(true),
-  ownerPk: serialRelation("ownerPk")
+  ownerPk: serialRelation("ownerId")
     .references(() => accounts.pk)
     .notNull(),
 });
@@ -56,7 +56,7 @@ export const tenantAccounts = mysqlTable(
     tenantId: serialRelation("tenantId")
       .references(() => tenants.id)
       .notNull(),
-    accountPk: serialRelation("accountPk")
+    accountPk: serialRelation("accountId")
       .references(() => accounts.pk)
       .notNull(),
   },
