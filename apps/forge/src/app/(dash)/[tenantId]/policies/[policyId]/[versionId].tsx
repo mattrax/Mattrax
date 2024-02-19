@@ -1,4 +1,4 @@
-import { A, useNavigate, useParams } from "@solidjs/router";
+import { A, useNavigate } from "@solidjs/router";
 import {
   type JSX,
   ParentProps,
@@ -9,6 +9,10 @@ import {
   createSignal,
   Accessor,
 } from "solid-js";
+import { As } from "@kobalte/core";
+import { toast } from "solid-sonner";
+import dayjs from "dayjs";
+
 import { isDebugMode, trpc } from "~/lib";
 import {
   Button,
@@ -31,22 +35,28 @@ import {
   Textarea,
   createController,
 } from "~/components/ui";
-import { As } from "@kobalte/core";
-import { toast } from "solid-sonner";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
-import dayjs from "dayjs";
-import { useTenantContext } from "~/app/(dash)/[tenant]";
+import { useTenantContext } from "~/app/(dash)/[tenantId]";
+import { useZodParams } from "~/lib/useZodParams";
+import { z } from "zod";
 
 // TODO: If the policy or version is not found redirect back to `/policies`
+
+function useParams() {
+  return useZodParams({
+    policyId: z.coerce.number(),
+    versionId: z.coerce.number(),
+  });
+}
 
 export default function Page(props: ParentProps) {
   const navigate = useNavigate();
   const [transitionPending] = useTransition();
-  const params = useParams<{ policyId: string }>();
+  const params = useParams();
 
   const tenant = useTenantContext();
   const policy = trpc.policy.get.useQuery(() => ({
-    policyId: params.policyId!,
+    policyId: params.policyId,
     tenantId: tenant.activeTenant.id,
   }));
 
@@ -189,7 +199,8 @@ export default function Page(props: ParentProps) {
 }
 
 function PolicyVersionSwitcher() {
-  const params = useParams<{ policyId: string; versionId: string }>();
+  const params = useParams();
+
   const tenant = useTenantContext();
   const versions = trpc.policy.getVersions.useQuery(() => ({
     policyId: params.policyId!,
@@ -260,7 +271,7 @@ function ActionsDropdown(
 ) {
   const navigate = useNavigate();
   const tenant = useTenantContext();
-  const params = useParams<{ policyId: string }>();
+  const params = useParams();
 
   const duplicatePolicy = trpc.policy.duplicate.useMutation(() => ({
     onSuccess: async (policyId) => {

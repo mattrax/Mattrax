@@ -7,6 +7,7 @@ export function useZodParams<S extends z.ZodRawShape>(schema: S) {
   const zodSchema = z.object(schema);
   const params = useParams();
 
+  console.log(params);
   const [parsedParams, setParsedParams] = createStore(zodSchema.parse(params));
 
   createEffect(

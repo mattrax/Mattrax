@@ -4,26 +4,21 @@ import { createId } from "@paralleldrive/cuid2";
 
 import { db, tenantUserProvider, users } from "../../db";
 import { createTRPCRouter, tenantProcedure } from "../../trpc";
-import { encodeId, decodeId } from "../../utils";
+import { decodeId } from "../../utils";
 import { env } from "../..";
 import { msGraphClient } from "../../microsoft";
 
 export const tenantAuthRouter = createTRPCRouter({
   query: tenantProcedure.query(async ({ ctx }) => {
-    return (
-      await db
-        .select({
-          id: tenantUserProvider.id,
-          resourceId: tenantUserProvider.resourceId,
-          name: tenantUserProvider.name,
-          lastSynced: tenantUserProvider.lastSynced,
-        })
-        .from(tenantUserProvider)
-        .where(eq(tenantUserProvider.tenantId, ctx.tenantId))
-    ).map((r) => ({
-      ...r,
-      id: encodeId("userProvider", r.id),
-    }));
+    return await db
+      .select({
+        id: tenantUserProvider.id,
+        resourceId: tenantUserProvider.resourceId,
+        name: tenantUserProvider.name,
+        lastSynced: tenantUserProvider.lastSynced,
+      })
+      .from(tenantUserProvider)
+      .where(eq(tenantUserProvider.tenantId, ctx.tenantId));
   }),
 
   linkEntra: tenantProcedure.mutation(async ({ ctx }) => {
@@ -51,14 +46,8 @@ export const tenantAuthRouter = createTRPCRouter({
   }),
 
   unlink: tenantProcedure
-    .input(
-      z.object({
-        id: z.string(),
-      })
-    )
+    .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const id = decodeId("userProvider", input.id);
-
       // TODO: Ensure no devices are owned by a user coming from this provider
       // await db
       //   .select()
@@ -75,11 +64,11 @@ export const tenantAuthRouter = createTRPCRouter({
           .where(
             and(
               eq(tenantUserProvider.tenantId, ctx.tenantId),
-              eq(tenantUserProvider.id, id)
+              eq(tenantUserProvider.id, input.id)
             )
           );
 
-        await db.delete(users).where(eq(users.provider, id));
+        await db.delete(users).where(eq(users.provider, input.id));
       });
 
       // TODO: Revoke admin consent with Microsoft as an extra precaution

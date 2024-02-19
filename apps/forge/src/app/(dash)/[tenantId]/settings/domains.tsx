@@ -24,7 +24,7 @@ import { z } from "zod";
 import { As } from "@kobalte/core";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { createTimeAgo } from "@solid-primitives/date";
-import { useTenantContext } from "../../[tenant]";
+import { useTenantContext } from "../../[tenantId]";
 
 export default function Page() {
   const tenant = useTenantContext();

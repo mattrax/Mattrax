@@ -2,7 +2,7 @@ import { redirect, useParams } from "@solidjs/router";
 import { ParentProps, Suspense } from "solid-js";
 import FlatTabs from "~/components/ui/flat-tabs";
 import { trpc } from "~/lib";
-import { useTenantContext } from "../../[tenant]";
+import { useTenantContext } from "../../[tenantId]";
 
 // TODO: Bring this back
 // const fetchDevice = cache(
@@ -26,7 +26,7 @@ export default function Page(props: ParentProps) {
   }));
 
   const url = (suffix: string) =>
-    `/${params.tenant!}/devices/${params.deviceId}${suffix}`;
+    `/${params.tenantId!}/devices/${params.deviceId}${suffix}`;
 
   const sync = trpc.device.sync.useMutation(() => ({
     onSuccess: () => alert("Synced!"),

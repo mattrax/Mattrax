@@ -10,7 +10,7 @@ import {
   CardTitle,
 } from "~/components/ui";
 import { isDebugMode, trpc, untrackScopeFromSuspense } from "~/lib";
-import { useTenantContext } from "../[tenant]";
+import { useTenantContext } from "../[tenantId]";
 
 export default function Page() {
   const tenant = useTenantContext();

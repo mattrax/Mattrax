@@ -44,7 +44,6 @@ export const adminsRouter = createTRPCRouter({
       ...row,
       isOwner:
         ownerId.status === "fulfilled" ? row.id === ownerId.value : false,
-      id: encodeId("account", row.id),
     }));
   }),
   sendInvite: tenantProcedure

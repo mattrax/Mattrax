@@ -11,7 +11,7 @@ import { trpc } from "~/lib";
 
 export function CreateTenantDialog(props: {
   refetchSession: () => Promise<void>;
-  setActiveTenant: (id: string) => void;
+  setActiveTenant: (id: number) => void;
 }) {
   const dialog = useController();
   const mutation = trpc.tenant.create.useMutation(() => ({

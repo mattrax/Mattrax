@@ -8,36 +8,25 @@ import { buildApplePolicy } from "@mattrax/policy";
 
 export const policyRouter = createTRPCRouter({
   list: tenantProcedure.query(async ({ ctx }) => {
-    return (
-      (
-        await db
-          .select({
-            id: policies.id,
-            name: policies.name,
-            activeVersionId: policies.activeVersion,
-            // activeVersion: {
-            //   id: policyVersions.id,
-            //   data: policyVersions.data,
-            //   createdAt: policyVersions.createdAt,
-            // },
-          })
-          .from(policies)
-          // .leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.id))
-          .where(eq(policies.tenantId, ctx.tenantId))
-      ).map((d) => ({
-        ...d,
-        id: encodeId("policy", d.id),
-        activeVersionId: d.activeVersionId
-          ? encodeId("policyVersion", d.activeVersionId)
-          : undefined,
-      }))
-    );
+    return await db
+      .select({
+        id: policies.id,
+        name: policies.name,
+        activeVersionId: policies.activeVersion,
+        // activeVersion: {
+        //   id: policyVersions.id,
+        //   data: policyVersions.data,
+        //   createdAt: policyVersions.createdAt,
+        // },
+      })
+      .from(policies)
+      // .leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.id))
+      .where(eq(policies.tenantId, ctx.tenantId));
   }),
 
   get: tenantProcedure
-    .input(z.object({ policyId: z.string() }))
+    .input(z.object({ policyId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const policyId = decodeId("policy", input.policyId);
       const policy = await db
         .select({
           id: policies.id,
@@ -50,21 +39,15 @@ export const policyRouter = createTRPCRouter({
         })
         .from(policies)
         .leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.id))
-        .where(eq(policies.id, policyId))
+        .where(eq(policies.id, input.policyId))
         .then((v) => v?.[0]);
 
-      return {
-        ...(policy && {
-          ...policy,
-          id: encodeId("policy", policy.id),
-        }),
-      };
+      return policy;
     }),
 
   getVersions: tenantProcedure
-    .input(z.object({ policyId: z.string() }))
+    .input(z.object({ policyId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const policyId = decodeId("policy", input.policyId);
       const versions = await db
         .select({
           id: policyVersions.id,
@@ -72,19 +55,16 @@ export const policyRouter = createTRPCRouter({
           createdAt: policyVersions.createdAt,
         })
         .from(policyVersions)
-        .where(eq(policyVersions.policyId, policyId));
+        .where(eq(policyVersions.policyId, input.policyId));
 
-      return versions.map((v) => ({
-        ...v,
-        id: encodeId("policyVersion", v.id),
-      }));
+      return versions;
     }),
 
   duplicate: tenantProcedure
-    .input(z.object({ policyId: z.string() }))
+    .input(z.object({ policyId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       throw new Error("TODO: Bring this back!");
-      // const id = decodeId("policy", input.policyId);
+      // const id = input.policyId;
       // let row = (
       //   await db.select().from(policies).where(eq(policies.id, id))
       // )?.[0];
@@ -98,21 +78,19 @@ export const policyRouter = createTRPCRouter({
       // delete row.policyHash;
 
       // const result = await db.insert(policies).values(row);
-      // return encodeId("policy", parseInt(result.insertId));
+      // return parseInt(result.insertId);
     }),
 
   updateVersion: tenantProcedure
     .input(
       z.object({
-        policyId: z.string(),
+        policyId: z.number(),
         versionId: z.number(),
         // TODO: Proper Zod type here
         data: z.any(),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const policyId = decodeId("policy", input.policyId);
-
       await db
         .update(policyVersions)
         .set({
@@ -121,7 +99,7 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policyVersions.id, input.versionId),
-            eq(policyVersions.policyId, policyId)
+            eq(policyVersions.policyId, input.policyId)
           )
         );
 
@@ -129,11 +107,7 @@ export const policyRouter = createTRPCRouter({
     }),
 
   create: tenantProcedure
-    .input(
-      z.object({
-        name: z.string().min(1).max(100),
-      })
-    )
+    .input(z.object({ name: z.string().min(1).max(100) }))
     .mutation(({ ctx, input }) =>
       db.transaction(async (db) => {
         const result = await db.insert(policies).values({
@@ -156,27 +130,26 @@ export const policyRouter = createTRPCRouter({
           })
           .where(eq(policies.id, policyInsertId));
 
-        return encodeId("policy", policyInsertId);
+        return policyInsertId;
       })
     ),
 
   delete: tenantProcedure
-    .input(z.object({ policyId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      const id = decodeId("policy", input.policyId);
-      await db.delete(policies).where(eq(policies.id, id));
+    .input(z.object({ policyId: z.number() }))
+    .mutation(async ({ input }) => {
+      await db.delete(policies).where(eq(policies.id, input.policyId));
     }),
 
   // push: tenantProcedure
   //   .input(
   //     z.object({
-  //       policyId: z.string(),
+  //       policyId: z.number(),
   //     })
   //   )
   //   .mutation(async ({ ctx, input }) => {
   //     // TODO: Check user is authorised to access tenant which owns the device
 
-  //     const id = decodeId("policy", input.policyId);
+  //     const id = input.policyId;
 
   //     const policy = (
   //       await db.select().from(policies).where(eq(policies.id, id))
@@ -271,7 +244,7 @@ export const policyRouter = createTRPCRouter({
   //     // const input = c.req.valid("json");
   //     // // TODO: Check user is authorised to access tenant which owns the device
 
-  //     // const id = decodeId("policy", policyId);
+  //     // const id = parseInt(policyId);
   //     // const policy = (
   //     //   await db.select().from(policies).where(eq(policies.id, id))
   //     // )?.[0];

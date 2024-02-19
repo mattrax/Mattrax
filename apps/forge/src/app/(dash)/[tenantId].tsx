@@ -12,6 +12,8 @@ import { RouterOutput } from "@mattrax/api";
 import { SuspenseError } from "~/lib";
 import { useAuthContext } from "../(dash)";
 import TopNav from "~/components/TopNav";
+import { useZodParams } from "~/lib/useZodParams";
+import { z } from "zod";
 
 export const [TenantContextProvider, useTenantContext] = createContextProvider(
   (props: { activeTenant: RouterOutput["auth"]["me"]["tenants"][number] }) =>
@@ -20,15 +22,17 @@ export const [TenantContextProvider, useTenantContext] = createContextProvider(
 );
 
 export default function Layout(props: ParentProps) {
-  const params = useParams<{ tenant: string }>();
+  const params = useZodParams({
+    tenantId: z.coerce.number(),
+  });
   const auth = useAuthContext();
   const navigate = useNavigate();
 
   const activeTenant = createMemo(() =>
-    auth.me.tenants.find((t) => t.id === params.tenant)
+    auth.me.tenants.find((t) => t.id === params.tenantId)
   );
 
-  function setTenantId(id: string) {
+  function setTenantId(id: number) {
     startTransition(() => navigate(`/${id}`));
   }
 

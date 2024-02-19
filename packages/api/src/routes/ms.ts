@@ -132,5 +132,5 @@ export const msRouter = new Hono<HonoEnv>()
 
     // TODO: Trigger an initial user sync out-of-band (event.waitUtil?)
 
-    return c.redirect(`/${encodeId("tenant", mttxTenantId)}/settings`);
+    return c.redirect(`/${mttxTenantId}/settings`);
   });

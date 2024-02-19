@@ -91,18 +91,13 @@ export const superAdminProcedure = authedProcedure.use((opts) => {
 
 // Authenticated procedure w/ a tenant
 export const tenantProcedure = authedProcedure
-  .input(
-    z.object({
-      tenantId: z.string(),
-    })
-  )
+  .input(z.object({ tenantId: z.number() }))
   .use(async (opts) => {
     const { ctx, input } = opts;
-    const tenantId = decodeId("tenant", input.tenantId);
 
     const tenantAccount = await db.query.tenantAccounts.findFirst({
       where: and(
-        eq(tenantAccounts.tenantId, tenantId),
+        eq(tenantAccounts.tenantId, input.tenantId),
         eq(tenantAccounts.accountPk, ctx.account.pk)
       ),
     });
@@ -116,7 +111,7 @@ export const tenantProcedure = authedProcedure
     return opts.next({
       ctx: {
         ...ctx,
-        tenantId,
+        tenantId: input.tenantId,
       },
     });
   });

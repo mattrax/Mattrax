@@ -1,27 +1,19 @@
-import { Suspense, startTransition } from "solid-js";
+import { useNavigate } from "@solidjs/router";
+import { ParentProps, Suspense, startTransition } from "solid-js";
 import {
+  type ColumnDef,
   createSolidTable,
   getCoreRowModel,
   getPaginationRowModel,
   getSortedRowModel,
   getFilteredRowModel,
-  createColumnHelper,
 } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
-import { useNavigate } from "@solidjs/router";
-import { RouterOutput } from "@mattrax/api";
-import dayjs from "dayjs";
 
-import { Button, Checkbox, Input } from "~/components/ui";
-import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
-import { useTenantContext } from "../../[tenant]";
 
-const columnHelper =
-  createColumnHelper<RouterOutput["device"]["list"][number]>();
-
-export const columns = [
-  columnHelper.display({
+export const columns: ColumnDef<any>[] = [
+  {
     id: "select",
     header: ({ table }) => (
       <Checkbox
@@ -43,73 +35,71 @@ export const columns = [
     size: 1,
     enableSorting: false,
     enableHiding: false,
-  }),
-  columnHelper.accessor("name", {
+  },
+  {
+    accessorKey: "name",
     header: "Name",
-  }),
-  columnHelper.accessor("operatingSystem", {
-    header: "Operating System",
-  }),
-  columnHelper.accessor("serialNumber", {
-    header: "Serial Number",
-  }),
-  columnHelper.accessor("owner", {
-    header: "Owner",
-    // TODO: Render as link with the user's name
-  }),
-  columnHelper.accessor("lastSynced", {
-    header: "Last Synced",
-    // TODO: Make time automatically update
-    cell: (cell) => dayjs(cell.getValue()).fromNow(),
-  }),
-  columnHelper.accessor("enrolledAt", {
-    header: "Enrolled At",
-    // TODO: Make time automatically update
-    cell: (cell) => dayjs(cell.getValue()).fromNow(),
-  }),
+  },
+  {
+    accessorKey: "memberCount",
+    header: "Member Count",
+  },
 ];
 
-function createDevicesTable() {
+function createGroupsTable() {
   const tenant = useTenantContext();
-  const devices = trpc.device.list.useQuery(() => ({
+  const groups = trpc.group.list.useQuery(() => ({
     tenantId: tenant.activeTenant.id,
   }));
 
   const table = createSolidTable({
     get data() {
-      return devices.data || [];
+      return groups.data || [];
     },
     get columns() {
       return columns;
     },
+    // onSortingChange: setSorting,
+    // onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    // onColumnVisibilityChange: setColumnVisibility,
+    // onRowSelectionChange: setRowSelection,
+    // state: {
+    //   sorting,
+    //   columnFilters,
+    //   columnVisibility,
+    //   rowSelection,
+    // },
     defaultColumn: {
       // @ts-expect-error // TODO: This property's value should be a number but setting it to string works ¯\_(ツ)_/¯
       size: "auto",
     },
   });
 
-  return { devices, table };
+  return { groups, table };
 }
-
-// TODO: Infinite scroll
 
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
 export default function Page() {
   const navigate = useNavigate();
-  const { table, devices } = createDevicesTable();
-  const isLoading = untrackScopeFromSuspense(() => devices.isLoading);
+  const { table, groups } = createGroupsTable();
+
+  const isLoading = untrackScopeFromSuspense(() => groups.isLoading);
 
   return (
     <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
-      <h1 class="text-3xl font-bold mb-4">Devices</h1>
-      <div class="flex flex-row items-center gap-4">
+      <div class="flex flex-row justify-between">
+        <h1 class="text-3xl font-bold mb-4">Groups</h1>
+        <CreateGroupDialog>
+          <As component={Button}>Create New Group</As>
+        </CreateGroupDialog>
+      </div>
+      <div class="flex items-center gap-4">
         <Input
-          class="flex-1"
           placeholder={isLoading() ? "Loading..." : "Search..."}
           disabled={isLoading()}
           value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
@@ -127,7 +117,7 @@ export default function Page() {
       <Suspense>
         <StandardTable
           table={table}
-          onRowClick={(row) => startTransition(() => navigate(row.id))}
+          onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}
         />
         <div class="flex items-center justify-end space-x-2">
           <div class="flex-1 text-sm text-muted-foreground">
@@ -157,3 +147,71 @@ export default function Page() {
     </div>
   );
 }
+
+import {
+  DialogContent,
+  DialogHeader,
+  DialogRoot,
+  DialogTitle,
+  DialogTrigger,
+  Input,
+} from "~/components/ui";
+
+function CreateGroupDialog(props: ParentProps) {
+  const tenant = useTenantContext();
+  const navigate = useNavigate();
+
+  const mutation = trpc.group.create.useMutation(() => ({
+    onSuccess: async (id) => {
+      await startTransition(() => {
+        navigate(`../groups/${id}`);
+      });
+    },
+  }));
+
+  return (
+    <DialogRoot>
+      <DialogTrigger asChild>{props.children}</DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create Group</DialogTitle>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const formData = new FormData(e.currentTarget);
+            mutation.mutate({
+              name: formData.get("name") as any,
+              tenantId: tenant.activeTenant.id,
+            });
+          }}
+        >
+          <fieldset
+            class="flex flex-col space-y-4"
+            disabled={mutation.isPending}
+          >
+            <Input
+              type="text"
+              name="name"
+              placeholder="New Group"
+              autocomplete="off"
+            />
+            <Button type="submit">Create</Button>
+          </fieldset>
+        </form>
+      </DialogContent>
+    </DialogRoot>
+  );
+}
+
+import {
+  Button,
+  Checkbox,
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "~/components/ui";
+import { OutlineLayout } from "../OutlineLayout";
+import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
+import { useTenantContext } from "../../[tenantId]";

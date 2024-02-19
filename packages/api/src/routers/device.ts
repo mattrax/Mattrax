@@ -24,7 +24,7 @@ export const deviceRouter = createTRPCRouter({
         .where(and(eq(devices.tenantId, ctx.tenantId)))
     ).map((d) => ({
       ...d,
-      id: encodeId("device", d.id),
+      id: "device",
     }));
   }),
 

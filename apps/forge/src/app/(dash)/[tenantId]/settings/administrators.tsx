@@ -21,7 +21,7 @@ import {
   CardTitle,
 } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useTenantContext } from "../../[tenant]";
+import { useTenantContext } from "../../[tenantId]";
 
 const column =
   createColumnHelper<

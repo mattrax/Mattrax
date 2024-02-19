@@ -12,7 +12,7 @@ import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { As } from "@kobalte/core";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { useNavigate } from "@solidjs/router";
-import { useTenantContext } from "../../[tenant]";
+import { useTenantContext } from "../../[tenantId]";
 
 export const columns: ColumnDef<any>[] = [
   {

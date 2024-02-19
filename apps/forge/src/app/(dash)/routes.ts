@@ -2,7 +2,7 @@ import { RouteDefinition } from "@solidjs/router";
 import { lazy } from "solid-js";
 
 import indexRoute from "./index";
-import tenantRoutes from "./[tenant]/routes";
+import tenantRoutes from "./[tenantId]/routes";
 
 export default [
   {
@@ -10,8 +10,8 @@ export default [
     component: indexRoute,
   },
   {
-    path: "/:tenant",
-    component: lazy(() => import("./[tenant]")),
+    path: "/:tenantId",
+    component: lazy(() => import("./[tenantId]")),
     children: tenantRoutes,
   },
   {

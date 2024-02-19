@@ -40,7 +40,7 @@ export const tenantRouter = createTRPCRouter({
       // TODO: Invalidate `tenants`
 
       return {
-        id: encodeId("tenant", lastInsertId),
+        id: lastInsertId,
       };
     }),
 

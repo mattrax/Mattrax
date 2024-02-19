@@ -23,7 +23,7 @@ import { authProviderDisplayName, authProviderUrl } from "~/lib/values";
 import { Form, createZodForm } from "~/components/forms";
 import { InputField } from "~/components/forms/InputField";
 import { useAuthContext } from "~/app/(dash)";
-import { useTenantContext } from "../../[tenant]";
+import { useTenantContext } from "../../[tenantId]";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 
 export default function Page() {

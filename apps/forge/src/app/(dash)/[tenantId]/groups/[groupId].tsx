@@ -226,7 +226,7 @@ import {
 import { Badge } from "~/components/ui/badge";
 import { useQueryClient } from "@tanstack/solid-query";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
-import { useTenantContext } from "../../[tenant]";
+import { useTenantContext } from "../../[tenantId]";
 
 const AddMemberTableOptions = {
   all: "All",

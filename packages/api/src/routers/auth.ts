@@ -7,30 +7,24 @@ import { generateId } from "lucia";
 
 import { authedProcedure, createTRPCRouter, publicProcedure } from "../trpc";
 import { accounts, db, accountLoginCodes, tenants } from "../db";
-import { encodeId } from "../utils";
 import { sendEmail } from "../emails";
 import { lucia } from "../auth";
 
 type UserResult = {
-  id: string;
+  id: number;
   name: string;
   email: string;
   tenants: Awaited<ReturnType<typeof fetchTenants>>;
 };
 
 const fetchTenants = async (session_id: number) =>
-  (
-    await db
-      .select({
-        id: tenants.id,
-        name: tenants.name,
-      })
-      .from(tenants)
-      .where(eq(tenants.ownerPk, session_id))
-  ).map((tenant) => ({
-    ...tenant,
-    id: encodeId("tenant", tenant.id),
-  }));
+  await db
+    .select({
+      id: tenants.id,
+      name: tenants.name,
+    })
+    .from(tenants)
+    .where(eq(tenants.ownerPk, session_id));
 
 export const authRouter = createTRPCRouter({
   sendLoginCode: publicProcedure
@@ -106,7 +100,7 @@ export const authRouter = createTRPCRouter({
     }),
   me: authedProcedure.query(async ({ ctx: { account } }) => {
     return {
-      id: encodeId("user", account.pk),
+      id: account.pk,
       name: account.name,
       email: account.email,
       tenants: await fetchTenants(account.pk),
@@ -128,7 +122,7 @@ export const authRouter = createTRPCRouter({
       }
 
       return {
-        id: encodeId("user", account.pk),
+        id: account.pk,
         name: input.name || account.name,
         email: account.email,
         tenants: await fetchTenants(account.pk),

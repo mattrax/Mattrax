@@ -1,6 +1,6 @@
 import { restrictions } from "@mattrax/policies";
-import { useParams } from "@solidjs/router";
 import { For, createSignal } from "solid-js";
+import { z } from "zod";
 
 import {
   Button,
@@ -23,10 +23,13 @@ import {
 } from "~/components/ui/popover";
 import { trpc } from "~/lib";
 import { RenderPolicy } from "./RenderPolicy";
-import { useTenantContext } from "~/app/(dash)/[tenant]";
+import { useTenantContext } from "~/app/(dash)/[tenantId]";
+import { useZodParams } from "~/lib/useZodParams";
 
 export default function Page() {
-  const params = useParams();
+  const params = useZodParams({
+    policyId: z.coerce.number(),
+  });
   const tenant = useTenantContext();
   const policy = trpc.policy.get.useQuery(() => ({
     policyId: params.policyId!,

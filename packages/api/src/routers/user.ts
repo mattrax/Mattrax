@@ -22,21 +22,14 @@ export const userRouter = createTRPCRouter({
       // TODO: Can a cursor make this more efficent???
       // TODO: Switch to DB
 
-      return (
-        (
-          await db
-            .select({
-              id: users.id,
-              name: users.name,
-              email: users.email,
-            })
-            .from(users)
-            // TODO: Is user authorised to tenant
-            .where(eq(users.tenantId, ctx.tenantId))
-        ).map((e) => ({
-          ...e,
-          id: encodeId("user", e.id),
-        }))
-      );
+      return await db
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+        })
+        .from(users)
+        // TODO: Is user authorised to tenant
+        .where(eq(users.tenantId, ctx.tenantId));
     }),
 });

@@ -47,10 +47,7 @@ export const billingRouter = createTRPCRouter({
 
     const body = new URLSearchParams({
       customer: customerId,
-      return_url: `${env.PROD_URL}/${encodeId(
-        "tenant",
-        ctx.tenantId
-      )}/settings`,
+      return_url: `${env.PROD_URL}/${ctx.tenantId}/settings`,
     });
 
     const resp = await fetch(
