@@ -13,7 +13,6 @@ export default function Page() {
 
   const defaultTenant = () => {
     const tenants = auth.me.tenants;
-    console.log(tenants);
     if (tenants.length < 1) return;
 
     // const persistedTenant = tenants.find((t) => t.id === tenantId());
@@ -36,13 +35,17 @@ function CreateTenant() {
   const createTenant = trpc.tenant.create.useMutation();
 
   const navigate = useNavigate();
+  const trpcCtx = trpc.useContext();
 
   const form = createZodForm({
     schema: z.object({ name: z.string() }),
     async onSubmit(data) {
       const tenant = await createTenant.mutateAsync(data.value);
 
-      await auth.meQuery.refetch();
+      await trpcCtx.auth.me.invalidate();
+
+      // lets the rq cache update -_-
+      await new Promise((res) => setTimeout(res, 0));
 
       await startTransition(() => {
         navigate(`/${tenant.id}`);

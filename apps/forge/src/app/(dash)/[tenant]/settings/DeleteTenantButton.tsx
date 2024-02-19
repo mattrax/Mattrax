@@ -4,7 +4,6 @@ import { startTransition } from "solid-js";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { Button } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useAuthContext } from "~/app/(dash)";
 import { useTenantContext } from "../../[tenant]";
 
 export function DeleteTenantButton() {
@@ -35,10 +34,12 @@ export function DeleteTenantButton() {
                   tenantId: tenant.activeTenant.id,
                 });
 
-                await startTransition(() => {
-                  trpcCtx.auth.me.invalidate();
-                  navigate("/");
-                });
+                await trpcCtx.auth.me.refetch();
+
+                // lets the rq cache update -_-
+                await new Promise((res) => setTimeout(res, 0));
+
+                await startTransition(() => navigate("/"));
               },
             })
           }
