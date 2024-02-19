@@ -12,6 +12,10 @@ export default [
         path: "/login",
         component: lazy(() => import("./(auth)/login")),
       },
+      {
+        path: "/invite/tenant/:code",
+        component: lazy(() => import("./(auth)/invite/tenant/[code]")),
+      },
     ],
   },
   {

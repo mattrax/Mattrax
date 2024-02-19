@@ -9,10 +9,13 @@ import {
   tenantAccounts,
   tenants,
 } from "../../db";
-import { createTRPCRouter, tenantProcedure } from "../../trpc";
+import { createTRPCRouter, publicProcedure, tenantProcedure } from "../../trpc";
 import { encodeId } from "../../utils";
 import { sendEmail } from "../../emails";
 import { env } from "../../env";
+import { lucia } from "../../auth";
+import { generateId } from "lucia";
+import { appendResponseHeader } from "h3";
 
 export const adminsRouter = createTRPCRouter({
   list: tenantProcedure.query(async ({ ctx }) => {
@@ -76,5 +79,68 @@ export const adminsRouter = createTRPCRouter({
         tenantName: tenant.name,
         inviteLink: `${env.PROD_URL}/invite/tenant/${code}`,
       });
+    }),
+  acceptInvite: publicProcedure
+    .input(z.object({ code: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const invite = await db.query.tenantAccountInvites.findFirst({
+        where: eq(tenantAccountInvites.code, input.code),
+      });
+      if (!invite)
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Invalid invite code",
+        });
+
+      const name = invite.email.split("@")[0] ?? "";
+      const id = generateId(16);
+      const result = await db
+        .insert(accounts)
+        .values({ name, email: invite.email, id })
+        .onDuplicateKeyUpdate({
+          set: { email: invite.email },
+        });
+
+      let accountPk = parseInt(result.insertId);
+      let accountId = id;
+
+      if (accountPk === 0) {
+        const account = await db.query.accounts.findFirst({
+          where: eq(accounts.email, invite.email),
+        });
+        if (!account)
+          throw new Error("Error getting account we just inserted!");
+        accountPk = account.pk;
+        accountId = account.id;
+      }
+
+      await db.transaction(async (db) => {
+        await db.insert(tenantAccounts).values({
+          tenantId: invite.tenantId,
+          accountPk: accountPk,
+        });
+
+        await db
+          .delete(tenantAccountInvites)
+          .where(eq(tenantAccountInvites.code, input.code));
+      });
+
+      const session = await lucia.createSession(accountId, {});
+      appendResponseHeader(
+        ctx.event,
+        "Set-Cookie",
+        lucia.createSessionCookie(session.id).serialize()
+      );
+
+      const tenant = await db.query.tenants.findFirst({
+        where: eq(tenants.id, invite.tenantId),
+      });
+      if (!tenant)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "tenant",
+        });
+
+      return { id: tenant.id, name: tenant.name };
     }),
 });
