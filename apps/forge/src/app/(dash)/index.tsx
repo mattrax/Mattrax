@@ -31,7 +31,6 @@ export default function Page() {
 }
 
 function CreateTenant() {
-  const auth = useAuthContext();
   const createTenant = trpc.tenant.create.useMutation();
 
   const navigate = useNavigate();

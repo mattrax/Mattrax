@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "@solidjs/router";
+import { Navigate, useNavigate, useParams } from "@solidjs/router";
 import {
   createMemo,
   ParentProps,
@@ -24,26 +24,26 @@ export default function Layout(props: ParentProps) {
   const auth = useAuthContext();
   const navigate = useNavigate();
 
-  const activeTenant = createMemo(() => {
-    const ownedTenant = auth.me.tenants.find((t) => t.id === params.tenant);
-
-    if (!ownedTenant) {
-      const firstTenant = auth.me.tenants[0];
-      navigate(firstTenant?.id ? `../${firstTenant.id}` : "/", {
-        replace: true,
-      });
-      return;
-    }
-
-    return ownedTenant;
-  });
+  const activeTenant = createMemo(() =>
+    auth.me.tenants.find((t) => t.id === params.tenant)
+  );
 
   function setTenantId(id: string) {
     startTransition(() => navigate(`/${id}`));
   }
 
   return (
-    <Show when={activeTenant()}>
+    <Show
+      when={activeTenant()}
+      fallback={
+        <Navigate
+          href={() => {
+            const firstTenant = auth.me.tenants[0];
+            return firstTenant?.id ? `../${firstTenant.id}` : "/";
+          }}
+        />
+      }
+    >
       {(activeTenant) => (
         <TenantContextProvider activeTenant={activeTenant()}>
           {/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
