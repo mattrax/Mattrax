@@ -12,9 +12,7 @@ export default [
     path: "/",
     component: lazy(() => import("./index")),
     load: ({ params }) => {
-      trpc.useContext().tenant.stats.ensureData({
-        tenantId: params.tenantId!,
-      });
+      trpc.useContext().tenant.stats.ensureData({ tenantId: params.tenantId! });
     },
   },
   {
@@ -24,9 +22,9 @@ export default [
         path: "/",
         component: lazy(() => import("./users")),
         load: ({ params }) => {
-          trpc.useContext().user.list.ensureData({
-            tenantId: params.tenantId!,
-          });
+          trpc
+            .useContext()
+            .user.list.ensureData({ tenantId: params.tenantId! });
         },
       },
       {
@@ -83,7 +81,7 @@ export default [
         path: "/:policyId",
         load: ({ params }) =>
           trpc.useContext().policy.get.ensureData({
-            policyId: parseInt(params.policyId!),
+            policyId: params.policyId!,
             tenantId: params.tenantId!,
           }),
         children: policyRoutes,

@@ -39,16 +39,14 @@ function CreateTenant() {
   const form = createZodForm({
     schema: z.object({ name: z.string() }),
     async onSubmit(data) {
-      const tenant = await createTenant.mutateAsync(data.value);
+      const tenantId = await createTenant.mutateAsync(data.value);
 
       await trpcCtx.auth.me.invalidate();
 
       // lets the rq cache update -_-
       await new Promise((res) => setTimeout(res, 0));
 
-      await startTransition(() => {
-        navigate(`/${tenant.id}`);
-      });
+      await startTransition(() => navigate(tenantId));
     },
   });
 

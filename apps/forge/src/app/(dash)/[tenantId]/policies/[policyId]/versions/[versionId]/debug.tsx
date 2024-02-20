@@ -1,4 +1,3 @@
-import { useParams } from "@solidjs/router";
 import { z } from "zod";
 
 import { useTenantContext } from "~/app/(dash)/[tenantId]";
@@ -7,9 +6,9 @@ import { useZodParams } from "~/lib/useZodParams";
 
 export default function Page() {
   const params = useZodParams({
-    tenant: z.coerce.number(),
-    policyId: z.coerce.number(),
-    versionid: z.coerce.number(),
+    tenant: z.string(),
+    policyId: z.string(),
+    versionid: z.string(),
   });
   const tenant = useTenantContext();
   const policy = trpc.policy.get.useQuery(() => ({

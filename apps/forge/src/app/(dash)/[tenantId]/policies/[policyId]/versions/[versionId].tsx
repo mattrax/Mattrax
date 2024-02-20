@@ -44,8 +44,8 @@ import { z } from "zod";
 
 function useParams() {
   return useZodParams({
-    policyId: z.coerce.number(),
-    versionId: z.coerce.number(),
+    policyId: z.string(),
+    versionId: z.string(),
   });
 }
 
@@ -203,7 +203,7 @@ function PolicyVersionSwitcher() {
 
   const tenant = useTenantContext();
   const versions = trpc.policy.getVersions.useQuery(() => ({
-    policyId: params.policyId!,
+    policyId: params.policyId,
     tenantId: tenant.activeTenant.id,
   }));
 
@@ -360,7 +360,7 @@ function DeployButton(props: {
                 // alert("TODO");
                 props.setPolicyState("deploying");
                 controller.setOpen(false);
-                navigate("./versions");
+                navigate("versions");
               }}
             >
               Deploy to {5} devices

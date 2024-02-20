@@ -13,6 +13,7 @@ import {
   policies,
   users,
 } from "../db";
+import { createId } from "@paralleldrive/cuid2";
 
 function getGroup(args: { groupId: string; tenantPk: number }) {
   return db.query.groups.findFirst({
@@ -38,7 +39,7 @@ export const groupRouter = createTRPCRouter({
 
       return await db
         .select({
-          id: groups.pk,
+          id: groups.id,
           name: groups.name,
           memberCount: sql`count(${groupGroupables.groupPk})`,
         })
@@ -50,13 +51,15 @@ export const groupRouter = createTRPCRouter({
   create: tenantProcedure
     .input(z.object({ name: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const result = await db.insert(groups).values({
+      const id = createId();
+
+      await db.insert(groups).values({
+        id,
         name: input.name,
         tenantPk: ctx.tenantPk,
       });
-      const insertId = parseInt(result.insertId);
 
-      return insertId;
+      return id;
     }),
 
   get: tenantProcedure

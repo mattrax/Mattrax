@@ -1,32 +1,12 @@
 import { RouteDefinition } from "@solidjs/router";
 import { lazy } from "solid-js";
 
+import versionsRoutes from "./versions/routes";
+
 export default [
   {
     path: "/",
     component: lazy(() => import("./index")),
   },
-  {
-    path: "/:versionId",
-    component: lazy(() => import("./[versionId]")),
-    children: [
-      {
-        path: "/",
-        component: lazy(() => import("./[versionId]/index")),
-      },
-      {
-        path: "/builder",
-        component: lazy(() => import("./[versionId]/builder")),
-      },
-      {
-        path: "/versions",
-        component: lazy(() => import("./[versionId]/versions")),
-      },
-
-      {
-        path: "/debug",
-        component: lazy(() => import("./[versionId]/debug")),
-      },
-    ],
-  },
+  { path: "/versions", children: versionsRoutes },
 ] satisfies RouteDefinition[];

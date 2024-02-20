@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { createTRPCRouter, tenantProcedure } from "../trpc";
 import { db, users } from "../db";
 import { eq } from "drizzle-orm";
@@ -23,9 +22,10 @@ export const userRouter = createTRPCRouter({
 
       return await db
         .select({
-          id: users.pk,
+          id: users.id,
           name: users.name,
           email: users.email,
+          provider: users.providerPk,
         })
         .from(users)
         // TODO: Is user authorised to tenant

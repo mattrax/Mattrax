@@ -6,11 +6,11 @@ import { useZodParams } from "~/lib/useZodParams";
 
 export default function Page() {
   const params = useZodParams({
-    policyId: z.coerce.number(),
+    policyId: z.string(),
   });
   const tenant = useTenantContext();
   const policy = trpc.policy.get.useQuery(() => ({
-    policyId: params.policyId!,
+    policyId: params.policyId,
     tenantId: tenant.activeTenant.id,
   }));
 

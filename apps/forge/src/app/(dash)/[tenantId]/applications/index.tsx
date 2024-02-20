@@ -108,7 +108,7 @@ export default function Page() {
       <Suspense>
         <StandardTable
           table={table}
-          onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}
+          onRowClick={(row) => startTransition(() => navigate(row.id))}
         />
         <div class="flex items-center justify-end space-x-2">
           <div class="flex-1 text-sm text-muted-foreground">

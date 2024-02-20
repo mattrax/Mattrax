@@ -1,11 +1,11 @@
 import { Suspense, startTransition } from "solid-js";
 import {
-  type ColumnDef,
   createSolidTable,
   getCoreRowModel,
   getPaginationRowModel,
   getSortedRowModel,
   getFilteredRowModel,
+  createColumnHelper,
 } from "@tanstack/solid-table";
 import { Button, Checkbox, Input } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
@@ -13,9 +13,12 @@ import { As } from "@kobalte/core";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { useNavigate } from "@solidjs/router";
 import { useTenantContext } from "../../[tenantId]";
+import { RouterOutput } from "@mattrax/api";
 
-export const columns: ColumnDef<any>[] = [
-  {
+const column = createColumnHelper<RouterOutput["user"]["list"][number]>();
+
+export const columns = [
+  column.display({
     id: "select",
     header: ({ table }) => (
       <Checkbox
@@ -39,13 +42,11 @@ export const columns: ColumnDef<any>[] = [
     size: 1,
     enableSorting: false,
     enableHiding: false,
-  },
-  {
-    accessorKey: "name",
+  }),
+  column.accessor("name", {
     header: "Name",
-  },
-  {
-    accessorKey: "email",
+  }),
+  column.accessor("email", {
     header: ({ column }) => {
       return (
         <Button
@@ -58,11 +59,10 @@ export const columns: ColumnDef<any>[] = [
         </Button>
       );
     },
-  },
-  {
-    accessorKey: "provider",
+  }),
+  column.accessor("provider", {
     header: "Provider",
-  },
+  }),
   // TODO: Link to OAuth provider
   // TODO: Actions
 ];
@@ -79,9 +79,7 @@ function createUsersTable() {
     get data() {
       return users.data || [];
     },
-    get columns() {
-      return columns;
-    },
+    columns,
     // onSortingChange: setSorting,
     // onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
@@ -130,7 +128,7 @@ export default function Page() {
       <Suspense>
         <StandardTable
           table={table}
-          onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}
+          onRowClick={(row) => startTransition(() => navigate(row.id))}
         />
         <div class="flex items-center justify-end space-x-2">
           <div class="flex-1 text-sm text-muted-foreground">

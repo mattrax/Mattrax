@@ -6,6 +6,7 @@ import {
   getPaginationRowModel,
   getSortedRowModel,
   getFilteredRowModel,
+  createColumnHelper,
 } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
 import { useNavigate } from "@solidjs/router";
@@ -26,9 +27,12 @@ import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { Separator } from "~/components/ui";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { useTenantContext } from "../../[tenantId]";
+import { RouterOutput } from "@mattrax/api";
 
-export const columns: ColumnDef<any>[] = [
-  {
+const column = createColumnHelper<RouterOutput["policy"]["list"][number]>();
+
+export const columns = [
+  column.display({
     id: "select",
     header: ({ table }) => (
       <Checkbox
@@ -50,25 +54,24 @@ export const columns: ColumnDef<any>[] = [
     size: 1,
     enableSorting: false,
     enableHiding: false,
-  },
-  {
-    accessorKey: "name",
+  }),
+  column.accessor("name", {
     header: "Name",
-  },
+  }),
   // TODO: Description
   // TODO: Configurations maybe?
   // TODO: Supported OS's
 ];
 
-function createGroupsTable() {
+function createPoliciesTable() {
   const tenant = useTenantContext();
-  const groups = trpc.policy.list.useQuery(() => ({
+  const policies = trpc.policy.list.useQuery(() => ({
     tenantId: tenant.activeTenant.id,
   }));
 
   const table = createSolidTable({
     get data() {
-      return groups.data || [];
+      return policies.data || [];
     },
     get columns() {
       return columns;
@@ -83,7 +86,7 @@ function createGroupsTable() {
     },
   });
 
-  return { groups, table };
+  return { policies, table };
 }
 
 // TODO: Infinite scroll
@@ -92,9 +95,9 @@ function createGroupsTable() {
 
 export default function Page() {
   const navigate = useNavigate();
-  const { table, groups } = createGroupsTable();
+  const { table, policies } = createPoliciesTable();
 
-  const isLoading = untrackScopeFromSuspense(() => groups.isLoading);
+  const isLoading = untrackScopeFromSuspense(() => policies.isLoading);
 
   return (
     <div class="px-4 py-8 w-full max-w-5xl mx-auto space-y-4">
@@ -121,7 +124,10 @@ export default function Page() {
       <Suspense>
         <StandardTable
           table={table}
-          onRowClick={(row) => navigate(`./${row.id}/${row.activeVersionId}`)}
+          onRowClick={(row) =>
+            row.activeVersionId !== null &&
+            navigate(`${row.id}/versions/${row.activeVersionId}`)
+          }
         />
         <div class="flex items-center justify-end space-x-2 py-4">
           <div class="flex-1 text-sm text-muted-foreground">

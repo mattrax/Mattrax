@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { count, eq } from "drizzle-orm";
+import { createId } from "@paralleldrive/cuid2";
 
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../../trpc";
 import { promiseObjectAll } from "../../utils";
@@ -17,14 +18,15 @@ import { billingRouter } from "./billing";
 import { tenantAuthRouter } from "./auth";
 import { domainsRouter } from "./domains";
 import { adminsRouter } from "./admins";
-import { TRPCError } from "@trpc/server";
 
 export const tenantRouter = createTRPCRouter({
   create: authedProcedure
     .input(z.object({ name: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const tenant = await db.transaction(async (db) => {
+      const tenantId = await db.transaction(async (db) => {
+        const id = createId();
         const result = await db.insert(tenants).values({
+          id,
           name: input.name,
           ownerPk: ctx.account.pk,
         });
@@ -35,20 +37,12 @@ export const tenantRouter = createTRPCRouter({
           accountPk: ctx.account.pk,
         });
 
-        return await db.query.tenants.findFirst({
-          where: eq(tenants.pk, tenantPk),
-        });
+        return id;
       });
-
-      if (tenant === undefined)
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to create tenant",
-        });
 
       // TODO: Invalidate `tenants`
 
-      return tenant;
+      return tenantId;
     }),
 
   edit: tenantProcedure

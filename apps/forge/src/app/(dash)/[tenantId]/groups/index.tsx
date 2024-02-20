@@ -1,19 +1,21 @@
 import { useNavigate } from "@solidjs/router";
 import { ParentProps, Suspense, startTransition } from "solid-js";
 import {
-  type ColumnDef,
   createSolidTable,
   getCoreRowModel,
   getPaginationRowModel,
   getSortedRowModel,
   getFilteredRowModel,
+  createColumnHelper,
 } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
 
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 
-export const columns: ColumnDef<any>[] = [
-  {
+const column = createColumnHelper<RouterOutput["group"]["list"][number]>();
+
+export const columns = [
+  column.display({
     id: "select",
     header: ({ table }) => (
       <Checkbox
@@ -35,15 +37,13 @@ export const columns: ColumnDef<any>[] = [
     size: 1,
     enableSorting: false,
     enableHiding: false,
-  },
-  {
-    accessorKey: "name",
+  }),
+  column.accessor("name", {
     header: "Name",
-  },
-  {
-    accessorKey: "memberCount",
+  }),
+  column.accessor("memberCount", {
     header: "Member Count",
-  },
+  }),
 ];
 
 function createGroupsTable() {
@@ -54,7 +54,7 @@ function createGroupsTable() {
 
   const table = createSolidTable({
     get data() {
-      return groups.data || [];
+      return groups.data ?? [];
     },
     get columns() {
       return columns;
@@ -117,7 +117,7 @@ export default function Page() {
       <Suspense>
         <StandardTable
           table={table}
-          onRowClick={(row) => startTransition(() => navigate(`./${row.id}`))}
+          onRowClick={(row) => startTransition(() => navigate(row.id))}
         />
         <div class="flex items-center justify-end space-x-2">
           <div class="flex-1 text-sm text-muted-foreground">
@@ -162,10 +162,8 @@ function CreateGroupDialog(props: ParentProps) {
   const navigate = useNavigate();
 
   const mutation = trpc.group.create.useMutation(() => ({
-    onSuccess: async (id) => {
-      await startTransition(() => {
-        navigate(`../groups/${id}`);
-      });
+    onSuccess: async (groupId) => {
+      await startTransition(() => navigate(groupId));
     },
   }));
 
@@ -204,14 +202,7 @@ function CreateGroupDialog(props: ParentProps) {
   );
 }
 
-import {
-  Button,
-  Checkbox,
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "~/components/ui";
-import { OutlineLayout } from "../OutlineLayout";
+import { Button, Checkbox } from "~/components/ui";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { useTenantContext } from "../../[tenantId]";
+import { RouterOutput } from "@mattrax/api";

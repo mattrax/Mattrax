@@ -33,7 +33,7 @@ export default function Layout(props: ParentProps) {
   );
 
   function setTenantId(id: string) {
-    startTransition(() => navigate(`/${id}`));
+    startTransition(() => navigate(`../${id}`));
   }
 
   return (

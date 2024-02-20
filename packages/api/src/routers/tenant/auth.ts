@@ -67,7 +67,7 @@ export const tenantAuthRouter = createTRPCRouter({
             )
           );
 
-        await db.delete(users).where(eq(users.provider, input.id));
+        await db.delete(users).where(eq(users.providerPk, input.id));
       });
 
       // TODO: Revoke admin consent with Microsoft as an extra precaution
@@ -102,7 +102,7 @@ export const tenantAuthRouter = createTRPCRouter({
           name: u.displayName,
           email: u.mail,
           tenantPk: ctx.tenantPk,
-          provider: tenantProvider.id,
+          providerPk: tenantProvider.pk,
           // resourceId: u.id, // TODO: Add this column
         }))
     );

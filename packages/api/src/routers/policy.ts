@@ -1,30 +1,27 @@
 import { z } from "zod";
-import { createTRPCRouter, tenantProcedure } from "../trpc";
-import { db, devices, policies, policyVersions, tenantAccounts } from "../db";
 import { and, eq } from "drizzle-orm";
-import { getMdm } from "../mdm";
 import { buildApplePolicy } from "@mattrax/policy";
+
+import { createTRPCRouter, tenantProcedure } from "../trpc";
+import { db, devices, policies, policyVersions } from "../db";
+import { getMdm } from "../mdm";
+import { createId } from "@paralleldrive/cuid2";
 
 export const policyRouter = createTRPCRouter({
   list: tenantProcedure.query(async ({ ctx }) => {
     return await db
       .select({
-        id: policies.pk,
+        id: policies.id,
         name: policies.name,
-        activeVersionId: policies.activeVersion,
-        // activeVersion: {
-        //   id: policyVersions.id,
-        //   data: policyVersions.data,
-        //   createdAt: policyVersions.createdAt,
-        // },
+        activeVersionId: policyVersions.id,
       })
       .from(policies)
-      // .leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.id))
+      .leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.pk))
       .where(eq(policies.tenantPk, ctx.tenantPk));
   }),
 
   get: tenantProcedure
-    .input(z.object({ policyId: z.number() }))
+    .input(z.object({ policyId: z.string() }))
     .query(async ({ ctx, input }) => {
       const policy = await db
         .select({
@@ -38,29 +35,40 @@ export const policyRouter = createTRPCRouter({
         })
         .from(policies)
         .leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.pk))
-        .where(eq(policies.pk, input.policyId))
+        .where(
+          and(
+            eq(policies.id, input.policyId),
+            eq(policies.tenantPk, ctx.tenantPk)
+          )
+        )
         .then((v) => v?.[0]);
 
       return policy;
     }),
 
   getVersions: tenantProcedure
-    .input(z.object({ policyId: z.number() }))
+    .input(z.object({ policyId: z.string() }))
     .query(async ({ ctx, input }) => {
       const versions = await db
         .select({
-          id: policyVersions.pk,
+          id: policyVersions.id,
           data: policyVersions.data,
           createdAt: policyVersions.createdAt,
         })
         .from(policyVersions)
-        .where(eq(policyVersions.policyId, input.policyId));
+        .innerJoin(policies, eq(policyVersions.policyPk, policies.pk))
+        .where(
+          and(
+            eq(policies.id, input.policyId),
+            eq(policies.tenantPk, ctx.tenantPk)
+          )
+        );
 
       return versions;
     }),
 
   duplicate: tenantProcedure
-    .input(z.object({ policyId: z.number() }))
+    .input(z.object({ policyId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       throw new Error("TODO: Bring this back!");
       // const id = input.policyId;
@@ -98,7 +106,7 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policyVersions.pk, input.versionId),
-            eq(policyVersions.policyId, input.policyId)
+            eq(policyVersions.policyPk, input.policyId)
           )
         );
 
@@ -109,34 +117,31 @@ export const policyRouter = createTRPCRouter({
     .input(z.object({ name: z.string().min(1).max(100) }))
     .mutation(({ ctx, input }) =>
       db.transaction(async (db) => {
-        const result = await db.insert(policies).values({
+        const policyId = createId();
+        const policyInsert = await db.insert(policies).values({
+          id: policyId,
           name: input.name,
           tenantPk: ctx.tenantPk,
         });
-        const policyInsertId = parseInt(result.insertId);
-        await db.insert(policyVersions).values({
-          policyId: policyInsertId,
-        });
-        const result2 = await db.insert(policyVersions).values({
-          policyId: policyInsertId,
-          data: {},
-        });
-        const activeVersionId = parseInt(result2.insertId);
+        const policyPk = parseInt(policyInsert.insertId);
+
+        const versionInsert = await db
+          .insert(policyVersions)
+          .values({ id: createId(), policyPk, data: {} });
+
         await db
           .update(policies)
-          .set({
-            activeVersion: activeVersionId,
-          })
-          .where(eq(policies.pk, policyInsertId));
+          .set({ activeVersion: parseInt(versionInsert.insertId) })
+          .where(eq(policies.pk, policyPk));
 
-        return policyInsertId;
+        return policyId;
       })
     ),
 
   delete: tenantProcedure
-    .input(z.object({ policyId: z.number() }))
+    .input(z.object({ policyId: z.string() }))
     .mutation(async ({ input }) => {
-      await db.delete(policies).where(eq(policies.pk, input.policyId));
+      await db.delete(policies).where(eq(policies.id, input.policyId));
     }),
 
   // push: tenantProcedure

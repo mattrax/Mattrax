@@ -19,7 +19,7 @@ const serialRelation = (name: string) =>
   bigint(name, { mode: "number", unsigned: true });
 
 const cuid = (name: string) =>
-  varchar(name, { length: 24 }).$defaultFn(() => createId());
+  varchar(name, { length: 24 }).$default(() => createId());
 
 export type TableID<Table extends string> = number & { __table: Table };
 
@@ -116,7 +116,7 @@ export const users = mysqlTable(
     tenantPk: serialRelation("tenantId")
       .references(() => tenants.pk)
       .notNull(),
-    provider: serialRelation("provider")
+    providerPk: serialRelation("provider")
       .references(() => tenantUserProvider.pk)
       .notNull(),
     // Resource ID within the provider's system.
@@ -148,7 +148,7 @@ export const policies = mysqlTable("policies", {
 export const policyVersions = mysqlTable("policy_versions", {
   pk: serial("id").primaryKey(),
   id: cuid("cuid").notNull().unique(),
-  policyId: serialRelation("policyId")
+  policyPk: serialRelation("policyId")
     // .references(() => policies.id) // This creates a circular reference so is let uncommented
     .notNull(),
   // status: mysqlEnum("status", ["open", "staged", "deployed"])
