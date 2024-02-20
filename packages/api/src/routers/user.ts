@@ -24,7 +24,7 @@ export const userRouter = createTRPCRouter({
 
       return await db
         .select({
-          id: users.id,
+          id: users.pk,
           name: users.name,
           email: users.email,
         })

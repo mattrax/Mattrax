@@ -12,7 +12,7 @@ export const deviceRouter = createTRPCRouter({
     return (
       await db
         .select({
-          id: devices.id,
+          id: devices.pk,
           name: devices.name,
           operatingSystem: devices.operatingSystem,
           serialNumber: devices.serialNumber,

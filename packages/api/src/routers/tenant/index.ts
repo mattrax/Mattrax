@@ -60,7 +60,7 @@ export const tenantRouter = createTRPCRouter({
             name: input.name,
           }),
         })
-        .where(eq(tenants.id, ctx.tenantId));
+        .where(eq(tenants.pk, ctx.tenantId));
     }),
 
   enrollmentInfo: tenantProcedure.query(async ({ ctx }) =>
@@ -69,7 +69,7 @@ export const tenantRouter = createTRPCRouter({
         enrollmentEnabled: tenants.enrollmentEnabled,
       })
       .from(tenants)
-      .where(eq(tenants.id, ctx.tenantId))
+      .where(eq(tenants.pk, ctx.tenantId))
       .then((rows) => rows[0])
   ),
 
@@ -81,7 +81,7 @@ export const tenantRouter = createTRPCRouter({
         .set({
           enrollmentEnabled: input.enrollmentEnabled,
         })
-        .where(eq(tenants.id, ctx.tenantId))
+        .where(eq(tenants.pk, ctx.tenantId))
     ),
 
   stats: tenantProcedure.query(({ ctx }) =>
@@ -118,7 +118,7 @@ export const tenantRouter = createTRPCRouter({
     // TODO: Ensure no outstanding bills
 
     await db.transaction(async (db) => {
-      await db.delete(tenants).where(eq(tenants.id, ctx.tenantId));
+      await db.delete(tenants).where(eq(tenants.pk, ctx.tenantId));
       await db
         .delete(tenantAccounts)
         .where(eq(tenantAccounts.tenantId, ctx.tenantId));

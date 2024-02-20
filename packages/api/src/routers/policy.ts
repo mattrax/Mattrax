@@ -10,7 +10,7 @@ export const policyRouter = createTRPCRouter({
   list: tenantProcedure.query(async ({ ctx }) => {
     return await db
       .select({
-        id: policies.id,
+        id: policies.pk,
         name: policies.name,
         activeVersionId: policies.activeVersion,
         // activeVersion: {
@@ -29,17 +29,17 @@ export const policyRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const policy = await db
         .select({
-          id: policies.id,
+          id: policies.pk,
           name: policies.name,
           activeVersion: {
-            id: policyVersions.id,
+            id: policyVersions.pk,
             data: policyVersions.data,
             createdAt: policyVersions.createdAt,
           },
         })
         .from(policies)
-        .leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.id))
-        .where(eq(policies.id, input.policyId))
+        .leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.pk))
+        .where(eq(policies.pk, input.policyId))
         .then((v) => v?.[0]);
 
       return policy;
@@ -50,7 +50,7 @@ export const policyRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const versions = await db
         .select({
-          id: policyVersions.id,
+          id: policyVersions.pk,
           data: policyVersions.data,
           createdAt: policyVersions.createdAt,
         })
@@ -98,7 +98,7 @@ export const policyRouter = createTRPCRouter({
         })
         .where(
           and(
-            eq(policyVersions.id, input.versionId),
+            eq(policyVersions.pk, input.versionId),
             eq(policyVersions.policyId, input.policyId)
           )
         );
@@ -128,7 +128,7 @@ export const policyRouter = createTRPCRouter({
           .set({
             activeVersion: activeVersionId,
           })
-          .where(eq(policies.id, policyInsertId));
+          .where(eq(policies.pk, policyInsertId));
 
         return policyInsertId;
       })
@@ -137,7 +137,7 @@ export const policyRouter = createTRPCRouter({
   delete: tenantProcedure
     .input(z.object({ policyId: z.number() }))
     .mutation(async ({ input }) => {
-      await db.delete(policies).where(eq(policies.id, input.policyId));
+      await db.delete(policies).where(eq(policies.pk, input.policyId));
     }),
 
   // push: tenantProcedure

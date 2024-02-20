@@ -17,6 +17,8 @@ import { relations } from "drizzle-orm";
 const serialRelation = (name: string) =>
   bigint(name, { mode: "number", unsigned: true });
 
+const cuid = (name: string) => varchar(name, { length: 24 });
+
 export type TableID<Table extends string> = number & { __table: Table };
 
 // An account represents the login of an *administrator*.
@@ -40,7 +42,8 @@ export const sessions = mysqlTable("session", {
 });
 
 export const tenants = mysqlTable("tenant", {
-  id: serial("id").primaryKey(),
+  pk: serial("id").primaryKey(),
+  id: cuid("cuid").notNull().unique(),
   name: varchar("name", { length: 100 }).notNull(),
   billingEmail: varchar("billingEmail", { length: 256 }),
   stripeCustomerId: varchar("stripeCustomerId", { length: 256 }),
@@ -54,7 +57,7 @@ export const tenantAccounts = mysqlTable(
   "tenant_account",
   {
     tenantId: serialRelation("tenantId")
-      .references(() => tenants.id)
+      .references(() => tenants.pk)
       .notNull(),
     accountPk: serialRelation("accountId")
       .references(() => accounts.pk)
@@ -68,7 +71,7 @@ export const tenantAccounts = mysqlTable(
 export const tenantAccountInvites = mysqlTable("tenant_account_invites", {
   code: varchar("code", { length: 256 }).primaryKey(),
   tenantId: serialRelation("tenantId")
-    .references(() => tenants.id)
+    .references(() => tenants.pk)
     .notNull(),
   email: varchar("email", { length: 256 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow(),
@@ -82,12 +85,13 @@ export type UserProvider = (typeof userProviders)[number];
 export const tenantUserProvider = mysqlTable(
   "tenant_user_provider",
   {
-    id: serial("id").primaryKey(),
+    pk: serial("id").primaryKey(),
+    id: cuid("cuid").notNull().unique(),
     name: mysqlEnum("provider", userProviders).notNull(),
     // This is the unique ID for the user in the provider's system.
     resourceId: varchar("resourceId", { length: 256 }).notNull(),
     tenantId: serialRelation("tenantId")
-      .references(() => tenants.id)
+      .references(() => tenants.pk)
       .notNull(),
     lastSynced: timestamp("lastSynced"),
   },
@@ -103,14 +107,15 @@ export const tenantUserProvider = mysqlTable(
 export const users = mysqlTable(
   "users",
   {
-    id: serial("id").primaryKey(),
+    pk: serial("id").primaryKey(),
+    id: cuid("cuid").notNull().unique(),
     name: varchar("name", { length: 256 }).notNull(),
     email: varchar("email", { length: 256 }).notNull(),
     tenantId: serialRelation("tenantId")
-      .references(() => tenants.id)
+      .references(() => tenants.pk)
       .notNull(),
     provider: serialRelation("provider")
-      .references(() => tenantUserProvider.id)
+      .references(() => tenantUserProvider.pk)
       .notNull(),
     // Resource ID within the provider's system.
     // resourceId: varchar("resourceId", { length: 256 }).notNull(),
@@ -124,13 +129,14 @@ export const users = mysqlTable(
 );
 
 export const policies = mysqlTable("policies", {
-  id: serial("id").primaryKey(),
+  pk: serial("id").primaryKey(),
+  id: cuid("cuid").notNull().unique(),
   name: varchar("name", { length: 256 }).notNull(),
   activeVersion: serialRelation("activeVersion").references(
-    () => policyVersions.id
+    () => policyVersions.pk
   ),
   tenantId: serialRelation("tenantId")
-    .references(() => tenants.id)
+    .references(() => tenants.pk)
     .notNull(),
   groupableVariant: mysqlEnum("groupableVariant", ["policy"])
     .notNull()
@@ -138,7 +144,8 @@ export const policies = mysqlTable("policies", {
 });
 
 export const policyVersions = mysqlTable("policy_versions", {
-  id: serial("id").primaryKey(),
+  pk: serial("id").primaryKey(),
+  id: cuid("cuid").notNull().unique(),
   policyId: serialRelation("policyId")
     // .references(() => policies.id) // This creates a circular reference so is let uncommented
     .notNull(),
@@ -151,7 +158,8 @@ export const policyVersions = mysqlTable("policy_versions", {
 });
 
 export const devices = mysqlTable("devices", {
-  id: serial("id").primaryKey(),
+  pk: serial("id").primaryKey(),
+  id: cuid("cuid").notNull().unique(),
   name: varchar("name", { length: 256 }).notNull(),
   description: varchar("description", { length: 256 }),
 
@@ -171,7 +179,7 @@ export const devices = mysqlTable("devices", {
     unsigned: true,
   }),
 
-  owner: serialRelation("owner").references(() => users.id),
+  owner: serialRelation("owner").references(() => users.pk),
 
   azureADDeviceId: varchar("azureADDeviceId", { length: 256 })
     .notNull()
@@ -182,7 +190,7 @@ export const devices = mysqlTable("devices", {
   lastSynced: timestamp("lastSynced").notNull().defaultNow(),
 
   tenantId: serialRelation("tenantId")
-    .references(() => tenants.id)
+    .references(() => tenants.pk)
     .notNull(),
 
   groupableVariant: mysqlEnum("groupableVariant", ["device"])
@@ -192,7 +200,7 @@ export const devices = mysqlTable("devices", {
 
 export const devicesRelations = relations(devices, ({ one }) => ({
   groupable: one(groupables, {
-    fields: [devices.id, devices.groupableVariant],
+    fields: [devices.pk, devices.groupableVariant],
     references: [groupables.id, groupables.variant],
   }),
 }));
@@ -205,7 +213,7 @@ export const groupables = mysqlTable(
     id: serialRelation("id").notNull(),
     variant: mysqlEnum("variant", groupableVariants).notNull(),
     tenantId: serialRelation("tenantId")
-      .references(() => tenants.id)
+      .references(() => tenants.pk)
       .notNull(),
   },
   (table) => ({ pk: primaryKey({ columns: [table.id, table.variant] }) })
@@ -215,7 +223,7 @@ export const groupGroupables = mysqlTable(
   "group_groupables",
   {
     groupId: serialRelation("groupId")
-      .references(() => groups.id)
+      .references(() => groups.pk)
       .notNull(),
     groupableId: serialRelation("groupableId").notNull(),
     groupableVariant: mysqlEnum(
@@ -231,10 +239,11 @@ export const groupGroupables = mysqlTable(
 );
 
 export const groups = mysqlTable("groups", {
-  id: serial("id").primaryKey(),
+  pk: serial("id").primaryKey(),
+  id: cuid("cuid").notNull().unique(),
   name: varchar("name", { length: 256 }),
   tenantId: serialRelation("tenantId")
-    .references(() => tenants.id)
+    .references(() => tenants.pk)
     .notNull(),
 });
 
@@ -243,11 +252,12 @@ export const groupRelations = relations(groups, ({ many }) => ({
 }));
 
 export const applications = mysqlTable("apps", {
-  id: serial("id").primaryKey(),
+  pk: serial("id").primaryKey(),
+  id: cuid("cuid").notNull().unique(),
   name: varchar("name", { length: 256 }).notNull(),
   description: varchar("description", { length: 256 }),
   tenantId: serialRelation("tenantId")
-    .references(() => tenants.id)
+    .references(() => tenants.pk)
     .notNull(),
 });
 
@@ -255,7 +265,7 @@ export const domains = mysqlTable("domains", {
   domain: varchar("domain", { length: 256 }).primaryKey(),
   secret: varchar("secret", { length: 256 }).notNull().unique(),
   tenantId: serialRelation("tenantId")
-    .references(() => tenants.id)
+    .references(() => tenants.pk)
     .notNull(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   lastVerificationTime: timestamp("lastVerificationTime"),
@@ -282,9 +292,9 @@ export const certificates = mysqlTable("certificates", {
 });
 
 export const accountLoginCodes = mysqlTable("account_login_codes", {
+  code: varchar("code", { length: 8 }).notNull().primaryKey(),
   accountPk: serialRelation("accountPk")
     .references(() => accounts.pk)
     .notNull(),
-  code: varchar("code", { length: 8 }).notNull().primaryKey(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });

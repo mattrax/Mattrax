@@ -12,7 +12,7 @@ export const tenantAuthRouter = createTRPCRouter({
   query: tenantProcedure.query(async ({ ctx }) => {
     return await db
       .select({
-        id: tenantUserProvider.id,
+        id: tenantUserProvider.pk,
         resourceId: tenantUserProvider.resourceId,
         name: tenantUserProvider.name,
         lastSynced: tenantUserProvider.lastSynced,
@@ -64,7 +64,7 @@ export const tenantAuthRouter = createTRPCRouter({
           .where(
             and(
               eq(tenantUserProvider.tenantId, ctx.tenantId),
-              eq(tenantUserProvider.id, input.id)
+              eq(tenantUserProvider.pk, input.id)
             )
           );
 

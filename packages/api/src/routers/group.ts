@@ -16,7 +16,7 @@ import {
 
 function getGroup(args: { groupId: number; tenantId: number }) {
   return db.query.groups.findFirst({
-    where: and(eq(groups.id, args.groupId), eq(groups.tenantId, args.tenantId)),
+    where: and(eq(groups.pk, args.groupId), eq(groups.tenantId, args.tenantId)),
   });
 }
 
@@ -38,14 +38,14 @@ export const groupRouter = createTRPCRouter({
 
       return await db
         .select({
-          id: groups.id,
+          id: groups.pk,
           name: groups.name,
           memberCount: sql`count(${groupGroupables.groupId})`,
         })
         .from(groups)
         .where(eq(groups.tenantId, ctx.tenantId))
-        .leftJoin(groupGroupables, eq(groups.id, groupGroupables.groupId))
-        .groupBy(groups.id);
+        .leftJoin(groupGroupables, eq(groups.pk, groupGroupables.groupId))
+        .groupBy(groups.pk);
     }),
   create: tenantProcedure
     .input(
@@ -80,9 +80,9 @@ export const groupRouter = createTRPCRouter({
 
       const results = await Promise.all([
         db
-          .select({ id: users.id, name: users.name })
+          .select({ id: users.pk, name: users.name })
           .from(users)
-          .leftJoin(groupGroupables, eq(users.id, groupGroupables.groupableId))
+          .leftJoin(groupGroupables, eq(users.pk, groupGroupables.groupableId))
           .where(
             and(
               eq(groupGroupables.groupableVariant, "user"),
@@ -90,11 +90,11 @@ export const groupRouter = createTRPCRouter({
             )
           ),
         db
-          .select({ id: devices.id, name: devices.name })
+          .select({ id: devices.pk, name: devices.name })
           .from(devices)
           .leftJoin(
             groupGroupables,
-            eq(devices.id, groupGroupables.groupableId)
+            eq(devices.pk, groupGroupables.groupableId)
           )
           .where(
             and(
@@ -103,11 +103,11 @@ export const groupRouter = createTRPCRouter({
             )
           ),
         db
-          .select({ id: policies.id, name: policies.name })
+          .select({ id: policies.pk, name: policies.name })
           .from(policies)
           .leftJoin(
             groupGroupables,
-            eq(policies.id, groupGroupables.groupableId)
+            eq(policies.pk, groupGroupables.groupableId)
           )
           .where(
             and(

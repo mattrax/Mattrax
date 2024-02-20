@@ -20,7 +20,7 @@ type UserResult = {
 const fetchTenants = async (session_id: number) =>
   await db
     .select({
-      id: tenants.id,
+      id: tenants.pk,
       name: tenants.name,
     })
     .from(tenants)

@@ -25,7 +25,7 @@ export const adminsRouter = createTRPCRouter({
           ownerId: tenants.ownerPk,
         })
         .from(tenants)
-        .where(eq(tenants.id, ctx.tenantId))
+        .where(eq(tenants.pk, ctx.tenantId))
         .then((v) => v?.[0]?.ownerId),
       db
         .select({
@@ -53,7 +53,7 @@ export const adminsRouter = createTRPCRouter({
         columns: {
           name: true,
         },
-        where: eq(tenants.id, ctx.tenantId),
+        where: eq(tenants.pk, ctx.tenantId),
       });
 
       if (!tenant)
@@ -132,7 +132,7 @@ export const adminsRouter = createTRPCRouter({
       );
 
       const tenant = await db.query.tenants.findFirst({
-        where: eq(tenants.id, invite.tenantId),
+        where: eq(tenants.pk, invite.tenantId),
       });
       if (!tenant)
         throw new TRPCError({
