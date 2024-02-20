@@ -1,0 +1,27 @@
+name: Vercel Landing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/landing/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: "Deploy"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
+      - name: Deploy to Vercel
+        run: npx vercel --token ${VERCEL_TOKEN} --prod
+        working-directory: ./apps/landing
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: prj_olckIYRW5BTEMCFdObKOmsBKv9gE
+          VERCEL_ORG_ID: St9DAPMLqW2wVV3u9XxhUcE1
