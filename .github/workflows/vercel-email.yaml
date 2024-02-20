@@ -26,7 +26,6 @@ jobs:
         run: pnpm i
 
       - name: Deploy to Vercel
-        # working-directory: ./apps/email
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: prj_bxxgLnEGQNRkURcgnMmDOXNtKjSA
