@@ -39,4 +39,5 @@ declare global {
   const IconPhSelectionDuotone: typeof import('~icons/ph/selection-duotone.jsx')['default']
   const IconPhStackDuotone: typeof import('~icons/ph/stack-duotone.jsx')['default']
   const IconPhUserDuotone: typeof import('~icons/ph/user-duotone.jsx')['default']
+  const IconPrimeExternalLink: typeof import('~icons/prime/external-link.jsx')['default']
 }

@@ -19,7 +19,7 @@ import {
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
-import { authProviderDisplayName, authProviderUrl } from "~/lib/values";
+import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
 import { Form, createZodForm } from "~/components/forms";
 import { InputField } from "~/components/forms/InputField";
 import { useAuthContext } from "~/app/(dash)";
@@ -130,16 +130,19 @@ function AuthenticationCard() {
               {(provider) => (
                 <div class="border-b">
                   <h1 class="text-xl">
-                    {authProviderDisplayName(provider.name)}
+                    {AUTH_PROVIDER_DISPLAY[provider.variant]}
                   </h1>
                   <p>
                     <a
-                      href={authProviderUrl(provider.name, provider.resourceId)}
+                      href={authProviderUrl(
+                        provider.variant,
+                        provider.remoteId
+                      )}
                       target="_blank"
                       rel="external"
                       class="hover:opacity-85 hover:underline"
                     >
-                      {provider.resourceId}
+                      {provider.remoteId}
                     </a>
                   </p>
 

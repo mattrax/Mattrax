@@ -1,4 +1,4 @@
-import { Suspense, startTransition } from "solid-js";
+import { ParentProps, Suspense, createSignal, startTransition } from "solid-js";
 import {
   createSolidTable,
   getCoreRowModel,
@@ -7,13 +7,29 @@ import {
   getFilteredRowModel,
   createColumnHelper,
 } from "@tanstack/solid-table";
-import { Button, Checkbox, Input } from "~/components/ui";
-import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { As } from "@kobalte/core";
-import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { useNavigate } from "@solidjs/router";
-import { useTenantContext } from "../../[tenantId]";
 import { RouterOutput } from "@mattrax/api";
+import { z } from "zod";
+
+import {
+  Badge,
+  Button,
+  Checkbox,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogRoot,
+  DialogTitle,
+  DialogTrigger,
+  Input,
+} from "~/components/ui";
+import { trpc, untrackScopeFromSuspense } from "~/lib";
+import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
+import { useTenantContext } from "../../[tenantId]";
+import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
+import { useZodParams } from "~/lib/useZodParams";
+import { Form, InputField, createZodForm } from "~/components/forms";
 
 const column = createColumnHelper<RouterOutput["user"]["list"][number]>();
 
@@ -60,8 +76,13 @@ export const columns = [
       );
     },
   }),
-  column.accessor("provider", {
+  column.accessor("provider.variant", {
     header: "Provider",
+    cell: (props) => (
+      <Badge variant="secondary">
+        {AUTH_PROVIDER_DISPLAY[props.getValue()]}
+      </Badge>
+    ),
   }),
   // TODO: Link to OAuth provider
   // TODO: Actions
@@ -107,7 +128,12 @@ export default function Page() {
 
   return (
     <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
-      <h1 class="text-3xl font-bold mb-4">Users</h1>
+      <div class="flex flex-row justify-between">
+        <h1 class="text-3xl font-bold mb-4">Users</h1>
+        <InviteUserDialog>
+          <As component={Button}>Invite User</As>
+        </InviteUserDialog>
+      </div>
       <div class="flex flex-row items-center gap-4">
         <Input
           placeholder={isLoading() ? "Loading..." : "Search..."}
@@ -156,5 +182,54 @@ export default function Page() {
         </div>
       </Suspense>
     </div>
+  );
+}
+
+function InviteUserDialog(props: ParentProps) {
+  const [open, setOpen] = createSignal(false);
+
+  const tenant = useTenantContext();
+  const mutation = trpc.user.invite.useMutation();
+
+  const form = createZodForm({
+    schema: z.object({ email: z.string().email() }),
+    onSubmit: async ({ value }) => {
+      await mutation.mutateAsync({
+        email: value.email,
+        tenantId: tenant.activeTenant.id,
+      });
+      setOpen(false);
+    },
+  });
+
+  return (
+    <DialogRoot
+      open={open()}
+      setOpen={(o) => {
+        if (o) form.setFieldValue("email", "");
+        setOpen(o);
+      }}
+    >
+      <DialogTrigger asChild>{props.children}</DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Invite User</DialogTitle>
+          <DialogDescription>
+            The user will receive an email with instructions on how to enroll
+            their device in this tenant.
+          </DialogDescription>
+        </DialogHeader>
+        <Form form={form} fieldsetClass="space-y-2">
+          <InputField
+            form={form}
+            type="email"
+            name="email"
+            placeholder="oscar@mattrax.app"
+            autocomplete="off"
+          />
+          <Button type="submit">Create</Button>
+        </Form>
+      </DialogContent>
+    </DialogRoot>
   );
 }

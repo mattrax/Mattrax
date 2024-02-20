@@ -113,14 +113,14 @@ export const msRouter = new Hono<HonoEnv>()
       .insert(tenantUserProvider)
       .values({
         name: "entraId",
-        resourceId: entraTenantId,
+        remoteId: entraTenantId,
         tenantPk: mttxTenantId,
       })
       // We don't care if it already exists so no need for that to cause an error.
       .onDuplicateKeyUpdate({
         // Drizzle requires at least one item or it will error.
         set: {
-          name: "entraId",
+          variant: "entraId",
         },
       });
 

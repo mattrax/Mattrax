@@ -12,8 +12,8 @@ export const tenantAuthRouter = createTRPCRouter({
     return await db
       .select({
         id: tenantUserProvider.pk,
-        resourceId: tenantUserProvider.resourceId,
-        name: tenantUserProvider.name,
+        remoteId: tenantUserProvider.remoteId,
+        variant: tenantUserProvider.variant,
         lastSynced: tenantUserProvider.lastSynced,
       })
       .from(tenantUserProvider)
@@ -85,12 +85,13 @@ export const tenantAuthRouter = createTRPCRouter({
     if (!tenantProvider)
       throw new Error(`Tenant '${ctx.tenantPk}' not found or has no providers`); // TODO: make an error the frontend can handle
 
-    const client = msGraphClient(tenantProvider.resourceId);
+    const client = msGraphClient(tenantProvider.remoteId);
 
     // TODO: Typescript with the client????
     // TODO: Pagination
 
     const result = await client.api("/users").get();
+    console.log(result);
 
     // TODO: This will cause users to build up. Really we want to upsert on `resourceId` but idk how to do that with a bulk-insert using Drizzle ORM.
     // TODO: Ensure `values` contains more than one value or skip the insert so it doesn't error out.
@@ -103,7 +104,7 @@ export const tenantAuthRouter = createTRPCRouter({
           email: u.mail,
           tenantPk: ctx.tenantPk,
           providerPk: tenantProvider.pk,
-          // resourceId: u.id, // TODO: Add this column
+          providerResourceId: u.id, // TODO: Add this column
         }))
     );
   }),

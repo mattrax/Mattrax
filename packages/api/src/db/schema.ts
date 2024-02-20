@@ -85,9 +85,12 @@ export const tenantAccountInvites = mysqlTable(
   })
 );
 
-const userProviders = ["entraId", "gsuite"] as const;
+const userProviderVariants = [
+  "entraId",
+  // "gsuite"
+] as const;
 
-export type UserProvider = (typeof userProviders)[number];
+export type UserProviderVariant = (typeof userProviderVariants)[number];
 
 // A link between a tenant and an external authentication provider.
 export const tenantUserProvider = mysqlTable(
@@ -95,9 +98,9 @@ export const tenantUserProvider = mysqlTable(
   {
     pk: serial("id").primaryKey(),
     id: cuid("cuid").notNull().unique(),
-    name: mysqlEnum("provider", userProviders).notNull(),
-    // This is the unique ID for the user in the provider's system.
-    resourceId: varchar("resourceId", { length: 256 }).notNull(),
+    variant: mysqlEnum("provider", userProviderVariants).notNull(),
+    // ID of the remote user provider
+    remoteId: varchar("resourceId", { length: 256 }).notNull(),
     tenantPk: serialRelation("tenantId")
       .references(() => tenants.pk)
       .notNull(),
@@ -105,7 +108,7 @@ export const tenantUserProvider = mysqlTable(
   },
   (table) => {
     return {
-      unique: unique().on(table.tenantPk, table.name, table.resourceId),
+      unique: unique().on(table.tenantPk, table.variant, table.remoteId),
     };
   }
 );
@@ -125,8 +128,8 @@ export const users = mysqlTable(
     providerPk: serialRelation("provider")
       .references(() => tenantUserProvider.pk)
       .notNull(),
-    // Resource ID within the provider's system.
-    // resourceId: varchar("resourceId", { length: 256 }).notNull(),
+    // ID of the user in the remove provider
+    providerResourceId: varchar("resourceId", { length: 256 }).notNull(),
     groupableVariant: mysqlEnum("groupableVariant", ["user"])
       .notNull()
       .default("user"),

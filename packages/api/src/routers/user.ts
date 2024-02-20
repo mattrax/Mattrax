@@ -1,6 +1,9 @@
 import { createTRPCRouter, tenantProcedure } from "../trpc";
-import { db, users } from "../db";
-import { eq } from "drizzle-orm";
+import { db, tenantUserProvider, users } from "../db";
+import { and, eq } from "drizzle-orm";
+import { z } from "zod";
+import { TRPCError } from "@trpc/server";
+import { sendEmail } from "../emails";
 
 export const userRouter = createTRPCRouter({
   // TODO: Copy after `devicesRouter`.
@@ -25,10 +28,67 @@ export const userRouter = createTRPCRouter({
           id: users.id,
           name: users.name,
           email: users.email,
-          provider: users.providerPk,
+          provider: {
+            variant: tenantUserProvider.variant,
+            remoteId: tenantUserProvider.remoteId,
+          },
         })
         .from(users)
         // TODO: Is user authorised to tenant
-        .where(eq(users.tenantPk, ctx.tenantPk));
+        .where(eq(users.tenantPk, ctx.tenantPk))
+        .innerJoin(
+          tenantUserProvider,
+          eq(users.providerPk, tenantUserProvider.pk)
+        );
+    }),
+  get: tenantProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return (
+        (
+          await db
+            .select({
+              id: users.id,
+              name: users.name,
+              email: users.email,
+              providerResourceId: users.providerResourceId,
+              provider: {
+                variant: tenantUserProvider.variant,
+                remoteId: tenantUserProvider.remoteId,
+              },
+            })
+            .from(users)
+            .where(
+              and(eq(users.tenantPk, ctx.tenantPk), eq(users.id, input.id))
+            )
+            .innerJoin(
+              tenantUserProvider,
+              eq(users.providerPk, tenantUserProvider.pk)
+            )
+        )[0] ?? null
+      );
+    }),
+  invite: tenantProcedure
+    .input(z.object({ email: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      if (
+        await db.query.users.findFirst({
+          where: and(
+            eq(users.tenantPk, ctx.tenantPk),
+            eq(users.email, input.email)
+          ),
+        })
+      )
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "User already exists",
+        });
+
+      await sendEmail({
+        type: "userEnrollmentInvite",
+        to: input.email,
+        subject: "Enroll your device to join Mattrax",
+        tenantName: ctx.tenant.name,
+      });
     }),
 });

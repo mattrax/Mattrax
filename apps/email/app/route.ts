@@ -6,6 +6,7 @@ import { AwsClient } from "aws4fetch";
 import { z } from "zod";
 
 import { TenantAdminInviteEmail, LoginCodeEmail } from "~/emails";
+import UserEnrollmentInvite from "~/emails/UserEnrollmentInvite";
 
 function optional_in_dev<T extends z.ZodTypeAny>(
   schema: T
@@ -53,6 +54,10 @@ const REQUEST_SCHEMA = z
         type: z.literal("loginCode"),
         code: z.string(),
       }),
+      z.object({
+        type: z.literal("userEnrollmentInvite"),
+        tenantName: z.string(),
+      }),
     ])
   );
 
@@ -83,6 +88,8 @@ export async function POST(req: NextRequest) {
     component = TenantAdminInviteEmail(args);
   } else if (args.type === "loginCode") {
     component = LoginCodeEmail(args);
+  } else if (args.type === "userEnrollmentInvite") {
+    component = UserEnrollmentInvite(args);
   } else {
     throw new Error(`Unknown email type`);
   }
