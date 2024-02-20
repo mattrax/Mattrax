@@ -92,6 +92,29 @@ export default function Page() {
           </div>
         </div>
       </div>
+
+      <div class="flex flex-col justify-center items-center pt-4 mb-5">
+        <p class="mt-6 text-lg leading-8 text-gray-600 text-center">
+          Follow us on{" "}
+          <a
+            href="https://twitter.com/mattraxapp"
+            class="underline underline-offset-2"
+            target="_blank"
+          >
+            @mattraxapp
+          </a>{" "}
+          for updates <br /> or
+          <br />{" "}
+          <a
+            href="https://cal.com/mattrax"
+            class="underline underline-offset-2"
+            target="_blank"
+          >
+            Setup a meeting
+          </a>{" "}
+          to discuss Mattrax.
+        </p>
+      </div>
       <div class="flex justify-center items-center pt-4 mb-5">
         <p>
           Developed by{" "}
