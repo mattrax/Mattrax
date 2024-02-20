@@ -11,6 +11,7 @@ import {
 import { As } from "@kobalte/core";
 import { useNavigate } from "@solidjs/router";
 import { z } from "zod";
+import { RouterOutput } from "@mattrax/api";
 
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import {
@@ -27,7 +28,6 @@ import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { Separator } from "~/components/ui";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { useTenantContext } from "../../[tenantId]";
-import { RouterOutput } from "@mattrax/api";
 
 const column = createColumnHelper<RouterOutput["policy"]["list"][number]>();
 

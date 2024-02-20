@@ -3,7 +3,7 @@ import { lazy } from "solid-js";
 
 import deviceRoutes from "./devices/[deviceId]/routes";
 import settingsRoutes from "./settings/routes";
-import policyRoutes from "./policies/[policyId]/routes";
+import policiesRoutes from "./policies/routes";
 import groupsRoutes from "./groups/routes";
 import { trpc } from "~/lib";
 
@@ -67,26 +67,7 @@ export default [
   },
   {
     path: "/policies",
-    children: [
-      {
-        path: "/",
-        component: lazy(() => import("./policies")),
-        load: ({ params }) => {
-          trpc.useContext().policy.list.ensureData({
-            tenantId: params.tenantId!,
-          });
-        },
-      },
-      {
-        path: "/:policyId",
-        load: ({ params }) =>
-          trpc.useContext().policy.get.ensureData({
-            policyId: params.policyId!,
-            tenantId: params.tenantId!,
-          }),
-        children: policyRoutes,
-      },
-    ],
+    children: policiesRoutes,
   },
   {
     path: "/groups",
