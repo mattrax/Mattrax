@@ -1,18 +1,9 @@
-import { RouterOutput } from "@mattrax/api";
-import {
-  createColumnHelper,
-  createSolidTable,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-} from "@tanstack/solid-table";
-import { Suspense } from "solid-js";
+import { For, Suspense } from "solid-js";
 import { z } from "zod";
 
-import { StandardTable } from "~/components/StandardTable";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -22,43 +13,124 @@ import {
 } from "~/components/ui";
 import { trpc } from "~/lib";
 import { useTenantContext } from "../../[tenantId]";
-
-const column =
-  createColumnHelper<
-    RouterOutput["tenant"]["administrators"]["list"][number]
-  >();
-
-const columns = [
-  column.accessor("name", {
-    header: "Name",
-  }),
-  column.accessor("email", {
-    header: "Email",
-  }),
-];
+import { useAuthContext } from "~/app/(dash)";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
 
 export default function Page() {
+  const auth = useAuthContext();
   const tenant = useTenantContext();
-  const administrators = trpc.tenant.administrators.list.useQuery(() => ({
+
+  const invites = trpc.tenant.admins.invites.useQuery(() => ({
+    tenantId: tenant.activeTenant.id,
+  }));
+  const administrators = trpc.tenant.admins.list.useQuery(() => ({
     tenantId: tenant.activeTenant.id,
   }));
 
-  const table = createSolidTable({
-    get data() {
-      return administrators.data || [];
-    },
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-  });
+  const removeInvite = trpc.tenant.admins.removeInvite.useMutation(() => ({
+    onSuccess: () => invites.refetch(),
+  }));
+  const removeAdmin = trpc.tenant.admins.remove.useMutation(() => ({
+    onSuccess: () => administrators.refetch(),
+  }));
 
   return (
     <div class="flex flex-col gap-4">
       <InviteAdminForm />
       <Suspense>
-        <StandardTable table={table} />
+        <ConfirmDialog>
+          {(confirm) => (
+            <ul class="rounded border border-gray-200 divide-y divide-gray-200">
+              <For each={invites.data}>
+                {(invite) => (
+                  <li class="p-4 flex flex-row justify-between">
+                    <div class="flex-1 flex flex-row space-x-4 items-center">
+                      <div class="flex flex-col text-sm">
+                        <span class="font-semibold text-yellow-700">
+                          Pending Invitation
+                        </span>
+                        <span class="text-gray-500">{invite.email}</span>
+                      </div>
+                    </div>
+                    <div>
+                      {auth.me.id === tenant.activeTenant.ownerId && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            confirm({
+                              title: "Remove Invite",
+                              description: (
+                                <>
+                                  Are you sure you want to remove the invite for{" "}
+                                  <b>{invite.email}</b>?
+                                </>
+                              ),
+                              action: "Remove",
+                              onConfirm: async () =>
+                                await removeInvite.mutateAsync({
+                                  tenantId: tenant.activeTenant.id,
+                                  email: invite.email,
+                                }),
+                            });
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  </li>
+                )}
+              </For>
+              <For each={administrators.data}>
+                {(admin) => (
+                  <li class="p-4 flex flex-row justify-between">
+                    <div class="flex-1 flex flex-row space-x-4 items-center">
+                      <div class="flex flex-col text-sm">
+                        <span class="font-semibold">{admin.name}</span>
+                        <span class="text-gray-500">{admin.email}</span>
+                      </div>
+                      {admin.isOwner && (
+                        <div>
+                          <Badge>Owner</Badge>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      {auth.me.id === tenant.activeTenant.ownerId &&
+                        !admin.isOwner && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => {
+                              confirm({
+                                title: "Remove Administrator",
+                                description: (
+                                  <>
+                                    Are you sure you want to remove{" "}
+                                    <b>{admin.email}</b> from this tenant's
+                                    administrators?
+                                  </>
+                                ),
+                                action: "Remove",
+                                onConfirm: async () =>
+                                  await removeAdmin.mutateAsync({
+                                    tenantId: tenant.activeTenant.id,
+                                    adminId: admin.id,
+                                  }),
+                              });
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        )}
+                    </div>
+                  </li>
+                )}
+              </For>
+            </ul>
+          )}
+        </ConfirmDialog>
       </Suspense>
     </div>
   );
@@ -66,7 +138,17 @@ export default function Page() {
 
 function InviteAdminForm() {
   const tenant = useTenantContext();
-  const inviteAdmin = trpc.tenant.administrators.sendInvite.useMutation();
+  const trpcCtx = trpc.useContext();
+
+  const inviteAdmin = trpc.tenant.admins.sendInvite.useMutation(() => ({
+    onSuccess: async () => {
+      await Promise.allSettled([
+        trpcCtx.tenant.admins.invites.refetch(),
+        trpcCtx.tenant.admins.list.refetch(),
+      ]);
+      form.setFieldValue("email", "");
+    },
+  }));
 
   const form = createZodForm({
     schema: z.object({ email: z.string().email() }),

@@ -70,14 +70,20 @@ export const tenantAccounts = mysqlTable(
   })
 );
 
-export const tenantAccountInvites = mysqlTable("tenant_account_invites", {
-  code: varchar("code", { length: 256 }).primaryKey(),
-  tenantPk: serialRelation("tenantId")
-    .references(() => tenants.pk)
-    .notNull(),
-  email: varchar("email", { length: 256 }).notNull(),
-  createdAt: timestamp("createdAt").defaultNow(),
-});
+export const tenantAccountInvites = mysqlTable(
+  "tenant_account_invites",
+  {
+    code: varchar("code", { length: 256 }).primaryKey(),
+    tenantPk: serialRelation("tenantId")
+      .references(() => tenants.pk)
+      .notNull(),
+    email: varchar("email", { length: 256 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow(),
+  },
+  (table) => ({
+    emailUnique: unique().on(table.tenantPk, table.email),
+  })
+);
 
 const userProviders = ["entraId", "gsuite"] as const;
 

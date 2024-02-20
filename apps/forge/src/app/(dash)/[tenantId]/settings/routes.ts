@@ -19,7 +19,7 @@ export default [
     path: "/administrators",
     component: lazy(() => import("./administrators")),
     load: ({ params }) => {
-      trpc.useContext().tenant.administrators.list.ensureData({
+      trpc.useContext().tenant.admins.list.ensureData({
         tenantId: params.tenantId!,
       });
     },

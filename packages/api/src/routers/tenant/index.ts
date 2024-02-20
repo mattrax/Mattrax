@@ -131,7 +131,7 @@ export const tenantRouter = createTRPCRouter({
     // TODO: Schedule all devices for unenrolment
   }),
 
-  administrators: adminsRouter,
+  admins: adminsRouter,
   billing: billingRouter,
   auth: tenantAuthRouter,
   domains: domainsRouter,

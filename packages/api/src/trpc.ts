@@ -116,6 +116,7 @@ export const tenantProcedure = authedProcedure
     return opts.next({
       ctx: {
         ...ctx,
+        tenant: query.tenant,
         tenantPk: query.tenant.pk,
       },
     });

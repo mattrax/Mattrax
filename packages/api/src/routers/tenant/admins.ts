@@ -1,6 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { generateId } from "lucia";
+import { appendResponseHeader } from "h3";
 
 import {
   accounts,
@@ -13,22 +15,19 @@ import { createTRPCRouter, publicProcedure, tenantProcedure } from "../../trpc";
 import { sendEmail } from "../../emails";
 import { env } from "../../env";
 import { lucia } from "../../auth";
-import { generateId } from "lucia";
-import { appendResponseHeader } from "h3";
 
 export const adminsRouter = createTRPCRouter({
   list: tenantProcedure.query(async ({ ctx }) => {
     const [ownerId, rows] = await Promise.allSettled([
       db
-        .select({
-          ownerId: tenants.ownerPk,
-        })
+        .select({ ownerId: accounts.id })
         .from(tenants)
         .where(eq(tenants.pk, ctx.tenantPk))
+        .innerJoin(accounts, eq(tenants.ownerPk, accounts.pk))
         .then((v) => v?.[0]?.ownerId),
       db
         .select({
-          id: accounts.pk,
+          id: accounts.id,
           name: accounts.name,
           email: accounts.email,
         })
@@ -49,12 +48,9 @@ export const adminsRouter = createTRPCRouter({
     .input(z.object({ email: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const tenant = await db.query.tenants.findFirst({
-        columns: {
-          name: true,
-        },
+        columns: { name: true },
         where: eq(tenants.pk, ctx.tenantPk),
       });
-
       if (!tenant)
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -63,11 +59,18 @@ export const adminsRouter = createTRPCRouter({
 
       const code = crypto.randomUUID();
 
+      // try {
       await db.insert(tenantAccountInvites).values({
         tenantPk: ctx.tenantPk,
         email: input.email,
         code,
       });
+      // } catch {
+      //   throw new TRPCError({
+      //     code: "PRECONDITION_FAILED",
+      //     message: "Invite already sent",
+      //   });
+      // }
 
       await sendEmail({
         to: input.email,
@@ -140,5 +143,49 @@ export const adminsRouter = createTRPCRouter({
         });
 
       return { id: tenant.id, name: tenant.name };
+    }),
+  remove: tenantProcedure
+    .input(z.object({ adminId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const account = await db.query.accounts.findFirst({
+        where: eq(accounts.id, input.adminId),
+      });
+      if (!account)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "account",
+        });
+
+      if (account.pk === ctx.tenant.ownerPk)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Cannot remove tenant owner",
+        });
+
+      await db
+        .delete(tenantAccounts)
+        .where(
+          and(
+            eq(tenantAccounts.accountPk, account.pk),
+            eq(tenantAccounts.tenantPk, ctx.tenantPk)
+          )
+        );
+    }),
+  invites: tenantProcedure.query(async ({ ctx }) => {
+    return await db.query.tenantAccountInvites.findMany({
+      where: eq(tenantAccountInvites.tenantPk, ctx.tenantPk),
+    });
+  }),
+  removeInvite: tenantProcedure
+    .input(z.object({ email: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await db
+        .delete(tenantAccountInvites)
+        .where(
+          and(
+            eq(tenantAccountInvites.tenantPk, ctx.tenantPk),
+            eq(tenantAccountInvites.email, input.email)
+          )
+        );
     }),
 });

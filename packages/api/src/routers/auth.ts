@@ -6,7 +6,13 @@ import { appendResponseHeader } from "vinxi/server";
 import { generateId } from "lucia";
 
 import { authedProcedure, createTRPCRouter, publicProcedure } from "../trpc";
-import { accounts, db, accountLoginCodes, tenants } from "../db";
+import {
+  accounts,
+  db,
+  accountLoginCodes,
+  tenants,
+  tenantAccounts,
+} from "../db";
 import { sendEmail } from "../emails";
 import { lucia } from "../auth";
 
@@ -17,14 +23,17 @@ type UserResult = {
   tenants: Awaited<ReturnType<typeof fetchTenants>>;
 };
 
-const fetchTenants = async (session_id: number) =>
+const fetchTenants = async (accountPk: number) =>
   await db
     .select({
       id: tenants.id,
       name: tenants.name,
+      ownerId: accounts.id,
     })
     .from(tenants)
-    .where(eq(tenants.ownerPk, session_id));
+    .where(eq(tenantAccounts.accountPk, accountPk))
+    .innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk))
+    .innerJoin(accounts, eq(tenants.ownerPk, accounts.pk));
 
 export const authRouter = createTRPCRouter({
   sendLoginCode: publicProcedure

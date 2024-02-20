@@ -1,5 +1,6 @@
 import { Show, Suspense, createResource } from "solid-js";
 import { z } from "zod";
+import { useAuthContext } from "~/app/(dash)";
 import {
   Card,
   CardDescription,
@@ -12,12 +13,14 @@ import { useZodParams } from "~/lib/useZodParams";
 export default function Page() {
   const params = useZodParams({ code: z.string() });
 
-  const acceptTenantInvite =
-    trpc.tenant.administrators.acceptInvite.useMutation();
+  const acceptTenantInvite = trpc.tenant.admins.acceptInvite.useMutation();
 
-  const [tenant] = createResource(
-    async () => await acceptTenantInvite.mutateAsync(params)
-  );
+  const trpcCtx = trpc.useContext();
+  const [tenant] = createResource(async () => {
+    const tenant = await acceptTenantInvite.mutateAsync(params);
+    await trpcCtx.auth.me.refetch();
+    return tenant;
+  });
 
   return (
     <Suspense fallback="Loading...">
