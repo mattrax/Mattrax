@@ -1,0 +1,41 @@
+name: Vercel Email
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/email/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/landing/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: "Deploy"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: pnpm i
+
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: prj_bxxgLnEGQNRkURcgnMmDOXNtKjSA
+          VERCEL_ORG_ID: St9DAPMLqW2wVV3u9XxhUcE1
+        run: |
+          args=()
+          if [ $GITHUB_REF = "main" ]; then
+              echo "Deploying as production build!"
+              args+=(--prod)
+          fi
+          npx vercel --token ${VERCEL_TOKEN} "${args[@]}"

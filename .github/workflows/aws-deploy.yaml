@@ -2,8 +2,7 @@ name: AWS Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - "aws/cloudformation.yaml"
   workflow_dispatch:

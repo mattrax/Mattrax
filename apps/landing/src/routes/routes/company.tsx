@@ -71,11 +71,11 @@ export default function Page() {
                   >
                     oscar@mattrax.app
                   </a>
-                  <p class="mt-1 text-base text-gray-600">Founder</p>
+                  <p class="mt-1 text-base text-gray-600">Co-founder</p>
                 </div>
               </div>
 
-              {/* <div class="flex">
+              <div class="flex">
                 <img
                   class="w-16 h-16 rounded-full"
                   src="https://gravatar.com/avatar/8dcfb438d50edbc0133b55391e0f43d77c4249021a46777fa15a1be16d7bdda3?size=512"
@@ -87,15 +87,13 @@ export default function Page() {
                   </h5>
                   <a
                     class="mt-1 text-base text-gray-500"
-                    href="mailto:oscar@mattrax.app"
+                    href="mailto:brendan@mattrax.app"
                   >
                     brendan@mattrax.app
                   </a>
-                  <p class="mt-1 text-base text-gray-600">
-                    Co-founder + developer
-                  </p>
+                  <p class="mt-1 text-base text-gray-600">Co-founder</p>
                 </div>
-              </div> */}
+              </div>
             </div>
 
             <p class="mt-6 text-lg leading-8 text-gray-600">
