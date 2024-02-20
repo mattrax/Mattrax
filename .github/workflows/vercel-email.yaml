@@ -34,7 +34,7 @@ jobs:
           VERCEL_ORG_ID: St9DAPMLqW2wVV3u9XxhUcE1
         run: |
           args=()
-          if [ $GITHUB_REF = "main" ]; then
+          if [ $GITHUB_REF_NAME = "main" ]; then
               echo "Deploying as production build!"
               args+=(--prod)
           fi
