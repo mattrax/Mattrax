@@ -1,4 +1,4 @@
-import { A, useNavigate } from "@solidjs/router";
+import { A, useNavigate, useParams as _useParams } from "@solidjs/router";
 import {
   type JSX,
   ParentProps,
@@ -12,6 +12,7 @@ import {
 import { As } from "@kobalte/core";
 import { toast } from "solid-sonner";
 import dayjs from "dayjs";
+import { z } from "zod";
 
 import { isDebugMode, trpc } from "~/lib";
 import {
@@ -38,7 +39,6 @@ import {
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { useTenantContext } from "~/app/(dash)/[tenantId]";
 import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
 
 // TODO: If the policy or version is not found redirect back to `/policies`
 
@@ -206,8 +206,6 @@ function PolicyVersionSwitcher() {
     policyId: params.policyId,
     tenantId: tenant.activeTenant.id,
   }));
-
-  createEffect(() => console.log(versions.data, activeVersion()));
 
   const activeVersion = () =>
     versions.data?.find((v) => v.id === params.versionId);
