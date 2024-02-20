@@ -9,7 +9,9 @@
   </p>
 </p>
 
-Mattrax MDM is a full device management solution with the ability to manage your organisations entire fleet from a single, well-crafted dashboard.
+<p align="center">
+  Mattrax MDM is a full device management solution with the ability to manage <br /> your organisations entire fleet from a single, well-crafted dashboard.
+</p>
 
 <br />
 

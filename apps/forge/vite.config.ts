@@ -8,6 +8,9 @@ import solid from "vite-plugin-solid";
 import { createHtmlPlugin } from "vite-plugin-html";
 import tsconfigPaths from "vite-tsconfig-paths";
 
+// Make sure env validation runs
+import "@mattrax/api";
+
 const monorepoRoot = path.join(__dirname, "../..");
 
 process.env = {
