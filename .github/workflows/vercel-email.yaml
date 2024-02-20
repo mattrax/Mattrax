@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - "apps/email/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/landing/**"
   workflow_dispatch:
 
 jobs:
@@ -22,9 +26,15 @@ jobs:
         run: pnpm i
 
       - name: Deploy to Vercel
-        run: npx vercel --token ${VERCEL_TOKEN} --prod
         working-directory: ./apps/email
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: prj_bxxgLnEGQNRkURcgnMmDOXNtKjSA
           VERCEL_ORG_ID: St9DAPMLqW2wVV3u9XxhUcE1
+        run: |
+          args=()
+          if [ $GITHUB_REF = "main" ]; then
+              echo "Deploying as production build!"
+              args+=(--prod)
+          fi
+          npx vercel --token ${VERCEL_TOKEN} "${args[@]}"
