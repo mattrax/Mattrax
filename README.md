@@ -1,6 +1,17 @@
-# Mattrax Forge
+<p align="center">
+  <p align="center">
+   <img width="150" height="150" src="apps/landing/public/logo-rounded.png" alt="Mattrax Logo">
+  </p>
+	<p align="center">
+		Mobile Device Management
+    <br />
+    <a href="https://mattrax.app"><strong>mattrax.app »</strong></a>
+  </p>
+</p>
 
-Device Management
+Mattrax MDM is a full device management solution with the ability to manage your organisations entire fleet from a single, well-crafted dashboard.
+
+<br />
 
 ## Usage
 
