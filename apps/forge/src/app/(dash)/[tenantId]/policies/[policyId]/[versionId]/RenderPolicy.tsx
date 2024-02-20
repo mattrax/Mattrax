@@ -59,14 +59,16 @@ export function RenderPolicy<P extends PolicyDefinition>(props: {
             <Select
               // value={value()}
               // onChange={setValue}
-              options={rest.options.map((option) => {
+              options={rest.options.map((option: any) => {
                 if (!(option instanceof z.ZodString))
                   throw new Error("Minor bruh moment");
                 return option.description;
               })}
               // placeholder="Select a fruit…"
               itemComponent={(props) => (
-                <SelectItem item={props.item}>{props.item.rawValue}</SelectItem>
+                <SelectItem item={props.item}>
+                  {props.item.rawValue as any}
+                </SelectItem>
               )}
             >
               <SelectTrigger aria-label="Fruit" class="w-[180px]">

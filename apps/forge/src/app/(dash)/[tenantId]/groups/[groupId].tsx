@@ -14,7 +14,7 @@ import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 
 export default function Page() {
-  const routeParams = useZodParams({ groupId: z.coerce.number() });
+  const routeParams = useZodParams({ groupId: z.string() });
 
   const tenant = useTenantContext();
   const group = trpc.group.get.useQuery(() => ({
@@ -65,7 +65,8 @@ const VariantDisplay = {
 type Variant = keyof typeof VariantDisplay;
 
 const columnHelper = createColumnHelper<{
-  id: number;
+  pk: number;
+  id: string;
   name: string;
   variant: Variant;
 }>();
@@ -99,7 +100,7 @@ const columns = [
   }),
 ];
 
-function createMembersTable(groupId: Accessor<number>) {
+function createMembersTable(groupId: Accessor<string>) {
   const tenant = useTenantContext();
   const members = trpc.group.members.useQuery(() => ({
     id: groupId(),
@@ -235,7 +236,7 @@ const AddMemberTableOptions = {
   policy: "Policies",
 };
 
-function AddMemberSheet(props: ParentProps & { groupId: number }) {
+function AddMemberSheet(props: ParentProps & { groupId: string }) {
   const [open, setOpen] = createSignal(false);
 
   const tenant = useTenantContext();
@@ -353,7 +354,7 @@ function AddMemberSheet(props: ParentProps & { groupId: number }) {
                       id: props.groupId,
                       tenantId: tenant.activeTenant.id,
                       members: table.getSelectedRowModel().rows.map((row) => ({
-                        id: row.original.id,
+                        pk: row.original.pk,
                         variant: row.original.variant,
                       })),
                     });

@@ -2,7 +2,6 @@ import { z } from "zod";
 import { createTRPCRouter, tenantProcedure } from "../trpc";
 import { db, users } from "../db";
 import { eq } from "drizzle-orm";
-import { encodeId } from "../utils";
 
 export const userRouter = createTRPCRouter({
   // TODO: Copy after `devicesRouter`.
@@ -30,6 +29,6 @@ export const userRouter = createTRPCRouter({
         })
         .from(users)
         // TODO: Is user authorised to tenant
-        .where(eq(users.tenantId, ctx.tenantId));
+        .where(eq(users.tenantPk, ctx.tenantPk));
     }),
 });

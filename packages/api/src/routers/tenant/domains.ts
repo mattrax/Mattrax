@@ -12,7 +12,7 @@ export const domainsRouter = createTRPCRouter({
   // TODO: Blocked on: https://github.com/drizzle-team/drizzle-orm/issues/1066
   // list: tenantProcedure.query(({ ctx }) =>
   //   db.query.domains.findMany({
-  //     where: eq(domains.tenantId, ctx.tenantId),
+  //     where: eq(domains.tenantPk, ctx.tenantPk),
   //     with: {
   //       certificate: {
   //         columns: {
@@ -27,7 +27,7 @@ export const domainsRouter = createTRPCRouter({
       .select()
       .from(domains)
       .leftJoin(certificates, eq(domains.domain, certificates.key))
-      .where(eq(domains.tenantId, ctx.tenantId));
+      .where(eq(domains.tenantPk, ctx.tenantPk));
 
     return results.map(({ certificates, domains }) => ({
       ...domains,
@@ -41,7 +41,7 @@ export const domainsRouter = createTRPCRouter({
       const secret = `mattrax:${crypto.randomUUID()}`;
 
       await db.insert(domains).values({
-        tenantId: ctx.tenantId,
+        tenantPk: ctx.tenantPk,
         domain: input.domain,
         secret,
       });
@@ -52,7 +52,7 @@ export const domainsRouter = createTRPCRouter({
       const domain = await db.query.domains.findFirst({
         where: and(
           eq(domains.domain, input.domain),
-          eq(domains.tenantId, ctx.tenantId),
+          eq(domains.tenantPk, ctx.tenantPk)
         ),
         // TODO: be aware this is not typesafe.
         // TODO: It will return `null`'s and Typescript won't save you.
@@ -102,21 +102,21 @@ export const domainsRouter = createTRPCRouter({
         try {
           const result = await fetch(
             `${env.MDM_URL}/internal/issue-cert?domain=${encodeURIComponent(
-              `enterpriseenrollment.${domain.domain}`,
+              `enterpriseenrollment.${domain.domain}`
             )}`,
             {
               method: "POST",
               headers: {
                 Authorization: `Bearer ${env.INTERNAL_SECRET}`,
               },
-            },
+            }
           );
           if (!result.ok)
             throw new Error(`request failed with status: ${result.status}`);
         } catch (err) {
           console.error(
             "Failed to contact MDM, to trigger certificate order: ",
-            err,
+            err
           );
         }
       }
@@ -129,8 +129,8 @@ export const domainsRouter = createTRPCRouter({
         .where(
           and(
             eq(domains.domain, input.domain),
-            eq(domains.tenantId, ctx.tenantId),
-          ),
+            eq(domains.tenantPk, ctx.tenantPk)
+          )
         );
     }),
 });
@@ -162,7 +162,7 @@ const CF_DNS_RESPONSE_SCHEMA = z.object({
       type: z.number(),
       TTL: z.number(),
       data: z.string(),
-    }),
+    })
   ),
 });
 

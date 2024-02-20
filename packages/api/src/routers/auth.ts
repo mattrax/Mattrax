@@ -20,7 +20,7 @@ type UserResult = {
 const fetchTenants = async (session_id: number) =>
   await db
     .select({
-      id: tenants.pk,
+      id: tenants.id,
       name: tenants.name,
     })
     .from(tenants)
@@ -100,7 +100,7 @@ export const authRouter = createTRPCRouter({
     }),
   me: authedProcedure.query(async ({ ctx: { account } }) => {
     return {
-      id: account.pk,
+      id: account.id,
       name: account.name,
       email: account.email,
       tenants: await fetchTenants(account.pk),

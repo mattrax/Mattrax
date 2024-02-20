@@ -9,9 +9,9 @@ export default [
     load: ({ params }) => {
       trpc
         .useContext()
-        .tenant.auth.query.ensureData({ tenantId: parseInt(params.tenantId!) });
+        .tenant.auth.query.ensureData({ tenantId: params.tenantId! });
       trpc.useContext().tenant.enrollmentInfo.ensureData({
-        tenantId: parseInt(params.tenantId!),
+        tenantId: params.tenantId!,
       });
     },
   },
@@ -20,7 +20,7 @@ export default [
     component: lazy(() => import("./administrators")),
     load: ({ params }) => {
       trpc.useContext().tenant.administrators.list.ensureData({
-        tenantId: parseInt(params.tenantId!),
+        tenantId: params.tenantId!,
       });
     },
   },
@@ -29,7 +29,7 @@ export default [
     component: lazy(() => import("./domains")),
     load: ({ params }) => {
       trpc.useContext().tenant.domains.list.ensureData({
-        tenantId: parseInt(params.tenantId!),
+        tenantId: params.tenantId!,
       });
     },
   },

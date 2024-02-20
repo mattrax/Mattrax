@@ -2,7 +2,7 @@ import { z } from "zod";
 import { count, eq } from "drizzle-orm";
 
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../../trpc";
-import { encodeId, promiseObjectAll } from "../../utils";
+import { promiseObjectAll } from "../../utils";
 import {
   applications,
   db,
@@ -17,31 +17,38 @@ import { billingRouter } from "./billing";
 import { tenantAuthRouter } from "./auth";
 import { domainsRouter } from "./domains";
 import { adminsRouter } from "./admins";
+import { TRPCError } from "@trpc/server";
 
 export const tenantRouter = createTRPCRouter({
   create: authedProcedure
     .input(z.object({ name: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const lastInsertId = await db.transaction(async (db) => {
+      const tenant = await db.transaction(async (db) => {
         const result = await db.insert(tenants).values({
           name: input.name,
           ownerPk: ctx.account.pk,
         });
-        const tenantId = parseInt(result.insertId);
+        const tenantPk = parseInt(result.insertId);
 
         await db.insert(tenantAccounts).values({
-          tenantId,
+          tenantPk,
           accountPk: ctx.account.pk,
         });
 
-        return tenantId;
+        return await db.query.tenants.findFirst({
+          where: eq(tenants.pk, tenantPk),
+        });
       });
+
+      if (tenant === undefined)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create tenant",
+        });
 
       // TODO: Invalidate `tenants`
 
-      return {
-        id: lastInsertId,
-      };
+      return tenant;
     }),
 
   edit: tenantProcedure
@@ -60,7 +67,7 @@ export const tenantRouter = createTRPCRouter({
             name: input.name,
           }),
         })
-        .where(eq(tenants.pk, ctx.tenantId));
+        .where(eq(tenants.pk, ctx.tenantPk));
     }),
 
   enrollmentInfo: tenantProcedure.query(async ({ ctx }) =>
@@ -69,7 +76,7 @@ export const tenantRouter = createTRPCRouter({
         enrollmentEnabled: tenants.enrollmentEnabled,
       })
       .from(tenants)
-      .where(eq(tenants.pk, ctx.tenantId))
+      .where(eq(tenants.pk, ctx.tenantPk))
       .then((rows) => rows[0])
   ),
 
@@ -81,7 +88,7 @@ export const tenantRouter = createTRPCRouter({
         .set({
           enrollmentEnabled: input.enrollmentEnabled,
         })
-        .where(eq(tenants.pk, ctx.tenantId))
+        .where(eq(tenants.pk, ctx.tenantPk))
     ),
 
   stats: tenantProcedure.query(({ ctx }) =>
@@ -89,27 +96,27 @@ export const tenantRouter = createTRPCRouter({
       devices: db
         .select({ count: count() })
         .from(devices)
-        .where(eq(devices.tenantId, ctx.tenantId))
+        .where(eq(devices.tenantPk, ctx.tenantPk))
         .then((rows) => rows[0]!.count),
       users: db
         .select({ count: count() })
         .from(users)
-        .where(eq(users.tenantId, ctx.tenantId))
+        .where(eq(users.tenantPk, ctx.tenantPk))
         .then((rows) => rows[0]!.count),
       policies: db
         .select({ count: count() })
         .from(policies)
-        .where(eq(policies.tenantId, ctx.tenantId))
+        .where(eq(policies.tenantPk, ctx.tenantPk))
         .then((rows) => rows[0]!.count),
       applications: db
         .select({ count: count() })
         .from(applications)
-        .where(eq(applications.tenantId, ctx.tenantId))
+        .where(eq(applications.tenantPk, ctx.tenantPk))
         .then((rows) => rows[0]!.count),
       groups: db
         .select({ count: count() })
         .from(groups)
-        .where(eq(groups.tenantId, ctx.tenantId))
+        .where(eq(groups.tenantPk, ctx.tenantPk))
         .then((rows) => rows[0]!.count),
     })
   ),
@@ -118,13 +125,13 @@ export const tenantRouter = createTRPCRouter({
     // TODO: Ensure no outstanding bills
 
     await db.transaction(async (db) => {
-      await db.delete(tenants).where(eq(tenants.pk, ctx.tenantId));
+      await db.delete(tenants).where(eq(tenants.pk, ctx.tenantPk));
       await db
         .delete(tenantAccounts)
-        .where(eq(tenantAccounts.tenantId, ctx.tenantId));
-      await db.delete(users).where(eq(users.tenantId, ctx.tenantId));
-      await db.delete(policies).where(eq(policies.tenantId, ctx.tenantId));
-      await db.delete(devices).where(eq(devices.tenantId, ctx.tenantId)); // TODO: Don't do this
+        .where(eq(tenantAccounts.tenantPk, ctx.tenantPk));
+      await db.delete(users).where(eq(users.tenantPk, ctx.tenantPk));
+      await db.delete(policies).where(eq(policies.tenantPk, ctx.tenantPk));
+      await db.delete(devices).where(eq(devices.tenantPk, ctx.tenantPk)); // TODO: Don't do this
     });
 
     // TODO: Schedule all devices for unenrolment

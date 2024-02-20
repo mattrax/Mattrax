@@ -5,8 +5,7 @@ import { getCookie, appendResponseHeader, H3Event } from "vinxi/server";
 import { User } from "lucia";
 import { and, eq } from "drizzle-orm";
 
-import { db, tenantAccounts } from "./db";
-import { decodeId } from "./utils";
+import { db, tenantAccounts, tenants } from "./db";
 import { lucia } from "./auth";
 import { HonoEnv } from "./types";
 
@@ -91,18 +90,24 @@ export const superAdminProcedure = authedProcedure.use((opts) => {
 
 // Authenticated procedure w/ a tenant
 export const tenantProcedure = authedProcedure
-  .input(z.object({ tenantId: z.number() }))
+  .input(z.object({ tenantId: z.string() }))
   .use(async (opts) => {
     const { ctx, input } = opts;
 
-    const tenantAccount = await db.query.tenantAccounts.findFirst({
-      where: and(
-        eq(tenantAccounts.tenantId, input.tenantId),
-        eq(tenantAccounts.accountPk, ctx.account.pk)
-      ),
-    });
+    const query = (
+      await db
+        .select()
+        .from(tenants)
+        .where(
+          and(
+            eq(tenants.id, input.tenantId),
+            eq(tenantAccounts.accountPk, ctx.account.pk)
+          )
+        )
+        .innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk))
+    )[0];
 
-    if (tenantAccount === undefined)
+    if (query === undefined)
       throw new TRPCError({
         code: "FORBIDDEN",
         message: "tenant",
@@ -111,7 +116,7 @@ export const tenantProcedure = authedProcedure
     return opts.next({
       ctx: {
         ...ctx,
-        tenantId: input.tenantId,
+        tenantPk: query.tenant.pk,
       },
     });
   });

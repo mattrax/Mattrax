@@ -4,7 +4,6 @@ import { createId } from "@paralleldrive/cuid2";
 
 import { db, tenantUserProvider, users } from "../../db";
 import { createTRPCRouter, tenantProcedure } from "../../trpc";
-import { decodeId } from "../../utils";
 import { env } from "../..";
 import { msGraphClient } from "../../microsoft";
 
@@ -18,7 +17,7 @@ export const tenantAuthRouter = createTRPCRouter({
         lastSynced: tenantUserProvider.lastSynced,
       })
       .from(tenantUserProvider)
-      .where(eq(tenantUserProvider.tenantId, ctx.tenantId));
+      .where(eq(tenantUserProvider.tenantPk, ctx.tenantPk));
   }),
 
   linkEntra: tenantProcedure.mutation(async ({ ctx }) => {
@@ -28,7 +27,7 @@ export const tenantAuthRouter = createTRPCRouter({
     await ctx.env.session.update({
       ...ctx.env.session.data,
       oauthData: {
-        tenant: ctx.tenantId,
+        tenant: ctx.tenantPk,
         state,
       },
     });
@@ -63,7 +62,7 @@ export const tenantAuthRouter = createTRPCRouter({
           .delete(tenantUserProvider)
           .where(
             and(
-              eq(tenantUserProvider.tenantId, ctx.tenantId),
+              eq(tenantUserProvider.tenantPk, ctx.tenantPk),
               eq(tenantUserProvider.pk, input.id)
             )
           );
@@ -81,10 +80,10 @@ export const tenantAuthRouter = createTRPCRouter({
       await db
         .select()
         .from(tenantUserProvider)
-        .where(eq(tenantUserProvider.tenantId, ctx.tenantId))
+        .where(eq(tenantUserProvider.tenantPk, ctx.tenantPk))
     )?.[0]; // TODO: Run a sync for each provider cause we can have more than one.
     if (!tenantProvider)
-      throw new Error(`Tenant '${ctx.tenantId}' not found or has no providers`); // TODO: make an error the frontend can handle
+      throw new Error(`Tenant '${ctx.tenantPk}' not found or has no providers`); // TODO: make an error the frontend can handle
 
     const client = msGraphClient(tenantProvider.resourceId);
 
@@ -102,7 +101,7 @@ export const tenantAuthRouter = createTRPCRouter({
         .map((u: any) => ({
           name: u.displayName,
           email: u.mail,
-          tenantId: ctx.tenantId,
+          tenantPk: ctx.tenantPk,
           provider: tenantProvider.id,
           // resourceId: u.id, // TODO: Add this column
         }))

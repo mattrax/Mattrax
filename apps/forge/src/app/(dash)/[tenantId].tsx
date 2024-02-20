@@ -1,4 +1,4 @@
-import { Navigate, useNavigate, useParams } from "@solidjs/router";
+import { Navigate, useNavigate } from "@solidjs/router";
 import {
   createMemo,
   ParentProps,
@@ -8,12 +8,12 @@ import {
 } from "solid-js";
 import { createContextProvider } from "@solid-primitives/context";
 import { RouterOutput } from "@mattrax/api";
+import { z } from "zod";
 
 import { SuspenseError } from "~/lib";
 import { useAuthContext } from "../(dash)";
 import TopNav from "~/components/TopNav";
 import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
 
 export const [TenantContextProvider, useTenantContext] = createContextProvider(
   (props: { activeTenant: RouterOutput["auth"]["me"]["tenants"][number] }) =>
@@ -23,7 +23,7 @@ export const [TenantContextProvider, useTenantContext] = createContextProvider(
 
 export default function Layout(props: ParentProps) {
   const params = useZodParams({
-    tenantId: z.coerce.number(),
+    tenantId: z.string(),
   });
   const auth = useAuthContext();
   const navigate = useNavigate();
@@ -32,7 +32,7 @@ export default function Layout(props: ParentProps) {
     auth.me.tenants.find((t) => t.id === params.tenantId)
   );
 
-  function setTenantId(id: number) {
+  function setTenantId(id: string) {
     startTransition(() => navigate(`/${id}`));
   }
 

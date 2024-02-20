@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { getCookie } from "vinxi/server";
 
 import { db, tenantUserProvider } from "../db";
-import { encodeId } from "../utils";
 import { env } from "../env";
 import { z } from "zod";
 import { lucia } from "../auth";
@@ -115,7 +114,7 @@ export const msRouter = new Hono<HonoEnv>()
       .values({
         name: "entraId",
         resourceId: entraTenantId,
-        tenantId: mttxTenantId,
+        tenantPk: mttxTenantId,
       })
       // We don't care if it already exists so no need for that to cause an error.
       .onDuplicateKeyUpdate({

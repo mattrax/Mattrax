@@ -13,7 +13,7 @@ export default [
     component: lazy(() => import("./index")),
     load: ({ params }) => {
       trpc.useContext().tenant.stats.ensureData({
-        tenantId: parseInt(params.tenantId!),
+        tenantId: params.tenantId!,
       });
     },
   },
@@ -25,7 +25,7 @@ export default [
         component: lazy(() => import("./users")),
         load: ({ params }) => {
           trpc.useContext().user.list.ensureData({
-            tenantId: parseInt(params.tenantId!),
+            tenantId: params.tenantId!,
           });
         },
       },
@@ -56,7 +56,7 @@ export default [
         component: lazy(() => import("./devices")),
         load: ({ params }) => {
           trpc.useContext().device.list.ensureData({
-            tenantId: parseInt(params.tenantId!),
+            tenantId: params.tenantId!,
           });
         },
       },
@@ -75,7 +75,7 @@ export default [
         component: lazy(() => import("./policies")),
         load: ({ params }) => {
           trpc.useContext().policy.list.ensureData({
-            tenantId: parseInt(params.tenantId!),
+            tenantId: params.tenantId!,
           });
         },
       },
@@ -84,7 +84,7 @@ export default [
         load: ({ params }) =>
           trpc.useContext().policy.get.ensureData({
             policyId: parseInt(params.policyId!),
-            tenantId: parseInt(params.tenantId!),
+            tenantId: params.tenantId!,
           }),
         children: policyRoutes,
       },

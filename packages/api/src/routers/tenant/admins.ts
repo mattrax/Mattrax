@@ -10,7 +10,6 @@ import {
   tenants,
 } from "../../db";
 import { createTRPCRouter, publicProcedure, tenantProcedure } from "../../trpc";
-import { encodeId } from "../../utils";
 import { sendEmail } from "../../emails";
 import { env } from "../../env";
 import { lucia } from "../../auth";
@@ -25,7 +24,7 @@ export const adminsRouter = createTRPCRouter({
           ownerId: tenants.ownerPk,
         })
         .from(tenants)
-        .where(eq(tenants.pk, ctx.tenantId))
+        .where(eq(tenants.pk, ctx.tenantPk))
         .then((v) => v?.[0]?.ownerId),
       db
         .select({
@@ -35,7 +34,7 @@ export const adminsRouter = createTRPCRouter({
         })
         .from(accounts)
         .leftJoin(tenantAccounts, eq(tenantAccounts.accountPk, accounts.pk))
-        .where(eq(tenantAccounts.tenantId, ctx.tenantId)),
+        .where(eq(tenantAccounts.tenantPk, ctx.tenantPk)),
     ]);
     // This is required. If the owner is not found, we gracefully continue.
     if (rows.status === "rejected") throw rows.reason;
@@ -53,7 +52,7 @@ export const adminsRouter = createTRPCRouter({
         columns: {
           name: true,
         },
-        where: eq(tenants.pk, ctx.tenantId),
+        where: eq(tenants.pk, ctx.tenantPk),
       });
 
       if (!tenant)
@@ -65,7 +64,7 @@ export const adminsRouter = createTRPCRouter({
       const code = crypto.randomUUID();
 
       await db.insert(tenantAccountInvites).values({
-        tenantId: ctx.tenantId,
+        tenantPk: ctx.tenantPk,
         email: input.email,
         code,
       });
@@ -115,7 +114,7 @@ export const adminsRouter = createTRPCRouter({
 
       await db.transaction(async (db) => {
         await db.insert(tenantAccounts).values({
-          tenantId: invite.tenantId,
+          tenantPk: invite.tenantPk,
           accountPk: accountPk,
         });
 
@@ -132,7 +131,7 @@ export const adminsRouter = createTRPCRouter({
       );
 
       const tenant = await db.query.tenants.findFirst({
-        where: eq(tenants.pk, invite.tenantId),
+        where: eq(tenants.pk, invite.tenantPk),
       });
       if (!tenant)
         throw new TRPCError({

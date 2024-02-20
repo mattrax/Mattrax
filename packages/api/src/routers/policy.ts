@@ -2,7 +2,6 @@ import { z } from "zod";
 import { createTRPCRouter, tenantProcedure } from "../trpc";
 import { db, devices, policies, policyVersions, tenantAccounts } from "../db";
 import { and, eq } from "drizzle-orm";
-import { decodeId, encodeId } from "../utils";
 import { getMdm } from "../mdm";
 import { buildApplePolicy } from "@mattrax/policy";
 
@@ -21,7 +20,7 @@ export const policyRouter = createTRPCRouter({
       })
       .from(policies)
       // .leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.id))
-      .where(eq(policies.tenantId, ctx.tenantId));
+      .where(eq(policies.tenantPk, ctx.tenantPk));
   }),
 
   get: tenantProcedure
@@ -112,7 +111,7 @@ export const policyRouter = createTRPCRouter({
       db.transaction(async (db) => {
         const result = await db.insert(policies).values({
           name: input.name,
-          tenantId: ctx.tenantId,
+          tenantPk: ctx.tenantPk,
         });
         const policyInsertId = parseInt(result.insertId);
         await db.insert(policyVersions).values({

@@ -8,7 +8,7 @@ export default [
     component: lazy(() => import("./index")),
     load: ({ params }) => {
       trpc.useContext().group.list.ensureData({
-        tenantId: parseInt(params.tenantId!),
+        tenantId: params.tenantId!,
       });
     },
   },
@@ -17,8 +17,8 @@ export default [
     component: lazy(() => import("./[groupId]")),
     load: ({ params }) =>
       trpc.useContext().group.get.ensureData({
-        id: parseInt(params.groupId!),
-        tenantId: parseInt(params.tenantId!),
+        id: params.groupId!,
+        tenantId: params.tenantId!,
       }),
   },
 ] satisfies RouteDefinition[];

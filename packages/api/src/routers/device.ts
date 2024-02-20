@@ -3,7 +3,6 @@ import { and, eq } from "drizzle-orm";
 
 import { createTRPCRouter, tenantProcedure } from "../trpc";
 import { db, devices } from "../db";
-import { encodeId } from "../utils";
 // import { graphClient } from "../microsoft";
 // import type { ManagedDevice } from "@microsoft/microsoft-graph-types";
 
@@ -21,7 +20,7 @@ export const deviceRouter = createTRPCRouter({
           enrolledAt: devices.enrolledAt,
         })
         .from(devices)
-        .where(and(eq(devices.tenantId, ctx.tenantId)))
+        .where(and(eq(devices.tenantPk, ctx.tenantPk)))
     ).map((d) => ({
       ...d,
       id: "device",
