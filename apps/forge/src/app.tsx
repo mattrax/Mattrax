@@ -161,7 +161,7 @@ export default function App() {
               // >
 
               <>
-                {isDebugMode() ? <SolidQueryDevtools /> : null}
+                {import.meta.env.DEV && <SolidQueryDevtools />}
                 <ErrorBoundary
                   fallback={(err, reset) => {
                     // Solid Start + HMR is buggy as all hell so this hacks around it.

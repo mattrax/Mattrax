@@ -2,6 +2,8 @@ import { A, useMatch, useResolvedPath } from "@solidjs/router";
 import { For, JSX } from "solid-js";
 import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
 import { As, Tabs } from "@kobalte/core";
+import { useAuthContext } from "~/app/(dash)";
+import { Button } from "../ui";
 
 type NavbarItem = {
   icon: (props: { class: string }) => JSX.Element;
@@ -53,45 +55,18 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 
   const tabValue = () => value()?.params.rest?.split("/")[0];
 
+  const auth = useAuthContext();
+
   return (
     <>
-      <div class="relative flex flex-row">
-        <div class="flex flex-row items-center gap-2">
-          <h1 class="px-3 py-1 text-white text-center text-3xl bg-brand rounded m-2">
-            MATTRAX
-          </h1>
-          <TenantSwitcher {...props} />
-          {import.meta.env.MODE === "development" && (
-            <>
-              <a
-                class="bg-orange-500 px-3 py-1 rounded text-white"
-                href="internal"
-              >
-                Internal
-              </a>
-              <button
-                class="bg-orange-400 px-3 py-1 rounded text-white"
-                onClick={() => {
-                  alert(
-                    `Debug mode ${
-                      localStorage.getItem("mttxDebug") === "1"
-                        ? "disabled"
-                        : "enabled"
-                    }!`
-                  );
-                  if (localStorage.getItem("mttxDebug") === "1") {
-                    localStorage.removeItem("mttxDebug");
-                  } else {
-                    localStorage.setItem("mttxDebug", "1");
-                  }
-                  globalThis.location.reload();
-                }}
-              >
-                Debug
-              </button>
-            </>
-          )}
-        </div>
+      <div class="relative flex flex-row items-center pr-4 gap-2">
+        <h1 class="px-3 py-1 text-white text-center text-3xl bg-brand rounded m-2">
+          MATTRAX
+        </h1>
+        <TenantSwitcher {...props} />
+        <div class="flex-1" />
+        <span class="font-medium">{auth.me.name}</span>
+        <Button variant="destructive">Log Out</Button>
       </div>
 
       <nav class="text-white sticky border-b border-gray-300 top-0 z-10 bg-white">

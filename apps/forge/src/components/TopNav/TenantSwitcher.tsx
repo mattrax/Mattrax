@@ -29,7 +29,7 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
   const controller = createController();
 
   return (
-    <div class="w-full relative inline-block text-left">
+    <div class="relative inline-block text-left">
       {/* DialogRoot must be outside the dropdown menu so it's not unrendered when the menu is closed */}
       <DialogRoot>
         <DropdownMenu controller={controller} sameWidth>

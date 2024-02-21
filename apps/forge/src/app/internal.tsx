@@ -1,6 +1,5 @@
 import { useNavigate } from "@solidjs/router";
 import { For, createEffect } from "solid-js";
-import { Button } from "~/components/ui";
 import { isTRPCClientError, trpc } from "~/lib";
 
 export default function Page() {
