@@ -209,6 +209,33 @@ export default function Page() {
                             );
                           }}
                         </Show>
+
+                        <DialogRoot>
+                          <DialogTrigger asChild>
+                            <As
+                              component={Button}
+                              variant="outline"
+                              size="iconSmall"
+                            >
+                              ?
+                            </As>
+                          </DialogTrigger>
+                          <DialogContent class="max-w-3xl">
+                            <DialogHeader>
+                              <DialogTitle>Domain Verification</DialogTitle>
+                              <DialogDescription>
+                                Verify that you control{" "}
+                                <code>{domain.domain}</code> by adding a TXT
+                                record with containing the domain's verification
+                                secret. This will permit Mattrax to issue SSL
+                                certificates for this domain.
+                              </DialogDescription>
+                            </DialogHeader>
+                            <code>
+                              {`TXT ${domain.domain} ${domain.secret}`}
+                            </code>
+                          </DialogContent>
+                        </DialogRoot>
                       </div>
 
                       <Label>Windows Automatic Enrollment</Label>
