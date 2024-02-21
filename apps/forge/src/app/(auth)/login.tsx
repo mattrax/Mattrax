@@ -14,12 +14,12 @@ export default function Page() {
   >({ variant: "sendCode" });
 
   return (
-    <div class="flex flex-row justify-center p-4">
-      <Card class="max-w-lg w-full">
+    <div class="h-full flex flex-row justify-center p-4">
+      <Card class="max-w-md min-h-0 w-full self-center">
         <CardHeader>
           <div class="sm:mx-auto sm:w-full sm:max-w-md flex items-center justify-center">
             <h2 class="mt-4 text-center text-2xl font-bold leading-9 tracking-tight text-gray-900">
-              Forge
+              Mattrax
             </h2>
             <span class="ml-2 inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
               Alpha
@@ -53,7 +53,8 @@ export default function Page() {
                       form={form}
                       type="email"
                       name="email"
-                      placeholder="oscar@otbeaumont.me"
+                      placeholder="user@example.com"
+                      autocomplete="email"
                     />
 
                     <Button type="submit" class="w-full">
@@ -83,19 +84,19 @@ export default function Page() {
                 });
 
                 return (
-                  <Form
-                    form={form}
-                    fieldsetClass="space-y-2 text-center"
-                    autocomplete="off"
-                  >
+                  <Form form={form} fieldsetClass="space-y-2 text-center">
                     <p>
                       Enter the code sent to <b>{state().email}</b>
                     </p>
                     <InputField
                       form={form}
-                      type="string"
+                      type="text"
                       name="code"
                       class="text-center font-mono"
+                      autocomplete="one-time-code"
+                      inputmode="numeric"
+                      maxlength="8"
+                      pattern="\d{8}"
                     />
 
                     <Button type="submit" class="w-full">
