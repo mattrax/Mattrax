@@ -1,5 +1,4 @@
-import path from "node:path";
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig } from "vite";
 import Icons from "unplugin-icons/vite";
 import IconsResolver from "unplugin-icons/resolver";
 import AutoImport from "unplugin-auto-import/vite";
@@ -9,14 +8,8 @@ import { createHtmlPlugin } from "vite-plugin-html";
 import tsconfigPaths from "vite-tsconfig-paths";
 
 // Make sure env validation runs
+import { monorepoRoot } from "./loadEnv";
 import "@mattrax/api";
-
-const monorepoRoot = path.join(__dirname, "../..");
-
-process.env = {
-  ...process.env,
-  ...loadEnv("production", monorepoRoot, ""),
-};
 
 export default defineConfig((config) => ({
   envDir: monorepoRoot,
