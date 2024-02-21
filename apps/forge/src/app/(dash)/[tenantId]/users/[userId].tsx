@@ -1,27 +1,19 @@
 import { z } from "zod";
 import { toast } from "solid-sonner";
-import { A, Navigate, useResolvedPath } from "@solidjs/router";
-import { Show, createEffect } from "solid-js";
+import { A, Navigate } from "@solidjs/router";
+import { Show } from "solid-js";
 
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 import { useTenantContext } from "../../[tenantId]";
 import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
 import { Badge, buttonVariants } from "~/components/ui";
-import { Breadcrumb, createBreadcrumb } from "~/components/Breadcrumbs";
+import { createBreadcrumb } from "~/components/Breadcrumbs";
 
 function UserNotFound() {
   toast.error("User not found");
   // necessary since '..' adds trailing slash -_-
   return <Navigate href="../../users" />;
-}
-
-function Bruh() {
-  const matches = useResolvedPath(() => "");
-
-  createEffect(() => console.log(matches()));
-
-  return null;
 }
 
 export default function Page() {

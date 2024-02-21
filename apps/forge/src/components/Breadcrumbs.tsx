@@ -29,11 +29,9 @@ export function Breadcrumbs() {
 export function createBreadcrumb(jsx: JSX.Element) {
   const { setBreadcrumbs } = useBreadcrumbContext();
 
-  onMount(() => {
-    setBreadcrumbs((prev) => [...prev, jsx]);
+  setBreadcrumbs((prev) => [...prev, jsx]);
 
-    onCleanup(() => {
-      setBreadcrumbs((p) => p.filter((j) => j !== jsx));
-    });
+  onCleanup(() => {
+    setBreadcrumbs((p) => p.filter((j) => j !== jsx));
   });
 }
