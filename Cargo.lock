@@ -381,6 +381,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
+name = "base91"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4eb5fbae7b5ee422f239444a3dca9bdf5ecb3abf3af1bf87c8097db3f7bc025"
+
+[[package]]
+name = "better-acme"
+version = "0.0.1"
+dependencies = [
+ "async-trait",
+ "base91",
+ "chrono",
+ "futures",
+ "pem",
+ "rustls 0.22.2",
+ "rustls-acme",
+ "sha2",
+ "tokio",
+ "x509-parser",
+]
+
+[[package]]
 name = "bigdecimal"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1490,9 +1512,11 @@ version = "0.0.1"
 dependencies = [
  "axum",
  "base64",
+ "better-acme",
  "chrono",
  "clap",
  "futures",
+ "futures-rustls",
  "getrandom",
  "hex",
  "hyper",
@@ -1502,7 +1526,6 @@ dependencies = [
  "mysql_common",
  "rcgen 0.13.0",
  "rustls 0.22.2",
- "rustls-acme",
  "serde",
  "serde_json",
  "sha1",

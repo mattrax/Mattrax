@@ -8,14 +8,15 @@ default-run = "mattrax"
 
 [dependencies]
 mattrax-utils = { path = "../../crates/utils" }
+better-acme = { path = "../../crates/better-acme" }
 
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
 clap = { version = "4.5.0", features = ["derive"] }
 axum = { version = "0.7.4", features = ["http2", "macros", "ws"] }
-rustls-acme = { version = "0.9.2", features = ["tokio"] }
 rustls = "0.22.2"
+futures-rustls = "0.25.1"
 tower = "0.4.13"
 hyper = { version = "1.1.0", features = ["http1", "http2", "server"] }
 tokio-util = { version = "0.7.10", features = ["compat"] }

@@ -1,127 +1,39 @@
-use std::{io::ErrorKind, path::PathBuf};
+use std::io::ErrorKind;
 
-use axum::async_trait;
+use better_acme::Store;
 use chrono::Utc;
-use rustls_acme::{caches::DirCache, AccountCache, CertCache};
 
 use crate::db::Db;
 
-/// A custom implementation of `CertCache` and `AccountCache` which uses
-/// the MySQL DB as the source of truth with a disk cache for quick access.
+/// A storage backend for `better-acme` that uses MySQL as the source of truth.
 pub struct MattraxAcmeStore {
     db: Db,
-    file_cache: DirCache<PathBuf>,
 }
 
 impl MattraxAcmeStore {
-    pub fn new(db: Db, cache_dir: PathBuf) -> Self {
-        Self {
-            db,
-            file_cache: DirCache::new(cache_dir),
-        }
+    pub fn new(db: Db) -> Self {
+        Self { db }
     }
 }
 
-#[async_trait]
-impl CertCache for MattraxAcmeStore {
-    type EC = std::io::Error;
-
-    async fn load_cert(
-        &self,
-        domains: &[String],
-        directory_url: &str,
-    ) -> Result<Option<Vec<u8>>, Self::EC> {
-        let result = self.file_cache.load_cert(domains, directory_url).await?;
-        let result = match result {
-            Some(cert) => Some(cert),
-            None => {
-                let cert = self
-                    .db
-                    .get_certificate(domains.join(","))
-                    .await
-                    .map_err(|err| {
-                        std::io::Error::new(ErrorKind::Other, format!("MattraxAcmeStore: {err:?}"))
-                    })?
-                    .into_iter()
-                    .next()
-                    .map(|v| v.certificate);
-
-                if let Some(cert) = &cert {
-                    self.store_cert(domains, directory_url, cert).await?;
-                }
-
-                cert
-            }
-        };
-
-        return Ok(result);
+impl Store for MattraxAcmeStore {
+    async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, std::io::Error> {
+        Ok(self
+            .db
+            .get_certificate(key.to_string())
+            .await
+            .map_err(|err| {
+                std::io::Error::new(ErrorKind::Other, format!("MattraxAcmeStore: {err:?}"))
+            })?
+            .into_iter()
+            .next()
+            .map(|v| v.certificate))
     }
 
-    async fn store_cert(
-        &self,
-        domains: &[String],
-        directory_url: &str,
-        cert: &[u8],
-    ) -> Result<(), Self::EC> {
+    async fn set(&self, key: &str, value: &[u8]) -> Result<(), std::io::Error> {
         self.db
-            .store_certificate(domains.join(","), cert.to_vec(), Utc::now().naive_utc())
+            .store_certificate(key.to_string(), value.to_vec(), Utc::now().naive_utc())
             .await
-            .map_err(|err| std::io::Error::new(ErrorKind::Other, err))?;
-
-        self.file_cache
-            .store_cert(domains, directory_url, cert)
-            .await
-    }
-}
-
-#[async_trait]
-impl AccountCache for MattraxAcmeStore {
-    type EA = std::io::Error;
-
-    async fn load_account(
-        &self,
-        contacts: &[String],
-        directory_url: &str,
-    ) -> Result<Option<Vec<u8>>, Self::EA> {
-        let result = self.file_cache.load_cert(contacts, directory_url).await?;
-        let result = match result {
-            Some(cert) => Some(cert),
-            None => {
-                let cert = self
-                    .db
-                    .get_certificate(contacts.join(","))
-                    .await
-                    .map_err(|err| {
-                        std::io::Error::new(ErrorKind::Other, format!("MattraxAcmeStore: {err:?}"))
-                    })?
-                    .into_iter()
-                    .next()
-                    .map(|v| v.certificate);
-
-                if let Some(cert) = &cert {
-                    self.store_cert(contacts, directory_url, cert).await?;
-                }
-
-                cert
-            }
-        };
-
-        return Ok(result);
-    }
-
-    async fn store_account(
-        &self,
-        contacts: &[String],
-        directory_url: &str,
-        account: &[u8],
-    ) -> Result<(), Self::EA> {
-        self.db
-            .store_certificate(contacts.join(","), account.to_vec(), Utc::now().naive_utc())
-            .await
-            .map_err(|err| std::io::Error::new(ErrorKind::Other, err))?;
-
-        self.file_cache
-            .store_account(contacts, directory_url, account)
-            .await
+            .map_err(|err| std::io::Error::new(ErrorKind::Other, err))
     }
 }

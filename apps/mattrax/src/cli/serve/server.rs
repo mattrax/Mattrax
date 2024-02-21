@@ -1,127 +1,86 @@
 use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{http::Request, Router};
+use better_acme::{AcceptorAction, Acme, FsStore};
+use futures_rustls::LazyConfigAcceptor;
 use hyper::body::Incoming;
 use hyper_util::{
     rt::{TokioExecutor, TokioIo, TokioTimer},
     server::conn::auto,
 };
-use rustls_acme::{
-    futures_rustls::{rustls::ServerConfig, LazyConfigAcceptor},
-    is_tls_alpn_challenge,
-};
-use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use tower::{Service, ServiceExt};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
+
+use crate::cli::serve::acme::MattraxAcmeStore;
 
 // TODO: Graceful shutdown
 // TODO: `ConnectInfo` should include rustls client certificate
 
 /// A HTTPS server.
-/// This struct acts as the "glue code" between `axum`, `rustls` and `rustls-acme`.
-/// Originally we used `axum-server` but I couldn't find a way to handle our mutual TLS requirements.
-#[derive(Clone)]
-pub struct Server {
-    router: Router,
-    // Used for connections from Let's Encrypt for the TLS-ALPN challenge.
-    challenge_rustls_config: Arc<ServerConfig>,
-    // Used for all other connections.
-    // This should return a pre-ared value not construct a new one each time.
-    get_tls_config: Arc<dyn Fn(&str) -> Arc<ServerConfig> + Send + Sync + 'static>,
-}
+/// This is the "glue code" between `axum`, `rustls` and `better-acme`.
+pub async fn server(router: Router, acme: Arc<Acme<FsStore<MattraxAcmeStore>>>, addr: SocketAddr) {
+    let listener = TcpListener::bind(addr).await.unwrap();
+    info!(
+        "Starting server listening on https://{}",
+        listener.local_addr().unwrap_or(addr)
+    );
 
-impl Server {
-    pub fn new(
-        router: Router,
-        challenge_rustls_config: Arc<ServerConfig>,
-        get_tls_config: impl Fn(&str) -> Arc<ServerConfig> + Send + Sync + 'static,
-    ) -> Self {
-        Self {
-            router,
-            challenge_rustls_config,
-            get_tls_config: Arc::new(get_tls_config),
-        }
-    }
+    let acme = Arc::new(acme);
 
-    pub async fn start(self, addr: SocketAddr) {
-        let listener = TcpListener::bind(addr).await.unwrap();
-        info!(
-            "Starting server listening on https://{}",
-            listener.local_addr().unwrap_or(addr)
-        );
+    let mut make_service = router
+        .clone()
+        .into_make_service_with_connect_info::<SocketAddr>();
+    while let Ok((stream, remote_addr)) = listener.accept().await {
+        let tower_service = unwrap_infallible(make_service.call(remote_addr).await);
+        let acme = acme.clone();
 
-        let this = Arc::new(self);
-
-        let mut make_service = this
-            .router
-            .clone()
-            .into_make_service_with_connect_info::<SocketAddr>();
-        while let Ok((stream, remote_addr)) = listener.accept().await {
-            let tower_service = unwrap_infallible(make_service.call(remote_addr).await);
-            let this = this.clone();
-
-            tokio::spawn(async move {
-                let stream = stream.compat();
-                let start_handshake =
-                    match LazyConfigAcceptor::new(Default::default(), stream).await {
-                        Ok(v) => v,
-                        Err(err) => {
-                            warn!("Error starting TLS handshake with {remote_addr}: {err:?}");
-                            return;
-                        }
-                    };
-
-                let client_hello = start_handshake.client_hello();
-                let server_name = client_hello.server_name().map(ToString::to_string);
-                if is_tls_alpn_challenge(&client_hello) {
-                    debug!("received TLS-ALPN-01 validation request for {server_name:?}",);
-                    match start_handshake
-                        .into_stream(this.challenge_rustls_config.clone())
-                        .await
-                    {
-                        Ok(tls) => {
-                            let _ = tls.into_inner().0.into_inner().shutdown().await;
-                        }
-                        Err(err) => warn!("Error completing TLS-ALPN-01 validation request for {server_name:?}: {err:?}"),
-                    }
+        tokio::spawn(async move {
+            let stream = stream.compat();
+            let start_handshake = match LazyConfigAcceptor::new(Default::default(), stream).await {
+                Ok(v) => v,
+                Err(err) => {
+                    warn!("Error starting TLS handshake with {remote_addr}: {err:?}");
                     return;
                 }
+            };
 
-                // TODO: Should we fallback to the main cert??? I don't think we could do this without forking rustls.
-                let Some(server_name) = server_name else {
-                    warn!("Error: no server name in client hello from {remote_addr}");
-                    return;
-                };
+            let Ok((domain, config, action)) = acme
+                .acceptor(start_handshake.client_hello())
+                .await
+                .map_err(|err| {
+                    warn!("Error accepting the TLS for connection with {remote_addr}: {err:?}");
+                })
+            else {
+                return;
+            };
 
-                let stream = match start_handshake
-                    .into_stream((this.get_tls_config)(&server_name))
-                    .await
-                {
-                    Ok(v) => v,
-                    Err(err) => {
-                        warn!("Error doing TLS handshake with {remote_addr} for {server_name:?}: {err:?}");
-                        return;
-                    }
-                };
+            let Ok(stream) = start_handshake.into_stream(config).await.map_err(|err| {
+                warn!("Error accepting the TLS for connection with {remote_addr} for {domain}: {err:?}");
+            }) else {
+                return;
+            };
 
-                if let Err(err) = auto::Builder::new(TokioExecutor::new())
-                    .http1()
-                    .header_read_timeout(Duration::from_secs(5))
-                    .timer(TokioTimer::new())
-                    .serve_connection(
-                        TokioIo::new(stream.compat()),
-                        hyper::service::service_fn(move |request: Request<Incoming>| {
-                            tower_service.clone().oneshot(request)
-                        }),
-                    )
-                    .await
-                {
-                    warn!("Error serving connection with {remote_addr}: {err:?}");
-                };
-            });
-        }
+            if let AcceptorAction::ServedChallenge = action {
+                return;
+            }
+
+            if let Err(err) = auto::Builder::new(TokioExecutor::new())
+                .http1()
+                .header_read_timeout(Duration::from_secs(5))
+                .timer(TokioTimer::new())
+                .serve_connection(
+                    TokioIo::new(stream.compat()),
+                    hyper::service::service_fn(move |request: Request<Incoming>| {
+                        tower_service.clone().oneshot(request)
+                    }),
+                )
+                .await
+            {
+                warn!("Error serving connection with {remote_addr}: {err:?}");
+            };
+        });
     }
 }
 

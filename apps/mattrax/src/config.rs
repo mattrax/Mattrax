@@ -22,6 +22,13 @@ impl AcmeServer {
     fn is_default(&self) -> bool {
         matches!(self, Self::Production)
     }
+
+    pub fn into_better_acme_server(&self) -> better_acme::Server {
+        match self {
+            Self::Production => better_acme::Server::LetsEncrypt,
+            Self::Staging => better_acme::Server::LetsEncryptStaging,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
