@@ -1,9 +1,18 @@
 import { A, useMatch, useResolvedPath } from "@solidjs/router";
-import { For, JSX } from "solid-js";
-import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
+import { For, JSX, ParentProps } from "solid-js";
 import { As, Tabs } from "@kobalte/core";
+
+import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
 import { useAuthContext } from "~/app/(dash)";
-import { Button } from "../ui";
+import {
+  Textarea,
+  Button,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "../ui";
+import { trpc } from "~/lib";
+import { createSignal } from "solid-js";
 
 type NavbarItem = {
   icon: (props: { class: string }) => JSX.Element;
@@ -65,6 +74,11 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
         </h1>
         <TenantSwitcher {...props} />
         <div class="flex-1" />
+        <FeedbackPopover>
+          <As component={Button} variant="outline" size="sm" class="mr-4">
+            Feedback
+          </As>
+        </FeedbackPopover>
         <span class="font-medium">{auth.me.name}</span>
         <Button variant="destructive">Log Out</Button>
       </div>
@@ -101,5 +115,34 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
         </Tabs.Root>
       </nav>
     </>
+  );
+}
+
+function FeedbackPopover(props: ParentProps) {
+  const sendFeedback = trpc.meta.sendFeedback.useMutation();
+  const [open, setOpen] = createSignal(false);
+  const [content, setContent] = createSignal("");
+
+  return (
+    <Popover open={open()} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{props.children}</PopoverTrigger>
+      <PopoverContent class="flex flex-col items-end gap-2">
+        <Textarea
+          value={content()}
+          onInput={(e) => setContent(e.target.value)}
+        />
+        <Button
+          onClick={async () => {
+            sendFeedback.mutateAsync({ content: content() });
+            setOpen(false);
+            setContent("");
+          }}
+          disabled={sendFeedback.isPending}
+          size="sm"
+        >
+          Submit
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }

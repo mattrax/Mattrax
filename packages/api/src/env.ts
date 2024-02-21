@@ -34,6 +34,7 @@ export const env = createEnv({
     INTUNE_TENANT: z.string(),
     SIMPLEMDM_API_KEY: z.string(),
     NODE_ENV: z.enum(["development", "production"]).default("development"),
+    FEEDBACK_DISCORD_WEBHOOK_URL: z.string().optional(),
   },
   clientPrefix: "VITE_",
   client: {},

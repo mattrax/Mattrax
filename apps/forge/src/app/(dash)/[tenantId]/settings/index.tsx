@@ -155,7 +155,7 @@ function AuthenticationCard() {
                     </span>
                   </p>
 
-                  <ConfirmDialog>
+                  {/* <ConfirmDialog>
                     {(confirm) => {
                       const unlinkProvider =
                         trpc.tenant.auth.unlink.useMutation(() => ({
@@ -194,7 +194,7 @@ function AuthenticationCard() {
                         </Button>
                       );
                     }}
-                  </ConfirmDialog>
+                  </ConfirmDialog> */}
                 </div>
               )}
             </For>

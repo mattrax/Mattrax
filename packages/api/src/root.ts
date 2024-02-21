@@ -9,6 +9,7 @@ import { scriptRouter } from "./routers/script";
 import { tenantRouter } from "./routers/tenant/index";
 import { userRouter } from "./routers/user";
 import { createTRPCRouter } from "./trpc";
+import { metaRouter } from "./routers/meta";
 
 export const appRouter = createTRPCRouter({
   app: applicationRouter,
@@ -20,6 +21,7 @@ export const appRouter = createTRPCRouter({
   script: scriptRouter,
   tenant: tenantRouter,
   user: userRouter,
+  meta: metaRouter,
 });
 
 export type AppRouter = typeof appRouter;
