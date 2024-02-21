@@ -174,11 +174,12 @@ export const devices = mysqlTable("devices", {
   name: varchar("name", { length: 256 }).notNull(),
   description: varchar("description", { length: 256 }),
 
-  manufacturer: varchar("manufacturer", { length: 256 }).notNull(),
-  model: varchar("model", { length: 256 }).notNull(),
   operatingSystem: varchar("operatingSystem", { length: 256 }).notNull(), // TODO: Enum maybe?
-  osVersion: varchar("osVersion", { length: 256 }).notNull(),
   serialNumber: varchar("serialNumber", { length: 256 }).notNull(),
+
+  manufacturer: varchar("manufacturer", { length: 256 }),
+  model: varchar("model", { length: 256 }),
+  osVersion: varchar("osVersion", { length: 256 }),
   imei: varchar("imei", { length: 256 }),
 
   freeStorageSpaceInBytes: bigint("freeStorageSpaceInBytes", {
@@ -195,7 +196,6 @@ export const devices = mysqlTable("devices", {
   azureADDeviceId: varchar("azureADDeviceId", { length: 256 })
     .notNull()
     .unique(),
-  intuneId: varchar("intuneId", { length: 256 }).notNull().unique(),
 
   enrolledAt: timestamp("enrolledAt").notNull().defaultNow(),
   lastSynced: timestamp("lastSynced").notNull().defaultNow(),
