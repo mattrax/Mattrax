@@ -108,16 +108,7 @@ export const tenantProcedure = authedProcedure
     )[0];
 
     if (query === undefined)
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "tenant",
-      });
+      throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
 
-    return opts.next({
-      ctx: {
-        ...ctx,
-        tenant: query.tenant,
-        tenantPk: query.tenant.pk,
-      },
-    });
+    return opts.next({ ctx: { ...ctx, tenant: query.tenant } });
   });

@@ -34,8 +34,7 @@ export const userRouter = createTRPCRouter({
           },
         })
         .from(users)
-        // TODO: Is user authorised to tenant
-        .where(eq(users.tenantPk, ctx.tenantPk))
+        .where(eq(users.tenantPk, ctx.tenant.pk))
         .innerJoin(
           tenantUserProvider,
           eq(users.providerPk, tenantUserProvider.pk)
@@ -59,7 +58,7 @@ export const userRouter = createTRPCRouter({
             })
             .from(users)
             .where(
-              and(eq(users.tenantPk, ctx.tenantPk), eq(users.id, input.id))
+              and(eq(users.tenantPk, ctx.tenant.pk), eq(users.id, input.id))
             )
             .innerJoin(
               tenantUserProvider,
@@ -74,7 +73,7 @@ export const userRouter = createTRPCRouter({
       if (
         await db.query.users.findFirst({
           where: and(
-            eq(users.tenantPk, ctx.tenantPk),
+            eq(users.tenantPk, ctx.tenant.pk),
             eq(users.email, input.email)
           ),
         })

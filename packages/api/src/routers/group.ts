@@ -44,7 +44,7 @@ export const groupRouter = createTRPCRouter({
           memberCount: sql`count(${groupGroupables.groupPk})`,
         })
         .from(groups)
-        .where(eq(groups.tenantPk, ctx.tenantPk))
+        .where(eq(groups.tenantPk, ctx.tenant.pk))
         .leftJoin(groupGroupables, eq(groups.pk, groupGroupables.groupPk))
         .groupBy(groups.pk);
     }),
@@ -56,7 +56,7 @@ export const groupRouter = createTRPCRouter({
       await db.insert(groups).values({
         id,
         name: input.name,
-        tenantPk: ctx.tenantPk,
+        tenantPk: ctx.tenant.pk,
       });
 
       return id;
@@ -65,14 +65,14 @@ export const groupRouter = createTRPCRouter({
   get: tenantProcedure
     .input(z.object({ id: z.string() }))
     .query(({ ctx, input }) => {
-      return getGroup({ groupId: input.id, tenantPk: ctx.tenantPk });
+      return getGroup({ groupId: input.id, tenantPk: ctx.tenant.pk });
     }),
   members: tenantProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
       const group = await getGroup({
         groupId: input.id,
-        tenantPk: ctx.tenantPk,
+        tenantPk: ctx.tenant.pk,
       });
       if (!group)
         throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
@@ -127,15 +127,15 @@ export const groupRouter = createTRPCRouter({
     .query(async ({ ctx }) => {
       const results = await Promise.all([
         db.query.users.findMany({
-          where: eq(users.tenantPk, ctx.tenantPk),
+          where: eq(users.tenantPk, ctx.tenant.pk),
           columns: { name: true, id: true, pk: true },
         }),
         db.query.devices.findMany({
-          where: eq(devices.tenantPk, ctx.tenantPk),
+          where: eq(devices.tenantPk, ctx.tenant.pk),
           columns: { name: true, id: true, pk: true },
         }),
         db.query.policies.findMany({
-          where: eq(policies.tenantPk, ctx.tenantPk),
+          where: eq(policies.tenantPk, ctx.tenant.pk),
           columns: { name: true, id: true, pk: true },
         }),
       ]);
@@ -157,7 +157,7 @@ export const groupRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const group = await getGroup({
         groupId: input.id,
-        tenantPk: ctx.tenantPk,
+        tenantPk: ctx.tenant.pk,
       });
       if (!group)
         throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
@@ -168,7 +168,7 @@ export const groupRouter = createTRPCRouter({
           input.members.map((member) => ({
             pk: member.pk,
             variant: member.variant,
-            tenantPk: ctx.tenantPk,
+            tenantPk: ctx.tenant.pk,
           }))
         )
         .onDuplicateKeyUpdate({ set: { pk: sql`id` } });

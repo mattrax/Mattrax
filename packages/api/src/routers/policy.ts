@@ -17,7 +17,7 @@ export const policyRouter = createTRPCRouter({
       })
       .from(policies)
       .leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.pk))
-      .where(eq(policies.tenantPk, ctx.tenantPk));
+      .where(eq(policies.tenantPk, ctx.tenant.pk));
   }),
 
   get: tenantProcedure
@@ -38,7 +38,7 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenantPk)
+            eq(policies.tenantPk, ctx.tenant.pk)
           )
         )
         .then((v) => v?.[0]);
@@ -60,7 +60,7 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenantPk)
+            eq(policies.tenantPk, ctx.tenant.pk)
           )
         );
 
@@ -121,7 +121,7 @@ export const policyRouter = createTRPCRouter({
         const policyInsert = await db.insert(policies).values({
           id: policyId,
           name: input.name,
-          tenantPk: ctx.tenantPk,
+          tenantPk: ctx.tenant.pk,
         });
         const policyPk = parseInt(policyInsert.insertId);
 

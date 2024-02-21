@@ -17,7 +17,7 @@ export const tenantAuthRouter = createTRPCRouter({
         lastSynced: tenantUserProvider.lastSynced,
       })
       .from(tenantUserProvider)
-      .where(eq(tenantUserProvider.tenantPk, ctx.tenantPk));
+      .where(eq(tenantUserProvider.tenantPk, ctx.tenant.pk));
   }),
 
   linkEntra: tenantProcedure.mutation(async ({ ctx }) => {
@@ -27,7 +27,7 @@ export const tenantAuthRouter = createTRPCRouter({
     await ctx.env.session.update({
       ...ctx.env.session.data,
       oauthData: {
-        tenant: ctx.tenantPk,
+        tenant: ctx.tenant.pk,
         state,
       },
     });
@@ -62,7 +62,7 @@ export const tenantAuthRouter = createTRPCRouter({
           .delete(tenantUserProvider)
           .where(
             and(
-              eq(tenantUserProvider.tenantPk, ctx.tenantPk),
+              eq(tenantUserProvider.tenantPk, ctx.tenant.pk),
               eq(tenantUserProvider.pk, input.id)
             )
           );
@@ -80,10 +80,12 @@ export const tenantAuthRouter = createTRPCRouter({
       await db
         .select()
         .from(tenantUserProvider)
-        .where(eq(tenantUserProvider.tenantPk, ctx.tenantPk))
+        .where(eq(tenantUserProvider.tenantPk, ctx.tenant.pk))
     )?.[0]; // TODO: Run a sync for each provider cause we can have more than one.
     if (!tenantProvider)
-      throw new Error(`Tenant '${ctx.tenantPk}' not found or has no providers`); // TODO: make an error the frontend can handle
+      throw new Error(
+        `Tenant '${ctx.tenant.pk}' not found or has no providers`
+      ); // TODO: make an error the frontend can handle
 
     const client = msGraphClient(tenantProvider.remoteId);
 
@@ -102,7 +104,7 @@ export const tenantAuthRouter = createTRPCRouter({
         .map((u: any) => ({
           name: u.displayName,
           email: u.mail,
-          tenantPk: ctx.tenantPk,
+          tenantPk: ctx.tenant.pk,
           providerPk: tenantProvider.pk,
           providerResourceId: u.id, // TODO: Add this column
         }))

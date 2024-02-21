@@ -22,7 +22,7 @@ export const adminsRouter = createTRPCRouter({
       db
         .select({ ownerId: accounts.id })
         .from(tenants)
-        .where(eq(tenants.pk, ctx.tenantPk))
+        .where(eq(tenants.pk, ctx.tenant.pk))
         .innerJoin(accounts, eq(tenants.ownerPk, accounts.pk))
         .then((v) => v?.[0]?.ownerId),
       db
@@ -33,7 +33,7 @@ export const adminsRouter = createTRPCRouter({
         })
         .from(accounts)
         .leftJoin(tenantAccounts, eq(tenantAccounts.accountPk, accounts.pk))
-        .where(eq(tenantAccounts.tenantPk, ctx.tenantPk)),
+        .where(eq(tenantAccounts.tenantPk, ctx.tenant.pk)),
     ]);
     // This is required. If the owner is not found, we gracefully continue.
     if (rows.status === "rejected") throw rows.reason;
@@ -49,7 +49,7 @@ export const adminsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const tenant = await db.query.tenants.findFirst({
         columns: { name: true },
-        where: eq(tenants.pk, ctx.tenantPk),
+        where: eq(tenants.pk, ctx.tenant.pk),
       });
       if (!tenant)
         throw new TRPCError({
@@ -61,7 +61,7 @@ export const adminsRouter = createTRPCRouter({
 
       // try {
       await db.insert(tenantAccountInvites).values({
-        tenantPk: ctx.tenantPk,
+        tenantPk: ctx.tenant.pk,
         email: input.email,
         code,
       });
@@ -167,13 +167,13 @@ export const adminsRouter = createTRPCRouter({
         .where(
           and(
             eq(tenantAccounts.accountPk, account.pk),
-            eq(tenantAccounts.tenantPk, ctx.tenantPk)
+            eq(tenantAccounts.tenantPk, ctx.tenant.pk)
           )
         );
     }),
   invites: tenantProcedure.query(async ({ ctx }) => {
     return await db.query.tenantAccountInvites.findMany({
-      where: eq(tenantAccountInvites.tenantPk, ctx.tenantPk),
+      where: eq(tenantAccountInvites.tenantPk, ctx.tenant.pk),
     });
   }),
   removeInvite: tenantProcedure
@@ -183,7 +183,7 @@ export const adminsRouter = createTRPCRouter({
         .delete(tenantAccountInvites)
         .where(
           and(
-            eq(tenantAccountInvites.tenantPk, ctx.tenantPk),
+            eq(tenantAccountInvites.tenantPk, ctx.tenant.pk),
             eq(tenantAccountInvites.email, input.email)
           )
         );

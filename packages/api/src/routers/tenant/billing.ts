@@ -15,7 +15,7 @@ export const billingRouter = createTRPCRouter({
           stripeCustomerId: tenants.stripeCustomerId,
         })
         .from(tenants)
-        .where(eq(tenants.pk, ctx.tenantPk))
+        .where(eq(tenants.pk, ctx.tenant.pk))
     )?.[0];
     if (!tenant) throw new Error("Tenant not found!"); // TODO: Proper error code which the frontend knows how to handle
 
@@ -30,7 +30,7 @@ export const billingRouter = createTRPCRouter({
         await db
           .update(tenants)
           .set({ stripeCustomerId: customer.id })
-          .where(eq(tenants.pk, ctx.tenantPk));
+          .where(eq(tenants.pk, ctx.tenant.pk));
 
         customerId = customer.id;
       } catch (err) {
@@ -46,7 +46,7 @@ export const billingRouter = createTRPCRouter({
 
     const body = new URLSearchParams({
       customer: customerId,
-      return_url: `${env.PROD_URL}/${ctx.tenantPk}/settings`,
+      return_url: `${env.PROD_URL}/${ctx.tenant.pk}/settings`,
     });
 
     const resp = await fetch(

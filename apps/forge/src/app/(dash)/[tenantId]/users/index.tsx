@@ -28,7 +28,6 @@ import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { useTenantContext } from "../../[tenantId]";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
-import { useZodParams } from "~/lib/useZodParams";
 import { Form, InputField, createZodForm } from "~/components/forms";
 
 const column = createColumnHelper<RouterOutput["user"]["list"][number]>();

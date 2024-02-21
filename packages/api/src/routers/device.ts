@@ -20,7 +20,7 @@ export const deviceRouter = createTRPCRouter({
           enrolledAt: devices.enrolledAt,
         })
         .from(devices)
-        .where(and(eq(devices.tenantPk, ctx.tenantPk)))
+        .where(and(eq(devices.tenantPk, ctx.tenant.pk)))
     ).map((d) => ({
       ...d,
       id: "device",

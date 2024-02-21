@@ -61,7 +61,7 @@ export const tenantRouter = createTRPCRouter({
             name: input.name,
           }),
         })
-        .where(eq(tenants.pk, ctx.tenantPk));
+        .where(eq(tenants.pk, ctx.tenant.pk));
     }),
 
   enrollmentInfo: tenantProcedure.query(async ({ ctx }) =>
@@ -70,7 +70,7 @@ export const tenantRouter = createTRPCRouter({
         enrollmentEnabled: tenants.enrollmentEnabled,
       })
       .from(tenants)
-      .where(eq(tenants.pk, ctx.tenantPk))
+      .where(eq(tenants.pk, ctx.tenant.pk))
       .then((rows) => rows[0])
   ),
 
@@ -82,7 +82,7 @@ export const tenantRouter = createTRPCRouter({
         .set({
           enrollmentEnabled: input.enrollmentEnabled,
         })
-        .where(eq(tenants.pk, ctx.tenantPk))
+        .where(eq(tenants.pk, ctx.tenant.pk))
     ),
 
   stats: tenantProcedure.query(({ ctx }) =>
@@ -90,27 +90,27 @@ export const tenantRouter = createTRPCRouter({
       devices: db
         .select({ count: count() })
         .from(devices)
-        .where(eq(devices.tenantPk, ctx.tenantPk))
+        .where(eq(devices.tenantPk, ctx.tenant.pk))
         .then((rows) => rows[0]!.count),
       users: db
         .select({ count: count() })
         .from(users)
-        .where(eq(users.tenantPk, ctx.tenantPk))
+        .where(eq(users.tenantPk, ctx.tenant.pk))
         .then((rows) => rows[0]!.count),
       policies: db
         .select({ count: count() })
         .from(policies)
-        .where(eq(policies.tenantPk, ctx.tenantPk))
+        .where(eq(policies.tenantPk, ctx.tenant.pk))
         .then((rows) => rows[0]!.count),
       applications: db
         .select({ count: count() })
         .from(applications)
-        .where(eq(applications.tenantPk, ctx.tenantPk))
+        .where(eq(applications.tenantPk, ctx.tenant.pk))
         .then((rows) => rows[0]!.count),
       groups: db
         .select({ count: count() })
         .from(groups)
-        .where(eq(groups.tenantPk, ctx.tenantPk))
+        .where(eq(groups.tenantPk, ctx.tenant.pk))
         .then((rows) => rows[0]!.count),
     })
   ),
@@ -119,13 +119,13 @@ export const tenantRouter = createTRPCRouter({
     // TODO: Ensure no outstanding bills
 
     await db.transaction(async (db) => {
-      await db.delete(tenants).where(eq(tenants.pk, ctx.tenantPk));
+      await db.delete(tenants).where(eq(tenants.pk, ctx.tenant.pk));
       await db
         .delete(tenantAccounts)
-        .where(eq(tenantAccounts.tenantPk, ctx.tenantPk));
-      await db.delete(users).where(eq(users.tenantPk, ctx.tenantPk));
-      await db.delete(policies).where(eq(policies.tenantPk, ctx.tenantPk));
-      await db.delete(devices).where(eq(devices.tenantPk, ctx.tenantPk)); // TODO: Don't do this
+        .where(eq(tenantAccounts.tenantPk, ctx.tenant.pk));
+      await db.delete(users).where(eq(users.tenantPk, ctx.tenant.pk));
+      await db.delete(policies).where(eq(policies.tenantPk, ctx.tenant.pk));
+      await db.delete(devices).where(eq(devices.tenantPk, ctx.tenant.pk)); // TODO: Don't do this
     });
 
     // TODO: Schedule all devices for unenrolment

@@ -12,7 +12,7 @@ export const domainsRouter = createTRPCRouter({
   // TODO: Blocked on: https://github.com/drizzle-team/drizzle-orm/issues/1066
   // list: tenantProcedure.query(({ ctx }) =>
   //   db.query.domains.findMany({
-  //     where: eq(domains.tenantPk, ctx.tenantPk),
+  //     where: eq(domains.tenantPk, ctx.tenant.pk),
   //     with: {
   //       certificate: {
   //         columns: {
@@ -27,7 +27,7 @@ export const domainsRouter = createTRPCRouter({
       .select()
       .from(domains)
       .leftJoin(certificates, eq(domains.domain, certificates.key))
-      .where(eq(domains.tenantPk, ctx.tenantPk));
+      .where(eq(domains.tenantPk, ctx.tenant.pk));
 
     return results.map(({ certificates, domains }) => ({
       ...domains,
@@ -41,7 +41,7 @@ export const domainsRouter = createTRPCRouter({
       const secret = `mattrax:${crypto.randomUUID()}`;
 
       await db.insert(domains).values({
-        tenantPk: ctx.tenantPk,
+        tenantPk: ctx.tenant.pk,
         domain: input.domain,
         secret,
       });
@@ -52,7 +52,7 @@ export const domainsRouter = createTRPCRouter({
       const domain = await db.query.domains.findFirst({
         where: and(
           eq(domains.domain, input.domain),
-          eq(domains.tenantPk, ctx.tenantPk)
+          eq(domains.tenantPk, ctx.tenant.pk)
         ),
         // TODO: be aware this is not typesafe.
         // TODO: It will return `null`'s and Typescript won't save you.
@@ -129,7 +129,7 @@ export const domainsRouter = createTRPCRouter({
         .where(
           and(
             eq(domains.domain, input.domain),
-            eq(domains.tenantPk, ctx.tenantPk)
+            eq(domains.tenantPk, ctx.tenant.pk)
           )
         );
     }),
