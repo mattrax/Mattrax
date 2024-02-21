@@ -32,7 +32,7 @@ export default function Page() {
       <SettingsCard />
       <AuthenticationCard />
       <ConfigureEnrollmentCard />
-      <MigrateCard />
+      {/* <MigrateCard /> */}
       <DeleteTenantCard />
     </div>
   );
@@ -202,7 +202,7 @@ function AuthenticationCard() {
         </div>
 
         <div class="flex flex-col space-y-2">
-          <DropdownMenu>
+          <DropdownMenu sameWidth>
             <DropdownMenuTrigger
               as={Button}
               disabled={isPending()}

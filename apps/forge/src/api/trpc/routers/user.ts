@@ -68,25 +68,22 @@ export const userRouter = createTRPCRouter({
       );
     }),
   invite: tenantProcedure
-    .input(z.object({ email: z.string() }))
+    .input(z.object({ id: z.string(), message: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      if (
-        await db.query.users.findFirst({
-          where: and(
-            eq(users.tenantPk, ctx.tenant.pk),
-            eq(users.email, input.email)
-          ),
-        })
-      )
+      const user = await db.query.users.findFirst({
+        where: and(eq(users.tenantPk, ctx.tenant.pk), eq(users.id, input.id)),
+      });
+      if (!user)
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: "User already exists",
+          message: "User doesn't exist",
         });
 
+      // TODO: "On behalf of {tenant_name}" in the content + render `input.message` inside the email.
       await sendEmail({
         type: "userEnrollmentInvite",
-        to: input.email,
-        subject: "Enroll your device to join Mattrax",
+        to: user.email,
+        subject: "Enroll your device to Mattrax",
         tenantName: ctx.tenant.name,
       });
     }),

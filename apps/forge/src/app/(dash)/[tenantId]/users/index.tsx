@@ -127,12 +127,7 @@ export default function Page() {
 
   return (
     <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
-      <div class="flex flex-row justify-between">
-        <h1 class="text-3xl font-bold mb-4">Users</h1>
-        <InviteUserDialog>
-          <As component={Button}>Invite User</As>
-        </InviteUserDialog>
-      </div>
+      <h1 class="text-3xl font-bold mb-4">Users</h1>
       <div class="flex flex-row items-center gap-4">
         <Input
           placeholder={isLoading() ? "Loading..." : "Search..."}
@@ -181,54 +176,5 @@ export default function Page() {
         </div>
       </Suspense>
     </div>
-  );
-}
-
-function InviteUserDialog(props: ParentProps) {
-  const [open, setOpen] = createSignal(false);
-
-  const tenant = useTenantContext();
-  const mutation = trpc.user.invite.useMutation();
-
-  const form = createZodForm({
-    schema: z.object({ email: z.string().email() }),
-    onSubmit: async ({ value }) => {
-      await mutation.mutateAsync({
-        email: value.email,
-        tenantId: tenant.activeTenant.id,
-      });
-      setOpen(false);
-    },
-  });
-
-  return (
-    <DialogRoot
-      open={open()}
-      setOpen={(o) => {
-        if (o) form.setFieldValue("email", "");
-        setOpen(o);
-      }}
-    >
-      <DialogTrigger asChild>{props.children}</DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Invite User</DialogTitle>
-          <DialogDescription>
-            The user will receive an email with instructions on how to enroll
-            their device in this tenant.
-          </DialogDescription>
-        </DialogHeader>
-        <Form form={form} fieldsetClass="space-y-2">
-          <InputField
-            form={form}
-            type="email"
-            name="email"
-            placeholder="oscar@mattrax.app"
-            autocomplete="off"
-          />
-          <Button type="submit">Create</Button>
-        </Form>
-      </DialogContent>
-    </DialogRoot>
   );
 }
