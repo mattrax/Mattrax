@@ -9,7 +9,7 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 // Make sure env validation runs
 import { monorepoRoot } from "./loadEnv";
-import "@mattrax/api";
+import "./src/env";
 
 export default defineConfig((config) => ({
   envDir: monorepoRoot,

@@ -205,4 +205,4 @@ function CreateGroupDialog(props: ParentProps) {
 import { Button, Checkbox } from "~/components/ui";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { useTenantContext } from "../../[tenantId]";
-import { RouterOutput } from "@mattrax/api";
+import { RouterOutput } from "~/api/trpc";

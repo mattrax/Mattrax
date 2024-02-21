@@ -7,12 +7,12 @@ import {
   Suspense,
 } from "solid-js";
 import { createContextProvider } from "@solid-primitives/context";
-import { RouterOutput } from "@mattrax/api";
+import { RouterOutput } from "~/api/trpc";
 import { z } from "zod";
 
 import { SuspenseError } from "~/lib";
 import { useAuthContext } from "../(dash)";
-import TopNav from "~/components/TopNav";
+import TopNav from "./[tenantId]/TopNav";
 import { useZodParams } from "~/lib/useZodParams";
 
 export const [TenantContextProvider, useTenantContext] = createContextProvider(

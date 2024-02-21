@@ -3,7 +3,7 @@ import { implementPolicy } from ".";
 import { PlistValue } from "plist";
 
 export const slackImplementation = implementPolicy(slack, {
-  buildAppleProfile: (data) => {
+  buildAppleProfile: (data: any) => {
     let policy: PlistValue = {
       // TODO: Build this into `implementPolicy` so each policy doesn't care about it
       PayloadDisplayName: "Slack",

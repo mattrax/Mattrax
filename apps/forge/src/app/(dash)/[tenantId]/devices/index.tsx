@@ -9,7 +9,7 @@ import {
 } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
 import { useNavigate } from "@solidjs/router";
-import { RouterOutput } from "@mattrax/api";
+import { RouterOutput } from "~/api/trpc";
 import dayjs from "dayjs";
 
 import { Button, Checkbox, Input } from "~/components/ui";

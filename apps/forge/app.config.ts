@@ -43,10 +43,26 @@ export default createApp({
       name: "server",
       type: "http",
       base: "/api",
-      handler: fileURLToPath(
-        new URL("./src/app/api/[...api].ts", import.meta.url)
-      ),
+      handler: fileURLToPath(new URL("./src/api/handler.ts", import.meta.url)),
       target: "server",
+      plugins: (configEnv) => {
+        if (!viteConfigFile) {
+          if (typeof viteConfigFileRaw === "function") {
+            viteConfigFile = viteConfigFileRaw(configEnv);
+          } else {
+            viteConfigFile = viteConfigFileRaw;
+          }
+        }
+
+        return [
+          // Due to Vite's plugin execution order this will not be injected by `inject-vite-config`
+          ...(("plugins" in viteConfigFile && viteConfigFile?.plugins) || []),
+          {
+            name: "inject-vite-config",
+            config: () => viteConfigFile,
+          } satisfies Plugin,
+        ];
+      },
     },
   ],
   server: {

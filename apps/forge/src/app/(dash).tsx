@@ -1,6 +1,6 @@
 import { ErrorBoundary, ParentProps, Show } from "solid-js";
 import { createContextProvider } from "@solid-primitives/context";
-import { RouterOutput } from "@mattrax/api";
+import { RouterOutput } from "~/api/trpc";
 
 import { trpc } from "~/lib";
 

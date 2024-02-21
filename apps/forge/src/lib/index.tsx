@@ -1,4 +1,4 @@
-import type { AppRouter } from "@mattrax/api";
+import type { AppRouter } from "~/api";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";

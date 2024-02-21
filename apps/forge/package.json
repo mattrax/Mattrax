@@ -14,7 +14,6 @@
   "dependencies": {
     "@kobalte/core": "^0.12.1",
     "@kobalte/tailwindcss": "^0.9.0",
-    "@mattrax/api": "workspace:^",
     "@mattrax/policies": "workspace:^",
     "@solid-mediakit/trpc": "^1.0.2",
     "@solid-primitives/context": "^0.2.2",
@@ -50,7 +49,27 @@
     "tailwindcss": "^3.4.1",
     "ts-pattern": "^5.0.6",
     "vinxi": "^0.3.0",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "@lucia-auth/adapter-drizzle": "^1.0.2",
+    "@mattrax/drizzle-to-rs": "workspace:^",
+    "@mattrax/email": "workspace:^",
+    "@mattrax/mdm": "workspace:^",
+    "@mattrax/ms-graph": "workspace:^",
+    "@mattrax/policy": "workspace:^",
+    "@paralleldrive/cuid2": "^2.2.2",
+    "@planetscale/database": "^1.16.0",
+    "@react-email/render": "^0.0.12",
+    "@t3-oss/env-core": "^0.9.2",
+    "@trpc/server": "^10.45.1",
+    "aws4fetch": "^1.0.17",
+    "base58": "^2.0.1",
+    "drizzle-orm": "^0.29.3",
+    "h3": "^1.10.1",
+    "hono": "^4.0.1",
+    "lucia": "^3.0.1",
+    "oslo": "^1.1.2",
+    "react": "^18.2.0",
+    "stripe": "^14.16.0"
   },
   "devDependencies": {
     "@iconify/json": "^2.2.182",
@@ -65,6 +84,7 @@
     "vite": "^5.1.1",
     "vite-plugin-html": "^3.2.2",
     "vite-plugin-solid": "^2.9.1",
-    "vite-tsconfig-paths": "^4.3.1"
+    "vite-tsconfig-paths": "^4.3.1",
+    "@microsoft/microsoft-graph-types": "^2.40.0"
   }
 }

@@ -27,8 +27,8 @@ import relativeTime from "dayjs/plugin/relativeTime";
 // import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import routes from "./app/routes";
 import { isDebugMode, isTRPCClientError, trpc } from "./lib";
-import "./app.css";
-import "./sonner.css";
+import "./assets/app.css";
+import "./assets/sonner.css";
 
 dayjs.extend(relativeTime);
 
@@ -92,7 +92,7 @@ const SolidQueryDevtools = lazy(() =>
   }))
 );
 
-export default function App() {
+function App() {
   const errorBus = createEventBus<[string, unknown]>();
 
   const [queryClient /* persistOptions */] = createQueryClient(errorBus);
@@ -202,3 +202,7 @@ export default function App() {
     </QueryClientProvider>
   );
 }
+
+import { render } from "solid-js/web";
+
+render(App, document.getElementById("root")!);
