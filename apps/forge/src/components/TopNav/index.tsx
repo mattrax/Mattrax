@@ -4,6 +4,7 @@ import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
 import { As, Tabs } from "@kobalte/core";
 import { useAuthContext } from "~/app/(dash)";
 import { Button } from "../ui";
+import { Breadcrumb, Breadcrumbs } from "../Breadcrumbs";
 
 type NavbarItem = {
   icon: (props: { class: string }) => JSX.Element;
@@ -63,7 +64,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
         <h1 class="px-3 py-1 text-white text-center text-3xl bg-brand rounded m-2">
           MATTRAX
         </h1>
-        <TenantSwitcher {...props} />
+        <Breadcrumbs />
         <div class="flex-1" />
         <span class="font-medium">{auth.me.name}</span>
         <Button variant="destructive">Log Out</Button>

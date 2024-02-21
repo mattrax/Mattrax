@@ -1,5 +1,13 @@
-import { Navigate, useNavigate } from "@solidjs/router";
 import {
+  A,
+  Navigate,
+  useLocation,
+  useMatch,
+  useNavigate,
+  useResolvedPath,
+} from "@solidjs/router";
+import {
+  createEffect,
   createMemo,
   ParentProps,
   Show,
@@ -14,6 +22,11 @@ import { SuspenseError } from "~/lib";
 import { useAuthContext } from "../(dash)";
 import TopNav from "~/components/TopNav";
 import { useZodParams } from "~/lib/useZodParams";
+import {
+  Breadcrumb,
+  BreadcrumbContextProvider,
+  createBreadcrumb,
+} from "~/components/Breadcrumbs";
 
 export const [TenantContextProvider, useTenantContext] = createContextProvider(
   (props: { activeTenant: RouterOutput["auth"]["me"]["tenants"][number] }) =>
@@ -37,36 +50,42 @@ export default function Layout(props: ParentProps) {
   }
 
   return (
-    <Show
-      when={activeTenant()}
-      fallback={
-        <Navigate
-          href={() => {
-            const firstTenant = auth.me.tenants[0];
-            return firstTenant?.id ? `../${firstTenant.id}` : "/";
-          }}
-        />
-      }
-    >
-      {(activeTenant) => (
-        <TenantContextProvider activeTenant={activeTenant()}>
-          {/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
-          <Suspense fallback={<SuspenseError name="Sidebar" />}>
-            <TopNav
-              activeTenant={activeTenant()}
-              tenants={auth.me.tenants}
-              setActiveTenant={setTenantId}
-              refetchSession={async () => {
-                await auth.meQuery.refetch();
-              }}
-            />
-          </Suspense>
-          {/* we key here on purpose - tenants are the root-most unit of isolation */}
-          <Show when={activeTenant().id} keyed>
-            {props.children}
-          </Show>
-        </TenantContextProvider>
-      )}
-    </Show>
+    <BreadcrumbContextProvider>
+      <Show
+        when={activeTenant()}
+        fallback={
+          <Navigate
+            href={() => {
+              const firstTenant = auth.me.tenants[0];
+              return firstTenant?.id ? `../${firstTenant.id}` : "/";
+            }}
+          />
+        }
+      >
+        {(activeTenant) => {
+          createBreadcrumb(<A href="">{activeTenant().name}</A>);
+
+          return (
+            <TenantContextProvider activeTenant={activeTenant()}>
+              {/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
+              <Suspense fallback={<SuspenseError name="Sidebar" />}>
+                <TopNav
+                  activeTenant={activeTenant()}
+                  tenants={auth.me.tenants}
+                  setActiveTenant={setTenantId}
+                  refetchSession={async () => {
+                    await auth.meQuery.refetch();
+                  }}
+                />
+              </Suspense>
+              {/* we key here on purpose - tenants are the root-most unit of isolation */}
+              <Show when={activeTenant().id} keyed>
+                {props.children}
+              </Show>
+            </TenantContextProvider>
+          );
+        }}
+      </Show>
+    </BreadcrumbContextProvider>
   );
 }

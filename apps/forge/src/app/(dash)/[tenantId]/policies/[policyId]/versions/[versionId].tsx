@@ -4,7 +4,6 @@ import {
   ParentProps,
   Show,
   startTransition,
-  useTransition,
   createEffect,
   createSignal,
   Accessor,
@@ -39,6 +38,7 @@ import {
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { useTenantContext } from "~/app/(dash)/[tenantId]";
 import { useZodParams } from "~/lib/useZodParams";
+import { Breadcrumb, createBreadcrumb } from "~/components/Breadcrumbs";
 
 // TODO: If the policy or version is not found redirect back to `/policies`
 
@@ -51,7 +51,6 @@ function useParams() {
 
 export default function Page(props: ParentProps) {
   const navigate = useNavigate();
-  const [transitionPending] = useTransition();
   const params = useParams();
 
   const tenant = useTenantContext();
@@ -72,6 +71,13 @@ export default function Page(props: ParentProps) {
 
         const [policyState, setPolicyState] =
           createSignal<TempPolicyState>("unchanged"); // TODO: From backend
+
+        createBreadcrumb(
+          <A class="flex flex-row items-center gap-2" href="">
+            <Badge>Policy</Badge>
+            {policy().name}
+          </A>
+        );
 
         // TODO: Bring back `OutlineLayout` but with a region for actions
         return (
@@ -105,7 +111,10 @@ export default function Page(props: ParentProps) {
               </div>
 
               <div class="flex space-x-4">
-                <PolicyVersionSwitcher />
+                <PolicyVersionSwitcher
+                  policyId={params.policyId}
+                  versionId={params.versionId}
+                />
                 <DeployButton
                   policyState={policyState}
                   setPolicyState={setPolicyState}
@@ -182,7 +191,6 @@ export default function Page(props: ParentProps) {
               <div class="flex-1">
                 <main class="px-4 w-full h-full">
                   {props.children}
-                  {/* // TODO: Remove this */}
                   <Button
                     onClick={() => setPolicyState("changed")}
                     class="mt-4"
@@ -199,18 +207,17 @@ export default function Page(props: ParentProps) {
   );
 }
 
-function PolicyVersionSwitcher() {
-  const params = useParams();
-
+function PolicyVersionSwitcher(props: { policyId: string; versionId: string }) {
   const tenant = useTenantContext();
   const versions = trpc.policy.getVersions.useQuery(() => ({
-    policyId: params.policyId,
+    policyId: props.policyId,
     tenantId: tenant.activeTenant.id,
   }));
 
   const data = untrackScopeFromSuspense(() => versions.data);
+  const isPending = untrackScopeFromSuspense(() => versions.isPending);
 
-  const activeVersion = () => data()?.find((v) => v.id === params.versionId);
+  const activeVersion = () => data()?.find((v) => v.id === props.versionId);
 
   return (
     <Select
@@ -221,7 +228,7 @@ function PolicyVersionSwitcher() {
           {dayjs(props.item.rawValue.createdAt).fromNow()}
         </SelectItem>
       )}
-      disabled={versions.isPending || !activeVersion()}
+      disabled={isPending() || !activeVersion()}
       multiple={false}
       disallowEmptySelection={true}
       value={activeVersion()}
