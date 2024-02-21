@@ -42,7 +42,7 @@ fn extract_from_xml2<'a>(tag_name: &str, end_tag_name: &str, body: &'a str) -> &
 }
 
 // `/EnrollmentServer`
-pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
+pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
     Router::new()
         .route("/TermsOfService.svc", get(|| async move {
             Html(r#"<h3>AzureAD Term Of Service</h3><button onClick="acceptBtn()">Accept</button><script>function acceptBtn(){var urlParams=new URLSearchParams(window.location.search);if (!urlParams.has('redirect_uri')){alert('Redirect url not found. Did you open this in your broswer?');}else{window.location=urlParams.get('redirect_uri') + "?IsAccepted=true&OpaqueBlob=TODOCustomDataFromAzureAD";}}</script>"#)
@@ -55,7 +55,7 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
         .route("/Discovery.svc", get(|| async move {
             StatusCode::OK
         }))
-        .route("/Discovery.svc", post(|body: String| async move {
+        .route("/Discovery.svc", post(|State(state): State<Arc<Context>>, body: String| async move {
             // TODO: Proper SOAP parsing
             let message_id = extract_from_xml("a:MessageID", &body);
 
@@ -149,6 +149,13 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
 
             let client_ctr_raw = BASE64_STANDARD.encode(certificate.der());
 
+            // TODO: Remove the device from the DB if it doesn't do an initial checkin within a certain time period
+            // TODO: Get all this information from parsing the request.
+            let tenant_pk: i32 = 5;
+            state.db.create_device(cuid2::create_id(), "TODO".into(), "Windows".into(), "Mind your own business".into(), tenant_pk).await.unwrap();
+            
+            // TODO: Get the device's DB id and put into this
+            // TODO: Lookup and set tenant name
             let wap_provisioning_profile = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
             <wap-provisioningdoc version="1.1">
                 <characteristic type="CertificateStore">
@@ -240,4 +247,5 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                 .body(body)
                 .unwrap()
         }))
+        .with_state(state)
 }

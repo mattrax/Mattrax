@@ -45,3 +45,4 @@ mysql_common = { version = "=0.31.0", features = [
 ] } # This is a dependency of `mysql_async`
 chrono = { version = "0.4.34", features = ["serde"] }
 futures = { version = "0.3.30", default-features = false }
+cuid2 = "0.1.2"

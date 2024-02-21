@@ -1,7 +1,7 @@
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { exportQueries, defineOperation } from "@mattrax/drizzle-to-rs";
-import { db, certificates } from ".";
+import { db, certificates, devices } from ".";
 import dotenv from "dotenv";
 
 dotenv.config({
@@ -45,6 +45,27 @@ exportQueries(
             },
           }),
     }),
+    defineOperation({
+      name: "create_device",
+      args: {
+        id: "String",
+        name: "String",
+        operating_system: "String",
+        serial_number: "String",
+        tenant_pk: "i32",
+      },
+      query: (args) =>
+        db.insert(devices).values([
+          {
+            id: args.id,
+            name: args.name,
+            operatingSystem: args.operating_system,
+            serialNumber: args.serial_number,
+            tenantPk: args.tenant_pk,
+            groupableVariant: "device",
+          },
+        ]),
+    }),
   ],
-  path.join(__dirname, "../../../../apps/mattrax/src/db.rs"),
+  path.join(__dirname, "../../../../apps/mattrax/src/db.rs")
 );

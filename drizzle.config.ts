@@ -9,7 +9,7 @@ if ("DATABASE_URL" in process.env === false)
   throw new Error("'DATABASE_URL' not set in env");
 
 export default defineConfig({
-  schema: "./packages/api/src/db/schema.ts",
+  schema: "./apps/forge/src/db/schema.ts",
   driver: "mysql2",
   dbCredentials: {
     uri: process.env.DATABASE_URL!,

@@ -41,7 +41,23 @@ impl Db {
         last_modified: NaiveDateTime,
     ) -> Result<(), mysql_async::Error> {
         r#"insert into `certificates` (`key`, `certificate`, `lastModified`) values (?, ?, ?) on duplicate key update `certificate` = ?, `lastModified` = ?"#
-            .with(mysql_async::Params::Positional(vec![key.clone().into(),certificate.clone().into(),last_modified.clone().into(),certificate.clone().into(),last_modified.clone().into()]))
+            .with(mysql_async::Params::Positional(vec![key.clone().into(),certificate.clone().into(),"[object Object]".into(),certificate.clone().into(),"[object Object]".into()]))
+            .run(&self.pool)
+            .await
+            .map(|_| ())
+    }
+}
+impl Db {
+    pub async fn create_device(
+        &self,
+        id: String,
+        name: String,
+        operating_system: String,
+        serial_number: String,
+        tenant_pk: i32,
+    ) -> Result<(), mysql_async::Error> {
+        r#"insert into `devices` (`id`, `cuid`, `name`, `description`, `operatingSystem`, `serialNumber`, `manufacturer`, `model`, `osVersion`, `imei`, `freeStorageSpaceInBytes`, `totalStorageSpaceInBytes`, `owner`, `azureADDeviceId`, `enrolledAt`, `lastSynced`, `tenantId`, `groupableVariant`) values (default, ?, ?, default, ?, ?, default, default, default, default, default, default, default, default, default, default, ?, ?)"#
+            .with(mysql_async::Params::Positional(vec![id.clone().into(),name.clone().into(),operating_system.clone().into(),serial_number.clone().into(),tenant_pk.clone().into(),"device".into()]))
             .run(&self.pool)
             .await
             .map(|_| ())

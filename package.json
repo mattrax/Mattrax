@@ -6,9 +6,9 @@
     "dev": "pnpm --filter @mattrax/forge dev",
     "landing": "pnpm --filter @mattrax/landing --",
     "email": "pnpm --filter @mattrax/email --",
-    "db:push": "drizzle-kit push:mysql && bun run ./packages/api/src/db/rust.ts",
+    "db:push": "drizzle-kit push:mysql && bun run ./apps/forge/src/db/rust.ts",
     "db:studio": "drizzle-kit studio",
-    "db:gen": "bun run ./packages/api/src/db/rust.ts",
+    "db:gen": "bun run ./apps/forge/src/db/rust.ts",
     "typecheck": "tsc -b"
   },
   "engines": {

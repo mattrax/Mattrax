@@ -193,9 +193,7 @@ export const devices = mysqlTable("devices", {
 
   owner: serialRelation("owner").references(() => users.pk),
 
-  azureADDeviceId: varchar("azureADDeviceId", { length: 256 })
-    .notNull()
-    .unique(),
+  azureADDeviceId: varchar("azureADDeviceId", { length: 256 }).unique(),
 
   enrolledAt: timestamp("enrolledAt").notNull().defaultNow(),
   lastSynced: timestamp("lastSynced").notNull().defaultNow(),

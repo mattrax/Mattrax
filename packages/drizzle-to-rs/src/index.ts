@@ -12,7 +12,7 @@ const snakeToCamel = (str: string) => {
   const a = str
     .toLowerCase()
     .replace(/([-_][a-z])/g, (group) =>
-      group.toUpperCase().replace("-", "").replace("_", ""),
+      group.toUpperCase().replace("-", "").replace("_", "")
     );
   return a[0]?.toUpperCase() + a.slice(1);
 };
@@ -39,8 +39,20 @@ type Query = {
   renderedFn: string;
 };
 
+class Placeholder {
+  name: string;
+
+  constructor(name: string) {
+    this.name = name;
+  }
+
+  toISOString() {
+    return `${this}_`; // TODO: I have no idea why this `_` is required but it prevents the string missing the last char
+  }
+}
+
 export function defineOperation<const T extends RustArgs = never>(
-  query: QueryDefinition<T>,
+  query: QueryDefinition<T>
 ): Query {
   // TODO: Bun is broken if this is a global
   const sqlDatatypeToRust = {
@@ -54,19 +66,9 @@ export function defineOperation<const T extends RustArgs = never>(
     new Proxy(
       {},
       {
-        get: (_, prop) => {
-          let result = prop;
-
-          // TODO: Use a custom class here instead of patching the `String` prototype
-          // @ts-expect-error
-          String.prototype.toISOString = function (this) {
-            return `${this}_`; // TODO: I have no idea why this `_` is required but it prevents the string missing the last char
-          };
-
-          return result;
-        },
-      },
-    ) as any,
+        get: (_, prop) => new Placeholder(prop as string),
+      }
+    ) as any
   );
   // @ts-expect-error
   const sql: { sql: string; params: string[] } = op.toSQL();
@@ -115,7 +117,14 @@ export function defineOperation<const T extends RustArgs = never>(
             .with(mysql_async::Params::Positional(vec![${sql.params
               // TODO: If the user puts a static value, this will snake case it.
               // We should detect a special suffix which the `Proxy` will return.
-              .map((p) => `${camelToSnakeCase(p)}.clone().into()`) // TODO: Only call `.clone()` when the value is used multiple times
+              .map((p) => {
+                // @ts-expect-error
+                if (p instanceof Placeholder) {
+                  return `${camelToSnakeCase(p.name)}.clone().into()`;
+                }
+
+                return `"${p}".into()`;
+              }) // TODO: Only call `.clone()` when the value is used multiple times
               .join(",")}]))
             ` +
       (!isQuery
@@ -179,7 +188,7 @@ export function exportQueries(queries: Query[], path: string) {
       dbStruct,
       dbStructConstructor,
       queries.map((q) => q.renderedFn).join("\n"),
-    ].join("\n"),
+    ].join("\n")
   );
 
   execSync(`rustfmt --edition 2021 ${path}`);
