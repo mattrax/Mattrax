@@ -12,7 +12,7 @@ export const metaRouter = createTRPCRouter({
 
       const content = [
         ...input.content.split("\n").map((l) => `> ${l}`),
-        `*${ctx.account.email}*`,
+        `\`${ctx.account.email}\``,
       ].join("\n");
 
       const body = new FormData();
