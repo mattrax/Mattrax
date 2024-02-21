@@ -6,3 +6,13 @@ pub enum Server {
     /// TODO
     LetsEncrypt,
 }
+
+impl Server {
+    /// TODO
+    pub fn directory_url(&self) -> &'static str {
+        match self {
+            Server::LetsEncryptStaging => "https://acme-staging-v02.api.letsencrypt.org/directory",
+            Server::LetsEncrypt => "https://acme-v02.api.letsencrypt.org/directory",
+        }
+    }
+}

@@ -1,6 +1,5 @@
 use std::{io, path::PathBuf};
 
-use sha2::{Digest, Sha256};
 use tokio::task::spawn_blocking;
 
 use crate::Store;
@@ -14,7 +13,7 @@ pub struct FsStore<S: Store> {
 
 impl<S: Store> FsStore<S> {
     pub fn new(dir: PathBuf, store: S) -> Result<Self, io::Error> {
-        if !dir.is_dir() {
+        if dir.exists() && !dir.is_dir() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "The provided path is not a directory",
@@ -30,13 +29,7 @@ impl<S: Store> FsStore<S> {
 
 impl<S: Store> Store for FsStore<S> {
     async fn get(&self, key: &str) -> Result<Option<Vec<u8>>, std::io::Error> {
-        let path = self.dir.join({
-            let mut hasher = Sha256::new();
-            hasher.update(key.as_bytes());
-            let result = hasher.finalize();
-            String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
-        });
-
+        let path = self.dir.join(key);
         let result = match spawn_blocking({
             let path = path.clone();
             move || std::fs::read(path)
@@ -73,12 +66,7 @@ impl<S: Store> Store for FsStore<S> {
     }
 
     async fn set(&self, key: &str, value: &[u8]) -> Result<(), std::io::Error> {
-        let path = self.dir.join({
-            let mut hasher = Sha256::new();
-            hasher.update(key.as_bytes());
-            let result = hasher.finalize();
-            String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
-        });
+        let path = self.dir.join(key);
 
         self.store.set(key, value).await?;
 

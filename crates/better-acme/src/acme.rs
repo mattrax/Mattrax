@@ -41,6 +41,8 @@ type TlsConfigFnBuilder =
 pub struct Acme<S: Store> {
     /// The backend storage implementation.
     store: Arc<S>,
+    /// The ACME server to use.
+    server: Server,
     /// A temporary cache for sharing certificates between the acceptor and resolver.
     temp: TempStore,
     /// This is optional so we can unload it in development.
@@ -124,6 +126,7 @@ impl<S: Store> Acme<S> {
 
         Self {
             store,
+            server,
             temp,
             acme_resolver,
             acme_tx: tx,
@@ -167,9 +170,16 @@ impl<S: Store> Acme<S> {
             ));
         }
 
-        // TODO: Replace this with a fallback when disabled.
+        // TODO: Store an in-memory lookup between domain & `Arc<CertifiedKey>` so we don't need to hash and parse the cert on each request.
+        let key = {
+            let mut hasher = Sha256::new();
+            hasher.update(server_name.as_bytes());
+            hasher.update(self.server.directory_url().as_bytes());
+            let result = hasher.finalize();
+            String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+        };
 
-        let output = match self.store.get(&server_name).await? {
+        let output = match self.store.get(&key).await? {
             // TODO: Caching this parsing & reuse `Arc`
             Some(cert) => Arc::new(
                 parse_cert(&cert)
@@ -182,19 +192,10 @@ impl<S: Store> Acme<S> {
                     .0,
             ),
             None => {
-                // TODO: Don't do this fallback in the future.
-                // For now `mdm.*` & `enterpriseenrollment.*` can't be looked up properly by my stuff so we rely on this fallback to serve them.
-
-                self.acme_resolver
-                    .as_ref()
-                    .unwrap()
-                    .resolve(hello)
-                    .ok_or_else(|| {
-                        io::Error::new(
-                            io::ErrorKind::Other,
-                            "Error resolving the server certificate!",
-                        )
-                    })?
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Unable to find certificate for domain '{server_name}'",
+                ));
             }
         };
 
@@ -260,17 +261,23 @@ impl<S: Store + Send + Sync> CertCache for StorageInterop<S> {
         domains: &[String],
         directory_url: &str,
     ) -> Result<Option<Vec<u8>>, Self::EC> {
-        let key = {
-            let mut hasher = Sha256::new();
-            for domain in domains.iter() {
+        for domain in domains {
+            let key = {
+                let mut hasher = Sha256::new();
                 hasher.update(domain.as_bytes());
-            }
-            hasher.update(directory_url.as_bytes());
-            let result = hasher.finalize();
-            String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
-        };
+                hasher.update(directory_url.as_bytes());
+                let result = hasher.finalize();
+                String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+            };
 
-        self.0.get(&key).await
+            let Ok(cert) = self.0.get(&key).await else {
+                continue;
+            };
+
+            return Ok(cert);
+        }
+
+        Ok(None)
     }
 
     async fn store_cert(
@@ -279,17 +286,19 @@ impl<S: Store + Send + Sync> CertCache for StorageInterop<S> {
         directory_url: &str,
         cert: &[u8],
     ) -> Result<(), Self::EC> {
-        let key = {
-            let mut hasher = Sha256::new();
-            for domain in domains.iter() {
+        for domain in domains {
+            let key = {
+                let mut hasher = Sha256::new();
                 hasher.update(domain.as_bytes());
-            }
-            hasher.update(directory_url.as_bytes());
-            let result = hasher.finalize();
-            String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
-        };
+                hasher.update(directory_url.as_bytes());
+                let result = hasher.finalize();
+                String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+            };
 
-        self.0.set(&key, cert).await
+            self.0.set(&key, cert).await?;
+        }
+
+        Ok(())
     }
 }
 
