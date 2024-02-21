@@ -1,6 +1,5 @@
-import { Show, Suspense, createResource } from "solid-js";
+import { Show, onMount } from "solid-js";
 import { z } from "zod";
-import { useAuthContext } from "~/app/(dash)";
 import {
   Card,
   CardDescription,
@@ -13,31 +12,27 @@ import { useZodParams } from "~/lib/useZodParams";
 export default function Page() {
   const params = useZodParams({ code: z.string() });
 
-  const acceptTenantInvite = trpc.tenant.admins.acceptInvite.useMutation();
-
   const trpcCtx = trpc.useContext();
-  const [tenant] = createResource(async () => {
-    const tenant = await acceptTenantInvite.mutateAsync(params);
-    await trpcCtx.auth.me.refetch();
-    return tenant;
-  });
+  const acceptTenantInvite = trpc.tenant.admins.acceptInvite.useMutation(
+    () => ({ onSuccess: async () => await trpcCtx.auth.me.refetch() })
+  );
+
+  onMount(() => acceptTenantInvite.mutateAsync(params));
 
   return (
-    <Suspense fallback="Loading...">
-      <Show when={tenant()}>
-        {(tenant) => (
-          <Card>
-            <CardHeader>
-              <CardDescription>
-                You are now an administrator of <b>{tenant().name}</b>.
-              </CardDescription>
-            </CardHeader>
-            <a class={buttonVariants()} href={`/${tenant().id}`}>
-              Go to tenant
-            </a>
-          </Card>
-        )}
-      </Show>
-    </Suspense>
+    <Show when={acceptTenantInvite.data} fallback="Loading...">
+      {(tenant) => (
+        <Card>
+          <CardHeader>
+            <CardDescription>
+              You are now an administrator of <b>{tenant().name}</b>.
+            </CardDescription>
+          </CardHeader>
+          <a class={buttonVariants()} href={`/${tenant().id}`}>
+            Go to tenant
+          </a>
+        </Card>
+      )}
+    </Show>
   );
 }
