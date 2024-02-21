@@ -9,10 +9,10 @@ export default function Page() {
     policyId: z.string(),
   });
   const tenant = useTenantContext();
-  const policy = trpc.policy.get.useQuery(() => ({
-    policyId: params.policyId,
-    tenantId: tenant.activeTenant.id,
-  }));
+  // const policy = trpc.policy.get.useQuery(() => ({
+  //   policyId: params.policyId,
+  //   tenantId: tenant.activeTenant.id,
+  // }));
 
   return (
     <div class="flex flex-col space-y-2">
@@ -20,13 +20,13 @@ export default function Page() {
       {/* // TODO: Form abstraction hooked up */}
       <div class="grid w-full max-w-sm items-center gap-1.5">
         <Label for="name">Name</Label>
-        <Input
+        {/* <Input
           type="email"
           id="name"
           placeholder="My Cool Policy"
           value={policy.data?.name}
           disabled
-        />
+        /> */}
       </div>
     </div>
   );

@@ -105,14 +105,15 @@ export default function Page(props: ParentProps) {
               </div>
 
               <div class="flex space-x-4">
-                {!transitionPending() && <PolicyVersionSwitcher />}
-                <DeployButton
+                {/* {!transitionPending() && <PolicyVersionSwitcher />} */}
+                {/* <DeployButton
                   policyState={policyState}
                   setPolicyState={setPolicyState}
-                />
+                /> */}
                 <ConfirmDialog>
                   {(confirm) => (
                     <ActionsDropdown
+                      policyId={params.policyId}
                       onSelect={async (item) => {
                         switch (item) {
                           case "delete":
@@ -265,11 +266,10 @@ const SidebarItem = (
 );
 
 function ActionsDropdown(
-  props: ParentProps & { onSelect(item: "delete"): void }
+  props: ParentProps & { onSelect(item: "delete"): void; policyId: string }
 ) {
   const navigate = useNavigate();
   const tenant = useTenantContext();
-  const params = useParams();
 
   const duplicatePolicy = trpc.policy.duplicate.useMutation(() => ({
     onSuccess: async (policyId) => {
@@ -286,7 +286,7 @@ function ActionsDropdown(
           disabled={duplicatePolicy.isPending}
           onSelect={() =>
             duplicatePolicy.mutate({
-              policyId: params.policyId,
+              policyId: props.policyId,
               tenantId: tenant.activeTenant.id,
             })
           }
