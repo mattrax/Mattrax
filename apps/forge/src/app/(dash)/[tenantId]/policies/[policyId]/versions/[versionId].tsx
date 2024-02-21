@@ -14,7 +14,7 @@ import { toast } from "solid-sonner";
 import dayjs from "dayjs";
 import { z } from "zod";
 
-import { isDebugMode, trpc } from "~/lib";
+import { isDebugMode, trpc, untrackScopeFromSuspense } from "~/lib";
 import {
   Button,
   DialogContent,
@@ -105,11 +105,11 @@ export default function Page(props: ParentProps) {
               </div>
 
               <div class="flex space-x-4">
-                {/* {!transitionPending() && <PolicyVersionSwitcher />} */}
-                {/* <DeployButton
+                <PolicyVersionSwitcher />
+                <DeployButton
                   policyState={policyState}
                   setPolicyState={setPolicyState}
-                /> */}
+                />
                 <ConfirmDialog>
                   {(confirm) => (
                     <ActionsDropdown
@@ -208,12 +208,13 @@ function PolicyVersionSwitcher() {
     tenantId: tenant.activeTenant.id,
   }));
 
-  const activeVersion = () =>
-    versions.data?.find((v) => v.id === params.versionId);
+  const data = untrackScopeFromSuspense(() => versions.data);
+
+  const activeVersion = () => data()?.find((v) => v.id === params.versionId);
 
   return (
     <Select
-      options={versions.data || []}
+      options={data() || []}
       placeholder="Select a fruit…"
       itemComponent={(props) => (
         <SelectItem item={props.item}>
