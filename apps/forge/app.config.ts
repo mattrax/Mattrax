@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createApp } from "vinxi";
 import { type Plugin } from "vite";
+import tsconfigPaths from "vite-tsconfig-paths";
 import viteConfigFileRaw from "./vite.config";
 
 let viteConfigFile: any = undefined;
@@ -45,24 +46,12 @@ export default createApp({
       base: "/api",
       handler: fileURLToPath(new URL("./src/api/handler.ts", import.meta.url)),
       target: "server",
-      plugins: (configEnv) => {
-        if (!viteConfigFile) {
-          if (typeof viteConfigFileRaw === "function") {
-            viteConfigFile = viteConfigFileRaw(configEnv);
-          } else {
-            viteConfigFile = viteConfigFileRaw;
-          }
-        }
-
-        return [
-          // Due to Vite's plugin execution order this will not be injected by `inject-vite-config`
-          ...(("plugins" in viteConfigFile && viteConfigFile?.plugins) || []),
-          {
-            name: "inject-vite-config",
-            config: () => viteConfigFile,
-          } satisfies Plugin,
-        ];
-      },
+      plugins: () => [
+        tsconfigPaths({
+          // If this isn't set Vinxi hangs on startup
+          root: ".",
+        }),
+      ],
     },
   ],
   server: {
