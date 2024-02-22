@@ -9,11 +9,17 @@ export const enrollmentRouter = new Hono()
   .get("/login", async (c) => {
     // `appru` and `login_hint` are parameters set by Windows MDM client
     const appru = c.req.query("appru");
+    const accesstoken = c.req.query("accesstoken"); // The access token from the `ms-device-enrollment:?` link
     const email = c.req.query("email") ?? c.req.query("login_hint");
     if (!email) {
       // TODO: Pretty error page
       c.status(400);
       return c.text("Email is required");
+    }
+
+    // The user did the login flow in their browser, so we can skip doing it again in within the Windows Federated enrollment flow.
+    if (appru && accesstoken) {
+      return c.html(renderMdmCallback(appru, accesstoken));
     }
 
     // TODO: Look up user to tenant ID
@@ -43,9 +49,7 @@ export const enrollmentRouter = new Hono()
     const authToken = "TODOSpecialTokenWhichVerifiesAuth"; // TODO: Get this back from OAuth provider
 
     if (appru) {
-      return c.html(
-        `<h3>Mattrax Login</h3><form id="loginForm" method="post" action="${appru}"><p><input type="hidden" name="wresult" value="${authToken}" /></p><input type="submit" value="Login" /></form><script>document.getElementById('loginForm').submit()</script>`
-      );
+      return c.html(renderMdmCallback(appru, authToken));
     } else {
       // TODO: Can we use cookies for this cause I don't trust non-tech people to not accidentally copy it out. - We would wanna render `/enroll` with Solid on the server for that.
       const searchParams = new URLSearchParams();
@@ -54,3 +58,6 @@ export const enrollmentRouter = new Hono()
       return c.redirect(`/enroll?${searchParams.toString()}`);
     }
   });
+
+const renderMdmCallback = (appru: string, authToken: string) =>
+  `<h3>Mattrax Login</h3><form id="loginForm" method="post" action="${appru}"><p><input type="hidden" name="wresult" value="${authToken}" /></p><input type="submit" value="Login" /></form><script>document.getElementById('loginForm').submit()</script>`;
