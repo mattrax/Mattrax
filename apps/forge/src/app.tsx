@@ -57,6 +57,7 @@ function createQueryClient(errorBus: EventBus<[string, unknown]>) {
         retry: false,
         gcTime: 1000 * 60 * 60 * 24, // 24 hours
         refetchInterval: 1000 * 60, // 1 minute
+        throwOnError: true,
         placeholderData: keepPreviousData,
       },
       mutations: {
@@ -106,11 +107,13 @@ function App() {
 
             onCleanup(
               errorBus.listen(([scopeMsg, error]) => {
-                let errorMsg = [
-                  scopeMsg,
-                  document.createElement("br"),
-                  "Please reload to try again!",
-                ];
+                let errorMsg = (
+                  <>
+                    {scopeMsg},
+                    <br />
+                    Please reload to try again!
+                  </>
+                );
 
                 if (isTRPCClientError(error)) {
                   if (error.data?.code === "UNAUTHORIZED") {
@@ -119,9 +122,9 @@ function App() {
                   } else if (error.data?.code === "FORBIDDEN") {
                     if (error.message === "tenant") navigate("/");
                     else
-                      errorMsg = [
-                        "You are not allowed to access this resource!",
-                      ];
+                      errorMsg = (
+                        <>You are not allowed to access this resource!,</>
+                      );
                   }
                 }
 
@@ -141,11 +144,11 @@ function App() {
                 }
 
                 toast.error(
-                  [
-                    "You are offline!",
-                    document.createElement("br"),
-                    "Please reconnect to continue!",
-                  ],
+                  <>
+                    You are offline!,
+                    <br />
+                    Please reconnect to continue!
+                  </>,
                   {
                     id: "network-offline",
                     duration: Infinity,
@@ -177,13 +180,13 @@ function App() {
                       reset();
                     }
 
-                    console.error(err);
-
                     return (
-                      <div>
-                        <div>Error:</div>
-                        <p>{err.toString()}</p>
-                        <button onClick={reset}>Reset</button>
+                      <div class="flex flex-col items-center justify-center h-full gap-4">
+                        <h1 class="text-3xl font-semibold">
+                          Failed To Load Mattrax
+                        </h1>
+                        <p class="text-gray-600">{err.toString()}</p>
+                        <Button onClick={reset}>Reload</Button>
                       </div>
                     );
                   }}
@@ -204,5 +207,6 @@ function App() {
 }
 
 import { render } from "solid-js/web";
+import { Button } from "./components/ui";
 
 render(App, document.getElementById("root")!);
