@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::Add, sync::Arc};
 
 use axum::{
     extract::{Query, State},
@@ -8,14 +8,17 @@ use axum::{
     Router,
 };
 use base64::prelude::*;
+use mysql_common::time::OffsetDateTime;
 use rcgen::{
-    Certificate, CertificateSigningRequestParams, ExtendedKeyUsagePurpose, KeyUsagePurpose,
-    SerialNumber,
+    Certificate, CertificateSigningRequestParams, CustomExtension, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose, SerialNumber
 };
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
 
 use crate::api::Context;
+
+// contains the OID for the Microsoft certificate extension which includes the MDM DeviceID
+const MICROSOFT_DEVICE_ID_EXTENSION: &[u64] = &[1, 3, 6, 1, 4, 1, 311, 66, 1, 0];
 
 #[derive(Deserialize)]
 pub struct AuthQueryParams {
@@ -55,7 +58,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
         .route("/Discovery.svc", get(|| async move {
             StatusCode::OK
         }))
-        .route("/Discovery.svc", post(|State(state): State<Arc<Context>>, body: String| async move {
+        .route("/Discovery.svc", post(|State(_state): State<Arc<Context>>, body: String| async move {
             // TODO: Proper SOAP parsing
             let message_id = extract_from_xml("a:MessageID", &body);
 
@@ -116,13 +119,24 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
 
             println!("{:?}", csr.params.distinguished_name);
 
-            csr.params.serial_number = Some(SerialNumber::from_slice(&[2])); // TODO: Encode proper Rust int type into the bytes
-            csr.params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+            // Version:               csr.Version,
+            // Signature:             csr.Signature,
+            // SignatureAlgorithm:    csr.SignatureAlgorithm,
+            // PublicKey:             csr.PublicKey,
+            // PublicKeyAlgorithm:    csr.PublicKeyAlgorithm,
+            csr.params.distinguished_name = DistinguishedName::new();
+            csr.params.distinguished_name.push(DnType::CommonName, "Device".to_string()); // TODO: Rcgen
+            // Issuer:
+            csr.params.serial_number = Some(SerialNumber::from_slice(&[1])); // TODO: Encode proper Rust int type into the bytes
+            csr.params.not_before = OffsetDateTime::now_utc();
+            csr.params.not_after = csr.params.not_before.clone().add(time::Duration::days(365));
+            csr.params.key_usages = vec![KeyUsagePurpose::DigitalSignature, KeyUsagePurpose::KeyEncipherment];
             csr.params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ClientAuth];
-
-            // csr.params.distinguished_name.push("CN".to_string(), "Mattrax Device".to_string());
-            // csr.params.not_after
-            // csr.params.not_before
+            // BasicConstraintsValid: true, // TODO
+            csr.params.is_ca = IsCa::ExplicitNoCa;
+            csr.params.custom_extensions = vec![
+                CustomExtension::from_oid_content(MICROSOFT_DEVICE_ID_EXTENSION, "TODO".as_bytes().to_vec()),
+            ];           
 
             println!("{:?} {:?}", csr.params.not_after, csr.params.not_before); // TODO
 
@@ -130,7 +144,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
 
             let cert_store = "User";
             // if enrollmentType == "Device" {
-            // 	certStore = "System"
+            // 	cert_store = "System"
             // }
 
             let domain = "https://mdm.mattrax.app"; // TODO: Don't hardcode it
@@ -147,7 +161,12 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             let signed_client_cert_fingerprint = hasher.finalize();
             let signed_client_cert_fingerprint = hex::encode(&signed_client_cert_fingerprint).to_uppercase();
 
+            
             let client_ctr_raw = BASE64_STANDARD.encode(certificate.der());
+            
+            let ssl_client_cert_search_criteria = format!("Subject={}&amp;Stores=MY%5C{cert_store}", urlencoding::encode("CN=Device"));
+            // TODO: Derive subject from the certificate - `certificate.get_params().distinguished_name()`
+            
 
             // TODO: Remove the device from the DB if it doesn't do an initial checkin within a certain time period
             // TODO: Get all this information from parsing the request.
@@ -171,19 +190,24 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                             <characteristic type="{signed_client_cert_fingerprint}">
                                 <parm name="EncodedCertificate" value="{client_ctr_raw}" />
                             </characteristic>
-                            <characteristic type="PrivateKeyContainer" />
+                            <characteristic type="PrivateKeyContainer">
+                                <param name="KeySpec" value="2" />
+                                <param name="ProviderName" value="ConfigMgrEnrollment" />
+                                <param name="ProviderType" value="1" />
+                            </characteristic>
                         </characteristic>
                     </characteristic>
                 </characteristic>
                 <characteristic type="APPLICATION">
                     <parm name="APPID" value="w7" />
-                    <parm name="PROVIDER-ID" value="DEMO MDM" />
-                    <parm name="NAME" value="Windows MDM Demo Server" />
+                    <parm name="PROVIDER-ID" value="Mattrax" />
+                    <parm name="NAME" value="Mattrax MDM" />
                     <parm name="ADDR" value="{domain}/ManagementServer/Manage.svc" />
                     <parm name="ServerList" value="{domain}/ManagementServer/ServerList.svc" />
                     <parm name="ROLE" value="4294967295" />
                     <parm name="BACKCOMPATRETRYDISABLED" />
                     <parm name="DEFAULTENCODING" value="application/vnd.syncml.dm+xml" />
+                    <parm name="SSLCLIENTCERTSEARCHCRITERIA" value="{ssl_client_cert_search_criteria}" />
                     <characteristic type="APPAUTH">
                         <parm name="AAUTHLEVEL" value="CLIENT" />
                         <parm name="AAUTHTYPE" value="DIGEST" />

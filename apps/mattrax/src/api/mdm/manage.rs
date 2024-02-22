@@ -7,7 +7,9 @@ use crate::api::Context;
 pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
     Router::new().route(
         "/Manage.svc",
-        post(|| async move {
+        post(|body: String| async move {
+            println!("{:?}", body);
+
             // TODO: Check `MS-Signature` header - base64 CMS detached + signature SHA-2 hash & check timestamp
             // TODO: Decode `Mode` from URL params
             // TODO: `Authorization` + `Bearer` token for AzureAD user account
