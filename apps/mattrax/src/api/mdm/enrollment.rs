@@ -47,20 +47,19 @@ fn extract_from_xml2<'a>(tag_name: &str, end_tag_name: &str, body: &'a str) -> &
 // `/EnrollmentServer`
 pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
     Router::new()
+        // TODO: Move this to SolidJS
         .route("/TermsOfService.svc", get(|| async move {
             Html(r#"<h3>AzureAD Term Of Service</h3><button onClick="acceptBtn()">Accept</button><script>function acceptBtn(){var urlParams=new URLSearchParams(window.location.search);if (!urlParams.has('redirect_uri')){alert('Redirect url not found. Did you open this in your broswer?');}else{window.location=urlParams.get('redirect_uri') + "?IsAccepted=true&OpaqueBlob=TODOCustomDataFromAzureAD";}}</script>"#)
-        }))
-        .route("/Auth.svc", get(|Query(query): Query<AuthQueryParams>| async move {
-            let auto_submit_form = "<script>document.getElementById('loginForm').submit()</script>";
-            Html(format!(r#"<h3>MDM Federated Login</h3><form id="loginForm" method="post" action="{}"><p><input type="hidden" name="wresult" value="TODOSpecialTokenWhichVerifiesAuth" /></p><input type="submit" value="Login" /></form>{}"#, query.appru, auto_submit_form))
         }))
         // allows the device to tests a domain for the existence of a enrollment server
         .route("/Discovery.svc", get(|| async move {
             StatusCode::OK
         }))
-        .route("/Discovery.svc", post(|State(_state): State<Arc<Context>>, body: String| async move {
+        .route("/Discovery.svc", post(|State(state): State<Arc<Context>>, body: String| async move {
             // TODO: Proper SOAP parsing
             let message_id = extract_from_xml("a:MessageID", &body);
+
+            println!("{:?}", body); // TODO
 
             // TODO: Proper SOAP generation
             let body = format!(r#"<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
@@ -74,13 +73,18 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                     <DiscoverResult>
                         <AuthPolicy>Federated</AuthPolicy>
                         <EnrollmentVersion>5.0</EnrollmentVersion>
-                        <EnrollmentPolicyServiceUrl>{1}/EnrollmentServer/Policy.svc</EnrollmentPolicyServiceUrl>
-                        <EnrollmentServiceUrl>{1}/EnrollmentServer/Enrollment.svc</EnrollmentServiceUrl>
-                        <AuthenticationServiceUrl>{1}/EnrollmentServer/Auth.svc</AuthenticationServiceUrl>
+                        <EnrollmentPolicyServiceUrl>https://{1}/EnrollmentServer/Policy.svc</EnrollmentPolicyServiceUrl>
+                        <EnrollmentServiceUrl>https://{1}/EnrollmentServer/Enrollment.svc</EnrollmentServiceUrl>
+                        <AuthenticationServiceUrl>https://{2}/api/enrollment/login</AuthenticationServiceUrl>
                     </DiscoverResult>
                 </DiscoverResponse>
             </s:Body>
-        </s:Envelope>"#, message_id, "https://enterpriseenrollment.mattrax.app");
+        </s:Envelope>"#,
+        message_id,
+        state.config.get().enrollment_domain,
+        // TODO: From config
+        "cloud.mattrax.app"
+    );
 
             Response::builder()
                 .header("Content-Type", "application/soap+xml; charset=utf-8")

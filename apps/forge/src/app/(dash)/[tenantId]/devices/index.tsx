@@ -8,7 +8,7 @@ import {
   createColumnHelper,
 } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
-import { useNavigate } from "@solidjs/router";
+import { useLocation, useNavigate } from "@solidjs/router";
 import { RouterOutput } from "~/api/trpc";
 import dayjs from "dayjs";
 
@@ -100,13 +100,28 @@ function createDevicesTable() {
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
 export default function Page() {
+  // const location = useLocation();
   const navigate = useNavigate();
   const { table, devices } = createDevicesTable();
   const isLoading = untrackScopeFromSuspense(() => devices.isLoading);
 
   return (
     <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
-      <h1 class="text-3xl font-bold mb-4">Devices</h1>
+      <div class="flex justify-between">
+        <h1 class="text-3xl font-bold mb-4">Devices</h1>
+        {/* // TODO: Put this somewhere but make it logical and right here is not it */}
+        {/* <Button
+          onClick={() =>
+            navigate("/enroll", {
+              state: {
+                backUrl: location.pathname,
+              },
+            })
+          }
+        >
+          Enroll Device
+        </Button> */}
+      </div>
       <div class="flex flex-row items-center gap-4">
         <Input
           class="flex-1"
