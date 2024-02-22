@@ -207,6 +207,17 @@ export const devices = mysqlTable("devices", {
     .default("device"),
 });
 
+// TODO: Remove this table
+export const device_windows_data_temp = mysqlTable("device_windows_data_temp", {
+  pk: serial("id").primaryKey(),
+  key: varchar("key", { length: 256 }).notNull(),
+  value: varchar("key", { length: 2048 }).notNull(),
+  deviceId: serialRelation("deviceId").references(() => devices.pk),
+  lastModified: timestamp("lastModified").notNull().defaultNow(),
+});
+
+// export const deviceSoftwareInventories = mysqlTable("device_software_inventory", {});
+
 export const devicesRelations = relations(devices, ({ one }) => ({
   groupable: one(groupables, {
     fields: [devices.pk, devices.groupableVariant],
