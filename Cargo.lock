@@ -1550,6 +1550,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "mattrax-utils",
+ "ms-mdm",
  "mysql_async",
  "mysql_common",
  "rcgen 0.13.0",

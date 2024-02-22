@@ -15,6 +15,14 @@ impl Source {
     }
 }
 
+impl From<Source> for Target {
+    fn from(source: Source) -> Self {
+        Self {
+            loc_uri: source.loc_uri,
+        }
+    }
+}
+
 /// The Target element type specifies target routing information.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub struct Target {
@@ -26,6 +34,14 @@ impl Target {
     pub fn new(loc_uri: impl Into<String>) -> Self {
         Self {
             loc_uri: loc_uri.into(),
+        }
+    }
+}
+
+impl From<Target> for Source {
+    fn from(target: Target) -> Self {
+        Self {
+            loc_uri: target.loc_uri,
         }
     }
 }

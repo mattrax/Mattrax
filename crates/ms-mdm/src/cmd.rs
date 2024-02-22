@@ -13,6 +13,9 @@ pub enum Cmd {
     Replace,
     Results,
     Status,
+    // Again not in spec's type definition but implied other places.
+    // #[easy_xml(rename = "SyncHdr")] // TODO: ?
+    // SyncHdr,
     #[default] // TODO: Remove this variant. I think it's a limitation of `yaserde`.
     _Unreachable,
 }

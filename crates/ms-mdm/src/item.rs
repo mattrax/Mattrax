@@ -1,27 +1,40 @@
 use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
-use crate::Target;
+use crate::{Source, Target};
 
 /// An enum to represent all possible children for `Item`.
 /// This would be better represeted as `serde_json::Value` like type but `yaserde` doesn't have one I can find. // TODO: Maybe upstream PR?
 #[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 enum Value {
-    Target(#[easy_xml(flatten)] Target), // TODO: Is this rename as intended???
+    Target(#[easy_xml(rename = "Item")] Target), // TODO: Is this rename as intended???
+    Source(#[easy_xml(rename = "Source")] Source),
 }
 
 /// The Item element type provides a container for item data.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 pub struct Item {
-    // TODO: Tuple structs are broken
-    #[easy_xml(flatten)] // TODO: I have a feeling this won't work how I want it to.
-    child: Value,
+    // // TODO: Tuple structs are broken
+    // #[easy_xml(rename = "Target|Source", enum)]
+    // // TODO: I have a feeling this won't work how I want it to.
+    // #[easy_xml(rename = "Item|Source", enum)]
+    // child: Value,
+    // TODO: These are for `Replace` & are both required fields
+    #[easy_xml(rename = "Source")]
+    source: Option<Source>,
+    #[easy_xml(rename = "Data")]
+    data: Option<String>, // TODO `Data` or `String`? This field literally isn't in the fucking spec.
+
+                          // TODO: These are for `Status` & is required
+                          // #[easy_xml(child)]
+                          // child: Option<String>,
 }
 
 impl From<Target> for Item {
     fn from(value: Target) -> Self {
-        Item {
-            child: Value::Target(value),
-        }
+        // Item {
+        //     child: Value::Target(value),
+        // }
+        todo!();
     }
 }
 

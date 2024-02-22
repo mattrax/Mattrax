@@ -10,6 +10,13 @@ use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 // - MaxMsgSize
 // - Type
 
+// is the recommended maximum amount of data that is allowed in a single request.
+pub const MAX_REQUEST_BODY_SIZE: usize = 524288;
+
 /// The Meta element type provides a container for meta-information about the parent element type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
-pub struct Meta {}
+pub struct Meta {
+    // TODO: Does this namespace work correctly???
+    // #[easy_xml(prefix = "a", rename = "MaxRequestBodySize")]
+    // pub max_request_body_size: Option<usize>, // TODO: Should this be a `usize`. It's no in the MS spec but check the OMA spec.
+}

@@ -46,7 +46,7 @@ export const enrollmentRouter = new Hono()
       return c.text("Email is required");
     }
 
-    const authToken = "TODOSpecialTokenWhichVerifiesAuth"; // TODO: Get this back from OAuth provider
+    const authToken = "TODOSpecialTokenWhichVerifiesAuth"; // TODO: Get this back from OAuth provider. This needs to hold the ID of Mattrax tenant.
 
     if (appru) {
       return c.html(renderMdmCallback(appru, authToken));

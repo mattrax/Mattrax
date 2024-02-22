@@ -1,6 +1,7 @@
-use std::str::FromStr;
+use std::{cell::RefCell, rc::Rc, str::FromStr};
 
 use easy_xml::{XmlDeserialize, XmlSerialize};
+use xml::{name::OwnedName, namespace::Namespace};
 
 /// The SessionID element type specifies the identifier of the SyncML session that is associated with the SyncML message.
 /// The SessionID can remain valid across the exchange of many SyncML messages between the client and server.
@@ -39,7 +40,13 @@ impl XmlSerialize for SessionId {
     where
         Self: Sized,
     {
-        *element = easy_xml::XmlElement::Text(self.as_str().into());
+        *element = easy_xml::XmlElement::Node(Rc::new(RefCell::new(easy_xml::XmlNode {
+            name: OwnedName::local("SessionID"),
+            attributes: vec![],
+            namespace: Namespace::empty(),
+            elements: vec![easy_xml::XmlElement::Text(self.as_str().into())],
+            parent: None,
+        })));
     }
 }
 

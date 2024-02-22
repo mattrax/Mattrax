@@ -59,7 +59,7 @@ pub struct Alert {
     #[easy_xml(rename = "Data")]
     data: Data,
     #[easy_xml(rename = "Item")]
-    item: Item,
+    item: Option<Item>, // The spec says this is required, but the MDM client implementation doesn't seem to agree.
 }
 
 // TODO: What the fuck is the 'Type' element Microsoft. It's not documented and it's not in the Open Mobile Alliance spec either.
