@@ -126,12 +126,14 @@ function FeedbackPopover(props: ParentProps) {
   return (
     <Popover open={open()} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{props.children}</PopoverTrigger>
-      <PopoverContent class="flex flex-col items-end gap-2">
+      <PopoverContent class="flex flex-col gap-2 md:w-[350px]">
+        <p class="text-sm">Enter feedback and we will get back to you:</p>
         <Textarea
           value={content()}
           onInput={(e) => setContent(e.target.value)}
         />
         <Button
+          class="w-full"
           onClick={async () => {
             sendFeedback.mutateAsync({ content: content() });
             setOpen(false);

@@ -1,18 +1,44 @@
-import type { Component } from "solid-js"
-import { splitProps } from "solid-js"
+import type { Component } from "solid-js";
+import { splitProps } from "solid-js";
 
-import { Popover as PopoverPrimitive } from "@kobalte/core"
+import { Popover as PopoverPrimitive } from "@kobalte/core";
 
-import { cn } from "~/lib/utils"
+import { cn } from "~/lib/utils";
+import { Controller, ControllerProvider, createController } from "./controller";
 
-const Popover: Component<PopoverPrimitive.PopoverRootProps> = (props) => {
-  return <PopoverPrimitive.Root gutter={4} {...props} />
-}
+const Popover: Component<
+  Omit<PopoverPrimitive.PopoverRootProps, "open"> &
+    (
+      | { open: boolean; setOpen: (open: boolean) => void }
+      | { controller?: Controller }
+    )
+> = (props) => {
+  const controller =
+    "controller" in props && props.controller !== undefined
+      ? props.controller
+      : createController();
 
-const PopoverTrigger = PopoverPrimitive.Trigger
+  return (
+    <ControllerProvider value={controller}>
+      <PopoverPrimitive.Root
+        gutter={4}
+        open={("open" in props ? props.open : false) || controller.open()}
+        onOpenChange={(isOpen) => {
+          if ("setOpen" in props) props.setOpen(isOpen);
+          controller.setOpen(isOpen);
+        }}
+        {...props}
+      />
+    </ControllerProvider>
+  );
+};
 
-const PopoverContent: Component<PopoverPrimitive.PopoverContentProps> = (props) => {
-  const [, rest] = splitProps(props, ["class"])
+const PopoverTrigger = PopoverPrimitive.Trigger;
+
+const PopoverContent: Component<PopoverPrimitive.PopoverContentProps> = (
+  props
+) => {
+  const [, rest] = splitProps(props, ["class"]);
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
@@ -23,7 +49,7 @@ const PopoverContent: Component<PopoverPrimitive.PopoverContentProps> = (props) 
         {...rest}
       />
     </PopoverPrimitive.Portal>
-  )
-}
+  );
+};
 
-export { Popover, PopoverTrigger, PopoverContent }
+export { Popover, PopoverTrigger, PopoverContent };

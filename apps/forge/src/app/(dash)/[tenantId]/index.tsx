@@ -31,14 +31,14 @@ export default function Page() {
         <StatItem title="Groups" value={data().groups ?? 0} />
       </dl>
       {isDebugMode() ? (
+        <div class="flex">
+          <RecentChanges />
+        </div>
+      ) : (
         <div>
           <h1 class="text-muted-foreground opacity-70">
             Dashboard coming soon...
           </h1>
-        </div>
-      ) : (
-        <div class="flex">
-          <RecentChanges />
         </div>
       )}
     </div>

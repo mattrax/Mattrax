@@ -160,9 +160,9 @@ export const policyVersions = mysqlTable("policy_versions", {
   policyPk: serialRelation("policyId")
     // .references(() => policies.id) // This creates a circular reference so is let uncommented
     .notNull(),
-  // status: mysqlEnum("status", ["open", "staged", "deployed"])
-  //   .notNull()
-  //   .default("open"),
+  status: mysqlEnum("status", ["open", "deploying", "deployed"])
+    .notNull()
+    .default("open"),
   data: json("data").notNull().default([]),
   // deployedAt: timestamp("deployedAt"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),

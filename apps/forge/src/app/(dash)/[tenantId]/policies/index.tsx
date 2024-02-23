@@ -1,6 +1,5 @@
 import { Suspense, startTransition } from "solid-js";
 import {
-  type ColumnDef,
   createSolidTable,
   getCoreRowModel,
   getPaginationRowModel,
@@ -125,8 +124,7 @@ export default function Page() {
         <StandardTable
           table={table}
           onRowClick={(row) =>
-            row.activeVersionId !== null &&
-            navigate(`${row.id}/versions/${row.activeVersionId}`)
+            row.activeVersionId !== null && navigate(`${row.id} `)
           }
         />
         <div class="flex items-center justify-end space-x-2 py-4">
