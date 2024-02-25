@@ -69,6 +69,7 @@ export default function Page() {
                     provider().variant,
                     provider().remoteId
                   )}
+                  target="_blank"
                 >
                   {provider().name ?? AUTH_PROVIDER_DISPLAY[provider().variant]}
                   <IconPrimeExternalLink class="inline" />
