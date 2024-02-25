@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { SQL, and, count, eq, sql } from "drizzle-orm";
 import { buildApplePolicy } from "@mattrax/policy";
 
 import { createTRPCRouter, tenantProcedure } from "../helpers";
-import { db, devices, policies, policyVersions } from "~/db";
+import { accounts, db, devices, policies, policyVersions } from "~/db";
 import { createId } from "@paralleldrive/cuid2";
 
 export const policyRouter = createTRPCRouter({
@@ -24,10 +24,11 @@ export const policyRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const policy = await db
         .select({
-          id: policies.pk,
+          id: policies.id,
           name: policies.name,
           activeVersion: {
             id: policyVersions.pk,
+            status: policyVersions.status,
             data: policyVersions.data,
             createdAt: policyVersions.createdAt,
           },
@@ -41,6 +42,8 @@ export const policyRouter = createTRPCRouter({
           )
         )
         .then((v) => v?.[0]);
+
+      if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
       return policy;
     }),
@@ -74,11 +77,16 @@ export const policyRouter = createTRPCRouter({
       const versions = await db
         .select({
           id: policyVersions.id,
+          status: policyVersions.status,
           data: policyVersions.data,
+          deployedBy: accounts.name,
+          deployedAt: policyVersions.deployedAt,
+          deployComment: policyVersions.deployComment,
           createdAt: policyVersions.createdAt,
         })
         .from(policyVersions)
         .innerJoin(policies, eq(policyVersions.policyPk, policies.pk))
+        .leftJoin(accounts, eq(policyVersions.deployedBy, accounts.pk))
         .where(
           and(
             eq(policies.id, input.policyId),
@@ -89,36 +97,150 @@ export const policyRouter = createTRPCRouter({
       return versions;
     }),
 
+  updateVersion: tenantProcedure
+    .input(
+      z.object({
+        policyId: z.string(),
+        versionId: z.string(),
+        data: z.any(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // TODO: Check no-one has edited this policy since we read it.
+
+      await db
+        .update(policyVersions)
+        .set({
+          data: input.data,
+        })
+        .where(
+          and(
+            eq(policyVersions.id, input.versionId),
+            // TODO: tenant id  // eq(policyVersions.policyPk, input.policyId) // TODO
+            // You can only update non-deployed versions
+            eq(policyVersions.status, "open")
+          )
+        );
+
+      return {};
+    }),
+
+  deployVersion: tenantProcedure
+    .input(z.object({ policyId: z.string(), comment: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      // TODO: Maybe transaction for this?
+
+      const policy = await db
+        .select({
+          id: policies.id,
+          pk: policies.pk,
+          activeVersion: policies.activeVersion,
+        })
+        .from(policies)
+        .where(
+          and(
+            eq(policies.id, input.policyId),
+            eq(policies.tenantPk, ctx.tenant.pk)
+          )
+        )
+        .then((v) => v?.[0]);
+      if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
+
+      const status = await db
+        .update(policyVersions)
+        .set({
+          status: "deploying",
+          deployComment: input.comment,
+          deployedBy: ctx.account.pk,
+          deployedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(policyVersions.policyPk, policy.pk),
+            eq(policyVersions.status, "open")
+          )
+        );
+      const versionId = parseInt(status.insertId);
+
+      await db
+        .update(policies)
+        .set({ activeVersion: versionId })
+        .where(
+          and(
+            eq(policies.id, input.policyId),
+            eq(policies.tenantPk, ctx.tenant.pk)
+          )
+        );
+
+      if (status.rowsAffected !== 0) {
+        // TODO: Send push notification to all devices
+        // TODO: Push into device page
+      }
+    }),
+
   createVersion: tenantProcedure
     .input(z.object({ policyId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      throw new Error("TODO");
+      // TODO: Maybe transaction for this?
 
-      // const policy = await db
-      //   .select({
-      //     id: policies.pk,
-      //     activeVersion: policies.activeVersion,
-      //   })
-      //   .from(policies)
-      //   .where(
-      //     and(
-      //       eq(policies.id, input.policyId),
-      //       eq(policies.tenantPk, ctx.tenant.pk)
-      //     )
-      //   )
-      //   .then((v) => v?.[0]);
-      // if (!policy) throw new Error("todo: error handling");
-      // const newVersionId = createId();
-      // const newVersion = await db.insert(policyVersions).values({
-      //   id: newVersionId,
-      //   policyPk: policy.id,
-      //   data: policy.activeVersion,
-      // });
-      // await db
-      //   .update(policies)
-      //   .set({ activeVersion: newVersion.insertId })
-      //   .where(eq(policies.pk, policy.id));
-      // return newVersionId;
+      const policy = await db
+        .select({
+          pk: policies.pk,
+        })
+        .from(policies)
+        .where(
+          and(
+            eq(policies.id, input.policyId),
+            eq(policies.tenantPk, ctx.tenant.pk)
+          )
+        )
+        .then((v) => v?.[0]);
+      if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
+
+      const numOpenPolicies = await db
+        .select({
+          count: count(),
+        })
+        .from(policyVersions)
+        .where(
+          and(
+            eq(policyVersions.id, input.policyId),
+            // eq(policyVersions.tenantPk, ctx.tenant.pk),
+            eq(policyVersions.status, "open")
+          )
+        )
+        .then((v) => v?.[0]?.count);
+
+      if (numOpenPolicies !== 0)
+        throw new Error("There is already an open policy version");
+
+      const activeVersion = await db
+        .select({
+          id: policyVersions.pk,
+          data: policyVersions.data,
+        })
+        .from(policyVersions)
+        .where(
+          and(
+            eq(policyVersions.id, input.policyId)
+            // eq(policyVersions.policyPk, policy.id), // TODO
+          )
+        )
+        .then((v) => v?.[0]);
+
+      const newVersionId = createId();
+      const newVersion = await db.insert(policyVersions).values({
+        id: newVersionId,
+        policyPk: policy.pk,
+        data: activeVersion?.data || {},
+      });
+
+      await db
+        .update(policies)
+        .set({ activeVersion: parseInt(newVersion.insertId) })
+        .where(eq(policies.pk, policy.pk));
+
+      return newVersionId;
     }),
 
   // duplicate: tenantProcedure

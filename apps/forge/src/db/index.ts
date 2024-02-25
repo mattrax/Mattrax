@@ -15,4 +15,4 @@ const connection = connect({
   },
 });
 
-export const db = drizzle(connection, { schema });
+export const db = drizzle(connection, { schema, logger: false });

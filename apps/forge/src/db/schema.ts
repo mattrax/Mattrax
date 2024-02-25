@@ -163,8 +163,10 @@ export const policyVersions = mysqlTable("policy_versions", {
   status: mysqlEnum("status", ["open", "deploying", "deployed"])
     .notNull()
     .default("open"),
-  data: json("data").notNull().default([]),
-  // deployedAt: timestamp("deployedAt"),
+  data: json("data").notNull().default({}),
+  deployComment: varchar("deployComment", { length: 256 }),
+  deployedBy: serialRelation("deployedBy").references(() => accounts.pk),
+  deployedAt: timestamp("deployedAt"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
@@ -208,7 +210,7 @@ export const devices = mysqlTable("devices", {
 });
 
 // TODO: Remove this table
-export const device_windows_data_temp = mysqlTable("device_windows_data_temp", {
+export const device_windows_data = mysqlTable("device_windows_data_temp", {
   pk: serial("id").primaryKey(),
   key: varchar("key", { length: 256 }).notNull(),
   value: varchar("key", { length: 2048 }).notNull(),
