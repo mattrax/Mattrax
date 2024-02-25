@@ -5,7 +5,7 @@ import { A } from "@solidjs/router";
 const navigation = [
   { name: "General", href: "" },
   { name: "Administrators", href: "administrators" },
-  { name: "Domains", href: "domains" },
+  { name: "Identity Provider", href: "identity-provider" },
   { name: "Biling", href: "billing" },
 ];
 

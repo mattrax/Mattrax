@@ -1,5 +1,5 @@
 import { createTRPCRouter, tenantProcedure } from "../helpers";
-import { db, tenantUserProvider, users } from "~/db";
+import { db, identityProviders, users } from "~/db";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -29,15 +29,15 @@ export const userRouter = createTRPCRouter({
           name: users.name,
           email: users.email,
           provider: {
-            variant: tenantUserProvider.variant,
-            remoteId: tenantUserProvider.remoteId,
+            variant: identityProviders.variant,
+            remoteId: identityProviders.remoteId,
           },
         })
         .from(users)
         .where(eq(users.tenantPk, ctx.tenant.pk))
         .innerJoin(
-          tenantUserProvider,
-          eq(users.providerPk, tenantUserProvider.pk)
+          identityProviders,
+          eq(users.providerPk, identityProviders.pk)
         );
     }),
   get: tenantProcedure
@@ -52,8 +52,8 @@ export const userRouter = createTRPCRouter({
               email: users.email,
               providerResourceId: users.providerResourceId,
               provider: {
-                variant: tenantUserProvider.variant,
-                remoteId: tenantUserProvider.remoteId,
+                variant: identityProviders.variant,
+                remoteId: identityProviders.remoteId,
               },
             })
             .from(users)
@@ -61,8 +61,8 @@ export const userRouter = createTRPCRouter({
               and(eq(users.tenantPk, ctx.tenant.pk), eq(users.id, input.id))
             )
             .innerJoin(
-              tenantUserProvider,
-              eq(users.providerPk, tenantUserProvider.pk)
+              identityProviders,
+              eq(users.providerPk, identityProviders.pk)
             )
         )[0] ?? null
       );

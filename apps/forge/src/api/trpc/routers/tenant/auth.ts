@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 
-import { db, tenantUserProvider, users } from "~/db";
+import { db, identityProviders, users } from "~/db";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
 import { env } from "~/env";
 import { msGraphClient } from "~/api/microsoft";
@@ -11,13 +11,13 @@ export const tenantAuthRouter = createTRPCRouter({
   query: tenantProcedure.query(async ({ ctx }) => {
     return await db
       .select({
-        id: tenantUserProvider.pk,
-        remoteId: tenantUserProvider.remoteId,
-        variant: tenantUserProvider.variant,
-        lastSynced: tenantUserProvider.lastSynced,
+        id: identityProviders.pk,
+        remoteId: identityProviders.remoteId,
+        variant: identityProviders.variant,
+        lastSynced: identityProviders.lastSynced,
       })
-      .from(tenantUserProvider)
-      .where(eq(tenantUserProvider.tenantPk, ctx.tenant.pk));
+      .from(identityProviders)
+      .where(eq(identityProviders.tenantPk, ctx.tenant.pk));
   }),
 
   linkEntra: tenantProcedure.mutation(async ({ ctx }) => {
@@ -59,11 +59,11 @@ export const tenantAuthRouter = createTRPCRouter({
 
       await db.transaction(async (db) => {
         await db
-          .delete(tenantUserProvider)
+          .delete(identityProviders)
           .where(
             and(
-              eq(tenantUserProvider.tenantPk, ctx.tenant.pk),
-              eq(tenantUserProvider.pk, input.id)
+              eq(identityProviders.tenantPk, ctx.tenant.pk),
+              eq(identityProviders.pk, input.id)
             )
           );
 
@@ -79,8 +79,8 @@ export const tenantAuthRouter = createTRPCRouter({
     const tenantProvider = (
       await db
         .select()
-        .from(tenantUserProvider)
-        .where(eq(tenantUserProvider.tenantPk, ctx.tenant.pk))
+        .from(identityProviders)
+        .where(eq(identityProviders.tenantPk, ctx.tenant.pk))
     )?.[0]; // TODO: Run a sync for each provider cause we can have more than one.
     if (!tenantProvider)
       throw new Error(

@@ -22,6 +22,7 @@ import { billingRouter } from "./billing";
 import { tenantAuthRouter } from "./auth";
 import { domainsRouter } from "./domains";
 import { adminsRouter } from "./admins";
+import { identityProviderRouter } from "./identityProvider";
 
 export const tenantRouter = createTRPCRouter({
   create: authedProcedure
@@ -138,5 +139,5 @@ export const tenantRouter = createTRPCRouter({
   admins: adminsRouter,
   billing: billingRouter,
   auth: tenantAuthRouter,
-  domains: domainsRouter,
+  identityProvider: identityProviderRouter,
 });

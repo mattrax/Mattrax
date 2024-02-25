@@ -93,24 +93,24 @@ const userProviderVariants = [
 export type UserProviderVariant = (typeof userProviderVariants)[number];
 
 // A link between a tenant and an external authentication provider.
-export const tenantUserProvider = mysqlTable(
+export const identityProviders = mysqlTable(
   "tenant_user_provider",
   {
     pk: serial("id").primaryKey(),
     id: cuid("cuid").notNull().unique(),
+    name: varchar("name", { length: 256 }),
     variant: mysqlEnum("provider", userProviderVariants).notNull(),
+    tenantPk: serialRelation("tenantId")
+      .notNull()
+      .unique()
+      .references(() => tenants.pk),
     // ID of the remote user provider
     remoteId: varchar("resourceId", { length: 256 }).notNull(),
-    tenantPk: serialRelation("tenantId")
-      .references(() => tenants.pk)
-      .notNull(),
     lastSynced: timestamp("lastSynced"),
   },
-  (table) => {
-    return {
-      unique: unique().on(table.tenantPk, table.variant, table.remoteId),
-    };
-  }
+  (table) => ({
+    unique: unique().on(table.variant, table.remoteId),
+  })
 );
 
 // An account represents the login of an *end-user*.
@@ -126,7 +126,7 @@ export const users = mysqlTable(
       .references(() => tenants.pk)
       .notNull(),
     providerPk: serialRelation("provider")
-      .references(() => tenantUserProvider.pk)
+      .references(() => identityProviders.pk)
       .notNull(),
     // ID of the user in the remove provider
     providerResourceId: varchar("resourceId", { length: 256 }).notNull(),
@@ -285,16 +285,16 @@ export const applications = mysqlTable("apps", {
 
 export const domains = mysqlTable("domains", {
   domain: varchar("domain", { length: 256 }).primaryKey(),
-  secret: varchar("secret", { length: 256 }).notNull().unique(),
   tenantPk: serialRelation("tenantId")
     .references(() => tenants.pk)
     .notNull(),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
-  lastVerificationTime: timestamp("lastVerificationTime"),
-  verified: boolean("verified").notNull().default(false),
   enterpriseEnrollmentAvailable: boolean("enterpriseEnrollmentAvailable")
     .notNull()
     .default(false),
+  identityProviderPk: serialRelation("ownerUserProviderPk")
+    .notNull()
+    .references(() => identityProviders.pk),
 });
 
 export const domainToCertificateRelation = relations(domains, ({ one }) => ({

@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { renderToString } from "solid-js/web";
+import { db } from "~/db";
 
 export type EnrollmentProfileDescription = {
   data: string;
@@ -52,12 +54,24 @@ export const enrollmentRouter = new Hono()
       return c.html(renderMdmCallback(appru, authToken));
     } else {
       // TODO: Can we use cookies for this cause I don't trust non-tech people to not accidentally copy it out. - We would wanna render `/enroll` with Solid on the server for that.
-      const searchParams = new URLSearchParams();
-      searchParams.set("token", authToken);
-      searchParams.set("email", email);
+      const searchParams = new URLSearchParams({
+        token: authToken,
+        email,
+      });
       return c.redirect(`/enroll?${searchParams.toString()}`);
     }
   });
 
 const renderMdmCallback = (appru: string, authToken: string) =>
-  `<h3>Mattrax Login</h3><form id="loginForm" method="post" action="${appru}"><p><input type="hidden" name="wresult" value="${authToken}" /></p><input type="submit" value="Login" /></form><script>document.getElementById('loginForm').submit()</script>`;
+  renderToString(() => (
+    <>
+      <h3>Mattrax Login</h3>
+      <form id="loginForm" method="post" action={appru}>
+        <p>
+          <input type="hidden" name="wresult" value={authToken} />
+        </p>
+        <input type="submit" value="Login" />
+      </form>
+      <script>document.getElementById('loginForm').submit()</script>
+    </>
+  ));

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { getCookie } from "vinxi/server";
 import { z } from "zod";
 
-import { db, tenantUserProvider } from "~/db";
+import { db, identityProviders } from "~/db";
 import { env } from "~/env";
 import { lucia } from "../auth";
 import { HonoEnv } from "../types";
@@ -110,7 +110,7 @@ export const msRouter = new Hono<HonoEnv>()
     const entraTenantId = c.env.session.data.oauthData.entraIdTenant;
 
     await db
-      .insert(tenantUserProvider)
+      .insert(identityProviders)
       .values({
         variant: "entraId",
         remoteId: entraTenantId,

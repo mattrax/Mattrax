@@ -37,4 +37,8 @@ export default [
     path: "/billing",
     component: lazy(() => import("./billing")),
   },
+  {
+    path: "/identity-provider",
+    component: lazy(() => import("./identity-provider")),
+  },
 ] satisfies RouteDefinition[];
