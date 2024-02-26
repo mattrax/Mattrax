@@ -162,7 +162,7 @@ export default function Page() {
                     return (
                       <li class="p-4 flex flex-row gap-2 items-center">
                         <div class="flex flex-col gap-1">
-                          <span class="font-medium">
+                          <div class="font-medium flex flex-row items-center">
                             {domain}
                             <Show when={state().variant === "connected"}>
                               <Badge class="ml-2">Connected</Badge>
@@ -172,8 +172,8 @@ export default function Page() {
                                 Unconnected
                               </Badge>
                             </Show>
-                          </span>
-                          <div class="flex flex-row items-center gap-2">
+                          </div>
+                          <div class="flex flex-row items-center gap-1.5 mt-0.5">
                             <Switch>
                               <Match when={state().variant === "dangling"}>
                                 <div class="w-6 h-6">
@@ -204,16 +204,16 @@ export default function Page() {
                                     <>
                                       <div
                                         class={clsx(
-                                          "w-6 h-6 rounded-full flex items-center justify-center text-white",
+                                          "w-5 h-5 rounded-full flex items-center justify-center text-white",
                                           enterpriseEnrollment()
                                             ? "bg-green-600"
                                             : "bg-red-600"
                                         )}
                                       >
                                         {enterpriseEnrollment() ? (
-                                          <IconIcRoundCheck />
+                                          <IconIcRoundCheck class="w-4 h-4" />
                                         ) : (
-                                          <IconIcOutlineClose />
+                                          <IconIcOutlineClose class="w-4 h-4" />
                                         )}
                                       </div>
                                       <span class="text-sm text-gray-600">

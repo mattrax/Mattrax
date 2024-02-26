@@ -25,15 +25,6 @@ export default [
     },
   },
   {
-    path: "/domains",
-    component: lazy(() => import("./domains")),
-    load: ({ params }) => {
-      trpc.useContext().tenant.domains.list.ensureData({
-        tenantId: params.tenantId!,
-      });
-    },
-  },
-  {
     path: "/billing",
     component: lazy(() => import("./billing")),
   },

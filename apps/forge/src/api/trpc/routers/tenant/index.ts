@@ -20,7 +20,6 @@ import {
 } from "~/db";
 import { billingRouter } from "./billing";
 import { tenantAuthRouter } from "./auth";
-import { domainsRouter } from "./domains";
 import { adminsRouter } from "./admins";
 import { identityProviderRouter } from "./identityProvider";
 
