@@ -23,12 +23,14 @@ export function InputField<
     fieldClass?: string;
     name: TName;
     label?: string;
+    labelClasses?: string;
   }
 ) {
   const [_, inputProps] = splitProps(props, [
     "form",
     "name",
     "label",
+    "labelClasses",
     "fieldClass",
   ]);
   const id = createUniqueId();
@@ -46,7 +48,11 @@ export function InputField<
     <form.Field name={props.name}>
       {(field) => (
         <div class={clsx("flex flex-col space-y-1.5", props.fieldClass)}>
-          {props.label !== undefined && <Label for={id}>{props.label}</Label>}
+          {props.label !== undefined && (
+            <Label for={id} class={props.labelClasses}>
+              {props.label}
+            </Label>
+          )}
           <Input
             {...inputProps}
             id={id}

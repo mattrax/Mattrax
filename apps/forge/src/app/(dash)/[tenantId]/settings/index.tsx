@@ -1,6 +1,3 @@
-import { For, Suspense } from "solid-js";
-import dayjs from "dayjs";
-import { toast } from "solid-sonner";
 import { z } from "zod";
 
 import {
@@ -25,7 +22,6 @@ export default function Page() {
     <div class="flex flex-col gap-4">
       <SettingsCard />
       <ConfigureEnrollmentCard />
-      {/* <MigrateCard /> */}
       <DeleteTenantCard />
     </div>
   );
@@ -67,27 +63,6 @@ function SettingsCard() {
           <Button type="submit">Save</Button>
         </CardFooter>
       </Form>
-    </Card>
-  );
-}
-
-function MigrateCard() {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Migrate to Mattrax</CardTitle>
-        <CardDescription>
-          Easily migrate from your existing MDM.
-        </CardDescription>
-      </CardHeader>
-      <CardContent class="flex flex-col space-y-2">
-        <Button disabled class="w-full">
-          Migrate From Intune
-        </Button>
-        <Button disabled class="w-full">
-          Migrate From Jamf
-        </Button>
-      </CardContent>
     </Card>
   );
 }

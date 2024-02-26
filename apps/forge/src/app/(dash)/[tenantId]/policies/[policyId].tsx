@@ -1,43 +1,8 @@
-import { A, useNavigate, useParams as _useParams } from "@solidjs/router";
-import {
-  type JSX,
-  ParentProps,
-  Show,
-  startTransition,
-  useTransition,
-  createEffect,
-  createSignal,
-  Accessor,
-  Suspense,
-} from "solid-js";
-import { As } from "@kobalte/core";
-import { toast } from "solid-sonner";
-import dayjs from "dayjs";
+import { A } from "@solidjs/router";
+import { type JSX, ParentProps, Show, Suspense } from "solid-js";
 import { z } from "zod";
 
-import { isDebugMode, trpc, untrackScopeFromSuspense } from "~/lib";
-import {
-  Button,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Badge,
-  DialogDescription,
-  DialogRoot,
-  Textarea,
-  createController,
-} from "~/components/ui";
-import { ConfirmDialog } from "~/components/ConfirmDialog";
+import { trpc } from "~/lib";
 import { useTenantContext } from "~/app/(dash)/[tenantId]";
 import { useZodParams } from "~/lib/useZodParams";
 
@@ -50,8 +15,6 @@ function useParams() {
 }
 
 export default function Page(props: ParentProps) {
-  const navigate = useNavigate();
-  const [transitionPending] = useTransition();
   const params = useParams();
 
   const tenant = useTenantContext();

@@ -11,18 +11,27 @@ export default function Page() {
   }));
 
   return (
-    <>
-      <p>While Mattrax is beta, it's free!</p>
-      {/* <p>Devices: 0</p> */}
-      {/* TODO: How much is owed and when it's due */}
+    <div>
+      <h1 class="text-2xl font-semibold">Billing</h1>
+      <p class="mt-2 mb-3 text-gray-700 text-sm">
+        Control billing settings for this tenant.
+      </p>
+      <div class="flex flex-col gap-4">
+        <p class="mt-2 mb-3 text-gray-700 text-xl">
+          While Mattrax is beta, it's free!
+        </p>
 
-      {/* <Button
+        {/* <p>Devices: 0</p> */}
+        {/* TODO: How much is owed and when it's due */}
+
+        {/* <Button
           class="w-full"
           onClick={() => stripePortalUrl.mutate()}
           disabled={stripePortalUrl.isPending}
         >
           Go to Stipe
         </Button> */}
-    </>
+      </div>
+    </div>
   );
 }

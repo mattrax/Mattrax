@@ -24,7 +24,6 @@ import { useZodParams } from "~/lib/useZodParams";
 import { match, P } from "ts-pattern";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { As } from "@kobalte/core";
-import { version } from "vite";
 
 export default function Page() {
   const tenant = useTenantContext();

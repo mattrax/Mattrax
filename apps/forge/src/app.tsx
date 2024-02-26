@@ -19,12 +19,6 @@ import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimen
 import { createEventBus, EventBus } from "@solid-primitives/event-bus";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
-
-// import {
-//   PersistQueryClientOptions,
-//   PersistQueryClientProvider,
-// } from "@tanstack/solid-query-persist-client";
-// import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import routes from "./app/routes";
 import { isDebugMode, isTRPCClientError, trpc } from "./lib";
 import "./assets/app.css";
