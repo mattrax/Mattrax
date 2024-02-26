@@ -1,4 +1,6 @@
 import { For, Match, Show, Suspense, Switch, createMemo } from "solid-js";
+import clsx from "clsx";
+import { As } from "@kobalte/core";
 
 import {
   Badge,
@@ -14,18 +16,72 @@ import {
 import { trpc } from "~/lib";
 import { useTenantContext } from "../../[tenantId]";
 import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
-import clsx from "clsx";
-import { As } from "@kobalte/core";
 
 export default function Page() {
+  return (
+    <div>
+      <h1 class="text-2xl font-semibold">Identity Provider</h1>
+      <p class="mt-2 mb-3 text-gray-700 text-sm">
+        Sync user accounts and enroll devices by connecting an identity
+        provider.
+      </p>
+      <IdentityProviderCard />
+      <Domains />
+    </div>
+  );
+}
+
+function IdentityProviderCard() {
   const tenant = useTenantContext();
-  const trpcCtx = trpc.useContext();
 
   const linkEntra = trpc.tenant.auth.linkEntra.useMutation(() => ({
     onSuccess: async (url) => {
       window.open(url, "_self");
     },
   }));
+
+  const provider = trpc.tenant.identityProvider.get.useQuery(() => ({
+    tenantId: tenant.activeTenant.id,
+  }));
+
+  return (
+    <Card class="p-4">
+      <Show
+        when={provider.data}
+        fallback={
+          <Button
+            onClick={() =>
+              linkEntra.mutate({ tenantId: tenant.activeTenant.id })
+            }
+            disabled={linkEntra.isPending}
+          >
+            Entra ID
+          </Button>
+        }
+      >
+        {(provider) => (
+          <>
+            <div class="flex flex-col text-sm gap-1 items-start">
+              <a
+                class="font-semibold hover:underline flex flex-row items-center gap-1"
+                href={authProviderUrl(provider().variant, provider().remoteId)}
+                target="_blank"
+              >
+                {provider().name ?? AUTH_PROVIDER_DISPLAY[provider().variant]}
+                <IconPrimeExternalLink class="inline" />
+              </a>
+              <span class="text-gray-600">{provider().remoteId}</span>
+            </div>
+          </>
+        )}
+      </Show>
+    </Card>
+  );
+}
+
+function Domains() {
+  const tenant = useTenantContext();
+  const trpcCtx = trpc.useContext();
 
   const provider = trpc.tenant.identityProvider.get.useQuery(() => ({
     tenantId: tenant.activeTenant.id,
@@ -40,46 +96,7 @@ export default function Page() {
     }));
 
   return (
-    <div>
-      <h1 class="text-2xl font-semibold">Identity Provider</h1>
-      <p class="mt-2 mb-3 text-gray-700 text-sm">
-        Sync user accounts and enroll devices by connecting an identity
-        provider.
-      </p>
-      <Card class="p-4">
-        <Show
-          when={provider.data}
-          fallback={
-            <Button
-              onClick={() =>
-                linkEntra.mutate({ tenantId: tenant.activeTenant.id })
-              }
-              disabled={linkEntra.isPending}
-            >
-              Entra ID
-            </Button>
-          }
-        >
-          {(provider) => (
-            <>
-              <div class="flex flex-col text-sm gap-1 items-start">
-                <a
-                  class="font-semibold hover:underline flex flex-row items-center gap-1"
-                  href={authProviderUrl(
-                    provider().variant,
-                    provider().remoteId
-                  )}
-                  target="_blank"
-                >
-                  {provider().name ?? AUTH_PROVIDER_DISPLAY[provider().variant]}
-                  <IconPrimeExternalLink class="inline" />
-                </a>
-                <span class="text-gray-600">{provider().remoteId}</span>
-              </div>
-            </>
-          )}
-        </Show>
-      </Card>
+    <>
       <div class="mt-4 flex flex-row">
         <div>
           <h2 class="text-lg font-semibold">Domains</h2>
@@ -318,6 +335,6 @@ export default function Page() {
           }}
         </Show>
       </Suspense>
-    </div>
+    </>
   );
 }
