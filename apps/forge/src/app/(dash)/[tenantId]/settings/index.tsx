@@ -11,26 +11,19 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
   Switch,
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
-import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
 import { Form, createZodForm } from "~/components/forms";
 import { InputField } from "~/components/forms/InputField";
 import { useAuthContext } from "~/app/(dash)";
 import { useTenantContext } from "../../[tenantId]";
-import { ConfirmDialog } from "~/components/ConfirmDialog";
 
 export default function Page() {
   return (
     <div class="flex flex-col gap-4">
       <SettingsCard />
-      <AuthenticationCard />
       <ConfigureEnrollmentCard />
       {/* <MigrateCard /> */}
       <DeleteTenantCard />
@@ -74,178 +67,6 @@ function SettingsCard() {
           <Button type="submit">Save</Button>
         </CardFooter>
       </Form>
-    </Card>
-  );
-}
-
-function AuthenticationCard() {
-  const tenant = useTenantContext();
-  const linkedProviders = trpc.tenant.auth.query.useQuery(() => ({
-    tenantId: tenant.activeTenant.id,
-  }));
-
-  const linkEntra = trpc.tenant.auth.linkEntra.useMutation(() => ({
-    onSuccess: async (url) => {
-      window.open(url, "_self");
-
-      // Make sure the button is disabled until the user is in the new tab
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    },
-  }));
-  const sync = trpc.tenant.auth.sync.useMutation(() => ({
-    onSuccess: async () => {
-      toast.success("Sync complete!", {
-        id: "tenant-user-sync",
-      });
-      // TODO: Refetch user's if the query is active
-    },
-  }));
-
-  const isQueryPending = untrackScopeFromSuspense(
-    () => linkedProviders.isPending
-  );
-  const isPending = () =>
-    isQueryPending() || linkEntra.isPending || sync.isPending;
-
-  const hasLinkedProviders = untrackScopeFromSuspense(
-    () => linkedProviders.data?.length === 0
-  );
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Tenant Authentication</CardTitle>
-        <CardDescription>
-          Manage external authentication providers.
-        </CardDescription>
-      </CardHeader>
-      <CardContent class="flex-grow flex flex-col justify-between space-y-2">
-        <div>
-          <Suspense fallback={<p>Loading...</p>}>
-            {linkedProviders.data?.length === 0 ? (
-              <p>No linked providers...</p>
-            ) : null}
-
-            <For each={linkedProviders.data}>
-              {(provider) => (
-                <div class="border-b">
-                  <h1 class="text-xl">
-                    {AUTH_PROVIDER_DISPLAY[provider.variant]}
-                  </h1>
-                  <p>
-                    <a
-                      href={authProviderUrl(
-                        provider.variant,
-                        provider.remoteId
-                      )}
-                      target="_blank"
-                      rel="external"
-                      class="hover:opacity-85 hover:underline"
-                    >
-                      {provider.remoteId}
-                    </a>
-                  </p>
-
-                  <p>
-                    Last Synced:{" "}
-                    <span>
-                      {provider.lastSynced
-                        ? dayjs(provider.lastSynced).fromNow()
-                        : "Never synced"}
-                    </span>
-                  </p>
-
-                  {/* <ConfirmDialog>
-                    {(confirm) => {
-                      const unlinkProvider =
-                        trpc.tenant.auth.unlink.useMutation(() => ({
-                          onSuccess: async () => {
-                            await linkedProviders.refetch();
-                            // TODO: Refetch user's if the query is active
-                          },
-                        }));
-
-                      return (
-                        <Button
-                          variant="destructive"
-                          class="w-full"
-                          onClick={() =>
-                            confirm({
-                              title: "Unlink Entra",
-                              inputText: "Unlink Entra",
-                              action: "Unlink Entra",
-                              description: (
-                                <>
-                                  Are you sure you want to unlink your auth
-                                  provider along with all <b>users</b> and{" "}
-                                  <b>groups</b> assigned to it?
-                                </>
-                              ),
-                              async onConfirm() {
-                                await unlinkProvider.mutateAsync({
-                                  id: provider.id,
-                                  tenantId: tenant.activeTenant.id,
-                                });
-                              },
-                            })
-                          }
-                        >
-                          Unlink
-                        </Button>
-                      );
-                    }}
-                  </ConfirmDialog> */}
-                </div>
-              )}
-            </For>
-          </Suspense>
-        </div>
-
-        <div class="flex flex-col space-y-2">
-          <DropdownMenu sameWidth>
-            <DropdownMenuTrigger
-              as={Button}
-              disabled={isPending()}
-              class="w-full"
-            >
-              Link Provider
-            </DropdownMenuTrigger>
-            {/* TODO: Make dropdown width the same as the button */}
-            <DropdownMenuContent>
-              {/* TODO: Warning about double login */}
-              <DropdownMenuItem
-                onClick={() => {
-                  if (
-                    confirm(
-                      "You will be asked to provide consent twice. This is expected and is to ensure your data is kept secure though the process!"
-                    )
-                  )
-                    linkEntra.mutate({ tenantId: tenant.activeTenant.id });
-                }}
-              >
-                <IconLogosMicrosoftAzure class="mr-3" />
-                Microsoft Entra ID
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled>
-                <IconLogosGoogleIcon class="mr-3" />
-                Google Workspaces
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <Button
-            class="w-full"
-            onClick={() =>
-              sync.mutate({
-                tenantId: tenant.activeTenant.id,
-              })
-            }
-            disabled={isPending() || hasLinkedProviders()}
-          >
-            Sync
-          </Button>
-        </div>
-      </CardContent>
     </Card>
   );
 }
