@@ -148,7 +148,7 @@ export const policies = mysqlTable("policies", {
     .notNull(),
 });
 
-export const policyAssignableVariants = ["user", "device", "groups"] as const;
+export const policyAssignableVariants = ["user", "device", "group"] as const;
 
 export const policyAssignables = mysqlTable(
   "policy_assignables",
@@ -172,7 +172,10 @@ export const policyAssignables = mysqlTable(
 
 export const policyVersions = mysqlTable("policy_versions", {
   pk: serial("id").primaryKey(),
-  id: cuid("cuid").notNull().unique(),
+  id: cuid("cuid")
+    .notNull()
+    .unique()
+    .$default(() => createId()),
   policyPk: serialRelation("policyId")
     // .references(() => policies.id) // This creates a circular reference so is let uncommented
     .notNull(),
@@ -271,7 +274,7 @@ export const groupAssignables = mysqlTable(
 export const groups = mysqlTable("groups", {
   pk: serial("id").primaryKey(),
   id: cuid("cuid").notNull().unique(),
-  name: varchar("name", { length: 256 }),
+  name: varchar("name", { length: 256 }).notNull(),
   tenantPk: serialRelation("tenantId")
     .references(() => tenants.pk)
     .notNull(),

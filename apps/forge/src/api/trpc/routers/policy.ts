@@ -1,10 +1,30 @@
 import { z } from "zod";
-import { SQL, and, count, eq, sql } from "drizzle-orm";
-import { buildApplePolicy } from "@mattrax/policy";
+import { and, count, eq } from "drizzle-orm";
 
 import { createTRPCRouter, tenantProcedure } from "../helpers";
-import { accounts, db, policies, policyVersions } from "~/db";
+import {
+  accounts,
+  db,
+  devices,
+  groups,
+  policies,
+  policyAssignableVariants,
+  policyAssignables,
+  policyVersions,
+  users,
+} from "~/db";
 import { createId } from "@paralleldrive/cuid2";
+import { promiseAllObject } from "~/api/utils";
+import { TRPCError } from "@trpc/server";
+
+function getPolicy(args: { policyId: string; tenantPk: number }) {
+  return db.query.policies.findFirst({
+    where: and(
+      eq(policies.id, args.policyId),
+      eq(policies.tenantPk, args.tenantPk)
+    ),
+  });
+}
 
 export const policyRouter = createTRPCRouter({
   list: tenantProcedure.query(async ({ ctx }) => {
@@ -243,6 +263,122 @@ export const policyRouter = createTRPCRouter({
         .where(eq(policies.pk, policy.pk));
 
       return newVersionId;
+    }),
+
+  scope: tenantProcedure
+    .input(z.object({ id: z.string() }))
+    .query(({ ctx, input }) => {
+      return getPolicy({ policyId: input.id, tenantPk: ctx.tenant.pk });
+    }),
+
+  members: tenantProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const policy = await getPolicy({
+        policyId: input.id,
+        tenantPk: ctx.tenant.pk,
+      });
+      if (!policy)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+
+      return await promiseAllObject({
+        users: db
+          .select({ pk: users.pk, id: users.id, name: users.name })
+          .from(users)
+          .leftJoin(
+            policyAssignables,
+            eq(users.pk, policyAssignables.groupablePk)
+          )
+          .where(
+            and(
+              eq(policyAssignables.groupableVariant, "user"),
+              eq(policyAssignables.policyPk, policy.pk)
+            )
+          )
+          .then((r) => r || []),
+        devices: db
+          .select({ pk: devices.pk, id: devices.id, name: devices.name })
+          .from(devices)
+          .leftJoin(
+            policyAssignables,
+            eq(devices.pk, policyAssignables.groupablePk)
+          )
+          .where(
+            and(
+              eq(policyAssignables.groupableVariant, "device"),
+              eq(policyAssignables.policyPk, policy.pk)
+            )
+          )
+          .then((r) => r || []),
+        groups: db
+          .select({ pk: groups.pk, id: groups.id, name: groups.name })
+          .from(groups)
+          .leftJoin(
+            policyAssignables,
+            eq(groups.pk, policyAssignables.groupablePk)
+          )
+          .where(
+            and(
+              eq(policyAssignables.groupableVariant, "group"),
+              eq(policyAssignables.policyPk, policy.pk)
+            )
+          )
+          .then((r) => r || []),
+      });
+    }),
+
+  possibleMembers: tenantProcedure
+    .input(z.object({ id: z.string() }))
+    .query(({ ctx }) =>
+      promiseAllObject({
+        users: db.query.users
+          .findMany({
+            where: eq(users.tenantPk, ctx.tenant.pk),
+            columns: { name: true, id: true, pk: true },
+          })
+          .then((r) => r || []),
+        devices: db.query.devices
+          .findMany({
+            where: eq(devices.tenantPk, ctx.tenant.pk),
+            columns: { name: true, id: true, pk: true },
+          })
+          .then((r) => r || []),
+        groups: db.query.groups
+          .findMany({
+            where: eq(groups.tenantPk, ctx.tenant.pk),
+            columns: { name: true, id: true, pk: true },
+          })
+          .then((r) => r || []),
+      })
+    ),
+
+  addMembers: tenantProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        members: z.array(
+          z.object({
+            pk: z.number(),
+            variant: z.enum(policyAssignableVariants),
+          })
+        ),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const policy = await getPolicy({
+        policyId: input.id,
+        tenantPk: ctx.tenant.pk,
+      });
+      if (!policy)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+
+      await db.insert(policyAssignables).values(
+        input.members.map((member) => ({
+          policyPk: policy.pk,
+          groupablePk: member.pk,
+          groupableVariant: member.variant,
+        }))
+      );
     }),
 
   // duplicate: tenantProcedure

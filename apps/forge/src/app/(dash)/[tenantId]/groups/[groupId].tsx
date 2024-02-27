@@ -228,7 +228,6 @@ const AddMemberTableOptions = {
   all: "All",
   user: "Users",
   device: "Devices",
-  policy: "Policies",
 };
 
 function AddMemberSheet(props: ParentProps & { groupId: string }) {
