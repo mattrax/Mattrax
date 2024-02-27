@@ -87,7 +87,7 @@ export const enrollmentRouter = new Hono()
           grant_type: "authorization_code",
           code,
         }),
-        headers: { "Application-Type": "application/x-www-form-urlencoded" },
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
       }
     ).then(async (r) => {
       if (!r.ok)
