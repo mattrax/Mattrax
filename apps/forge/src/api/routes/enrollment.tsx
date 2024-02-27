@@ -1,6 +1,9 @@
+import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { renderToString } from "solid-js/web";
-import { db } from "~/db";
+
+import { db, domains, identityProviders } from "~/db";
+import { env } from "..";
 
 export type EnrollmentProfileDescription = {
   data: string;
@@ -24,42 +27,67 @@ export const enrollmentRouter = new Hono()
       return c.html(renderMdmCallback(appru, accesstoken));
     }
 
-    // TODO: Look up user to tenant ID
+    const [, domain] = email.split("@");
 
-    if (email === "404@otbeaumont.me") {
-      // TODO: Pretty error page
-      return c.text(
-        "Your account was not found. Please contact your administrator."
+    if (domain === undefined) return c.text("Invalid email address");
+
+    const [domainRecord] = await db
+      .select({
+        identityProvider: identityProviders,
+      })
+      .from(domains)
+      .where(and(eq(domains.domain, domain)))
+      .innerJoin(
+        identityProviders,
+        eq(domains.identityProviderPk, identityProviders.pk)
       );
-    }
 
-    // TODO: Work out oauth provider for that specific user (remember tenant can have multiple) and send user to it.
-    // This is to mock the OAuth provider's callback
-    const searchParams = new URLSearchParams();
-    if (appru) searchParams.set("appru", appru);
-    searchParams.set("email", email);
-    return c.redirect(`/api/enrollment/callback?${searchParams.toString()}`);
+    if (domainRecord === undefined) return c.text("Domain not found");
+
+    const params = new URLSearchParams({
+      client_id: env.ENTRA_CLIENT_ID,
+      scope: "https://graph.microsoft.com/.default",
+      redirect_uri: `${env.PROD_URL}/api/enrollment/callback`,
+      response_type: "code",
+      response_mode: "query",
+      login_hint: email,
+      state: JSON.stringify({
+        appru,
+        email,
+        tenantId: domainRecord.identityProvider.remoteId,
+      }),
+    });
+
+    return c.redirect(
+      `https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?${params.toString()}`
+    );
   })
   .get("/callback", async (c) => {
-    const appru = c.req.query("appru");
-    const email = c.req.query("email");
-    if (!email) {
-      // TODO: Pretty error page
-      return c.text("Email is required");
-    }
+    const stateStr = c.req.query("state");
+    if (!stateStr) return c.text("Missing OAuth state");
 
-    const authToken = "TODOSpecialTokenWhichVerifiesAuth"; // TODO: Get this back from OAuth provider. This needs to hold the ID of Mattrax tenant.
+    const code = c.req.query("code");
+    if (!code) return c.text("Missing OAuth code");
 
-    if (appru) {
-      return c.html(renderMdmCallback(appru, authToken));
-    } else {
-      // TODO: Can we use cookies for this cause I don't trust non-tech people to not accidentally copy it out. - We would wanna render `/enroll` with Solid on the server for that.
-      const searchParams = new URLSearchParams({
-        token: authToken,
-        email,
-      });
-      return c.redirect(`/enroll?${searchParams.toString()}`);
-    }
+    const { appru, tenantId } = JSON.parse(stateStr);
+
+    const { access_token } = await fetch(
+      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+      {
+        method: "POST",
+        body: new URLSearchParams({
+          client_id: env.ENTRA_CLIENT_ID,
+          client_secret: env.ENTRA_CLIENT_SECRET,
+          scope: "https://graph.microsoft.com/.default",
+          redirect_uri: `${env.PROD_URL}/api/enrollment/callback`,
+          grant_type: "authorization_code",
+          code,
+        }),
+        headers: { "Application-Type": "application/x-www-form-urlencoded" },
+      }
+    ).then((r) => r.json());
+
+    return c.html(renderMdmCallback(appru, access_token));
   });
 
 const renderMdmCallback = (appru: string, authToken: string) =>
@@ -72,6 +100,6 @@ const renderMdmCallback = (appru: string, authToken: string) =>
         </p>
         <input type="submit" value="Login" />
       </form>
-      <script>document.getElementById('loginForm').submit()</script>
+      {/* <script>document.getElementById('loginForm').submit()</script> */}
     </>
   ));

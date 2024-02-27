@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createApp } from "vinxi";
 import { type Plugin } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+import solid from "vite-plugin-solid";
 import viteConfigFileRaw from "./vite.config";
 
 let viteConfigFile: any = undefined;
@@ -51,6 +52,7 @@ export default createApp({
           // If this isn't set Vinxi hangs on startup
           root: ".",
         }),
+        solid({ ssr: true }),
       ],
     },
   ],
