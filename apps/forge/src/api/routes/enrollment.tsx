@@ -58,7 +58,6 @@ export const enrollmentRouter = new Hono()
       login_hint: email,
       state: JSON.stringify({
         appru,
-        email,
         tenantId: domainRecord.identityProvider.remoteId,
       }),
     });
@@ -90,9 +89,12 @@ export const enrollmentRouter = new Hono()
         }),
         headers: { "Application-Type": "application/x-www-form-urlencoded" },
       }
-    ).then((r) => {
-      if (!r.ok) throw new Error("Failed to get access token");
-      return r.json();
+    ).then(async (r) => {
+      if (!r.ok)
+        throw new Error(
+          `Failed to get access token '${r.status}': ${await r.text()}`
+        );
+      return await r.json();
     });
 
     const { userPrincipalName } = await fetch(
@@ -102,9 +104,10 @@ export const enrollmentRouter = new Hono()
           Authorization: `Bearer ${access_token}`,
         },
       }
-    ).then((r) => {
-      if (!r.ok) throw new Error("Failed to get access token");
-      return r.json();
+    ).then(async (r) => {
+      if (!r.ok)
+        throw new Error(`Failed to get user '${r.status}': ${await r.text()}`);
+      return await r.json();
     });
 
     if (appru) {
