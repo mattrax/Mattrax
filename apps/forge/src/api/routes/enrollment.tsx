@@ -90,7 +90,10 @@ export const enrollmentRouter = new Hono()
         }),
         headers: { "Application-Type": "application/x-www-form-urlencoded" },
       }
-    ).then((r) => r.json());
+    ).then((r) => {
+      if (!r.ok) throw new Error("Failed to get access token");
+      return r.json();
+    });
 
     const { userPrincipalName } = await fetch(
       "https://graph.microsoft.com/v1.0/me",
@@ -99,7 +102,10 @@ export const enrollmentRouter = new Hono()
           Authorization: `Bearer ${access_token}`,
         },
       }
-    ).then((r) => r.json());
+    ).then((r) => {
+      if (!r.ok) throw new Error("Failed to get access token");
+      return r.json();
+    });
 
     if (appru) {
       return c.html(renderMdmCallback(appru, access_token));
