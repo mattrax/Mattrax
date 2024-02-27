@@ -6,9 +6,8 @@ import { createTRPCRouter, tenantProcedure } from "../helpers";
 import {
   db,
   devices,
-  groupGroupables,
+  groupAssignable,
   groupableVariants,
-  groupables,
   groups,
   policies,
   users,
@@ -41,11 +40,11 @@ export const groupRouter = createTRPCRouter({
         .select({
           id: groups.id,
           name: groups.name,
-          memberCount: sql`count(${groupGroupables.groupPk})`,
+          memberCount: sql`count(${groupAssignable.groupPk})`,
         })
         .from(groups)
         .where(eq(groups.tenantPk, ctx.tenant.pk))
-        .leftJoin(groupGroupables, eq(groups.pk, groupGroupables.groupPk))
+        .leftJoin(groupAssignable, eq(groups.pk, groupAssignable.groupPk))
         .groupBy(groups.pk);
     }),
   create: tenantProcedure
@@ -81,37 +80,37 @@ export const groupRouter = createTRPCRouter({
         db
           .select({ pk: users.pk, id: users.id, name: users.name })
           .from(users)
-          .leftJoin(groupGroupables, eq(users.pk, groupGroupables.groupablePk))
+          .leftJoin(groupAssignable, eq(users.pk, groupAssignable.groupablePk))
           .where(
             and(
-              eq(groupGroupables.groupableVariant, "user"),
-              eq(groupGroupables.groupPk, group.pk)
+              eq(groupAssignable.groupableVariant, "user"),
+              eq(groupAssignable.groupPk, group.pk)
             )
           ),
         db
           .select({ pk: devices.pk, id: devices.id, name: devices.name })
           .from(devices)
           .leftJoin(
-            groupGroupables,
-            eq(devices.pk, groupGroupables.groupablePk)
+            groupAssignable,
+            eq(devices.pk, groupAssignable.groupablePk)
           )
           .where(
             and(
-              eq(groupGroupables.groupableVariant, "device"),
-              eq(groupGroupables.groupPk, group.pk)
+              eq(groupAssignable.groupableVariant, "device"),
+              eq(groupAssignable.groupPk, group.pk)
             )
           ),
         db
           .select({ pk: policies.pk, id: policies.id, name: policies.name })
           .from(policies)
           .leftJoin(
-            groupGroupables,
-            eq(policies.pk, groupGroupables.groupablePk)
+            groupAssignable,
+            eq(policies.pk, groupAssignable.groupablePk)
           )
           .where(
             and(
-              eq(groupGroupables.groupableVariant, "policy"),
-              eq(groupGroupables.groupPk, group.pk)
+              eq(groupAssignable.groupableVariant, "policy"),
+              eq(groupAssignable.groupPk, group.pk)
             )
           ),
       ]);
@@ -162,18 +161,7 @@ export const groupRouter = createTRPCRouter({
       if (!group)
         throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
 
-      await db
-        .insert(groupables)
-        .values(
-          input.members.map((member) => ({
-            pk: member.pk,
-            variant: member.variant,
-            tenantPk: ctx.tenant.pk,
-          }))
-        )
-        .onDuplicateKeyUpdate({ set: { pk: sql`id` } });
-
-      await db.insert(groupGroupables).values(
+      await db.insert(groupAssignable).values(
         input.members.map((member) => ({
           groupPk: group.pk,
           groupablePk: member.pk,

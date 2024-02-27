@@ -224,22 +224,10 @@ export const device_windows_data = mysqlTable("device_windows_data_temp", {
 
 // export const deviceSoftwareInventories = mysqlTable("device_software_inventory", {});
 
-export const groupableVariants = ["user", "device", "policy"] as const;
+export const groupableVariants = ["user", "device"] as const;
 
-export const groupables = mysqlTable(
-  "groupables",
-  {
-    pk: serialRelation("id").notNull(),
-    variant: mysqlEnum("variant", groupableVariants).notNull(),
-    tenantPk: serialRelation("tenantId")
-      .references(() => tenants.pk)
-      .notNull(),
-  },
-  (table) => ({ pk: primaryKey({ columns: [table.pk, table.variant] }) })
-);
-
-export const groupGroupables = mysqlTable(
-  "group_groupables",
+export const groupAssignable = mysqlTable(
+  "group_groupables", // TODO: Rename at some point but Planetscale make it too annoying for me to care, rn.
   {
     groupPk: serialRelation("groupId")
       .references(() => groups.pk)
@@ -267,7 +255,7 @@ export const groups = mysqlTable("groups", {
 });
 
 export const groupRelations = relations(groups, ({ many }) => ({
-  groupables: many(groupGroupables),
+  groupables: many(groupAssignable),
 }));
 
 export const applications = mysqlTable("apps", {
