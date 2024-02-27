@@ -1,8 +1,16 @@
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { exportQueries, defineOperation } from "@mattrax/drizzle-to-rs";
-import { db, certificates, devices } from ".";
+import {
+  db,
+  certificates,
+  devices,
+  groupAssignables,
+  policyAssignables,
+  policies,
+} from ".";
 import dotenv from "dotenv";
+import { union } from "drizzle-orm/mysql-core";
 
 dotenv.config({
   path: "../../../../.env",
@@ -64,6 +72,60 @@ exportQueries(
             tenantPk: args.tenant_pk,
           },
         ]),
+    }),
+    defineOperation({
+      name: "get_policies_for_device",
+      args: {
+        device_id: "i32",
+      },
+      query: (args) => {
+        // Any policy scoped directly to device
+        const a = db
+          .select({
+            pk: policies.pk,
+            id: policies.id,
+            name: policies.name,
+          })
+          .from(policies)
+          .innerJoin(
+            policyAssignables,
+            eq(policies.pk, policyAssignables.policyPk)
+          )
+          .where(
+            and(
+              eq(policyAssignables.groupableVariant, "device"),
+              eq(policyAssignables.groupablePk, args.device_id)
+            )
+          );
+
+        // Any policy scoped to a group containing the device.
+        const b = db
+          .select({
+            pk: policies.pk,
+            id: policies.id,
+            name: policies.name,
+          })
+          .from(policies)
+          .innerJoin(
+            policyAssignables,
+            eq(policies.pk, policyAssignables.policyPk)
+          )
+          .innerJoin(
+            groupAssignables,
+            and(
+              eq(groupAssignables.groupPk, policyAssignables.groupablePk),
+              eq(policyAssignables.groupableVariant, "group")
+            )
+          )
+          .where(
+            and(
+              eq(groupAssignables.groupableVariant, "device"),
+              eq(groupAssignables.groupablePk, args.device_id)
+            )
+          );
+
+        return union(a, b);
+      },
     }),
   ],
   path.join(__dirname, "../../../../apps/mattrax/src/db.rs")

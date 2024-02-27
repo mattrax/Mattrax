@@ -261,7 +261,7 @@ export const groupAssignables = mysqlTable(
     groupablePk: serialRelation("groupableId").notNull(),
     groupableVariant: mysqlEnum(
       "groupableVariant",
-      policyAssignableVariants
+      groupAssignableVariants
     ).notNull(),
   },
   (table) => ({

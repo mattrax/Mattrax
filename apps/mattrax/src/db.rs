@@ -9,6 +9,12 @@ pub struct GetCertificateResult {
     pub certificate: Vec<u8>,
 }
 
+#[derive(Debug)]
+pub struct GetPoliciesForDeviceResult {
+    pub pk: u64,
+    pub id: String,
+    pub name: String,
+}
 #[derive(Clone)]
 pub struct Db {
     pool: mysql_async::Pool,
@@ -61,5 +67,18 @@ impl Db {
             .run(&self.pool)
             .await
             .map(|_| ())
+    }
+}
+impl Db {
+    pub async fn get_policies_for_device(
+        &self,
+        device_id: i32,
+    ) -> Result<Vec<GetPoliciesForDeviceResult>, mysql_async::Error> {
+        r#"(select `policies`.`id`, `policies`.`cuid`, `policies`.`name` from `policies` inner join `policy_assignables` on `policies`.`id` = `policy_assignables`.`policyPk` where (`policy_assignables`.`groupableVariant` = ? and `policy_assignables`.`groupableId` = ?)) union (select `policies`.`id`, `policies`.`cuid`, `policies`.`name` from `policies` inner join `policy_assignables` on `policies`.`id` = `policy_assignables`.`policyPk` inner join `group_assignables` on (`group_assignables`.`groupId` = `policy_assignables`.`groupableId` and `policy_assignables`.`groupableVariant` = ?) where (`group_assignables`.`groupableVariant` = ? and `group_assignables`.`groupableId` = ?))"#
+            .with(mysql_async::Params::Positional(vec!["device".into(),device_id.clone().into(),"group".into(),"device".into(),device_id.clone().into()]))
+            .map(&self.pool, |p: (u64,String,String,)| GetPoliciesForDeviceResult {
+                pk: p.0,id: p.1,name: p.2
+              })
+            .await
     }
 }
