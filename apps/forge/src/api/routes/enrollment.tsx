@@ -14,7 +14,10 @@ export const enrollmentRouter = new Hono()
   .get("/login", async (c) => {
     // `appru` and `login_hint` are parameters set by Windows MDM client
     const appru = c.req.query("appru");
-    const accesstoken = c.req.query("accesstoken"); // The access token from the `ms-device-enrollment:?` link
+    // The access token from the `ms-device-enrollment:?` link.
+    // This won't be set if the enrollment is started on the device but will be set if the user started in their browser through `/enroll`.
+    const accesstoken = c.req.query("accesstoken");
+    // `email` is set when coming from the form in `/enroll`, `login_hint` is set by the MDM browser.
     const email = c.req.query("email") ?? c.req.query("login_hint");
     if (!email) {
       // TODO: Pretty error page
@@ -24,6 +27,8 @@ export const enrollmentRouter = new Hono()
 
     // The user did the login flow in their browser, so we can skip doing it again in within the Windows Federated enrollment flow.
     if (appru && accesstoken) {
+      // TODO: Reject expired access_tokens. Microsoft's MDM client seems to be caching them (as least that's the only explanation to what i'm seeing)
+
       return c.html(renderMdmCallback(appru, accesstoken));
     }
 
@@ -87,7 +92,25 @@ export const enrollmentRouter = new Hono()
       }
     ).then((r) => r.json());
 
-    return c.html(renderMdmCallback(appru, access_token));
+    const { userPrincipalName } = await fetch(
+      "https://graph.microsoft.com/v1.0/me",
+      {
+        headers: {
+          Authorization: `Bearer ${access_token}`,
+        },
+      }
+    ).then((r) => r.json());
+
+    if (appru) {
+      return c.html(renderMdmCallback(appru, access_token));
+    } else {
+      // TODO: Can we use cookies for this cause I don't trust non-tech people to not accidentally copy it out. - We would wanna render `/enroll` with Solid on the server for that.
+      const searchParams = new URLSearchParams({
+        token: access_token,
+        email: userPrincipalName,
+      });
+      return c.redirect(`/enroll?${searchParams.toString()}`);
+    }
   });
 
 const renderMdmCallback = (appru: string, authToken: string) =>
