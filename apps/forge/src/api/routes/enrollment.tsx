@@ -100,6 +100,6 @@ const renderMdmCallback = (appru: string, authToken: string) =>
         </p>
         <input type="submit" value="Login" />
       </form>
-      {/* <script>document.getElementById('loginForm').submit()</script> */}
+      <script>document.getElementById('loginForm').submit()</script>
     </>
   ));
