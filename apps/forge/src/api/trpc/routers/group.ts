@@ -6,13 +6,13 @@ import { createTRPCRouter, tenantProcedure } from "../helpers";
 import {
   db,
   devices,
-  groupAssignable,
-  groupableVariants,
+  groupAssignables,
+  groupAssignableVariants,
   groups,
-  policies,
   users,
 } from "~/db";
 import { createId } from "@paralleldrive/cuid2";
+import { promiseAllObject } from "~/api/utils";
 
 function getGroup(args: { groupId: string; tenantPk: number }) {
   return db.query.groups.findFirst({
@@ -40,11 +40,11 @@ export const groupRouter = createTRPCRouter({
         .select({
           id: groups.id,
           name: groups.name,
-          memberCount: sql`count(${groupAssignable.groupPk})`,
+          memberCount: sql`count(${groupAssignables.groupPk})`,
         })
         .from(groups)
         .where(eq(groups.tenantPk, ctx.tenant.pk))
-        .leftJoin(groupAssignable, eq(groups.pk, groupAssignable.groupPk))
+        .leftJoin(groupAssignables, eq(groups.pk, groupAssignables.groupPk))
         .groupBy(groups.pk);
     }),
   create: tenantProcedure
@@ -76,71 +76,55 @@ export const groupRouter = createTRPCRouter({
       if (!group)
         throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
 
-      const results = await Promise.all([
-        db
+      return await promiseAllObject({
+        users: db
           .select({ pk: users.pk, id: users.id, name: users.name })
           .from(users)
-          .leftJoin(groupAssignable, eq(users.pk, groupAssignable.groupablePk))
+          .leftJoin(
+            groupAssignables,
+            eq(users.pk, groupAssignables.groupablePk)
+          )
           .where(
             and(
-              eq(groupAssignable.groupableVariant, "user"),
-              eq(groupAssignable.groupPk, group.pk)
+              eq(groupAssignables.groupableVariant, "user"),
+              eq(groupAssignables.groupPk, group.pk)
             )
-          ),
-        db
+          )
+          .then((r) => r || []),
+        devices: db
           .select({ pk: devices.pk, id: devices.id, name: devices.name })
           .from(devices)
           .leftJoin(
-            groupAssignable,
-            eq(devices.pk, groupAssignable.groupablePk)
+            groupAssignables,
+            eq(devices.pk, groupAssignables.groupablePk)
           )
           .where(
             and(
-              eq(groupAssignable.groupableVariant, "device"),
-              eq(groupAssignable.groupPk, group.pk)
+              eq(groupAssignables.groupableVariant, "device"),
+              eq(groupAssignables.groupPk, group.pk)
             )
-          ),
-        db
-          .select({ pk: policies.pk, id: policies.id, name: policies.name })
-          .from(policies)
-          .leftJoin(
-            groupAssignable,
-            eq(policies.pk, groupAssignable.groupablePk)
           )
-          .where(
-            and(
-              eq(groupAssignable.groupableVariant, "policy"),
-              eq(groupAssignable.groupPk, group.pk)
-            )
-          ),
-      ]);
-
-      return {
-        users: results[0],
-        devices: results[1],
-        policies: results[2],
-      };
+          .then((r) => r || []),
+      });
     }),
   possibleMembers: tenantProcedure
     .input(z.object({ id: z.string() }))
-    .query(async ({ ctx }) => {
-      const results = await Promise.all([
-        db.query.users.findMany({
-          where: eq(users.tenantPk, ctx.tenant.pk),
-          columns: { name: true, id: true, pk: true },
-        }),
-        db.query.devices.findMany({
-          where: eq(devices.tenantPk, ctx.tenant.pk),
-          columns: { name: true, id: true, pk: true },
-        }),
-        db.query.policies.findMany({
-          where: eq(policies.tenantPk, ctx.tenant.pk),
-          columns: { name: true, id: true, pk: true },
-        }),
-      ]);
-
-      return { users: results[0], devices: results[1], policies: results[2] };
-    }),
+    .query(({ ctx }) =>
+      promiseAllObject({
+        users: db.query.users
+          .findMany({
+            where: eq(users.tenantPk, ctx.tenant.pk),
+            columns: { name: true, id: true, pk: true },
+          })
+          .then((r) => r || []),
+        devices: db.query.devices
+          .findMany({
+            where: eq(devices.tenantPk, ctx.tenant.pk),
+            columns: { name: true, id: true, pk: true },
+          })
+          .then((r) => r || []),
+      })
+    ),
   addMembers: tenantProcedure
     .input(
       z.object({
@@ -148,7 +132,7 @@ export const groupRouter = createTRPCRouter({
         members: z.array(
           z.object({
             pk: z.number(),
-            variant: z.enum(groupableVariants),
+            variant: z.enum(groupAssignableVariants),
           })
         ),
       })
@@ -161,7 +145,7 @@ export const groupRouter = createTRPCRouter({
       if (!group)
         throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
 
-      await db.insert(groupAssignable).values(
+      await db.insert(groupAssignables).values(
         input.members.map((member) => ({
           groupPk: group.pk,
           groupablePk: member.pk,

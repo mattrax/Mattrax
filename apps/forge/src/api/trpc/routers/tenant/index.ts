@@ -7,7 +7,7 @@ import {
   createTRPCRouter,
   tenantProcedure,
 } from "../../helpers";
-import { promiseObjectAll } from "~/api/utils";
+import { promiseAllObject } from "~/api/utils";
 import {
   applications,
   db,
@@ -90,7 +90,7 @@ export const tenantRouter = createTRPCRouter({
     ),
 
   stats: tenantProcedure.query(({ ctx }) =>
-    promiseObjectAll({
+    promiseAllObject({
       devices: db
         .select({ count: count() })
         .from(devices)

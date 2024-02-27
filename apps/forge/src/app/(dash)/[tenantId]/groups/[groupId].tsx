@@ -59,7 +59,6 @@ import {
 const VariantDisplay = {
   user: "User",
   device: "Device",
-  policy: "Policy",
 } as const;
 
 type Variant = keyof typeof VariantDisplay;
@@ -119,10 +118,6 @@ function createMembersTable(groupId: Accessor<string>) {
         ...members.data.devices.map((device) => ({
           ...device,
           variant: "device" as const,
-        })),
-        ...members.data.policies.map((policy) => ({
-          ...policy,
-          variant: "policy" as const,
         })),
       ];
 
@@ -257,10 +252,6 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
         ...possibleMembers.data.devices.map((device) => ({
           ...device,
           variant: "device" as const,
-        })),
-        ...possibleMembers.data.policies.map((policy) => ({
-          ...policy,
-          variant: "policy" as const,
         })),
       ];
 

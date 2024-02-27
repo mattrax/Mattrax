@@ -3,7 +3,7 @@ import { MySqlTable } from "drizzle-orm/mysql-core";
 
 import { db, devices, policies, tenants, users } from "~/db";
 import { createTRPCRouter, superAdminProcedure } from "../helpers";
-import { promiseObjectAll } from "~/api/utils";
+import { promiseAllObject } from "~/api/utils";
 
 export const dbCount = <TFrom extends MySqlTable>(table: TFrom) =>
   db
@@ -13,7 +13,7 @@ export const dbCount = <TFrom extends MySqlTable>(table: TFrom) =>
 
 export const internalRouter = createTRPCRouter({
   stats: superAdminProcedure.query(() =>
-    promiseObjectAll({
+    promiseAllObject({
       tenants: dbCount(tenants),
       devices: dbCount(devices),
       users: dbCount(users),

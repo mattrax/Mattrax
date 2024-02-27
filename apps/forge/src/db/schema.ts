@@ -148,6 +148,28 @@ export const policies = mysqlTable("policies", {
     .notNull(),
 });
 
+export const policyAssignableVariants = ["user", "device", "groups"] as const;
+
+export const policyAssignables = mysqlTable(
+  "policy_assignables",
+  {
+    policyPk: serialRelation("policyPk")
+      .references(() => policies.pk)
+      .notNull(),
+    // The primary key of the user or device or group
+    groupablePk: serialRelation("groupableId").notNull(),
+    groupableVariant: mysqlEnum(
+      "groupableVariant",
+      policyAssignableVariants
+    ).notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.policyPk, table.groupablePk, table.groupableVariant],
+    }),
+  })
+);
+
 export const policyVersions = mysqlTable("policy_versions", {
   pk: serial("id").primaryKey(),
   id: cuid("cuid").notNull().unique(),
@@ -224,18 +246,19 @@ export const device_windows_data = mysqlTable("device_windows_data_temp", {
 
 // export const deviceSoftwareInventories = mysqlTable("device_software_inventory", {});
 
-export const groupableVariants = ["user", "device"] as const;
+export const groupAssignableVariants = ["user", "device"] as const;
 
-export const groupAssignable = mysqlTable(
-  "group_groupables", // TODO: Rename at some point but Planetscale make it too annoying for me to care, rn.
+export const groupAssignables = mysqlTable(
+  "group_assignables",
   {
     groupPk: serialRelation("groupId")
       .references(() => groups.pk)
       .notNull(),
+    // The primary key of the user or device
     groupablePk: serialRelation("groupableId").notNull(),
     groupableVariant: mysqlEnum(
       "groupableVariant",
-      groupableVariants
+      policyAssignableVariants
     ).notNull(),
   },
   (table) => ({
@@ -255,7 +278,7 @@ export const groups = mysqlTable("groups", {
 });
 
 export const groupRelations = relations(groups, ({ many }) => ({
-  groupables: many(groupAssignable),
+  groupables: many(groupAssignables),
 }));
 
 export const applications = mysqlTable("apps", {
