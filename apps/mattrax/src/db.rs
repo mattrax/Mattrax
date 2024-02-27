@@ -56,8 +56,8 @@ impl Db {
         serial_number: String,
         tenant_pk: i32,
     ) -> Result<(), mysql_async::Error> {
-        r#"insert into `devices` (`id`, `cuid`, `name`, `description`, `operatingSystem`, `serialNumber`, `manufacturer`, `model`, `osVersion`, `imei`, `freeStorageSpaceInBytes`, `totalStorageSpaceInBytes`, `owner`, `azureADDeviceId`, `enrolledAt`, `lastSynced`, `tenantId`, `groupableVariant`) values (default, ?, ?, default, ?, ?, default, default, default, default, default, default, default, default, default, default, ?, ?)"#
-            .with(mysql_async::Params::Positional(vec![id.clone().into(),name.clone().into(),operating_system.clone().into(),serial_number.clone().into(),tenant_pk.clone().into(),"device".into()]))
+        r#"insert into `devices` (`id`, `cuid`, `name`, `description`, `operatingSystem`, `serialNumber`, `manufacturer`, `model`, `osVersion`, `imei`, `freeStorageSpaceInBytes`, `totalStorageSpaceInBytes`, `owner`, `azureADDeviceId`, `enrolledAt`, `lastSynced`, `tenantId`) values (default, ?, ?, default, ?, ?, default, default, default, default, default, default, default, default, default, default, ?)"#
+            .with(mysql_async::Params::Positional(vec![id.clone().into(),name.clone().into(),operating_system.clone().into(),serial_number.clone().into(),tenant_pk.clone().into()]))
             .run(&self.pool)
             .await
             .map(|_| ())

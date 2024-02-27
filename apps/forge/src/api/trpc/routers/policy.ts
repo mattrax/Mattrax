@@ -3,7 +3,7 @@ import { SQL, and, count, eq, sql } from "drizzle-orm";
 import { buildApplePolicy } from "@mattrax/policy";
 
 import { createTRPCRouter, tenantProcedure } from "../helpers";
-import { accounts, db, devices, policies, policyVersions } from "~/db";
+import { accounts, db, policies, policyVersions } from "~/db";
 import { createId } from "@paralleldrive/cuid2";
 
 export const policyRouter = createTRPCRouter({
@@ -186,6 +186,7 @@ export const policyRouter = createTRPCRouter({
       const policy = await db
         .select({
           pk: policies.pk,
+          activeVersion: policies.activeVersion,
         })
         .from(policies)
         .where(
@@ -222,7 +223,8 @@ export const policyRouter = createTRPCRouter({
         .from(policyVersions)
         .where(
           and(
-            eq(policyVersions.id, input.policyId)
+            // @ts-expect-error
+            eq(policyVersions.pk, policy.activeVersion) // TODO: This should probs not be this. It should be the latest version???
             // eq(policyVersions.policyPk, policy.id), // TODO
           )
         )

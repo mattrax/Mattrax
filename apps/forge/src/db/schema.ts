@@ -130,9 +130,6 @@ export const users = mysqlTable(
       .notNull(),
     // ID of the user in the remove provider
     providerResourceId: varchar("resourceId", { length: 256 }).notNull(),
-    groupableVariant: mysqlEnum("groupableVariant", ["user"])
-      .notNull()
-      .default("user"),
   },
   (t) => ({
     emailUnq: unique().on(t.email, t.tenantPk),
@@ -149,9 +146,6 @@ export const policies = mysqlTable("policies", {
   tenantPk: serialRelation("tenantId")
     .references(() => tenants.pk)
     .notNull(),
-  groupableVariant: mysqlEnum("groupableVariant", ["policy"])
-    .notNull()
-    .default("policy"),
 });
 
 export const policyVersions = mysqlTable("policy_versions", {
@@ -168,6 +162,20 @@ export const policyVersions = mysqlTable("policy_versions", {
   deployedBy: serialRelation("deployedBy").references(() => accounts.pk),
   deployedAt: timestamp("deployedAt"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export const policyVersionDeploy = mysqlTable("policy_version_deploy", {
+  pk: serial("id").primaryKey(),
+  versionPk: serialRelation("versionId")
+    .references(() => policyVersions.pk)
+    .notNull(),
+  deviceId: serialRelation("deviceId")
+    .references(() => devices.pk)
+    .notNull(),
+  status: mysqlEnum("status", ["queued", "deployed", "success", "failed"])
+    .notNull()
+    .default("queued"),
+  lastModified: timestamp("lastModified").notNull().defaultNow(),
 });
 
 export const devices = mysqlTable("devices", {
@@ -203,10 +211,6 @@ export const devices = mysqlTable("devices", {
   tenantPk: serialRelation("tenantId")
     .references(() => tenants.pk)
     .notNull(),
-
-  groupableVariant: mysqlEnum("groupableVariant", ["device"])
-    .notNull()
-    .default("device"),
 });
 
 // TODO: Remove this table
@@ -219,13 +223,6 @@ export const device_windows_data = mysqlTable("device_windows_data_temp", {
 });
 
 // export const deviceSoftwareInventories = mysqlTable("device_software_inventory", {});
-
-export const devicesRelations = relations(devices, ({ one }) => ({
-  groupable: one(groupables, {
-    fields: [devices.pk, devices.groupableVariant],
-    references: [groupables.pk, groupables.variant],
-  }),
-}));
 
 export const groupableVariants = ["user", "device", "policy"] as const;
 

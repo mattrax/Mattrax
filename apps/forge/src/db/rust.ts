@@ -62,7 +62,6 @@ exportQueries(
             operatingSystem: args.operating_system,
             serialNumber: args.serial_number,
             tenantPk: args.tenant_pk,
-            groupableVariant: "device",
           },
         ]),
     }),
