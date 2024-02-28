@@ -56,3 +56,6 @@ result.mobileconfig
 
 # Data directory
 /data
+
+# Oscar's staging area
+/_
