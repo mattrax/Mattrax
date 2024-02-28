@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 
 import { createTRPCRouter, tenantProcedure } from "../helpers";
 import {
@@ -281,50 +281,47 @@ export const policyRouter = createTRPCRouter({
       if (!policy)
         throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
 
-      return await promiseAllObject({
-        users: db
-          .select({ pk: users.pk, id: users.id, name: users.name })
-          .from(users)
-          .leftJoin(
-            policyAssignables,
-            eq(users.pk, policyAssignables.groupablePk)
-          )
-          .where(
-            and(
-              eq(policyAssignables.groupableVariant, "user"),
-              eq(policyAssignables.policyPk, policy.pk)
+      return await db
+        .select({
+          pk: policyAssignables.groupablePk,
+          variant: policyAssignables.groupableVariant,
+          name: sql<string>`
+            GROUP_CONCAT(
+                CASE
+                    WHEN ${policyAssignables.groupableVariant} = "device" THEN ${devices.name}
+                    WHEN ${policyAssignables.groupableVariant} = "user" THEN ${users.name}
+                    WHEN ${policyAssignables.groupableVariant} = "group" THEN ${groups.name}
+                END
             )
+          `.as("name"),
+        })
+        .from(policyAssignables)
+        .where(eq(policyAssignables.policyPk, policy.pk))
+        .leftJoin(
+          devices,
+          and(
+            eq(devices.pk, policyAssignables.groupablePk),
+            eq(policyAssignables.groupableVariant, "device")
           )
-          .then((r) => r || []),
-        devices: db
-          .select({ pk: devices.pk, id: devices.id, name: devices.name })
-          .from(devices)
-          .leftJoin(
-            policyAssignables,
-            eq(devices.pk, policyAssignables.groupablePk)
+        )
+        .leftJoin(
+          users,
+          and(
+            eq(users.pk, policyAssignables.groupablePk),
+            eq(policyAssignables.groupableVariant, "user")
           )
-          .where(
-            and(
-              eq(policyAssignables.groupableVariant, "device"),
-              eq(policyAssignables.policyPk, policy.pk)
-            )
+        )
+        .leftJoin(
+          groups,
+          and(
+            eq(groups.pk, policyAssignables.groupablePk),
+            eq(policyAssignables.groupableVariant, "group")
           )
-          .then((r) => r || []),
-        groups: db
-          .select({ pk: groups.pk, id: groups.id, name: groups.name })
-          .from(groups)
-          .leftJoin(
-            policyAssignables,
-            eq(groups.pk, policyAssignables.groupablePk)
-          )
-          .where(
-            and(
-              eq(policyAssignables.groupableVariant, "group"),
-              eq(policyAssignables.policyPk, policy.pk)
-            )
-          )
-          .then((r) => r || []),
-      });
+        )
+        .groupBy(
+          policyAssignables.groupableVariant,
+          policyAssignables.groupablePk
+        );
     }),
 
   possibleMembers: tenantProcedure

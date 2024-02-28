@@ -74,7 +74,7 @@ type Variant = keyof typeof VariantDisplay;
 
 const columnHelper = createColumnHelper<{
   pk: number;
-  id: string;
+  // id: string;
   name: string;
   variant: Variant;
 }>();
@@ -120,28 +120,26 @@ function createMembersTable(groupId: Accessor<string>) {
     get data() {
       if (!members.data) return [];
 
-      const res = [
-        ...members.data.users.map((user) => ({
-          ...user,
-          variant: "user" as const,
-        })),
-        ...members.data.devices.map((device) => ({
-          ...device,
-          variant: "device" as const,
-        })),
-        ...members.data.groups.map((group) => ({
-          ...group,
-          variant: "group" as const,
-        })),
-      ];
+      // const res = [
+      //   ...members.data.users.map((user) => ({
+      //     ...user,
+      //     variant: "user" as const,
+      //   })),
+      //   ...members.data.devices.map((device) => ({
+      //     ...device,
+      //     variant: "device" as const,
+      //   })),
+      //   ...members.data.groups.map((group) => ({
+      //     ...group,
+      //     variant: "group" as const,
+      //   })),
+      // ];
 
-      res.sort((a, b) => a.name.localeCompare(b.name));
+      // res.sort((a, b) => a.name.localeCompare(b.name));
 
-      return res;
+      return members.data;
     },
-    get columns() {
-      return columns;
-    },
+    columns,
     // onSortingChange: setSorting,
     // onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
