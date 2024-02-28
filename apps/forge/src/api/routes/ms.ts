@@ -129,7 +129,7 @@ export const msRouter = new Hono<HonoEnv>()
       .api("/subscriptions")
       .post({
         changeType: "created",
-        notificationUrl: `https://davis-hotel-consumers-packing.trycloudflare.com/api/webhook/ms`,
+        notificationUrl: `${env.PROD_URL}/api/webhook/ms`,
         resource: "/users",
         expirationDateTime: new Date(
           new Date().getTime() + 1000 * 60 * 60 * 24 * 25
