@@ -7,6 +7,7 @@ import { env } from "~/env";
 import { lucia } from "../auth";
 import { HonoEnv } from "../types";
 import { msGraphClient } from "../microsoft";
+import { syncAllUsersWithEntra } from "../trpc/routers/tenant/identityProvider";
 
 const tokenEndpointResponse = z.object({ access_token: z.string() });
 const organizationResponse = z.object({
@@ -110,7 +111,7 @@ export const msRouter = new Hono<HonoEnv>()
 
     const { tenant, entraIdTenant } = c.env.session.data.oauthData;
 
-    await db
+    const result = await db
       .insert(identityProviders)
       .values({
         variant: "entraId",
@@ -124,12 +125,15 @@ export const msRouter = new Hono<HonoEnv>()
           variant: "entraId",
         },
       });
+    const providerId = parseInt(result.insertId);
 
     const resp = await msGraphClient(entraIdTenant)
       .api("/subscriptions")
       .post({
-        changeType: "created",
+        changeType: "created,updated,deleted",
         notificationUrl: `${env.PROD_URL}/api/webhook/ms`,
+        // TODO: Automatically renew the subscription when we get the expiration notification
+        // lifecycleNotificationUrl: `${env.PROD_URL}/api/webhook/ms/lifecycle`,
         resource: "/users",
         expirationDateTime: new Date(
           new Date().getTime() + 1000 * 60 * 60 * 24 * 25
@@ -137,14 +141,13 @@ export const msRouter = new Hono<HonoEnv>()
         clientState: env.INTERNAL_SECRET,
       });
 
-    console.log({ resp });
-
     await c.env.session.update({
       ...c.env.session.data,
       oauthData: undefined,
     });
 
-    // TODO: Trigger an initial user sync out-of-band (event.waitUtil?)
+    // TODO: Trigger this out-of-band (event.waitUtil?)
+    await syncAllUsersWithEntra(tenant, providerId, entraIdTenant);
 
     return c.redirect(`/${tenant}/settings`);
   });

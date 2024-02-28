@@ -94,7 +94,7 @@ export type UserProviderVariant = (typeof userProviderVariants)[number];
 
 // A link between a tenant and an external authentication provider.
 export const identityProviders = mysqlTable(
-  "tenant_user_provider",
+  "identity_providers",
   {
     pk: serial("id").primaryKey(),
     id: cuid("cuid").notNull().unique(),
@@ -105,7 +105,7 @@ export const identityProviders = mysqlTable(
       .unique()
       .references(() => tenants.pk),
     // ID of the remote user provider
-    remoteId: varchar("resourceId", { length: 256 }).notNull(),
+    remoteId: varchar("remoteId", { length: 256 }).notNull(),
     lastSynced: timestamp("lastSynced"),
   },
   (table) => ({

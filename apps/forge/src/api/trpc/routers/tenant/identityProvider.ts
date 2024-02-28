@@ -1,9 +1,11 @@
 import { db, domains, identityProviders, users } from "~/db";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { msGraphClient } from "~/api/microsoft";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { createId } from "@paralleldrive/cuid2";
+import { env } from "~/env";
 
 export const identityProviderRouter = createTRPCRouter({
   get: tenantProcedure.query(async ({ ctx }) => {
@@ -13,12 +15,59 @@ export const identityProviderRouter = createTRPCRouter({
       })) ?? null
     );
   }),
+
+  linkEntra: tenantProcedure.mutation(async ({ ctx }) => {
+    // This will cause all in-progress linking to hit the CSRF error.
+    // Due to this being an infrequent operation, I think this is fine.
+    const state = createId();
+    await ctx.env.session.update({
+      ...ctx.env.session.data,
+      oauthData: {
+        tenant: ctx.tenant.pk,
+        state,
+      },
+    });
+    const params = new URLSearchParams({
+      client_id: env.ENTRA_CLIENT_ID,
+      scope: "https://graph.microsoft.com/.default",
+      redirect_uri: `${env.PROD_URL}/api/ms/link`,
+      response_type: "code",
+      response_mode: "query",
+      state: state,
+    });
+    return `https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?${params.toString()}`;
+  }),
+
   remove: tenantProcedure.mutation(async ({ ctx }) => {
     const [provider] = await db
-      .select({ pk: identityProviders.pk })
+      .select({
+        pk: identityProviders.pk,
+        remoteId: identityProviders.remoteId,
+      })
       .from(identityProviders)
       .where(eq(identityProviders.tenantPk, ctx.tenant.pk));
     if (!provider) throw new Error("No identity provider found");
+
+    // We ignore any errors cleaning up the subscriptions cause it's a non vital error.
+    try {
+      const subscriptions = await msGraphClient(provider.remoteId)
+        .api("/subscriptions")
+        .get();
+
+      const results = await Promise.allSettled(
+        subscriptions.value.map((sub: { id: string }) => {
+          return msGraphClient(provider.remoteId)
+            .api(`/subscriptions/${sub.id}`)
+            .delete();
+        })
+      );
+
+      for (const result of results) {
+        if (result.status === "rejected") console.error(result.reason);
+      }
+    } catch (err) {
+      console.error(err);
+    }
 
     await db.transaction(async (db) => {
       await db
@@ -30,6 +79,7 @@ export const identityProviderRouter = createTRPCRouter({
         .where(eq(identityProviders.tenantPk, ctx.tenant.pk));
     });
   }),
+
   domains: tenantProcedure.query(async ({ ctx }) => {
     const provider = await ensureIdentityProvider(ctx.tenant.pk);
 
@@ -47,6 +97,7 @@ export const identityProviderRouter = createTRPCRouter({
 
     return { remoteDomains, connectedDomains };
   }),
+
   connectDomain: tenantProcedure
     .input(z.object({ domain: z.string() }))
     .mutation(async ({ ctx, input }) => {
@@ -75,8 +126,16 @@ export const identityProviderRouter = createTRPCRouter({
         enterpriseEnrollmentAvailable: await enterpriseEnrollmentAvailable,
       });
 
+      // TODO: Trigger this in an `event.waitUntil` so it doesn't block the response.
+      await syncAllUsersWithEntra(
+        ctx.tenant.pk,
+        provider.pk,
+        provider.remoteId
+      );
+
       return true;
     }),
+
   refreshDomains: tenantProcedure.mutation(async ({ ctx }) => {
     const provider = await ensureIdentityProvider(ctx.tenant.pk);
 
@@ -100,6 +159,7 @@ export const identityProviderRouter = createTRPCRouter({
         );
     }
   }),
+
   removeDomain: tenantProcedure
     .input(
       z.object({
@@ -120,6 +180,23 @@ export const identityProviderRouter = createTRPCRouter({
 
       return true;
     }),
+
+  sync: tenantProcedure.mutation(async ({ ctx }) => {
+    const [tenantProvider] = await db
+      .select()
+      .from(identityProviders)
+      .where(eq(identityProviders.tenantPk, ctx.tenant.pk));
+    if (!tenantProvider)
+      throw new Error(
+        `Tenant '${ctx.tenant.pk}' not found or has no providers`
+      ); // TODO: make an error the frontend can handle
+
+    await syncAllUsersWithEntra(
+      ctx.tenant.pk,
+      tenantProvider.pk,
+      tenantProvider.remoteId
+    );
+  }),
 });
 
 interface IdentityProvider {
@@ -188,3 +265,49 @@ async function cloudflareDnsQuery(args: {
 
   return CF_DNS_RESPONSE_SCHEMA.parse(json);
 }
+
+export async function syncAllUsersWithEntra(
+  mttxTenantId: number,
+  mttxTenantProviderId: number,
+  msftProviderId: string
+) {
+  const client = msGraphClient(msftProviderId);
+  // TODO: Typescript with the client????
+  // TODO: Pagination
+
+  const result = await client.api("/users").get();
+  // TODO: This will cause users to build up. Really we want to upsert on `resourceId` but idk how to do that with a bulk-insert using Drizzle ORM.
+  // TODO: Ensure `values` contains more than one value or skip the insert so it doesn't error out.
+
+  // Make sure Drizzle doesn't get unhappy
+  if (result.value.length === 0) return;
+
+  // TODO: Filter users to only ones with a connected domain.
+  await db
+    .insert(users)
+    .values(
+      result.value.map((u: any) =>
+        mapUser(u, mttxTenantId, mttxTenantProviderId)
+      )
+    )
+    .onDuplicateKeyUpdate(onDuplicateKeyUpdateUser());
+}
+
+export const mapUser = (
+  u: any,
+  mttxTenantId: number,
+  mttxTenantProviderId: number
+) => ({
+  name: u.displayName,
+  email: u.userPrincipalName,
+  tenantPk: mttxTenantId,
+  providerPk: mttxTenantProviderId,
+  providerResourceId: u.id,
+});
+
+export const onDuplicateKeyUpdateUser = () => ({
+  set: {
+    name: sql`VALUES(${users.name})`,
+    // TODO: Update `email` if the `providerResourceId` matches.
+  },
+});

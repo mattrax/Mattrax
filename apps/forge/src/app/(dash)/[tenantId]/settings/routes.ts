@@ -7,9 +7,6 @@ export default [
     path: "/",
     component: lazy(() => import("./index")),
     load: ({ params }) => {
-      trpc
-        .useContext()
-        .tenant.auth.query.ensureData({ tenantId: params.tenantId! });
       trpc.useContext().tenant.enrollmentInfo.ensureData({
         tenantId: params.tenantId!,
       });
@@ -31,5 +28,10 @@ export default [
   {
     path: "/identity-provider",
     component: lazy(() => import("./identity-provider")),
+    load: ({ params }) => {
+      trpc.useContext().tenant.identityProvider.get.ensureData({
+        tenantId: params.tenantId!,
+      });
+    },
   },
 ] satisfies RouteDefinition[];

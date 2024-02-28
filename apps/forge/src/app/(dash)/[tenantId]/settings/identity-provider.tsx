@@ -34,7 +34,7 @@ export default function Page() {
 function IdentityProviderCard() {
   const tenantCtx = useTenantContext();
 
-  const linkEntra = trpc.tenant.auth.linkEntra.useMutation(() => ({
+  const linkEntra = trpc.tenant.identityProvider.linkEntra.useMutation(() => ({
     onSuccess: async (url) => {
       window.open(url, "_self");
     },
@@ -42,6 +42,10 @@ function IdentityProviderCard() {
 
   const provider = trpc.tenant.identityProvider.get.useQuery(() => ({
     tenantId: tenantCtx.activeTenant.id,
+  }));
+
+  const syncProvider = trpc.tenant.identityProvider.sync.useMutation(() => ({
+    onSuccess: () => provider.refetch(),
   }));
 
   const removeProvider = trpc.tenant.identityProvider.remove.useMutation(
@@ -65,7 +69,7 @@ function IdentityProviderCard() {
       >
         {(provider) => {
           return (
-            <>
+            <div class="flex justify-between w-full">
               <div class="flex flex-col text-sm gap-1 items-start">
                 <a
                   class="font-semibold hover:underline flex flex-row items-center gap-1"
@@ -80,19 +84,32 @@ function IdentityProviderCard() {
                 </a>
                 <span class="text-gray-600">{provider().remoteId}</span>
               </div>
-              <Button
-                class="ml-auto"
-                variant="destructive"
-                onClick={() =>
-                  removeProvider.mutate({
-                    tenantId: tenantCtx.activeTenant.id,
-                  })
-                }
-                disabled={removeProvider.isPending}
-              >
-                Remove
-              </Button>
-            </>
+              <div class="flex space-x-4">
+                <Button
+                  class="ml-auto"
+                  onClick={() =>
+                    syncProvider.mutate({
+                      tenantId: tenantCtx.activeTenant.id,
+                    })
+                  }
+                  disabled={syncProvider.isPending}
+                >
+                  Sync
+                </Button>
+                <Button
+                  class="ml-auto"
+                  variant="destructive"
+                  onClick={() =>
+                    removeProvider.mutate({
+                      tenantId: tenantCtx.activeTenant.id,
+                    })
+                  }
+                  disabled={removeProvider.isPending}
+                >
+                  Remove
+                </Button>
+              </div>
+            </div>
           );
         }}
       </Show>
