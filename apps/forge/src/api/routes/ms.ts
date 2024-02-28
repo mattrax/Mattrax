@@ -111,7 +111,7 @@ export const msRouter = new Hono<HonoEnv>()
 
     const { tenant, entraIdTenant } = c.env.session.data.oauthData;
 
-    const result = await db
+    await db
       .insert(identityProviders)
       .values({
         variant: "entraId",
@@ -125,9 +125,8 @@ export const msRouter = new Hono<HonoEnv>()
           variant: "entraId",
         },
       });
-    const providerId = parseInt(result.insertId);
 
-    const resp = await msGraphClient(entraIdTenant)
+    await msGraphClient(entraIdTenant)
       .api("/subscriptions")
       .post({
         changeType: "created,updated,deleted",
@@ -145,9 +144,6 @@ export const msRouter = new Hono<HonoEnv>()
       ...c.env.session.data,
       oauthData: undefined,
     });
-
-    // TODO: Trigger this out-of-band (event.waitUtil?)
-    await syncAllUsersWithEntra(tenant, providerId, entraIdTenant);
 
     return c.redirect(`/${tenant}/settings`);
   });

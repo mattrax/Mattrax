@@ -126,7 +126,7 @@ export const identityProviderRouter = createTRPCRouter({
         enterpriseEnrollmentAvailable: await enterpriseEnrollmentAvailable,
       });
 
-      // TODO: Trigger this in an `event.waitUntil` so it doesn't block the response.
+      // TODO: `event.waitUntil`???
       await syncAllUsersWithEntra(
         ctx.tenant.pk,
         provider.pk,
