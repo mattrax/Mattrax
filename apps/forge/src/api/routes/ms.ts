@@ -6,6 +6,7 @@ import { db, identityProviders } from "~/db";
 import { env } from "~/env";
 import { lucia } from "../auth";
 import { HonoEnv } from "../types";
+import { msGraphClient } from "../microsoft";
 
 const tokenEndpointResponse = z.object({ access_token: z.string() });
 const organizationResponse = z.object({
@@ -106,15 +107,15 @@ export const msRouter = new Hono<HonoEnv>()
     if (!c.env.session.data?.oauthData) return new Response(`Conflict!`); // TODO: Proper error UI as the user may land here
     if (!c.env.session.data?.oauthData.entraIdTenant)
       return new Response(`Conflict!`); // TODO: Proper error UI as the user may land here
-    const mttxTenantId = c.env.session.data.oauthData.tenant;
-    const entraTenantId = c.env.session.data.oauthData.entraIdTenant;
+
+    const { tenant, entraIdTenant } = c.env.session.data.oauthData;
 
     await db
       .insert(identityProviders)
       .values({
         variant: "entraId",
-        remoteId: entraTenantId,
-        tenantPk: mttxTenantId,
+        remoteId: entraIdTenant,
+        tenantPk: tenant,
       })
       // We don't care if it already exists so no need for that to cause an error.
       .onDuplicateKeyUpdate({
@@ -124,6 +125,20 @@ export const msRouter = new Hono<HonoEnv>()
         },
       });
 
+    const resp = await msGraphClient(entraIdTenant)
+      .api("/subscriptions")
+      .post({
+        changeType: "created",
+        notificationUrl: `https://davis-hotel-consumers-packing.trycloudflare.com/api/webhook/ms`,
+        resource: "/users",
+        expirationDateTime: new Date(
+          new Date().getTime() + 1000 * 60 * 60 * 24 * 25
+        ).toISOString(),
+        clientState: env.INTERNAL_SECRET,
+      });
+
+    console.log({ resp });
+
     await c.env.session.update({
       ...c.env.session.data,
       oauthData: undefined,
@@ -131,5 +146,5 @@ export const msRouter = new Hono<HonoEnv>()
 
     // TODO: Trigger an initial user sync out-of-band (event.waitUtil?)
 
-    return c.redirect(`/${mttxTenantId}/settings`);
+    return c.redirect(`/${tenant}/settings`);
   });

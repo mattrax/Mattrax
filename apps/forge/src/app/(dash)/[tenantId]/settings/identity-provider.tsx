@@ -32,7 +32,7 @@ export default function Page() {
 }
 
 function IdentityProviderCard() {
-  const tenant = useTenantContext();
+  const tenantCtx = useTenantContext();
 
   const linkEntra = trpc.tenant.auth.linkEntra.useMutation(() => ({
     onSuccess: async (url) => {
@@ -41,17 +41,21 @@ function IdentityProviderCard() {
   }));
 
   const provider = trpc.tenant.identityProvider.get.useQuery(() => ({
-    tenantId: tenant.activeTenant.id,
+    tenantId: tenantCtx.activeTenant.id,
   }));
 
+  const removeProvider = trpc.tenant.identityProvider.remove.useMutation(
+    () => ({ onSuccess: () => provider.refetch() })
+  );
+
   return (
-    <Card class="p-4">
+    <Card class="p-4 flex flex-row items-center">
       <Show
         when={provider.data}
         fallback={
           <Button
             onClick={() =>
-              linkEntra.mutate({ tenantId: tenant.activeTenant.id })
+              linkEntra.mutate({ tenantId: tenantCtx.activeTenant.id })
             }
             disabled={linkEntra.isPending}
           >
@@ -59,21 +63,38 @@ function IdentityProviderCard() {
           </Button>
         }
       >
-        {(provider) => (
-          <>
-            <div class="flex flex-col text-sm gap-1 items-start">
-              <a
-                class="font-semibold hover:underline flex flex-row items-center gap-1"
-                href={authProviderUrl(provider().variant, provider().remoteId)}
-                target="_blank"
+        {(provider) => {
+          return (
+            <>
+              <div class="flex flex-col text-sm gap-1 items-start">
+                <a
+                  class="font-semibold hover:underline flex flex-row items-center gap-1"
+                  href={authProviderUrl(
+                    provider().variant,
+                    provider().remoteId
+                  )}
+                  target="_blank"
+                >
+                  {provider().name ?? AUTH_PROVIDER_DISPLAY[provider().variant]}
+                  <IconPrimeExternalLink class="inline" />
+                </a>
+                <span class="text-gray-600">{provider().remoteId}</span>
+              </div>
+              <Button
+                class="ml-auto"
+                variant="destructive"
+                onClick={() =>
+                  removeProvider.mutate({
+                    tenantId: tenantCtx.activeTenant.id,
+                  })
+                }
+                disabled={removeProvider.isPending}
               >
-                {provider().name ?? AUTH_PROVIDER_DISPLAY[provider().variant]}
-                <IconPrimeExternalLink class="inline" />
-              </a>
-              <span class="text-gray-600">{provider().remoteId}</span>
-            </div>
-          </>
-        )}
+                Remove
+              </Button>
+            </>
+          );
+        }}
       </Show>
     </Card>
   );

@@ -1,4 +1,4 @@
-import { db, domains, identityProviders } from "~/db";
+import { db, domains, identityProviders, users } from "~/db";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
 import { and, eq } from "drizzle-orm";
 import { msGraphClient } from "~/api/microsoft";
@@ -12,6 +12,23 @@ export const identityProviderRouter = createTRPCRouter({
         where: eq(identityProviders.tenantPk, ctx.tenant.pk),
       })) ?? null
     );
+  }),
+  remove: tenantProcedure.mutation(async ({ ctx }) => {
+    const [provider] = await db
+      .select({ pk: identityProviders.pk })
+      .from(identityProviders)
+      .where(eq(identityProviders.tenantPk, ctx.tenant.pk));
+    if (!provider) throw new Error("No identity provider found");
+
+    await db.transaction(async (db) => {
+      await db
+        .delete(domains)
+        .where(eq(domains.identityProviderPk, provider.pk));
+      await db.delete(users).where(eq(users.providerPk, provider.pk));
+      await db
+        .delete(identityProviders)
+        .where(eq(identityProviders.tenantPk, ctx.tenant.pk));
+    });
   }),
   domains: tenantProcedure.query(async ({ ctx }) => {
     const provider = await ensureIdentityProvider(ctx.tenant.pk);
@@ -31,11 +48,7 @@ export const identityProviderRouter = createTRPCRouter({
     return { remoteDomains, connectedDomains };
   }),
   connectDomain: tenantProcedure
-    .input(
-      z.object({
-        domain: z.string(),
-      })
-    )
+    .input(z.object({ domain: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const enterpriseEnrollmentAvailable = isEnterpriseEnrollmentAvailable(
         input.domain
