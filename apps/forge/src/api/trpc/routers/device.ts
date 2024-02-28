@@ -45,13 +45,13 @@ export const deviceRouter = createTRPCRouter({
 
       //   // TODO: Filter to only devices in current tenant
       //   // TODO: .where(eq(devices.tenantId, todo))
-      //   const device = (
+      //   const [device] = (
       //     await db
       //       .select({
       //         intuneId: devices.intuneId,
       //       })
       //       .from(devices)
-      //   )?.[0];
+      //   );
       //   if (!device) throw new Error("Device not found"); // TODO: Properly handle this error on frontend
 
       //   await syncDevice(device.intuneId);

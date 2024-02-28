@@ -42,7 +42,7 @@ export const policyRouter = createTRPCRouter({
   get: tenantProcedure
     .input(z.object({ policyId: z.string() }))
     .query(async ({ ctx, input }) => {
-      const policy = await db
+      const [policy] = await db
         .select({
           id: policies.id,
           name: policies.name,
@@ -60,8 +60,7 @@ export const policyRouter = createTRPCRouter({
             eq(policies.id, input.policyId),
             eq(policies.tenantPk, ctx.tenant.pk)
           )
-        )
-        .then((v) => v?.[0]);
+        );
 
       if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
@@ -150,7 +149,7 @@ export const policyRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       // TODO: Maybe transaction for this?
 
-      const policy = await db
+      const [policy] = await db
         .select({
           id: policies.id,
           pk: policies.pk,
@@ -162,8 +161,7 @@ export const policyRouter = createTRPCRouter({
             eq(policies.id, input.policyId),
             eq(policies.tenantPk, ctx.tenant.pk)
           )
-        )
-        .then((v) => v?.[0]);
+        );
       if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
       const status = await db
@@ -203,7 +201,7 @@ export const policyRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       // TODO: Maybe transaction for this?
 
-      const policy = await db
+      const [policy] = await db
         .select({
           pk: policies.pk,
           activeVersion: policies.activeVersion,
@@ -214,11 +212,10 @@ export const policyRouter = createTRPCRouter({
             eq(policies.id, input.policyId),
             eq(policies.tenantPk, ctx.tenant.pk)
           )
-        )
-        .then((v) => v?.[0]);
+        );
       if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
-      const numOpenPolicies = await db
+      const [result] = await db
         .select({
           count: count(),
         })
@@ -229,13 +226,13 @@ export const policyRouter = createTRPCRouter({
             // eq(policyVersions.tenantPk, ctx.tenant.pk),
             eq(policyVersions.status, "open")
           )
-        )
-        .then((v) => v?.[0]?.count);
+        );
+      const numOpenPolicies = result?.count;
 
       if (numOpenPolicies !== 0)
         throw new Error("There is already an open policy version");
 
-      const activeVersion = await db
+      const [activeVersion] = await db
         .select({
           id: policyVersions.pk,
           data: policyVersions.data,
@@ -247,8 +244,7 @@ export const policyRouter = createTRPCRouter({
             eq(policyVersions.pk, policy.activeVersion) // TODO: This should probs not be this. It should be the latest version???
             // eq(policyVersions.policyPk, policy.id), // TODO
           )
-        )
-        .then((v) => v?.[0]);
+        );
 
       const newVersionId = createId();
       const newVersion = await db.insert(policyVersions).values({
@@ -383,9 +379,9 @@ export const policyRouter = createTRPCRouter({
   //   .mutation(async ({ ctx, input }) => {
   //     throw new Error("TODO: Bring this back!");
   //     // const id = input.policyId;
-  //     // let row = (
+  //     // let [row] = (
   //     //   await db.select().from(policies).where(eq(policies.id, id))
-  //     // )?.[0];
+  //     // );
   //     // if (!row) throw new Error("todo: error handling");
 
   //     // // @ts-expect-error

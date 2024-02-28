@@ -7,16 +7,14 @@ import type Stripe from "stripe";
 
 export const billingRouter = createTRPCRouter({
   portalUrl: tenantProcedure.mutation(async ({ ctx }) => {
-    const tenant = (
-      await db
-        .select({
-          name: tenants.name,
-          billingEmail: tenants.billingEmail,
-          stripeCustomerId: tenants.stripeCustomerId,
-        })
-        .from(tenants)
-        .where(eq(tenants.pk, ctx.tenant.pk))
-    )?.[0];
+    const [tenant] = await db
+      .select({
+        name: tenants.name,
+        billingEmail: tenants.billingEmail,
+        stripeCustomerId: tenants.stripeCustomerId,
+      })
+      .from(tenants)
+      .where(eq(tenants.pk, ctx.tenant.pk));
     if (!tenant) throw new Error("Tenant not found!"); // TODO: Proper error code which the frontend knows how to handle
 
     let customerId: string;
