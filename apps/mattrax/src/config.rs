@@ -42,9 +42,17 @@ pub struct Config {
     pub secret: [u8; 32],
     pub db_url: String,
     pub internal_secret: String,
+    pub cloud: Option<CloudConfig>,
     // pub setup_code: Option<String>,
     // #[serde(skip_serializing_if = "Option::is_none")]
     // pub conn_url: Option<String>,
+}
+
+/// Configuration properties for when deploying Mattrax at scale. (Eg. cloud.mattrax.app)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudConfig {
+    // Domain for the frontend. Falls back to `Config::domain` if not set.
+    pub frontend: Option<String>,
 }
 
 // impl Config {

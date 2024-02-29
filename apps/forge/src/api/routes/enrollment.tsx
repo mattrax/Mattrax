@@ -1,14 +1,17 @@
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { renderToString } from "solid-js/web";
+import * as jose from "jose";
 
 import { db, domains, identityProviders } from "~/db";
-import { env } from "..";
+import { env } from "~/env";
 
 export type EnrollmentProfileDescription = {
   data: string;
   createdAt: number;
 };
+
+const MINUTE = 60 * 1000;
 
 export const enrollmentRouter = new Hono()
   .get("/login", async (c) => {
@@ -27,9 +30,20 @@ export const enrollmentRouter = new Hono()
 
     // The user did the login flow in their browser, so we can skip doing it again in within the Windows Federated enrollment flow.
     if (appru && accesstoken) {
-      // TODO: Reject expired access_tokens. Microsoft's MDM client seems to be caching them (as least that's the only explanation to what i'm seeing)
+      // It seems like Microsoft's MDM client is caching the `accesstoken` prop (as least that's the only explanation for what i'm seeing)
+      // This will trigger a new login flow if the token is expired (hence was probs cached).
+      try {
+        await jose.jwtVerify(
+          accesstoken,
+          new TextEncoder().encode(env.INTERNAL_SECRET),
+          {
+            audience: "mdm.mattrax.app",
+            algorithms: ["ES256"],
+          }
+        );
 
-      return c.html(renderMdmCallback(appru, accesstoken));
+        return c.html(renderMdmCallback(appru, accesstoken));
+      } catch (err) {}
     }
 
     const [, domain] = email.split("@");
@@ -110,12 +124,24 @@ export const enrollmentRouter = new Hono()
       return await r.json();
     });
 
+    // TODO: Upsert if the user doesn't exist already
+
+    const jwt = await new jose.SignJWT({
+      tenant: tenantId,
+      upn: userPrincipalName,
+    })
+      .setAudience("mdm.mattrax.app")
+      .setNotBefore(new Date())
+      .setExpirationTime(new Date(Date.now() + 10 * MINUTE))
+      .setProtectedHeader({ alg: "ES256" })
+      .sign(new TextEncoder().encode(env.INTERNAL_SECRET));
+
     if (appru) {
-      return c.html(renderMdmCallback(appru, access_token));
+      return c.html(renderMdmCallback(appru, jwt));
     } else {
       // TODO: Can we use cookies for this cause I don't trust non-tech people to not accidentally copy it out. - We would wanna render `/enroll` with Solid on the server for that.
       const searchParams = new URLSearchParams({
-        token: access_token,
+        token: jwt,
         email: userPrincipalName,
       });
       return c.redirect(`/enroll?${searchParams.toString()}`);

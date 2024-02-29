@@ -171,7 +171,6 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
             )
         }),
     )
-    // TODO: `ManagementServer/ServerList.svc` -> What does this do again???
 }
 
 // TODO:

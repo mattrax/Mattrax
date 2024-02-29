@@ -203,6 +203,9 @@ importers:
       hono:
         specifier: ^4.0.1
         version: 4.0.1
+      jose:
+        specifier: ^5.2.2
+        version: 5.2.2
       lucia:
         specifier: ^3.0.1
         version: 3.0.1
@@ -9186,6 +9189,10 @@ packages:
       '@sideway/address': 4.1.5
       '@sideway/formula': 3.0.1
       '@sideway/pinpoint': 2.0.0
+    dev: false
+
+  /jose@5.2.2:
+    resolution: {integrity: sha512-/WByRr4jDcsKlvMd1dRJnPfS1GVO3WuKyaurJ/vvXcOaUQO8rnNObCQMlv/5uCceVQIq5Q4WLF44ohsdiTohdg==}
     dev: false
 
   /js-beautify@1.14.11:

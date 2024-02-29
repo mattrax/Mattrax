@@ -65,6 +65,7 @@ impl Command {
             secret,
             db_url: "mysql://user:password@aws.connect.psdb.cloud/mattrax?require_ssl=true".into(),
             internal_secret: "areallylongsecretthatyoushouldreplace".to_string(),
+            cloud: None,
         };
 
         fs::write(

@@ -126,19 +126,31 @@ export const msRouter = new Hono<HonoEnv>()
         },
       });
 
-    await msGraphClient(entraIdTenant)
-      .api("/subscriptions")
-      .post({
-        changeType: "created,updated,deleted",
-        notificationUrl: `${env.PROD_URL}/api/webhook/ms`,
-        // TODO: Automatically renew the subscription when we get the expiration notification
-        // lifecycleNotificationUrl: `${env.PROD_URL}/api/webhook/ms/lifecycle`,
-        resource: "/users",
-        expirationDateTime: new Date(
-          new Date().getTime() + 1000 * 60 * 60 * 24 * 25
-        ).toISOString(),
-        clientState: env.INTERNAL_SECRET,
-      });
+    let skipSubscription = false;
+    try {
+      const url = new URL(env.PROD_URL);
+      if (url.hostname === "localhost") {
+        skipSubscription = true;
+      }
+    } catch (_) {}
+
+    if (!skipSubscription) {
+      await msGraphClient(entraIdTenant)
+        .api("/subscriptions")
+        .post({
+          changeType: "created,updated,deleted",
+          notificationUrl: `${env.PROD_URL}/api/webhook/ms`,
+          // TODO: Automatically renew the subscription when we get the expiration notification
+          // lifecycleNotificationUrl: `${env.PROD_URL}/api/webhook/ms/lifecycle`,
+          resource: "/users",
+          expirationDateTime: new Date(
+            new Date().getTime() + 1000 * 60 * 60 * 24 * 25
+          ).toISOString(),
+          clientState: env.INTERNAL_SECRET,
+        });
+    } else {
+      console.log("Skipping subscription creation as we are on localhost");
+    }
 
     await c.env.session.update({
       ...c.env.session.data,

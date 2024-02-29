@@ -11,9 +11,14 @@ function optional_in_dev<T extends z.ZodTypeAny>(
 
 export const env = createEnv({
   server: {
+    // Used to secure the session for the dashboard
     AUTH_SECRET: z.string(),
-    DATABASE_URL: z.string(),
+    // Used to secure the JWT's used for MDM authentication
+    // This is shared with Rust so both sides can sign/verify JWT's
+    //
+    // This token is also used to authenticate forge with the Rust code when making HTTP requests
     INTERNAL_SECRET: z.string(),
+    DATABASE_URL: z.string(),
     PROD_URL: z.string(),
     MDM_URL: z.string(),
     EMAIL_URL: z.string(),

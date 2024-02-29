@@ -6,6 +6,7 @@ use std::{
 };
 
 use better_acme::{Acme, FsStore};
+use hmac::{Hmac, Mac};
 use rcgen::{Certificate, CertificateParams, KeyPair};
 use rustls::{
     pki_types::CertificateDer, server::WebPkiClientVerifier, RootCertStore, ServerConfig,
@@ -70,6 +71,8 @@ impl Command {
             KeyPair::from_der(&fs::read(data_dir.join("certs").join("identity-key.der")).unwrap())
                 .unwrap();
         let db = Db::new(&config_manager.get().db_url);
+        let shared_secret =
+            Hmac::new_from_slice(config_manager.get().internal_secret.as_bytes()).unwrap();
         let (acme_tx, acme_rx) = mpsc::channel(25);
         let state = Arc::new(api::Context {
             config: config_manager,
@@ -79,6 +82,7 @@ impl Command {
             // TODO: Is calling generate each time, okay????
             identity_cert: Certificate::generate_self_signed(params, &key_pair).unwrap(),
             identity_key: key_pair,
+            shared_secret,
             acme_tx,
         });
 

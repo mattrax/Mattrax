@@ -8,7 +8,9 @@ use axum::{
     routing::get,
     Router,
 };
+use hmac::Hmac;
 use rcgen::{Certificate, KeyPair};
+use sha2::Sha256;
 use tokio::sync::mpsc;
 
 use crate::{config::ConfigManager, db::Db};
@@ -21,6 +23,8 @@ pub struct Context {
     pub server_port: u16,
     pub is_dev: bool,
     pub db: Db,
+
+    pub shared_secret: Hmac<Sha256>,
 
     pub identity_cert: Certificate,
     pub identity_key: KeyPair,
