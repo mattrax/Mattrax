@@ -22,6 +22,7 @@ const fetchTenants = async (accountPk: number) =>
     .select({
       id: tenants.id,
       name: tenants.name,
+      slug: tenants.slug,
       ownerId: accounts.id,
     })
     .from(tenants)

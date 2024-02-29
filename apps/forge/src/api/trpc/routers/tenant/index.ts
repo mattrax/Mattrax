@@ -32,6 +32,10 @@ export const tenantRouter = createTRPCRouter({
           id,
           name: input.name,
           ownerPk: ctx.account.pk,
+          slug: `${input.name
+            .toLowerCase()
+            .replace(/\ /g, "-")
+            .replace(/[^a-z0-9-v]/g, "")}-${createId().slice(0, 4)}`,
         });
         const tenantPk = parseInt(result.insertId);
 
@@ -52,6 +56,7 @@ export const tenantRouter = createTRPCRouter({
     .input(
       z.object({
         name: z.string().min(1).max(100).optional(),
+        slug: z.string().min(1).max(100).optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -60,9 +65,8 @@ export const tenantRouter = createTRPCRouter({
       await db
         .update(tenants)
         .set({
-          ...(input.name !== undefined && {
-            name: input.name,
-          }),
+          ...(input.name !== undefined && { name: input.name }),
+          ...(input.slug !== undefined && { slug: input.slug }),
         })
         .where(eq(tenants.pk, ctx.tenant.pk));
     }),

@@ -47,6 +47,7 @@ export const tenants = mysqlTable("tenant", {
   pk: serial("id").primaryKey(),
   id: cuid("cuid").notNull().unique(),
   name: varchar("name", { length: 100 }).notNull(),
+  slug: varchar("slug", { length: 256 }).notNull().unique(),
   billingEmail: varchar("billingEmail", { length: 256 }),
   stripeCustomerId: varchar("stripeCustomerId", { length: 256 }),
   enrollmentEnabled: boolean("enrollmentEnabled").notNull().default(true),

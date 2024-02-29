@@ -90,9 +90,11 @@ export const superAdminProcedure = authedProcedure.use((opts) => {
 
 // Authenticated procedure w/ a tenant
 export const tenantProcedure = authedProcedure
-  .input(z.object({ tenantId: z.string() }))
+  .input(z.object({ tenantSlug: z.string() }))
   .use(async (opts) => {
     const { ctx, input } = opts;
+
+    console.log(input);
 
     const query = (
       await db
@@ -100,7 +102,7 @@ export const tenantProcedure = authedProcedure
         .from(tenants)
         .where(
           and(
-            eq(tenants.id, input.tenantId),
+            eq(tenants.slug, input.tenantSlug),
             eq(tenantAccounts.accountPk, ctx.account.pk)
           )
         )
