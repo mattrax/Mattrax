@@ -3,27 +3,32 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn test_discovery_request() {
-    let payload = r#"<s:Envelope xmlns:a="http://www.w3.org/2005/08/addressing" xmlns:s="http://www.w3.org/2003/05/soap-envelope">
-        <s:Header>
-           <a:Action s:mustUnderstand="1">http://schemas.microsoft.com/windows/management/2012/01/enrollment/IDiscoveryService/Discover
-           </a:Action>
-           <a:MessageID>urn:uuid:748132ec-a575-4329-b01b-6171a9cf8478</a:MessageID>
-           <a:ReplyTo>
-              <a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address>
-           </a:ReplyTo>
-           <a:To s:mustUnderstand="1">
-              https://manage.contoso.com:443/EnrollmentServer/Discovery.svc
-           </a:To>
-        </s:Header>
-        <s:Body>
-           <Discover xmlns="http://schemas.microsoft.com/windows/management/2012/01/enrollment">
-              <request xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-                 <EmailAddress>johndoe@contoso.com</EmailAddress>
-                 <RequestVersion></RequestVersion>
-              </request>
-           </Discover>
-        </s:Body>
-     </s:Envelope>"#;
+    let payload = r#"<s:Envelope xmlns:a=\"http://www.w3.org/2005/08/addressing\"
+    xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\">
+    <s:Header>
+        <a:Action s:mustUnderstand=\"1\">http://schemas.microsoft.com/windows/management/2012/01/enrollment/IDiscoveryService/Discover</a:Action>
+        <a:MessageID>urn:uuid:748132ec-a575-4329-b01b-6171a9cf8478</a:MessageID>
+        <a:ReplyTo>
+            <a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address>
+        </a:ReplyTo>
+        <a:To s:mustUnderstand=\"1\">https://EnterpriseEnrollment.otbeaumont.me:443/EnrollmentServer/Discovery.svc</a:To>
+    </s:Header>
+    <s:Body>
+        <Discover xmlns=\"http://schemas.microsoft.com/windows/management/2012/01/enrollment\">
+            <request xmlns:i=\"http://www.w3.org/2001/XMLSchema-instance\">
+                <EmailAddress>oscar@otbeaumont.me</EmailAddress>
+                <RequestVersion>6.0</RequestVersion>
+                <DeviceType>CIMClient_Windows</DeviceType>
+                <ApplicationVersion>10.0.22621.3155</ApplicationVersion>
+                <OSEdition>101</OSEdition>
+                <AuthPolicies>
+                    <AuthPolicy>OnPremise</AuthPolicy>
+                    <AuthPolicy>Federated</AuthPolicy>
+                </AuthPolicies>
+            </request>
+        </Discover>
+    </s:Body>
+</s:Envelope>"#;
 
     let payload = strip_whitespace_from_xml(payload).unwrap();
     println!("{:?}", payload);

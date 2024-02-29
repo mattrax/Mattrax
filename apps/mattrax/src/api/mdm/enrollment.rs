@@ -72,7 +72,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
         
             // TODO: Posthog metrics on `cmd.body.discover.request.request_version`
 
-            let (enrollment_domain, web_domain) = {
+            let (enrollment_domain, web_origin) = {
                 let config = state.config.get();
                 (config.enrollment_domain.clone(), config.cloud.as_ref().and_then(|c| c.frontend.as_ref()).unwrap_or(&config.domain).clone())
             };
@@ -97,14 +97,14 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                             enrollment_version: "5.0".into(), // TODO: From request
                             enrollment_policy_service_url: format!("https://{enrollment_domain}/EnrollmentServer/Policy.svc"),
                             enrollment_service_url: format!("https://{enrollment_domain}/EnrollmentServer/Enrollment.svc"),
-                            authentication_service_url: Some(format!("https://{web_domain}/api/enrollment/login")),
+                            authentication_service_url: Some(format!("{web_origin}/api/enrollment/login")),
                         }
                     }
                 },
             };
 
             let result = response.to_string().unwrap(); // TODO: Error handling
-            // println!("\nRESULT: {result}\n"); // TODO: Remove
+            println!("\nRESULT: {result}\n"); // TODO: Remove
             (
                 [
                     (header::CONTENT_TYPE, HeaderValue::from_static("application/soap+xml; charset=utf-8")),
@@ -119,22 +119,22 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
         .route("/Policy.svc", post(|body: String| async move {
             println!("POLICY {body:?}"); // TODO
 
-    //         fault := soap.FaultFromRequest("policy", policyActionResponse, w)
+            // let cmd = match PolicyRequest::from_str(&body) {
+            //     Ok(cmd) => cmd,
+            //     Err(err) => {
+            //         // TODO: fault.Fault(err, "the request could not be parsed", soap.FaultCodeInternalServiceFault)
+            //         error!("todo: proper soap fault. invalid request body {err:?}");
+            //         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            //     }
+            // };
 
-	// var cmd soap.PolicyRequest
-	// if err := soap.NewDecoder(r.Body).Decode(&cmd); err != nil {
-	// 	fault.Fault(err, "the request could not be parsed", soap.FaultCodeInternalServiceFault)
-	// 	return
-	// }
-	// fault.SetRequestContext(cmd.Header)
-
-	// if cmd.Header.Action != policyActionRequest {
-	// 	fault.Fault(fmt.Errorf("the request's action is not supported by the endpoint"), "the request was not destined for this endpoint", soap.FaultCodeActionMismatch)
-	// 	return
-	// } else if strings.Split(r.URL.String(), "?")[0] != strings.Split(cmd.Header.To, "?")[0] {
-	// 	fault.Fault(fmt.Errorf("the request was destined for another server"), "the request was not destined for this server", soap.FaultCodeEndpointUnavailable)
-	// 	return
-	// }
+        // if cmd.Header.Action != policyActionRequest {
+        // 	fault.Fault(fmt.Errorf("the request's action is not supported by the endpoint"), "the request was not destined for this endpoint", soap.FaultCodeActionMismatch)
+        // 	return
+        // } else if strings.Split(r.URL.String(), "?")[0] != strings.Split(cmd.Header.To, "?")[0] {
+        // 	fault.Fault(fmt.Errorf("the request was destined for another server"), "the request was not destined for this server", soap.FaultCodeEndpointUnavailable)
+        // 	return
+        // }
 
 	// var res = soap.DefaultResponseEnvelope
 	// res.Header.Action.Value = policyActionResponse
