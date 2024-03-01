@@ -7,13 +7,16 @@ import {
 } from "~/api/trpc/routers/tenant/identityProvider";
 import { db, identityProviders, users } from "~/db";
 import { env } from "~/env";
+import { z } from "zod";
+
+// TODO: Listen to Stripe webhooks - https://stripe.com/docs/customer-management/integrate-customer-portal#webhooks
 
 export const webhookRouter = new Hono()
   .post("/ms", async (c) => {
     const validationToken = c.req.query("validationToken");
     if (validationToken) return c.text(validationToken);
 
-    const data = await c.req.json();
+    const data = CHANGE_NOTIFICATION_COLLECTION.parse(await c.req.json());
 
     console.log(JSON.stringify(data, null, 2)); // TODO: Remove this
 
@@ -22,22 +25,6 @@ export const webhookRouter = new Hono()
         console.error("Client state mismatch. Not processing!");
         continue;
       }
-
-      // {                                                                                                                              22:07:03
-      //   changeType: 'updated',
-      //   clientState: 'areallylongsecretthatyoushouldreplace',
-      //   resource: 'Users/3e23cadd-f197-47ab-95e1-d929b94ed00a',
-      //   resourceData: {
-      //     '@odata.type': '#Microsoft.Graph.User',
-      //     '@odata.id': 'Users/3e23cadd-f197-47ab-95e1-d929b94ed00a',
-      //     id: '3e23cadd-f197-47ab-95e1-d929b94ed00a',
-      //     organizationId: '3509b545-2799-4c5c-a0d2-f822ddbd416c'
-      //   },
-      //   subscriptionExpirationDateTime: '2024-03-24T06:47:55.003-07:00',
-      //   subscriptionId: '9a15c438-7c11-461c-9283-49f800142ca5',
-      //   tenantId: '3509b545-2799-4c5c-a0d2-f822ddbd416c'
-      // }
-      console.log(value);
 
       const entraTenantId = value.tenantId;
 
@@ -80,4 +67,29 @@ export const webhookRouter = new Hono()
     return c.text("");
   });
 
-// TODO: Listen to Stripe webhooks - https://stripe.com/docs/customer-management/integrate-customer-portal#webhooks
+const CHANGE_TYPE = z.enum(["created", "updated", "deleted"]);
+
+// https://learn.microsoft.com/en-us/graph/api/resources/resourcedata?view=graph-rest-1.0
+const RESOURCE_DATA = z.object({
+  "@odata.type": z.string(),
+  "@odata.id": z.string(),
+  "@odata.etag": z.string(),
+  id: z.string(),
+});
+
+// https://learn.microsoft.com/en-us/graph/api/resources/changenotification?view=graph-rest-1.0
+const CHANGE_NOTIFICATION = z.object({
+  changeType: CHANGE_TYPE,
+  clientState: z.string(),
+  id: z.string().optional(),
+  resource: z.string(),
+  resourceData: RESOURCE_DATA,
+  subscriptionId: z.string(),
+  tenantId: z.string(),
+});
+
+// https://learn.microsoft.com/en-us/graph/api/resources/changenotificationcollection?view=graph-rest-1.0
+const CHANGE_NOTIFICATION_COLLECTION = z.object({
+  value: z.array(CHANGE_NOTIFICATION),
+  validationTokens: z.array(z.string()).optional(),
+});
