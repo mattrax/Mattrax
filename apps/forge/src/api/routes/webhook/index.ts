@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 
-import { msRouter } from "../ms";
 import { stripeRouter } from "./stripe";
+import { microsoftGraphRouter } from "./microsoft-graph";
 
 export const webhookRouter = new Hono()
-  .route("/ms", msRouter)
+  .route("/microsoft-graph", microsoftGraphRouter)
   .route("/stripe", stripeRouter);

@@ -61,7 +61,7 @@ const LIFECYCLE_NOTIFICATION_COLLECTION = z.object({
   value: z.array(LIFECYCLE_NOTIFICATION),
 });
 
-export const msRouter = new Hono()
+export const microsoftGraphRouter = new Hono()
   .use(async (c, next) => {
     const validationToken = c.req.query("validationToken");
     if (validationToken) return c.text(validationToken);
