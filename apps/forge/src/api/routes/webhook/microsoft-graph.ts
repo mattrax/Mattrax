@@ -108,11 +108,7 @@ async function handleChangeNotification(
 
   switch (notification.resourceData["@odata.type"]) {
     case "#Microsoft.Graph.User":
-      await handleUserChangeNotification(
-        notification,
-        identityProvider,
-        domainList
-      );
+      await handleUserChangeNotification(notification, identityProvider);
       break;
     default:
       console.error(
