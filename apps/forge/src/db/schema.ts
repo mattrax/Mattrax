@@ -132,9 +132,7 @@ export const users = mysqlTable(
     // ID of the user in the remove provider
     providerResourceId: varchar("resourceId", { length: 256 }).notNull(),
   },
-  (t) => ({
-    emailUnq: unique().on(t.email, t.tenantPk),
-  })
+  (t) => ({ emailUnq: unique().on(t.email, t.tenantPk) })
 );
 
 export const policies = mysqlTable("policies", {

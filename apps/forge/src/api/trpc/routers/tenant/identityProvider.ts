@@ -1,10 +1,12 @@
-import { db, domains, identityProviders, users } from "~/db";
-import { createTRPCRouter, tenantProcedure } from "../../helpers";
 import { and, eq, sql } from "drizzle-orm";
-import { msGraphClient } from "~/api/microsoft";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
+import * as MSGraph from "@microsoft/microsoft-graph-types";
+
+import { db, domains, identityProviders, users } from "~/db";
+import { createTRPCRouter, tenantProcedure } from "../../helpers";
+import { msGraphClient } from "~/api/microsoft";
 import { env } from "~/env";
 
 export const identityProviderRouter = createTRPCRouter({
@@ -294,15 +296,15 @@ export async function syncAllUsersWithEntra(
 }
 
 export const mapUser = (
-  u: any,
+  u: Pick<MSGraph.User, "displayName" | "userPrincipalName" | "id">,
   mttxTenantId: number,
   mttxTenantProviderId: number
 ) => ({
-  name: u.displayName,
-  email: u.userPrincipalName,
+  name: u.displayName!,
+  email: u.userPrincipalName!,
   tenantPk: mttxTenantId,
   providerPk: mttxTenantProviderId,
-  providerResourceId: u.id,
+  providerResourceId: u.id!,
 });
 
 export const onDuplicateKeyUpdateUser = () => ({
