@@ -111,20 +111,23 @@ export const msRouter = new Hono<HonoEnv>()
     if (!c.env.session.data?.oauthData.entraIdTenant)
       return new Response(`Conflict!`); // TODO: Proper error UI as the user may land here
 
-    const { tenant, entraIdTenant } = c.env.session.data.oauthData;
+    const { tenantPk, tenantSlug, entraIdTenant } =
+      c.env.session.data.oauthData;
 
     await db
       .insert(identityProviders)
       .values({
         variant: "entraId",
         remoteId: entraIdTenant,
-        tenantPk: tenant,
+        tenantPk: tenantPk,
       })
       // We don't care if it already exists so no need for that to cause an error.
       .onDuplicateKeyUpdate({
         // Drizzle requires at least one item or it will error.
         set: {
           variant: "entraId",
+          remoteId: entraIdTenant,
+          tenantPk: tenantPk,
         },
       });
 
@@ -136,27 +139,27 @@ export const msRouter = new Hono<HonoEnv>()
       }
     } catch (_) {}
 
-    if (!skipSubscription) {
-      await msGraphClient(entraIdTenant)
-        .api("/subscriptions")
-        .post({
-          changeType: "created,updated,deleted",
-          notificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph`,
-          lifecycleNotificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph/lifecycle`,
-          resource: "/users",
-          expirationDateTime: new Date(
-            new Date().getTime() + 1000 * 60 * 60 * 24 * 25 // 25 days
-          ).toISOString(),
-          clientState: env.INTERNAL_SECRET,
-        });
-    } else {
-      console.log("Skipping subscription creation as we are on localhost");
-    }
+    // if (!skipSubscription) {
+    await msGraphClient(entraIdTenant)
+      .api("/subscriptions")
+      .post({
+        changeType: "created,updated,deleted",
+        notificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph`,
+        lifecycleNotificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph/lifecycle`,
+        resource: "/users",
+        expirationDateTime: new Date(
+          new Date().getTime() + 1000 * 60 * 60 * 24 * 25 // 25 days
+        ).toISOString(),
+        clientState: env.INTERNAL_SECRET,
+      });
+    // } else {
+    //   console.log("Skipping subscription creation as we are on localhost");
+    // }
 
     await c.env.session.update({
       ...c.env.session.data,
       oauthData: undefined,
     });
 
-    return c.redirect(`/${tenant}/settings`);
+    return c.redirect(`/${tenantSlug}/settings`);
   });

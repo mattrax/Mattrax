@@ -11,6 +11,7 @@ import {
 } from "~/api/trpc/routers/tenant/identityProvider";
 import { db, identityProviders, users } from "~/db";
 import { env } from "~/env";
+import { isNotFoundGraphError } from "@mattrax/ms-graph";
 
 const CHANGE_TYPE = z.enum(["created", "updated", "deleted"]);
 
@@ -18,13 +19,12 @@ const CHANGE_TYPE = z.enum(["created", "updated", "deleted"]);
 const RESOURCE_DATA = z.object({
   "@odata.type": z.string(),
   "@odata.id": z.string(),
-  "@odata.etag": z.string(),
   id: z.string(),
 });
 
 const BASE_NOTIFICATION = z.object({
   subscriptionId: z.string(),
-  subscriptionExpriationDateTime: z.coerce.date(),
+  subscriptionExpirationDateTime: z.coerce.date(),
   tenantId: z.string(),
   clientState: z.string(),
 });
@@ -33,7 +33,6 @@ const BASE_NOTIFICATION = z.object({
 const CHANGE_NOTIFICATION = BASE_NOTIFICATION.and(
   z.object({
     changeType: CHANGE_TYPE,
-    id: z.string(),
     resource: z.string(),
     resourceData: RESOURCE_DATA,
   })
@@ -66,16 +65,16 @@ export const microsoftGraphRouter = new Hono()
     const validationToken = c.req.query("validationToken");
     if (validationToken) return c.text(validationToken);
 
-    console.log("single string");
-    console.log(await c.req.json());
-
     return await next();
   })
   .post("/", zValidator("json", CHANGE_NOTIFICATION_COLLECTION), async (c) => {
     const { value } = c.req.valid("json");
-    console.log(value);
+
+    console.log(`handling change notification collection`);
 
     await Promise.all(value.map(handleChangeNotification));
+
+    console.log("done handling change notification collection");
 
     return c.text("");
   })
@@ -85,7 +84,11 @@ export const microsoftGraphRouter = new Hono()
     async (c) => {
       const { value } = c.req.valid("json");
 
+      console.log(`handling lifecycle notification collection`);
+
       await Promise.all(value.map(handleLifecycleNotification));
+
+      console.log("done handling lifecycle notification collection");
 
       return c.text("");
     }
@@ -129,37 +132,48 @@ async function handleUserChangeNotification(
 
   switch (notification.changeType) {
     case "created":
-    case "updated":
-      const user: Pick<
-        MSGraph.User,
-        "id" | "displayName" | "userPrincipalName"
-      > = await msGraphClient(notification.tenantId)
-        .api(`/users/${userId}`)
-        .select("id")
-        .select("displayName")
-        .select("userPrincipalName")
-        .get();
+    case "updated": {
+      try {
+        const user: Pick<
+          MSGraph.User,
+          "id" | "displayName" | "userPrincipalName"
+        > = await msGraphClient(notification.tenantId)
+          .api(`/users/${userId}`)
+          .select("id")
+          .select("displayName")
+          .select("userPrincipalName")
+          .get();
 
-      await db
-        .insert(users)
-        .values(mapUser(user, identityProvider.tenantPk, identityProvider.pk))
-        .onDuplicateKeyUpdate(onDuplicateKeyUpdateUser());
-
-      break;
-
-    case "deleted":
-      await db
-        .update(users)
-        .set({ providerResourceId: null })
-        .where(
-          and(
-            eq(users.providerResourceId, userId),
-            eq(users.providerPk, identityProvider.pk)
-          )
-        );
+        await db
+          .insert(users)
+          .values(mapUser(user, identityProvider.tenantPk, identityProvider.pk))
+          .onDuplicateKeyUpdate(onDuplicateKeyUpdateUser());
+      } catch (e) {
+        if (isNotFoundGraphError(e)) {
+          await handleUserDeleted(userId, identityProvider.pk);
+        }
+      }
 
       break;
+    }
+    case "deleted": {
+      await handleUserDeleted(userId, identityProvider.pk);
+
+      break;
+    }
   }
+}
+
+function handleUserDeleted(userId: string, providerPk: number) {
+  return db
+    .update(users)
+    .set({ providerResourceId: null })
+    .where(
+      and(
+        eq(users.providerResourceId, userId),
+        eq(users.providerPk, providerPk)
+      )
+    );
 }
 
 async function handleLifecycleNotification(

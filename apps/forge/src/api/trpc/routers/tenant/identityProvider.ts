@@ -25,7 +25,8 @@ export const identityProviderRouter = createTRPCRouter({
     await ctx.env.session.update({
       ...ctx.env.session.data,
       oauthData: {
-        tenant: ctx.tenant.pk,
+        tenantPk: ctx.tenant.pk,
+        tenantSlug: ctx.tenant.slug,
         state,
       },
     });
@@ -297,13 +298,13 @@ export async function syncAllUsersWithEntra(
 
 export const mapUser = (
   u: Pick<MSGraph.User, "displayName" | "userPrincipalName" | "id">,
-  mttxTenantId: number,
-  mttxTenantProviderId: number
+  tenantPk: number,
+  identityProviderPk: number
 ) => ({
   name: u.displayName!,
   email: u.userPrincipalName!,
-  tenantPk: mttxTenantId,
-  providerPk: mttxTenantProviderId,
+  tenantPk: tenantPk,
+  providerPk: identityProviderPk,
   providerResourceId: u.id!,
 });
 

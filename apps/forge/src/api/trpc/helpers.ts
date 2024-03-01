@@ -94,8 +94,6 @@ export const tenantProcedure = authedProcedure
   .use(async (opts) => {
     const { ctx, input } = opts;
 
-    console.log(input);
-
     const query = (
       await db
         .select()

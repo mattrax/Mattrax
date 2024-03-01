@@ -11,7 +11,8 @@ export type SessionData = {
   // Data for OAuth flow
   oauthData?: {
     // Mattrax tenant to send the user back to
-    tenant: number;
+    tenantPk: number;
+    tenantSlug: string;
     // EntraID tenant. The ownership of this must be verified before putting it here.
     entraIdTenant?: string;
     // Used for CSRF protection
