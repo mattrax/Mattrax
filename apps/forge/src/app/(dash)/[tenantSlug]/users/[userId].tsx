@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { toast } from "solid-sonner";
-import { A, Navigate } from "@solidjs/router";
+import { Navigate } from "@solidjs/router";
 import { ParentProps, Show, createSignal } from "solid-js";
+import clsx from "clsx";
+import { As } from "@kobalte/core";
 
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
@@ -17,8 +19,6 @@ import {
   DialogTrigger,
   buttonVariants,
 } from "~/components/ui";
-import clsx from "clsx";
-import { As } from "@kobalte/core";
 import { Form, InputField, createZodForm } from "~/components/forms";
 
 function UserNotFound() {
@@ -48,7 +48,16 @@ export default function Page() {
                 <span class="block mt-1 text-gray-700 text-sm">
                   {user().email}
                 </span>
-                <Show when={user().providerResourceId}>
+                <Show
+                  when={user().providerResourceId}
+                  fallback={
+                    <span class="flex flex-row items-center text-sm py-2.5 gap-1 font-medium">
+                      <IconMaterialSymbolsWarningRounded class="w-5 h-5 text-yellow-600" />
+                      User not found in{" "}
+                      {AUTH_PROVIDER_DISPLAY[user().provider.variant]}
+                    </span>
+                  }
+                >
                   {(resourceId) => (
                     <a
                       class={clsx(buttonVariants({ variant: "link" }), "!p-0")}
