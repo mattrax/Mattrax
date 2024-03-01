@@ -5,6 +5,7 @@ import * as jose from "jose";
 
 import { db, domains, identityProviders } from "~/db";
 import { env } from "~/env";
+import { getEmailDomain } from "../utils";
 
 export type EnrollmentProfileDescription = {
   data: string;
@@ -46,8 +47,7 @@ export const enrollmentRouter = new Hono()
       } catch (err) {}
     }
 
-    const [, domain] = email.split("@");
-
+    const domain = getEmailDomain(email);
     if (domain === undefined) return c.text("Invalid email address");
 
     const [domainRecord] = await db

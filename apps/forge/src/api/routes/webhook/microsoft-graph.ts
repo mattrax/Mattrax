@@ -9,9 +9,10 @@ import {
   mapUser,
   onDuplicateKeyUpdateUser,
 } from "~/api/trpc/routers/tenant/identityProvider";
-import { db, identityProviders, users } from "~/db";
+import { db, domains, identityProviders, users } from "~/db";
 import { env } from "~/env";
 import { isNotFoundGraphError } from "@mattrax/ms-graph";
+import { getEmailDomain } from "~/api/utils";
 
 const CHANGE_TYPE = z.enum(["created", "updated", "deleted"]);
 
@@ -70,11 +71,7 @@ export const microsoftGraphRouter = new Hono()
   .post("/", zValidator("json", CHANGE_NOTIFICATION_COLLECTION), async (c) => {
     const { value } = c.req.valid("json");
 
-    console.log(`handling change notification collection`);
-
     await Promise.all(value.map(handleChangeNotification));
-
-    console.log("done handling change notification collection");
 
     return c.text("");
   })
@@ -84,11 +81,7 @@ export const microsoftGraphRouter = new Hono()
     async (c) => {
       const { value } = c.req.valid("json");
 
-      console.log(`handling lifecycle notification collection`);
-
       await Promise.all(value.map(handleLifecycleNotification));
-
-      console.log("done handling lifecycle notification collection");
 
       return c.text("");
     }
@@ -115,7 +108,11 @@ async function handleChangeNotification(
 
   switch (notification.resourceData["@odata.type"]) {
     case "#Microsoft.Graph.User":
-      await handleUserChangeNotification(notification, identityProvider);
+      await handleUserChangeNotification(
+        notification,
+        identityProvider,
+        domainList
+      );
       break;
     default:
       console.error(
@@ -143,6 +140,15 @@ async function handleUserChangeNotification(
           .select("displayName")
           .select("userPrincipalName")
           .get();
+
+        const userDomain = getEmailDomain(user.userPrincipalName!)!;
+        const domain = await db.query.domains.findFirst({
+          where: and(
+            eq(domains.identityProviderPk, identityProvider.pk),
+            eq(domains.domain, userDomain)
+          ),
+        });
+        if (!domain) throw new Error(`Domain ${userDomain} not found`);
 
         await db
           .insert(users)
