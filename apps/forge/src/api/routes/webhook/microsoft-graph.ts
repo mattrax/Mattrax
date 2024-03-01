@@ -66,6 +66,7 @@ export const microsoftGraphRouter = new Hono()
     const validationToken = c.req.query("validationToken");
     if (validationToken) return c.text(validationToken);
 
+    console.log("single string");
     console.log(await c.req.json());
 
     return await next();
