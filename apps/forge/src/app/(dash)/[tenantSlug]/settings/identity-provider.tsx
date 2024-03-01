@@ -49,7 +49,11 @@ function IdentityProviderCard() {
   }));
 
   const removeProvider = trpc.tenant.identityProvider.remove.useMutation(
-    () => ({ onSuccess: () => provider.refetch() })
+    () => ({
+      onSuccess: () => {
+        provider.refetch();
+      },
+    })
   );
 
   return (

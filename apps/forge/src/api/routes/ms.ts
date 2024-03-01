@@ -92,7 +92,9 @@ export const msRouter = new Hono<HonoEnv>()
     });
 
     return c.redirect(
-      `https://login.microsoftonline.com/organizations/v2.0/adminconsent?${params.toString()}`
+      `https://login.microsoftonline.com/${
+        tenant.id
+      }/v2.0/adminconsent?${params.toString()}`
     );
   })
   .get("/permissions", async (c) => {

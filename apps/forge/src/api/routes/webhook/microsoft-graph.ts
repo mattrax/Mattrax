@@ -70,6 +70,7 @@ export const microsoftGraphRouter = new Hono()
   })
   .post("/", zValidator("json", CHANGE_NOTIFICATION_COLLECTION), async (c) => {
     const { value } = c.req.valid("json");
+    console.log(value);
 
     await Promise.all(value.map(handleChangeNotification));
 
