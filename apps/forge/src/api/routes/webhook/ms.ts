@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import * as MSGraph from "@microsoft/microsoft-graph-types";
 
@@ -18,58 +18,8 @@ export const msRouter = new Hono()
 
     const data = CHANGE_NOTIFICATION_COLLECTION.parse(await c.req.json());
 
-    for (const value of data.value) {
-      if (value.clientState !== env.INTERNAL_SECRET) {
-        console.error("Client state mismatch. Not processing!");
-        continue;
-      }
-
-      const entraTenantId = value.tenantId;
-
-      switch (value.resourceData["@odata.type"]) {
-        case "#Microsoft.Graph.User":
-          const userId = value.resourceData.id;
-
-          switch (value.changeType) {
-            case "created":
-            case "updated":
-              const user: Pick<
-                MSGraph.User,
-                "id" | "displayName" | "userPrincipalName"
-              > = await msGraphClient(entraTenantId)
-                .api(`/users/${userId}`)
-                .select("id")
-                .select("displayName")
-                .select("userPrincipalName")
-                .get();
-
-              const [provider] = await db
-                .select()
-                .from(identityProviders)
-                .where(eq(identityProviders.remoteId, entraTenantId));
-              if (!provider) {
-                console.error(
-                  `No identity provider found for tenantId ${entraTenantId}`
-                );
-                continue;
-              }
-
-              await db
-                .insert(users)
-                .values(mapUser(user, provider.tenantPk, provider.pk))
-                .onDuplicateKeyUpdate(onDuplicateKeyUpdateUser());
-
-              break;
-
-            case "deleted":
-          }
-
-          break;
-        default:
-          console.error(
-            `Unhandled resource type '${value.resourceData["@odata.type"]}'`
-          );
-      }
+    for (const changeNotification of data.value) {
+      await handleChangeNotification(changeNotification);
     }
 
     return c.text("");
@@ -79,6 +29,77 @@ export const msRouter = new Hono()
     console.log(await c.req.json());
     return c.text("");
   });
+
+async function handleChangeNotification(
+  changeNotification: z.infer<typeof CHANGE_NOTIFICATION>
+) {
+  if (changeNotification.clientState !== env.INTERNAL_SECRET) {
+    console.error("Client state mismatch. Not processing!");
+    return;
+  }
+
+  const entraTenantId = changeNotification.tenantId;
+
+  const [identityProvider] = await db
+    .select()
+    .from(identityProviders)
+    .where(eq(identityProviders.remoteId, entraTenantId));
+  if (!identityProvider) {
+    console.error(`No identity provider found for tenantId ${entraTenantId}`);
+    return;
+  }
+
+  switch (changeNotification.resourceData["@odata.type"]) {
+    case "#Microsoft.Graph.User":
+      await handleUserChangeNotification(changeNotification, identityProvider);
+      break;
+    default:
+      console.error(
+        `Unhandled resource type '${changeNotification.resourceData["@odata.type"]}'`
+      );
+  }
+}
+
+async function handleUserChangeNotification(
+  changeNotification: z.infer<typeof CHANGE_NOTIFICATION>,
+  identityProvider: typeof identityProviders.$inferSelect
+) {
+  const userId = changeNotification.resourceData.id;
+
+  switch (changeNotification.changeType) {
+    case "created":
+    case "updated":
+      const user: Pick<
+        MSGraph.User,
+        "id" | "displayName" | "userPrincipalName"
+      > = await msGraphClient(changeNotification.tenantId)
+        .api(`/users/${userId}`)
+        .select("id")
+        .select("displayName")
+        .select("userPrincipalName")
+        .get();
+
+      await db
+        .insert(users)
+        .values(mapUser(user, identityProvider.tenantPk, identityProvider.pk))
+        .onDuplicateKeyUpdate(onDuplicateKeyUpdateUser());
+
+      break;
+
+    case "deleted":
+      await db
+        .update(users)
+        .set({ providerResourceId: null })
+        .where(
+          and(
+            eq(users.providerResourceId, userId),
+            eq(users.providerPk, identityProvider.pk)
+          )
+        );
+
+      break;
+  }
+}
 
 const CHANGE_TYPE = z.enum(["created", "updated", "deleted"]);
 
