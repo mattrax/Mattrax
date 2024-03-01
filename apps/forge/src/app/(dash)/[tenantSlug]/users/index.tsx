@@ -1,4 +1,4 @@
-import { ParentProps, Suspense, createSignal, startTransition } from "solid-js";
+import { Show, Suspense, startTransition } from "solid-js";
 import {
   createSolidTable,
   getCoreRowModel,
@@ -10,25 +10,20 @@ import {
 import { As } from "@kobalte/core";
 import { useNavigate } from "@solidjs/router";
 import { RouterOutput } from "~/api/trpc";
-import { z } from "zod";
 
 import {
   Badge,
   Button,
   Checkbox,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogRoot,
-  DialogTitle,
-  DialogTrigger,
   Input,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
 import { useTenantContext } from "../../[tenantSlug]";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
-import { Form, InputField, createZodForm } from "~/components/forms";
 
 const column = createColumnHelper<RouterOutput["user"]["list"][number]>();
 
@@ -77,11 +72,24 @@ export const columns = [
   }),
   column.accessor("provider.variant", {
     header: "Provider",
-    cell: (props) => (
-      <Badge variant="secondary">
-        {AUTH_PROVIDER_DISPLAY[props.getValue()]}
-      </Badge>
-    ),
+    cell: (props) => {
+      const providerDisplayName = () => AUTH_PROVIDER_DISPLAY[props.getValue()];
+      return (
+        <span class="flex flex-row gap-1 items-center">
+          <Badge variant="secondary">{providerDisplayName()}</Badge>
+          <Show when={props.row.original.resourceId === null}>
+            <Tooltip>
+              <TooltipTrigger>
+                <IconMaterialSymbolsWarningRounded class="w-4 h-4 text-yellow-600" />
+              </TooltipTrigger>
+              <TooltipContent>
+                User not found in {providerDisplayName()}
+              </TooltipContent>
+            </Tooltip>
+          </Show>
+        </span>
+      );
+    },
   }),
   // TODO: Link to OAuth provider
   // TODO: Actions

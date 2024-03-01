@@ -28,6 +28,7 @@ export const userRouter = createTRPCRouter({
           id: users.id,
           name: users.name,
           email: users.email,
+          resourceId: users.providerResourceId,
           provider: {
             variant: identityProviders.variant,
             remoteId: identityProviders.remoteId,
