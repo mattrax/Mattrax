@@ -86,6 +86,9 @@ importers:
 
   apps/forge:
     dependencies:
+      '@hono/zod-validator':
+        specifier: ^0.1.11
+        version: 0.1.11(hono@4.0.1)(zod@3.22.4)
       '@kobalte/core':
         specifier: ^0.12.1
         version: 0.12.1(solid-js@1.8.14)
@@ -2738,6 +2741,16 @@ packages:
     resolution: {integrity: sha512-foQZKJig7Ob0BMAYBfcJk8d77QtOe7Wo4ox7ff1lQYoNNAb6jwcY1ncdoy2e9wQZzvNy7ODZCYJkK8kzmcAnAg==}
     dependencies:
       '@hapi/hoek': 9.3.0
+    dev: false
+
+  /@hono/zod-validator@0.1.11(hono@4.0.1)(zod@3.22.4):
+    resolution: {integrity: sha512-PQXeHUP0+36qpRt8yfeD7N2jbK3ETlGvSN6dMof/HwUC/APRokQRjpXZm4rrlG71Ft0aWE01+Bm4XejqPie5Uw==}
+    peerDependencies:
+      hono: '>=3.9.0'
+      zod: ^3.19.1
+    dependencies:
+      hono: 4.0.1
+      zod: 3.22.4
     dev: false
 
   /@humanwhocodes/config-array@0.11.14:

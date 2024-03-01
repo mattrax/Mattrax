@@ -12,6 +12,7 @@
     "cbuild": "NITRO_PRESET=cloudflare_pages vinxi build"
   },
   "dependencies": {
+    "@hono/zod-validator": "^0.1.11",
     "@kobalte/core": "^0.12.1",
     "@kobalte/tailwindcss": "^0.9.0",
     "@lucia-auth/adapter-drizzle": "^1.0.2",

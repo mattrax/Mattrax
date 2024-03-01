@@ -139,12 +139,11 @@ export const msRouter = new Hono<HonoEnv>()
         .api("/subscriptions")
         .post({
           changeType: "created,updated,deleted",
-          notificationUrl: `${env.PROD_URL}/api/webhook/ms`,
-          // TODO: Automatically renew the subscription when we get the expiration notification
-          // lifecycleNotificationUrl: `${env.PROD_URL}/api/webhook/ms/lifecycle`,
+          notificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph`,
+          lifecycleNotificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph/lifecycle`,
           resource: "/users",
           expirationDateTime: new Date(
-            new Date().getTime() + 1000 * 60 * 60 * 24 * 25
+            new Date().getTime() + 1000 * 60 * 60 * 24 * 25 // 25 days
           ).toISOString(),
           clientState: env.INTERNAL_SECRET,
         });
