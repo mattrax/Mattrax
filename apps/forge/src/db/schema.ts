@@ -130,7 +130,7 @@ export const users = mysqlTable(
       .references(() => identityProviders.pk)
       .notNull(),
     // ID of the user in the remove provider
-    providerResourceId: varchar("resourceId", { length: 256 }).notNull(),
+    providerResourceId: varchar("resourceId", { length: 256 }),
   },
   (t) => ({ emailUnq: unique().on(t.email, t.tenantPk) })
 );

@@ -48,20 +48,24 @@ export default function Page() {
                 <span class="block mt-1 text-gray-700 text-sm">
                   {user().email}
                 </span>
-                <a
-                  class={clsx(buttonVariants({ variant: "link" }), "!p-0")}
-                  target="_blank"
-                  href={
-                    userAuthProviderUrl(
-                      user().provider.variant,
-                      user().provider.remoteId,
-                      user().providerResourceId
-                    )!
-                  }
-                >
-                  {AUTH_PROVIDER_DISPLAY[user().provider.variant]}
-                  <IconPrimeExternalLink class="inline ml-1" />
-                </a>
+                <Show when={user().providerResourceId}>
+                  {(resourceId) => (
+                    <a
+                      class={clsx(buttonVariants({ variant: "link" }), "!p-0")}
+                      target="_blank"
+                      href={
+                        userAuthProviderUrl(
+                          user().provider.variant,
+                          user().provider.remoteId,
+                          resourceId()
+                        )!
+                      }
+                    >
+                      {AUTH_PROVIDER_DISPLAY[user().provider.variant]}
+                      <IconPrimeExternalLink class="inline ml-1" />
+                    </a>
+                  )}
+                </Show>
               </div>
 
               <InviteUserDialog id={user().id} email={user().email}>
