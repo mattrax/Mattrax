@@ -13,8 +13,6 @@ export type SessionData = {
     // Mattrax tenant to send the user back to
     tenantPk: number;
     tenantSlug: string;
-    // EntraID tenant. The ownership of this must be verified before putting it here.
-    entraIdTenant?: string;
     // Used for CSRF protection
     state: string;
   };

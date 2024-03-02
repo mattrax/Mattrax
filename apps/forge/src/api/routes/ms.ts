@@ -74,45 +74,8 @@ export const msRouter = new Hono<HonoEnv>()
       return new Response(`Failed to parse tenant response from Microsoft`); // TODO: Proper error UI as the user may land here
     const tenant = tenantData.data.value[0]!; // We valid the length in the Zod schema
 
-    await c.env.session.update({
-      ...c.env.session.data,
-      oauthData: {
-        ...c.env.session.data.oauthData,
-        entraIdTenant: tenant.id,
-      },
-    });
-
-    const params = new URLSearchParams({
-      client_id: env.ENTRA_CLIENT_ID,
-      scope: "https://graph.microsoft.com/.default",
-      redirect_uri: `${env.PROD_URL}/api/ms/permissions`,
-      state: c.env.session.data.oauthData.state,
-      // params.set("response_type", "code");
-      // params.set("response_mode", "query");
-    });
-
-    return c.redirect(
-      `https://login.microsoftonline.com/${
-        tenant.id
-      }/v2.0/adminconsent?${params.toString()}`
-    );
-  })
-  .get("/permissions", async (c) => {
-    const error = c.req.query("error");
-    if (error) return new Response(`Error from Microsoft: ${error}`); // TODO: Proper error UI as the user may land here
-
-    const sessionId = getCookie(c.env.h3Event, lucia.sessionCookieName) ?? null;
-    if (sessionId === null) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
-
-    const { session } = await lucia.validateSession(sessionId);
-
-    if (!session) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
-    if (!c.env.session.data?.oauthData) return new Response(`Conflict!`); // TODO: Proper error UI as the user may land here
-    if (!c.env.session.data?.oauthData.entraIdTenant)
-      return new Response(`Conflict!`); // TODO: Proper error UI as the user may land here
-
-    const { tenantPk, tenantSlug, entraIdTenant } =
-      c.env.session.data.oauthData;
+    const entraIdTenant = tenant.id;
+    const { tenantPk, tenantSlug } = c.env.session.data.oauthData;
 
     await db
       .insert(identityProviders)
@@ -139,22 +102,22 @@ export const msRouter = new Hono<HonoEnv>()
       }
     } catch (_) {}
 
-    // if (!skipSubscription) {
-    await msGraphClient(entraIdTenant)
-      .api("/subscriptions")
-      .post({
-        changeType: "created,updated,deleted",
-        notificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph`,
-        lifecycleNotificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph/lifecycle`,
-        resource: "/users",
-        expirationDateTime: new Date(
-          new Date().getTime() + 1000 * 60 * 60 * 24 * 25 // 25 days
-        ).toISOString(),
-        clientState: env.INTERNAL_SECRET,
-      });
-    // } else {
-    //   console.log("Skipping subscription creation as we are on localhost");
-    // }
+    if (!skipSubscription) {
+      await msGraphClient(entraIdTenant)
+        .api("/subscriptions")
+        .post({
+          changeType: "created,updated,deleted",
+          notificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph`,
+          lifecycleNotificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph/lifecycle`,
+          resource: "/users",
+          expirationDateTime: new Date(
+            new Date().getTime() + 1000 * 60 * 60 * 24 * 25 // 25 days
+          ).toISOString(),
+          clientState: env.INTERNAL_SECRET,
+        });
+    } else {
+      console.log("Skipping subscription creation as we are on localhost");
+    }
 
     await c.env.session.update({
       ...c.env.session.data,

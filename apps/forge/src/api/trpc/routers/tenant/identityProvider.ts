@@ -32,13 +32,16 @@ export const identityProviderRouter = createTRPCRouter({
     });
     const params = new URLSearchParams({
       client_id: env.ENTRA_CLIENT_ID,
-      scope: "https://graph.microsoft.com/.default",
+      prompt: "login",
       redirect_uri: `${env.PROD_URL}/api/ms/link`,
+      resource: "https://graph.microsoft.com",
       response_type: "code",
-      response_mode: "query",
       state: state,
     });
-    return `https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?${params.toString()}`;
+
+    // We use OAuth v1 (not v2) so that can be do admin consent, while also verifying the user is a tenant owner.
+    // From what we can tell the OAuth v2 endpoint doesn't support this flow.
+    return `https://login.microsoftonline.com/organizations/oauth2/authorize?${params.toString()}`;
   }),
 
   remove: tenantProcedure.mutation(async ({ ctx }) => {
