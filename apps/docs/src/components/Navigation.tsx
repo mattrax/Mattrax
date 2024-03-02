@@ -243,9 +243,10 @@ export const navigation: Array<NavGroup> = [
     title: 'Guides',
     links: [
       { title: 'Introduction', href: '/' },
+      { title: 'FAQ', href: '/faq' },
       { title: 'Getting started', href: '/getting-started' },
       { title: 'Self-hosting', href: '/self-hosting' },
-      { title: 'FAQ', href: '/faq' },
+      { title: 'Roadmap', href: '/roadmap' },
     ],
   },
   {

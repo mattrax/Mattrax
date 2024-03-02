@@ -6,4 +6,99 @@ export const metadata = {
 
 # Frequently Asked Questions
 
-Coming soon...
+## Why not another MDM solution?
+
+Device management is not a new problem, but I believe we are taking a fresh approach to it.
+
+<h4 class="text-xl ">Unified policies and applications</h4>
+
+Mattrax is designed from the ground up to work with all of your devices regardless of operating system. This by itself is nothing new but Mattrax takes it a step furthur with unified policies. Define your configuration or applications once, and leave it to Mattrax to work out the operating systems differences.
+
+{/* TODO: Example */}
+
+<h4 class="text-xl ">Policy versioning</h4>
+
+In Mattrax policy versioning is a first class citizen which opens up a whole new world of possibilities. <br/>
+You accidently deploy a faulty configuration? on a Friday! No problem, roll back to the previous version and enjoy the weekend! <br/> 
+You want to test a policy, just stage it to your test device to instantly see the changes, without fiddling with the policies scope.
+
+<h4 class="text-xl ">Integrations</h4>
+
+Mattrax is designed to be extensible. We know being an MDM is more than just managing the operating system, you've got software that needs locking down and licencing. <br />
+To combat this Mattrax has a feature called policy templates. Software vendors or 3rd party contributors can provide definitions that instruct Mattrax how to deploy, configure and licence their software. <br />
+You want to deploy Slack, Chrome, Microsoft Office, Chef, etc? No problem, just select the policy template and fill in the blanks. No wrangling with scripts or custom MDM profiles. Spend hours not days introducing new software to your fleet.
+
+{/* TODO: Our Linux agent will be declarative */}
+
+These features all come together to allow your IT team to ship changes faster and with less risk. Your users will be happier and you will have more time to fix the printers.
+
+## What is a policy?
+
+In Mattrax a policy is a set of rules that define the expected state of a device. Mattrax will take care of enforcing these rules for you. <br /> A policy consists of a collection of:
+ - A device configurations such as firewall rule, network setting, disk encryption configuration, taskbar/dock layout, etc
+ - A script (Bash or Powershell) with a schedule to run it on
+
+## Why would I want my policies versioned?
+
+There is many reasons why you might want this.
+
+<h4 class="text-xl">Ship with confidence</h4>
+
+You can deploy changes to your fleet with the confidence that you can undo it or track it down easily. <br />
+If something goes wrong with a change, you can roll back to the previous version quickly to mitigate the disruption to users. <br />
+If many users are reporting issues you can check the activity feed to quickly narrow down the issue and put a stop to it.
+
+<h4 class="text-xl">Collaboration</h4>
+
+When working with a team of people, it's important to all be on the same page and versions help with that. <br />
+You can see who made what changes and when and also leave a message on changes to provide context to your team. <br />
+An activity feed on the dashboard allows everyone to keep on the same page about changes being rolled out to your fleet.
+
+<h4 class="text-xl">Better testing</h4>
+
+While policies are in a draft state you can quickly apply them to a test device to see the changes in action. <br />
+This allows you to test changes in a real-world environment without affecting other devices or users that the policy is applied to. <br />
+We also ensure the deploy is done with a high-priority because no one wants to be left wait around for the changes to apply.
+
+## What are policy templates?
+
+{/* TODO: Look we probally need a better name. */}
+
+An MDM is more than just managing the operating system, it's about managing the software that runs on it. Policy templates are a way to define how to deploy, configure and licence software. Software vendors or 3rd party contributors can provide definitions that instruct Mattrax how to deploy, configure and licence their software. <br />
+
+{/* TODO: Exmaples */}
+
+## Do you support application management?
+
+We take care of application management including integrations with [Apple Volume Purchase Program](https://www.apple.com/business/vpp/), [Microsoft Store for Business](https://www.microsoft.com/en-us/store/b/business), [Brew](https://brew.sh) and [Chocolatey](https://chocolatey.org). <br />
+An application is defined and *targets* are linked to it which instruct Mattrax how to conduct the installation for each operating system. <br />
+
+We can also take care of software updates for you. Select "Latest version" and never think about it again or manually select a version to pin to. We will even alert you when a new version is available for you to test and deploy.
+
+## How much will Mattrax cost?
+
+While Mattrax is in beta it is free to use. We will be charging per device per month (with discounts for yearly purchases). <br />
+We will also provide discounts for non-profits and students. <br />
+Self-hosting will still require a valid Mattrax subscription to use the service.
+
+## What OS's are supported?
+
+Initially we will support **Windows, macOS and iOS** with Android, tvOS and Linux coming soon.
+
+## Can I migrate to/from cloud to self-hosted?
+
+Yeah for sure! We will offer a migration tool to help you move your data with zero-downtime.
+
+## I'm an managed service provider, is Mattrax for me?
+
+Right now Mattrax is focused on internal IT teams but if your an MSP and are interested in using Mattrax, please get in touch and we can discuss your needs.
+
+## I'm building my own MDM, can I use Mattrax's infrastructure?
+
+We are going to offer a REST API for you to use to interact with Mattrax's infrastructure. This will allow you to ship the power of Mattrax's MDM infrastructure while providing your own dashboard. <br />
+
+Right now we are focusing on the core product but if you are interested in this, please get in touch and we can discuss your needs.
+
+## Who is behind Mattrax?
+
+Checkout our [company page](https://mattrax.app/company).

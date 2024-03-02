@@ -29,6 +29,8 @@ We download a `.mobileconfig` file which the user must open to install, and then
 
 ### Using EntraID
 
+Requires paid subscription - TODO Document.
+
  - The users goes to "Access work and school" on their device.
  - They enter their email.
  - Microsoft notices an EntraID tenant exists.
