@@ -53,12 +53,11 @@ export const identityProviderRouter = createTRPCRouter({
 
     // We ignore any errors cleaning up the subscriptions cause it's a non vital error.
     try {
-      const subscriptions = await msGraphClient(provider.remoteId)
-        .api("/subscriptions")
-        .get();
+      const subscriptions: { value: Array<MSGraph.Subscription> } =
+        await msGraphClient(provider.remoteId).api("/subscriptions").get();
 
       const results = await Promise.allSettled(
-        subscriptions.value.map((sub: { id: string }) => {
+        subscriptions.value.map((sub) => {
           return msGraphClient(provider.remoteId)
             .api(`/subscriptions/${sub.id}`)
             .delete();
@@ -225,9 +224,10 @@ export function createEntraIDUserProvider(
 
   return {
     async getDomains() {
-      const { value }: { value: Array<{ id: string; isVerified: boolean }> } =
-        await client.api("/domains").get();
-      return value.filter((v) => v.isVerified).map((v) => v.id);
+      const { value }: { value: Array<MSGraph.Domain> } = await client
+        .api("/domains")
+        .get();
+      return value.filter((v) => v.isVerified).map((v) => v.id!);
     },
   };
 }
@@ -278,39 +278,39 @@ export async function syncAllUsersWithEntra(
   // TODO: Typescript with the client????
   // TODO: Pagination
 
-  const result = await client.api("/users").get();
+  const result: { value: Array<MSGraph.User> } = await client
+    .api("/users")
+    .get();
   // TODO: This will cause users to build up. Really we want to upsert on `resourceId` but idk how to do that with a bulk-insert using Drizzle ORM.
   // TODO: Ensure `values` contains more than one value or skip the insert so it doesn't error out.
 
-  // Make sure Drizzle doesn't get unhappy
-  if (result.value.length === 0) return;
-
   // TODO: Filter users to only ones with a connected domain.
-  await db
-    .insert(users)
-    .values(
-      result.value.map((u: any) =>
-        mapUser(u, mttxTenantId, mttxTenantProviderId)
-      )
+  await Promise.all(
+    result.value.map((u: any) =>
+      upsertEntraIdUser(u, mttxTenantId, mttxTenantProviderId)
     )
-    .onDuplicateKeyUpdate(onDuplicateKeyUpdateUser());
+  );
 }
 
-export const mapUser = (
+export function upsertEntraIdUser(
   u: Pick<MSGraph.User, "displayName" | "userPrincipalName" | "id">,
   tenantPk: number,
   identityProviderPk: number
-) => ({
-  name: u.displayName!,
-  email: u.userPrincipalName!,
-  tenantPk: tenantPk,
-  providerPk: identityProviderPk,
-  providerResourceId: u.id!,
-});
-
-export const onDuplicateKeyUpdateUser = () => ({
-  set: {
-    name: sql`VALUES(${users.name})`,
-    // TODO: Update `email` if the `providerResourceId` matches.
-  },
-});
+) {
+  return db
+    .insert(users)
+    .values({
+      name: u.displayName!,
+      email: u.userPrincipalName!,
+      tenantPk: tenantPk,
+      providerPk: identityProviderPk,
+      providerResourceId: u.id!,
+    })
+    .onDuplicateKeyUpdate({
+      set: {
+        // TODO: Update `email` if the `providerResourceId` matches.
+        name: u.displayName!,
+        providerResourceId: u.id!,
+      },
+    });
+}

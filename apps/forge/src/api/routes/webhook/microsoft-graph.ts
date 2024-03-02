@@ -5,10 +5,7 @@ import * as MSGraph from "@microsoft/microsoft-graph-types";
 import { zValidator } from "@hono/zod-validator";
 
 import { msGraphClient } from "~/api/microsoft";
-import {
-  mapUser,
-  onDuplicateKeyUpdateUser,
-} from "~/api/trpc/routers/tenant/identityProvider";
+import { upsertEntraIdUser } from "~/api/trpc/routers/tenant/identityProvider";
 import { db, domains, identityProviders, users } from "~/db";
 import { env } from "~/env";
 import { isNotFoundGraphError } from "@mattrax/ms-graph";
@@ -70,6 +67,8 @@ export const microsoftGraphRouter = new Hono()
   })
   .post("/", zValidator("json", CHANGE_NOTIFICATION_COLLECTION), async (c) => {
     const { value } = c.req.valid("json");
+
+    console.log("change notification", value);
 
     await Promise.all(value.map(handleChangeNotification));
 
@@ -146,10 +145,11 @@ async function handleUserChangeNotification(
         });
         if (!domain) throw new Error(`Domain ${userDomain} not found`);
 
-        await db
-          .insert(users)
-          .values(mapUser(user, identityProvider.tenantPk, identityProvider.pk))
-          .onDuplicateKeyUpdate(onDuplicateKeyUpdateUser());
+        await upsertEntraIdUser(
+          user,
+          identityProvider.tenantPk,
+          identityProvider.pk
+        );
       } catch (e) {
         if (isNotFoundGraphError(e)) {
           await handleUserDeleted(userId, identityProvider.pk);
