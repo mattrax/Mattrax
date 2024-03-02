@@ -124,5 +124,5 @@ export const msRouter = new Hono<HonoEnv>()
       oauthData: undefined,
     });
 
-    return c.redirect(`/${tenantSlug}/settings`);
+    return c.redirect(`/${tenantSlug}/settings/identity-provider`);
   });
