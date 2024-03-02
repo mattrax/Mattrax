@@ -1,4 +1,4 @@
-import { useNavigate } from "@solidjs/router";
+import { A, useNavigate } from "@solidjs/router";
 import { ParentProps, Suspense, startTransition } from "solid-js";
 import {
   createSolidTable,
@@ -40,6 +40,14 @@ export const columns = [
   }),
   column.accessor("name", {
     header: "Name",
+    cell: (props) => (
+      <A
+        class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
+        href={props.row.original.id}
+      >
+        {props.getValue()}
+      </A>
+    ),
   }),
   column.accessor("memberCount", {
     header: "Member Count",
@@ -115,10 +123,7 @@ export default function Page() {
         </ColumnsDropdown>
       </div>
       <Suspense>
-        <StandardTable
-          table={table}
-          onRowClick={(row) => startTransition(() => navigate(row.id))}
-        />
+        <StandardTable table={table} />
         <div class="flex items-center justify-end space-x-2">
           <div class="flex-1 text-sm text-muted-foreground">
             {table.getFilteredSelectedRowModel().rows.length} of{" "}

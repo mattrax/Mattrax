@@ -8,7 +8,7 @@ import {
   createColumnHelper,
 } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
-import { useLocation, useNavigate } from "@solidjs/router";
+import { A, useLocation, useNavigate } from "@solidjs/router";
 import { RouterOutput } from "~/api/trpc";
 import dayjs from "dayjs";
 
@@ -46,6 +46,14 @@ export const columns = [
   }),
   columnHelper.accessor("name", {
     header: "Name",
+    cell: (props) => (
+      <A
+        class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
+        href={props.row.original.id}
+      >
+        {props.getValue()}
+      </A>
+    ),
   }),
   columnHelper.accessor("operatingSystem", {
     header: "Operating System",
@@ -140,10 +148,7 @@ export default function Page() {
         </ColumnsDropdown>
       </div>
       <Suspense>
-        <StandardTable
-          table={table}
-          onRowClick={(row) => startTransition(() => navigate(row.id))}
-        />
+        <StandardTable table={table} />
         <div class="flex items-center justify-end space-x-2">
           <div class="flex-1 text-sm text-muted-foreground">
             {table.getFilteredSelectedRowModel().rows.length} of{" "}

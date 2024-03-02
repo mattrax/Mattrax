@@ -6,11 +6,14 @@ import {
   getPaginationRowModel,
   getSortedRowModel,
   getFilteredRowModel,
+  createColumnHelper,
 } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
 
-export const columns: ColumnDef<any>[] = [
-  {
+const column = createColumnHelper<{ id: string; name: string }>();
+
+export const columns = [
+  column.display({
     id: "select",
     header: ({ table }) => (
       <Checkbox
@@ -32,11 +35,18 @@ export const columns: ColumnDef<any>[] = [
     size: 1,
     enableSorting: false,
     enableHiding: false,
-  },
-  {
-    accessorKey: "name",
+  }),
+  column.accessor("name", {
     header: "Name",
-  },
+    cell: (props) => (
+      <A
+        class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
+        href={props.row.original.id}
+      >
+        {props.getValue()}
+      </A>
+    ),
+  }),
   // TODO: Descriptions, supported OS's.
 ];
 
@@ -106,10 +116,7 @@ export default function Page() {
         </ColumnsDropdown>
       </div>
       <Suspense>
-        <StandardTable
-          table={table}
-          onRowClick={(row) => startTransition(() => navigate(row.id))}
-        />
+        <StandardTable table={table} />
         <div class="flex items-center justify-end space-x-2">
           <div class="flex-1 text-sm text-muted-foreground">
             {table.getFilteredSelectedRowModel().rows.length} of{" "}
@@ -143,7 +150,7 @@ export default function Page() {
 import { Button, Checkbox, Input } from "~/components/ui";
 import { OutlineLayout } from "../OutlineLayout";
 import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
-import { createAsync, useNavigate } from "@solidjs/router";
+import { A, createAsync, useNavigate } from "@solidjs/router";
 
 import {
   DialogContent,

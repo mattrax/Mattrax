@@ -16,7 +16,6 @@ import clsx from "clsx";
 
 export function StandardTable<TData>(props: {
   table: TTable<TData>;
-  onRowClick?: (row: TData) => void;
   class?: string;
 }) {
   const numCols = () =>
@@ -50,10 +49,7 @@ export function StandardTable<TData>(props: {
           {props.table.getRowModel().rows.length ? (
             <For each={props.table.getRowModel().rows}>
               {(row) => (
-                <TableRow
-                  data-state={row.getIsSelected() && "selected"}
-                  onClick={() => props.onRowClick?.(row.original)}
-                >
+                <TableRow data-state={row.getIsSelected() && "selected"}>
                   <For each={row.getVisibleCells()}>
                     {(cell) => (
                       <TableCell>
