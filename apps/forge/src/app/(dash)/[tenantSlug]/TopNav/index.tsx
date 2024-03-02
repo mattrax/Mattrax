@@ -84,11 +84,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
       </div>
 
       <nav class="text-white sticky border-b border-gray-300 top-0 z-10 bg-white">
-        <Tabs.Root
-          value={tabValue()}
-          class="mx-2 relative"
-          onChange={(c) => console.log(c)}
-        >
+        <Tabs.Root value={tabValue()} class="mx-2 relative">
           <Tabs.List class="flex flex-row">
             <For each={items}>
               {(item) => (

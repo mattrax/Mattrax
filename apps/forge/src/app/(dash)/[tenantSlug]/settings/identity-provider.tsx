@@ -45,8 +45,6 @@ function IdentityProviderCard() {
       window.addEventListener("message", (e) => {
         if (e.source !== popupWindow || e.origin !== location.origin) return;
 
-        console.log(e);
-
         popupWindow?.close();
         provider.refetch();
       });

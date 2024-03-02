@@ -291,7 +291,6 @@ export async function syncEntraUsersWithDomains(
     .get();
 
   while (response.value.length > 0) {
-    console.log(response);
     await Promise.all(
       response.value
         .filter((v) => domains.includes(getEmailDomain(v.userPrincipalName!)))
