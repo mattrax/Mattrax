@@ -34,7 +34,7 @@ const FeedbackForm = forwardRef<
   React.ElementRef<'form'>,
   Pick<React.ComponentPropsWithoutRef<'form'>, 'onSubmit'>
 >(function FeedbackForm({ onSubmit }, ref) {
-  return null
+  return <form ref={ref} />
   // return (
   //   <form
   //     ref={ref}

@@ -15,9 +15,11 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 
 function TopLevelNavItem({
   href,
+  target,
   children,
 }: {
   href: string
+  target?: string
   children: React.ReactNode
 }) {
   return (
@@ -25,6 +27,7 @@ function TopLevelNavItem({
       <Link
         href={href}
         className="text-sm leading-5 text-zinc-600 transition hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+        target={target}
       >
         {children}
       </Link>
@@ -82,7 +85,7 @@ export const Header = forwardRef<
             <TopLevelNavItem href="https://mattrax.app">
               Website
             </TopLevelNavItem>
-            <TopLevelNavItem href="https://cloud.mattrax.app">
+            <TopLevelNavItem href="https://cloud.mattrax.app" target="_blank">
               Cloud
             </TopLevelNavItem>
             <TopLevelNavItem href="mailto:hello@mattrax.app">
