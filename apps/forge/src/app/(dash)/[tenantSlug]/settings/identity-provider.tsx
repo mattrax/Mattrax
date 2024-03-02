@@ -36,7 +36,20 @@ function IdentityProviderCard() {
 
   const linkEntra = trpc.tenant.identityProvider.linkEntra.useMutation(() => ({
     onSuccess: async (url) => {
-      window.open(url, "_self");
+      const popupWindow = window.open(
+        url,
+        "entraOAuth",
+        "toolbar=no, menubar=no, width=600, height=700, top=100, left=100"
+      );
+
+      window.addEventListener("message", (e) => {
+        if (e.source !== popupWindow || e.origin !== location.origin) return;
+
+        console.log(e);
+
+        popupWindow?.close();
+        provider.refetch();
+      });
     },
   }));
 

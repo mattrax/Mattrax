@@ -1,9 +1,7 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { createId } from "@paralleldrive/cuid2";
 import * as MSGraph from "@microsoft/microsoft-graph-types";
-import { PageIterator } from "@microsoft/microsoft-graph-client";
 
 import { db, domains, identityProviders, users } from "~/db";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
@@ -21,24 +19,15 @@ export const identityProviderRouter = createTRPCRouter({
   }),
 
   linkEntra: tenantProcedure.mutation(async ({ ctx }) => {
-    // This will cause all in-progress linking to hit the CSRF error.
-    // Due to this being an infrequent operation, I think this is fine.
-    const state = createId();
-    await ctx.env.session.update({
-      ...ctx.env.session.data,
-      oauthData: {
-        tenantPk: ctx.tenant.pk,
-        tenantSlug: ctx.tenant.slug,
-        state,
-      },
-    });
     const params = new URLSearchParams({
       client_id: env.ENTRA_CLIENT_ID,
       prompt: "login",
       redirect_uri: `${env.PROD_URL}/api/ms/link`,
       resource: "https://graph.microsoft.com",
       response_type: "code",
-      state: state,
+      state: JSON.stringify({
+        tenantPk: ctx.tenant.pk,
+      }),
     });
 
     // We use OAuth v1 (not v2) so that can be do admin consent, while also verifying the user is a tenant owner.
