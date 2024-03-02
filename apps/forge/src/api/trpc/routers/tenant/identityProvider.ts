@@ -3,11 +3,13 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 import * as MSGraph from "@microsoft/microsoft-graph-types";
+import { PageIterator } from "@microsoft/microsoft-graph-client";
 
 import { db, domains, identityProviders, users } from "~/db";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
 import { msGraphClient } from "~/api/microsoft";
 import { env } from "~/env";
+import { getEmailDomain } from "~/api/utils";
 
 export const identityProviderRouter = createTRPCRouter({
   get: tenantProcedure.query(async ({ ctx }) => {
@@ -132,10 +134,11 @@ export const identityProviderRouter = createTRPCRouter({
       });
 
       // TODO: `event.waitUntil`???
-      await syncAllUsersWithEntra(
+      await syncEntraUsersWithDomains(
         ctx.tenant.pk,
         provider.pk,
-        provider.remoteId
+        provider.remoteId,
+        [input.domain]
       );
 
       return true;
@@ -196,10 +199,15 @@ export const identityProviderRouter = createTRPCRouter({
         `Tenant '${ctx.tenant.pk}' not found or has no providers`
       ); // TODO: make an error the frontend can handle
 
-    await syncAllUsersWithEntra(
+    const domainList = await db.query.domains.findMany({
+      where: eq(domains.identityProviderPk, tenantProvider.pk),
+    });
+
+    await syncEntraUsersWithDomains(
       ctx.tenant.pk,
       tenantProvider.pk,
-      tenantProvider.remoteId
+      tenantProvider.remoteId,
+      domainList.map((d) => d.domain)
     );
   }),
 });
@@ -272,27 +280,41 @@ async function cloudflareDnsQuery(args: {
   return CF_DNS_RESPONSE_SCHEMA.parse(json);
 }
 
-export async function syncAllUsersWithEntra(
-  mttxTenantId: number,
-  mttxTenantProviderId: number,
-  msftProviderId: string
+export async function syncEntraUsersWithDomains(
+  tenantPk: number,
+  identityProviderPk: number,
+  entraTenantId: string,
+  domains: string[]
 ) {
-  const client = msGraphClient(msftProviderId);
-  // TODO: Typescript with the client????
-  // TODO: Pagination
+  const graphClient = msGraphClient(entraTenantId);
 
-  const result: { value: Array<MSGraph.User> } = await client
+  let response: {
+    value: Array<
+      Pick<MSGraph.User, "id" | "displayName" | "userPrincipalName">
+    >;
+    "@odata.nextLink"?: string;
+  } = await graphClient
     .api("/users")
+    .select("id")
+    .select("displayName")
+    .select("userPrincipalName")
+    .top(500)
     .get();
-  // TODO: This will cause users to build up. Really we want to upsert on `resourceId` but idk how to do that with a bulk-insert using Drizzle ORM.
-  // TODO: Ensure `values` contains more than one value or skip the insert so it doesn't error out.
 
-  // TODO: Filter users to only ones with a connected domain.
-  await Promise.all(
-    result.value.map((u: any) =>
-      upsertEntraIdUser(u, mttxTenantId, mttxTenantProviderId)
-    )
-  );
+  while (response.value.length > 0) {
+    console.log(response);
+    await Promise.all(
+      response.value
+        .filter((v) => domains.includes(getEmailDomain(v.userPrincipalName!)))
+        .map((u) => upsertEntraIdUser(u, tenantPk, identityProviderPk))
+    );
+
+    if (response["@odata.nextLink"]) {
+      response = await graphClient.api(response["@odata.nextLink"]).get();
+    } else {
+      break;
+    }
+  }
 }
 
 export function upsertEntraIdUser(

@@ -80,6 +80,8 @@ export const microsoftGraphRouter = new Hono()
     async (c) => {
       const { value } = c.req.valid("json");
 
+      console.log("lifecycle notification", value);
+
       await Promise.all(value.map(handleLifecycleNotification));
 
       return c.text("");

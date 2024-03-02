@@ -2,12 +2,13 @@ import { Hono } from "hono";
 import { getCookie } from "vinxi/server";
 import { z } from "zod";
 
-import { db, identityProviders } from "~/db";
+import { db, domains, identityProviders } from "~/db";
 import { env } from "~/env";
 import { lucia } from "../auth";
 import { HonoEnv } from "../types";
 import { msGraphClient } from "../microsoft";
-import { syncAllUsersWithEntra } from "../trpc/routers/tenant/identityProvider";
+import { syncEntraUsersWithDomains } from "../trpc/routers/tenant/identityProvider";
+import { eq } from "drizzle-orm";
 
 const tokenEndpointResponse = z.object({ access_token: z.string() });
 const organizationResponse = z.object({
@@ -74,14 +75,14 @@ export const msRouter = new Hono<HonoEnv>()
       return new Response(`Failed to parse tenant response from Microsoft`); // TODO: Proper error UI as the user may land here
     const tenant = tenantData.data.value[0]!; // We valid the length in the Zod schema
 
-    const entraIdTenant = tenant.id;
+    const entraTenantId = tenant.id;
     const { tenantPk, tenantSlug } = c.env.session.data.oauthData;
 
-    await db
+    const idPUpsert = await db
       .insert(identityProviders)
       .values({
         variant: "entraId",
-        remoteId: entraIdTenant,
+        remoteId: entraTenantId,
         tenantPk: tenantPk,
       })
       // We don't care if it already exists so no need for that to cause an error.
@@ -89,10 +90,16 @@ export const msRouter = new Hono<HonoEnv>()
         // Drizzle requires at least one item or it will error.
         set: {
           variant: "entraId",
-          remoteId: entraIdTenant,
+          remoteId: entraTenantId,
           tenantPk: tenantPk,
         },
       });
+
+    const identityProviderPk = parseInt(idPUpsert.insertId);
+
+    const domainList = await db.query.domains.findMany({
+      where: eq(domains.identityProviderPk, identityProviderPk),
+    });
 
     let skipSubscription = false;
     try {
@@ -103,7 +110,7 @@ export const msRouter = new Hono<HonoEnv>()
     } catch (_) {}
 
     if (!skipSubscription) {
-      await msGraphClient(entraIdTenant)
+      await msGraphClient(entraTenantId)
         .api("/subscriptions")
         .post({
           changeType: "created,updated,deleted",
@@ -118,6 +125,13 @@ export const msRouter = new Hono<HonoEnv>()
     } else {
       console.log("Skipping subscription creation as we are on localhost");
     }
+
+    await syncEntraUsersWithDomains(
+      tenantPk,
+      identityProviderPk,
+      entraTenantId,
+      domainList.map((d) => d.domain)
+    );
 
     await c.env.session.update({
       ...c.env.session.data,
