@@ -17,6 +17,7 @@ interface NavGroup {
   links: Array<{
     title: string
     href: string
+    disabled?: boolean
   }>
 }
 
@@ -49,12 +50,14 @@ function NavLink({
   children,
   tag,
   active = false,
+  disabled = false,
   isAnchorLink = false,
 }: {
   href: string
   children: React.ReactNode
   tag?: string
   active?: boolean
+  disabled?: boolean
   isAnchorLink?: boolean
 }) {
   return (
@@ -64,9 +67,11 @@ function NavLink({
       className={clsx(
         'flex justify-between gap-2 py-1 pr-3 text-sm transition',
         isAnchorLink ? 'pl-7' : 'pl-4',
-        active
-          ? 'text-zinc-900 dark:text-white'
-          : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white',
+        disabled
+          ? 'cursor-not-allowed text-zinc-900 dark:text-zinc-400'
+          : active
+            ? 'text-zinc-900 dark:text-white'
+            : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white',
       )}
     >
       <span className="truncate">{children}</span>
@@ -190,7 +195,11 @@ function NavigationGroup({
         <ul role="list" className="border-l border-transparent">
           {group.links.map((link) => (
             <motion.li key={link.href} layout="position" className="relative">
-              <NavLink href={link.href} active={link.href === pathname}>
+              <NavLink
+                href={link.href}
+                active={link.href === pathname}
+                disabled={link.disabled}
+              >
                 {link.title}
               </NavLink>
               <AnimatePresence mode="popLayout" initial={false}>
@@ -246,11 +255,11 @@ export const navigation: Array<NavGroup> = [
     title: 'Resources',
     links: [
       // TODO: Urls for these (I left `/devices` as a reference)
-      { title: 'Tenant', href: '#' },
-      { title: 'Users', href: '#' },
-      { title: 'Devices', href: '#' },
-      { title: 'Policies', href: '#' },
-      { title: 'Applications', href: '#' },
+      { title: 'Tenant', href: '#', disabled: true },
+      { title: 'Users', href: '#', disabled: true },
+      { title: 'Devices', href: '#', disabled: true },
+      { title: 'Policies', href: '#', disabled: true },
+      { title: 'Applications', href: '#', disabled: true },
     ],
   },
 ]
