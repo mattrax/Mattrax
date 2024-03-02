@@ -1,6 +1,7 @@
 import { Navigate, useNavigate } from "@solidjs/router";
 import {
   createMemo,
+  ErrorBoundary,
   ParentProps,
   Show,
   startTransition,
@@ -14,6 +15,7 @@ import { SuspenseError } from "~/lib";
 import { useAuthContext } from "../(dash)";
 import TopNav from "./[tenantSlug]/TopNav";
 import { useZodParams } from "~/lib/useZodParams";
+import { Button } from "~/components/ui";
 
 export const [TenantContextProvider, useTenantContext] = createContextProvider(
   (props: { activeTenant: RouterOutput["auth"]["me"]["tenants"][number] }) =>
@@ -61,10 +63,20 @@ export default function Layout(props: ParentProps) {
               }}
             />
           </Suspense>
-          {/* we key here on purpose - tenants are the root-most unit of isolation */}
-          <Show when={activeTenant().id} keyed>
-            {props.children}
-          </Show>
+          <ErrorBoundary
+            fallback={(err, reset) => (
+              <div class="flex flex-col items-center justify-center h-full gap-4">
+                <h1 class="text-3xl font-semibold">Failed To Load Mattrax</h1>
+                <p class="text-gray-600">{err.toString()}</p>
+                <Button onClick={reset}>Reload</Button>
+              </div>
+            )}
+          >
+            {/* we key here on purpose - tenants are the root-most unit of isolation */}
+            <Show when={activeTenant().id} keyed>
+              {props.children}
+            </Show>
+          </ErrorBoundary>
         </TenantContextProvider>
       )}
     </Show>
