@@ -37,7 +37,7 @@ export default function Page() {
             </div>
 
             <Suspense>
-              <MembersTable table={table} />
+              <StandardTable table={table} />
             </Suspense>
           </div>
         );
@@ -75,6 +75,7 @@ const columns = [
     id: "select",
     header: ({ table }) => (
       <Checkbox
+        class="w-4"
         checked={table.getIsAllPageRowsSelected()}
         indeterminate={table.getIsSomePageRowsSelected()}
         onChange={(value) => table.toggleAllPageRowsSelected(!!value)}
@@ -83,6 +84,7 @@ const columns = [
     ),
     cell: ({ row }) => (
       <Checkbox
+        class="w-4"
         checked={row.getIsSelected()}
         onChange={(value) => row.toggleSelected(!!value)}
         aria-label="Select row"
@@ -150,68 +152,6 @@ function createMembersTable(groupId: Accessor<string>) {
 }
 
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "~/components/ui";
-
-function MembersTable(props: { table: ReturnType<typeof createMembersTable> }) {
-  return (
-    <div class="rounded-md border">
-      <Table>
-        <TableHeader>
-          <For each={props.table.getHeaderGroups()}>
-            {(headerGroup) => (
-              <TableRow>
-                {headerGroup.headers.map((header) => (
-                  <TableHead style={{ width: `${header.getSize()}px` }}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext()
-                        )}
-                  </TableHead>
-                ))}
-              </TableRow>
-            )}
-          </For>
-        </TableHeader>
-        <TableBody>
-          {props.table.getRowModel().rows?.length ? (
-            <For each={props.table.getRowModel().rows}>
-              {(row) => (
-                <TableRow data-state={row.getIsSelected() && "selected"}>
-                  <For each={row.getVisibleCells()}>
-                    {(cell) => (
-                      <TableCell>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </TableCell>
-                    )}
-                  </For>
-                </TableRow>
-              )}
-            </For>
-          ) : (
-            <TableRow>
-              <TableCell colSpan={columns.length} class="h-24 text-center">
-                No results.
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
-
-import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -223,6 +163,7 @@ import { Badge } from "~/components/ui/badge";
 import { useQueryClient } from "@tanstack/solid-query";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { useTenantContext } from "../../[tenantSlug]";
+import { StandardTable } from "~/components/StandardTable";
 
 const AddMemberTableOptions = {
   all: "All",
@@ -358,63 +299,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
                 </Button>
               </div>
               <div class="rounded-md border mt-2">
-                <Table class="h-full flex-1">
-                  <TableHeader>
-                    <For each={table.getHeaderGroups()}>
-                      {(headerGroup) => (
-                        <TableRow>
-                          {headerGroup.headers.map((header) => (
-                            <TableHead>
-                              {header.isPlaceholder
-                                ? null
-                                : flexRender(
-                                    header.column.columnDef.header,
-                                    header.getContext()
-                                  )}
-                            </TableHead>
-                          ))}
-                        </TableRow>
-                      )}
-                    </For>
-                  </TableHeader>
-                  <TableBody>
-                    {table.getRowModel().rows?.length ? (
-                      <For each={table.getRowModel().rows}>
-                        {(row) => (
-                          <TableRow
-                            data-state={row.getIsSelected() && "selected"}
-                          >
-                            <For each={row.getVisibleCells()}>
-                              {(cell) => (
-                                <TableCell
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    row.toggleSelected();
-                                  }}
-                                >
-                                  {flexRender(
-                                    cell.column.columnDef.cell,
-                                    cell.getContext()
-                                  )}
-                                </TableCell>
-                              )}
-                            </For>
-                          </TableRow>
-                        )}
-                      </For>
-                    ) : (
-                      <TableRow>
-                        <TableCell
-                          colSpan={columns.length}
-                          class="h-24 text-center"
-                        >
-                          No results.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+                <StandardTable table={table} />
               </div>
             </Suspense>
           </SheetContent>

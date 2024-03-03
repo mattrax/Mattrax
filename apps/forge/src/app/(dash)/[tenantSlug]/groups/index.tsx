@@ -64,9 +64,7 @@ function createGroupsTable() {
     get data() {
       return groups.data ?? [];
     },
-    get columns() {
-      return columns;
-    },
+    columns,
     // onSortingChange: setSorting,
     // onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
@@ -93,7 +91,6 @@ function createGroupsTable() {
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
 export default function Page() {
-  const navigate = useNavigate();
   const { table, groups } = createGroupsTable();
 
   const isLoading = untrackScopeFromSuspense(() => groups.isLoading);

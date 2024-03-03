@@ -80,9 +80,7 @@ function createPoliciesTable() {
     get data() {
       return policies.data || [];
     },
-    get columns() {
-      return columns;
-    },
+    columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -101,7 +99,6 @@ function createPoliciesTable() {
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
 export default function Page() {
-  const navigate = useNavigate();
   const { table, policies } = createPoliciesTable();
 
   const isLoading = untrackScopeFromSuspense(() => policies.isLoading);
