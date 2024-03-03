@@ -145,12 +145,15 @@ export const groupRouter = createTRPCRouter({
       if (!group)
         throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
 
-      await db.insert(groupAssignables).values(
-        input.members.map((member) => ({
-          groupPk: group.pk,
-          groupablePk: member.pk,
-          groupableVariant: member.variant,
-        }))
-      );
+      await db
+        .insert(groupAssignables)
+        .values(
+          input.members.map((member) => ({
+            groupPk: group.pk,
+            groupablePk: member.pk,
+            groupableVariant: member.variant,
+          }))
+        )
+        .onDuplicateKeyUpdate({ set: { groupPk: sql`groupPk` } });
     }),
 });
