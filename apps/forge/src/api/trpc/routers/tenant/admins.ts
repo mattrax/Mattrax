@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { generateId } from "lucia";
-import { appendResponseHeader } from "h3";
+import { appendResponseHeader, setCookie } from "h3";
 
 import {
   accounts,
@@ -136,6 +136,9 @@ export const adminsRouter = createTRPCRouter({
         "Set-Cookie",
         lucia.createSessionCookie(session.id).serialize()
       );
+      setCookie(ctx.event, "isLoggedIn", "true", {
+        httpOnly: false,
+      });
 
       const tenant = await db.query.tenants.findFirst({
         where: eq(tenants.pk, invite.tenantPk),

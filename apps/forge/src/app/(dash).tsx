@@ -1,7 +1,9 @@
-import { ErrorBoundary, ParentProps, Show } from "solid-js";
+import { ErrorBoundary, ParentProps, Show, onMount } from "solid-js";
 import { createContextProvider } from "@solid-primitives/context";
-import { RouterOutput } from "~/api/trpc";
+import { parse } from "cookie-es";
+import { useNavigate } from "@solidjs/router";
 
+import { RouterOutput } from "~/api/trpc";
 import { trpc } from "~/lib";
 
 export const [AuthContextProvider, useAuthContext] = createContextProvider(
@@ -13,6 +15,16 @@ export const [AuthContextProvider, useAuthContext] = createContextProvider(
 );
 
 export default function Layout(props: ParentProps) {
+  const navigate = useNavigate();
+
+  onMount(() => {
+    // isLoggedIn cookie trick for quick login navigation
+    const cookies = parse(document.cookie);
+    if (cookies.isLoggedIn !== "true") {
+      navigate("/login");
+    }
+  });
+
   // TODO: Use the auth cookie trick for better UX
   const me = trpc.auth.me.useQuery(void 0, () => ({
     // This will *always* stay in the cache. Avoids need for `localStorage` shenanigans.
@@ -32,13 +44,15 @@ export default function Layout(props: ParentProps) {
         );
       }}
     >
-      <Show when={me.data}>
-        {(meData) => (
-          <AuthContextProvider me={meData()} meQuery={me}>
-            {props.children}
-          </AuthContextProvider>
-        )}
-      </Show>
+      <Suspense>
+        <Show when={me.data}>
+          {(meData) => (
+            <AuthContextProvider me={meData()} meQuery={me}>
+              {props.children}
+            </AuthContextProvider>
+          )}
+        </Show>
+      </Suspense>
     </ErrorBoundary>
   );
 }

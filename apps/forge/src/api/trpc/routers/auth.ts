@@ -2,7 +2,11 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { alphabet, generateRandomString } from "oslo/crypto";
-import { appendResponseHeader } from "vinxi/server";
+import {
+  appendResponseHeader,
+  appendResponseHeaders,
+  setCookie,
+} from "vinxi/server";
 import { generateId } from "lucia";
 
 import { authedProcedure, createTRPCRouter, publicProcedure } from "../helpers";
@@ -94,15 +98,21 @@ export const authRouter = createTRPCRouter({
         });
 
       const session = await lucia.createSession(account.id, {});
+
       appendResponseHeader(
         ctx.event,
         "Set-Cookie",
         lucia.createSessionCookie(session.id).serialize()
       );
 
+      setCookie(ctx.event, "isLoggedIn", "true", {
+        httpOnly: false,
+      });
+
       return true;
     }),
   me: authedProcedure.query(async ({ ctx: { account } }) => {
+    await new Promise((res) => setTimeout(res, 1000));
     return {
       id: account.id,
       name: account.name,

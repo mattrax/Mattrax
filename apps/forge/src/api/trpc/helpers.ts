@@ -1,7 +1,12 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { z, ZodError } from "zod";
-import { getCookie, appendResponseHeader, H3Event } from "vinxi/server";
+import {
+  getCookie,
+  appendResponseHeader,
+  H3Event,
+  setCookie,
+} from "vinxi/server";
 import { User } from "lucia";
 import { and, eq } from "drizzle-orm";
 
@@ -47,12 +52,19 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 
     const { session, user: account } = await lucia.validateSession(sessionId);
 
-    if (session && session.fresh) {
-      appendResponseHeader(
-        opts.ctx.event,
-        "Set-Cookie",
-        lucia.createSessionCookie(session.id).serialize()
-      );
+    if (session) {
+      if (session.fresh)
+        appendResponseHeader(
+          opts.ctx.event,
+          "Set-Cookie",
+          lucia.createSessionCookie(session.id).serialize()
+        );
+
+      if (getCookie(opts.ctx.event, "isLoggedIn") === undefined) {
+        setCookie(opts.ctx.event, "isLoggedIn", "true", {
+          httpOnly: false,
+        });
+      }
     }
     if (!session) {
       appendResponseHeader(

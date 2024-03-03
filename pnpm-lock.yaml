@@ -324,6 +324,9 @@ importers:
       codejar:
         specifier: ^4.2.0
         version: 4.2.0
+      cookie-es:
+        specifier: ^1.0.0
+        version: 1.0.0
       dayjs:
         specifier: ^1.11.10
         version: 1.11.10

@@ -80,7 +80,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
           </As>
         </FeedbackPopover>
         <span class="font-medium">{auth.me.name}</span>
-        <Button variant="destructive">Log Out</Button>
+        {/* <Button variant="destructive">Log Out</Button> */}
       </div>
 
       <nav class="text-white sticky border-b border-gray-300 top-0 z-10 bg-white">
