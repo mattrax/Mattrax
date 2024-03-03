@@ -276,6 +276,9 @@ importers:
       '@solid-primitives/memo':
         specifier: ^1.3.6
         version: 1.3.6(solid-js@1.8.14)
+      '@solid-primitives/scheduled':
+        specifier: ^1.4.2
+        version: 1.4.2(solid-js@1.8.14)
       '@solid-primitives/storage':
         specifier: ^2.1.2
         version: 2.1.2(solid-js@1.8.14)(solid-start@0.3.10)

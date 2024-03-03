@@ -16,6 +16,7 @@ declare global {
   const IconLogosMicrosoftAzure: (typeof import("~icons/logos/microsoft-azure.jsx"))["default"]
   const IconLogosMicrosoftIcon: (typeof import("~icons/logos/microsoft-icon.jsx"))["default"]
   const IconLogosSlackIcon: (typeof import("~icons/logos/slack-icon.jsx"))["default"]
+  const IconMaterialSymbolsEditOutline: typeof import('~icons/material-symbols/edit-outline.jsx')['default']
   const IconMaterialSymbolsWarningRounded: typeof import('~icons/material-symbols/warning-rounded.jsx')['default']
   const IconPhAlarmBold: (typeof import("~icons/ph/alarm-bold.jsx"))["default"]
   const IconPhAppDuotone: (typeof import("~icons/ph/app-duotone.jsx"))["default"]

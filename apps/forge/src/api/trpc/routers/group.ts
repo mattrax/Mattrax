@@ -68,6 +68,19 @@ export const groupRouter = createTRPCRouter({
     .query(({ ctx, input }) => {
       return getGroup({ groupId: input.id, tenantPk: ctx.tenant.pk });
     }),
+  update: tenantProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().optional(),
+      })
+    )
+    .mutation(({ ctx, input }) =>
+      db
+        .update(groups)
+        .set({ ...(input.name && { name: input.name }) })
+        .where(and(eq(groups.id, input.id), eq(groups.tenantPk, ctx.tenant.pk)))
+    ),
   members: tenantProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -118,17 +131,22 @@ export const groupRouter = createTRPCRouter({
             name: users.name,
             id: users.id,
             pk: users.pk,
-            variant: sql<GroupAssignableVariant>`user`,
+            variant:
+              sql<GroupAssignableVariant>`${GroupAssignableVariants.user}`.as(
+                "variant"
+              ),
           })
           .from(users)
           .where(eq(users.tenantPk, ctx.tenant.pk)),
-
         db
           .select({
             name: devices.name,
             id: devices.id,
             pk: devices.pk,
-            variant: sql<GroupAssignableVariant>`device`,
+            variant:
+              sql<GroupAssignableVariant>`${GroupAssignableVariants.device}`.as(
+                "variant"
+              ),
           })
           .from(devices)
           .where(eq(devices.tenantPk, ctx.tenant.pk))
