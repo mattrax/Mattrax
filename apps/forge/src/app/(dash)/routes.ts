@@ -1,8 +1,8 @@
 import { RouteDefinition } from "@solidjs/router";
 import { lazy } from "solid-js";
 
-import indexRoute from "./index";
 import tenantRoutes from "./[tenantSlug]/routes";
+import indexRoute from "./index";
 
 export default [
   {

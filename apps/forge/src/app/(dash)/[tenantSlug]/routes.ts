@@ -1,11 +1,11 @@
 import { RouteDefinition } from "@solidjs/router";
 import { lazy } from "solid-js";
 
-import deviceRoutes from "./devices/[deviceId]/routes";
-import settingsRoutes from "./settings/routes";
-import policiesRoutes from "./policies/routes";
-import groupsRoutes from "./groups/routes";
 import { trpc } from "~/lib";
+import deviceRoutes from "./devices/[deviceId]/routes";
+import groupsRoutes from "./groups/routes";
+import policiesRoutes from "./policies/routes";
+import settingsRoutes from "./settings/routes";
 
 export default [
   {

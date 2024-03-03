@@ -1,5 +1,5 @@
-import { drizzle } from "drizzle-orm/planetscale-serverless";
 import { connect } from "@planetscale/database";
+import { drizzle } from "drizzle-orm/planetscale-serverless";
 
 import { env } from "../env";
 
@@ -10,7 +10,7 @@ const connection = connect({
   url: env.DATABASE_URL,
   // Cloudflare Worker's doesn't like `cache`
   fetch: (url, init) => {
-    delete (init as any)["cache"];
+    (init as any).cache = undefined;
     return fetch(url, init);
   },
 });

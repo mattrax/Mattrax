@@ -1,18 +1,18 @@
-import { z } from "zod";
-import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { eq } from "drizzle-orm";
+import { generateId } from "lucia";
 import { alphabet, generateRandomString } from "oslo/crypto";
 import {
   appendResponseHeader,
   appendResponseHeaders,
   setCookie,
 } from "vinxi/server";
-import { generateId } from "lucia";
+import { z } from "zod";
 
-import { authedProcedure, createTRPCRouter, publicProcedure } from "../helpers";
-import { accounts, db, accountLoginCodes, tenants, tenantAccounts } from "~/db";
-import { sendEmail } from "~/api/emails";
 import { lucia } from "~/api/auth";
+import { sendEmail } from "~/api/emails";
+import { accountLoginCodes, accounts, db, tenantAccounts, tenants } from "~/db";
+import { authedProcedure, createTRPCRouter, publicProcedure } from "../helpers";
 
 type UserResult = {
   id: number;
@@ -102,7 +102,7 @@ export const authRouter = createTRPCRouter({
       appendResponseHeader(
         ctx.event,
         "Set-Cookie",
-        lucia.createSessionCookie(session.id).serialize()
+        lucia.createSessionCookie(session.id).serialize(),
       );
 
       setCookie(ctx.event, "isLoggedIn", "true", {
@@ -124,7 +124,7 @@ export const authRouter = createTRPCRouter({
     .input(
       z.object({
         name: z.string().optional(),
-      })
+      }),
     )
     .mutation(async ({ ctx: { account }, input }) => {
       // Skip DB if we have nothing to update

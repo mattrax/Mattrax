@@ -1,12 +1,7 @@
+import { EventBus, createEventBus } from "@solid-primitives/event-bus";
 // @refresh reload
 import { Router, useNavigate } from "@solidjs/router";
-import {
-  ErrorBoundary,
-  Suspense,
-  lazy,
-  onCleanup,
-  startTransition,
-} from "solid-js";
+import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
 import {
   QueryCache,
   QueryClient,
@@ -14,15 +9,20 @@ import {
   keepPreviousData,
   onlineManager,
 } from "@tanstack/solid-query";
-import { Toaster, toast } from "solid-sonner";
-import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
-import { createEventBus, EventBus } from "@solid-primitives/event-bus";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
+import {
+  ErrorBoundary,
+  Suspense,
+  lazy,
+  onCleanup,
+  startTransition,
+} from "solid-js";
+import { Toaster, toast } from "solid-sonner";
 import routes from "./app/routes";
-import { isDebugMode, isTRPCClientError, trpc } from "./lib";
 import "./assets/app.css";
 import "./assets/sonner.css";
+import { isDebugMode, isTRPCClientError, trpc } from "./lib";
 
 dayjs.extend(relativeTime);
 
@@ -84,7 +84,7 @@ function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 const SolidQueryDevtools = lazy(() =>
   import("@tanstack/solid-query-devtools").then((m) => ({
     default: m.SolidQueryDevtools,
-  }))
+  })),
 );
 
 function App() {
@@ -113,12 +113,13 @@ function App() {
                   if (error.data?.code === "UNAUTHORIZED") {
                     startTransition(() => navigate("/login"));
                     return;
-                  } else if (error.data?.code === "FORBIDDEN") {
+                  }
+
+                  if (error.data?.code === "FORBIDDEN") {
                     if (error.message === "tenant") navigate("/");
                     else
-                      errorMsg = (
-                        <>You are not allowed to access this resource!,</>
-                      );
+                      errorMsg =
+                        "You are not allowed to access this resource!,";
                   }
                 }
 
@@ -126,7 +127,7 @@ function App() {
                 toast.error(errorMsg, {
                   id: "network-error",
                 });
-              })
+              }),
             );
 
             onCleanup(
@@ -146,9 +147,9 @@ function App() {
                   {
                     id: "network-offline",
                     duration: Infinity,
-                  }
+                  },
                 );
-              })
+              }),
             );
 
             return (
@@ -169,7 +170,7 @@ function App() {
                       typeof document !== "undefined"
                     ) {
                       console.error(
-                        "Automatically resetting error boundary due to HMR-related router context error."
+                        "Automatically resetting error boundary due to HMR-related router context error.",
                       );
                       reset();
                     }

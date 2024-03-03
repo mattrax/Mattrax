@@ -1,17 +1,17 @@
-import { Suspense, startTransition } from "solid-js";
-import { createColumnHelper } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
 import { A } from "@solidjs/router";
+import { createColumnHelper } from "@tanstack/solid-table";
+import { Suspense, startTransition } from "solid-js";
 
 import { RouterOutput } from "~/api/trpc";
-import { trpc, untrackScopeFromSuspense } from "~/lib";
-import { Button, Input, Separator } from "~/components/ui";
 import {
   ColumnsDropdown,
   StandardTable,
   createStandardTable,
   selectCheckboxColumn,
 } from "~/components/StandardTable";
+import { Button, Input, Separator } from "~/components/ui";
+import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { useTenantContext } from "../../[tenantSlug]";
 
 const column = createColumnHelper<RouterOutput["policy"]["list"][number]>();
@@ -112,9 +112,10 @@ export default function Page() {
   );
 }
 
-import { z } from "zod";
 import { useNavigate } from "@solidjs/router";
+import { z } from "zod";
 
+import { Form, InputField, createZodForm } from "~/components/forms";
 import {
   Card,
   CardContent,
@@ -122,7 +123,6 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui";
-import { Form, InputField, createZodForm } from "~/components/forms";
 
 function CreatePolicyCard() {
   const tenant = useTenantContext();

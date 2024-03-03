@@ -1,9 +1,9 @@
 // This amazing counter component was written by @Brendonovich
 
-import { Accessor, createEffect, createSignal, JSX, onCleanup } from "solid-js";
+import { Accessor, JSX, createEffect, createSignal, onCleanup } from "solid-js";
 
 function ease(x: number) {
-  return 1 - Math.pow(1 - x, 3);
+  return 1 - (1 - x) ** 3;
 }
 
 interface Props {
@@ -46,7 +46,9 @@ const Count = (props: Props) => {
       });
 
       return end;
-    } else return start;
+    }
+
+    return start;
   }, props.start ?? 0);
 
   return props.children(value);

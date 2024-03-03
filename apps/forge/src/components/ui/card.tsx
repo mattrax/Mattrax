@@ -9,7 +9,7 @@ const Card: Component<ComponentProps<"div">> = (props) => {
     <div
       class={cn(
         "bg-card text-card-foreground rounded-lg border shadow-sm",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -29,7 +29,7 @@ const CardTitle: Component<ComponentProps<"h3">> = (props) => {
     <h3
       class={cn(
         "text-lg font-semibold leading-none tracking-tight",
-        props.class
+        props.class,
       )}
       {...rest}
     />

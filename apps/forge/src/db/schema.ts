@@ -1,19 +1,19 @@
-import {
-  varchar,
-  serial,
-  json,
-  timestamp,
-  mysqlEnum,
-  unique,
-  primaryKey,
-  bigint,
-  mysqlTable,
-  boolean,
-  varbinary,
-  datetime,
-} from "drizzle-orm/mysql-core";
-import { relations } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
+import { relations } from "drizzle-orm";
+import {
+  bigint,
+  boolean,
+  datetime,
+  json,
+  mysqlEnum,
+  mysqlTable,
+  primaryKey,
+  serial,
+  timestamp,
+  unique,
+  varbinary,
+  varchar,
+} from "drizzle-orm/mysql-core";
 
 const serialRelation = (name: string) =>
   bigint(name, { mode: "number", unsigned: true });
@@ -68,7 +68,7 @@ export const tenantAccounts = mysqlTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.tenantPk, table.accountPk] }),
-  })
+  }),
 );
 
 export const tenantAccountInvites = mysqlTable(
@@ -83,7 +83,7 @@ export const tenantAccountInvites = mysqlTable(
   },
   (table) => ({
     emailUnique: unique().on(table.tenantPk, table.email),
-  })
+  }),
 );
 
 const userProviderVariants = [
@@ -111,7 +111,7 @@ export const identityProviders = mysqlTable(
   },
   (table) => ({
     unique: unique().on(table.variant, table.remoteId),
-  })
+  }),
 );
 
 // An account represents the login of an *end-user*.
@@ -135,7 +135,7 @@ export const users = mysqlTable(
   (t) => ({
     emailUnq: unique().on(t.email, t.tenantPk),
     resourceIdUnq: unique().on(t.providerResourceId, t.providerPk),
-  })
+  }),
 );
 
 export const policies = mysqlTable("policies", {
@@ -143,7 +143,7 @@ export const policies = mysqlTable("policies", {
   id: cuid("cuid").notNull().unique(),
   name: varchar("name", { length: 256 }).notNull(),
   activeVersion: serialRelation("activeVersion").references(
-    () => policyVersions.pk
+    () => policyVersions.pk,
   ),
   tenantPk: serialRelation("tenantId")
     .references(() => tenants.pk)
@@ -162,14 +162,14 @@ export const policyAssignables = mysqlTable(
     groupablePk: serialRelation("groupableId").notNull(),
     groupableVariant: mysqlEnum(
       "groupableVariant",
-      policyAssignableVariants
+      policyAssignableVariants,
     ).notNull(),
   },
   (table) => ({
     pk: primaryKey({
       columns: [table.policyPk, table.groupablePk, table.groupableVariant],
     }),
-  })
+  }),
 );
 
 export const policyVersions = mysqlTable("policy_versions", {
@@ -263,14 +263,14 @@ export const groupAssignables = mysqlTable(
     groupablePk: serialRelation("groupableId").notNull(),
     groupableVariant: mysqlEnum(
       "groupableVariant",
-      groupAssignableVariants
+      groupAssignableVariants,
     ).notNull(),
   },
   (table) => ({
     pk: primaryKey({
       columns: [table.groupPk, table.groupablePk, table.groupableVariant],
     }),
-  })
+  }),
 );
 
 export const groups = mysqlTable("groups", {

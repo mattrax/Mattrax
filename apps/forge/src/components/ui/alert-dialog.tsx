@@ -18,7 +18,7 @@ const AlertDialogOverlay: Component<
     <AlertDialogPrimitive.Overlay
       class={cn(
         "bg-background/80 data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 fixed inset-0 z-50 backdrop-blur-sm",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -35,7 +35,7 @@ const AlertDialogContent: Component<
       <AlertDialogPrimitive.Content
         class={cn(
           "bg-background data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95 data-[closed]:slide-out-to-left-1/2 data-[closed]:slide-out-to-top-[48%] data-[expanded]:slide-in-from-left-1/2 data-[expanded]:slide-in-from-top-[48%] fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border p-6 shadow-lg duration-200 sm:rounded-lg md:w-full",
-          props.class
+          props.class,
         )}
         {...rest}
       >

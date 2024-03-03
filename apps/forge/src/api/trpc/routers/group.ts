@@ -1,18 +1,18 @@
+import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { TRPCError } from "@trpc/server";
 
-import { createTRPCRouter, tenantProcedure } from "../helpers";
+import { createId } from "@paralleldrive/cuid2";
+import { promiseAllObject } from "~/api/utils";
 import {
   db,
   devices,
-  groupAssignables,
   groupAssignableVariants,
+  groupAssignables,
   groups,
   users,
 } from "~/db";
-import { createId } from "@paralleldrive/cuid2";
-import { promiseAllObject } from "~/api/utils";
+import { createTRPCRouter, tenantProcedure } from "../helpers";
 
 function getGroup(args: { groupId: string; tenantPk: number }) {
   return db.query.groups.findFirst({
@@ -82,13 +82,13 @@ export const groupRouter = createTRPCRouter({
           .from(users)
           .leftJoin(
             groupAssignables,
-            eq(users.pk, groupAssignables.groupablePk)
+            eq(users.pk, groupAssignables.groupablePk),
           )
           .where(
             and(
               eq(groupAssignables.groupableVariant, "user"),
-              eq(groupAssignables.groupPk, group.pk)
-            )
+              eq(groupAssignables.groupPk, group.pk),
+            ),
           )
           .then((r) => r || []),
         devices: db
@@ -96,13 +96,13 @@ export const groupRouter = createTRPCRouter({
           .from(devices)
           .leftJoin(
             groupAssignables,
-            eq(devices.pk, groupAssignables.groupablePk)
+            eq(devices.pk, groupAssignables.groupablePk),
           )
           .where(
             and(
               eq(groupAssignables.groupableVariant, "device"),
-              eq(groupAssignables.groupPk, group.pk)
-            )
+              eq(groupAssignables.groupPk, group.pk),
+            ),
           )
           .then((r) => r || []),
       });
@@ -123,7 +123,7 @@ export const groupRouter = createTRPCRouter({
             columns: { name: true, id: true, pk: true },
           })
           .then((r) => r || []),
-      })
+      }),
     ),
   addMembers: tenantProcedure
     .input(
@@ -133,9 +133,9 @@ export const groupRouter = createTRPCRouter({
           z.object({
             pk: z.number(),
             variant: z.enum(groupAssignableVariants),
-          })
+          }),
         ),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       const group = await getGroup({
@@ -152,7 +152,7 @@ export const groupRouter = createTRPCRouter({
             groupPk: group.pk,
             groupablePk: member.pk,
             groupableVariant: member.variant,
-          }))
+          })),
         )
         .onDuplicateKeyUpdate({
           set: { groupPk: sql`${groupAssignables.groupPk}` },

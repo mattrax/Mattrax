@@ -1,10 +1,10 @@
 // @ts-expect-error
 import { createEnv } from "@t3-oss/env-core";
-import { z } from "zod";
 import "dotenv/config";
+import { z } from "zod";
 
 function optional_in_dev<T extends z.ZodTypeAny>(
-  schema: T
+  schema: T,
 ): z.ZodOptional<T> | T {
   return process.env.NODE_ENV === "development" ? schema.optional() : schema;
 }

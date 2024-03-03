@@ -4,7 +4,7 @@ export type PromiseValues<TO> = {
 
 export const promiseAllObject = <T>(obj: PromiseValues<T>): Promise<T> => {
   return Promise.all(
-    Object.entries(obj).map(async ([k, v]) => [k, await v])
+    Object.entries(obj).map(async ([k, v]) => [k, await v]),
   ).then(Object.fromEntries);
 };
 

@@ -1,9 +1,15 @@
-import { Show, Suspense } from "solid-js";
-import { createColumnHelper } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
 import { A, useNavigate } from "@solidjs/router";
+import { createColumnHelper } from "@tanstack/solid-table";
+import { Show, Suspense } from "solid-js";
 import { RouterOutput } from "~/api/trpc";
 
+import {
+  ColumnsDropdown,
+  StandardTable,
+  createStandardTable,
+  selectCheckboxColumn,
+} from "~/components/StandardTable";
 import {
   Badge,
   Button,
@@ -13,14 +19,8 @@ import {
   TooltipTrigger,
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
-import {
-  ColumnsDropdown,
-  StandardTable,
-  createStandardTable,
-  selectCheckboxColumn,
-} from "~/components/StandardTable";
-import { useTenantContext } from "../../[tenantSlug]";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
+import { useTenantContext } from "../../[tenantSlug]";
 
 const column = createColumnHelper<RouterOutput["user"]["list"][number]>();
 

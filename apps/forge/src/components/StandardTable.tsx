@@ -1,18 +1,18 @@
 import {
   ColumnDef,
+  PartialKeys,
+  RowData,
+  type Table as TTable,
+  TableOptions,
   createSolidTable,
   flexRender,
   getCoreRowModel,
-  PartialKeys,
-  RowData,
-  TableOptions,
-  type Table as TTable,
 } from "@tanstack/solid-table";
-import { For, mergeProps, ParentProps } from "solid-js";
 import clsx from "clsx";
+import { For, ParentProps, mergeProps } from "solid-js";
 
 export function createStandardTable<TData extends RowData>(
-  options: PartialKeys<TableOptions<TData>, "getCoreRowModel">
+  options: PartialKeys<TableOptions<TData>, "getCoreRowModel">,
 ) {
   return createSolidTable(
     mergeProps(
@@ -20,22 +20,22 @@ export function createStandardTable<TData extends RowData>(
         getCoreRowModel: getCoreRowModel(),
         defaultColumn: mergeProps(
           { size: "auto" as unknown as number },
-          options.defaultColumn
+          options.defaultColumn,
         ),
       },
-      options
-    )
+      options,
+    ),
   );
 }
 
 import {
+  Checkbox,
   Table,
-  TableHeader,
-  TableRow,
-  TableHead,
   TableBody,
   TableCell,
-  Checkbox,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "./ui";
 
 export function StandardTable<TData>(props: {
@@ -61,7 +61,7 @@ export function StandardTable<TData>(props: {
                       ? null
                       : flexRender(
                           header.column.columnDef.header,
-                          header.getContext()
+                          header.getContext(),
                         )}
                   </TableHead>
                 ))}
@@ -79,7 +79,7 @@ export function StandardTable<TData>(props: {
                       <TableCell>
                         {flexRender(
                           cell.column.columnDef.cell,
-                          cell.getContext()
+                          cell.getContext(),
                         )}
                       </TableCell>
                     )}
@@ -108,7 +108,7 @@ import {
 } from "./ui";
 
 export function ColumnsDropdown<TData>(
-  props: ParentProps & { table: TTable<TData> }
+  props: ParentProps & { table: TTable<TData> },
 ) {
   return (
     <DropdownMenu placement="bottom-end">

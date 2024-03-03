@@ -7,12 +7,12 @@ export const AUTH_PROVIDER_DISPLAY = {
 
 export function authProviderUrl(
   providerName: UserProvider,
-  providerId: string
+  providerId: string,
 ): string {
   switch (providerName) {
     case "entraId":
       return `https://portal.azure.com/${encodeURIComponent(
-        providerId
+        providerId,
       )}#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/Overview`;
   }
 }
@@ -20,14 +20,14 @@ export function authProviderUrl(
 export function userAuthProviderUrl(
   providerName: UserProvider,
   providerId: string,
-  userId: string
+  userId: string,
 ): string {
   switch (providerName) {
     case "entraId": {
       return `https://portal.azure.com/${encodeURIComponent(
-        providerId
+        providerId,
       )}#view/Microsoft_AAD_UsersAndTenants/UserProfileMenuBlade/~/overview/userId/${encodeURIComponent(
-        userId
+        userId,
       )}`;
     }
   }

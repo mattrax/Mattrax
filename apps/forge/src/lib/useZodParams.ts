@@ -13,7 +13,7 @@ export function useZodParams<S extends z.ZodRawShape>(schema: S) {
     () => {
       setParsedParams(zodSchema.parse(params));
     },
-    { defer: true }
+    { defer: true },
   );
 
   return parsedParams;

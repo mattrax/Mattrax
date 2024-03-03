@@ -16,5 +16,5 @@ function cache<T>(key: string, fn: () => T): T {
 // This uses the "Forge" application.
 export const msGraphClient = (tenantId: string) =>
   cache(`tenantGraphClient|${tenantId}`, () =>
-    initGraphClient(tenantId, env.ENTRA_CLIENT_ID, env.ENTRA_CLIENT_SECRET)
+    initGraphClient(tenantId, env.ENTRA_CLIENT_ID, env.ENTRA_CLIENT_SECRET),
   );

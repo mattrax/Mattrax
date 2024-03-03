@@ -1,6 +1,6 @@
-import { ParentProps, Suspense, createSignal } from "solid-js";
-import { createColumnHelper } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
+import { createColumnHelper } from "@tanstack/solid-table";
+import { ParentProps, Suspense, createSignal } from "solid-js";
 
 import {
   ColumnsDropdown,
@@ -113,9 +113,9 @@ export default function Page() {
   );
 }
 
-import { Button, Checkbox, Input } from "~/components/ui";
 import { A, useNavigate } from "@solidjs/router";
 import { createQuery } from "@tanstack/solid-query";
+import { Button, Checkbox, Input } from "~/components/ui";
 
 import {
   DialogContent,
@@ -182,7 +182,7 @@ function AppleAppStoreDemo() {
     queryFn: async () => {
       // TODO: Pagination support
       const res = await fetch(
-        `https://itunes.apple.com/search?term=${search()}&entity=software`
+        `https://itunes.apple.com/search?term=${search()}&entity=software`,
       );
       return await res.json();
     },
@@ -201,7 +201,7 @@ function AppleAppStoreDemo() {
         <Suspense fallback={<div>Loading...</div>}>
           {searchQuery.data?.results.map((app: any) => (
             <div class="flex flex-col">
-              <img src={app.artworkUrl100} />
+              <img alt="App Artwork" src={app.artworkUrl100} />
               <div class="text-sm">{app.trackName}</div>
               <div class="text-xs">{app.sellerName}</div>
             </div>

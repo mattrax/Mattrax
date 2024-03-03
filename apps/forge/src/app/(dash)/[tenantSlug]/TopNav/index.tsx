@@ -1,18 +1,18 @@
+import { As, Tabs } from "@kobalte/core";
 import { A, useMatch, useResolvedPath } from "@solidjs/router";
 import { For, JSX, ParentProps } from "solid-js";
-import { As, Tabs } from "@kobalte/core";
 
-import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
+import { createSignal } from "solid-js";
 import { useAuthContext } from "~/app/(dash)";
 import {
-  Textarea,
   Button,
   Popover,
   PopoverContent,
   PopoverTrigger,
+  Textarea,
 } from "~/components/ui";
 import { trpc } from "~/lib";
-import { createSignal } from "solid-js";
+import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
 
 type NavbarItem = {
   icon: (props: { class: string }) => JSX.Element;

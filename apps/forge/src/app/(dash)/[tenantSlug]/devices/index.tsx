@@ -1,17 +1,17 @@
-import { Suspense } from "solid-js";
-import { createColumnHelper } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
 import { A, useNavigate } from "@solidjs/router";
-import { RouterOutput } from "~/api/trpc";
+import { createColumnHelper } from "@tanstack/solid-table";
 import dayjs from "dayjs";
+import { Suspense } from "solid-js";
+import { RouterOutput } from "~/api/trpc";
 
-import { Button, Input } from "~/components/ui";
 import {
   ColumnsDropdown,
   StandardTable,
   createStandardTable,
   selectCheckboxColumn,
 } from "~/components/StandardTable";
+import { Button, Input } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { useTenantContext } from "../../[tenantSlug]";
 

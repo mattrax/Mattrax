@@ -33,7 +33,7 @@ const buttonVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
+  },
 );
 
 export interface ButtonProps
@@ -44,9 +44,10 @@ const Button: Component<ButtonProps> = (props) => {
   const [, rest] = splitProps(props, ["variant", "size", "class"]);
   return (
     <button
+      type="button"
       class={cn(
         buttonVariants({ variant: props.variant, size: props.size }),
-        props.class
+        props.class,
       )}
       {...rest}
     />

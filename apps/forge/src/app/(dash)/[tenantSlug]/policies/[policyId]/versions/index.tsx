@@ -1,7 +1,10 @@
+import { As } from "@kobalte/core";
 import { For, Show, createEffect, createSignal } from "solid-js";
+import { P, match } from "ts-pattern";
 import { z } from "zod";
 import { RouterOutput } from "~/api";
 import { useTenantContext } from "~/app/(dash)/[tenantSlug]";
+import { Form, InputField, createZodForm } from "~/components/forms";
 import {
   Badge,
   Button,
@@ -21,9 +24,6 @@ import {
 } from "~/components/ui";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
-import { match, P } from "ts-pattern";
-import { Form, InputField, createZodForm } from "~/components/forms";
-import { As } from "@kobalte/core";
 
 export default function Page() {
   const tenant = useTenantContext();
@@ -282,7 +282,7 @@ function VersionRow(props: {
               variant="destructive"
               onClick={() => {
                 const data = { ...(props.version.data || {}) };
-                if ("apple" in data) delete data.apple;
+                if ("apple" in data) data.apple = undefined;
                 updateVersion.mutateAsync({
                   tenantSlug: tenant.activeTenant.slug,
                   policyId: props.policy.id,

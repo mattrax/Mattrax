@@ -1,6 +1,7 @@
 // TODO: Deduplicate this UI stuff with the groups page
 // TODO: cause it's the same thing with some tRPC queries switched out.
 
+import { As } from "@kobalte/core";
 import {
   Accessor,
   For,
@@ -10,7 +11,6 @@ import {
   createSignal,
 } from "solid-js";
 import { z } from "zod";
-import { As } from "@kobalte/core";
 
 import { Button, Checkbox, Tabs, TabsList, TabsTrigger } from "~/components/ui";
 import { trpc } from "~/lib";
@@ -28,7 +28,7 @@ export default function Page() {
     }),
     () => ({
       enabled: true,
-    })
+    }),
   );
 
   return (
@@ -138,7 +138,7 @@ function MembersTable(props: { table: ReturnType<typeof createMembersTable> }) {
                       ? null
                       : flexRender(
                           header.column.columnDef.header,
-                          header.getContext()
+                          header.getContext(),
                         )}
                   </TableHead>
                 ))}
@@ -156,7 +156,7 @@ function MembersTable(props: { table: ReturnType<typeof createMembersTable> }) {
                       <TableCell>
                         {flexRender(
                           cell.column.columnDef.cell,
-                          cell.getContext()
+                          cell.getContext(),
                         )}
                       </TableCell>
                     )}
@@ -177,6 +177,15 @@ function MembersTable(props: { table: ReturnType<typeof createMembersTable> }) {
   );
 }
 
+import { useQueryClient } from "@tanstack/solid-query";
+import { useTenantContext } from "~/app/(dash)/[tenantSlug]";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
+import {
+  StandardTable,
+  createStandardTable,
+  selectCheckboxColumn,
+} from "~/components/StandardTable";
+import { Badge } from "~/components/ui/badge";
 import {
   Sheet,
   SheetContent,
@@ -185,15 +194,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "~/components/ui/sheet";
-import { Badge } from "~/components/ui/badge";
-import { useQueryClient } from "@tanstack/solid-query";
-import { ConfirmDialog } from "~/components/ConfirmDialog";
-import { useTenantContext } from "~/app/(dash)/[tenantSlug]";
-import {
-  StandardTable,
-  createStandardTable,
-  selectCheckboxColumn,
-} from "~/components/StandardTable";
 
 const AddMemberTableOptions = {
   all: "All",
@@ -209,7 +209,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
   // TODO
   const possibleMembers = trpc.policy.possibleMembers.useQuery(
     () => ({ id: props.groupId, tenantSlug: tenant.activeTenant.slug }),
-    () => ({ enabled: open() })
+    () => ({ enabled: open() }),
   );
 
   const table = createStandardTable({
@@ -294,7 +294,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
                     {Object.entries(AddMemberTableOptions).map(
                       ([value, name]) => (
                         <TabsTrigger value={value}>{name}</TabsTrigger>
-                      )
+                      ),
                     )}
                   </TabsList>
                 </Tabs>
@@ -333,7 +333,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
                                 ? null
                                 : flexRender(
                                     header.column.columnDef.header,
-                                    header.getContext()
+                                    header.getContext(),
                                   )}
                             </TableHead>
                           ))}
@@ -359,7 +359,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
                                 >
                                   {flexRender(
                                     cell.column.columnDef.cell,
-                                    cell.getContext()
+                                    cell.getContext(),
                                   )}
                                 </TableCell>
                               )}

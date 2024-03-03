@@ -1,7 +1,7 @@
-import type { Component, ComponentProps } from "solid-js";
-import { splitProps } from "solid-js";
 import { DropdownMenu as DropdownMenuPrimitive } from "@kobalte/core";
 import { TbCheck, TbChevronRight, TbCircle } from "solid-icons/tb";
+import type { Component, ComponentProps } from "solid-js";
+import { splitProps } from "solid-js";
 
 import { cn } from "~/lib/utils";
 import { Controller, ControllerProvider, createController } from "./controller";
@@ -81,7 +81,7 @@ const DropdownMenuContent: Component<
       <DropdownMenuPrimitive.Content
         class={cn(
           "bg-popover text-popover-foreground animate-content-hide data-[expanded]:animate-content-show z-50 min-w-[8rem] origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border p-1 shadow-md",
-          props.class
+          props.class,
         )}
         {...rest}
       />
@@ -97,7 +97,7 @@ const DropdownMenuItem: Component<
     <DropdownMenuPrimitive.Item
       class={cn(
         "focus:bg-accent focus:text-accent-foreground relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -123,7 +123,7 @@ const DropdownMenuLabel: Component<
       class={cn(
         "px-2 py-1.5 text-sm font-semibold",
         props.inset && "pl-8",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -152,7 +152,7 @@ const DropdownMenuSubTrigger: Component<
     <DropdownMenuPrimitive.SubTrigger
       class={cn(
         "focus:bg-accent data-[state=open]:bg-accent flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
-        props.class
+        props.class,
       )}
       {...rest}
     >
@@ -170,7 +170,7 @@ const DropdownMenuSubContent: Component<
     <DropdownMenuPrimitive.SubContent
       class={cn(
         "bg-popover text-popover-foreground animate-in z-50 min-w-[8rem] origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border p-1 shadow-md",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -185,7 +185,7 @@ const DropdownMenuCheckboxItem: Component<
     <DropdownMenuPrimitive.CheckboxItem
       class={cn(
         "focus:bg-accent focus:text-accent-foreground relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-        props.class
+        props.class,
       )}
       {...rest}
     >
@@ -223,7 +223,7 @@ const DropdownMenuRadioItem: Component<
     <DropdownMenuPrimitive.RadioItem
       class={cn(
         "focus:bg-accent focus:text-accent-foreground relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-        props.class
+        props.class,
       )}
       {...rest}
     >

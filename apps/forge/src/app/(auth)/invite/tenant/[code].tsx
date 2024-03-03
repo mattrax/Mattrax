@@ -14,7 +14,7 @@ export default function Page() {
 
   const trpcCtx = trpc.useContext();
   const acceptTenantInvite = trpc.tenant.admins.acceptInvite.useMutation(
-    () => ({ onSuccess: async () => await trpcCtx.auth.me.refetch() })
+    () => ({ onSuccess: async () => await trpcCtx.auth.me.refetch() }),
   );
 
   onMount(() => acceptTenantInvite.mutateAsync(params));

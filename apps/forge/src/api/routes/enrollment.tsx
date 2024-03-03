@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
-import { renderToString } from "solid-js/web";
 import * as jose from "jose";
+import { renderToString } from "solid-js/web";
 
 import { db, domains, identityProviders } from "~/db";
 import { env } from "~/env";
@@ -136,16 +136,14 @@ export const enrollmentRouter = new Hono()
       .setProtectedHeader({ alg: "ES256" })
       .sign(new TextEncoder().encode(env.INTERNAL_SECRET));
 
-    if (appru) {
-      return c.html(renderMdmCallback(appru, jwt));
-    } else {
-      // TODO: Can we use cookies for this cause I don't trust non-tech people to not accidentally copy it out. - We would wanna render `/enroll` with Solid on the server for that.
-      const searchParams = new URLSearchParams({
-        token: jwt,
-        email: userPrincipalName,
-      });
-      return c.redirect(`/enroll?${searchParams.toString()}`);
-    }
+    if (appru) return c.html(renderMdmCallback(appru, jwt));
+
+    // TODO: Can we use cookies for this cause I don't trust non-tech people to not accidentally copy it out. - We would wanna render `/enroll` with Solid on the server for that.
+    const searchParams = new URLSearchParams({
+      token: jwt,
+      email: userPrincipalName,
+    });
+    return c.redirect(`/enroll?${searchParams.toString()}`);
   });
 
 const renderMdmCallback = (appru: string, authToken: string) =>

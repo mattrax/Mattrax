@@ -1,14 +1,14 @@
-import { initTRPC, TRPCError } from "@trpc/server";
+import { TRPCError, initTRPC } from "@trpc/server";
+import { and, eq } from "drizzle-orm";
+import { User } from "lucia";
 import superjson from "superjson";
-import { z, ZodError } from "zod";
 import {
-  getCookie,
-  appendResponseHeader,
   H3Event,
+  appendResponseHeader,
+  getCookie,
   setCookie,
 } from "vinxi/server";
-import { User } from "lucia";
-import { and, eq } from "drizzle-orm";
+import { ZodError, z } from "zod";
 
 import { db, tenantAccounts, tenants } from "~/db";
 import { lucia } from "../auth";
@@ -57,7 +57,7 @@ export const authedProcedure = t.procedure.use(async (opts) => {
         appendResponseHeader(
           opts.ctx.event,
           "Set-Cookie",
-          lucia.createSessionCookie(session.id).serialize()
+          lucia.createSessionCookie(session.id).serialize(),
         );
 
       if (getCookie(opts.ctx.event, "isLoggedIn") === undefined) {
@@ -70,7 +70,7 @@ export const authedProcedure = t.procedure.use(async (opts) => {
       appendResponseHeader(
         opts.ctx.event,
         "Set-Cookie",
-        lucia.createBlankSessionCookie().serialize()
+        lucia.createBlankSessionCookie().serialize(),
       );
     }
 
@@ -113,8 +113,8 @@ export const tenantProcedure = authedProcedure
         .where(
           and(
             eq(tenants.slug, input.tenantSlug),
-            eq(tenantAccounts.accountPk, ctx.account.pk)
-          )
+            eq(tenantAccounts.accountPk, ctx.account.pk),
+          ),
         )
         .innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk))
     )[0];

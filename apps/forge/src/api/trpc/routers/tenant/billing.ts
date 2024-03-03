@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
-import { db, tenants } from "~/db";
-import { createTRPCRouter, tenantProcedure } from "../../helpers";
-import { env } from "~/env";
-import { stripe } from "~/api/stripe";
 import type Stripe from "stripe";
+import { stripe } from "~/api/stripe";
+import { db, tenants } from "~/db";
+import { env } from "~/env";
+import { createTRPCRouter, tenantProcedure } from "../../helpers";
 
 export const billingRouter = createTRPCRouter({
   portalUrl: tenantProcedure.mutation(async ({ ctx }) => {
@@ -56,13 +56,13 @@ export const billingRouter = createTRPCRouter({
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: body.toString(),
-      }
+      },
     );
     if (!resp.ok) {
       const body = await resp.text();
       console.error("Error creating billing portal session", resp.status, body);
       throw new Error(
-        `Error creating billing portal session: '${resp.status}' '${body}'`
+        `Error creating billing portal session: '${resp.status}' '${body}'`,
       );
     }
     const session: Stripe.Response<Stripe.BillingPortal.Session> =

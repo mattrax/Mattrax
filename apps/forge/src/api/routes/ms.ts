@@ -1,14 +1,14 @@
+import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getCookie } from "vinxi/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
 
 import { db, domains, identityProviders } from "~/db";
 import { env } from "~/env";
 import { lucia } from "../auth";
-import { HonoEnv } from "../types";
 import { msGraphClient } from "../microsoft";
 import { syncEntraUsersWithDomains } from "../trpc/routers/tenant/identityProvider";
+import { HonoEnv } from "../types";
 
 const tokenEndpointResponse = z.object({ access_token: z.string() });
 const organizationResponse = z.object({
@@ -16,7 +16,7 @@ const organizationResponse = z.object({
     .array(
       z.object({
         id: z.string(),
-      })
+      }),
     )
     .min(1)
     .max(1),
@@ -31,17 +31,17 @@ export const msRouter = new Hono<HonoEnv>().get("/link", async (c) => {
   if (error) return new Response(`Error from Microsoft: ${error}`); // TODO: Proper error UI as the user may land here
 
   const code = c.req.query("code");
-  if (!code) return new Response(`No code!`); // TODO: Proper error UI as the user may land here
+  if (!code) return new Response("No code!"); // TODO: Proper error UI as the user may land here
 
   const rawState = c.req.query("state");
-  if (!rawState) return new Response(`No state!`); // TODO: Proper error UI as the user may land here
+  if (!rawState) return new Response("No state!"); // TODO: Proper error UI as the user may land here
   const { tenantPk } = OAUTH_STATE.parse(JSON.parse(rawState));
 
   const sessionId = getCookie(c.env.h3Event, lucia.sessionCookieName) ?? null;
-  if (sessionId === null) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
+  if (sessionId === null) return new Response("Unauthorised!"); // TODO: Proper error UI as the user may land here
 
   const { session } = await lucia.validateSession(sessionId);
-  if (!session) return new Response(`Unauthorised!`); // TODO: Proper error UI as the user may land here
+  if (!session) return new Response("Unauthorised!"); // TODO: Proper error UI as the user may land here
 
   const body = new URLSearchParams({
     client_id: env.ENTRA_CLIENT_ID,
@@ -53,29 +53,29 @@ export const msRouter = new Hono<HonoEnv>().get("/link", async (c) => {
   });
 
   const tokenReq = await fetch(
-    `https://login.microsoftonline.com/organizations/oauth2/v2.0/token`,
+    "https://login.microsoftonline.com/organizations/oauth2/v2.0/token",
     {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body,
-    }
+    },
   );
-  if (!tokenReq.ok) return new Response(`Failed to get token from Microsoft`); // TODO: Proper error UI as the user may land here
+  if (!tokenReq.ok) return new Response("Failed to get token from Microsoft"); // TODO: Proper error UI as the user may land here
 
   const tokenData = tokenEndpointResponse.safeParse(await tokenReq.json());
   if (!tokenData.success)
-    return new Response(`Failed to parse token response from Microsoft`); // TODO: Proper error UI as the user may land here
+    return new Response("Failed to parse token response from Microsoft"); // TODO: Proper error UI as the user may land here
 
   // > returns a 200 OK response code and a collection of one organization object in the response body.
   const tenantReq = await fetch(
-    `https://graph.microsoft.com/v1.0/organization?$select=id`,
-    { headers: { Authorization: `Bearer ${tokenData.data.access_token}` } }
+    "https://graph.microsoft.com/v1.0/organization?$select=id",
+    { headers: { Authorization: `Bearer ${tokenData.data.access_token}` } },
   );
   if (!tenantReq.ok)
-    return new Response(`Failed to get tenant ID from Microsoft`); // TODO: Proper error UI as the user may land here
+    return new Response("Failed to get tenant ID from Microsoft"); // TODO: Proper error UI as the user may land here
   const tenantData = organizationResponse.safeParse(await tenantReq.json());
   if (!tenantData.success)
-    return new Response(`Failed to parse tenant response from Microsoft`); // TODO: Proper error UI as the user may land here
+    return new Response("Failed to parse tenant response from Microsoft"); // TODO: Proper error UI as the user may land here
   const tenant = tenantData.data.value[0]!; // We valid the length in the Zod schema
 
   const entraTenantId = tenant.id;
@@ -115,7 +115,7 @@ export const msRouter = new Hono<HonoEnv>().get("/link", async (c) => {
         lifecycleNotificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph/lifecycle`,
         resource: "/users",
         expirationDateTime: new Date(
-          new Date().getTime() + 1000 * 60 * 60 * 24 * 25 // 25 days
+          new Date().getTime() + 1000 * 60 * 60 * 24 * 25, // 25 days
         ).toISOString(),
         clientState: env.INTERNAL_SECRET,
       });

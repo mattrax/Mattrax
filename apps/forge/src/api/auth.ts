@@ -1,7 +1,7 @@
-import { Lucia } from "lucia";
 import { DrizzleMySQLAdapter } from "@lucia-auth/adapter-drizzle";
+import { Lucia } from "lucia";
 
-import { accounts, sessions, db } from "~/db";
+import { accounts, db, sessions } from "~/db";
 import { env } from "~/env";
 
 const adapter = new DrizzleMySQLAdapter(db, sessions, accounts);

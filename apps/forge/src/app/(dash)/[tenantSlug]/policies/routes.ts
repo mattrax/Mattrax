@@ -1,8 +1,8 @@
 import { RouteDefinition } from "@solidjs/router";
 import { lazy } from "solid-js";
 
-import policyRoutes from "./[policyId]/routes";
 import { trpc } from "~/lib";
+import policyRoutes from "./[policyId]/routes";
 
 export default [
   {

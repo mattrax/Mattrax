@@ -1,26 +1,26 @@
+import { createContextProvider } from "@solid-primitives/context";
 import { Navigate, useNavigate } from "@solidjs/router";
 import {
-  createMemo,
   ErrorBoundary,
   ParentProps,
   Show,
-  startTransition,
   Suspense,
+  createMemo,
+  startTransition,
 } from "solid-js";
-import { createContextProvider } from "@solid-primitives/context";
-import { RouterOutput } from "~/api/trpc";
 import { z } from "zod";
+import { RouterOutput } from "~/api/trpc";
 
+import { Button } from "~/components/ui";
 import { SuspenseError } from "~/lib";
+import { useZodParams } from "~/lib/useZodParams";
 import { useAuthContext } from "../(dash)";
 import TopNav from "./[tenantSlug]/TopNav";
-import { useZodParams } from "~/lib/useZodParams";
-import { Button } from "~/components/ui";
 
 export const [TenantContextProvider, useTenantContext] = createContextProvider(
   (props: { activeTenant: RouterOutput["auth"]["me"]["tenants"][number] }) =>
     props,
-  null!
+  null!,
 );
 
 export default function Layout(props: ParentProps) {
@@ -31,7 +31,7 @@ export default function Layout(props: ParentProps) {
   const navigate = useNavigate();
 
   const activeTenant = createMemo(() =>
-    auth.me.tenants.find((t) => t.slug === params.tenantSlug)
+    auth.me.tenants.find((t) => t.slug === params.tenantSlug),
   );
 
   function setTenantSlug(slug: string) {

@@ -1,14 +1,11 @@
-import { z } from "zod";
-import { toast } from "solid-sonner";
-import { Navigate } from "@solidjs/router";
-import { ParentProps, Show, createSignal } from "solid-js";
-import clsx from "clsx";
 import { As } from "@kobalte/core";
+import { Navigate } from "@solidjs/router";
+import clsx from "clsx";
+import { ParentProps, Show, createSignal } from "solid-js";
+import { toast } from "solid-sonner";
+import { z } from "zod";
 
-import { trpc } from "~/lib";
-import { useZodParams } from "~/lib/useZodParams";
-import { useTenantContext } from "../../[tenantSlug]";
-import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
+import { Form, InputField, createZodForm } from "~/components/forms";
 import {
   Button,
   DialogContent,
@@ -19,7 +16,10 @@ import {
   DialogTrigger,
   buttonVariants,
 } from "~/components/ui";
-import { Form, InputField, createZodForm } from "~/components/forms";
+import { trpc } from "~/lib";
+import { useZodParams } from "~/lib/useZodParams";
+import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
+import { useTenantContext } from "../../[tenantSlug]";
 
 function UserNotFound() {
   toast.error("User not found");
@@ -66,9 +66,10 @@ export default function Page() {
                         userAuthProviderUrl(
                           user().provider.variant,
                           user().provider.remoteId,
-                          resourceId()
+                          resourceId(),
                         )!
                       }
+                      rel="noreferrer"
                     >
                       {AUTH_PROVIDER_DISPLAY[user().provider.variant]}
                       <IconPrimeExternalLink class="inline ml-1" />

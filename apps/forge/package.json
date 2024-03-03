@@ -9,7 +9,8 @@
     "start": "vinxi start",
     "stats": "pnpm build && open stats.html",
     "vbuild": "NITRO_PRESET=vercel_edge vinxi build",
-    "cbuild": "NITRO_PRESET=cloudflare_pages vinxi build"
+    "cbuild": "NITRO_PRESET=cloudflare_pages vinxi build",
+    "lint": "biome lint src"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.1.11",
@@ -73,6 +74,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@biomejs/biome": "1.5.3",
     "@iconify/json": "^2.2.182",
     "@microsoft/microsoft-graph-types": "^2.40.0",
     "@tailwindcss/forms": "^0.5.7",

@@ -1,9 +1,9 @@
 import { RouteDefinition } from "@solidjs/router";
 import { lazy } from "solid-js";
 
+import { trpc } from "~/lib";
 import dashboardLayout from "./(dash)";
 import dashboardRoutes from "./(dash)/routes";
-import { trpc } from "~/lib";
 
 export default [
   {

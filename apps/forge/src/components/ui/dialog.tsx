@@ -1,10 +1,10 @@
-import type { Component, ComponentProps, JSX, ParentProps } from "solid-js";
-import { splitProps } from "solid-js";
 import { Dialog as DialogPrimitive } from "@kobalte/core";
 import { TbX } from "solid-icons/tb";
+import type { Component, ComponentProps, JSX, ParentProps } from "solid-js";
+import { splitProps } from "solid-js";
 
-import { Controller, ControllerProvider, createController } from "./controller";
 import { cn } from "~/lib/utils";
+import { Controller, ControllerProvider, createController } from "./controller";
 
 // An easy wrapper on the dialog primitives
 const Dialog: Component<
@@ -48,7 +48,7 @@ const DialogRoot: Component<
 };
 
 const DialogTrigger: Component<DialogPrimitive.DialogTriggerProps> = (
-  props
+  props,
 ) => {
   const [, rest] = splitProps(props, ["children"]);
   return (
@@ -70,14 +70,14 @@ const DialogPortal: Component<DialogPrimitive.DialogPortalProps> = (props) => {
 };
 
 const DialogOverlay: Component<DialogPrimitive.DialogOverlayProps> = (
-  props
+  props,
 ) => {
   const [, rest] = splitProps(props, ["class"]);
   return (
     <DialogPrimitive.Overlay
       class={cn(
         "bg-background/60 data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 fixed inset-0 z-50 backdrop-blur-[2px]",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -85,7 +85,7 @@ const DialogOverlay: Component<DialogPrimitive.DialogOverlayProps> = (
 };
 
 const DialogContent: Component<DialogPrimitive.DialogContentProps> = (
-  props
+  props,
 ) => {
   const [, rest] = splitProps(props, ["class", "children"]);
   return (
@@ -94,7 +94,7 @@ const DialogContent: Component<DialogPrimitive.DialogContentProps> = (
       <DialogPrimitive.Content
         class={cn(
           "bg-background data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95 data-[closed]:slide-out-to-left-1/2 data-[closed]:slide-out-to-top-[48%] data-[expanded]:slide-in-from-left-1/2 data-[expanded]:slide-in-from-top-[48%] fixed left-[50%] top-[50%] z-50 grid translate-x-[-50%] translate-y-[-50%] gap-4 border p-6 shadow-lg duration-200 sm:rounded-lg",
-          props.class
+          props.class,
         )}
         {...rest}
       >
@@ -114,7 +114,7 @@ const DialogHeader: Component<ComponentProps<"div">> = (props) => {
     <div
       class={cn(
         "flex flex-col space-y-1.5 text-center sm:text-left",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -127,7 +127,7 @@ const DialogFooter: Component<ComponentProps<"div">> = (props) => {
     <div
       class={cn(
         "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -140,7 +140,7 @@ const DialogTitle: Component<DialogPrimitive.DialogTitleProps> = (props) => {
     <DialogPrimitive.Title
       class={cn(
         "text-lg font-semibold leading-none tracking-tight",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -148,7 +148,7 @@ const DialogTitle: Component<DialogPrimitive.DialogTitleProps> = (props) => {
 };
 
 const DialogDescription: Component<DialogPrimitive.DialogDescriptionProps> = (
-  props
+  props,
 ) => {
   const [, rest] = splitProps(props, ["class"]);
   return (

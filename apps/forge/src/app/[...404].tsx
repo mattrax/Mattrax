@@ -25,6 +25,7 @@ function OscarTriedToDesignAMattraxLogoButFailedPrettyHard(props: {
       xmlns="http://www.w3.org/2000/svg"
       class={props.class}
     >
+      <title>Sad Face SVG</title>
       <rect
         width="500"
         height="500"

@@ -1,7 +1,7 @@
-import { Accessor, ParentProps, Show, Suspense, createSignal } from "solid-js";
-import { z } from "zod";
 import { As } from "@kobalte/core";
 import { createColumnHelper } from "@tanstack/solid-table";
+import { Accessor, ParentProps, Show, Suspense, createSignal } from "solid-js";
+import { z } from "zod";
 
 import { Button, Checkbox, Tabs, TabsList, TabsTrigger } from "~/components/ui";
 import { trpc } from "~/lib";
@@ -95,6 +95,13 @@ function createMembersTable(groupId: Accessor<string>) {
 
 import { useQueryClient } from "@tanstack/solid-query";
 
+import { ConfirmDialog } from "~/components/ConfirmDialog";
+import {
+  StandardTable,
+  createStandardTable,
+  selectCheckboxColumn,
+} from "~/components/StandardTable";
+import { Badge } from "~/components/ui/badge";
 import {
   Sheet,
   SheetContent,
@@ -103,14 +110,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "~/components/ui/sheet";
-import { Badge } from "~/components/ui/badge";
-import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { useTenantContext } from "../../[tenantSlug]";
-import {
-  StandardTable,
-  createStandardTable,
-  selectCheckboxColumn,
-} from "~/components/StandardTable";
 
 const AddMemberTableOptions = {
   all: "All",
@@ -124,7 +124,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
   const tenant = useTenantContext();
   const possibleMembers = trpc.group.possibleMembers.useQuery(
     () => ({ id: props.groupId, tenantSlug: tenant.activeTenant.slug }),
-    () => ({ enabled: open() })
+    () => ({ enabled: open() }),
   );
 
   const table = createStandardTable({
@@ -205,7 +205,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
                     {Object.entries(AddMemberTableOptions).map(
                       ([value, name]) => (
                         <TabsTrigger value={value}>{name}</TabsTrigger>
-                      )
+                      ),
                     )}
                   </TabsList>
                 </Tabs>

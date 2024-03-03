@@ -1,4 +1,4 @@
-import { type JSX, For, ParentProps } from "solid-js";
+import { For, type JSX, ParentProps } from "solid-js";
 
 import { A } from "@solidjs/router";
 
@@ -17,7 +17,7 @@ export default function Layout(props: ParentProps) {
       </h1>
       <div class="flex flex-row flex-1 w-full relative max-w-6xl mx-auto">
         <nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pt-4 pl-4">
-          <ul role="list" class="space-y-1">
+          <ul class="space-y-1">
             <For each={navigation}>
               {(item) => (
                 <SidebarItem href={item.href}>{item.name}</SidebarItem>
@@ -36,7 +36,7 @@ const SidebarItem = (
     href: string;
     disabled?: boolean;
     icon?: (props: JSX.SvgSVGAttributes<SVGSVGElement>) => JSX.Element;
-  }
+  },
 ) => (
   <A
     end

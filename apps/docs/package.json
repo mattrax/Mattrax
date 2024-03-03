@@ -5,8 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start -p 3005",
-    "lint": "next lint"
+    "start": "next start -p 3005"
   },
   "browserslist": "defaults, not ie <= 11",
   "dependencies": {

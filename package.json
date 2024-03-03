@@ -10,7 +10,8 @@
     "db:push": "drizzle-kit push:mysql && bun run ./apps/forge/src/db/rust.ts",
     "db:studio": "drizzle-kit studio",
     "db:gen": "bun run ./apps/forge/src/db/rust.ts",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "lint": "pnpm -r lint"
   },
   "engines": {
     "node": ">=18"

@@ -1,13 +1,13 @@
-import { and, eq } from "drizzle-orm";
-import { TRPCError } from "@trpc/server";
-import { z } from "zod";
 import * as MSGraph from "@microsoft/microsoft-graph-types";
+import { TRPCError } from "@trpc/server";
+import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 
-import { db, domains, identityProviders, users } from "~/db";
-import { createTRPCRouter, tenantProcedure } from "../../helpers";
 import { msGraphClient } from "~/api/microsoft";
-import { env } from "~/env";
 import { getEmailDomain } from "~/api/utils";
+import { db, domains, identityProviders, users } from "~/db";
+import { env } from "~/env";
+import { createTRPCRouter, tenantProcedure } from "../../helpers";
 
 export const identityProviderRouter = createTRPCRouter({
   get: tenantProcedure.query(async ({ ctx }) => {
@@ -55,7 +55,7 @@ export const identityProviderRouter = createTRPCRouter({
           return msGraphClient(provider.remoteId)
             .api(`/subscriptions/${sub.id}`)
             .delete();
-        })
+        }),
       );
 
       for (const result of results) {
@@ -98,7 +98,7 @@ export const identityProviderRouter = createTRPCRouter({
     .input(z.object({ domain: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const enterpriseEnrollmentAvailable = isEnterpriseEnrollmentAvailable(
-        input.domain
+        input.domain,
       );
 
       const provider = await ensureIdentityProvider(ctx.tenant.pk);
@@ -127,7 +127,7 @@ export const identityProviderRouter = createTRPCRouter({
         ctx.tenant.pk,
         provider.pk,
         provider.remoteId,
-        [input.domain]
+        [input.domain],
       );
 
       return true;
@@ -145,14 +145,14 @@ export const identityProviderRouter = createTRPCRouter({
         .update(domains)
         .set({
           enterpriseEnrollmentAvailable: await isEnterpriseEnrollmentAvailable(
-            domain.domain
+            domain.domain,
           ),
         })
         .where(
           and(
             eq(domains.domain, domain.domain),
-            eq(domains.tenantPk, ctx.tenant.pk)
-          )
+            eq(domains.tenantPk, ctx.tenant.pk),
+          ),
         );
     }
   }),
@@ -161,7 +161,7 @@ export const identityProviderRouter = createTRPCRouter({
     .input(
       z.object({
         domain: z.string(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       const provider = await ensureIdentityProvider(ctx.tenant.pk);
@@ -171,8 +171,8 @@ export const identityProviderRouter = createTRPCRouter({
         .where(
           and(
             eq(domains.identityProviderPk, provider.pk),
-            eq(domains.domain, input.domain)
-          )
+            eq(domains.domain, input.domain),
+          ),
         );
 
       return true;
@@ -185,7 +185,7 @@ export const identityProviderRouter = createTRPCRouter({
       .where(eq(identityProviders.tenantPk, ctx.tenant.pk));
     if (!tenantProvider)
       throw new Error(
-        `Tenant '${ctx.tenant.pk}' not found or has no providers`
+        `Tenant '${ctx.tenant.pk}' not found or has no providers`,
       ); // TODO: make an error the frontend can handle
 
     const domainList = await db.query.domains.findMany({
@@ -196,7 +196,7 @@ export const identityProviderRouter = createTRPCRouter({
       ctx.tenant.pk,
       tenantProvider.pk,
       tenantProvider.remoteId,
-      domainList.map((d) => d.domain)
+      domainList.map((d) => d.domain),
     );
   }),
 });
@@ -218,7 +218,7 @@ async function ensureIdentityProvider(tenantPk: number) {
 }
 
 export function createEntraIDUserProvider(
-  resourceId: string
+  resourceId: string,
 ): IdentityProvider {
   const client = msGraphClient(resourceId);
 
@@ -250,7 +250,7 @@ const CF_DNS_RESPONSE_SCHEMA = z.object({
       type: z.number(),
       TTL: z.number(),
       data: z.string(),
-    })
+    }),
   ),
 });
 
@@ -273,7 +273,7 @@ export async function syncEntraUsersWithDomains(
   tenantPk: number,
   identityProviderPk: number,
   entraTenantId: string,
-  domains: string[]
+  domains: string[],
 ) {
   const graphClient = msGraphClient(entraTenantId);
 
@@ -294,7 +294,7 @@ export async function syncEntraUsersWithDomains(
     await Promise.all(
       response.value
         .filter((v) => domains.includes(getEmailDomain(v.userPrincipalName!)))
-        .map((u) => upsertEntraIdUser(u, tenantPk, identityProviderPk))
+        .map((u) => upsertEntraIdUser(u, tenantPk, identityProviderPk)),
     );
 
     if (response["@odata.nextLink"]) {
@@ -308,7 +308,7 @@ export async function syncEntraUsersWithDomains(
 export function upsertEntraIdUser(
   u: Pick<MSGraph.User, "displayName" | "userPrincipalName" | "id">,
   tenantPk: number,
-  identityProviderPk: number
+  identityProviderPk: number,
 ) {
   return db
     .insert(users)

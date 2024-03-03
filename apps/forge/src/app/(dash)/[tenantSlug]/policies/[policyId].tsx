@@ -2,8 +2,8 @@ import { A } from "@solidjs/router";
 import { type JSX, ParentProps, Show, Suspense } from "solid-js";
 import { z } from "zod";
 
-import { trpc } from "~/lib";
 import { useTenantContext } from "~/app/(dash)/[tenantSlug]";
+import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 
 // TODO: If the policy or version is not found redirect back to `/policies`
@@ -118,9 +118,9 @@ export default function Page(props: ParentProps) {
 
               <div class="flex h-full mb-4">
                 <nav class="flex flex-col min-w-48">
-                  <ul role="list" class="flex flex-1 flex-col gap-y-7">
+                  <ul class="flex flex-1 flex-col gap-y-7">
                     <li>
-                      <ul role="list" class="space-y-1">
+                      <ul class="space-y-1">
                         <SidebarItem href="" icon={IconPhGearDuotone}>
                           General
                         </SidebarItem>
@@ -151,7 +151,7 @@ const SidebarItem = (
     href: string;
     disabled?: boolean;
     icon?: (props: JSX.SvgSVGAttributes<SVGSVGElement>) => JSX.Element;
-  }
+  },
 ) => (
   <A
     end

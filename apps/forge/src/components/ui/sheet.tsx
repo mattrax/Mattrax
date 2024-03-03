@@ -2,7 +2,7 @@ import type { Component, ComponentProps } from "solid-js";
 import { splitProps } from "solid-js";
 
 import { Dialog as SheetPrimitive } from "@kobalte/core";
-import { cva, type VariantProps } from "class-variance-authority";
+import { type VariantProps, cva } from "class-variance-authority";
 import { TbX } from "solid-icons/tb";
 
 import { cn } from "~/lib/utils";
@@ -49,7 +49,7 @@ const SheetOverlay: Component<
       class={cn(
         "ui-closed:animate-out ui-closed:fade-out ui-expanded:animate-in ui-expanded:fade-in fixed inset-0 z-50 transition-all duration-100",
         !props.transparent && "bg-background/80 backdrop-blur-sm",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -143,7 +143,7 @@ const sheetVariants = cva(
       position: "right",
       size: "default",
     },
-  }
+  },
 );
 
 export interface DialogContentProps
@@ -166,7 +166,7 @@ const SheetContent: Component<
       <SheetPrimitive.Content
         class={cn(
           sheetVariants({ position: props.position, size: props.size }),
-          props.class
+          props.class,
         )}
         {...rest}
       >
@@ -186,7 +186,7 @@ const SheetHeader: Component<ComponentProps<"div">> = (props) => {
     <div
       class={cn(
         "flex flex-col space-y-2 text-center sm:text-left",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -199,7 +199,7 @@ const SheetFooter: Component<ComponentProps<"div">> = (props) => {
     <div
       class={cn(
         "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -217,7 +217,7 @@ const SheetTitle: Component<SheetPrimitive.DialogTitleProps> = (props) => {
 };
 
 const SheetDescription: Component<SheetPrimitive.DialogDescriptionProps> = (
-  props
+  props,
 ) => {
   const [, rest] = splitProps(props, ["class"]);
   return (

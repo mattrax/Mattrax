@@ -18,7 +18,7 @@ const Progress: Component<ProgressPrimitive.ProgressRootProps> = (props) => {
 };
 
 const ProgressLabel: Component<ProgressPrimitive.ProgressLabelProps> = (
-  props
+  props,
 ) => {
   return <ProgressPrimitive.Label as={Label} {...props} />;
 };

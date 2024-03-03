@@ -3,8 +3,8 @@ import { mergeProps, splitProps } from "solid-js";
 
 import { TbChevronLeft, TbChevronRight, TbDots } from "solid-icons/tb";
 
+import { type ButtonProps, buttonVariants } from "~/components/ui/button";
 import { cn } from "~/lib/utils";
-import { buttonVariants, type ButtonProps } from "~/components/ui/button";
 
 const Pagination: Component<ComponentProps<"nav">> = (props) => {
   const [, rest] = splitProps(props, ["class"]);
@@ -35,9 +35,9 @@ type PaginationLinkProps = {
 } & Pick<ButtonProps, "size"> &
   ComponentProps<"a">;
 
-const PaginationLink: Component<PaginationLinkProps> = (props) => {
-  props = mergeProps({ size: "icon" } as PaginationLinkProps, props);
+const PaginationLink = (props: PaginationLinkProps) => {
   const [, rest] = splitProps(props, ["class", "isActive", "size"]);
+
   return (
     <PaginationItem>
       <a
@@ -45,9 +45,9 @@ const PaginationLink: Component<PaginationLinkProps> = (props) => {
         class={cn(
           buttonVariants({
             variant: props.isActive ? "outline" : "ghost",
-            size: props.size,
+            size: props.size ?? "icon",
           }),
-          props.class
+          props.class,
         )}
         {...rest}
       />

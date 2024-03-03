@@ -1,9 +1,11 @@
-import { and, eq } from "drizzle-orm";
-import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { generateId } from "lucia";
+import { and, eq } from "drizzle-orm";
 import { appendResponseHeader, setCookie } from "h3";
+import { generateId } from "lucia";
+import { z } from "zod";
 
+import { lucia } from "~/api/auth";
+import { sendEmail } from "~/api/emails";
 import {
   accounts,
   db,
@@ -11,14 +13,12 @@ import {
   tenantAccounts,
   tenants,
 } from "~/db";
+import { env } from "~/env";
 import {
   createTRPCRouter,
   publicProcedure,
   tenantProcedure,
 } from "../../helpers";
-import { sendEmail } from "~/api/emails";
-import { env } from "~/env";
-import { lucia } from "~/api/auth";
 
 export const adminsRouter = createTRPCRouter({
   list: tenantProcedure.query(async ({ ctx }) => {
@@ -134,7 +134,7 @@ export const adminsRouter = createTRPCRouter({
       appendResponseHeader(
         ctx.event,
         "Set-Cookie",
-        lucia.createSessionCookie(session.id).serialize()
+        lucia.createSessionCookie(session.id).serialize(),
       );
       setCookie(ctx.event, "isLoggedIn", "true", {
         httpOnly: false,
@@ -174,8 +174,8 @@ export const adminsRouter = createTRPCRouter({
         .where(
           and(
             eq(tenantAccounts.accountPk, account.pk),
-            eq(tenantAccounts.tenantPk, ctx.tenant.pk)
-          )
+            eq(tenantAccounts.tenantPk, ctx.tenant.pk),
+          ),
         );
     }),
   invites: tenantProcedure.query(async ({ ctx }) => {
@@ -191,8 +191,8 @@ export const adminsRouter = createTRPCRouter({
         .where(
           and(
             eq(tenantAccountInvites.tenantPk, ctx.tenant.pk),
-            eq(tenantAccountInvites.email, input.email)
-          )
+            eq(tenantAccountInvites.email, input.email),
+          ),
         );
     }),
 });

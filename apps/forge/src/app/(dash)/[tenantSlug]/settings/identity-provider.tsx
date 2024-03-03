@@ -1,6 +1,6 @@
-import { For, Match, Show, Suspense, Switch, createMemo } from "solid-js";
-import clsx from "clsx";
 import { As } from "@kobalte/core";
+import clsx from "clsx";
+import { For, Match, Show, Suspense, Switch, createMemo } from "solid-js";
 
 import {
   Badge,
@@ -14,8 +14,8 @@ import {
   DialogTrigger,
 } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useTenantContext } from "../../[tenantSlug]";
 import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
+import { useTenantContext } from "../../[tenantSlug]";
 
 export default function Page() {
   return (
@@ -39,7 +39,7 @@ function IdentityProviderCard() {
       const popupWindow = window.open(
         url,
         "entraOAuth",
-        "toolbar=no, menubar=no, width=600, height=700, top=100, left=100"
+        "toolbar=no, menubar=no, width=600, height=700, top=100, left=100",
       );
 
       window.addEventListener("message", (e) => {
@@ -64,7 +64,7 @@ function IdentityProviderCard() {
       onSuccess: () => {
         provider.refetch();
       },
-    })
+    }),
   );
 
   return (
@@ -90,9 +90,10 @@ function IdentityProviderCard() {
                   class="font-semibold hover:underline flex flex-row items-center gap-1"
                   href={authProviderUrl(
                     provider().variant,
-                    provider().remoteId
+                    provider().remoteId,
                   )}
                   target="_blank"
+                  rel="noreferrer"
                 >
                   {provider().name ?? AUTH_PROVIDER_DISPLAY[provider().variant]}
                   <IconPrimeExternalLink class="inline" />
@@ -177,7 +178,7 @@ function Domains() {
             const domains = trpc.tenant.identityProvider.domains.useQuery(
               () => ({
                 tenantSlug: tenant.activeTenant.slug,
-              })
+              }),
             );
 
             const allDomains = createMemo(() => {
@@ -191,10 +192,10 @@ function Domains() {
 
               arr.sort((a, b) => {
                 const aData = domains.data?.connectedDomains.find(
-                  (d) => d.domain === a
+                  (d) => d.domain === a,
                 );
                 const bData = domains.data?.connectedDomains.find(
-                  (d) => d.domain === b
+                  (d) => d.domain === b,
                 );
 
                 if (aData === bData) return 0;
@@ -212,8 +213,8 @@ function Domains() {
                   {(domain) => {
                     const connectionData = createMemo(() =>
                       domains.data?.connectedDomains.find(
-                        (d) => d.domain === domain
-                      )
+                        (d) => d.domain === domain,
+                      ),
                     );
 
                     const state = createMemo(() => {
@@ -277,7 +278,7 @@ function Domains() {
                                           "w-5 h-5 rounded-full flex items-center justify-center text-white",
                                           enterpriseEnrollment()
                                             ? "bg-green-600"
-                                            : "bg-red-600"
+                                            : "bg-red-600",
                                         )}
                                       >
                                         {enterpriseEnrollment() ? (
@@ -338,7 +339,9 @@ function Domains() {
                             {(_) => {
                               const removeDomain =
                                 trpc.tenant.identityProvider.removeDomain.useMutation(
-                                  () => ({ onSuccess: () => domains.refetch() })
+                                  () => ({
+                                    onSuccess: () => domains.refetch(),
+                                  }),
                                 );
 
                               return (
@@ -360,7 +363,9 @@ function Domains() {
                             {(_) => {
                               const enableDomain =
                                 trpc.tenant.identityProvider.connectDomain.useMutation(
-                                  () => ({ onSuccess: () => domains.refetch() })
+                                  () => ({
+                                    onSuccess: () => domains.refetch(),
+                                  }),
                                 );
 
                               return (

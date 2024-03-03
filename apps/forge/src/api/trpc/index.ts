@@ -1,15 +1,15 @@
 import { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
+import { createTRPCRouter } from "./helpers";
 import { applicationRouter } from "./routers/app";
 import { authRouter } from "./routers/auth";
 import { deviceRouter } from "./routers/device";
 import { groupRouter } from "./routers/group";
 import { internalRouter } from "./routers/internal";
+import { metaRouter } from "./routers/meta";
 import { policyRouter } from "./routers/policy";
 import { scriptRouter } from "./routers/script";
 import { tenantRouter } from "./routers/tenant/index";
 import { userRouter } from "./routers/user";
-import { createTRPCRouter } from "./helpers";
-import { metaRouter } from "./routers/meta";
 
 export const appRouter = createTRPCRouter({
   app: applicationRouter,

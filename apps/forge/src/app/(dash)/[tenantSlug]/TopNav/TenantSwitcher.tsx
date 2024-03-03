@@ -1,13 +1,13 @@
-import { For, Suspense } from "solid-js";
 import { As, DropdownMenu as KDropdownMenu } from "@kobalte/core";
+import { For, Suspense } from "solid-js";
 
 import {
+  DialogTrigger,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
   DropdownMenuSeparator,
-  DialogTrigger,
+  DropdownMenuTrigger,
   createController,
 } from "~/components/ui";
 import { CreateTenantDialog } from "./CreateTenantDialog";
@@ -39,7 +39,7 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
             </KDropdownMenu.Icon>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <Suspense fallback={<></>}>
+            <Suspense>
               <For each={props.tenants}>
                 {(tenant) => (
                   <DropdownMenuItem

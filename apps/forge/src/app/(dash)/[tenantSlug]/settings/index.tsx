@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+import { useAuthContext } from "~/app/(dash)";
+import { Form, createZodForm } from "~/components/forms";
+import { InputField } from "~/components/forms/InputField";
 import {
   Button,
   Card,
@@ -11,11 +14,8 @@ import {
   Switch,
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
-import { DeleteTenantButton } from "./DeleteTenantButton";
-import { Form, createZodForm } from "~/components/forms";
-import { InputField } from "~/components/forms/InputField";
-import { useAuthContext } from "~/app/(dash)";
 import { useTenantContext } from "../../[tenantSlug]";
+import { DeleteTenantButton } from "./DeleteTenantButton";
 
 export default function Page() {
   return (
@@ -79,7 +79,7 @@ function ConfigureEnrollmentCard() {
     onSuccess: () => enrollmentInfo.refetch(),
   }));
   const enrollmentEnabled = untrackScopeFromSuspense(
-    () => enrollmentInfo.data?.enrollmentEnabled
+    () => enrollmentInfo.data?.enrollmentEnabled,
   );
 
   return (

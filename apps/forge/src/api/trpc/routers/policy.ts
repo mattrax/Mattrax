@@ -1,7 +1,9 @@
-import { z } from "zod";
 import { and, count, eq, sql } from "drizzle-orm";
+import { z } from "zod";
 
-import { createTRPCRouter, tenantProcedure } from "../helpers";
+import { createId } from "@paralleldrive/cuid2";
+import { TRPCError } from "@trpc/server";
+import { promiseAllObject } from "~/api/utils";
 import {
   accounts,
   db,
@@ -13,15 +15,13 @@ import {
   policyVersions,
   users,
 } from "~/db";
-import { createId } from "@paralleldrive/cuid2";
-import { promiseAllObject } from "~/api/utils";
-import { TRPCError } from "@trpc/server";
+import { createTRPCRouter, tenantProcedure } from "../helpers";
 
 function getPolicy(args: { policyId: string; tenantPk: number }) {
   return db.query.policies.findFirst({
     where: and(
       eq(policies.id, args.policyId),
-      eq(policies.tenantPk, args.tenantPk)
+      eq(policies.tenantPk, args.tenantPk),
     ),
   });
 }
@@ -58,8 +58,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk)
-          )
+            eq(policies.tenantPk, ctx.tenant.pk),
+          ),
         );
 
       if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
@@ -72,7 +72,7 @@ export const policyRouter = createTRPCRouter({
       z.object({
         policyId: z.string(),
         name: z.string(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       await db
@@ -83,8 +83,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk)
-          )
+            eq(policies.tenantPk, ctx.tenant.pk),
+          ),
         );
 
       return {};
@@ -109,8 +109,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk)
-          )
+            eq(policies.tenantPk, ctx.tenant.pk),
+          ),
         );
 
       return versions;
@@ -122,7 +122,7 @@ export const policyRouter = createTRPCRouter({
         policyId: z.string(),
         versionId: z.string(),
         data: z.any(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       // TODO: Check no-one has edited this policy since we read it.
@@ -137,8 +137,8 @@ export const policyRouter = createTRPCRouter({
             eq(policyVersions.id, input.versionId),
             // TODO: tenant id  // eq(policyVersions.policyPk, input.policyId) // TODO
             // You can only update non-deployed versions
-            eq(policyVersions.status, "open")
-          )
+            eq(policyVersions.status, "open"),
+          ),
         );
 
       return {};
@@ -159,8 +159,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk)
-          )
+            eq(policies.tenantPk, ctx.tenant.pk),
+          ),
         );
       if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
@@ -175,8 +175,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policyVersions.policyPk, policy.pk),
-            eq(policyVersions.status, "open")
-          )
+            eq(policyVersions.status, "open"),
+          ),
         );
       const versionId = parseInt(status.insertId);
 
@@ -186,8 +186,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk)
-          )
+            eq(policies.tenantPk, ctx.tenant.pk),
+          ),
         );
 
       if (status.rowsAffected !== 0) {
@@ -210,8 +210,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk)
-          )
+            eq(policies.tenantPk, ctx.tenant.pk),
+          ),
         );
       if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
@@ -224,8 +224,8 @@ export const policyRouter = createTRPCRouter({
           and(
             eq(policyVersions.id, input.policyId),
             // eq(policyVersions.tenantPk, ctx.tenant.pk),
-            eq(policyVersions.status, "open")
-          )
+            eq(policyVersions.status, "open"),
+          ),
         );
       const numOpenPolicies = result?.count;
 
@@ -241,9 +241,9 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             // @ts-expect-error
-            eq(policyVersions.pk, policy.activeVersion) // TODO: This should probs not be this. It should be the latest version???
+            eq(policyVersions.pk, policy.activeVersion), // TODO: This should probs not be this. It should be the latest version???
             // eq(policyVersions.policyPk, policy.id), // TODO
-          )
+          ),
         );
 
       const newVersionId = createId();
@@ -297,26 +297,26 @@ export const policyRouter = createTRPCRouter({
           devices,
           and(
             eq(devices.pk, policyAssignables.groupablePk),
-            eq(policyAssignables.groupableVariant, "device")
-          )
+            eq(policyAssignables.groupableVariant, "device"),
+          ),
         )
         .leftJoin(
           users,
           and(
             eq(users.pk, policyAssignables.groupablePk),
-            eq(policyAssignables.groupableVariant, "user")
-          )
+            eq(policyAssignables.groupableVariant, "user"),
+          ),
         )
         .leftJoin(
           groups,
           and(
             eq(groups.pk, policyAssignables.groupablePk),
-            eq(policyAssignables.groupableVariant, "group")
-          )
+            eq(policyAssignables.groupableVariant, "group"),
+          ),
         )
         .groupBy(
           policyAssignables.groupableVariant,
-          policyAssignables.groupablePk
+          policyAssignables.groupablePk,
         );
     }),
 
@@ -342,7 +342,7 @@ export const policyRouter = createTRPCRouter({
             columns: { name: true, id: true, pk: true },
           })
           .then((r) => r || []),
-      })
+      }),
     ),
 
   addMembers: tenantProcedure
@@ -353,9 +353,9 @@ export const policyRouter = createTRPCRouter({
           z.object({
             pk: z.number(),
             variant: z.enum(policyAssignableVariants),
-          })
+          }),
         ),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       const policy = await getPolicy({
@@ -370,7 +370,7 @@ export const policyRouter = createTRPCRouter({
           policyPk: policy.pk,
           groupablePk: member.pk,
           groupableVariant: member.variant,
-        }))
+        })),
       );
     }),
 
@@ -442,7 +442,7 @@ export const policyRouter = createTRPCRouter({
           .where(eq(policies.pk, policyPk));
 
         return policyId;
-      })
+      }),
     ),
 
   delete: tenantProcedure
@@ -453,8 +453,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk)
-          )
+            eq(policies.tenantPk, ctx.tenant.pk),
+          ),
         );
     }),
 });

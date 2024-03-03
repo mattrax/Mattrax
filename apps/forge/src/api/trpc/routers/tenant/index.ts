@@ -1,12 +1,7 @@
-import { z } from "zod";
-import { count, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
+import { count, eq } from "drizzle-orm";
+import { z } from "zod";
 
-import {
-  authedProcedure,
-  createTRPCRouter,
-  tenantProcedure,
-} from "../../helpers";
 import { promiseAllObject } from "~/api/utils";
 import {
   applications,
@@ -18,8 +13,13 @@ import {
   tenants,
   users,
 } from "~/db";
-import { billingRouter } from "./billing";
+import {
+  authedProcedure,
+  createTRPCRouter,
+  tenantProcedure,
+} from "../../helpers";
 import { adminsRouter } from "./admins";
+import { billingRouter } from "./billing";
 import { identityProviderRouter } from "./identityProvider";
 
 export const tenantRouter = createTRPCRouter({
@@ -57,7 +57,7 @@ export const tenantRouter = createTRPCRouter({
       z.object({
         name: z.string().min(1).max(100).optional(),
         slug: z.string().min(1).max(100).optional(),
-      })
+      }),
     )
     .mutation(async ({ ctx, input }) => {
       if (input.name === undefined) return;
@@ -78,7 +78,7 @@ export const tenantRouter = createTRPCRouter({
       })
       .from(tenants)
       .where(eq(tenants.pk, ctx.tenant.pk))
-      .then((rows) => rows[0])
+      .then((rows) => rows[0]),
   ),
 
   setEnrollmentInfo: tenantProcedure
@@ -89,7 +89,7 @@ export const tenantRouter = createTRPCRouter({
         .set({
           enrollmentEnabled: input.enrollmentEnabled,
         })
-        .where(eq(tenants.pk, ctx.tenant.pk))
+        .where(eq(tenants.pk, ctx.tenant.pk)),
     ),
 
   stats: tenantProcedure.query(({ ctx }) =>
@@ -119,7 +119,7 @@ export const tenantRouter = createTRPCRouter({
         .from(groups)
         .where(eq(groups.tenantPk, ctx.tenant.pk))
         .then((rows) => rows[0]!.count),
-    })
+    }),
   ),
 
   delete: tenantProcedure.mutation(async ({ ctx }) => {

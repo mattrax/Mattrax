@@ -1,6 +1,8 @@
 import { For, Suspense } from "solid-js";
 import { z } from "zod";
 
+import { useAuthContext } from "~/app/(dash)";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import {
   Badge,
@@ -13,8 +15,6 @@ import {
 } from "~/components/ui";
 import { trpc } from "~/lib";
 import { useTenantContext } from "../../[tenantSlug]";
-import { useAuthContext } from "~/app/(dash)";
-import { ConfirmDialog } from "~/components/ConfirmDialog";
 
 export default function Page() {
   const auth = useAuthContext();

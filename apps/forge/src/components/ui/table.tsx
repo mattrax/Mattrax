@@ -43,7 +43,7 @@ const TableRow: Component<ComponentProps<"tr">> = (props) => {
     <tr
       class={cn(
         "hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors",
-        props.class
+        props.class,
       )}
       {...rest}
     />
@@ -56,7 +56,7 @@ const TableHead: Component<ComponentProps<"th">> = (props) => {
     <th
       class={cn(
         "text-muted-foreground h-12 px-4 text-left align-middle font-medium [&:has([role=checkbox])]:pr-0",
-        props.class
+        props.class,
       )}
       {...rest}
     />

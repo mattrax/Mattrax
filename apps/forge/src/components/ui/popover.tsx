@@ -36,7 +36,7 @@ const Popover: Component<
 const PopoverTrigger = PopoverPrimitive.Trigger;
 
 const PopoverContent: Component<PopoverPrimitive.PopoverContentProps> = (
-  props
+  props,
 ) => {
   const [, rest] = splitProps(props, ["class"]);
   return (
@@ -44,7 +44,7 @@ const PopoverContent: Component<PopoverPrimitive.PopoverContentProps> = (
       <PopoverPrimitive.Content
         class={cn(
           "z-50 w-72 origin-[var(--kb-popover-content-transform-origin)] rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-none data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95",
-          props.class
+          props.class,
         )}
         {...rest}
       />

@@ -7,7 +7,6 @@
     "dev": "next dev --port 3005",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
     "email:build": "email build",
     "email:dev": "email dev --port 3002",
     "email:export": "email export"

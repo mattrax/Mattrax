@@ -1,7 +1,7 @@
-import { ErrorBoundary, ParentProps, Show, Suspense, onMount } from "solid-js";
 import { createContextProvider } from "@solid-primitives/context";
-import { parse } from "cookie-es";
 import { useNavigate } from "@solidjs/router";
+import { parse } from "cookie-es";
+import { ErrorBoundary, ParentProps, Show, Suspense, onMount } from "solid-js";
 
 import { RouterOutput } from "~/api/trpc";
 import { trpc } from "~/lib";
@@ -11,7 +11,7 @@ export const [AuthContextProvider, useAuthContext] = createContextProvider(
     meQuery: ReturnType<typeof trpc.auth.me.useQuery>;
     me: RouterOutput["auth"]["me"];
   }) => props,
-  null!
+  null!,
 );
 
 export default function Layout(props: ParentProps) {

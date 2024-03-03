@@ -1,15 +1,15 @@
-import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
-import { z } from "zod";
-import * as MSGraph from "@microsoft/microsoft-graph-types";
 import { zValidator } from "@hono/zod-validator";
+import * as MSGraph from "@microsoft/microsoft-graph-types";
+import { and, eq } from "drizzle-orm";
+import { Hono } from "hono";
+import { z } from "zod";
 
+import { isNotFoundGraphError } from "@mattrax/ms-graph";
 import { msGraphClient } from "~/api/microsoft";
 import { upsertEntraIdUser } from "~/api/trpc/routers/tenant/identityProvider";
+import { getEmailDomain } from "~/api/utils";
 import { db, domains, identityProviders, users } from "~/db";
 import { env } from "~/env";
-import { isNotFoundGraphError } from "@mattrax/ms-graph";
-import { getEmailDomain } from "~/api/utils";
 
 const CHANGE_TYPE = z.enum(["created", "updated", "deleted"]);
 
@@ -33,7 +33,7 @@ const CHANGE_NOTIFICATION = BASE_NOTIFICATION.and(
     changeType: CHANGE_TYPE,
     resource: z.string(),
     resourceData: RESOURCE_DATA,
-  })
+  }),
 );
 
 // https://learn.microsoft.com/en-us/graph/api/resources/changenotificationcollection?view=graph-rest-1.0
@@ -51,7 +51,7 @@ const LIFECYCLE_EVENT = z.enum([
 
 // https://learn.microsoft.com/en-us/graph/change-notifications-lifecycle-events?tabs=http#structure-of-a-lifecycle-notification
 const LIFECYCLE_NOTIFICATION = BASE_NOTIFICATION.and(
-  z.object({ lifecycleEvent: LIFECYCLE_EVENT })
+  z.object({ lifecycleEvent: LIFECYCLE_EVENT }),
 );
 
 const LIFECYCLE_NOTIFICATION_COLLECTION = z.object({
@@ -85,11 +85,11 @@ export const microsoftGraphRouter = new Hono()
       await Promise.all(value.map(handleLifecycleNotification));
 
       return c.text("");
-    }
+    },
   );
 
 async function handleChangeNotification(
-  notification: z.infer<typeof CHANGE_NOTIFICATION>
+  notification: z.infer<typeof CHANGE_NOTIFICATION>,
 ) {
   if (notification.clientState !== env.INTERNAL_SECRET) {
     console.error("Client state mismatch. Not processing!");
@@ -113,14 +113,14 @@ async function handleChangeNotification(
       break;
     default:
       console.error(
-        `Unhandled resource type '${notification.resourceData["@odata.type"]}'`
+        `Unhandled resource type '${notification.resourceData["@odata.type"]}'`,
       );
   }
 }
 
 async function handleUserChangeNotification(
   notification: z.infer<typeof CHANGE_NOTIFICATION>,
-  identityProvider: typeof identityProviders.$inferSelect
+  identityProvider: typeof identityProviders.$inferSelect,
 ) {
   const userId = notification.resourceData.id;
 
@@ -142,7 +142,7 @@ async function handleUserChangeNotification(
         const domain = await db.query.domains.findFirst({
           where: and(
             eq(domains.identityProviderPk, identityProvider.pk),
-            eq(domains.domain, userDomain)
+            eq(domains.domain, userDomain),
           ),
         });
         if (!domain) throw new Error(`Domain ${userDomain} not found`);
@@ -150,7 +150,7 @@ async function handleUserChangeNotification(
         await upsertEntraIdUser(
           user,
           identityProvider.tenantPk,
-          identityProvider.pk
+          identityProvider.pk,
         );
       } catch (e) {
         if (isNotFoundGraphError(e)) {
@@ -175,13 +175,13 @@ function handleUserDeleted(userId: string, providerPk: number) {
     .where(
       and(
         eq(users.providerResourceId, userId),
-        eq(users.providerPk, providerPk)
-      )
+        eq(users.providerPk, providerPk),
+      ),
     );
 }
 
 async function handleLifecycleNotification(
-  notification: z.infer<typeof LIFECYCLE_NOTIFICATION>
+  notification: z.infer<typeof LIFECYCLE_NOTIFICATION>,
 ) {
   switch (notification.lifecycleEvent) {
     case "reauthorizationRequired": {
@@ -189,7 +189,7 @@ async function handleLifecycleNotification(
         .api(`/subscriptions/${notification.subscriptionId}/reauthorize`)
         .patch({
           expirationDateTime: new Date(
-            new Date().getTime() + 60 * 60 * 24 * 25 // 25 days
+            new Date().getTime() + 60 * 60 * 24 * 25, // 25 days
           ),
         });
 

@@ -59,7 +59,7 @@ export default function Page() {
             <h5 class="pt-8 text-2xl font-semibold leading-7 text-center">
               Features
             </h5>
-            <ul role="list" class="flex flex-col space-y-4 pt-4">
+            <ul class="flex flex-col space-y-4 pt-4">
               <li class="flex padding-4 justify-center items-center">
                 <PhLaptop class="w-10 h-10" />
                 <h4 class="pl-2 font-semibold">

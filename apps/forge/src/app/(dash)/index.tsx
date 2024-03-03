@@ -1,12 +1,12 @@
-import { startTransition, Show } from "solid-js";
 import { Navigate, useNavigate } from "@solidjs/router";
+import { Show, startTransition } from "solid-js";
 import { z } from "zod";
 
 import { Form, createZodForm } from "~/components/forms";
-import { useAuthContext } from "../(dash)";
 import { InputField } from "~/components/forms";
 import { Button, Card, CardContent, CardHeader } from "~/components/ui";
 import { trpc } from "~/lib";
+import { useAuthContext } from "../(dash)";
 
 export default function Page() {
   const auth = useAuthContext();
@@ -24,7 +24,7 @@ export default function Page() {
   return (
     <Show when={defaultTenant()} fallback={<CreateTenant />}>
       {(
-        tenant // If we have an active tenant, send the user to it
+        tenant, // If we have an active tenant, send the user to it
       ) => <Navigate href={`/${tenant().slug}`} />}
     </Show>
   );

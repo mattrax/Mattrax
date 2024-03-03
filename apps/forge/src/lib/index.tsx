@@ -1,13 +1,13 @@
-import type { AppRouter } from "~/api";
-import { httpBatchLink, TRPCClientError } from "@trpc/client";
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
 import {
-  createTRPCSolidStart,
   type CreateTRPCSolidStart,
+  createTRPCSolidStart,
 } from "@solid-mediakit/trpc";
-import superjson from "superjson";
+import { TRPCClientError, httpBatchLink } from "@trpc/client";
+import { type ClassValue, clsx } from "clsx";
 import { Accessor, createEffect, createSignal } from "solid-js";
+import superjson from "superjson";
+import { twMerge } from "tailwind-merge";
+import type { AppRouter } from "~/api";
 
 export const trpc: CreateTRPCSolidStart<AppRouter> = createTRPCSolidStart({
   config: () => ({
@@ -39,7 +39,7 @@ export function SuspenseError(props: { name: string }) {
 
 // https://trpc.io/docs/client/vanilla/infer-types#infer-trpcclienterror-types
 export function isTRPCClientError(
-  cause: unknown
+  cause: unknown,
 ): cause is TRPCClientError<AppRouter> {
   return cause instanceof TRPCClientError;
 }

@@ -1,7 +1,7 @@
-import { z } from "zod";
+import { As, Dialog as KDialog } from "@kobalte/core";
 import { JSX } from "solid-js";
 import { createStore } from "solid-js/store";
-import { As, Dialog as KDialog } from "@kobalte/core";
+import { z } from "zod";
 
 import {
   Button,
@@ -24,7 +24,7 @@ export type ConfirmDialogState = {
 };
 export interface ConfirmDialogProps {
   children: (
-    confirm: (state: Omit<ConfirmDialogState, "open">) => Promise<boolean>
+    confirm: (state: Omit<ConfirmDialogState, "open">) => Promise<boolean>,
   ) => JSX.Element;
 }
 
@@ -40,9 +40,8 @@ function createDefaultState(): ConfirmDialogState {
  * A dialog that asks the user to enter some specific text before proceeding with an action.
  */
 export function ConfirmDialog(props: ConfirmDialogProps) {
-  const [state, setState] = createStore<ConfirmDialogState>(
-    createDefaultState()
-  );
+  const [state, setState] =
+    createStore<ConfirmDialogState>(createDefaultState());
 
   let res: ((v: boolean) => void) | undefined;
   const form = createZodForm({
@@ -72,7 +71,9 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       {props.children((state) => {
         form.reset();
         setState({ ...createDefaultState(), ...state, open: true });
-        return new Promise<boolean>((r) => (res = r));
+        return new Promise<boolean>((r) => {
+          res = r;
+        });
       })}
       <DialogContent>
         <DialogHeader>

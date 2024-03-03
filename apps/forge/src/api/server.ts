@@ -1,13 +1,13 @@
 // Side-side exports (we don't want these shipped to the client)
 
-import { Hono } from "hono";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { Hono } from "hono";
 
-import { createTRPCContext, appRouter } from "./trpc";
-import { HonoEnv } from "./types";
-import { webhookRouter } from "./routes/webhook";
 import { enrollmentRouter } from "./routes/enrollment";
 import { msRouter } from "./routes/ms";
+import { webhookRouter } from "./routes/webhook";
+import { appRouter, createTRPCContext } from "./trpc";
+import { HonoEnv } from "./types";
 
 export const app = new Hono<HonoEnv>()
   .basePath("/api")
@@ -22,7 +22,7 @@ export const app = new Hono<HonoEnv>()
           env: c.env,
           event: c.env.h3Event,
         }),
-    })
+    }),
   )
   .route("/enrollment", enrollmentRouter)
   .route("/webhook", webhookRouter)

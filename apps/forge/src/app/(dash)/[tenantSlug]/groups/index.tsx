@@ -1,7 +1,7 @@
-import { A, useNavigate } from "@solidjs/router";
-import { ParentProps, Suspense, startTransition } from "solid-js";
-import { createColumnHelper } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
+import { A, useNavigate } from "@solidjs/router";
+import { createColumnHelper } from "@tanstack/solid-table";
+import { ParentProps, Suspense, startTransition } from "solid-js";
 
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 
@@ -25,15 +25,15 @@ export const columns = [
   }),
 ];
 
-import { Button } from "~/components/ui";
+import { RouterOutput } from "~/api/trpc";
 import {
   ColumnsDropdown,
   StandardTable,
   createStandardTable,
   selectCheckboxColumn,
 } from "~/components/StandardTable";
+import { Button } from "~/components/ui";
 import { useTenantContext } from "../../[tenantSlug]";
-import { RouterOutput } from "~/api/trpc";
 
 function createGroupsTable() {
   const tenant = useTenantContext();

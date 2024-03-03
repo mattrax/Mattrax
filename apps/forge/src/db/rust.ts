@@ -1,16 +1,16 @@
 import path from "node:path";
+import { defineOperation, exportQueries } from "@mattrax/drizzle-to-rs";
+import dotenv from "dotenv";
 import { and, eq } from "drizzle-orm";
-import { exportQueries, defineOperation } from "@mattrax/drizzle-to-rs";
+import { union } from "drizzle-orm/mysql-core";
 import {
-  db,
   certificates,
+  db,
   devices,
   groupAssignables,
-  policyAssignables,
   policies,
+  policyAssignables,
 } from ".";
-import dotenv from "dotenv";
-import { union } from "drizzle-orm/mysql-core";
 
 dotenv.config({
   path: "../../../../.env",
@@ -89,13 +89,13 @@ exportQueries(
           .from(policies)
           .innerJoin(
             policyAssignables,
-            eq(policies.pk, policyAssignables.policyPk)
+            eq(policies.pk, policyAssignables.policyPk),
           )
           .where(
             and(
               eq(policyAssignables.groupableVariant, "device"),
-              eq(policyAssignables.groupablePk, args.device_id)
-            )
+              eq(policyAssignables.groupablePk, args.device_id),
+            ),
           );
 
         // Any policy scoped to a group containing the device.
@@ -108,25 +108,25 @@ exportQueries(
           .from(policies)
           .innerJoin(
             policyAssignables,
-            eq(policies.pk, policyAssignables.policyPk)
+            eq(policies.pk, policyAssignables.policyPk),
           )
           .innerJoin(
             groupAssignables,
             and(
               eq(groupAssignables.groupPk, policyAssignables.groupablePk),
-              eq(policyAssignables.groupableVariant, "group")
-            )
+              eq(policyAssignables.groupableVariant, "group"),
+            ),
           )
           .where(
             and(
               eq(groupAssignables.groupableVariant, "device"),
-              eq(groupAssignables.groupablePk, args.device_id)
-            )
+              eq(groupAssignables.groupablePk, args.device_id),
+            ),
           );
 
         return union(a, b);
       },
     }),
   ],
-  path.join(__dirname, "../../../../apps/mattrax/src/db.rs")
+  path.join(__dirname, "../../../../apps/mattrax/src/db.rs"),
 );

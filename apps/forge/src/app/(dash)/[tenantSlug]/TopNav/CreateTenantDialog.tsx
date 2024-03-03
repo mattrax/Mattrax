@@ -17,7 +17,7 @@ export function CreateTenantDialog(
   props: {
     refetchSession: () => Promise<void>;
     setActiveTenant: (id: string) => void;
-  } & ParentProps
+  } & ParentProps,
 ) {
   const [open, setOpen] = createSignal(false);
 

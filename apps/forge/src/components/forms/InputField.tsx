@@ -1,19 +1,19 @@
+import { DeepKeys, FieldApi, FormApi } from "@tanstack/solid-form";
 import {
+  Accessor,
   Component,
   ComponentProps,
+  JSX,
   createUniqueId,
   splitProps,
-  JSX,
-  Accessor,
 } from "solid-js";
-import { DeepKeys, FieldApi, FormApi } from "@tanstack/solid-form";
 
-import { Input, Label } from "../ui";
 import { clsx } from "clsx";
+import { Input, Label } from "../ui";
 
 export function InputField<
   TData extends Record<string, any>,
-  TName extends DeepKeys<TData>
+  TName extends DeepKeys<TData>,
 >(
   props: Omit<
     ComponentProps<typeof Input>,
@@ -24,7 +24,7 @@ export function InputField<
     name: TName;
     label?: string;
     labelClasses?: string;
-  }
+  },
 ) {
   const [_, inputProps] = splitProps(props, [
     "form",

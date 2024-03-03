@@ -1,11 +1,11 @@
 // TODO: Do this properly copying Brendan's blog post
 // TODO: Input validation built into the components
 
-import { ComponentProps, createMemo, splitProps } from "solid-js";
+import { useBeforeLeave } from "@solidjs/router";
 import { FormOptions, createForm } from "@tanstack/solid-form";
 import { zodValidator } from "@tanstack/zod-form-adapter";
+import { ComponentProps, createMemo, splitProps } from "solid-js";
 import { z } from "zod";
-import { useBeforeLeave } from "@solidjs/router";
 
 export function createZodForm<S extends z.ZodSchema>(
   opts: Omit<
@@ -13,7 +13,7 @@ export function createZodForm<S extends z.ZodSchema>(
     "validatorAdapter"
   > & {
     schema: S;
-  }
+  },
 ) {
   return createForm(
     createMemo(() => ({
@@ -22,7 +22,7 @@ export function createZodForm<S extends z.ZodSchema>(
       validators: {
         onSubmit: opts.schema,
       },
-    }))
+    })),
   );
 }
 
