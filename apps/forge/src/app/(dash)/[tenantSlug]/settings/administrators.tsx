@@ -4,7 +4,15 @@ import { z } from "zod";
 import { useAuthContext } from "~/app/(dash)";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { Form, InputField, createZodForm } from "~/components/forms";
-import { Badge, Button, Card, CardContent } from "~/components/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui";
 import { trpc } from "~/lib";
 import { useTenant } from "../../[tenantSlug]";
 
@@ -158,7 +166,15 @@ function InviteAdminForm() {
 
   return (
     <Card>
-      <CardContent class="pt-7">
+      <CardHeader>
+        <CardTitle>Invite Administrator</CardTitle>
+        <CardDescription>
+          Invite a new administrator to this tenant. They will receive an
+          invitation email and be granted full administrative access to this
+          tenant.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
         <Form form={form} fieldsetClass="flex flex-row gap-4" class="w-full">
           <InputField
             form={form}
