@@ -11,7 +11,7 @@ export const [AuthContextProvider, useAuthContext] = createContextProvider(
     meQuery: ReturnType<typeof trpc.auth.me.useQuery>;
     me: RouterOutput["auth"]["me"];
   }) => props,
-  null!,
+  null!
 );
 
 export default function Layout(props: ParentProps) {
@@ -44,15 +44,13 @@ export default function Layout(props: ParentProps) {
         );
       }}
     >
-      <Suspense>
-        <Show when={me.data}>
-          {(meData) => (
-            <AuthContextProvider me={meData()} meQuery={me}>
-              {props.children}
-            </AuthContextProvider>
-          )}
-        </Show>
-      </Suspense>
+      <Show when={me.data}>
+        {(meData) => (
+          <AuthContextProvider me={meData()} meQuery={me}>
+            {props.children}
+          </AuthContextProvider>
+        )}
+      </Show>
     </ErrorBoundary>
   );
 }

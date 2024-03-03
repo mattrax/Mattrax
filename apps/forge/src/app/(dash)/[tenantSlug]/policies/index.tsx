@@ -8,6 +8,7 @@ import {
   ColumnsDropdown,
   StandardTable,
   createStandardTable,
+  createSearchParamPagination,
   selectCheckboxColumn,
 } from "~/components/StandardTable";
 import { Button, Input, Separator } from "~/components/ui";
@@ -45,7 +46,10 @@ function createPoliciesTable() {
       return policies.data || [];
     },
     columns,
+    pagination: true,
   });
+
+  createSearchParamPagination(table, "page");
 
   return { policies, table };
 }
@@ -105,7 +109,9 @@ function CreatePolicyCard() {
   const navigate = useNavigate();
 
   const createPolicy = trpc.policy.create.useMutation(() => ({
-    onSuccess: (id) => startTransition(() => navigate(id)),
+    onSuccess: async (policyId) => {
+      await startTransition(() => navigate(policyId));
+    },
   }));
 
   const form = createZodForm({

@@ -1,111 +1,10 @@
-// TODO: Deduplicate this UI stuff with the groups page
-// TODO: cause it's the same thing with some tRPC queries switched out.
-
-import { As } from "@kobalte/core";
-import {
-  Accessor,
-  For,
-  ParentProps,
-  Show,
-  Suspense,
-  createSignal,
-} from "solid-js";
-import { z } from "zod";
+import { useQueryClient } from "@tanstack/solid-query";
+import { ParentProps, Suspense, createSignal } from "solid-js";
 
 import { Button, Tabs, TabsList, TabsTrigger } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useZodParams } from "~/lib/useZodParams";
-
-export default function Page() {
-  const routeParams = useZodParams({ policyId: z.string() });
-
-  const tenant = useTenantContext();
-  console.log(routeParams.policyId, tenant.activeTenant.id); // TODO
-  const group = trpc.policy.scope.useQuery(
-    () => ({
-      id: routeParams.policyId,
-      tenantSlug: tenant.activeTenant.slug,
-    }),
-    () => ({
-      enabled: true,
-    })
-  );
-
-  return (
-    <div class="flex flex-col space-y-2">
-      <div class="flex flex-row justify-between">
-        <h2 class="text-2xl font-bold mb-4">Scope</h2>
-        <AddMemberSheet groupId={routeParams.policyId}>
-          <As component={Button}>Add Members</As>
-        </AddMemberSheet>
-      </div>
-      <Show when={group.data}>
-        {(group) => {
-          const table = createMembersTable(() => group().id);
-
-          return (
-            <Suspense>
-              <StandardTable table={table} />
-            </Suspense>
-          );
-        }}
-      </Show>
-    </div>
-  );
-}
-
-import { createColumnHelper } from "@tanstack/solid-table";
-
-const VariantDisplay = {
-  user: "User",
-  device: "Device",
-  group: "Group",
-} as const;
-
-type Variant = keyof typeof VariantDisplay;
-
-const columnHelper = createColumnHelper<{
-  pk: number;
-  // id: string;
-  name: string;
-  variant: Variant;
-}>();
-
-const columns = [
-  selectCheckboxColumn,
-  columnHelper.accessor("name", { header: "Name" }),
-  columnHelper.accessor("variant", {
-    header: "Variant",
-    cell: (info) => <Badge>{VariantDisplay[info.getValue()]}</Badge>,
-  }),
-];
-
-function createMembersTable(groupId: Accessor<string>) {
-  const tenant = useTenantContext();
-  // TODO: Fix this
-  const members = trpc.policy.members.useQuery(() => ({
-    id: groupId(),
-    tenantSlug: tenant.activeTenant.slug,
-  }));
-
-  return createStandardTable({
-    get data() {
-      return members.data ?? [];
-    },
-    columns,
-    pagination: true,
-  });
-}
-
-import { useQueryClient } from "@tanstack/solid-query";
-import { useTenantContext } from "~/app/(dash)/[tenantSlug]";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
-import {
-  StandardTable,
-  createStandardTable,
-  selectCheckboxColumn,
-} from "~/components/StandardTable";
-import { Badge } from "~/components/ui/badge";
+import { StandardTable, createStandardTable } from "~/components/StandardTable";
 import {
   Sheet,
   SheetContent,
@@ -114,20 +13,21 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "~/components/ui/sheet";
+import { useTenantContext } from "../../[tenantSlug]";
+import { columns } from "./[groupId]";
+import { GroupAssignableVariant } from "~/db";
 
 const AddMemberTableOptions = {
   all: "All",
   user: "Users",
   device: "Devices",
-  group: "Groups",
 };
 
-function AddMemberSheet(props: ParentProps & { groupId: string }) {
+export function AddMemberSheet(props: ParentProps & { groupId: string }) {
   const [open, setOpen] = createSignal(false);
 
   const tenant = useTenantContext();
-  // TODO
-  const possibleMembers = trpc.policy.possibleMembers.useQuery(
+  const possibleMembers = trpc.group.possibleMembers.useQuery(
     () => ({ id: props.groupId, tenantSlug: tenant.activeTenant.slug }),
     () => ({ enabled: open() })
   );
@@ -136,10 +36,11 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
     get data() {
       return possibleMembers.data ?? [];
     },
+    pagination: true,
     columns,
   });
 
-  const addMembers = trpc.policy.addMembers.useMutation(() => ({
+  const addMembers = trpc.group.addMembers.useMutation(() => ({
     onSuccess: () => {
       setOpen(false);
     },
@@ -185,8 +86,8 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
               <div class="flex flex-row justify-between w-full items-center">
                 <Tabs
                   value={
-                    (table.getColumn("variant")!.getFilterValue() as
-                      | Variant
+                    (table.getColumn("variant")?.getFilterValue() as
+                      | GroupAssignableVariant
                       | undefined) ?? "all"
                   }
                   onChange={(t) =>

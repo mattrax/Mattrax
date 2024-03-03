@@ -8,6 +8,7 @@ import {
   ColumnsDropdown,
   StandardTable,
   createStandardTable,
+  createSearchParamPagination,
   selectCheckboxColumn,
 } from "~/components/StandardTable";
 import {
@@ -76,8 +77,6 @@ export const columns = [
   // TODO: Actions
 ];
 
-// TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
-
 function createUsersTable() {
   const tenant = useTenantContext();
   const users = trpc.user.list.useQuery(() => ({
@@ -89,13 +88,15 @@ function createUsersTable() {
       return users.data || [];
     },
     columns,
+    pagination: true,
   });
+
+  createSearchParamPagination(table, "page");
 
   return { table, users };
 }
 
 export default function Page() {
-  const navigate = useNavigate();
   const { table, users } = createUsersTable();
 
   const isLoading = untrackScopeFromSuspense(() => users.isLoading);

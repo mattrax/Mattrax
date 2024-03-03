@@ -3,8 +3,9 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { createId } from "@paralleldrive/cuid2";
-import { promiseAllObject } from "~/api/utils";
 import {
+  GroupAssignableVariant,
+  GroupAssignableVariants,
   db,
   devices,
   groupAssignableVariants,
@@ -13,6 +14,7 @@ import {
   users,
 } from "~/db";
 import { createTRPCRouter, tenantProcedure } from "../helpers";
+import { union } from "drizzle-orm/mysql-core";
 
 function getGroup(args: { groupId: string; tenantPk: number }) {
   return db.query.groups.findFirst({
@@ -76,54 +78,61 @@ export const groupRouter = createTRPCRouter({
       if (!group)
         throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
 
-      return await promiseAllObject({
-        users: db
-          .select({ pk: users.pk, id: users.id, name: users.name })
-          .from(users)
-          .leftJoin(
-            groupAssignables,
-            eq(users.pk, groupAssignables.groupablePk),
+      return await db
+        .select({
+          pk: groupAssignables.pk,
+          variant: groupAssignables.variant,
+          name: sql<GroupAssignableVariant>`
+          	GROUP_CONCAT(
+           		CASE
+           			WHEN ${groupAssignables.variant} = ${GroupAssignableVariants.device} THEN ${devices.name}
+             		WHEN ${groupAssignables.variant} = ${GroupAssignableVariants.user} THEN ${users.name}
+             	END
+           	)
+          `.as("name"),
+        })
+        .from(groupAssignables)
+        .where(eq(groupAssignables.groupPk, group.pk))
+        .leftJoin(
+          devices,
+          and(
+            eq(devices.pk, groupAssignables.pk),
+            eq(groupAssignables.variant, GroupAssignableVariants.device)
           )
-          .where(
-            and(
-              eq(groupAssignables.groupableVariant, "user"),
-              eq(groupAssignables.groupPk, group.pk),
-            ),
+        )
+        .leftJoin(
+          users,
+          and(
+            eq(users.pk, groupAssignables.pk),
+            eq(groupAssignables.variant, GroupAssignableVariants.user)
           )
-          .then((r) => r || []),
-        devices: db
-          .select({ pk: devices.pk, id: devices.id, name: devices.name })
-          .from(devices)
-          .leftJoin(
-            groupAssignables,
-            eq(devices.pk, groupAssignables.groupablePk),
-          )
-          .where(
-            and(
-              eq(groupAssignables.groupableVariant, "device"),
-              eq(groupAssignables.groupPk, group.pk),
-            ),
-          )
-          .then((r) => r || []),
-      });
+        )
+        .groupBy(groupAssignables.variant, groupAssignables.pk);
     }),
   possibleMembers: tenantProcedure
     .input(z.object({ id: z.string() }))
     .query(({ ctx }) =>
-      promiseAllObject({
-        users: db.query.users
-          .findMany({
-            where: eq(users.tenantPk, ctx.tenant.pk),
-            columns: { name: true, id: true, pk: true },
+      union(
+        db
+          .select({
+            name: users.name,
+            id: users.id,
+            pk: users.pk,
+            variant: sql<GroupAssignableVariant>`user`,
           })
-          .then((r) => r || []),
-        devices: db.query.devices
-          .findMany({
-            where: eq(devices.tenantPk, ctx.tenant.pk),
-            columns: { name: true, id: true, pk: true },
+          .from(users)
+          .where(eq(users.tenantPk, ctx.tenant.pk)),
+
+        db
+          .select({
+            name: devices.name,
+            id: devices.id,
+            pk: devices.pk,
+            variant: sql<GroupAssignableVariant>`device`,
           })
-          .then((r) => r || []),
-      }),
+          .from(devices)
+          .where(eq(devices.tenantPk, ctx.tenant.pk))
+      )
     ),
   addMembers: tenantProcedure
     .input(
@@ -133,9 +142,9 @@ export const groupRouter = createTRPCRouter({
           z.object({
             pk: z.number(),
             variant: z.enum(groupAssignableVariants),
-          }),
+          })
         ),
-      }),
+      })
     )
     .mutation(async ({ ctx, input }) => {
       const group = await getGroup({
@@ -150,9 +159,9 @@ export const groupRouter = createTRPCRouter({
         .values(
           input.members.map((member) => ({
             groupPk: group.pk,
-            groupablePk: member.pk,
-            groupableVariant: member.variant,
-          })),
+            pk: member.pk,
+            variant: member.variant,
+          }))
         )
         .onDuplicateKeyUpdate({
           set: { groupPk: sql`${groupAssignables.groupPk}` },

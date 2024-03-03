@@ -1,10 +1,12 @@
 import { and, count, eq, sql } from "drizzle-orm";
-import { z } from "zod";
-
+import { union } from "drizzle-orm/mysql-core";
 import { createId } from "@paralleldrive/cuid2";
 import { TRPCError } from "@trpc/server";
-import { promiseAllObject } from "~/api/utils";
+import { z } from "zod";
+
 import {
+  PolicyAssignableVariant,
+  PolicyAssignableVariants,
   accounts,
   db,
   devices,
@@ -21,7 +23,7 @@ function getPolicy(args: { policyId: string; tenantPk: number }) {
   return db.query.policies.findFirst({
     where: and(
       eq(policies.id, args.policyId),
-      eq(policies.tenantPk, args.tenantPk),
+      eq(policies.tenantPk, args.tenantPk)
     ),
   });
 }
@@ -58,8 +60,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk),
-          ),
+            eq(policies.tenantPk, ctx.tenant.pk)
+          )
         );
 
       if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
@@ -72,7 +74,7 @@ export const policyRouter = createTRPCRouter({
       z.object({
         policyId: z.string(),
         name: z.string(),
-      }),
+      })
     )
     .mutation(async ({ ctx, input }) => {
       await db
@@ -83,8 +85,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk),
-          ),
+            eq(policies.tenantPk, ctx.tenant.pk)
+          )
         );
 
       return {};
@@ -109,8 +111,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk),
-          ),
+            eq(policies.tenantPk, ctx.tenant.pk)
+          )
         );
 
       return versions;
@@ -122,7 +124,7 @@ export const policyRouter = createTRPCRouter({
         policyId: z.string(),
         versionId: z.string(),
         data: z.any(),
-      }),
+      })
     )
     .mutation(async ({ ctx, input }) => {
       // TODO: Check no-one has edited this policy since we read it.
@@ -137,8 +139,8 @@ export const policyRouter = createTRPCRouter({
             eq(policyVersions.id, input.versionId),
             // TODO: tenant id  // eq(policyVersions.policyPk, input.policyId) // TODO
             // You can only update non-deployed versions
-            eq(policyVersions.status, "open"),
-          ),
+            eq(policyVersions.status, "open")
+          )
         );
 
       return {};
@@ -159,8 +161,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk),
-          ),
+            eq(policies.tenantPk, ctx.tenant.pk)
+          )
         );
       if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
@@ -175,8 +177,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policyVersions.policyPk, policy.pk),
-            eq(policyVersions.status, "open"),
-          ),
+            eq(policyVersions.status, "open")
+          )
         );
       const versionId = parseInt(status.insertId);
 
@@ -186,8 +188,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk),
-          ),
+            eq(policies.tenantPk, ctx.tenant.pk)
+          )
         );
 
       if (status.rowsAffected !== 0) {
@@ -210,8 +212,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk),
-          ),
+            eq(policies.tenantPk, ctx.tenant.pk)
+          )
         );
       if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
@@ -224,8 +226,8 @@ export const policyRouter = createTRPCRouter({
           and(
             eq(policyVersions.id, input.policyId),
             // eq(policyVersions.tenantPk, ctx.tenant.pk),
-            eq(policyVersions.status, "open"),
-          ),
+            eq(policyVersions.status, "open")
+          )
         );
       const numOpenPolicies = result?.count;
 
@@ -241,9 +243,9 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             // @ts-expect-error
-            eq(policyVersions.pk, policy.activeVersion), // TODO: This should probs not be this. It should be the latest version???
+            eq(policyVersions.pk, policy.activeVersion) // TODO: This should probs not be this. It should be the latest version???
             // eq(policyVersions.policyPk, policy.id), // TODO
-          ),
+          )
         );
 
       const newVersionId = createId();
@@ -279,14 +281,14 @@ export const policyRouter = createTRPCRouter({
 
       return await db
         .select({
-          pk: policyAssignables.groupablePk,
-          variant: policyAssignables.groupableVariant,
-          name: sql<string>`
+          pk: policyAssignables.pk,
+          variant: policyAssignables.variant,
+          name: sql<PolicyAssignableVariant>`
             GROUP_CONCAT(
                 CASE
-                    WHEN ${policyAssignables.groupableVariant} = "device" THEN ${devices.name}
-                    WHEN ${policyAssignables.groupableVariant} = "user" THEN ${users.name}
-                    WHEN ${policyAssignables.groupableVariant} = "group" THEN ${groups.name}
+                    WHEN ${policyAssignables.variant} = ${PolicyAssignableVariants.device} THEN ${devices.name}
+                    WHEN ${policyAssignables.variant} = ${PolicyAssignableVariants.user} THEN ${users.name}
+                    WHEN ${policyAssignables.variant} = ${PolicyAssignableVariants.group} THEN ${groups.name}
                 END
             )
           `.as("name"),
@@ -296,54 +298,60 @@ export const policyRouter = createTRPCRouter({
         .leftJoin(
           devices,
           and(
-            eq(devices.pk, policyAssignables.groupablePk),
-            eq(policyAssignables.groupableVariant, "device"),
-          ),
+            eq(devices.pk, policyAssignables.pk),
+            eq(policyAssignables.variant, PolicyAssignableVariants.device)
+          )
         )
         .leftJoin(
           users,
           and(
-            eq(users.pk, policyAssignables.groupablePk),
-            eq(policyAssignables.groupableVariant, "user"),
-          ),
+            eq(users.pk, policyAssignables.pk),
+            eq(policyAssignables.variant, PolicyAssignableVariants.user)
+          )
         )
         .leftJoin(
           groups,
           and(
-            eq(groups.pk, policyAssignables.groupablePk),
-            eq(policyAssignables.groupableVariant, "group"),
-          ),
+            eq(groups.pk, policyAssignables.pk),
+            eq(policyAssignables.variant, PolicyAssignableVariants.group)
+          )
         )
-        .groupBy(
-          policyAssignables.groupableVariant,
-          policyAssignables.groupablePk,
-        );
+        .groupBy(policyAssignables.variant, policyAssignables.pk);
     }),
 
   possibleMembers: tenantProcedure
     .input(z.object({ id: z.string() }))
-    .query(({ ctx }) =>
-      promiseAllObject({
-        users: db.query.users
-          .findMany({
-            where: eq(users.tenantPk, ctx.tenant.pk),
-            columns: { name: true, id: true, pk: true },
+    .query(({ ctx }) => {
+      return union(
+        db
+          .select({
+            name: users.name,
+            id: users.id,
+            pk: users.pk,
+            variant: sql<PolicyAssignableVariant>`${PolicyAssignableVariants.user}`,
           })
-          .then((r) => r || []),
-        devices: db.query.devices
-          .findMany({
-            where: eq(devices.tenantPk, ctx.tenant.pk),
-            columns: { name: true, id: true, pk: true },
+          .from(users)
+          .where(eq(users.tenantPk, ctx.tenant.pk)),
+        db
+          .select({
+            name: devices.name,
+            id: devices.id,
+            pk: devices.pk,
+            variant: sql<PolicyAssignableVariant>`${PolicyAssignableVariants.device}`,
           })
-          .then((r) => r || []),
-        groups: db.query.groups
-          .findMany({
-            where: eq(groups.tenantPk, ctx.tenant.pk),
-            columns: { name: true, id: true, pk: true },
+          .from(devices)
+          .where(eq(devices.tenantPk, ctx.tenant.pk)),
+        db
+          .select({
+            name: groups.name,
+            id: groups.id,
+            pk: groups.pk,
+            variant: sql<PolicyAssignableVariant>`${PolicyAssignableVariants.group}`,
           })
-          .then((r) => r || []),
-      }),
-    ),
+          .from(groups)
+          .where(eq(groups.tenantPk, ctx.tenant.pk))
+      ).orderBy(() => sql`name ASC`);
+    }),
 
   addMembers: tenantProcedure
     .input(
@@ -353,9 +361,9 @@ export const policyRouter = createTRPCRouter({
           z.object({
             pk: z.number(),
             variant: z.enum(policyAssignableVariants),
-          }),
+          })
         ),
-      }),
+      })
     )
     .mutation(async ({ ctx, input }) => {
       const policy = await getPolicy({
@@ -368,9 +376,9 @@ export const policyRouter = createTRPCRouter({
       await db.insert(policyAssignables).values(
         input.members.map((member) => ({
           policyPk: policy.pk,
-          groupablePk: member.pk,
-          groupableVariant: member.variant,
-        })),
+          pk: member.pk,
+          variant: member.variant,
+        }))
       );
     }),
 
@@ -442,7 +450,7 @@ export const policyRouter = createTRPCRouter({
           .where(eq(policies.pk, policyPk));
 
         return policyId;
-      }),
+      })
     ),
 
   delete: tenantProcedure
@@ -453,8 +461,8 @@ export const policyRouter = createTRPCRouter({
         .where(
           and(
             eq(policies.id, input.policyId),
-            eq(policies.tenantPk, ctx.tenant.pk),
-          ),
+            eq(policies.tenantPk, ctx.tenant.pk)
+          )
         );
     }),
 });

@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   datetime,
+  foreignKey,
   json,
   mysqlEnum,
   mysqlTable,
@@ -68,7 +69,7 @@ export const tenantAccounts = mysqlTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.tenantPk, table.accountPk] }),
-  }),
+  })
 );
 
 export const tenantAccountInvites = mysqlTable(
@@ -83,7 +84,7 @@ export const tenantAccountInvites = mysqlTable(
   },
   (table) => ({
     emailUnique: unique().on(table.tenantPk, table.email),
-  }),
+  })
 );
 
 const userProviderVariants = [
@@ -111,7 +112,7 @@ export const identityProviders = mysqlTable(
   },
   (table) => ({
     unique: unique().on(table.variant, table.remoteId),
-  }),
+  })
 );
 
 // An account represents the login of an *end-user*.
@@ -135,7 +136,7 @@ export const users = mysqlTable(
   (t) => ({
     emailUnq: unique().on(t.email, t.tenantPk),
     resourceIdUnq: unique().on(t.providerResourceId, t.providerPk),
-  }),
+  })
 );
 
 export const policies = mysqlTable("policies", {
@@ -143,14 +144,24 @@ export const policies = mysqlTable("policies", {
   id: cuid("cuid").notNull().unique(),
   name: varchar("name", { length: 256 }).notNull(),
   activeVersion: serialRelation("activeVersion").references(
-    () => policyVersions.pk,
+    () => policyVersions.pk
   ),
   tenantPk: serialRelation("tenantId")
     .references(() => tenants.pk)
     .notNull(),
 });
 
-export const policyAssignableVariants = ["user", "device", "group"] as const;
+export const PolicyAssignableVariants = {
+  user: "user",
+  device: "device",
+  group: "group",
+} as const;
+export const policyAssignableVariants = [
+  PolicyAssignableVariants.user,
+  PolicyAssignableVariants.device,
+  PolicyAssignableVariants.group,
+] as const;
+export type PolicyAssignableVariant = (typeof policyAssignableVariants)[number];
 
 export const policyAssignables = mysqlTable(
   "policy_assignables",
@@ -159,17 +170,14 @@ export const policyAssignables = mysqlTable(
       .references(() => policies.pk)
       .notNull(),
     // The primary key of the user or device or group
-    groupablePk: serialRelation("groupableId").notNull(),
-    groupableVariant: mysqlEnum(
-      "groupableVariant",
-      policyAssignableVariants,
-    ).notNull(),
+    pk: serialRelation("groupableId").notNull(),
+    variant: mysqlEnum("groupableVariant", policyAssignableVariants).notNull(),
   },
   (table) => ({
     pk: primaryKey({
-      columns: [table.policyPk, table.groupablePk, table.groupableVariant],
+      columns: [table.policyPk, table.pk, table.variant],
     }),
-  }),
+  })
 );
 
 export const policyVersions = mysqlTable("policy_versions", {
@@ -251,7 +259,16 @@ export const device_windows_data = mysqlTable("device_windows_data_temp", {
 
 // export const deviceSoftwareInventories = mysqlTable("device_software_inventory", {});
 
-export const groupAssignableVariants = ["user", "device"] as const;
+export const GroupAssignableVariants = {
+  user: "user",
+  device: "device",
+} as const;
+
+export const groupAssignableVariants = [
+  GroupAssignableVariants.user,
+  GroupAssignableVariants.device,
+] as const;
+export type GroupAssignableVariant = (typeof groupAssignableVariants)[number];
 
 export const groupAssignables = mysqlTable(
   "group_assignables",
@@ -260,17 +277,14 @@ export const groupAssignables = mysqlTable(
       .references(() => groups.pk)
       .notNull(),
     // The primary key of the user or device
-    groupablePk: serialRelation("groupableId").notNull(),
-    groupableVariant: mysqlEnum(
-      "groupableVariant",
-      groupAssignableVariants,
-    ).notNull(),
+    pk: serialRelation("groupableId").notNull(),
+    variant: mysqlEnum("groupableVariant", groupAssignableVariants).notNull(),
   },
   (table) => ({
     pk: primaryKey({
-      columns: [table.groupPk, table.groupablePk, table.groupableVariant],
+      columns: [table.groupPk, table.pk, table.variant],
     }),
-  }),
+  })
 );
 
 export const groups = mysqlTable("groups", {
@@ -281,10 +295,6 @@ export const groups = mysqlTable("groups", {
     .references(() => tenants.pk)
     .notNull(),
 });
-
-export const groupRelations = relations(groups, ({ many }) => ({
-  groupables: many(groupAssignables),
-}));
 
 export const applications = mysqlTable("apps", {
   pk: serial("id").primaryKey(),

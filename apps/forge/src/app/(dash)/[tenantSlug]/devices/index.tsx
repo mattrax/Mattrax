@@ -9,6 +9,7 @@ import {
   ColumnsDropdown,
   StandardTable,
   createStandardTable,
+  createSearchParamPagination,
   selectCheckboxColumn,
 } from "~/components/StandardTable";
 import { Button, Input } from "~/components/ui";
@@ -59,7 +60,10 @@ function createDevicesTable() {
       return devices.data || [];
     },
     columns,
+    pagination: true,
   });
+
+  createSearchParamPagination(table, "page");
 
   return { devices, table };
 }

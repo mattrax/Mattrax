@@ -2,11 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { generateId } from "lucia";
 import { alphabet, generateRandomString } from "oslo/crypto";
-import {
-  appendResponseHeader,
-  appendResponseHeaders,
-  setCookie,
-} from "vinxi/server";
+import { appendResponseHeader, setCookie } from "vinxi/server";
 import { z } from "zod";
 
 import { lucia } from "~/api/auth";
@@ -102,7 +98,7 @@ export const authRouter = createTRPCRouter({
       appendResponseHeader(
         ctx.event,
         "Set-Cookie",
-        lucia.createSessionCookie(session.id).serialize(),
+        lucia.createSessionCookie(session.id).serialize()
       );
 
       setCookie(ctx.event, "isLoggedIn", "true", {
@@ -124,7 +120,7 @@ export const authRouter = createTRPCRouter({
     .input(
       z.object({
         name: z.string().optional(),
-      }),
+      })
     )
     .mutation(async ({ ctx: { account }, input }) => {
       // Skip DB if we have nothing to update

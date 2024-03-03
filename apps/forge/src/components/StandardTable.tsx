@@ -7,12 +7,16 @@ import {
   createSolidTable,
   flexRender,
   getCoreRowModel,
+  getPaginationRowModel,
 } from "@tanstack/solid-table";
 import clsx from "clsx";
-import { For, ParentProps, mergeProps } from "solid-js";
+import { For, ParentProps, createEffect, mergeProps, on } from "solid-js";
 
 export function createStandardTable<TData extends RowData>(
-  options: PartialKeys<TableOptions<TData>, "getCoreRowModel">
+  options: Omit<
+    PartialKeys<TableOptions<TData>, "getCoreRowModel">,
+    "getPaginationRowModle"
+  > & { pagination?: boolean }
 ) {
   return createSolidTable(
     mergeProps(
@@ -22,9 +26,40 @@ export function createStandardTable<TData extends RowData>(
           { size: "auto" as unknown as number },
           options.defaultColumn
         ),
-      },
+        ...(options.pagination && {
+          getPaginationRowModel: getPaginationRowModel(),
+        }),
+      } satisfies Partial<TableOptions<TData>>,
       options
     )
+  );
+}
+
+export function createSearchParamPagination<TData extends RowData>(
+  table: TTable<TData>,
+  key: string
+) {
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const pageParam = createMemo(() => {
+    const parsed = z.coerce.number().safeParse(searchParams[key]);
+
+    if (parsed.success) return parsed.data;
+    return 0;
+  });
+
+  createEffect(
+    on(
+      () => table.getState().pagination.pageIndex,
+      (index) =>
+        setSearchParams({ [key]: index || undefined }, { replace: true })
+    )
+  );
+
+  createEffect(
+    on(pageParam, (page) => {
+      table.setPageIndex(page);
+    })
   );
 }
 
@@ -99,12 +134,16 @@ export function StandardTable<TData>(props: {
           </TableBody>
         </Table>
       </div>
-      <StandardTableFooter table={props.table} />
+      {props.table.options.getPaginationRowModel && (
+        <StandardTablePagination table={props.table} />
+      )}
     </>
   );
 }
 
-export function StandardTableFooter<TData>(props: { table: TTable<TData> }) {
+export function StandardTablePagination<TData>(props: {
+  table: TTable<TData>;
+}) {
   return (
     <div class="flex items-center justify-end space-x-2">
       <div class="flex-1 text-sm text-muted-foreground">
@@ -139,6 +178,10 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "./ui";
+import { useSearchParams } from "@solidjs/router";
+import { useZodParams } from "~/lib/useZodParams";
+import { z } from "zod";
+import { createMemo } from "solid-js";
 
 export function ColumnsDropdown<TData>(
   props: ParentProps & { table: TTable<TData> }

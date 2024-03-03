@@ -2,6 +2,7 @@ import { As } from "@kobalte/core";
 import { A, useNavigate } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { ParentProps, Suspense, startTransition } from "solid-js";
+import { z } from "zod";
 
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 
@@ -30,6 +31,7 @@ import {
   ColumnsDropdown,
   StandardTable,
   createStandardTable,
+  createSearchParamPagination,
   selectCheckboxColumn,
 } from "~/components/StandardTable";
 import { Button } from "~/components/ui";
@@ -46,7 +48,10 @@ function createGroupsTable() {
       return groups.data ?? [];
     },
     columns,
+    pagination: true,
   });
+
+  createSearchParamPagination(table, "page");
 
   return { groups, table };
 }
@@ -97,6 +102,7 @@ import {
   DialogTrigger,
   Input,
 } from "~/components/ui";
+import { Form, InputField, createZodForm } from "~/components/forms";
 
 function CreateGroupDialog(props: ParentProps) {
   const tenant = useTenantContext();
@@ -108,6 +114,15 @@ function CreateGroupDialog(props: ParentProps) {
     },
   }));
 
+  const form = createZodForm({
+    schema: z.object({ name: z.string() }),
+    onSubmit: ({ value }) =>
+      mutation.mutateAsync({
+        name: value.name,
+        tenantSlug: tenant.activeTenant.slug,
+      }),
+  });
+
   return (
     <DialogRoot>
       <DialogTrigger asChild>{props.children}</DialogTrigger>
@@ -115,29 +130,17 @@ function CreateGroupDialog(props: ParentProps) {
         <DialogHeader>
           <DialogTitle>Create Group</DialogTitle>
         </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const formData = new FormData(e.currentTarget);
-            mutation.mutate({
-              name: formData.get("name") as any,
-              tenantSlug: tenant.activeTenant.slug,
-            });
-          }}
-        >
-          <fieldset
-            class="flex flex-col space-y-4"
-            disabled={mutation.isPending}
-          >
-            <Input
-              type="text"
-              name="name"
-              placeholder="New Group"
-              autocomplete="off"
-            />
-            <Button type="submit">Create</Button>
-          </fieldset>
-        </form>
+        <Form form={form} fieldsetClass="space-y-4 flex flex-col">
+          <InputField
+            form={form}
+            label="Group Name"
+            type="text"
+            name="name"
+            placeholder="New Group"
+            autocomplete="off"
+          />
+          <Button type="submit">Create Group</Button>
+        </Form>
       </DialogContent>
     </DialogRoot>
   );

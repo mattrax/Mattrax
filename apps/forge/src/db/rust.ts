@@ -89,13 +89,13 @@ exportQueries(
           .from(policies)
           .innerJoin(
             policyAssignables,
-            eq(policies.pk, policyAssignables.policyPk),
+            eq(policies.pk, policyAssignables.policyPk)
           )
           .where(
             and(
-              eq(policyAssignables.groupableVariant, "device"),
-              eq(policyAssignables.groupablePk, args.device_id),
-            ),
+              eq(policyAssignables.variant, "device"),
+              eq(policyAssignables.pk, args.device_id)
+            )
           );
 
         // Any policy scoped to a group containing the device.
@@ -108,25 +108,25 @@ exportQueries(
           .from(policies)
           .innerJoin(
             policyAssignables,
-            eq(policies.pk, policyAssignables.policyPk),
+            eq(policies.pk, policyAssignables.policyPk)
           )
           .innerJoin(
             groupAssignables,
             and(
-              eq(groupAssignables.groupPk, policyAssignables.groupablePk),
-              eq(policyAssignables.groupableVariant, "group"),
-            ),
+              eq(groupAssignables.groupPk, policyAssignables.pk),
+              eq(policyAssignables.variant, "group")
+            )
           )
           .where(
             and(
-              eq(groupAssignables.groupableVariant, "device"),
-              eq(groupAssignables.groupablePk, args.device_id),
-            ),
+              eq(groupAssignables.variant, "device"),
+              eq(groupAssignables.pk, args.device_id)
+            )
           );
 
         return union(a, b);
       },
     }),
   ],
-  path.join(__dirname, "../../../../apps/mattrax/src/db.rs"),
+  path.join(__dirname, "../../../../apps/mattrax/src/db.rs")
 );
