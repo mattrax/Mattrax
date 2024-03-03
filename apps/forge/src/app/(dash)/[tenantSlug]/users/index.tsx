@@ -1,12 +1,5 @@
 import { Show, Suspense } from "solid-js";
-import {
-  createSolidTable,
-  getCoreRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  getFilteredRowModel,
-  createColumnHelper,
-} from "@tanstack/solid-table";
+import { createColumnHelper } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
 import { A, useNavigate } from "@solidjs/router";
 import { RouterOutput } from "~/api/trpc";
@@ -14,45 +7,25 @@ import { RouterOutput } from "~/api/trpc";
 import {
   Badge,
   Button,
-  Checkbox,
   Input,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
-import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
+import {
+  ColumnsDropdown,
+  StandardTable,
+  createStandardTable,
+  selectCheckboxColumn,
+} from "~/components/StandardTable";
 import { useTenantContext } from "../../[tenantSlug]";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 
 const column = createColumnHelper<RouterOutput["user"]["list"][number]>();
 
 export const columns = [
-  column.display({
-    id: "select",
-    header: ({ table }) => (
-      <Checkbox
-        class="w-4"
-        checked={
-          table.getIsAllPageRowsSelected() || table.getIsSomePageRowsSelected()
-        }
-        indeterminate={table.getIsSomePageRowsSelected()}
-        onChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-        aria-label="Select all"
-      />
-    ),
-    cell: ({ row }) => (
-      <Checkbox
-        class="w-4"
-        checked={row.getIsSelected()}
-        onChange={(value) => row.toggleSelected(!!value)}
-        aria-label="Select row"
-      />
-    ),
-    size: 1,
-    enableSorting: false,
-    enableHiding: false,
-  }),
+  selectCheckboxColumn,
   column.accessor("name", {
     header: "Name",
     cell: (props) => (
@@ -111,25 +84,11 @@ function createUsersTable() {
     tenantSlug: tenant.activeTenant.slug,
   }));
 
-  const table = createSolidTable({
+  const table = createStandardTable({
     get data() {
       return users.data || [];
     },
     columns,
-    // onSortingChange: setSorting,
-    // onColumnFiltersChange: setColumnFilters,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    // onColumnVisibilityChange: setColumnVisibility,
-    // onRowSelectionChange: setRowSelection,
-    // state: {
-    //   sorting,
-    //   columnFilters,
-    //   columnVisibility,
-    //   rowSelection,
-    // },
   });
 
   return { table, users };

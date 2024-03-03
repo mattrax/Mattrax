@@ -1,50 +1,25 @@
-import { Suspense, startTransition } from "solid-js";
-import {
-  createSolidTable,
-  getCoreRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  getFilteredRowModel,
-  createColumnHelper,
-} from "@tanstack/solid-table";
+import { Suspense } from "solid-js";
+import { createColumnHelper } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
-import { A, useLocation, useNavigate } from "@solidjs/router";
+import { A, useNavigate } from "@solidjs/router";
 import { RouterOutput } from "~/api/trpc";
 import dayjs from "dayjs";
 
-import { Button, Checkbox, Input } from "~/components/ui";
-import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
+import { Button, Input } from "~/components/ui";
+import {
+  ColumnsDropdown,
+  StandardTable,
+  createStandardTable,
+  selectCheckboxColumn,
+} from "~/components/StandardTable";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { useTenantContext } from "../../[tenantSlug]";
 
-const columnHelper =
-  createColumnHelper<RouterOutput["device"]["list"][number]>();
+const column = createColumnHelper<RouterOutput["device"]["list"][number]>();
 
 export const columns = [
-  columnHelper.display({
-    id: "select",
-    header: ({ table }) => (
-      <Checkbox
-        class="w-4"
-        checked={table.getIsAllPageRowsSelected()}
-        indeterminate={table.getIsSomePageRowsSelected()}
-        onChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-        aria-label="Select all"
-      />
-    ),
-    cell: ({ row }) => (
-      <Checkbox
-        class="w-4"
-        checked={row.getIsSelected()}
-        onChange={(value) => row.toggleSelected(!!value)}
-        aria-label="Select row"
-      />
-    ),
-    size: 1,
-    enableSorting: false,
-    enableHiding: false,
-  }),
-  columnHelper.accessor("name", {
+  selectCheckboxColumn,
+  column.accessor("name", {
     header: "Name",
     cell: (props) => (
       <A
@@ -55,22 +30,18 @@ export const columns = [
       </A>
     ),
   }),
-  columnHelper.accessor("operatingSystem", {
-    header: "Operating System",
-  }),
-  columnHelper.accessor("serialNumber", {
-    header: "Serial Number",
-  }),
-  columnHelper.accessor("owner", {
+  column.accessor("operatingSystem", { header: "Operating System" }),
+  column.accessor("serialNumber", { header: "Serial Number" }),
+  column.accessor("owner", {
     header: "Owner",
     // TODO: Render as link with the user's name
   }),
-  columnHelper.accessor("lastSynced", {
+  column.accessor("lastSynced", {
     header: "Last Synced",
     // TODO: Make time automatically update
     cell: (cell) => dayjs(cell.getValue()).fromNow(),
   }),
-  columnHelper.accessor("enrolledAt", {
+  column.accessor("enrolledAt", {
     header: "Enrolled At",
     // TODO: Make time automatically update
     cell: (cell) => dayjs(cell.getValue()).fromNow(),
@@ -83,21 +54,11 @@ function createDevicesTable() {
     tenantSlug: tenant.activeTenant.slug,
   }));
 
-  const table = createSolidTable({
+  const table = createStandardTable({
     get data() {
       return devices.data || [];
     },
-    get columns() {
-      return columns;
-    },
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    defaultColumn: {
-      // @ts-expect-error // TODO: This property's value should be a number but setting it to string works ¯\_(ツ)_/¯
-      size: "auto",
-    },
+    columns,
   });
 
   return { devices, table };

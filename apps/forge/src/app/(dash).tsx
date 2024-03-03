@@ -1,4 +1,4 @@
-import { ErrorBoundary, ParentProps, Show, onMount } from "solid-js";
+import { ErrorBoundary, ParentProps, Show, Suspense, onMount } from "solid-js";
 import { createContextProvider } from "@solid-primitives/context";
 import { parse } from "cookie-es";
 import { useNavigate } from "@solidjs/router";

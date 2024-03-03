@@ -1,13 +1,7 @@
-import {
-  Accessor,
-  For,
-  ParentProps,
-  Show,
-  Suspense,
-  createSignal,
-} from "solid-js";
+import { Accessor, ParentProps, Show, Suspense, createSignal } from "solid-js";
 import { z } from "zod";
 import { As } from "@kobalte/core";
+import { createColumnHelper } from "@tanstack/solid-table";
 
 import { Button, Checkbox, Tabs, TabsList, TabsTrigger } from "~/components/ui";
 import { trpc } from "~/lib";
@@ -46,16 +40,6 @@ export default function Page() {
   );
 }
 
-import {
-  createSolidTable,
-  getCoreRowModel,
-  flexRender,
-  getPaginationRowModel,
-  getSortedRowModel,
-  getFilteredRowModel,
-  createColumnHelper,
-} from "@tanstack/solid-table";
-
 const VariantDisplay = {
   user: "User",
   device: "Device",
@@ -71,29 +55,7 @@ const columnHelper = createColumnHelper<{
 }>();
 
 const columns = [
-  columnHelper.display({
-    id: "select",
-    header: ({ table }) => (
-      <Checkbox
-        class="w-4"
-        checked={table.getIsAllPageRowsSelected()}
-        indeterminate={table.getIsSomePageRowsSelected()}
-        onChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-        aria-label="Select all"
-      />
-    ),
-    cell: ({ row }) => (
-      <Checkbox
-        class="w-4"
-        checked={row.getIsSelected()}
-        onChange={(value) => row.toggleSelected(!!value)}
-        aria-label="Select row"
-      />
-    ),
-    size: 1,
-    enableSorting: false,
-    enableHiding: false,
-  }),
+  selectCheckboxColumn,
   columnHelper.accessor("name", { header: "Name" }),
   columnHelper.accessor("variant", {
     header: "Variant",
@@ -108,7 +70,7 @@ function createMembersTable(groupId: Accessor<string>) {
     tenantSlug: tenant.activeTenant.slug,
   }));
 
-  return createSolidTable({
+  return createStandardTable({
     get data() {
       if (!members.data) return [];
 
@@ -127,29 +89,11 @@ function createMembersTable(groupId: Accessor<string>) {
 
       return res;
     },
-    get columns() {
-      return columns;
-    },
-    // onSortingChange: setSorting,
-    // onColumnFiltersChange: setColumnFilters,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    // onColumnVisibilityChange: setColumnVisibility,
-    // onRowSelectionChange: setRowSelection,
-    // state: {
-    //   sorting,
-    //   columnFilters,
-    //   columnVisibility,
-    //   rowSelection,
-    // },
-    defaultColumn: {
-      // @ts-expect-error // TODO: This property's value should be a number but setting it to string works ¯\_(ツ)_/¯
-      size: "auto",
-    },
+    columns,
   });
 }
+
+import { useQueryClient } from "@tanstack/solid-query";
 
 import {
   Sheet,
@@ -160,10 +104,13 @@ import {
   SheetTrigger,
 } from "~/components/ui/sheet";
 import { Badge } from "~/components/ui/badge";
-import { useQueryClient } from "@tanstack/solid-query";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { useTenantContext } from "../../[tenantSlug]";
-import { StandardTable } from "~/components/StandardTable";
+import {
+  StandardTable,
+  createStandardTable,
+  selectCheckboxColumn,
+} from "~/components/StandardTable";
 
 const AddMemberTableOptions = {
   all: "All",
@@ -180,7 +127,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
     () => ({ enabled: open() })
   );
 
-  const table = createSolidTable({
+  const table = createStandardTable({
     get data() {
       if (!possibleMembers.data) return [];
 
@@ -200,19 +147,6 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
       return res;
     },
     columns,
-    initialState: {
-      pagination: {
-        pageSize: 9999,
-      },
-    },
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    defaultColumn: {
-      // @ts-expect-error // TODO: This property's value should be a number but setting it to string works ¯\_(ツ)_/¯
-      size: "auto",
-    },
   });
 
   const addMembers = trpc.group.addMembers.useMutation(() => ({

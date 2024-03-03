@@ -1,59 +1,23 @@
 import { Suspense, startTransition } from "solid-js";
-import {
-  createSolidTable,
-  getCoreRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  getFilteredRowModel,
-  createColumnHelper,
-} from "@tanstack/solid-table";
+import { createColumnHelper } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
-import { A, useNavigate } from "@solidjs/router";
-import { z } from "zod";
-import { RouterOutput } from "~/api/trpc";
+import { A } from "@solidjs/router";
 
+import { RouterOutput } from "~/api/trpc";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
+import { Button, Input, Separator } from "~/components/ui";
 import {
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Checkbox,
-  Input,
-} from "~/components/ui";
-import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
-import { Separator } from "~/components/ui";
-import { Form, InputField, createZodForm } from "~/components/forms";
+  ColumnsDropdown,
+  StandardTable,
+  createStandardTable,
+  selectCheckboxColumn,
+} from "~/components/StandardTable";
 import { useTenantContext } from "../../[tenantSlug]";
 
 const column = createColumnHelper<RouterOutput["policy"]["list"][number]>();
 
 export const columns = [
-  column.display({
-    id: "select",
-    header: ({ table }) => (
-      <Checkbox
-        class="w-4"
-        checked={table.getIsAllPageRowsSelected()}
-        indeterminate={table.getIsSomePageRowsSelected()}
-        onChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-        aria-label="Select all"
-      />
-    ),
-    cell: ({ row }) => (
-      <Checkbox
-        class="w-4"
-        checked={row.getIsSelected()}
-        onChange={(value) => row.toggleSelected(!!value)}
-        aria-label="Select row"
-      />
-    ),
-    size: 1,
-    enableSorting: false,
-    enableHiding: false,
-  }),
+  selectCheckboxColumn,
   column.accessor("name", {
     header: "Name",
     cell: (props) => (
@@ -76,19 +40,11 @@ function createPoliciesTable() {
     tenantSlug: tenant.activeTenant.slug,
   }));
 
-  const table = createSolidTable({
+  const table = createStandardTable({
     get data() {
       return policies.data || [];
     },
     columns,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    defaultColumn: {
-      // @ts-expect-error // TODO: This property's value should be a number but setting it to string works ¯\_(ツ)_/¯
-      size: "auto",
-    },
   });
 
   return { policies, table };
@@ -155,6 +111,18 @@ export default function Page() {
     </div>
   );
 }
+
+import { z } from "zod";
+import { useNavigate } from "@solidjs/router";
+
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui";
+import { Form, InputField, createZodForm } from "~/components/forms";
 
 function CreatePolicyCard() {
   const tenant = useTenantContext();

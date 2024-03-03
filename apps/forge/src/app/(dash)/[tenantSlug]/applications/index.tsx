@@ -1,41 +1,18 @@
-import { ParentProps, Suspense, createSignal, startTransition } from "solid-js";
-import {
-  type ColumnDef,
-  createSolidTable,
-  getCoreRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  getFilteredRowModel,
-  createColumnHelper,
-} from "@tanstack/solid-table";
+import { ParentProps, Suspense, createSignal } from "solid-js";
+import { createColumnHelper } from "@tanstack/solid-table";
 import { As } from "@kobalte/core";
+
+import {
+  ColumnsDropdown,
+  StandardTable,
+  createStandardTable,
+  selectCheckboxColumn,
+} from "~/components/StandardTable";
 
 const column = createColumnHelper<{ id: string; name: string }>();
 
 export const columns = [
-  column.display({
-    id: "select",
-    header: ({ table }) => (
-      <Checkbox
-        class="w-4"
-        checked={table.getIsAllPageRowsSelected()}
-        indeterminate={table.getIsSomePageRowsSelected()}
-        onChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-        aria-label="Select all"
-      />
-    ),
-    cell: ({ row }) => (
-      <Checkbox
-        class="w-4"
-        checked={row.getIsSelected()}
-        onChange={(value) => row.toggleSelected(!!value)}
-        aria-label="Select row"
-      />
-    ),
-    size: 1,
-    enableSorting: false,
-    enableHiding: false,
-  }),
+  selectCheckboxColumn,
   column.accessor("name", {
     header: "Name",
     cell: (props) => (
@@ -53,29 +30,18 @@ export const columns = [
 function createApplicationsTable() {
   // const groups = trpc.policy.list.useQuery();
 
-  const table = createSolidTable({
+  const table = createStandardTable({
     get data() {
       return []; // TODO
       // return groups.data || [];
     },
-    get columns() {
-      return columns;
-    },
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    defaultColumn: {
-      // @ts-expect-error // TODO: This property's value should be a number but setting it to string works ¯\_(ツ)_/¯
-      size: "auto",
-    },
+    columns,
   });
 
   return { table };
 }
 
 export default function Page() {
-  const navigate = useNavigate();
   const { table } = createApplicationsTable();
 
   const isLoading = untrackScopeFromSuspense(() => false);
@@ -148,9 +114,8 @@ export default function Page() {
 }
 
 import { Button, Checkbox, Input } from "~/components/ui";
-import { OutlineLayout } from "../OutlineLayout";
-import { ColumnsDropdown, StandardTable } from "~/components/StandardTable";
-import { A, createAsync, useNavigate } from "@solidjs/router";
+import { A, useNavigate } from "@solidjs/router";
+import { createQuery } from "@tanstack/solid-query";
 
 import {
   DialogContent,
@@ -159,7 +124,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "~/components/ui";
-import { createQuery } from "@tanstack/solid-query";
 import { isDebugMode, untrackScopeFromSuspense } from "~/lib";
 
 function CreatePolicyDialog(props: ParentProps) {

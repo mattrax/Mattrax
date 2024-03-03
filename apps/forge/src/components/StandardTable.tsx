@@ -1,5 +1,33 @@
-import { flexRender, type Table as TTable } from "@tanstack/solid-table";
-import { For, ParentProps } from "solid-js";
+import {
+  ColumnDef,
+  createSolidTable,
+  flexRender,
+  getCoreRowModel,
+  PartialKeys,
+  RowData,
+  TableOptions,
+  type Table as TTable,
+} from "@tanstack/solid-table";
+import { For, mergeProps, ParentProps } from "solid-js";
+import clsx from "clsx";
+
+export function createStandardTable<TData extends RowData>(
+  options: PartialKeys<TableOptions<TData>, "getCoreRowModel">
+) {
+  return createSolidTable(
+    mergeProps(
+      {
+        getCoreRowModel: getCoreRowModel(),
+        defaultColumn: mergeProps(
+          { size: "auto" as unknown as number },
+          options.defaultColumn
+        ),
+      },
+      options
+    )
+  );
+}
+
 import {
   Table,
   TableHeader,
@@ -7,12 +35,8 @@ import {
   TableHead,
   TableBody,
   TableCell,
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
+  Checkbox,
 } from "./ui";
-import clsx from "clsx";
 
 export function StandardTable<TData>(props: {
   table: TTable<TData>;
@@ -76,6 +100,13 @@ export function StandardTable<TData>(props: {
   );
 }
 
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "./ui";
+
 export function ColumnsDropdown<TData>(
   props: ParentProps & { table: TTable<TData> }
 ) {
@@ -102,3 +133,27 @@ export function ColumnsDropdown<TData>(
     </DropdownMenu>
   );
 }
+
+export const selectCheckboxColumn = {
+  id: "select",
+  header: ({ table }) => (
+    <Checkbox
+      class="w-4"
+      checked={table.getIsAllPageRowsSelected()}
+      indeterminate={table.getIsSomePageRowsSelected()}
+      onChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+      aria-label="Select all"
+    />
+  ),
+  cell: ({ row }) => (
+    <Checkbox
+      class="w-4"
+      checked={row.getIsSelected()}
+      onChange={(value) => row.toggleSelected(!!value)}
+      aria-label="Select row"
+    />
+  ),
+  size: 1,
+  enableSorting: false,
+  enableHiding: false,
+} satisfies ColumnDef<any>;
