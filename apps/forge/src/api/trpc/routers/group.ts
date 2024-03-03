@@ -154,6 +154,8 @@ export const groupRouter = createTRPCRouter({
             groupableVariant: member.variant,
           }))
         )
-        .onDuplicateKeyUpdate({ set: { groupPk: sql`groupPk` } });
+        .onDuplicateKeyUpdate({
+          set: { groupPk: sql`${groupAssignables.groupPk}` },
+        });
     }),
 });
