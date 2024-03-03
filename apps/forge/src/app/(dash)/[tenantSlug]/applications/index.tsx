@@ -58,13 +58,18 @@ export default function Page() {
   }
 
   return (
-    <div class="px-4 py-8 w-full max-w-5xl mx-auto gap-4 flex flex-col">
-      <div class="flex flex-row justify-between">
-        <h1 class="text-3xl font-bold mb-4">Applications</h1>
-        <CreatePolicyDialog>
-          <As component={Button}>Create Application</As>
-        </CreatePolicyDialog>
-      </div>
+    <PageLayout
+      heading={
+        <>
+          <PageLayoutHeading>Applications</PageLayoutHeading>
+          <CreatePolicyDialog>
+            <As component={Button} class="ml-auto">
+              Create Application
+            </As>
+          </CreatePolicyDialog>
+        </>
+      }
+    >
       <div class="flex flex-row items-center gap-4">
         <Input
           placeholder={isLoading() ? "Loading..." : "Search..."}
@@ -85,7 +90,7 @@ export default function Page() {
         <StandardTable table={table} />
       </Suspense>
       <AppleAppStoreDemo />
-    </div>
+    </PageLayout>
   );
 }
 
@@ -101,6 +106,7 @@ import {
   DialogTrigger,
 } from "~/components/ui";
 import { isDebugMode, untrackScopeFromSuspense } from "~/lib";
+import { PageLayout, PageLayoutHeading } from "../PageLayout";
 
 function CreatePolicyDialog(props: ParentProps) {
   const navigate = useNavigate();

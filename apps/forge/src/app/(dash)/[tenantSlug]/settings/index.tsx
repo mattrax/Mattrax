@@ -14,7 +14,7 @@ import {
   Switch,
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
-import { useTenantContext } from "../../[tenantSlug]";
+import { useTenant } from "../../[tenantSlug]";
 import { DeleteTenantButton } from "./DeleteTenantButton";
 
 export default function Page() {
@@ -29,7 +29,7 @@ export default function Page() {
 
 function SettingsCard() {
   const auth = useAuthContext();
-  const tenant = useTenantContext();
+  const tenant = useTenant();
 
   // TODO: rollback form on failure
   const updateTenant = trpc.tenant.edit.useMutation(() => ({
@@ -39,13 +39,13 @@ function SettingsCard() {
   const form = createZodForm({
     schema: z.object({ name: z.string(), slug: z.string() }),
     defaultValues: {
-      name: tenant.activeTenant.name,
-      slug: tenant.activeTenant.slug,
+      name: tenant().name,
+      slug: tenant().slug,
     },
     onSubmit: ({ value }) =>
       updateTenant.mutateAsync({
         name: value.name,
-        tenantSlug: tenant.activeTenant.slug,
+        tenantSlug: tenant().slug,
       }),
   });
 
@@ -69,17 +69,17 @@ function SettingsCard() {
 }
 
 function ConfigureEnrollmentCard() {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
 
   const enrollmentInfo = trpc.tenant.enrollmentInfo.useQuery(() => ({
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
   // TODO: Show correct state on the UI while the mutation is pending but keep fields disabled.
   const setEnrollmentInfo = trpc.tenant.setEnrollmentInfo.useMutation(() => ({
     onSuccess: () => enrollmentInfo.refetch(),
   }));
   const enrollmentEnabled = untrackScopeFromSuspense(
-    () => enrollmentInfo.data?.enrollmentEnabled,
+    () => enrollmentInfo.data?.enrollmentEnabled
   );
 
   return (
@@ -97,7 +97,7 @@ function ConfigureEnrollmentCard() {
             onChange={(state) =>
               setEnrollmentInfo.mutate({
                 enrollmentEnabled: state,
-                tenantSlug: tenant.activeTenant.slug,
+                tenantSlug: tenant().slug,
               })
             }
           />

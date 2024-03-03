@@ -1,20 +1,12 @@
 import { createColumnHelper } from "@tanstack/solid-table";
-import { debounce } from "@solid-primitives/scheduled";
-import {
-  Accessor,
-  Show,
-  Suspense,
-  createEffect,
-  createMemo,
-  createSignal,
-} from "solid-js";
+import { Accessor, Show, Suspense, createMemo, createSignal } from "solid-js";
 import { As } from "@kobalte/core";
 import { z } from "zod";
 
-import { Badge, Button, Input } from "~/components/ui";
+import { Badge, Button } from "~/components/ui";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
-import { useTenantContext } from "../../[tenantSlug]";
+import { useTenant } from "../../[tenantSlug]";
 import { AddMemberSheet } from "./AddMemberSheet";
 import {
   StandardTable,
@@ -22,14 +14,16 @@ import {
   selectCheckboxColumn,
 } from "~/components/StandardTable";
 import { toast } from "solid-sonner";
+import { Dynamic } from "solid-js/web";
+import { PageLayout, PageLayoutHeading } from "../PageLayout";
 
 export default function Page() {
   const routeParams = useZodParams({ groupId: z.string() });
 
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const group = trpc.group.get.useQuery(() => ({
     id: routeParams.groupId,
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
 
   const updateGroup = trpc.group.update.useMutation(() => ({
@@ -49,7 +43,7 @@ export default function Page() {
 
           toast.promise(
             updateGroup.mutateAsync({
-              tenantSlug: tenant.activeTenant.slug,
+              tenantSlug: tenant().slug,
               id: group().id,
               name,
             }),
@@ -71,12 +65,12 @@ export default function Page() {
         );
 
         return (
-          <div class="px-4 w-full max-w-5xl mx-auto flex flex-col">
-            <div class="flex flex-row items-center py-8 gap-4">
-              <div class="flex flex-row items-center gap-4 flex-1 h-10">
-                <h1
+          <PageLayout
+            heading={
+              <>
+                <PageLayoutHeading
                   ref={nameEl!}
-                  class="text-3xl font-bold p-2 -m-2"
+                  class="p-2 -m-2"
                   contenteditable={editingName()}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -89,13 +83,14 @@ export default function Page() {
                   }}
                 >
                   {name()}
-                </h1>
+                </PageLayoutHeading>
                 <Button
                   variant="link"
                   size="iconSmall"
-                  class="text-xl"
+                  class="text-lg"
                   onClick={() => {
                     setEditingName((e) => !e);
+
                     if (editingName()) {
                       setCachedName(group().name);
 
@@ -105,22 +100,26 @@ export default function Page() {
                     }
                   }}
                 >
-                  {editingName() ? (
-                    <IconIcRoundCheck />
-                  ) : (
-                    <IconMaterialSymbolsEditOutline />
-                  )}
+                  <Dynamic
+                    component={
+                      editingName()
+                        ? IconIcRoundCheck
+                        : IconMaterialSymbolsEditOutline
+                    }
+                  />
                 </Button>
-              </div>
-              <AddMemberSheet groupId={routeParams.groupId}>
-                <As component={Button}>Add Members</As>
-              </AddMemberSheet>
-            </div>
-
+                <AddMemberSheet groupId={routeParams.groupId}>
+                  <As component={Button} class="ml-auto">
+                    Add Members
+                  </As>
+                </AddMemberSheet>
+              </>
+            }
+          >
             <Suspense>
               <StandardTable table={table} />
             </Suspense>
-          </div>
+          </PageLayout>
         );
       }}
     </Show>
@@ -150,10 +149,10 @@ export const columns = [
 ];
 
 function createMembersTable(groupId: Accessor<string>) {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const members = trpc.group.members.useQuery(() => ({
     id: groupId(),
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
 
   return createStandardTable({

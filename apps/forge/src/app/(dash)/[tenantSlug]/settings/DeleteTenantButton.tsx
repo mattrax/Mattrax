@@ -4,12 +4,12 @@ import { startTransition } from "solid-js";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { Button } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useTenantContext } from "../../[tenantSlug]";
+import { useTenant } from "../../[tenantSlug]";
 
 export function DeleteTenantButton() {
   const deleteTenant = trpc.tenant.delete.useMutation();
   const navigate = useNavigate();
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const trpcCtx = trpc.useContext();
 
   return (
@@ -20,7 +20,7 @@ export function DeleteTenantButton() {
           onClick={() =>
             confirm({
               title: "Delete tenant?",
-              action: `Delete '${tenant.activeTenant.name}'`,
+              action: `Delete '${tenant().name}'`,
               description: (
                 <>
                   Are you sure you want to delete your tenant along with all{" "}
@@ -28,10 +28,10 @@ export function DeleteTenantButton() {
                   <b>applications</b> and <b>groups</b>?
                 </>
               ),
-              inputText: tenant.activeTenant.name,
+              inputText: tenant().name,
               async onConfirm() {
                 await deleteTenant.mutateAsync({
-                  tenantSlug: tenant.activeTenant.slug,
+                  tenantSlug: tenant().slug,
                 });
 
                 await trpcCtx.auth.me.refetch();

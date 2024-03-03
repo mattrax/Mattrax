@@ -13,6 +13,7 @@ import {
 } from "~/components/ui";
 import { trpc } from "~/lib";
 import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
+import Logo from "~/assets/MATTRAX.png";
 
 type NavbarItem = {
   icon: (props: { class: string }) => JSX.Element;
@@ -68,10 +69,9 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 
   return (
     <>
-      <div class="relative flex flex-row items-center pr-4 gap-2">
-        <h1 class="px-3 py-1 text-white text-center text-3xl bg-brand rounded m-2">
-          MATTRAX
-        </h1>
+      <div class="relative flex flex-row items-center px-6 gap-2 h-16 shrink-0">
+        <img src={Logo} class="h-5" />
+        <div class="w-1" />
         <TenantSwitcher {...props} />
         <div class="flex-1" />
         <FeedbackPopover>
@@ -83,7 +83,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
         {/* <Button variant="destructive">Log Out</Button> */}
       </div>
 
-      <nav class="text-white sticky border-b border-gray-300 top-0 z-10 bg-white">
+      <nav class="text-white sticky border-b border-gray-300 top-0 z-10 bg-white -mt-2">
         <Tabs.Root value={tabValue()} class="mx-2 relative">
           <Tabs.List class="flex flex-row">
             <For each={items}>
@@ -95,9 +95,9 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
                     href={item.href}
                     activeClass="text-black selected"
                     inactiveClass="text-gray-500"
-                    class="py-2 flex text-center align-middle transition duration-[16ms] relative group"
+                    class="py-2 flex text-center align-middle transition duration-[16ms] relative group focus:outline-none"
                   >
-                    <div class="text-sm hover:bg-black/5 hover:text-black rounded px-3 py-1.5">
+                    <div class="text-sm rounded px-3 py-1.5 hover:bg-black/5 hover:text-black group-focus-visible:bg-black/5 group-focus-visible:text-black group-focus:outline-none">
                       {item.title}
                     </div>
                   </As>

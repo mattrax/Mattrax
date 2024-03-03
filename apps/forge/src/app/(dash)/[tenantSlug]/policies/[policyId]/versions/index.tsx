@@ -3,7 +3,7 @@ import { For, Show, createEffect, createSignal } from "solid-js";
 import { P, match } from "ts-pattern";
 import { z } from "zod";
 import { RouterOutput } from "~/api";
-import { useTenantContext } from "~/app/(dash)/[tenantSlug]";
+import { useTenant } from "~/app/(dash)/[tenantSlug]";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import {
   Badge,
@@ -26,16 +26,16 @@ import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 
 export default function Page() {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const params = useZodParams({
     policyId: z.string(),
   });
   const policy = trpc.policy.get.useQuery(() => ({
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
     policyId: params.policyId,
   }));
   const versions = trpc.policy.getVersions.useQuery(() => ({
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
     policyId: params.policyId,
   }));
   const createVersion = trpc.policy.createVersion.useMutation(() => ({
@@ -90,7 +90,7 @@ export default function Page() {
                     return;
 
                   createVersion.mutate({
-                    tenantSlug: tenant.activeTenant.slug,
+                    tenantSlug: tenant().slug,
                     policyId: policyData().id,
                   });
                 }}
@@ -110,7 +110,7 @@ function VersionRow(props: {
   refetchPolicy: () => Promise<void>;
   version: RouterOutput["policy"]["getVersions"][number];
 }) {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const updateVersion = trpc.policy.updateVersion.useMutation(() => ({
     onSuccess: props.refetchVersion,
   }));
@@ -121,7 +121,7 @@ function VersionRow(props: {
     }),
     onSubmit: (values) =>
       updateVersion.mutateAsync({
-        tenantSlug: tenant.activeTenant.slug,
+        tenantSlug: tenant().slug,
         policyId: props.policy.id,
         versionId: props.version.id,
         data: {
@@ -205,7 +205,7 @@ function VersionRow(props: {
                       };
                       delete windows[uri];
                       updateVersion.mutateAsync({
-                        tenantSlug: tenant.activeTenant.slug,
+                        tenantSlug: tenant().slug,
                         policyId: props.policy.id,
                         versionId: props.version.id,
                         data: {
@@ -266,7 +266,7 @@ function VersionRow(props: {
                 if (!file) return;
                 file.text().then((text) => {
                   updateVersion.mutateAsync({
-                    tenantSlug: tenant.activeTenant.slug,
+                    tenantSlug: tenant().slug,
                     policyId: props.policy.id,
                     versionId: props.version.id,
                     data: {
@@ -284,7 +284,7 @@ function VersionRow(props: {
                 const data = { ...(props.version.data || {}) };
                 if ("apple" in data) data.apple = undefined;
                 updateVersion.mutateAsync({
-                  tenantSlug: tenant.activeTenant.slug,
+                  tenantSlug: tenant().slug,
                   policyId: props.policy.id,
                   versionId: props.version.id,
                   data,
@@ -324,7 +324,7 @@ function DeployButton(props: {
   version: RouterOutput["policy"]["getVersions"][number];
   refetch: () => Promise<void>;
 }) {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const controller = createController();
   const [page, setPage] = createSignal(0);
   const [comment, setComment] = createSignal("");
@@ -387,7 +387,7 @@ function DeployButton(props: {
               variant="destructive"
               onClick={() =>
                 deployVersion.mutate({
-                  tenantSlug: tenant.activeTenant.slug,
+                  tenantSlug: tenant().slug,
                   policyId: props.policyId,
                   comment: comment(),
                 })

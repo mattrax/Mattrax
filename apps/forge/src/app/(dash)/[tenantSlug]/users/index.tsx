@@ -21,7 +21,8 @@ import {
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
-import { useTenantContext } from "../../[tenantSlug]";
+import { useTenant } from "../../[tenantSlug]";
+import { PageLayout, PageLayoutHeading } from "../PageLayout";
 
 const column = createColumnHelper<RouterOutput["user"]["list"][number]>();
 
@@ -78,9 +79,9 @@ export const columns = [
 ];
 
 function createUsersTable() {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const users = trpc.user.list.useQuery(() => ({
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
 
   const table = createStandardTable({
@@ -102,8 +103,7 @@ export default function Page() {
   const isLoading = untrackScopeFromSuspense(() => users.isLoading);
 
   return (
-    <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
-      <h1 class="text-3xl font-bold mb-4">Users</h1>
+    <PageLayout heading={<PageLayoutHeading>Users</PageLayoutHeading>}>
       <div class="flex flex-row items-center gap-4">
         <Input
           placeholder={isLoading() ? "Loading..." : "Search..."}
@@ -124,6 +124,6 @@ export default function Page() {
       <Suspense>
         <StandardTable table={table} />
       </Suspense>
-    </div>
+    </PageLayout>
   );
 }

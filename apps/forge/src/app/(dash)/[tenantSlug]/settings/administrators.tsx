@@ -4,27 +4,19 @@ import { z } from "zod";
 import { useAuthContext } from "~/app/(dash)";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { Form, InputField, createZodForm } from "~/components/forms";
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "~/components/ui";
+import { Badge, Button, Card, CardContent } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useTenantContext } from "../../[tenantSlug]";
+import { useTenant } from "../../[tenantSlug]";
 
 export default function Page() {
   const auth = useAuthContext();
-  const tenant = useTenantContext();
+  const tenant = useTenant();
 
   const invites = trpc.tenant.admins.invites.useQuery(() => ({
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
   const administrators = trpc.tenant.admins.list.useQuery(() => ({
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
 
   const removeInvite = trpc.tenant.admins.removeInvite.useMutation(() => ({
@@ -58,7 +50,7 @@ export default function Page() {
                         </div>
                       </div>
                       <div>
-                        {auth.me.id === tenant.activeTenant.ownerId && (
+                        {auth.me.id === tenant().ownerId && (
                           <Button
                             variant="destructive"
                             size="sm"
@@ -74,7 +66,7 @@ export default function Page() {
                                 action: "Remove",
                                 onConfirm: async () =>
                                   await removeInvite.mutateAsync({
-                                    tenantSlug: tenant.activeTenant.slug,
+                                    tenantSlug: tenant().slug,
                                     email: invite.email,
                                   }),
                               });
@@ -102,33 +94,32 @@ export default function Page() {
                         )}
                       </div>
                       <div>
-                        {auth.me.id === tenant.activeTenant.ownerId &&
-                          !admin.isOwner && (
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => {
-                                confirm({
-                                  title: "Remove Administrator",
-                                  description: (
-                                    <>
-                                      Are you sure you want to remove{" "}
-                                      <b>{admin.email}</b> from this tenant's
-                                      administrators?
-                                    </>
-                                  ),
-                                  action: "Remove",
-                                  onConfirm: async () =>
-                                    await removeAdmin.mutateAsync({
-                                      tenantSlug: tenant.activeTenant.slug,
-                                      adminId: admin.id,
-                                    }),
-                                });
-                              }}
-                            >
-                              Remove
-                            </Button>
-                          )}
+                        {auth.me.id === tenant().ownerId && !admin.isOwner && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => {
+                              confirm({
+                                title: "Remove Administrator",
+                                description: (
+                                  <>
+                                    Are you sure you want to remove{" "}
+                                    <b>{admin.email}</b> from this tenant's
+                                    administrators?
+                                  </>
+                                ),
+                                action: "Remove",
+                                onConfirm: async () =>
+                                  await removeAdmin.mutateAsync({
+                                    tenantSlug: tenant().slug,
+                                    adminId: admin.id,
+                                  }),
+                              });
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        )}
                       </div>
                     </li>
                   )}
@@ -143,7 +134,7 @@ export default function Page() {
 }
 
 function InviteAdminForm() {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const trpcCtx = trpc.useContext();
 
   const inviteAdmin = trpc.tenant.admins.sendInvite.useMutation(() => ({
@@ -161,7 +152,7 @@ function InviteAdminForm() {
     onSubmit: ({ value }) =>
       inviteAdmin.mutateAsync({
         email: value.email,
-        tenantSlug: tenant.activeTenant.slug,
+        tenantSlug: tenant().slug,
       }),
   });
 
@@ -174,7 +165,6 @@ function InviteAdminForm() {
             name="email"
             fieldClass="flex-1"
             placeholder="oscar@example.com"
-            label="Email Address"
             labelClasses="text-muted-foreground"
           />
           <Button type="submit">Invite</Button>

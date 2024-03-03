@@ -35,12 +35,12 @@ import {
   selectCheckboxColumn,
 } from "~/components/StandardTable";
 import { Button } from "~/components/ui";
-import { useTenantContext } from "../../[tenantSlug]";
+import { useTenant } from "../../[tenantSlug]";
 
 function createGroupsTable() {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const groups = trpc.group.list.useQuery(() => ({
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
 
   const table = createStandardTable({
@@ -64,13 +64,18 @@ export default function Page() {
   const isLoading = untrackScopeFromSuspense(() => groups.isLoading);
 
   return (
-    <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
-      <div class="flex flex-row justify-between">
-        <h1 class="text-3xl font-bold mb-4">Groups</h1>
-        <CreateGroupDialog>
-          <As component={Button}>Create New Group</As>
-        </CreateGroupDialog>
-      </div>
+    <PageLayout
+      heading={
+        <>
+          <PageLayoutHeading>Groups</PageLayoutHeading>
+          <CreateGroupDialog>
+            <As component={Button} class="ml-auto">
+              Create New Group
+            </As>
+          </CreateGroupDialog>
+        </>
+      }
+    >
       <div class="flex items-center gap-4">
         <Input
           placeholder={isLoading() ? "Loading..." : "Search..."}
@@ -90,7 +95,7 @@ export default function Page() {
       <Suspense>
         <StandardTable table={table} />
       </Suspense>
-    </div>
+    </PageLayout>
   );
 }
 
@@ -103,9 +108,10 @@ import {
   Input,
 } from "~/components/ui";
 import { Form, InputField, createZodForm } from "~/components/forms";
+import { PageLayout, PageLayoutHeading } from "../PageLayout";
 
 function CreateGroupDialog(props: ParentProps) {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const navigate = useNavigate();
 
   const mutation = trpc.group.create.useMutation(() => ({
@@ -119,7 +125,7 @@ function CreateGroupDialog(props: ParentProps) {
     onSubmit: ({ value }) =>
       mutation.mutateAsync({
         name: value.name,
-        tenantSlug: tenant.activeTenant.slug,
+        tenantSlug: tenant().slug,
       }),
   });
 

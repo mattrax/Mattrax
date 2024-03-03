@@ -19,7 +19,7 @@ import {
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
-import { useTenantContext } from "../../[tenantSlug]";
+import { useTenant } from "../../[tenantSlug]";
 
 function UserNotFound() {
   toast.error("User not found");
@@ -28,12 +28,12 @@ function UserNotFound() {
 }
 
 export default function Page() {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const params = useZodParams({
     userId: z.string(),
   });
   const user = trpc.user.get.useQuery(() => ({
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
     id: params.userId,
   }));
 
@@ -66,7 +66,7 @@ export default function Page() {
                         userAuthProviderUrl(
                           user().provider.variant,
                           user().provider.remoteId,
-                          resourceId(),
+                          resourceId()
                         )!
                       }
                       rel="noreferrer"
@@ -92,7 +92,7 @@ export default function Page() {
 function InviteUserDialog(props: ParentProps<{ id: string; email: string }>) {
   const [open, setOpen] = createSignal(false);
 
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const mutation = trpc.user.invite.useMutation();
 
   const form = createZodForm({
@@ -101,7 +101,7 @@ function InviteUserDialog(props: ParentProps<{ id: string; email: string }>) {
       await mutation.mutateAsync({
         id: props.id,
         message: value.message,
-        tenantSlug: tenant.activeTenant.slug,
+        tenantSlug: tenant().slug,
       });
       setOpen(false);
     },

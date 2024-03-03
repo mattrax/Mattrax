@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { useTenantContext } from "~/app/(dash)/[tenantSlug]";
+import { useTenant } from "~/app/(dash)/[tenantSlug]";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { Button, Label } from "~/components/ui";
 import { trpc } from "~/lib";
@@ -9,10 +9,10 @@ export default function Page() {
   const params = useZodParams({
     policyId: z.string(),
   });
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const policy = trpc.policy.get.useQuery(() => ({
     policyId: params.policyId,
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
   const updatePolicy = trpc.policy.update.useMutation(() => ({
     onSuccess: () => policy.refetch(),
@@ -23,7 +23,7 @@ export default function Page() {
     defaultValues: { name: policy.data?.name || "" },
     onSubmit: ({ value }) =>
       updatePolicy.mutateAsync({
-        tenantSlug: tenant.activeTenant.slug,
+        tenantSlug: tenant().slug,
         policyId: params.policyId,
         name: value.name,
       }),

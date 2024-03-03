@@ -16,7 +16,7 @@ import {
 } from "~/components/ui";
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
-import { useTenantContext } from "../../[tenantSlug]";
+import { useTenant } from "../../[tenantSlug]";
 
 export default function Page() {
   return (
@@ -33,7 +33,7 @@ export default function Page() {
 }
 
 function IdentityProviderCard() {
-  const tenantCtx = useTenantContext();
+  const tenant = useTenant();
 
   const linkEntra = trpc.tenant.identityProvider.linkEntra.useMutation(() => ({
     onSuccess: async (url) => {
@@ -53,7 +53,7 @@ function IdentityProviderCard() {
   }));
 
   const provider = trpc.tenant.identityProvider.get.useQuery(() => ({
-    tenantSlug: tenantCtx.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
 
   const syncProvider = trpc.tenant.identityProvider.sync.useMutation(() => ({
@@ -74,9 +74,7 @@ function IdentityProviderCard() {
         when={provider.data}
         fallback={
           <Button
-            onClick={() =>
-              linkEntra.mutate({ tenantSlug: tenantCtx.activeTenant.slug })
-            }
+            onClick={() => linkEntra.mutate({ tenantSlug: tenant().slug })}
             disabled={linkEntra.isPending}
           >
             Entra ID
@@ -103,7 +101,7 @@ function IdentityProviderCard() {
                 onClick={() =>
                   toast.promise(
                     syncProvider.mutateAsync({
-                      tenantSlug: tenantCtx.activeTenant.slug,
+                      tenantSlug: tenant().slug,
                     }),
                     {
                       loading: "Syncing users...",
@@ -120,7 +118,7 @@ function IdentityProviderCard() {
                 variant="destructive"
                 onClick={() =>
                   removeProvider.mutate({
-                    tenantSlug: tenantCtx.activeTenant.slug,
+                    tenantSlug: tenant().slug,
                   })
                 }
                 disabled={removeProvider.isPending}
@@ -136,23 +134,23 @@ function IdentityProviderCard() {
 }
 
 function Domains() {
-  const tenantCtx = useTenantContext();
+  const tenant = useTenant();
   const trpcCtx = trpc.useContext();
 
   const provider = trpc.tenant.identityProvider.get.useQuery(() => ({
-    tenantSlug: tenantCtx.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
 
   const refreshDomains =
     trpc.tenant.identityProvider.refreshDomains.useMutation(() => ({
       onSuccess: () =>
         trpcCtx.tenant.identityProvider.domains.refetch({
-          tenantSlug: tenantCtx.activeTenant.slug,
+          tenantSlug: tenant().slug,
         }),
     }));
 
   const domains = trpc.tenant.identityProvider.domains.useQuery(() => ({
-    tenantSlug: tenantCtx.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
 
   function allDomains() {
@@ -190,7 +188,7 @@ function Domains() {
             class="ml-auto"
             onClick={() =>
               refreshDomains.mutate({
-                tenantSlug: tenantCtx.activeTenant.slug,
+                tenantSlug: tenant().slug,
               })
             }
             disabled={refreshDomains.isPending}
@@ -340,7 +338,7 @@ function Domains() {
                             <Button
                               onClick={() =>
                                 removeDomain.mutate({
-                                  tenantSlug: tenantCtx.activeTenant.slug,
+                                  tenantSlug: tenant().slug,
                                   domain,
                                 })
                               }
@@ -365,7 +363,7 @@ function Domains() {
                               disabled={enableDomain.isPending}
                               onClick={() =>
                                 enableDomain.mutate({
-                                  tenantSlug: tenantCtx.activeTenant.slug,
+                                  tenantSlug: tenant().slug,
                                   domain,
                                 })
                               }

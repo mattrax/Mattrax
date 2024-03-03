@@ -2,7 +2,7 @@ import { A } from "@solidjs/router";
 import { type JSX, ParentProps, Show, Suspense } from "solid-js";
 import { z } from "zod";
 
-import { useTenantContext } from "~/app/(dash)/[tenantSlug]";
+import { useTenant } from "~/app/(dash)/[tenantSlug]";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 
@@ -17,10 +17,10 @@ function useParams() {
 export default function Page(props: ParentProps) {
   const params = useParams();
 
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const policy = trpc.policy.get.useQuery(() => ({
     policyId: params.policyId,
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
 
   return (
@@ -92,7 +92,7 @@ export default function Page(props: ParentProps) {
                               async onConfirm() {
                                 await deletePolicy.mutateAsync({
                                   policyId: params.policyId,
-                                  tenantId: tenant.activeTenant.id,
+                                  tenantId: tenant().id,
                                 });
                               },
                             });
@@ -151,7 +151,7 @@ const SidebarItem = (
     href: string;
     disabled?: boolean;
     icon?: (props: JSX.SvgSVGAttributes<SVGSVGElement>) => JSX.Element;
-  },
+  }
 ) => (
   <A
     end

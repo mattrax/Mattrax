@@ -19,12 +19,12 @@ import { useZodParams } from "~/lib/useZodParams";
 export default function Page() {
   const routeParams = useZodParams({ policyId: z.string() });
 
-  const tenant = useTenantContext();
-  console.log(routeParams.policyId, tenant.activeTenant.id); // TODO
+  const tenant = useTenant();
+  console.log(routeParams.policyId, tenant().id); // TODO
   const group = trpc.policy.scope.useQuery(
     () => ({
       id: routeParams.policyId,
-      tenantSlug: tenant.activeTenant.slug,
+      tenantSlug: tenant().slug,
     }),
     () => ({
       enabled: true,
@@ -81,11 +81,11 @@ const columns = [
 ];
 
 function createMembersTable(groupId: Accessor<string>) {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   // TODO: Fix this
   const members = trpc.policy.members.useQuery(() => ({
     id: groupId(),
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
 
   return createStandardTable({
@@ -98,7 +98,7 @@ function createMembersTable(groupId: Accessor<string>) {
 }
 
 import { useQueryClient } from "@tanstack/solid-query";
-import { useTenantContext } from "~/app/(dash)/[tenantSlug]";
+import { useTenant } from "~/app/(dash)/[tenantSlug]";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import {
   StandardTable,
@@ -125,10 +125,10 @@ const AddMemberTableOptions = {
 function AddMemberSheet(props: ParentProps & { groupId: string }) {
   const [open, setOpen] = createSignal(false);
 
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   // TODO
   const possibleMembers = trpc.policy.possibleMembers.useQuery(
-    () => ({ id: props.groupId, tenantSlug: tenant.activeTenant.slug }),
+    () => ({ id: props.groupId, tenantSlug: tenant().slug }),
     () => ({ enabled: open() })
   );
 
@@ -211,7 +211,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
                   onClick={async () => {
                     await addMembers.mutateAsync({
                       id: props.groupId,
-                      tenantSlug: tenant.activeTenant.slug,
+                      tenantSlug: tenant().slug,
                       members: table.getSelectedRowModel().rows.map((row) => ({
                         pk: row.original.pk,
                         variant: row.original.variant,

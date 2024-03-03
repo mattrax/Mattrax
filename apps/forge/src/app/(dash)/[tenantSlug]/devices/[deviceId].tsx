@@ -2,7 +2,7 @@ import { redirect, useParams } from "@solidjs/router";
 import { ParentProps, Suspense } from "solid-js";
 import FlatTabs from "~/components/ui/flat-tabs";
 import { trpc } from "~/lib";
-import { useTenantContext } from "../../[tenantSlug]";
+import { useTenant } from "../../[tenantSlug]";
 
 // TODO: Bring this back
 // const fetchDevice = cache(
@@ -19,10 +19,10 @@ export default function Page(props: ParentProps) {
   const params = useParams();
   if (!params.deviceId) redirect("/"); // TODO: Use a tenant relative redirect instead
 
-  const tenant = useTenantContext();
+  const activeTenant = useTenant();
   const device = trpc.device.get.useQuery(() => ({
     deviceId: params.deviceId!,
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: activeTenant().slug,
   }));
 
   const url = (suffix: string) =>

@@ -10,20 +10,20 @@ import {
   CardTitle,
 } from "~/components/ui";
 import { isDebugMode, trpc, untrackScopeFromSuspense } from "~/lib";
-import { useTenantContext } from "../[tenantSlug]";
+import { useTenant } from "../[tenantSlug]";
+import { PageLayout, PageLayoutHeading } from "./PageLayout";
 
 export default function Page() {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const stats = trpc.tenant.stats.useQuery(() => ({
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
 
   const data = untrackScopeFromSuspense(() => ({ ...stats.data }));
 
   return (
-    <div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
-      <h1 class="text-3xl font-bold mb-4">Dashboard</h1>
-      <dl class="mt-5 gap-5 flex">
+    <PageLayout heading={<PageLayoutHeading>Dashboard</PageLayoutHeading>}>
+      <dl class="gap-5 flex">
         <StatItem title="Users" value={data().users ?? 0} />
         <StatItem title="Devices" value={data().devices ?? 0} />
         <StatItem title="Policies" value={data().policies ?? 0} />
@@ -41,7 +41,7 @@ export default function Page() {
           </h1>
         </div>
       )}
-    </div>
+    </PageLayout>
   );
 }
 

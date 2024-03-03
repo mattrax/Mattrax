@@ -17,10 +17,10 @@ import { useZodParams } from "~/lib/useZodParams";
 import { useAuthContext } from "../(dash)";
 import TopNav from "./[tenantSlug]/TopNav";
 
-export const [TenantContextProvider, useTenantContext] = createContextProvider(
-  (props: { activeTenant: RouterOutput["auth"]["me"]["tenants"][number] }) =>
-    props,
-  null!,
+export const [TenantContextProvider, useTenant] = createContextProvider(
+  (props: { tenant: RouterOutput["auth"]["me"]["tenants"][number] }) => () =>
+    props.tenant,
+  null!
 );
 
 export default function Layout(props: ParentProps) {
@@ -31,7 +31,7 @@ export default function Layout(props: ParentProps) {
   const navigate = useNavigate();
 
   const activeTenant = createMemo(() =>
-    auth.me.tenants.find((t) => t.slug === params.tenantSlug),
+    auth.me.tenants.find((t) => t.slug === params.tenantSlug)
   );
 
   function setTenantSlug(slug: string) {
@@ -51,7 +51,7 @@ export default function Layout(props: ParentProps) {
       }
     >
       {(activeTenant) => (
-        <TenantContextProvider activeTenant={activeTenant()}>
+        <TenantContextProvider tenant={activeTenant()}>
           {/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
           <Suspense fallback={<SuspenseError name="Sidebar" />}>
             <TopNav

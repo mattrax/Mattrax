@@ -13,7 +13,7 @@ import {
 } from "~/components/StandardTable";
 import { Button, Input, Separator } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
-import { useTenantContext } from "../../[tenantSlug]";
+import { useTenant } from "../../[tenantSlug]";
 
 const column = createColumnHelper<RouterOutput["policy"]["list"][number]>();
 
@@ -36,9 +36,9 @@ export const columns = [
 ];
 
 function createPoliciesTable() {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const policies = trpc.policy.list.useQuery(() => ({
-    tenantSlug: tenant.activeTenant.slug,
+    tenantSlug: tenant().slug,
   }));
 
   const table = createStandardTable({
@@ -64,8 +64,7 @@ export default function Page() {
   const isLoading = untrackScopeFromSuspense(() => policies.isLoading);
 
   return (
-    <div class="px-4 py-8 w-full max-w-5xl mx-auto space-y-4">
-      <h1 class="text-3xl font-bold">Policies</h1>
+    <PageLayout heading={<PageLayoutHeading>Policies</PageLayoutHeading>}>
       <CreatePolicyCard />
       <Separator />
       <div class="flex flex-row gap-4">
@@ -88,7 +87,7 @@ export default function Page() {
       <Suspense>
         <StandardTable table={table} />
       </Suspense>
-    </div>
+    </PageLayout>
   );
 }
 
@@ -103,9 +102,10 @@ import {
   CardHeader,
   CardTitle,
 } from "~/components/ui";
+import { PageLayout, PageLayoutHeading } from "../PageLayout";
 
 function CreatePolicyCard() {
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const navigate = useNavigate();
 
   const createPolicy = trpc.policy.create.useMutation(() => ({
@@ -119,7 +119,7 @@ function CreatePolicyCard() {
     onSubmit: ({ value }) =>
       createPolicy.mutateAsync({
         name: value.name,
-        tenantSlug: tenant.activeTenant.slug,
+        tenantSlug: tenant().slug,
       }),
   });
 

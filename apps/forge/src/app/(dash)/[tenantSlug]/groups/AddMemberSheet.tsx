@@ -13,7 +13,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "~/components/ui/sheet";
-import { useTenantContext } from "../../[tenantSlug]";
+import { useTenant } from "../../[tenantSlug]";
 import { columns } from "./[groupId]";
 import { GroupAssignableVariant } from "~/db";
 
@@ -26,9 +26,9 @@ const AddMemberTableOptions = {
 export function AddMemberSheet(props: ParentProps & { groupId: string }) {
   const [open, setOpen] = createSignal(false);
 
-  const tenant = useTenantContext();
+  const tenant = useTenant();
   const possibleMembers = trpc.group.possibleMembers.useQuery(
-    () => ({ id: props.groupId, tenantSlug: tenant.activeTenant.slug }),
+    () => ({ id: props.groupId, tenantSlug: tenant().slug }),
     () => ({ enabled: open() })
   );
 
@@ -112,7 +112,7 @@ export function AddMemberSheet(props: ParentProps & { groupId: string }) {
                   onClick={async () => {
                     await addMembers.mutateAsync({
                       id: props.groupId,
-                      tenantSlug: tenant.activeTenant.slug,
+                      tenantSlug: tenant().slug,
                       members: table.getSelectedRowModel().rows.map((row) => ({
                         pk: row.original.pk,
                         variant: row.original.variant,

@@ -1,6 +1,7 @@
 import { For, type JSX, ParentProps } from "solid-js";
 
 import { A } from "@solidjs/router";
+import { PageLayout, PageLayoutHeading } from "./PageLayout";
 
 const navigation = [
   { name: "General", href: "" },
@@ -11,12 +12,12 @@ const navigation = [
 
 export default function Layout(props: ParentProps) {
   return (
-    <>
-      <h1 class="w-full relative max-w-6xl mx-auto pt-8 pb-4 text-3xl font-bold ">
-        Tenant Settings
-      </h1>
-      <div class="flex flex-row flex-1 w-full relative max-w-6xl mx-auto">
-        <nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pt-4 pl-4">
+    <PageLayout
+      size="lg"
+      heading={<PageLayoutHeading>Tenant Settings</PageLayoutHeading>}
+    >
+      <div class="flex flex-row">
+        <nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pl-4">
           <ul class="space-y-1">
             <For each={navigation}>
               {(item) => (
@@ -25,9 +26,9 @@ export default function Layout(props: ParentProps) {
             </For>
           </ul>
         </nav>
-        <main class="flex-1 overflow-y-auto px-4 pt-4">{props.children}</main>
+        <main class="flex-1 overflow-y-auto px-4">{props.children}</main>
       </div>
-    </>
+    </PageLayout>
   );
 }
 
@@ -36,7 +37,7 @@ const SidebarItem = (
     href: string;
     disabled?: boolean;
     icon?: (props: JSX.SvgSVGAttributes<SVGSVGElement>) => JSX.Element;
-  },
+  }
 ) => (
   <A
     end
