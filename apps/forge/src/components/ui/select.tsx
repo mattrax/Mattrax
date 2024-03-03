@@ -11,14 +11,14 @@ const Select = SelectPrimitive.Root;
 const SelectValue = SelectPrimitive.Value;
 
 const SelectTrigger: Component<SelectPrimitive.SelectTriggerProps> = (
-  props,
+  props
 ) => {
   const [, rest] = splitProps(props, ["class", "children"]);
   return (
     <SelectPrimitive.Trigger
       class={cn(
         "border-input ring-offset-background placeholder:text-muted-foreground focus:ring-ring flex h-10 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-        props.class,
+        props.class
       )}
       {...rest}
     >
@@ -31,7 +31,7 @@ const SelectTrigger: Component<SelectPrimitive.SelectTriggerProps> = (
 };
 
 const SelectContent: Component<SelectPrimitive.SelectContentProps> = (
-  props,
+  props
 ) => {
   const [, rest] = splitProps(props, ["class"]);
   return (
@@ -39,7 +39,7 @@ const SelectContent: Component<SelectPrimitive.SelectContentProps> = (
       <SelectPrimitive.Content
         class={cn(
           "bg-popover text-popover-foreground animate-in fade-in-80 relative z-50 min-w-[8rem] overflow-hidden rounded-md border shadow-md",
-          props.class,
+          props.class
         )}
         {...rest}
       >
@@ -55,7 +55,7 @@ const SelectItem: Component<SelectPrimitive.SelectItemProps> = (props) => {
     <SelectPrimitive.Item
       class={cn(
         "focus:bg-accent focus:text-accent-foreground relative mt-0 flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-        props.class,
+        props.class
       )}
       {...rest}
     >

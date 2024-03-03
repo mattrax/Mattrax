@@ -2,6 +2,7 @@ import { As, DropdownMenu as KDropdownMenu } from "@kobalte/core";
 import { For, Suspense } from "solid-js";
 
 import {
+  Button,
   DialogTrigger,
   DropdownMenu,
   DropdownMenuContent,
@@ -30,13 +31,15 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
     <div class="relative inline-block text-left">
       <CreateTenantDialog {...props}>
         <DropdownMenu controller={controller} sameWidth>
-          <DropdownMenuTrigger class="inline-flex w-full justify-between rounded-md bg-brand-secondary text-white px-4 py-2 text-sm font-medium shadow-sm hover:bg-brand-tertiary focus:outline-none focus:ring-2 focus:ring-white disabled:opacity-80 disabled:cursor-not-allowed">
-            {/* // TODO: Tooltip when truncated */}
-            <span class="truncate">{props.activeTenant.name}</span>
+          <DropdownMenuTrigger asChild>
+            <As component={Button} variant="outline" class="space-x-3">
+              {/* // TODO: Tooltip when truncated */}
+              <span class="truncate">{props.activeTenant.name}</span>
 
-            <KDropdownMenu.Icon>
-              <IconPhArrowDownBold class="-mr-1 ml-2 h-5 w-5" />
-            </KDropdownMenu.Icon>
+              <KDropdownMenu.Icon>
+                <IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+              </KDropdownMenu.Icon>
+            </As>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
             <Suspense>

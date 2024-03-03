@@ -70,7 +70,9 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
   return (
     <>
       <div class="relative flex flex-row items-center px-6 gap-2 h-16 shrink-0">
-        <img src={Logo} class="h-5" />
+        <A href="">
+          <img src={Logo} class="h-5" />
+        </A>
         <div class="w-1" />
         <TenantSwitcher {...props} />
         <div class="flex-1" />
