@@ -3,7 +3,7 @@ import { createColumnHelper } from "@tanstack/solid-table";
 import { Accessor, ParentProps, Show, Suspense, createSignal } from "solid-js";
 import { z } from "zod";
 
-import { Button, Checkbox, Tabs, TabsList, TabsTrigger } from "~/components/ui";
+import { Button, Tabs, TabsList, TabsTrigger } from "~/components/ui";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 
@@ -124,7 +124,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
   const tenant = useTenantContext();
   const possibleMembers = trpc.group.possibleMembers.useQuery(
     () => ({ id: props.groupId, tenantSlug: tenant.activeTenant.slug }),
-    () => ({ enabled: open() }),
+    () => ({ enabled: open() })
   );
 
   const table = createStandardTable({
@@ -180,7 +180,11 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
           }}
         >
           <SheetTrigger asChild>{props.children}</SheetTrigger>
-          <SheetContent transparent size="lg" class="overflow-y-auto">
+          <SheetContent
+            transparent
+            size="lg"
+            class="overflow-y-auto flex flex-col"
+          >
             <SheetHeader>
               <SheetTitle>Add Member</SheetTitle>
               <SheetDescription>
@@ -188,7 +192,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
               </SheetDescription>
             </SheetHeader>
             <Suspense>
-              <div class="flex flex-row justify-between w-full items-center mt-4">
+              <div class="flex flex-row justify-between w-full items-center">
                 <Tabs
                   value={
                     (table.getColumn("variant")!.getFilterValue() as
@@ -205,7 +209,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
                     {Object.entries(AddMemberTableOptions).map(
                       ([value, name]) => (
                         <TabsTrigger value={value}>{name}</TabsTrigger>
-                      ),
+                      )
                     )}
                   </TabsList>
                 </Tabs>
@@ -232,9 +236,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
                   {table.getSelectedRowModel().rows.length !== 1 && "s"}
                 </Button>
               </div>
-              <div class="rounded-md border mt-2">
-                <StandardTable table={table} />
-              </div>
+              <StandardTable table={table} />
             </Suspense>
           </SheetContent>
         </Sheet>

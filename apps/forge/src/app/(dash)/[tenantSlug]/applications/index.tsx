@@ -83,30 +83,6 @@ export default function Page() {
       </div>
       <Suspense>
         <StandardTable table={table} />
-        <div class="flex items-center justify-end space-x-2">
-          <div class="flex-1 text-sm text-muted-foreground">
-            {table.getFilteredSelectedRowModel().rows.length} of{" "}
-            {table.getFilteredRowModel().rows.length} row(s) selected.
-          </div>
-          <div class="space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
       </Suspense>
       <AppleAppStoreDemo />
     </div>
@@ -182,7 +158,7 @@ function AppleAppStoreDemo() {
     queryFn: async () => {
       // TODO: Pagination support
       const res = await fetch(
-        `https://itunes.apple.com/search?term=${search()}&entity=software`,
+        `https://itunes.apple.com/search?term=${search()}&entity=software`
       );
       return await res.json();
     },
