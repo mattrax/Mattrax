@@ -13,8 +13,8 @@ export type Policy = any; // TODO: Infer this from Zod
 
 export { buildApplePolicy } from "./buildApple";
 export {
-  configurationSchema,
-  type ConfigurationSchema,
+	configurationSchema,
+	type ConfigurationSchema,
 } from "./configurationSchema";
 
 export { slackImplementation } from "./implementations/slack";

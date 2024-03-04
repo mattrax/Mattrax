@@ -6,45 +6,45 @@ import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 
 export default function Page() {
-  const params = useZodParams({
-    policyId: z.string(),
-  });
-  const tenant = useTenant();
-  const policy = trpc.policy.get.useQuery(() => ({
-    policyId: params.policyId,
-    tenantSlug: tenant().slug,
-  }));
-  const updatePolicy = trpc.policy.update.useMutation(() => ({
-    onSuccess: () => policy.refetch(),
-  }));
+	const params = useZodParams({
+		policyId: z.string(),
+	});
+	const tenant = useTenant();
+	const policy = trpc.policy.get.useQuery(() => ({
+		policyId: params.policyId,
+		tenantSlug: tenant().slug,
+	}));
+	const updatePolicy = trpc.policy.update.useMutation(() => ({
+		onSuccess: () => policy.refetch(),
+	}));
 
-  const form = createZodForm({
-    schema: z.object({ name: z.string() }),
-    defaultValues: { name: policy.data?.name || "" },
-    onSubmit: ({ value }) =>
-      updatePolicy.mutateAsync({
-        tenantSlug: tenant().slug,
-        policyId: params.policyId,
-        name: value.name,
-      }),
-  });
+	const form = createZodForm({
+		schema: z.object({ name: z.string() }),
+		defaultValues: { name: policy.data?.name || "" },
+		onSubmit: ({ value }) =>
+			updatePolicy.mutateAsync({
+				tenantSlug: tenant().slug,
+				policyId: params.policyId,
+				name: value.name,
+			}),
+	});
 
-  return (
-    <div class="flex flex-col space-y-2">
-      <h2 class="text-2xl font-bold mb-4">General</h2>
-      <Form form={form} fieldsetClass="space-y-2">
-        <Label for="name">Name</Label>
-        <InputField
-          form={form}
-          type="text"
-          name="name"
-          placeholder="My Cool Policy"
-        />
+	return (
+		<div class="flex flex-col space-y-2">
+			<h2 class="text-2xl font-bold mb-4">General</h2>
+			<Form form={form} fieldsetClass="space-y-2">
+				<Label for="name">Name</Label>
+				<InputField
+					form={form}
+					type="text"
+					name="name"
+					placeholder="My Cool Policy"
+				/>
 
-        <Button type="submit" class="w-full">
-          <span class="text-sm font-semibold leading-6">Save</span>
-        </Button>
-      </Form>
-    </div>
-  );
+				<Button type="submit" class="w-full">
+					<span class="text-sm font-semibold leading-6">Save</span>
+				</Button>
+			</Form>
+		</div>
+	);
 }

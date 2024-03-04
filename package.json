@@ -11,12 +11,14 @@
     "db:studio": "drizzle-kit studio",
     "db:gen": "bun run ./apps/forge/src/db/rust.ts",
     "typecheck": "tsc -b",
-    "lint": "pnpm -r lint"
+    "lint": "biome lint .",
+    "format": "biome format --write ."
   },
   "engines": {
     "node": ">=18"
   },
-  "devDependencies": {
+  "dependencies": {
+    "@biomejs/biome": "^1.5.3",
     "dotenv": "^16.4.3",
     "drizzle-kit": "^0.20.14",
     "mysql2": "^3.9.1",

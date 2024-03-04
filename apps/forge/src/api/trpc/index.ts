@@ -12,16 +12,16 @@ import { tenantRouter } from "./routers/tenant/index";
 import { userRouter } from "./routers/user";
 
 export const appRouter = createTRPCRouter({
-  app: applicationRouter,
-  auth: authRouter,
-  device: deviceRouter,
-  group: groupRouter,
-  internal: internalRouter,
-  policy: policyRouter,
-  script: scriptRouter,
-  tenant: tenantRouter,
-  user: userRouter,
-  meta: metaRouter,
+	app: applicationRouter,
+	auth: authRouter,
+	device: deviceRouter,
+	group: groupRouter,
+	internal: internalRouter,
+	policy: policyRouter,
+	script: scriptRouter,
+	tenant: tenantRouter,
+	user: userRouter,
+	meta: metaRouter,
 });
 
 export type AppRouter = typeof appRouter;

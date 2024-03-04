@@ -5,17 +5,17 @@ import { AuthProvider } from "./authProvider";
 export type { Client } from "@microsoft/microsoft-graph-client";
 
 export const initGraphClient = (
-  tenantId: string,
-  clientId: string,
-  clientSecret: string
+	tenantId: string,
+	clientId: string,
+	clientSecret: string,
 ) =>
-  Client.initWithMiddleware({
-    authProvider: new AuthProvider(tenantId, clientId, clientSecret),
-  });
+	Client.initWithMiddleware({
+		authProvider: new AuthProvider(tenantId, clientId, clientSecret),
+	});
 
 export function isGraphError(err: any): err is GraphError {
-  return err instanceof GraphError;
+	return err instanceof GraphError;
 }
 export function isNotFoundGraphError(err: any): err is GraphError {
-  return isGraphError(err) && err.code === "Request_ResourceNotFound";
+	return isGraphError(err) && err.code === "Request_ResourceNotFound";
 }

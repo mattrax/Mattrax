@@ -9,156 +9,156 @@ import { useZodParams } from "~/lib/useZodParams";
 import { useTenant } from "../../[tenantSlug]";
 import { AddMemberSheet } from "./AddMemberSheet";
 import {
-  StandardTable,
-  createStandardTable,
-  selectCheckboxColumn,
+	StandardTable,
+	createStandardTable,
+	selectCheckboxColumn,
 } from "~/components/StandardTable";
 import { toast } from "solid-sonner";
 import { Dynamic } from "solid-js/web";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
 
 export default function Page() {
-  const routeParams = useZodParams({ groupId: z.string() });
+	const routeParams = useZodParams({ groupId: z.string() });
 
-  const tenant = useTenant();
-  const group = trpc.group.get.useQuery(() => ({
-    id: routeParams.groupId,
-    tenantSlug: tenant().slug,
-  }));
+	const tenant = useTenant();
+	const group = trpc.group.get.useQuery(() => ({
+		id: routeParams.groupId,
+		tenantSlug: tenant().slug,
+	}));
 
-  const updateGroup = trpc.group.update.useMutation(() => ({
-    onSuccess: () => group.refetch(),
-  }));
+	const updateGroup = trpc.group.update.useMutation(() => ({
+		onSuccess: () => group.refetch(),
+	}));
 
-  return (
-    <Show when={group.data}>
-      {(group) => {
-        const table = createMembersTable(() => group().id);
+	return (
+		<Show when={group.data}>
+			{(group) => {
+				const table = createMembersTable(() => group().id);
 
-        const updateName = (name: string) => {
-          if (name === "") {
-            toast.error("Group name cannot be empty");
-            return;
-          }
+				const updateName = (name: string) => {
+					if (name === "") {
+						toast.error("Group name cannot be empty");
+						return;
+					}
 
-          toast.promise(
-            updateGroup.mutateAsync({
-              tenantSlug: tenant().slug,
-              id: group().id,
-              name,
-            }),
-            {
-              loading: "Updating group name...",
-              success: "Group name updated",
-              error: "Failed to update group name",
-            }
-          );
-        };
+					toast.promise(
+						updateGroup.mutateAsync({
+							tenantSlug: tenant().slug,
+							id: group().id,
+							name,
+						}),
+						{
+							loading: "Updating group name...",
+							success: "Group name updated",
+							error: "Failed to update group name",
+						},
+					);
+				};
 
-        const [editingName, setEditingName] = createSignal(false);
+				const [editingName, setEditingName] = createSignal(false);
 
-        let nameEl: HTMLHeadingElement;
+				let nameEl: HTMLHeadingElement;
 
-        const [cachedName, setCachedName] = createSignal(group().name);
-        const name = createMemo(() =>
-          editingName() ? cachedName() : group().name
-        );
+				const [cachedName, setCachedName] = createSignal(group().name);
+				const name = createMemo(() =>
+					editingName() ? cachedName() : group().name,
+				);
 
-        return (
-          <PageLayout
-            heading={
-              <>
-                <PageLayoutHeading
-                  ref={nameEl!}
-                  class="p-2 -m-2"
-                  contenteditable={editingName()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      e.currentTarget.blur();
-                    } else if (e.key === "Escape") {
-                      e.preventDefault();
-                      setEditingName(false);
-                    }
-                  }}
-                >
-                  {name()}
-                </PageLayoutHeading>
-                <Button
-                  variant="link"
-                  size="iconSmall"
-                  class="text-lg"
-                  onClick={() => {
-                    setEditingName((e) => !e);
+				return (
+					<PageLayout
+						heading={
+							<>
+								<PageLayoutHeading
+									ref={nameEl!}
+									class="p-2 -m-2"
+									contenteditable={editingName()}
+									onKeyDown={(e) => {
+										if (e.key === "Enter") {
+											e.preventDefault();
+											e.currentTarget.blur();
+										} else if (e.key === "Escape") {
+											e.preventDefault();
+											setEditingName(false);
+										}
+									}}
+								>
+									{name()}
+								</PageLayoutHeading>
+								<Button
+									variant="link"
+									size="iconSmall"
+									class="text-lg"
+									onClick={() => {
+										setEditingName((e) => !e);
 
-                    if (editingName()) {
-                      setCachedName(group().name);
+										if (editingName()) {
+											setCachedName(group().name);
 
-                      nameEl.focus();
-                    } else {
-                      updateName(nameEl.textContent ?? "");
-                    }
-                  }}
-                >
-                  <Dynamic
-                    component={
-                      editingName()
-                        ? IconIcRoundCheck
-                        : IconMaterialSymbolsEditOutline
-                    }
-                  />
-                </Button>
-                <AddMemberSheet groupId={routeParams.groupId}>
-                  <As component={Button} class="ml-auto">
-                    Add Members
-                  </As>
-                </AddMemberSheet>
-              </>
-            }
-          >
-            <Suspense>
-              <StandardTable table={table} />
-            </Suspense>
-          </PageLayout>
-        );
-      }}
-    </Show>
-  );
+											nameEl.focus();
+										} else {
+											updateName(nameEl.textContent ?? "");
+										}
+									}}
+								>
+									<Dynamic
+										component={
+											editingName()
+												? IconIcRoundCheck
+												: IconMaterialSymbolsEditOutline
+										}
+									/>
+								</Button>
+								<AddMemberSheet groupId={routeParams.groupId}>
+									<As component={Button} class="ml-auto">
+										Add Members
+									</As>
+								</AddMemberSheet>
+							</>
+						}
+					>
+						<Suspense>
+							<StandardTable table={table} />
+						</Suspense>
+					</PageLayout>
+				);
+			}}
+		</Show>
+	);
 }
 
 const VariantDisplay = {
-  user: "User",
-  device: "Device",
+	user: "User",
+	device: "Device",
 } as const;
 
 type Variant = keyof typeof VariantDisplay;
 
 const columnHelper = createColumnHelper<{
-  pk: number;
-  name: string;
-  variant: Variant;
+	pk: number;
+	name: string;
+	variant: Variant;
 }>();
 
 export const columns = [
-  selectCheckboxColumn,
-  columnHelper.accessor("name", { header: "Name" }),
-  columnHelper.accessor("variant", {
-    header: "Variant",
-    cell: (info) => <Badge>{VariantDisplay[info.getValue()]}</Badge>,
-  }),
+	selectCheckboxColumn,
+	columnHelper.accessor("name", { header: "Name" }),
+	columnHelper.accessor("variant", {
+		header: "Variant",
+		cell: (info) => <Badge>{VariantDisplay[info.getValue()]}</Badge>,
+	}),
 ];
 
 function createMembersTable(groupId: Accessor<string>) {
-  const tenant = useTenant();
-  const members = trpc.group.members.useQuery(() => ({
-    id: groupId(),
-    tenantSlug: tenant().slug,
-  }));
+	const tenant = useTenant();
+	const members = trpc.group.members.useQuery(() => ({
+		id: groupId(),
+		tenantSlug: tenant().slug,
+	}));
 
-  return createStandardTable({
-    get data() {
-      return members.data ?? [];
-    },
-    columns,
-  });
+	return createStandardTable({
+		get data() {
+			return members.data ?? [];
+		},
+		columns,
+	});
 }
