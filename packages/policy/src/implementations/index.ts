@@ -35,9 +35,7 @@ type DoImpl<
 	P extends PolicyDefinition,
 	U extends Platform,
 	R extends Record<string, any>,
-> = InArray<InferPolicySupportedPlatforms<P>, U> extends true
-	? R
-	: Record<string, never>;
+> = InArray<InferPolicySupportedPlatforms<P>, U> extends true ? R : {};
 
 type PolicyImplementation<P extends PolicyDefinition> = DoImpl<
 	P,

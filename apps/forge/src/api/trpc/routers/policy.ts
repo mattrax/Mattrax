@@ -97,6 +97,7 @@ export const policyRouter = createTRPCRouter({
 		.query(async ({ ctx, input }) => {
 			const versions = await db
 				.select({
+					// TODO: Don't return everything here
 					id: policyVersions.id,
 					status: policyVersions.status,
 					data: policyVersions.data,
@@ -116,6 +117,33 @@ export const policyRouter = createTRPCRouter({
 				);
 
 			return versions;
+		}),
+
+	getVersion: tenantProcedure
+		.input(z.object({ policyId: z.string(), versionId: z.string() }))
+		.query(async ({ ctx, input }) => {
+			const [version] = await db
+				.select({
+					id: policyVersions.id,
+					status: policyVersions.status,
+					data: policyVersions.data,
+					deployedBy: accounts.name,
+					deployedAt: policyVersions.deployedAt,
+					deployComment: policyVersions.deployComment,
+					createdAt: policyVersions.createdAt,
+				})
+				.from(policyVersions)
+				.innerJoin(policies, eq(policyVersions.policyPk, policies.pk))
+				.leftJoin(accounts, eq(policyVersions.deployedBy, accounts.pk))
+				.where(
+					and(
+						eq(policies.id, input.policyId),
+						eq(policies.tenantPk, ctx.tenant.pk),
+						eq(policyVersions.id, input.versionId),
+					),
+				);
+
+			return version;
 		}),
 
 	updateVersion: tenantProcedure

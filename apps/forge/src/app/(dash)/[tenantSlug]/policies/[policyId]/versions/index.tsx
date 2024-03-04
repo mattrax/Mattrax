@@ -25,7 +25,7 @@ export const columns = [
 	column.display({
 		id: "number",
 		header: "Number",
-		cell: ({ row }) => <A href={row.getValue("id") || ""}># {row.index + 1}</A>,
+		cell: ({ row }) => <A href={row.original.id}># {row.index + 1}</A>,
 		size: 1,
 	}),
 	column.accessor("status", {
