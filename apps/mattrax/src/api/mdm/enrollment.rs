@@ -9,12 +9,22 @@ use axum::{
 };
 use base64::prelude::*;
 use hyper::header;
+use ms_mde::{
+    Action, ActivityId, BinarySecurityToken, DiscoverRequest, DiscoverResponse,
+    DiscoverResponseBody, DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult,
+    EnrollmentRequest, EnrollmentResponse, EnrollmentResponseBody, RequestSecurityTokenResponse,
+    RequestSecurityTokenResponseCollection, RequestedSecurityToken, ResponseHeader,
+    ACTIVITY_ID_XMLNS, DISCOVER_ACTION_REQUEST, DISCOVER_ACTION_RESPONSE, DISCOVER_RESPONSE_XMLNS,
+    ENROLLMENT_ACTION_REQUEST, ENROLLMENT_ACTION_RESPONSE, ENROLLMENT_REQUEST_TYPE_ISSUE,
+    ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION,
+    REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION, REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE,
+};
 use mysql_common::time::OffsetDateTime;
 use rcgen::{
-    Certificate, CertificateSigningRequestParams, CustomExtension, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose, SerialNumber
+    Certificate, CertificateSigningRequestParams, CustomExtension, DistinguishedName, DnType,
+    ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose, SerialNumber,
 };
 use serde::Deserialize;
-use ms_mde::{Action, ActivityId, DiscoverRequest, DiscoverResponse, DiscoverResponseBody, DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult, EnrollmentRequest, ResponseHeader, ACTIVITY_ID_XMLNS, DISCOVER_ACTION_REQUEST, DISCOVER_ACTION_RESPONSE, DISCOVER_RESPONSE_XMLNS, ENROLLMENT_ACTION_REQUEST, ENROLLMENT_REQUEST_TYPE_ISSUE, ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION};
 use sha1::{Digest, Sha1};
 use tracing::error;
 
@@ -71,7 +81,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 error!("todo: proper soap fault. invalid action '{}', expected '{}", cmd.header.action, DISCOVER_ACTION_REQUEST);
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
-        
+
             // TODO: Posthog metrics on `cmd.body.discover.request.request_version`
 
             let (enrollment_domain, web_origin) = {
@@ -87,7 +97,6 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                         // TODO: Dynamic values
                         correlation_id: "8c6060c4-3d78-4d73-ae17-e8bce88426ee".into(),
                         value: "8c6060c4-3d78-4d73-ae17-e8bce88426ee".into(),
-                      
                     },
                     relates_to: cmd.header.message_id,
                 },
@@ -240,11 +249,24 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             //     return
             // }
 
+            // TODO: Mattrax auth or AAD auth
+
             // TODO: Authentication
             // upn := Authenticate(mttxAPI, aadService, certService, fault, cmd, p7)
             // if upn == "" {
             //     return
             // }
+
+            // let key: Hmac<Sha256> = Hmac::new_from_slice(b"some-secret").unwrap();
+            // let mut claims = BTreeMap::new();
+            // claims.insert("sub", "someone");
+            // // TODO: Token expiry working -> it's determinstic no shot time is being used.
+            // let token_str = claims.sign_with_key(&key).unwrap();
+            // assert_eq!(
+            //     token_str,
+            //     "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzb21lb25lIn0.5wwE1sBrs-vftww_BGIuTVDeHtc1Jsjo-fiHhDwR8m0"
+            // );
+
             let upn = "bob@mattrax.app";
 
             let additional_context = cmd.body.request_security_token.additional_context;
@@ -272,7 +294,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             };
             let mut csr = CertificateSigningRequestParams::from_der(&csr).unwrap(); // TODO: Error handling
-            
+
             // Version:               csr.Version,
             // Signature:             csr.Signature,
             // SignatureAlgorithm:    csr.SignatureAlgorithm,
@@ -304,7 +326,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                     			// 	fault.AdvancedFault(err, "the management server encountered a fault", "InMaintenance", soap.FaultCodeInternalServiceFault)
                     			// 	return
                     			// }
-        
+
                     			// wapProvisioningDocCharacteristics = append(wapProvisioningDocCharacteristics, wap.NewW7Application(internal.ProviderID, internal.ServerDisplayName, internal.ManagementServiceURL, sslClientCertSearchCriteria), wap.NewDMClient(internal.ProviderID, []wap.Parameter{
                     			// 	{
                     			// 		Name:     "EntDMID",
@@ -351,9 +373,6 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             // }
             // rawProvisioningProfile = append([]byte(`<?xml version="1.0" encoding="UTF-8"?>`), rawProvisioningProfile...)
 
-            // println!("{cmd:#?}");
-            // todo!();
-
             let mut hasher = Sha1::new();
             hasher.update(state.identity_cert.der());
             let identity_cert_fingerprint =  hasher.finalize();
@@ -366,21 +385,24 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             let signed_client_cert_fingerprint = hasher.finalize();
             let signed_client_cert_fingerprint = hex::encode(&signed_client_cert_fingerprint).to_uppercase();
 
-            
+
             let client_ctr_raw = BASE64_STANDARD.encode(certificate.der());
-            
+
             let ssl_client_cert_search_criteria = format!("Subject={}&amp;Stores=MY%5C{cert_store}", urlencoding::encode("CN=Device"));
             // TODO: Derive subject from the certificate - `certificate.get_params().distinguished_name()`
-            
+
 
             // TODO: Remove the device from the DB if it doesn't do an initial checkin within a certain time period
             // TODO: Get all this information from parsing the request.
-            let tenant_pk: i32 = 5;
-            state.db.create_device(cuid2::create_id(), "TODO".into(), "Windows".into(), "Mind your own business".into(), tenant_pk).await.unwrap();
-            
+
+            // TODO: `HWDevID`, `DeviceID`, `OSVersion`
+
+            let tenant_pk: i32 = 5; // TODO: Work out this
+            state.db.create_device(cuid2::create_id(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), "Windows".into(), "Mind your own business".into(), tenant_pk).await.unwrap();
+
             // TODO: Get the device's DB id and put into this
             // TODO: Lookup and set tenant name
-            let domain = "https://mdm.mattrax.app"; // TODO: From config
+            let domain = state.config.get().domain.clone();
             let wap_provisioning_profile = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
             <wap-provisioningdoc version="1.1">
                 <characteristic type="CertificateStore">
@@ -441,42 +463,51 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
 
             let wap_provisioning_profile_encoded = BASE64_STANDARD.encode(wap_provisioning_profile.replace("\n\t", ""));
 
-            let message_id = cmd.header.message_id;
-            let body  = format!(r#"<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
-            xmlns:a="http://www.w3.org/2005/08/addressing"
-            xmlns:u="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">
-            <s:Header>
-                <a:Action s:mustUnderstand="1">http://schemas.microsoft.com/windows/pki/2009/01/enrollment/RSTRC/wstep</a:Action>
-                <a:RelatesTo>{message_id}</a:RelatesTo>
-                <o:Security xmlns:o="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" s:mustUnderstand="1">
-                    <u:Timestamp u:Id="_0">
-                        <u:Created>2018-11-30T00:32:59.420Z</u:Created>
-                        <u:Expires>2018-12-30T00:37:59.420Z</u:Expires>
-                    </u:Timestamp>
-                </o:Security>
-            </s:Header>
-            <s:Body>
-                <RequestSecurityTokenResponseCollection xmlns="http://docs.oasis-open.org/ws-sx/ws-trust/200512">
-                    <RequestSecurityTokenResponse>
-                        <TokenType>http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken</TokenType>
-                        <DispositionMessage xmlns="http://schemas.microsoft.com/windows/pki/2009/01/enrollment"></DispositionMessage>
-                        <RequestedSecurityToken>
-                            <BinarySecurityToken xmlns="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" ValueType="http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentProvisionDoc" EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#base64binary">{wap_provisioning_profile_encoded}</BinarySecurityToken>
-                        </RequestedSecurityToken>
-                        <RequestID xmlns="http://schemas.microsoft.com/windows/pki/2009/01/enrollment">0</RequestID>
-                    </RequestSecurityTokenResponse>
-                </RequestSecurityTokenResponseCollection>
-            </s:Body>
-        </s:Envelope>"#);
+            let response = EnrollmentResponse {
+                header: ResponseHeader {
+                    action: Action::from(ENROLLMENT_ACTION_RESPONSE),
+                    activity_id: ActivityId {
+                        xmlns: ACTIVITY_ID_XMLNS.into(),
+                        // TODO: Dynamic values
+                        correlation_id: "8c6060c4-3d78-4d73-ae17-e8bce88426ee".into(),
+                        value: "8c6060c4-3d78-4d73-ae17-e8bce88426ee".into(),
+                    },
+                    relates_to: cmd.header.message_id,
+                    // <o:Security xmlns:o="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" s:mustUnderstand="1">
+                    //     <u:Timestamp u:Id="_0">
+                    //         <u:Created>2018-11-30T00:32:59.420Z</u:Created>
+                    //         <u:Expires>2018-12-30T00:37:59.420Z</u:Expires>
+                    //     </u:Timestamp>
+                    // </o:Security>
+                },
+                body: EnrollmentResponseBody {
+                    request_security_token_response_collection: RequestSecurityTokenResponseCollection {
+                        xmlns: REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION.into(),
+                        request_security_token_response: RequestSecurityTokenResponse {
+                            token_type: REQUEST_SECURITY_TOKEN_TYPE.into(),
+                            requested_security_token: RequestedSecurityToken {
+                                binary_security_token: BinarySecurityToken {
+                                    xmlns: Some(WSSE_NAMESPACE.into()),
+                                    // TODO: Use constants from `ms-mde`
+                                    value_type: "http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentProvisionDoc".into(),
+                                    encoding_type: "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#base64binary".into(),
+                                    value: wap_provisioning_profile_encoded,
+                                }
+                            }
+                        }
+                    }
+                }
+            };
 
-
-            Response::builder()
-                .header("Content-Type", "application/soap+xml; charset=utf-8")
-                // This header is important. The Windows MDM client doesn't like chunked encodings.
-                .header("Content-Length", body.len())
-                .body(body)
-                .unwrap()
-                .into_response()
+            let result = response.to_string().unwrap(); // TODO: Error handling
+            (
+                [
+                    (header::CONTENT_TYPE, HeaderValue::from_static("application/soap+xml; charset=utf-8")),
+                    // This header is important. The Windows MDM client doesn't like chunked encodings.
+                    (header::CONTENT_LENGTH, HeaderValue::from_str(&result.len().to_string()).expect("number will always be valid"))
+                ],
+                result,
+            ).into_response()
         }))
         .with_state(state)
 }

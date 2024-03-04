@@ -3,7 +3,7 @@ use std::error::Error;
 use base64::prelude::*;
 use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
-use crate::RequestHeader;
+use crate::{RequestHeader, ResponseHeader};
 
 pub const ENROLLMENT_ACTION_REQUEST: &str =
     "http://schemas.microsoft.com/windows/pki/2009/01/enrollment/RST/wstep";
@@ -29,13 +29,22 @@ pub const BINARY_SECURITY_TOKEN_TYPE_PKCS7: &str =
 pub const BINARY_SECURITY_TOKEN_TYPE_PKCS10: &str =
     "http://schemas.microsoft.com/windows/pki/2009/01/enrollment#PKCS10";
 
+pub const REQUEST_SECURITY_TOKEN_TYPE: &str =
+    "http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken";
+
+pub const REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION: &str =
+    "http://docs.oasis-open.org/ws-sx/ws-trust/200512";
+
+pub const WSSE_NAMESPACE: &str =
+    "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd";
+
 ///  contains the device information and identity certificate CSR
 #[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 #[easy_xml(root, rename = "Envelope", prefix="s", namespace = {
     "a" : "http://www.w3.org/2005/08/addressing",
     "s" : "http://www.w3.org/2003/05/soap-envelope",
     "u": "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd",
-    "wsse": "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd",
+    "wsse": WSSE_NAMESPACE,
     "wst": "http://docs.oasis-open.org/ws-sx/ws-trust/200512",
     "ac": "http://schemas.microsoft.com/windows/pki/2009/01/enrollment",
 })]
@@ -105,6 +114,9 @@ pub struct ContextItem {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 #[easy_xml(rename = "BinarySecurityToken", prefix = "wsse")]
 pub struct BinarySecurityToken {
+    // TODO: Do this in easy_xml
+    #[easy_xml(rename = "xmlns", attribute)]
+    pub xmlns: Option<String>,
     #[easy_xml(rename = "ValueType", attribute)]
     pub value_type: String,
     #[easy_xml(rename = "EncodingType", attribute)]
@@ -128,16 +140,16 @@ impl BinarySecurityToken {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 #[easy_xml(root, rename = "Envelope", prefix="s",
     namespace = {
-        // TODO: Any other ones???
         "a" : "http://www.w3.org/2005/08/addressing",
-        "s" : "http://www.w3.org/2003/05/soap-envelope"
+        "s" : "http://www.w3.org/2003/05/soap-envelope",
+        "u": "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"
     }
 )]
 pub struct EnrollmentResponse {
-    // #[easy_xml(rename = "Header", prefix = "s")]
-    // pub header: ResponseHeader,
-    // #[easy_xml(rename = "Body", prefix = "s")]
-    // pub body: DiscoverResponseBody,
+    #[easy_xml(rename = "Header", prefix = "s")]
+    pub header: ResponseHeader,
+    #[easy_xml(rename = "Body", prefix = "s")]
+    pub body: EnrollmentResponseBody,
 }
 
 impl EnrollmentResponse {
@@ -149,16 +161,37 @@ impl EnrollmentResponse {
     }
 }
 
-// type EnrollmentResponse struct {
-// 	XMLName                      xml.Name            `xml:"http://docs.oasis-open.org/ws-sx/ws-trust/200512 RequestSecurityTokenResponseCollection"`
-// 	TokenType                    string              `xml:"RequestSecurityTokenResponse>TokenType"`
-// 	DispositionMessage           DispositionMessage  `xml:"http://schemas.microsoft.com/windows/pki/2009/01/enrollment RequestSecurityTokenResponse>DispositionMessage"`
-// 	RequestedBinarySecurityToken BinarySecurityToken `xml:"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd RequestSecurityTokenResponse>RequestedSecurityToken>BinarySecurityToken"`
-// 	RequestID                    int                 `xml:"http://schemas.microsoft.com/windows/pki/2009/01/enrollment RequestSecurityTokenResponse>RequestID"`
-// }
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
+#[easy_xml(rename = "Body", prefix = "s")]
+pub struct EnrollmentResponseBody {
+    #[easy_xml(rename = "RequestSecurityTokenResponseCollection")]
+    pub request_security_token_response_collection: RequestSecurityTokenResponseCollection,
+}
 
-// // DispositionMessage is an extension to the string type that allows an attribute definition of the language
-// type DispositionMessage struct {
-// 	Lang  string `xml:"xml:lang,attr"`
-// 	Value string `xml:",innerxml"`
-// }
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
+#[easy_xml(rename = "RequestSecurityTokenResponseCollection")]
+pub struct RequestSecurityTokenResponseCollection {
+    // TODO: Make this work with easy_xml properly
+    #[easy_xml(rename = "xmlns", attribute)]
+    pub xmlns: String,
+
+    #[easy_xml(rename = "RequestSecurityTokenResponse")]
+    pub request_security_token_response: RequestSecurityTokenResponse,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
+#[easy_xml(rename = "RequestSecurityTokenResponse")]
+pub struct RequestSecurityTokenResponse {
+    #[easy_xml(rename = "TokenType")]
+    pub token_type: String,
+    // <DispositionMessage xmlns="http://schemas.microsoft.com/windows/pki/2009/01/enrollment"></DispositionMessage>
+    // <RequestID xmlns="http://schemas.microsoft.com/windows/pki/2009/01/enrollment">0</RequestID>
+    #[easy_xml(rename = "RequestedSecurityToken")]
+    pub requested_security_token: RequestedSecurityToken,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
+pub struct RequestedSecurityToken {
+    #[easy_xml(rename = "BinarySecurityToken")]
+    pub binary_security_token: BinarySecurityToken,
+}

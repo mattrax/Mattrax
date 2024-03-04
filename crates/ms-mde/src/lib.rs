@@ -14,9 +14,12 @@ pub use discovery::{
 };
 pub use enrollment::{
     AdditionalContext, BinarySecurityToken, ContextItem, EnrollmentRequest, EnrollmentRequestBody,
-    EnrollmentRequestBodyRequestSecurityToken, BINARY_SECURITY_TOKEN_TYPE_PKCS10,
-    BINARY_SECURITY_TOKEN_TYPE_PKCS7, ENROLLMENT_ACTION_REQUEST, ENROLLMENT_ACTION_RESPONSE,
-    ENROLLMENT_REQUEST_TYPE_ISSUE, ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION,
+    EnrollmentRequestBodyRequestSecurityToken, EnrollmentResponse, EnrollmentResponseBody,
+    RequestSecurityTokenResponse, RequestSecurityTokenResponseCollection, RequestedSecurityToken,
+    BINARY_SECURITY_TOKEN_TYPE_PKCS10, BINARY_SECURITY_TOKEN_TYPE_PKCS7, ENROLLMENT_ACTION_REQUEST,
+    ENROLLMENT_ACTION_RESPONSE, ENROLLMENT_REQUEST_TYPE_ISSUE, ENROLLMENT_REQUEST_TYPE_RENEW,
+    MICROSOFT_DEVICE_ID_EXTENSION, REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION,
+    REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE,
 };
 pub use header::{
     Action, ActivityId, RequestHeader, RequestHeaderReplyTo, RequestHeaderSecurity,
