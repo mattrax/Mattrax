@@ -153,10 +153,9 @@ function Domains() {
 				}),
 		}));
 
-	const domains = trpc.tenant.identityProvider.domains.useQuery(
-		() => ({ tenantSlug: tenant().slug }),
-		() => ({ enabled: !!provider.data }),
-	);
+	const domains = trpc.tenant.identityProvider.domains.useQuery(() => ({
+		tenantSlug: tenant().slug,
+	}));
 
 	function allDomains() {
 		const arr = [

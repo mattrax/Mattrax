@@ -66,7 +66,7 @@ export default function Layout(props: ParentProps) {
 					<ErrorBoundary
 						fallback={(err, reset) => (
 							<div class="flex flex-col items-center justify-center h-full gap-4">
-								<h1 class="text-3xl font-semibold">Failed To Load Mattrax</h1>
+								<h1 class="text-3xl font-semibold">An error occurred!</h1>
 								<p class="text-gray-600">{err.toString()}</p>
 								<Button onClick={reset}>Reload</Button>
 							</div>

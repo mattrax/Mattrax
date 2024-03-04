@@ -77,7 +77,10 @@ export const identityProviderRouter = createTRPCRouter({
 	}),
 
 	domains: tenantProcedure.query(async ({ ctx }) => {
-		const provider = await ensureIdentityProvider(ctx.tenant.pk);
+		const provider = await ensureIdentityProvider(ctx.tenant.pk).catch(
+			() => null,
+		);
+		if (provider === null) return [];
 
 		let identityProvider!: IdentityProvider;
 
