@@ -12,6 +12,7 @@ import {
 import { isDebugMode, trpc, untrackScopeFromSuspense } from "~/lib";
 import { useTenant } from "../[tenantSlug]";
 import { PageLayout, PageLayoutHeading } from "./PageLayout";
+import type { StatsTarget } from "~/api/trpc/routers/tenant";
 
 export default function Page() {
 	const tenant = useTenant();
@@ -21,14 +22,17 @@ export default function Page() {
 
 	const data = untrackScopeFromSuspense(() => ({ ...stats.data }));
 
+	const getValue = (v: StatsTarget) =>
+		data().find?.((i) => i.variant === v)?.count ?? 0;
+
 	return (
 		<PageLayout heading={<PageLayoutHeading>Dashboard</PageLayoutHeading>}>
 			<dl class="gap-5 flex">
-				<StatItem title="Users" value={data().users ?? 0} />
-				<StatItem title="Devices" value={data().devices ?? 0} />
-				<StatItem title="Policies" value={data().policies ?? 0} />
-				<StatItem title="Applications" value={data().applications ?? 0} />
-				<StatItem title="Groups" value={data().groups ?? 0} />
+				<StatItem title="Users" value={getValue("users")} />
+				<StatItem title="Devices" value={getValue("devices")} />
+				<StatItem title="Policies" value={getValue("policies")} />
+				<StatItem title="Applications" value={getValue("applications")} />
+				<StatItem title="Groups" value={getValue("groups")} />
 			</dl>
 			{isDebugMode() ? (
 				<div class="flex">

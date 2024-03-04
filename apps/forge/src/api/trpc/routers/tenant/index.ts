@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
-import { count, eq } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -20,7 +20,14 @@ import {
 import { adminsRouter } from "./admins";
 import { billingRouter } from "./billing";
 import { identityProviderRouter } from "./identityProvider";
-import { promiseAllObject } from "~/api/utils";
+import { union } from "drizzle-orm/mysql-core";
+
+export type StatsTarget =
+	| "devices"
+	| "users"
+	| "policies"
+	| "applications"
+	| "groups";
 
 export const tenantRouter = createTRPCRouter({
 	create: authedProcedure
@@ -93,33 +100,28 @@ export const tenantRouter = createTRPCRouter({
 		),
 
 	stats: tenantProcedure.query(({ ctx }) =>
-		promiseAllObject({
-			devices: db
-				.select({ count: count() })
-				.from(devices)
-				.where(eq(devices.tenantPk, ctx.tenant.pk))
-				.then((rows) => rows[0]!.count),
-			users: db
-				.select({ count: count() })
+		union(
+			db
+				.select({ count: count(), variant: sql<StatsTarget>`"users"` })
 				.from(users)
-				.where(eq(users.tenantPk, ctx.tenant.pk))
-				.then((rows) => rows[0]!.count),
-			policies: db
-				.select({ count: count() })
+				.where(eq(users.tenantPk, ctx.tenant.pk)),
+			db
+				.select({ count: count(), variant: sql<StatsTarget>`"devices"` })
+				.from(devices)
+				.where(eq(devices.tenantPk, ctx.tenant.pk)),
+			db
+				.select({ count: count(), variant: sql<StatsTarget>`"policies"` })
 				.from(policies)
-				.where(eq(policies.tenantPk, ctx.tenant.pk))
-				.then((rows) => rows[0]!.count),
-			applications: db
-				.select({ count: count() })
+				.where(eq(policies.tenantPk, ctx.tenant.pk)),
+			db
+				.select({ count: count(), variant: sql<StatsTarget>`"applications"` })
 				.from(applications)
-				.where(eq(applications.tenantPk, ctx.tenant.pk))
-				.then((rows) => rows[0]!.count),
-			groups: db
-				.select({ count: count() })
+				.where(eq(applications.tenantPk, ctx.tenant.pk)),
+			db
+				.select({ count: count(), variant: sql<StatsTarget>`"groups"` })
 				.from(groups)
-				.where(eq(groups.tenantPk, ctx.tenant.pk))
-				.then((rows) => rows[0]!.count),
-		}),
+				.where(eq(groups.tenantPk, ctx.tenant.pk)),
+		),
 	),
 
 	delete: tenantProcedure.mutation(async ({ ctx }) => {

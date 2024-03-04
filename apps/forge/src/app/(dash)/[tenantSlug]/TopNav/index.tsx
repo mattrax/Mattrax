@@ -125,7 +125,9 @@ function FeedbackPopover(props: ParentProps) {
 		<Popover open={open()} onOpenChange={setOpen}>
 			<PopoverTrigger asChild>{props.children}</PopoverTrigger>
 			<PopoverContent class="flex flex-col gap-2 md:w-[350px]">
-				<p class="text-sm">Enter feedback and we will get back to you:</p>
+				<p class="text-sm text-gray-700">
+					We'll contact you via email when your feedback is addressed
+				</p>
 				<Textarea
 					value={content()}
 					onInput={(e) => setContent(e.target.value)}

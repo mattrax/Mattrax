@@ -25,7 +25,7 @@ export default function Page() {
 		<Show when={defaultTenant()} fallback={<CreateTenant />}>
 			{(
 				tenant, // If we have an active tenant, send the user to it
-			) => <Navigate href={`/${tenant().slug}`} />}
+			) => <Navigate href={tenant().slug} />}
 		</Show>
 	);
 }

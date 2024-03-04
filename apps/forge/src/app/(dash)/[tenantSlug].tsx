@@ -14,7 +14,7 @@ import { RouterOutput } from "~/api/trpc";
 import { Button } from "~/components/ui";
 import { SuspenseError } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
-import { useAuthContext } from "../(dash)";
+import { useAuthContext } from "~/app/(dash)";
 import TopNav from "./[tenantSlug]/TopNav";
 
 export const [TenantContextProvider, useTenant] = createContextProvider(

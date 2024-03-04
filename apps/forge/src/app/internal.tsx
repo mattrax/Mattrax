@@ -19,10 +19,10 @@ export default function Page() {
 			</a>
 			<h1 class="text-4xl pb-4">Top-secret dashboard</h1>
 			<div class="flex flex-col space-y-2">
-				<For each={Object.entries(stats.data || {})}>
-					{([name, value]) => (
+				<For each={stats.data ?? []}>
+					{(row) => (
 						<p>
-							{name}: {value}
+							{row.variant}: {row.count}
 						</p>
 					)}
 				</For>

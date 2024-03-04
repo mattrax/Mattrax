@@ -17,6 +17,7 @@ import {
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
 import { useTenant } from "../../[tenantSlug]";
+import ENTRA_ID_ICON from "~/assets/EntraIDLogo.svg";
 
 export default function Page() {
 	return (
@@ -74,10 +75,13 @@ function IdentityProviderCard() {
 				when={provider.data}
 				fallback={
 					<Button
+						variant="outline"
+						class="space-x-2"
 						onClick={() => linkEntra.mutate({ tenantSlug: tenant().slug })}
 						disabled={linkEntra.isPending}
 					>
-						Entra ID
+						<img src={ENTRA_ID_ICON} class="w-6" alt="Entra ID Logo" />
+						<span>Entra ID</span>
 					</Button>
 				}
 			>
@@ -149,9 +153,10 @@ function Domains() {
 				}),
 		}));
 
-	const domains = trpc.tenant.identityProvider.domains.useQuery(() => ({
-		tenantSlug: tenant().slug,
-	}));
+	const domains = trpc.tenant.identityProvider.domains.useQuery(
+		() => ({ tenantSlug: tenant().slug }),
+		() => ({ enabled: !!provider.data }),
+	);
 
 	function allDomains() {
 		const arr = [
@@ -186,18 +191,14 @@ function Domains() {
 				<Show when={provider.data}>
 					<Button
 						class="ml-auto"
-						onClick={() =>
-							refreshDomains.mutate({
-								tenantSlug: tenant().slug,
-							})
-						}
+						onClick={() => refreshDomains.mutate({ tenantSlug: tenant().slug })}
 						disabled={refreshDomains.isPending}
 					>
 						Refresh
 					</Button>
 				</Show>
 			</div>
-			<Show when={!!provider.data} keyed>
+			<Show when={provider.data}>
 				<Suspense>
 					<ul class="rounded border border-gray-200 divide-y divide-gray-200">
 						<For each={allDomains()}>

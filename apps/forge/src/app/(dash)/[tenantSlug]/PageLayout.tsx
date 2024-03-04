@@ -1,4 +1,4 @@
-import { ComponentProps, JSX } from "solid-js";
+import { ComponentProps, JSX, splitProps } from "solid-js";
 import clsx from "clsx";
 
 export function PageLayout(
@@ -7,9 +7,11 @@ export function PageLayout(
 		size?: "md" | "lg";
 	},
 ) {
+	const [_, divProps] = splitProps(props, ["heading", "size"]);
+
 	return (
 		<div
-			{...props}
+			{...divProps}
 			class={clsx(
 				"px-4 w-full mx-auto gap-4",
 				props.size === "lg" ? "max-w-6xl" : "max-w-5xl",
