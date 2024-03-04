@@ -1,4 +1,3 @@
-import { getRequestEvent } from "solid-js/web";
 import { EventHandler, defineEventHandler, toWebRequest } from "vinxi/server";
 
 import { app } from "~/api/server";

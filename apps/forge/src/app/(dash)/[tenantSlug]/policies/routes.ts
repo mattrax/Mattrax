@@ -16,7 +16,6 @@ export default [
 	},
 	{
 		path: "/:policyId",
-		component: lazy(() => import("./[policyId]")),
 		load: ({ params }) =>
 			trpc.useContext().policy.get.ensureData({
 				policyId: params.policyId!,

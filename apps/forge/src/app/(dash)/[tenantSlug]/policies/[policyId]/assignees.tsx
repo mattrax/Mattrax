@@ -32,13 +32,18 @@ export default function Page() {
 	);
 
 	return (
-		<div class="flex flex-col space-y-2">
-			<div class="flex flex-row justify-between">
-				<h2 class="text-2xl font-bold mb-4">Scope</h2>
-				<AddMemberSheet groupId={routeParams.policyId}>
-					<As component={Button}>Add Members</As>
-				</AddMemberSheet>
-			</div>
+		<PageLayout
+			heading={
+				<>
+					<PageLayoutHeading>Assignees</PageLayoutHeading>
+					<AddMemberSheet groupId={routeParams.policyId}>
+						<As component={Button} class="ml-auto">
+							Add Assignee
+						</As>
+					</AddMemberSheet>
+				</>
+			}
+		>
 			<Show when={group.data}>
 				{(group) => {
 					const table = createMembersTable(() => group().id);
@@ -50,7 +55,7 @@ export default function Page() {
 					);
 				}}
 			</Show>
-		</div>
+		</PageLayout>
 	);
 }
 
@@ -114,6 +119,7 @@ import {
 	SheetTitle,
 	SheetTrigger,
 } from "~/components/ui/sheet";
+import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 
 const AddMemberTableOptions = {
 	all: "All",

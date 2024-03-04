@@ -4,6 +4,7 @@ import { Form, InputField, createZodForm } from "~/components/forms";
 import { Button, Label } from "~/components/ui";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
+import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 
 export default function Page() {
 	const params = useZodParams({
@@ -30,8 +31,7 @@ export default function Page() {
 	});
 
 	return (
-		<div class="flex flex-col space-y-2">
-			<h2 class="text-2xl font-bold mb-4">General</h2>
+		<PageLayout heading={<PageLayoutHeading>Overview</PageLayoutHeading>}>
 			<Form form={form} fieldsetClass="space-y-2">
 				<Label for="name">Name</Label>
 				<InputField
@@ -45,6 +45,6 @@ export default function Page() {
 					<span class="text-sm font-semibold leading-6">Save</span>
 				</Button>
 			</Form>
-		</div>
+		</PageLayout>
 	);
 }

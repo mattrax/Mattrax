@@ -7,16 +7,20 @@ import {
 	getFilteredRowModel,
 	createColumnHelper,
 } from "@tanstack/solid-table";
-import { As } from "@kobalte/core";
 import { A } from "@solidjs/router";
 import { RouterOutput } from "~/api/trpc";
 
 import { trpc } from "~/lib";
-import { StandardTable } from "~/components/StandardTable";
+import {
+	StandardTable,
+	createSearchParamPagination,
+	createStandardTable,
+} from "~/components/StandardTable";
 import { useTenant } from "~/app/(dash)/[tenantSlug]";
 import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
 import { createTimeAgo } from "@solid-primitives/date";
+import { PageLayout, PageLayoutHeading } from "../../../PageLayout";
 
 const column =
 	createColumnHelper<RouterOutput["policy"]["getVersions"][number]>();
@@ -65,26 +69,15 @@ function createVersionTable() {
 		policyId: params.policyId,
 	}));
 
-	const table = createSolidTable({
+	const table = createStandardTable({
 		get data() {
 			return versions.data || [];
 		},
 		columns,
-		// onSortingChange: setSorting,
-		// onColumnFiltersChange: setColumnFilters,
-		getCoreRowModel: getCoreRowModel(),
-		getPaginationRowModel: getPaginationRowModel(),
-		getSortedRowModel: getSortedRowModel(),
-		getFilteredRowModel: getFilteredRowModel(),
-		// onColumnVisibilityChange: setColumnVisibility,
-		// onRowSelectionChange: setRowSelection,
-		// state: {
-		//   sorting,
-		//   columnFilters,
-		//   columnVisibility,
-		//   rowSelection,
-		// },
+		pagination: true,
 	});
+
+	createSearchParamPagination(table, "page");
 
 	return { table, policy, versions };
 }
@@ -93,11 +86,8 @@ export default function Page() {
 	const { table } = createVersionTable();
 
 	return (
-		<div class="flex flex-col space-y-2">
-			<h2 class="text-2xl font-bold mb-4">Versions</h2>
-			<Suspense>
-				<StandardTable table={table} />
-			</Suspense>
-		</div>
+		<PageLayout heading={<PageLayoutHeading>Versions</PageLayoutHeading>}>
+			<StandardTable table={table} />
+		</PageLayout>
 	);
 }

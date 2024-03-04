@@ -1,10 +1,11 @@
 import { As, Tabs } from "@kobalte/core";
 import { A, useMatch, useResolvedPath } from "@solidjs/router";
-import { For, JSX, ParentProps } from "solid-js";
+import { For, JSX, ParentProps, Show, Suspense, createEffect } from "solid-js";
 
 import { createSignal } from "solid-js";
 import { useAuthContext } from "~/app/(dash)";
 import {
+	Badge,
 	Button,
 	Popover,
 	PopoverContent,
@@ -14,58 +15,87 @@ import {
 import { trpc } from "~/lib";
 import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
 import Logo from "~/assets/MATTRAX.png";
+import { createMemo } from "solid-js";
 
 type NavbarItem = {
-	icon: (props: { class: string }) => JSX.Element;
 	title: string;
 	href: string;
 };
 
-const items: NavbarItem[] = [
+const tenantItems: NavbarItem[] = [
 	{
-		icon: IconPhHouseDuotone,
 		title: "Dashboard",
 		href: "",
 	},
 	{
-		icon: IconPhUserDuotone,
 		title: "Users",
 		href: "users",
 	},
 	{
-		icon: IconPhLaptopDuotone,
 		title: "Devices",
 		href: "devices",
 	},
 	{
-		icon: IconPhClipboardDuotone,
 		title: "Policies",
 		href: "policies",
 	},
 	{
-		icon: IconPhAppWindowDuotone,
 		title: "Applications",
 		href: "apps",
 	},
 	{
-		icon: IconPhBoundingBoxDuotone,
 		title: "Groups",
 		href: "groups",
 	},
 	{
-		icon: IconPhGearDuotone,
 		title: "Settings",
 		href: "settings",
 	},
 ];
 
+const policyItems: NavbarItem[] = [
+	{
+		title: "Overview",
+		href: "",
+	},
+	{
+		title: "Versions",
+		href: "versions",
+	},
+	{
+		title: "Assignees",
+		href: "assignees",
+	},
+];
+
 export default function Component(props: TenantSwitcherProps): JSX.Element {
-	const path = useResolvedPath(() => "");
-	const value = useMatch(() => `${path()}/*rest`);
-
-	const tabValue = () => value()?.params.rest?.split("/")[0];
-
 	const auth = useAuthContext();
+
+	const path = useResolvedPath(() => "");
+	const tenantMatch = useMatch(() => `${path()}/*rest`);
+	const policyMatch = useMatch(() => `${path()}/policies/:policyId/*rest`);
+
+	const matches = createMemo(() => {
+		const policy = policyMatch();
+
+		if (policy !== undefined) {
+			return {
+				items: policyItems.map((i) => ({
+					...i,
+					href: `policies/${policy.params.policyId}${
+						i.href !== "" ? `/${i.href}` : ""
+					}`,
+					value: i.href,
+				})),
+				value: () => policy.params.rest?.split("/")[0] ?? "",
+			};
+		}
+
+		return {
+			items: tenantItems.map((i) => ({ ...i, value: i.href })),
+			value: () => tenantMatch()!.params.rest?.split("/")[0] ?? "",
+		};
+	});
 
 	return (
 		<>
@@ -75,6 +105,29 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 				</A>
 				<div class="w-1" />
 				<TenantSwitcher {...props} />
+				<Show when={policyMatch()}>
+					{(match) => {
+						const policyId = () => match()!.params.policyId!;
+
+						const policy = trpc.policy.get.useQuery(() => ({
+							policyId: policyId(),
+							tenantSlug: props.activeTenant.slug,
+						}));
+
+						return (
+							<>
+								<span class="text-xl text-gray-300 mx-2">/</span>
+								<A
+									href={`${path()}/policies/${policyId()}`}
+									class="flex flex-row items-center gap-2"
+								>
+									<span>{policy.data?.name}</span>
+									<Badge variant="outline">Policy</Badge>
+								</A>
+							</>
+						);
+					}}
+				</Show>
 				<div class="flex-1" />
 				<FeedbackPopover>
 					<As component={Button} variant="outline" size="sm" class="mr-4">
@@ -86,11 +139,11 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 			</div>
 
 			<nav class="text-white sticky border-b border-gray-300 top-0 z-10 bg-white -mt-2">
-				<Tabs.Root value={tabValue()} class="mx-2 relative">
+				<Tabs.Root value={matches().value()} class="mx-2 relative">
 					<Tabs.List class="flex flex-row">
-						<For each={items}>
+						<For each={matches().items}>
 							{(item) => (
-								<Tabs.Trigger asChild value={item.href}>
+								<Tabs.Trigger asChild value={item.value}>
 									<As
 										component={A}
 										end={item.href === ""}

@@ -12,11 +12,12 @@ import {
 	createController,
 } from "~/components/ui";
 import { CreateTenantDialog } from "./CreateTenantDialog";
+import { A } from "@solidjs/router";
 
 // TODO: When shrinking window and scrolling to move the trigger offscreen the popover comes with it. This is Kolate behavior but I don't like it.
 // TODO: Transition on dropdown open/close
 
-type Tenant = { id: string; name: string };
+type Tenant = { id: string; name: string; slug: string };
 export type TenantSwitcherProps = {
 	activeTenant: Tenant;
 	tenants: Tenant[];
@@ -30,17 +31,19 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
 	return (
 		<div class="relative inline-block text-left">
 			<CreateTenantDialog {...props}>
-				<DropdownMenu controller={controller} sameWidth>
-					<DropdownMenuTrigger asChild>
-						<As component={Button} variant="outline" class="space-x-3">
-							{/* // TODO: Tooltip when truncated */}
-							<span class="truncate">{props.activeTenant.name}</span>
-
-							<KDropdownMenu.Icon>
-								<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
-							</KDropdownMenu.Icon>
-						</As>
-					</DropdownMenuTrigger>
+				<DropdownMenu controller={controller} sameWidth placement="bottom">
+					<div class="flex flex-row items-center">
+						<A href="" class="px-2 py-1 block">
+							{props.activeTenant.name}
+						</A>
+						<DropdownMenuTrigger asChild>
+							<As component={Button} variant="ghost" size="iconSmall">
+								<KDropdownMenu.Icon>
+									<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+								</KDropdownMenu.Icon>
+							</As>
+						</DropdownMenuTrigger>
+					</div>
 					<DropdownMenuContent>
 						<Suspense>
 							<For each={props.tenants}>

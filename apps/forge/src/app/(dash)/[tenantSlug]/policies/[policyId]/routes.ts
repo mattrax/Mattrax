@@ -9,8 +9,8 @@ export default [
 		component: lazy(() => import("./index")),
 	},
 	{
-		path: "/scope",
-		component: lazy(() => import("./scope")),
+		path: "/assignees",
+		component: lazy(() => import("./assignees")),
 	},
 	{ path: "/versions", children: versionsRoutes },
 ] satisfies RouteDefinition[];
