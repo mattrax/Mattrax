@@ -5,6 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+base64 = "0.22.0"
 easy-xml = "0.1.4"
 easy-xml-derive = "0.1.4"
 xml = "0.8.10"

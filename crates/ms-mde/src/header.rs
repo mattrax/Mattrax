@@ -29,6 +29,8 @@ pub struct RequestHeaderReplyTo {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 #[easy_xml(rename = "Security", prefix = "wsse")]
 pub struct RequestHeaderSecurity {
+    #[easy_xml(rename = "mustUnderstand", prefix = "s", attribute)]
+    pub must_understand: String,
     #[easy_xml(rename = "UsernameToken", prefix = "wsse")]
     pub username_token: Option<RequestHeaderSecurityUsernameToken>,
     #[easy_xml(rename = "BinarySecurityToken", prefix = "wsse")]
@@ -48,9 +50,9 @@ pub struct RequestHeaderSecurityUsernameToken {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 #[easy_xml(rename = "BinarySecurityToken", prefix = "wsse")]
 pub struct BinarySecurityToken {
-    #[easy_xml(rename = "ValueType", prefix = "wsse", attr)]
+    #[easy_xml(rename = "ValueType", attribute)]
     pub value_type: String,
-    #[easy_xml(rename = "EncodingType", prefix = "wsse", attr)]
+    #[easy_xml(rename = "EncodingType", attribute)]
     pub encoding_type: String,
     #[easy_xml(text)]
     pub value: String,

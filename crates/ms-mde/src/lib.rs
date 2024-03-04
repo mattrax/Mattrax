@@ -1,6 +1,7 @@
 //! Type for the [MS-MDE](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-mde/5c841535-042e-489e-913c-9d783d741267) and [MS-MDE2](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-mde2/4d7eadd5-3951-4f1c-8159-c39e07cbe692) protocols.
 
 mod discovery;
+mod enrollment;
 mod header;
 
 pub mod util;
@@ -10,6 +11,12 @@ pub use discovery::{
     DiscoverRequestBodyDiscoverRequest, DiscoverResponse, DiscoverResponseBody,
     DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult, DISCOVER_ACTION_REQUEST,
     DISCOVER_ACTION_RESPONSE, DISCOVER_RESPONSE_XMLNS,
+};
+pub use enrollment::{
+    AdditionalContext, BinarySecurityToken, ContextItem, EnrollmentRequest, EnrollmentRequestBody,
+    EnrollmentRequestBodyRequestSecurityToken, BINARY_SECURITY_TOKEN_TYPE_PKCS10,
+    BINARY_SECURITY_TOKEN_TYPE_PKCS7, ENROLLMENT_ACTION_REQUEST, ENROLLMENT_ACTION_RESPONSE,
+    ENROLLMENT_REQUEST_TYPE_ISSUE, ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION,
 };
 pub use header::{
     Action, ActivityId, RequestHeader, RequestHeaderReplyTo, RequestHeaderSecurity,
