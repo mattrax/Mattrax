@@ -6,6 +6,9 @@ import { useTenant } from "../../[tenantSlug]";
 import { z } from "zod";
 import { trpc } from "~/lib";
 import { RouterOutput } from "~/api";
+import { Breadcrumb } from "~/components/Breadcrumbs";
+import { A } from "@solidjs/router";
+import { Badge } from "~/components/ui";
 
 export const [PolicyContextProvider, usePolicy] = createContextProvider(
 	(props: {
@@ -27,6 +30,12 @@ export default function Layout(props: ParentProps) {
 		<Show when={policyQuery.data}>
 			{(policy) => (
 				<PolicyContextProvider policy={policy()} query={policyQuery}>
+					<Breadcrumb>
+						<A href="" class="flex flex-row items-center gap-2">
+							<span>{policy().name}</span>
+							<Badge variant="outline">Policy</Badge>
+						</A>
+					</Breadcrumb>
 					{props.children}
 				</PolicyContextProvider>
 			)}

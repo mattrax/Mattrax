@@ -16,6 +16,8 @@ import { SuspenseError } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 import { useAuth as useAuth } from "~/app/(dash)";
 import TopNav from "./[tenantSlug]/TopNav";
+import { Breadcrumb, BreadcrumbsRoot } from "~/components/Breadcrumbs";
+import { TenantSwitcher } from "./[tenantSlug]/TopNav/TenantSwitcher";
 
 export const [TenantContextProvider, useTenant] = createContextProvider(
 	(props: {
@@ -40,44 +42,46 @@ export default function Layout(props: ParentProps) {
 	}
 
 	return (
-		<Show
-			when={activeTenant()}
-			fallback={
-				<Navigate
-					href={() => {
-						const firstTenant = auth().tenants[0];
-						return firstTenant?.slug ? `../${firstTenant.slug}` : "/";
-					}}
-				/>
-			}
-		>
-			{(activeTenant) => (
-				<TenantContextProvider tenant={activeTenant()}>
-					{/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
-					<Suspense fallback={<SuspenseError name="Sidebar" />}>
-						<TopNav
-							setActiveTenant={setTenantSlug}
-							refetchSession={async () => {
-								await auth.query.refetch();
-							}}
-						/>
-					</Suspense>
-					<ErrorBoundary
-						fallback={(err, reset) => (
-							<div class="flex flex-col items-center justify-center h-full gap-4">
-								<h1 class="text-3xl font-semibold">An error occurred!</h1>
-								<p class="text-gray-600 max-w-4xl">{err.toString()}</p>
-								<Button onClick={reset}>Reload</Button>
-							</div>
-						)}
-					>
-						{/* we key here on purpose - tenants are the root-most unit of isolation */}
-						<Show when={activeTenant().id} keyed>
-							{props.children}
-						</Show>
-					</ErrorBoundary>
-				</TenantContextProvider>
-			)}
-		</Show>
+		<BreadcrumbsRoot>
+			<Show
+				when={activeTenant()}
+				fallback={
+					<Navigate
+						href={() => {
+							const firstTenant = auth().tenants[0];
+							return firstTenant?.slug ? `../${firstTenant.slug}` : "/";
+						}}
+					/>
+				}
+			>
+				{(activeTenant) => (
+					<TenantContextProvider tenant={activeTenant()}>
+						{/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
+						<Suspense fallback={<SuspenseError name="Sidebar" />}>
+							<TopNav
+								setActiveTenant={setTenantSlug}
+								refetchSession={async () => {
+									await auth.query.refetch();
+								}}
+							/>
+						</Suspense>
+						<ErrorBoundary
+							fallback={(err, reset) => (
+								<div class="flex flex-col items-center justify-center h-full gap-4">
+									<h1 class="text-3xl font-semibold">An error occurred!</h1>
+									<p class="text-gray-600 max-w-4xl">{err.toString()}</p>
+									<Button onClick={reset}>Reload</Button>
+								</div>
+							)}
+						>
+							{/* we key here on purpose - tenants are the root-most unit of isolation */}
+							<Show when={activeTenant().id} keyed>
+								{props.children}
+							</Show>
+						</ErrorBoundary>
+					</TenantContextProvider>
+				)}
+			</Show>
+		</BreadcrumbsRoot>
 	);
 }

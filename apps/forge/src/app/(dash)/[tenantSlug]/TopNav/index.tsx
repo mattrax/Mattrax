@@ -17,6 +17,7 @@ import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
 import Logo from "~/assets/MATTRAX.png";
 import { createMemo } from "solid-js";
 import { useTenant } from "../../[tenantSlug]";
+import { Breadcrumbs } from "~/components/Breadcrumbs";
 
 type NavbarItem = {
 	title: string;
@@ -106,8 +107,6 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 		};
 	});
 
-	const tenant = useTenant();
-
 	return (
 		<>
 			<div class="relative flex flex-row items-center px-6 gap-2 h-16 shrink-0">
@@ -116,29 +115,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 				</A>
 				<div class="w-1" />
 				<TenantSwitcher {...props} />
-				<Show when={policyMatch()}>
-					{(match) => {
-						const policyId = () => match()!.params.policyId!;
-
-						const policy = trpc.policy.get.useQuery(() => ({
-							policyId: policyId(),
-							tenantSlug: tenant().slug,
-						}));
-
-						return (
-							<>
-								<span class="text-xl text-gray-300 mx-2">/</span>
-								<A
-									href={`${path()}/policies/${policyId()}`}
-									class="flex flex-row items-center gap-2"
-								>
-									<span>{policy.data?.name}</span>
-									<Badge variant="outline">Policy</Badge>
-								</A>
-							</>
-						);
-					}}
-				</Show>
+				<Breadcrumbs />
 				<div class="flex-1" />
 				<FeedbackPopover>
 					<As component={Button} variant="outline" size="sm" class="mr-4">
