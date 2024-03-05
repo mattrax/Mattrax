@@ -59,12 +59,20 @@ const policyItems: NavbarItem[] = [
 		href: "",
 	},
 	{
-		title: "Versions",
-		href: "versions",
+		title: "Edit",
+		href: "edit",
 	},
 	{
 		title: "Assignees",
 		href: "assignees",
+	},
+	{
+		title: "History",
+		href: "history",
+	},
+	{
+		title: "Settings",
+		href: "settings",
 	},
 ];
 
@@ -179,7 +187,7 @@ function FeedbackPopover(props: ParentProps) {
 			<PopoverTrigger asChild>{props.children}</PopoverTrigger>
 			<PopoverContent class="flex flex-col gap-2 md:w-[350px]">
 				<p class="text-sm text-gray-700">
-					We'll contact you via email when your feedback is addressed
+					We welcome all feedback or bug reports:
 				</p>
 				<Textarea
 					value={content()}
