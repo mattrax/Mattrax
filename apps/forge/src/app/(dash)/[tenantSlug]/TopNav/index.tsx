@@ -145,7 +145,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 						Feedback
 					</As>
 				</FeedbackPopover>
-				<span class="font-medium">{auth.me.name}</span>
+				<span class="font-medium">{auth().name}</span>
 				{/* <Button variant="destructive">Log Out</Button> */}
 			</div>
 
