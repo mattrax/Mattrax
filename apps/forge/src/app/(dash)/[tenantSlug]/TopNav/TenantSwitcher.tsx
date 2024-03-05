@@ -52,7 +52,7 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
 										class={
 											"block px-4 py-2 text-sm text-left w-full truncate hover:bg-gray-200"
 										}
-										onSelect={() => props.setActiveTenant(tenant.id)}
+										onSelect={() => props.setActiveTenant(tenant.slug)}
 									>
 										{/* TODO: Use a link here instead of JS for accessibility */}
 										{tenant.name}
