@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { useAuthContext } from "~/app/(dash)";
+import { useAuth } from "~/app/(dash)";
 import { Form, createZodForm } from "~/components/forms";
 import { InputField } from "~/components/forms/InputField";
 import {
@@ -28,12 +28,12 @@ export default function Page() {
 }
 
 function SettingsCard() {
-	const auth = useAuthContext();
+	const auth = useAuth();
 	const tenant = useTenant();
 
 	// TODO: rollback form on failure
 	const updateTenant = trpc.tenant.edit.useMutation(() => ({
-		onSuccess: () => auth.meQuery.refetch(),
+		onSuccess: () => auth.query.refetch(),
 	}));
 
 	const form = createZodForm({

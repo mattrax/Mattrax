@@ -1,7 +1,7 @@
 import { For, Suspense } from "solid-js";
 import { z } from "zod";
 
-import { useAuthContext } from "~/app/(dash)";
+import { useAuth } from "~/app/(dash)";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import {
@@ -17,7 +17,7 @@ import { trpc } from "~/lib";
 import { useTenant } from "../../[tenantSlug]";
 
 export default function Page() {
-	const auth = useAuthContext();
+	const auth = useAuth();
 	const tenant = useTenant();
 
 	const invites = trpc.tenant.admins.invites.useQuery(() => ({

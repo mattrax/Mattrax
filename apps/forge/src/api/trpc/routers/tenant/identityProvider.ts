@@ -80,7 +80,7 @@ export const identityProviderRouter = createTRPCRouter({
 		const provider = await ensureIdentityProvider(ctx.tenant.pk).catch(
 			() => null,
 		);
-		if (provider === null) return [];
+		if (provider === null) return { remoteDomains: [], connectedDomains: [] };
 
 		let identityProvider!: IdentityProvider;
 

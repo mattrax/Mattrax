@@ -6,10 +6,10 @@ import { Form, createZodForm } from "~/components/forms";
 import { InputField } from "~/components/forms";
 import { Button, Card, CardContent, CardHeader } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useAuthContext } from "../(dash)";
+import { useAuth } from "../(dash)";
 
 export default function Page() {
-	const auth = useAuthContext();
+	const auth = useAuth();
 
 	const defaultTenant = () => {
 		const tenants = auth.me.tenants;

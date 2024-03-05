@@ -6,11 +6,11 @@ import { ErrorBoundary, ParentProps, Show, Suspense, onMount } from "solid-js";
 import { RouterOutput } from "~/api/trpc";
 import { trpc } from "~/lib";
 
-export const [AuthContextProvider, useAuthContext] = createContextProvider(
+export const [AuthContextProvider, useAuth] = createContextProvider(
 	(props: {
-		meQuery: ReturnType<typeof trpc.auth.me.useQuery>;
+		query: ReturnType<typeof trpc.auth.me.useQuery>;
 		me: RouterOutput["auth"]["me"];
-	}) => props,
+	}) => Object.assign(() => props.me, { query: props.query }),
 	null!,
 );
 
@@ -26,7 +26,7 @@ export default function Layout(props: ParentProps) {
 	});
 
 	// TODO: Use the auth cookie trick for better UX
-	const me = trpc.auth.me.useQuery(void 0, () => ({
+	const meQuery = trpc.auth.me.useQuery(void 0, () => ({
 		// This will *always* stay in the cache. Avoids need for `localStorage` shenanigans.
 		// gcTime: Infinity,
 	}));
@@ -44,9 +44,9 @@ export default function Layout(props: ParentProps) {
 				);
 			}}
 		>
-			<Show when={me.data}>
-				{(meData) => (
-					<AuthContextProvider me={meData()} meQuery={me}>
+			<Show when={meQuery.data}>
+				{(me) => (
+					<AuthContextProvider me={me()} query={meQuery}>
 						{props.children}
 					</AuthContextProvider>
 				)}

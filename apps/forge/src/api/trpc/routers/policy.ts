@@ -57,9 +57,7 @@ export const policyRouter = createTRPCRouter({
 						),
 					),
 				db
-					.select({
-						data: policyVersions.data,
-					})
+					.select({ data: policyVersions.data })
 					.from(policyVersions)
 					.where(and(eq(policyVersions.id, input.policyId)))
 					.orderBy(policyVersions.createdAt)

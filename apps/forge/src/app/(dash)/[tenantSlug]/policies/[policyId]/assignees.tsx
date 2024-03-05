@@ -20,15 +20,13 @@ export default function Page() {
 	const routeParams = useZodParams({ policyId: z.string() });
 
 	const tenant = useTenant();
+	const policy = usePolicy();
+
 	console.log(routeParams.policyId, tenant().id); // TODO
+
 	const group = trpc.policy.scope.useQuery(
-		() => ({
-			id: routeParams.policyId,
-			tenantSlug: tenant().slug,
-		}),
-		() => ({
-			enabled: true,
-		}),
+		() => ({ id: policy().id, tenantSlug: tenant().slug }),
+		() => ({ enabled: true }),
 	);
 
 	return (
@@ -120,6 +118,7 @@ import {
 	SheetTrigger,
 } from "~/components/ui/sheet";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
+import { usePolicy } from "../[policyId]";
 
 const AddMemberTableOptions = {
 	all: "All",

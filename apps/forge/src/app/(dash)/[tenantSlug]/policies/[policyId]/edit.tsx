@@ -43,13 +43,12 @@ function DeployButton() {
 			<DialogTrigger asChild>
 				<As
 					component={Button}
-					disabled={!(policy.data?.isDirty ?? true)}
+					disabled={!(policy().isDirty ?? true)}
 					onMouseEnter={() => {
-						if (policy.data)
-							trpcCtx.policy.getDeploySummary.ensureData({
-								tenantSlug: tenant().slug,
-								policyId: policy.data.id,
-							});
+						trpcCtx.policy.getDeploySummary.ensureData({
+							tenantSlug: tenant().slug,
+							policyId: policy().id,
+						});
 					}}
 				>
 					Deploy
@@ -63,20 +62,21 @@ function DeployButton() {
 }
 
 function DeployDialog() {
+	const tenant = useTenant();
 	const policy = usePolicy();
+
 	const [page, setPage] = createSignal(0);
 	const controller = useController();
 	const [comment, setComment] = createSignal("");
 
-	const tenant = useTenant();
-	const getDeploySummary = trpc.policy.getDeploySummary.useQuery({
+	const getDeploySummary = trpc.policy.getDeploySummary.useQuery(() => ({
 		tenantSlug: tenant().slug,
-		policyId: policy.data?.id,
-	});
+		policyId: policy().id,
+	}));
 
 	const deployVersion = trpc.policy.deploy.useMutation(() => ({
 		onSuccess: async () => {
-			await policy.refetch();
+			await policy.query.refetch();
 			controller.setOpen(false);
 		},
 	}));
@@ -121,7 +121,7 @@ function DeployDialog() {
 						onClick={() =>
 							deployVersion.mutate({
 								tenantSlug: tenant().slug,
-								policyId: policy.data?.id,
+								policyId: policy().id,
 								comment: comment(),
 							})
 						}

@@ -1,30 +1,35 @@
 import { createContextProvider } from "@solid-primitives/context";
-import { ParentProps } from "solid-js";
+import { ParentProps, Show } from "solid-js";
+
 import { useZodParams } from "~/lib/useZodParams";
 import { useTenant } from "../../[tenantSlug]";
 import { z } from "zod";
 import { trpc } from "~/lib";
-
-function getPolicy() {
-	const params = useZodParams({
-		policyId: z.string(),
-	});
-	const tenant = useTenant();
-	return trpc.policy.get.useQuery(() => ({
-		policyId: params.policyId,
-		tenantSlug: tenant().slug,
-	}));
-}
+import { RouterOutput } from "~/api";
 
 export const [PolicyContextProvider, usePolicy] = createContextProvider(
-	(props: { policy: ReturnType<typeof getPolicy> }) => props.policy,
+	(props: {
+		policy: RouterOutput["policy"]["get"];
+		query: ReturnType<typeof trpc.policy.get.useQuery>;
+	}) => Object.assign(() => props.policy, { query: props.query }),
 	null!,
 );
 
 export default function Layout(props: ParentProps) {
+	const params = useZodParams({ policyId: z.string() });
+	const tenant = useTenant();
+	const policyQuery = trpc.policy.get.useQuery(() => ({
+		tenantSlug: tenant().slug,
+		policyId: params.policyId,
+	}));
+
 	return (
-		<PolicyContextProvider policy={getPolicy()}>
-			{props.children}
-		</PolicyContextProvider>
+		<Show when={policyQuery.data}>
+			{(policy) => (
+				<PolicyContextProvider policy={policy()} query={policyQuery}>
+					{props.children}
+				</PolicyContextProvider>
+			)}
+		</Show>
 	);
 }

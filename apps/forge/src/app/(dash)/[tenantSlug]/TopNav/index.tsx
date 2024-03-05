@@ -3,7 +3,7 @@ import { A, useMatch, useResolvedPath } from "@solidjs/router";
 import { For, JSX, ParentProps, Show, Suspense, createEffect } from "solid-js";
 
 import { createSignal } from "solid-js";
-import { useAuthContext } from "~/app/(dash)";
+import { useAuth } from "~/app/(dash)";
 import {
 	Badge,
 	Button,
@@ -16,6 +16,7 @@ import { trpc } from "~/lib";
 import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
 import Logo from "~/assets/MATTRAX.png";
 import { createMemo } from "solid-js";
+import { useTenant } from "../../[tenantSlug]";
 
 type NavbarItem = {
 	title: string;
@@ -77,7 +78,7 @@ const policyItems: NavbarItem[] = [
 ];
 
 export default function Component(props: TenantSwitcherProps): JSX.Element {
-	const auth = useAuthContext();
+	const auth = useAuth();
 
 	const path = useResolvedPath(() => "");
 	const tenantMatch = useMatch(() => `${path()}/*rest`);
@@ -105,6 +106,8 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 		};
 	});
 
+	const tenant = useTenant();
+
 	return (
 		<>
 			<div class="relative flex flex-row items-center px-6 gap-2 h-16 shrink-0">
@@ -119,7 +122,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 
 						const policy = trpc.policy.get.useQuery(() => ({
 							policyId: policyId(),
-							tenantSlug: props.activeTenant.slug,
+							tenantSlug: tenant().slug,
 						}));
 
 						return (

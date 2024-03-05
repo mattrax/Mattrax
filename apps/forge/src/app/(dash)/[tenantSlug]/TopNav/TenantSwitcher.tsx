@@ -13,14 +13,13 @@ import {
 } from "~/components/ui";
 import { CreateTenantDialog } from "./CreateTenantDialog";
 import { A } from "@solidjs/router";
+import { useTenant } from "../../[tenantSlug]";
+import { useAuth } from "~/app/(dash)";
 
 // TODO: When shrinking window and scrolling to move the trigger offscreen the popover comes with it. This is Kolate behavior but I don't like it.
 // TODO: Transition on dropdown open/close
 
-type Tenant = { id: string; name: string; slug: string };
 export type TenantSwitcherProps = {
-	activeTenant: Tenant;
-	tenants: Tenant[];
 	refetchSession: () => Promise<void>;
 	setActiveTenant: (id: string) => void;
 };
@@ -28,13 +27,16 @@ export type TenantSwitcherProps = {
 export function TenantSwitcher(props: TenantSwitcherProps) {
 	const controller = createController();
 
+	const auth = useAuth();
+	const tenant = useTenant();
+
 	return (
 		<div class="relative inline-block text-left">
 			<CreateTenantDialog {...props}>
 				<DropdownMenu controller={controller} sameWidth placement="bottom">
 					<div class="flex flex-row items-center">
 						<A href="" class="px-2 py-1 block">
-							{props.activeTenant.name}
+							{tenant().name}
 						</A>
 						<DropdownMenuTrigger asChild>
 							<As component={Button} variant="ghost" size="iconSmall">
@@ -46,7 +48,7 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
 					</div>
 					<DropdownMenuContent>
 						<Suspense>
-							<For each={props.tenants}>
+							<For each={auth().tenants}>
 								{(tenant) => (
 									<DropdownMenuItem
 										class={
@@ -60,7 +62,7 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
 								)}
 							</For>
 
-							{props.tenants.length !== 0 && <DropdownMenuSeparator />}
+							{auth().tenants.length !== 0 && <DropdownMenuSeparator />}
 						</Suspense>
 
 						<DialogTrigger asChild>

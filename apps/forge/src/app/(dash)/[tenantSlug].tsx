@@ -14,24 +14,25 @@ import { RouterOutput } from "~/api/trpc";
 import { Button } from "~/components/ui";
 import { SuspenseError } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
-import { useAuthContext } from "~/app/(dash)";
+import { useAuth as useAuth } from "~/app/(dash)";
 import TopNav from "./[tenantSlug]/TopNav";
 
 export const [TenantContextProvider, useTenant] = createContextProvider(
-	(props: { tenant: RouterOutput["auth"]["me"]["tenants"][number] }) => () =>
-		props.tenant,
+	(props: {
+		tenant: RouterOutput["auth"]["me"]["tenants"][number];
+	}) =>
+		() =>
+			props.tenant,
 	null!,
 );
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({
-		tenantSlug: z.string(),
-	});
-	const auth = useAuthContext();
+	const params = useZodParams({ tenantSlug: z.string() });
+	const auth = useAuth();
 	const navigate = useNavigate();
 
 	const activeTenant = createMemo(() =>
-		auth.me.tenants.find((t) => t.slug === params.tenantSlug),
+		auth().tenants.find((t) => t.slug === params.tenantSlug),
 	);
 
 	function setTenantSlug(slug: string) {
@@ -44,7 +45,7 @@ export default function Layout(props: ParentProps) {
 			fallback={
 				<Navigate
 					href={() => {
-						const firstTenant = auth.me.tenants[0];
+						const firstTenant = auth().tenants[0];
 						return firstTenant?.slug ? `../${firstTenant.slug}` : "/";
 					}}
 				/>
@@ -55,11 +56,9 @@ export default function Layout(props: ParentProps) {
 					{/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
 					<Suspense fallback={<SuspenseError name="Sidebar" />}>
 						<TopNav
-							activeTenant={activeTenant()}
-							tenants={auth.me.tenants}
 							setActiveTenant={setTenantSlug}
 							refetchSession={async () => {
-								await auth.meQuery.refetch();
+								await auth.query.refetch();
 							}}
 						/>
 					</Suspense>
