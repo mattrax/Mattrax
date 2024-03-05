@@ -65,7 +65,7 @@ export default function Layout(props: ParentProps) {
 					</Suspense>
 					<ErrorBoundary
 						fallback={(err, reset) => (
-							<div class="flex flex-col items-center justify-center h-full gap-4">
+							<div class="flex flex-col items-center justify-center h-full gap-4 max-w-4xl">
 								<h1 class="text-3xl font-semibold">An error occurred!</h1>
 								<p class="text-gray-600">{err.toString()}</p>
 								<Button onClick={reset}>Reload</Button>

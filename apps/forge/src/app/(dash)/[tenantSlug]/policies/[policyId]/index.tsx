@@ -15,19 +15,21 @@ export default function Page() {
 		policyId: params.policyId,
 		tenantSlug: tenant().slug,
 	}));
-	const updatePolicy = trpc.policy.update.useMutation(() => ({
-		onSuccess: () => policy.refetch(),
-	}));
+	// const updatePolicy = trpc.policy.update.useMutation(() => ({
+	// 	onSuccess: () => policy.refetch(),
+	// }));
 
 	const form = createZodForm({
 		schema: z.object({ name: z.string() }),
 		defaultValues: { name: policy.data?.name || "" },
-		onSubmit: ({ value }) =>
-			updatePolicy.mutateAsync({
-				tenantSlug: tenant().slug,
-				policyId: params.policyId,
-				name: value.name,
-			}),
+		onSubmit: ({ value }) => {
+			// updatePolicy.mutateAsync({
+			// 	tenantSlug: tenant().slug,
+			// 	policyId: params.policyId,
+			// 	name: value.name,
+			// });
+			alert("TODO");
+		},
 	});
 
 	return (

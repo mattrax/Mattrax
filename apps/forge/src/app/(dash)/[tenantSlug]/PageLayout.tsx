@@ -15,7 +15,7 @@ export function PageLayout(
 			class={clsx(
 				"px-4 w-full mx-auto gap-4",
 				props.size === "lg" ? "max-w-6xl" : "max-w-5xl",
-				props.class
+				props.class,
 			)}
 		>
 			{props.heading && (

@@ -143,12 +143,12 @@ export const policies = mysqlTable("policies", {
 	pk: serial("id").primaryKey(),
 	id: cuid("cuid").notNull().unique(),
 	name: varchar("name", { length: 256 }).notNull(),
-	activeVersion: serialRelation("activeVersion").references(
-		() => policyVersions.pk,
-	),
+	data: json("data").notNull().default({}),
 	tenantPk: serialRelation("tenantId")
 		.references(() => tenants.pk)
 		.notNull(),
+	lastModified: timestamp("lastModified").notNull().defaultNow(),
+	createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 
 export const PolicyAssignableVariants = {
@@ -180,6 +180,8 @@ export const policyAssignables = mysqlTable(
 	}),
 );
 
+/// Each version is an immutable snapshot of the policy at a point in time when it was deployed.
+/// Versions are tracked on a linear timeline so the timestamp can be used to determine the order.
 export const policyVersions = mysqlTable("policy_versions", {
 	pk: serial("id").primaryKey(),
 	id: cuid("cuid")
@@ -187,15 +189,16 @@ export const policyVersions = mysqlTable("policy_versions", {
 		.unique()
 		.$default(() => createId()),
 	policyPk: serialRelation("policyId")
-		// .references(() => policies.id) // This creates a circular reference so is let uncommented
+		.references(() => policies.id) // This creates a circular reference so is let uncommented
 		.notNull(),
-	status: mysqlEnum("status", ["open", "deploying", "deployed"])
+	status: mysqlEnum("status", ["deploying", "deployed"])
 		.notNull()
-		.default("open"),
+		.default("deploying"),
 	data: json("data").notNull().default({}),
-	deployComment: varchar("deployComment", { length: 256 }),
-	deployedBy: serialRelation("deployedBy").references(() => accounts.pk),
-	deployedAt: timestamp("deployedAt"),
+	comment: varchar("comment", { length: 256 }).notNull(),
+	createdBy: serialRelation("createdBy")
+		.references(() => accounts.pk)
+		.notNull(),
 	createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
 

@@ -34,10 +34,8 @@ export const policyRouter = createTRPCRouter({
 			.select({
 				id: policies.id,
 				name: policies.name,
-				activeVersionId: policyVersions.id,
 			})
 			.from(policies)
-			.leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.pk))
 			.where(eq(policies.tenantPk, ctx.tenant.pk));
 	}),
 
@@ -48,248 +46,241 @@ export const policyRouter = createTRPCRouter({
 				.select({
 					id: policies.id,
 					name: policies.name,
-					activeVersion: {
-						id: policyVersions.pk,
-						status: policyVersions.status,
-						data: policyVersions.data,
-						createdAt: policyVersions.createdAt,
-					},
+					data: policies.data,
 				})
 				.from(policies)
-				.leftJoin(policyVersions, eq(policies.activeVersion, policyVersions.pk))
 				.where(
 					and(
 						eq(policies.id, input.policyId),
 						eq(policies.tenantPk, ctx.tenant.pk),
 					),
 				);
-
 			if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
 			return policy;
 		}),
 
-	update: tenantProcedure
-		.input(
-			z.object({
-				policyId: z.string(),
-				name: z.string(),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			await db
-				.update(policies)
-				.set({
-					name: input.name,
-				})
-				.where(
-					and(
-						eq(policies.id, input.policyId),
-						eq(policies.tenantPk, ctx.tenant.pk),
-					),
-				);
+	// update: tenantProcedure
+	// 	.input(
+	// 		z.object({
+	// 			policyId: z.string(),
+	// 			name: z.string(),
+	// 		}),
+	// 	)
+	// 	.mutation(async ({ ctx, input }) => {
+	// 		await db
+	// 			.update(policies)
+	// 			.set({
+	// 				name: input.name,
+	// 			})
+	// 			.where(
+	// 				and(
+	// 					eq(policies.id, input.policyId),
+	// 					eq(policies.tenantPk, ctx.tenant.pk),
+	// 				),
+	// 			);
 
-			return {};
-		}),
+	// 		return {};
+	// 	}),
 
-	getVersions: tenantProcedure
-		.input(z.object({ policyId: z.string() }))
-		.query(async ({ ctx, input }) => {
-			const versions = await db
-				.select({
-					// TODO: Don't return everything here
-					id: policyVersions.id,
-					status: policyVersions.status,
-					data: policyVersions.data,
-					deployedBy: accounts.name,
-					deployedAt: policyVersions.deployedAt,
-					deployComment: policyVersions.deployComment,
-					createdAt: policyVersions.createdAt,
-				})
-				.from(policyVersions)
-				.innerJoin(policies, eq(policyVersions.policyPk, policies.pk))
-				.leftJoin(accounts, eq(policyVersions.deployedBy, accounts.pk))
-				.where(
-					and(
-						eq(policies.id, input.policyId),
-						eq(policies.tenantPk, ctx.tenant.pk),
-					),
-				);
+	// getVersions: tenantProcedure
+	// 	.input(z.object({ policyId: z.string() }))
+	// 	.query(async ({ ctx, input }) => {
+	// 		const versions = await db
+	// 			.select({
+	// 				// TODO: Don't return everything here
+	// 				id: policyVersions.id,
+	// 				status: policyVersions.status,
+	// 				data: policyVersions.data,
+	// 				deployedBy: accounts.name,
+	// 				deployedAt: policyVersions.deployedAt,
+	// 				deployComment: policyVersions.deployComment,
+	// 				createdAt: policyVersions.createdAt,
+	// 			})
+	// 			.from(policyVersions)
+	// 			.innerJoin(policies, eq(policyVersions.policyPk, policies.pk))
+	// 			.leftJoin(accounts, eq(policyVersions.deployedBy, accounts.pk))
+	// 			.where(
+	// 				and(
+	// 					eq(policies.id, input.policyId),
+	// 					eq(policies.tenantPk, ctx.tenant.pk),
+	// 				),
+	// 			);
 
-			return versions;
-		}),
+	// 		return versions;
+	// 	}),
 
-	getVersion: tenantProcedure
-		.input(z.object({ policyId: z.string(), versionId: z.string() }))
-		.query(async ({ ctx, input }) => {
-			const [version] = await db
-				.select({
-					id: policyVersions.id,
-					status: policyVersions.status,
-					data: policyVersions.data,
-					deployedBy: accounts.name,
-					deployedAt: policyVersions.deployedAt,
-					deployComment: policyVersions.deployComment,
-					createdAt: policyVersions.createdAt,
-				})
-				.from(policyVersions)
-				.innerJoin(policies, eq(policyVersions.policyPk, policies.pk))
-				.leftJoin(accounts, eq(policyVersions.deployedBy, accounts.pk))
-				.where(
-					and(
-						eq(policies.id, input.policyId),
-						eq(policies.tenantPk, ctx.tenant.pk),
-						eq(policyVersions.id, input.versionId),
-					),
-				);
+	// getVersion: tenantProcedure
+	// 	.input(z.object({ policyId: z.string(), versionId: z.string() }))
+	// 	.query(async ({ ctx, input }) => {
+	// 		const [version] = await db
+	// 			.select({
+	// 				id: policyVersions.id,
+	// 				status: policyVersions.status,
+	// 				data: policyVersions.data,
+	// 				deployedBy: accounts.name,
+	// 				deployedAt: policyVersions.deployedAt,
+	// 				deployComment: policyVersions.deployComment,
+	// 				createdAt: policyVersions.createdAt,
+	// 			})
+	// 			.from(policyVersions)
+	// 			.innerJoin(policies, eq(policyVersions.policyPk, policies.pk))
+	// 			.leftJoin(accounts, eq(policyVersions.deployedBy, accounts.pk))
+	// 			.where(
+	// 				and(
+	// 					eq(policies.id, input.policyId),
+	// 					eq(policies.tenantPk, ctx.tenant.pk),
+	// 					eq(policyVersions.id, input.versionId),
+	// 				),
+	// 			);
 
-			return version;
-		}),
+	// 		return version;
+	// 	}),
 
-	updateVersion: tenantProcedure
-		.input(
-			z.object({
-				policyId: z.string(),
-				versionId: z.string(),
-				data: z.any(),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			// TODO: Check no-one has edited this policy since we read it.
+	// updateVersion: tenantProcedure
+	// 	.input(
+	// 		z.object({
+	// 			policyId: z.string(),
+	// 			versionId: z.string(),
+	// 			data: z.any(),
+	// 		}),
+	// 	)
+	// 	.mutation(async ({ ctx, input }) => {
+	// 		// TODO: Check no-one has edited this policy since we read it.
 
-			await db
-				.update(policyVersions)
-				.set({
-					data: input.data,
-				})
-				.where(
-					and(
-						eq(policyVersions.id, input.versionId),
-						// TODO: tenant id  // eq(policyVersions.policyPk, input.policyId) // TODO
-						// You can only update non-deployed versions
-						eq(policyVersions.status, "open"),
-					),
-				);
+	// 		await db
+	// 			.update(policyVersions)
+	// 			.set({
+	// 				data: input.data,
+	// 			})
+	// 			.where(
+	// 				and(
+	// 					eq(policyVersions.id, input.versionId),
+	// 					// TODO: tenant id  // eq(policyVersions.policyPk, input.policyId) // TODO
+	// 					// You can only update non-deployed versions
+	// 					eq(policyVersions.status, "open"),
+	// 				),
+	// 			);
 
-			return {};
-		}),
+	// 		return {};
+	// 	}),
 
-	deployVersion: tenantProcedure
-		.input(z.object({ policyId: z.string(), comment: z.string() }))
-		.mutation(async ({ ctx, input }) => {
-			// TODO: Maybe transaction for this?
+	// deployVersion: tenantProcedure
+	// 	.input(z.object({ policyId: z.string(), comment: z.string() }))
+	// 	.mutation(async ({ ctx, input }) => {
+	// 		// TODO: Maybe transaction for this?
 
-			const [policy] = await db
-				.select({
-					id: policies.id,
-					pk: policies.pk,
-					activeVersion: policies.activeVersion,
-				})
-				.from(policies)
-				.where(
-					and(
-						eq(policies.id, input.policyId),
-						eq(policies.tenantPk, ctx.tenant.pk),
-					),
-				);
-			if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
+	// 		const [policy] = await db
+	// 			.select({
+	// 				id: policies.id,
+	// 				pk: policies.pk,
+	// 				activeVersion: policies.activeVersion,
+	// 			})
+	// 			.from(policies)
+	// 			.where(
+	// 				and(
+	// 					eq(policies.id, input.policyId),
+	// 					eq(policies.tenantPk, ctx.tenant.pk),
+	// 				),
+	// 			);
+	// 		if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
-			const status = await db
-				.update(policyVersions)
-				.set({
-					status: "deploying",
-					deployComment: input.comment,
-					deployedBy: ctx.account.pk,
-					deployedAt: new Date(),
-				})
-				.where(
-					and(
-						eq(policyVersions.policyPk, policy.pk),
-						eq(policyVersions.status, "open"),
-					),
-				);
-			const versionId = parseInt(status.insertId);
+	// 		const status = await db
+	// 			.update(policyVersions)
+	// 			.set({
+	// 				status: "deploying",
+	// 				deployComment: input.comment,
+	// 				deployedBy: ctx.account.pk,
+	// 				deployedAt: new Date(),
+	// 			})
+	// 			.where(
+	// 				and(
+	// 					eq(policyVersions.policyPk, policy.pk),
+	// 					eq(policyVersions.status, "open"),
+	// 				),
+	// 			);
+	// 		const versionId = parseInt(status.insertId);
 
-			await db
-				.update(policies)
-				.set({ activeVersion: versionId })
-				.where(
-					and(
-						eq(policies.id, input.policyId),
-						eq(policies.tenantPk, ctx.tenant.pk),
-					),
-				);
+	// 		await db
+	// 			.update(policies)
+	// 			.set({ activeVersion: versionId })
+	// 			.where(
+	// 				and(
+	// 					eq(policies.id, input.policyId),
+	// 					eq(policies.tenantPk, ctx.tenant.pk),
+	// 				),
+	// 			);
 
-			if (status.rowsAffected !== 0) {
-				// TODO: Send push notification to all devices
-				// TODO: Push into device page
-			}
-		}),
+	// 		if (status.rowsAffected !== 0) {
+	// 			// TODO: Send push notification to all devices
+	// 			// TODO: Push into device page
+	// 		}
+	// 	}),
 
-	createVersion: tenantProcedure
-		.input(z.object({ policyId: z.string() }))
-		.mutation(async ({ ctx, input }) => {
-			// TODO: Maybe transaction for this?
+	// createVersion: tenantProcedure
+	// 	.input(z.object({ policyId: z.string() }))
+	// 	.mutation(async ({ ctx, input }) => {
+	// 		// TODO: Maybe transaction for this?
 
-			const [policy] = await db
-				.select({
-					pk: policies.pk,
-					activeVersion: policies.activeVersion,
-				})
-				.from(policies)
-				.where(
-					and(
-						eq(policies.id, input.policyId),
-						eq(policies.tenantPk, ctx.tenant.pk),
-					),
-				);
-			if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
+	// 		const [policy] = await db
+	// 			.select({
+	// 				pk: policies.pk,
+	// 				activeVersion: policies.activeVersion,
+	// 			})
+	// 			.from(policies)
+	// 			.where(
+	// 				and(
+	// 					eq(policies.id, input.policyId),
+	// 					eq(policies.tenantPk, ctx.tenant.pk),
+	// 				),
+	// 			);
+	// 		if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
-			const [result] = await db
-				.select({
-					count: count(),
-				})
-				.from(policyVersions)
-				.where(
-					and(
-						eq(policyVersions.id, input.policyId),
-						// eq(policyVersions.tenantPk, ctx.tenant.pk),
-						eq(policyVersions.status, "open"),
-					),
-				);
-			const numOpenPolicies = result?.count;
+	// 		const [result] = await db
+	// 			.select({
+	// 				count: count(),
+	// 			})
+	// 			.from(policyVersions)
+	// 			.where(
+	// 				and(
+	// 					eq(policyVersions.id, input.policyId),
+	// 					// eq(policyVersions.tenantPk, ctx.tenant.pk),
+	// 					eq(policyVersions.status, "open"),
+	// 				),
+	// 			);
+	// 		const numOpenPolicies = result?.count;
 
-			if (numOpenPolicies !== 0)
-				throw new Error("There is already an open policy version");
+	// 		if (numOpenPolicies !== 0)
+	// 			throw new Error("There is already an open policy version");
 
-			const [activeVersion] = await db
-				.select({
-					id: policyVersions.pk,
-					data: policyVersions.data,
-				})
-				.from(policyVersions)
-				.where(
-					and(
-						// @ts-expect-error
-						eq(policyVersions.pk, policy.activeVersion), // TODO: This should probs not be this. It should be the latest version???
-						// eq(policyVersions.policyPk, policy.id), // TODO
-					),
-				);
+	// 		const [activeVersion] = await db
+	// 			.select({
+	// 				id: policyVersions.pk,
+	// 				data: policyVersions.data,
+	// 			})
+	// 			.from(policyVersions)
+	// 			.where(
+	// 				and(
+	// 					// @ts-expect-error
+	// 					eq(policyVersions.pk, policy.activeVersion), // TODO: This should probs not be this. It should be the latest version???
+	// 					// eq(policyVersions.policyPk, policy.id), // TODO
+	// 				),
+	// 			);
 
-			const newVersionId = createId();
-			const newVersion = await db.insert(policyVersions).values({
-				id: newVersionId,
-				policyPk: policy.pk,
-				data: activeVersion?.data || {},
-			});
+	// 		const newVersionId = createId();
+	// 		const newVersion = await db.insert(policyVersions).values({
+	// 			id: newVersionId,
+	// 			policyPk: policy.pk,
+	// 			data: activeVersion?.data || {},
+	// 		});
 
-			await db
-				.update(policies)
-				.set({ activeVersion: parseInt(newVersion.insertId) })
-				.where(eq(policies.pk, policy.pk));
+	// 		await db
+	// 			.update(policies)
+	// 			.set({ activeVersion: parseInt(newVersion.insertId) })
+	// 			.where(eq(policies.pk, policy.pk));
 
-			return newVersionId;
-		}),
+	// 		return newVersionId;
+	// 	}),
 
 	scope: tenantProcedure
 		.input(z.object({ id: z.string() }))
@@ -466,17 +457,6 @@ export const policyRouter = createTRPCRouter({
 					name: input.name,
 					tenantPk: ctx.tenant.pk,
 				});
-				const policyPk = parseInt(policyInsert.insertId);
-
-				const versionInsert = await db
-					.insert(policyVersions)
-					.values({ id: createId(), policyPk, data: {} });
-
-				await db
-					.update(policies)
-					.set({ activeVersion: parseInt(versionInsert.insertId) })
-					.where(eq(policies.pk, policyPk));
-
 				return policyId;
 			}),
 		),
