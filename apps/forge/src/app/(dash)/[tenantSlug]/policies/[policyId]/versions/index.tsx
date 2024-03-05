@@ -10,6 +10,8 @@
 // import { A } from "@solidjs/router";
 // import { RouterOutput } from "~/api/trpc";
 
+import { PageLayout, PageLayoutHeading } from "../../../PageLayout";
+
 // import { trpc } from "~/lib";
 // import {
 // 	StandardTable,
@@ -93,5 +95,9 @@
 // }
 
 export default function Page() {
-	return <h1>TODO</h1>;
+	return (
+		<PageLayout heading={<PageLayoutHeading>History</PageLayoutHeading>}>
+			<h1>TODO</h1>
+		</PageLayout>
+	);
 }

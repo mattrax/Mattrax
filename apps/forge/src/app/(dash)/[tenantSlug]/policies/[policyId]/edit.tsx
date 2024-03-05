@@ -1,3 +1,9 @@
+import { PageLayout, PageLayoutHeading } from "../../PageLayout";
+
 export default function Page() {
-	return <h1>TODO</h1>;
+	return (
+		<PageLayout heading={<PageLayoutHeading>Edit</PageLayoutHeading>}>
+			<p>TODO</p>
+		</PageLayout>
+	);
 }
