@@ -139,11 +139,16 @@ export const users = mysqlTable(
 	}),
 );
 
+const policyDataCol = json("data")
+	.notNull()
+	.default({})
+	.$type<Record<string, unknown>>();
+
 export const policies = mysqlTable("policies", {
 	pk: serial("id").primaryKey(),
 	id: cuid("cuid").notNull().unique(),
 	name: varchar("name", { length: 256 }).notNull(),
-	data: json("data").notNull().default({}),
+	data: policyDataCol,
 	tenantPk: serialRelation("tenantId")
 		.references(() => tenants.pk)
 		.notNull(),
@@ -194,7 +199,7 @@ export const policyVersions = mysqlTable("policy_versions", {
 	status: mysqlEnum("status", ["deploying", "deployed"])
 		.notNull()
 		.default("deploying"),
-	data: json("data").notNull().default({}),
+	data: policyDataCol,
 	comment: varchar("comment", { length: 256 }).notNull(),
 	createdBy: serialRelation("createdBy")
 		.references(() => accounts.pk)

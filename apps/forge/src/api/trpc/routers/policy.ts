@@ -42,10 +42,84 @@ export const policyRouter = createTRPCRouter({
 	get: tenantProcedure
 		.input(z.object({ policyId: z.string() }))
 		.query(async ({ ctx, input }) => {
+			const [[policy], [lastVersion]] = await Promise.all([
+				db
+					.select({
+						id: policies.id,
+						name: policies.name,
+						data: policies.data,
+					})
+					.from(policies)
+					.where(
+						and(
+							eq(policies.id, input.policyId),
+							eq(policies.tenantPk, ctx.tenant.pk),
+						),
+					),
+				db
+					.select({
+						data: policyVersions.data,
+					})
+					.from(policyVersions)
+					.where(and(eq(policyVersions.id, input.policyId)))
+					.orderBy(policyVersions.createdAt)
+					.limit(1),
+			]);
+			if (!policy) throw new Error("policy not found"); // TODO: Proper tRPC error and have frontend catch and handle it
+
+			return {
+				// Compare to last deployed version or default (empty object)
+				isDirty: !deepEqual(policy.data, lastVersion?.data ?? {}),
+				...policy,
+			};
+		}),
+
+	getDeploySummary: tenantProcedure
+		.input(z.object({ policyId: z.string() }))
+		.query(async ({ ctx, input }) => {
+			// const policy = await getPolicy({
+			// 	policyId: input.policyId,
+			// 	tenantPk: ctx.tenant.pk,
+			// });
+
+			// TODO: Check policy is within the current tenant safely? Can we do this with a join on the second query?
+			// db
+			// 		.select({
+			// 			id: policies.id,
+			// 			name: policies.name,
+			// 			data: policies.data,
+			// 		})
+			// 		.from(policies)
+			// 		.where(
+			// 			and(
+			// 				eq(policies.id, input.policyId),
+			// 				eq(policies.tenantPk, ctx.tenant.pk),
+			// 			),
+			// 		),
+			// TODO: Also count through groups
+			// const [result] = await db
+			// 	.select({
+			// 		count: count(),
+			// 	})
+			// 	.from(policyAssignables)
+			// 	.where(eq(policyAssignables.policyPk, input.policyId));
+			// return result?.count;
+
+			return {
+				numScoped: 5, // TODO
+				// TODO: Implement this
+				changes: {
+					"./Testing/Testing/Testing": "123",
+				},
+			};
+		}),
+
+	deploy: tenantProcedure
+		.input(z.object({ policyId: z.string(), comment: z.string() }))
+		.mutation(async ({ ctx, input }) => {
 			const [policy] = await db
 				.select({
-					id: policies.id,
-					name: policies.name,
+					pk: policies.pk,
 					data: policies.data,
 				})
 				.from(policies)
@@ -55,33 +129,37 @@ export const policyRouter = createTRPCRouter({
 						eq(policies.tenantPk, ctx.tenant.pk),
 					),
 				);
-			if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
+			if (!policy) throw new Error("policy not found"); // TODO: Error and have frontend catch and handle it
 
-			return policy;
+			await db.insert(policyVersions).values({
+				policyPk: policy.pk,
+				data: policy.data,
+				comment: input.comment,
+				createdBy: ctx.account.pk,
+			});
 		}),
 
-	// update: tenantProcedure
-	// 	.input(
-	// 		z.object({
-	// 			policyId: z.string(),
-	// 			name: z.string(),
-	// 		}),
-	// 	)
-	// 	.mutation(async ({ ctx, input }) => {
-	// 		await db
-	// 			.update(policies)
-	// 			.set({
-	// 				name: input.name,
-	// 			})
-	// 			.where(
-	// 				and(
-	// 					eq(policies.id, input.policyId),
-	// 					eq(policies.tenantPk, ctx.tenant.pk),
-	// 				),
-	// 			);
-
-	// 		return {};
-	// 	}),
+	update: tenantProcedure
+		.input(
+			z.object({
+				policyId: z.string(),
+				name: z.string(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			// TODO
+			// await db
+			// 	.update(policies)
+			// 	.set({
+			// 		name: input.name,
+			// 	})
+			// 	.where(
+			// 		and(
+			// 			eq(policies.id, input.policyId),
+			// 			eq(policies.tenantPk, ctx.tenant.pk),
+			// 		),
+			// 	);
+		}),
 
 	// getVersions: tenantProcedure
 	// 	.input(z.object({ policyId: z.string() }))
@@ -474,3 +552,30 @@ export const policyRouter = createTRPCRouter({
 				);
 		}),
 });
+
+function deepEqual(object1: Record<any, any>, object2: Record<any, any>) {
+	const keys1 = Object.keys(object1);
+	const keys2 = Object.keys(object2);
+
+	if (keys1.length !== keys2.length) {
+		return false;
+	}
+
+	for (const key of keys1) {
+		const val1 = object1[key];
+		const val2 = object2[key];
+		const areObjects = isObject(val1) && isObject(val2);
+		if (
+			(areObjects && !deepEqual(val1, val2)) ||
+			(!areObjects && val1 !== val2)
+		) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+function isObject(object: any) {
+	return object != null && typeof object === "object";
+}
