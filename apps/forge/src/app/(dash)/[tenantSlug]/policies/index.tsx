@@ -11,7 +11,14 @@ import {
 	createSearchParamPagination,
 	selectCheckboxColumn,
 } from "~/components/StandardTable";
-import { Button, Input, Separator } from "~/components/ui";
+import {
+	Button,
+	Input,
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+	Separator,
+} from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { useTenant } from "../../[tenantSlug]";
 
@@ -65,7 +72,6 @@ export default function Page() {
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Policies</PageLayoutHeading>}>
-			<CreatePolicyCard />
 			<Separator />
 			<div class="flex flex-row gap-4">
 				<Input
@@ -83,6 +89,8 @@ export default function Page() {
 						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
 					</As>
 				</ColumnsDropdown>
+
+				<CreatePolicyButton />
 			</div>
 			<Suspense>
 				<StandardTable table={table} />
@@ -95,16 +103,9 @@ import { useNavigate } from "@solidjs/router";
 import { z } from "zod";
 
 import { Form, InputField, createZodForm } from "~/components/forms";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "~/components/ui";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
 
-function CreatePolicyCard() {
+function CreatePolicyButton() {
 	const tenant = useTenant();
 	const navigate = useNavigate();
 
@@ -124,29 +125,28 @@ function CreatePolicyCard() {
 	});
 
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle>Create Policy</CardTitle>
-				<CardDescription>
-					Once a new policy is created, you will be taken to assign
-					configurations to it.
-				</CardDescription>
-			</CardHeader>
-			<CardContent>
+		<Popover>
+			<PopoverTrigger asChild>
+				<As component={Button}>Add New</As>
+			</PopoverTrigger>
+			<PopoverContent>
 				<Form
 					form={form}
 					class="w-full"
-					fieldsetClass="flex items-center gap-4"
+					fieldsetClass="flex flex-col items-center gap-4 w-full"
 				>
 					<InputField
 						placeholder="Policy Name"
-						fieldClass="flex-1"
+						class="w-full"
+						fieldClass="flex-1 w-full"
 						form={form}
 						name="name"
 					/>
-					<Button type="submit">Create Policy</Button>
+					<Button type="submit" class="w-full">
+						Create
+					</Button>
 				</Form>
-			</CardContent>
-		</Card>
+			</PopoverContent>
+		</Popover>
 	);
 }
