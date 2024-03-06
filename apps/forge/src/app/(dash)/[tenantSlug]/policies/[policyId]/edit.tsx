@@ -8,16 +8,27 @@ import {
 	DialogHeader,
 	DialogTitle,
 	useController,
+	Card,
+	CardContent,
+	CardHeader,
+	CardTitle,
+	Input,
 } from "~/components/ui";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { usePolicy } from "../[policyId]";
 import { As } from "@kobalte/core";
 import { trpc } from "~/lib";
 import { useTenant } from "~/app/(dash)/[tenantSlug]";
-import { For, Suspense, createSignal } from "solid-js";
+import { For, Show, Suspense, createResource, createSignal } from "solid-js";
+import { Form, InputField, createZodForm } from "~/components/forms";
+import { z } from "zod";
 
 export default function Page() {
 	const policy = usePolicy();
+	const tenant = useTenant();
+	const updatePolicy = trpc.policy.update.useMutation(() => ({
+		onSuccess: () => policy.query.refetch(),
+	}));
 
 	return (
 		<PageLayout
@@ -28,7 +39,17 @@ export default function Page() {
 				</div>
 			}
 		>
-			<p>TODO</p>
+			<Editor
+				data={policy().data}
+				updatePolicy={(data) =>
+					updatePolicy.mutate({
+						tenantSlug: tenant().slug,
+						policyId: policy().id,
+						data,
+					})
+				}
+				disabled={updatePolicy.isPending}
+			/>
 		</PageLayout>
 	);
 }
@@ -131,5 +152,167 @@ function DeployDialog() {
 				</>
 			)}
 		</DialogHeader>
+	);
+}
+
+export function Editor(props: {
+	data: Record<any, unknown>;
+	updatePolicy: (data: Record<any, unknown>) => void;
+	disabled?: boolean;
+}) {
+	const form = createZodForm({
+		schema: z.object({
+			uri: z.string(),
+			value: z.string(),
+		}),
+		onSubmit: ({ value }) =>
+			props.updatePolicy({
+				...props.data,
+				windows: {
+					...(props.data?.windows || {}),
+					[value.uri]: value.value,
+				},
+			}),
+	});
+
+	const isDisabled = () => form.state.isSubmitting || props.disabled;
+
+	// TODO: Properly reset the form and file input after submission
+
+	return (
+		<PageLayout class="pt-4">
+			<Card>
+				<CardHeader class="flex-row justify-between">
+					<div class="flex space-x-2 justify-center items-center">
+						<CardTitle>Editor</CardTitle>
+					</div>
+				</CardHeader>
+				<CardContent class="flex flex-col space-y-4">
+					<div>
+						<h1 class="text-md font-semibold leading-none tracking-tight py-2">
+							Windows
+						</h1>
+						<div class="flex flex-col space-y-3">
+							<For each={Object.entries((props.data as any)?.windows || {})}>
+								{([uri, value]) => (
+									<div class="flex space-x-3">
+										<Input
+											value={uri}
+											class="flex-1"
+											disabled={isDisabled() || true}
+										/>
+										<Input
+											value={value as string}
+											class="flex-1"
+											disabled={isDisabled() || true}
+										/>
+										<Button
+											variant="destructive"
+											class="w-16"
+											disabled={isDisabled()}
+											onClick={() => {
+												const windows: Record<any, unknown> = {
+													...(props.data?.windows || {}),
+												};
+												delete windows[uri];
+
+												props.updatePolicy({
+													...props.data,
+													windows,
+												});
+											}}
+										>
+											Delete
+										</Button>
+									</div>
+								)}
+							</For>
+							<Form form={form} fieldsetClass="flex space-x-3">
+								<div class="flex-1">
+									<InputField
+										form={form}
+										name="uri"
+										placeholder="./Device/Vendor/MSFT/Policy/Config/Camera/AllowCamera"
+										disabled={isDisabled()}
+										onDblClick={(e) => {
+											form.setFieldValue("uri", e.currentTarget.placeholder);
+										}}
+									/>
+								</div>
+								<div class="flex-1">
+									<InputField
+										form={form}
+										name="value"
+										placeholder="0"
+										disabled={isDisabled()}
+										onDblClick={(e) => {
+											form.setFieldValue("value", e.currentTarget.placeholder);
+										}}
+									/>
+								</div>
+								<Button type="submit" class="w-16" disabled={isDisabled()}>
+									Add
+								</Button>
+							</Form>
+						</div>
+					</div>
+
+					<div>
+						<h1 class="text-md font-semibold leading-none tracking-tight py-2">
+							Apple
+						</h1>
+
+						<div class="flex justify-between">
+							<input
+								type="file"
+								class="disabled:opacity-70"
+								accept=".mobileconfig"
+								disabled={isDisabled()}
+								onInput={(e) => {
+									const file = e.currentTarget.files?.[0];
+									if (!file) return;
+									file.text().then((text) => {
+										props.updatePolicy({
+											...(props.data || {}),
+											apple: text,
+										});
+									});
+								}}
+							/>
+
+							<Button
+								variant="destructive"
+								onClick={() => {
+									const data = { ...(props.data || {}) };
+									if ("apple" in data) data.apple = undefined;
+									props.updatePolicy(data);
+								}}
+								disabled={isDisabled()}
+							>
+								Delete
+							</Button>
+						</div>
+
+						<Show when={props.data?.apple}>
+							{(value) => <pre>{value() as string}</pre>}
+						</Show>
+					</div>
+
+					<div>
+						<h1 class="text-md font-semibold leading-none tracking-tight py-2">
+							Android
+						</h1>
+						<h2 class="text-muted-foreground opacity-70">Coming soon...</h2>
+					</div>
+
+					<div>
+						<h1 class="text-md font-semibold leading-none tracking-tight py-2">
+							Linux
+						</h1>
+						<h2 class="text-muted-foreground opacity-70">Coming soon...</h2>
+					</div>
+				</CardContent>
+			</Card>
+		</PageLayout>
 	);
 }

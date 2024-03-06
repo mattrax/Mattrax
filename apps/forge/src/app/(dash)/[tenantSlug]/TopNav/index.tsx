@@ -57,7 +57,7 @@ const tenantItems: NavbarItem[] = [
 
 const policyItems: NavbarItem[] = [
 	{
-		title: "Overview",
+		title: "Policy",
 		href: "",
 	},
 	{

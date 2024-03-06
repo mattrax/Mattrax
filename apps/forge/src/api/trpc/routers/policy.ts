@@ -141,22 +141,23 @@ export const policyRouter = createTRPCRouter({
 		.input(
 			z.object({
 				policyId: z.string(),
-				name: z.string(),
+				name: z.string().optional(),
+				data: z.any().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			// TODO
-			// await db
-			// 	.update(policies)
-			// 	.set({
-			// 		name: input.name,
-			// 	})
-			// 	.where(
-			// 		and(
-			// 			eq(policies.id, input.policyId),
-			// 			eq(policies.tenantPk, ctx.tenant.pk),
-			// 		),
-			// 	);
+			await db
+				.update(policies)
+				.set({
+					name: input.name ?? sql`${policies.name}`,
+					data: input.data ?? sql`${policies.data}`,
+				})
+				.where(
+					and(
+						eq(policies.id, input.policyId),
+						eq(policies.tenantPk, ctx.tenant.pk),
+					),
+				);
 		}),
 
 	// getVersions: tenantProcedure

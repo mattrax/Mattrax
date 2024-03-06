@@ -36,23 +36,6 @@ export default function Page() {
 function IdentityProviderCard() {
 	const tenant = useTenant();
 
-	const linkEntra = trpc.tenant.identityProvider.linkEntra.useMutation(() => ({
-		onSuccess: async (url) => {
-			const popupWindow = window.open(
-				url,
-				"entraOAuth",
-				"toolbar=no, menubar=no, width=600, height=700, top=100, left=100",
-			);
-
-			window.addEventListener("message", (e) => {
-				if (e.source !== popupWindow || e.origin !== location.origin) return;
-
-				popupWindow?.close();
-				provider.refetch();
-			});
-		},
-	}));
-
 	const provider = trpc.tenant.identityProvider.get.useQuery(() => ({
 		tenantSlug: tenant().slug,
 	}));
@@ -68,6 +51,26 @@ function IdentityProviderCard() {
 			},
 		}),
 	);
+
+	const linkEntra = trpc.tenant.identityProvider.linkEntra.useMutation(() => ({
+		onSuccess: async (url) => {
+			const popupWindow = window.open(
+				url,
+				"entraOAuth",
+				"toolbar=no, menubar=no, width=600, height=700, top=100, left=100",
+			);
+
+			window.addEventListener("message", (e) => {
+				if (e.source !== popupWindow || e.origin !== location.origin) return;
+
+				popupWindow?.close();
+				provider.refetch();
+				syncProvider.mutate({
+					tenantSlug: tenant().slug,
+				});
+			});
+		},
+	}));
 
 	return (
 		<Card class="p-4 flex flex-row items-center">
