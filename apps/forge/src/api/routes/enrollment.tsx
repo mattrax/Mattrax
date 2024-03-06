@@ -133,8 +133,20 @@ export const enrollmentRouter = new Hono()
 			.setAudience("mdm.mattrax.app")
 			.setNotBefore(new Date())
 			.setExpirationTime(new Date(Date.now() + 10 * MINUTE))
-			.setProtectedHeader({ alg: "ES256" })
-			.sign(new TextEncoder().encode(env.INTERNAL_SECRET));
+			.setProtectedHeader({ alg: "HS256" })
+			.sign(
+				await crypto.subtle.importKey(
+					"raw",
+					new TextEncoder().encode(env.INTERNAL_SECRET),
+					{
+						// Do not adjust these without updating Rust.
+						name: "HMAC",
+						hash: "SHA-256",
+					},
+					false,
+					["sign", "verify"],
+				),
+			);
 
 		if (appru) return c.html(renderMdmCallback(appru, jwt));
 
