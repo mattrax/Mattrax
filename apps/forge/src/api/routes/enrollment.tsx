@@ -72,7 +72,7 @@ export const enrollmentRouter = new Hono()
 			login_hint: email,
 			state: JSON.stringify({
 				appru,
-				tenantId: domainRecord.identityProvider.tenantPk,
+				tid: domainRecord.identityProvider.tenantPk,
 			}),
 		});
 
