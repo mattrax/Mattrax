@@ -29,6 +29,22 @@ export type StatsTarget =
 	| "applications"
 	| "groups";
 
+export const restrictedUsernames = new Set([
+	"admin",
+	"administrator",
+	"help",
+	"mod",
+	"moderator",
+	"staff",
+	"mattrax",
+	"root",
+	"contact",
+	"support",
+	"home",
+	"employee",
+	"enroll",
+]);
+
 export const tenantRouter = createTRPCRouter({
 	create: authedProcedure
 		.input(z.object({ name: z.string().min(1) }))
@@ -68,6 +84,10 @@ export const tenantRouter = createTRPCRouter({
 		)
 		.mutation(async ({ ctx, input }) => {
 			if (input.name === undefined) return;
+
+			if (restrictedUsernames.has(input.name.toLowerCase())) {
+				throw new Error("Name is restricted"); // TODO: Properly handle this on the frontend
+			}
 
 			await db
 				.update(tenants)
