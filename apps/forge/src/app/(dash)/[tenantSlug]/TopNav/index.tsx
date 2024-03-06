@@ -262,7 +262,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 				</DropdownMenu>
 			</div>
 
-			<nav class="text-white sticky border-b border-gray-300 top-0 z-10 bg-white -mt-2">
+			<nav class="text-white sticky border-b border-gray-300 top-0 z-10 bg-white -mt-2 overflow-x-scroll overflow-y-hidden">
 				<Tabs.Root value={matches().value()} class="mx-2 relative">
 					<Tabs.List class="flex flex-row">
 						<For each={matches().items}>
