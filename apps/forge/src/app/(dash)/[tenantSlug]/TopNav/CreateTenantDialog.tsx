@@ -37,7 +37,6 @@ export function CreateTenantDialog(
 	const form = createZodForm({
 		schema: z.object({
 			name: z.string(),
-			slug: z.string(),
 		}),
 		onSubmit: ({ value }) => mutation.mutateAsync({ name: value.name }),
 	});

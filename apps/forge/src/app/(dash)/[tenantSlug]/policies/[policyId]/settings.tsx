@@ -5,23 +5,24 @@ import { Button, Label } from "~/components/ui";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
+import { usePolicy } from "../[policyId]";
+import { useNavigate } from "@solidjs/router";
+import { startTransition } from "solid-js";
 
 export default function Page() {
-	const params = useZodParams({
-		policyId: z.string(),
-	});
+	const navigate = useNavigate();
 	const tenant = useTenant();
-	const policy = trpc.policy.get.useQuery(() => ({
-		policyId: params.policyId,
-		tenantSlug: tenant().slug,
-	}));
+	const policy = usePolicy();
+
+	const deletePolicy = trpc.policy.delete.useMutation();
 	// const updatePolicy = trpc.policy.update.useMutation(() => ({
 	// 	onSuccess: () => policy.refetch(),
 	// }));
 
 	const form = createZodForm({
 		schema: z.object({ name: z.string() }),
-		defaultValues: { name: policy.data?.name || "" },
+		defaultValues: { name: policy().name || "" },
 		onSubmit: ({ value }) => {
 			// updatePolicy.mutateAsync({
 			// 	tenantSlug: tenant().slug,
@@ -47,6 +48,32 @@ export default function Page() {
 					<span class="text-sm font-semibold leading-6">Save</span>
 				</Button>
 			</Form>
+
+			<ConfirmDialog>
+				{(confirm) => (
+					<Button
+						variant="destructive"
+						onClick={() =>
+							confirm({
+								title: "Delete policy?",
+								action: `Delete '${policy().name}'`,
+								description: <>Are you sure you want to delete this policy?</>,
+								inputText: policy().name,
+								async onConfirm() {
+									await deletePolicy.mutateAsync({
+										tenantSlug: tenant().slug,
+										policyId: policy().id,
+									});
+
+									await startTransition(() => navigate("../.."));
+								},
+							})
+						}
+					>
+						Delete Policy
+					</Button>
+				)}
+			</ConfirmDialog>
 		</PageLayout>
 	);
 }
