@@ -7,9 +7,14 @@ export default function Page() {
 			</p>
 			<div class="flex flex-col gap-4">
 				<h2 class="text-muted-foreground opacity-70">Coming soon...</h2>
-				{/* TODO: Has auth provider */}
-				{/* TODO: If EntraID is enabled, we need to ensure mobility config set up or ask them to use enroll.mattrax.app */}
-				{/* TODO: If GSuite we need the CNAME configured */}
+
+				{/* // TODO: Enable/disable enrollment */}
+
+				{/* // TODO: Configure who is allowed to enroll devices */}
+
+				{/* // TODO: Has auth provider */}
+				{/* // TODO: If EntraID is enabled, we need to ensure mobility config set up or ask them to use enroll.mattrax.app */}
+				{/* // TODO: If GSuite we need the CNAME configured */}
 			</div>
 		</div>
 	);

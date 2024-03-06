@@ -72,6 +72,18 @@ export const policyRouter = createTRPCRouter({
 			};
 		}),
 
+	overview: tenantProcedure
+		.input(z.object({ policyId: z.string() }))
+		.query(async ({ ctx, input }) => {
+			// TODO: History of deploys and track there process
+
+			return {
+				// TODO: Active deploy information
+				// TODO: Scope info
+				timeline: [],
+			}; // TODO
+		}),
+
 	getDeploySummary: tenantProcedure
 		.input(z.object({ policyId: z.string() }))
 		.query(async ({ ctx, input }) => {
