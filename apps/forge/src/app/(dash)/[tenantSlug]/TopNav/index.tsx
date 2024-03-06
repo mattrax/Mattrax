@@ -55,6 +55,20 @@ const tenantItems: NavbarItem[] = [
 	},
 ];
 
+const userItems: NavbarItem[] = [
+	{
+		title: "User",
+		href: "",
+	},
+];
+
+const deviceItems: NavbarItem[] = [
+	{
+		title: "Device",
+		href: "",
+	},
+];
+
 const policyItems: NavbarItem[] = [
 	{
 		title: "Policy",
@@ -78,15 +92,51 @@ const policyItems: NavbarItem[] = [
 	},
 ];
 
+const applicationItems: NavbarItem[] = [
+	{
+		title: "Application",
+		href: "",
+	},
+];
+
+const groupItems: NavbarItem[] = [
+	{
+		title: "Group",
+		href: "",
+	},
+];
+
 export default function Component(props: TenantSwitcherProps): JSX.Element {
 	const auth = useAuth();
 
 	const path = useResolvedPath(() => "");
 	const tenantMatch = useMatch(() => `${path()}/*rest`);
+	const userMatch = useMatch(() => `${path()}/users/:userId/*rest`);
+	const deviceMatch = useMatch(() => `${path()}/devices/:deviceId/*rest`);
 	const policyMatch = useMatch(() => `${path()}/policies/:policyId/*rest`);
+	const applicationMatch = useMatch(() => `${path()}/apps/:appId/*rest`);
+	const groupMatch = useMatch(() => `${path()}/groups/:groupId/*rest`);
 
 	const matches = createMemo(() => {
+		const user = userMatch();
+		const device = deviceMatch();
 		const policy = policyMatch();
+		const application = applicationMatch();
+		const group = groupMatch();
+
+		if (user !== undefined) {
+			return {
+				items: userItems.map((i) => ({
+					...i,
+					href: `users/${user.params.userId}${
+						i.href !== "" ? `/${i.href}` : ""
+					}`,
+					end: i.href === "",
+					value: i.href,
+				})),
+				value: () => user.params.rest?.split("/")[0] ?? "",
+			};
+		}
 
 		if (policy !== undefined) {
 			return {
@@ -99,6 +149,48 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 					value: i.href,
 				})),
 				value: () => policy.params.rest?.split("/")[0] ?? "",
+			};
+		}
+
+		if (device !== undefined) {
+			return {
+				items: deviceItems.map((i) => ({
+					...i,
+					href: `devices/${device.params.deviceId}${
+						i.href !== "" ? `/${i.href}` : ""
+					}`,
+					end: i.href === "",
+					value: i.href,
+				})),
+				value: () => device.params.rest?.split("/")[0] ?? "",
+			};
+		}
+
+		if (application !== undefined) {
+			return {
+				items: applicationItems.map((i) => ({
+					...i,
+					href: `apps/${application.params.appId}${
+						i.href !== "" ? `/${i.href}` : ""
+					}`,
+					end: i.href === "",
+					value: i.href,
+				})),
+				value: () => application.params.rest?.split("/")[0] ?? "",
+			};
+		}
+
+		if (group !== undefined) {
+			return {
+				items: groupItems.map((i) => ({
+					...i,
+					href: `groups/${group.params.groupId}${
+						i.href !== "" ? `/${i.href}` : ""
+					}`,
+					end: i.href === "",
+					value: i.href,
+				})),
+				value: () => group.params.rest?.split("/")[0] ?? "",
 			};
 		}
 
