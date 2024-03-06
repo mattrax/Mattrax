@@ -22,10 +22,6 @@ export default [
 		},
 	},
 	{
-		path: "/billing",
-		component: lazy(() => import("./billing")),
-	},
-	{
 		path: "/identity-provider",
 		component: lazy(() => import("./identity-provider")),
 		load: ({ params }) => {
@@ -33,5 +29,13 @@ export default [
 				tenantSlug: params.tenantSlug!,
 			});
 		},
+	},
+	{
+		path: "/enrollment",
+		component: lazy(() => import("./enrollment")),
+	},
+	{
+		path: "/billing",
+		component: lazy(() => import("./billing")),
 	},
 ] satisfies RouteDefinition[];

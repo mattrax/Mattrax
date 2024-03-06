@@ -7,6 +7,7 @@ const navigation = [
 	{ name: "General", href: "" },
 	{ name: "Administrators", href: "administrators" },
 	{ name: "Identity Provider", href: "identity-provider" },
+	{ name: "Enrollment", href: "enrollment" },
 	{ name: "Biling", href: "billing" },
 ];
 
