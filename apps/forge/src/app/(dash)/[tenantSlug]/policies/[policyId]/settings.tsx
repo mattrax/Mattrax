@@ -22,7 +22,7 @@ export default function Page() {
 
 	const form = createZodForm({
 		schema: z.object({ name: z.string() }),
-		defaultValues: { name: policy().data?.name || "" },
+		defaultValues: { name: policy().name || "" },
 		onSubmit: ({ value }) => {
 			// updatePolicy.mutateAsync({
 			// 	tenantSlug: tenant().slug,
