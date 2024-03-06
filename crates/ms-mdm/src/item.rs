@@ -20,13 +20,13 @@ pub struct Item {
     // child: Value,
     // TODO: These are for `Replace` & are both required fields
     #[easy_xml(rename = "Source")]
-    source: Option<Source>,
+    pub source: Option<Source>,
     #[easy_xml(rename = "Data")]
-    data: Option<String>, // TODO `Data` or `String`? This field literally isn't in the fucking spec.
+    pub data: Option<String>, // TODO `Data` or `String`? This field literally isn't in the fucking spec.
 
-                          // TODO: These are for `Status` & is required
-                          // #[easy_xml(child)]
-                          // child: Option<String>,
+                              // TODO: These are for `Status` & is required
+                              // #[easy_xml(child)]
+                              // child: Option<String>,
 }
 
 impl From<Target> for Item {

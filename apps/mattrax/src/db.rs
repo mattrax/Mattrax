@@ -15,6 +15,7 @@ pub struct GetPoliciesForDeviceResult {
     pub id: String,
     pub name: String,
 }
+
 #[derive(Clone)]
 pub struct Db {
     pool: mysql_async::Pool,
@@ -81,5 +82,19 @@ impl Db {
                 pk: p.0,id: p.1,name: p.2
               })
             .await
+    }
+}
+impl Db {
+    pub async fn set_device_data(
+        &self,
+        device_id: i32,
+        key: String,
+        value: String,
+    ) -> Result<(), mysql_async::Error> {
+        r#"insert into `device_windows_data_temp` (`id`, `key`, `key`, `deviceId`, `lastModified`) values (default, ?, ?, ?, default)"#
+            .with(mysql_async::Params::Positional(vec![key.clone().into(),value.clone().into(),device_id.clone().into()]))
+            .run(&self.pool)
+            .await
+            .map(|_| ())
     }
 }

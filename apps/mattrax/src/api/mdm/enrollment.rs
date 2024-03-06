@@ -458,7 +458,8 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
 
             // TODO: `HWDevID`, `DeviceID`, `OSVersion`
 
-            state.db.create_device(cuid2::create_id(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), "Windows".into(), hw_dev_id.into(), tenant_pk, owner_pk).await.unwrap();
+            let device_id = cuid2::create_id();
+            state.db.create_device(device_id.clone(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), "Windows".into(), hw_dev_id.into(), tenant_pk, owner_pk).await.unwrap();
 
             // TODO: Get the device's DB id and put into this
             // TODO: Lookup and set tenant name
@@ -490,7 +491,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                     <parm name="APPID" value="w7" />
                     <parm name="PROVIDER-ID" value="Mattrax" />
                     <parm name="NAME" value="Mattrax" />
-                    <parm name="ADDR" value="{domain}/ManagementServer/Manage.svc" />
+                    <parm name="ADDR" value="https://{domain}/ManagementServer/Manage.svc" />
                     <parm name="ROLE" value="4294967295" />
                     <parm name="BACKCOMPATRETRYDISABLED" />
                     <parm name="DEFAULTENCODING" value="application/vnd.syncml.dm+xml" />
@@ -511,7 +512,8 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 </characteristic>
                 <characteristic type="DMClient">
                     <characteristic type="Provider">
-                        <characteristic type="DEMO MDM">
+                        <characteristic type="Mattrax">
+                            <parm name="EntDMID" value="{device_id}" datatype="string" />
                             <parm name="SyncApplicationVersion" value="5.0" datatype="string" />
                             <characteristic type="Poll">
                                 <parm name="NumberOfFirstRetries" value="8" datatype="integer" />

@@ -6,6 +6,7 @@ import { union } from "drizzle-orm/mysql-core";
 import {
 	certificates,
 	db,
+	device_windows_data,
 	devices,
 	groupAssignables,
 	policies,
@@ -138,6 +139,20 @@ exportQueries(
 
 				return union(a, b);
 			},
+		}),
+		defineOperation({
+			name: "set_device_data",
+			args: {
+				device_id: "i32",
+				key: "String",
+				value: "String",
+			},
+			query: (args) =>
+				db.insert(device_windows_data).values({
+					key: args.key,
+					value: args.value,
+					devicePk: args.device_id,
+				}),
 		}),
 	],
 	path.join(__dirname, "../../../../apps/mattrax/src/db.rs"),

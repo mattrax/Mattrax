@@ -262,7 +262,7 @@ export const device_windows_data = mysqlTable("device_windows_data_temp", {
 	pk: serial("id").primaryKey(),
 	key: varchar("key", { length: 256 }).notNull(),
 	value: varchar("key", { length: 2048 }).notNull(),
-	deviceId: serialRelation("deviceId").references(() => devices.pk),
+	devicePk: serialRelation("deviceId").references(() => devices.pk),
 	lastModified: timestamp("lastModified").notNull().defaultNow(),
 });
 
