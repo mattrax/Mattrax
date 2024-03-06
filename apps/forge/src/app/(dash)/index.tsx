@@ -12,7 +12,7 @@ export default function Page() {
 	const auth = useAuth();
 
 	const defaultTenant = () => {
-		const tenants = auth.me.tenants;
+		const tenants = auth().tenants;
 		if (tenants.length < 1) return;
 
 		// const persistedTenant = tenants.find((t) => t.id === tenantId());

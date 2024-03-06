@@ -58,7 +58,7 @@ export default function Page() {
 												</div>
 											</div>
 											<div>
-												{auth.me.id === tenant().ownerId && (
+												{auth().id === tenant().ownerId && (
 													<Button
 														variant="destructive"
 														size="sm"
@@ -102,7 +102,7 @@ export default function Page() {
 												)}
 											</div>
 											<div>
-												{auth.me.id === tenant().ownerId && !admin.isOwner && (
+												{auth().id === tenant().ownerId && !admin.isOwner && (
 													<Button
 														variant="destructive"
 														size="sm"
