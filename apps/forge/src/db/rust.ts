@@ -61,17 +61,29 @@ exportQueries(
 				operating_system: "String",
 				serial_number: "String",
 				tenant_pk: "i32",
+				owner_pk: "i32",
 			},
 			query: (args) =>
-				db.insert(devices).values([
-					{
-						id: args.id,
-						name: args.name,
-						operatingSystem: args.operating_system,
-						serialNumber: args.serial_number,
-						tenantPk: args.tenant_pk,
-					},
-				]),
+				db
+					.insert(devices)
+					.values([
+						{
+							id: args.id,
+							name: args.name,
+							operatingSystem: args.operating_system,
+							serialNumber: args.serial_number,
+							tenantPk: args.tenant_pk,
+							owner: args.owner_pk,
+						},
+					])
+					.onDuplicateKeyUpdate({
+						// TODO: When we do this update what if policies from the old-tenant refer to it. We kinda break shit.
+						set: {
+							name: args.name,
+							tenantPk: args.tenant_pk,
+							owner: args.owner_pk,
+						},
+					}),
 		}),
 		defineOperation({
 			name: "get_policies_for_device",

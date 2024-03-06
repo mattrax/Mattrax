@@ -228,7 +228,8 @@ export const devices = mysqlTable("devices", {
 	description: varchar("description", { length: 256 }),
 
 	operatingSystem: varchar("operatingSystem", { length: 256 }).notNull(), // TODO: Enum maybe?
-	serialNumber: varchar("serialNumber", { length: 256 }).notNull(),
+	// This must be a unique *hardware* identifier
+	serialNumber: varchar("serialNumber", { length: 256 }).unique().notNull(),
 
 	manufacturer: varchar("manufacturer", { length: 256 }),
 	model: varchar("model", { length: 256 }),

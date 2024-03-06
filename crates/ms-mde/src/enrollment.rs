@@ -1,9 +1,6 @@
-use std::error::Error;
-
-use base64::prelude::*;
 use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
-use crate::{RequestHeader, ResponseHeader};
+use crate::{header::BinarySecurityToken, RequestHeader, ResponseHeader};
 
 pub const ENROLLMENT_ACTION_REQUEST: &str =
     "http://schemas.microsoft.com/windows/pki/2009/01/enrollment/RST/wstep";
@@ -108,32 +105,6 @@ pub struct ContextItem {
     pub name: String,
     #[easy_xml(rename = "Value", prefix = "ac")]
     pub value: String,
-}
-
-// contains the CSR for the request and wap-provisioning payload for the response
-#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
-#[easy_xml(rename = "BinarySecurityToken", prefix = "wsse")]
-pub struct BinarySecurityToken {
-    // TODO: Do this in easy_xml
-    #[easy_xml(rename = "xmlns", attribute)]
-    pub xmlns: Option<String>,
-    #[easy_xml(rename = "ValueType", attribute)]
-    pub value_type: String,
-    #[easy_xml(rename = "EncodingType", attribute)]
-    pub encoding_type: String,
-    #[easy_xml(text)]
-    pub value: String,
-}
-
-impl BinarySecurityToken {
-    pub fn decode(&self) -> Result<Vec<u8>, Box<dyn Error>> {
-        match &*self.encoding_type {
-            "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#base64binary" => {
-                BASE64_STANDARD.decode(&self.value.replace("\r\n", "")).map_err(Into::into)
-            }
-            _ => Err("encoding not supported".into()),
-        }
-    }
 }
 
 // contains the management client configuration and signed identity certificate

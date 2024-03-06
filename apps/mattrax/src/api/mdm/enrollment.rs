@@ -1,4 +1,4 @@
-use std::{ops::Add, sync::Arc};
+use std::{collections::BTreeMap, ops::Add, sync::Arc};
 
 use axum::{
     extract::State,
@@ -9,15 +9,9 @@ use axum::{
 };
 use base64::prelude::*;
 use hyper::header;
+use jwt::VerifyWithKey;
 use ms_mde::{
-    Action, ActivityId, BinarySecurityToken, DiscoverRequest, DiscoverResponse,
-    DiscoverResponseBody, DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult,
-    EnrollmentRequest, EnrollmentResponse, EnrollmentResponseBody, RequestSecurityTokenResponse,
-    RequestSecurityTokenResponseCollection, RequestedSecurityToken, ResponseHeader,
-    ACTIVITY_ID_XMLNS, DISCOVER_ACTION_REQUEST, DISCOVER_ACTION_RESPONSE, DISCOVER_RESPONSE_XMLNS,
-    ENROLLMENT_ACTION_REQUEST, ENROLLMENT_ACTION_RESPONSE, ENROLLMENT_REQUEST_TYPE_ISSUE,
-    ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION,
-    REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION, REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE,
+    Action, ActivityId, BinarySecurityToken, DiscoverRequest, DiscoverResponse, DiscoverResponseBody, DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult, EnrollmentRequest, EnrollmentResponse, EnrollmentResponseBody, RequestHeaderSecurity, RequestSecurityTokenResponse, RequestSecurityTokenResponseCollection, RequestedSecurityToken, ResponseHeader, ACTIVITY_ID_XMLNS, DISCOVER_ACTION_REQUEST, DISCOVER_ACTION_RESPONSE, DISCOVER_RESPONSE_XMLNS, ENROLLMENT_ACTION_REQUEST, ENROLLMENT_ACTION_RESPONSE, ENROLLMENT_REQUEST_TYPE_ISSUE, ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION, REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION, REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE
 };
 use mysql_common::time::OffsetDateTime;
 use rcgen::{
@@ -57,11 +51,6 @@ fn extract_from_xml2<'a>(tag_name: &str, end_tag_name: &str, body: &'a str) -> &
 // `/EnrollmentServer`
 pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
     Router::new()
-        // TODO: Remove this
-        .route("/Auth.svc", get(|axum::extract::Query(query): axum::extract::Query<AuthQueryParams>| async move {
-            let auto_submit_form = "<script>document.getElementById('loginForm').submit()</script>";
-            axum::response::Html(format!(r#"<h3>MDM Federated Login</h3><form id="loginForm" method="post" action="{}"><p><input type="hidden" name="wresult" value="TODOSpecialTokenWhichVerifiesAuth" /></p><input type="submit" value="Login" /></form>{}"#, query.appru, auto_submit_form))
-        }))
         // allows the device to tests a domain for the existence of a enrollment server
         .route("/Discovery.svc", get(|| async move {
             StatusCode::OK
@@ -108,7 +97,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                             enrollment_version: "5.0".into(), // TODO: From request
                             enrollment_policy_service_url: format!("https://{enrollment_domain}/EnrollmentServer/Policy.svc"),
                             enrollment_service_url: format!("https://{enrollment_domain}/EnrollmentServer/Enrollment.svc"),
-                            authentication_service_url: Some("https://mdm.mattrax.app/EnrollmentServer/Auth.svc".into()), // TODO: format!("{web_origin}/api/enrollment/login")),
+                            authentication_service_url: Some(format!("{web_origin}/api/enrollment/login")),
                         }
                     }
                 },
@@ -241,7 +230,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
 
             if cmd.header.action != ENROLLMENT_ACTION_REQUEST {
                 // TODO: fault.Fault(fmt.Errorf("the request's action is not supported by the endpoint"), "the request was not destined for this endpoint", soap.FaultCodeActionMismatch)
-                error!("todo: proper soap fault. invalid action '{}', expected '{}", cmd.header.action, DISCOVER_ACTION_REQUEST);
+                error!("todo: proper soap fault. invalid action '{}', expected '{}'", cmd.header.action, DISCOVER_ACTION_REQUEST);
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
             // else if strings.Split(r.URL.String(), "?")[0] != strings.Split(cmd.Header.To, "?")[0] {
@@ -249,25 +238,94 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             //     return
             // }
 
-            // TODO: Mattrax auth or AAD auth
+            let (upn, owner_pk, tenant_pk) = match cmd.header.security {
+                Some(RequestHeaderSecurity { binary_security_token: Some(token), .. }) => {
+                    let bst_raw = match token.decode() {
+                        Ok(raw) => raw,
+                        Err(err) => {
+                            // TODO: fault.Fault(err, "the federated authentication token has an unsupported encoding", soap.FaultCodeMessageFormat)
+                            error!("todo: proper soap fault. error decoding bst: {err:?}");
+                            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                        }
+                    };
 
-            // TODO: Authentication
-            // upn := Authenticate(mttxAPI, aadService, certService, fault, cmd, p7)
-            // if upn == "" {
-            //     return
-            // }
 
-            // let key: Hmac<Sha256> = Hmac::new_from_slice(b"some-secret").unwrap();
-            // let mut claims = BTreeMap::new();
-            // claims.insert("sub", "someone");
-            // // TODO: Token expiry working -> it's determinstic no shot time is being used.
-            // let token_str = claims.sign_with_key(&key).unwrap();
-            // assert_eq!(
-            //     token_str,
-            //     "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzb21lb25lIn0.5wwE1sBrs-vftww_BGIuTVDeHtc1Jsjo-fiHhDwR8m0"
-            // );
+                    match &*token.value_type {
+                        // AzureAD Federated
+                        "urn:ietf:params:oauth:token-type:jwt" => todo!("verify the token with Microsoft and then backtrack to Mattrax"),
+                        // Mattrax token
+                        "http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentUserToken" => {
+                            let token = String::from_utf8_lossy(&bst_raw);
+                            // TODO: Does this validate the token has not expired???
+                            let claims: BTreeMap<String, serde_json::Value> = match token.verify_with_key(&state.shared_secret) {
+                                Ok(claims) => claims,
+                                Err(err) => {
+                                     // fault.Fault(err, "the users authenticity could not be verified", soap.FaultCodeAuthentication)
+                                    error!("todo: proper soap fault. error verifying token: '{err:?}'");
+                                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                                }
+                            };
 
-            let upn = "bob@mattrax.app";
+                            if claims.get("aud") != Some(&serde_json::Value::String("mdm.mattrax.app".into())) {
+                                // fault.Fault(err, "the users authenticity could not be verified", soap.FaultCodeAuthentication)
+                                error!("todo: proper soap fault. error verifying token: invalid aud '{:?}'", claims.get("aud"));
+                                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                            }
+
+                            let upn = claims.get("upn").unwrap().as_str().unwrap().to_string(); // TODO: Error handling
+                            let owner_pk = claims.get("uid").unwrap().as_i64().unwrap().try_into().unwrap(); // TODO: Error handling
+                            let tenant = claims.get("tid").unwrap().as_i64().unwrap().try_into().unwrap(); // TODO: Error handling
+
+                            (upn, owner_pk, tenant)
+                        },
+                        ty => {
+                            // fault.Fault(err, "the users authenticity could not be verified", soap.FaultCodeAuthentication)
+                            error!("todo: proper soap fault. error invalid bst value_type '{ty}'");
+                            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                        }
+                    }
+                }
+                Some(RequestHeaderSecurity { username_token: Some(token), .. }) => {
+                    // fault.Fault(fmt.Errorf("OnPremise authentication not supported"), "no valid authentication method was found", soap.FaultCodeInvalidSecurity)
+                    error!("todo: proper soap fault. OnPremise authentication not supported");
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+                _ => {
+                    // fault.Fault(fmt.Errorf("Federated authentication not supported"), "no valid authentication method was found", soap.FaultCodeInvalidSecurity)
+                    error!("todo: proper soap fault. Federated authentication not supported");
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                }
+
+                // TODO: Authentication for certificate renewal.
+                // if cmd.Body.RequestType == soap.EnrollmentRequestTypeRenew && cmd.Header.WSSESecurity.Username != "" {
+                //     if p7 == nil {
+                //         fault.Fault(fmt.Errorf("pkcs7 required for authenticating renewal"), "the users authenticity could not be verified", soap.FaultCodeAuthentication)
+                //         return ""
+                //     }
+            
+                //     signer := p7.GetOnlySigner()
+                //     if signer == nil {
+                //         fault.Fault(fmt.Errorf("pkcs7: binary security token has no signer"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
+                //         return ""
+                //     }
+            
+                //     if now := time.Now(); now.Before(signer.NotBefore) || now.After(signer.NotAfter) /* Check that the certificate has not expired */ {
+                //         fault.Fault(fmt.Errorf("pkcs7: pkcs7 signer is expired"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
+                //         return ""
+                //     } else if err := certService.IsIssuerIdentity(signer); err != nil {
+                //         fault.Fault(fmt.Errorf("pkcs7: the signer was not a trusted certificate"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
+                //         return ""
+                //     } else if os.Getenv("DISABLE_CERT_RENEW_ELIGIBILITY") != "true" && time.Until(signer.NotAfter).Hours()/24 > wap.ROBORenewPeriod {
+                //         fault.AdvancedFault(fmt.Errorf("pkcs7: the device is not eligible to renew yet"), "the device is not eligible to renew yet", "NotEligibleToRenew", soap.FaultCodeInternalServiceFault)
+                //         return ""
+                //     } else if cmd.GetAdditionalContextItem("DeviceID") != signer.Subject.CommonName {
+                //         fault.Fault(fmt.Errorf("pkcs7: certificate command name does match renewal request DeviceID"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
+                //         return ""
+                //     }
+            
+                //     return cmd.Header.WSSESecurity.Username
+                // }
+            };
 
             let additional_context = cmd.body.request_security_token.additional_context;
             let Some(device_id) = additional_context.get("DeviceID") else {
@@ -388,17 +446,19 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
 
             let client_ctr_raw = BASE64_STANDARD.encode(certificate.der());
 
-            let ssl_client_cert_search_criteria = format!("Subject={}&amp;Stores=MY%5C{cert_store}", urlencoding::encode("CN=Device"));
             // TODO: Derive subject from the certificate - `certificate.get_params().distinguished_name()`
-
+            let ssl_client_cert_search_criteria = format!("Subject={}&amp;Stores=MY%5C{cert_store}", urlencoding::encode("CN=Device"));
 
             // TODO: Remove the device from the DB if it doesn't do an initial checkin within a certain time period
             // TODO: Get all this information from parsing the request.
 
+            let Some(hw_dev_id) = additional_context.get("HWDevID") else {
+                todo!("cringe device. No HwDevId-ass");
+            };
+
             // TODO: `HWDevID`, `DeviceID`, `OSVersion`
 
-            let tenant_pk: i32 = 5; // TODO: Work out this
-            state.db.create_device(cuid2::create_id(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), "Windows".into(), "Mind your own business".into(), tenant_pk).await.unwrap();
+            state.db.create_device(cuid2::create_id(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), "Windows".into(), hw_dev_id.into(), tenant_pk, owner_pk).await.unwrap();
 
             // TODO: Get the device's DB id and put into this
             // TODO: Lookup and set tenant name

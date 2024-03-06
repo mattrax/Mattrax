@@ -3,9 +3,10 @@ import { Hono } from "hono";
 import * as jose from "jose";
 import { renderToString } from "solid-js/web";
 
-import { db, domains, identityProviders } from "~/db";
+import { db, domains, identityProviders, users } from "~/db";
 import { env } from "~/env";
 import { getEmailDomain } from "../utils";
+import { upsertEntraIdUser } from "../trpc/routers/tenant/identityProvider";
 
 export type EnrollmentProfileDescription = {
 	data: string;
@@ -15,9 +16,13 @@ export type EnrollmentProfileDescription = {
 const MINUTE = 60 * 1000;
 
 type State = {
-	appru: string;
+	// MDM webview special callback URL
+	appru: string | undefined;
+	// Microsoft tenantID
 	tenantId: string;
+	// Mattrax id's
 	tid: number;
+	providerId: number;
 };
 
 export const enrollmentRouter = new Hono()
@@ -76,10 +81,12 @@ export const enrollmentRouter = new Hono()
 			response_type: "code",
 			response_mode: "query",
 			login_hint: email,
+			// TODO: Encrypt this state so it can't be forged and the primary keys are not leaked.
 			state: JSON.stringify({
 				appru,
 				tenantId: domainRecord.identityProvider.remoteId,
 				tid: domainRecord.identityProvider.tenantPk,
+				providerId: domainRecord.identityProvider.pk,
 			} satisfies State),
 		});
 
@@ -94,7 +101,7 @@ export const enrollmentRouter = new Hono()
 		const code = c.req.query("code");
 		if (!code) return c.text("Missing OAuth code");
 
-		const { appru, tenantId, tid }: State = JSON.parse(stateStr);
+		const { appru, tenantId, tid, providerId }: State = JSON.parse(stateStr);
 
 		const { access_token } = await fetch(
 			`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
@@ -118,23 +125,25 @@ export const enrollmentRouter = new Hono()
 			return await r.json();
 		});
 
-		const { userPrincipalName } = await fetch(
-			"https://graph.microsoft.com/v1.0/me",
-			{
-				headers: {
-					Authorization: `Bearer ${access_token}`,
-				},
+		const user = await fetch("https://graph.microsoft.com/v1.0/me", {
+			headers: {
+				Authorization: `Bearer ${access_token}`,
 			},
-		).then(async (r) => {
+		}).then(async (r) => {
 			if (!r.ok)
 				throw new Error(`Failed to get user '${r.status}': ${await r.text()}`);
 			return await r.json();
 		});
+		const { userPrincipalName } = user;
+
+		const result = await upsertEntraIdUser(user, tid, providerId);
+		const uid = parseInt(result.insertId);
 
 		// TODO: Upsert if the user doesn't exist already
 
 		const jwt = await new jose.SignJWT({
 			tid,
+			uid,
 			upn: userPrincipalName,
 		})
 			.setAudience("mdm.mattrax.app")

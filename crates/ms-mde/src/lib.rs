@@ -13,7 +13,7 @@ pub use discovery::{
     DISCOVER_ACTION_RESPONSE, DISCOVER_RESPONSE_XMLNS,
 };
 pub use enrollment::{
-    AdditionalContext, BinarySecurityToken, ContextItem, EnrollmentRequest, EnrollmentRequestBody,
+    AdditionalContext, ContextItem, EnrollmentRequest, EnrollmentRequestBody,
     EnrollmentRequestBodyRequestSecurityToken, EnrollmentResponse, EnrollmentResponseBody,
     RequestSecurityTokenResponse, RequestSecurityTokenResponseCollection, RequestedSecurityToken,
     BINARY_SECURITY_TOKEN_TYPE_PKCS10, BINARY_SECURITY_TOKEN_TYPE_PKCS7, ENROLLMENT_ACTION_REQUEST,
@@ -22,8 +22,8 @@ pub use enrollment::{
     REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE,
 };
 pub use header::{
-    Action, ActivityId, RequestHeader, RequestHeaderReplyTo, RequestHeaderSecurity,
-    RequestHeaderSecurityUsernameToken, ResponseHeader, ACTIVITY_ID_XMLNS,
+    Action, ActivityId, BinarySecurityToken, RequestHeader, RequestHeaderReplyTo,
+    RequestHeaderSecurity, RequestHeaderSecurityUsernameToken, ResponseHeader, ACTIVITY_ID_XMLNS,
 };
 
 // TODO: Namespaces
