@@ -95,6 +95,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 					href: `policies/${policy.params.policyId}${
 						i.href !== "" ? `/${i.href}` : ""
 					}`,
+					end: i.href === "",
 					value: i.href,
 				})),
 				value: () => policy.params.rest?.split("/")[0] ?? "",
@@ -102,7 +103,11 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 		}
 
 		return {
-			items: tenantItems.map((i) => ({ ...i, value: i.href })),
+			items: tenantItems.map((i) => ({
+				...i,
+				value: i.href,
+				end: i.href === "",
+			})),
 			value: () => tenantMatch()!.params.rest?.split("/")[0] ?? "",
 		};
 	});
@@ -134,7 +139,7 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 								<Tabs.Trigger asChild value={item.value}>
 									<As
 										component={A}
-										end={item.href === ""}
+										end={item.end}
 										href={item.href}
 										activeClass="text-black selected"
 										inactiveClass="text-gray-500"
