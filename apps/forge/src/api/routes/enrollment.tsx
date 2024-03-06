@@ -14,6 +14,12 @@ export type EnrollmentProfileDescription = {
 
 const MINUTE = 60 * 1000;
 
+type State = {
+	appru: string;
+	tenantId: string;
+	tid: number;
+};
+
 export const enrollmentRouter = new Hono()
 	.get("/login", async (c) => {
 		// `appru` and `login_hint` are parameters set by Windows MDM client
@@ -72,8 +78,9 @@ export const enrollmentRouter = new Hono()
 			login_hint: email,
 			state: JSON.stringify({
 				appru,
+				tenantId: domainRecord.identityProvider.remoteId,
 				tid: domainRecord.identityProvider.tenantPk,
-			}),
+			} satisfies State),
 		});
 
 		return c.redirect(
@@ -87,7 +94,7 @@ export const enrollmentRouter = new Hono()
 		const code = c.req.query("code");
 		if (!code) return c.text("Missing OAuth code");
 
-		const { appru, tenantId } = JSON.parse(stateStr);
+		const { appru, tenantId, tid }: State = JSON.parse(stateStr);
 
 		const { access_token } = await fetch(
 			`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
@@ -127,7 +134,7 @@ export const enrollmentRouter = new Hono()
 		// TODO: Upsert if the user doesn't exist already
 
 		const jwt = await new jose.SignJWT({
-			tenant: tenantId,
+			tid,
 			upn: userPrincipalName,
 		})
 			.setAudience("mdm.mattrax.app")
