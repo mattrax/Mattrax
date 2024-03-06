@@ -229,7 +229,12 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 				<Breadcrumbs />
 				<div class="flex-1" />
 				<FeedbackPopover>
-					<As component={Button} variant="outline" size="sm" class="mr-4">
+					<As
+						component={Button}
+						variant="outline"
+						size="sm"
+						class="mr-4 hidden md:block"
+					>
 						Feedback
 					</As>
 				</FeedbackPopover>

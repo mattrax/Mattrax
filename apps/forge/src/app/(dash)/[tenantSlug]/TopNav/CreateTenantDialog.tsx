@@ -44,7 +44,8 @@ export function CreateTenantDialog(
 	return (
 		<DialogRoot open={open()} setOpen={setOpen}>
 			{props.children}
-			<DialogContent>
+			{/* // TODO: Fix mx-4 only offsetting from the left on mobile Safari */}
+			<DialogContent class="w-full max-w-xl mx-4">
 				<DialogHeader>
 					<DialogTitle>Create Tenant</DialogTitle>
 				</DialogHeader>
