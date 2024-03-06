@@ -10,6 +10,10 @@ export default [
 		component: indexRoute,
 	},
 	{
+		path: "/profile",
+		component: lazy(() => import("./profile")),
+	},
+	{
 		path: "/:tenantSlug",
 		component: lazy(() => import("./[tenantSlug]")),
 		children: tenantRoutes,

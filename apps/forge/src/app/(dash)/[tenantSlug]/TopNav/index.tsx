@@ -1,12 +1,21 @@
 import { As, Tabs } from "@kobalte/core";
-import { A, useMatch, useResolvedPath } from "@solidjs/router";
-import { For, JSX, ParentProps, Show, Suspense, createEffect } from "solid-js";
+import { A, useMatch, useNavigate, useResolvedPath } from "@solidjs/router";
+import { For, JSX, ParentProps } from "solid-js";
 
 import { createSignal } from "solid-js";
 import { useAuth } from "~/app/(dash)";
 import {
+	Avatar,
+	AvatarFallback,
+	AvatarImage,
 	Badge,
 	Button,
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
 	Popover,
 	PopoverContent,
 	PopoverTrigger,
@@ -204,6 +213,11 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 		};
 	});
 
+	const navigate = useNavigate();
+	const logout = trpc.auth.logout.useMutation(() => ({
+		onSuccess: () => navigate("/login"),
+	}));
+
 	return (
 		<>
 			<div class="relative flex flex-row items-center px-6 gap-2 h-16 shrink-0">
@@ -219,8 +233,28 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 						Feedback
 					</As>
 				</FeedbackPopover>
-				<span class="font-medium">{auth().name}</span>
-				{/* <Button variant="destructive">Log Out</Button> */}
+
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<As component={Avatar}>
+							{/* TODO: Properly hook this up + Gravatar support */}
+							{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
+							<AvatarFallback>{getInitials(auth().name)}</AvatarFallback>
+						</As>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent>
+						<DropdownMenuLabel>{auth().email}</DropdownMenuLabel>
+						<DropdownMenuSeparator />
+						<DropdownMenuItem asChild>
+							<As component={A} href="/profile">
+								Profile
+							</As>
+						</DropdownMenuItem>
+						<DropdownMenuItem onClick={() => logout.mutate()}>
+							Logout
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
 			</div>
 
 			<nav class="text-white sticky border-b border-gray-300 top-0 z-10 bg-white -mt-2">
@@ -285,4 +319,16 @@ function FeedbackPopover(props: ParentProps) {
 			</PopoverContent>
 		</Popover>
 	);
+}
+
+function getInitials(string: string) {
+	const names = string.split(" ");
+	// @ts-expect-error
+	let initials = names[0].substring(0, 1).toUpperCase();
+
+	if (names.length > 1) {
+		// @ts-expect-error
+		initials += names[names.length - 1].substring(0, 1).toUpperCase();
+	}
+	return initials;
 }

@@ -141,7 +141,6 @@ export const authRouter = createTRPCRouter({
 
 	logout: authedProcedure.mutation(async ({ ctx: { session } }) => {
 		await lucia.invalidateSession(session.id);
-		return {};
 	}),
 
 	//   delete: authedProcedure.mutation(async ({ ctx }) => {

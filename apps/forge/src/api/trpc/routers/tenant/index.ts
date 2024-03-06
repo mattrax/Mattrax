@@ -30,6 +30,7 @@ export type StatsTarget =
 	| "groups";
 
 export const restrictedUsernames = new Set([
+	// Misleading names
 	"admin",
 	"administrator",
 	"help",
@@ -42,7 +43,9 @@ export const restrictedUsernames = new Set([
 	"support",
 	"home",
 	"employee",
+	// Reserved Mattrax routes
 	"enroll",
+	"profile",
 ]);
 
 export const tenantRouter = createTRPCRouter({
