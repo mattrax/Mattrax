@@ -180,7 +180,7 @@ function AppleAppStoreDemo() {
 				<Suspense fallback={<div>Loading...</div>}>
 					{searchQuery.data?.results.map((app: any) => (
 						<div class="flex flex-col">
-							<img alt="App Artwork" class="w-56" src={app.artworkUrl100} />
+							<img alt="App Artwork" src={app.artworkUrl100} />
 							<div class="text-sm">{app.trackName}</div>
 							<div class="text-xs">{app.sellerName}</div>
 						</div>
