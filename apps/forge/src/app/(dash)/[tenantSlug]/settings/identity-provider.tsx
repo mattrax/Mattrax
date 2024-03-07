@@ -18,6 +18,7 @@ import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
 import ENTRA_ID_ICON from "~/assets/EntraIDLogo.svg";
 import { useTenant } from "../../TenantContext";
+import { useTenantSlug } from "../../[tenantSlug]";
 
 export default function Page() {
 	return (
@@ -36,10 +37,10 @@ export default function Page() {
 }
 
 function IdentityProviderCard() {
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 
 	const provider = trpc.tenant.identityProvider.get.useQuery(() => ({
-		tenantSlug: tenant().slug,
+		tenantSlug: tenantSlug(),
 	}));
 
 	const syncProvider = trpc.tenant.identityProvider.sync.useMutation(() => ({
@@ -68,7 +69,7 @@ function IdentityProviderCard() {
 				popupWindow?.close();
 				provider.refetch();
 				syncProvider.mutate({
-					tenantSlug: tenant().slug,
+					tenantSlug: tenantSlug(),
 				});
 			});
 		},
@@ -82,7 +83,7 @@ function IdentityProviderCard() {
 					<Button
 						variant="outline"
 						class="space-x-2"
-						onClick={() => linkEntra.mutate({ tenantSlug: tenant().slug })}
+						onClick={() => linkEntra.mutate({ tenantSlug: tenantSlug() })}
 						disabled={linkEntra.isPending}
 					>
 						<img src={ENTRA_ID_ICON} class="w-6" alt="Entra ID Logo" />
@@ -110,7 +111,7 @@ function IdentityProviderCard() {
 								onClick={() =>
 									toast.promise(
 										syncProvider.mutateAsync({
-											tenantSlug: tenant().slug,
+											tenantSlug: tenantSlug(),
 										}),
 										{
 											loading: "Syncing users...",
@@ -127,7 +128,7 @@ function IdentityProviderCard() {
 								variant="destructive"
 								onClick={() =>
 									removeProvider.mutate({
-										tenantSlug: tenant().slug,
+										tenantSlug: tenantSlug(),
 									})
 								}
 								disabled={removeProvider.isPending}
@@ -143,23 +144,23 @@ function IdentityProviderCard() {
 }
 
 function Domains() {
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	const trpcCtx = trpc.useContext();
 
 	const provider = trpc.tenant.identityProvider.get.useQuery(() => ({
-		tenantSlug: tenant().slug,
+		tenantSlug: tenantSlug(),
 	}));
 
 	const refreshDomains =
 		trpc.tenant.identityProvider.refreshDomains.useMutation(() => ({
 			onSuccess: () =>
 				trpcCtx.tenant.identityProvider.domains.refetch({
-					tenantSlug: tenant().slug,
+					tenantSlug: tenantSlug(),
 				}),
 		}));
 
 	const domains = trpc.tenant.identityProvider.domains.useQuery(() => ({
-		tenantSlug: tenant().slug,
+		tenantSlug: tenantSlug(),
 	}));
 
 	function allDomains() {
@@ -195,7 +196,7 @@ function Domains() {
 				<Show when={provider.data}>
 					<Button
 						class="ml-auto"
-						onClick={() => refreshDomains.mutate({ tenantSlug: tenant().slug })}
+						onClick={() => refreshDomains.mutate({ tenantSlug: tenantSlug() })}
 						disabled={refreshDomains.isPending}
 					>
 						Refresh
@@ -343,7 +344,7 @@ function Domains() {
 														<Button
 															onClick={() =>
 																removeDomain.mutate({
-																	tenantSlug: tenant().slug,
+																	tenantSlug: tenantSlug(),
 																	domain,
 																})
 															}
@@ -358,9 +359,7 @@ function Domains() {
 												{(_) => {
 													const enableDomain =
 														trpc.tenant.identityProvider.connectDomain.useMutation(
-															() => ({
-																onSuccess: () => domains.refetch(),
-															}),
+															() => ({ onSuccess: () => domains.refetch() }),
 														);
 
 													return (
@@ -368,7 +367,7 @@ function Domains() {
 															disabled={enableDomain.isPending}
 															onClick={() =>
 																enableDomain.mutate({
-																	tenantSlug: tenant().slug,
+																	tenantSlug: tenantSlug(),
 																	domain,
 																})
 															}

@@ -10,6 +10,8 @@ import { A, Navigate } from "@solidjs/router";
 import { Badge } from "~/components/ui";
 import { useTenant } from "../../TenantContext";
 import { toast } from "solid-sonner";
+import { useTenantSlug } from "../../[tenantSlug]";
+import { useNavbarItems } from "../../NavItems";
 
 export const [UserContextProvider, useUser] = createContextProvider(
 	(props: {
@@ -21,11 +23,14 @@ export const [UserContextProvider, useUser] = createContextProvider(
 
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ userId: z.string() });
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
+
 	const query = trpc.user.get.useQuery(() => ({
-		tenantSlug: tenant().slug,
+		tenantSlug: tenantSlug(),
 		id: params.userId,
 	}));
+
+	useNavbarItems(NAV_ITEMS);
 
 	return (
 		<Show when={query.data !== undefined}>
@@ -51,3 +56,14 @@ function NotFound() {
 	// necessary since '..' adds trailing slash -_-
 	return <Navigate href="../../users" />;
 }
+
+const NAV_ITEMS = [
+		{
+			title: "User",
+			href: "",
+		},
+		{
+			title: "Scope",
+			href: "scope",
+		},
+	]

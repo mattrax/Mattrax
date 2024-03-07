@@ -12,10 +12,10 @@ import {
 	CardTitle,
 	Switch,
 } from "~/components/ui";
-import { trpc, untrackScopeFromSuspense } from "~/lib";
+import { trpc } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
-import { useAuth } from "../../AuthContext";
-import { useTenant } from "../../TenantContext";
+import { AuthContext, useAuth } from "../../AuthContext";
+import { TenantContext, useTenant } from "../../TenantContext";
 
 export default function Page() {
 	return (

@@ -37,10 +37,8 @@ import {
 import { Button } from "~/components/ui";
 
 function createGroupsTable() {
-	const tenant = useTenant();
-	const groups = trpc.group.list.useQuery(() => ({
-		tenantSlug: tenant().slug,
-	}));
+	const params = useZodParams({ tenantSlug: z.string() });
+	const groups = trpc.group.list.useQuery(() => params);
 
 	const table = createStandardTable({
 		get data() {
@@ -108,10 +106,10 @@ import {
 } from "~/components/ui";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
-import { useTenant } from "../../TenantContext";
+import { useZodParams } from "~/lib/useZodParams";
 
 function CreateGroupDialog(props: ParentProps) {
-	const tenant = useTenant();
+	const params = useZodParams({ tenantSlug: z.string() });
 	const navigate = useNavigate();
 
 	const mutation = trpc.group.create.useMutation(() => ({
@@ -125,7 +123,7 @@ function CreateGroupDialog(props: ParentProps) {
 		onSubmit: ({ value }) =>
 			mutation.mutateAsync({
 				name: value.name,
-				tenantSlug: tenant().slug,
+				...params,
 			}),
 	});
 

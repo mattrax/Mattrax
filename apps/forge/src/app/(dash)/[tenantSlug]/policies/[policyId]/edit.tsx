@@ -1,3 +1,6 @@
+import { As } from "@kobalte/core";
+import { z } from "zod";
+
 import {
 	DialogContent,
 	DialogRoot,
@@ -16,16 +19,14 @@ import {
 } from "~/components/ui";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { usePolicy } from "../[policyId]";
-import { As } from "@kobalte/core";
 import { trpc } from "~/lib";
-import { For, Show, Suspense, createResource, createSignal } from "solid-js";
+import { For, Show, Suspense, createSignal } from "solid-js";
 import { Form, InputField, createZodForm } from "~/components/forms";
-import { z } from "zod";
-import { useTenant } from "~/app/(dash)/TenantContext";
+import { useTenantSlug } from "~/app/(dash)/[tenantSlug]";
 
 export default function Page() {
 	const policy = usePolicy();
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	const updatePolicy = trpc.policy.update.useMutation(() => ({
 		onSuccess: () => policy.query.refetch(),
 	}));
@@ -43,7 +44,7 @@ export default function Page() {
 				data={policy().data}
 				updatePolicy={(data) =>
 					updatePolicy.mutate({
-						tenantSlug: tenant().slug,
+						tenantSlug: tenantSlug(),
 						policyId: policy().id,
 						data,
 					})
@@ -55,7 +56,7 @@ export default function Page() {
 }
 
 function DeployButton() {
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	const policy = usePolicy();
 	const trpcCtx = trpc.useContext();
 
@@ -67,7 +68,7 @@ function DeployButton() {
 					disabled={!(policy().isDirty ?? true)}
 					onMouseEnter={() => {
 						trpcCtx.policy.getDeploySummary.ensureData({
-							tenantSlug: tenant().slug,
+							tenantSlug: tenantSlug(),
 							policyId: policy().id,
 						});
 					}}
@@ -83,7 +84,7 @@ function DeployButton() {
 }
 
 function DeployDialog() {
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	const policy = usePolicy();
 
 	const [page, setPage] = createSignal(0);
@@ -91,7 +92,7 @@ function DeployDialog() {
 	const [comment, setComment] = createSignal("");
 
 	const getDeploySummary = trpc.policy.getDeploySummary.useQuery(() => ({
-		tenantSlug: tenant().slug,
+		tenantSlug: tenantSlug(),
 		policyId: policy().id,
 	}));
 
@@ -141,7 +142,7 @@ function DeployDialog() {
 						variant="destructive"
 						onClick={() =>
 							deployVersion.mutate({
-								tenantSlug: tenant().slug,
+								tenantSlug: tenantSlug(),
 								policyId: policy().id,
 								comment: comment(),
 							})

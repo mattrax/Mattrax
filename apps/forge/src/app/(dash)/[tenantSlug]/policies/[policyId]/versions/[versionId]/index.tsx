@@ -30,7 +30,7 @@ export default function Page() {
 // import { PageLayout } from "~/app/(dash)/[tenantSlug]/PageLayout";
 
 // export default function Page() {
-// 	const tenant = useTenant();
+// 	const params = useZodParams({ tenantSlug: z.string() });
 // 	const params = useZodParams({
 // 		policyId: z.string(),
 // 		versionId: z.string(),

@@ -7,7 +7,7 @@ import {
 	Switch,
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
-import { useTenant } from "../../TenantContext";
+import { useTenantSlug } from "../../[tenantSlug]";
 
 export default function Page() {
 	return (
@@ -34,10 +34,10 @@ export default function Page() {
 }
 
 function ConfigureEnrollmentCard() {
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 
 	const enrollmentInfo = trpc.tenant.enrollmentInfo.useQuery(() => ({
-		tenantSlug: tenant().slug,
+		tenantSlug: tenantSlug(),
 	}));
 	// TODO: Show correct state on the UI while the mutation is pending but keep fields disabled.
 	const setEnrollmentInfo = trpc.tenant.setEnrollmentInfo.useMutation(() => ({
@@ -62,7 +62,7 @@ function ConfigureEnrollmentCard() {
 						onChange={(state) =>
 							setEnrollmentInfo.mutate({
 								enrollmentEnabled: state,
-								tenantSlug: tenant().slug,
+								tenantSlug: tenantSlug(),
 							})
 						}
 					/>

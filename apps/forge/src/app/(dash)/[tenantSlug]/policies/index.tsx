@@ -42,10 +42,8 @@ export const columns = [
 ];
 
 function createPoliciesTable() {
-	const tenant = useTenant();
-	const policies = trpc.policy.list.useQuery(() => ({
-		tenantSlug: tenant().slug,
-	}));
+	const params = useZodParams({ tenantSlug: z.string() });
+	const policies = trpc.policy.list.useQuery(() => params);
 
 	const table = createStandardTable({
 		get data() {
@@ -103,10 +101,11 @@ import { z } from "zod";
 
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
-import { useTenant } from "../../TenantContext";
+import { useZodParams } from "~/lib/useZodParams";
+import { useTenantSlug } from "../../[tenantSlug]";
 
 function CreatePolicyButton() {
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	const navigate = useNavigate();
 
 	const createPolicy = trpc.policy.create.useMutation(() => ({
@@ -120,7 +119,7 @@ function CreatePolicyButton() {
 		onSubmit: ({ value }) =>
 			createPolicy.mutateAsync({
 				name: value.name,
-				tenantSlug: tenant().slug,
+				tenantSlug: tenantSlug(),
 			}),
 	});
 

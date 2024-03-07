@@ -22,7 +22,7 @@ import {
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
-import { useTenant } from "../../TenantContext";
+import { useTenantSlug } from "../../[tenantSlug]";
 
 const column = createColumnHelper<RouterOutput["user"]["list"][number]>();
 
@@ -79,9 +79,9 @@ export const columns = [
 ];
 
 function createUsersTable() {
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	const users = trpc.user.list.useQuery(() => ({
-		tenantSlug: tenant().slug,
+		tenantSlug: tenantSlug(),
 	}));
 
 	const table = createStandardTable({

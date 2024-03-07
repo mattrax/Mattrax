@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import {
 	Avatar,
 	AvatarFallback,
@@ -12,13 +14,11 @@ import { isDebugMode, trpc, untrackScopeFromSuspense } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "./PageLayout";
 import type { StatsTarget } from "~/api/trpc/routers/tenant";
 import { StatItem } from "~/components/StatItem";
-import { useTenant } from "../TenantContext";
+import { useZodParams } from "~/lib/useZodParams";
 
 export default function Page() {
-	const tenant = useTenant();
-	const stats = trpc.tenant.stats.useQuery(() => ({
-		tenantSlug: tenant().slug,
-	}));
+	const params = useZodParams({ tenantSlug: z.string() });
+	const stats = trpc.tenant.stats.useQuery(() => params);
 
 	const data = untrackScopeFromSuspense(() => ({ ...stats.data }));
 

@@ -1,5 +1,6 @@
-import { useQueryClient } from "@tanstack/solid-query";
 import { ParentProps, Suspense, createSignal } from "solid-js";
+import { useQueryClient } from "@tanstack/solid-query";
+import { z } from "zod";
 
 import { Button, Tabs, TabsList, TabsTrigger } from "~/components/ui";
 import { trpc } from "~/lib";
@@ -15,7 +16,8 @@ import {
 } from "~/components/ui/sheet";
 import { columns } from "./[groupId]/index";
 import { GroupAssignableVariant } from "~/db";
-import { useTenant } from "../../TenantContext";
+import { useZodParams } from "~/lib/useZodParams";
+import { useTenantSlug } from "../../[tenantSlug]";
 
 const AddMemberTableOptions = {
 	all: "All",
@@ -26,9 +28,9 @@ const AddMemberTableOptions = {
 export function AddMemberSheet(props: ParentProps & { groupId: string }) {
 	const [open, setOpen] = createSignal(false);
 
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	const possibleMembers = trpc.group.possibleMembers.useQuery(
-		() => ({ id: props.groupId, tenantSlug: tenant().slug }),
+		() => ({ id: props.groupId, tenantSlug: tenantSlug() }),
 		() => ({ enabled: open() }),
 	);
 
@@ -112,7 +114,7 @@ export function AddMemberSheet(props: ParentProps & { groupId: string }) {
 									onClick={async () => {
 										await addMembers.mutateAsync({
 											id: props.groupId,
-											tenantSlug: tenant().slug,
+											tenantSlug: tenantSlug(),
 											members: table.getSelectedRowModel().rows.map((row) => ({
 												pk: row.original.pk,
 												variant: row.original.variant,

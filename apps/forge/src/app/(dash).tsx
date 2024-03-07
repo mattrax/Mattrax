@@ -1,5 +1,8 @@
 import { ErrorBoundary, ParentProps, Suspense } from "solid-js";
 
+import { BreadcrumbsRoot } from "~/components/Breadcrumbs";
+import { NavItemsProvider } from "./(dash)/NavItems";
+
 export default function Layout(props: ParentProps) {
 	return (
 		<ErrorBoundary
@@ -14,7 +17,11 @@ export default function Layout(props: ParentProps) {
 				);
 			}}
 		>
-			<Suspense>{props.children}</Suspense>
+			<BreadcrumbsRoot>
+				<NavItemsProvider>
+					<Suspense>{props.children}</Suspense>
+				</NavItemsProvider>
+			</BreadcrumbsRoot>
 		</ErrorBoundary>
 	);
 }

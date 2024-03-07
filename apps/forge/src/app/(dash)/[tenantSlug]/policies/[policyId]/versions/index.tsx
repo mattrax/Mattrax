@@ -57,7 +57,7 @@ import { PageLayout, PageLayoutHeading } from "../../../PageLayout";
 // // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
 // function createVersionTable() {
-// 	const tenant = useTenant();
+// 	const params = useZodParams({ tenantSlug: z.string() });
 // 	const params = useZodParams({
 // 		policyId: z.string(),
 // 	});

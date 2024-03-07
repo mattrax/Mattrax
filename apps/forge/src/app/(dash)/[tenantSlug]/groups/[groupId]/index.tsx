@@ -1,9 +1,13 @@
+import { createColumnHelper } from "@tanstack/solid-table";
+import { Accessor, Suspense, createMemo, createSignal } from "solid-js";
+import { Dynamic } from "solid-js/web";
+import { toast } from "solid-sonner";
+import { As } from "@kobalte/core";
+import { z } from "zod";
+
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { useGroup } from "../[groupId]";
-import { createColumnHelper } from "@tanstack/solid-table";
-import { Accessor, Show, Suspense, createMemo, createSignal } from "solid-js";
-import { As } from "@kobalte/core";
 import { Badge, Button } from "~/components/ui";
 import { AddMemberSheet } from "../AddMemberSheet";
 import {
@@ -11,15 +15,12 @@ import {
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~/components/StandardTable";
-import { toast } from "solid-sonner";
-import { Dynamic } from "solid-js/web";
-import { Breadcrumb } from "~/components/Breadcrumbs";
-import { A } from "@solidjs/router";
-import { useTenant } from "~/app/(dash)/TenantContext";
+import { useZodParams } from "~/lib/useZodParams";
+import { useTenantSlug } from "~/app/(dash)/[tenantSlug]";
 
 export default function Page() {
 	const group = useGroup();
-	const tenant = useTenant();
+	const params = useZodParams({ tenantSlug: z.string() });
 	const updateGroup = trpc.group.update.useMutation(() => ({
 		onSuccess: () => group.query.refetch(),
 	}));
@@ -34,7 +35,7 @@ export default function Page() {
 
 		toast.promise(
 			updateGroup.mutateAsync({
-				tenantSlug: tenant().slug,
+				...params,
 				id: group().id,
 				name,
 			}),
@@ -135,10 +136,10 @@ export const columns = [
 ];
 
 function createMembersTable(groupId: Accessor<string>) {
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	const members = trpc.group.members.useQuery(() => ({
 		id: groupId(),
-		tenantSlug: tenant().slug,
+		tenantSlug: tenantSlug(),
 	}));
 
 	return createStandardTable({

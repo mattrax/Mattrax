@@ -1,15 +1,15 @@
 import { createContextProvider } from "@solid-primitives/context";
 import { ParentProps, Show } from "solid-js";
+import { z } from "zod";
+import { A, Navigate } from "@solidjs/router";
+import { toast } from "solid-sonner";
 
 import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
 import { trpc } from "~/lib";
 import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { A, Navigate } from "@solidjs/router";
 import { Badge } from "~/components/ui";
-import { useTenant } from "../../TenantContext";
-import { toast } from "solid-sonner";
+import { useNavbarItems } from "../../NavItems";
 
 export const [PolicyContextProvider, usePolicy] = createContextProvider(
 	(props: {
@@ -20,12 +20,11 @@ export const [PolicyContextProvider, usePolicy] = createContextProvider(
 );
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ policyId: z.string() });
-	const tenant = useTenant();
-	const query = trpc.policy.get.useQuery(() => ({
-		tenantSlug: tenant().slug,
-		policyId: params.policyId,
-	}));
+	const params = useZodParams({ policyId: z.string(), tenantSlug: z.string() });
+
+	const query = trpc.policy.get.useQuery(() => params);
+
+	useNavbarItems(NAV_ITEMS);
 
 	return (
 		<Show when={query.data !== undefined}>
@@ -51,3 +50,26 @@ function NotFound() {
 	// necessary since '..' adds trailing slash -_-
 	return <Navigate href="../../policies" />;
 }
+
+const NAV_ITEMS = [
+	{
+		title: "Policy",
+		href: "",
+	},
+	{
+		title: "Edit",
+		href: "edit",
+	},
+	{
+		title: "Assignees",
+		href: "assignees",
+	},
+	{
+		title: "History",
+		href: "history",
+	},
+	{
+		title: "Settings",
+		href: "settings",
+	},
+];

@@ -13,8 +13,9 @@ import {
 	CardTitle,
 } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useTenant } from "../../TenantContext";
 import { useAuth } from "../../AuthContext";
+import { useTenant } from "../../TenantContext";
+import { useTenantSlug } from "../../[tenantSlug]";
 
 export default function Page() {
 	const auth = useAuth();
@@ -23,6 +24,7 @@ export default function Page() {
 	const invites = trpc.tenant.admins.invites.useQuery(() => ({
 		tenantSlug: tenant().slug,
 	}));
+
 	const administrators = trpc.tenant.admins.list.useQuery(() => ({
 		tenantSlug: tenant().slug,
 	}));
@@ -142,7 +144,7 @@ export default function Page() {
 }
 
 function InviteAdminForm() {
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	const trpcCtx = trpc.useContext();
 
 	const inviteAdmin = trpc.tenant.admins.sendInvite.useMutation(() => ({
@@ -160,7 +162,7 @@ function InviteAdminForm() {
 		onSubmit: ({ value }) =>
 			inviteAdmin.mutateAsync({
 				email: value.email,
-				tenantSlug: tenant().slug,
+				tenantSlug: tenantSlug(),
 			}),
 	});
 

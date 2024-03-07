@@ -2,6 +2,8 @@ import { For, type JSX, ParentProps, Suspense } from "solid-js";
 
 import { A } from "@solidjs/router";
 import { PageLayout, PageLayoutHeading } from "./PageLayout";
+import { AuthContext } from "../AuthContext";
+import { TenantContext } from "../TenantContext";
 
 const navigation = [
 	{ name: "General", href: "" },
@@ -28,7 +30,11 @@ export default function Layout(props: ParentProps) {
 					</ul>
 				</nav>
 				<main class="flex-1 overflow-y-auto px-4">
-					<Suspense>{props.children}</Suspense>
+					<Suspense>
+						<AuthContext>
+							<TenantContext>{props.children}</TenantContext>
+						</AuthContext>
+					</Suspense>
 				</main>
 			</div>
 		</PageLayout>

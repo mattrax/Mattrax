@@ -1,4 +1,8 @@
 import { ParentProps, Show, createSignal } from "solid-js";
+import { As } from "@kobalte/core";
+import clsx from "clsx";
+import { z } from "zod";
+
 import { useUser } from "../[userId]";
 import { useTenant } from "~/app/(dash)/TenantContext";
 import {
@@ -13,11 +17,9 @@ import {
 	buttonVariants,
 } from "~/components/ui";
 import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
-import clsx from "clsx";
 import { Form, InputField, createZodForm } from "~/components/forms";
-import { z } from "zod";
 import { trpc } from "~/lib";
-import { As } from "@kobalte/core";
+import { useTenantSlug } from "~/app/(dash)/[tenantSlug]";
 
 export default function Page() {
 	const user = useUser();
@@ -69,7 +71,7 @@ export default function Page() {
 function InviteUserDialog(props: ParentProps<{ id: string; email: string }>) {
 	const [open, setOpen] = createSignal(false);
 
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	const mutation = trpc.user.invite.useMutation();
 
 	const form = createZodForm({
@@ -78,7 +80,7 @@ function InviteUserDialog(props: ParentProps<{ id: string; email: string }>) {
 			await mutation.mutateAsync({
 				id: props.id,
 				message: value.message,
-				tenantSlug: tenant().slug,
+				tenantSlug: tenantSlug(),
 			});
 			setOpen(false);
 		},

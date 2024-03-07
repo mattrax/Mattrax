@@ -16,6 +16,8 @@ import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
 import { createTimeAgo } from "@solid-primitives/date";
 import { useTenant } from "../../TenantContext";
+import { useZodParams } from "~/lib/useZodParams";
+import { z } from "zod";
 
 const column = createColumnHelper<RouterOutput["device"]["list"][number]>();
 
@@ -55,10 +57,8 @@ export const columns = [
 ];
 
 function createDevicesTable() {
-	const tenant = useTenant();
-	const devices = trpc.device.list.useQuery(() => ({
-		tenantSlug: tenant().slug,
-	}));
+	const params = useZodParams({ tenantSlug: z.string() });
+	const devices = trpc.device.list.useQuery(() => params);
 
 	const table = createStandardTable({
 		get data() {

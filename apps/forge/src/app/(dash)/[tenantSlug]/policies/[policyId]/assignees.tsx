@@ -11,6 +11,7 @@ import {
 	createSignal,
 } from "solid-js";
 import { z } from "zod";
+import { useQueryClient } from "@tanstack/solid-query";
 
 import { Button, Tabs, TabsList, TabsTrigger } from "~/components/ui";
 import { trpc } from "~/lib";
@@ -19,13 +20,11 @@ import { useZodParams } from "~/lib/useZodParams";
 export default function Page() {
 	const routeParams = useZodParams({ policyId: z.string() });
 
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	const policy = usePolicy();
 
-	console.log(routeParams.policyId, tenant().id); // TODO
-
 	const group = trpc.policy.scope.useQuery(
-		() => ({ id: policy().id, tenantSlug: tenant().slug }),
+		() => ({ id: policy().id, tenantSlug: tenantSlug() }),
 		() => ({ enabled: true }),
 	);
 
@@ -84,11 +83,11 @@ const columns = [
 ];
 
 function createMembersTable(groupId: Accessor<string>) {
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	// TODO: Fix this
 	const members = trpc.policy.members.useQuery(() => ({
 		id: groupId(),
-		tenantSlug: tenant().slug,
+		tenantSlug: tenantSlug(),
 	}));
 
 	return createStandardTable({
@@ -100,7 +99,6 @@ function createMembersTable(groupId: Accessor<string>) {
 	});
 }
 
-import { useQueryClient } from "@tanstack/solid-query";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import {
 	StandardTable,
@@ -118,7 +116,7 @@ import {
 } from "~/components/ui/sheet";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { usePolicy } from "../[policyId]";
-import { useTenant } from "~/app/(dash)/TenantContext";
+import { useTenantSlug } from "~/app/(dash)/[tenantSlug]";
 
 const AddMemberTableOptions = {
 	all: "All",
@@ -130,10 +128,10 @@ const AddMemberTableOptions = {
 function AddMemberSheet(props: ParentProps & { groupId: string }) {
 	const [open, setOpen] = createSignal(false);
 
-	const tenant = useTenant();
+	const tenantSlug = useTenantSlug();
 	// TODO
 	const possibleMembers = trpc.policy.possibleMembers.useQuery(
-		() => ({ id: props.groupId, tenantSlug: tenant().slug }),
+		() => ({ id: props.groupId, tenantSlug: tenantSlug() }),
 		() => ({ enabled: open() }),
 	);
 
@@ -216,7 +214,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
 									onClick={async () => {
 										await addMembers.mutateAsync({
 											id: props.groupId,
-											tenantSlug: tenant().slug,
+											tenantSlug: tenantSlug(),
 											members: table.getSelectedRowModel().rows.map((row) => ({
 												pk: row.original.pk,
 												variant: row.original.variant,

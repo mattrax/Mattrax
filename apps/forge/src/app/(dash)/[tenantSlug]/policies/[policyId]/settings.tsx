@@ -1,18 +1,19 @@
 import { z } from "zod";
+import { useNavigate } from "@solidjs/router";
+import { startTransition } from "solid-js";
+
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { Button, Label } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useZodParams } from "~/lib/useZodParams";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { usePolicy } from "../[policyId]";
-import { useNavigate } from "@solidjs/router";
-import { startTransition } from "solid-js";
-import { useTenant } from "~/app/(dash)/TenantContext";
+import { useTenantSlug } from "~/app/(dash)/[tenantSlug]";
 
 export default function Page() {
 	const navigate = useNavigate();
-	const tenant = useTenant();
+
+	const tenantSlug = useTenantSlug();
 	const policy = usePolicy();
 
 	const deletePolicy = trpc.policy.delete.useMutation();
@@ -61,7 +62,7 @@ export default function Page() {
 								inputText: policy().name,
 								async onConfirm() {
 									await deletePolicy.mutateAsync({
-										tenantSlug: tenant().slug,
+										tenantSlug: tenantSlug(),
 										policyId: policy().id,
 									});
 

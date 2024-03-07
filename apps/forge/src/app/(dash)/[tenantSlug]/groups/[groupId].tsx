@@ -1,15 +1,15 @@
 import { createContextProvider } from "@solid-primitives/context";
+import { A, Navigate } from "@solidjs/router";
 import { ParentProps, Show } from "solid-js";
+import { toast } from "solid-sonner";
+import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
 import { trpc } from "~/lib";
 import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { A, Navigate } from "@solidjs/router";
 import { Badge } from "~/components/ui";
-import { useTenant } from "../../TenantContext";
-import { toast } from "solid-sonner";
+import { useNavbarItems } from "../../NavItems";
 
 export const [GroupContextProvider, useGroup] = createContextProvider(
 	(props: {
@@ -20,12 +20,13 @@ export const [GroupContextProvider, useGroup] = createContextProvider(
 );
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ groupId: z.string() });
-	const tenant = useTenant();
+	const params = useZodParams({ tenantSlug: z.string(), groupId: z.string() });
 	const query = trpc.group.get.useQuery(() => ({
-		tenantSlug: tenant().slug,
+		tenantSlug: params.tenantSlug,
 		id: params.groupId,
 	}));
+
+	useNavbarItems(NAV_ITEMS)
 
 	return (
 		<Show when={query.data !== undefined}>
@@ -51,3 +52,5 @@ function NotFound() {
 	// necessary since '..' adds trailing slash -_-
 	return <Navigate href="../../groups" />;
 }
+
+const NAV_ITEMS = [{ title: "Group", href: "" }]

@@ -1,15 +1,15 @@
 import { createContextProvider } from "@solid-primitives/context";
+import { A, Navigate } from "@solidjs/router";
 import { ParentProps, Show } from "solid-js";
+import { toast } from "solid-sonner";
+import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
 import { trpc } from "~/lib";
 import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { A, Navigate } from "@solidjs/router";
 import { Badge } from "~/components/ui";
-import { useTenant } from "../../TenantContext";
-import { toast } from "solid-sonner";
+import { useNavbarItems } from "../../NavItems";
 
 export const [DeviceContextProvider, useDevice] = createContextProvider(
 	(props: {
@@ -20,12 +20,10 @@ export const [DeviceContextProvider, useDevice] = createContextProvider(
 );
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ deviceId: z.string() });
-	const tenant = useTenant();
-	const query = trpc.device.get.useQuery(() => ({
-		tenantSlug: tenant().slug,
-		deviceId: params.deviceId,
-	}));
+	const params = useZodParams({ tenantSlug: z.string(), deviceId: z.string() });
+	const query = trpc.device.get.useQuery(() => params);
+
+	useNavbarItems(NAV_ITEMS)
 
 	return (
 		<Show when={query.data !== undefined}>
@@ -51,3 +49,19 @@ function NotFound() {
 	// necessary since '..' adds trailing slash -_-
 	return <Navigate href="../../devices" />;
 }
+
+const NAV_ITEMS = [
+		{ title: "Device", href: "" },
+		{
+			title: "Scope",
+			href: "scope",
+		},
+		{
+			title: "Inventory",
+			href: "inventory",
+		},
+		{
+			title: "Settings",
+			href: "settings",
+		},
+	]
