@@ -1,8 +1,8 @@
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
-import { useDevice } from "../[deviceId]";
+import { useApp } from "../[appId]";
 
 export default function Page() {
-	const device = useDevice();
+	const app = useApp();
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Overview</PageLayoutHeading>}>

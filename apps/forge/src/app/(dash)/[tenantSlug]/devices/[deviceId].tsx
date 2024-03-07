@@ -1,84 +1,44 @@
-import { A, redirect, useParams } from "@solidjs/router";
-import { ParentProps, Suspense } from "solid-js";
-import FlatTabs from "~/components/ui/flat-tabs";
+import { createContextProvider } from "@solid-primitives/context";
+import { ParentProps, Show } from "solid-js";
+
+import { useZodParams } from "~/lib/useZodParams";
+import { z } from "zod";
 import { trpc } from "~/lib";
-import { useTenant } from "../../TenantContext";
+import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
+import { A } from "@solidjs/router";
 import { Badge } from "~/components/ui";
+import { useTenant } from "../../TenantContext";
 
-// TODO: Bring this back
-// const fetchDevice = cache(
-//   // TODO: Handle error or unauthorised responses
-//   (deviceId: string) => trpcClient.device.get.query({ deviceId }),
-//   "device"
-// );
+export const [DeviceContextProvider, useDevice] = createContextProvider(
+	(props: {
+		device: RouterOutput["device"]["get"];
+		query: ReturnType<typeof trpc.device.get.useQuery>;
+	}) => Object.assign(() => props.device, { query: props.query }),
+	null!,
+);
 
-// export const route = {
-//   load: ({ params }) => fetchDevice(params.deviceId!),
-// } satisfies RouteDefinition;
-
-export default function Page(props: ParentProps) {
-	const params = useParams();
-	if (!params.deviceId) redirect("/"); // TODO: Use a tenant relative redirect instead
-
-	const activeTenant = useTenant();
-	const device = trpc.device.get.useQuery(() => ({
-		deviceId: params.deviceId!,
-		tenantSlug: activeTenant().slug,
-	}));
-
-	const url = (suffix: string) =>
-		`/${params.tenantId!}/devices/${params.deviceId}${suffix}`;
-
-	const sync = trpc.device.sync.useMutation(() => ({
-		onSuccess: () => alert("Synced!"),
+export default function Layout(props: ParentProps) {
+	const params = useZodParams({ deviceId: z.string() });
+	const tenant = useTenant();
+	const query = trpc.device.get.useQuery(() => ({
+		tenantSlug: tenant().slug,
+		deviceId: params.deviceId,
 	}));
 
 	return (
-		<div class="flex flex-col">
-			{/* <Suspense fallback={<div>Loading...</div>}>
-        <button
-          onClick={() =>
-            sync.mutate({
-              deviceId: params.deviceId!,
-            })
-          }
-          disabled={device.isPending || sync.isPending}
-        >
-          Sync
-        </button>
-      </Suspense> */}
-			{/* TODO: Cleanup this suspense cause it's a whole page suspend */}
-			<Suspense fallback={<div>Loading...</div>}>
-				<Breadcrumb>
-					<A href="" class="flex flex-row items-center gap-2">
-						<span>{device.data?.name}</span>
-						<Badge variant="outline">Device</Badge>
-					</A>
-				</Breadcrumb>
-
-				<div class="flex-1 px-4 py-8">
-					<h1 class="text-3xl font-bold focus:outline-none" contentEditable>
-						{device.data?.name}
-					</h1>
-
-					{/* TODO: Use JSX children instead of tabs prop */}
-					<FlatTabs
-						tabs={[
-							{ name: "Overview", href: url(""), current: false },
-							{ name: "Scoped", href: url("/scoped"), current: true },
-							{
-								name: "Applications",
-								href: url("/applications"),
-								current: false,
-							},
-							{ name: "Settings", href: url("/settings"), current: false },
-						]}
-					/>
-
+		<Show when={query.data}>
+			{(data) => (
+				<DeviceContextProvider device={data()} query={query}>
+					<Breadcrumb>
+						<A href="" class="flex flex-row items-center gap-2">
+							<span>{data().name}</span>
+							<Badge variant="outline">Device</Badge>
+						</A>
+					</Breadcrumb>
 					{props.children}
-				</div>
-			</Suspense>
-		</div>
+				</DeviceContextProvider>
+			)}
+		</Show>
 	);
 }

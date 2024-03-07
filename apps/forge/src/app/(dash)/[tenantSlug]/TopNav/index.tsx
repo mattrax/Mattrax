@@ -65,6 +65,10 @@ const navItems = {
 			title: "User",
 			href: "",
 		},
+		{
+			title: "Scope",
+			href: "scope",
+		},
 	],
 	policy: [
 		{
@@ -88,7 +92,21 @@ const navItems = {
 			href: "settings",
 		},
 	],
-	device: [{ title: "Device", href: "" }],
+	device: [
+		{ title: "Device", href: "" },
+		{
+			title: "Scope",
+			href: "scope",
+		},
+		{
+			title: "Inventory",
+			href: "inventory",
+		},
+		{
+			title: "Settings",
+			href: "settings",
+		},
+	],
 	application: [{ title: "Application", href: "" }],
 	group: [{ title: "Group", href: "" }],
 } satisfies Record<string, NavbarItem[]>;

@@ -2,10 +2,12 @@ import { RouteDefinition } from "@solidjs/router";
 import { lazy } from "solid-js";
 
 import { trpc } from "~/lib";
-import deviceRoutes from "./devices/[deviceId]/routes";
+import deviceRoutes from "./devices/routes";
 import groupsRoutes from "./groups/routes";
 import policiesRoutes from "./policies/routes";
 import settingsRoutes from "./settings/routes";
+import usersRoutes from "./users/routes";
+import appsRoutes from "./applications/routes";
 
 export default [
 	{
@@ -19,53 +21,15 @@ export default [
 	},
 	{
 		path: "/users",
-		children: [
-			{
-				path: "/",
-				component: lazy(() => import("./users")),
-				load: ({ params }) => {
-					trpc
-						.useContext()
-						.user.list.ensureData({ tenantSlug: params.tenantSlug! });
-				},
-			},
-			{
-				path: "/:userId",
-				component: lazy(() => import("./users/[userId]")),
-			},
-		],
+		children: usersRoutes,
 	},
 	{
 		path: "/apps",
-		children: [
-			{
-				path: "/",
-				component: lazy(() => import("./applications")),
-			},
-			{
-				path: "/:appId",
-				component: lazy(() => import("./applications/[appId]")),
-			},
-		],
+		children: appsRoutes,
 	},
 	{
 		path: "/devices",
-		children: [
-			{
-				path: "/",
-				component: lazy(() => import("./devices")),
-				load: ({ params }) => {
-					trpc.useContext().device.list.ensureData({
-						tenantSlug: params.tenantSlug!,
-					});
-				},
-			},
-			{
-				path: "/:deviceId",
-				component: lazy(() => import("./devices/[deviceId]")),
-				children: deviceRoutes,
-			},
-		],
+		children: deviceRoutes,
 	},
 	{
 		path: "/policies",

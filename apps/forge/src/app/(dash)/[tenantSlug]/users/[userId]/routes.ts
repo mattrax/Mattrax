@@ -10,12 +10,4 @@ export default [
 		path: "/scope",
 		component: lazy(() => import("./scope")),
 	},
-	{
-		path: "/inventory",
-		component: lazy(() => import("./inventory")),
-	},
-	{
-		path: "/settings",
-		component: lazy(() => import("./settings")),
-	},
-] as RouteDefinition[];
+] satisfies RouteDefinition[];

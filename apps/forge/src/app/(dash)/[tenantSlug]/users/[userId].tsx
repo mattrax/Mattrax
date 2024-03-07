@@ -1,152 +1,44 @@
-import { As } from "@kobalte/core";
-import { A, Navigate } from "@solidjs/router";
-import clsx from "clsx";
-import { ParentProps, Show, createSignal } from "solid-js";
-import { toast } from "solid-sonner";
-import { z } from "zod";
+import { createContextProvider } from "@solid-primitives/context";
+import { ParentProps, Show } from "solid-js";
 
-import { Form, InputField, createZodForm } from "~/components/forms";
-import {
-	Badge,
-	Button,
-	DialogContent,
-	DialogDescription,
-	DialogHeader,
-	DialogRoot,
-	DialogTitle,
-	DialogTrigger,
-	buttonVariants,
-} from "~/components/ui";
-import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
-import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
-import { useTenant } from "../../TenantContext";
+import { z } from "zod";
+import { trpc } from "~/lib";
+import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
+import { A } from "@solidjs/router";
+import { Badge } from "~/components/ui";
+import { useTenant } from "../../TenantContext";
 
-function UserNotFound() {
-	toast.error("User not found");
-	// necessary since '..' adds trailing slash -_-
-	return <Navigate href="../../users" />;
-}
+export const [UserContextProvider, useUser] = createContextProvider(
+	(props: {
+		user: NonNullable<RouterOutput["user"]["get"]>;
+		query: ReturnType<typeof trpc.user.get.useQuery>;
+	}) => Object.assign(() => props.user, { query: props.query }),
+	null!,
+);
 
-export default function Page() {
+export default function Layout(props: ParentProps) {
+	const params = useZodParams({ userId: z.string() });
 	const tenant = useTenant();
-	const params = useZodParams({
-		userId: z.string(),
-	});
-	const user = trpc.user.get.useQuery(() => ({
+	const query = trpc.user.get.useQuery(() => ({
 		tenantSlug: tenant().slug,
 		id: params.userId,
 	}));
 
 	return (
-		<Show when={user.data !== undefined}>
-			<Show when={user.data} fallback={<UserNotFound />}>
-				{(user) => (
-					<div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
-						<Breadcrumb>
-							<A href="" class="flex flex-row items-center gap-2">
-								<span>{user().name}</span>
-								<Badge variant="outline">User</Badge>
-							</A>
-						</Breadcrumb>
-
-						<div class="flex flex-row justify-between">
-							<div>
-								<h1 class="text-3xl font-bold">{user().name}</h1>
-								<span class="block mt-1 text-gray-700 text-sm">
-									{user().email}
-								</span>
-								<Show
-									when={user().providerResourceId}
-									fallback={
-										<span class="flex flex-row items-center text-sm py-2.5 gap-1 font-medium">
-											<IconMaterialSymbolsWarningRounded class="w-5 h-5 text-yellow-600" />
-											User not found in{" "}
-											{AUTH_PROVIDER_DISPLAY[user().provider.variant]}
-										</span>
-									}
-								>
-									{(resourceId) => (
-										<a
-											class={clsx(buttonVariants({ variant: "link" }), "!p-0")}
-											target="_blank"
-											href={
-												userAuthProviderUrl(
-													user().provider.variant,
-													user().provider.remoteId,
-													resourceId(),
-												)!
-											}
-											rel="noreferrer"
-										>
-											{AUTH_PROVIDER_DISPLAY[user().provider.variant]}
-											<IconPrimeExternalLink class="inline ml-1" />
-										</a>
-									)}
-								</Show>
-							</div>
-
-							<InviteUserDialog id={user().id} email={user().email}>
-								<As component={Button}>Invite</As>
-							</InviteUserDialog>
-						</div>
-					</div>
-				)}
-			</Show>
+		<Show when={query.data}>
+			{(data) => (
+				<UserContextProvider user={data()} query={query}>
+					<Breadcrumb>
+						<A href="" class="flex flex-row items-center gap-2">
+							<span>{data().name}</span>
+							<Badge variant="outline">User</Badge>
+						</A>
+					</Breadcrumb>
+					{props.children}
+				</UserContextProvider>
+			)}
 		</Show>
-	);
-}
-
-function InviteUserDialog(props: ParentProps<{ id: string; email: string }>) {
-	const [open, setOpen] = createSignal(false);
-
-	const tenant = useTenant();
-	const mutation = trpc.user.invite.useMutation();
-
-	const form = createZodForm({
-		schema: z.object({ message: z.string().email().optional() }),
-		onSubmit: async ({ value }) => {
-			await mutation.mutateAsync({
-				id: props.id,
-				message: value.message,
-				tenantSlug: tenant().slug,
-			});
-			setOpen(false);
-		},
-	});
-
-	return (
-		<DialogRoot
-			open={open()}
-			setOpen={(o) => {
-				if (o) form.setFieldValue("email", "");
-				setOpen(o);
-			}}
-		>
-			<DialogTrigger asChild>{props.children}</DialogTrigger>
-			<DialogContent>
-				<DialogHeader>
-					<DialogTitle>Invite User</DialogTitle>
-					<DialogDescription>
-						We will send an email to <b>{props.email}</b> with instructions on
-						how to enroll their device in this tenant.
-					</DialogDescription>
-				</DialogHeader>
-				<Form form={form} fieldsetClass="space-y-2">
-					{/* TODO: Show this as optional + make it a text area */}
-					<InputField
-						form={form}
-						type="text"
-						name="message"
-						placeholder="Your message"
-						autocomplete="off"
-					/>
-					<Button type="submit" class="w-full">
-						Send Invitation
-					</Button>
-				</Form>
-			</DialogContent>
-		</DialogRoot>
 	);
 }

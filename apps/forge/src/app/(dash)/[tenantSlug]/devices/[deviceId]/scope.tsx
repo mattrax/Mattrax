@@ -5,7 +5,7 @@ export default function Page() {
 	const device = useDevice();
 
 	return (
-		<PageLayout heading={<PageLayoutHeading>Overview</PageLayoutHeading>}>
+		<PageLayout heading={<PageLayoutHeading>Scope</PageLayoutHeading>}>
 			<h1 class="text-muted-foreground opacity-70">Coming soon...</h1>
 		</PageLayout>
 	);
