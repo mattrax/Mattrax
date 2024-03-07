@@ -1,12 +1,29 @@
 import { JSX } from "solid-js";
 import { A } from "@solidjs/router";
-import { Label } from "~/components/ui";
+import {
+	Button,
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+	Label,
+} from "~/components/ui";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { useDevice } from "../[deviceId]";
 import { createTimeAgo } from "@solid-primitives/date";
+import { As } from "@kobalte/core";
+import { trpc } from "~/lib";
+import { useTenant } from "~/app/(dash)/TenantContext";
 
 export default function Page() {
+	const tenant = useTenant();
 	const device = useDevice();
+
+	const syncDevice = trpc.device.sync.useMutation(() => ({
+		onSuccess: () => device.query.refetch(),
+	}));
 
 	const [lastSeen] = createTimeAgo(device().lastSynced);
 	const [enrolledAt] = createTimeAgo(device().enrolledAt);
@@ -23,8 +40,60 @@ export default function Page() {
 		return result;
 	};
 
+	const isDropdownDisabled = () => syncDevice.isPending;
+
 	return (
-		<PageLayout heading={<PageLayoutHeading>Overview</PageLayoutHeading>}>
+		<PageLayout
+			heading={
+				<div class="flex justify-between w-full">
+					<PageLayoutHeading>Overview</PageLayoutHeading>
+
+					<DropdownMenu>
+						<DropdownMenuTrigger asChild>
+							{/* // TODO: Make this button's UI indicate dropdown menu not button */}
+							<As component={Button}>Actions</As>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent>
+							<DropdownMenuItem
+								disabled={isDropdownDisabled()}
+								onClick={() =>
+									syncDevice.mutate({
+										tenantSlug: tenant().slug,
+										deviceId: device().id,
+									})
+								}
+							>
+								Sync
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								disabled={isDropdownDisabled()}
+								onClick={() => alert("TODO: Confirmation then lock device")}
+								class="text-red-500"
+							>
+								Lost Mode
+							</DropdownMenuItem>
+							{/* <DropdownMenuItem disabled={isDropdownDisabled()} onClick={() => alert("TODO")} class="text-red-500">
+								Clear passcode
+							</DropdownMenuItem> */}
+							<DropdownMenuItem
+								disabled={isDropdownDisabled()}
+								onClick={() => alert("TODO: Confirmation then wipe device")}
+								class="text-red-500"
+							>
+								Wipe
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								disabled={isDropdownDisabled()}
+								onClick={() => alert("TODO: Confirmation then unenroll device")}
+								class="text-red-500"
+							>
+								Remove
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</div>
+			}
+		>
 			<h2 class="text-bold text-xl">General:</h2>
 			{/* // TODO: Enrollment type (supervised, DEP, Windows Azure, etc) */}
 			<Item

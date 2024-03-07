@@ -25,7 +25,7 @@ export const deviceRouter = createTRPCRouter({
 		.query(async ({ ctx, input }) => {
 			const [device] = await db
 				.select({
-					id: devices.pk,
+					id: devices.id,
 					name: devices.name,
 					operatingSystem: devices.operatingSystem,
 					serialNumber: devices.serialNumber,
@@ -56,21 +56,7 @@ export const deviceRouter = createTRPCRouter({
 		.input(z.object({ deviceId: z.string() }))
 		.mutation(async ({ ctx, input }) => {
 			// TODO
-
-			//   // TODO: Check user is authorised to access tenant which owns the device
-
-			//   // TODO: Filter to only devices in current tenant
-			//   // TODO: .where(eq(devices.tenantId, todo))
-			//   const [device] = (
-			//     await db
-			//       .select({
-			//         intuneId: devices.intuneId,
-			//       })
-			//       .from(devices)
-			//   );
-			//   if (!device) throw new Error("Device not found"); // TODO: Properly handle this error on frontend
-
-			//   await syncDevice(device.intuneId);
+			console.log("TODO: Trigger device checking using WNS", input.deviceId);
 
 			return {};
 		}),
