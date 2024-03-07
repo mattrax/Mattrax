@@ -6,13 +6,11 @@ import { Form, createZodForm } from "~/components/forms";
 import { InputField } from "~/components/forms";
 import { Button, Card, CardContent, CardHeader } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useAuth } from "./AuthContext";
+import { AuthContext, useAuth } from "./AuthContext";
 
 export default function Page() {
-	const auth = useAuth();
-
 	const defaultTenant = () => {
-		const tenants = auth().tenants;
+		const tenants = useAuth()().tenants;
 		if (tenants.length < 1) return;
 
 		// const persistedTenant = tenants.find((t) => t.id === tenantId());
@@ -22,11 +20,13 @@ export default function Page() {
 	};
 
 	return (
-		<Show when={defaultTenant()} fallback={<CreateTenant />}>
-			{(
-				tenant, // If we have an active tenant, send the user to it
-			) => <Navigate href={tenant().slug} />}
-		</Show>
+		<AuthContext>
+			<Show when={defaultTenant()} fallback={<CreateTenant />}>
+				{(
+					tenant, // If we have an active tenant, send the user to it
+				) => <Navigate href={tenant().slug} />}
+			</Show>
+		</AuthContext>
 	);
 }
 
