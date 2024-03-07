@@ -52,11 +52,18 @@ export const deviceRouter = createTRPCRouter({
 			return omit(device, ["tenantPk"]);
 		}),
 
-	sync: tenantProcedure
+	sync: authedProcedure
 		.input(z.object({ deviceId: z.string() }))
 		.mutation(async ({ ctx, input }) => {
+			const device = await db.query.devices.findFirst({
+				where: eq(devices.id, input.deviceId),
+			});
+			if (!device) return null;
+
+			await ctx.ensureTenantAccount(device.tenantPk);
+
 			// TODO
-			console.log("TODO: Trigger device checking using WNS", input.deviceId);
+			console.log("TODO: Trigger device checking using WNS", device.id);
 
 			return {};
 		}),

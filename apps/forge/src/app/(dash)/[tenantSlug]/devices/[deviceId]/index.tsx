@@ -16,7 +16,6 @@ import { trpc } from "~/lib";
 import { useTenant } from "~/app/(dash)/TenantContext";
 
 export default function Page() {
-	const tenant = useTenant();
 	const device = useDevice();
 
 	const syncDevice = trpc.device.sync.useMutation(() => ({
@@ -56,7 +55,6 @@ export default function Page() {
 								disabled={isDropdownDisabled()}
 								onClick={() =>
 									syncDevice.mutate({
-										tenantSlug: tenant().slug,
 										deviceId: device().id,
 									})
 								}
