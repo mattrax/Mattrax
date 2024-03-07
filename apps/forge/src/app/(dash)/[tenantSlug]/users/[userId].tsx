@@ -6,9 +6,10 @@ import { z } from "zod";
 import { trpc } from "~/lib";
 import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { A } from "@solidjs/router";
+import { A, Navigate } from "@solidjs/router";
 import { Badge } from "~/components/ui";
 import { useTenant } from "../../TenantContext";
+import { toast } from "solid-sonner";
 
 export const [UserContextProvider, useUser] = createContextProvider(
 	(props: {
@@ -27,18 +28,26 @@ export default function Layout(props: ParentProps) {
 	}));
 
 	return (
-		<Show when={query.data}>
-			{(data) => (
-				<UserContextProvider user={data()} query={query}>
-					<Breadcrumb>
-						<A href="" class="flex flex-row items-center gap-2">
-							<span>{data().name}</span>
-							<Badge variant="outline">User</Badge>
-						</A>
-					</Breadcrumb>
-					{props.children}
-				</UserContextProvider>
-			)}
+		<Show when={query.data !== undefined}>
+			<Show when={query.data} fallback={<NotFound />}>
+				{(data) => (
+					<UserContextProvider user={data()} query={query}>
+						<Breadcrumb>
+							<A href="" class="flex flex-row items-center gap-2">
+								<span>{data().name}</span>
+								<Badge variant="outline">User</Badge>
+							</A>
+						</Breadcrumb>
+						{props.children}
+					</UserContextProvider>
+				)}
+			</Show>
 		</Show>
 	);
+}
+
+function NotFound() {
+	toast.error("User not found");
+	// necessary since '..' adds trailing slash -_-
+	return <Navigate href="../../users" />;
 }

@@ -7,7 +7,6 @@ import { groupRouter } from "./routers/group";
 import { internalRouter } from "./routers/internal";
 import { metaRouter } from "./routers/meta";
 import { policyRouter } from "./routers/policy";
-import { scriptRouter } from "./routers/script";
 import { tenantRouter } from "./routers/tenant/index";
 import { userRouter } from "./routers/user";
 
@@ -18,7 +17,6 @@ export const appRouter = createTRPCRouter({
 	group: groupRouter,
 	internal: internalRouter,
 	policy: policyRouter,
-	script: scriptRouter,
 	tenant: tenantRouter,
 	user: userRouter,
 	meta: metaRouter,

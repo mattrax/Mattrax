@@ -63,7 +63,7 @@ export const policyRouter = createTRPCRouter({
 					.orderBy(policyVersions.createdAt)
 					.limit(1),
 			]);
-			if (!policy) throw new Error("policy not found"); // TODO: Proper tRPC error and have frontend catch and handle it
+			if (!policy) return null;
 
 			return {
 				// Compare to last deployed version or default (empty object)

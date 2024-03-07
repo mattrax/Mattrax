@@ -30,10 +30,25 @@ export const deviceRouter = createTRPCRouter({
 	get: tenantProcedure
 		.input(z.object({ deviceId: z.string() }))
 		.query(async ({ ctx, input }) => {
-			// TODO
-			return {
-				name: "todo",
-			};
+			const [device] = await db
+				.select({
+					id: devices.pk,
+					name: devices.name,
+					// operatingSystem: devices.operatingSystem,
+					// serialNumber: devices.serialNumber,
+					// lastSynced: devices.lastSynced,
+					// owner: devices.owner, // TODO: Fetch `owner` name
+					// enrolledAt: devices.enrolledAt,
+				})
+				.from(devices)
+				.where(
+					and(
+						eq(devices.id, input.deviceId),
+						eq(devices.tenantPk, ctx.tenant.pk),
+					),
+				);
+
+			return device ?? null;
 		}),
 
 	sync: tenantProcedure

@@ -6,13 +6,14 @@ import { z } from "zod";
 import { trpc } from "~/lib";
 import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { A } from "@solidjs/router";
+import { A, Navigate } from "@solidjs/router";
 import { Badge } from "~/components/ui";
 import { useTenant } from "../../TenantContext";
+import { toast } from "solid-sonner";
 
 export const [AppContextProvider, useApp] = createContextProvider(
 	(props: {
-		app: RouterOutput["app"]["get"];
+		app: NonNullable<RouterOutput["app"]["get"]>;
 		query: ReturnType<typeof trpc.app.get.useQuery>;
 	}) => Object.assign(() => props.app, { query: props.query }),
 	null!,
@@ -27,18 +28,26 @@ export default function Layout(props: ParentProps) {
 	}));
 
 	return (
-		<Show when={query.data}>
-			{(data) => (
-				<AppContextProvider app={data()} query={query}>
-					<Breadcrumb>
-						<A href="" class="flex flex-row items-center gap-2">
-							<span>{data().name}</span>
-							<Badge variant="outline">Application</Badge>
-						</A>
-					</Breadcrumb>
-					{props.children}
-				</AppContextProvider>
-			)}
+		<Show when={query.data !== undefined}>
+			<Show when={query.data} fallback={<NotFound />}>
+				{(data) => (
+					<AppContextProvider app={data()} query={query}>
+						<Breadcrumb>
+							<A href="" class="flex flex-row items-center gap-2">
+								<span>{data().name}</span>
+								<Badge variant="outline">Application</Badge>
+							</A>
+						</Breadcrumb>
+						{props.children}
+					</AppContextProvider>
+				)}
+			</Show>
 		</Show>
 	);
+}
+
+function NotFound() {
+	toast.error("Application not found");
+	// necessary since '..' adds trailing slash -_-
+	return <Navigate href="../../apps" />;
 }

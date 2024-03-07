@@ -1,172 +1,53 @@
-import { createColumnHelper } from "@tanstack/solid-table";
-import { Accessor, Show, Suspense, createMemo, createSignal } from "solid-js";
-import { As } from "@kobalte/core";
-import { z } from "zod";
+import { createContextProvider } from "@solid-primitives/context";
+import { ParentProps, Show } from "solid-js";
 
-import { Badge, Button } from "~/components/ui";
-import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
-import { AddMemberSheet } from "./AddMemberSheet";
-import {
-	StandardTable,
-	createStandardTable,
-	selectCheckboxColumn,
-} from "~/components/StandardTable";
-import { toast } from "solid-sonner";
-import { Dynamic } from "solid-js/web";
-import { PageLayout, PageLayoutHeading } from "../PageLayout";
-import { useTenant } from "../../TenantContext";
+import { z } from "zod";
+import { trpc } from "~/lib";
+import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { A } from "@solidjs/router";
+import { A, Navigate } from "@solidjs/router";
+import { Badge } from "~/components/ui";
+import { useTenant } from "../../TenantContext";
+import { toast } from "solid-sonner";
 
-export default function Page() {
-	const routeParams = useZodParams({ groupId: z.string() });
+export const [GroupContextProvider, useGroup] = createContextProvider(
+	(props: {
+		group: NonNullable<RouterOutput["group"]["get"]>;
+		query: ReturnType<typeof trpc.group.get.useQuery>;
+	}) => Object.assign(() => props.group, { query: props.query }),
+	null!,
+);
 
+export default function Layout(props: ParentProps) {
+	const params = useZodParams({ groupId: z.string() });
 	const tenant = useTenant();
-	const group = trpc.group.get.useQuery(() => ({
-		id: routeParams.groupId,
+	const query = trpc.group.get.useQuery(() => ({
 		tenantSlug: tenant().slug,
-	}));
-
-	const updateGroup = trpc.group.update.useMutation(() => ({
-		onSuccess: () => group.refetch(),
+		id: params.groupId,
 	}));
 
 	return (
-		<Show when={group.data}>
-			{(group) => {
-				const table = createMembersTable(() => group().id);
-
-				const updateName = (name: string) => {
-					if (name === "") {
-						toast.error("Group name cannot be empty");
-						return;
-					}
-
-					toast.promise(
-						updateGroup.mutateAsync({
-							tenantSlug: tenant().slug,
-							id: group().id,
-							name,
-						}),
-						{
-							loading: "Updating group name...",
-							success: "Group name updated",
-							error: "Failed to update group name",
-						},
-					);
-				};
-
-				const [editingName, setEditingName] = createSignal(false);
-
-				let nameEl: HTMLHeadingElement;
-
-				const [cachedName, setCachedName] = createSignal(group().name);
-				const name = createMemo(() =>
-					editingName() ? cachedName() : group().name,
-				);
-
-				return (
-					<PageLayout
-						heading={
-							<>
-								<PageLayoutHeading
-									ref={nameEl!}
-									class="p-2 -m-2"
-									contenteditable={editingName()}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") {
-											e.preventDefault();
-											e.currentTarget.blur();
-										} else if (e.key === "Escape") {
-											e.preventDefault();
-											setEditingName(false);
-										}
-									}}
-								>
-									{name()}
-								</PageLayoutHeading>
-								<Button
-									variant="link"
-									size="iconSmall"
-									class="text-lg"
-									onClick={() => {
-										setEditingName((e) => !e);
-
-										if (editingName()) {
-											setCachedName(group().name);
-
-											nameEl.focus();
-										} else {
-											updateName(nameEl.textContent ?? "");
-										}
-									}}
-								>
-									<Dynamic
-										component={
-											editingName()
-												? IconIcRoundCheck
-												: IconMaterialSymbolsEditOutline
-										}
-									/>
-								</Button>
-								<AddMemberSheet groupId={routeParams.groupId}>
-									<As component={Button} class="ml-auto">
-										Add Members
-									</As>
-								</AddMemberSheet>
-							</>
-						}
-					>
+		<Show when={query.data !== undefined}>
+			<Show when={query.data} fallback={<NotFound />}>
+				{(data) => (
+					<GroupContextProvider group={data()} query={query}>
 						<Breadcrumb>
 							<A href="" class="flex flex-row items-center gap-2">
-								<span>{group().name}</span>
+								<span>{data().name}</span>
 								<Badge variant="outline">Group</Badge>
 							</A>
 						</Breadcrumb>
-						<Suspense>
-							<StandardTable table={table} />
-						</Suspense>
-					</PageLayout>
-				);
-			}}
+						{props.children}
+					</GroupContextProvider>
+				)}
+			</Show>
 		</Show>
 	);
 }
 
-const VariantDisplay = {
-	user: "User",
-	device: "Device",
-} as const;
-
-type Variant = keyof typeof VariantDisplay;
-
-const columnHelper = createColumnHelper<{
-	pk: number;
-	name: string;
-	variant: Variant;
-}>();
-
-export const columns = [
-	selectCheckboxColumn,
-	columnHelper.accessor("name", { header: "Name" }),
-	columnHelper.accessor("variant", {
-		header: "Variant",
-		cell: (info) => <Badge>{VariantDisplay[info.getValue()]}</Badge>,
-	}),
-];
-
-function createMembersTable(groupId: Accessor<string>) {
-	const tenant = useTenant();
-	const members = trpc.group.members.useQuery(() => ({
-		id: groupId(),
-		tenantSlug: tenant().slug,
-	}));
-
-	return createStandardTable({
-		get data() {
-			return members.data ?? [];
-		},
-		columns,
-	});
+function NotFound() {
+	toast.error("Group not found");
+	// necessary since '..' adds trailing slash -_-
+	return <Navigate href="../../groups" />;
 }

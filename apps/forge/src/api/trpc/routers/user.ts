@@ -44,29 +44,25 @@ export const userRouter = createTRPCRouter({
 	get: tenantProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			return (
-				(
-					await db
-						.select({
-							id: users.id,
-							name: users.name,
-							email: users.email,
-							providerResourceId: users.providerResourceId,
-							provider: {
-								variant: identityProviders.variant,
-								remoteId: identityProviders.remoteId,
-							},
-						})
-						.from(users)
-						.where(
-							and(eq(users.tenantPk, ctx.tenant.pk), eq(users.id, input.id)),
-						)
-						.innerJoin(
-							identityProviders,
-							eq(users.providerPk, identityProviders.pk),
-						)
-				)[0] ?? null
-			);
+			const [user] = await db
+				.select({
+					id: users.id,
+					name: users.name,
+					email: users.email,
+					providerResourceId: users.providerResourceId,
+					provider: {
+						variant: identityProviders.variant,
+						remoteId: identityProviders.remoteId,
+					},
+				})
+				.from(users)
+				.where(and(eq(users.tenantPk, ctx.tenant.pk), eq(users.id, input.id)))
+				.innerJoin(
+					identityProviders,
+					eq(users.providerPk, identityProviders.pk),
+				);
+
+			return user ?? null;
 		}),
 	invite: tenantProcedure
 		.input(z.object({ id: z.string(), message: z.string().optional() }))

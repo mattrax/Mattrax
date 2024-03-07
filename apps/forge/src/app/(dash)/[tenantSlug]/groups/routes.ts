@@ -2,6 +2,8 @@ import { RouteDefinition } from "@solidjs/router";
 import { lazy } from "solid-js";
 import { trpc } from "~/lib";
 
+import groupRoutes from "./[groupId]/routes";
+
 export default [
 	{
 		path: "/",
@@ -20,5 +22,6 @@ export default [
 				id: params.groupId!,
 				tenantSlug: params.tenantSlug!,
 			}),
+		children: groupRoutes,
 	},
 ] satisfies RouteDefinition[];

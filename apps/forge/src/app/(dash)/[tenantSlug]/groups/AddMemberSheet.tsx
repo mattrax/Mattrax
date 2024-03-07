@@ -13,7 +13,7 @@ import {
 	SheetTitle,
 	SheetTrigger,
 } from "~/components/ui/sheet";
-import { columns } from "./[groupId]";
+import { columns } from "./[groupId]/index";
 import { GroupAssignableVariant } from "~/db";
 import { useTenant } from "../../TenantContext";
 

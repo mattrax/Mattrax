@@ -6,13 +6,14 @@ import { z } from "zod";
 import { trpc } from "~/lib";
 import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { A } from "@solidjs/router";
+import { A, Navigate } from "@solidjs/router";
 import { Badge } from "~/components/ui";
 import { useTenant } from "../../TenantContext";
+import { toast } from "solid-sonner";
 
 export const [PolicyContextProvider, usePolicy] = createContextProvider(
 	(props: {
-		policy: RouterOutput["policy"]["get"];
+		policy: NonNullable<RouterOutput["policy"]["get"]>;
 		query: ReturnType<typeof trpc.policy.get.useQuery>;
 	}) => Object.assign(() => props.policy, { query: props.query }),
 	null!,
@@ -21,24 +22,32 @@ export const [PolicyContextProvider, usePolicy] = createContextProvider(
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ policyId: z.string() });
 	const tenant = useTenant();
-	const policyQuery = trpc.policy.get.useQuery(() => ({
+	const query = trpc.policy.get.useQuery(() => ({
 		tenantSlug: tenant().slug,
 		policyId: params.policyId,
 	}));
 
 	return (
-		<Show when={policyQuery.data}>
-			{(policy) => (
-				<PolicyContextProvider policy={policy()} query={policyQuery}>
-					<Breadcrumb>
-						<A href="" class="flex flex-row items-center gap-2">
-							<span>{policy().name}</span>
-							<Badge variant="outline">Policy</Badge>
-						</A>
-					</Breadcrumb>
-					{props.children}
-				</PolicyContextProvider>
-			)}
+		<Show when={query.data !== undefined}>
+			<Show when={query.data} fallback={<NotFound />}>
+				{(policy) => (
+					<PolicyContextProvider policy={policy()} query={query}>
+						<Breadcrumb>
+							<A href="" class="flex flex-row items-center gap-2">
+								<span>{policy().name}</span>
+								<Badge variant="outline">Policy</Badge>
+							</A>
+						</Breadcrumb>
+						{props.children}
+					</PolicyContextProvider>
+				)}
+			</Show>
 		</Show>
 	);
+}
+
+function NotFound() {
+	toast.error("Policy not found");
+	// necessary since '..' adds trailing slash -_-
+	return <Navigate href="../../policies" />;
 }
