@@ -72,7 +72,7 @@ export const userRouter = createTRPCRouter({
 		.input(z.object({ id: z.string(), message: z.string().optional() }))
 		.mutation(async ({ ctx, input }) => {
 			const user = await db.query.users.findFirst({
-				where: and(eq(users.tenantPk, ctx.tenant.pk), eq(users.id, input.id)),
+				where: eq(users.id, input.id),
 			});
 			if (!user)
 				throw new TRPCError({
@@ -80,12 +80,14 @@ export const userRouter = createTRPCRouter({
 					message: "user",
 				});
 
+			const tenant = await ctx.ensureTenantAccount(user.tenantPk)
+
 			// TODO: "On behalf of {tenant_name}" in the content + render `input.message` inside the email.
 			await sendEmail({
 				type: "userEnrollmentInvite",
 				to: user.email,
 				subject: "Enroll your device to Mattrax",
-				tenantName: ctx.tenant.name,
+				tenantName: tenant.name,
 			});
 		}),
 });

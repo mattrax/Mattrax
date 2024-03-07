@@ -1,5 +1,8 @@
 import { JSX } from "solid-js";
 import { A } from "@solidjs/router";
+import { createTimeAgo } from "@solid-primitives/date";
+import { As } from "@kobalte/core";
+
 import {
 	Button,
 	DropdownMenu,
@@ -10,10 +13,7 @@ import {
 } from "~/components/ui";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { useDevice } from "../[deviceId]";
-import { createTimeAgo } from "@solid-primitives/date";
-import { As } from "@kobalte/core";
 import { trpc } from "~/lib";
-import { useTenant } from "~/app/(dash)/TenantContext";
 
 export default function Page() {
 	const device = useDevice();

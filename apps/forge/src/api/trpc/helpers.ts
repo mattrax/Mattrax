@@ -79,12 +79,12 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 
 	if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-	let tenantList: Array<{ pk: number }> | undefined;
+	let tenantList: Array<{ pk: number, name: string }> | undefined;
 
 	const getTenantList = async () => {
 		if (!tenantList)
 			tenantList = await db
-				.select({ pk: tenants.pk })
+				.select({ pk: tenants.pk, name: tenants.name })
 				.from(tenants)
 				.where(eq(tenantAccounts.accountPk, data.account.pk))
 				.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk));
@@ -98,8 +98,12 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 			...data,
 			ensureTenantAccount: async (tenantPk: number) => {
 				const tenantList = await getTenantList();
-				if (!tenantList.find((t) => t.pk === tenantPk))
+
+				const tenant = tenantList.find((t) => t.pk === tenantPk);
+				if (!tenant)
 					throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
+
+				return tenant
 			},
 		},
 	});
