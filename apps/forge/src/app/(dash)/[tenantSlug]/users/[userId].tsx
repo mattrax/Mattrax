@@ -9,7 +9,6 @@ import { trpc } from "~/lib";
 import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
 import { Badge } from "~/components/ui";
-import { useTenantSlug } from "../../[tenantSlug]";
 import { useNavbarItems } from "../../NavItems";
 
 export const [UserContextProvider, useUser] = createContextProvider(
@@ -22,7 +21,6 @@ export const [UserContextProvider, useUser] = createContextProvider(
 
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ userId: z.string() });
-	const tenantSlug = useTenantSlug();
 
 	const query = trpc.user.get.useQuery(() => ({
 		id: params.userId,

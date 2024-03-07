@@ -1,8 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { db, devices } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { db, devices, users } from "~/db";
+import { omit } from "~/api/utils";
 
 export const deviceRouter = createTRPCRouter({
 	list: tenantProcedure.query(async ({ ctx }) => {
@@ -25,22 +26,30 @@ export const deviceRouter = createTRPCRouter({
 		.query(async ({ ctx, input }) => {
 			const [device] = await db
 				.select({
-					id: devices.pk,
+					id: devices.id,
 					name: devices.name,
+					operatingSystem: devices.operatingSystem,
+					serialNumber: devices.serialNumber,
+					manufacturer: devices.manufacturer,
+					azureADDeviceId: devices.azureADDeviceId,
+					freeStorageSpaceInBytes: devices.freeStorageSpaceInBytes,
+					totalStorageSpaceInBytes: devices.totalStorageSpaceInBytes,
+					imei: devices.imei,
+					model: devices.model,
+					lastSynced: devices.lastSynced,
+					enrolledAt: devices.enrolledAt,
 					tenantPk: devices.tenantPk,
-					// operatingSystem: devices.operatingSystem,
-					// serialNumber: devices.serialNumber,
-					// lastSynced: devices.lastSynced,
-					// owner: devices.owner, // TODO: Fetch `owner` name
-					// enrolledAt: devices.enrolledAt,
+					ownerId: users.id,
+					ownerName: users.name,
 				})
 				.from(devices)
+				.leftJoin(users, eq(users.pk, devices.owner))
 				.where(eq(devices.id, input.deviceId));
 			if (!device) return null;
 
 			await ctx.ensureTenantAccount(device.tenantPk);
 
-			return device;
+			return omit(device, ["tenantPk"]);
 		}),
 
 	sync: tenantProcedure

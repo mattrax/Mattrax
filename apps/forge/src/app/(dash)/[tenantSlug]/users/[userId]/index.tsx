@@ -64,6 +64,10 @@ export default function Page() {
 					<As component={Button}>Invite</As>
 				</InviteUserDialog>
 			</div>
+
+			<h1 class="text-muted-foreground">
+				Users can be managed in your identity providers portal!
+			</h1>
 		</div>
 	);
 }
@@ -107,7 +111,7 @@ function InviteUserDialog(props: ParentProps<{ id: string; email: string }>) {
 						form={form}
 						type="text"
 						name="message"
-						placeholder="Your message"
+						placeholder="Your custom message"
 						autocomplete="off"
 					/>
 					<Button type="submit" class="w-full">
