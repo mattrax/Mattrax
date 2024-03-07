@@ -21,6 +21,7 @@ import routes from "./app/routes";
 import "./assets/app.css";
 import "./assets/sonner.css";
 import { isTRPCClientError, trpc } from "./lib";
+import { Button } from "./components/ui";
 
 // TODO: Maybe PR this back to Solid DND???
 declare module "solid-js" {
@@ -83,7 +84,7 @@ const SolidQueryDevtools = lazy(() =>
 	})),
 );
 
-function App() {
+export default function App() {
 	const errorBus = createEventBus<[string, unknown]>();
 
 	const [queryClient /* persistOptions */] = createQueryClient(errorBus);
@@ -198,8 +199,3 @@ function App() {
 		</QueryClientProvider>
 	);
 }
-
-import { render } from "solid-js/web";
-import { Button } from "./components/ui";
-
-render(App, document.getElementById("root")!);

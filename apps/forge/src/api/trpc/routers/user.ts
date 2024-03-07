@@ -80,7 +80,7 @@ export const userRouter = createTRPCRouter({
 					message: "user",
 				});
 
-			const tenant = await ctx.ensureTenantAccount(user.tenantPk)
+			const tenant = await ctx.ensureTenantAccount(user.tenantPk);
 
 			// TODO: "On behalf of {tenant_name}" in the content + render `input.message` inside the email.
 			await sendEmail({

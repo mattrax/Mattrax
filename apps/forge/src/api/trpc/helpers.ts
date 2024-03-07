@@ -2,26 +2,14 @@ import { TRPCError, initTRPC } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { User } from "lucia";
 import superjson from "superjson";
-import {
-	H3Event,
-	appendResponseHeader,
-	getCookie,
-	setCookie,
-} from "vinxi/server";
+import { appendResponseHeader, getCookie, setCookie } from "vinxi/server";
 import { ZodError, z } from "zod";
 
 import { db, tenantAccounts, tenants } from "~/db";
 import { lucia } from "../auth";
-import { HonoEnv } from "../types";
 
-export const createTRPCContext = async (opts: {
-	env: HonoEnv["Bindings"];
-	event: H3Event;
-}) => {
-	return {
-		db,
-		...opts,
-	};
+export const createTRPCContext = () => {
+	return { db };
 };
 
 const t = initTRPC.context<typeof createTRPCContext>().create({
@@ -45,7 +33,7 @@ export const publicProcedure = t.procedure;
 
 // Authenticated procedure
 export const authedProcedure = t.procedure.use(async (opts) => {
-	const sessionId = getCookie(opts.ctx.event, lucia.sessionCookieName) ?? null;
+	const sessionId = getCookie(lucia.sessionCookieName) ?? null;
 
 	const data = await (async () => {
 		if (sessionId === null) return;
@@ -55,20 +43,18 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 		if (session) {
 			if (session.fresh)
 				appendResponseHeader(
-					opts.ctx.event,
 					"Set-Cookie",
 					lucia.createSessionCookie(session.id).serialize(),
 				);
 
-			if (getCookie(opts.ctx.event, "isLoggedIn") === undefined) {
-				setCookie(opts.ctx.event, "isLoggedIn", "true", {
+			if (getCookie("isLoggedIn") === undefined) {
+				setCookie("isLoggedIn", "true", {
 					httpOnly: false,
 				});
 			}
 		}
 		if (!session) {
 			appendResponseHeader(
-				opts.ctx.event,
 				"Set-Cookie",
 				lucia.createBlankSessionCookie().serialize(),
 			);
@@ -79,7 +65,7 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 
 	if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-	let tenantList: Array<{ pk: number, name: string }> | undefined;
+	let tenantList: Array<{ pk: number; name: string }> | undefined;
 
 	const getTenantList = async () => {
 		if (!tenantList)
@@ -103,7 +89,7 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 				if (!tenant)
 					throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
 
-				return tenant
+				return tenant;
 			},
 		},
 	});

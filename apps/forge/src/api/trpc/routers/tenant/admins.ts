@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
-import { appendResponseHeader, setCookie } from "h3";
+import { appendResponseHeader, setCookie } from "vinxi/server";
 import { generateId } from "lucia";
 import { z } from "zod";
 
@@ -132,11 +132,10 @@ export const adminsRouter = createTRPCRouter({
 
 			const session = await lucia.createSession(accountId, {});
 			appendResponseHeader(
-				ctx.event,
 				"Set-Cookie",
 				lucia.createSessionCookie(session.id).serialize(),
 			);
-			setCookie(ctx.event, "isLoggedIn", "true", {
+			setCookie("isLoggedIn", "true", {
 				httpOnly: false,
 			});
 
