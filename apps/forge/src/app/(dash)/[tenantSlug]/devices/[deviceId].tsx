@@ -1,8 +1,10 @@
-import { redirect, useParams } from "@solidjs/router";
+import { A, redirect, useParams } from "@solidjs/router";
 import { ParentProps, Suspense } from "solid-js";
 import FlatTabs from "~/components/ui/flat-tabs";
 import { trpc } from "~/lib";
 import { useTenant } from "../../TenantContext";
+import { Breadcrumb } from "~/components/Breadcrumbs";
+import { Badge } from "~/components/ui";
 
 // TODO: Bring this back
 // const fetchDevice = cache(
@@ -48,6 +50,13 @@ export default function Page(props: ParentProps) {
       </Suspense> */}
 			{/* TODO: Cleanup this suspense cause it's a whole page suspend */}
 			<Suspense fallback={<div>Loading...</div>}>
+				<Breadcrumb>
+					<A href="" class="flex flex-row items-center gap-2">
+						<span>{device.data?.name}</span>
+						<Badge variant="outline">Device</Badge>
+					</A>
+				</Breadcrumb>
+
 				<div class="flex-1 px-4 py-8">
 					<h1 class="text-3xl font-bold focus:outline-none" contentEditable>
 						{device.data?.name}

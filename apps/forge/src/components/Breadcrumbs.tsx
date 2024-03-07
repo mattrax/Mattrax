@@ -1,5 +1,4 @@
 import { createContextProvider } from "@solid-primitives/context";
-import { ComponentProps } from "solid-js";
 import { ParentProps, createSignal } from "solid-js";
 import { Portal } from "solid-js/web";
 

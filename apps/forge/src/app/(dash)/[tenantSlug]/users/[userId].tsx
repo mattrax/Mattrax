@@ -1,5 +1,5 @@
 import { As } from "@kobalte/core";
-import { Navigate } from "@solidjs/router";
+import { A, Navigate } from "@solidjs/router";
 import clsx from "clsx";
 import { ParentProps, Show, createSignal } from "solid-js";
 import { toast } from "solid-sonner";
@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { Form, InputField, createZodForm } from "~/components/forms";
 import {
+	Badge,
 	Button,
 	DialogContent,
 	DialogDescription,
@@ -20,6 +21,7 @@ import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
 import { useTenant } from "../../TenantContext";
+import { Breadcrumb } from "~/components/Breadcrumbs";
 
 function UserNotFound() {
 	toast.error("User not found");
@@ -42,6 +44,13 @@ export default function Page() {
 			<Show when={user.data} fallback={<UserNotFound />}>
 				{(user) => (
 					<div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
+						<Breadcrumb>
+							<A href="" class="flex flex-row items-center gap-2">
+								<span>{user().name}</span>
+								<Badge variant="outline">User</Badge>
+							</A>
+						</Breadcrumb>
+
 						<div class="flex flex-row justify-between">
 							<div>
 								<h1 class="text-3xl font-bold">{user().name}</h1>

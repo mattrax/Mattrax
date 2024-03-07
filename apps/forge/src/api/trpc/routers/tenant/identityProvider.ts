@@ -1,13 +1,16 @@
 import * as MSGraph from "@microsoft/microsoft-graph-types";
+import { MINUTE } from "@solid-primitives/date";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import * as jose from "jose";
 
 import { msGraphClient } from "~/api/microsoft";
 import { getEmailDomain } from "~/api/utils";
 import { db, domains, identityProviders, users } from "~/db";
 import { env } from "~/env";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
+import { encryptJWT } from "~/api/jwt";
 
 export const identityProviderRouter = createTRPCRouter({
 	get: tenantProcedure.query(async ({ ctx }) => {
@@ -26,9 +29,7 @@ export const identityProviderRouter = createTRPCRouter({
 			redirect_uri: `${env.PROD_URL}/api/ms/link`,
 			resource: "https://graph.microsoft.com",
 			response_type: "code",
-			state: JSON.stringify({
-				tenantPk: ctx.tenant.pk,
-			}),
+			state: await encryptJWT({ tenantPk: ctx.tenant.pk }),
 		});
 
 		// We use OAuth v1 (not v2) so that can be do admin consent, while also verifying the user is a tenant owner.

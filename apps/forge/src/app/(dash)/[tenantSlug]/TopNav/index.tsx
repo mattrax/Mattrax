@@ -1,8 +1,7 @@
 import { As, Tabs } from "@kobalte/core";
 import { A, useMatch, useNavigate, useResolvedPath } from "@solidjs/router";
-import { For, JSX, ParentProps } from "solid-js";
+import { createMemo, createSignal, For, JSX, ParentProps } from "solid-js";
 
-import { createSignal } from "solid-js";
 import {
 	Avatar,
 	AvatarFallback,
@@ -21,7 +20,6 @@ import {
 import { trpc } from "~/lib";
 import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
 import Logo from "~/assets/MATTRAX.png";
-import { createMemo } from "solid-js";
 import { Breadcrumbs } from "~/components/Breadcrumbs";
 import { AuthContext, useAuth } from "../../AuthContext";
 import { TenantContext } from "../../TenantContext";
@@ -31,87 +29,69 @@ type NavbarItem = {
 	href: string;
 };
 
-const tenantItems: NavbarItem[] = [
-	{
-		title: "Dashboard",
-		href: "",
-	},
-	{
-		title: "Users",
-		href: "users",
-	},
-	{
-		title: "Devices",
-		href: "devices",
-	},
-	{
-		title: "Policies",
-		href: "policies",
-	},
-	{
-		title: "Applications",
-		href: "apps",
-	},
-	{
-		title: "Groups",
-		href: "groups",
-	},
-	{
-		title: "Settings",
-		href: "settings",
-	},
-];
-
-const userItems: NavbarItem[] = [
-	{
-		title: "User",
-		href: "",
-	},
-];
-
-const deviceItems: NavbarItem[] = [
-	{
-		title: "Device",
-		href: "",
-	},
-];
-
-const policyItems: NavbarItem[] = [
-	{
-		title: "Policy",
-		href: "",
-	},
-	{
-		title: "Edit",
-		href: "edit",
-	},
-	{
-		title: "Assignees",
-		href: "assignees",
-	},
-	{
-		title: "History",
-		href: "history",
-	},
-	{
-		title: "Settings",
-		href: "settings",
-	},
-];
-
-const applicationItems: NavbarItem[] = [
-	{
-		title: "Application",
-		href: "",
-	},
-];
-
-const groupItems: NavbarItem[] = [
-	{
-		title: "Group",
-		href: "",
-	},
-];
+const navItems = {
+	tenant: [
+		{
+			title: "Dashboard",
+			href: "",
+		},
+		{
+			title: "Users",
+			href: "users",
+		},
+		{
+			title: "Devices",
+			href: "devices",
+		},
+		{
+			title: "Policies",
+			href: "policies",
+		},
+		{
+			title: "Applications",
+			href: "apps",
+		},
+		{
+			title: "Groups",
+			href: "groups",
+		},
+		{
+			title: "Settings",
+			href: "settings",
+		},
+	],
+	user: [
+		{
+			title: "User",
+			href: "",
+		},
+	],
+	policy: [
+		{
+			title: "Policy",
+			href: "",
+		},
+		{
+			title: "Edit",
+			href: "edit",
+		},
+		{
+			title: "Assignees",
+			href: "assignees",
+		},
+		{
+			title: "History",
+			href: "history",
+		},
+		{
+			title: "Settings",
+			href: "settings",
+		},
+	],
+	device: [{ title: "Device", href: "" }],
+	application: [{ title: "Application", href: "" }],
+	group: [{ title: "Group", href: "" }],
+} satisfies Record<string, NavbarItem[]>;
 
 export default function Component(props: TenantSwitcherProps): JSX.Element {
 	const path = useResolvedPath(() => "");
@@ -131,81 +111,82 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 
 		if (user !== undefined) {
 			return {
-				items: userItems.map((i) => ({
+				items: navItems.user.map((i) => ({
 					...i,
 					href: `users/${user.params.userId}${
 						i.href !== "" ? `/${i.href}` : ""
 					}`,
 					end: i.href === "",
-					value: i.href,
+					value: `user-${i.href}`,
 				})),
-				value: () => user.params.rest?.split("/")[0] ?? "",
+				value: () => `user-${user.params.rest?.split("/")[0] ?? ""}`,
 			};
 		}
 
 		if (policy !== undefined) {
 			return {
-				items: policyItems.map((i) => ({
+				items: navItems.policy.map((i) => ({
 					...i,
 					href: `policies/${policy.params.policyId}${
 						i.href !== "" ? `/${i.href}` : ""
 					}`,
 					end: i.href === "",
-					value: i.href,
+					value: `policy-${i.href}`,
 				})),
-				value: () => policy.params.rest?.split("/")[0] ?? "",
+				value: () => `policy-${policy.params.rest?.split("/")[0] ?? ""}`,
 			};
 		}
 
 		if (device !== undefined) {
 			return {
-				items: deviceItems.map((i) => ({
+				items: navItems.device.map((i) => ({
 					...i,
 					href: `devices/${device.params.deviceId}${
 						i.href !== "" ? `/${i.href}` : ""
 					}`,
 					end: i.href === "",
-					value: i.href,
+					value: `device-${i.href}`,
 				})),
-				value: () => device.params.rest?.split("/")[0] ?? "",
+				value: () => `device-${device.params.rest?.split("/")[0] ?? ""}`,
 			};
 		}
 
 		if (application !== undefined) {
 			return {
-				items: applicationItems.map((i) => ({
+				items: navItems.application.map((i) => ({
 					...i,
 					href: `apps/${application.params.appId}${
 						i.href !== "" ? `/${i.href}` : ""
 					}`,
 					end: i.href === "",
-					value: i.href,
+					value: `application-${i.href}`,
 				})),
-				value: () => application.params.rest?.split("/")[0] ?? "",
+				value: () =>
+					`application-${application.params.rest?.split("/")[0] ?? ""}`,
 			};
 		}
 
 		if (group !== undefined) {
 			return {
-				items: groupItems.map((i) => ({
+				items: navItems.group.map((i) => ({
 					...i,
 					href: `groups/${group.params.groupId}${
 						i.href !== "" ? `/${i.href}` : ""
 					}`,
 					end: i.href === "",
-					value: i.href,
+					value: `group-${i.href}`,
 				})),
-				value: () => group.params.rest?.split("/")[0] ?? "",
+				value: () => `group-${group.params.rest?.split("/")[0] ?? ""}`,
 			};
 		}
 
 		return {
-			items: tenantItems.map((i) => ({
+			items: navItems.tenant.map((i) => ({
 				...i,
-				value: i.href,
+				value: `tenant-${i.href}`,
 				end: i.href === "",
 			})),
-			value: () => tenantMatch()!.params.rest?.split("/")[0] ?? "",
+			value: () => `tenant-${tenantMatch()!.params.rest?.split("/")[0] ?? ""}`,
 		};
 	});
 

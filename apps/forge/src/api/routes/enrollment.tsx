@@ -3,10 +3,11 @@ import { Hono } from "hono";
 import * as jose from "jose";
 import { renderToString } from "solid-js/web";
 
-import { db, domains, identityProviders, users } from "~/db";
+import { db, domains, identityProviders } from "~/db";
 import { env } from "~/env";
 import { getEmailDomain } from "../utils";
 import { upsertEntraIdUser } from "../trpc/routers/tenant/identityProvider";
+import { encryptJWT, signJWT } from "../jwt";
 
 export type EnrollmentProfileDescription = {
 	data: string;
@@ -81,13 +82,15 @@ export const enrollmentRouter = new Hono()
 			response_type: "code",
 			response_mode: "query",
 			login_hint: email,
-			// TODO: Encrypt this state so it can't be forged and the primary keys are not leaked.
-			state: JSON.stringify({
-				appru,
-				tenantId: domainRecord.identityProvider.remoteId,
-				tid: domainRecord.identityProvider.tenantPk,
-				providerId: domainRecord.identityProvider.pk,
-			} satisfies State),
+			state: await encryptJWT<State>(
+				{
+					appru,
+					tenantId: domainRecord.identityProvider.remoteId,
+					tid: domainRecord.identityProvider.tenantPk,
+					providerId: domainRecord.identityProvider.pk,
+				},
+				{ expirationTime: new Date(Date.now() + 10 * MINUTE) },
+			),
 		});
 
 		return c.redirect(
@@ -141,28 +144,13 @@ export const enrollmentRouter = new Hono()
 
 		// TODO: Upsert if the user doesn't exist already
 
-		const jwt = await new jose.SignJWT({
-			tid,
-			uid,
-			upn: userPrincipalName,
-		})
-			.setAudience("mdm.mattrax.app")
-			.setNotBefore(new Date())
-			.setExpirationTime(new Date(Date.now() + 10 * MINUTE))
-			.setProtectedHeader({ alg: "HS256" })
-			.sign(
-				await crypto.subtle.importKey(
-					"raw",
-					new TextEncoder().encode(env.INTERNAL_SECRET),
-					{
-						// Do not adjust these without updating Rust.
-						name: "HMAC",
-						hash: "SHA-256",
-					},
-					false,
-					["sign", "verify"],
-				),
-			);
+		const jwt = await signJWT(
+			{ tid, uid, upn: userPrincipalName },
+			{
+				expirationTime: new Date(Date.now() + 10 * MINUTE),
+				audience: "mdm.mattrax.app",
+			},
+		);
 
 		if (appru) return c.html(renderMdmCallback(appru, jwt));
 

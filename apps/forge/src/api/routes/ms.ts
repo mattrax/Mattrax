@@ -9,6 +9,7 @@ import { lucia } from "../auth";
 import { msGraphClient } from "../microsoft";
 import { syncEntraUsersWithDomains } from "../trpc/routers/tenant/identityProvider";
 import { HonoEnv } from "../types";
+import { decryptJWT } from "../jwt";
 
 const tokenEndpointResponse = z.object({ access_token: z.string() });
 const organizationResponse = z.object({
@@ -35,7 +36,7 @@ export const msRouter = new Hono<HonoEnv>().get("/link", async (c) => {
 
 	const rawState = c.req.query("state");
 	if (!rawState) return new Response("No state!"); // TODO: Proper error UI as the user may land here
-	const { tenantPk } = OAUTH_STATE.parse(JSON.parse(rawState));
+	const { tenantPk } = OAUTH_STATE.parse((await decryptJWT(rawState)).payload);
 
 	const sessionId = getCookie(c.env.h3Event, lucia.sessionCookieName) ?? null;
 	if (sessionId === null) return new Response("Unauthorised!"); // TODO: Proper error UI as the user may land here

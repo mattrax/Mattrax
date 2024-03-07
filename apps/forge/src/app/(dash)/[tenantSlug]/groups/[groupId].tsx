@@ -16,6 +16,8 @@ import { toast } from "solid-sonner";
 import { Dynamic } from "solid-js/web";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
 import { useTenant } from "../../TenantContext";
+import { Breadcrumb } from "~/components/Breadcrumbs";
+import { A } from "@solidjs/router";
 
 export default function Page() {
 	const routeParams = useZodParams({ groupId: z.string() });
@@ -116,6 +118,12 @@ export default function Page() {
 							</>
 						}
 					>
+						<Breadcrumb>
+							<A href="" class="flex flex-row items-center gap-2">
+								<span>{group().name}</span>
+								<Badge variant="outline">Group</Badge>
+							</A>
+						</Breadcrumb>
 						<Suspense>
 							<StandardTable table={table} />
 						</Suspense>
