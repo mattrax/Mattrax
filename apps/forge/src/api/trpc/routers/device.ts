@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db, devices } from "~/db";
-import { createTRPCRouter, tenantProcedure } from "../helpers";
+import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 
 export const deviceRouter = createTRPCRouter({
 	list: tenantProcedure.query(async ({ ctx }) => {
@@ -20,13 +20,14 @@ export const deviceRouter = createTRPCRouter({
 			.where(and(eq(devices.tenantPk, ctx.tenant.pk)));
 	}),
 
-	get: tenantProcedure
+	get: authedProcedure
 		.input(z.object({ deviceId: z.string() }))
 		.query(async ({ ctx, input }) => {
 			const [device] = await db
 				.select({
 					id: devices.pk,
 					name: devices.name,
+					tenantPk: devices.tenantPk,
 					// operatingSystem: devices.operatingSystem,
 					// serialNumber: devices.serialNumber,
 					// lastSynced: devices.lastSynced,
@@ -34,14 +35,12 @@ export const deviceRouter = createTRPCRouter({
 					// enrolledAt: devices.enrolledAt,
 				})
 				.from(devices)
-				.where(
-					and(
-						eq(devices.id, input.deviceId),
-						eq(devices.tenantPk, ctx.tenant.pk),
-					),
-				);
+				.where(eq(devices.id, input.deviceId));
+			if (!device) return null;
 
-			return device ?? null;
+			await ctx.ensureTenantAccount(device.tenantPk);
+
+			return device;
 		}),
 
 	sync: tenantProcedure

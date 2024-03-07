@@ -22,13 +22,10 @@ export const [AppContextProvider, useApp] = createContextProvider(
 
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ appId: z.string() });
-	const tenantSlug = useTenantSlug();
 
 	const query = trpc.app.get.useQuery(() => ({
 		id: params.appId,
-		tenantSlug: tenantSlug(),
 	}));
-
 
 	useNavbarItems(NAV_ITEMS);
 
@@ -57,4 +54,4 @@ function NotFound() {
 	return <Navigate href="../../apps" />;
 }
 
-const NAV_ITEMS = [{ title: "Application", href: "" }]
+const NAV_ITEMS = [{ title: "Application", href: "" }];

@@ -20,7 +20,6 @@ export default [
 		load: ({ params }) =>
 			trpc.useContext().user.get.ensureData({
 				id: params.userId!,
-				tenantSlug: params.tenantSlug!,
 			}),
 		children: userRoutes,
 	},

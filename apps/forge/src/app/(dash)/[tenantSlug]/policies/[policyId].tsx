@@ -20,7 +20,7 @@ export const [PolicyContextProvider, usePolicy] = createContextProvider(
 );
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ policyId: z.string(), tenantSlug: z.string() });
+	const params = useZodParams({ policyId: z.string() });
 
 	const query = trpc.policy.get.useQuery(() => params);
 

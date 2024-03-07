@@ -44,7 +44,6 @@ export default function Page() {
 				data={policy().data}
 				updatePolicy={(data) =>
 					updatePolicy.mutate({
-						tenantSlug: tenantSlug(),
 						policyId: policy().id,
 						data,
 					})
@@ -56,7 +55,6 @@ export default function Page() {
 }
 
 function DeployButton() {
-	const tenantSlug = useTenantSlug();
 	const policy = usePolicy();
 	const trpcCtx = trpc.useContext();
 
@@ -68,7 +66,6 @@ function DeployButton() {
 					disabled={!(policy().isDirty ?? true)}
 					onMouseEnter={() => {
 						trpcCtx.policy.getDeploySummary.ensureData({
-							tenantSlug: tenantSlug(),
 							policyId: policy().id,
 						});
 					}}
@@ -84,7 +81,6 @@ function DeployButton() {
 }
 
 function DeployDialog() {
-	const tenantSlug = useTenantSlug();
 	const policy = usePolicy();
 
 	const [page, setPage] = createSignal(0);
@@ -92,7 +88,6 @@ function DeployDialog() {
 	const [comment, setComment] = createSignal("");
 
 	const getDeploySummary = trpc.policy.getDeploySummary.useQuery(() => ({
-		tenantSlug: tenantSlug(),
 		policyId: policy().id,
 	}));
 
@@ -142,7 +137,6 @@ function DeployDialog() {
 						variant="destructive"
 						onClick={() =>
 							deployVersion.mutate({
-								tenantSlug: tenantSlug(),
 								policyId: policy().id,
 								comment: comment(),
 							})

@@ -1,15 +1,14 @@
 import { createContextProvider } from "@solid-primitives/context";
 import { ParentProps, Show } from "solid-js";
+import { A, Navigate } from "@solidjs/router";
+import { toast } from "solid-sonner";
+import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
 import { trpc } from "~/lib";
 import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { A, Navigate } from "@solidjs/router";
 import { Badge } from "~/components/ui";
-import { useTenant } from "../../TenantContext";
-import { toast } from "solid-sonner";
 import { useTenantSlug } from "../../[tenantSlug]";
 import { useNavbarItems } from "../../NavItems";
 
@@ -26,7 +25,6 @@ export default function Layout(props: ParentProps) {
 	const tenantSlug = useTenantSlug();
 
 	const query = trpc.user.get.useQuery(() => ({
-		tenantSlug: tenantSlug(),
 		id: params.userId,
 	}));
 
@@ -58,12 +56,12 @@ function NotFound() {
 }
 
 const NAV_ITEMS = [
-		{
-			title: "User",
-			href: "",
-		},
-		{
-			title: "Scope",
-			href: "scope",
-		},
-	]
+	{
+		title: "User",
+		href: "",
+	},
+	{
+		title: "Scope",
+		href: "scope",
+	},
+];

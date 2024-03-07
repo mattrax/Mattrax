@@ -13,7 +13,6 @@ import { useTenantSlug } from "~/app/(dash)/[tenantSlug]";
 export default function Page() {
 	const navigate = useNavigate();
 
-	const tenantSlug = useTenantSlug();
 	const policy = usePolicy();
 
 	const deletePolicy = trpc.policy.delete.useMutation();
@@ -62,7 +61,6 @@ export default function Page() {
 								inputText: policy().name,
 								async onConfirm() {
 									await deletePolicy.mutateAsync({
-										tenantSlug: tenantSlug(),
 										policyId: policy().id,
 									});
 

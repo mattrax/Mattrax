@@ -20,7 +20,6 @@ export default [
 		load: ({ params }) =>
 			trpc.useContext().device.get.ensureData({
 				deviceId: params.deviceId!,
-				tenantSlug: params.tenantSlug!,
 			}),
 		children: deviceRoutes,
 	},

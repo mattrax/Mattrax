@@ -1,13 +1,7 @@
 import { As, Tabs } from "@kobalte/core";
 import { createContextProvider } from "@solid-primitives/context";
 import { A, useMatch, useResolvedPath } from "@solidjs/router";
-import {
-	Accessor,
-	For,
-	Show,
-	createMemo,
-	onCleanup,
-} from "solid-js";
+import { Accessor, For, Show, createMemo, onCleanup } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 
 export type NavItemConfig = {
@@ -17,7 +11,11 @@ export type NavItemConfig = {
 
 const [NavItemsProvider, useContext] = createContextProvider(() => {
 	const [entries, setEntries] = createStore<
-		Array<{ items: Array<NavItemConfig>; value: Accessor<string>, prefix: Accessor<string> }>
+		Array<{
+			items: Array<NavItemConfig>;
+			value: Accessor<string>;
+			prefix: Accessor<string>;
+		}>
 	>([]);
 
 	return { entries, setEntries };
@@ -47,7 +45,11 @@ export function NavItems() {
 									<As
 										component={A}
 										end={item.href === ""}
-										href={item.href === "" ? entry.prefix() : `${entry.prefix()}/${item.href}`}
+										href={
+											item.href === ""
+												? entry.prefix()
+												: `${entry.prefix()}/${item.href}`
+										}
 										activeClass="text-black selected"
 										inactiveClass="text-gray-500"
 										class="py-2 flex text-center align-middle transition duration-[16ms] relative group focus:outline-none"
