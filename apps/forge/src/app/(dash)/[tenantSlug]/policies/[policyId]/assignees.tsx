@@ -24,7 +24,7 @@ export default function Page() {
 	const policy = usePolicy();
 
 	const group = trpc.policy.scope.useQuery(
-		() => ({ id: policy().id, tenantSlug: tenantSlug() }),
+		() => ({ id: policy().id }),
 		() => ({ enabled: true }),
 	);
 
@@ -83,11 +83,8 @@ const columns = [
 ];
 
 function createMembersTable(groupId: Accessor<string>) {
-	const tenantSlug = useTenantSlug();
-	// TODO: Fix this
 	const members = trpc.policy.members.useQuery(() => ({
 		id: groupId(),
-		tenantSlug: tenantSlug(),
 	}));
 
 	return createStandardTable({
@@ -131,7 +128,7 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
 	const tenantSlug = useTenantSlug();
 	// TODO
 	const possibleMembers = trpc.policy.possibleMembers.useQuery(
-		() => ({ id: props.groupId, tenantSlug: tenantSlug() }),
+		() => ({ id: props.groupId }),
 		() => ({ enabled: open() }),
 	);
 
@@ -214,7 +211,6 @@ function AddMemberSheet(props: ParentProps & { groupId: string }) {
 									onClick={async () => {
 										await addMembers.mutateAsync({
 											id: props.groupId,
-											tenantSlug: tenantSlug(),
 											members: table.getSelectedRowModel().rows.map((row) => ({
 												pk: row.original.pk,
 												variant: row.original.variant,

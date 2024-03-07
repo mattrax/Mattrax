@@ -20,13 +20,12 @@ export const [GroupContextProvider, useGroup] = createContextProvider(
 );
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ tenantSlug: z.string(), groupId: z.string() });
+	const params = useZodParams({ groupId: z.string() });
 	const query = trpc.group.get.useQuery(() => ({
-		tenantSlug: params.tenantSlug,
 		id: params.groupId,
 	}));
 
-	useNavbarItems(NAV_ITEMS)
+	useNavbarItems(NAV_ITEMS);
 
 	return (
 		<Show when={query.data !== undefined}>
@@ -53,4 +52,4 @@ function NotFound() {
 	return <Navigate href="../../groups" />;
 }
 
-const NAV_ITEMS = [{ title: "Group", href: "" }]
+const NAV_ITEMS = [{ title: "Group", href: "" }];

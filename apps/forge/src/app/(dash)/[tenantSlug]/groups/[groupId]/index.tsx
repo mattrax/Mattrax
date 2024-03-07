@@ -15,12 +15,9 @@ import {
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~/components/StandardTable";
-import { useZodParams } from "~/lib/useZodParams";
-import { useTenantSlug } from "~/app/(dash)/[tenantSlug]";
 
 export default function Page() {
 	const group = useGroup();
-	const params = useZodParams({ tenantSlug: z.string() });
 	const updateGroup = trpc.group.update.useMutation(() => ({
 		onSuccess: () => group.query.refetch(),
 	}));
@@ -35,7 +32,6 @@ export default function Page() {
 
 		toast.promise(
 			updateGroup.mutateAsync({
-				...params,
 				id: group().id,
 				name,
 			}),
@@ -136,10 +132,8 @@ export const columns = [
 ];
 
 function createMembersTable(groupId: Accessor<string>) {
-	const tenantSlug = useTenantSlug();
 	const members = trpc.group.members.useQuery(() => ({
 		id: groupId(),
-		tenantSlug: tenantSlug(),
 	}));
 
 	return createStandardTable({

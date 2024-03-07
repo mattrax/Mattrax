@@ -12,3 +12,9 @@ export function getEmailDomain(email: string) {
 	const segments = email.split("@");
 	return segments[segments.length - 1]!;
 }
+
+export function omit<T, K extends string>(obj: T, keys: K[]): Omit<T, K> {
+	keys.forEach((k) => ((obj as any)[k] = undefined));
+
+	return obj;
+}

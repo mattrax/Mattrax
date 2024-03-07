@@ -28,9 +28,8 @@ const AddMemberTableOptions = {
 export function AddMemberSheet(props: ParentProps & { groupId: string }) {
 	const [open, setOpen] = createSignal(false);
 
-	const tenantSlug = useTenantSlug();
 	const possibleMembers = trpc.group.possibleMembers.useQuery(
-		() => ({ id: props.groupId, tenantSlug: tenantSlug() }),
+		() => ({ id: props.groupId }),
 		() => ({ enabled: open() }),
 	);
 
@@ -114,7 +113,6 @@ export function AddMemberSheet(props: ParentProps & { groupId: string }) {
 									onClick={async () => {
 										await addMembers.mutateAsync({
 											id: props.groupId,
-											tenantSlug: tenantSlug(),
 											members: table.getSelectedRowModel().rows.map((row) => ({
 												pk: row.original.pk,
 												variant: row.original.variant,

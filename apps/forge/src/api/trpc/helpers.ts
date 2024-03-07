@@ -79,10 +79,28 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 
 	if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
+	let tenantList: Array<{ pk: number }> | undefined;
+
+	const getTenantList = async () => {
+		if (!tenantList)
+			tenantList = await db
+				.select({ pk: tenants.pk })
+				.from(tenants)
+				.where(eq(tenantAccounts.accountPk, data.account.pk))
+				.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk));
+
+		return tenantList;
+	};
+
 	return opts.next({
 		ctx: {
 			...opts.ctx,
 			...data,
+			ensureTenantAccount: async (tenantPk: number) => {
+				const tenantList = await getTenantList();
+				if (!tenantList.find((t) => t.pk === tenantPk))
+					throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
+			},
 		},
 	});
 });
@@ -102,25 +120,31 @@ export const superAdminProcedure = authedProcedure.use((opts) => {
 
 // Authenticated procedure w/ a tenant
 export const tenantProcedure = authedProcedure
-	.input(z.object({ tenantSlug: z.string() }))
+	.input(
+		z.object({
+			tenantSlug: z.string(),
+		}),
+	)
 	.use(async (opts) => {
 		const { ctx, input } = opts;
 
-		const query = (
-			await db
-				.select()
-				.from(tenants)
-				.where(
-					and(
-						eq(tenants.slug, input.tenantSlug),
-						eq(tenantAccounts.accountPk, ctx.account.pk),
-					),
-				)
-				.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk))
-		)[0];
+		const [tenant] = await db
+			.select({ pk: tenants.pk, name: tenants.name, ownerPk: tenants.ownerPk })
+			.from(tenants)
+			.where(
+				and(
+					eq(tenantAccounts.accountPk, ctx.account.pk),
+					eq(tenants.slug, input.tenantSlug),
+				),
+			)
+			.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk));
 
-		if (query === undefined)
-			throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
+		if (!tenant) throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
 
-		return opts.next({ ctx: { ...ctx, tenant: query.tenant } });
+		return opts.next({
+			ctx: {
+				...ctx,
+				tenant,
+			},
+		});
 	});

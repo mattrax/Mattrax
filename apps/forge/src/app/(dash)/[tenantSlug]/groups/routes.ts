@@ -20,7 +20,6 @@ export default [
 		load: ({ params }) =>
 			trpc.useContext().group.get.ensureData({
 				id: params.groupId!,
-				tenantSlug: params.tenantSlug!,
 			}),
 		children: groupRoutes,
 	},

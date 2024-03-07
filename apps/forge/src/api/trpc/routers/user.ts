@@ -2,8 +2,9 @@ import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { sendEmail } from "~/api/emails";
-import { db, identityProviders, users } from "~/db";
-import { createTRPCRouter, tenantProcedure } from "../helpers";
+import { db, identityProviders, tenantAccounts, tenants, users } from "~/db";
+import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { omit } from "~/api/utils";
 
 export const userRouter = createTRPCRouter({
 	// TODO: Copy after `devicesRouter`.
@@ -41,7 +42,7 @@ export const userRouter = createTRPCRouter({
 					eq(users.providerPk, identityProviders.pk),
 				);
 		}),
-	get: tenantProcedure
+	get: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
 			const [user] = await db
@@ -54,17 +55,20 @@ export const userRouter = createTRPCRouter({
 						variant: identityProviders.variant,
 						remoteId: identityProviders.remoteId,
 					},
+					tenantPk: users.tenantPk,
 				})
 				.from(users)
-				.where(and(eq(users.tenantPk, ctx.tenant.pk), eq(users.id, input.id)))
+				.where(eq(users.id, input.id))
 				.innerJoin(
 					identityProviders,
 					eq(users.providerPk, identityProviders.pk),
 				);
 
-			return user ?? null;
+			if (!user) return null;
+			await ctx.ensureTenantAccount(user.tenantPk);
+			return omit(user, ["tenantPk"]);
 		}),
-	invite: tenantProcedure
+	invite: authedProcedure
 		.input(z.object({ id: z.string(), message: z.string().optional() }))
 		.mutation(async ({ ctx, input }) => {
 			const user = await db.query.users.findFirst({
@@ -72,8 +76,8 @@ export const userRouter = createTRPCRouter({
 			});
 			if (!user)
 				throw new TRPCError({
-					code: "PRECONDITION_FAILED",
-					message: "User doesn't exist",
+					code: "NOT_FOUND",
+					message: "user",
 				});
 
 			// TODO: "On behalf of {tenant_name}" in the content + render `input.message` inside the email.

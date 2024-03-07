@@ -75,7 +75,6 @@ export default function Page() {
 function InviteUserDialog(props: ParentProps<{ id: string; email: string }>) {
 	const [open, setOpen] = createSignal(false);
 
-	const tenantSlug = useTenantSlug();
 	const mutation = trpc.user.invite.useMutation();
 
 	const form = createZodForm({
@@ -84,7 +83,6 @@ function InviteUserDialog(props: ParentProps<{ id: string; email: string }>) {
 			await mutation.mutateAsync({
 				id: props.id,
 				message: value.message,
-				tenantSlug: tenantSlug(),
 			});
 			setOpen(false);
 		},

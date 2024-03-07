@@ -20,7 +20,6 @@ export default [
 		load: ({ params }) =>
 			trpc.useContext().policy.get.ensureData({
 				policyId: params.policyId!,
-				tenantSlug: params.tenantSlug!,
 			}),
 		children: policyRoutes,
 	},

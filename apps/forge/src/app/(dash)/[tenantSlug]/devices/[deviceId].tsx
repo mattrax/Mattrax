@@ -20,10 +20,10 @@ export const [DeviceContextProvider, useDevice] = createContextProvider(
 );
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ tenantSlug: z.string(), deviceId: z.string() });
+	const params = useZodParams({ deviceId: z.string() });
 	const query = trpc.device.get.useQuery(() => params);
 
-	useNavbarItems(NAV_ITEMS)
+	useNavbarItems(NAV_ITEMS);
 
 	return (
 		<Show when={query.data !== undefined}>
@@ -51,17 +51,17 @@ function NotFound() {
 }
 
 const NAV_ITEMS = [
-		{ title: "Device", href: "" },
-		{
-			title: "Scope",
-			href: "scope",
-		},
-		{
-			title: "Inventory",
-			href: "inventory",
-		},
-		{
-			title: "Settings",
-			href: "settings",
-		},
-	]
+	{ title: "Device", href: "" },
+	{
+		title: "Scope",
+		href: "scope",
+	},
+	{
+		title: "Inventory",
+		href: "inventory",
+	},
+	{
+		title: "Settings",
+		href: "settings",
+	},
+];
