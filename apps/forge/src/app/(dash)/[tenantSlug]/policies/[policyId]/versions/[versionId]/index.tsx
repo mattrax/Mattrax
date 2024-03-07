@@ -4,7 +4,6 @@ export default function Page() {
 
 // import { Show, For, createEffect, createSignal } from "solid-js";
 // import { z } from "zod";
-// import { useTenant } from "~/app/(dash)/[tenantSlug]";
 // import { Form, InputField, createZodForm } from "~/components/forms";
 // import {
 // 	Button,

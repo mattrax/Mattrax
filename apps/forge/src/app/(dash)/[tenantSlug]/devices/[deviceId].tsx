@@ -2,7 +2,7 @@ import { redirect, useParams } from "@solidjs/router";
 import { ParentProps, Suspense } from "solid-js";
 import FlatTabs from "~/components/ui/flat-tabs";
 import { trpc } from "~/lib";
-import { useTenant } from "../../[tenantSlug]";
+import { useTenant } from "../../TenantContext";
 
 // TODO: Bring this back
 // const fetchDevice = cache(

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { useTenant } from "~/app/(dash)/[tenantSlug]";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { Button, Label } from "~/components/ui";
 import { trpc } from "~/lib";
@@ -9,6 +8,7 @@ import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { usePolicy } from "../[policyId]";
 import { useNavigate } from "@solidjs/router";
 import { startTransition } from "solid-js";
+import { useTenant } from "~/app/(dash)/TenantContext";
 
 export default function Page() {
 	const navigate = useNavigate();

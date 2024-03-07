@@ -6,7 +6,7 @@ import { Form, createZodForm } from "~/components/forms";
 import { InputField } from "~/components/forms";
 import { Button, Card, CardContent, CardHeader } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useAuth } from "../(dash)";
+import { useAuth } from "./AuthContext";
 
 export default function Page() {
 	const auth = useAuth();

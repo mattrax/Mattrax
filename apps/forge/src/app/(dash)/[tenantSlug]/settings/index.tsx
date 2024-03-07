@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { useAuth } from "~/app/(dash)";
 import { Form, createZodForm } from "~/components/forms";
 import { InputField } from "~/components/forms/InputField";
 import {
@@ -14,8 +13,9 @@ import {
 	Switch,
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
-import { useTenant } from "../../[tenantSlug]";
 import { DeleteTenantButton } from "./DeleteTenantButton";
+import { useAuth } from "../../AuthContext";
+import { useTenant } from "../../TenantContext";
 
 export default function Page() {
 	return (

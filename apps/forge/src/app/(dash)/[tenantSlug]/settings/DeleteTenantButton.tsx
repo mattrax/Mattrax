@@ -4,7 +4,7 @@ import { startTransition } from "solid-js";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { Button } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useTenant } from "../../[tenantSlug]";
+import { useTenant } from "../../TenantContext";
 
 export function DeleteTenantButton() {
 	const deleteTenant = trpc.tenant.delete.useMutation();

@@ -13,14 +13,13 @@ import {
 } from "~/components/ui";
 import { CreateTenantDialog } from "./CreateTenantDialog";
 import { A } from "@solidjs/router";
-import { useTenant } from "../../[tenantSlug]";
-import { useAuth } from "~/app/(dash)";
+import { useAuth } from "../../AuthContext";
+import { useTenant } from "../../TenantContext";
 
 // TODO: When shrinking window and scrolling to move the trigger offscreen the popover comes with it. This is Kolate behavior but I don't like it.
 // TODO: Transition on dropdown open/close
 
 export type TenantSwitcherProps = {
-	refetchSession: () => Promise<void>;
 	setActiveTenant: (id: string) => void;
 };
 

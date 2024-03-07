@@ -3,12 +3,9 @@ import { A, useMatch, useNavigate, useResolvedPath } from "@solidjs/router";
 import { For, JSX, ParentProps } from "solid-js";
 
 import { createSignal } from "solid-js";
-import { useAuth } from "~/app/(dash)";
 import {
 	Avatar,
 	AvatarFallback,
-	AvatarImage,
-	Badge,
 	Button,
 	DropdownMenu,
 	DropdownMenuContent,
@@ -25,8 +22,9 @@ import { trpc } from "~/lib";
 import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
 import Logo from "~/assets/MATTRAX.png";
 import { createMemo } from "solid-js";
-import { useTenant } from "../../[tenantSlug]";
 import { Breadcrumbs } from "~/components/Breadcrumbs";
+import { AuthContext, useAuth } from "../../AuthContext";
+import { TenantContext } from "../../TenantContext";
 
 type NavbarItem = {
 	title: string;
@@ -116,8 +114,6 @@ const groupItems: NavbarItem[] = [
 ];
 
 export default function Component(props: TenantSwitcherProps): JSX.Element {
-	const auth = useAuth();
-
 	const path = useResolvedPath(() => "");
 	const tenantMatch = useMatch(() => `${path()}/*rest`);
 	const userMatch = useMatch(() => `${path()}/users/:userId/*rest`);
@@ -225,70 +221,80 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 					<img src={Logo} class="h-5" alt="Mattrax icon" />
 				</A>
 				<div class="w-1" />
-				<TenantSwitcher {...props} />
+				<AuthContext>
+					<TenantContext>
+						<TenantSwitcher {...props} />
+					</TenantContext>
+				</AuthContext>
 				<Breadcrumbs />
-				<div class="flex-1" />
-				<FeedbackPopover>
-					<As
-						component={Button}
-						variant="outline"
-						size="sm"
-						class="mr-4 hidden md:block"
-					>
-						Feedback
-					</As>
-				</FeedbackPopover>
 
-				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<As component={Avatar}>
-							{/* TODO: Properly hook this up + Gravatar support */}
-							{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
-							<AvatarFallback>{getInitials(auth().name)}</AvatarFallback>
+				<div class="flex-1" />
+
+				<AuthContext>
+					<FeedbackPopover>
+						<As
+							component={Button}
+							variant="outline"
+							size="sm"
+							class="mr-4 hidden md:block"
+						>
+							Feedback
 						</As>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent>
-						<DropdownMenuLabel>{auth().email}</DropdownMenuLabel>
-						<DropdownMenuSeparator />
-						<DropdownMenuItem asChild>
-							<As component={A} href="/profile">
-								Profile
+					</FeedbackPopover>
+
+					<DropdownMenu>
+						<DropdownMenuTrigger asChild>
+							<As component={Avatar}>
+								{/* TODO: Properly hook this up + Gravatar support */}
+								{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
+								<AvatarFallback>{getInitials(useAuth()().name)}</AvatarFallback>
 							</As>
-						</DropdownMenuItem>
-						<DropdownMenuItem onClick={() => logout.mutate()}>
-							Logout
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent>
+							<DropdownMenuLabel>{useAuth()().email}</DropdownMenuLabel>
+							<DropdownMenuSeparator />
+							<DropdownMenuItem asChild>
+								<As component={A} href="/profile">
+									Profile
+								</As>
+							</DropdownMenuItem>
+							<DropdownMenuItem onClick={() => logout.mutate()}>
+								Logout
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</AuthContext>
 			</div>
 
-			<nav class="text-white sticky border-b border-gray-300 top-0 z-10 bg-white -mt-2 overflow-x-scroll overflow-y-hidden">
-				<Tabs.Root value={matches().value()} class="mx-2 relative">
-					<Tabs.List class="flex flex-row">
-						<For each={matches().items}>
-							{(item) => (
-								<Tabs.Trigger asChild value={item.value}>
-									<As
-										component={A}
-										end={item.end}
-										href={item.href}
-										activeClass="text-black selected"
-										inactiveClass="text-gray-500"
-										class="py-2 flex text-center align-middle transition duration-[16ms] relative group focus:outline-none"
-									>
-										<div class="text-sm rounded px-3 py-1.5 hover:bg-black/5 hover:text-black group-focus-visible:bg-black/5 group-focus-visible:text-black group-focus:outline-none">
-											{item.title}
-										</div>
-									</As>
-								</Tabs.Trigger>
-							)}
-						</For>
-						<Tabs.Indicator class="absolute transition-all duration-200 -bottom-px flex flex-row px-2 h-[2px]">
-							<div class="bg-brand flex-1" />
-						</Tabs.Indicator>
-					</Tabs.List>
-				</Tabs.Root>
-			</nav>
+			<Tabs.Root
+				as="nav"
+				value={matches().value()}
+				class="text-white sticky top-0 border-b border-gray-300 z-10 bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
+			>
+				<Tabs.List class="flex flex-row px-2">
+					<For each={matches().items}>
+						{(item) => (
+							<Tabs.Trigger asChild value={item.value}>
+								<As
+									component={A}
+									end={item.end}
+									href={item.href}
+									activeClass="text-black selected"
+									inactiveClass="text-gray-500"
+									class="py-2 flex text-center align-middle transition duration-[16ms] relative group focus:outline-none"
+								>
+									<div class="text-sm rounded px-3 py-1.5 hover:bg-black/5 hover:text-black group-focus-visible:bg-black/5 group-focus-visible:text-black group-focus:outline-none transition-colors duration-75">
+										{item.title}
+									</div>
+								</As>
+							</Tabs.Trigger>
+						)}
+					</For>
+				</Tabs.List>
+				<Tabs.Indicator class="absolute transition-all duration-200 -bottom-px flex flex-row px-2 h-[2px]">
+					<div class="bg-brand flex-1" />
+				</Tabs.Indicator>
+			</Tabs.Root>
 		</>
 	);
 }

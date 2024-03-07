@@ -13,9 +13,9 @@ import {
 } from "~/components/StandardTable";
 import { Button, Input } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
-import { useTenant } from "../../[tenantSlug]";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
 import { createTimeAgo } from "@solid-primitives/date";
+import { useTenant } from "../../TenantContext";
 
 const column = createColumnHelper<RouterOutput["device"]["list"][number]>();
 

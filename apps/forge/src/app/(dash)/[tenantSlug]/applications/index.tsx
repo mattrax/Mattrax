@@ -48,12 +48,9 @@ export default function Page() {
 
 	if (!isDebugMode()) {
 		return (
-			<div class="px-4 py-8 w-full max-w-5xl mx-auto gap-4 flex flex-col">
-				<div class="flex flex-row justify-between">
-					<h1 class="text-3xl font-bold mb-4">Applications</h1>
-				</div>
+			<PageLayout heading={<PageLayoutHeading>Applications</PageLayoutHeading>}>
 				<h1 class="text-muted-foreground opacity-70">Coming soon...</h1>
-			</div>
+			</PageLayout>
 		);
 	}
 
@@ -183,7 +180,7 @@ function AppleAppStoreDemo() {
 				<Suspense fallback={<div>Loading...</div>}>
 					{searchQuery.data?.results.map((app: any) => (
 						<div class="flex flex-col">
-							<img alt="App Artwork" src={app.artworkUrl100} />
+							<img alt="App Artwork" class="w-56" src={app.artworkUrl100} />
 							<div class="text-sm">{app.trackName}</div>
 							<div class="text-xs">{app.sellerName}</div>
 						</div>

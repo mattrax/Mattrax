@@ -35,7 +35,6 @@ import {
 	selectCheckboxColumn,
 } from "~/components/StandardTable";
 import { Button } from "~/components/ui";
-import { useTenant } from "../../[tenantSlug]";
 
 function createGroupsTable() {
 	const tenant = useTenant();
@@ -109,6 +108,7 @@ import {
 } from "~/components/ui";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
+import { useTenant } from "../../TenantContext";
 
 function CreateGroupDialog(props: ParentProps) {
 	const tenant = useTenant();

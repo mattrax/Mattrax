@@ -1,5 +1,5 @@
 import { As } from "@kobalte/core";
-import { A, useNavigate } from "@solidjs/router";
+import { A } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Show, Suspense } from "solid-js";
 import { RouterOutput } from "~/api/trpc";
@@ -21,8 +21,8 @@ import {
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
-import { useTenant } from "../../[tenantSlug]";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
+import { useTenant } from "../../TenantContext";
 
 const column = createColumnHelper<RouterOutput["user"]["list"][number]>();
 

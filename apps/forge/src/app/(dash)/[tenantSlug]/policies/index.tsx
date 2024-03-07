@@ -20,7 +20,6 @@ import {
 	Separator,
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
-import { useTenant } from "../../[tenantSlug]";
 
 const column = createColumnHelper<RouterOutput["policy"]["list"][number]>();
 
@@ -104,6 +103,7 @@ import { z } from "zod";
 
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
+import { useTenant } from "../../TenantContext";
 
 function CreatePolicyButton() {
 	const tenant = useTenant();

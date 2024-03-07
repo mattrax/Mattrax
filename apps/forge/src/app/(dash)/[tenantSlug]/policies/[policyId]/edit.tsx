@@ -18,10 +18,10 @@ import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { usePolicy } from "../[policyId]";
 import { As } from "@kobalte/core";
 import { trpc } from "~/lib";
-import { useTenant } from "~/app/(dash)/[tenantSlug]";
 import { For, Show, Suspense, createResource, createSignal } from "solid-js";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import { z } from "zod";
+import { useTenant } from "~/app/(dash)/TenantContext";
 
 export default function Page() {
 	const policy = usePolicy();

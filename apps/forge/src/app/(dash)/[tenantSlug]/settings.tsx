@@ -1,4 +1,4 @@
-import { For, type JSX, ParentProps } from "solid-js";
+import { For, type JSX, ParentProps, Suspense } from "solid-js";
 
 import { A } from "@solidjs/router";
 import { PageLayout, PageLayoutHeading } from "./PageLayout";
@@ -27,7 +27,9 @@ export default function Layout(props: ParentProps) {
 						</For>
 					</ul>
 				</nav>
-				<main class="flex-1 overflow-y-auto px-4">{props.children}</main>
+				<main class="flex-1 overflow-y-auto px-4">
+					<Suspense>{props.children}</Suspense>
+				</main>
 			</div>
 		</PageLayout>
 	);

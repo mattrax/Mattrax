@@ -1,4 +1,3 @@
-import Counter from "~/components/Counter";
 import {
 	Avatar,
 	AvatarFallback,
@@ -10,10 +9,10 @@ import {
 	CardTitle,
 } from "~/components/ui";
 import { isDebugMode, trpc, untrackScopeFromSuspense } from "~/lib";
-import { useTenant } from "../[tenantSlug]";
 import { PageLayout, PageLayoutHeading } from "./PageLayout";
 import type { StatsTarget } from "~/api/trpc/routers/tenant";
 import { StatItem } from "~/components/StatItem";
+import { useTenant } from "../TenantContext";
 
 export default function Page() {
 	const tenant = useTenant();

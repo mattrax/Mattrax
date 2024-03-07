@@ -19,7 +19,7 @@ import {
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
-import { useTenant } from "../../[tenantSlug]";
+import { useTenant } from "../../TenantContext";
 
 function UserNotFound() {
 	toast.error("User not found");

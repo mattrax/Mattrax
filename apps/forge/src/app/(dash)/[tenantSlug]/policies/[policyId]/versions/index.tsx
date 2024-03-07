@@ -18,7 +18,6 @@ import { PageLayout, PageLayoutHeading } from "../../../PageLayout";
 // 	createSearchParamPagination,
 // 	createStandardTable,
 // } from "~/components/StandardTable";
-// import { useTenant } from "~/app/(dash)/[tenantSlug]";
 // import { useZodParams } from "~/lib/useZodParams";
 // import { z } from "zod";
 // import { createTimeAgo } from "@solid-primitives/date";

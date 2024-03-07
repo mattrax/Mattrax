@@ -17,8 +17,8 @@ type UserResult = {
 	tenants: Awaited<ReturnType<typeof fetchTenants>>;
 };
 
-const fetchTenants = async (accountPk: number) =>
-	await db
+const fetchTenants = (accountPk: number) =>
+	db
 		.select({
 			id: tenants.id,
 			name: tenants.name,

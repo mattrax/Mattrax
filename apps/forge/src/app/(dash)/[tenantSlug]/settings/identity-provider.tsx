@@ -16,8 +16,8 @@ import {
 } from "~/components/ui";
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
-import { useTenant } from "../../[tenantSlug]";
 import ENTRA_ID_ICON from "~/assets/EntraIDLogo.svg";
+import { useTenant } from "../../TenantContext";
 
 export default function Page() {
 	return (
@@ -27,8 +27,10 @@ export default function Page() {
 				Sync user accounts and enroll devices by connecting an identity
 				provider.
 			</p>
-			<IdentityProviderCard />
-			<Domains />
+			<Suspense>
+				<IdentityProviderCard />
+				<Domains />
+			</Suspense>
 		</div>
 	);
 }

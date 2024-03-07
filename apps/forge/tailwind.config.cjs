@@ -25,6 +25,6 @@ export default {
       },
     },
   },
-  plugins: [require("@kobalte/tailwindcss")],
+  plugins: [require("@kobalte/tailwindcss"), require("tailwind-scrollbar")],
   presets: [require("./ui.preset.js")],
 };

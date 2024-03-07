@@ -1,7 +1,6 @@
 import { For, Suspense } from "solid-js";
 import { z } from "zod";
 
-import { useAuth } from "~/app/(dash)";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { Form, InputField, createZodForm } from "~/components/forms";
 import {
@@ -14,7 +13,8 @@ import {
 	CardTitle,
 } from "~/components/ui";
 import { trpc } from "~/lib";
-import { useTenant } from "../../[tenantSlug]";
+import { useTenant } from "../../TenantContext";
+import { useAuth } from "../../AuthContext";
 
 export default function Page() {
 	const auth = useAuth();

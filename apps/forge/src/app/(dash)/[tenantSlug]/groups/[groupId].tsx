@@ -6,7 +6,6 @@ import { z } from "zod";
 import { Badge, Button } from "~/components/ui";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
-import { useTenant } from "../../[tenantSlug]";
 import { AddMemberSheet } from "./AddMemberSheet";
 import {
 	StandardTable,
@@ -16,6 +15,7 @@ import {
 import { toast } from "solid-sonner";
 import { Dynamic } from "solid-js/web";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
+import { useTenant } from "../../TenantContext";
 
 export default function Page() {
 	const routeParams = useZodParams({ groupId: z.string() });

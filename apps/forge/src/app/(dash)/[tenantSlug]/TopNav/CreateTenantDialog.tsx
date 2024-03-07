@@ -15,7 +15,6 @@ import { trpc } from "~/lib";
 
 export function CreateTenantDialog(
 	props: {
-		refetchSession: () => Promise<void>;
 		setActiveTenant: (id: string) => void;
 	} & ParentProps,
 ) {
@@ -25,7 +24,7 @@ export function CreateTenantDialog(
 		onSuccess: async (tenantId) => {
 			// TODO: Get the data back in the response instead of a separate request
 			// Session also holds tenants
-			await props.refetchSession();
+			// await props.refetchSession();
 			props.setActiveTenant(tenantId);
 			setOpen(false);
 

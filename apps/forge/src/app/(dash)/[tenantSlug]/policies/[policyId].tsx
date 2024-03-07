@@ -2,13 +2,13 @@ import { createContextProvider } from "@solid-primitives/context";
 import { ParentProps, Show } from "solid-js";
 
 import { useZodParams } from "~/lib/useZodParams";
-import { useTenant } from "../../[tenantSlug]";
 import { z } from "zod";
 import { trpc } from "~/lib";
 import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
 import { A } from "@solidjs/router";
 import { Badge } from "~/components/ui";
+import { useTenant } from "../../TenantContext";
 
 export const [PolicyContextProvider, usePolicy] = createContextProvider(
 	(props: {

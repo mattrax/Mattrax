@@ -101,7 +101,6 @@ function createMembersTable(groupId: Accessor<string>) {
 }
 
 import { useQueryClient } from "@tanstack/solid-query";
-import { useTenant } from "~/app/(dash)/[tenantSlug]";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import {
 	StandardTable,
@@ -119,6 +118,7 @@ import {
 } from "~/components/ui/sheet";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { usePolicy } from "../[policyId]";
+import { useTenant } from "~/app/(dash)/TenantContext";
 
 const AddMemberTableOptions = {
 	all: "All",

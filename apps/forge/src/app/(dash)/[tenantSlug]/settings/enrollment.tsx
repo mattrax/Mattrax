@@ -7,7 +7,7 @@ import {
 	Switch,
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
-import { useTenant } from "../../[tenantSlug]";
+import { useTenant } from "../../TenantContext";
 
 export default function Page() {
 	return (

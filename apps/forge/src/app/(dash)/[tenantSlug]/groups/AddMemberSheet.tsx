@@ -13,9 +13,9 @@ import {
 	SheetTitle,
 	SheetTrigger,
 } from "~/components/ui/sheet";
-import { useTenant } from "../../[tenantSlug]";
 import { columns } from "./[groupId]";
 import { GroupAssignableVariant } from "~/db";
+import { useTenant } from "../../TenantContext";
 
 const AddMemberTableOptions = {
 	all: "All",

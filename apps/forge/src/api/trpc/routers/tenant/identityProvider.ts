@@ -11,6 +11,7 @@ import { createTRPCRouter, tenantProcedure } from "../../helpers";
 
 export const identityProviderRouter = createTRPCRouter({
 	get: tenantProcedure.query(async ({ ctx }) => {
+		await new Promise((res) => setTimeout(res, 1000));
 		return (
 			(await db.query.identityProviders.findFirst({
 				where: eq(identityProviders.tenantPk, ctx.tenant.pk),
