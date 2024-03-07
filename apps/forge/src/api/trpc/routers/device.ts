@@ -3,28 +3,21 @@ import { z } from "zod";
 
 import { db, devices } from "~/db";
 import { createTRPCRouter, tenantProcedure } from "../helpers";
-// import { graphClient } from "../microsoft";
-// import type { ManagedDevice } from "@microsoft/microsoft-graph-types";
 
 export const deviceRouter = createTRPCRouter({
 	list: tenantProcedure.query(async ({ ctx }) => {
-		return (
-			await db
-				.select({
-					id: devices.pk,
-					name: devices.name,
-					operatingSystem: devices.operatingSystem,
-					serialNumber: devices.serialNumber,
-					lastSynced: devices.lastSynced,
-					owner: devices.owner, // TODO: Fetch `owner` name
-					enrolledAt: devices.enrolledAt,
-				})
-				.from(devices)
-				.where(and(eq(devices.tenantPk, ctx.tenant.pk)))
-		).map((d) => ({
-			...d,
-			id: "device",
-		}));
+		return await db
+			.select({
+				id: devices.id,
+				name: devices.name,
+				operatingSystem: devices.operatingSystem,
+				serialNumber: devices.serialNumber,
+				lastSynced: devices.lastSynced,
+				owner: devices.owner, // TODO: Fetch `owner` name
+				enrolledAt: devices.enrolledAt,
+			})
+			.from(devices)
+			.where(and(eq(devices.tenantPk, ctx.tenant.pk)));
 	}),
 
 	get: tenantProcedure
