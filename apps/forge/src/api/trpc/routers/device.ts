@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { db, devices } from "~/db";
+import { db, devices, users } from "~/db";
 import { createTRPCRouter, tenantProcedure } from "../helpers";
 
 export const deviceRouter = createTRPCRouter({
@@ -27,13 +27,21 @@ export const deviceRouter = createTRPCRouter({
 				.select({
 					id: devices.pk,
 					name: devices.name,
-					// operatingSystem: devices.operatingSystem,
-					// serialNumber: devices.serialNumber,
-					// lastSynced: devices.lastSynced,
-					// owner: devices.owner, // TODO: Fetch `owner` name
-					// enrolledAt: devices.enrolledAt,
+					operatingSystem: devices.operatingSystem,
+					serialNumber: devices.serialNumber,
+					manufacturer: devices.manufacturer,
+					azureADDeviceId: devices.azureADDeviceId,
+					freeStorageSpaceInBytes: devices.freeStorageSpaceInBytes,
+					totalStorageSpaceInBytes: devices.totalStorageSpaceInBytes,
+					imei: devices.imei,
+					model: devices.model,
+					lastSynced: devices.lastSynced,
+					enrolledAt: devices.enrolledAt,
+					ownerId: users.id,
+					ownerName: users.name,
 				})
 				.from(devices)
+				.leftJoin(users, eq(users.pk, devices.owner))
 				.where(
 					and(
 						eq(devices.id, input.deviceId),

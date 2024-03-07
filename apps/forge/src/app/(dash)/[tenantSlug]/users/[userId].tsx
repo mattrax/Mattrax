@@ -8,7 +8,6 @@ import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
 import { A, Navigate } from "@solidjs/router";
 import { Badge } from "~/components/ui";
-import { useTenant } from "../../TenantContext";
 import { toast } from "solid-sonner";
 import { useTenantSlug } from "../../[tenantSlug]";
 import { useNavbarItems } from "../../NavItems";
@@ -58,12 +57,12 @@ function NotFound() {
 }
 
 const NAV_ITEMS = [
-		{
-			title: "User",
-			href: "",
-		},
-		{
-			title: "Scope",
-			href: "scope",
-		},
-	]
+	{
+		title: "User",
+		href: "",
+	},
+	{
+		title: "Scope",
+		href: "scope",
+	},
+];
