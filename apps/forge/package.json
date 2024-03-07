@@ -2,7 +2,6 @@
   "name": "@mattrax/forge",
   "type": "module",
   "private": true,
-  "sideEffects": false,
   "scripts": {
     "dev": "vinxi dev --host 0.0.0.0",
     "build": "vinxi build",
