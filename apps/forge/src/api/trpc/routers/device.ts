@@ -28,6 +28,7 @@ export const deviceRouter = createTRPCRouter({
 				.select({
 					id: devices.id,
 					name: devices.name,
+					description: devices.description,
 					operatingSystem: devices.operatingSystem,
 					serialNumber: devices.serialNumber,
 					manufacturer: devices.manufacturer,
