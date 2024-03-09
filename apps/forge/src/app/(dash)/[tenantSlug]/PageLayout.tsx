@@ -27,5 +27,7 @@ export function PageLayout(
 }
 
 export function PageLayoutHeading(props: ComponentProps<"h1">) {
-	return <h1 {...props} class={clsx("text-3xl font-bold", props.class)} />;
+	return <h1 {...props} class={clsx("text-3xl font-bold", props.class)}>
+		{props.children}
+	</h1>;
 }

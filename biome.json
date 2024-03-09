@@ -2,9 +2,12 @@
 	"$schema": "https://biomejs.dev/schemas/1.5.3/schema.json",
 	"files": {
 		"include": [
-			"apps/forge/src/**/*.js",
-			"apps/forge/src/**/*.ts",
-			"apps/forge/src/**/*.tsx"
+			"apps/*/src/**/*.js",
+			"apps/*/src/**/*.ts",
+			"apps/*/src/**/*.tsx",
+			"packages/*/src/**/*.js",
+			"packages/*/src/**/*.ts",
+			"packages/*/src/**/*.tsx"
 		],
 		"ignore": [".next", "auto-import.d.ts"]
 	},

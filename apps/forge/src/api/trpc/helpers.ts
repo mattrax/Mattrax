@@ -1,26 +1,27 @@
 import { TRPCError, initTRPC } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { User } from "lucia";
-import superjson from "superjson";
 import {
-	H3Event,
 	appendResponseHeader,
 	getCookie,
+	getEvent,
 	setCookie,
 } from "vinxi/server";
 import { ZodError, z } from "zod";
 
 import { db, tenantAccounts, tenants } from "~/db";
 import { lucia } from "../auth";
+import { seroval } from "@mattrax/trpc-solid-start";
 
-export const createTRPCContext = (event: H3Event) => {
+export const createContext = () => {
 	return {
 		db,
-		event,
+		event: getEvent(),
 	};
 };
 
-const t = initTRPC.context<typeof createTRPCContext>().create({
+const t = initTRPC.context<typeof createContext>().create({
+	transformer: seroval,
 	errorFormatter({ shape, error }) {
 		return {
 			...shape,

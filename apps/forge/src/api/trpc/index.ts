@@ -10,7 +10,7 @@ import { policyRouter } from "./routers/policy";
 import { tenantRouter } from "./routers/tenant/index";
 import { userRouter } from "./routers/user";
 
-export const appRouter = createTRPCRouter({
+export const router = createTRPCRouter({
 	app: applicationRouter,
 	auth: authRouter,
 	device: deviceRouter,
@@ -22,9 +22,9 @@ export const appRouter = createTRPCRouter({
 	meta: metaRouter,
 });
 
-export type AppRouter = typeof appRouter;
+export type Router = typeof router;
 
-export type RouterInput = inferRouterInputs<AppRouter>;
-export type RouterOutput = inferRouterOutputs<AppRouter>;
+export type RouterInput = inferRouterInputs<Router>;
+export type RouterOutput = inferRouterOutputs<Router>;
 
 export * from "./helpers";

@@ -2,7 +2,7 @@ import { TRPCClientError } from "@trpc/client";
 import { type ClassValue, clsx } from "clsx";
 import { Accessor, createEffect, createSignal } from "solid-js";
 import { twMerge } from "tailwind-merge";
-import { type AppRouter } from "~/api";
+import { type Router } from "~/api";
 
 export * from "./trpc";
 
@@ -26,7 +26,7 @@ export function SuspenseError(props: { name: string }) {
 // https://trpc.io/docs/client/vanilla/infer-types#infer-trpcclienterror-types
 export function isTRPCClientError(
 	cause: unknown,
-): cause is TRPCClientError<AppRouter> {
+): cause is TRPCClientError<Router> {
 	return cause instanceof TRPCClientError;
 }
 
