@@ -3,7 +3,7 @@ import type { APIHandler } from "@solidjs/start/server";
 import { app } from "~/api/server";
 
 const createHandler = (): APIHandler => async (event) => {
-	return await app.fetch(event.nativeEvent, {
+	return await app.fetch(event.request, {
 		h3Event: event.nativeEvent,
 	});
 };
