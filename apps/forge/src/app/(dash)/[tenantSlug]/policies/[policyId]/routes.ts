@@ -21,4 +21,9 @@ export default [
 		path: "/settings",
 		component: lazy(() => import("./settings")),
 	},
+	{
+		// This 404 prevents the navbar breaking
+		path: "/*all",
+		component: lazy(() => import("../../[...404]")),
+	},
 ] satisfies RouteDefinition[];

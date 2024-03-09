@@ -40,8 +40,9 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 				<TenantContext>
 					<TenantSwitcher {...props} />
 				</TenantContext>
+				{/* // Technically this doesn't depend on auth but it's nicer UX for them to render left to right. */}
+				<Breadcrumbs />
 			</AuthContext>
-			<Breadcrumbs />
 
 			<div class="flex-1" />
 

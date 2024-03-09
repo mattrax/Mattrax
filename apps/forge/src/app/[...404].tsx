@@ -15,7 +15,7 @@ export default function NotFound() {
 	);
 }
 
-function OscarTriedToDesignAMattraxLogoButFailedPrettyHard(props: {
+export function OscarTriedToDesignAMattraxLogoButFailedPrettyHard(props: {
 	class?: string;
 }) {
 	return (

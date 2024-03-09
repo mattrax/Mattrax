@@ -1,5 +1,7 @@
-import { EventBus, createEventBus } from "@solid-primitives/event-bus";
 // @refresh reload
+import { render } from "solid-js/web";
+import { MErrorBoundary } from "./components/MattraxErrorBoundary";
+import { EventBus, createEventBus } from "@solid-primitives/event-bus";
 import { Router, useNavigate } from "@solidjs/router";
 import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
 import {
@@ -9,18 +11,12 @@ import {
 	keepPreviousData,
 	onlineManager,
 } from "@tanstack/solid-query";
-import {
-	ErrorBoundary,
-	Suspense,
-	lazy,
-	onCleanup,
-	startTransition,
-} from "solid-js";
+import { Suspense, lazy, onCleanup, startTransition } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
+import { isTRPCClientError, trpc } from "./lib";
 import routes from "./app/routes";
 import "./assets/app.css";
 import "./assets/sonner.css";
-import { isTRPCClientError, trpc } from "./lib";
 
 // TODO: Maybe PR this back to Solid DND???
 declare module "solid-js" {
@@ -159,35 +155,10 @@ function App() {
 
 								<>
 									{import.meta.env.DEV && <SolidQueryDevtools />}
-									<ErrorBoundary
-										fallback={(err, reset) => {
-											// Solid Start + HMR is buggy as all hell so this hacks around it.
-											if (
-												import.meta.env.DEV &&
-												err.toString() ===
-													"Error: Make sure your app is wrapped in a <Router />" &&
-												typeof document !== "undefined"
-											) {
-												console.error(
-													"Automatically resetting error boundary due to HMR-related router context error.",
-												);
-												reset();
-											}
-
-											return (
-												<div class="flex flex-col items-center justify-center h-full gap-4">
-													<h1 class="text-3xl font-semibold">
-														Failed To Load Mattrax
-													</h1>
-													<p class="text-gray-600">{err.toString()}</p>
-													<Button onClick={reset}>Reload</Button>
-												</div>
-											);
-										}}
-									>
+									<MErrorBoundary>
 										<Toaster />
 										{props.children}
-									</ErrorBoundary>
+									</MErrorBoundary>
 								</>
 								// </PersistQueryClientProvider>
 							);
@@ -200,8 +171,5 @@ function App() {
 		</QueryClientProvider>
 	);
 }
-
-import { render } from "solid-js/web";
-import { Button } from "./components/ui";
 
 render(App, document.getElementById("root")!);
