@@ -69,6 +69,7 @@ export const groupRouter = createTRPCRouter({
 
 			return group;
 		}),
+
 	update: authedProcedure
 		.input(
 			z.object({
@@ -89,6 +90,7 @@ export const groupRouter = createTRPCRouter({
 				.set({ ...(input.name && { name: input.name }) })
 				.where(eq(groups.id, input.id));
 		}),
+
 	members: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
@@ -130,44 +132,7 @@ export const groupRouter = createTRPCRouter({
 				)
 				.groupBy(groupAssignables.variant, groupAssignables.pk);
 		}),
-	possibleMembers: authedProcedure
-		.input(z.object({ id: z.string() }))
-		.query(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
-				where: eq(groups.id, input.id),
-			});
-			if (!group)
-				throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
 
-			await ctx.ensureTenantAccount(group.tenantPk);
-
-			return await union(
-				db
-					.select({
-						name: users.name,
-						id: users.id,
-						pk: users.pk,
-						variant:
-							sql<GroupAssignableVariant>`${GroupAssignableVariants.user}`.as(
-								"variant",
-							),
-					})
-					.from(users)
-					.where(eq(users.tenantPk, group.tenantPk)),
-				db
-					.select({
-						name: devices.name,
-						id: devices.id,
-						pk: devices.pk,
-						variant:
-							sql<GroupAssignableVariant>`${GroupAssignableVariants.device}`.as(
-								"variant",
-							),
-					})
-					.from(devices)
-					.where(eq(devices.tenantPk, group.tenantPk)),
-			);
-		}),
 	addMembers: authedProcedure
 		.input(
 			z.object({

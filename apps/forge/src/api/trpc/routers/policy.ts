@@ -373,20 +373,6 @@ export const policyRouter = createTRPCRouter({
 	// 		return newVersionId;
 	// 	}),
 
-	scope: authedProcedure
-		.input(z.object({ id: z.string() }))
-		.query(async ({ ctx, input }) => {
-			const policy = await db.query.policies.findFirst({
-				where: eq(policies.id, input.id),
-			});
-
-			if (!policy) return null;
-
-			await ctx.ensureTenantAccount(policy.tenantPk);
-
-			return omit(policy, ["tenantPk"]);
-		}),
-
 	members: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
@@ -436,48 +422,6 @@ export const policyRouter = createTRPCRouter({
 					),
 				)
 				.groupBy(policyAssignables.variant, policyAssignables.pk);
-		}),
-
-	possibleMembers: authedProcedure
-		.input(z.object({ id: z.string() }))
-		.query(async ({ ctx, input }) => {
-			const policy = await db.query.policies.findFirst({
-				where: eq(policies.id, input.id),
-			});
-			if (!policy)
-				throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
-
-			await ctx.ensureTenantAccount(policy.tenantPk);
-
-			return await union(
-				db
-					.select({
-						name: users.name,
-						id: users.id,
-						pk: users.pk,
-						variant: sql<PolicyAssignableVariant>`${PolicyAssignableVariants.user}`,
-					})
-					.from(users)
-					.where(eq(users.tenantPk, policy.tenantPk)),
-				db
-					.select({
-						name: devices.name,
-						id: devices.id,
-						pk: devices.pk,
-						variant: sql<PolicyAssignableVariant>`${PolicyAssignableVariants.device}`,
-					})
-					.from(devices)
-					.where(eq(devices.tenantPk, policy.tenantPk)),
-				db
-					.select({
-						name: groups.name,
-						id: groups.id,
-						pk: groups.pk,
-						variant: sql<PolicyAssignableVariant>`${PolicyAssignableVariants.group}`,
-					})
-					.from(groups)
-					.where(eq(groups.tenantPk, policy.tenantPk)),
-			).orderBy(() => sql`name ASC`);
 		}),
 
 	addMembers: authedProcedure

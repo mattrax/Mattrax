@@ -92,7 +92,7 @@ function InviteUserDialog(props: ParentProps<{ id: string; email: string }>) {
 		<DialogRoot
 			open={open()}
 			setOpen={(o) => {
-				if (o) form.setFieldValue("email", "");
+				if (o) form.setFieldValue("message", "");
 				setOpen(o);
 			}}
 		>

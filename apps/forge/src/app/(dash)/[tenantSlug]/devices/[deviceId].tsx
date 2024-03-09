@@ -53,6 +53,10 @@ function NotFound() {
 const NAV_ITEMS = [
 	{ title: "Device", href: "" },
 	{
+		title: "Configuration",
+		href: "configuration",
+	},
+	{
 		title: "Scope",
 		href: "scope",
 	},

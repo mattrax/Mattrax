@@ -9,7 +9,11 @@ import tsconfigPaths from "vite-tsconfig-paths";
 
 // Make sure env validation runs
 import { monorepoRoot } from "./loadEnv";
-import "./src/env";
+import { env } from "./src/env";
+
+// We wanna make sure this isn't bundle split so the validation runs.
+// We can't just `import "./src/env"` as we have marked this package as no side effects.
+const _env = env;
 
 export default defineConfig((config) => ({
 	envDir: monorepoRoot,

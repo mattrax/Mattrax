@@ -7,6 +7,10 @@ export default [
 		component: lazy(() => import("./index")),
 	},
 	{
+		path: "/configuration",
+		component: lazy(() => import("./configuration")),
+	},
+	{
 		path: "/scope",
 		component: lazy(() => import("./scope")),
 	},

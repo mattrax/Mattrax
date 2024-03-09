@@ -79,7 +79,7 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 
 	if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-	let tenantList: Array<{ pk: number, name: string }> | undefined;
+	let tenantList: Array<{ pk: number; name: string }> | undefined;
 
 	const getTenantList = async () => {
 		if (!tenantList)
@@ -103,14 +103,13 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 				if (!tenant)
 					throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
 
-				return tenant
+				return tenant;
 			},
 		},
 	});
 });
 
 export const isSuperAdmin = (account: User) =>
-	// TODO: Make sure this check is only run if the email is verified
 	account.email.endsWith("@otbeaumont.me") ||
 	account.email.endsWith("@mattrax.app");
 

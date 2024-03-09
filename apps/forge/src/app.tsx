@@ -35,8 +35,10 @@ declare module "solid-js" {
 const keysToPersist = [`[["auth","me"]]`];
 
 function createQueryClient(errorBus: EventBus<[string, unknown]>) {
-	const onErrorFactory = (scopeMsg: string) => (error: unknown) =>
+	const onErrorFactory = (scopeMsg: string) => (error: unknown) => {
+		console.error(scopeMsg, error);
 		errorBus.emit([scopeMsg, error]);
+	};
 
 	const queryClient = new QueryClient({
 		queryCache: new QueryCache({

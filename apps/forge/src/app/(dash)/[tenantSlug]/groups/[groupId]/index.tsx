@@ -1,20 +1,17 @@
-import { createColumnHelper } from "@tanstack/solid-table";
-import { Accessor, Suspense, createMemo, createSignal } from "solid-js";
-import { Dynamic } from "solid-js/web";
-import { toast } from "solid-sonner";
 import { As } from "@kobalte/core";
-import { z } from "zod";
+import { Suspense, createMemo, createSignal } from "solid-js";
+import { Dynamic } from "solid-js/web";
 
+import { Button } from "~/components/ui";
 import { trpc } from "~/lib";
-import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { useGroup } from "../[groupId]";
-import { Badge, Button } from "~/components/ui";
-import { AddMemberSheet } from "../AddMemberSheet";
+import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import {
-	StandardTable,
-	createStandardTable,
-	selectCheckboxColumn,
-} from "~/components/StandardTable";
+	AddMemberSheet,
+	memberSheetColumns,
+} from "~/components/AddMemberSheet";
+import { StandardTable, createStandardTable } from "~/components/StandardTable";
+import { toast } from "solid-sonner";
 
 export default function Page() {
 	const group = useGroup();
@@ -22,7 +19,17 @@ export default function Page() {
 		onSuccess: () => group.query.refetch(),
 	}));
 
-	const table = createMembersTable(() => group().id);
+	const members = trpc.group.members.useQuery(() => ({
+		id: group().id,
+	}));
+
+	const table = createStandardTable({
+		get data() {
+			return members.data ?? [];
+		},
+		columns: memberSheetColumns,
+		// pagination: true, // TODO: Pagination
+	});
 
 	const updateName = (name: string) => {
 		if (name === "") {
@@ -44,11 +51,14 @@ export default function Page() {
 	};
 
 	const [editingName, setEditingName] = createSignal(false);
-
 	let nameEl: HTMLHeadingElement;
 
 	const [cachedName, setCachedName] = createSignal(group().name);
 	const name = createMemo(() => (editingName() ? cachedName() : group().name));
+
+	const addMembers = trpc.group.addMembers.useMutation(() => ({
+		onSuccess: () => members.refetch(),
+	}));
 
 	return (
 		<PageLayout
@@ -94,9 +104,17 @@ export default function Page() {
 							}
 						/>
 					</Button>
-					<AddMemberSheet groupId={group().id}>
+					<AddMemberSheet
+						omitGroups
+						addMember={(members) =>
+							addMembers.mutateAsync({
+								id: group().id,
+								members,
+							})
+						}
+					>
 						<As component={Button} class="ml-auto">
-							Add Members
+							Add Member
 						</As>
 					</AddMemberSheet>
 				</>
@@ -107,39 +125,4 @@ export default function Page() {
 			</Suspense>
 		</PageLayout>
 	);
-}
-
-const VariantDisplay = {
-	user: "User",
-	device: "Device",
-} as const;
-
-type Variant = keyof typeof VariantDisplay;
-
-const columnHelper = createColumnHelper<{
-	pk: number;
-	name: string;
-	variant: Variant;
-}>();
-
-export const columns = [
-	selectCheckboxColumn,
-	columnHelper.accessor("name", { header: "Name" }),
-	columnHelper.accessor("variant", {
-		header: "Variant",
-		cell: (info) => <Badge>{VariantDisplay[info.getValue()]}</Badge>,
-	}),
-];
-
-function createMembersTable(groupId: Accessor<string>) {
-	const members = trpc.group.members.useQuery(() => ({
-		id: groupId(),
-	}));
-
-	return createStandardTable({
-		get data() {
-			return members.data ?? [];
-		},
-		columns,
-	});
 }
