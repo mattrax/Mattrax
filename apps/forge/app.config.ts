@@ -99,6 +99,7 @@ process.on("exit", () => {
 // TODO: Remove this hack.
 // TODO: It's to serve the SPA from the CDN while only routing API redirects to the Edge Functions.
 // TODO: This issue comes down to a limitation in Nitro only allowing one present/adapter but it could possible by worked around in Vinxi.
+// TODO: We also do it to inject the environment variables so they are available outside the request context.
 //
 // TODO: https://github.com/unjs/nitro/issues/1158
 // TODO: https://github.com/unjs/nitro/issues/1678
