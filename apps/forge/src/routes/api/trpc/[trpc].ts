@@ -108,7 +108,7 @@ function createSolidAPIHandler<TRouter extends AnyRouter>(
 			setResponseStatus(e, head.status);
 
 			if (isStreaming) {
-				setResponseHeader(e, "Transfer-Encoding", "cunked");
+				setResponseHeader(e, "Transfer-Encoding", "chunked");
 				setResponseHeader(e, "Vary", "trpc-batch-mode");
 
 				const stream = new ReadableStream({
@@ -117,9 +117,7 @@ function createSolidAPIHandler<TRouter extends AnyRouter>(
 					},
 				});
 
-				sendStream(e, stream).then(() => {
-					resolve()
-				})
+				sendStream(e, stream).then(resolve)
 
 				encoder = new TextEncoder();
 				formatter = getBatchStreamFormatter();
