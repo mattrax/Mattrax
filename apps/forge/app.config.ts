@@ -68,8 +68,7 @@ process.on("exit", () => {
 		path.join(workerCode, "../env.js"),
 		`
 		const process={env:${JSON.stringify(process.env)}};
-		globalThis.process=process.env;
-		console.log(process);`,
+		globalThis.process=process.env;`,
 	);
 
 	fs.writeFileSync(

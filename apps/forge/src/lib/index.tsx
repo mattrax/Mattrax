@@ -2,7 +2,7 @@ import {
 	type CreateTRPCSolidStart,
 	createTRPCSolidStart,
 } from "@solid-mediakit/trpc";
-import { TRPCClientError, unstable_httpBatchStreamLink } from "@trpc/client";
+import { TRPCClientError, httpBatchLink } from "@trpc/client";
 import { type ClassValue, clsx } from "clsx";
 import { Accessor, createEffect, createSignal } from "solid-js";
 import superjson from "superjson";
@@ -12,7 +12,7 @@ import type { AppRouter } from "~/api";
 export const trpc: CreateTRPCSolidStart<AppRouter> = createTRPCSolidStart({
 	config: () => ({
 		links: [
-			unstable_httpBatchStreamLink({
+			httpBatchLink({
 				url: `${location.origin}/api/trpc`,
 			}),
 		],

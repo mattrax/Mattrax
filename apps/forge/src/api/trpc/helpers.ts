@@ -56,7 +56,7 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 					lucia.createSessionCookie(session.id).serialize(),
 				);
 
-			if (getCookie("isLoggedIn") === undefined) {
+			if (getCookie(opts.ctx.event, "isLoggedIn") === undefined) {
 				setCookie(opts.ctx.event, "isLoggedIn", "true", {
 					httpOnly: false,
 				});

@@ -17,7 +17,7 @@ import { TRPCErrorResponse } from "@trpc/server/rpc";
 import { APIEvent, APIHandler } from "@solidjs/start/server";
 import { appendResponseHeader, setResponseHeader, setResponseStatus } from "h3";
 import { appRouter, createTRPCContext } from "~/api/trpc";
-import { sendStream } from "vinxi/http";
+import { H3Event, sendStream } from "vinxi/http";
 
 function getPath(args: APIEvent): string | null {
 	const p: any = args.params.trpc;
@@ -65,7 +65,7 @@ function createSolidAPIHandler<TRouter extends AnyRouter>(
 	opts: ICreateSolidAPIHandlerOpts<TRouter>,
 ) {
 	const handler: APIHandler = async (event) => {
-		const e = event.nativeEvent;
+		const e: H3Event = event.nativeEvent;
 
 		const path = getPath(event);
 		if (path === null) {
@@ -97,11 +97,11 @@ function createSolidAPIHandler<TRouter extends AnyRouter>(
 					continue;
 				}
 				if (typeof value === "string") {
-					setResponseHeader(event.nativeEvent, key, value);
+					setResponseHeader(e, key, value);
 					continue;
 				}
 				for (const v of value) {
-					appendResponseHeader(event.nativeEvent, key, v);
+					appendResponseHeader(e, key, v);
 				}
 			}
 
@@ -117,7 +117,7 @@ function createSolidAPIHandler<TRouter extends AnyRouter>(
 					},
 				});
 
-				sendStream(e, stream).then(resolve)
+				resolve(stream);
 
 				encoder = new TextEncoder();
 				formatter = getBatchStreamFormatter();
