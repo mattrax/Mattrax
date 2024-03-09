@@ -394,7 +394,7 @@ importers:
         specifier: ^5.0.8
         version: 5.0.8
       vinxi:
-        specifier: 0.3.10
+        specifier: ^0.3.10
         version: 0.3.10(@planetscale/database@1.16.0)(drizzle-orm@0.30.1)
       zod:
         specifier: ^3.22.4
