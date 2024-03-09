@@ -393,6 +393,9 @@ importers:
       ts-pattern:
         specifier: ^5.0.8
         version: 5.0.8
+      unenv:
+        specifier: ^1.9.0
+        version: 1.9.0
       vinxi:
         specifier: '=0.3.4'
         version: 0.3.4(@planetscale/database@1.16.0)(preact@10.19.6)

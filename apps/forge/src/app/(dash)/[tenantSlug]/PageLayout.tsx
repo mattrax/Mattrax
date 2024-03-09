@@ -9,7 +9,7 @@ export function PageLayout(
 ) {
 	const [_, divProps] = splitProps(props, ["heading", "size"]);
 
-	const heading = children(() => props.heading)
+	const heading = children(() => props.heading);
 
 	return (
 		<div
@@ -20,7 +20,7 @@ export function PageLayout(
 				props.class,
 			)}
 		>
-		 	{heading() && (
+			{heading() && (
 				<div class="flex flex-row items-center h-24 gap-4">{heading()}</div>
 			)}
 			<div class="gap-4 flex flex-col">{props.children}</div>
@@ -29,7 +29,9 @@ export function PageLayout(
 }
 
 export function PageLayoutHeading(props: ComponentProps<"h1">) {
-	return <h1 {...props} class={clsx("text-3xl font-bold", props.class)}>
-		{props.children}
-	</h1>;
+	return (
+		<h1 {...props} class={clsx("text-3xl font-bold", props.class)}>
+			{props.children}
+		</h1>
+	);
 }

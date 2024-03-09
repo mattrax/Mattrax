@@ -29,7 +29,7 @@ export const userRouter = createTRPCRouter({
 			// TODO: Can a cursor make this more efficent???
 			// TODO: Switch to DB
 
-			await new Promise((resolve) => setTimeout(resolve, 1000))
+			await new Promise((resolve) => setTimeout(resolve, 1000));
 
 			return await db
 				.select({

@@ -1,0 +1,4 @@
+name = "forge"
+
+compatibility_flags = ["nodejs_compat", "nodejs_als"]
+compatibility_date = "2024-03-09"

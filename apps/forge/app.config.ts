@@ -6,6 +6,7 @@ import Icons from "unplugin-icons/vite";
 import IconsResolver from "unplugin-icons/resolver";
 import AutoImport from "unplugin-auto-import/vite";
 import { visualizer } from "rollup-plugin-visualizer";
+import { cloudflare } from "unenv";
 
 import { monorepoRoot } from "./loadEnv";
 import "./src/env";
@@ -35,6 +36,7 @@ export default defineConfig({
 		],
 	},
 	server: {
+		unenv: cloudflare,
 		// vercel: {
 		//   regions: ["iad1"],
 		// },
@@ -80,12 +82,12 @@ process.on("exit", () => {
 	);
 
 	// Replace Nitro's config so Cloudflare will serve the HTML from the CDN instead of the worker (they can do "304 Not Modified" & ETag caching).
-	fs.writeFileSync(
-		routesJson,
-		JSON.stringify({
-			version: 1,
-			include: ["/api/*"],
-			exclude: ["/_headers"],
-		}),
-	);
+	// fs.writeFileSync(
+	// 	routesJson,
+	// 	JSON.stringify({
+	// 		version: 1,
+	// 		include: ["/api/*"],
+	// 		exclude: ["/_headers"],
+	// 	}),
+	// );
 });

@@ -4,6 +4,7 @@
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/forge dev",
 		"build": "pnpm --filter @mattrax/forge build",
+		"build:cf": "pnpm --filter @mattrax/forge build:cf",
 		"start:cf": "wrangler pages dev apps/forge/dist",
 		"landing": "pnpm --filter @mattrax/landing --",
 		"email": "pnpm --filter @mattrax/email --",
