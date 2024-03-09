@@ -76,10 +76,18 @@ process.on("exit", () => {
 	// Cloudflare doesn't allow access to env outside the handler.
 	// So we ship the env with the worker code.
 	fs.writeFileSync(
+		path.join(workerCode, "../env.js"),
+		`
+		const process={env:${JSON.stringify(process.env)}};
+		globalThis.process=process.env;
+		console.log(process);`,
+	);
+
+	fs.writeFileSync(
 		workerCode,
-		`const process={env:${JSON.stringify(
-			process.env,
-		)}};globalThis.process=process.env;console.log(process);${fs.readFileSync(workerCode)}`,
+		`
+		import "./env";
+		${fs.readFileSync(workerCode)}`
 	);
 
 	// Replace Nitro's config so Cloudflare will serve the HTML from the CDN instead of the worker (they can do "304 Not Modified" & ETag caching).
