@@ -1,6 +1,4 @@
 import { defineConfig } from "@solidjs/start/config";
-import path from "node:path";
-import fs from "node:fs";
 import tsconfigPaths from "vite-tsconfig-paths";
 import Icons from "unplugin-icons/vite";
 import IconsResolver from "unplugin-icons/resolver";
