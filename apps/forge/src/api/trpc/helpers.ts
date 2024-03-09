@@ -38,7 +38,7 @@ export const publicProcedure = t.procedure;
 
 // Authenticated procedure
 export const authedProcedure = t.procedure.use(async (opts) => {
-	const sessionId = getCookie(lucia.sessionCookieName) ?? null;
+	const sessionId = getCookie(opts.ctx.event, lucia.sessionCookieName) ?? null;
 
 	const data = await (async () => {
 		if (sessionId === null) return;
