@@ -48,18 +48,20 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 		if (session) {
 			if (session.fresh)
 				appendResponseHeader(
+					opts.ctx.event,
 					"Set-Cookie",
 					lucia.createSessionCookie(session.id).serialize(),
 				);
 
 			if (getCookie("isLoggedIn") === undefined) {
-				setCookie("isLoggedIn", "true", {
+				setCookie(opts.ctx.event, "isLoggedIn", "true", {
 					httpOnly: false,
 				});
 			}
 		}
 		if (!session) {
 			appendResponseHeader(
+				opts.ctx.event,
 				"Set-Cookie",
 				lucia.createBlankSessionCookie().serialize(),
 			);
