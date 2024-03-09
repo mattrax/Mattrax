@@ -1,29 +1,17 @@
 // Side-side exports (we don't want these shipped to the client)
 
-import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+// import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { Hono } from "hono";
 
 import { enrollmentRouter } from "./routes/enrollment";
 import { msRouter } from "./routes/ms";
 import { webhookRouter } from "./routes/webhook";
-import { appRouter, createTRPCContext } from "./trpc";
+// import { appRouter, createTRPCContext } from "./trpc";
 import type { HonoEnv } from "./types";
 
 export const app = new Hono<HonoEnv>()
 	.basePath("/api")
 	.get("/", (c) => c.json({ message: "Mattrax Forge!" }))
-	.all("/trpc/*", (c) =>
-		fetchRequestHandler({
-			endpoint: "/api/trpc",
-			req: c.req.raw,
-			router: appRouter,
-			createContext: () =>
-				createTRPCContext({
-					env: c.env,
-					event: c.env.h3Event
-				}),
-		}),
-	)
 	.route("/enrollment", enrollmentRouter)
 	.route("/webhook", webhookRouter)
 	.route("/ms", msRouter)

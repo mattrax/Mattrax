@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { User } from "lucia";
 import superjson from "superjson";
 import {
-    H3Event,
+	H3Event,
 	appendResponseHeader,
 	getCookie,
 	setCookie,
@@ -12,15 +12,11 @@ import { ZodError, z } from "zod";
 
 import { db, tenantAccounts, tenants } from "~/db";
 import { lucia } from "../auth";
-import { HonoEnv } from "../types";
 
-export const createTRPCContext = async (opts: {
-	env: HonoEnv["Bindings"];
-	event: H3Event;
-}) => {
+export const createTRPCContext = async (event: H3Event) => {
 	return {
 		db,
-		...opts,
+		event,
 	};
 };
 
