@@ -1,6 +1,6 @@
 import { createMutation } from "@tanstack/solid-query";
 import { For, ParentProps, Suspense, createMemo, createSignal } from "solid-js";
-import { useTenantSlug } from "~/app/(dash)/[tenantSlug]";
+import { useTenantSlug } from "~/routes/(dash)/[tenantSlug]";
 import { trpc } from "~/lib";
 import {
 	StandardTable,

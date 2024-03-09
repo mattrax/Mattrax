@@ -1,5 +1,4 @@
 // @refresh reload
-import { MErrorBoundary } from "./components/MattraxErrorBoundary";
 import { type EventBus, createEventBus } from "@solid-primitives/event-bus";
 import { Router, useNavigate } from "@solidjs/router";
 import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
@@ -12,8 +11,10 @@ import {
 } from "@tanstack/solid-query";
 import { Suspense, lazy, onCleanup, startTransition } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
+import { FileRoutes } from "@solidjs/start/router";
+
+import { MErrorBoundary } from "./components/MattraxErrorBoundary";
 import { isTRPCClientError, trpc } from "./lib";
-import routes from "./app/routes";
 import "./assets/app.css";
 import "./assets/sonner.css";
 
@@ -160,7 +161,7 @@ export default function App() {
 							);
 						}}
 					>
-						{routes}
+						<FileRoutes />
 					</Router>
 				</Suspense>
 			</trpc.Provider>
