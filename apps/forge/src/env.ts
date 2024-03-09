@@ -1,6 +1,5 @@
 // @ts-expect-error
 import { createEnv } from "@t3-oss/env-core";
-import "dotenv/config";
 import { z } from "zod";
 
 function optional_in_dev<T extends z.ZodTypeAny>(

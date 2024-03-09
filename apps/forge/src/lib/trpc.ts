@@ -6,7 +6,7 @@ import {
 } from "@mattrax/trpc-solid-start";
 import { createTRPCSolidStart } from "@solid-mediakit/trpc";
 
-import { router, createContext } from "~/api";
+import { router, createContext } from "~/api/trpc";
 
 const serverFunction = (opts: TrpcServerFunctionOpts) => {
 	"use server";

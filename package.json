@@ -3,6 +3,8 @@
 	"private": true,
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/forge dev",
+		"build": "pnpm --filter @mattrax/forge build",
+		"start:cf": "wrangler pages dev apps/forge/dist",
 		"landing": "pnpm --filter @mattrax/landing --",
 		"email": "pnpm --filter @mattrax/email --",
 		"doc": "pnpm --filter @mattrax/docs --",

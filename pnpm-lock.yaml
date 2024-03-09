@@ -369,9 +369,6 @@ importers:
       react:
         specifier: ^18.2.0
         version: 18.2.0
-      solid-icons:
-        specifier: ^1.1.0
-        version: 1.1.0(solid-js@1.8.15)
       solid-js:
         specifier: ^1.8.15
         version: 1.8.15
@@ -12809,14 +12806,6 @@ packages:
       - bufferutil
       - supports-color
       - utf-8-validate
-    dev: false
-
-  /solid-icons@1.1.0(solid-js@1.8.15):
-    resolution: {integrity: sha512-IesTfr/F1ElVwH2E1110s2RPXH4pujKfSs+koT8rwuTAdleO5s26lNSpqJV7D1+QHooJj18mcOiz2PIKs0ic+A==}
-    peerDependencies:
-      solid-js: '*'
-    dependencies:
-      solid-js: 1.8.15
     dev: false
 
   /solid-js@1.8.15:

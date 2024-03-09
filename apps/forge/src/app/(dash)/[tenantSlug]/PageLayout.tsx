@@ -1,4 +1,4 @@
-import { ComponentProps, JSX, splitProps } from "solid-js";
+import { ComponentProps, JSX, children, splitProps } from "solid-js";
 import clsx from "clsx";
 
 export function PageLayout(
@@ -9,6 +9,8 @@ export function PageLayout(
 ) {
 	const [_, divProps] = splitProps(props, ["heading", "size"]);
 
+	const heading = children(() => props.heading)
+
 	return (
 		<div
 			{...divProps}
@@ -18,8 +20,8 @@ export function PageLayout(
 				props.class,
 			)}
 		>
-			{props.heading && (
-				<div class="flex flex-row items-center h-24 gap-4">{props.heading}</div>
+		 	{heading() && (
+				<div class="flex flex-row items-center h-24 gap-4">{heading()}</div>
 			)}
 			<div class="gap-4 flex flex-col">{props.children}</div>
 		</div>

@@ -30,4 +30,4 @@ export function isTRPCClientError(
 	return cause instanceof TRPCClientError;
 }
 
-export const isDebugMode = () => localStorage.getItem("mttxDebug") === "1";
+export const isDebugMode = () => false // localStorage.getItem("mttxDebug") === "1";

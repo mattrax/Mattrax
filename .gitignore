@@ -28,6 +28,7 @@ dist
 # Environment
 .env
 .env*.local
+.*.vars
 
 # dependencies
 node_modules

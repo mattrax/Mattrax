@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vinxi dev --host 0.0.0.0",
+    "dev:cf": "wrangler pages dev dist",
     "build": "vinxi build",
     "start": "vinxi start",
     "stats": "pnpm build && open stats.html",
@@ -63,7 +64,6 @@
     "prism-themes": "^1.9.0",
     "prismjs": "^1.29.0",
     "react": "^18.2.0",
-    "solid-icons": "^1.1.0",
     "solid-js": "^1.8.15",
     "solid-sonner": "^0.2.5",
     "stripe": "^14.20.0",

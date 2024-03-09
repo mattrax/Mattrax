@@ -31,7 +31,7 @@ export async function trpcServerFunction<TRouter extends AnyRouter>(args: {
 
 	return args.opts.operations.map(async (o) => ({
 		result: {
-			data: callProcedure({
+			data: await callProcedure({
 				procedures: args.router._def.procedures,
 				path: o.path,
 				rawInput: o.input,
