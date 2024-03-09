@@ -5,6 +5,7 @@
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
     "types": ["vinxi/client", "vite/client", "unplugin-icons/types/solid"],
+    "resolveJsonModule": true,
     "paths": {
       "~/*": ["./src/*"]
     }
