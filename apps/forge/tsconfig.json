@@ -1,13 +1,15 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+	  "composite": false,
     "outDir": "./dist",
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
     "types": ["vinxi/client", "vite/client", "unplugin-icons/types/solid"],
     "paths": {
       "~/*": ["./src/*"]
-    }
+    },
+    "declaration": false
   },
   "include": ["src/"],
   "exclude": ["node_modules", "dist"],

@@ -1,7 +1,9 @@
 import type { RequestSchema } from "@mattrax/email";
-import { env } from "~/env";
+import { getEnv } from "~/env";
 
 export async function sendEmail(args: RequestSchema) {
+	const env = getEnv();
+
 	if (env.FROM_ADDRESS === "console") {
 		console.log("SEND EMAIL", args);
 		return;

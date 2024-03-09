@@ -21,7 +21,7 @@ import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { omit } from "~/api/utils";
 
 function getPolicy(args: { policyId: string; tenantPk: number }) {
-	return db.query.policies.findFirst({
+	return db().query.policies.findFirst({
 		where: and(
 			eq(policies.id, args.policyId),
 			eq(policies.tenantPk, args.tenantPk),
@@ -31,7 +31,7 @@ function getPolicy(args: { policyId: string; tenantPk: number }) {
 
 export const policyRouter = createTRPCRouter({
 	list: tenantProcedure.query(({ ctx }) =>
-		db
+		db()
 			.select({
 				id: policies.id,
 				name: policies.name,
@@ -43,7 +43,7 @@ export const policyRouter = createTRPCRouter({
 		.input(z.object({ policyId: z.string() }))
 		.query(async ({ ctx, input }) => {
 			const [[policy], [lastVersion]] = await Promise.all([
-				db
+				db()
 					.select({
 						id: policies.id,
 						name: policies.name,
@@ -52,7 +52,7 @@ export const policyRouter = createTRPCRouter({
 					})
 					.from(policies)
 					.where(eq(policies.id, input.policyId)),
-				db
+				db()
 					.select({ data: policyVersions.data })
 					.from(policyVersions)
 					.where(and(eq(policyVersions.id, input.policyId)))
@@ -91,8 +91,7 @@ export const policyRouter = createTRPCRouter({
 			// });
 
 			// TODO: Check policy is within the current tenant safely? Can we do this with a join on the second query?
-			// db
-			// 		.select({
+			// db()			// 		.select({
 			// 			id: policies.id,
 			// 			name: policies.name,
 			// 			data: policies.data,
@@ -105,8 +104,7 @@ export const policyRouter = createTRPCRouter({
 			// 			),
 			// 		),
 			// TODO: Also count through groups
-			// const [result] = await db
-			// 	.select({
+			// const [result] = await db()			// 	.select({
 			// 		count: count(),
 			// 	})
 			// 	.from(policyAssignables)
@@ -125,7 +123,7 @@ export const policyRouter = createTRPCRouter({
 	deploy: authedProcedure
 		.input(z.object({ policyId: z.string(), comment: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const [policy] = await db
+			const [policy] = await db()
 				.select({
 					pk: policies.pk,
 					data: policies.data,
@@ -137,7 +135,7 @@ export const policyRouter = createTRPCRouter({
 
 			await ctx.ensureTenantAccount(policy.tenantPk);
 
-			await db.insert(policyVersions).values({
+			await db().insert(policyVersions).values({
 				policyPk: policy.pk,
 				data: policy.data,
 				comment: input.comment,
@@ -154,7 +152,7 @@ export const policyRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const policy = await db.query.policies.findFirst({
+			const policy = await db().query.policies.findFirst({
 				where: eq(policies.id, input.policyId),
 			});
 			if (!policy)
@@ -165,7 +163,7 @@ export const policyRouter = createTRPCRouter({
 
 			await ctx.ensureTenantAccount(policy.tenantPk);
 
-			await db
+			await db()
 				.update(policies)
 				.set({
 					name: input.name ?? sql`${policies.name}`,
@@ -177,8 +175,7 @@ export const policyRouter = createTRPCRouter({
 	// getVersions: tenantProcedure
 	// 	.input(z.object({ policyId: z.string() }))
 	// 	.query(async ({ ctx, input }) => {
-	// 		const versions = await db
-	// 			.select({
+	// 		const versions = await db()	// 			.select({
 	// 				// TODO: Don't return everything here
 	// 				id: policyVersions.id,
 	// 				status: policyVersions.status,
@@ -204,8 +201,7 @@ export const policyRouter = createTRPCRouter({
 	// getVersion: tenantProcedure
 	// 	.input(z.object({ policyId: z.string(), versionId: z.string() }))
 	// 	.query(async ({ ctx, input }) => {
-	// 		const [version] = await db
-	// 			.select({
+	// 		const [version] = await db()	// 			.select({
 	// 				id: policyVersions.id,
 	// 				status: policyVersions.status,
 	// 				data: policyVersions.data,
@@ -239,8 +235,7 @@ export const policyRouter = createTRPCRouter({
 	// 	.mutation(async ({ ctx, input }) => {
 	// 		// TODO: Check no-one has edited this policy since we read it.
 
-	// 		await db
-	// 			.update(policyVersions)
+	// 		await db()	// 			.update(policyVersions)
 	// 			.set({
 	// 				data: input.data,
 	// 			})
@@ -261,8 +256,7 @@ export const policyRouter = createTRPCRouter({
 	// 	.mutation(async ({ ctx, input }) => {
 	// 		// TODO: Maybe transaction for this?
 
-	// 		const [policy] = await db
-	// 			.select({
+	// 		const [policy] = await db()	// 			.select({
 	// 				id: policies.id,
 	// 				pk: policies.pk,
 	// 				activeVersion: policies.activeVersion,
@@ -276,8 +270,7 @@ export const policyRouter = createTRPCRouter({
 	// 			);
 	// 		if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
-	// 		const status = await db
-	// 			.update(policyVersions)
+	// 		const status = await db()	// 			.update(policyVersions)
 	// 			.set({
 	// 				status: "deploying",
 	// 				deployComment: input.comment,
@@ -292,8 +285,7 @@ export const policyRouter = createTRPCRouter({
 	// 			);
 	// 		const versionId = parseInt(status.insertId);
 
-	// 		await db
-	// 			.update(policies)
+	// 		await db()	// 			.update(policies)
 	// 			.set({ activeVersion: versionId })
 	// 			.where(
 	// 				and(
@@ -313,8 +305,7 @@ export const policyRouter = createTRPCRouter({
 	// 	.mutation(async ({ ctx, input }) => {
 	// 		// TODO: Maybe transaction for this?
 
-	// 		const [policy] = await db
-	// 			.select({
+	// 		const [policy] = await db()	// 			.select({
 	// 				pk: policies.pk,
 	// 				activeVersion: policies.activeVersion,
 	// 			})
@@ -327,8 +318,7 @@ export const policyRouter = createTRPCRouter({
 	// 			);
 	// 		if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
 
-	// 		const [result] = await db
-	// 			.select({
+	// 		const [result] = await db()	// 			.select({
 	// 				count: count(),
 	// 			})
 	// 			.from(policyVersions)
@@ -344,8 +334,7 @@ export const policyRouter = createTRPCRouter({
 	// 		if (numOpenPolicies !== 0)
 	// 			throw new Error("There is already an open policy version");
 
-	// 		const [activeVersion] = await db
-	// 			.select({
+	// 		const [activeVersion] = await db()	// 			.select({
 	// 				id: policyVersions.pk,
 	// 				data: policyVersions.data,
 	// 			})
@@ -359,14 +348,13 @@ export const policyRouter = createTRPCRouter({
 	// 			);
 
 	// 		const newVersionId = createId();
-	// 		const newVersion = await db.insert(policyVersions).values({
+	// 		const newVersion = await db().insert(policyVersions).values({
 	// 			id: newVersionId,
 	// 			policyPk: policy.pk,
 	// 			data: activeVersion?.data || {},
 	// 		});
 
-	// 		await db
-	// 			.update(policies)
+	// 		await db()	// 			.update(policies)
 	// 			.set({ activeVersion: parseInt(newVersion.insertId) })
 	// 			.where(eq(policies.pk, policy.pk));
 
@@ -376,7 +364,7 @@ export const policyRouter = createTRPCRouter({
 	members: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const policy = await db.query.policies.findFirst({
+			const policy = await db().query.policies.findFirst({
 				where: eq(policies.id, input.id),
 			});
 			if (!policy)
@@ -384,7 +372,7 @@ export const policyRouter = createTRPCRouter({
 
 			await ctx.ensureTenantAccount(policy.tenantPk);
 
-			return await db
+			return await db()
 				.select({
 					pk: policyAssignables.pk,
 					variant: policyAssignables.variant,
@@ -437,7 +425,7 @@ export const policyRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const policy = await db.query.policies.findFirst({
+			const policy = await db().query.policies.findFirst({
 				where: eq(policies.id, input.id),
 			});
 			if (!policy)
@@ -445,13 +433,15 @@ export const policyRouter = createTRPCRouter({
 
 			await ctx.ensureTenantAccount(policy.tenantPk);
 
-			await db.insert(policyAssignables).values(
-				input.members.map((member) => ({
-					policyPk: policy.pk,
-					pk: member.pk,
-					variant: member.variant,
-				})),
-			);
+			await db()
+				.insert(policyAssignables)
+				.values(
+					input.members.map((member) => ({
+						policyPk: policy.pk,
+						pk: member.pk,
+						variant: member.variant,
+					})),
+				);
 		}),
 
 	// duplicate: tenantProcedure
@@ -460,7 +450,7 @@ export const policyRouter = createTRPCRouter({
 	//     throw new Error("TODO: Bring this back!");
 	//     // const id = input.policyId;
 	//     // let [row] = (
-	//     //   await db.select().from(policies).where(eq(policies.id, id))
+	//     //   await db().select().from(policies).where(eq(policies.id, id))
 	//     // );
 	//     // if (!row) throw new Error("todo: error handling");
 
@@ -471,7 +461,7 @@ export const policyRouter = createTRPCRouter({
 	//     // // @ts-expect-error
 	//     // delete row.policyHash;
 
-	//     // const result = await db.insert(policies).values(row);
+	//     // const result = await db().insert(policies).values(row);
 	//     // return parseInt(result.insertId);
 	//   }),
 
@@ -485,8 +475,7 @@ export const policyRouter = createTRPCRouter({
 	//     })
 	//   )
 	//   .mutation(async ({ ctx, input }) => {
-	//     await db
-	//       .update(policyVersions)
+	//     await db()	//       .update(policyVersions)
 	//       .set({
 	//         data: input.data,
 	//       })
@@ -503,7 +492,7 @@ export const policyRouter = createTRPCRouter({
 	create: tenantProcedure
 		.input(z.object({ name: z.string().min(1).max(100) }))
 		.mutation(({ ctx, input }) =>
-			db.transaction(async (db) => {
+			db().transaction(async (db) => {
 				const policyId = createId();
 				const policyInsert = await db.insert(policies).values({
 					id: policyId,
@@ -517,13 +506,13 @@ export const policyRouter = createTRPCRouter({
 	delete: authedProcedure
 		.input(z.object({ policyId: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const policy = await db.query.policies.findFirst({
+			const policy = await db().query.policies.findFirst({
 				where: eq(policies.id, input.policyId),
 			});
 			if (!policy)
 				throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
 
-			await db.delete(policies).where(eq(policies.id, input.policyId));
+			await db().delete(policies).where(eq(policies.id, input.policyId));
 		}),
 });
 

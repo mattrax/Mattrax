@@ -9,7 +9,13 @@ import {
 	keepPreviousData,
 	onlineManager,
 } from "@tanstack/solid-query";
-import { Suspense, lazy, onCleanup, startTransition } from "solid-js";
+import {
+	ErrorBoundary,
+	Suspense,
+	lazy,
+	onCleanup,
+	startTransition,
+} from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 import { FileRoutes } from "@solidjs/start/router";
 
@@ -84,87 +90,89 @@ export default function App() {
 	const [queryClient /* persistOptions */] = createQueryClient(errorBus);
 
 	return (
-		<QueryClientProvider client={queryClient}>
-			<trpc.Provider queryClient={queryClient}>
-				<Suspense>
-					<Router
-						root={(props) => {
-							const navigate = useNavigate();
+		<ErrorBoundary fallback={(e) => <p>{e.toString()}</p>}>
+			<QueryClientProvider client={queryClient}>
+				<trpc.Provider queryClient={queryClient}>
+					<Suspense>
+						<Router
+							root={(props) => {
+								const navigate = useNavigate();
 
-							onCleanup(
-								errorBus.listen(([scopeMsg, error]) => {
-									let errorMsg = (
-										<>
-											{scopeMsg},
-											<br />
-											Please reload to try again!
-										</>
-									);
+								onCleanup(
+									errorBus.listen(([scopeMsg, error]) => {
+										let errorMsg = (
+											<>
+												{scopeMsg},
+												<br />
+												Please reload to try again!
+											</>
+										);
 
-									if (isTRPCClientError(error)) {
-										if (error.data?.code === "UNAUTHORIZED") {
-											startTransition(() => navigate("/login"));
+										if (isTRPCClientError(error)) {
+											if (error.data?.code === "UNAUTHORIZED") {
+												startTransition(() => navigate("/login"));
+												return;
+											}
+
+											if (error.data?.code === "FORBIDDEN") {
+												if (error.message === "tenant") navigate("/");
+												else
+													errorMsg =
+														"You are not allowed to access this resource!,";
+											}
+										}
+
+										// TODO: Prevent this for auth errors
+										toast.error(errorMsg, {
+											id: "network-error",
+										});
+									}),
+								);
+
+								onCleanup(
+									onlineManager.subscribe((isOnline) => {
+										if (isOnline) {
+											// TODO: This dismiss doesn't animate the toast close which is ugly.
+											toast.dismiss("network-offline");
 											return;
 										}
 
-										if (error.data?.code === "FORBIDDEN") {
-											if (error.message === "tenant") navigate("/");
-											else
-												errorMsg =
-													"You are not allowed to access this resource!,";
-										}
-									}
+										toast.error(
+											<>
+												You are offline!,
+												<br />
+												Please reconnect to continue!
+											</>,
+											{
+												id: "network-offline",
+												duration: Number.POSITIVE_INFINITY,
+											},
+										);
+									}),
+								);
 
-									// TODO: Prevent this for auth errors
-									toast.error(errorMsg, {
-										id: "network-error",
-									});
-								}),
-							);
+								return (
+									// <PersistQueryClientProvider
+									//   client={queryClient}
+									//   persistOptions={persistOptions}
+									// >
 
-							onCleanup(
-								onlineManager.subscribe((isOnline) => {
-									if (isOnline) {
-										// TODO: This dismiss doesn't animate the toast close which is ugly.
-										toast.dismiss("network-offline");
-										return;
-									}
-
-									toast.error(
-										<>
-											You are offline!,
-											<br />
-											Please reconnect to continue!
-										</>,
-										{
-											id: "network-offline",
-											duration: Number.POSITIVE_INFINITY,
-										},
-									);
-								}),
-							);
-
-							return (
-								// <PersistQueryClientProvider
-								//   client={queryClient}
-								//   persistOptions={persistOptions}
-								// >
-
-								<>
-									{import.meta.env.DEV && <SolidQueryDevtools />}
-									<MErrorBoundary>
-										<Toaster />
-										{props.children}
-									</MErrorBoundary>
-								</>
-								// </PersistQueryClientProvider>
-							);
-						}}
-					>
-						<FileRoutes />
-					</Router>
-				</Suspense>
-			</trpc.Provider>
-		</QueryClientProvider>
+									<>
+										{import.meta.env.DEV && <SolidQueryDevtools />}
+										<MErrorBoundary>
+											<Toaster />
+											{props.children}
+										</MErrorBoundary>
+									</>
+									// </PersistQueryClientProvider>
+								);
+							}}
+						>
+							<FileRoutes />
+						</Router>
+					</Suspense>
+				</trpc.Provider>
+			</QueryClientProvider>
+		</ErrorBoundary>
 	);
 }

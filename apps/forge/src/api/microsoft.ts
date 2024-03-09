@@ -1,5 +1,5 @@
 import { initGraphClient } from "@mattrax/ms-graph";
-import { env } from "~/env";
+import { getEnv } from "~/env";
 
 // A really simple in-memory cache.
 // This will amortise the cost of constructing the same client multiple times in a single request.
@@ -16,5 +16,9 @@ function cache<T>(key: string, fn: () => T): T {
 // This uses the "Forge" application.
 export const msGraphClient = (tenantId: string) =>
 	cache(`tenantGraphClient|${tenantId}`, () =>
-		initGraphClient(tenantId, env.ENTRA_CLIENT_ID, env.ENTRA_CLIENT_SECRET),
+		initGraphClient(
+			tenantId,
+			getEnv().ENTRA_CLIENT_ID,
+			getEnv().ENTRA_CLIENT_SECRET,
+		),
 	);

@@ -4,7 +4,7 @@ import * as jose from "jose";
 import { renderToString } from "solid-js/web";
 
 import { db, domains, identityProviders } from "~/db";
-import { env } from "~/env";
+import { getEnv } from "~/env";
 import { getEmailDomain } from "../utils";
 import { upsertEntraIdUser } from "../trpc/routers/tenant/identityProvider";
 import { encryptJWT, signJWT } from "../jwt";
@@ -41,6 +41,8 @@ export const enrollmentRouter = new Hono()
 			return c.text("Email is required");
 		}
 
+		const env = getEnv();
+
 		// The user did the login flow in their browser, so we can skip doing it again in within the Windows Federated enrollment flow.
 		if (appru && accesstoken) {
 			// It seems like Microsoft's MDM client is caching the `accesstoken` prop (as least that's the only explanation for what i'm seeing)
@@ -62,7 +64,7 @@ export const enrollmentRouter = new Hono()
 		const domain = getEmailDomain(email);
 		if (domain === undefined) return c.text("Invalid email address");
 
-		const [domainRecord] = await db
+		const [domainRecord] = await db()
 			.select({
 				identityProvider: identityProviders,
 			})
@@ -103,6 +105,8 @@ export const enrollmentRouter = new Hono()
 
 		const code = c.req.query("code");
 		if (!code) return c.text("Missing OAuth code");
+
+		const env = getEnv();
 
 		const { appru, tenantId, tid, providerId }: State = JSON.parse(stateStr);
 

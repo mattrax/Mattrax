@@ -17,7 +17,7 @@ import { TRPCError } from "@trpc/server";
 
 export const deviceRouter = createTRPCRouter({
 	list: tenantProcedure.query(async ({ ctx }) => {
-		return await db
+		return await db()
 			.select({
 				id: devices.id,
 				name: devices.name,
@@ -34,7 +34,7 @@ export const deviceRouter = createTRPCRouter({
 	get: authedProcedure
 		.input(z.object({ deviceId: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const [device] = await db
+			const [device] = await db()
 				.select({
 					id: devices.id,
 					name: devices.name,
@@ -66,7 +66,7 @@ export const deviceRouter = createTRPCRouter({
 	sync: authedProcedure
 		.input(z.object({ deviceId: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const device = await db.query.devices.findFirst({
+			const device = await db().query.devices.findFirst({
 				where: eq(devices.id, input.deviceId),
 			});
 			if (!device) return null;
@@ -82,7 +82,7 @@ export const deviceRouter = createTRPCRouter({
 	members: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const policy = await db.query.devices.findFirst({
+			const policy = await db().query.devices.findFirst({
 				where: eq(devices.id, input.id),
 			});
 			if (!policy)
@@ -93,8 +93,7 @@ export const deviceRouter = createTRPCRouter({
 			// TODO: Finish this
 			return [] as any[];
 
-			// 	return await db
-			// 		.select({
+			// 	return await db()			// 		.select({
 			// 			pk: policyAssignables.pk,
 			// 			variant: policyAssignables.variant,
 			// 			name: sql<PolicyAssignableVariant>`
@@ -146,7 +145,7 @@ export const deviceRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const policy = await db.query.devices.findFirst({
+			const policy = await db().query.devices.findFirst({
 				where: eq(devices.id, input.id),
 			});
 			if (!policy)
@@ -155,7 +154,7 @@ export const deviceRouter = createTRPCRouter({
 			await ctx.ensureTenantAccount(policy.tenantPk);
 
 			// TODO: Finish this
-			// await db.insert(policyAssignables).values(
+			// await db().insert(policyAssignables).values(
 			// 	input.members.map((member) => ({
 			// 		policyPk: policy.pk,
 			// 		pk: member.pk,

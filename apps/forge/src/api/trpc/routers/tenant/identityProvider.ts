@@ -6,7 +6,7 @@ import { z } from "zod";
 import { msGraphClient } from "~/api/microsoft";
 import { getEmailDomain } from "~/api/utils";
 import { db, domains, identityProviders, users } from "~/db";
-import { env } from "~/env";
+import { getEnv } from "~/env";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
 import { encryptJWT } from "~/api/jwt";
 
@@ -14,13 +14,15 @@ export const identityProviderRouter = createTRPCRouter({
 	get: tenantProcedure.query(async ({ ctx }) => {
 		await new Promise((res) => setTimeout(res, 1000));
 		return (
-			(await db.query.identityProviders.findFirst({
+			(await db().query.identityProviders.findFirst({
 				where: eq(identityProviders.tenantPk, ctx.tenant.pk),
 			})) ?? null
 		);
 	}),
 
 	linkEntra: tenantProcedure.mutation(async ({ ctx }) => {
+		const env = getEnv();
+
 		const params = new URLSearchParams({
 			client_id: env.ENTRA_CLIENT_ID,
 			prompt: "login",
@@ -36,7 +38,7 @@ export const identityProviderRouter = createTRPCRouter({
 	}),
 
 	remove: tenantProcedure.mutation(async ({ ctx }) => {
-		const [provider] = await db
+		const [provider] = await db()
 			.select({
 				pk: identityProviders.pk,
 				remoteId: identityProviders.remoteId,
@@ -65,7 +67,7 @@ export const identityProviderRouter = createTRPCRouter({
 			console.error(err);
 		}
 
-		await db.transaction(async (db) => {
+		await db().transaction(async (db) => {
 			await db
 				.delete(domains)
 				.where(eq(domains.identityProviderPk, provider.pk));
@@ -89,7 +91,7 @@ export const identityProviderRouter = createTRPCRouter({
 
 		const [remoteDomains, connectedDomains] = await Promise.all([
 			identityProvider.getDomains(),
-			db.query.domains.findMany({
+			db().query.domains.findMany({
 				where: eq(domains.identityProviderPk, provider.pk),
 			}),
 		]);
@@ -118,12 +120,14 @@ export const identityProviderRouter = createTRPCRouter({
 					message: "Domain not found",
 				});
 
-			await db.insert(domains).values({
-				tenantPk: ctx.tenant.pk,
-				identityProviderPk: provider.pk,
-				domain: input.domain,
-				enterpriseEnrollmentAvailable: await enterpriseEnrollmentAvailable,
-			});
+			await db()
+				.insert(domains)
+				.values({
+					tenantPk: ctx.tenant.pk,
+					identityProviderPk: provider.pk,
+					domain: input.domain,
+					enterpriseEnrollmentAvailable: await enterpriseEnrollmentAvailable,
+				});
 
 			// TODO: `event.waitUntil`???
 			await syncEntraUsersWithDomains(
@@ -139,12 +143,12 @@ export const identityProviderRouter = createTRPCRouter({
 	refreshDomains: tenantProcedure.mutation(async ({ ctx }) => {
 		const provider = await ensureIdentityProvider(ctx.tenant.pk);
 
-		const knownDomains = await db.query.domains.findMany({
+		const knownDomains = await db().query.domains.findMany({
 			where: eq(domains.identityProviderPk, provider.pk),
 		});
 
 		for (const domain of knownDomains) {
-			await db
+			await db()
 				.update(domains)
 				.set({
 					enterpriseEnrollmentAvailable: await isEnterpriseEnrollmentAvailable(
@@ -169,7 +173,7 @@ export const identityProviderRouter = createTRPCRouter({
 		.mutation(async ({ ctx, input }) => {
 			const provider = await ensureIdentityProvider(ctx.tenant.pk);
 
-			await db
+			await db()
 				.delete(domains)
 				.where(
 					and(
@@ -182,7 +186,7 @@ export const identityProviderRouter = createTRPCRouter({
 		}),
 
 	sync: tenantProcedure.mutation(async ({ ctx }) => {
-		const [tenantProvider] = await db
+		const [tenantProvider] = await db()
 			.select()
 			.from(identityProviders)
 			.where(eq(identityProviders.tenantPk, ctx.tenant.pk));
@@ -191,7 +195,7 @@ export const identityProviderRouter = createTRPCRouter({
 				`Tenant '${ctx.tenant.pk}' not found or has no providers`,
 			); // TODO: make an error the frontend can handle
 
-		const domainList = await db.query.domains.findMany({
+		const domainList = await db().query.domains.findMany({
 			where: eq(domains.identityProviderPk, tenantProvider.pk),
 		});
 
@@ -209,7 +213,7 @@ interface IdentityProvider {
 }
 
 async function ensureIdentityProvider(tenantPk: number) {
-	const provider = await db.query.identityProviders.findFirst({
+	const provider = await db().query.identityProviders.findFirst({
 		where: eq(identityProviders.tenantPk, tenantPk),
 	});
 	if (!provider)
@@ -313,7 +317,7 @@ export function upsertEntraIdUser(
 	tenantPk: number,
 	identityProviderPk: number,
 ) {
-	return db
+	return db()
 		.insert(users)
 		.values({
 			name: u.displayName!,

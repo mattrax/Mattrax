@@ -8,7 +8,7 @@ export const membersRouter = createTRPCRouter({
 		// TODO: Pagination
 		.query(async ({ ctx, input }) => {
 			return (
-				await db
+				await db()
 					.select({
 						name: users.name,
 						id: users.id,
@@ -26,7 +26,7 @@ export const membersRouter = createTRPCRouter({
 		// TODO: Pagination
 		.query(async ({ ctx, input }) => {
 			return (
-				await db
+				await db()
 					.select({
 						name: devices.name,
 						id: devices.id,
@@ -44,7 +44,7 @@ export const membersRouter = createTRPCRouter({
 		// TODO: Pagination
 		.query(async ({ ctx, input }) => {
 			return (
-				await db
+				await db()
 					.select({
 						name: groups.name,
 						id: groups.id,

@@ -9,16 +9,16 @@ type StatsTarget = "tenants" | "users" | "devices" | "policies";
 export const internalRouter = createTRPCRouter({
 	stats: superAdminProcedure.query(() =>
 		union(
-			db
+			db()
 				.select({ count: count(), variant: sql<StatsTarget>`"tenants"` })
 				.from(tenants),
-			db
+			db()
 				.select({ count: count(), variant: sql<StatsTarget>`"users"` })
 				.from(users),
-			db
+			db()
 				.select({ count: count(), variant: sql<StatsTarget>`"devices"` })
 				.from(devices),
-			db
+			db()
 				.select({ count: count(), variant: sql<StatsTarget>`"policies"` })
 				.from(policies),
 		),

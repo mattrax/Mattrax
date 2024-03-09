@@ -41,19 +41,20 @@ export const publicProcedure = t.procedure;
 
 // Authenticated procedure
 export const authedProcedure = t.procedure.use(async (opts) => {
-	const sessionId = getCookie(opts.ctx.event, lucia.sessionCookieName) ?? null;
+	const sessionId =
+		getCookie(opts.ctx.event, lucia().sessionCookieName) ?? null;
 
 	const data = await (async () => {
 		if (sessionId === null) return;
 
-		const { session, user: account } = await lucia.validateSession(sessionId);
+		const { session, user: account } = await lucia().validateSession(sessionId);
 
 		if (session) {
 			if (session.fresh)
 				appendResponseHeader(
 					opts.ctx.event,
 					"Set-Cookie",
-					lucia.createSessionCookie(session.id).serialize(),
+					lucia().createSessionCookie(session.id).serialize(),
 				);
 
 			if (getCookie(opts.ctx.event, "isLoggedIn") === undefined) {
@@ -66,7 +67,7 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 			appendResponseHeader(
 				opts.ctx.event,
 				"Set-Cookie",
-				lucia.createBlankSessionCookie().serialize(),
+				lucia().createBlankSessionCookie().serialize(),
 			);
 		}
 
@@ -79,7 +80,7 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 
 	const getTenantList = async () => {
 		if (!tenantList)
-			tenantList = await db
+			tenantList = await db()
 				.select({ pk: tenants.pk, name: tenants.name })
 				.from(tenants)
 				.where(eq(tenantAccounts.accountPk, data.account.pk))
@@ -127,7 +128,7 @@ export const tenantProcedure = authedProcedure
 	.use(async (opts) => {
 		const { ctx, input } = opts;
 
-		const [tenant] = await db
+		const [tenant] = await db()
 			.select({ pk: tenants.pk, name: tenants.name, ownerPk: tenants.ownerPk })
 			.from(tenants)
 			.where(

@@ -30,9 +30,8 @@ export const groupRouter = createTRPCRouter({
 			// TODO: Full-text search???
 			// TODO: Pagination abstraction
 			// TODO: Can a cursor make this more efficent???
-			// TODO: Switch to DB
-
-			return await db
+			// TODO: Switch to db()
+			return await db()
 				.select({
 					id: groups.id,
 					name: groups.name,
@@ -48,7 +47,7 @@ export const groupRouter = createTRPCRouter({
 		.mutation(async ({ ctx, input }) => {
 			const id = createId();
 
-			await db.insert(groups).values({
+			await db().insert(groups).values({
 				id,
 				name: input.name,
 				tenantPk: ctx.tenant.pk,
@@ -60,7 +59,7 @@ export const groupRouter = createTRPCRouter({
 	get: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
+			const group = await db().query.groups.findFirst({
 				where: eq(groups.id, input.id),
 			});
 			if (!group) return null;
@@ -78,14 +77,14 @@ export const groupRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
+			const group = await db().query.groups.findFirst({
 				where: eq(groups.id, input.id),
 			});
 			if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
 
 			await ctx.ensureTenantAccount(group.tenantPk);
 
-			await db
+			await db()
 				.update(groups)
 				.set({ ...(input.name && { name: input.name }) })
 				.where(eq(groups.id, input.id));
@@ -94,14 +93,14 @@ export const groupRouter = createTRPCRouter({
 	members: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
+			const group = await db().query.groups.findFirst({
 				where: eq(groups.id, input.id),
 			});
 			if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
 
 			await ctx.ensureTenantAccount(group.tenantPk);
 
-			return await db
+			return await db()
 				.select({
 					pk: groupAssignables.pk,
 					variant: groupAssignables.variant,
@@ -146,7 +145,7 @@ export const groupRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
+			const group = await db().query.groups.findFirst({
 				where: and(eq(groups.id, input.id)),
 			});
 			if (!group)
@@ -154,7 +153,7 @@ export const groupRouter = createTRPCRouter({
 
 			await ctx.ensureTenantAccount(group.tenantPk);
 
-			await db
+			await db()
 				.insert(groupAssignables)
 				.values(
 					input.members.map((member) => ({

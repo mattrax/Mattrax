@@ -1,13 +1,11 @@
-import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getCookie } from "vinxi/server";
 import { z } from "zod";
 
-import { db, domains, identityProviders } from "~/db";
-import { env } from "~/env";
+import { db, identityProviders } from "~/db";
+import { getEnv } from "~/env";
 import { lucia } from "../auth";
 import { msGraphClient } from "../microsoft";
-import { syncEntraUsersWithDomains } from "../trpc/routers/tenant/identityProvider";
 import { HonoEnv } from "../types";
 import { decryptJWT } from "../jwt";
 
@@ -38,11 +36,13 @@ export const msRouter = new Hono<HonoEnv>().get("/link", async (c) => {
 	if (!rawState) return new Response("No state!"); // TODO: Proper error UI as the user may land here
 	const { tenantPk } = OAUTH_STATE.parse((await decryptJWT(rawState)).payload);
 
-	const sessionId = getCookie(c.env.h3Event, lucia.sessionCookieName) ?? null;
+	const sessionId = getCookie(c.env.h3Event, lucia().sessionCookieName) ?? null;
 	if (sessionId === null) return new Response("Unauthorised!"); // TODO: Proper error UI as the user may land here
 
-	const { session } = await lucia.validateSession(sessionId);
+	const { session } = await lucia().validateSession(sessionId);
 	if (!session) return new Response("Unauthorised!"); // TODO: Proper error UI as the user may land here
+
+	const env = getEnv();
 
 	const body = new URLSearchParams({
 		client_id: env.ENTRA_CLIENT_ID,
@@ -82,7 +82,7 @@ export const msRouter = new Hono<HonoEnv>().get("/link", async (c) => {
 	const entraTenantId = tenant.id;
 
 	// the actually important bit
-	await db
+	await db()
 		.insert(identityProviders)
 		.values({
 			variant: "entraId",

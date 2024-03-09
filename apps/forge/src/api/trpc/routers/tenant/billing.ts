@@ -1,13 +1,13 @@
 import { eq } from "drizzle-orm";
 import type Stripe from "stripe";
-import { stripe } from "~/api/stripe";
+// import { stripe } from "~/api/stripe";
 import { db, tenants } from "~/db";
-import { env } from "~/env";
+import { getEnv } from "~/env";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
 
 export const billingRouter = createTRPCRouter({
 	portalUrl: tenantProcedure.mutation(async ({ ctx }) => {
-		const [tenant] = await db
+		const [tenant] = await db()
 			.select({
 				name: tenants.name,
 				billingEmail: tenants.billingEmail,
@@ -20,17 +20,14 @@ export const billingRouter = createTRPCRouter({
 		let customerId: string;
 		if (!tenant.stripeCustomerId) {
 			try {
-				const customer = await stripe.customers.create({
-					name: tenant.name,
-					email: tenant.billingEmail || undefined,
-				});
-
-				await db
-					.update(tenants)
-					.set({ stripeCustomerId: customer.id })
-					.where(eq(tenants.pk, ctx.tenant.pk));
-
-				customerId = customer.id;
+				// const customer = await stripe.customers.create({
+				// 	name: tenant.name,
+				// 	email: tenant.billingEmail || undefined,
+				// });
+				// await db()				// 	.update(tenants)
+				// 	.set({ stripeCustomerId: customer.id })
+				// 	.where(eq(tenants.pk, ctx.tenant.pk));
+				// customerId = customer.id;
 			} catch (err) {
 				console.error("Error creating customer", err);
 				throw new Error("Error creating customer");
@@ -42,8 +39,10 @@ export const billingRouter = createTRPCRouter({
 		// TODO: When using the official Stripe SDK, this endpoint causes the entire Edge Function to hang and i'm at a loss to why.
 		// TODO: This will do for now but we should try and fix it.
 
+		const env = getEnv();
+
 		const body = new URLSearchParams({
-			customer: customerId,
+			customer: customerId!,
 			return_url: `${env.PROD_URL}/${ctx.tenant.pk}/settings`,
 		});
 

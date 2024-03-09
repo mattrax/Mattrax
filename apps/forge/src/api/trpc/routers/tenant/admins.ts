@@ -13,7 +13,7 @@ import {
 	tenantAccounts,
 	tenants,
 } from "~/db";
-import { env } from "~/env";
+import { getEnv } from "~/env";
 import {
 	createTRPCRouter,
 	publicProcedure,
@@ -23,13 +23,13 @@ import {
 export const adminsRouter = createTRPCRouter({
 	list: tenantProcedure.query(async ({ ctx }) => {
 		const [ownerId, rows] = await Promise.allSettled([
-			db
+			db()
 				.select({ ownerId: accounts.id })
 				.from(tenants)
 				.where(eq(tenants.pk, ctx.tenant.pk))
 				.innerJoin(accounts, eq(tenants.ownerPk, accounts.pk))
 				.then((v) => v?.[0]?.ownerId),
-			db
+			db()
 				.select({
 					id: accounts.id,
 					name: accounts.name,
@@ -51,7 +51,7 @@ export const adminsRouter = createTRPCRouter({
 	sendInvite: tenantProcedure
 		.input(z.object({ email: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const tenant = await db.query.tenants.findFirst({
+			const tenant = await db().query.tenants.findFirst({
 				columns: { name: true },
 				where: eq(tenants.pk, ctx.tenant.pk),
 			});
@@ -64,7 +64,7 @@ export const adminsRouter = createTRPCRouter({
 			const code = crypto.randomUUID();
 
 			// try {
-			await db.insert(tenantAccountInvites).values({
+			await db().insert(tenantAccountInvites).values({
 				tenantPk: ctx.tenant.pk,
 				email: input.email,
 				code,
@@ -82,13 +82,13 @@ export const adminsRouter = createTRPCRouter({
 				type: "tenantAdminInvite",
 				invitedByEmail: ctx.account.email,
 				tenantName: tenant.name,
-				inviteLink: `${env.PROD_URL}/invite/tenant/${code}`,
+				inviteLink: `${getEnv().PROD_URL}/invite/tenant/${code}`,
 			});
 		}),
 	acceptInvite: publicProcedure
 		.input(z.object({ code: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const invite = await db.query.tenantAccountInvites.findFirst({
+			const invite = await db().query.tenantAccountInvites.findFirst({
 				where: eq(tenantAccountInvites.code, input.code),
 			});
 			if (!invite)
@@ -99,7 +99,7 @@ export const adminsRouter = createTRPCRouter({
 
 			const name = invite.email.split("@")[0] ?? "";
 			const id = generateId(16);
-			const result = await db
+			const result = await db()
 				.insert(accounts)
 				.values({ name, email: invite.email, id })
 				.onDuplicateKeyUpdate({
@@ -110,7 +110,7 @@ export const adminsRouter = createTRPCRouter({
 			let accountId = id;
 
 			if (accountPk === 0) {
-				const account = await db.query.accounts.findFirst({
+				const account = await db().query.accounts.findFirst({
 					where: eq(accounts.email, invite.email),
 				});
 				if (!account)
@@ -119,7 +119,7 @@ export const adminsRouter = createTRPCRouter({
 				accountId = account.id;
 			}
 
-			await db.transaction(async (db) => {
+			await db().transaction(async (db) => {
 				await db.insert(tenantAccounts).values({
 					tenantPk: invite.tenantPk,
 					accountPk: accountPk,
@@ -130,17 +130,17 @@ export const adminsRouter = createTRPCRouter({
 					.where(eq(tenantAccountInvites.code, input.code));
 			});
 
-			const session = await lucia.createSession(accountId, {});
+			const session = await lucia().createSession(accountId, {});
 			appendResponseHeader(
 				ctx.event,
 				"Set-Cookie",
-				lucia.createSessionCookie(session.id).serialize(),
+				lucia().createSessionCookie(session.id).serialize(),
 			);
 			setCookie(ctx.event, "isLoggedIn", "true", {
 				httpOnly: false,
 			});
 
-			const tenant = await db.query.tenants.findFirst({
+			const tenant = await db().query.tenants.findFirst({
 				where: eq(tenants.pk, invite.tenantPk),
 			});
 			if (!tenant)
@@ -154,7 +154,7 @@ export const adminsRouter = createTRPCRouter({
 	remove: tenantProcedure
 		.input(z.object({ adminId: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const account = await db.query.accounts.findFirst({
+			const account = await db().query.accounts.findFirst({
 				where: eq(accounts.id, input.adminId),
 			});
 			if (!account)
@@ -169,7 +169,7 @@ export const adminsRouter = createTRPCRouter({
 					message: "Cannot remove tenant owner",
 				});
 
-			await db
+			await db()
 				.delete(tenantAccounts)
 				.where(
 					and(
@@ -179,14 +179,14 @@ export const adminsRouter = createTRPCRouter({
 				);
 		}),
 	invites: tenantProcedure.query(async ({ ctx }) => {
-		return await db.query.tenantAccountInvites.findMany({
+		return await db().query.tenantAccountInvites.findMany({
 			where: eq(tenantAccountInvites.tenantPk, ctx.tenant.pk),
 		});
 	}),
 	removeInvite: tenantProcedure
 		.input(z.object({ email: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			await db
+			await db()
 				.delete(tenantAccountInvites)
 				.where(
 					and(

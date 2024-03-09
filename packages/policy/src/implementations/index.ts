@@ -19,7 +19,7 @@ export const implementPolicy = <const P extends PolicyDefinition>(
 			// TODO: Sign the plist
 			return plist.build({
 				PayloadContent: [implementation.buildAppleProfile(data)],
-				// TODO: All generated properly from DB
+				// TODO: All generated properly from db
 				PayloadDisplayName: "Untitled",
 				PayloadIdentifier:
 					"Oscars-MacBook-Pro.54A9B63C-F7E6-47F5-83C9-E3A10C4EE5C8",

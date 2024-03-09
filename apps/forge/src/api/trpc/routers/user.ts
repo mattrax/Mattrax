@@ -27,11 +27,10 @@ export const userRouter = createTRPCRouter({
 			// TODO: Full-text search???
 			// TODO: Pagination abstraction
 			// TODO: Can a cursor make this more efficent???
-			// TODO: Switch to DB
-
+			// TODO: Switch to db()
 			await new Promise((resolve) => setTimeout(resolve, 1000));
 
-			return await db
+			return await db()
 				.select({
 					id: users.id,
 					name: users.name,
@@ -53,7 +52,7 @@ export const userRouter = createTRPCRouter({
 	get: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const [user] = await db
+			const [user] = await db()
 				.select({
 					id: users.id,
 					name: users.name,
@@ -80,7 +79,7 @@ export const userRouter = createTRPCRouter({
 	invite: authedProcedure
 		.input(z.object({ id: z.string(), message: z.string().optional() }))
 		.mutation(async ({ ctx, input }) => {
-			const user = await db.query.users.findFirst({
+			const user = await db().query.users.findFirst({
 				where: eq(users.id, input.id),
 			});
 			if (!user)
@@ -103,7 +102,7 @@ export const userRouter = createTRPCRouter({
 	members: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const policy = await db.query.users.findFirst({
+			const policy = await db().query.users.findFirst({
 				where: eq(users.id, input.id),
 			});
 			if (!policy)
@@ -113,8 +112,7 @@ export const userRouter = createTRPCRouter({
 
 			return [] as any[]; // TODO
 
-			// 	return await db
-			// 		.select({
+			// 	return await db()			// 		.select({
 			// 			pk: policyAssignables.pk,
 			// 			variant: policyAssignables.variant,
 			// 			name: sql<PolicyAssignableVariant>`
@@ -166,7 +164,7 @@ export const userRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const policy = await db.query.users.findFirst({
+			const policy = await db().query.users.findFirst({
 				where: eq(users.id, input.id),
 			});
 			if (!policy)
@@ -175,7 +173,7 @@ export const userRouter = createTRPCRouter({
 			await ctx.ensureTenantAccount(policy.tenantPk);
 
 			// TODO
-			// await db.insert(policyAssignables).values(
+			// await db().insert(policyAssignables).values(
 			// 	input.members.map((member) => ({
 			// 		policyPk: policy.pk,
 			// 		pk: member.pk,
