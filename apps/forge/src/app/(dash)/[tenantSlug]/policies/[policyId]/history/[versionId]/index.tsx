@@ -27,7 +27,7 @@ export default function Page() {
 // import { match } from "ts-pattern";
 // import { As } from "@kobalte/core";
 // import { RouterOutput } from "~/api";
-// import { PageLayout } from "~/routes/(dash)/[tenantSlug]/PageLayout";
+// import { PageLayout } from "~/app/(dash)/[tenantSlug]/PageLayout";
 
 // export default function Page() {
 // 	const params = useZodParams({ tenantSlug: z.string() });

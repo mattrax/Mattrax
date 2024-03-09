@@ -1,6 +1,6 @@
 import { ErrorBoundary, type ParentProps } from "solid-js";
 import { Button } from "./ui";
-import { OscarTriedToDesignAMattraxLogoButFailedPrettyHard } from "~/routes/[...404]";
+import { OscarTriedToDesignAMattraxLogoButFailedPrettyHard } from "~/app/[...404]";
 
 // A Mattrax styled error boundary.
 export function MErrorBoundary(props: ParentProps) {

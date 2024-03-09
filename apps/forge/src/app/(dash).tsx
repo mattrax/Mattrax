@@ -3,7 +3,6 @@ import { ParentProps, Suspense } from "solid-js";
 import { BreadcrumbsRoot } from "~/components/Breadcrumbs";
 import { NavItemsProvider } from "./(dash)/NavItems";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
-import { Route } from "@solidjs/router/dist/types";
 import { trpc } from "~/lib";
 
 export const route = {
