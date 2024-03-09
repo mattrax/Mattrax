@@ -1,7 +1,7 @@
 import { As, Tabs } from "@kobalte/core";
 import { createContextProvider } from "@solid-primitives/context";
 import { A, useMatch, useResolvedPath } from "@solidjs/router";
-import { Accessor, For, Show, createMemo, onCleanup } from "solid-js";
+import { type Accessor, For, Show, createMemo, onCleanup } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 
 export type NavItemConfig = {
@@ -52,7 +52,7 @@ export function NavItems() {
 										}
 										activeClass="text-black selected"
 										inactiveClass="text-gray-500"
-										class="py-2 flex text-center align-middle transition duration-[16ms] relative group focus:outline-none"
+										class="py-2 flex text-center align-middle relative group focus:outline-none"
 									>
 										<div class="text-sm rounded px-3 py-1.5 hover:bg-black/5 hover:text-black group-focus-visible:bg-black/5 group-focus-visible:text-black group-focus:outline-none transition-colors duration-75">
 											{item.title}
