@@ -38,6 +38,6 @@ export const env = createEnv({
 	},
 	clientPrefix: "VITE_",
 	client: {},
-	runtimeEnv: import.meta.env,
+	runtimeEnv: process.env,
 	emptyStringAsUndefined: true,
 });
