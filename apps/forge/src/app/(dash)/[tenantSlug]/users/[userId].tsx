@@ -10,6 +10,7 @@ import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
 import { Badge } from "~/components/ui";
 import { useNavbarItems } from "../../NavItems";
+import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
 
 export const [UserContextProvider, useUser] = createContextProvider(
 	(props: {
@@ -39,7 +40,7 @@ export default function Layout(props: ParentProps) {
 								<Badge variant="outline">User</Badge>
 							</A>
 						</Breadcrumb>
-						{props.children}
+						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</UserContextProvider>
 				)}
 			</Show>

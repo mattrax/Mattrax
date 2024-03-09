@@ -96,7 +96,6 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 });
 
 export const isSuperAdmin = (account: User) =>
-	// TODO: Make sure this check is only run if the email is verified
 	account.email.endsWith("@otbeaumont.me") ||
 	account.email.endsWith("@mattrax.app");
 

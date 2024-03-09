@@ -69,6 +69,7 @@ export const authRouter = createTRPCRouter({
 
 			return { accountId };
 		}),
+
 	verifyLoginCode: publicProcedure
 		.input(z.object({ code: z.string() }))
 		.mutation(async ({ input, ctx }) => {
@@ -106,6 +107,7 @@ export const authRouter = createTRPCRouter({
 
 			return true;
 		}),
+
 	me: authedProcedure.query(async ({ ctx: { account } }) => {
 		return {
 			id: account.id,
@@ -114,6 +116,7 @@ export const authRouter = createTRPCRouter({
 			tenants: await fetchTenants(account.pk),
 		};
 	}),
+
 	update: authedProcedure
 		.input(
 			z.object({

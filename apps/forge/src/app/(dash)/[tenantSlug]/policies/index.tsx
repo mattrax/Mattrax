@@ -17,7 +17,6 @@ import {
 	Popover,
 	PopoverContent,
 	PopoverTrigger,
-	Separator,
 } from "~/components/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 
@@ -69,7 +68,6 @@ export default function Page() {
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Policies</PageLayoutHeading>}>
-			<Separator />
 			<div class="flex flex-row gap-4">
 				<Input
 					placeholder={isLoading() ? "Loading..." : "Search..."}

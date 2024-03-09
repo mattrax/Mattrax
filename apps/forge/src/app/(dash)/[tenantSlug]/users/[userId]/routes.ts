@@ -10,4 +10,9 @@ export default [
 		path: "/scope",
 		component: lazy(() => import("./scope")),
 	},
+	{
+		// This 404 prevents the navbar breaking
+		path: "/*all",
+		component: lazy(() => import("../../[...404]")),
+	},
 ] satisfies RouteDefinition[];

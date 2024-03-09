@@ -9,8 +9,8 @@ import { trpc } from "~/lib";
 import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
 import { Badge } from "~/components/ui";
-import { useTenantSlug } from "../../[tenantSlug]";
 import { useNavbarItems } from "../../NavItems";
+import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
 
 export const [AppContextProvider, useApp] = createContextProvider(
 	(props: {
@@ -40,7 +40,7 @@ export default function Layout(props: ParentProps) {
 								<Badge variant="outline">Application</Badge>
 							</A>
 						</Breadcrumb>
-						{props.children}
+						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</AppContextProvider>
 				)}
 			</Show>

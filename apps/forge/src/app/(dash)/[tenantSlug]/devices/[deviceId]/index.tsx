@@ -10,16 +10,25 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 	Label,
+	Textarea,
 } from "~/components/ui";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { useDevice } from "../[deviceId]";
 import { trpc } from "~/lib";
+import { toast } from "solid-sonner";
+
+// TODO: Rename device
+// TODO: Rotate filevault keys
+// TODO: Disable activation lock
 
 export default function Page() {
 	const device = useDevice();
 
 	const syncDevice = trpc.device.sync.useMutation(() => ({
-		onSuccess: () => device.query.refetch(),
+		onSuccess: () => {
+			device.query.refetch();
+			toast.success("Device successfully synced");
+		},
 	}));
 
 	const [lastSeen] = createTimeAgo(device().lastSynced);
@@ -63,6 +72,19 @@ export default function Page() {
 							</DropdownMenuItem>
 							<DropdownMenuItem
 								disabled={isDropdownDisabled()}
+								onClick={() => alert("TODO: Confirmation then restart device")}
+							>
+								Restart
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								disabled={isDropdownDisabled()}
+								onClick={() => alert("TODO: Confirmation then shutdown device")}
+								class="text-red-500"
+							>
+								Shutdown
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								disabled={isDropdownDisabled()}
 								onClick={() => alert("TODO: Confirmation then lock device")}
 								class="text-red-500"
 							>
@@ -83,7 +105,7 @@ export default function Page() {
 								onClick={() => alert("TODO: Confirmation then unenroll device")}
 								class="text-red-500"
 							>
-								Remove
+								Retire
 							</DropdownMenuItem>
 						</DropdownMenuContent>
 					</DropdownMenu>
@@ -92,6 +114,7 @@ export default function Page() {
 		>
 			<h2 class="text-bold text-xl">General:</h2>
 			{/* // TODO: Enrollment type (supervised, DEP, Windows Azure, etc) */}
+			{/* // TODO: User approved enrollment */}
 			<Item
 				label="Owner"
 				data={
@@ -107,6 +130,11 @@ export default function Page() {
 			{/* // TODO: Tooltip on dates with actual value */}
 			<Item label="Last Seen" data={lastSeen()} />
 			<Item label="Enrolled At" data={enrolledAt()} />
+			{/* // TODO: Allow saving changes to notes */}
+			<Item
+				label="Notes"
+				data={<Textarea disabled>{device().description}</Textarea>}
+			/>
 
 			<h2 class="text-bold text-xl">Hardware:</h2>
 			<Item label="Serial Number" data={device().serialNumber} />
@@ -156,6 +184,11 @@ export default function Page() {
 				label="MAC addresses"
 				data={<p class="text-muted-foreground opacity-70">Coming soon</p>}
 			/>
+
+			{/* Supervised
+			Encrypted
+			Jailbroken
+			Bootstrap token escrowed */}
 		</PageLayout>
 	);
 }

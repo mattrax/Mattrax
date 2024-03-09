@@ -1,6 +1,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { union } from "drizzle-orm/mysql-core";
 
 import {
 	applications,
@@ -20,7 +21,7 @@ import {
 import { adminsRouter } from "./admins";
 import { billingRouter } from "./billing";
 import { identityProviderRouter } from "./identityProvider";
-import { union } from "drizzle-orm/mysql-core";
+import { membersRouter } from "./members";
 
 export type StatsTarget =
 	| "devices"
@@ -166,4 +167,5 @@ export const tenantRouter = createTRPCRouter({
 	admins: adminsRouter,
 	billing: billingRouter,
 	identityProvider: identityProviderRouter,
+	members: membersRouter,
 });

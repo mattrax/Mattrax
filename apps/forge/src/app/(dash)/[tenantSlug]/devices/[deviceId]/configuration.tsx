@@ -5,12 +5,12 @@ export default function Page() {
 	const device = useDevice();
 
 	return (
-		<PageLayout heading={<PageLayoutHeading>Inventory</PageLayoutHeading>}>
+		<PageLayout heading={<PageLayoutHeading>Configuration</PageLayoutHeading>}>
 			<h1 class="text-muted-foreground opacity-70">Coming soon...</h1>
 
-			{/* // TODO: Apps */}
+			{/* // TODO: Show deploy status and the results */}
 
-			{/* // TODO: Local users */}
+			{/* // TODO: Os version management maybe */}
 		</PageLayout>
 	);
 }

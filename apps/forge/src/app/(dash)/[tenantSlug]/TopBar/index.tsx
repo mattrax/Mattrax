@@ -40,44 +40,56 @@ export default function Component(props: TenantSwitcherProps): JSX.Element {
 				<TenantContext>
 					<TenantSwitcher {...props} />
 				</TenantContext>
+				{/* // Technically this doesn't depend on auth but it's nicer UX for them to render left to right. */}
+				<Breadcrumbs />
 			</AuthContext>
-			<Breadcrumbs />
 
 			<div class="flex-1" />
 
 			<AuthContext>
-				<FeedbackPopover>
-					<As
-						component={Button}
-						variant="outline"
-						size="sm"
-						class="mr-4 hidden md:block"
-					>
-						Feedback
-					</As>
-				</FeedbackPopover>
-
-				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<As component={Avatar}>
-							{/* TODO: Properly hook this up + Gravatar support */}
-							{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
-							<AvatarFallback>{getInitials(useAuth()().name)}</AvatarFallback>
+				<div class="flex space-x-2 justify-center items-center">
+					<FeedbackPopover>
+						<As
+							component={Button}
+							variant="outline"
+							size="sm"
+							class="hidden md:block"
+						>
+							Feedback
 						</As>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent>
-						<DropdownMenuLabel>{useAuth()().email}</DropdownMenuLabel>
-						<DropdownMenuSeparator />
-						<DropdownMenuItem asChild>
-							<As component={A} href="/profile">
-								Profile
+					</FeedbackPopover>
+
+					<a
+						href="https://docs.mattrax.app"
+						class="text-gray-900 text-sm px-2"
+						rel="noreferrer noopener"
+						target="_blank"
+					>
+						Docs
+					</a>
+
+					<DropdownMenu>
+						<DropdownMenuTrigger asChild>
+							<As component={Avatar}>
+								{/* TODO: Properly hook this up + Gravatar support */}
+								{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
+								<AvatarFallback>{getInitials(useAuth()().name)}</AvatarFallback>
 							</As>
-						</DropdownMenuItem>
-						<DropdownMenuItem onClick={() => logout.mutate()}>
-							Logout
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent>
+							<DropdownMenuLabel>{useAuth()().email}</DropdownMenuLabel>
+							<DropdownMenuSeparator />
+							<DropdownMenuItem asChild>
+								<As component={A} href="/profile">
+									Profile
+								</As>
+							</DropdownMenuItem>
+							<DropdownMenuItem onClick={() => logout.mutate()}>
+								Logout
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</div>
 			</AuthContext>
 		</div>
 	);

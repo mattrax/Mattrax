@@ -7,6 +7,10 @@ export default [
 		component: lazy(() => import("./index")),
 	},
 	{
+		path: "/configuration",
+		component: lazy(() => import("./configuration")),
+	},
+	{
 		path: "/scope",
 		component: lazy(() => import("./scope")),
 	},
@@ -17,5 +21,10 @@ export default [
 	{
 		path: "/settings",
 		component: lazy(() => import("./settings")),
+	},
+	{
+		// This 404 prevents the navbar breaking
+		path: "/*all",
+		component: lazy(() => import("../../[...404]")),
 	},
 ] as RouteDefinition[];
