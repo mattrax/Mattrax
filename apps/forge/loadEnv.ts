@@ -6,6 +6,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const monorepoRoot = join(__dirname, "../..");
 
+console.log(monorepoRoot);
+
 process.env = {
 	...process.env,
 	...loadEnv("production", monorepoRoot, ""),

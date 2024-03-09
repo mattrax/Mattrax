@@ -6,7 +6,6 @@ import Icons from "unplugin-icons/vite";
 import IconsResolver from "unplugin-icons/resolver";
 import AutoImport from "unplugin-auto-import/vite";
 import { visualizer } from "rollup-plugin-visualizer";
-import { createHtmlPlugin } from "vite-plugin-html";
 
 import { monorepoRoot } from "./loadEnv";
 import "./src/env";
@@ -24,10 +23,6 @@ export default defineConfig({
 				// If this isn't set Vinxi hangs on startup
 				root: ".",
 			}),
-			// Vinxi/Nitro doesn't play nice with this plugin
-			// ...(process.env.NODE_ENV === "development"
-			// 	? [createHtmlPlugin({ minify: true })]
-			// 	: []),
 			AutoImport({
 				resolvers: [IconsResolver({ prefix: "Icon", extension: "jsx" })],
 				dts: "./src/auto-imports.d.ts",
