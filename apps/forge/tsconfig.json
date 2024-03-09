@@ -4,7 +4,7 @@
     "outDir": "./dist",
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
-    "types": ["vinxi/client", "vite/client", "unplugin-icons/types/solid"],
+    "types": ["vinxi/client", "unplugin-icons/types/solid"],
     "paths": {
       "~/*": ["./src/*"]
     }

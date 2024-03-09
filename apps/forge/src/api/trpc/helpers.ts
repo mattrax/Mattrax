@@ -2,14 +2,19 @@ import { TRPCError, initTRPC } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { User } from "lucia";
 import superjson from "superjson";
-import { appendResponseHeader, getCookie, setCookie } from "vinxi/server";
+import {
+	HTTPEvent,
+	appendResponseHeader,
+	getCookie,
+	setCookie,
+} from "vinxi/server";
 import { ZodError, z } from "zod";
 
 import { db, tenantAccounts, tenants } from "~/db";
 import { lucia } from "../auth";
 
-export const createTRPCContext = () => {
-	return { db };
+export const createTRPCContext = (event: HTTPEvent) => {
+	return { db, event };
 };
 
 const t = initTRPC.context<typeof createTRPCContext>().create({

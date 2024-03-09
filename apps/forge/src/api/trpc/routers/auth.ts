@@ -97,11 +97,12 @@ export const authRouter = createTRPCRouter({
 			const session = await lucia.createSession(account.id, {});
 
 			appendResponseHeader(
+				ctx.event,
 				"Set-Cookie",
 				lucia.createSessionCookie(session.id).serialize(),
 			);
 
-			setCookie("isLoggedIn", "true", {
+			setCookie(ctx.event, "isLoggedIn", "true", {
 				httpOnly: false,
 			});
 
