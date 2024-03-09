@@ -7,7 +7,7 @@ import { db, domains, identityProviders } from "~/db";
 import { env } from "~/env";
 import { getEmailDomain } from "../utils";
 import { upsertEntraIdUser } from "../trpc/routers/tenant/identityProvider";
-import { encryptJWT, signJWT } from "../jwt";
+import { decryptJWT, encryptJWT, signJWT } from "../jwt";
 
 export type EnrollmentProfileDescription = {
 	data: string;
@@ -89,7 +89,10 @@ export const enrollmentRouter = new Hono()
 					tid: domainRecord.identityProvider.tenantPk,
 					providerId: domainRecord.identityProvider.pk,
 				},
-				{ expirationTime: new Date(Date.now() + 10 * MINUTE) },
+				{
+					expirationTime: new Date(Date.now() + 10 * MINUTE),
+					audience: "enroll",
+				},
 			),
 		});
 
@@ -104,7 +107,10 @@ export const enrollmentRouter = new Hono()
 		const code = c.req.query("code");
 		if (!code) return c.text("Missing OAuth code");
 
-		const { appru, tenantId, tid, providerId }: State = JSON.parse(stateStr);
+		const stateJwt = await decryptJWT(stateStr, {
+			audience: "enroll",
+		});
+		const { appru, tenantId, tid, providerId } = stateJwt.payload as State;
 
 		const { access_token } = await fetch(
 			`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
@@ -140,7 +146,7 @@ export const enrollmentRouter = new Hono()
 		const { userPrincipalName } = user;
 
 		const result = await upsertEntraIdUser(user, tid, providerId);
-		const uid = parseInt(result.insertId);
+		const uid = Number.parseInt(result.insertId);
 
 		// TODO: Upsert if the user doesn't exist already
 
