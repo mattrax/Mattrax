@@ -4,7 +4,7 @@ import Icons from "unplugin-icons/vite";
 import IconsResolver from "unplugin-icons/resolver";
 import AutoImport from "unplugin-auto-import/vite";
 import { visualizer } from "rollup-plugin-visualizer";
-// import { cloudflare } from "unenv";
+import { cloudflare } from "unenv";
 
 import { monorepoRoot } from "./loadEnv";
 import "./src/env";
@@ -34,7 +34,7 @@ export default defineConfig({
 		],
 	},
 	server: {
-		// unenv: cloudflare,
+		unenv: cloudflare,
 		// vercel: {
 		//   regions: ["iad1"],
 		// },
