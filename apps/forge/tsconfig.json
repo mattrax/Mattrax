@@ -1,9 +1,9 @@
 {
   "extends": "../../tsconfig.json",
   "compileroptions": {
-    "outdir": "./dist",
+    "outDir": "./dist",
     "jsx": "preserve",
-    "jsximportsource": "solid-js",
+    "jsxImportSource": "solid-js",
     "types": ["vinxi/client", "vite/client", "unplugin-icons/types/solid"],
     "paths": {
       "~/*": ["./src/*"]

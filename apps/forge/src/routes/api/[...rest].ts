@@ -1,4 +1,4 @@
-import { APIHandler } from "@solidjs/start/server";
+import type { APIHandler } from "@solidjs/start/server";
 
 import { app } from "~/api/server";
 
