@@ -15,8 +15,8 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "~/components/ui";
-import IconIcOutlineClose from '~icons/ic/outline-close.jsx'
-import IconPrimeExternalLink from '~icons/prime/external-link.jsx'
+import IconIcOutlineClose from "~icons/ic/outline-close.jsx";
+import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
 import ENTRA_ID_ICON from "~/assets/EntraIDLogo.svg";

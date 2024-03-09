@@ -3,8 +3,8 @@ import { As } from "@kobalte/core";
 import clsx from "clsx";
 import { z } from "zod";
 
-import IconMaterialSymbolsWarningRounded from '~icons/material-symbols/warning-rounded.jsx'
-import IconPrimeExternalLink from '~icons/prime/external-link.jsx'
+import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
+import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import {
 	Badge,
 	Button,

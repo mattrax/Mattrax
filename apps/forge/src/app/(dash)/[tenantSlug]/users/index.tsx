@@ -3,8 +3,8 @@ import { A, RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Show, Suspense } from "solid-js";
 
-import IconCarbonCaretSort from '~icons/carbon/caret-sort.jsx'
-import IconCarbonCaretDown from '~icons/carbon/caret-down.jsx'
+import IconCarbonCaretSort from "~icons/carbon/caret-sort.jsx";
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { RouterOutput } from "~/api/trpc";
 import {
 	ColumnsDropdown,

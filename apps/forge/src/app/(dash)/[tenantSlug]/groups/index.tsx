@@ -4,7 +4,7 @@ import { createColumnHelper } from "@tanstack/solid-table";
 import { ParentProps, Suspense, startTransition } from "solid-js";
 import { z } from "zod";
 
-import IconCarbonCaretDown from '~icons/carbon/caret-down.jsx'
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 
 export const route = {

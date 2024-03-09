@@ -2,7 +2,7 @@ import { As } from "@kobalte/core";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { ParentProps, Suspense, createSignal } from "solid-js";
 
-import IconCarbonCaretDown from '~icons/carbon/caret-down.jsx'
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import {
 	ColumnsDropdown,
 	StandardTable,

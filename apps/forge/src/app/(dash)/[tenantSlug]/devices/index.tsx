@@ -5,7 +5,7 @@ import { RouterOutput } from "~/api/trpc";
 import { Suspense } from "solid-js";
 import { As } from "@kobalte/core";
 
-import IconCarbonCaretDown from '~icons/carbon/caret-down.jsx'
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import {
 	ColumnsDropdown,
 	StandardTable,

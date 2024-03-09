@@ -13,7 +13,7 @@ import { ZodError, z } from "zod";
 import { db, tenantAccounts, tenants } from "~/db";
 import { lucia } from "../auth";
 
-export const createTRPCContext = async (event: H3Event) => {
+export const createTRPCContext = (event: H3Event) => {
 	return {
 		db,
 		event,
@@ -21,7 +21,6 @@ export const createTRPCContext = async (event: H3Event) => {
 };
 
 const t = initTRPC.context<typeof createTRPCContext>().create({
-	transformer: superjson,
 	errorFormatter({ shape, error }) {
 		return {
 			...shape,

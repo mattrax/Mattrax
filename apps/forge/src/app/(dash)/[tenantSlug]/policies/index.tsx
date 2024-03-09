@@ -3,7 +3,7 @@ import { A, RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Suspense, startTransition } from "solid-js";
 
-import IconCarbonCaretDown from '~icons/carbon/caret-down.jsx'
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { RouterOutput } from "~/api/trpc";
 import {
 	ColumnsDropdown,
@@ -27,7 +27,7 @@ export const route = {
 			tenantSlug: params.tenantSlug!,
 		});
 	},
-} satisfies RouteDefinition
+} satisfies RouteDefinition;
 
 const column = createColumnHelper<RouterOutput["policy"]["list"][number]>();
 

@@ -2,4 +2,4 @@
 
 export { env } from "~/env";
 export type { UserProviderVariant as UserProvider } from "~/db";
-export type * from "./trpc";
+export * from "./trpc";

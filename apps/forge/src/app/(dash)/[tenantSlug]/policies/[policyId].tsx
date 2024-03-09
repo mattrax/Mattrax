@@ -16,7 +16,7 @@ export const route = {
 		trpc.useContext().policy.get.ensureData({
 			policyId: params.policyId!,
 		}),
-		} satisfies RouteDefinition
+} satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ policyId: z.string() });
