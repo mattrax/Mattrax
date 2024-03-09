@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { User } from "lucia";
 import superjson from "superjson";
 import {
-	HTTPEvent,
+    H3Event,
 	appendResponseHeader,
 	getCookie,
 	setCookie,
@@ -13,7 +13,7 @@ import { ZodError, z } from "zod";
 import { db, tenantAccounts, tenants } from "~/db";
 import { lucia } from "../auth";
 
-export const createTRPCContext = (event: HTTPEvent) => {
+export const createTRPCContext = (event: H3Event) => {
 	return { db, event };
 };
 
