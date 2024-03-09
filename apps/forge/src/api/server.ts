@@ -17,7 +17,11 @@ export const app = new Hono<HonoEnv>()
 			endpoint: "/api/trpc",
 			req: c.req.raw,
 			router: appRouter,
-			createContext: () => createTRPCContext(c.env.h3Event),
+			createContext: () =>
+				createTRPCContext({
+					env: c.env,
+					event: c.env.h3Event
+				}),
 		}),
 	)
 	.route("/enrollment", enrollmentRouter)

@@ -12,9 +12,16 @@ import { ZodError, z } from "zod";
 
 import { db, tenantAccounts, tenants } from "~/db";
 import { lucia } from "../auth";
+import { HonoEnv } from "../types";
 
-export const createTRPCContext = (event: H3Event) => {
-	return { db, event };
+export const createTRPCContext = async (opts: {
+	env: HonoEnv["Bindings"];
+	event: H3Event;
+}) => {
+	return {
+		db,
+		...opts,
+	};
 };
 
 const t = initTRPC.context<typeof createTRPCContext>().create({
