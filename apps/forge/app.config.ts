@@ -45,11 +45,6 @@ export default defineConfig({
 		// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
 		// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
 		exportConditions: ["worker"],
-		unenv: {
-			inject: {
-				process: undefined,
-			},
-		},
 		esbuild: {
 			options: {
 				/// Required for `@paralleldrive/cuid2` to work.
@@ -65,41 +60,41 @@ export default defineConfig({
 
 // TODO: Remove this hackery
 
-// const workerCode = path.join("dist", "_worker.js", "index.js");
-// const routesJson = path.join("dist", "_routes.json");
-// process.on("exit", () => {
-// 	if (!fs.existsSync(workerCode)) {
-// 		console.warn("Skipping Cloudflare env patching...");
-// 		return;
-// 	}
+const workerCode = path.join("dist", "_worker.js", "index.js");
+const routesJson = path.join("dist", "_routes.json");
+process.on("exit", () => {
+	if (!fs.existsSync(workerCode)) {
+		console.warn("Skipping Cloudflare env patching...");
+		return;
+	}
 
-// 	// Cloudflare doesn't allow access to env outside the handler.
-// 	// So we ship the env with the worker code.
-// 	fs.writeFileSync(
-// 		path.join(workerCode, "../env.js"),
-// 		`
-// 		const process={env:${JSON.stringify(process.env)}};
-// 		globalThis.process=process.env;
-// 		console.log(process);`,
-// 	);
+	// Cloudflare doesn't allow access to env outside the handler.
+	// So we ship the env with the worker code.
+	fs.writeFileSync(
+		path.join(workerCode, "../env.js"),
+		`
+		const process={env:${JSON.stringify(process.env)}};
+		globalThis.process=process.env;
+		console.log(process);`,
+	);
 
-// 	fs.writeFileSync(
-// 		workerCode,
-// 		`
-// 		import "./env";
-// 		${fs.readFileSync(workerCode)}`
-// 	);
+	fs.writeFileSync(
+		workerCode,
+		`
+		import "./env";
+		${fs.readFileSync(workerCode)}`
+	);
 
-// 	// Replace Nitro's config so Cloudflare will serve the HTML from the CDN instead of the worker (they can do "304 Not Modified" & ETag caching).
-// 	fs.writeFileSync(
-// 		routesJson,
-// 		JSON.stringify({
-// 			version: 1,
-// 			include: ["/api/*"],
-// 			exclude: ["/_headers"],
-// 		}),
-// 	);
-// });
+	// Replace Nitro's config so Cloudflare will serve the HTML from the CDN instead of the worker (they can do "304 Not Modified" & ETag caching).
+	fs.writeFileSync(
+		routesJson,
+		JSON.stringify({
+			version: 1,
+			include: ["/api/*"],
+			exclude: ["/_headers"],
+		}),
+	);
+});
 
 // TODO: Remove this hack.
 // TODO: It's to serve the SPA from the CDN while only routing API redirects to the Edge Functions.
