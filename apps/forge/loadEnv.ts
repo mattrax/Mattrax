@@ -1,7 +1,10 @@
-import path from "node:path";
 import { loadEnv } from "vite";
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const monorepoRoot = path.join(__dirname, "../..");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const monorepoRoot = join(__dirname, "../..");
 
 process.env = {
 	...process.env,

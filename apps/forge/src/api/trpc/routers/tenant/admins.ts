@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
-import { appendResponseHeader, setCookie } from "h3";
+import { appendResponseHeader, setCookie } from "vinxi/server";
 import { generateId } from "lucia";
 import { z } from "zod";
 

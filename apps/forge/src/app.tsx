@@ -1,7 +1,6 @@
 // @refresh reload
-import { render } from "solid-js/web";
 import { MErrorBoundary } from "./components/MattraxErrorBoundary";
-import { EventBus, createEventBus } from "@solid-primitives/event-bus";
+import { type EventBus, createEventBus } from "@solid-primitives/event-bus";
 import { Router, useNavigate } from "@solidjs/router";
 import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
 import {
@@ -26,9 +25,6 @@ declare module "solid-js" {
 		}
 	}
 }
-
-// Which Tanstack Query keys to persist to `localStorage`
-const keysToPersist = [`[["auth","me"]]`];
 
 function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 	const onErrorFactory = (scopeMsg: string) => (error: unknown) => {
@@ -81,7 +77,7 @@ const SolidQueryDevtools = lazy(() =>
 	})),
 );
 
-function App() {
+export default function App() {
 	const errorBus = createEventBus<[string, unknown]>();
 
 	const [queryClient /* persistOptions */] = createQueryClient(errorBus);
@@ -141,7 +137,7 @@ function App() {
 										</>,
 										{
 											id: "network-offline",
-											duration: Infinity,
+											duration: Number.POSITIVE_INFINITY,
 										},
 									);
 								}),
@@ -171,5 +167,3 @@ function App() {
 		</QueryClientProvider>
 	);
 }
-
-render(App, document.getElementById("root")!);

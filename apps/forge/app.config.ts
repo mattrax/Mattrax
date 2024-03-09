@@ -1,61 +1,38 @@
+import { defineConfig } from "@solidjs/start/config";
 import path from "node:path";
 import fs from "node:fs";
-import { fileURLToPath } from "node:url";
-import { createApp } from "vinxi";
-import { type Plugin } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
-import solid from "vite-plugin-solid";
-import viteConfigFileRaw from "./vite.config";
+import Icons from "unplugin-icons/vite";
+import IconsResolver from "unplugin-icons/resolver";
+import AutoImport from "unplugin-auto-import/vite";
+import { visualizer } from "rollup-plugin-visualizer";
 
-let viteConfigFile: any = undefined;
+import { monorepoRoot } from "./loadEnv";
+import "./src/env";
 
-export default createApp({
-	routers: [
-		{
-			name: "public",
-			type: "static",
-			dir: "./public",
-			base: "/",
+export default defineConfig({
+	ssr: false,
+	vite: {
+		envDir: monorepoRoot,
+		build: {
+			// Safari mobile has problems with newer syntax
+			target: "es2015",
 		},
-		{
-			name: "client",
-			type: "spa",
-			handler: "./index.html",
-			target: "browser",
-			plugins: (configEnv) => {
-				if (!viteConfigFile) {
-					if (typeof viteConfigFileRaw === "function") {
-						viteConfigFile = viteConfigFileRaw(configEnv);
-					} else {
-						viteConfigFile = viteConfigFileRaw;
-					}
-				}
-
-				return [
-					// Due to Vite's plugin execution order this will not be injected by `inject-vite-config`
-					...(("plugins" in viteConfigFile && viteConfigFile?.plugins) || []),
-					{
-						name: "inject-vite-config",
-						config: () => viteConfigFile,
-					} satisfies Plugin,
-				];
-			},
-		},
-		{
-			name: "server",
-			type: "http",
-			base: "/api",
-			handler: fileURLToPath(new URL("./src/api/handler.ts", import.meta.url)),
-			target: "server",
-			plugins: () => [
-				tsconfigPaths({
-					// If this isn't set Vinxi hangs on startup
-					root: ".",
-				}),
-				solid({ ssr: true }),
-			],
-		},
-	],
+		plugins: [
+			tsconfigPaths({
+				// If this isn't set Vinxi hangs on startup
+				root: ".",
+			}),
+			AutoImport({
+				resolvers: [IconsResolver({ prefix: "Icon", extension: "jsx" })],
+				dts: "./src/auto-imports.d.ts",
+			}),
+			Icons({ compiler: "solid" }),
+			!(process.env.VERCEL === "1")
+				? visualizer({ brotliSize: true, gzipSize: true })
+				: undefined,
+		],
+	},
 	server: {
 		// vercel: {
 		//   regions: ["iad1"],
@@ -63,11 +40,6 @@ export default createApp({
 		// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
 		// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
 		exportConditions: ["worker"],
-		unenv: {
-			inject: {
-				process: undefined,
-			},
-		},
 		esbuild: {
 			options: {
 				/// Required for `@paralleldrive/cuid2` to work.
@@ -82,7 +54,6 @@ export default createApp({
 });
 
 // TODO: Remove this hackery
-
 const workerCode = path.join("dist", "_worker.js", "index.js");
 const routesJson = path.join("dist", "_routes.json");
 process.on("exit", () => {
@@ -94,10 +65,17 @@ process.on("exit", () => {
 	// Cloudflare doesn't allow access to env outside the handler.
 	// So we ship the env with the worker code.
 	fs.writeFileSync(
+		path.join(workerCode, "../env.js"),
+		`
+		const process={env:${JSON.stringify(process.env)}};
+		globalThis.process=process.env;`,
+	);
+
+	fs.writeFileSync(
 		workerCode,
-		`const process={env:${JSON.stringify(
-			process.env,
-		)}};globalThis.process=process.env;${fs.readFileSync(workerCode)}`,
+		`
+		import "./env";
+		${fs.readFileSync(workerCode)}`
 	);
 
 	// Replace Nitro's config so Cloudflare will serve the HTML from the CDN instead of the worker (they can do "304 Not Modified" & ETag caching).
