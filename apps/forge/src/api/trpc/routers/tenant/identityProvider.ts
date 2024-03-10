@@ -1,4 +1,4 @@
-import * as MSGraph from "@microsoft/microsoft-graph-types";
+import type * as MSGraph from "@microsoft/microsoft-graph-types";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -12,9 +12,16 @@ import { encryptJWT } from "~/api/jwt";
 
 export const identityProviderRouter = createTRPCRouter({
 	get: tenantProcedure.query(async ({ ctx }) => {
-		await new Promise((res) => setTimeout(res, 1000));
 		return (
 			(await db.query.identityProviders.findFirst({
+				columns: {
+					pk: true,
+					name: true,
+					variant: true,
+					linkerUpn: true,
+					remoteId: true,
+					lastSynced: true,
+				},
 				where: eq(identityProviders.tenantPk, ctx.tenant.pk),
 			})) ?? null
 		);
@@ -183,7 +190,10 @@ export const identityProviderRouter = createTRPCRouter({
 
 	sync: tenantProcedure.mutation(async ({ ctx }) => {
 		const [tenantProvider] = await db
-			.select()
+			.select({
+				pk: identityProviders.pk,
+				remoteId: identityProviders.remoteId,
+			})
 			.from(identityProviders)
 			.where(eq(identityProviders.tenantPk, ctx.tenant.pk));
 		if (!tenantProvider)

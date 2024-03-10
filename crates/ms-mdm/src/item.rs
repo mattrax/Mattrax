@@ -1,6 +1,6 @@
 use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
-use crate::{Source, Target};
+use crate::{Meta, Source, Target};
 
 /// An enum to represent all possible children for `Item`.
 /// This would be better represeted as `serde_json::Value` like type but `yaserde` doesn't have one I can find. // TODO: Maybe upstream PR?
@@ -21,6 +21,14 @@ pub struct Item {
     // TODO: These are for `Replace` & are both required fields
     #[easy_xml(rename = "Source")]
     pub source: Option<Source>,
+
+    // TODO: These are for `Exec` and are required
+    #[easy_xml(rename = "Target")]
+    pub target: Option<Target>,
+    #[easy_xml(rename = "Meta")]
+    pub meta: Option<Meta>,
+
+    // General stuff
     #[easy_xml(rename = "Data")]
     pub data: Option<String>, // TODO `Data` or `String`? This field literally isn't in the fucking spec.
 

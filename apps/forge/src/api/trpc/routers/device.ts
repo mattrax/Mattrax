@@ -11,6 +11,8 @@ import {
 	policyAssignableVariants,
 	policyAssignables,
 	users,
+	deviceActions,
+	possibleDeviceActions,
 } from "~/db";
 import { omit } from "~/api/utils";
 import { TRPCError } from "@trpc/server";
@@ -21,7 +23,8 @@ export const deviceRouter = createTRPCRouter({
 			.select({
 				id: devices.id,
 				name: devices.name,
-				operatingSystem: devices.operatingSystem,
+				enrollmentType: devices.enrollmentType,
+				os: devices.os,
 				serialNumber: devices.serialNumber,
 				lastSynced: devices.lastSynced,
 				owner: devices.owner, // TODO: Fetch `owner` name
@@ -39,7 +42,8 @@ export const deviceRouter = createTRPCRouter({
 					id: devices.id,
 					name: devices.name,
 					description: devices.description,
-					operatingSystem: devices.operatingSystem,
+					enrollmentType: devices.enrollmentType,
+					os: devices.os,
 					serialNumber: devices.serialNumber,
 					manufacturer: devices.manufacturer,
 					azureADDeviceId: devices.azureADDeviceId,
@@ -63,8 +67,13 @@ export const deviceRouter = createTRPCRouter({
 			return omit(device, ["tenantPk"]);
 		}),
 
-	sync: authedProcedure
-		.input(z.object({ deviceId: z.string() }))
+	action: authedProcedure
+		.input(
+			z.object({
+				deviceId: z.string(),
+				action: z.enum([...possibleDeviceActions, "sync"]),
+			}),
+		)
 		.mutation(async ({ ctx, input }) => {
 			const device = await db.query.devices.findFirst({
 				where: eq(devices.id, input.deviceId),
@@ -73,8 +82,16 @@ export const deviceRouter = createTRPCRouter({
 
 			await ctx.ensureTenantAccount(device.tenantPk);
 
-			// TODO
-			console.log("TODO: Trigger device checking using WNS", device.id);
+			if (input.action !== "sync") {
+				await db.insert(deviceActions).values({
+					action: input.action,
+					devicePk: device.pk,
+					createdBy: ctx.account.pk,
+				});
+			}
+
+			// TODO: Talk with WNS or APNS to ask the device to checkin to MDM.
+			console.log("TODO: Trigger MDM device checkin");
 
 			return {};
 		}),

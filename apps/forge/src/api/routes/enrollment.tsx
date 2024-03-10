@@ -64,7 +64,11 @@ export const enrollmentRouter = new Hono()
 
 		const [domainRecord] = await db
 			.select({
-				identityProvider: identityProviders,
+				identityProvider: {
+					remoteId: identityProviders.remoteId,
+					tenantPk: identityProviders.tenantPk,
+					pk: identityProviders.pk,
+				},
 			})
 			.from(domains)
 			.where(and(eq(domains.domain, domain)))

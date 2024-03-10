@@ -42,7 +42,7 @@ pub use delete::Delete;
 pub use exec::Exec;
 pub use get::Get;
 pub use item::Item;
-pub use meta::{Meta, MAX_REQUEST_BODY_SIZE};
+pub use meta::{Format, Meta, MAX_REQUEST_BODY_SIZE};
 pub use mode::Mode;
 pub use msg_ref::MsgRef;
 pub use os_edition::OsEdition;

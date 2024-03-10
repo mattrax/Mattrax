@@ -1,4 +1,4 @@
-import { JSX } from "solid-js";
+import type { JSX } from "solid-js";
 import { A } from "@solidjs/router";
 import { createTimeAgo } from "@solid-primitives/date";
 import { As } from "@kobalte/core";
@@ -24,10 +24,10 @@ import { toast } from "solid-sonner";
 export default function Page() {
 	const device = useDevice();
 
-	const syncDevice = trpc.device.sync.useMutation(() => ({
-		onSuccess: () => {
+	const triggerAction = trpc.device.action.useMutation(() => ({
+		onSuccess: (_, data) => {
 			device.query.refetch();
-			toast.success("Device successfully synced");
+			toast.success(`Triggered ${data.action} successfully`);
 		},
 	}));
 
@@ -46,8 +46,6 @@ export default function Page() {
 		return result;
 	};
 
-	const isDropdownDisabled = () => syncDevice.isPending;
-
 	return (
 		<PageLayout
 			heading={
@@ -61,9 +59,10 @@ export default function Page() {
 						</DropdownMenuTrigger>
 						<DropdownMenuContent>
 							<DropdownMenuItem
-								disabled={isDropdownDisabled()}
+								disabled={triggerAction.isPending}
 								onClick={() =>
-									syncDevice.mutate({
+									triggerAction.mutate({
+										action: "sync",
 										deviceId: device().id,
 									})
 								}
@@ -71,37 +70,57 @@ export default function Page() {
 								Sync
 							</DropdownMenuItem>
 							<DropdownMenuItem
-								disabled={isDropdownDisabled()}
-								onClick={() => alert("TODO: Confirmation then restart device")}
+								disabled={triggerAction.isPending}
+								onClick={() =>
+									triggerAction.mutate({
+										action: "restart",
+										deviceId: device().id,
+									})
+								}
 							>
 								Restart
 							</DropdownMenuItem>
 							<DropdownMenuItem
-								disabled={isDropdownDisabled()}
-								onClick={() => alert("TODO: Confirmation then shutdown device")}
+								disabled={triggerAction.isPending}
+								onClick={() =>
+									triggerAction.mutate({
+										action: "shutdown",
+										deviceId: device().id,
+									})
+								}
 								class="text-red-500"
 							>
 								Shutdown
 							</DropdownMenuItem>
 							<DropdownMenuItem
-								disabled={isDropdownDisabled()}
-								onClick={() => alert("TODO: Confirmation then lock device")}
+								disabled={triggerAction.isPending}
+								onClick={() =>
+									triggerAction.mutate({
+										action: "lost",
+										deviceId: device().id,
+									})
+								}
 								class="text-red-500"
 							>
 								Lost Mode
 							</DropdownMenuItem>
-							{/* <DropdownMenuItem disabled={isDropdownDisabled()} onClick={() => alert("TODO")} class="text-red-500">
+							{/* <DropdownMenuItem disabled={triggerAction.isPending} onClick={() => alert("TODO")} class="text-red-500">
 								Clear passcode
 							</DropdownMenuItem> */}
 							<DropdownMenuItem
-								disabled={isDropdownDisabled()}
-								onClick={() => alert("TODO: Confirmation then wipe device")}
+								disabled={triggerAction.isPending}
+								onClick={() =>
+									triggerAction.mutate({
+										action: "wipe",
+										deviceId: device().id,
+									})
+								}
 								class="text-red-500"
 							>
 								Wipe
 							</DropdownMenuItem>
 							<DropdownMenuItem
-								disabled={isDropdownDisabled()}
+								disabled={triggerAction.isPending}
 								onClick={() => alert("TODO: Confirmation then unenroll device")}
 								class="text-red-500"
 							>
@@ -156,7 +175,7 @@ export default function Page() {
 			/>
 
 			<h2 class="text-bold text-xl">Software:</h2>
-			<Item label="Operating System" data={device().operatingSystem} />
+			<Item label="Operating System" data={device().os} />
 			<Item
 				label="OS version"
 				data={<p class="text-muted-foreground opacity-70">Coming soon</p>}

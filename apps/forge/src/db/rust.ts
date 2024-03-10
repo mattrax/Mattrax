@@ -1,12 +1,13 @@
 import path from "node:path";
 import { defineOperation, exportQueries } from "@mattrax/drizzle-to-rs";
 import dotenv from "dotenv";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { union } from "drizzle-orm/mysql-core";
 import {
 	certificates,
 	db,
-	device_windows_data,
+	deviceActions,
+	deviceWindowsData,
 	devices,
 	groupAssignables,
 	policies,
@@ -59,7 +60,8 @@ exportQueries(
 			args: {
 				id: "String",
 				name: "String",
-				operating_system: "String",
+				enrollmentType: "String", // TODO: Enum
+				os: "String", // TODO: Enum
 				serial_number: "String",
 				tenant_pk: "i32",
 				owner_pk: "i32",
@@ -71,7 +73,8 @@ exportQueries(
 						{
 							id: args.id,
 							name: args.name,
-							operatingSystem: args.operating_system,
+							enrollmentType: args.enrollmentType as any,
+							os: args.os as any,
 							serialNumber: args.serial_number,
 							tenantPk: args.tenant_pk,
 							owner: args.owner_pk,
@@ -148,11 +151,28 @@ exportQueries(
 				value: "String",
 			},
 			query: (args) =>
-				db.insert(device_windows_data).values({
+				db.insert(deviceWindowsData).values({
 					key: args.key,
 					value: args.value,
 					devicePk: args.device_id,
 				}),
+		}),
+		defineOperation({
+			name: "queued_device_actions",
+			args: {
+				device_id: "i32",
+			},
+			// TODO: Enum on `action` field of the result
+			query: (args) =>
+				db
+					.select()
+					.from(deviceActions)
+					.where(
+						and(
+							eq(deviceActions.devicePk, args.device_id),
+							isNull(deviceActions.deployedAt),
+						),
+					),
 		}),
 	],
 	path.join(__dirname, "../../../../apps/mattrax/src/db.rs"),

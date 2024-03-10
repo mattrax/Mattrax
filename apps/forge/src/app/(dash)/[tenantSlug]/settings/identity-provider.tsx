@@ -1,5 +1,5 @@
 import { For, Match, Show, Suspense, Switch, createMemo } from "solid-js";
-import { RouteDefinition } from "@solidjs/router";
+import type { RouteDefinition } from "@solidjs/router";
 import { toast } from "solid-sonner";
 import { As } from "@kobalte/core";
 import clsx from "clsx";
@@ -15,8 +15,8 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "~/components/ui";
-import IconIcOutlineClose from '~icons/ic/outline-close.jsx'
-import IconPrimeExternalLink from '~icons/prime/external-link.jsx'
+import IconIcOutlineClose from "~icons/ic/outline-close.jsx";
+import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
 import ENTRA_ID_ICON from "~/assets/EntraIDLogo.svg";
@@ -114,6 +114,10 @@ function IdentityProviderCard() {
 								<IconPrimeExternalLink class="inline" />
 							</a>
 							<span class="text-gray-600">{provider().remoteId}</span>
+
+							<span class="text-gray-600">
+								Linked by: {provider().linkerUpn}
+							</span>
 						</div>
 						<div class="flex space-x-4">
 							<Button

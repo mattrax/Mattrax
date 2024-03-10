@@ -1,5 +1,5 @@
 import { zValidator } from "@hono/zod-validator";
-import * as MSGraph from "@microsoft/microsoft-graph-types";
+import type * as MSGraph from "@microsoft/microsoft-graph-types";
 import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";

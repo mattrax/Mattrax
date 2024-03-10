@@ -3,9 +3,10 @@ use std::sync::Arc;
 use axum::{extract::State, routing::post, Router};
 use hyper::header;
 use ms_mdm::{
-    Cmd, CmdId, CmdRef, Data, Final, Meta, MsgRef, Replace, Status, SyncBody, SyncBodyChild,
-    SyncHdr, SyncML, MAX_REQUEST_BODY_SIZE,
+    Add, Cmd, CmdId, CmdRef, Data, Exec, Final, Format, Item, Meta, MsgRef, Replace, Source,
+    Status, SyncBody, SyncBodyChild, SyncHdr, SyncML, Target, MAX_REQUEST_BODY_SIZE,
 };
+use tracing::error;
 
 use crate::api::Context;
 
@@ -31,7 +32,9 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                         panic!("{:?}", err); // TODO: Error handling
                     }
                 };
-                println!("{:#?}", cmd);
+                // println!("{:#?}", cmd);
+
+                println!("{:?}", body);
 
                 // TODO: How to properly report errors to the device so they show up in logs????
                 // if cmd.Header.VerDTD != "1.2" {
@@ -126,12 +129,14 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
 
                 // TODO: Take into account max message size
 
+                let device_id = 1; // TODO: Work this out properly after auth
+
                 for cmd in cmd.child.children.iter() {
                     println!("{:#?}", cmd);
                     match cmd {
                         SyncBodyChild::Replace(cmd) => {
                             for item in cmd.item.iter() {
-                                println!("{:#?} {:?} {:?}", item, item.source, item.data);
+                                // println!("{:#?} {:?} {:?}", item, item.source, item.data);
                                 // TODO: Do a insert many instead of multiple inserts
                                 // state.db.set_device_data(
                                 //     &cmd.cmd_id,
@@ -144,7 +149,164 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                     }
                 }
 
-                let msg_ref = MsgRef::from(&cmd.hdr);
+                // TODO: Do this helper better
+                let mut cmd_id = 0;
+                let mut next_cmd_id = move || {
+                    cmd_id += 1;
+                    CmdId::new(format!("{}", cmd_id)).expect("can't be zero")
+                };
+
+                let mut children = vec![Status {
+                    cmd_id: next_cmd_id(),
+                    msg_ref: MsgRef::from(&cmd.hdr),
+                    cmd_ref: CmdRef::zero(), // TODO: Remove `zero` function and use special helper???
+                    cmd: "SyncHdr".into(),
+                    data: "200".into(),
+                    // data: Data {
+                    //     msft_originalerror: None,
+                    //     child: "200".into(), // TODO: Use SyncML status abstraction
+                    // },
+                    item: vec![],
+                    target_ref: None,
+                    source_ref: None,
+                }
+                .into()];
+
+                // TODO: Do stuff on more than the first request.
+                if cmd.hdr.msg_id == "1" {
+                    let actions = state.db.queued_device_actions(device_id).await.unwrap(); // TODO: Error handling
+                    for action in actions {
+                        // TODO: Can we make this export as a Rust enum so it's typesafe??
+                        match &*action.action {
+                            "restart" => {
+                                // TODO: "User" not supported. Does this matter for us with AAD enrollment???
+
+                                // TODO: This is 406'ing and idk why it copies a Fleet doc and the MDM docs so it should be valid.
+                                // children.push(SyncBodyChild::Exec(Exec {
+                                //     cmd_id: next_cmd_id(),
+                                //     meta: None,
+                                //     item: Item {
+                                //         source: None,
+                                //         target: Some(Target::new(
+                                //             "./Device/Vendor/MSFT/Reboot/RebootNow",
+                                //         )),
+                                //         meta: Some(Meta {
+                                //             format: Some(Format {
+                                //                 xmlns: "syncml:metinf".into(),
+                                //                 value: "null".into(),
+                                //             }),
+                                //             ttype: Some("text/plain".into()),
+                                //         }),
+                                //         data: Some("".into()),
+                                //     },
+                                // }));
+
+                                // children.push(SyncBodyChild::Replace(Replace {
+                                //     cmd_id: next_cmd_id(),
+                                //     meta: None,
+                                //     item: vec![Item {
+                                //         source: None,
+                                //         target: Some(Target::new(
+                                //             "./Vendor/MSFT/Reboot/Schedule/Single",
+                                //         )),
+                                //         meta: Some(Meta {
+                                //             format: Some(Format {
+                                //                 xmlns: "syncml:metinf".into(),
+                                //                 value: "chr".into(),
+                                //             }),
+                                //             ttype: Some("text/plain".into()),
+                                //         }),
+                                //         data: Some("2024-03-10T01:50:00".into()),
+                                //     }],
+                                // }));
+
+                                // children.push(SyncBodyChild::Add(Add {
+                                //     cmd_id: next_cmd_id(),
+                                //     meta: None,
+                                //     item: vec![Item {
+                                //         source: None,
+                                //         target: Some(Target::new(
+                                //             "./Vendor/MSFT/Personalization/DesktopImageUrl",
+                                //         )),
+                                //         meta: Some(Meta {
+                                //             format: Some(Format {
+                                //                 xmlns: "syncml:metinf".into(),
+                                //                 value: "chr".into(),
+                                //             }),
+                                //             ttype: Some("text/plain".into()),
+                                //         }),
+                                //         data: Some("https://github.com/HaoHoo/WinMDM/blob/master/resource/desktop.jpg".into()),
+                                //     }],
+                                // }));
+                                // children.push(SyncBodyChild::Replace(Replace {
+                                //     cmd_id: next_cmd_id(),
+                                //     meta: None,
+                                //     item: vec![Item {
+                                //         source: None,
+                                //         target: Some(Target::new(
+                                //             "./Vendor/MSFT/Personalization/DesktopImageUrl",
+                                //         )),
+                                //         meta: Some(Meta {
+                                //             format: Some(Format {
+                                //                 xmlns: "syncml:metinf".into(),
+                                //                 value: "chr".into(),
+                                //             }),
+                                //             ttype: Some("text/plain".into()),
+                                //         }),
+                                //         data: Some("https://github.com/HaoHoo/WinMDM/blob/master/resource/desktop.jpg".into()),
+                                //     }],
+                                // }));
+
+                                // TODO: 405
+                                // children.push(SyncBodyChild::Replace(Replace {
+                                //     cmd_id: next_cmd_id(),
+                                //     meta: None,
+                                //     item: vec![Item {
+                                //         source: None,
+                                //         target: Some(Target::new(
+                                //             "./Device/Vendor/MSFT/Policy/Config/Camera/AllowCamera",
+                                //         )),
+                                //         meta: Some(Meta {
+                                //             format: Some(Format {
+                                //                 xmlns: "syncml:metinf".into(),
+                                //                 value: "int".into(),
+                                //             }),
+                                //             ttype: Some("text/plain".into()),
+                                //         }),
+                                //         data: Some("0".into()),
+                                //     }],
+                                // }));
+
+                                // This works cause it's user scoped.
+                                children.push(SyncBodyChild::Add(Add {
+                                    cmd_id: next_cmd_id(),
+                                    meta: None,
+                                    item: vec![Item {
+                                        source: None,
+                                        target: Some(Target::new(
+                                            "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator",
+                                        )),
+                                        meta: Some(Meta {
+                                            format: Some(Format {
+                                                xmlns: "syncml:metinf".into(),
+                                                value: "int".into(),
+                                            }),
+                                            ttype: Some("text/plain".into()),
+                                        }),
+                                        data: Some("0".into()),
+                                    }],
+                                }));
+
+                                // TODO: Deal with result and mark as done so it doesn't reboot on every checkin.
+                            }
+                            "shutdown" => todo!(),
+                            "lost" => todo!(),
+                            "wipe" => todo!(),
+                            // "retire",
+                            action => error!("Unknown device action queued: {}", action),
+                        }
+                    }
+                }
 
                 // TODO: Helper for constructing this
                 let response = SyncML {
@@ -162,21 +324,7 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                         // }),
                     },
                     child: SyncBody {
-                        children: vec![Status {
-                            cmd_id: CmdId::new("1").unwrap(), // TODO: Helper for these
-                            msg_ref,
-                            cmd_ref: CmdRef::zero(), // TODO: Remove `zero` function and use special helper???
-                            cmd: "SyncHdr".into(),
-                            data: "200".into(),
-                            // data: Data {
-                            //     msft_originalerror: None,
-                            //     child: "200".into(), // TODO: Use SyncML status abstraction
-                            // },
-                            item: vec![],
-                            target_ref: None,
-                            source_ref: None,
-                        }
-                        .into()],
+                        children,
                         _final: Some(Final),
                     },
                 };

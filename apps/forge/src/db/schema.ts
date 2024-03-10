@@ -4,7 +4,6 @@ import {
 	bigint,
 	boolean,
 	datetime,
-	foreignKey,
 	json,
 	mysqlEnum,
 	mysqlTable,
@@ -106,6 +105,13 @@ export const identityProviders = mysqlTable(
 			.notNull()
 			.unique()
 			.references(() => tenants.pk),
+
+		// The "linker" is an administrative user that provides Mattrax with the 'Policy.ReadWrite.MobilityManagement' scope.
+		// If the user is deleted, changes password, or revokes the scope, we will need to re-authenticate with a new user.
+		// This user is not mission-critical but it helps with UX.
+		linkerUpn: varchar("linkerUpn", { length: 256 }),
+		linkerRefreshToken: varchar("linkerRefreshToken", { length: 1024 }),
+
 		// ID of the remote user provider
 		remoteId: varchar("remoteId", { length: 256 }).notNull(),
 		lastSynced: timestamp("lastSynced"),
@@ -221,13 +227,24 @@ export const policyVersionDeploy = mysqlTable("policy_version_deploy", {
 	lastModified: timestamp("lastModified").notNull().defaultNow(),
 });
 
+export const possibleOSes = [
+	"Windows",
+	"iOS",
+	"macOS",
+	"tvOS",
+	"Android",
+	"ChromeOS",
+] as const;
+
 export const devices = mysqlTable("devices", {
 	pk: serial("id").primaryKey(),
 	id: cuid("cuid").notNull().unique(),
 	name: varchar("name", { length: 256 }).notNull(),
 	description: varchar("description", { length: 256 }),
 
-	operatingSystem: varchar("operatingSystem", { length: 256 }).notNull(), // TODO: Enum maybe?
+	enrollmentType: mysqlEnum("enrollmentType", ["user", "device"]).notNull(),
+	os: mysqlEnum("os", possibleOSes).notNull(),
+
 	// This must be a unique *hardware* identifier
 	serialNumber: varchar("serialNumber", { length: 256 }).unique().notNull(),
 
@@ -257,9 +274,31 @@ export const devices = mysqlTable("devices", {
 		.notNull(),
 });
 
+export const possibleDeviceActions = [
+	"restart",
+	"shutdown",
+	"lost",
+	"wipe",
+	// "retire",
+] as const;
+
+export const deviceActions = mysqlTable("device_actions", {
+	id: serial("id").primaryKey(),
+	action: mysqlEnum("action", possibleDeviceActions).notNull(),
+	devicePk: serialRelation("deviceId")
+		.notNull()
+		.references(() => devices.pk),
+	createdBy: serialRelation("createdBy")
+		.notNull()
+		.references(() => accounts.pk),
+	createdAt: timestamp("createdAt").notNull().defaultNow(),
+	// TODO: Possibly move into the audit log instead of keeping this?
+	deployedAt: timestamp("deployedAt"),
+});
+
 // TODO: Remove this table
-export const device_windows_data = mysqlTable("device_windows_data_temp", {
-	pk: serial("id").primaryKey(),
+export const deviceWindowsData = mysqlTable("device_windows_data_temp", {
+	id: serial("id").primaryKey(),
 	key: varchar("key", { length: 256 }).notNull(),
 	value: varchar("key", { length: 2048 }).notNull(),
 	devicePk: serialRelation("deviceId").references(() => devices.pk),

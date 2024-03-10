@@ -1,4 +1,4 @@
-import { For, type JSX, ParentProps, Suspense } from "solid-js";
+import { For, type JSX, type ParentProps, Suspense } from "solid-js";
 
 import { A } from "@solidjs/router";
 import { PageLayout, PageLayoutHeading } from "./PageLayout";

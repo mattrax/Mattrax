@@ -19,4 +19,20 @@ pub struct Meta {
     // TODO: Does this namespace work correctly???
     // #[easy_xml(prefix = "a", rename = "MaxRequestBodySize")]
     // pub max_request_body_size: Option<usize>, // TODO: Should this be a `usize`. It's no in the MS spec but check the OMA spec.
+
+    // For `Exec` commands
+    #[easy_xml(rename = "Format")]
+    pub format: Option<Format>,
+    #[easy_xml(rename = "Type")]
+    pub ttype: Option<String>, // TODO: r# not supported by `easy_xml`
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
+pub struct Format {
+    // TODO: Do this with easy_xml???
+    #[easy_xml(rename = "xmlns", attribute)]
+    pub xmlns: String,
+
+    #[easy_xml(text)]
+    pub value: String,
 }

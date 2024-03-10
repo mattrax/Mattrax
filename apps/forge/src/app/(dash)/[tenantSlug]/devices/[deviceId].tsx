@@ -1,5 +1,5 @@
-import { A, Navigate, RouteDefinition } from "@solidjs/router";
-import { ParentProps, Show } from "solid-js";
+import { A, Navigate, type RouteDefinition } from "@solidjs/router";
+import { type ParentProps, Show } from "solid-js";
 import { toast } from "solid-sonner";
 import { z } from "zod";
 

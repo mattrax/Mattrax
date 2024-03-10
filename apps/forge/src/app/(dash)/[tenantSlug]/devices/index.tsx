@@ -1,7 +1,7 @@
-import { A, RouteDefinition, useNavigate } from "@solidjs/router";
+import { A, type RouteDefinition, useNavigate } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { createTimeAgo } from "@solid-primitives/date";
-import { RouterOutput } from "~/api/trpc";
+import type { RouterOutput } from "~/api/trpc";
 import { Suspense } from "solid-js";
 import { As } from "@kobalte/core";
 
@@ -42,7 +42,7 @@ const columns = [
 			</A>
 		),
 	}),
-	column.accessor("operatingSystem", { header: "Operating System" }),
+	column.accessor("os", { header: "Operating System" }),
 	column.accessor("serialNumber", { header: "Serial Number" }),
 	column.accessor("owner", {
 		header: "Owner",

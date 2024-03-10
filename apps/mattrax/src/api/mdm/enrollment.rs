@@ -24,6 +24,13 @@ use tracing::error;
 
 use crate::api::Context;
 
+// TODO: Generate from Drizzle
+const ENROLLMENT_TYPE_USER: &str = "user";
+const ENROLLMENT_TYPE_DEVICE: &str = "device";
+
+// TODO: Generate from Drizzle
+const OS_WINDOWS: &str = "Windows";
+
 #[derive(Deserialize)]
 pub struct AuthQueryParams {
     pub appru: String,
@@ -340,9 +347,9 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
 
-            let (cert_store, common_name) = match additional_context.get("EnrollmentType") {
-                Some("Device") => ("System", device_id.to_string()),
-                _ => ("User", upn.to_string()),
+            let (cert_store, common_name, enrollment_type) = match additional_context.get("EnrollmentType") {
+                Some("Device") => ("System", device_id.to_string(), ENROLLMENT_TYPE_USER),
+                _ => ("User", upn.to_string(), ENROLLMENT_TYPE_DEVICE),
             };
 
             let Ok(csr) = cmd.body.request_security_token.binary_security_token.decode().map_err(|err| {
@@ -443,7 +450,6 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             let signed_client_cert_fingerprint = hasher.finalize();
             let signed_client_cert_fingerprint = hex::encode(&signed_client_cert_fingerprint).to_uppercase();
 
-
             let client_ctr_raw = BASE64_STANDARD.encode(certificate.der());
 
             // TODO: Derive subject from the certificate - `certificate.get_params().distinguished_name()`
@@ -459,7 +465,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             // TODO: `HWDevID`, `DeviceID`, `OSVersion`
 
             let device_id = cuid2::create_id();
-            state.db.create_device(device_id.clone(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), "Windows".into(), hw_dev_id.into(), tenant_pk, owner_pk).await.unwrap();
+            state.db.create_device(device_id.clone(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), enrollment_type.into(), OS_WINDOWS.into(), hw_dev_id.into(), tenant_pk, owner_pk).await.unwrap();
 
             // TODO: Get the device's DB id and put into this
             // TODO: Lookup and set tenant name
