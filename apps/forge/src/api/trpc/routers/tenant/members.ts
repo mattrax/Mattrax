@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
-import { PolicyAssignableVariants, db, devices, groups, users } from "~/db";
+import { PolicyAssignableVariants, getDb, devices, groups, users } from "~/db";
 import { eq } from "drizzle-orm";
 
 export const membersRouter = createTRPCRouter({
@@ -8,7 +8,7 @@ export const membersRouter = createTRPCRouter({
 		// TODO: Pagination
 		.query(async ({ ctx, input }) => {
 			return (
-				await db
+				await getDb()
 					.select({
 						name: users.name,
 						id: users.id,
@@ -26,7 +26,7 @@ export const membersRouter = createTRPCRouter({
 		// TODO: Pagination
 		.query(async ({ ctx, input }) => {
 			return (
-				await db
+				await getDb()
 					.select({
 						name: devices.name,
 						id: devices.id,
@@ -44,7 +44,7 @@ export const membersRouter = createTRPCRouter({
 		// TODO: Pagination
 		.query(async ({ ctx, input }) => {
 			return (
-				await db
+				await getDb()
 					.select({
 						name: groups.name,
 						id: groups.id,

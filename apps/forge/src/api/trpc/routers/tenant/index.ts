@@ -5,7 +5,7 @@ import { union } from "drizzle-orm/mysql-core";
 
 import {
 	applications,
-	db,
+	getDb,
 	devices,
 	groups,
 	policies,
@@ -53,7 +53,7 @@ export const tenantRouter = createTRPCRouter({
 	create: authedProcedure
 		.input(z.object({ name: z.string().min(1) }))
 		.mutation(async ({ ctx, input }) => {
-			const tenantId = await db.transaction(async (db) => {
+			const tenantId = await getDb().transaction(async (db) => {
 				const id = createId();
 				const result = await db.insert(tenants).values({
 					id,
@@ -93,7 +93,7 @@ export const tenantRouter = createTRPCRouter({
 				throw new Error("Name is restricted"); // TODO: Properly handle this on the frontend
 			}
 
-			await db
+			await getDb()
 				.update(tenants)
 				.set({
 					...(input.name !== undefined && { name: input.name }),
@@ -103,7 +103,7 @@ export const tenantRouter = createTRPCRouter({
 		}),
 
 	enrollmentInfo: tenantProcedure.query(async ({ ctx }) =>
-		db
+		getDb()
 			.select({
 				enrollmentEnabled: tenants.enrollmentEnabled,
 			})
@@ -115,7 +115,7 @@ export const tenantRouter = createTRPCRouter({
 	setEnrollmentInfo: tenantProcedure
 		.input(z.object({ enrollmentEnabled: z.boolean() }))
 		.mutation(async ({ ctx, input }) =>
-			db
+			getDb()
 				.update(tenants)
 				.set({
 					enrollmentEnabled: input.enrollmentEnabled,
@@ -125,23 +125,23 @@ export const tenantRouter = createTRPCRouter({
 
 	stats: tenantProcedure.query(({ ctx }) =>
 		union(
-			db
+			getDb()
 				.select({ count: count(), variant: sql<StatsTarget>`"users"` })
 				.from(users)
 				.where(eq(users.tenantPk, ctx.tenant.pk)),
-			db
+			getDb()
 				.select({ count: count(), variant: sql<StatsTarget>`"devices"` })
 				.from(devices)
 				.where(eq(devices.tenantPk, ctx.tenant.pk)),
-			db
+			getDb()
 				.select({ count: count(), variant: sql<StatsTarget>`"policies"` })
 				.from(policies)
 				.where(eq(policies.tenantPk, ctx.tenant.pk)),
-			db
+			getDb()
 				.select({ count: count(), variant: sql<StatsTarget>`"applications"` })
 				.from(applications)
 				.where(eq(applications.tenantPk, ctx.tenant.pk)),
-			db
+			getDb()
 				.select({ count: count(), variant: sql<StatsTarget>`"groups"` })
 				.from(groups)
 				.where(eq(groups.tenantPk, ctx.tenant.pk)),
@@ -151,7 +151,7 @@ export const tenantRouter = createTRPCRouter({
 	delete: tenantProcedure.mutation(async ({ ctx }) => {
 		// TODO: Ensure no outstanding bills
 
-		await db.transaction(async (db) => {
+		await getDb().transaction(async (db) => {
 			await db.delete(tenants).where(eq(tenants.pk, ctx.tenant.pk));
 			await db
 				.delete(tenantAccounts)

@@ -3,9 +3,9 @@ import { Hono } from "hono";
 import { getCookie } from "vinxi/server";
 import { z } from "zod";
 
-import { db, domains, identityProviders } from "~/db";
-import { env } from "~/env";
-import { lucia } from "../auth";
+import { getDb, domains, identityProviders } from "~/db";
+import { getEnv } from "~/env";
+import { getLucia } from "../auth";
 import { msGraphClient } from "../microsoft";
 import { syncEntraUsersWithDomains } from "../trpc/routers/tenant/identityProvider";
 import { HonoEnv } from "../types";
@@ -38,18 +38,19 @@ export const msRouter = new Hono<HonoEnv>().get("/link", async (c) => {
 	if (!rawState) return new Response("No state!"); // TODO: Proper error UI as the user may land here
 	const { tenantPk } = OAUTH_STATE.parse((await decryptJWT(rawState)).payload);
 
-	const sessionId = getCookie(c.env.h3Event, lucia.sessionCookieName) ?? null;
+	const sessionId =
+		getCookie(c.env.h3Event, getLucia().sessionCookieName) ?? null;
 	if (sessionId === null) return new Response("Unauthorised!"); // TODO: Proper error UI as the user may land here
 
-	const { session } = await lucia.validateSession(sessionId);
+	const { session } = await getLucia().validateSession(sessionId);
 	if (!session) return new Response("Unauthorised!"); // TODO: Proper error UI as the user may land here
 
 	const body = new URLSearchParams({
-		client_id: env.ENTRA_CLIENT_ID,
-		client_secret: env.ENTRA_CLIENT_SECRET,
+		client_id: getEnv().ENTRA_CLIENT_ID,
+		client_secret: getEnv().ENTRA_CLIENT_SECRET,
 		scope: "https://graph.microsoft.com/.default",
 		code: code,
-		redirect_uri: `${env.PROD_URL}/api/ms/link`,
+		redirect_uri: `${getEnv().PROD_URL}/api/ms/link`,
 		grant_type: "authorization_code",
 	});
 
@@ -82,7 +83,7 @@ export const msRouter = new Hono<HonoEnv>().get("/link", async (c) => {
 	const entraTenantId = tenant.id;
 
 	// the actually important bit
-	await db
+	await getDb()
 		.insert(identityProviders)
 		.values({
 			variant: "entraId",
@@ -101,7 +102,7 @@ export const msRouter = new Hono<HonoEnv>().get("/link", async (c) => {
 
 	let skipSubscription = false;
 	try {
-		const url = new URL(env.PROD_URL);
+		const url = new URL(getEnv().PROD_URL);
 		if (url.hostname === "localhost") {
 			skipSubscription = true;
 		}
@@ -112,13 +113,15 @@ export const msRouter = new Hono<HonoEnv>().get("/link", async (c) => {
 			.api("/subscriptions")
 			.post({
 				changeType: "created,updated,deleted",
-				notificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph`,
-				lifecycleNotificationUrl: `${env.PROD_URL}/api/webhook/microsoft-graph/lifecycle`,
+				notificationUrl: `${getEnv().PROD_URL}/api/webhook/microsoft-graph`,
+				lifecycleNotificationUrl: `${
+					getEnv().PROD_URL
+				}/api/webhook/microsoft-graph/lifecycle`,
 				resource: "/users",
 				expirationDateTime: new Date(
 					new Date().getTime() + 1000 * 60 * 60 * 24 * 25, // 25 days
 				).toISOString(),
-				clientState: env.INTERNAL_SECRET,
+				clientState: getEnv().INTERNAL_SECRET,
 			});
 	} else {
 		console.log("Skipping subscription creation as we are on localhost");

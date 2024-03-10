@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { union } from "drizzle-orm/mysql-core";
 import {
 	certificates,
-	db,
+	getDb,
 	device_windows_data,
 	devices,
 	groupAssignables,
@@ -25,7 +25,7 @@ exportQueries(
 				key: "String",
 			},
 			query: (args) =>
-				db
+				getDb()
 					.select({
 						certificate: certificates.certificate,
 					})
@@ -40,7 +40,7 @@ exportQueries(
 				last_modified: "NaiveDateTime",
 			},
 			query: (args) =>
-				db
+				getDb()
 					.insert(certificates)
 					.values({
 						key: args.key,
@@ -65,7 +65,7 @@ exportQueries(
 				owner_pk: "i32",
 			},
 			query: (args) =>
-				db
+				getDb()
 					.insert(devices)
 					.values([
 						{
@@ -93,7 +93,7 @@ exportQueries(
 			},
 			query: (args) => {
 				// Any policy scoped directly to device
-				const a = db
+				const a = getDb()
 					.select({
 						pk: policies.pk,
 						id: policies.id,
@@ -112,7 +112,7 @@ exportQueries(
 					);
 
 				// Any policy scoped to a group containing the device.
-				const b = db
+				const b = getDb()
 					.select({
 						pk: policies.pk,
 						id: policies.id,
@@ -148,7 +148,7 @@ exportQueries(
 				value: "String",
 			},
 			query: (args) =>
-				db.insert(device_windows_data).values({
+				getDb().insert(device_windows_data).values({
 					key: args.key,
 					value: args.value,
 					devicePk: args.device_id,

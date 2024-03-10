@@ -8,8 +8,8 @@ import { isNotFoundGraphError } from "@mattrax/ms-graph";
 import { msGraphClient } from "~/api/microsoft";
 import { upsertEntraIdUser } from "~/api/trpc/routers/tenant/identityProvider";
 import { getEmailDomain } from "~/api/utils";
-import { db, domains, identityProviders, users } from "~/db";
-import { env } from "~/env";
+import { getDb, domains, identityProviders, users } from "~/db";
+import { getEnv } from "~/env";
 
 const CHANGE_TYPE = z.enum(["created", "updated", "deleted"]);
 
@@ -91,14 +91,14 @@ export const microsoftGraphRouter = new Hono()
 async function handleChangeNotification(
 	notification: z.infer<typeof CHANGE_NOTIFICATION>,
 ) {
-	if (notification.clientState !== env.INTERNAL_SECRET) {
+	if (notification.clientState !== getEnv().INTERNAL_SECRET) {
 		console.error("Client state mismatch. Not processing!");
 		return;
 	}
 
 	const entraTenantId = notification.tenantId;
 
-	const [identityProvider] = await db
+	const [identityProvider] = await getDb()
 		.select()
 		.from(identityProviders)
 		.where(eq(identityProviders.remoteId, entraTenantId));
@@ -139,7 +139,7 @@ async function handleUserChangeNotification(
 					.get();
 
 				const userDomain = getEmailDomain(user.userPrincipalName!)!;
-				const domain = await db.query.domains.findFirst({
+				const domain = await getDb().query.domains.findFirst({
 					where: and(
 						eq(domains.identityProviderPk, identityProvider.pk),
 						eq(domains.domain, userDomain),
@@ -169,7 +169,7 @@ async function handleUserChangeNotification(
 }
 
 function handleUserDeleted(userId: string, providerPk: number) {
-	return db
+	return getDb()
 		.update(users)
 		.set({ providerResourceId: null })
 		.where(

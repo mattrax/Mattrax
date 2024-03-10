@@ -1,5 +1,10 @@
 import { Operation, TRPCClientError, TRPCLink } from "@trpc/client";
-import { AnyRouter, ProcedureType, callProcedure } from "@trpc/server";
+import {
+	AnyRouter,
+	DataTransformer,
+	ProcedureType,
+	callProcedure,
+} from "@trpc/server";
 import { type TRPCResponse } from "@trpc/server/rpc";
 import { observable } from "@trpc/server/observable";
 import { getEvent } from "vinxi/http";
@@ -98,4 +103,8 @@ export const createServerFunctionLink = <
 			});
 		};
 	};
+};
+export const seroval: DataTransformer = {
+	serialize: (d) => d,
+	deserialize: (d) => d,
 };

@@ -3,8 +3,8 @@ import { Hono } from "hono";
 import * as jose from "jose";
 import { renderToString } from "solid-js/web";
 
-import { db, domains, identityProviders } from "~/db";
-import { env } from "~/env";
+import { getDb, domains, identityProviders } from "~/db";
+import { getEnv } from "~/env";
 import { getEmailDomain } from "../utils";
 import { upsertEntraIdUser } from "../trpc/routers/tenant/identityProvider";
 import { encryptJWT, signJWT } from "../jwt";
@@ -48,7 +48,7 @@ export const enrollmentRouter = new Hono()
 			try {
 				await jose.jwtVerify(
 					accesstoken,
-					new TextEncoder().encode(env.INTERNAL_SECRET),
+					new TextEncoder().encode(getEnv().INTERNAL_SECRET),
 					{
 						audience: "mdm.mattrax.app",
 						algorithms: ["ES256"],
@@ -62,7 +62,7 @@ export const enrollmentRouter = new Hono()
 		const domain = getEmailDomain(email);
 		if (domain === undefined) return c.text("Invalid email address");
 
-		const [domainRecord] = await db
+		const [domainRecord] = await getDb()
 			.select({
 				identityProvider: identityProviders,
 			})
@@ -76,9 +76,9 @@ export const enrollmentRouter = new Hono()
 		if (domainRecord === undefined) return c.text("Domain not found");
 
 		const params = new URLSearchParams({
-			client_id: env.ENTRA_CLIENT_ID,
+			client_id: getEnv().ENTRA_CLIENT_ID,
 			scope: "https://graph.microsoft.com/.default",
-			redirect_uri: `${env.PROD_URL}/api/enrollment/callback`,
+			redirect_uri: `${getEnv().PROD_URL}/api/enrollment/callback`,
 			response_type: "code",
 			response_mode: "query",
 			login_hint: email,
@@ -111,10 +111,10 @@ export const enrollmentRouter = new Hono()
 			{
 				method: "POST",
 				body: new URLSearchParams({
-					client_id: env.ENTRA_CLIENT_ID,
-					client_secret: env.ENTRA_CLIENT_SECRET,
+					client_id: getEnv().ENTRA_CLIENT_ID,
+					client_secret: getEnv().ENTRA_CLIENT_SECRET,
 					scope: "https://graph.microsoft.com/.default",
-					redirect_uri: `${env.PROD_URL}/api/enrollment/callback`,
+					redirect_uri: `${getEnv().PROD_URL}/api/enrollment/callback`,
 					grant_type: "authorization_code",
 					code,
 				}),

@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { sendEmail } from "~/api/emails";
 import {
-	db,
+	getDb,
 	identityProviders,
 	policyAssignableVariants,
 	tenantAccounts,
@@ -29,7 +29,7 @@ export const userRouter = createTRPCRouter({
 			// TODO: Can a cursor make this more efficent???
 			// TODO: Switch to DB
 
-			return await db
+			return await getDb()
 				.select({
 					id: users.id,
 					name: users.name,
@@ -51,7 +51,7 @@ export const userRouter = createTRPCRouter({
 	get: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const [user] = await db
+			const [user] = await getDb()
 				.select({
 					id: users.id,
 					name: users.name,
@@ -78,7 +78,7 @@ export const userRouter = createTRPCRouter({
 	invite: authedProcedure
 		.input(z.object({ id: z.string(), message: z.string().optional() }))
 		.mutation(async ({ ctx, input }) => {
-			const user = await db.query.users.findFirst({
+			const user = await getDb().query.users.findFirst({
 				where: eq(users.id, input.id),
 			});
 			if (!user)
@@ -101,7 +101,7 @@ export const userRouter = createTRPCRouter({
 	members: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const policy = await db.query.users.findFirst({
+			const policy = await getDb().query.users.findFirst({
 				where: eq(users.id, input.id),
 			});
 			if (!policy)
@@ -164,7 +164,7 @@ export const userRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const policy = await db.query.users.findFirst({
+			const policy = await getDb().query.users.findFirst({
 				where: eq(users.id, input.id),
 			});
 			if (!policy)

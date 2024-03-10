@@ -10,17 +10,19 @@ import {
 } from "vinxi/server";
 import { ZodError, z } from "zod";
 
-import { db, tenantAccounts, tenants } from "~/db";
-import { lucia } from "../auth";
+import { getDb, tenantAccounts, tenants } from "~/db";
+import { getLucia } from "../auth";
+import { seroval } from "~/lib/trpc/serverFunctionLink";
 
 export const createTRPCContext = (event: H3Event) => {
 	return {
-		db,
+		db: getDb,
 		event,
 	};
 };
 
 const t = initTRPC.context<typeof createTRPCContext>().create({
+	transformer: seroval,
 	errorFormatter({ shape, error }) {
 		return {
 			...shape,
@@ -40,19 +42,21 @@ export const publicProcedure = t.procedure;
 
 // Authenticated procedure
 export const authedProcedure = t.procedure.use(async (opts) => {
-	const sessionId = getCookie(opts.ctx.event, lucia.sessionCookieName) ?? null;
+	const sessionId =
+		getCookie(opts.ctx.event, getLucia().sessionCookieName) ?? null;
 
 	const data = await (async () => {
 		if (sessionId === null) return;
 
-		const { session, user: account } = await lucia.validateSession(sessionId);
+		const { session, user: account } =
+			await getLucia().validateSession(sessionId);
 
 		if (session) {
 			if (session.fresh)
 				appendResponseHeader(
 					opts.ctx.event,
 					"Set-Cookie",
-					lucia.createSessionCookie(session.id).serialize(),
+					getLucia().createSessionCookie(session.id).serialize(),
 				);
 
 			if (getCookie(opts.ctx.event, "isLoggedIn") === undefined) {
@@ -65,7 +69,7 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 			appendResponseHeader(
 				opts.ctx.event,
 				"Set-Cookie",
-				lucia.createBlankSessionCookie().serialize(),
+				getLucia().createBlankSessionCookie().serialize(),
 			);
 		}
 
@@ -78,7 +82,7 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 
 	const getTenantList = async () => {
 		if (!tenantList)
-			tenantList = await db
+			tenantList = await getDb()
 				.select({ pk: tenants.pk, name: tenants.name })
 				.from(tenants)
 				.where(eq(tenantAccounts.accountPk, data.account.pk))
@@ -126,7 +130,7 @@ export const tenantProcedure = authedProcedure
 	.use(async (opts) => {
 		const { ctx, input } = opts;
 
-		const [tenant] = await db
+		const [tenant] = await getDb()
 			.select({ pk: tenants.pk, name: tenants.name, ownerPk: tenants.ownerPk })
 			.from(tenants)
 			.where(

@@ -1,7 +1,7 @@
 import { count, sql } from "drizzle-orm";
 import { union } from "drizzle-orm/mysql-core";
 
-import { db, devices, policies, tenants, users } from "~/db";
+import { getDb, devices, policies, tenants, users } from "~/db";
 import { createTRPCRouter, superAdminProcedure } from "../helpers";
 
 type StatsTarget = "tenants" | "users" | "devices" | "policies";
@@ -9,16 +9,16 @@ type StatsTarget = "tenants" | "users" | "devices" | "policies";
 export const internalRouter = createTRPCRouter({
 	stats: superAdminProcedure.query(() =>
 		union(
-			db
+			getDb()
 				.select({ count: count(), variant: sql<StatsTarget>`"tenants"` })
 				.from(tenants),
-			db
+			getDb()
 				.select({ count: count(), variant: sql<StatsTarget>`"users"` })
 				.from(users),
-			db
+			getDb()
 				.select({ count: count(), variant: sql<StatsTarget>`"devices"` })
 				.from(devices),
-			db
+			getDb()
 				.select({ count: count(), variant: sql<StatsTarget>`"policies"` })
 				.from(policies),
 		),

@@ -1,13 +1,13 @@
 import { eq } from "drizzle-orm";
 import type Stripe from "stripe";
 import { stripe } from "~/api/stripe";
-import { db, tenants } from "~/db";
-import { env } from "~/env";
+import { getDb, tenants } from "~/db";
+import { getEnv } from "~/env";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
 
 export const billingRouter = createTRPCRouter({
 	portalUrl: tenantProcedure.mutation(async ({ ctx }) => {
-		const [tenant] = await db
+		const [tenant] = await getDb()
 			.select({
 				name: tenants.name,
 				billingEmail: tenants.billingEmail,
@@ -25,7 +25,7 @@ export const billingRouter = createTRPCRouter({
 					email: tenant.billingEmail || undefined,
 				});
 
-				await db
+				await getDb()
 					.update(tenants)
 					.set({ stripeCustomerId: customer.id })
 					.where(eq(tenants.pk, ctx.tenant.pk));
@@ -44,7 +44,7 @@ export const billingRouter = createTRPCRouter({
 
 		const body = new URLSearchParams({
 			customer: customerId,
-			return_url: `${env.PROD_URL}/${ctx.tenant.pk}/settings`,
+			return_url: `${getEnv().PROD_URL}/${ctx.tenant.pk}/settings`,
 		});
 
 		const resp = await fetch(
@@ -52,7 +52,7 @@ export const billingRouter = createTRPCRouter({
 			{
 				method: "POST",
 				headers: {
-					Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+					Authorization: `Bearer ${getEnv().STRIPE_SECRET_KEY}`,
 					"Content-Type": "application/x-www-form-urlencoded",
 				},
 				body: body.toString(),

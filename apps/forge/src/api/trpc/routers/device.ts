@@ -5,7 +5,7 @@ import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import {
 	PolicyAssignableVariant,
 	PolicyAssignableVariants,
-	db,
+	getDb,
 	devices,
 	groups,
 	policyAssignableVariants,
@@ -17,7 +17,7 @@ import { TRPCError } from "@trpc/server";
 
 export const deviceRouter = createTRPCRouter({
 	list: tenantProcedure.query(async ({ ctx }) => {
-		return await db
+		return await getDb()
 			.select({
 				id: devices.id,
 				name: devices.name,
@@ -34,7 +34,7 @@ export const deviceRouter = createTRPCRouter({
 	get: authedProcedure
 		.input(z.object({ deviceId: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const [device] = await db
+			const [device] = await getDb()
 				.select({
 					id: devices.id,
 					name: devices.name,
@@ -66,7 +66,7 @@ export const deviceRouter = createTRPCRouter({
 	sync: authedProcedure
 		.input(z.object({ deviceId: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const device = await db.query.devices.findFirst({
+			const device = await getDb().query.devices.findFirst({
 				where: eq(devices.id, input.deviceId),
 			});
 			if (!device) return null;
@@ -82,7 +82,7 @@ export const deviceRouter = createTRPCRouter({
 	members: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const policy = await db.query.devices.findFirst({
+			const policy = await getDb().query.devices.findFirst({
 				where: eq(devices.id, input.id),
 			});
 			if (!policy)
@@ -146,7 +146,7 @@ export const deviceRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const policy = await db.query.devices.findFirst({
+			const policy = await getDb().query.devices.findFirst({
 				where: eq(devices.id, input.id),
 			});
 			if (!policy)

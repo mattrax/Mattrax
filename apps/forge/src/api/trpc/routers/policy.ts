@@ -8,7 +8,7 @@ import {
 	PolicyAssignableVariant,
 	PolicyAssignableVariants,
 	accounts,
-	db,
+	getDb,
 	devices,
 	groups,
 	policies,
@@ -21,7 +21,7 @@ import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { omit } from "~/api/utils";
 
 function getPolicy(args: { policyId: string; tenantPk: number }) {
-	return db.query.policies.findFirst({
+	return getDb().query.policies.findFirst({
 		where: and(
 			eq(policies.id, args.policyId),
 			eq(policies.tenantPk, args.tenantPk),
@@ -31,7 +31,7 @@ function getPolicy(args: { policyId: string; tenantPk: number }) {
 
 export const policyRouter = createTRPCRouter({
 	list: tenantProcedure.query(({ ctx }) =>
-		db
+		getDb()
 			.select({
 				id: policies.id,
 				name: policies.name,
@@ -43,7 +43,7 @@ export const policyRouter = createTRPCRouter({
 		.input(z.object({ policyId: z.string() }))
 		.query(async ({ ctx, input }) => {
 			const [[policy], [lastVersion]] = await Promise.all([
-				db
+				getDb()
 					.select({
 						id: policies.id,
 						name: policies.name,
@@ -52,7 +52,7 @@ export const policyRouter = createTRPCRouter({
 					})
 					.from(policies)
 					.where(eq(policies.id, input.policyId)),
-				db
+				getDb()
 					.select({ data: policyVersions.data })
 					.from(policyVersions)
 					.where(and(eq(policyVersions.id, input.policyId)))
@@ -125,7 +125,7 @@ export const policyRouter = createTRPCRouter({
 	deploy: authedProcedure
 		.input(z.object({ policyId: z.string(), comment: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const [policy] = await db
+			const [policy] = await getDb()
 				.select({
 					pk: policies.pk,
 					data: policies.data,
@@ -137,7 +137,7 @@ export const policyRouter = createTRPCRouter({
 
 			await ctx.ensureTenantAccount(policy.tenantPk);
 
-			await db.insert(policyVersions).values({
+			await getDb().insert(policyVersions).values({
 				policyPk: policy.pk,
 				data: policy.data,
 				comment: input.comment,
@@ -154,7 +154,7 @@ export const policyRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const policy = await db.query.policies.findFirst({
+			const policy = await getDb().query.policies.findFirst({
 				where: eq(policies.id, input.policyId),
 			});
 			if (!policy)
@@ -165,7 +165,7 @@ export const policyRouter = createTRPCRouter({
 
 			await ctx.ensureTenantAccount(policy.tenantPk);
 
-			await db
+			await getDb()
 				.update(policies)
 				.set({
 					name: input.name ?? sql`${policies.name}`,
@@ -376,7 +376,7 @@ export const policyRouter = createTRPCRouter({
 	members: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const policy = await db.query.policies.findFirst({
+			const policy = await getDb().query.policies.findFirst({
 				where: eq(policies.id, input.id),
 			});
 			if (!policy)
@@ -384,7 +384,7 @@ export const policyRouter = createTRPCRouter({
 
 			await ctx.ensureTenantAccount(policy.tenantPk);
 
-			return await db
+			return await getDb()
 				.select({
 					pk: policyAssignables.pk,
 					variant: policyAssignables.variant,
@@ -437,7 +437,7 @@ export const policyRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const policy = await db.query.policies.findFirst({
+			const policy = await getDb().query.policies.findFirst({
 				where: eq(policies.id, input.id),
 			});
 			if (!policy)
@@ -445,13 +445,15 @@ export const policyRouter = createTRPCRouter({
 
 			await ctx.ensureTenantAccount(policy.tenantPk);
 
-			await db.insert(policyAssignables).values(
-				input.members.map((member) => ({
-					policyPk: policy.pk,
-					pk: member.pk,
-					variant: member.variant,
-				})),
-			);
+			await getDb()
+				.insert(policyAssignables)
+				.values(
+					input.members.map((member) => ({
+						policyPk: policy.pk,
+						pk: member.pk,
+						variant: member.variant,
+					})),
+				);
 		}),
 
 	// duplicate: tenantProcedure
@@ -503,7 +505,7 @@ export const policyRouter = createTRPCRouter({
 	create: tenantProcedure
 		.input(z.object({ name: z.string().min(1).max(100) }))
 		.mutation(({ ctx, input }) =>
-			db.transaction(async (db) => {
+			getDb().transaction(async (db) => {
 				const policyId = createId();
 				const policyInsert = await db.insert(policies).values({
 					id: policyId,
@@ -517,13 +519,13 @@ export const policyRouter = createTRPCRouter({
 	delete: authedProcedure
 		.input(z.object({ policyId: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const policy = await db.query.policies.findFirst({
+			const policy = await getDb().query.policies.findFirst({
 				where: eq(policies.id, input.policyId),
 			});
 			if (!policy)
 				throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
 
-			await db.delete(policies).where(eq(policies.id, input.policyId));
+			await getDb().delete(policies).where(eq(policies.id, input.policyId));
 		}),
 });
 

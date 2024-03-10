@@ -5,9 +5,15 @@ import { alphabet, generateRandomString } from "oslo/crypto";
 import { appendResponseHeader, setCookie } from "vinxi/server";
 import { z } from "zod";
 
-import { lucia } from "~/api/auth";
+import { getLucia } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
-import { accountLoginCodes, accounts, db, tenantAccounts, tenants } from "~/db";
+import {
+	accountLoginCodes,
+	accounts,
+	getDb,
+	tenantAccounts,
+	tenants,
+} from "~/db";
 import { authedProcedure, createTRPCRouter, publicProcedure } from "../helpers";
 
 type UserResult = {
@@ -18,7 +24,7 @@ type UserResult = {
 };
 
 const fetchTenants = (accountPk: number) =>
-	db
+	getDb()
 		.select({
 			id: tenants.id,
 			name: tenants.name,
@@ -38,7 +44,7 @@ export const authRouter = createTRPCRouter({
 			const code = generateRandomString(8, alphabet("0-9"));
 
 			const id = generateId(16);
-			const result = await db
+			const result = await getDb()
 				.insert(accounts)
 				.values({ name, email: input.email, id })
 				.onDuplicateKeyUpdate({
@@ -49,7 +55,7 @@ export const authRouter = createTRPCRouter({
 			let accountId = id;
 
 			if (accountPk === 0) {
-				const account = await db.query.accounts.findFirst({
+				const account = await getDb().query.accounts.findFirst({
 					where: eq(accounts.email, input.email),
 				});
 				if (!account)
@@ -58,7 +64,7 @@ export const authRouter = createTRPCRouter({
 				accountId = account.id;
 			}
 
-			await db.insert(accountLoginCodes).values({ accountPk, code });
+			await getDb().insert(accountLoginCodes).values({ accountPk, code });
 
 			await sendEmail({
 				type: "loginCode",
@@ -73,18 +79,18 @@ export const authRouter = createTRPCRouter({
 	verifyLoginCode: publicProcedure
 		.input(z.object({ code: z.string() }))
 		.mutation(async ({ input, ctx }) => {
-			const code = await db.query.accountLoginCodes.findFirst({
+			const code = await getDb().query.accountLoginCodes.findFirst({
 				where: eq(accountLoginCodes.code, input.code),
 			});
 
 			if (!code)
 				throw new TRPCError({ code: "NOT_FOUND", message: "Invalid code" });
 
-			await db
+			await getDb()
 				.delete(accountLoginCodes)
 				.where(eq(accountLoginCodes.code, input.code));
 
-			const account = await db.query.accounts.findFirst({
+			const account = await getDb().query.accounts.findFirst({
 				where: eq(accounts.pk, code.accountPk),
 			});
 
@@ -94,12 +100,12 @@ export const authRouter = createTRPCRouter({
 					message: "Account not found",
 				});
 
-			const session = await lucia.createSession(account.id, {});
+			const session = await getLucia().createSession(account.id, {});
 
 			appendResponseHeader(
 				ctx.event,
 				"Set-Cookie",
-				lucia.createSessionCookie(session.id).serialize(),
+				getLucia().createSessionCookie(session.id).serialize(),
 			);
 
 			setCookie(ctx.event, "isLoggedIn", "true", {
@@ -127,7 +133,7 @@ export const authRouter = createTRPCRouter({
 		.mutation(async ({ ctx: { account }, input }) => {
 			// Skip DB if we have nothing to update
 			if (input.name !== undefined) {
-				await db
+				await getDb()
 					.update(accounts)
 					.set({ name: input.name })
 					.where(eq(accounts.pk, account.pk));
@@ -142,7 +148,7 @@ export const authRouter = createTRPCRouter({
 		}),
 
 	logout: authedProcedure.mutation(async ({ ctx: { session } }) => {
-		await lucia.invalidateSession(session.id);
+		await getLucia().invalidateSession(session.id);
 	}),
 
 	//   delete: authedProcedure.mutation(async ({ ctx }) => {
