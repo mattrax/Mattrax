@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type Stripe from "stripe";
-import { stripe } from "~/api/stripe";
+import { getStripe } from "~/api/stripe";
 import { getDb, tenants } from "~/db";
 import { getEnv } from "~/env";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
@@ -20,7 +20,7 @@ export const billingRouter = createTRPCRouter({
 		let customerId: string;
 		if (!tenant.stripeCustomerId) {
 			try {
-				const customer = await stripe.customers.create({
+				const customer = await getStripe().customers.create({
 					name: tenant.name,
 					email: tenant.billingEmail || undefined,
 				});
