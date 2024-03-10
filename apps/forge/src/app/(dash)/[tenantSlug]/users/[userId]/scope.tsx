@@ -8,7 +8,7 @@ import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import {
 	AddMemberSheet,
 	memberSheetColumns,
-} from "~/components/AddMemberSheet";
+} from "../../AddMemberSheet";
 import { StandardTable, createStandardTable } from "~/components/StandardTable";
 
 export default function Page() {

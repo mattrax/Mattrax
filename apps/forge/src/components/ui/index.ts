@@ -6,6 +6,7 @@ export * from "./dialog";
 export * from "./input";
 export * from "./pagination";
 export * from "./select";
+export * from "./sheet";
 export * from "./separator";
 export * from "./skeleton";
 export * from "./switch";

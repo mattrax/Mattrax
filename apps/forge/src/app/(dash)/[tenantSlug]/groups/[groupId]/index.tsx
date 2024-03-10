@@ -11,7 +11,7 @@ import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import {
 	AddMemberSheet,
 	memberSheetColumns,
-} from "~/components/AddMemberSheet";
+} from "../../AddMemberSheet";
 import { StandardTable, createStandardTable } from "~/components/StandardTable";
 import { useGroup } from "./Context";
 

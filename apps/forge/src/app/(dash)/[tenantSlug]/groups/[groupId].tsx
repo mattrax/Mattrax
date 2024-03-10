@@ -1,4 +1,3 @@
-import { createContextProvider } from "@solid-primitives/context";
 import { A, Navigate, RouteDefinition } from "@solidjs/router";
 import { ParentProps, Show } from "solid-js";
 import { toast } from "solid-sonner";

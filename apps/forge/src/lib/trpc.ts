@@ -12,21 +12,23 @@ import { getEvent } from "vinxi/http";
 
 import { router, createContext, Router } from "~/api/trpc";
 
-const serverFunction = (opts: TrpcServerFunctionOpts) => {
-	"use server";
+// const serverFunction = (opts: TrpcServerFunctionOpts) => {
+// 	"use server";
 
-	try {
-		console.log(getEvent());
-	} catch (error) {
-		console.error(error);
-	}
+// 	try {
+// 		console.log(getEvent());
+// 	} catch (error) {
+// 		console.error(error);
+// 	}
 
-	return trpcServerFunction({ router, createContext, opts });
-};
+// 	return trpcServerFunction({ router, createContext, opts });
+// };
 
 export const trpc: CreateTRPCSolidStart<Router> = createTRPCSolidStart({
 	config: () => ({
-		links: [createServerFunctionLink(serverFunction)],
+		links: [createServerFunctionLink(() => { throw new Error("unimplemented") }
+			// serverFunction
+		)],
 		transformer: seroval,
 	}),
 });

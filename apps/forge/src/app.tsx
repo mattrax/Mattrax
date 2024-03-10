@@ -17,7 +17,7 @@ import {
 	startTransition,
 } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
-import { FileRoutes } from "@solidjs/start/router";
+// import { FileRoutes } from "@solidjs/start/router";
 
 import { MErrorBoundary } from "./components/MattraxErrorBoundary";
 import { isTRPCClientError, trpc } from "./lib";
@@ -168,7 +168,8 @@ export default function App() {
 								);
 							}}
 						>
-							<FileRoutes />
+							{[]}
+							{/* <FileRoutes /> */}
 						</Router>
 					</Suspense>
 				</trpc.Provider>

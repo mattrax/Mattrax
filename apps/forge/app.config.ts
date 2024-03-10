@@ -10,7 +10,7 @@ import { monorepoRoot } from "./loadEnv";
 import "./src/env";
 
 export default defineConfig({
-	ssr: false,
+	ssr: true,
 	routeDir: "./app",
 	vite: {
 		envDir: monorepoRoot,
