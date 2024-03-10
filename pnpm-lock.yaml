@@ -243,6 +243,9 @@ importers:
       '@mattrax/policy':
         specifier: workspace:^
         version: link:../../packages/policy
+      '@mattrax/trpc-solid-start':
+        specifier: workspace:^
+        version: link:../../packages/trpc-solid-start
       '@microsoft/microsoft-graph-client':
         specifier: ^3.0.7
         version: 3.0.7
@@ -552,6 +555,18 @@ importers:
       '@types/plist':
         specifier: ^3.0.5
         version: 3.0.5
+
+  packages/trpc-solid-start:
+    dependencies:
+      '@trpc/client':
+        specifier: ^10.45.1
+        version: 10.45.1(@trpc/server@10.45.1)
+      '@trpc/server':
+        specifier: ^10.45.1
+        version: 10.45.1
+      vinxi:
+        specifier: '=0.3.4'
+        version: 0.3.4(@planetscale/database@1.16.0)(preact@10.19.6)
 
 packages:
 

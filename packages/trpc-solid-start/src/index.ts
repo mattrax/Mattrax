@@ -1,58 +1,62 @@
-import { Operation, TRPCClientError, TRPCLink } from "@trpc/client";
 import {
 	AnyRouter,
 	DataTransformer,
 	ProcedureType,
 	callProcedure,
 } from "@trpc/server";
+import { Operation, TRPCClientError, TRPCLink } from "@trpc/client";
 import { type TRPCResponse } from "@trpc/server/rpc";
 import { observable } from "@trpc/server/observable";
-import { getEvent } from "vinxi/http";
 
-import { appRouter, createTRPCContext } from "~/api";
 import { dataLoader } from "./dataLoader";
 
-async function serverFunctionHandler(opts: {
+export type TrpcServerFunctionOpts = {
 	operations: Array<Pick<Operation, "path" | "input">>;
 	type: ProcedureType;
-}): Promise<TRPCResponse[]> {
-	"use server";
+};
+export type TrpcServerFunction<TRouter extends AnyRouter = AnyRouter> = (
+	opts: TrpcServerFunctionOpts,
+) => TrpcServerFunctionResult<TRouter>;
 
-	const ctx = createTRPCContext(getEvent());
+export type TrpcServerFunctionResult<TRouter extends AnyRouter> = Promise<
+	Array<Promise<TRPCResponse>> & { _router: TRouter }
+>;
 
-	return await Promise.all(
-		opts.operations.map(async (o) => ({
-			result: {
-				data: await callProcedure({
-					procedures: appRouter._def.procedures,
-					path: o.path,
-					rawInput: o.input,
-					ctx,
-					type: opts.type,
-				}),
-			},
-		})),
-	);
+export async function trpcServerFunction<TRouter extends AnyRouter>(args: {
+	router: TRouter;
+	createContext: () => any;
+	opts: TrpcServerFunctionOpts;
+}): TrpcServerFunctionResult<TRouter> {
+	const ctx = args.createContext();
+
+	return args.opts.operations.map(async (o) => ({
+		result: {
+			data: await callProcedure({
+				procedures: args.router._def.procedures,
+				path: o.path,
+				rawInput: o.input,
+				ctx,
+				type: args.opts.type,
+			}),
+		},
+	})) as unknown as TrpcServerFunctionResult<TRouter>;
 }
 
-const serverFunctionRequester =
-	(requesterOpts: { type: ProcedureType }) => (batchOps: Operation[]) => ({
-		promise: serverFunctionHandler({
-			operations: batchOps.map((o) => ({
-				path: o.path,
-				input: o.input,
-			})),
-			type: requesterOpts.type,
-		}),
-		cancel: () => {},
-	});
-
-export const createServerFunctionLink = <
-	TRouter extends AnyRouter,
->(): TRPCLink<TRouter> => {
+export const createServerFunctionLink = <TRouter extends AnyRouter>(
+	requester: TrpcServerFunction<TRouter>,
+): TRPCLink<TRouter> => {
 	return () => {
 		const batchLoader = (type: ProcedureType) => {
-			const fetch = serverFunctionRequester({ type });
+			const fetch = (batchOps: Operation[]) => ({
+				promise: requester({
+					operations: batchOps.map((o) => ({
+						path: o.path,
+						input: o.input,
+					})),
+					type: type,
+				}),
+				cancel: () => {},
+			});
 
 			return { fetch, validate: () => true };
 		};
@@ -69,6 +73,7 @@ export const createServerFunctionLink = <
 				const { promise, cancel } = loader.load(op);
 
 				promise
+					.then((r) => r)
 					.then((response) => {
 						if ("error" in response) {
 							observer.error(
@@ -104,6 +109,7 @@ export const createServerFunctionLink = <
 		};
 	};
 };
+
 export const seroval: DataTransformer = {
 	serialize: (d) => d,
 	deserialize: (d) => d,

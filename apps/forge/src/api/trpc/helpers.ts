@@ -1,7 +1,6 @@
 import { TRPCError, initTRPC } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { User } from "lucia";
-import superjson from "superjson";
 import {
 	H3Event,
 	appendResponseHeader,
@@ -12,7 +11,7 @@ import { ZodError, z } from "zod";
 
 import { getDb, tenantAccounts, tenants } from "~/db";
 import { getLucia } from "../auth";
-import { seroval } from "~/lib/trpc/serverFunctionLink";
+import { seroval } from "@mattrax/trpc-solid-start";
 
 export const createTRPCContext = (event: H3Event) => {
 	return {

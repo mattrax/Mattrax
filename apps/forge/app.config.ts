@@ -35,6 +35,10 @@ export default defineConfig({
 		],
 	},
 	server: {
+		prerender: {
+			crawlLinks: false,
+			routes: []
+		},
 		unenv: cloudflare,
 		// vercel: {
 		//   regions: ["iad1"],
