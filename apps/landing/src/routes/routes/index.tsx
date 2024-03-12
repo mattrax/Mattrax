@@ -1,7 +1,7 @@
 import type { JSX } from "solid-js";
 
 // TODO: Setup unplugin icons
-function PhLaptop(props: JSX.IntrinsicElements["svg"], key: string) {
+function PhLaptop(props: JSX.IntrinsicElements["svg"]) {
 	return (
 		<svg
 			xmlns="http://www.w3.org/2000/svg"
@@ -18,7 +18,7 @@ function PhLaptop(props: JSX.IntrinsicElements["svg"], key: string) {
 	);
 }
 
-function PhGear(props: JSX.IntrinsicElements["svg"], key: string) {
+function PhGear(props: JSX.IntrinsicElements["svg"]) {
 	return (
 		<svg
 			xmlns="http://www.w3.org/2000/svg"
@@ -33,6 +33,14 @@ function PhGear(props: JSX.IntrinsicElements["svg"], key: string) {
 			></path>
 		</svg>
 	);
+}
+
+function PhGitCommit(props: JSX.IntrinsicElements["svg"]) {
+	return (<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="#000000" viewBox="0 0 256 256" {...props}><path d="M248,120H183.42a56,56,0,0,0-110.84,0H8a8,8,0,0,0,0,16H72.58a56,56,0,0,0,110.84,0H248a8,8,0,0,0,0-16ZM128,168a40,40,0,1,1,40-40A40,40,0,0,1,128,168Z"></path></svg>)
+}
+
+function PhAppWindow(props: JSX.IntrinsicElements["svg"]) {
+	return (<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="#000000" viewBox="0 0 256 256" {...props}><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200ZM80,84A12,12,0,1,1,68,72,12,12,0,0,1,80,84Zm40,0a12,12,0,1,1-12-12A12,12,0,0,1,120,84Z"></path></svg>)
 }
 
 export default function Page() {
@@ -67,11 +75,19 @@ export default function Page() {
 								</h4>
 							</li>
 							<li class="flex padding-4 justify-center items-center">
-								<PhGear class="w-10 h-10" />
+								<PhGitCommit class="w-10 h-10" />
 								<h4 class="pl-2 font-semibold">
-									Define your policy once, deploy it to any OS
+									Track policy versions, require approval and quickly rollback
 									{/* TODO: This is to line up the icons. Do this properly, cause this is cursed lol */}
 									&nbsp;
+									&nbsp;
+									&nbsp;
+								</h4>
+							</li>
+							<li class="flex padding-4 justify-center items-center">
+								<PhAppWindow class="w-10 h-10" />
+								<h4 class="pl-2 font-semibold">
+									Manage 3rd party software with built-in integrations
 								</h4>
 							</li>
 						</ul>
