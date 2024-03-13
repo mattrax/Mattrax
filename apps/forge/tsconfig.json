@@ -11,5 +11,5 @@
   },
   "include": ["src/"],
   "exclude": ["node_modules", "dist"],
-  "references": [{ "path": "../email" }]
+  "references": [{ "path": "../email" }, { "path": "../../packages/ui" }]
 }
