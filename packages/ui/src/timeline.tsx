@@ -7,7 +7,7 @@ import {
 	type JSXElement,
 } from "solid-js";
 
-import { cn } from "~/lib/utils";
+import { cn } from "./lib";
 
 export type TimelinePropsItem = Omit<
 	TimelineItemProps,

@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router";
-import { Button } from "~/components/ui";
+import { Button } from "@mattrax/ui";
 
 export default function NotFound() {
 	const navigate = useNavigate();

@@ -1,5 +1,11 @@
 import { createMutation } from "@tanstack/solid-query";
-import { For, ParentProps, Suspense, createMemo, createSignal } from "solid-js";
+import {
+	For,
+	type ParentProps,
+	Suspense,
+	createMemo,
+	createSignal,
+} from "solid-js";
 import { useTenantSlug } from "~/app/(dash)/[tenantSlug]";
 import { trpc } from "~/lib";
 import {
@@ -8,16 +14,20 @@ import {
 	selectCheckboxColumn,
 } from "./StandardTable";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { Badge, Button, Tabs, TabsList, TabsTrigger } from "./ui";
-import { ConfirmDialog } from "./ConfirmDialog";
 import {
+	Badge,
+	Button,
+	Tabs,
+	TabsList,
+	TabsTrigger,
 	Sheet,
 	SheetContent,
 	SheetDescription,
 	SheetHeader,
 	SheetTitle,
 	SheetTrigger,
-} from "./ui/sheet";
+} from "@mattrax/ui";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 const VariantDisplay = {
 	user: "User",

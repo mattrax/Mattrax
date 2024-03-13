@@ -3,10 +3,8 @@ import {
 	createTRPCSolidStart,
 } from "@solid-mediakit/trpc";
 import { TRPCClientError, httpBatchLink } from "@trpc/client";
-import { type ClassValue, clsx } from "clsx";
-import { Accessor, createEffect, createSignal } from "solid-js";
+import { type Accessor, createEffect, createSignal } from "solid-js";
 import superjson from "superjson";
-import { twMerge } from "tailwind-merge";
 import type { AppRouter } from "~/api";
 
 export const trpc: CreateTRPCSolidStart<AppRouter> = createTRPCSolidStart({
@@ -19,10 +17,6 @@ export const trpc: CreateTRPCSolidStart<AppRouter> = createTRPCSolidStart({
 		transformer: superjson,
 	}),
 });
-
-export function cn(...inputs: ClassValue[]) {
-	return twMerge(clsx(inputs));
-}
 
 // TODO: Surly this can be done in a better way.
 export function untrackScopeFromSuspense<T>(scope: () => T): Accessor<T> {

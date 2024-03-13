@@ -2,7 +2,7 @@ import { useNavigate } from "@solidjs/router";
 import { startTransition } from "solid-js";
 
 import { ConfirmDialog } from "~/components/ConfirmDialog";
-import { Button } from "~/components/ui";
+import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { useTenant } from "../../TenantContext";
 

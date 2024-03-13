@@ -3,7 +3,7 @@ import { splitProps } from "solid-js";
 
 import { Tabs as TabsPrimitive } from "@kobalte/core";
 
-import { cn } from "~/lib/utils";
+import { cn } from "./lib";
 
 const Tabs = TabsPrimitive.Root;
 

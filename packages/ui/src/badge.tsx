@@ -4,7 +4,7 @@ import { splitProps } from "solid-js";
 import type { VariantProps } from "class-variance-authority";
 import { cva } from "class-variance-authority";
 
-import { cn } from "~/lib/utils";
+import { cn } from "./lib";
 
 const badgeVariants = cva(
 	"focus:ring-ring inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2",

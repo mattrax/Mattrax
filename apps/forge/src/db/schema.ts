@@ -23,6 +23,29 @@ const cuid = (name: string) =>
 
 export type TableID<Table extends string> = number & { __table: Table };
 
+export const waitlistInterestReasons = [
+	"personal",
+	"internal-it-team",
+	"msp-provider",
+	"other",
+] as const;
+
+export const waitlistDeploymentMethod = [
+	"managed-cloud",
+	"private-cloud",
+	"onprem",
+	"other",
+] as const;
+
+export const waitlist = mysqlTable("waitlist", {
+	id: serial("id").primaryKey(),
+	email: varchar("email", { length: 256 }).notNull().unique(),
+	name: varchar("name", { length: 256 }),
+	interest: mysqlEnum("interest", waitlistInterestReasons).notNull(),
+	deployment: mysqlEnum("deployment", waitlistDeploymentMethod).notNull(),
+	createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
 // An account represents the login of an *administrator*.
 export const accounts = mysqlTable("accounts", {
 	pk: serial("id").primaryKey(),

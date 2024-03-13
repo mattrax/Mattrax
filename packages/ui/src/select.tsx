@@ -4,7 +4,7 @@ import { splitProps } from "solid-js";
 import { Select as SelectPrimitive } from "@kobalte/core";
 import { TbCheck, TbChevronDown } from "solid-icons/tb";
 
-import { cn } from "~/lib/utils";
+import { cn } from "./lib";
 
 const Select = SelectPrimitive.Root;
 

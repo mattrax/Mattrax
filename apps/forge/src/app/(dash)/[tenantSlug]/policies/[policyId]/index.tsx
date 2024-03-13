@@ -1,4 +1,4 @@
-import { Timeline } from "~/components/ui/timeline";
+import { Timeline } from "@mattrax/ui";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { usePolicy } from "./Context";
 import { StatItem } from "~/components/StatItem";

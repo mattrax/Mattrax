@@ -2,8 +2,8 @@ import { useNavigate } from "@solidjs/router";
 import { Match, Switch, createSignal, startTransition } from "solid-js";
 import { z } from "zod";
 
-import { Form, InputField, createZodForm } from "~/components/forms";
-import { Button, Card, CardContent, CardHeader } from "~/components/ui";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
 import { trpc } from "~/lib";
 
 // TODO: Autocomplete attributes
@@ -26,6 +26,10 @@ export default function Page() {
 							Alpha
 						</span>
 					</div>
+					<h1 class="text-red-500 text-center">
+						WARNING: NOT READY FOR PUBLIC USE, AND COMES WITH NO WARRANTY OR
+						SECURITY GUARANTEES
+					</h1>
 				</CardHeader>
 
 				<CardContent>

@@ -1,14 +1,14 @@
-import { ParentProps, createSignal } from "solid-js";
+import { type ParentProps, createSignal } from "solid-js";
 import { z } from "zod";
 
-import { Form, InputField, createZodForm } from "~/components/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import {
 	Button,
 	DialogContent,
 	DialogHeader,
 	DialogRoot,
 	DialogTitle,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { trpc } from "~/lib";
 
 // TODO: Use form abstraction

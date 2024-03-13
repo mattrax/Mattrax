@@ -1,13 +1,12 @@
-// Side-side exports (we don't want these shipped to the client)
+// Server-side exports (we don't want these shipped to the client)
 
-// import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { Hono } from "hono";
 
 import { enrollmentRouter } from "./routes/enrollment";
 import { msRouter } from "./routes/ms";
 import { webhookRouter } from "./routes/webhook";
-// import { appRouter, createTRPCContext } from "./trpc";
 import type { HonoEnv } from "./types";
+import { waitlistRouter } from "./routes/waitlist";
 
 export const app = new Hono<HonoEnv>()
 	.basePath("/api")
@@ -15,6 +14,7 @@ export const app = new Hono<HonoEnv>()
 	.route("/enrollment", enrollmentRouter)
 	.route("/webhook", webhookRouter)
 	.route("/ms", msRouter)
+	.route("/waitlist", waitlistRouter)
 	.all("*", (c) => {
 		c.status(404);
 		if (c.req.raw.headers.get("Accept")?.includes("application/json")) {

@@ -5,7 +5,7 @@ import {
 	CardDescription,
 	CardContent,
 	Switch,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { useTenantSlug } from "../../[tenantSlug]";
 

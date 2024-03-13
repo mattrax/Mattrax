@@ -5,7 +5,7 @@ import { Dialog as SheetPrimitive } from "@kobalte/core";
 import { type VariantProps, cva } from "class-variance-authority";
 import { TbX } from "solid-icons/tb";
 
-import { cn } from "~/lib/utils";
+import { cn } from "./lib";
 
 const Sheet = SheetPrimitive.Root;
 

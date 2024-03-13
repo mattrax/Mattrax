@@ -11,7 +11,7 @@ import {
 	DropdownMenuTrigger,
 	Label,
 	Textarea,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { useDevice } from "./Context";
 import { trpc } from "~/lib";

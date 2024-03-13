@@ -1,12 +1,12 @@
-import { ParentProps, Show } from "solid-js";
+import { type ParentProps, Show } from "solid-js";
 import { z } from "zod";
-import { A, Navigate, RouteDefinition } from "@solidjs/router";
+import { A, Navigate, type RouteDefinition } from "@solidjs/router";
 import { toast } from "solid-sonner";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { Badge } from "~/components/ui";
+import { Badge } from "@mattrax/ui";
 import { useNavbarItems } from "../../NavItems";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
 import { PolicyContextProvider } from "./[policyId]/Context";
@@ -16,7 +16,7 @@ export const route = {
 		trpc.useContext().policy.get.ensureData({
 			policyId: params.policyId!,
 		}),
-		} satisfies RouteDefinition
+} satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ policyId: z.string() });

@@ -1,8 +1,8 @@
 import { As } from "@kobalte/core";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { ParentProps, Suspense, createSignal } from "solid-js";
+import { type ParentProps, Suspense, createSignal } from "solid-js";
 
-import IconCarbonCaretDown from '~icons/carbon/caret-down.jsx'
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import {
 	ColumnsDropdown,
 	StandardTable,
@@ -100,9 +100,9 @@ export default function Page() {
 	);
 }
 
-import { A, RouteDefinition, useNavigate } from "@solidjs/router";
+import { A, type RouteDefinition, useNavigate } from "@solidjs/router";
 import { createQuery } from "@tanstack/solid-query";
-import { Button, Checkbox, Input } from "~/components/ui";
+import { Button, Checkbox, Input } from "@mattrax/ui";
 
 import {
 	DialogContent,
@@ -110,7 +110,7 @@ import {
 	DialogRoot,
 	DialogTitle,
 	DialogTrigger,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { isDebugMode, trpc, untrackScopeFromSuspense } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
 

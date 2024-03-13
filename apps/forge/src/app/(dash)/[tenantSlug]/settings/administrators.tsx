@@ -1,9 +1,9 @@
-import { RouteDefinition } from "@solidjs/router";
+import type { RouteDefinition } from "@solidjs/router";
 import { For, Suspense } from "solid-js";
 import { z } from "zod";
 
 import { ConfirmDialog } from "~/components/ConfirmDialog";
-import { Form, InputField, createZodForm } from "~/components/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import {
 	Badge,
 	Button,
@@ -12,7 +12,7 @@ import {
 	CardDescription,
 	CardHeader,
 	CardTitle,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { useAuth } from "../../AuthContext";
 import { useTenant } from "../../TenantContext";

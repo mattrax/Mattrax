@@ -14,7 +14,7 @@ import {
 	DialogRoot,
 	DialogTitle,
 	DialogTrigger,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import IconIcOutlineClose from "~icons/ic/outline-close.jsx";
 import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import { trpc } from "~/lib";

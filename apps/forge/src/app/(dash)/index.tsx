@@ -2,9 +2,9 @@ import { Navigate, useNavigate } from "@solidjs/router";
 import { Show, startTransition } from "solid-js";
 import { z } from "zod";
 
-import { Form, createZodForm } from "~/components/forms";
-import { InputField } from "~/components/forms";
-import { Button, Card, CardContent, CardHeader } from "~/components/ui";
+import { Form, createZodForm } from "@mattrax/ui/forms";
+import { InputField } from "@mattrax/ui/forms";
+import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { AuthContext, useAuth } from "./AuthContext";
 

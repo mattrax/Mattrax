@@ -3,7 +3,7 @@ import { TbX } from "solid-icons/tb";
 import type { Component, ComponentProps, JSX, ParentProps } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { cn } from "~/lib/utils";
+import { cn } from "./lib";
 import { Controller, ControllerProvider, createController } from "./controller";
 
 // An easy wrapper on the dialog primitives

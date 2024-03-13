@@ -1,11 +1,11 @@
 import { As } from "@kobalte/core";
-import { A, RouteDefinition } from "@solidjs/router";
+import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Show, Suspense } from "solid-js";
 
-import IconCarbonCaretSort from '~icons/carbon/caret-sort.jsx'
-import IconCarbonCaretDown from '~icons/carbon/caret-down.jsx'
-import { RouterOutput } from "~/api/trpc";
+import IconCarbonCaretSort from "~icons/carbon/caret-sort.jsx";
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
+import type { RouterOutput } from "~/api/trpc";
 import {
 	ColumnsDropdown,
 	StandardTable,
@@ -20,7 +20,7 @@ import {
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";

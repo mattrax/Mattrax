@@ -9,7 +9,7 @@ import {
 } from "solid-js";
 
 import { clsx } from "clsx";
-import { Input, Label } from "../ui";
+import { Input, Label } from "..";
 
 export function InputField<
 	TData extends Record<string, any>,

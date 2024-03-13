@@ -1,10 +1,10 @@
 import { As } from "@kobalte/core";
-import { A, RouteDefinition, useNavigate } from "@solidjs/router";
+import { A, type RouteDefinition, useNavigate } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { ParentProps, Suspense, startTransition } from "solid-js";
+import { type ParentProps, Suspense, startTransition } from "solid-js";
 import { z } from "zod";
 
-import IconCarbonCaretDown from '~icons/carbon/caret-down.jsx'
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 
 export const route = {
@@ -35,7 +35,7 @@ const columns = [
 	}),
 ];
 
-import { RouterOutput } from "~/api/trpc";
+import type { RouterOutput } from "~/api/trpc";
 import {
 	ColumnsDropdown,
 	StandardTable,
@@ -43,7 +43,7 @@ import {
 	createSearchParamPagination,
 	selectCheckboxColumn,
 } from "~/components/StandardTable";
-import { Button } from "~/components/ui";
+import { Button } from "@mattrax/ui";
 
 function createGroupsTable() {
 	const params = useZodParams({ tenantSlug: z.string() });
@@ -112,8 +112,8 @@ import {
 	DialogTitle,
 	DialogTrigger,
 	Input,
-} from "~/components/ui";
-import { Form, InputField, createZodForm } from "~/components/forms";
+} from "@mattrax/ui";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 

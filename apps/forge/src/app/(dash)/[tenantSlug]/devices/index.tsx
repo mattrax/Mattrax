@@ -5,7 +5,7 @@ import type { RouterOutput } from "~/api/trpc";
 import { Suspense } from "solid-js";
 import { As } from "@kobalte/core";
 
-import IconCarbonCaretDown from '~icons/carbon/caret-down.jsx'
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import {
 	ColumnsDropdown,
 	StandardTable,
@@ -13,7 +13,7 @@ import {
 	createSearchParamPagination,
 	selectCheckboxColumn,
 } from "~/components/StandardTable";
-import { Button, Input } from "~/components/ui";
+import { Button, Input } from "@mattrax/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
 import { useZodParams } from "~/lib/useZodParams";

@@ -1,7 +1,7 @@
 import type { Component, ComponentProps } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { cn } from "~/lib/utils";
+import { cn } from "./lib";
 
 const Textarea: Component<ComponentProps<"textarea">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);

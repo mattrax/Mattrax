@@ -3,7 +3,7 @@ import { splitProps } from "solid-js";
 
 import { Separator as SeparatorPrimitive } from "@kobalte/core";
 
-import { cn } from "~/lib/utils";
+import { cn } from "./lib";
 
 const Separator: Component<SeparatorPrimitive.SeparatorRootProps> = (props) => {
 	const [, rest] = splitProps(props, ["class", "orientation"]);

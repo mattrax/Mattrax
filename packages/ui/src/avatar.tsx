@@ -3,7 +3,7 @@ import { splitProps } from "solid-js";
 
 import { Image as ImagePrimitive } from "@kobalte/core";
 
-import { cn } from "~/lib/utils";
+import { cn } from "./lib";
 
 const Avatar: Component<ImagePrimitive.ImageRootProps> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);

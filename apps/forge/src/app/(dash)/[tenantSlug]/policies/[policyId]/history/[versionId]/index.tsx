@@ -4,7 +4,7 @@ export default function Page() {
 
 // import { Show, For, createEffect, createSignal } from "solid-js";
 // import { z } from "zod";
-// import { Form, InputField, createZodForm } from "~/components/forms";
+// import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 // import {
 // 	Button,
 // 	Card,
@@ -21,7 +21,7 @@ export default function Page() {
 // 	DialogTrigger,
 // 	Textarea,
 // 	createController,
-// } from "~/components/ui";
+// } from "@mattrax/ui";
 // import { trpc } from "~/lib";
 // import { useZodParams } from "~/lib/useZodParams";
 // import { match } from "ts-pattern";

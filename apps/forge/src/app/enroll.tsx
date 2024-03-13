@@ -8,7 +8,7 @@ import {
 	CardDescription,
 	CardHeader,
 	Input,
-} from "~/components/ui";
+} from "@mattrax/ui";
 
 // TODO: Autocomplete attributes
 // TODO: Use Mattrax colors on this page

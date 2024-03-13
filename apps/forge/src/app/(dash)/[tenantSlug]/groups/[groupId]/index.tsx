@@ -3,9 +3,9 @@ import { Suspense, createMemo, createSignal } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { toast } from "solid-sonner";
 
-import IconMaterialSymbolsEditOutline from '~icons/material-symbols/edit-outline.jsx'
-import IconIcRoundCheck from '~icons/ic/round-check.jsx'
-import { Button } from "~/components/ui";
+import IconMaterialSymbolsEditOutline from "~icons/material-symbols/edit-outline.jsx";
+import IconIcRoundCheck from "~icons/ic/round-check.jsx";
+import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import {

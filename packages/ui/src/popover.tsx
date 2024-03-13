@@ -3,7 +3,7 @@ import { splitProps } from "solid-js";
 
 import { Popover as PopoverPrimitive } from "@kobalte/core";
 
-import { cn } from "~/lib/utils";
+import { cn } from "./lib";
 import { Controller, ControllerProvider, createController } from "./controller";
 
 const Popover: Component<

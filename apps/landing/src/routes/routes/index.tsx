@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import type { ComponentProps, JSX } from "solid-js";
 
 // TODO: Setup unplugin icons
 function PhLaptop(props: JSX.IntrinsicElements["svg"]) {
@@ -131,6 +131,16 @@ export default function Page() {
 					to discuss Mattrax.
 				</p>
 			</div>
+
+			<div class="flex flex-col justify-center items-center">
+				<p>Sign up for the waitlist:</p>
+				<div>
+					<Input name="email" placeholder="email" autocomplete="email" label="Email" />
+					<Input name="name" placeholder="name" autocomplete="name" label="Name" />
+					<Input name="email" placeholder="email" autocomplete="email" label="Email" />
+				</div>
+			</div>
+
 			<div class="flex justify-center items-center pt-4 mb-5">
 				<p>
 					Developed by{" "}
@@ -144,5 +154,15 @@ export default function Page() {
 				</p>
 			</div>
 		</main>
+	);
+}
+
+// TODO: Use `InputField` from Mattrax's UI package once it's broken out.
+function Input(props: Omit<ComponentProps<"input">, "class"> & { label: JSX.Element }) {
+	return (
+		<div class="flex flex-col space-y-1.5">
+			<label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{props.label}</label>
+			<input {...props} class="border-input ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border bg-transparent px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" />
+		</div>
 	);
 }

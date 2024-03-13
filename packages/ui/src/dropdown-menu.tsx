@@ -3,7 +3,7 @@ import { TbCheck, TbChevronRight, TbCircle } from "solid-icons/tb";
 import type { Component, ComponentProps } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { cn } from "~/lib/utils";
+import { cn } from "./lib";
 import { Controller, ControllerProvider, createController } from "./controller";
 
 // TODO: Making a trigger prop work is hard cause the element attributes don't get set

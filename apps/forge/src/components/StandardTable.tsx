@@ -1,16 +1,16 @@
 import {
-	ColumnDef,
-	PartialKeys,
-	RowData,
+	type ColumnDef,
+	type PartialKeys,
+	type RowData,
 	type Table as TTable,
-	TableOptions,
+	type TableOptions,
 	createSolidTable,
 	flexRender,
 	getCoreRowModel,
 	getPaginationRowModel,
 } from "@tanstack/solid-table";
 import clsx from "clsx";
-import { For, ParentProps, createEffect, mergeProps, on } from "solid-js";
+import { For, type ParentProps, createEffect, mergeProps, on } from "solid-js";
 
 export function createStandardTable<TData extends RowData>(
 	options: Omit<
@@ -72,7 +72,7 @@ import {
 	TableHead,
 	TableHeader,
 	TableRow,
-} from "./ui";
+} from "@mattrax/ui";
 
 export function StandardTable<TData>(props: {
 	table: TTable<TData>;
@@ -177,7 +177,7 @@ import {
 	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
 	DropdownMenuTrigger,
-} from "./ui";
+} from "@mattrax/ui";
 import { useSearchParams } from "@solidjs/router";
 import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";

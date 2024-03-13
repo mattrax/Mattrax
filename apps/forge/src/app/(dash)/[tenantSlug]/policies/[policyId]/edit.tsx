@@ -16,12 +16,12 @@ import {
 	CardHeader,
 	CardTitle,
 	Input,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { usePolicy } from "./Context";
 import { trpc } from "~/lib";
 import { For, Show, Suspense, createSignal } from "solid-js";
-import { Form, InputField, createZodForm } from "~/components/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 
 export default function Page() {
 	const policy = usePolicy();

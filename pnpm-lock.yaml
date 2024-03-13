@@ -243,6 +243,9 @@ importers:
       '@mattrax/policy':
         specifier: workspace:^
         version: link:../../packages/policy
+      '@mattrax/ui':
+        specifier: workspace:^
+        version: link:../../packages/ui
       '@microsoft/microsoft-graph-client':
         specifier: ^3.0.7
         version: 3.0.7
@@ -549,6 +552,39 @@ importers:
       '@types/plist':
         specifier: ^3.0.5
         version: 3.0.5
+
+  packages/ui:
+    dependencies:
+      '@kobalte/core':
+        specifier: ^0.12.3
+        version: 0.12.3(solid-js@1.8.15)
+      '@solidjs/router':
+        specifier: ^0.13.0
+        version: 0.13.0(solid-js@1.8.15)
+      '@tanstack/solid-form':
+        specifier: ^0.13.7
+        version: 0.13.7(solid-js@1.8.15)
+      '@tanstack/zod-form-adapter':
+        specifier: ^0.13.7
+        version: 0.13.7(zod@3.22.4)
+      class-variance-authority:
+        specifier: ^0.7.0
+        version: 0.7.0
+      clsx:
+        specifier: ^2.1.0
+        version: 2.1.0
+      solid-icons:
+        specifier: ^1.1.0
+        version: 1.1.0(solid-js@1.8.15)
+      solid-js:
+        specifier: ^1.8.15
+        version: 1.8.15
+      tailwind-merge:
+        specifier: ^2.2.1
+        version: 2.2.1
+      zod:
+        specifier: ^3.22.4
+        version: 3.22.4
 
 packages:
 

@@ -2,8 +2,8 @@ import { z } from "zod";
 import { useNavigate } from "@solidjs/router";
 import { startTransition } from "solid-js";
 
-import { Form, InputField, createZodForm } from "~/components/forms";
-import { Button, Label } from "~/components/ui";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Button, Label } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";
 import { ConfirmDialog } from "~/components/ConfirmDialog";

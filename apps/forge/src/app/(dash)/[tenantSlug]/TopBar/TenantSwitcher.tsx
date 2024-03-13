@@ -11,7 +11,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 	createController,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { CreateTenantDialog } from "./CreateTenantDialog";
 import { useAuth } from "../../AuthContext";
 import { useTenant } from "../../TenantContext";

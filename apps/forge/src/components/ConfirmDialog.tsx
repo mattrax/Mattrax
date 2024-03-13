@@ -1,5 +1,5 @@
 import { As, Dialog as KDialog } from "@kobalte/core";
-import { JSX } from "solid-js";
+import type { JSX } from "solid-js";
 import { createStore } from "solid-js/store";
 import { z } from "zod";
 
@@ -11,8 +11,8 @@ import {
 	DialogHeader,
 	DialogRoot,
 	DialogTitle,
-} from "~/components/ui";
-import { Form, InputField, createZodForm } from "./forms";
+} from "@mattrax/ui";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 
 export type ConfirmDialogState = {
 	title: string;

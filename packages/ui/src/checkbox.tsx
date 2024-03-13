@@ -4,7 +4,7 @@ import { splitProps } from "solid-js";
 import { Checkbox as CheckboxPrimitive } from "@kobalte/core";
 import { TbCheck } from "solid-icons/tb";
 
-import { cn } from "~/lib/utils";
+import { cn } from "./lib";
 
 const Checkbox: Component<CheckboxPrimitive.CheckboxRootProps> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);

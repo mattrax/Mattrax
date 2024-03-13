@@ -3,8 +3,9 @@ import { splitProps } from "solid-js";
 
 import { AlertDialog as AlertDialogPrimitive } from "@kobalte/core";
 import { TbX } from "solid-icons/tb";
+import { cn } from "./lib";
 
-import { cn } from "~/lib/utils";
+
 
 const AlertDialog = AlertDialogPrimitive.Root;
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger;

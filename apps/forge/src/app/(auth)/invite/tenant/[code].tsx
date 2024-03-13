@@ -1,12 +1,7 @@
 import { Show, onMount } from "solid-js";
 import { z } from "zod";
 
-import {
-	Card,
-	CardDescription,
-	CardHeader,
-	buttonVariants,
-} from "~/components/ui";
+import { Card, CardDescription, CardHeader, buttonVariants } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 

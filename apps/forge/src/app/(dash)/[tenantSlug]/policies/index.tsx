@@ -1,10 +1,10 @@
 import { As } from "@kobalte/core";
-import { A, RouteDefinition } from "@solidjs/router";
+import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Suspense, startTransition } from "solid-js";
 
-import IconCarbonCaretDown from '~icons/carbon/caret-down.jsx'
-import { RouterOutput } from "~/api/trpc";
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
+import type { RouterOutput } from "~/api/trpc";
 import {
 	ColumnsDropdown,
 	StandardTable,
@@ -18,7 +18,7 @@ import {
 	Popover,
 	PopoverContent,
 	PopoverTrigger,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 
 export const route = {
@@ -27,7 +27,7 @@ export const route = {
 			tenantSlug: params.tenantSlug!,
 		});
 	},
-} satisfies RouteDefinition
+} satisfies RouteDefinition;
 
 const column = createColumnHelper<RouterOutput["policy"]["list"][number]>();
 
@@ -106,7 +106,7 @@ export default function Page() {
 import { useNavigate } from "@solidjs/router";
 import { z } from "zod";
 
-import { Form, InputField, createZodForm } from "~/components/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 import { useTenantSlug } from "../../[tenantSlug]";

@@ -1,5 +1,5 @@
 import { ErrorBoundary, type ParentProps } from "solid-js";
-import { Button } from "./ui";
+import { Button } from "@mattrax/ui";
 import { OscarTriedToDesignAMattraxLogoButFailedPrettyHard } from "~/app/[...404]";
 
 // A Mattrax styled error boundary.

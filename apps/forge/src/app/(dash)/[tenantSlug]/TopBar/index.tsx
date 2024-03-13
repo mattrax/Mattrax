@@ -1,6 +1,6 @@
 import { As } from "@kobalte/core";
 import { A, useNavigate } from "@solidjs/router";
-import { createSignal, JSX, ParentProps } from "solid-js";
+import { createSignal, type JSX, type ParentProps } from "solid-js";
 
 import {
 	Avatar,
@@ -16,9 +16,9 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 	Textarea,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { trpc } from "~/lib";
-import { TenantSwitcher, TenantSwitcherProps } from "./TenantSwitcher";
+import { TenantSwitcher, type TenantSwitcherProps } from "./TenantSwitcher";
 import Logo from "~/assets/MATTRAX.png";
 import { Breadcrumbs } from "~/components/Breadcrumbs";
 import { AuthContext, useAuth } from "../../AuthContext";

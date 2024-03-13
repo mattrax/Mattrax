@@ -3,8 +3,8 @@ import { mergeProps, splitProps } from "solid-js";
 
 import { TbChevronLeft, TbChevronRight, TbDots } from "solid-icons/tb";
 
-import { type ButtonProps, buttonVariants } from "~/components/ui/button";
-import { cn } from "~/lib/utils";
+import { type ButtonProps, buttonVariants } from "./button";
+import { cn } from "./lib";
 
 const Pagination: Component<ComponentProps<"nav">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);

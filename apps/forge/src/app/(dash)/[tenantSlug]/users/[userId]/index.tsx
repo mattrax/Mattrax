@@ -1,10 +1,10 @@
-import { ParentProps, Show, createSignal } from "solid-js";
+import { type ParentProps, Show, createSignal } from "solid-js";
 import { As } from "@kobalte/core";
 import clsx from "clsx";
 import { z } from "zod";
 
-import IconMaterialSymbolsWarningRounded from '~icons/material-symbols/warning-rounded.jsx'
-import IconPrimeExternalLink from '~icons/prime/external-link.jsx'
+import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
+import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import {
 	Badge,
 	Button,
@@ -15,9 +15,9 @@ import {
 	DialogTitle,
 	DialogTrigger,
 	buttonVariants,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
-import { Form, InputField, createZodForm } from "~/components/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { trpc } from "~/lib";
 import { useUser } from "./Context";
 

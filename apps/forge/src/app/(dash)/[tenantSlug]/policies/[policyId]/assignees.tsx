@@ -1,7 +1,7 @@
 import { As } from "@kobalte/core";
 import { Suspense } from "solid-js";
 
-import { Button } from "~/components/ui";
+import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { usePolicy } from "./Context";
 import { PageLayout, PageLayoutHeading } from "../../PageLayout";

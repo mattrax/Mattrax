@@ -1,4 +1,4 @@
-import { RouteDefinition } from "@solidjs/router";
+import type { RouteDefinition } from "@solidjs/router";
 import { z } from "zod";
 
 import {
@@ -10,7 +10,7 @@ import {
 	CardDescription,
 	CardHeader,
 	CardTitle,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { isDebugMode, trpc, untrackScopeFromSuspense } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "./PageLayout";
 import type { StatsTarget } from "~/api/trpc/routers/tenant";
