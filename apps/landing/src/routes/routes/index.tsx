@@ -133,11 +133,72 @@ export default function Page() {
 			</div>
 
 			<div class="flex flex-col justify-center items-center">
-				<p>Sign up for the waitlist:</p>
+				{/* <p>Sign up for the waitlist:</p>
 				<div>
 					<Input name="email" placeholder="email" autocomplete="email" label="Email" />
 					<Input name="name" placeholder="name" autocomplete="name" label="Name" />
 					<Input name="email" placeholder="email" autocomplete="email" label="Email" />
+				</div> */}
+			<div class="flex items-center justify-center py-12 sm:py-24">
+				<div class="rounded-lg border bg-card text-card-foreground shadow-sm w-full max-w-sm" data-v0-t="card">
+					<div class="p-6 flex flex-col items-center space-y-2">
+					<h3 class="text-2xl font-semibold whitespace-nowrap leading-none tracking-tight">Join the Waitlist</h3>
+					<p class="text-sm text-muted-foreground">Enter your email to join the waitlist. </p>
+					</div>
+					<div class="p-6 space-y-4">
+					<div class="space-y-2">
+						<label
+						class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+						for="name"
+						>
+						Name
+						</label>
+						<input
+						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+						id="name"
+						placeholder="Elon Musk"
+						required
+						/>
+					</div>
+					<div class="space-y-2">
+						<label
+						class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+						for="email"
+						>
+						Email
+						</label>
+						<input
+						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+						id="email"
+						placeholder="email@example.com"
+						type="email"
+						/>
+					</div>
+					<div class="space-y-2">
+						<label
+						class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+						for="option"
+						>
+						Option
+						</label>
+						<div>Option A</div>
+						<div>Option B</div>
+						<div>Option C</div>
+						<div>Option D</div>
+						<select
+						aria-hidden="true"
+						tabindex="-1"
+						style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;"
+						></select>
+					</div>
+					<button
+						class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 w-full"
+						type="submit"
+					>
+						Join Waitlist
+					</button>
+					</div>
+				</div>
 				</div>
 			</div>
 
