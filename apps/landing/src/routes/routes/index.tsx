@@ -136,6 +136,7 @@ export default function Page() {
 						href="https://twitter.com/mattraxapp"
 						class="underline underline-offset-2"
 						target="_blank"
+						rel="noreferrer"
 					>
 						@mattraxapp
 					</a>{" "}
@@ -145,20 +146,21 @@ export default function Page() {
 						href="https://cal.com/mattrax"
 						class="underline underline-offset-2"
 						target="_blank"
+						rel="noreferrer"
 					>
 						Setup a meeting
 					</a>{" "}
 					to discuss Mattrax.
 				</p>
 			</div>
-
-			<div class="flex flex-col justify-center items-center">
-				{/* <p>Sign up for the waitlist:</p>
+			{/* <p>Sign up for the waitlist:</p>
 				<div>
 					<Input name="email" placeholder="email" autocomplete="email" label="Email" />
 					<Input name="name" placeholder="name" autocomplete="name" label="Name" />
 					<Input name="email" placeholder="email" autocomplete="email" label="Email" />
 				</div> */}
+
+			{/* <div class="flex flex-col justify-center items-center">
 				<div class="flex items-center justify-center py-12 sm:py-24">
 					<div
 						class="rounded-lg border bg-card text-card-foreground shadow-sm w-full max-w-sm"
@@ -227,7 +229,7 @@ export default function Page() {
 						</div>
 					</div>
 				</div>
-			</div>
+			</div> */}
 
 			<div class="flex justify-center items-center pt-4 mb-5">
 				<p>
