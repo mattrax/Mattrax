@@ -2,18 +2,11 @@
 	"$schema": "https://biomejs.dev/schemas/1.5.3/schema.json",
 	"files": {
 		"include": [
-			"apps/*/**/*.js",
-			"apps/*/**/*.ts",
-			"apps/*/**/*.tsx",
-			"apps/*/*.js",
-			"apps/*/*.ts",
-			"apps/*/*.tsx",
-			"packages/*/**/*.js",
-			"packages/*/**/*.ts",
-			"packages/*/**/*.tsx",
-			"packages/*/*.js",
-			"packages/*/*.ts",
-			"packages/*/*.tsx"
+			"apps/*/src/**",
+			"apps/*/*",
+			"packages/*/src/**",
+			"packages/*/*",
+			"*"
 		],
 		"ignore": [".next", "auto-import.d.ts", "node_modules", "dist"]
 	},

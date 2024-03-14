@@ -1,11 +1,9 @@
+import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig } from "@solidjs/start/config";
+import tsconfigPaths from "vite-tsconfig-paths";
+import mattraxUI from "@mattrax/ui/vite";
 import path from "node:path";
 import fs from "node:fs";
-import tsconfigPaths from "vite-tsconfig-paths";
-import Icons from "unplugin-icons/vite";
-import IconsResolver from "unplugin-icons/resolver";
-import AutoImport from "unplugin-auto-import/vite";
-import { visualizer } from "rollup-plugin-visualizer";
 
 import { monorepoRoot } from "./loadEnv";
 import "./src/env";
@@ -24,11 +22,7 @@ export default defineConfig({
 				// If this isn't set Vinxi hangs on startup
 				root: ".",
 			}),
-			AutoImport({
-				resolvers: [IconsResolver({ prefix: "Icon", extension: "jsx" })],
-				dts: "./src/auto-imports.d.ts",
-			}),
-			Icons({ compiler: "solid" }),
+			mattraxUI,
 			!(process.env.VERCEL === "1")
 				? visualizer({ brotliSize: true, gzipSize: true })
 				: undefined,
