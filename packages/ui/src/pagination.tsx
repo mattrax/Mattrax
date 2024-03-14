@@ -1,5 +1,7 @@
 import type { Component, ComponentProps } from "solid-js";
-import { splitProps } from "solid-js";
+import { mergeProps, splitProps } from "solid-js";
+
+import { TbChevronLeft, TbChevronRight, TbDots } from "solid-icons/tb";
 
 import { type ButtonProps, buttonVariants } from "./button";
 import { cn } from "./lib";
@@ -62,7 +64,7 @@ const PaginationPrevious: typeof PaginationLink = (props) => {
 			class={cn("gap-1 pl-2.5", props.class)}
 			{...rest}
 		>
-			<IconTablerChevronLeft class="h-4 w-4" />
+			<TbChevronLeft class="h-4 w-4" />
 			<span>Previous</span>
 		</PaginationLink>
 	);
@@ -78,7 +80,7 @@ const PaginationNext: typeof PaginationLink = (props) => {
 			{...rest}
 		>
 			<span>Next</span>
-			<IconTablerChevronRight class="h-4 w-4" />
+			<TbChevronRight class="h-4 w-4" />
 		</PaginationLink>
 	);
 };
@@ -91,7 +93,7 @@ const PaginationEllipsis: Component<ComponentProps<"span">> = (props) => {
 			class={cn("flex h-9 w-9 items-center justify-center", props.class)}
 			{...rest}
 		>
-			<IconTablerDots class="h-4 w-4" />
+			<TbDots class="h-4 w-4" />
 			<span class="sr-only">More pages</span>
 		</span>
 	);

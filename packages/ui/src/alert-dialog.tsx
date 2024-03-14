@@ -1,7 +1,8 @@
-import { AlertDialog as AlertDialogPrimitive } from "@kobalte/core";
 import type { Component } from "solid-js";
 import { splitProps } from "solid-js";
 
+import { AlertDialog as AlertDialogPrimitive } from "@kobalte/core";
+import { TbX } from "solid-icons/tb";
 import { cn } from "./lib";
 
 const AlertDialog = AlertDialogPrimitive.Root;
@@ -39,7 +40,7 @@ const AlertDialogContent: Component<
 			>
 				{props.children}
 				<AlertDialogPrimitive.CloseButton class="ring-offset-background focus:ring-ring data-[expanded]:bg-accent data-[expanded]:text-muted-foreground absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none">
-					<IconTablerX class="h-4 w-4" />
+					<TbX class="h-4 w-4" />
 					<span class="sr-only">Close</span>
 				</AlertDialogPrimitive.CloseButton>
 			</AlertDialogPrimitive.Content>

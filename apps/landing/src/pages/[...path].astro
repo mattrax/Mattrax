@@ -3,7 +3,10 @@ import App from "../routes/app";
 import "../index.css";
 
 export function getStaticPaths() {
-	return [{ params: { path: undefined } }, { params: { path: "company" } }];
+  return [
+    { params: { path: undefined } },
+    { params: { path: "company" } },
+  ];
 }
 ---
 

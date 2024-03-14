@@ -369,6 +369,9 @@ importers:
       react:
         specifier: ^18.2.0
         version: 18.2.0
+      solid-icons:
+        specifier: ^1.1.0
+        version: 1.1.0(solid-js@1.8.15)
       solid-js:
         specifier: ^1.8.15
         version: 1.8.15
@@ -418,9 +421,6 @@ importers:
       rollup-plugin-visualizer:
         specifier: ^5.12.0
         version: 5.12.0(rollup@4.12.1)
-      tailwind-scrollbar:
-        specifier: ^3.1.0
-        version: 3.1.0(tailwindcss@3.4.1)
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.1)
@@ -573,6 +573,9 @@ importers:
       clsx:
         specifier: ^2.1.0
         version: 2.1.0
+      solid-icons:
+        specifier: ^1.1.0
+        version: 1.1.0(solid-js@1.8.15)
       solid-js:
         specifier: ^1.8.15
         version: 1.8.15
@@ -582,16 +585,6 @@ importers:
       zod:
         specifier: ^3.22.4
         version: 3.22.4
-    devDependencies:
-      unplugin-auto-import:
-        specifier: ^0.17.5
-        version: 0.17.5
-      unplugin-icons:
-        specifier: ^0.18.5
-        version: 0.18.5
-      vite:
-        specifier: ^5.1.5
-        version: 5.1.6
 
 packages:
 
@@ -4438,6 +4431,7 @@ packages:
     cpu: [arm]
     os: [android]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rollup/rollup-android-arm64@4.12.1:
@@ -4452,6 +4446,7 @@ packages:
     cpu: [arm64]
     os: [android]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rollup/rollup-darwin-arm64@4.12.1:
@@ -4466,6 +4461,7 @@ packages:
     cpu: [arm64]
     os: [darwin]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rollup/rollup-darwin-x64@4.12.1:
@@ -4480,6 +4476,7 @@ packages:
     cpu: [x64]
     os: [darwin]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rollup/rollup-linux-arm-gnueabihf@4.12.1:
@@ -4494,6 +4491,7 @@ packages:
     cpu: [arm]
     os: [linux]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rollup/rollup-linux-arm64-gnu@4.12.1:
@@ -4508,6 +4506,7 @@ packages:
     cpu: [arm64]
     os: [linux]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rollup/rollup-linux-arm64-musl@4.12.1:
@@ -4522,6 +4521,7 @@ packages:
     cpu: [arm64]
     os: [linux]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rollup/rollup-linux-riscv64-gnu@4.12.1:
@@ -4536,6 +4536,7 @@ packages:
     cpu: [riscv64]
     os: [linux]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rollup/rollup-linux-x64-gnu@4.12.1:
@@ -4550,6 +4551,7 @@ packages:
     cpu: [x64]
     os: [linux]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rollup/rollup-linux-x64-musl@4.12.1:
@@ -4564,6 +4566,7 @@ packages:
     cpu: [x64]
     os: [linux]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rollup/rollup-win32-arm64-msvc@4.12.1:
@@ -4578,6 +4581,7 @@ packages:
     cpu: [arm64]
     os: [win32]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rollup/rollup-win32-ia32-msvc@4.12.1:
@@ -4592,6 +4596,7 @@ packages:
     cpu: [ia32]
     os: [win32]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rollup/rollup-win32-x64-msvc@4.12.1:
@@ -4606,6 +4611,7 @@ packages:
     cpu: [x64]
     os: [win32]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@rushstack/eslint-patch@1.7.2:
@@ -6208,8 +6214,8 @@ packages:
       tsconfck: 3.0.3(typescript@5.4.2)
       unist-util-visit: 5.0.0
       vfile: 6.0.1
-      vite: 5.1.6
-      vitefu: 0.2.5(vite@5.1.6)
+      vite: 5.1.5
+      vitefu: 0.2.5(vite@5.1.5)
       which-pm: 2.1.1
       yargs-parser: 21.1.1
       zod: 3.22.4
@@ -12552,6 +12558,7 @@ packages:
       '@rollup/rollup-win32-ia32-msvc': 4.13.0
       '@rollup/rollup-win32-x64-msvc': 4.13.0
       fsevents: 2.3.3
+    dev: false
 
   /run-applescript@5.0.0:
     resolution: {integrity: sha512-XcT5rBksx1QdIhlFOCtgZkB99ZEouFZ1E2Kc2LHqNW13U3/74YGdkQRmThTwxy4QIyookibDKYZOPqX//6BlAg==}
@@ -12953,6 +12960,14 @@ packages:
       - bufferutil
       - supports-color
       - utf-8-validate
+    dev: false
+
+  /solid-icons@1.1.0(solid-js@1.8.15):
+    resolution: {integrity: sha512-IesTfr/F1ElVwH2E1110s2RPXH4pujKfSs+koT8rwuTAdleO5s26lNSpqJV7D1+QHooJj18mcOiz2PIKs0ic+A==}
+    peerDependencies:
+      solid-js: '*'
+    dependencies:
+      solid-js: 1.8.15
     dev: false
 
   /solid-js@1.8.15:
@@ -13364,15 +13379,6 @@ packages:
     dependencies:
       '@babel/runtime': 7.24.0
     dev: false
-
-  /tailwind-scrollbar@3.1.0(tailwindcss@3.4.1):
-    resolution: {integrity: sha512-pmrtDIZeHyu2idTejfV59SbaJyvp1VRjYxAjZBH0jnyrPRo6HL1kD5Glz8VPagasqr6oAx6M05+Tuw429Z8jxg==}
-    engines: {node: '>=12.13.0'}
-    peerDependencies:
-      tailwindcss: 3.x
-    dependencies:
-      tailwindcss: 3.4.1
-    dev: true
 
   /tailwindcss-animate@1.0.7(tailwindcss@3.4.1):
     resolution: {integrity: sha512-bl6mpH3T7I3UFxuvDEXLxy/VuFxBk5bbzplh7tXI68mwMokNYd1t9qPBHlnyTwfa4JGC4zP516I1hYYtQ/vspA==}
@@ -14635,6 +14641,7 @@ packages:
       rollup: 4.13.0
     optionalDependencies:
       fsevents: 2.3.3
+    dev: false
 
   /vitefu@0.2.5(vite@5.1.1):
     resolution: {integrity: sha512-SgHtMLoqaeeGnd2evZ849ZbACbnwQCIwRH57t18FxcXoZop0uQu0uzlIhJBlF/eWVzuce0sHeqPcDo+evVcg8Q==}

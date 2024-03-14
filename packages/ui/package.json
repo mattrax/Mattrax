@@ -10,18 +10,15 @@
 		".": "./src/index.ts",
 		"./forms": "./src/forms/index.tsx",
 		"./lib": "./src/lib/index.ts",
-		"./tailwind": "./tailwind.js",
-		"./vite": "./vite.ts",
-		"./types": "./src/types.d.ts"
+		"./tailwind": "./tailwind.js"
 	},
 	"typesVersions": {
 		"*": {
-			"*": ["./src/index.tsx"],
-			"forms": ["./src/forms/index.tsx"],
-			"lib": ["./src/lib/index.tsx"],
-			"types": ["./src/types.d.ts"]
+		  "*": ["./src/index.tsx"],
+		  "forms": ["./src/forms/index.tsx"],
+		  "lib": ["./src/lib/index.tsx"]
 		}
-	},
+	  },
 	"dependencies": {
 		"@kobalte/core": "^0.12.3",
 		"@solidjs/router": "^0.13.0",
@@ -29,13 +26,9 @@
 		"@tanstack/zod-form-adapter": "^0.13.7",
 		"class-variance-authority": "^0.7.0",
 		"clsx": "^2.1.0",
+		"solid-icons": "^1.1.0",
 		"solid-js": "^1.8.15",
 		"tailwind-merge": "^2.2.1",
 		"zod": "^3.22.4"
-	},
-	"devDependencies": {
-		"unplugin-auto-import": "^0.17.5",
-		"unplugin-icons": "^0.18.5",
-		"vite": "^5.1.5"
 	}
 }
