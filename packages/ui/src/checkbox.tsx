@@ -1,8 +1,6 @@
+import { Checkbox as CheckboxPrimitive } from "@kobalte/core";
 import type { Component } from "solid-js";
 import { splitProps } from "solid-js";
-
-import { Checkbox as CheckboxPrimitive } from "@kobalte/core";
-import { TbCheck } from "solid-icons/tb";
 
 import { cn } from "./lib";
 
@@ -21,7 +19,7 @@ const Checkbox: Component<CheckboxPrimitive.CheckboxRootProps> = (props) => {
 				}}
 			>
 				<CheckboxPrimitive.Indicator>
-					<TbCheck class="h-4 w-4" />
+					<IconTablerCheck class="h-4 w-4" />
 				</CheckboxPrimitive.Indicator>
 			</CheckboxPrimitive.Control>
 		</CheckboxPrimitive.Root>

@@ -1,15 +1,15 @@
 {
-  "extends": "../../tsconfig.json",
-  "compilerOptions": {
-    "outDir": "./dist",
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js",
-    "types": ["vinxi/client", "vite/client", "unplugin-icons/types/solid"],
-    "paths": {
-      "~/*": ["./src/*"]
-    }
-  },
-  "include": ["src/"],
-  "exclude": ["node_modules", "dist"],
-  "references": [{ "path": "../email" }, { "path": "../../packages/ui" }]
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"outDir": "./dist",
+		"jsx": "preserve",
+		"jsxImportSource": "solid-js",
+		"types": ["vinxi/client", "vite/client", "@mattrax/ui/types"],
+		"paths": {
+			"~/*": ["./src/*"]
+		}
+	},
+	"include": ["src/"],
+	"exclude": ["node_modules", "dist"],
+	"references": [{ "path": "../email" }, { "path": "../../packages/ui" }]
 }
