@@ -1,8 +1,19 @@
 {
-	"extends": "astro/tsconfigs/strict",
 	"compilerOptions": {
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleResolution": "node",
+		"allowSyntheticDefaultImports": true,
+		"esModuleInterop": true,
 		"jsx": "preserve",
 		"jsxImportSource": "solid-js",
-		"types": ["@mattrax/ui/types"]
+		"allowJs": true,
+		"strict": true,
+		"noEmit": true,
+		"types": ["vinxi/client", "vite/client", "@mattrax/ui/types"],
+		"isolatedModules": true,
+		"paths": {
+			"~/*": ["./src/*"]
+		}
 	}
 }

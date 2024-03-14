@@ -15,7 +15,8 @@ import { FileRoutes } from "@solidjs/start/router";
 
 import { MErrorBoundary } from "./components/MattraxErrorBoundary";
 import { isTRPCClientError, trpc } from "./lib";
-import "./assets/app.css";
+
+import "@mattrax/ui/css";
 import "./assets/sonner.css";
 
 // TODO: Maybe PR this back to Solid DND???

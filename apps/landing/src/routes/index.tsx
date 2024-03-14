@@ -1,4 +1,5 @@
 import type { ComponentProps, JSX } from "solid-js";
+import DashboardImg from "../assets/dashboard.png";
 
 // TODO: Setup unplugin icons
 function PhLaptop(props: JSX.IntrinsicElements["svg"]) {
@@ -116,7 +117,7 @@ export default function Page() {
 				<div class="relative overflow-hidden pt-10">
 					<div class="mx-auto max-w-7xl px-6 lg:px-8">
 						<img
-							src="/dashboard.png"
+							src={DashboardImg}
 							alt="Mattrax Dashboard"
 							class="mb-[-12%] rounded-xl shadow-2xl ring-1 ring-gray-900/10"
 							width={2432}
