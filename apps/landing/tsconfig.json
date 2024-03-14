@@ -1,8 +1,16 @@
 {
-	"extends": "astro/tsconfigs/strict",
+	"extends": "../../tsconfig.json",
 	"compilerOptions": {
+		"outDir": "./dist",
+		"noEmit": true,
 		"jsx": "preserve",
 		"jsxImportSource": "solid-js",
-		"types": ["@mattrax/ui/types"]
-	}
+		"types": ["vinxi/client", "vite/client", "@mattrax/ui/types"],
+		"paths": {
+			"~/*": ["./src/*"]
+		}
+	},
+	"include": ["src/"],
+	"exclude": ["node_modules", "dist"],
+	"references": [{ "path": "../../packages/ui" }]
 }

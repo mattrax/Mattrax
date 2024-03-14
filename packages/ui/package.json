@@ -12,7 +12,8 @@
 		"./lib": "./src/lib/index.ts",
 		"./tailwind": "./tailwind.js",
 		"./vite": "./vite.ts",
-		"./types": "./src/types.d.ts"
+		"./types": "./src/types.d.ts",
+		"./css": "./src/index.css"
 	},
 	"typesVersions": {
 		"*": {

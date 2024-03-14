@@ -15,7 +15,7 @@
 		"strict": true,
 		"target": "ESNext",
 		"module": "ESNext",
-		"moduleResolution": "node",
+		"moduleResolution": "bundler",
 		"jsx": "preserve",
 		"jsxImportSource": "solid-js",
 		"allowSyntheticDefaultImports": true,
