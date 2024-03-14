@@ -1,29 +1,29 @@
 {
-  "files": [],
-  "references": [
-    { "path": "./apps/forge" },
-    { "path": "./apps/landing" },
-    { "path": "./apps/email" },
-    { "path": "./packages/drizzle-to-rs" },
-    { "path": "./packages/mdm" },
-    { "path": "./packages/policy" },
-    { "path": "./packages/policies" },
-    { "path": "./packages/ui" }
-  ],
-  "compilerOptions": {
-    "incremental": true,
-    "strict": true,
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "node",
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js",
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
-    "strictNullChecks": true,
-    "noUncheckedIndexedAccess": true,
-    "isolatedModules": true,
-    "composite": true,
-    "skipLibCheck": true
-  }
+	"files": [],
+	"references": [
+		{ "path": "./apps/forge" },
+		{ "path": "./apps/landing" },
+		{ "path": "./apps/email" },
+		{ "path": "./packages/drizzle-to-rs" },
+		{ "path": "./packages/mdm" },
+		{ "path": "./packages/policy" },
+		{ "path": "./packages/policies" },
+		{ "path": "./packages/ui" }
+	],
+	"compilerOptions": {
+		"incremental": true,
+		"strict": true,
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleResolution": "node",
+		"jsx": "preserve",
+		"jsxImportSource": "solid-js",
+		"allowSyntheticDefaultImports": true,
+		"esModuleInterop": true,
+		"strictNullChecks": true,
+		"noUncheckedIndexedAccess": true,
+		"isolatedModules": true,
+		"composite": true,
+		"skipLibCheck": true
+	}
 }
