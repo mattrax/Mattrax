@@ -158,7 +158,7 @@ export default function Page() {
 				<Input name="email" placeholder="email" autocomplete="email" label="Email" />
 				<Input name="name" placeholder="name" autocomplete="name" label="Name" />
 				<Input name="email" placeholder="email" autocomplete="email" label="Email" />
-			</div> */}
+				</div> */}
 
 			{/* <div class="flex flex-col justify-center items-center">
 				<div class="flex items-center justify-center py-12 sm:py-24">
