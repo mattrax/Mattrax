@@ -1,6 +1,6 @@
 <p align="center">
   <p align="center">
-   <img width="150" height="150" src="apps/landing/assets/logo-rounded.png" alt="Mattrax Logo">
+   <img width="150" height="150" src="apps/landing/src/assets/logo-rounded.png" alt="Mattrax Logo">
   </p>
 	<p align="center">
 		Mobile Device Management
