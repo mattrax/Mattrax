@@ -1,19 +1,16 @@
 {
+	"extends": "../../tsconfig.json",
 	"compilerOptions": {
-		"target": "ESNext",
-		"module": "ESNext",
-		"moduleResolution": "node",
-		"allowSyntheticDefaultImports": true,
-		"esModuleInterop": true,
+		"outDir": "./dist",
+		"noEmit": true,
 		"jsx": "preserve",
 		"jsxImportSource": "solid-js",
-		"allowJs": true,
-		"strict": true,
-		"noEmit": true,
 		"types": ["vinxi/client", "vite/client", "@mattrax/ui/types"],
-		"isolatedModules": true,
 		"paths": {
 			"~/*": ["./src/*"]
 		}
-	}
+	},
+	"include": ["src/"],
+	"exclude": ["node_modules", "dist"],
+	"references": [{ "path": "../../packages/ui" }]
 }

@@ -460,6 +460,9 @@ importers:
       '@solidjs/start':
         specifier: ^0.7.2
         version: 0.7.2(solid-js@1.8.15)(vinxi@0.3.4)(vite@5.1.6)
+      h3:
+        specifier: ^1.11.1
+        version: 1.11.1
       solid-js:
         specifier: ^1.8.15
         version: 1.8.15
