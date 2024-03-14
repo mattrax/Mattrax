@@ -154,11 +154,11 @@ export default function Page() {
 				</p>
 			</div>
 			{/* <p>Sign up for the waitlist:</p>
-				<div>
-					<Input name="email" placeholder="email" autocomplete="email" label="Email" />
-					<Input name="name" placeholder="name" autocomplete="name" label="Name" />
-					<Input name="email" placeholder="email" autocomplete="email" label="Email" />
-				</div> */}
+			<div>
+				<Input name="email" placeholder="email" autocomplete="email" label="Email" />
+				<Input name="name" placeholder="name" autocomplete="name" label="Name" />
+				<Input name="email" placeholder="email" autocomplete="email" label="Email" />
+			</div> */}
 
 			{/* <div class="flex flex-col justify-center items-center">
 				<div class="flex items-center justify-center py-12 sm:py-24">
