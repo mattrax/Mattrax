@@ -5,8 +5,6 @@ import { AlertDialog as AlertDialogPrimitive } from "@kobalte/core";
 import { TbX } from "solid-icons/tb";
 import { cn } from "./lib";
 
-
-
 const AlertDialog = AlertDialogPrimitive.Root;
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
 const AlertDialogPortal = AlertDialogPrimitive.Portal;
