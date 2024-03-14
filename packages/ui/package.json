@@ -15,14 +15,6 @@
 		"./types": "./src/types.d.ts",
 		"./css": "./src/index.css"
 	},
-	"typesVersions": {
-		"*": {
-			"*": ["./src/index.tsx"],
-			"forms": ["./src/forms/index.tsx"],
-			"lib": ["./src/lib/index.tsx"],
-			"types": ["./src/types.d.ts"]
-		}
-	},
 	"dependencies": {
 		"@kobalte/core": "^0.12.3",
 		"@solidjs/router": "^0.13.0",
@@ -35,8 +27,10 @@
 		"zod": "^3.22.4"
 	},
 	"devDependencies": {
+		"@iconify/json": "^2.2.190",
 		"unplugin-auto-import": "^0.17.5",
 		"unplugin-icons": "^0.18.5",
-		"vite": "^5.1.5"
+		"vite": "^5.1.5",
+		"vite-plugin-solid": "^2.10.1"
 	}
 }

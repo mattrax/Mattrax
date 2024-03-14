@@ -12,7 +12,7 @@ export default defineConfig({
 		plugins: [mattraxUI],
 		server: {
 			fs: {
-				allow: ["../../node_modules/.pnpm/@fontsource-variable+inter@5.0.17"],
+				allow: ["../../node_modules"],
 			},
 		},
 	},
