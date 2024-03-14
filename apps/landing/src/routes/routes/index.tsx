@@ -36,11 +36,33 @@ function PhGear(props: JSX.IntrinsicElements["svg"]) {
 }
 
 function PhGitCommit(props: JSX.IntrinsicElements["svg"]) {
-	return (<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="#000000" viewBox="0 0 256 256" {...props}><path d="M248,120H183.42a56,56,0,0,0-110.84,0H8a8,8,0,0,0,0,16H72.58a56,56,0,0,0,110.84,0H248a8,8,0,0,0,0-16ZM128,168a40,40,0,1,1,40-40A40,40,0,0,1,128,168Z"></path></svg>)
+	return (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			width="32"
+			height="32"
+			fill="#000000"
+			viewBox="0 0 256 256"
+			{...props}
+		>
+			<path d="M248,120H183.42a56,56,0,0,0-110.84,0H8a8,8,0,0,0,0,16H72.58a56,56,0,0,0,110.84,0H248a8,8,0,0,0,0-16ZM128,168a40,40,0,1,1,40-40A40,40,0,0,1,128,168Z"></path>
+		</svg>
+	);
 }
 
 function PhAppWindow(props: JSX.IntrinsicElements["svg"]) {
-	return (<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="#000000" viewBox="0 0 256 256" {...props}><path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200ZM80,84A12,12,0,1,1,68,72,12,12,0,0,1,80,84Zm40,0a12,12,0,1,1-12-12A12,12,0,0,1,120,84Z"></path></svg>)
+	return (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			width="32"
+			height="32"
+			fill="#000000"
+			viewBox="0 0 256 256"
+			{...props}
+		>
+			<path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,160H40V56H216V200ZM80,84A12,12,0,1,1,68,72,12,12,0,0,1,80,84Zm40,0a12,12,0,1,1-12-12A12,12,0,0,1,120,84Z"></path>
+		</svg>
+	);
 }
 
 export default function Page() {
@@ -79,9 +101,7 @@ export default function Page() {
 								<h4 class="pl-2 font-semibold">
 									Track policy versions, require approval and quickly rollback
 									{/* TODO: This is to line up the icons. Do this properly, cause this is cursed lol */}
-									&nbsp;
-									&nbsp;
-									&nbsp;
+									&nbsp; &nbsp; &nbsp;
 								</h4>
 							</li>
 							<li class="flex padding-4 justify-center items-center">
@@ -139,66 +159,73 @@ export default function Page() {
 					<Input name="name" placeholder="name" autocomplete="name" label="Name" />
 					<Input name="email" placeholder="email" autocomplete="email" label="Email" />
 				</div> */}
-			<div class="flex items-center justify-center py-12 sm:py-24">
-				<div class="rounded-lg border bg-card text-card-foreground shadow-sm w-full max-w-sm" data-v0-t="card">
-					<div class="p-6 flex flex-col items-center space-y-2">
-					<h3 class="text-2xl font-semibold whitespace-nowrap leading-none tracking-tight">Join the Waitlist</h3>
-					<p class="text-sm text-muted-foreground">Enter your email to join the waitlist. </p>
-					</div>
-					<div class="p-6 space-y-4">
-					<div class="space-y-2">
-						<label
-						class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-						for="name"
-						>
-						Name
-						</label>
-						<input
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-						id="name"
-						placeholder="Elon Musk"
-						required
-						/>
-					</div>
-					<div class="space-y-2">
-						<label
-						class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-						for="email"
-						>
-						Email
-						</label>
-						<input
-						class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-						id="email"
-						placeholder="email@example.com"
-						type="email"
-						/>
-					</div>
-					<div class="space-y-2">
-						<label
-						class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-						for="option"
-						>
-						Option
-						</label>
-						<div>Option A</div>
-						<div>Option B</div>
-						<div>Option C</div>
-						<div>Option D</div>
-						<select
-						aria-hidden="true"
-						tabindex="-1"
-						style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;"
-						></select>
-					</div>
-					<button
-						class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 w-full"
-						type="submit"
+				<div class="flex items-center justify-center py-12 sm:py-24">
+					<div
+						class="rounded-lg border bg-card text-card-foreground shadow-sm w-full max-w-sm"
+						data-v0-t="card"
 					>
-						Join Waitlist
-					</button>
+						<div class="p-6 flex flex-col items-center space-y-2">
+							<h3 class="text-2xl font-semibold whitespace-nowrap leading-none tracking-tight">
+								Join the Waitlist
+							</h3>
+							<p class="text-sm text-muted-foreground">
+								Enter your email to join the waitlist.{" "}
+							</p>
+						</div>
+						<div class="p-6 space-y-4">
+							<div class="space-y-2">
+								<label
+									class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+									for="name"
+								>
+									Name
+								</label>
+								<input
+									class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+									id="name"
+									placeholder="Elon Musk"
+									required
+								/>
+							</div>
+							<div class="space-y-2">
+								<label
+									class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+									for="email"
+								>
+									Email
+								</label>
+								<input
+									class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+									id="email"
+									placeholder="email@example.com"
+									type="email"
+								/>
+							</div>
+							<div class="space-y-2">
+								<label
+									class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+									for="option"
+								>
+									Option
+								</label>
+								<div>Option A</div>
+								<div>Option B</div>
+								<div>Option C</div>
+								<div>Option D</div>
+								<select
+									aria-hidden="true"
+									tabindex="-1"
+									style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;"
+								></select>
+							</div>
+							<button
+								class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 w-full"
+								type="submit"
+							>
+								Join Waitlist
+							</button>
+						</div>
 					</div>
-				</div>
 				</div>
 			</div>
 
@@ -219,11 +246,18 @@ export default function Page() {
 }
 
 // TODO: Use `InputField` from Mattrax's UI package once it's broken out.
-function Input(props: Omit<ComponentProps<"input">, "class"> & { label: JSX.Element }) {
+function Input(
+	props: Omit<ComponentProps<"input">, "class"> & { label: JSX.Element },
+) {
 	return (
 		<div class="flex flex-col space-y-1.5">
-			<label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{props.label}</label>
-			<input {...props} class="border-input ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border bg-transparent px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" />
+			<label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+				{props.label}
+			</label>
+			<input
+				{...props}
+				class="border-input ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border bg-transparent px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+			/>
 		</div>
 	);
 }

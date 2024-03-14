@@ -1,8 +1,6 @@
 import type { RouteDefinition } from "@solidjs/router";
-import { z } from "zod";
-
 import { Form, createZodForm } from "@mattrax/ui/forms";
-import { InputField } from "@mattrax/ui/forms/InputField";
+import { InputField } from "@mattrax/ui/forms";
 import {
 	Button,
 	Card,
@@ -12,6 +10,8 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@mattrax/ui";
+import { z } from "zod";
+
 import { trpc } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
 import { useAuth } from "../../AuthContext";

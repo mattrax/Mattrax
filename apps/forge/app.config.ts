@@ -76,7 +76,7 @@ process.on("exit", () => {
 		workerCode,
 		`
 		import "./env";
-		${fs.readFileSync(workerCode)}`
+		${fs.readFileSync(workerCode)}`,
 	);
 
 	// Replace Nitro's config so Cloudflare will serve the HTML from the CDN instead of the worker (they can do "304 Not Modified" & ETag caching).

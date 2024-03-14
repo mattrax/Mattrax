@@ -8,16 +8,11 @@ import {
 	type inferRouterContext,
 	TRPCError,
 } from "@trpc/server";
-import {
-	HTTPResponse,
-	ResponseChunk,
-	type ResponseMetaFn,
-} from "@trpc/server/dist/http/internals/types";
 import { TRPCErrorResponse } from "@trpc/server/rpc";
 import { APIEvent, APIHandler } from "@solidjs/start/server";
 import { appendResponseHeader, setResponseHeader, setResponseStatus } from "h3";
 import { appRouter, createTRPCContext } from "~/api/trpc";
-import { H3Event, sendStream } from "vinxi/http";
+import { H3Event } from "vinxi/http";
 
 function getPath(args: APIEvent): string | null {
 	const p: any = args.params.trpc;
@@ -58,7 +53,7 @@ type CreateContextFn<TRouter extends AnyRouter> = (
 type ICreateSolidAPIHandlerOpts<TRouter extends AnyRouter> = {
 	router: TRouter;
 	createContext: CreateContextFn<TRouter>;
-	responseMeta?: ResponseMetaFn<TRouter>;
+	responseMeta?: Parameters<typeof resolveHTTPResponse>[0]["responseMeta"];
 };
 
 function createSolidAPIHandler<TRouter extends AnyRouter>(
@@ -87,10 +82,16 @@ function createSolidAPIHandler<TRouter extends AnyRouter>(
 		let encoder: TextEncoder;
 		let formatter: ReturnType<typeof getBatchStreamFormatter>;
 
-		function unstable_onHead(
-			head: Omit<HTTPResponse, "body">,
-			isStreaming: boolean,
-		) {
+		const unstable_onChunk: Parameters<
+			typeof resolveHTTPResponse
+		>[0]["unstable_onChunk"] = ([index, string]) => {
+			if (index === -1) resolve(string || null);
+			else controller.enqueue(encoder.encode(formatter(index, string)));
+		};
+
+		const unstable_onHead: Parameters<
+			typeof resolveHTTPResponse
+		>[0]["unstable_onHead"] = (head, isStreaming) => {
 			for (const [key, value] of Object.entries(head.headers ?? {})) {
 				/* istanbul ignore if -- @preserve */
 				if (typeof value === "undefined") {
@@ -123,12 +124,7 @@ function createSolidAPIHandler<TRouter extends AnyRouter>(
 				formatter = getBatchStreamFormatter();
 				isStream = true;
 			}
-		}
-
-		function unstable_onChunk([index, string]: ResponseChunk) {
-			if (index === -1) resolve(string || null);
-			else controller.enqueue(encoder.encode(formatter(index, string)));
-		}
+		};
 
 		resolveHTTPResponse({
 			router: opts.router,

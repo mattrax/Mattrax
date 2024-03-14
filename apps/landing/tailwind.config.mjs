@@ -2,7 +2,6 @@ import { fontFamily } from "tailwindcss/defaultTheme";
 
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ["./src/**/*.{astro,html,js,jsx,md,mdx,svelte,ts,tsx,vue}"],
   theme: {
     extend: {
       fontFamily: {
@@ -11,4 +10,5 @@ export default {
     },
   },
   plugins: [require("@tailwindcss/typography"), require("@tailwindcss/forms")],
+  presets: [require("@mattrax/ui/tailwind")]
 };

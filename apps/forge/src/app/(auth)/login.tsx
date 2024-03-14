@@ -1,9 +1,9 @@
-import { useNavigate } from "@solidjs/router";
 import { Match, Switch, createSignal, startTransition } from "solid-js";
-import { z } from "zod";
-
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
+import { useNavigate } from "@solidjs/router";
+import { z } from "zod";
+
 import { trpc } from "~/lib";
 
 // TODO: Autocomplete attributes
