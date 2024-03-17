@@ -169,9 +169,9 @@ export default function Page() {
 					to discuss Mattrax.
 				</p>
 			</div>
-			<p>Sign up for the waitlist:</p>
+			{/* <p>Sign up for the waitlist:</p>
 			<div class="flex flex-col justify-center items-center">
-				{/* <InputField
+				<InputField
 					name="email"
 					placeholder="email"
 					autocomplete="email"
@@ -182,17 +182,17 @@ export default function Page() {
 					placeholder="name"
 					autocomplete="name"
 					label="Name"
-				/> */}
+				/>
 
 				<Select
 					options={["Apple", "Banana", "Blueberry", "Grapes", "Pineapple"]}
 				>
 					<SelectTrigger class="w-[180px]">
-						{/* <SelectValue placeholder="Theme" /> */}
+						<SelectValue placeholder="Theme" />
 					</SelectTrigger>
 					<SelectContent />
 				</Select>
-			</div>
+			</div> */}
 
 			{/* <div class="flex flex-col justify-center items-center">
 				<div class="flex items-center justify-center py-12 sm:py-24">
