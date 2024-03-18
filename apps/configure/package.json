@@ -31,7 +31,6 @@
 		"class-variance-authority": "^0.7.0",
 		"clsx": "^2.1.0",
 		"plist": "^3.1.0",
-		"solid-icons": "^1.1.0",
 		"solid-js": "^1.8.15",
 		"tailwind-merge": "^2.2.1",
 		"tailwindcss-animate": "^1.0.7",
