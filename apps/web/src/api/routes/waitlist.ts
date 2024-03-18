@@ -24,6 +24,7 @@ export const waitlistRouter = new Hono<HonoEnv>()
 			allowMethods: ["POST"],
 		}),
 	)
+	.options("*", (c) => c.text("", 204))
 	.post("/", async (c) => {
 		const result = waitlistRequest.safeParse(await c.req.json());
 		if (!result.success) {
