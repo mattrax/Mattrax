@@ -20,10 +20,10 @@
 		"@kobalte/core": "^0.12.3",
 		"@mattrax/ui": "workspace:^",
 		"@solidjs/router": "^0.13.0",
-		"@solidjs/start": "^0.7.2",
+		"@solidjs/start": "^0.7.5",
 		"h3": "^1.11.1",
 		"solid-js": "^1.8.15",
-		"vinxi": "=0.3.4",
+		"vinxi": "^0.3.10",
 		"vite": "^5.1.5"
 	}
 }

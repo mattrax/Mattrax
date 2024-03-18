@@ -36,7 +36,7 @@
 		"@solid-primitives/scheduled": "^1.4.3",
 		"@solid-primitives/storage": "^2.1.4",
 		"@solidjs/router": "^0.13.0",
-		"@solidjs/start": "^0.7.2",
+		"@solidjs/start": "^0.7.5",
 		"@t3-oss/env-core": "^0.9.2",
 		"@tanstack/query-broadcast-client-experimental": "^5.25.0",
 		"@tanstack/solid-form": "^0.13.7",
@@ -70,7 +70,7 @@
 		"tailwind-merge": "^2.2.1",
 		"tailwindcss": "^3.4.1",
 		"ts-pattern": "^5.0.8",
-		"vinxi": "=0.3.4",
+		"vinxi": "^0.3.10",
 		"zod": "^3.22.4"
 	},
 	"devDependencies": {
