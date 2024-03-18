@@ -11,11 +11,15 @@ import {
 import { clsx } from "clsx";
 import { Select, Label } from "..";
 
+type DistributiveOmit<T, K extends keyof any> = T extends any
+  ? Omit<T, K>
+  : never;
+
 export function SelectField<
 	TData extends Record<string, any>,
 	TName extends DeepKeys<TData>,
 >(
-	props: Omit<
+	props: DistributiveOmit<
 		ComponentProps<typeof Select>,
 		"id" | "value" | "onChange" | "onBlur" | "form"
 	> & {
