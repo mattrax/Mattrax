@@ -1,5 +1,6 @@
 import { defineConfig } from "@solidjs/start/config";
 import tsconfigPaths from "vite-tsconfig-paths";
+import mattraxUI from "@mattrax/ui/vite";
 
 export default defineConfig({
 	ssr: false,
@@ -11,7 +12,10 @@ export default defineConfig({
 			watch: {
 				ignored: ["**/src-tauri/**"],
 			},
+			fs: {
+				allow: ["../../node_modules"],
+			},
 		},
-		plugins: [tsconfigPaths()],
+		plugins: [tsconfigPaths(), mattraxUI],
 	},
 });
