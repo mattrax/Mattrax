@@ -242,18 +242,11 @@ const interestReasons = {
 } as const;
 
 const deploymentMethod = {
-	managedCloud: "Managed Cloud",
-	privateCloud: "Private Cloud",
+	"managed-cloud": "Managed Cloud",
+	"private-cloud": "Private Cloud",
 	onprem: "On Premise",
 	other: "Other",
 } as const;
-
-if (typeof import.meta.env.VITE_MATTRAX_CLOUD_ORIGIN !== "string")
-	throw new Error("Missing 'VITE_MATTRAX_CLOUD_ORIGIN' env variable!");
-const waitlistEndpoint = new URL(
-	"/api/waitlist",
-	import.meta.env.VITE_MATTRAX_CLOUD_ORIGIN,
-).toString();
 
 function DropdownBody() {
 	const controller = useController();
@@ -268,7 +261,8 @@ function DropdownBody() {
 	const form = createZodForm({
 		schema,
 		onSubmit: async ({ value }) => {
-			const resp = await fetch(waitlistEndpoint, {
+			// This endpoint is defined in Nitro and proxies to `cloud.mattrax.app` so we can avoid CORS
+			const resp = await fetch("/api/waitlist", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
