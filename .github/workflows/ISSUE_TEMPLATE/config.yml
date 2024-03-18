@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-issue-config.json
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 Feature Request & Questions
+    url: https://github.com/mattrax/Mattrax/discussions/new?category=ideas
+    about: Please ask here and we will answer.
+  - name: 💬 Community Chat
+    url: https://discord.gg/WPBHmDSfAn
+    about: A Discord server for chatting with the community and developers.
