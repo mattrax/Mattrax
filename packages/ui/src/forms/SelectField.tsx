@@ -9,15 +9,15 @@ import {
 } from "solid-js";
 
 import { clsx } from "clsx";
-import { Input, Label } from "..";
+import { Select, Label } from "..";
 
-export function InputField<
+export function SelectField<
 	TData extends Record<string, any>,
 	TName extends DeepKeys<TData>,
 >(
 	props: Omit<
-		ComponentProps<typeof Input>,
-		"id" | "value" | "onInput" | "onBlur" | "form"
+		ComponentProps<typeof Select>,
+		"id" | "value" | "onChange" | "onBlur" | "form"
 	> & {
 		form: FormApi<TData, any>;
 		fieldClass?: string;
@@ -26,7 +26,7 @@ export function InputField<
 		labelClasses?: string;
 	},
 ) {
-	const [_, inputProps] = splitProps(props, [
+	const [_, selectProps] = splitProps(props, [
 		"form",
 		"name",
 		"label",
@@ -53,11 +53,11 @@ export function InputField<
 							{props.label}
 						</Label>
 					)}
-					<Input
-						{...inputProps}
+					<Select
+						{...selectProps}
 						id={id}
 						value={field().state.value}
-						onInput={(e) => field().handleChange(e.currentTarget.value as any)}
+						onChange={(e) => field().handleChange(e as any)}
 						onBlur={() => field().handleBlur()}
 					/>
 				</div>

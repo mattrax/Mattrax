@@ -1,4 +1,5 @@
 import { defineConfig } from "@solidjs/start/config";
+import { monorepoRoot } from "./loadEnv";
 import mattraxUI from "@mattrax/ui/vite";
 
 export default defineConfig({
@@ -9,6 +10,7 @@ export default defineConfig({
 		},
 	},
 	vite: {
+		envDir: monorepoRoot,
 		plugins: [mattraxUI],
 		server: {
 			fs: {

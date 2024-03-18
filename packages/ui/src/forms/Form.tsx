@@ -1,11 +1,14 @@
-// TODO: Do this properly copying Brendan's blog post
-// TODO: Input validation built into the components
-
 import { useBeforeLeave } from "@solidjs/router";
-import { FormOptions, createForm } from "@tanstack/solid-form";
+import { type FormOptions, createForm } from "@tanstack/solid-form";
 import { zodValidator } from "@tanstack/zod-form-adapter";
-import { ComponentProps, createMemo, splitProps } from "solid-js";
-import { z } from "zod";
+import {
+	type ComponentProps,
+	createMemo,
+	splitProps,
+	createSignal,
+	onCleanup,
+} from "solid-js";
+import type { z } from "zod";
 
 export function createZodForm<S extends z.ZodSchema>(
 	opts: Omit<
@@ -15,7 +18,7 @@ export function createZodForm<S extends z.ZodSchema>(
 		schema: S;
 	},
 ) {
-	return createForm(
+	const form = createForm(
 		createMemo(() => ({
 			...opts,
 			validatorAdapter: zodValidator,
@@ -24,6 +27,31 @@ export function createZodForm<S extends z.ZodSchema>(
 			},
 		})),
 	);
+
+	const [state, setState] = createSignal(form.store.state);
+	let skipGetter = false; // `setState` will call the getter causing a recursive loop so this skips a set operation if `true`.
+
+	onCleanup(
+		form.store.subscribe(() => {
+			skipGetter = true;
+			setState(form.store.state);
+		}),
+	);
+
+	// A workaround for Tanstack Form's lack of proper reactivity // TODO: Maybe upstream PR?
+	Object.defineProperty(form, "state", {
+		get: () => state(),
+		set: (v) => {
+			if (skipGetter) {
+				skipGetter = false;
+				return;
+			}
+
+			setState(v);
+		},
+	});
+
+	return form;
 }
 
 export type FormProps<S extends z.ZodSchema> = Omit<

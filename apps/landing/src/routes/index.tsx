@@ -1,14 +1,26 @@
-import type { ComponentProps, JSX } from "solid-js";
+import type { JSX } from "solid-js";
 import DashboardImg from "../assets/dashboard.png";
 import {
-	Input,
-	Select,
+	Button,
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
+	useController,
 } from "@mattrax/ui";
-import { InputField, createZodForm } from "@mattrax/ui/forms";
+import { z } from "zod";
+import {
+	Form,
+	InputField,
+	SelectField,
+	createZodForm,
+} from "@mattrax/ui/forms";
+import { As } from "@kobalte/core";
 
 // TODO: Setup unplugin icons
 function PhLaptop(props: JSX.IntrinsicElements["svg"]) {
@@ -102,9 +114,10 @@ export default function Page() {
 							well-crafted dashboard.
 						</p>
 
-						<h5 class="pt-8 text-2xl font-semibold leading-7 text-center">
-							Features
-						</h5>
+						<div class="pt-4">
+							<Waitlist />
+						</div>
+
 						<ul class="flex flex-col space-y-4 pt-4">
 							<li class="flex padding-4 justify-center items-center">
 								<PhLaptop class="w-10 h-10" />
@@ -156,7 +169,17 @@ export default function Page() {
 					>
 						@mattraxapp
 					</a>{" "}
-					for updates <br /> or
+					or join the{" "}
+					<a
+						href="https://discord.gg/WPBHmDSfAn"
+						class="underline underline-offset-2"
+						target="_blank"
+						rel="noreferrer"
+					>
+						Discord
+					</a>{" "}
+					for updates
+					<br /> and
 					<br />{" "}
 					<a
 						href="https://cal.com/mattrax"
@@ -169,101 +192,6 @@ export default function Page() {
 					to discuss Mattrax.
 				</p>
 			</div>
-			{/* <p>Sign up for the waitlist:</p>
-			<div class="flex flex-col justify-center items-center">
-				<InputField
-					name="email"
-					placeholder="email"
-					autocomplete="email"
-					label="Email"
-				/>
-				<InputField
-					name="name"
-					placeholder="name"
-					autocomplete="name"
-					label="Name"
-				/>
-
-				<Select
-					options={["Apple", "Banana", "Blueberry", "Grapes", "Pineapple"]}
-				>
-					<SelectTrigger class="w-[180px]">
-						<SelectValue placeholder="Theme" />
-					</SelectTrigger>
-					<SelectContent />
-				</Select>
-			</div> */}
-
-			{/* <div class="flex flex-col justify-center items-center">
-				<div class="flex items-center justify-center py-12 sm:py-24">
-					<div
-						class="rounded-lg border bg-card text-card-foreground shadow-sm w-full max-w-sm"
-						data-v0-t="card"
-					>
-						<div class="p-6 flex flex-col items-center space-y-2">
-							<h3 class="text-2xl font-semibold whitespace-nowrap leading-none tracking-tight">
-								Join the Waitlist
-							</h3>
-							<p class="text-sm text-muted-foreground">
-								Enter your email to join the waitlist.{" "}
-							</p>
-						</div>
-						<div class="p-6 space-y-4">
-							<div class="space-y-2">
-								<label
-									class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-									for="name"
-								>
-									Name
-								</label>
-								<input
-									class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-									id="name"
-									placeholder="Elon Musk"
-									required
-								/>
-							</div>
-							<div class="space-y-2">
-								<label
-									class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-									for="email"
-								>
-									Email
-								</label>
-								<input
-									class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-									id="email"
-									placeholder="email@example.com"
-									type="email"
-								/>
-							</div>
-							<div class="space-y-2">
-								<label
-									class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-									for="option"
-								>
-									Option
-								</label>
-								<div>Option A</div>
-								<div>Option B</div>
-								<div>Option C</div>
-								<div>Option D</div>
-								<select
-									aria-hidden="true"
-									tabindex="-1"
-									style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;"
-								></select>
-							</div>
-							<button
-								class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 w-full"
-								type="submit"
-							>
-								Join Waitlist
-							</button>
-						</div>
-					</div>
-				</div>
-			</div> */}
 
 			<div class="flex justify-center items-center pt-4 mb-5">
 				<p>
@@ -273,7 +201,7 @@ export default function Page() {
 						class="text-center w-full underline"
 						rel="external"
 					>
-						Mattrax Technologies Inc.
+						Mattrax Inc.
 					</a>
 				</p>
 			</div>
@@ -281,19 +209,147 @@ export default function Page() {
 	);
 }
 
-// // TODO: Use `InputField` from Mattrax's UI package once it's broken out.
-// function Input(
-// 	props: Omit<ComponentProps<"input">, "class"> & { label: JSX.Element },
-// ) {
-// 	return (
-// 		<div class="flex flex-col space-y-1.5">
-// 			<label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-// 				{props.label}
-// 			</label>
-// 			<input
-// 				{...props}
-// 				class="border-input ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border bg-transparent px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-// 			/>
-// 		</div>
-// 	);
-// }
+function Waitlist() {
+	return (
+		<Dialog trigger={<As component={Button}>Join Waitlist</As>}>
+			<DialogContent>
+				<DialogHeader>
+					<DialogTitle>Join Waitlist</DialogTitle>
+					<DialogDescription>
+						We will keep you updated with Mattrax's development!
+						<br /> You can unsubscribe at any time.
+					</DialogDescription>
+				</DialogHeader>
+
+				<DropdownBody />
+			</DialogContent>
+		</Dialog>
+	);
+}
+
+const getObjectKeys = <T extends object>(obj: T) =>
+	Object.keys(obj) as (keyof T)[];
+
+function zodEnumFromObjectKeys<K extends string>(obj: Record<K, any>) {
+	return z.enum([getObjectKeys(obj)[0]!, ...getObjectKeys(obj)]);
+}
+
+const interestReasons = {
+	personal: "Personal",
+	"internal-it-team": "Internal IT Team",
+	"msp-provider": "MSP Provider",
+	other: "Other",
+} as const;
+
+const deploymentMethod = {
+	managedCloud: "Managed Cloud",
+	privateCloud: "Private Cloud",
+	onprem: "On Premise",
+	other: "Other",
+} as const;
+
+if (typeof import.meta.env.VITE_MATTRAX_CLOUD_ORIGIN !== "string")
+	throw new Error("Missing 'VITE_MATTRAX_CLOUD_ORIGIN' env variable!");
+const waitlistEndpoint = new URL(
+	"/api/waitlist",
+	import.meta.env.VITE_MATTRAX_CLOUD_ORIGIN,
+).toString();
+
+function DropdownBody() {
+	const controller = useController();
+
+	const schema = z.object({
+		email: z.string().email(),
+		name: z.string().optional(),
+		interest: zodEnumFromObjectKeys(interestReasons),
+		deployment: zodEnumFromObjectKeys(deploymentMethod),
+	});
+
+	const form = createZodForm({
+		schema,
+		onSubmit: async ({ value }) => {
+			const resp = await fetch(waitlistEndpoint, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(value),
+			});
+			if (!resp.ok) {
+				console.error(
+					"Error applying to waitlist",
+					resp.status,
+					await resp.text(),
+				);
+				alert(
+					"Error adding you to the waitlist. Please try again or email hello@mattrax.app",
+				);
+				return;
+			}
+
+			controller.setOpen(false);
+		},
+	});
+
+	// `state().isValid` seems to be always `true` (probs cause `createZodForm` only does validation on submit) // TODO: Maybe fix this properly?
+	const isFormValid = () => schema.safeParse(form.state.values).success;
+
+	return (
+		<Form form={form} fieldsetClass="flex flex-col space-y-4">
+			<InputField form={form} name="email" label="Email" autocomplete="email" />
+			<InputField
+				form={form}
+				name="name"
+				label="Name (optional)"
+				autocomplete="name"
+			/>
+
+			<SelectField
+				form={form}
+				name="interest"
+				label="Why are you interested?"
+				options={Object.keys(interestReasons)}
+				placeholder="Select a reason..."
+				itemComponent={(props) => (
+					<SelectItem item={props.item}>
+						{interestReasons[props.item.rawValue]}
+					</SelectItem>
+				)}
+			>
+				<SelectTrigger>
+					<SelectValue<string>>
+						{(state) => interestReasons[state.selectedOption()]}
+					</SelectValue>
+				</SelectTrigger>
+				<SelectContent />
+			</SelectField>
+
+			<SelectField
+				form={form}
+				name="deployment"
+				label="How will you use Mattrax?"
+				options={Object.keys(deploymentMethod)}
+				placeholder="Select a method..."
+				itemComponent={(props) => (
+					<SelectItem item={props.item}>
+						{deploymentMethod[props.item.rawValue]}
+					</SelectItem>
+				)}
+			>
+				<SelectTrigger>
+					<SelectValue<string>>
+						{(state) => deploymentMethod[state.selectedOption()]}
+					</SelectValue>
+				</SelectTrigger>
+				<SelectContent />
+			</SelectField>
+
+			<Button
+				type="submit"
+				disabled={!isFormValid() || form.state.isSubmitting}
+			>
+				Submit
+			</Button>
+		</Form>
+	);
+}

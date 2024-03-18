@@ -3,7 +3,11 @@ import type { Component, ComponentProps, JSX, ParentProps } from "solid-js";
 import { splitProps } from "solid-js";
 
 import { cn } from "./lib";
-import { Controller, ControllerProvider, createController } from "./controller";
+import {
+	type Controller,
+	ControllerProvider,
+	createController,
+} from "./controller";
 
 // An easy wrapper on the dialog primitives
 const Dialog: Component<
@@ -13,7 +17,7 @@ const Dialog: Component<
 	}>
 > = (props) => (
 	<DialogRoot controller={props.controller}>
-		{props.trigger && <DialogTrigger>{props.trigger}</DialogTrigger>}
+		{props.trigger && <DialogTrigger asChild>{props.trigger}</DialogTrigger>}
 		<DialogContent>
 			<DialogHeader>{props.children}</DialogHeader>
 		</DialogContent>

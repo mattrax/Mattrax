@@ -3,14 +3,19 @@ export default function Page() {
 		<main>
 			<div class="mt-32 sm:mt-56">
 				<div class="mx-auto max-w-7xl px-6 lg:px-8">
-					<div class="mx-auto max-w-3xl sm:text-center">
+					<div class="mx-auto max-w-4xl sm:text-center">
 						<p class="mt-2 text-3xl font-bold tracking-tight text-gray-900 sm:text-7xl">
-							Mattrax Technologies
+							Mattrax Inc.
 						</p>
 						<p class="mt-6 text-xl leading-8 text-gray-600">
-							We at Mattrax Technologies are setting out to build better tools
-							for IT administrators. <br /> Empowering smaller teams to move
-							faster and more reliably than was ever possible.
+							<span class="inline-block">
+								We at Mattrax are setting out to build better tools for IT
+								administrators.
+							</span>
+							<span class="inline-block">
+								Empowering smaller teams to move faster without compromising on
+								end-user experience.
+							</span>
 						</p>
 
 						<h5 class="pt-8 text-2xl font-semibold leading-7 text-center">
@@ -18,7 +23,7 @@ export default function Page() {
 						</h5>
 
 						<div class="mt-6 flex justify-center items-center text-start">
-							<div class="space-y-4 flex flex-col sm:w-full sm:flex-row sm:justify-around">
+							<div class="flex flex-col sm:w-full sm:flex-row sm:justify-around">
 								<div class="flex">
 									<img
 										class="w-16 h-16 rounded-full"

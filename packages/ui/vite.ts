@@ -1,7 +1,7 @@
 import IconsResolver from "unplugin-icons/resolver";
 import AutoImport from "unplugin-auto-import/vite";
 import Icons from "unplugin-icons/vite";
-import { PluginOption } from "vite";
+import type { PluginOption } from "vite";
 
 export default [
 	AutoImport({
