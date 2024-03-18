@@ -4,6 +4,7 @@
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/forge dev",
 		"landing": "pnpm --filter @mattrax/landing --",
+		"configure": "pnpm --filter @mattrax/configure --",
 		"email": "pnpm --filter @mattrax/email --",
 		"doc": "pnpm --filter @mattrax/docs --",
 		"db:push": "drizzle-kit push:mysql && bun run ./apps/forge/src/db/rust.ts",

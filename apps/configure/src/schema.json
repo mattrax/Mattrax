@@ -1,0 +1,3333 @@
+{
+  "generated_at": "2024-03-13",
+  "sections": [
+    {
+      "name": "Policy",
+      "description": "Policy settings for Windows devices.",
+      "properties": [
+        {
+          "name": "RequirePrivateStoreOnly",
+          "type": "windows",
+          "uri": "./User/Vendor/MSFT/Policy/Config/ApplicationManagement/RequirePrivateStoreOnly",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "AllowEAPCertSSO",
+          "type": "windows",
+          "uri": "./User/Vendor/MSFT/Policy/Config/Authentication/AllowEAPCertSSO",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "AllowWindowsConsumerFeatures",
+          "type": "windows",
+          "uri": "./User/Vendor/MSFT/Policy/Config/Experience/AllowWindowsConsumerFeatures",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "AllowWindowsSpotlight",
+          "type": "windows",
+          "uri": "./User/Vendor/MSFT/Policy/Config/Experience/AllowWindowsSpotlight",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "ConfigureWindowsSpotlightOnLockScreen",
+          "type": "windows",
+          "uri": "./User/Vendor/MSFT/Policy/Config/Experience/ConfigureWindowsSpotlightOnLockScreen",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "AllowThirdPartySuggestionsInWindowsSpotlight",
+          "type": "windows",
+          "uri": "./User/Vendor/MSFT/Policy/Config/Experience/AllowThirdPartySuggestionsInWindowsSpotlight",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "DisallowNotificationMirroring",
+          "type": "windows",
+          "uri": "./User/Vendor/MSFT/Policy/Config/Notifications/DisallowNotificationMirroring",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "StartLayout",
+          "type": "windows",
+          "uri": "./User/Vendor/MSFT/Policy/Config/Start/StartLayout",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "AllowActionCenterNotifications",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/AboveLock/AllowActionCenterNotifications",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowToasts",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/AboveLock/AllowToasts",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowCortanaAboveLock",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/AboveLock/AllowCortanaAboveLock",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowAddingNonMicrosoftAccountsManually",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Accounts/AllowAddingNonMicrosoftAccountsManually",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowMicrosoftAccountConnection",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Accounts/AllowMicrosoftAccountConnection",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DomainNamesForEmailSync",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Accounts/DomainNamesForEmailSync",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowAllTrustedApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/ApplicationManagement/AllowAllTrustedApps",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowAppStoreAutoUpdate",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/ApplicationManagement/AllowAppStoreAutoUpdate",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowDeveloperUnlock",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/ApplicationManagement/AllowDeveloperUnlock",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowGameDVR",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/ApplicationManagement/AllowGameDVR",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSharedUserAppData",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/ApplicationManagement/AllowSharedUserAppData",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowStore",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/ApplicationManagement/AllowStore",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ApplicationRestrictions",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/ApplicationManagement/ApplicationRestrictions",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DisableStoreOriginatedApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/ApplicationManagement/DisableStoreOriginatedApps",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "RestrictAppDataToSystemVolume",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/ApplicationManagement/RestrictAppDataToSystemVolume",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "RestrictAppToSystemVolume",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/ApplicationManagement/RestrictAppToSystemVolume",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowFastReconnect",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Authentication/AllowFastReconnect",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSecondaryAuthenticationDevice",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Authentication/AllowSecondaryAuthenticationDevice",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EncryptionMethod",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Bitlocker/EncryptionMethod",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowAdvertising",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Bluetooth/AllowAdvertising",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowDiscoverableMode",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Bluetooth/AllowDiscoverableMode",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LocalDeviceName",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Bluetooth/LocalDeviceName",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ServicesAllowedList",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Bluetooth/ServicesAllowedList",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowPrepairing",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Bluetooth/AllowPrepairing",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowAutofill",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/AllowAutofill",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowBrowser",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/AllowBrowser",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowCookies",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/AllowCookies",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowDeveloperTools",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/AllowDeveloperTools",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowDoNotTrack",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/AllowDoNotTrack",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowInPrivate",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/AllowInPrivate",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowPasswordManager",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/AllowPasswordManager",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowPopups",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/AllowPopups",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSearchSuggestionsinAddressBar",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/AllowSearchSuggestionsinAddressBar",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSmartScreen",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/AllowSmartScreen",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseModeSiteList",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/EnterpriseModeSiteList",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "FirstRunURL",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/FirstRunURL",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "HomePages",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/HomePages",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "PreventAccessToAboutFlagsInMicrosoftEdge",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/PreventAccessToAboutFlagsInMicrosoftEdge",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "PreventSmartScreenPromptOverride",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/PreventSmartScreenPromptOverride",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "PreventSmartScreenPromptOverrideForFiles",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/PreventSmartScreenPromptOverrideForFiles",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "PreventUsingLocalHostIPAddressForWebRTC",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/PreventUsingLocalHostIPAddressForWebRTC",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "SendIntranetTraffictoInternetExplorer",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/SendIntranetTraffictoInternetExplorer",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ShowMessageWhenOpeningSitesInInternetExplorer",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Browser/ShowMessageWhenOpeningSitesInInternetExplorer",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowCamera",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Camera/AllowCamera",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowBluetooth",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Connectivity/AllowBluetooth",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowCellularData",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Connectivity/AllowCellularData",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowCellularDataRoaming",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Connectivity/AllowCellularDataRoaming",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowNFC",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Connectivity/AllowNFC",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowUSBConnection",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Connectivity/AllowUSBConnection",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowVPNOverCellular",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Connectivity/AllowVPNOverCellular",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowVPNRoamingOverCellular",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Connectivity/AllowVPNRoamingOverCellular",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowFipsAlgorithmPolicy",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Cryptography/AllowFipsAlgorithmPolicy",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "TLSCipherSuites",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Cryptography/TLSCipherSuites",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowAzureRMSForEDP",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/AllowAzureRMSForEDP",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowDirectMemoryAccess",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/AllowDirectMemoryAccess",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowUserDecryption",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/AllowUserDecryption",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DataRecoveryCertificate",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/DataRecoveryCertificate",
+          "description": null,
+          "datatype": "b64",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EDPEnforcementLevel",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/EDPEnforcementLevel",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EDPShowIcons",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/EDPShowIcons",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseCloudResources",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/EnterpriseCloudResources",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseInternalProxyServers",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/EnterpriseInternalProxyServers",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseIPRange",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/EnterpriseIPRange",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseIPRangesAreAuthoritative",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/EnterpriseIPRangesAreAuthoritative",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseNetworkDomainNames",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/EnterpriseNetworkDomainNames",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseProtectedDomainNames",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/EnterpriseProtectedDomainNames",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseProxyServers",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/EnterpriseProxyServers",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseProxyServersAreAuthoritative",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/EnterpriseProxyServersAreAuthoritative",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LegacySelectiveWipeID",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/LegacySelectiveWipeID",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "NeutralResources",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/NeutralResources",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "RequireProtectionUnderLockConfig",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/RequireProtectionUnderLockConfig",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "RevokeOnUnenroll",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/RevokeOnUnenroll",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "RMSTemplateIDForEDP",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DataProtection/RMSTemplateIDForEDP",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowArchiveScanning",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowArchiveScanning",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowBehaviorMonitoring",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowBehaviorMonitoring",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowCloudProtection",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowCloudProtection",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowEmailScanning",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowEmailScanning",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowFullScanOnMappedNetworkDrives",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowFullScanOnMappedNetworkDrives",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowFullScanRemovableDriveScanning",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowFullScanRemovableDriveScanning",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowIntrusionPreventionSystem",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowIntrusionPreventionSystem",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowIOAVProtection",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowIOAVProtection",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowOnAccessProtection",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowOnAccessProtection",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowRealtimeMonitoring",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowRealtimeMonitoring",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowScanningNetworkFiles",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowScanningNetworkFiles",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowScriptScanning",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowScriptScanning",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowUserUIAccess",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AllowUserUIAccess",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AvgCPULoadFactor",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/AvgCPULoadFactor",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DaysToRetainCleanedMalware",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/DaysToRetainCleanedMalware",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ExcludedExtensions",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/ExcludedExtensions",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ExcludedPaths",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/ExcludedPaths",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ExcludedProcesses",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/ExcludedProcesses",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "PUAProtection",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/PUAProtection",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "RealTimeScanDirection",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/RealTimeScanDirection",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ScanParameter",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/ScanParameter",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ScheduleQuickScanTime",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/ScheduleQuickScanTime",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ScheduleScanDay",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/ScheduleScanDay",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ScheduleScanTime",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/ScheduleScanTime",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "SignatureUpdateInterval",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/SignatureUpdateInterval",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "SubmitSamplesConsent",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/SubmitSamplesConsent",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ThreatSeverityDefaultAction",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Defender/ThreatSeverityDefaultAction",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DOAbsoluteMaxCacheSize",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeliveryOptimization/DOAbsoluteMaxCacheSize",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DODownloadMode",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeliveryOptimization/DODownloadMode",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DOGroupId",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeliveryOptimization/DOGroupId",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DOMaxCacheAge",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeliveryOptimization/DOMaxCacheAge",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DOMaxCacheSize",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeliveryOptimization/DOMaxCacheSize",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DOMaxDownloadBandwidth",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeliveryOptimization/DOMaxDownloadBandwidth",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DOMaxUploadBandwidth",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeliveryOptimization/DOMaxUploadBandwidth",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DOMinBackgroundQos",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeliveryOptimization/DOMinBackgroundQos",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DOModifyCacheDrive",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeliveryOptimization/DOModifyCacheDrive",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DOMonthlyUploadDataCap",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeliveryOptimization/DOMonthlyUploadDataCap",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DOPercentageMaxDownloadBandwidth",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeliveryOptimization/DOPercentageMaxDownloadBandwidth",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowIdleReturnWithoutPassword",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/AllowIdleReturnWithoutPassword",
+          "description": "Specifies whether the user must input a PIN or password when the device resumes from an idle state.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowScreenTimeoutWhileLockedUserConfig",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/AllowScreenTimeoutWhileLockedUserConfig",
+          "description": "Specifies whether to show a user-configurable setting to control the screen timeout while on the lock screen of Windows 10 Mobile devices.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSimpleDevicePassword",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/AllowSimpleDevicePassword",
+          "description": "Specifies whether PINs or passwords such as 1111 or 1234 are allowed. For the desktop, it also controls the use of picture passwords.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AlphanumericDevicePasswordRequired",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/AlphanumericDevicePasswordRequired",
+          "description": "Determines the type of PIN or password required. This policy only applies if the DeviceLock/DevicePasswordEnabled policy is set to 0",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DevicePasswordEnabled",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/DevicePasswordEnabled",
+          "description": "Specifies whether device lock is enabled.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DevicePasswordExpiration",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/DevicePasswordExpiration",
+          "description": "Specifies when the password expires (in days).",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DevicePasswordHistory",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/DevicePasswordHistory",
+          "description": "Specifies how many passwords can be stored in the history that can�t be used.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnforceLockScreenAndLogonImage",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/EnforceLockScreenAndLogonImage",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnforceLockScreenProvider",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/EnforceLockScreenProvider",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "MaxDevicePasswordFailedAttempts",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/MaxDevicePasswordFailedAttempts",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "MaxInactivityTimeDeviceLock",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/MaxInactivityTimeDeviceLock",
+          "description": "The number of authentication failures allowed before the device will be wiped. A value of 0 disables device wipe functionality.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "MinDevicePasswordComplexCharacters",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/MinDevicePasswordComplexCharacters",
+          "description": "The number of complex element types (uppercase and lowercase letters, numbers, and punctuation) required for a strong PIN or password.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "MinDevicePasswordLength",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/MinDevicePasswordLength",
+          "description": "Specifies the minimum number or characters required in the PIN or password.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ScreenTimeoutWhileLocked",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/DeviceLock/ScreenTimeoutWhileLocked",
+          "description": "Specifies whether to show a user-configurable setting to control the screen timeout while on the lock screen of Windows 10 Mobile devices.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowCopyPaste",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/AllowCopyPaste",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowCortana",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/AllowCortana",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowDeviceDiscovery",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/AllowDeviceDiscovery",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowManualMDMUnenrollment",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/AllowManualMDMUnenrollment",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSaveAsOfOfficeFiles",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/AllowSaveAsOfOfficeFiles",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowScreenCapture",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/AllowScreenCapture",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSharingOfOfficeFiles",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/AllowSharingOfOfficeFiles",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSIMErrorDialogPromptWhenNoSIM",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/AllowSIMErrorDialogPromptWhenNoSIM",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSyncMySettings",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/AllowSyncMySettings",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowTaskSwitcher",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/AllowTaskSwitcher",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowVoiceRecording",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/AllowVoiceRecording",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowWindowsTips",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/AllowWindowsTips",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DoNotShowFeedbackNotifications",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Experience/DoNotShowFeedbackNotifications",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowWindowsEntitlementReactivation",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Licensing/AllowWindowsEntitlementReactivation",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DisallowKMSClientOnlineAVSValidation",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Licensing/DisallowKMSClientOnlineAVSValidation",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowEdgeSwipe",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/LockDown/AllowEdgeSwipe",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowOfflineMapsDownloadOverMeteredConnection",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Maps/AllowOfflineMapsDownloadOverMeteredConnection",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnableOfflineMapsAutoUpdate",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Maps/EnableOfflineMapsAutoUpdate",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowMessageSync",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Messaging/AllowMessageSync",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseCloudResources",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/NetworkIsolation/EnterpriseCloudResources",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseInternalProxyServers",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/NetworkIsolation/EnterpriseInternalProxyServers",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseIPRange",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/NetworkIsolation/EnterpriseIPRange",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseIPRangesAreAuthoritative",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/NetworkIsolation/EnterpriseIPRangesAreAuthoritative",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseNetworkDomainNames",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/NetworkIsolation/EnterpriseNetworkDomainNames",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseProxyServers",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/NetworkIsolation/EnterpriseProxyServers",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "EnterpriseProxyServersAreAuthoritative",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/NetworkIsolation/EnterpriseProxyServersAreAuthoritative",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "NeutralResources",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/NetworkIsolation/NeutralResources",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowWindowsInkWorkspace",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/WindowsInkWorkspace/AllowWindowsInkWorkspace",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSuggestedAppsInWindowsInkWorkspace",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/WindowsInkWorkspace/AllowSuggestedAppsInWindowsInkWorkspace",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowAutoAcceptPairingAndPrivacyConsentPrompts",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/AllowAutoAcceptPairingAndPrivacyConsentPrompts",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowInputPersonalization",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/AllowInputPersonalization",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DisableAdvertisingId",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/DisableAdvertisingId",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessAccountInfo",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessAccountInfo",
+          "description": "This policy setting specifies whether Windows apps can access account information.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessAccountInfo_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessAccountInfo_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows apps. Listed Windows apps are allowed access to account information. This setting overrides the default LetAppsAccessAccountInfo policy setting for the specified Windows apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessAccountInfo_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessAccountInfo_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows apps. Listed Windows apps are denied access to account information. This setting overrides the default LetAppsAccessAccountInfo policy setting for the specified Windows apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessAccountInfo_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessAccountInfo_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows apps. The user is able to control the account information privacy setting for the listed Windows apps. This setting overrides the default LetAppsAccessAccountInfo policy setting for the specified Windows apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessCalendar",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessCalendar",
+          "description": "This policy setting specifies whether Windows apps can access the calendar.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessCalendar_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessCalendar_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows apps. Listed Windows apps are allowed access to the calendar. This setting overrides the default LetAppsAccessCalendar policy setting for the specified Windows apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessCalendar_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessCalendar_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows apps. Listed Windows apps are denied access to the calendar. This setting overrides the default LetAppsAccessCalendar policy setting for the specified Windows apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessCalendar_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessCalendar_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows apps. The user is able to control the calendar privacy setting for the listed Windows apps. This setting overrides the default LetAppsAccessCalendar policy setting for the specified Windows apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessCallHistory",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessCallHistory",
+          "description": "This policy setting specifies whether Windows apps can access call history.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessCallHistory_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessCallHistory_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows apps. Listed Windows apps are allowed access to call history. This setting overrides the default LetAppsAccessCallHistory policy setting for the specified Windows apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessCallHistory_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessCallHistory_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows apps. Listed Windows apps are denied access to call history. This setting overrides the default LetAppsAccessCallHistory policy setting for the specified Windows apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessCallHistory_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessCallHistory_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows apps. The user is able to control the call history privacy setting for the listed Windows apps. This setting overrides the default LetAppsAccessCallHistory policy setting for the specified Windows apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessCamera",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessCamera",
+          "description": "This policy setting specifies whether Windows apps can access the camera.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessCamera_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessCamera_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are allowed access to the camera. This setting overrides the default LetAppsAccessCamera policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessCamera_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessCamera_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are denied access to the camera. This setting overrides the default LetAppsAccessCamera policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessCamera_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessCamera_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. The user is able to control the camera privacy setting for the listed apps. This setting overrides the default LetAppsAccessCamera policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessContacts",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessContacts",
+          "description": "This policy setting specifies whether Windows apps can access contacts.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessContacts_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessContacts_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are allowed access to contacts. This setting overrides the default LetAppsAccessContacts policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessContacts_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessContacts_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are denied access to contacts. This setting overrides the default LetAppsAccessContacts policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessContacts_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessContacts_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. The user is able to control the contacts privacy setting for the listed apps. This setting overrides the default LetAppsAccessContacts policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessEmail",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessEmail",
+          "description": "This policy setting specifies whether Windows apps can access email.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessEmail_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessEmail_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are allowed access to email. This setting overrides the default LetAppsAccessEmail policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessEmail_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessEmail_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are denied access to email. This setting overrides the default LetAppsAccessEmail policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessEmail_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessEmail_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. The user is able to control the email privacy setting for the listed apps. This setting overrides the default LetAppsAccessEmail policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessLocation",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessLocation",
+          "description": "This policy setting specifies whether Windows apps can access location.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessLocation_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessLocation_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are allowed access to location. This setting overrides the default LetAppsAccessLocation policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessLocation_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessLocation_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are denied access to location. This setting overrides the default LetAppsAccessLocation policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessLocation_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessLocation_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. The user is able to control the location privacy setting for the listed apps. This setting overrides the default LetAppsAccessLocation policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessMessaging",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessMessaging",
+          "description": "This policy setting specifies whether Windows apps can read or send messages (text or MMS).",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessMessaging_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessMessaging_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are allowed to read or send messages (text or MMS). This setting overrides the default LetAppsAccessMessaging policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessMessaging_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessMessaging_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are not allowed to read or send messages (text or MMS). This setting overrides the default LetAppsAccessMessaging policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessMessaging_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessMessaging_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. The user is able to control the messaging privacy setting for the listed apps. This setting overrides the default LetAppsAccessMessaging policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessMicrophone",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessMicrophone",
+          "description": "This policy setting specifies whether Windows apps can access the microphone.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessMicrophone_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessMicrophone_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are allowed access to the microphone. This setting overrides the default LetAppsAccessMicrophone policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessMicrophone_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessMicrophone_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are denied access to the microphone. This setting overrides the default LetAppsAccessMicrophone policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessMicrophone_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessMicrophone_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. The user is able to control the microphone privacy setting for the listed apps. This setting overrides the default LetAppsAccessMicrophone policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessMotion",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessMotion",
+          "description": "This policy setting specifies whether Windows apps can access motion data.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessMotion_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessMotion_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are allowed access to motion data. This setting overrides the default LetAppsAccessMotion policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessMotion_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessMotion_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are denied access to motion data. This setting overrides the default LetAppsAccessMotion policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessMotion_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessMotion_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. The user is able to control the motion privacy setting for the listed apps. This setting overrides the default LetAppsAccessMotion policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessPhone",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessPhone",
+          "description": "This policy setting specifies whether Windows apps can make phone calls",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessPhone_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessPhone_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are allowed to make phone calls. This setting overrides the default LetAppsAccessPhone policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessPhone_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessPhone_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps are not allowed to make phone calls. This setting overrides the default LetAppsAccessPhone policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessPhone_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessPhone_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. The user is able to control the phone call privacy setting for the listed apps. This setting overrides the default LetAppsAccessPhone policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessRadios",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessRadios",
+          "description": "This policy setting specifies whether Windows apps have access to control radios.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessRadios_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessRadios_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps will have access to control radios. This setting overrides the default LetAppsAccessRadios policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessRadios_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessRadios_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps will not have access to control radios. This setting overrides the default LetAppsAccessRadios policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessRadios_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessRadios_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. The user is able to control the radios privacy setting for the listed apps. This setting overrides the default LetAppsAccessRadios policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessTrustedDevices",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessTrustedDevices",
+          "description": "This policy setting specifies whether Windows apps can access trusted devices.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessTrustedDevices_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessTrustedDevices_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps will have access to trusted devices. This setting overrides the default LetAppsAccessTrustedDevices policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessTrustedDevices_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessTrustedDevices_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps will not have access to trusted devices. This setting overrides the default LetAppsAccessTrustedDevices policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsAccessTrustedDevices_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsAccessTrustedDevices_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. The user is able to control the 'trusted devices' privacy setting for the listed apps. This setting overrides the default LetAppsAccessTrustedDevices policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsSyncWithDevices",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsSyncWithDevices",
+          "description": "This policy setting specifies whether Windows apps can sync with devices.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsSyncWithDevices_ForceAllowTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsSyncWithDevices_ForceAllowTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps will have access to sync with devices. This setting overrides the default LetAppsSyncWithDevices policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsSyncWithDevices_ForceDenyTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsSyncWithDevices_ForceDenyTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. Listed apps will not have access to sync with devices. This setting overrides the default LetAppsSyncWithDevices policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "LetAppsSyncWithDevices_UserInControlOfTheseApps",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Privacy/LetAppsSyncWithDevices_UserInControlOfTheseApps",
+          "description": "List of semi-colon delimited Package Family Names of Windows Store Apps. The user is able to control the 'sync with devices' privacy setting for the listed apps. This setting overrides the default LetAppsSyncWithDevices policy setting for the specified apps.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowIndexingEncryptedStoresOrItems",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Search/AllowIndexingEncryptedStoresOrItems",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSearchToUseLocation",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Search/AllowSearchToUseLocation",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowStoringImagesFromVisionSearch",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Search/AllowStoringImagesFromVisionSearch",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowUsingDiacritics",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Search/AllowUsingDiacritics",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AlwaysUseAutoLangDetection",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Search/AlwaysUseAutoLangDetection",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DisableBackoff",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Search/DisableBackoff",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DisableRemovableDriveIndexing",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Search/DisableRemovableDriveIndexing",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "PreventIndexingLowDiskSpaceMB",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Search/PreventIndexingLowDiskSpaceMB",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "PreventRemoteQueries",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Search/PreventRemoteQueries",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "SafeSearchPermissions",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Search/SafeSearchPermissions",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowAddProvisioningPackage",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Security/AllowAddProvisioningPackage",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowManualRootCertificateInstallation",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Security/AllowManualRootCertificateInstallation",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowRemoveProvisioningPackage",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Security/AllowRemoveProvisioningPackage",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AntiTheftMode",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Security/AntiTheftMode",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "PreventAutomaticDeviceEncryptionForAzureADJoinedDevices",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Security/PreventAutomaticDeviceEncryptionForAzureADJoinedDevices",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "RequireDeviceEncryption",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Security/RequireDeviceEncryption",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "RequireProvisioningPackageSignature",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Security/RequireProvisioningPackageSignature",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "RequireRetrieveHealthCertificateOnBoot",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Security/RequireRetrieveHealthCertificateOnBoot",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowAutoPlay",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Settings/AllowAutoPlay",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowDataSense",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Settings/AllowDataSense",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowDateTime",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Settings/AllowDateTime",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowEditDeviceName",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Settings/AllowEditDeviceName",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowLanguage",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Settings/AllowLanguage",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowPowerSleep",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Settings/AllowPowerSleep",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowRegion",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Settings/AllowRegion",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSignInOptions",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Settings/AllowSignInOptions",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowVPN",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Settings/AllowVPN",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowWorkplace",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Settings/AllowWorkplace",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowYourAccount",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Settings/AllowYourAccount",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowSpeechModelUpdate",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Speech/AllowSpeechModelUpdate",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ForceStartSize",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Start/ForceStartSize",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowBuildPreview",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/System/AllowBuildPreview",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowEmbeddedMode",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/System/AllowEmbeddedMode",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowExperimentation",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/System/AllowExperimentation",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowLocation",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/System/AllowLocation",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowStorageCard",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/System/AllowStorageCard",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowTelemetry",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/System/AllowTelemetry",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowUserToResetPhone",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/System/AllowUserToResetPhone",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "TelemetryProxy",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/System/TelemetryProxy",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowIMELogging",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/TextInput/AllowIMELogging",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowIMENetworkAccess",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/TextInput/AllowIMENetworkAccess",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowInputPanel",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/TextInput/AllowInputPanel",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowJapaneseIMESurrogatePairCharacters",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/TextInput/AllowJapaneseIMESurrogatePairCharacters",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowJapaneseIVSCharacters",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/TextInput/AllowJapaneseIVSCharacters",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowJapaneseNonPublishingStandardGlyph",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/TextInput/AllowJapaneseNonPublishingStandardGlyph",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowJapaneseUserDictionary",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/TextInput/AllowJapaneseUserDictionary",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowLanguageFeaturesUninstall",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/TextInput/AllowLanguageFeaturesUninstall",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowLinguisticDataCollection",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/TextInput/AllowLinguisticDataCollection",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ExcludeJapaneseIMEExceptJIS0208",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/TextInput/ExcludeJapaneseIMEExceptJIS0208",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ExcludeJapaneseIMEExceptJIS0208andEUDC",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/TextInput/ExcludeJapaneseIMEExceptJIS0208andEUDC",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ExcludeJapaneseIMEExceptShiftJIS",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/TextInput/ExcludeJapaneseIMEExceptShiftJIS",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ActiveHoursEnd",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/ActiveHoursEnd",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ActiveHoursStart",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/ActiveHoursStart",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowAutoUpdate",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/AllowAutoUpdate",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowMUUpdateService",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/AllowMUUpdateService",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowNonMicrosoftSignedUpdate",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/AllowNonMicrosoftSignedUpdate",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowUpdateService",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/AllowUpdateService",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "BranchReadinessLevel",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/BranchReadinessLevel",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DeferFeatureUpdatesPeriodInDays",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/DeferFeatureUpdatesPeriodInDays",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DeferQualityUpdatesPeriodInDays",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/DeferQualityUpdatesPeriodInDays",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DeferUpdatePeriod",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/DeferUpdatePeriod",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "DeferUpgradePeriod",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/DeferUpgradePeriod",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ExcludeWUDriversInQualityUpdate",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/ExcludeWUDriversInQualityUpdate",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "PauseDeferrals",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/PauseDeferrals",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "PauseFeatureUpdates",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/PauseFeatureUpdates",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "PauseQualityUpdates",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/PauseQualityUpdates",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "RequireDeferUpgrade",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/RequireDeferUpgrade",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "RequireUpdateApproval",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/RequireUpdateApproval",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ScheduledInstallDay",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/ScheduledInstallDay",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "ScheduledInstallTime",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/ScheduledInstallTime",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "UpdateServiceUrl",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Update/UpdateServiceUrl",
+          "description": null,
+          "datatype": "chr",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowAutoConnectToWiFiSenseHotspots",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Wifi/AllowAutoConnectToWiFiSenseHotspots",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowInternetSharing",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Wifi/AllowInternetSharing",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowManualWiFiConfiguration",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Wifi/AllowManualWiFiConfiguration",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowWiFi",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Wifi/AllowWiFi",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "WLANScanMode",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/Wifi/WLANScanMode",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowProjectionToPC",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/WirelessDisplay/AllowProjectionToPC",
+          "description": "This policy setting allows you to turn off projection to a PC\r\n\t\t\t\t\t\t\tIf you set it to 0, your PC isn't discoverable and can't be projected to\r\n\t\t\t\t\t\t\tIf you set it to 1, your PC is discoverable and can be projected to above the lock screen only. The user has an option to turn it always on or off except for manual launch, too.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "AllowUserInputFromWirelessDisplayReceiver",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/WirelessDisplay/AllowUserInputFromWirelessDisplayReceiver",
+          "description": null,
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        },
+        {
+          "name": "RequirePinForPairing",
+          "type": "windows",
+          "uri": "./Device/Vendor/MSFT/Policy/Config/WirelessDisplay/RequirePinForPairing",
+          "description": "This policy setting allows you to require a pin for pairing.\r\n                            If you turn this on, the pairing ceremony for new devices will always require a PIN\r\n                            If you turn it off or don't configure it, a pin isn't required for pairing.",
+          "datatype": "int",
+          "default": null,
+          "scope": "device"
+        }
+      ]
+    },
+    {
+      "name": "ActiveSync",
+      "description": "TODO",
+      "properties": [
+        {
+          "name": "EmailAddress",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//EmailAddress",
+          "description": "The email address the user entered during setup. This is the email address that is associated with the Exchange ActiveSync account and it is required.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "Domain",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Domain",
+          "description": "Domain name of the Exchange server",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "AccountIcon",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//AccountIcon",
+          "description": "Specify the location of the icon associated with the account.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "AccountType",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//AccountType",
+          "description": "Specify the account type.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "AccountName",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//AccountName",
+          "description": "The name that refers to the account on the phone.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "Password",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Password",
+          "description": "A character string that specifies the password for the account.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "ServerName",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//ServerName",
+          "description": "Specifies the server name used by the account.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "UserName",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//UserName",
+          "description": "Specifies the user name for the account.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "CalendarAgeFilter",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Options/CalendarAgeFilter",
+          "description": "Specifies the time window used for syncing calendar items to the phone.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "Logging",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Options/Logging",
+          "description": "Specifies whether diagnostic logging is enabled and at what level.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "MailBodyType",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Options/MailBodyType",
+          "description": "Indicates format type of the Email.  Supported values are 0 (none), 1 (text), 2 (HTML), 3 (RTF), and 4 (MIME).",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "MailHTMLTruncation",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Options/MailHTMLTruncation",
+          "description": "This setting specifies the size beyond which HTML-formatted e-mail messages are truncated when they are synchronized to the mobile phone. The value is specified in KB. A value of -1 disables truncation.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "MailPlainTextTruncation",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Options/MailPlainTextTruncation",
+          "description": "This setting specifies the size beyond which text-formatted e-mail messages are truncated when they are synchronized to the mobile phone. The value is specified in KB. A value of -1 disables truncation.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "Schedule",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Options/Schedule",
+          "description": "Specifies the time until the next sync is performed in minutes.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "UseSSL",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Options/UseSSL",
+          "description": "Specifies whether SSL is used.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "MailAgeFilter",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Options/MailAgeFilter",
+          "description": "Specifies the time window used for syncing email items to the phone.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "Enabled",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Options/ContentTypes//Enabled",
+          "description": "Enables or disables Sync for Email, contacts, calendar, and Tasks.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "Name",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Options/ContentTypes//Name",
+          "description": "The name of the content type.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "MailBodyType",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Policies/MailBodyType",
+          "description": "Specifies the email body type. HTML or plain",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "MaxMailAgeFilter",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ActiveSync/Accounts//Policies/MaxMailAgeFilter",
+          "description": "Specifies the time window used for syncing mail items to the device.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        }
+      ]
+    },
+    {
+      "name": "CertificateStore",
+      "description": "TODO",
+      "properties": [
+        {
+          "name": "EncodedCertificate",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/ROOT/*/EncodedCertificate",
+          "description": "The base64 Encoded X.509 certificate.",
+          "datatype": "b64",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "EncodedCertificate",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/ROOT/System/*/EncodedCertificate",
+          "description": "The base64 Encoded X.509 certificate.",
+          "datatype": "b64",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "EncodedCertificate",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/User/*/EncodedCertificate",
+          "description": "The base64 Encoded X.509 certificate. Note that though during MDM enrollment, enrollment server could use WAP XML format to add public part of MDM client cert via EncodedCertificate node, properly enroll a client certificate including private needs a cert enroll protocol handle it  or user installs it manually. In WP, the server cannot purely rely on CertificateStore CSP to install a client certificate including private key.",
+          "datatype": "b64",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "ServerURL",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/ServerURL",
+          "description": "Specify the cert enrollment server.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "Challenge",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/Challenge",
+          "description": "Enroll requester authentication shared secret.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "EKUMapping",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/EKUMapping",
+          "description": "Specify extended key usages. The list of OIDs are separated by plus “+”.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "KeyUsage",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/KeyUsage",
+          "description": "Specify the key usage bits (0x80, 0x20, 0xA0) for the cert.",
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "SubjectName",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/SubjectName",
+          "description": "Specify the subject name.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "KeyProtection",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/KeyProtection",
+          "description": "Specify where to keep the private key.",
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "RetryDelay",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/RetryDelay",
+          "description": "When the SCEP server sends pending status, specify device retry waiting time in minutes.",
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "RetryCount",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/RetryCount",
+          "description": "When the SCEP sends pending status, specify device retry times.",
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "TemplateName",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/TemplateName",
+          "description": "Certificate Template Name OID (As in AD used by PKI infrastructure.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "KeyLength",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/KeyLength",
+          "description": "Specify private key length (RSA).",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "HashAlgrithm",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/HashAlgrithm",
+          "description": "Client create Cert enroll request, get supported hash OIalgorithm from SCEP server  and  match it with one specified in this parameter.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "CAThumbPrint",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/CAThumbPrint",
+          "description": "Specify root CA thumbprint.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "SubjectAlternativeNames",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/SubjectAlternativeNames",
+          "description": "Specify subject alternative name. Multiple alternative names could be specified by this node. Each name is the combination of name format+actual name. Each pair is separated by semi-comma.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "ValidPeriodUnit",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/SCEP/*/Install/ValidPeriodUnit",
+          "description": "Specify valid period unit type.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "RenewPeriod",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/WSTEP/Renew/RenewPeriod",
+          "description": "Specify the number of days prior to the enrollment cert expiration to prompt the user to renew.",
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "ServerURL",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/WSTEP/Renew/ServerURL",
+          "description": "Optional. Specifies the cert renewal server URL which is the discovery server.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "RetryInterval",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/WSTEP/Renew/RetryInterval",
+          "description": "Optional. This parameter specifies retry interval when previous renew failed (in days). It applies to both manual cert renewal and ROBO cert renewal. Retry schedule will stop at cert expiration date.",
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "ROBOSupport",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/MY/WSTEP/Renew/ROBOSupport",
+          "description": "Optional. Notify the client whether enrollment server supports ROBO auto certificate renew. NOTE: This flag is only needed to the device which is MDM enrolled via On-premise authentication method. For MDM enrolled with federated authentication, ROBO is the only supported renewal method. If the server sets this node value to be false or delete this node for federated enrolled device, the configuration will fail with OMA DM error code 405.",
+          "datatype": "bool",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "EncodedCertificate",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/CA/*/EncodedCertificate",
+          "description": "The base64 Encoded X.509 certificate",
+          "datatype": "b64",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "EncodedCertificate",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/CertificateStore/CA/System/*/EncodedCertificate",
+          "description": "The base64 Encoded X.509 certificate.",
+          "datatype": "b64",
+          "default": null,
+          "scope": "user"
+        }
+      ]
+    },
+    {
+      "name": "ClientCertificateInstall",
+      "description": "TODO",
+      "properties": [
+        {
+          "name": "KeyLocation",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/PFXCertInstall//KeyLocation",
+          "description": "Required for PFX certificate installation. Indicates the KeyStorage provider to target the private key installation to. Supported operations are Get, Add\r\n Datatype will be int\r\n1- Install to TPM, fail if not present\r\n2 – Install to TPM if present, if not present fallback to Software\r\n3 – Install to software\r\n4 – Install to NGC container whose name is specified\r\n",
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "ContainerName",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/PFXCertInstall//ContainerName",
+          "description": "Optional. \r\nSpecifies the NGC container name (if NGC KSP is chosen for above node). If this node is not specified when NGC KSP is chosen, enrollment will fail.\r\nFormat is chr\r\nSupported operations are Get, Add, Delete and Replace\r\n",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "PFXCertBlob",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/PFXCertInstall//PFXCertBlob",
+          "description": "Required. \r\nCRYPT_DATA_BLOB structure that contains a PFX packet with the exported and encrypted certificates and keys. Add on this node will trigger the addition to the PFX certificate. This requires that all the other nodes under UniqueID that are parameters for PFX installation (Container Name, KeyLocation, CertPassword, fKeyExportable) are present before this is called. This will also set the Status node to the current Status of the operation.\r\nFormat is Binary64\r\nSupported operations are Get, Add, Replace\r\nIf Add is called on this node and a blob already exists, it will fail. If Replace is called on this node, the certificates will be overwritten.\r\nIf Add is called on this node for a new PFX, the certificate will be added. If Replace is called on this node when it does not exist, this will fail.\r\nIn other words, using Replace or Add will result in the effect of either overwriting the old certificate or adding a new certificate\r\nCRYPT_DATA_BLOB on MSDN can be found at http://msdn.microsoft.com/en-us/library/windows/desktop/aa381414(v=vs.85).aspx\r\n",
+          "datatype": "bin",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "PFXCertPassword",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/PFXCertInstall//PFXCertPassword",
+          "description": "\r\nRequired if PFX is password protected.\r\nPassword that protects the PFX blob. \r\nFormat is  chr. Supported operations are Add, Get\r\n",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "PFXCertPasswordEncryptionType",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/PFXCertInstall//PFXCertPasswordEncryptionType",
+          "description": "Optional. Used to specify if the PFX certificate password is encrypted with a certificate.\r\nIf the value is \r\n0 - Password is not encrypted\r\n1- Password is encrypted using the MDM certificate by the MDM server\r\n2 - Password is encrypted by a Custom Certificate by the MDM server. When this value is used here, also specify the custom store name in the PFXCertPasswordEncryptionStore node.\r\nThe datatype for this node is int.\r\nSupported operations are Add, Replace\r\n",
+          "datatype": "int",
+          "default": "0",
+          "scope": "user"
+        },
+        {
+          "name": "PFXKeyExportable",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/PFXCertInstall//PFXKeyExportable",
+          "description": "Optional. Used to specify if the private key installed is exportable (can be exported later). The datatype for this node is bool.\r\nSupported operations are Add, Get\r\n",
+          "datatype": "bool",
+          "default": "true",
+          "scope": "user"
+        },
+        {
+          "name": "PFXCertPasswordEncryptionStore",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/PFXCertInstall//PFXCertPasswordEncryptionStore",
+          "description": "Optional. \r\nWhen a value of \"2\" is contained iin PFXCertPasswordEncryptionType, specify the store name where the certificate for decrypting the PFXCertPassword is stored. \r\nDatatype is string,\r\nSupport operation are Add, Get and Replace.\r\n",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "ServerURL",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/ServerURL",
+          "description": "Required for SCEP certificate enrollment. Specify the cert enrollment server. The server could specify multiple server URLs separated by semicolon. \r\nFormat is string. \r\nSupported operations are Get, Add, Delete, Replace.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "Challenge",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/Challenge",
+          "description": "Required for SCEP certificate enrollment. B64 encoded SCEP enrollment challenge. Format is chr. Supported operations are Get, Add, Replace, Delete. Challenge will be deleted shortly after the Exec command is accepted.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "EKUMapping",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/EKUMapping",
+          "description": "Required. Specify extended key usages. Subjected to SCEP server configuration. The list of OIDs are separated by plus “+”. Sample format: OID1+OID2+OID3.\r\n\r\nFormat is chr. \r\n\r\nSupported operations are Get, Add, Delete, Replace.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "KeyUsage",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/KeyUsage",
+          "description": "Required for enrollment. Specify the key usage bits (0x80, 0x20, 0xA0, etc.) for the certificate in decimal format. The value should at least have second (0x20) or forth (0x80) or both bits set. If the value doesn’t have those bits set, configuration will fail.\r\n\r\nFormat is int. \r\n\r\nSupported operations are Get, Add, Delete, Replace.",
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "SubjectName",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/SubjectName",
+          "description": "Required. Specify the subject name. Format is chr. Supported operations are Get, Add, Delete, Replace.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "KeyProtection",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/KeyProtection",
+          "description": "Optional. Specify where to keep the private key. Note that even it is protected by TPM, it is not guarded with TPM PIN. \r\nSCEP enrolled cert doesn’t support TPM PIN protection. \r\nSupported values: \r\n1 – private key protected by TPM, \r\n\r\n2 – private key protected by phone TPM if the device supports TPM. \r\nAll Windows Phone 8.1 devices support TPM and will treat value 2 as 1 \r\n\r\n3 (default) – private key saved in software KSP \r\n\r\n4 – private key protected by NGC. If this option is specified, container name should be specifed, if not enrollment will fail\r\n\r\n\r\nFormat is int. \r\n\r\nSupported operations are Get, Add, Delete, Replace \r\n",
+          "datatype": "int",
+          "default": "3",
+          "scope": "user"
+        },
+        {
+          "name": "RetryDelay",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/RetryDelay",
+          "description": "Optional. When the SCEP server sends pending status, specify device retry waiting time in minutes. \r\n\r\nDefault value is: 5\r\nThe min value is 1. \r\n\r\nFormat is int. \r\n\r\nSupported operations are Get, Add, Delete noreplace",
+          "datatype": "int",
+          "default": "5",
+          "scope": "user"
+        },
+        {
+          "name": "RetryCount",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/RetryCount",
+          "description": "Optional. Special to SCEP. Specify device retry times when the SCEP sever sends pending status. Format is int. Default value is 3. Max value: the value cannot be larger than 30. If it is larger than 30, the device will use 30.\r\nThe min value is 0 which means no retry. Supported operations are Get, Add, Delete, Replace.",
+          "datatype": "int",
+          "default": "3",
+          "scope": "user"
+        },
+        {
+          "name": "TemplateName",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/TemplateName",
+          "description": "Optional. OID of certificate template name. Note that this name is typically ignored by the SCEP server, therefore the MDM server typically doesn’t need to provide it. Format is chr. Supported operations are Get, Add, Delete.noreplace",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "KeyLength",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/KeyLength",
+          "description": "Required for enrollment. Specify private key length (RSA). Format is int. \r\n\r\nValid value: 1024, 2048, 4096. For NGC, only 2048 is the supported keylength.\r\n\r\nSupported operations are Get, Add, Delete, Replace.",
+          "datatype": "int",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "HashAlgorithm",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/HashAlgorithm",
+          "description": "Required for enrollment. Hash algorithm family (SHA-1, SHA-2, SHA-3) specified by MDM server. If multiple hash algorithm families are specified, they must be separated via +. \r\n\r\nFor NGC, only SHA256 is supported as the supported algorithm\r\n\r\nFormat is chr. \r\nSupported operations are Get, Add, Delete, Replace.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "CAThumbprint",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/CAThumbprint",
+          "description": "Required. Specify root CA thumbprint. It is a 20-byte value of the SHA1 certificate hash specified as a hexadecimal string value. When client authenticates SCEP server, it checks CA cert from SCEP server whether match with this cert. If not match, fail the authentication. \r\nFormat is chr. \r\nSupported operations are Get, Add, Delete, Replace.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "SubjectAlternativeNames",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/SubjectAlternativeNames",
+          "description": "Optional. Specify subject alternative name. Multiple alternative names could be specified by this node. Each name is the combination of name format+actual name. Refer name type definition in MSDN. Each pair is separated by semicolon. E.g. multiple SAN are presented in the format of [nameformat1]+[actual name1];[name format 2]+[actual name2]. \r\n\r\nFormat is chr. \r\n\r\nSupported operations are Get, Add, Delete, Replace.",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "ValidPeriod",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/ValidPeriod",
+          "description": "Optional. Specify the units for valid period. Valid values are: Days(Default), Months, Years. \r\nFormat is chr. \r\nSupported operations are Get, Add, Delete, Replace.\r\n\r\nNOTE: The device only sends the MDM server expected certificate validation period (ValidPeriodUnits + ValidPerio) the SCEP server as part of certificate enrollment request. It is the server’s decision on how to use this valid period to create the certificate.",
+          "datatype": "chr",
+          "default": "Days",
+          "scope": "user"
+        },
+        {
+          "name": "ValidPeriodUnits",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/ValidPeriodUnits",
+          "description": "Optional. Specify desired number of units used in validity period. Subjected to SCEP server configuration. Default is 0. The units are defined in ValidPeriod node. Note the valid period specified by MDM will overwrite the valid period specified in cert template. For example, if ValidPeriod is days and ValidPeriodUnits is 30, it means the total valid duration is 30 days. \r\n\r\nFormat is int. \r\n\r\nSupported operations are Get, Add, Delete, Replace.\r\n\r\nNOTE: The device only sends the MDM server expected certificate validation period (ValidPeriodUnits + ValidPerio) the SCEP server as part of certificate enrollment request. It is the server’s decision on how to use this valid period to create the certificate.",
+          "datatype": "int",
+          "default": "0",
+          "scope": "user"
+        },
+        {
+          "name": "ContainerName",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/ContainerName",
+          "description": "Optional. \r\nSpecifies the NGC container name (if NGC KSP is chosen for above node). If this node is not specified when NGC KSP is chosen, enrollment will fail.\r\n\r\nFormat is chr\r\n\r\nSupported operations are Get, Add, Delete and Replace",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        },
+        {
+          "name": "CustomTextToShowInPrompt",
+          "type": "windows",
+          "uri": "./Vendor/MSFT/ClientCertificateInstall/SCEP//Install/CustomTextToShowInPrompt",
+          "description": "Optional. Specifies the custom text to show on the NGC PIN prompt during certificate enrollment. The admin can choose to provide more contextual information for why the user needs to enter the PIN and what the certificate will be used for through this.\r\n\r\nFormat is chr\r\n\r\nSupported operations are Get, Add, Delete and Replace",
+          "datatype": "chr",
+          "default": null,
+          "scope": "user"
+        }
+      ]
+    },
+    {
+      "name": "Defender",
+      "description": "TODO",
+      "properties": []
+    },
+    {
+      "name": "Win32AppInventory",
+      "description": "TODO",
+      "properties": []
+    }
+  ]
+}
