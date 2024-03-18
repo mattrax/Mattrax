@@ -1,5 +1,5 @@
 {
-	"name": "@mattrax/forge",
+	"name": "@mattrax/web",
 	"type": "module",
 	"private": true,
 	"scripts": {

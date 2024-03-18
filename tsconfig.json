@@ -1,7 +1,7 @@
 {
 	"files": [],
 	"references": [
-		{ "path": "./apps/forge" },
+		{ "path": "./apps/web" },
 		{ "path": "./apps/landing" },
 		{ "path": "./apps/configure" },
 		{ "path": "./apps/email" },
