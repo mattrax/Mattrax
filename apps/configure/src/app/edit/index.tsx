@@ -2,7 +2,7 @@ import plist from "plist";
 import { match } from "ts-pattern";
 import xml from "xml";
 
-import { Button, Input } from "~/components/ui";
+import { Button, Input } from "@mattrax/ui";
 import { useFile, type File } from "~/file";
 
 export default function Component() {

@@ -2,7 +2,7 @@ import { useNavigate } from "@solidjs/router";
 import { save, open } from "@tauri-apps/api/dialog";
 import { writeFile } from "@tauri-apps/api/fs";
 import { For, startTransition } from "solid-js";
-import { Button } from "~/components/ui";
+import { Button } from "@mattrax/ui";
 import { recents, setPath, setRecents } from "~/file";
 
 export default function Component() {

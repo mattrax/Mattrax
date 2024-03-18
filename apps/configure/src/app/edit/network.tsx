@@ -6,7 +6,7 @@ import {
 	CardHeader,
 	CardTitle,
 	Input,
-} from "~/components/ui";
+} from "@mattrax/ui";
 import { type WiFiRestriction, useFile } from "~/file";
 
 export default function Component() {

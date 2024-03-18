@@ -3,6 +3,7 @@
 	"references": [
 		{ "path": "./apps/forge" },
 		{ "path": "./apps/landing" },
+		{ "path": "./apps/configure" },
 		{ "path": "./apps/email" },
 		{ "path": "./packages/drizzle-to-rs" },
 		{ "path": "./packages/mdm" },
