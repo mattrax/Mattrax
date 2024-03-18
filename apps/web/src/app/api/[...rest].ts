@@ -13,3 +13,4 @@ export const POST = createHandler();
 export const PUT = createHandler();
 export const DELETE = createHandler();
 export const PATCH = createHandler();
+export const OPTIONS = createHandler();
