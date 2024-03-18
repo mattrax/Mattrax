@@ -15,15 +15,29 @@
 
 <br />
 
-## Usage
+> [!WARNING]  
+> The repository is under heavy development and is not ready for public use.
 
-```bash
-pnpm i
-cp .env.example .env
-pnpm dev
-# pnpm db:push
-# pnpm db:studio
+## Overview
 
-cargo run -p mattrax -- init
-cargo run -p mattrax -- serve
-```
+This repository is a monorepo of all Mattrax projects.
+
+The components are:
+ - [`apps/dashboard`](apps/dashboard) - [Web frontend](https://cloud.mattrax.app)
+ - [`apps/mattrax`](apps/mattrax) - MDM backend
+ - [`apps/mattraxd`](apps/mattraxd) - Agent for managed devices that makes script execution and more 
+ - [`apps/landing`](apps/landing) - [Landing website](https://mattrax.app)
+ - [`apps/docs`](apps/docs) - [Documentation website](https://docs.mattrax.app)
+ - [`apps/configure`](apps/configure) - Cross-platform MDM policy builder
+
+We mainly use the following technologies:
+ - [SolidJS](https://www.solidjs.com)
+ - [TailwindCSS](https://tailwindcss.com)
+ - [tRPC](https://trpc.io)
+ - [DrizzleORM](https://orm.drizzle.team)
+ - [Kobalte](https://kobalte.dev)
+ - [SolidUI](https://www.solid-ui.com)
+
+## Contributing
+
+Check out the guide in [`CONTRIBUTING.md`](CONTRIBUTING.md).
