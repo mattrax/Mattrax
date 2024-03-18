@@ -18,12 +18,12 @@
 		"@fontsource-variable/inter": "^5.0.17",
 		"@fontsource/inter": "^5.0.17",
 		"@kobalte/core": "^0.12.3",
-		"@mattrax/ui": "workspace:^",
+		"@mattrax/ui": "workspace:*",
 		"@solidjs/router": "^0.13.0",
 		"@solidjs/start": "^0.7.5",
 		"h3": "^1.11.1",
 		"solid-js": "^1.8.15",
-		"vinxi": "=0.3.4",
+		"vinxi": "^0.3.10",
 		"vite": "^5.1.5",
 		"zod": "^3.22.4"
 	}

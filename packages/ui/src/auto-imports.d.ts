@@ -27,7 +27,7 @@ declare global {
   const IconPhArrowDownBold: typeof import("~icons/ph/arrow-down-bold.jsx")["default"]
   const IconPhBookDuotone: typeof import("~icons/ph/book-duotone.jsx")["default"]
   const IconPhBoundingBoxDuotone: typeof import("~icons/ph/bounding-box-duotone.jsx")["default"]
-  const IconPhCaretUpDown: typeof import("~icons/ph/caret-up-down.jsx")["default"]
+  const IconPhCaretUpDown: typeof import('~icons/ph/caret-up-down.jsx')['default']
   const IconPhClipboardDuotone: typeof import("~icons/ph/clipboard-duotone.jsx")["default"]
   const IconPhCogDuotone: typeof import("~icons/ph/cog-duotone.jsx")["default"]
   const IconPhCookingPotDuotone: typeof import("~icons/ph/cooking-pot-duotone.jsx")["default"]

@@ -11,7 +11,7 @@
 		}
 	},
 	"dependencies": {
-		"@mattrax/policies": "workspace:^",
+		"@mattrax/policies": "workspace:*",
 		"plist": "^3.1.0",
 		"zod": "^3.22.4"
 	},

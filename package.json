@@ -1,12 +1,14 @@
 {
 	"name": "@mattrax/monorepo",
 	"private": true,
+	"workspaces": ["apps/*", "packages/*", "apps/email/*"],
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/web dev",
 		"landing": "pnpm --filter @mattrax/landing --",
 		"configure": "pnpm --filter @mattrax/configure --",
 		"email": "pnpm --filter @mattrax/email --",
 		"doc": "pnpm --filter @mattrax/docs --",
+		"web": "pnpm --filter @mattrax/web --",
 		"db:push": "drizzle-kit push:mysql && bun run ./apps/web/src/db/rust.ts",
 		"db:studio": "drizzle-kit studio",
 		"db:gen": "bun run ./apps/web/src/db/rust.ts",
@@ -19,15 +21,25 @@
 	},
 	"dependencies": {
 		"@biomejs/biome": "^1.6.0",
+		"@solidjs/start": "^0.7.5",
 		"dotenv": "^16.4.5",
 		"drizzle-kit": "^0.20.14",
 		"mysql2": "^3.9.2",
-		"typescript": "^5.4.2"
+		"typescript": "^5.4.2",
+		"vinxi": "^0.3.10"
+	},
+	"resolutions": {
+		"@solidjs/start": "^0.7.5",
+		"vinxi": "^0.3.10",
+		"drizzle-orm": "^0.30.1"
 	},
 	"pnpm": {
 		"patchedDependencies": {
 			"drizzle-kit@0.20.14": "patches/drizzle-kit@0.20.14.patch",
 			"@solid-mediakit/trpc@2.0.2": "patches/@solid-mediakit__trpc@2.0.2.patch"
+		},
+		"peerDependencyRules": {
+			"allowAny": ["@solidjs/start", "vinxi", "nitropack"]
 		}
 	}
 }

@@ -1,7 +1,7 @@
 import IconsResolver from "unplugin-icons/resolver";
 import AutoImport from "unplugin-auto-import/vite";
 import Icons from "unplugin-icons/vite";
-import type { PluginOption } from "vite";
+// import { PluginOption } from "vite";
 
 export default [
 	AutoImport({
@@ -9,4 +9,4 @@ export default [
 		dts: new URL("./src/auto-imports.d.ts", import.meta.url).pathname,
 	}),
 	Icons({ compiler: "solid" }),
-] satisfies PluginOption;
+]; // satisfies PluginOption;
