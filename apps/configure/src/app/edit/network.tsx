@@ -6,8 +6,10 @@ import {
 	CardHeader,
 	CardTitle,
 	Input,
+    Label,
 } from "@mattrax/ui";
 import { type WiFiRestriction, useFile } from "~/file";
+import { produce } from "solid-js/store";
 
 export default function Component() {
 	const file = useFile();
@@ -42,7 +44,7 @@ export default function Component() {
 														"restrictions",
 														i(),
 														"ssid",
-														event.currentTarget.textContent,
+														event.currentTarget.textContent
 													);
 												}
 											}}
@@ -75,9 +77,9 @@ export default function Component() {
 								</CardHeader>
 								<CardContent>
 									{/* TODO: Select type of authentication before showing this */}
+									<Label>Preshared Key</Label>
 									<Input
 										name="preshared_key"
-										label="Preshared Key"
 										value={file.file.restrictions[i()].security.preshared_key}
 										onInput={(event) =>
 											file.setFile("restrictions", i(), "security", {

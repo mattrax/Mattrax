@@ -12,15 +12,15 @@ import { clsx } from "clsx";
 import { Select, Label } from "..";
 
 type DistributiveOmit<T, K extends keyof any> = T extends any
-  ? Omit<T, K>
-  : never;
+	? Omit<T, K>
+	: never;
 
 export function SelectField<
 	TData extends Record<string, any>,
 	TName extends DeepKeys<TData>,
 >(
 	props: DistributiveOmit<
-		ComponentProps<typeof Select>,
+		ComponentProps<typeof Select<TData[TName]>>,
 		"id" | "value" | "onChange" | "onBlur" | "form"
 	> & {
 		form: FormApi<TData, any>;
@@ -58,7 +58,7 @@ export function SelectField<
 						</Label>
 					)}
 					<Select
-						{...selectProps}
+						{...(selectProps as any)}
 						id={id}
 						value={field().state.value}
 						onChange={(e) => field().handleChange(e as any)}

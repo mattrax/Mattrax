@@ -91,26 +91,21 @@ export function Form<S extends z.ZodSchema>(props: FormProps<S>) {
 	});
 
 	return (
-		<props.form.Provider>
-			<form
-				{...formProps}
-				onSubmit={(e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					void props.form.handleSubmit();
-				}}
-			>
-				<props.form.Subscribe>
-					{(state) => (
-						<fieldset
-							disabled={state().isSubmitting}
-							class={props.fieldsetClass}
-						>
-							{props.children}
-						</fieldset>
-					)}
-				</props.form.Subscribe>
-			</form>
-		</props.form.Provider>
+		<form
+			{...formProps}
+			onSubmit={(e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				void props.form.handleSubmit();
+			}}
+		>
+			<props.form.Subscribe>
+				{(state) => (
+					<fieldset disabled={state().isSubmitting} class={props.fieldsetClass}>
+						{props.children}
+					</fieldset>
+				)}
+			</props.form.Subscribe>
+		</form>
 	);
 }

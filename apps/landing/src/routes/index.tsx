@@ -302,7 +302,7 @@ function DropdownBody() {
 				form={form}
 				name="interest"
 				label="Why are you interested?"
-				options={Object.keys(interestReasons)}
+				options={["personal", "internal-it-team", "msp-provider", "other"]}
 				placeholder="Select a reason..."
 				itemComponent={(props) => (
 					<SelectItem item={props.item}>
@@ -311,7 +311,7 @@ function DropdownBody() {
 				)}
 			>
 				<SelectTrigger>
-					<SelectValue<string>>
+					<SelectValue<keyof typeof interestReasons>>
 						{(state) => interestReasons[state.selectedOption()]}
 					</SelectValue>
 				</SelectTrigger>
@@ -322,7 +322,7 @@ function DropdownBody() {
 				form={form}
 				name="deployment"
 				label="How will you use Mattrax?"
-				options={Object.keys(deploymentMethod)}
+				options={["managed-cloud", "private-cloud", "onprem", "other"]}
 				placeholder="Select a method..."
 				itemComponent={(props) => (
 					<SelectItem item={props.item}>
@@ -331,7 +331,7 @@ function DropdownBody() {
 				)}
 			>
 				<SelectTrigger>
-					<SelectValue<string>>
+					<SelectValue<keyof typeof deploymentMethod>>
 						{(state) => deploymentMethod[state.selectedOption()]}
 					</SelectValue>
 				</SelectTrigger>

@@ -1,8 +1,6 @@
-import plist from "plist";
 import { match } from "ts-pattern";
-import xml from "xml";
 
-import { Button, Input } from "@mattrax/ui";
+import { Button, Input, Label } from "@mattrax/ui";
 import { useFile, type File } from "~/file";
 
 export default function Component() {
@@ -10,8 +8,8 @@ export default function Component() {
 
 	return (
 		<div class="flex flex-col space-y-4">
+			<Label>Name</Label>
 			<Input
-				label="Name"
 				name="name"
 				value={fileCtx.file.meta.name}
 				onInput={(e) => fileCtx.setFile("meta", "name", e.target.value)}
