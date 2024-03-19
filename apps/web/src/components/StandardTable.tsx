@@ -8,6 +8,7 @@ import {
 	flexRender,
 	getCoreRowModel,
 	getPaginationRowModel,
+    getFilteredRowModel,
 } from "@tanstack/solid-table";
 import clsx from "clsx";
 import { For, type ParentProps, createEffect, mergeProps, on } from "solid-js";
@@ -15,13 +16,14 @@ import { For, type ParentProps, createEffect, mergeProps, on } from "solid-js";
 export function createStandardTable<TData extends RowData>(
 	options: Omit<
 		PartialKeys<TableOptions<TData>, "getCoreRowModel">,
-		"getPaginationRowModle"
+		"getPaginationRowModle" | "getFilteredRowModel"
 	> & { pagination?: boolean },
 ) {
 	return createSolidTable(
 		mergeProps(
 			{
 				getCoreRowModel: getCoreRowModel(),
+				getFilteredRowModel: getFilteredRowModel(),
 				defaultColumn: mergeProps(
 					{ size: "auto" as unknown as number },
 					options.defaultColumn,

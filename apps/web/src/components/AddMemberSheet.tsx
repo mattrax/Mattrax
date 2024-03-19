@@ -3,16 +3,8 @@ import {
 	For,
 	type ParentProps,
 	Suspense,
-	createMemo,
 	createSignal,
 } from "solid-js";
-import { useTenantSlug } from "~/app/(dash)/[tenantSlug]";
-import { trpc } from "~/lib";
-import {
-	StandardTable,
-	createStandardTable,
-	selectCheckboxColumn,
-} from "./StandardTable";
 import { createColumnHelper } from "@tanstack/solid-table";
 import {
 	Badge,
@@ -27,6 +19,13 @@ import {
 	SheetTitle,
 	SheetTrigger,
 } from "@mattrax/ui";
+import { useTenantSlug } from "~/app/(dash)/[tenantSlug]";
+import { trpc } from "~/lib";
+import {
+	StandardTable,
+	createStandardTable,
+	selectCheckboxColumn,
+} from "./StandardTable";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 const VariantDisplay = {
@@ -85,31 +84,25 @@ export function AddMemberSheet(props: ParentProps & Props) {
 	});
 
 	const possibleUsers = trpc.tenant.members.users.useQuery(
-		() => ({
-			tenantSlug: tenantSlug(),
-		}),
+		() => ({ tenantSlug: tenantSlug() }),
 		() => ({ enabled: open() }),
 	);
 	const possibleDevices = trpc.tenant.members.devices.useQuery(
-		() => ({
-			tenantSlug: tenantSlug(),
-		}),
+		() => ({ tenantSlug: tenantSlug() }),
 		() => ({ enabled: open() }),
 	);
 	const possibleGroups = trpc.tenant.members.groups.useQuery(
-		() => ({
-			tenantSlug: tenantSlug(),
-		}),
+		() => ({ tenantSlug: tenantSlug() }),
 		() => ({ enabled: props.omitGroups === true && open() }),
 	);
 
-	const possibleMembers = createMemo(() => {
+	const possibleMembers = () => {
 		return [
 			...(possibleUsers.data ?? []),
 			...(possibleDevices.data ?? []),
 			...(possibleGroups.data ?? []),
 		].sort((a, b) => a.name.localeCompare(b.name));
-	});
+	}
 
 	const table = createStandardTable({
 		get data() {
