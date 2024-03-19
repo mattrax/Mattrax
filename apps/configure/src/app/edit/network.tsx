@@ -6,7 +6,7 @@ import {
 	CardHeader,
 	CardTitle,
 	Input,
-    Label,
+	Label,
 } from "@mattrax/ui";
 import { type WiFiRestriction, useFile } from "~/file";
 import { produce } from "solid-js/store";
@@ -44,7 +44,7 @@ export default function Component() {
 														"restrictions",
 														i(),
 														"ssid",
-														event.currentTarget.textContent
+														event.currentTarget.textContent,
 													);
 												}
 											}}
