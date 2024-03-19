@@ -1,11 +1,7 @@
 {
 	"name": "@mattrax/monorepo",
 	"private": true,
-	"workspaces": [
-		"apps/*",
-		"packages/*",
-		"apps/email/*"
-	],
+	"workspaces": ["apps/*", "packages/*", "apps/email/*"],
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/web dev",
 		"landing": "pnpm --filter @mattrax/landing --",
@@ -44,11 +40,7 @@
 			"@tanstack/solid-form@0.16.0": "patches/@tanstack__solid-form@0.16.0.patch"
 		},
 		"peerDependencyRules": {
-			"allowAny": [
-				"@solidjs/start",
-				"vinxi",
-				"nitropack"
-			]
+			"allowAny": ["@solidjs/start", "vinxi", "nitropack"]
 		}
 	}
 }

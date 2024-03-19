@@ -115,9 +115,9 @@ function IdentityProviderCard() {
 							</a>
 							<span class="text-gray-600">{provider().remoteId}</span>
 
-							<span class="text-gray-600">
-								Linked by: {provider().linkerUpn}
-							</span>
+							<Show when={provider().linkerUpn}>
+								{(upn) => <span class="text-gray-600">Linked by: {upn()}</span>}
+							</Show>
 						</div>
 						<div class="flex space-x-4">
 							<Button
