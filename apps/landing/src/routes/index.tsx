@@ -114,7 +114,7 @@ export default function Page() {
 							well-crafted dashboard.
 						</p>
 
-						<div class="pt-4">
+						<div class="pt-4 flex justify-center">
 							<Waitlist />
 						</div>
 
@@ -212,7 +212,7 @@ export default function Page() {
 function Waitlist() {
 	return (
 		<Dialog trigger={<As component={Button}>Join Waitlist</As>}>
-			<DialogContent>
+			<DialogContent class="md:w-auto w-11/12">
 				<DialogHeader>
 					<DialogTitle>Join Waitlist</DialogTitle>
 					<DialogDescription>

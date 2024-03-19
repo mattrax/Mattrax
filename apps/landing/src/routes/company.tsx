@@ -23,7 +23,7 @@ export default function Page() {
 						</h5>
 
 						<div class="mt-6 flex justify-center items-center text-start">
-							<div class="flex flex-col sm:w-full sm:flex-row sm:justify-around">
+							<div class="flex flex-col sm:w-full sm:flex-row sm:justify-around space-y-4 sm:space-y-0">
 								<div class="flex">
 									<img
 										class="w-16 h-16 rounded-full"
