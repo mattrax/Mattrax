@@ -1,4 +1,4 @@
-import { For, createMemo, createSignal } from "solid-js";
+import { For, Match, Switch, createMemo, createSignal } from "solid-js";
 import {
 	Button,
 	Card,
@@ -9,7 +9,6 @@ import {
 	Label,
 } from "@mattrax/ui";
 import { type WiFiRestriction, useFile } from "~/file";
-import { produce } from "solid-js/store";
 
 export default function Component() {
 	const file = useFile();
@@ -27,69 +26,94 @@ export default function Component() {
 			<div class="flex flex-col space-y-4 w-full">
 				<For each={networkRestrictions()}>
 					{(restriction, i) => {
-						const [isEditable, setIsEditable] = createSignal(true);
-
 						return (
-							<Card class="w-full">
-								<CardHeader class="flex-row justify-between">
-									<div>
-										<h2>SSID:</h2>
-										<CardTitle
-											contentEditable={isEditable()}
-											onClick={() => setIsEditable(true)}
-											onKeyPress={(event) => {
-												if (event.key === "Enter") {
-													setIsEditable(false);
-													file.setFile(
-														"restrictions",
-														i(),
-														"ssid",
-														event.currentTarget.textContent,
-													);
-												}
-											}}
-											onBlur={(event) => {
-												file.setFile(
-													"restrictions",
-													i(),
-													"ssid",
-													event.currentTarget.textContent,
-												);
-											}}
-										>
-											{restriction.ssid}
-										</CardTitle>
-									</div>
+							<Switch>
+								<Match
+									when={
+										restriction.type === "wifi" &&
+										restriction.network_type === "basic" &&
+										restriction
+									}
+								>
+									{(restriction) => {
+										const [isEditable, setIsEditable] = createSignal(true);
 
-									<Button
-										variant="destructive"
-										onClick={() => {
-											file.setFile(
-												"restrictions",
-												file.file.restrictions.filter(
-													(_, index) => index !== i(),
-												),
-											);
-										}}
-									>
-										Delete
-									</Button>
-								</CardHeader>
-								<CardContent>
-									{/* TODO: Select type of authentication before showing this */}
-									<Label>Preshared Key</Label>
-									<Input
-										name="preshared_key"
-										value={file.file.restrictions[i()].security.preshared_key}
-										onInput={(event) =>
-											file.setFile("restrictions", i(), "security", {
-												type: "wpa2",
-												preshared_key: event.currentTarget.value,
-											})
+										function setSsid(ssid: string) {
+											file.setFile("restrictions", i(), {
+												...restriction(),
+												ssid,
+											});
 										}
-									/>
-								</CardContent>
-							</Card>
+
+										return (
+											<Card class="w-full">
+												<CardHeader class="flex-row justify-between">
+													<div>
+														<h2>SSID:</h2>
+														<CardTitle
+															contentEditable={isEditable()}
+															onClick={() => setIsEditable(true)}
+															onKeyPress={(event) => {
+																if (event.key === "Enter") {
+																	setIsEditable(false);
+																	setSsid(
+																		event.currentTarget.textContent ?? "",
+																	);
+																}
+															}}
+															onBlur={(event) => {
+																setSsid(event.currentTarget.textContent ?? "");
+															}}
+														>
+															{restriction().ssid}
+														</CardTitle>
+													</div>
+
+													<Button
+														variant="destructive"
+														onClick={() => {
+															file.setFile("restrictions", i(), undefined!);
+														}}
+													>
+														Delete
+													</Button>
+												</CardHeader>
+												<CardContent>
+													<Switch>
+														<Match
+															when={(() => {
+																const r = restriction();
+																return r.security.type === "wpa2" && r.security;
+															})()}
+														>
+															{(security) => (
+																<>
+																	{/* TODO: Select type of authentication before showing this */}
+																	<Label>Preshared Key</Label>
+																	<Input
+																		name="preshared_key"
+																		value={security().preshared_key}
+																		onInput={(event) =>
+																			file.setFile("restrictions", i(), {
+																				...restriction,
+																				security: {
+																					...security(),
+																					preshared_key:
+																						event.currentTarget.value,
+																				},
+																			})
+																		}
+																	/>
+																</>
+															)}
+														</Match>
+													</Switch>
+												</CardContent>
+											</Card>
+										);
+									}}
+								</Match>
+							</Switch>
 						);
 					}}
 				</For>

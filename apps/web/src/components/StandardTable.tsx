@@ -8,7 +8,7 @@ import {
 	flexRender,
 	getCoreRowModel,
 	getPaginationRowModel,
-    getFilteredRowModel,
+	getFilteredRowModel,
 } from "@tanstack/solid-table";
 import clsx from "clsx";
 import { For, type ParentProps, createEffect, mergeProps, on } from "solid-js";

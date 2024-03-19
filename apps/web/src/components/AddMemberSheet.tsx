@@ -1,10 +1,5 @@
 import { createMutation } from "@tanstack/solid-query";
-import {
-	For,
-	type ParentProps,
-	Suspense,
-	createSignal,
-} from "solid-js";
+import { For, type ParentProps, Suspense, createSignal } from "solid-js";
 import { createColumnHelper } from "@tanstack/solid-table";
 import {
 	Badge,
@@ -102,7 +97,7 @@ export function AddMemberSheet(props: ParentProps & Props) {
 			...(possibleDevices.data ?? []),
 			...(possibleGroups.data ?? []),
 		].sort((a, b) => a.name.localeCompare(b.name));
-	}
+	};
 
 	const table = createStandardTable({
 		get data() {
