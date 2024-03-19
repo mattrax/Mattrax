@@ -11,10 +11,10 @@
     <a href="https://discord.gg/WPBHmDSfAn">Discord</a>
     ·
     <a href="https://mattrax.app">Website</a>
+     ·
+    <a href="https://docs.mattrax.app">Docs</a>
     ·
     <a href="https://twitter.com/mattraxapp">Twitter</a>
-    ·
-    <a href="https://github.com/mattrax/mattrax/issues">Issues</a>
   </p>
 </p>
 
