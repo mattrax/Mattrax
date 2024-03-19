@@ -1,7 +1,11 @@
 {
 	"name": "@mattrax/monorepo",
 	"private": true,
-	"workspaces": ["apps/*", "packages/*", "apps/email/*"],
+	"workspaces": [
+		"apps/*",
+		"packages/*",
+		"apps/email/*"
+	],
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/web dev",
 		"landing": "pnpm --filter @mattrax/landing --",
@@ -36,10 +40,15 @@
 	"pnpm": {
 		"patchedDependencies": {
 			"drizzle-kit@0.20.14": "patches/drizzle-kit@0.20.14.patch",
-			"@solid-mediakit/trpc@2.0.2": "patches/@solid-mediakit__trpc@2.0.2.patch"
+			"@solid-mediakit/trpc@2.0.2": "patches/@solid-mediakit__trpc@2.0.2.patch",
+			"@tanstack/solid-form@0.16.0": "patches/@tanstack__solid-form@0.16.0.patch"
 		},
 		"peerDependencyRules": {
-			"allowAny": ["@solidjs/start", "vinxi", "nitropack"]
+			"allowAny": [
+				"@solidjs/start",
+				"vinxi",
+				"nitropack"
+			]
 		}
 	}
 }

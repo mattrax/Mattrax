@@ -13,6 +13,9 @@ patchedDependencies:
   '@solid-mediakit/trpc@2.0.2':
     hash: s3q7tzjii6vaoljvaeayyczbc4
     path: patches/@solid-mediakit__trpc@2.0.2.patch
+  '@tanstack/solid-form@0.16.0':
+    hash: wsolznlrgivobzbyoqfvs3sypy
+    path: patches/@tanstack__solid-form@0.16.0.patch
   drizzle-kit@0.20.14:
     hash: fd5wnhu3lnq6ol4deipldttfry
     path: patches/drizzle-kit@0.20.14.patch
@@ -74,7 +77,7 @@ importers:
         version: 0.7.5(solid-js@1.8.15)(vinxi@0.3.10)(vite@5.1.6)
       '@tanstack/solid-form':
         specifier: ^0.16.0
-        version: 0.16.0(solid-js@1.8.15)
+        version: 0.16.0(patch_hash=wsolznlrgivobzbyoqfvs3sypy)(solid-js@1.8.15)
       '@tanstack/solid-query':
         specifier: ^5.28.5
         version: 5.28.5(solid-js@1.8.15)
@@ -483,7 +486,7 @@ importers:
         version: 5.28.4
       '@tanstack/solid-form':
         specifier: ^0.16.0
-        version: 0.16.0(solid-js@1.8.15)
+        version: 0.16.0(patch_hash=wsolznlrgivobzbyoqfvs3sypy)(solid-js@1.8.15)
       '@tanstack/solid-query':
         specifier: ^5.28.5
         version: 5.28.5(solid-js@1.8.15)
@@ -710,7 +713,7 @@ importers:
         version: 0.13.0(solid-js@1.8.15)
       '@tanstack/solid-form':
         specifier: ^0.16.0
-        version: 0.16.0(solid-js@1.8.15)
+        version: 0.16.0(patch_hash=wsolznlrgivobzbyoqfvs3sypy)(solid-js@1.8.15)
       '@tanstack/zod-form-adapter':
         specifier: ^0.16.0
         version: 0.16.0(zod@3.22.4)
@@ -5101,7 +5104,7 @@ packages:
       react-dom: 18.2.0(react@18.2.0)
     dev: false
 
-  /@tanstack/solid-form@0.16.0(solid-js@1.8.15):
+  /@tanstack/solid-form@0.16.0(patch_hash=wsolznlrgivobzbyoqfvs3sypy)(solid-js@1.8.15):
     resolution: {integrity: sha512-NxPZQTtekqY7kzuM7IeT3wyUsDflbPD2FI83IbsoUFNVPABn3FDRg2RBTSGaqFkYLaE92RNobTmd/dFfRe5CuQ==}
     peerDependencies:
       solid-js: ^1.6.0
@@ -5110,6 +5113,7 @@ packages:
       '@tanstack/solid-store': 0.3.1(solid-js@1.8.15)
       solid-js: 1.8.15
     dev: false
+    patched: true
 
   /@tanstack/solid-query-devtools@5.28.5(@tanstack/solid-query@5.28.5)(solid-js@1.8.15):
     resolution: {integrity: sha512-FGnBXFDFr3TdnrjKwC6xrPBhNQ8S4dcXfSGwHwlEbiJtL5k/+7vt89nvNXLOqC9Gs11+s4Y7R2K4zKaBg3BKXw==}
