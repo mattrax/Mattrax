@@ -36,16 +36,13 @@ export default function Page() {
 function ConfigureEnrollmentCard() {
 	const tenantSlug = useTenantSlug();
 
-	const enrollmentInfo = trpc.tenant.enrollmentInfo.useQuery(() => ({
+	const info = trpc.tenant.enrollmentInfo.useQuery(() => ({
 		tenantSlug: tenantSlug(),
 	}));
 	// TODO: Show correct state on the UI while the mutation is pending but keep fields disabled.
 	const setEnrollmentInfo = trpc.tenant.setEnrollmentInfo.useMutation(() => ({
-		onSuccess: () => enrollmentInfo.refetch(),
+		onSuccess: () => info.refetch(),
 	}));
-	const enrollmentEnabled = untrackScopeFromSuspense(
-		() => enrollmentInfo.data?.enrollmentEnabled,
-	);
 
 	return (
 		<Card>
@@ -57,8 +54,8 @@ function ConfigureEnrollmentCard() {
 				<div class="flex justify-between">
 					<p>Enable enrollment</p>
 					<Switch
-						checked={enrollmentEnabled() ?? true}
-						disabled={enrollmentEnabled() === undefined}
+						checked={info.latest?.enrollmentEnabled ?? true}
+						disabled={info.latest === undefined}
 						onChange={(state) =>
 							setEnrollmentInfo.mutate({
 								enrollmentEnabled: state,

@@ -16,6 +16,9 @@ patchedDependencies:
   '@tanstack/solid-form@0.16.0':
     hash: wsolznlrgivobzbyoqfvs3sypy
     path: patches/@tanstack__solid-form@0.16.0.patch
+  '@tanstack/solid-query@5.28.5':
+    hash: 7cfc2hqgis2nitxglhdoyzqcce
+    path: patches/@tanstack__solid-query@5.28.5.patch
   drizzle-kit@0.20.14:
     hash: fd5wnhu3lnq6ol4deipldttfry
     path: patches/drizzle-kit@0.20.14.patch
@@ -80,7 +83,7 @@ importers:
         version: 0.16.0(patch_hash=wsolznlrgivobzbyoqfvs3sypy)(solid-js@1.8.15)
       '@tanstack/solid-query':
         specifier: ^5.28.5
-        version: 5.28.5(solid-js@1.8.15)
+        version: 5.28.5(patch_hash=7cfc2hqgis2nitxglhdoyzqcce)(solid-js@1.8.15)
       '@tanstack/zod-form-adapter':
         specifier: ^0.16.0
         version: 0.16.0(zod@3.22.4)
@@ -489,7 +492,7 @@ importers:
         version: 0.16.0(patch_hash=wsolznlrgivobzbyoqfvs3sypy)(solid-js@1.8.15)
       '@tanstack/solid-query':
         specifier: ^5.28.5
-        version: 5.28.5(solid-js@1.8.15)
+        version: 5.28.5(patch_hash=7cfc2hqgis2nitxglhdoyzqcce)(solid-js@1.8.15)
       '@tanstack/solid-query-devtools':
         specifier: ^5.28.5
         version: 5.28.5(@tanstack/solid-query@5.28.5)(solid-js@1.8.15)
@@ -4679,7 +4682,7 @@ packages:
     dependencies:
       '@solidjs/router': 0.13.0(solid-js@1.8.15)
       '@solidjs/start': 0.7.5(solid-js@1.8.15)(vinxi@0.3.10)(vite@5.1.6)
-      '@tanstack/solid-query': 5.28.5(solid-js@1.8.15)
+      '@tanstack/solid-query': 5.28.5(patch_hash=7cfc2hqgis2nitxglhdoyzqcce)(solid-js@1.8.15)
       '@trpc/client': 10.45.1(@trpc/server@10.45.1)
       '@trpc/server': 10.45.1
       solid-js: 1.8.15
@@ -5122,7 +5125,7 @@ packages:
       solid-js: ^1.8.14
     dependencies:
       '@tanstack/query-devtools': 5.28.3
-      '@tanstack/solid-query': 5.28.5(solid-js@1.8.15)
+      '@tanstack/solid-query': 5.28.5(patch_hash=7cfc2hqgis2nitxglhdoyzqcce)(solid-js@1.8.15)
       solid-js: 1.8.15
     dev: false
 
@@ -5133,11 +5136,11 @@ packages:
       solid-js: ^1.6.0
     dependencies:
       '@tanstack/query-persist-client-core': 5.28.4
-      '@tanstack/solid-query': 5.28.5(solid-js@1.8.15)
+      '@tanstack/solid-query': 5.28.5(patch_hash=7cfc2hqgis2nitxglhdoyzqcce)(solid-js@1.8.15)
       solid-js: 1.8.15
     dev: false
 
-  /@tanstack/solid-query@5.28.5(solid-js@1.8.15):
+  /@tanstack/solid-query@5.28.5(patch_hash=7cfc2hqgis2nitxglhdoyzqcce)(solid-js@1.8.15):
     resolution: {integrity: sha512-qQrs3lVOPi7Jj+ud7WtaGsWwv/2GGnIbqzlQZ49xTvkCfBM20OynRh90j1WB+EoNq5tr0ozCZP/lvnCy2w4lZQ==}
     peerDependencies:
       solid-js: ^1.6.0
@@ -5145,6 +5148,7 @@ packages:
       '@tanstack/query-core': 5.28.4
       solid-js: 1.8.15
     dev: false
+    patched: true
 
   /@tanstack/solid-store@0.3.1(solid-js@1.8.15):
     resolution: {integrity: sha512-MBsV3kTHW0v+fHsSUfxpVUh2FVX/qmc6hTq8HdwOkleBcpVRiF8RX0gyCcE5+cE03LncKoIEw9hO80dOBEZbFw==}

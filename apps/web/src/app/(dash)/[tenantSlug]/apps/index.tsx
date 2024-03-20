@@ -53,7 +53,7 @@ function createApplicationsTable() {
 export default function Page() {
 	const { table } = createApplicationsTable();
 
-	const isLoading = untrackScopeFromSuspense(() => false);
+	const isLoading = () => false;
 
 	if (!isDebugMode()) {
 		return (

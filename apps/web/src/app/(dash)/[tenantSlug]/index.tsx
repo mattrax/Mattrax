@@ -29,10 +29,8 @@ export default function Page() {
 	const params = useZodParams({ tenantSlug: z.string() });
 	const stats = trpc.tenant.stats.useQuery(() => params);
 
-	const data = untrackScopeFromSuspense(() => ({ ...stats.data }));
-
 	const getValue = (v: StatsTarget) =>
-		data().find?.((i) => i.variant === v)?.count ?? 0;
+		stats.latest?.find((i) => i.variant === v)?.count ?? 0;
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Dashboard</PageLayoutHeading>}>

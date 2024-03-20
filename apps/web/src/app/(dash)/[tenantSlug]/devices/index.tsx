@@ -87,9 +87,7 @@ function createDevicesTable() {
 
 export default function Page() {
 	// const location = useLocation();
-	const navigate = useNavigate();
 	const { table, devices } = createDevicesTable();
-	const isLoading = untrackScopeFromSuspense(() => devices.isLoading);
 
 	return (
 		<PageLayout
@@ -114,8 +112,8 @@ export default function Page() {
 			<div class="flex flex-row items-center gap-4">
 				<Input
 					class="flex-1"
-					placeholder={isLoading() ? "Loading..." : "Search..."}
-					disabled={isLoading()}
+					placeholder={!devices.latest ? "Loading..." : "Search..."}
+					disabled={!devices.latest}
 					value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
 					onInput={(event) =>
 						table.getColumn("name")?.setFilterValue(event.target.value)

@@ -37,7 +37,8 @@
 		"patchedDependencies": {
 			"drizzle-kit@0.20.14": "patches/drizzle-kit@0.20.14.patch",
 			"@solid-mediakit/trpc@2.0.2": "patches/@solid-mediakit__trpc@2.0.2.patch",
-			"@tanstack/solid-form@0.16.0": "patches/@tanstack__solid-form@0.16.0.patch"
+			"@tanstack/solid-form@0.16.0": "patches/@tanstack__solid-form@0.16.0.patch",
+			"@tanstack/solid-query@5.28.5": "patches/@tanstack__solid-query@5.28.5.patch"
 		},
 		"peerDependencyRules": {
 			"allowAny": ["@solidjs/start", "vinxi", "nitropack"]

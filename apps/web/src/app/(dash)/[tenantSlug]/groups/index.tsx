@@ -1,7 +1,12 @@
 import { As } from "@kobalte/core";
 import { A, type RouteDefinition, useNavigate } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { type ParentProps, Suspense, startTransition } from "solid-js";
+import {
+	type ParentProps,
+	Suspense,
+	startTransition,
+	createEffect,
+} from "solid-js";
 import { z } from "zod";
 
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
@@ -67,8 +72,6 @@ function createGroupsTable() {
 export default function Page() {
 	const { table, groups } = createGroupsTable();
 
-	const isLoading = untrackScopeFromSuspense(() => groups.isLoading);
-
 	return (
 		<PageLayout
 			heading={
@@ -84,8 +87,8 @@ export default function Page() {
 		>
 			<div class="flex items-center gap-4">
 				<Input
-					placeholder={isLoading() ? "Loading..." : "Search..."}
-					disabled={isLoading()}
+					placeholder={!groups.latest ? "Loading..." : "Search..."}
+					disabled={!groups.latest}
 					value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
 					onInput={(event) =>
 						table.getColumn("name")?.setFilterValue(event.target.value)

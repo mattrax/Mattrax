@@ -73,14 +73,12 @@ function createPoliciesTable() {
 export default function Page() {
 	const { table, policies } = createPoliciesTable();
 
-	const isLoading = untrackScopeFromSuspense(() => policies.isLoading);
-
 	return (
 		<PageLayout heading={<PageLayoutHeading>Policies</PageLayoutHeading>}>
 			<div class="flex flex-row gap-4">
 				<Input
-					placeholder={isLoading() ? "Loading..." : "Search..."}
-					disabled={isLoading()}
+					placeholder={!policies.data ? "Loading..." : "Search..."}
+					disabled={!policies.data}
 					value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
 					onInput={(event) =>
 						table.getColumn("name")?.setFilterValue(event.target.value)

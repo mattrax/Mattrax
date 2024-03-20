@@ -110,14 +110,12 @@ function createUsersTable() {
 export default function Page() {
 	const { table, users } = createUsersTable();
 
-	const isLoading = untrackScopeFromSuspense(() => users.isLoading);
-
 	return (
 		<PageLayout heading={<PageLayoutHeading>Users</PageLayoutHeading>}>
 			<div class="flex flex-row items-center gap-4">
 				<Input
-					placeholder={isLoading() ? "Loading..." : "Search..."}
-					disabled={isLoading()}
+					placeholder={!users.latest ? "Loading..." : "Search..."}
+					disabled={!users.latest}
 					value={(table.getColumn("email")?.getFilterValue() as string) ?? ""}
 					onInput={(event) =>
 						table.getColumn("email")?.setFilterValue(event.target.value)
