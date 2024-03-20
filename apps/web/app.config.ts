@@ -45,41 +45,31 @@ export default defineConfig({
 		experimental: {
 			asyncContext: true,
 		},
+		hooks: {
+			"prerender:done": () => {
+				const workerCode = path.join("dist", "_worker.js", "index.js");
+
+				if (!fs.existsSync(workerCode)) {
+					console.warn("Skipping Cloudflare env patching...");
+					return;
+				}
+
+				// Cloudflare doesn't allow access to env outside the handler.
+				// So we ship the env with the worker code.
+				fs.writeFileSync(
+					path.join(workerCode, "../env.js"),
+					`
+					const process={env:${JSON.stringify(process.env)}};
+					globalThis.process=process.env;`,
+				);
+
+				fs.writeFileSync(
+					workerCode,
+					`
+					import "./env";
+					${fs.readFileSync(workerCode)}`,
+				);
+			},
+		},
 	},
-});
-
-// TODO: Remove this hackery
-const workerCode = path.join("dist", "_worker.js", "index.js");
-const routesJson = path.join("dist", "_routes.json");
-process.on("exit", () => {
-	if (!fs.existsSync(workerCode)) {
-		console.warn("Skipping Cloudflare env patching...");
-		return;
-	}
-
-	// Cloudflare doesn't allow access to env outside the handler.
-	// So we ship the env with the worker code.
-	fs.writeFileSync(
-		path.join(workerCode, "../env.js"),
-		`
-		const process={env:${JSON.stringify(process.env)}};
-		globalThis.process=process.env;`,
-	);
-
-	fs.writeFileSync(
-		workerCode,
-		`
-		import "./env";
-		${fs.readFileSync(workerCode)}`,
-	);
-
-	// Replace Nitro's config so Cloudflare will serve the HTML from the CDN instead of the worker (they can do "304 Not Modified" & ETag caching).
-	fs.writeFileSync(
-		routesJson,
-		JSON.stringify({
-			version: 1,
-			include: ["/api/*"],
-			exclude: ["/_headers"],
-		}),
-	);
 });
