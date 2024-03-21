@@ -7,7 +7,7 @@ export async function sendEmail(args: RequestSchema) {
 		return;
 	}
 
-	return fetch(env.EMAIL_URL, {
+	const resp = await fetch(env.EMAIL_URL, {
 		method: "POST",
 		body: JSON.stringify(args),
 		headers: {
@@ -15,4 +15,6 @@ export async function sendEmail(args: RequestSchema) {
 			Authorization: env.INTERNAL_SECRET,
 		},
 	});
+	if (!resp.ok)
+		console.error(`Failed to send email: ${resp.status} ${await resp.text()}`);
 }
