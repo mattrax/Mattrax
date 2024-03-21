@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 // @ts-expect-error
 import { createEnv } from "@t3-oss/env-core";
 import { render } from "@react-email/render";

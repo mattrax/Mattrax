@@ -16,5 +16,7 @@ export async function sendEmail(args: RequestSchema) {
 		},
 	});
 	if (!resp.ok)
-		console.error(`Failed to send email: ${resp.status} ${await resp.text()}`);
+		throw new Error(
+			`Failed to send email: ${resp.status} ${await resp.text()}`,
+		);
 }
