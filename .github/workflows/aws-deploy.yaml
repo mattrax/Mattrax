@@ -23,7 +23,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v1-node16
         with:
           aws-region: us-east-1
-          role-to-assume: arn:aws:iam::101829795063:role/github-actions
+          role-to-assume: arn:aws:iam::101829795063:role/mattrax-gh-actions
           role-session-name: mattrax-api-workflow
 
       - name: Deploy to AWS CloudFormation
