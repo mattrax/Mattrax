@@ -169,8 +169,7 @@ function CreateApplicationSheet(props: ParentProps) {
 		schema: z.object({
 			name: z.string(),
 		}),
-		onSubmit: () => {
-		},
+		onSubmit: () => {},
 	});
 
 	const [search, setSearch] = createSignal("");
@@ -230,7 +229,7 @@ function CreateApplicationSheet(props: ParentProps) {
 						<Input
 							placeholder="Search Targets..."
 							value={search()}
-							onKeyPress={e => e.key === "Enter" && e.preventDefault()}
+							onKeyPress={(e) => e.key === "Enter" && e.preventDefault()}
 							onInput={debounce((e) => setSearch(e.target.value), 200)}
 						/>
 					</div>

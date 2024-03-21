@@ -7,8 +7,6 @@
 		{ "path": "./apps/email" },
 		{ "path": "./packages/drizzle-to-rs" },
 		{ "path": "./packages/mdm" },
-		{ "path": "./packages/policy" },
-		{ "path": "./packages/policies" },
 		{ "path": "./packages/ui" }
 	],
 	"compilerOptions": {

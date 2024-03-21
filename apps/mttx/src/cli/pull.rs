@@ -2,6 +2,7 @@ use std::{fs, path::PathBuf};
 
 use mattrax_policy::Policy;
 use reqwest::{Client, Url};
+use serde_json::Value;
 use tracing::{error, info};
 
 #[derive(clap::Args)]
@@ -69,6 +70,17 @@ impl Command {
                 .as_str()
                 .unwrap()
                 .to_string(),
+            description: None, // TODO: From the backend
+            configuration: serde_json::from_value(Value::Object(
+                body.as_object()
+                    .unwrap()
+                    .get("name")
+                    .unwrap()
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ))
+            .unwrap(),
         };
 
         let Ok(yaml) = serde_yaml::to_string(&policy)
