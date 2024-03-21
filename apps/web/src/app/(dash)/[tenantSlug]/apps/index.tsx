@@ -5,9 +5,9 @@ import {
 	Suspense,
 	createSignal,
 	Accessor,
-	createMemo,
 	For,
 	createEffect,
+	startTransition,
 } from "solid-js";
 import { debounce } from "@solid-primitives/scheduled";
 
@@ -46,31 +46,23 @@ const columns = [
 ];
 
 function createApplicationsTable() {
-	// const groups = trpc.policy.list.useQuery();
+	const tenantSlug = useTenantSlug();
+	const apps = trpc.app.list.useQuery(() => ({
+		tenantSlug: tenantSlug(),
+	}));
 
 	const table = createStandardTable({
 		get data() {
-			return []; // TODO
-			// return groups.data || [];
+			return apps.data ?? [];
 		},
 		columns,
 	});
 
-	return { table };
+	return { table, apps };
 }
 
 export default function Page() {
-	const { table } = createApplicationsTable();
-
-	const isLoading = () => false;
-
-	if (!isDebugMode()) {
-		return (
-			<PageLayout heading={<PageLayoutHeading>Applications</PageLayoutHeading>}>
-				<h1 class="text-muted-foreground opacity-70">Coming soon...</h1>
-			</PageLayout>
-		);
-	}
+	const { table, apps } = createApplicationsTable();
 
 	return (
 		<PageLayout
@@ -87,8 +79,8 @@ export default function Page() {
 		>
 			<div class="flex flex-row items-center gap-4">
 				<Input
-					placeholder={isLoading() ? "Loading..." : "Search..."}
-					disabled={isLoading()}
+					placeholder={apps.isLoading ? "Loading..." : "Search..."}
+					disabled={apps.isLoading}
 					value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
 					onInput={(event) =>
 						table.getColumn("name")?.setFilterValue(event.target.value)
@@ -104,12 +96,11 @@ export default function Page() {
 			<Suspense>
 				<StandardTable table={table} />
 			</Suspense>
-			{/* <AppleAppStoreDemo /> */}
 		</PageLayout>
 	);
 }
 
-import { A, type RouteDefinition } from "@solidjs/router";
+import { A, useNavigate, type RouteDefinition } from "@solidjs/router";
 import { createQuery, queryOptions } from "@tanstack/solid-query";
 import {
 	Button,
@@ -130,19 +121,18 @@ import { isDebugMode, trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
 import { z } from "zod";
 import clsx from "clsx";
+import { useTenantSlug } from "../../[tenantSlug]";
 
 const IOS_APP_SCHEMA = z.object({
 	results: z.array(
 		z.object({
-			artworkUrl100: z.string(),
+			artworkUrl512: z.string(),
 			trackName: z.string(),
 			sellerName: z.string(),
 			bundleId: z.string(),
 		}),
 	),
 });
-
-import { createWritableMemo } from "@solid-primitives/memo";
 
 const APPLICATION_TARGETS = {
 	iOS: {
@@ -165,34 +155,58 @@ const APPLICATION_TARGETS = {
 >;
 
 function CreateApplicationSheet(props: ParentProps) {
+	const tenantSlug = useTenantSlug();
+	const navigate = useNavigate();
+
+	const createApplication = trpc.app.create.useMutation();
 	const form = createZodForm({
 		schema: z.object({
 			name: z.string(),
+			targetType: z.custom<keyof typeof APPLICATION_TARGETS>(),
+			targetId: z.string(),
 		}),
-		onSubmit: () => {
+		defaultValues: {
+			name: "",
+			targetType: "iOS",
+			targetId: "",
+		},
+		onSubmit: async ({ value }) => {
+			const app = await createApplication.mutateAsync({
+				...value,
+				tenantSlug: tenantSlug(),
+			});
+			await startTransition(() => navigate(app.id));
 		},
 	});
 
-	const [search, setSearch] = createSignal("");
-	const [targetType, setTargetType] =
-		createSignal<keyof typeof APPLICATION_TARGETS>("iOS");
+	const [search, setSearch] = createSignal("Spotify");
 
 	const query = createQuery(
-		queryOptions(() => APPLICATION_TARGETS[targetType()].queryOptions(search)),
+		queryOptions(() =>
+			APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
+				search,
+			),
+		),
 	);
 
-	const [selected, setSelected] = createWritableMemo(
-		(prev: string | undefined) => {
-			const results = query.data?.results;
-			if (!results) return undefined;
+	createEffect(() => {
+		const results = query.data?.results;
+		if (!results) {
+			form.setFieldValue("targetId", undefined!);
+			return;
+		}
 
-			const first = results[0]?.bundleId;
-			if (!prev) return first;
-			if (results.find((result) => result.bundleId === prev)) return prev;
+		const first = results[0]?.bundleId;
+		if (!form.getFieldValue("targetId")) form.setFieldValue("targetId", first!);
+		if (
+			results.find(
+				(result) => result.bundleId === form.getFieldValue("targetId"),
+			)
+		)
+			return;
 
-			return first;
-		},
-	);
+		form.setFieldValue("targetId", first!);
+	});
 
 	return (
 		<Sheet>
@@ -209,60 +223,75 @@ function CreateApplicationSheet(props: ParentProps) {
 					<InputField form={form} label="Name" name="name" />
 					<div class="flex flex-col space-y-1.5">
 						<Label>Target</Label>
-						<Tabs value={targetType()} onChange={setTargetType}>
-							<TabsList>
-								<For
-									each={
-										["iOS"] satisfies Array<keyof typeof APPLICATION_TARGETS>
-									}
+						<form.Field name="targetType">
+							{(field) => (
+								<Tabs
+									value={field().state.value}
+									onChange={(v) => field().handleChange(v as any)}
 								>
-									{(target) => (
-										<TabsTrigger value={target}>
-											{APPLICATION_TARGETS[target].display}
-										</TabsTrigger>
-									)}
-								</For>
-								{/*
+									<TabsList>
+										<For
+											each={
+												["iOS"] satisfies Array<
+													keyof typeof APPLICATION_TARGETS
+												>
+											}
+										>
+											{(target) => (
+												<TabsTrigger value={target}>
+													{APPLICATION_TARGETS[target].display}
+												</TabsTrigger>
+											)}
+										</For>
+										{/*
 								<TabsTrigger value="macOS">macOS</TabsTrigger>
 								<TabsTrigger value="windows">Windows</TabsTrigger> */}
-							</TabsList>
-						</Tabs>
+									</TabsList>
+								</Tabs>
+							)}
+						</form.Field>
 						<Input
 							placeholder="Search Targets..."
 							value={search()}
-							onKeyPress={e => e.key === "Enter" && e.preventDefault()}
+							onKeyPress={(e) => e.key === "Enter" && e.preventDefault()}
 							onInput={debounce((e) => setSearch(e.target.value), 200)}
 						/>
 					</div>
-					<RadioGroup.Root
-						class="flex-1 overflow-y-auto !mt-1.5"
-						value={selected()}
-						onChange={setSelected}
-					>
-						<div class="p-1">
-							<Suspense>
-								<For each={query.data?.results}>
-									{(app) => (
-										<RadioGroup.Item value={app.bundleId}>
-											<RadioGroup.ItemInput class="peer" />
-											<RadioGroup.ItemControl
-												class={clsx(
-													"flex flex-row p-2 gap-2 items-center rounded-md",
-													"border-2 border-transparent ui-checked:border-brand peer-focus-visible:outline outline-brand",
-												)}
-											>
-												<img src={app.artworkUrl100} class="rounded h-12" />
-												<div class="flex flex-col text-sm flex-1">
-													<span class="font-semibold">{app.trackName}</span>
-													<span class="text-gray-700">{app.sellerName}</span>
-												</div>
-											</RadioGroup.ItemControl>
-										</RadioGroup.Item>
-									)}
-								</For>
-							</Suspense>
-						</div>
-					</RadioGroup.Root>
+					<form.Field name="targetId">
+						{(field) => (
+							<RadioGroup.Root
+								class="flex-1 overflow-y-auto !mt-1.5"
+								value={field().state.value}
+								onChange={(v) => field().handleChange(v)}
+							>
+								<div class="p-1">
+									<Suspense>
+										<For each={query.data?.results}>
+											{(app) => (
+												<RadioGroup.Item value={app.bundleId}>
+													<RadioGroup.ItemInput class="peer" />
+													<RadioGroup.ItemControl
+														class={clsx(
+															"flex flex-row p-2 gap-2 items-center rounded-md",
+															"border-2 border-transparent ui-checked:border-brand peer-focus-visible:outline outline-brand",
+														)}
+													>
+														<img src={app.artworkUrl512} class="rounded h-12" />
+														<div class="flex flex-col text-sm flex-1">
+															<span class="font-semibold">{app.trackName}</span>
+															<span class="text-gray-700">
+																{app.sellerName}
+															</span>
+														</div>
+													</RadioGroup.ItemControl>
+												</RadioGroup.Item>
+											)}
+										</For>
+									</Suspense>
+								</div>
+							</RadioGroup.Root>
+						)}
+					</form.Field>
 					<Button type="submit" class="grow-0">
 						Create
 					</Button>

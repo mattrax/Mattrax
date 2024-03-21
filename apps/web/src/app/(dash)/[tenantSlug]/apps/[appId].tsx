@@ -2,13 +2,13 @@ import { createContextProvider } from "@solid-primitives/context";
 import { A, Navigate, type RouteDefinition } from "@solidjs/router";
 import { type ParentProps, Show } from "solid-js";
 import { toast } from "solid-sonner";
+import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 import type { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { Badge } from "@mattrax/ui";
 import { useNavbarItems } from "../../NavItems";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
 
@@ -44,7 +44,7 @@ export default function Layout(props: ParentProps) {
 						<Breadcrumb>
 							<A href="" class="flex flex-row items-center gap-2">
 								<span>{data().name}</span>
-								<Badge variant="outline">Application</Badge>
+								<Badge variant="outline">App</Badge>
 							</A>
 						</Breadcrumb>
 						<MErrorBoundary>{props.children}</MErrorBoundary>

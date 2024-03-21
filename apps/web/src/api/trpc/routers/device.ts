@@ -1,15 +1,11 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import {
-	PolicyAssignableVariant,
-	PolicyAssignableVariants,
 	db,
 	devices,
-	groups,
 	policyAssignableVariants,
-	policyAssignables,
 	users,
 	deviceActions,
 	possibleDeviceActions,

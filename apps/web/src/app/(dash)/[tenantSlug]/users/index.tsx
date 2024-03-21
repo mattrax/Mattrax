@@ -114,8 +114,8 @@ export default function Page() {
 		<PageLayout heading={<PageLayoutHeading>Users</PageLayoutHeading>}>
 			<div class="flex flex-row items-center gap-4">
 				<Input
-					placeholder={!users.latest ? "Loading..." : "Search..."}
-					disabled={!users.latest}
+					placeholder={users.isLoading ? "Loading..." : "Search..."}
+					disabled={users.isLoading}
 					value={(table.getColumn("email")?.getFilterValue() as string) ?? ""}
 					onInput={(event) =>
 						table.getColumn("email")?.setFilterValue(event.target.value)

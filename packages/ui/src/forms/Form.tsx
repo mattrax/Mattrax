@@ -1,11 +1,7 @@
 import { useBeforeLeave } from "@solidjs/router";
 import { type FormOptions, createForm } from "@tanstack/solid-form";
 import { zodValidator } from "@tanstack/zod-form-adapter";
-import {
-	type ComponentProps,
-	createMemo,
-	splitProps,
-} from "solid-js";
+import { type ComponentProps, createMemo, splitProps } from "solid-js";
 import type { z } from "zod";
 
 export function createZodForm<S extends z.ZodSchema>(

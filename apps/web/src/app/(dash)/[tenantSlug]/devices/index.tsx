@@ -112,8 +112,8 @@ export default function Page() {
 			<div class="flex flex-row items-center gap-4">
 				<Input
 					class="flex-1"
-					placeholder={!devices.latest ? "Loading..." : "Search..."}
-					disabled={!devices.latest}
+					placeholder={devices.isLoading ? "Loading..." : "Search..."}
+					disabled={devices.isLoading}
 					value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
 					onInput={(event) =>
 						table.getColumn("name")?.setFilterValue(event.target.value)
