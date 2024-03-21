@@ -10,7 +10,7 @@ pub struct Policy {
     pub description: Option<String>,
 
     #[serde(default)]
-    pub configuration: Vec<Configuration>,
+    pub configurations: Vec<Configuration>,
 }
 
 /// TODO
@@ -21,7 +21,7 @@ pub enum Configuration {
     WindowsCustom {
         // TODO: Properly account for the different types
         oma_uri: String,
-        data: String,
+        value: String, // TODO: Allow direct number types
     },
     /// TODO
     AppleCustom {

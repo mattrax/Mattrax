@@ -46,7 +46,7 @@ impl Command {
             .json(&json!({
                 "name": policy.name,
                 // TODO: properly hook this up
-                "data": policy.configuration,
+                "data": policy.configurations,
             }))
             .send()
             .await

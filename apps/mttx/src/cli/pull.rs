@@ -71,12 +71,12 @@ impl Command {
                 .unwrap()
                 .to_string(),
             description: None, // TODO: From the backend
-            configuration: serde_json::from_value(Value::Object(
+            configurations: serde_json::from_value(Value::Array(
                 body.as_object()
                     .unwrap()
-                    .get("name")
+                    .get("data")
                     .unwrap()
-                    .as_object()
+                    .as_array()
                     .unwrap()
                     .clone(),
             ))
@@ -88,6 +88,11 @@ impl Command {
         else {
             return;
         };
+
+        let yaml = format!(
+            "# yaml-language-server: $schema={}schema/policy.json\n{yaml}",
+            base_url.to_string()
+        );
 
         fs::write(&self.path, yaml)
             .map_err(|err| error!("Error writing policy to file: {err}"))
