@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "apps/mattrax",
     "apps/mattraxd",
+    "apps/mttx",
     "apps/configure/src-tauri",
     "crates/*",
 ]

@@ -1,0 +1,13 @@
+[package]
+name = "mttx"
+description = "Mattrax CLI"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+mattrax-utils = { path = "../../crates/utils" }
+
+clap = { version = "4.5.0", features = ["derive"] }
+tracing-subscriber = "0.3.18"
+tracing = "0.1.40"

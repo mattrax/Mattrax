@@ -2684,6 +2684,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mttx"
+version = "0.0.1"
+dependencies = [
+ "clap",
+ "mattrax-utils",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "mysql-common-derive"
 version = "0.30.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
