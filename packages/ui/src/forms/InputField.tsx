@@ -48,6 +48,7 @@ export function InputField<
 		<form.Field name={props.name}>
 			{(field) => (
 				<div class={clsx("flex flex-col space-y-1.5", props.fieldClass)}>
+					{props.label && <Label for={id}>{props.label}</Label>}
 					<Input
 						{...inputProps}
 						id={id}

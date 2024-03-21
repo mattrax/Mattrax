@@ -1,6 +1,15 @@
-import { As } from "@kobalte/core";
+import { As, RadioGroup } from "@kobalte/core";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { type ParentProps, Suspense, createSignal } from "solid-js";
+import {
+	type ParentProps,
+	Suspense,
+	createSignal,
+	Accessor,
+	createMemo,
+	For,
+	createEffect,
+} from "solid-js";
+import { debounce } from "@solid-primitives/scheduled";
 
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import {
@@ -68,11 +77,11 @@ export default function Page() {
 			heading={
 				<>
 					<PageLayoutHeading>Applications</PageLayoutHeading>
-					<CreatePolicyDialog>
+					<CreateApplicationSheet>
 						<As component={Button} class="ml-auto">
 							Create Application
 						</As>
-					</CreatePolicyDialog>
+					</CreateApplicationSheet>
 				</>
 			}
 		>
@@ -95,107 +104,170 @@ export default function Page() {
 			<Suspense>
 				<StandardTable table={table} />
 			</Suspense>
-			<AppleAppStoreDemo />
+			{/* <AppleAppStoreDemo /> */}
 		</PageLayout>
 	);
 }
 
-import { A, type RouteDefinition, useNavigate } from "@solidjs/router";
-import { createQuery } from "@tanstack/solid-query";
-import { Button, Checkbox, Input } from "@mattrax/ui";
-
+import { A, type RouteDefinition } from "@solidjs/router";
+import { createQuery, queryOptions } from "@tanstack/solid-query";
 import {
-	DialogContent,
-	DialogHeader,
-	DialogRoot,
-	DialogTitle,
-	DialogTrigger,
+	Button,
+	Input,
+	Label,
+	Sheet,
+	SheetContent,
+	SheetHeader,
+	SheetTitle,
+	SheetTrigger,
+	Tabs,
+	TabsList,
+	TabsTrigger,
 } from "@mattrax/ui";
-import { isDebugMode, trpc, untrackScopeFromSuspense } from "~/lib";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+
+import { isDebugMode, trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
+import { z } from "zod";
+import clsx from "clsx";
 
-function CreatePolicyDialog(props: ParentProps) {
-	const navigate = useNavigate();
-	// const mutation = trpc.app.create.useMutation(() => ({
-	//   onSuccess: async (id) => {
-	//     await startTransition(() => navigate(`./${id}`));
-	//   },
-	// }));
+const IOS_APP_SCHEMA = z.object({
+	results: z.array(
+		z.object({
+			artworkUrl100: z.string(),
+			trackName: z.string(),
+			sellerName: z.string(),
+			bundleId: z.string(),
+		}),
+	),
+});
 
-	return (
-		<DialogRoot>
-			<DialogTrigger asChild>{props.children}</DialogTrigger>
-			<DialogContent>
-				<DialogHeader>
-					<DialogTitle>Create Application</DialogTitle>
-				</DialogHeader>
-				<form
-					onSubmit={(e) => {
-						e.preventDefault();
-						const formData = new FormData(e.currentTarget);
-						// mutation.mutate({
-						//   name: formData.get("name") as any,
-						// });
-					}}
-				>
-					<fieldset
-						class="flex flex-col space-y-4"
-						// disabled={mutation.isPending}
-					>
-						<Input
-							type="text"
-							name="name"
-							placeholder="New Application"
-							autocomplete="off"
-						/>
-						<Button type="submit" disabled>
-							Create
-						</Button>
-					</fieldset>
-				</form>
-			</DialogContent>
-		</DialogRoot>
-	);
-}
+import { createWritableMemo } from "@solid-primitives/memo";
 
-function AppleAppStoreDemo() {
-	const [search, setSearch] = createSignal();
+const APPLICATION_TARGETS = {
+	iOS: {
+		display: "iOS/iPad OS",
+		queryOptions: (search) => ({
+			queryKey: ["appStoreSearch", search()],
+			queryFn: async () => {
+				// TODO: Pagination support
+				const res = await fetch(
+					`https://itunes.apple.com/search?term=${search()}&entity=software`,
+				);
 
-	// TODO: Debounce on input + cancel previous request
+				return IOS_APP_SCHEMA.parse(await res.json());
+			},
+		}),
+	},
+} satisfies Record<
+	string,
+	{ display: string; queryOptions: (search: Accessor<string>) => any }
+>;
 
-	// TODO: Typescript types
-	// TODO: Move to Tanstack Query
-	const searchQuery = createQuery(() => ({
-		queryKey: ["appStoreSearch", search()],
-		queryFn: async () => {
-			// TODO: Pagination support
-			const res = await fetch(
-				`https://itunes.apple.com/search?term=${search()}&entity=software`,
-			);
-			return await res.json();
+function CreateApplicationSheet(props: ParentProps) {
+	const form = createZodForm({
+		schema: z.object({
+			name: z.string(),
+		}),
+		onSubmit: () => {
 		},
-	}));
+	});
+
+	const [search, setSearch] = createSignal("");
+	const [targetType, setTargetType] =
+		createSignal<keyof typeof APPLICATION_TARGETS>("iOS");
+
+	const query = createQuery(
+		queryOptions(() => APPLICATION_TARGETS[targetType()].queryOptions(search)),
+	);
+
+	const [selected, setSelected] = createWritableMemo(
+		(prev: string | undefined) => {
+			const results = query.data?.results;
+			if (!results) return undefined;
+
+			const first = results[0]?.bundleId;
+			if (!prev) return first;
+			if (results.find((result) => result.bundleId === prev)) return prev;
+
+			return first;
+		},
+	);
 
 	return (
-		<>
-			<input
-				type="text"
-				class="border border-gray-300 rounded-md p-2"
-				placeholder="Search"
-				onInput={(e) => setSearch(e.currentTarget.value)}
-			/>
-			<div class="grid grid-cols-3 gap-4">
-				{/* TODO: Empty and error states */}
-				<Suspense fallback={<div>Loading...</div>}>
-					{searchQuery.data?.results.map((app: any) => (
-						<div class="flex flex-col">
-							<img alt="App Artwork" src={app.artworkUrl100} />
-							<div class="text-sm">{app.trackName}</div>
-							<div class="text-xs">{app.sellerName}</div>
+		<Sheet>
+			<SheetTrigger asChild>{props.children}</SheetTrigger>
+			<SheetContent asChild>
+				<As
+					component={Form}
+					form={form}
+					fieldsetClass="p-6 overflow-hidden space-y-4 h-full flex flex-col"
+				>
+					<SheetHeader>
+						<SheetTitle>Create Application</SheetTitle>
+					</SheetHeader>
+					<InputField form={form} label="Name" name="name" />
+					<div class="flex flex-col space-y-1.5">
+						<Label>Target</Label>
+						<Tabs value={targetType()} onChange={setTargetType}>
+							<TabsList>
+								<For
+									each={
+										["iOS"] satisfies Array<keyof typeof APPLICATION_TARGETS>
+									}
+								>
+									{(target) => (
+										<TabsTrigger value={target}>
+											{APPLICATION_TARGETS[target].display}
+										</TabsTrigger>
+									)}
+								</For>
+								{/*
+								<TabsTrigger value="macOS">macOS</TabsTrigger>
+								<TabsTrigger value="windows">Windows</TabsTrigger> */}
+							</TabsList>
+						</Tabs>
+						<Input
+							placeholder="Search Targets..."
+							value={search()}
+							onKeyPress={e => e.key === "Enter" && e.preventDefault()}
+							onInput={debounce((e) => setSearch(e.target.value), 200)}
+						/>
+					</div>
+					<RadioGroup.Root
+						class="flex-1 overflow-y-auto !mt-1.5"
+						value={selected()}
+						onChange={setSelected}
+					>
+						<div class="p-1">
+							<Suspense>
+								<For each={query.data?.results}>
+									{(app) => (
+										<RadioGroup.Item value={app.bundleId}>
+											<RadioGroup.ItemInput class="peer" />
+											<RadioGroup.ItemControl
+												class={clsx(
+													"flex flex-row p-2 gap-2 items-center rounded-md",
+													"border-2 border-transparent ui-checked:border-brand peer-focus-visible:outline outline-brand",
+												)}
+											>
+												<img src={app.artworkUrl100} class="rounded h-12" />
+												<div class="flex flex-col text-sm flex-1">
+													<span class="font-semibold">{app.trackName}</span>
+													<span class="text-gray-700">{app.sellerName}</span>
+												</div>
+											</RadioGroup.ItemControl>
+										</RadioGroup.Item>
+									)}
+								</For>
+							</Suspense>
 						</div>
-					))}
-				</Suspense>
-			</div>
-		</>
+					</RadioGroup.Root>
+					<Button type="submit" class="grow-0">
+						Create
+					</Button>
+				</As>
+			</SheetContent>
+		</Sheet>
 	);
 }

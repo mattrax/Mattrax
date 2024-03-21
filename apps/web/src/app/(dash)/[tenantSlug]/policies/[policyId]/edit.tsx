@@ -168,7 +168,8 @@ function Editor(props: {
 			}),
 	});
 
-	const isDisabled = () => form.state.isSubmitting || props.disabled;
+	const formState = form.useStore();
+	const isDisabled = () => formState().isSubmitting || props.disabled;
 
 	// TODO: Properly reset the form and file input after submission
 

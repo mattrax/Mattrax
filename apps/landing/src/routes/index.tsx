@@ -286,7 +286,9 @@ function DropdownBody() {
 	});
 
 	// `state().isValid` seems to be always `true` (probs cause `createZodForm` only does validation on submit) // TODO: Maybe fix this properly?
-	const isFormValid = () => schema.safeParse(form.state.values).success;
+	const isFormValid = form.useStore(
+		(state) => schema.safeParse(state.values).success,
+	);
 
 	return (
 		<Form form={form} fieldsetClass="flex flex-col space-y-4">
@@ -338,10 +340,7 @@ function DropdownBody() {
 				<SelectContent />
 			</SelectField>
 
-			<Button
-				type="submit"
-				disabled={!isFormValid() || form.state.isSubmitting}
-			>
+			<Button type="submit" disabled={!isFormValid()}>
 				Submit
 			</Button>
 		</Form>

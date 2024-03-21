@@ -1,7 +1,7 @@
 import { type VariantProps, cva } from "class-variance-authority";
 import type { Component, ComponentProps } from "solid-js";
 import { Dialog as SheetPrimitive } from "@kobalte/core";
-import { splitProps } from "solid-js";
+import { mergeProps, splitProps } from "solid-js";
 
 import { cn } from "./lib";
 
@@ -55,7 +55,7 @@ const SheetOverlay: Component<
 };
 
 const sheetVariants = cva(
-	"bg-background fixed z-50 scale-100 gap-4 border p-6 opacity-100 shadow-lg ui-expanded:animate-in ui-closed:animate-out",
+	"bg-background fixed z-50 scale-100 border opacity-100 shadow-lg ui-expanded:animate-in ui-closed:animate-out",
 	{
 		variants: {
 			position: {
@@ -73,6 +73,10 @@ const sheetVariants = cva(
 				lg: "",
 				xl: "",
 				full: "",
+			},
+			padding: {
+				default: "p-6",
+				none: "",
 			},
 		},
 		compoundVariants: [
@@ -150,6 +154,8 @@ export interface DialogContentProps
 
 const SheetContent: Component<DialogContentProps & { transparent?: boolean }> =
 	(props) => {
+		props = mergeProps({ transparent: true }, props);
+
 		const [, rest] = splitProps(props, [
 			"position",
 			"size",
@@ -157,9 +163,10 @@ const SheetContent: Component<DialogContentProps & { transparent?: boolean }> =
 			"children",
 			"transparent",
 		]);
+
 		return (
 			<SheetPortal position={props.position}>
-				<SheetOverlay transparent={props.transparent} />
+				<SheetOverlay transparent={props.transparent ?? true} />
 				<SheetPrimitive.Content
 					class={cn(
 						sheetVariants({ position: props.position, size: props.size }),
