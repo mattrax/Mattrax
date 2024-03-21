@@ -19,8 +19,6 @@
 		"@mattrax/email": "workspace:*",
 		"@mattrax/mdm": "workspace:*",
 		"@mattrax/ms-graph": "workspace:*",
-		"@mattrax/policies": "workspace:*",
-		"@mattrax/policy": "workspace:*",
 		"@mattrax/ui": "workspace:*",
 		"@microsoft/microsoft-graph-client": "^3.0.7",
 		"@paralleldrive/cuid2": "^2.2.2",

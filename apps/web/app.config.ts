@@ -10,7 +10,7 @@ import "./src/env";
 
 export default defineConfig({
 	ssr: false,
-	routeDir: "./app",
+	routeDir: "app",
 	vite: {
 		envDir: monorepoRoot,
 		build: {
