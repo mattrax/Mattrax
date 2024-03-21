@@ -1,7 +1,6 @@
-use std::path::PathBuf;
-
 use clap::{Parser, Subcommand};
 
+mod login;
 mod pull;
 mod push;
 mod validate;
@@ -35,4 +34,5 @@ pub enum Commands {
     Validate(validate::Command),
     Push(push::Command),
     Pull(pull::Command),
+    Login(login::Command),
 }

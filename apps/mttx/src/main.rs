@@ -37,5 +37,6 @@ async fn main() {
         cli::Commands::Validate(cmd) => todo!(), // cmd.run(base_uri),
         cli::Commands::Pull(cmd) => cmd.run(base_uri, client).await,
         cli::Commands::Push(cmd) => cmd.run(base_uri, client).await,
+        cli::Commands::Login(cmd) => cmd.run(base_uri, client).await,
     }
 }

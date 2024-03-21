@@ -66,7 +66,7 @@ export default function Page() {
 						</a>
 					</p>
 
-					{/* <pre class="pt-4">{JSON.stringify(policy().data, null, 2)}</pre> */}
+					<PolicyContent />
 				</TabsContent>
 				<TabsContent value="visual">
 					<h2 class="text-muted-foreground opacity-70">
@@ -86,6 +86,28 @@ export default function Page() {
 			/> */}
 			</PageLayout>
 		</Tabs>
+	);
+}
+
+function PolicyContent() {
+	const policy = usePolicy();
+
+	return (
+		<div class="pt-4">
+			<h2>Policy Content:</h2>
+
+			<div class="pl-2">
+				{/* TODO: Render this pretty */}
+				<For each={policy().data}>
+					{(configuration) => (
+						<p>
+							{configuration.type}{" "}
+							{"oma_uri" in configuration ? configuration.oma_uri : ""}
+						</p>
+					)}
+				</For>
+			</div>
+		</div>
 	);
 }
 
