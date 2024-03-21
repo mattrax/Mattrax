@@ -46,9 +46,7 @@ impl Command {
             .json(&json!({
                 "name": policy.name,
                 // TODO: properly hook this up
-                "data": {
-                    "a": "pushed from mttx cli!",
-                }
+                "data": policy.configurations,
             }))
             .send()
             .await

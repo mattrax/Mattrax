@@ -14,6 +14,7 @@ import {
 	varbinary,
 	varchar,
 } from "drizzle-orm/mysql-core";
+import type { Configuration } from "~/lib/policy";
 
 const serialRelation = (name: string) =>
 	bigint(name, { mode: "number", unsigned: true });
@@ -170,8 +171,8 @@ export const users = mysqlTable(
 
 const policyDataCol = json("data")
 	.notNull()
-	.default({})
-	.$type<Record<string, unknown>>();
+	.default([])
+	.$type<Configuration[]>();
 
 export const policies = mysqlTable("policies", {
 	pk: serial("id").primaryKey(),

@@ -2,6 +2,7 @@ use std::{fs, path::PathBuf};
 
 use mattrax_policy::Policy;
 use reqwest::{Client, Url};
+use serde_json::Value;
 use tracing::{error, info};
 
 #[derive(clap::Args)]
@@ -69,6 +70,17 @@ impl Command {
                 .as_str()
                 .unwrap()
                 .to_string(),
+            description: None, // TODO: From the backend
+            configurations: serde_json::from_value(Value::Array(
+                body.as_object()
+                    .unwrap()
+                    .get("data")
+                    .unwrap()
+                    .as_array()
+                    .unwrap()
+                    .clone(),
+            ))
+            .unwrap(),
         };
 
         let Ok(yaml) = serde_yaml::to_string(&policy)
@@ -76,6 +88,11 @@ impl Command {
         else {
             return;
         };
+
+        let yaml = format!(
+            "# yaml-language-server: $schema={}schema/policy.json\n{yaml}",
+            base_url.to_string()
+        );
 
         fs::write(&self.path, yaml)
             .map_err(|err| error!("Error writing policy to file: {err}"))
