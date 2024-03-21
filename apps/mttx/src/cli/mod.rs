@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+mod pull;
 mod push;
 mod validate;
 
@@ -16,8 +17,14 @@ pub struct Cli {
     #[arg(short = 'v', short_alias = 'V', long, action = clap::builder::ArgAction::Version)]
     version: (),
 
-    #[arg(short, long)]
-    pub config: PathBuf,
+    // The backend API server
+    #[arg(
+        short,
+        long,
+        help = "The Mattrax API server to connect to",
+        default_value = "https://cloud.mattrax.app"
+    )]
+    pub server: String,
 
     #[command(subcommand)]
     pub command: Commands,
@@ -27,4 +34,5 @@ pub struct Cli {
 pub enum Commands {
     Validate(validate::Command),
     Push(push::Command),
+    Pull(pull::Command),
 }

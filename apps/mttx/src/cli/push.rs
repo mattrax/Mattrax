@@ -1,3 +1,4 @@
+use reqwest::{Client, Url};
 use tracing::info;
 
 #[derive(clap::Args)]
@@ -5,7 +6,7 @@ use tracing::info;
 pub struct Command {}
 
 impl Command {
-    pub fn run(&self) {
+    pub async fn run(&self, base_url: Url, client: Client) {
         info!("Hello World");
 
         // TODO: Push the policy up into Mattrax.

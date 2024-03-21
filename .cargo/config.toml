@@ -1,0 +1,4 @@
+[alias]
+mattrax = "run -p mattrax --"
+mttx = "run -p mttx -- --server http://localhost:3000 "
+mattraxd = "run -p mattraxd --"
