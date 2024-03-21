@@ -11,3 +11,8 @@ mattrax-utils = { path = "../../crates/utils" }
 clap = { version = "4.5.0", features = ["derive"] }
 tracing-subscriber = "0.3.18"
 tracing = "0.1.40"
+
+graph-rs-sdk = "2.0.0-beta.0"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.114"
+tokio = { version = "1.36.0", features = ["macros", "rt-multi-thread"] }
