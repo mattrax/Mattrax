@@ -29,5 +29,5 @@ jobs:
       - name: Deploy to AWS CloudFormation
         uses: aws-actions/aws-cloudformation-github-deploy@v1
         with:
-          name: MattraxForge
+          name: mattrax-prod
           template: aws/cloudformation.yaml
