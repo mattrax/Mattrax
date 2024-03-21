@@ -179,7 +179,7 @@ function CreateApplicationSheet(props: ParentProps) {
 		},
 	});
 
-	const [search, setSearch] = createSignal("Spotify");
+	const [search, setSearch] = createSignal("");
 
 	const query = createQuery(
 		queryOptions(() =>
