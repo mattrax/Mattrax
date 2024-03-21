@@ -5,8 +5,6 @@ import {
 	type ComponentProps,
 	createMemo,
 	splitProps,
-	createSignal,
-	onCleanup,
 } from "solid-js";
 import type { z } from "zod";
 
@@ -27,29 +25,6 @@ export function createZodForm<S extends z.ZodSchema>(
 			},
 		})),
 	);
-
-	// const [state, setState] = createSignal(form.store.state);
-	// let skipGetter = false; // `setState` will call the getter causing a recursive loop so this skips a set operation if `true`.
-
-	// onCleanup(
-	// 	form.store.subscribe(() => {
-	// 		skipGetter = true;
-	// 		setState(form.store.state);
-	// 	}),
-	// );
-
-	// A workaround for Tanstack Form's lack of proper reactivity // TODO: Maybe upstream PR?
-	// Object.defineProperty(form, "state", {
-	// 	get: () => state(),
-	// 	set: (v) => {
-	// 		if (skipGetter) {
-	// 			skipGetter = false;
-	// 			return;
-	// 		}
-
-	// 		setState(v);
-	// 	},
-	// });
 
 	return form;
 }
