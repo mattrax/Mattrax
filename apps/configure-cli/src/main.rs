@@ -38,6 +38,29 @@ async fn main() {
         let body: DeviceConfigurationResponse = response.json().await.unwrap();
         println!("{:#?}", body);
     }
+
+    // TODO: Looks like we don't have a way to manage scripts
+    // TODO: https://learn.microsoft.com/en-us/graph/api/intune-shared-devicemanagementscript-create?view=graph-rest-beta
+
+    // let response = client
+    //     .beta()
+    //     .device_management()
+    //     .device_configurations()
+    //     .list_device_configurations()
+    //     .send()
+    //     .await
+    //     .unwrap();
+    // if !response.status().is_success() {
+    //     if let Ok(error) = response.into_graph_error_message().await {
+    //         println!("{error:#?}");
+    //         return; // TODO
+    //     }
+    // } else {
+    //     let body: serde_json::Value = response.json().await.unwrap();
+    //     println!("{:#?}", body);
+
+    //     std::fs::write("./test2.json", serde_json::to_string_pretty(&body).unwrap()).unwrap();
+    // }
 }
 
 #[derive(Deserialize)]

@@ -1,0 +1,13 @@
+# backend:
+#  - provider: intune
+#    tenant_id: abc
+
+# include:
+#  - ./testing.yml
+#  - ./script/*.yml 
+
+# scripts:
+
+# policies:
+
+# groups:

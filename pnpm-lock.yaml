@@ -10,9 +10,6 @@ overrides:
   drizzle-orm: ^0.30.1
 
 patchedDependencies:
-  '@solid-mediakit/trpc@2.0.2':
-    hash: s3q7tzjii6vaoljvaeayyczbc4
-    path: patches/@solid-mediakit__trpc@2.0.2.patch
   '@tanstack/solid-form@0.16.0':
     hash: wsolznlrgivobzbyoqfvs3sypy
     path: patches/@tanstack__solid-form@0.16.0.patch
@@ -407,8 +404,8 @@ importers:
         specifier: ^0.2.0
         version: 0.2.0(hono@4.0.10)(zod@3.22.4)
       '@kobalte/core':
-        specifier: ^0.12.3
-        version: 0.12.6(solid-js@1.8.15)
+        specifier: '=0.12.0'
+        version: 0.12.0(solid-js@1.8.15)
       '@kobalte/tailwindcss':
         specifier: ^0.9.0
         version: 0.9.0(tailwindcss@3.4.1)
@@ -450,7 +447,7 @@ importers:
         version: 0.0.12
       '@solid-mediakit/trpc':
         specifier: ^2.0.2
-        version: 2.0.2(patch_hash=s3q7tzjii6vaoljvaeayyczbc4)(@solidjs/router@0.13.0)(@solidjs/start@0.7.5)(@tanstack/solid-query@5.28.5)(@trpc/client@10.45.1)(@trpc/server@10.45.1)(solid-js@1.8.15)(vinxi@0.3.10)
+        version: 2.0.2(@solidjs/router@0.13.0)(@solidjs/start@0.7.5)(@tanstack/solid-query@5.28.5)(@trpc/client@10.45.1)(@trpc/server@10.45.1)(solid-js@1.8.15)(vinxi@0.3.10)
       '@solid-primitives/context':
         specifier: ^0.2.3
         version: 0.2.3(solid-js@1.8.15)
@@ -2462,6 +2459,18 @@ packages:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.4.15
+
+  /@kobalte/core@0.12.0(solid-js@1.8.15):
+    resolution: {integrity: sha512-TjUYlFCbfQ8T3g7M0pZI5s0BtkDmojLxDZR/pnsmhOzY6hNdERmnHpwe+7IxLeOx/Vwtudfa+YGm7xdOhZ0o8Q==}
+    peerDependencies:
+      solid-js: ^1.7.11
+    dependencies:
+      '@floating-ui/dom': 1.6.3
+      '@internationalized/date': 3.5.2
+      '@internationalized/number': 3.5.1
+      '@kobalte/utils': 0.9.0(solid-js@1.8.15)
+      solid-js: 1.8.15
+    dev: false
 
   /@kobalte/core@0.12.6(solid-js@1.8.15):
     resolution: {integrity: sha512-+Ta2o2wEqZ2fCqLMkvjT40VHNmcFKdGe8TNDVQbbMPk66qoU6g/DDRFR/Ib7eAjb+C95VoIyk6zaafos2VOo0w==}
@@ -4668,7 +4677,7 @@ packages:
     resolution: {integrity: sha512-+9jVqKhRSpsc591z5vX+X5Yyw+he/HCB4iQ/RYxw35CEPaY1gnsNE43nf9n9AaYjAQrTiI/mOwKUKdUs9vf7Xg==}
     dev: false
 
-  /@solid-mediakit/trpc@2.0.2(patch_hash=s3q7tzjii6vaoljvaeayyczbc4)(@solidjs/router@0.13.0)(@solidjs/start@0.7.5)(@tanstack/solid-query@5.28.5)(@trpc/client@10.45.1)(@trpc/server@10.45.1)(solid-js@1.8.15)(vinxi@0.3.10):
+  /@solid-mediakit/trpc@2.0.2(@solidjs/router@0.13.0)(@solidjs/start@0.7.5)(@tanstack/solid-query@5.28.5)(@trpc/client@10.45.1)(@trpc/server@10.45.1)(solid-js@1.8.15)(vinxi@0.3.10):
     resolution: {integrity: sha512-u1RCBDC3Xs8W+PH4vSK+A9VcW4twS/uWmUhvWzjUYTiHbsDMMBBE4oo21EWKF5C4nuWICXtx4YcpttlN1do8gA==}
     engines: {node: '>=16'}
     peerDependencies:
@@ -4688,7 +4697,6 @@ packages:
       solid-js: 1.8.15
       vinxi: 0.3.10(@planetscale/database@1.16.0)(drizzle-orm@0.30.1)(xml2js@0.6.2)
     dev: false
-    patched: true
 
   /@solid-primitives/context@0.2.3(solid-js@1.8.15):
     resolution: {integrity: sha512-6/e8qu9qJf48FJ+sxc/B782NdgFw5TvI8+r6U0gHizumfZcWZg8FAJqvRZAiwlygkUNiTQOGTeO10LVbMm0kvg==}
