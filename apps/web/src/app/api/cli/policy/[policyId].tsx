@@ -43,4 +43,8 @@ export async function POST({ request, params }: APIEvent) {
 			data: body.data.data,
 		})
 		.where(eq(policies.id, policyId));
+
+	return new Response("", {
+		status: 201,
+	});
 }

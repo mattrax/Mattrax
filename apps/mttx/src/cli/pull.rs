@@ -60,6 +60,7 @@ impl Command {
         };
 
         let policy = Policy {
+            id: self.policy_id.clone(),
             name: body
                 .as_object()
                 .unwrap()
