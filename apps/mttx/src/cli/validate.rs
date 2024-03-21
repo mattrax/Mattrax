@@ -4,16 +4,19 @@ use tracing::{error, info};
 
 #[derive(clap::Args)]
 #[command(about = "Validate a policy file is valid offline")]
-pub struct Command {}
+pub struct Command {
+    #[arg(help = "The file to write the policy to")]
+    path: PathBuf,
+}
 
 impl Command {
-    pub fn run(&self, config_path: PathBuf) {
-        if !config_path.exists() {
-            error!("Config file was not found at {config_path:?}");
+    pub fn run(&self) {
+        if !self.path.exists() {
+            error!("Config file was not found at {:?}", self.path);
             return;
         }
 
-        let Ok(config_raw) = std::fs::read_to_string(&config_path)
+        let Ok(config_raw) = std::fs::read_to_string(&self.path)
             .map_err(|err| error!("Failed to read config file: {err}"))
         else {
             return;
@@ -25,8 +28,9 @@ impl Command {
             return;
         };
 
+        // TODO: Validate the policy file against the schema (can Serde do this for us?)
         info!("{file:#?}");
 
-        // TODO: Validate the policy file against the schema (can Serde do this for us?)
+        // TODO: Check for invalid values
     }
 }
