@@ -45,31 +45,28 @@ export default defineConfig({
 		experimental: {
 			asyncContext: true,
 		},
-		hooks: {
-			"prerender:done": () => {
-				const workerCode = path.join("dist", "_worker.js", "index.js");
-
-				if (!fs.existsSync(workerCode)) {
-					console.warn("Skipping Cloudflare env patching...");
-					return;
-				}
-
-				// Cloudflare doesn't allow access to env outside the handler.
-				// So we ship the env with the worker code.
-				fs.writeFileSync(
-					path.join(workerCode, "../env.js"),
-					`
-					const process={env:${JSON.stringify(process.env)}};
-					globalThis.process=process.env;`,
-				);
-
-				fs.writeFileSync(
-					workerCode,
-					`
-					import "./env";
-					${fs.readFileSync(workerCode)}`,
-				);
-			},
-		},
 	},
+});
+
+process.on("exit", () => {
+	const workerCode = path.join("dist", "_worker.js", "chunks", "runtime.mjs");
+
+	if (!fs.existsSync(workerCode)) {
+		console.warn("Skipping Cloudflare env patching...");
+		return;
+	}
+
+	// Cloudflare doesn't allow access to env outside the handler.
+	// So we ship the env with the worker code.
+	fs.writeFileSync(
+		path.join(workerCode, "../env.js"),
+		`
+		const process={env:${JSON.stringify(process.env)}};
+		globalThis.process=process;`,
+	);
+
+	fs.writeFileSync(
+		workerCode,
+		`import "./env";\n${fs.readFileSync(workerCode)}`,
+	);
 });
