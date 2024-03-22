@@ -2,6 +2,9 @@
 resolver = "2"
 members = ["apps/mattrax", "apps/mattraxd", "apps/mttx", "crates/*"]
 
+[workspace.dependencies]
+specta = { version = "=2.0.0-rc.7" }
+
 [patch.crates-io]
 # TODO: This is likely a security risk, will fix it properly once the MVP is out.
 # TODO: This patch is from the unreleased `0.13.0` but I patched it to lie and pretend to be `0.21.1`

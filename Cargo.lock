@@ -3640,6 +3640,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "specta-zod"
+version = "0.1.0"
+dependencies = [
+ "specta",
+]
+
+[[package]]
 name = "spin"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
