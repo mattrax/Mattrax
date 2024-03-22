@@ -55,6 +55,14 @@ export const accounts = mysqlTable("accounts", {
 	name: varchar("name", { length: 256 }).notNull(),
 });
 
+export const apiKeys = mysqlTable("api_keys", {
+	pk: serial("id").primaryKey(),
+	id: cuid("cuid").notNull().unique(),
+	name: varchar("name", { length: 256 }).notNull(),
+	value: varchar("value", { length: 256 }).unique(),
+	accountPk: serialRelation("accountPk"),
+});
+
 export const sessions = mysqlTable("session", {
 	id: varchar("id", {
 		length: 255,

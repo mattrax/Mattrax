@@ -21,7 +21,7 @@ import {
 	TabsList,
 	TabsTrigger,
 } from "@mattrax/ui";
-import { PageLayout, PageLayoutHeading } from "../../PageLayout";
+import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 import { usePolicy } from "./Context";
 import { trpc } from "~/lib";
 import { For, Show, Suspense, createSignal } from "solid-js";

@@ -19,7 +19,7 @@ export function Breadcrumbs() {
 	return <div class="flex flex-row items-center" ref={setRef} />;
 }
 
-export function Breadcrumb(props: ParentProps<{ parentHref?: string }>) {
+export function Breadcrumb(props: ParentProps) {
 	const { ref } = useContext();
 
 	return (

@@ -1,24 +1,20 @@
-import { For, type JSX, type ParentProps, Suspense } from "solid-js";
-
+import { For, ParentProps, Suspense } from "solid-js";
 import { A } from "@solidjs/router";
-import { PageLayout, PageLayoutHeading } from "../PageLayout";
-import { AuthContext } from "../AuthContext";
-import { TenantContext } from "../TenantContext";
+import { JSX } from "solid-js";
 
-const navigation = [
-	{ name: "General", href: "" },
-	{ name: "Administrators", href: "administrators" },
-	{ name: "Identity Provider", href: "identity-provider" },
-	{ name: "Enrollment", href: "enrollment" },
-	{ name: "Biling", href: "billing" },
-];
+import { PageLayout, PageLayoutHeading } from "./PageLayout";
+import { AuthContext } from "./AuthContext";
+import { Breadcrumb } from "~/components/Breadcrumbs";
+
+const navigation = [{ name: "API Keys", href: "api-keys" }];
 
 export default function Layout(props: ParentProps) {
 	return (
 		<PageLayout
 			size="lg"
-			heading={<PageLayoutHeading>Tenant Settings</PageLayoutHeading>}
+			heading={<PageLayoutHeading>Account</PageLayoutHeading>}
 		>
+			<Breadcrumb>Account</Breadcrumb>
 			<div class="flex flex-row">
 				<nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pl-4">
 					<ul class="space-y-1">
@@ -31,9 +27,7 @@ export default function Layout(props: ParentProps) {
 				</nav>
 				<main class="flex-1 overflow-y-auto px-4">
 					<Suspense>
-						<AuthContext>
-							<TenantContext>{props.children}</TenantContext>
-						</AuthContext>
+						<AuthContext>{props.children}</AuthContext>
 					</Suspense>
 				</main>
 			</div>

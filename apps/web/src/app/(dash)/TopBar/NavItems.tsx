@@ -9,26 +9,27 @@ export type NavItemConfig = {
 	href: string;
 };
 
-const [NavItemsProvider, useContext] = createContextProvider(() => {
-	const [entries, setEntries] = createStore<
-		Array<{
-			items: Array<NavItemConfig>;
-			value: Accessor<string>;
-			prefix: Accessor<string>;
-		}>
-	>([]);
+export const [NavItemsProvider, useNavItemsContext] = createContextProvider(
+	() => {
+		const [entries, setEntries] = createStore<
+			Array<{
+				items: Array<NavItemConfig>;
+				value: Accessor<string>;
+				prefix: Accessor<string>;
+			}>
+		>([]);
 
-	return { entries, setEntries };
-}, null!);
+		const lastEntry = createMemo(() =>
+			entries.length < 1 ? undefined : entries[entries.length - 1],
+		);
 
-export { NavItemsProvider };
+		return { entries, setEntries, lastEntry };
+	},
+	null!,
+);
 
 export function NavItems() {
-	const { entries } = useContext();
-
-	const lastEntry = createMemo(() =>
-		entries.length < 1 ? undefined : entries[entries.length - 1],
-	);
+	const { lastEntry } = useNavItemsContext();
 
 	return (
 		<Show when={lastEntry()} keyed>
@@ -36,7 +37,7 @@ export function NavItems() {
 				<Tabs.Root
 					as="nav"
 					value={entry.value()}
-					class="text-white sticky top-0 border-b border-gray-300 z-10 bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
+					class="text-white sticky top-0 border-b border-gray-200 z-10 bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
 				>
 					<Tabs.List class="flex flex-row px-2">
 						<For each={entry.items}>
@@ -72,7 +73,7 @@ export function NavItems() {
 }
 
 export function useNavbarItems(items: Array<NavItemConfig>) {
-	const { setEntries } = useContext();
+	const { setEntries } = useNavItemsContext();
 
 	const prefix = useResolvedPath(() => "");
 	const match = useMatch(() => `${prefix()}/*rest`);

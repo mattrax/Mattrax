@@ -112,7 +112,7 @@ import {
 	Input,
 } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { PageLayout, PageLayoutHeading } from "../PageLayout";
+import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 
 function CreateGroupDialog(props: ParentProps) {

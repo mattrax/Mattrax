@@ -10,7 +10,7 @@
 // import { A } from "@solidjs/router";
 // import { RouterOutput } from "~/api/trpc";
 
-import { PageLayout, PageLayoutHeading } from "../../../PageLayout";
+import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 
 // import { trpc } from "~/lib";
 // import {
@@ -21,7 +21,7 @@ import { PageLayout, PageLayoutHeading } from "../../../PageLayout";
 // import { useZodParams } from "~/lib/useZodParams";
 // import { z } from "zod";
 // import { createTimeAgo } from "@solid-primitives/date";
-// import { PageLayout, PageLayoutHeading } from "../../../PageLayout";
+// import { PageLayout, PageLayoutHeading } from "../~/app/(dash)/PageLayout";
 
 // const column =
 // 	createColumnHelper<RouterOutput["policy"]["getVersions"][number]>();

@@ -5,7 +5,7 @@ import { startTransition } from "solid-js";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { Button, Label } from "@mattrax/ui";
 import { trpc } from "~/lib";
-import { PageLayout, PageLayoutHeading } from "../../PageLayout";
+import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { usePolicy } from "./Context";
 

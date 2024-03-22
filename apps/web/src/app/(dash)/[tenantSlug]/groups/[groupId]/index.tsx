@@ -7,7 +7,7 @@ import IconMaterialSymbolsEditOutline from "~icons/material-symbols/edit-outline
 import IconIcRoundCheck from "~icons/ic/round-check.jsx";
 import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
-import { PageLayout, PageLayoutHeading } from "../../PageLayout";
+import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 import {
 	AddMemberSheet,
 	memberSheetColumns,

@@ -4,7 +4,7 @@ import { Suspense } from "solid-js";
 import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { useUser } from "./Context";
-import { PageLayout, PageLayoutHeading } from "../../PageLayout";
+import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 import {
 	AddMemberSheet,
 	memberSheetColumns,

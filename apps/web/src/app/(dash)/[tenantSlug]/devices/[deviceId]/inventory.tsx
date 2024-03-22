@@ -1,4 +1,4 @@
-import { PageLayout, PageLayoutHeading } from "../../PageLayout";
+import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 import { useDevice } from "./Context";
 
 export default function Page() {

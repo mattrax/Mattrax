@@ -9,6 +9,7 @@ import { metaRouter } from "./routers/meta";
 import { policyRouter } from "./routers/policy";
 import { tenantRouter } from "./routers/tenant/index";
 import { userRouter } from "./routers/user";
+import { apiKeyRouter } from "./routers/apiKey";
 
 export const appRouter = createTRPCRouter({
 	app: applicationRouter,
@@ -20,6 +21,7 @@ export const appRouter = createTRPCRouter({
 	tenant: tenantRouter,
 	user: userRouter,
 	meta: metaRouter,
+	apiKey: apiKeyRouter,
 });
 
 export type AppRouter = typeof appRouter;

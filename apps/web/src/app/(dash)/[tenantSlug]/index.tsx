@@ -11,8 +11,8 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@mattrax/ui";
-import { isDebugMode, trpc, untrackScopeFromSuspense } from "~/lib";
-import { PageLayout, PageLayoutHeading } from "./PageLayout";
+import { isDebugMode, trpc } from "~/lib";
+import { PageLayout, PageLayoutHeading } from "../PageLayout";
 import type { StatsTarget } from "~/api/trpc/routers/tenant";
 import { StatItem } from "~/components/StatItem";
 import { useZodParams } from "~/lib/useZodParams";
