@@ -47,6 +47,7 @@ export const restrictedUsernames = new Set([
 	// Reserved Mattrax routes
 	"enroll",
 	"profile",
+	"account",
 ]);
 
 export const tenantRouter = createTRPCRouter({
@@ -64,7 +65,7 @@ export const tenantRouter = createTRPCRouter({
 						.replace(/\ /g, "-")
 						.replace(/[^a-z0-9-v]/g, "")}-${createId().slice(0, 4)}`,
 				});
-				const tenantPk = parseInt(result.insertId);
+				const tenantPk = Number.parseInt(result.insertId);
 
 				await db.insert(tenantAccounts).values({
 					tenantPk,

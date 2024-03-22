@@ -1,6 +1,6 @@
 import { useNavigate } from "@solidjs/router";
 import { z } from "zod";
-import { ParentProps, Show, Suspense, startTransition } from "solid-js";
+import { type ParentProps, Show, Suspense, startTransition } from "solid-js";
 
 import { useNavbarItems } from "./TopBar/NavItems";
 import { useZodParams } from "~/lib/useZodParams";
