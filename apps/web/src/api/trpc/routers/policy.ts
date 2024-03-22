@@ -5,7 +5,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import {
-	PolicyAssignableVariant,
+	type PolicyAssignableVariant,
 	PolicyAssignableVariants,
 	accounts,
 	db,

@@ -80,8 +80,8 @@ export function TopBar(props: TenantSwitcherProps): JSX.Element {
 							<DropdownMenuLabel>{useAuth()().email}</DropdownMenuLabel>
 							<DropdownMenuSeparator />
 							<DropdownMenuItem asChild>
-								<As component={A} href="/profile">
-									Profile
+								<As component={A} href="/account">
+									Account
 								</As>
 							</DropdownMenuItem>
 							<DropdownMenuItem onClick={() => logout.mutate()}>
