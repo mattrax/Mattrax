@@ -33,10 +33,8 @@ export default function Layout(props: ParentProps) {
 				{(data) => (
 					<GroupContextProvider group={data()} query={query}>
 						<Breadcrumb>
-							<A href="" class="flex flex-row items-center gap-2">
-								<span>{data().name}</span>
-								<Badge variant="outline">Group</Badge>
-							</A>
+							<span>{data().name}</span>
+							<Badge variant="outline">Group</Badge>
 						</Breadcrumb>
 						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</GroupContextProvider>

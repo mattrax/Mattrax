@@ -1,6 +1,6 @@
 import { As, DropdownMenu as KDropdownMenu } from "@kobalte/core";
-import { For, Suspense } from "solid-js";
-import { A } from "@solidjs/router";
+import { createEffect, For, Suspense } from "solid-js";
+import { A, useMatch, useResolvedPath } from "@solidjs/router";
 
 import {
 	Button,
@@ -29,12 +29,17 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
 	const auth = useAuth();
 	const tenant = useTenant();
 
+	const segmentMatch = useMatch(() => "/:tenantId/:segment/:subSegment/*");
+
 	return (
 		<div class="relative inline-block text-left">
 			<CreateTenantDialog {...props}>
 				<DropdownMenu controller={controller} sameWidth placement="bottom">
 					<div class="flex flex-row items-center">
-						<A href="" class="px-2 py-1 block">
+						<A
+							href={segmentMatch()?.params.segment ?? ""}
+							class="px-2 py-1 block"
+						>
 							{tenant().name}
 						</A>
 						<DropdownMenuTrigger asChild>

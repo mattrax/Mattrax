@@ -35,10 +35,8 @@ export default function Layout(props: ParentProps) {
 				{(data) => (
 					<UserContextProvider user={data()} query={query}>
 						<Breadcrumb>
-							<A href="" class="flex flex-row items-center gap-2">
-								<span>{data().name}</span>
-								<Badge variant="outline">User</Badge>
-							</A>
+							<span>{data().name}</span>
+							<Badge variant="outline">User</Badge>
 						</Breadcrumb>
 						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</UserContextProvider>
