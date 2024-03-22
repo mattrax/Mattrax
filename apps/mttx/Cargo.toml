@@ -9,7 +9,7 @@ publish = false
 mattrax-utils = { path = "../../crates/utils" }
 mattrax-policy = { path = "../../crates/policy" }
 
-clap = { version = "4.5.0", features = ["derive"] }
+clap = { version = "4.5.3", features = ["derive"] }
 tracing-subscriber = "0.3.18"
 tracing = "0.1.40"
 serde = { version = "1.0.197", features = ["derive"] }
