@@ -135,7 +135,11 @@ function CreateAPIKeyCard() {
 							</p>
 						)}
 					</Show>
-					<Button onClick={() => setDialogState(s => ({...s, open: false}))}>Close</Button>
+					<Button
+						onClick={() => setDialogState((s) => ({ ...s, open: false }))}
+					>
+						Close
+					</Button>
 				</DialogContent>
 			</DialogRoot>
 		</Card>
