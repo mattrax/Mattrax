@@ -24,9 +24,9 @@ import {
 
 import { trpc } from "~/lib";
 
-// export const routes = {
-// 	load: () => trpc.useContext().account.apiKeys.list.ensureData(),
-// }
+export const routes = {
+	load: () => trpc.useContext().apiKey.list.ensureData(),
+};
 
 const column = createColumnHelper<RouterOutput["apiKey"]["list"][number]>();
 
@@ -69,9 +69,11 @@ export default function Page() {
 }
 
 function CreateAPIKeyCard() {
-	const [dialogState, setDialogState] = createSignal<
-		{ open: false } | { open: boolean; apiKey: string }
-	>({ open: false });
+	type DialogState = { open: false } | { open: boolean; apiKey: string };
+
+	const [dialogState, setDialogState] = createSignal<DialogState>({
+		open: false,
+	});
 
 	const trpcCtx = trpc.useContext();
 	const createAPIKey = trpc.apiKey.create.useMutation(() => ({
@@ -110,8 +112,10 @@ function CreateAPIKeyCard() {
 				open={dialogState().open}
 				onOpenChange={(open) =>
 					setDialogState((s) => {
-						if (createAPIKey.data) return { open, apiKey: createAPIKey.data };
-						else return { open };
+						if (createAPIKey.data)
+							return { open, apiKey: createAPIKey.data } satisfies DialogState;
+						else if ("apiKey" in s) return { ...s, open } satisfies DialogState;
+						else return { open: false } satisfies DialogState;
 					})
 				}
 			>
