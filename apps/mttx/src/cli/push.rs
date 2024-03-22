@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 use mattrax_policy::Policy;
 use reqwest::{Client, Url};
 use serde_json::json;
-use tracing::{error, info};
+use tracing::info;
 
 #[derive(clap::Args)]
 #[command(about = "Push a policy file to Mattrax")]
@@ -13,35 +13,25 @@ pub struct Command {
 }
 
 impl Command {
-    pub async fn run(&self, base_url: Url, client: Client) {
+    pub async fn run(&self, base_url: Url, client: Client) -> Result<(), String> {
         if !self.path.exists() {
-            error!("Policy file does not exist {:?}", self.path);
-            return;
+            return Err(format!("Policy file does not exist {:?}", self.path));
         }
 
-        let Ok(yaml) = fs::read_to_string(&self.path)
-            .map_err(|err| error!("Error reading policy file: {err}"))
-        else {
-            return;
-        };
+        let yaml = fs::read_to_string(&self.path)
+            .map_err(|err| format!("Error reading policy file: {err}"))?;
 
-        let Ok(policy) = serde_yaml::from_str::<Policy>(&yaml)
-            .map_err(|err| error!("Error parsing policy file: {err}"))
-        else {
-            return;
-        };
+        let policy = serde_yaml::from_str::<Policy>(&yaml)
+            .map_err(|err| format!("Error parsing policy file: {err}"))?;
 
-        let Ok(url) = base_url
+        let url = base_url
             .join(&format!(
                 "/api/cli/policy/{}",
                 urlencoding::encode(&policy.id)
             ))
-            .map_err(|err| error!("Error constructing url to Mattrax API: {err}"))
-        else {
-            return;
-        };
+            .map_err(|err| format!("Error constructing url to Mattrax API: {err}"))?;
 
-        let Ok(response) = client
+        let response = client
             .post(url)
             .json(&json!({
                 "name": policy.name,
@@ -50,15 +40,17 @@ impl Command {
             }))
             .send()
             .await
-            .map_err(|err| error!("Error doing HTTP request to Mattrax API: {err}"))
-        else {
-            return;
-        };
+            .map_err(|err| format!("Error doing HTTP request to Mattrax API: {err}"))?;
+
         if !response.status().is_success() {
-            error!("Error pushing policy to Mattrax: {:?}", response.status());
-            return;
+            return Err(format!(
+                "Error pushing policy to Mattrax: {:?}",
+                response.status()
+            ));
         }
 
         info!("Successfully push '{}' to Mattrax!", policy.name);
+
+        Ok(())
     }
 }

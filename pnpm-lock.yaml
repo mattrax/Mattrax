@@ -46,127 +46,6 @@ importers:
         specifier: ^0.3.10
         version: 0.3.10(@planetscale/database@1.16.0)(drizzle-orm@0.30.1)(xml2js@0.6.2)
 
-  apps/configure:
-    dependencies:
-      '@kobalte/core':
-        specifier: ^0.12.4
-        version: 0.12.6(solid-js@1.8.15)
-      '@kobalte/tailwindcss':
-        specifier: ^0.9.0
-        version: 0.9.0(tailwindcss@3.4.1)
-      '@mattrax/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
-      '@planetscale/database':
-        specifier: ^1.16.0
-        version: 1.16.0
-      '@solid-primitives/context':
-        specifier: ^0.2.3
-        version: 0.2.3(solid-js@1.8.15)
-      '@solid-primitives/deep':
-        specifier: ^0.2.7
-        version: 0.2.7(solid-js@1.8.15)
-      '@solid-primitives/storage':
-        specifier: ^2.1.4
-        version: 2.1.4(solid-js@1.8.15)
-      '@solidjs/router':
-        specifier: ^0.13.0
-        version: 0.13.0(solid-js@1.8.15)
-      '@solidjs/start':
-        specifier: ^0.7.5
-        version: 0.7.5(solid-js@1.8.15)(vinxi@0.3.10)(vite@5.1.6)
-      '@tanstack/solid-form':
-        specifier: ^0.16.0
-        version: 0.16.0(patch_hash=wsolznlrgivobzbyoqfvs3sypy)(solid-js@1.8.15)
-      '@tanstack/solid-query':
-        specifier: ^5.28.5
-        version: 5.28.5(patch_hash=sjghnjy4dmmfctkhp3l6udt4te)(solid-js@1.8.15)
-      '@tanstack/zod-form-adapter':
-        specifier: ^0.16.0
-        version: 0.16.0(zod@3.22.4)
-      '@tauri-apps/api':
-        specifier: ^1.5.3
-        version: 1.5.3
-      browser-next-tick:
-        specifier: ^1.1.0
-        version: 1.1.0
-      buffer:
-        specifier: ^6.0.3
-        version: 6.0.3
-      class-variance-authority:
-        specifier: ^0.7.0
-        version: 0.7.0
-      clsx:
-        specifier: ^2.1.0
-        version: 2.1.0
-      drizzle-orm:
-        specifier: ^0.30.1
-        version: 0.30.1(@planetscale/database@1.16.0)(mysql2@3.9.2)(react@18.2.0)
-      plist:
-        specifier: ^3.1.0
-        version: 3.1.0
-      solid-js:
-        specifier: ^1.8.15
-        version: 1.8.15
-      tailwind-merge:
-        specifier: ^2.2.1
-        version: 2.2.1
-      tailwindcss-animate:
-        specifier: ^1.0.7
-        version: 1.0.7(tailwindcss@3.4.1)
-      ts-pattern:
-        specifier: ^5.0.8
-        version: 5.0.8
-      vinxi:
-        specifier: ^0.3.10
-        version: 0.3.10(@planetscale/database@1.16.0)(drizzle-orm@0.30.1)(xml2js@0.6.2)
-      vite-tsconfig-paths:
-        specifier: ^4.3.2
-        version: 4.3.2(typescript@5.4.2)(vite@5.1.6)
-      xml:
-        specifier: ^1.0.1
-        version: 1.0.1
-      xml2js:
-        specifier: ^0.6.2
-        version: 0.6.2
-      zod:
-        specifier: ^3.22.4
-        version: 3.22.4
-    devDependencies:
-      '@biomejs/biome':
-        specifier: 1.6.1
-        version: 1.6.1
-      '@iconify/json':
-        specifier: ^2.2.190
-        version: 2.2.190
-      '@tauri-apps/cli':
-        specifier: ^1.5.11
-        version: 1.5.11
-      '@types/plist':
-        specifier: ^3.0.5
-        version: 3.0.5
-      '@types/xml':
-        specifier: ^1.0.11
-        version: 1.0.11
-      autoprefixer:
-        specifier: ^10.4.18
-        version: 10.4.18(postcss@8.4.36)
-      postcss:
-        specifier: ^8.4.35
-        version: 8.4.36
-      tailwindcss:
-        specifier: ^3.4.1
-        version: 3.4.1
-      typescript:
-        specifier: ^5.4.2
-        version: 5.4.2
-      vite:
-        specifier: ^5.1.6
-        version: 5.1.6
-      vite-plugin-solid:
-        specifier: ^2.10.1
-        version: 2.10.1(solid-js@1.8.15)(vite@5.1.6)
-
   apps/docs:
     dependencies:
       '@algolia/autocomplete-core':
@@ -1103,6 +982,7 @@ packages:
       '@biomejs/cli-linux-x64-musl': 1.6.1
       '@biomejs/cli-win32-arm64': 1.6.1
       '@biomejs/cli-win32-x64': 1.6.1
+    dev: false
 
   /@biomejs/cli-darwin-arm64@1.6.1:
     resolution: {integrity: sha512-KlvY00iB9T/vFi4m/GXxEyYkYnYy6aw06uapzUIIdiMMj7I/pmZu7CsZlzWdekVD0j+SsQbxdZMsb0wPhnRSsg==}
@@ -1110,6 +990,7 @@ packages:
     cpu: [arm64]
     os: [darwin]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@biomejs/cli-darwin-x64@1.6.1:
@@ -1118,6 +999,7 @@ packages:
     cpu: [x64]
     os: [darwin]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@biomejs/cli-linux-arm64-musl@1.6.1:
@@ -1126,6 +1008,7 @@ packages:
     cpu: [arm64]
     os: [linux]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@biomejs/cli-linux-arm64@1.6.1:
@@ -1134,6 +1017,7 @@ packages:
     cpu: [arm64]
     os: [linux]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@biomejs/cli-linux-x64-musl@1.6.1:
@@ -1142,6 +1026,7 @@ packages:
     cpu: [x64]
     os: [linux]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@biomejs/cli-linux-x64@1.6.1:
@@ -1150,6 +1035,7 @@ packages:
     cpu: [x64]
     os: [linux]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@biomejs/cli-win32-arm64@1.6.1:
@@ -1158,6 +1044,7 @@ packages:
     cpu: [arm64]
     os: [win32]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@biomejs/cli-win32-x64@1.6.1:
@@ -1166,6 +1053,7 @@ packages:
     cpu: [x64]
     os: [win32]
     requiresBuild: true
+    dev: false
     optional: true
 
   /@cloudflare/kv-asset-handler@0.3.1:
@@ -4677,15 +4565,6 @@ packages:
       solid-js: 1.8.15
     dev: false
 
-  /@solid-primitives/deep@0.2.7(solid-js@1.8.15):
-    resolution: {integrity: sha512-DHthV00gdzW0UgjKTBKydqcsZBdgUYTtOA8WsOtgLBn0TNDx0Z2Br/feDoBs6yZ2erYBHPHGHyMLQL2MFji2ww==}
-    peerDependencies:
-      solid-js: ^1.6.12
-    dependencies:
-      '@solid-primitives/memo': 1.3.8(solid-js@1.8.15)
-      solid-js: 1.8.15
-    dev: false
-
   /@solid-primitives/event-bus@1.0.11(solid-js@1.8.15):
     resolution: {integrity: sha512-bSwVA4aI2aNHomSbEroUnisMSyDDXJbrw4U8kFEvrcYdlLrJX5i6QeCFx+vj/zdQQw62KAllrEIyWP8KMpPVnQ==}
     peerDependencies:
@@ -5159,118 +5038,6 @@ packages:
       zod: 3.22.4
     dev: false
 
-  /@tauri-apps/api@1.5.3:
-    resolution: {integrity: sha512-zxnDjHHKjOsrIzZm6nO5Xapb/BxqUq1tc7cGkFXsFkGTsSWgCPH1D8mm0XS9weJY2OaR73I3k3S+b7eSzJDfqA==}
-    engines: {node: '>= 14.6.0', npm: '>= 6.6.0', yarn: '>= 1.19.1'}
-    dev: false
-
-  /@tauri-apps/cli-darwin-arm64@1.5.11:
-    resolution: {integrity: sha512-2NLSglDb5VfvTbMtmOKWyD+oaL/e8Z/ZZGovHtUFyUSFRabdXc6cZOlcD1BhFvYkHqm+TqGaz5qtPR5UbqDs8A==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [darwin]
-    requiresBuild: true
-    dev: true
-    optional: true
-
-  /@tauri-apps/cli-darwin-x64@1.5.11:
-    resolution: {integrity: sha512-/RQllHiJRH2fJOCudtZlaUIjofkHzP3zZgxi71ZUm7Fy80smU5TDfwpwOvB0wSVh0g/ciDjMArCSTo0MRvL+ag==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [darwin]
-    requiresBuild: true
-    dev: true
-    optional: true
-
-  /@tauri-apps/cli-linux-arm-gnueabihf@1.5.11:
-    resolution: {integrity: sha512-IlBuBPKmMm+a5LLUEK6a21UGr9ZYd6zKuKLq6IGM4tVweQa8Sf2kP2Nqs74dMGIUrLmMs0vuqdURpykQg+z4NQ==}
-    engines: {node: '>= 10'}
-    cpu: [arm]
-    os: [linux]
-    requiresBuild: true
-    dev: true
-    optional: true
-
-  /@tauri-apps/cli-linux-arm64-gnu@1.5.11:
-    resolution: {integrity: sha512-w+k1bNHCU/GbmXshtAhyTwqosThUDmCEFLU4Zkin1vl2fuAtQry2RN7thfcJFepblUGL/J7yh3Q/0+BCjtspKQ==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [linux]
-    requiresBuild: true
-    dev: true
-    optional: true
-
-  /@tauri-apps/cli-linux-arm64-musl@1.5.11:
-    resolution: {integrity: sha512-PN6/dl+OfYQ/qrAy4HRAfksJ2AyWQYn2IA/2Wwpaa7SDRz2+hzwTQkvajuvy0sQ5L2WCG7ymFYRYMbpC6Hk9Pg==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [linux]
-    requiresBuild: true
-    dev: true
-    optional: true
-
-  /@tauri-apps/cli-linux-x64-gnu@1.5.11:
-    resolution: {integrity: sha512-MTVXLi89Nj7Apcvjezw92m7ZqIDKT5SFKZtVPCg6RoLUBTzko/BQoXYIRWmdoz2pgkHDUHgO2OMJ8oKzzddXbw==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [linux]
-    requiresBuild: true
-    dev: true
-    optional: true
-
-  /@tauri-apps/cli-linux-x64-musl@1.5.11:
-    resolution: {integrity: sha512-kwzAjqFpz7rvTs7WGZLy/a5nS5t15QKr3E9FG95MNF0exTl3d29YoAUAe1Mn0mOSrTJ9Z+vYYAcI/QdcsGBP+w==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [linux]
-    requiresBuild: true
-    dev: true
-    optional: true
-
-  /@tauri-apps/cli-win32-arm64-msvc@1.5.11:
-    resolution: {integrity: sha512-L+5NZ/rHrSUrMxjj6YpFYCXp6wHnq8c8SfDTBOX8dO8x+5283/vftb4vvuGIsLS4UwUFXFnLt3XQr44n84E67Q==}
-    engines: {node: '>= 10'}
-    cpu: [arm64]
-    os: [win32]
-    requiresBuild: true
-    dev: true
-    optional: true
-
-  /@tauri-apps/cli-win32-ia32-msvc@1.5.11:
-    resolution: {integrity: sha512-oVlD9IVewrY0lZzTdb71kNXkjdgMqFq+ohb67YsJb4Rf7o8A9DTlFds1XLCe3joqLMm4M+gvBKD7YnGIdxQ9vA==}
-    engines: {node: '>= 10'}
-    cpu: [ia32]
-    os: [win32]
-    requiresBuild: true
-    dev: true
-    optional: true
-
-  /@tauri-apps/cli-win32-x64-msvc@1.5.11:
-    resolution: {integrity: sha512-1CexcqUFCis5ypUIMOKllxUBrna09McbftWENgvVXMfA+SP+yPDPAVb8fIvUcdTIwR/yHJwcIucmTB4anww4vg==}
-    engines: {node: '>= 10'}
-    cpu: [x64]
-    os: [win32]
-    requiresBuild: true
-    dev: true
-    optional: true
-
-  /@tauri-apps/cli@1.5.11:
-    resolution: {integrity: sha512-B475D7phZrq5sZ3kDABH4g2mEoUIHtnIO+r4ZGAAfsjMbZCwXxR/jlMGTEL+VO3YzjpF7gQe38IzB4vLBbVppw==}
-    engines: {node: '>= 10'}
-    hasBin: true
-    optionalDependencies:
-      '@tauri-apps/cli-darwin-arm64': 1.5.11
-      '@tauri-apps/cli-darwin-x64': 1.5.11
-      '@tauri-apps/cli-linux-arm-gnueabihf': 1.5.11
-      '@tauri-apps/cli-linux-arm64-gnu': 1.5.11
-      '@tauri-apps/cli-linux-arm64-musl': 1.5.11
-      '@tauri-apps/cli-linux-x64-gnu': 1.5.11
-      '@tauri-apps/cli-linux-x64-musl': 1.5.11
-      '@tauri-apps/cli-win32-arm64-msvc': 1.5.11
-      '@tauri-apps/cli-win32-ia32-msvc': 1.5.11
-      '@tauri-apps/cli-win32-x64-msvc': 1.5.11
-    dev: true
-
   /@trpc/client@10.45.1(@trpc/server@10.45.1):
     resolution: {integrity: sha512-nVbAk1xpIiI64WgzXGgfxPOGgHoYvffn1IsjV1D/Ri7DL4BKuo2qtZ7UQ+OuHkzH2M8j4ikSVBDpk545fOdvpw==}
     peerDependencies:
@@ -5476,12 +5243,6 @@ packages:
       - uglify-js
       - webpack-cli
     dev: false
-
-  /@types/xml@1.0.11:
-    resolution: {integrity: sha512-9gktTjxBWoz4+X8ZOS+QRFM2/liMQgBv8Z36wuNnomK5jtXFq4IJa7Az4Hzoy+rYux343NkH9Dq+nzIdejVrjw==}
-    dependencies:
-      '@types/node': 20.11.28
-    dev: true
 
   /@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.4.2):
     resolution: {integrity: sha512-tbsV1jPne5CkFQCgPBcDOt30ItF7aJoZL997JSF7MhGQqOeT3svWRYxiqlfA5RUdlHN6Fi+EI9bxqbdyAUZjYQ==}
@@ -6315,10 +6076,6 @@ packages:
       oblivious-set: 1.4.0
       p-queue: 6.6.2
       unload: 2.4.1
-    dev: false
-
-  /browser-next-tick@1.1.0:
-    resolution: {integrity: sha512-ybnW0MOnyZ66QUBEX5Ti9NRzl+9h1JytgiPekrcGJMuaSEK7cq+yreKwa/NFg42ig2BTRGFMbLrFYEobXdA9eQ==}
     dev: false
 
   /browserslist@4.23.0:
@@ -8538,6 +8295,7 @@ packages:
 
   /globrex@0.1.2:
     resolution: {integrity: sha512-uHJgbwAMwNFf5mLst7IWLNg14x1CkeqglJb/K3doi4dw6q2IvAAmM/Y81kevy83wP+Sst+nutFTYOGg3d1lsxg==}
+    dev: true
 
   /gopd@1.0.1:
     resolution: {integrity: sha512-d65bNlIadxvpb/A2abVdlqKqV563juRnZ1Wtk6s1sIR8uNsXR70xqIzVqxVf1eTqDunwT2MkczEeaezCKTZhwA==}
@@ -12567,6 +12325,7 @@ packages:
       tailwindcss: '>=3.0.0 || insiders'
     dependencies:
       tailwindcss: 3.4.1
+    dev: true
 
   /tailwindcss@3.4.0:
     resolution: {integrity: sha512-VigzymniH77knD1dryXbyxR+ePHihHociZbXnLZHUyzf2MMs2ZVqlUrZ3FvpXP8pno9JzmILt1sZPD19M3IxtA==}
@@ -12805,6 +12564,7 @@ packages:
         optional: true
     dependencies:
       typescript: 5.4.2
+    dev: true
 
   /tsconfig-paths@3.15.0:
     resolution: {integrity: sha512-2Ac2RgzDe/cn48GvOe3M+o82pEFewD3UPbyoUHHdKasHwJKjds4fLXWf/Ux5kATBKN20oaFGu+jbElp1pos0mg==}
@@ -13501,6 +13261,7 @@ packages:
     transitivePeerDependencies:
       - supports-color
       - typescript
+    dev: true
 
   /vite@5.1.6:
     resolution: {integrity: sha512-yYIAZs9nVfRJ/AiOLCA91zzhjsHUgMjB+EigzFb6W2XTLO8JixBCKCjvhKZaye+NKYHCrkv3Oh50dH9EdLU2RA==}
@@ -13737,10 +13498,6 @@ packages:
     dependencies:
       sax: 1.3.0
       xmlbuilder: 11.0.1
-    dev: false
-
-  /xml@1.0.1:
-    resolution: {integrity: sha512-huCv9IH9Tcf95zuYCsQraZtWnJvBtLVE0QHMOs8bWyZAFZNDcYjsPq1nEx8jKA9y+Beo9v+7OBPRisQTjinQMw==}
     dev: false
 
   /xmlbuilder@11.0.1:

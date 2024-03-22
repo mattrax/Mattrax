@@ -11,7 +11,7 @@ import {
 import { ZodError, z } from "zod";
 
 import { db, tenantAccounts, tenants } from "~/db";
-import { lucia } from "../auth";
+import { checkAuth, lucia } from "../auth";
 
 export const createTRPCContext = async (event: H3Event) => {
 	return {
@@ -41,38 +41,7 @@ export const publicProcedure = t.procedure;
 
 // Authenticated procedure
 export const authedProcedure = t.procedure.use(async (opts) => {
-	const sessionId = getCookie(opts.ctx.event, lucia.sessionCookieName) ?? null;
-
-	const data = await (async () => {
-		if (sessionId === null) return;
-
-		const { session, user: account } = await lucia.validateSession(sessionId);
-
-		if (session) {
-			if (session.fresh)
-				appendResponseHeader(
-					opts.ctx.event,
-					"Set-Cookie",
-					lucia.createSessionCookie(session.id).serialize(),
-				);
-
-			if (getCookie(opts.ctx.event, "isLoggedIn") === undefined) {
-				setCookie(opts.ctx.event, "isLoggedIn", "true", {
-					httpOnly: false,
-				});
-			}
-		}
-		if (!session) {
-			appendResponseHeader(
-				opts.ctx.event,
-				"Set-Cookie",
-				lucia.createBlankSessionCookie().serialize(),
-			);
-		}
-
-		if (session && account) return { session, account };
-	})();
-
+	const data = await checkAuth(opts.ctx.event);
 	if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
 	let tenantList: Array<{ pk: number; name: string }> | undefined;

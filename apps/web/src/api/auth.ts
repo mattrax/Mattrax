@@ -1,5 +1,11 @@
 import { DrizzleMySQLAdapter } from "@lucia-auth/adapter-drizzle";
 import { Lucia } from "lucia";
+import {
+	HTTPEvent,
+	appendResponseHeader,
+	getCookie,
+	setCookie,
+} from "vinxi/server";
 
 import { accounts, db, sessions } from "~/db";
 import { env } from "~/env";
@@ -33,4 +39,36 @@ interface DatabaseUserAttributes {
 	id: string;
 	email: string;
 	name: string;
+}
+
+export async function checkAuth(event: HTTPEvent) {
+	const sessionId = getCookie(event, lucia.sessionCookieName) ?? null;
+
+	if (sessionId === null) return;
+
+	const { session, user: account } = await lucia.validateSession(sessionId);
+
+	if (session) {
+		if (session.fresh)
+			appendResponseHeader(
+				event,
+				"Set-Cookie",
+				lucia.createSessionCookie(session.id).serialize(),
+			);
+
+		if (getCookie(event, "isLoggedIn") === undefined) {
+			setCookie(event, "isLoggedIn", "true", {
+				httpOnly: false,
+			});
+		}
+	}
+	if (!session) {
+		appendResponseHeader(
+			event,
+			"Set-Cookie",
+			lucia.createBlankSessionCookie().serialize(),
+		);
+	}
+
+	if (session && account) return { session, account };
 }

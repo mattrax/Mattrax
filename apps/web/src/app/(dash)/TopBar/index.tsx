@@ -21,7 +21,7 @@ import {
 import { trpc } from "~/lib";
 import Logo from "~/assets/MATTRAX.png";
 import { Breadcrumbs } from "~/components/Breadcrumbs";
-import { AuthContext, useAuth } from "../AuthContext";
+import { AuthContext, useAuth } from "~/app/AuthContext";
 import { NavItems, useNavItemsContext } from "./NavItems";
 
 export function TopBar(): JSX.Element {

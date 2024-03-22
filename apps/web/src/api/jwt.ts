@@ -21,6 +21,11 @@ export async function signJWT<T extends jose.JWTPayload>(
 		.sign(createSecretKey());
 }
 
+export async function verifyJWT<T extends jose.JWTPayload>(jwt: string) {
+	const result = await jose.jwtVerify<T>(jwt, createSecretKey());
+	return result.payload;
+}
+
 export async function encryptJWT<T extends jose.JWTPayload>(
 	payload: T,
 	opts?: {

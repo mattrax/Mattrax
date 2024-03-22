@@ -13,7 +13,7 @@ import {
 	createController,
 } from "@mattrax/ui";
 import { CreateTenantDialog } from "../CreateTenantDialog";
-import { useAuth } from "../AuthContext";
+import { useAuth } from "~/app/AuthContext";
 import { useTenant } from "../TenantContext";
 
 // TODO: When shrinking window and scrolling to move the trigger offscreen the popover comes with it. This is Kolate behavior but I don't like it.

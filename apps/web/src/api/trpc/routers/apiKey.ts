@@ -18,15 +18,23 @@ export const apiKeyRouter = createTRPCRouter({
 	create: authedProcedure
 		.input(z.object({ name: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const value = `mttx_${createId()}`;
-
-			await db.insert(apiKeys).values({
-				value,
-				id: createId(),
-				name: input.name,
-				accountPk: ctx.account.pk,
-			});
-
+			const { value } = await createAPIKey(input.name, ctx.account.pk);
 			return value;
 		}),
 });
+
+export async function createAPIKey(name: string, accountPk: number) {
+	const value = `mttx_${createId()}`;
+
+	const record = await db.insert(apiKeys).values({
+		id: createId(),
+		value,
+		name,
+		accountPk,
+	});
+
+	return {
+		pk: Number(record.insertId),
+		value,
+	};
+}
