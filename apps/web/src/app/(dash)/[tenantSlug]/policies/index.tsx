@@ -105,7 +105,7 @@ import { useNavigate } from "@solidjs/router";
 import { z } from "zod";
 
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { PageLayout, PageLayoutHeading } from "../PageLayout";
+import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 import { useTenantSlug } from "../../[tenantSlug]";
 

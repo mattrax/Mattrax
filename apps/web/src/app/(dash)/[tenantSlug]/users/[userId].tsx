@@ -9,7 +9,7 @@ import { trpc } from "~/lib";
 import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
 import { Badge } from "@mattrax/ui";
-import { useNavbarItems } from "../../NavItems";
+import { useNavbarItems } from "../../TopBar/NavItems";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
 import { UserContextProvider } from "./[userId]/Context";
 

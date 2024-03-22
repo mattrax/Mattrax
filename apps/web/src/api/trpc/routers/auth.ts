@@ -117,7 +117,6 @@ export const authRouter = createTRPCRouter({
 			tenants: await fetchTenants(account.pk),
 		};
 	}),
-
 	update: authedProcedure
 		.input(
 			z.object({

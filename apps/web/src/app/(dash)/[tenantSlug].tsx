@@ -2,10 +2,13 @@ import { useNavigate } from "@solidjs/router";
 import { z } from "zod";
 import { type ParentProps, Show, Suspense, startTransition } from "solid-js";
 
-import { TopBar } from "./[tenantSlug]/TopBar";
-import { NavItems, useNavbarItems } from "./NavItems";
+import { useNavbarItems } from "./TopBar/NavItems";
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
+import { Breadcrumb } from "~/components/Breadcrumbs";
+import { AuthContext } from "./AuthContext";
+import { TenantContext } from "./TenantContext";
+import { TenantSwitcher } from "./[tenantSlug]/TenantSwitcher";
 
 export function useTenantSlug() {
 	const params = useZodParams({ tenantSlug: z.string() });
@@ -16,16 +19,21 @@ export default function Layout(props: ParentProps) {
 	const params = useZodParams({ tenantSlug: z.string() });
 	const navigate = useNavigate();
 
-	function setTenantSlug(slug: string) {
-		startTransition(() => navigate(`../${slug}`));
-	}
-
 	useNavbarItems(NAV_ITEMS);
 
 	return (
 		<>
-			<TopBar setActiveTenant={setTenantSlug} />
-			<NavItems />
+			<Breadcrumb>
+				<AuthContext>
+					<TenantContext>
+						<TenantSwitcher
+							setActiveTenant={(slug) => {
+								startTransition(() => navigate(`../${slug}`));
+							}}
+						/>
+					</TenantContext>
+				</AuthContext>
+			</Breadcrumb>
 			{/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
 			<MErrorBoundary>
 				{/* we key here on purpose - tenants are the root-most unit of isolation */}

@@ -52,7 +52,7 @@ export default function Page() {
 				Control who is allowed to manage this tenant.
 			</p>
 			<div class="flex flex-col gap-4">
-				<InviteAdminForm />
+				<InviteAdminCard />
 				<Suspense>
 					<ConfirmDialog>
 						{(confirm) => (
@@ -152,7 +152,7 @@ export default function Page() {
 	);
 }
 
-function InviteAdminForm() {
+function InviteAdminCard() {
 	const tenantSlug = useTenantSlug();
 	const trpcCtx = trpc.useContext();
 

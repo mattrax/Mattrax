@@ -1,7 +1,7 @@
 import { For, type JSX, type ParentProps, Suspense } from "solid-js";
 
 import { A } from "@solidjs/router";
-import { PageLayout, PageLayoutHeading } from "./PageLayout";
+import { PageLayout, PageLayoutHeading } from "../PageLayout";
 import { AuthContext } from "../AuthContext";
 import { TenantContext } from "../TenantContext";
 

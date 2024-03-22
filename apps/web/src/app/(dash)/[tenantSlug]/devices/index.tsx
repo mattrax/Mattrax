@@ -1,4 +1,4 @@
-import { A, type RouteDefinition, useNavigate } from "@solidjs/router";
+import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { createTimeAgo } from "@solid-primitives/date";
 import type { RouterOutput } from "~/api/trpc";
@@ -14,8 +14,8 @@ import {
 	selectCheckboxColumn,
 } from "~/components/StandardTable";
 import { Button, Input } from "@mattrax/ui";
-import { trpc, untrackScopeFromSuspense } from "~/lib";
-import { PageLayout, PageLayoutHeading } from "../PageLayout";
+import { trpc } from "~/lib";
+import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
 

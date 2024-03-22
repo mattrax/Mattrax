@@ -7,7 +7,7 @@ import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 import { Breadcrumb } from "~/components/Breadcrumbs";
 import { Badge } from "@mattrax/ui";
-import { useNavbarItems } from "../../NavItems";
+import { useNavbarItems } from "../../TopBar/NavItems";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
 import { DeviceContextProvider } from "./[deviceId]/Context";
 

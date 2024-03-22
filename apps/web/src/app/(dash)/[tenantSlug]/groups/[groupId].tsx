@@ -1,16 +1,15 @@
-import { createContextProvider } from "@solid-primitives/context";
-import { A, Navigate, type RouteDefinition } from "@solidjs/router";
+import { Navigate, type RouteDefinition } from "@solidjs/router";
 import { type ParentProps, Show } from "solid-js";
 import { toast } from "solid-sonner";
+import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 
-import { useZodParams } from "~/lib/useZodParams";
-import { trpc } from "~/lib";
-import { Breadcrumb } from "~/components/Breadcrumbs";
-import { Badge } from "@mattrax/ui";
-import { useNavbarItems } from "../../NavItems";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
 import { GroupContextProvider } from "./[groupId]/Context";
+import { Breadcrumb } from "~/components/Breadcrumbs";
+import { useZodParams } from "~/lib/useZodParams";
+import { trpc } from "~/lib";
+import { useNavbarItems } from "../../TopBar/NavItems";
 
 export const route = {
 	load: ({ params }) =>

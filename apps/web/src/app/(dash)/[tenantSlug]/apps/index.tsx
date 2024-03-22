@@ -117,7 +117,7 @@ import {
 import { Form, createZodForm } from "@mattrax/ui/forms";
 
 import { trpc } from "~/lib";
-import { PageLayout, PageLayoutHeading } from "../PageLayout";
+import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 import { z } from "zod";
 import clsx from "clsx";
 import { useTenantSlug } from "../../[tenantSlug]";

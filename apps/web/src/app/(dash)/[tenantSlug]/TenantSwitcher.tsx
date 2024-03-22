@@ -12,9 +12,9 @@ import {
 	DropdownMenuTrigger,
 	createController,
 } from "@mattrax/ui";
-import { CreateTenantDialog } from "./CreateTenantDialog";
-import { useAuth } from "../../AuthContext";
-import { useTenant } from "../../TenantContext";
+import { CreateTenantDialog } from "../CreateTenantDialog";
+import { useAuth } from "../AuthContext";
+import { useTenant } from "../TenantContext";
 
 // TODO: When shrinking window and scrolling to move the trigger offscreen the popover comes with it. This is Kolate behavior but I don't like it.
 // TODO: Transition on dropdown open/close
@@ -35,11 +35,8 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
 		<div class="relative inline-block text-left">
 			<CreateTenantDialog {...props}>
 				<DropdownMenu controller={controller} sameWidth placement="bottom">
-					<div class="flex flex-row items-center">
-						<A
-							href={segmentMatch()?.params.segment ?? ""}
-							class="px-2 py-1 block"
-						>
+					<div class="flex flex-row items-center gap-2">
+						<A href={segmentMatch()?.params.segment ?? ""} class="block">
 							{tenant().name}
 						</A>
 						<DropdownMenuTrigger asChild>

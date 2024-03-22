@@ -12,7 +12,7 @@ import {
 	Label,
 	Textarea,
 } from "@mattrax/ui";
-import { PageLayout, PageLayoutHeading } from "../../PageLayout";
+import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 import { useDevice } from "./Context";
 import { trpc } from "~/lib";
 import { toast } from "solid-sonner";

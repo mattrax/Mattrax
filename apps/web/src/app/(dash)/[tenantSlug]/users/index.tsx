@@ -23,7 +23,7 @@ import {
 } from "@mattrax/ui";
 import { trpc, untrackScopeFromSuspense } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
-import { PageLayout, PageLayoutHeading } from "../PageLayout";
+import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 import { useTenantSlug } from "../../[tenantSlug]";
 
 export const route = {

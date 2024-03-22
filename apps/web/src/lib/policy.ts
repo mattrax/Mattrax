@@ -3,17 +3,22 @@
 /**
  * TODO
  */
-export type Policy = { id: string; name: string; description?: string | null; configurations?: Configuration[] }
+export type Policy = {
+	id: string;
+	name: string;
+	description?: string | null;
+	configurations?: Configuration[];
+};
 
 /**
  * TODO
  */
-export type Configuration = 
-/**
- * TODO
- */
-{ type: "windows_custom"; oma_uri: string; value: string } | 
-/**
- * TODO
- */
-{ type: "apple_custom"; path: string }
+export type Configuration =
+	/**
+	 * TODO
+	 */
+	| { type: "windows_custom"; oma_uri: string; value: string }
+	/**
+	 * TODO
+	 */
+	| { type: "apple_custom"; path: string };

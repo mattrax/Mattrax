@@ -1,9 +1,10 @@
 import { ParentProps, Suspense } from "solid-js";
 
 import { BreadcrumbsRoot } from "~/components/Breadcrumbs";
-import { NavItemsProvider } from "./(dash)/NavItems";
+import { NavItemsProvider } from "./(dash)/TopBar/NavItems";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
 import { trpc } from "~/lib";
+import { TopBar } from "./(dash)/TopBar";
 
 export const route = {
 	load: () => {
@@ -16,6 +17,7 @@ export default function Layout(props: ParentProps) {
 		<MErrorBoundary>
 			<BreadcrumbsRoot>
 				<NavItemsProvider>
+					<TopBar />
 					<Suspense>{props.children}</Suspense>
 				</NavItemsProvider>
 			</BreadcrumbsRoot>
