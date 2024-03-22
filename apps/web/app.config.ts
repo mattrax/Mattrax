@@ -59,14 +59,12 @@ process.on("exit", () => {
 	// Cloudflare doesn't allow access to env outside the handler.
 	// So we ship the env with the worker code.
 	fs.writeFileSync(
-		path.join(workerCode, "../env.js"),
-		`
-		const process={env:${JSON.stringify(process.env)}};
-		globalThis.process=process;`,
+		path.join(workerCode, "../env.mjs"),
+		`const process={env:${JSON.stringify(process.env)}};globalThis.process=process;`,
 	);
 
 	fs.writeFileSync(
 		workerCode,
-		`import "./env";\n${fs.readFileSync(workerCode)}`,
+		`import "./env.mjs";\n${fs.readFileSync(workerCode)}`,
 	);
 });
