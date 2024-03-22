@@ -21,8 +21,7 @@ pub struct Cli {
         short,
         long,
         help = "The Mattrax API server to connect to",
-        // default_value = "https://cloud.mattrax.app"
-        default_value = "http://localhost:3000"
+        default_value = "https://cloud.mattrax.app"
     )]
     pub server: String,
 
