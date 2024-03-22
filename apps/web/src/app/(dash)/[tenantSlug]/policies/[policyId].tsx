@@ -31,10 +31,8 @@ export default function Layout(props: ParentProps) {
 				{(policy) => (
 					<PolicyContextProvider policy={policy()} query={query}>
 						<Breadcrumb>
-							<A href="" class="flex flex-row items-center gap-2">
-								<span>{policy().name}</span>
-								<Badge variant="outline">Policy</Badge>
-							</A>
+							<span>{policy().name}</span>
+							<Badge variant="outline">Policy</Badge>
 						</Breadcrumb>
 						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</PolicyContextProvider>

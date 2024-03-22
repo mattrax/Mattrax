@@ -105,7 +105,6 @@ import { createQuery, queryOptions } from "@tanstack/solid-query";
 import {
 	Button,
 	Input,
-	Label,
 	Sheet,
 	SheetContent,
 	SheetHeader,
@@ -115,9 +114,9 @@ import {
 	TabsList,
 	TabsTrigger,
 } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, createZodForm } from "@mattrax/ui/forms";
 
-import { isDebugMode, trpc } from "~/lib";
+import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "../PageLayout";
 import { z } from "zod";
 import clsx from "clsx";
@@ -161,18 +160,18 @@ function CreateApplicationSheet(props: ParentProps) {
 	const createApplication = trpc.app.create.useMutation();
 	const form = createZodForm({
 		schema: z.object({
-			name: z.string(),
 			targetType: z.custom<keyof typeof APPLICATION_TARGETS>(),
 			targetId: z.string(),
 		}),
 		defaultValues: {
-			name: "",
 			targetType: "iOS",
 			targetId: "",
 		},
 		onSubmit: async ({ value }) => {
 			const app = await createApplication.mutateAsync({
 				...value,
+				name: query.data?.results.find((r) => r.bundleId === value.targetId)
+					?.trackName!,
 				tenantSlug: tenantSlug(),
 			});
 			await startTransition(() => navigate(app.id));
@@ -220,9 +219,7 @@ function CreateApplicationSheet(props: ParentProps) {
 					<SheetHeader>
 						<SheetTitle>Create Application</SheetTitle>
 					</SheetHeader>
-					<InputField form={form} label="Name" name="name" />
 					<div class="flex flex-col space-y-1.5">
-						<Label>Target</Label>
 						<form.Field name="targetType">
 							{(field) => (
 								<Tabs

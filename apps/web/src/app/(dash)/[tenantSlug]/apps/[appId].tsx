@@ -42,10 +42,8 @@ export default function Layout(props: ParentProps) {
 				{(data) => (
 					<AppContextProvider app={data()} query={query}>
 						<Breadcrumb>
-							<A href="" class="flex flex-row items-center gap-2">
-								<span>{data().name}</span>
-								<Badge variant="outline">App</Badge>
-							</A>
+							<span>{data().name}</span>
+							<Badge variant="outline">App</Badge>
 						</Breadcrumb>
 						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</AppContextProvider>

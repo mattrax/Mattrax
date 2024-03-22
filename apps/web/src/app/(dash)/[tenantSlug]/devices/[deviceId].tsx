@@ -30,10 +30,8 @@ export default function Layout(props: ParentProps) {
 				{(data) => (
 					<DeviceContextProvider device={data()} query={query}>
 						<Breadcrumb>
-							<A href="" class="flex flex-row items-center gap-2">
-								<span>{data().name}</span>
-								<Badge variant="outline">Device</Badge>
-							</A>
+							<span>{data().name}</span>
+							<Badge variant="outline">Device</Badge>
 						</Breadcrumb>
 						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</DeviceContextProvider>
