@@ -4,7 +4,7 @@ import { z } from "zod";
 import { Navigate } from "@solidjs/router";
 
 import { RouterOutput } from "~/api";
-import { useAuth } from "./AuthContext";
+import { useAuth } from "../AuthContext";
 import { useZodParams } from "~/lib/useZodParams";
 
 const [TenantContextProvider, useTenant] = createContextProvider(

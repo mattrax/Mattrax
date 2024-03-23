@@ -6,7 +6,7 @@ import { Form, createZodForm } from "@mattrax/ui/forms";
 import { InputField } from "@mattrax/ui/forms";
 import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
 import { trpc } from "~/lib";
-import { AuthContext, useAuth } from "./AuthContext";
+import { AuthContext, useAuth } from "../AuthContext";
 
 export default function Page() {
 	const defaultTenant = () => {

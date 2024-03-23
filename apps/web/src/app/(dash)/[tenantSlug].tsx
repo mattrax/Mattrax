@@ -1,12 +1,12 @@
+import { type ParentProps, Show, Suspense, startTransition } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { z } from "zod";
-import { type ParentProps, Show, Suspense, startTransition } from "solid-js";
 
 import { useNavbarItems } from "./TopBar/NavItems";
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { AuthContext } from "./AuthContext";
+import { AuthContext } from "../AuthContext";
 import { TenantContext } from "./TenantContext";
 import { TenantSwitcher } from "./[tenantSlug]/TenantSwitcher";
 

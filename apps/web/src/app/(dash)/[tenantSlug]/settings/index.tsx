@@ -14,7 +14,7 @@ import { z } from "zod";
 
 import { trpc } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
-import { useAuth } from "../../AuthContext";
+import { useAuth } from "~/app/AuthContext";
 import { useTenant } from "../../TenantContext";
 
 export const route = {

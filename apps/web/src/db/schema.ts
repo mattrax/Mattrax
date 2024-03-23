@@ -423,3 +423,9 @@ export const accountLoginCodes = mysqlTable("account_login_codes", {
 		.notNull(),
 	createdAt: timestamp("createdAt").notNull().defaultNow(),
 });
+
+export const cliAuthCodes = mysqlTable("cli_auth_codes", {
+	code: cuid("code").notNull().primaryKey(),
+	createdAt: timestamp("createdAt").notNull().defaultNow(),
+	apiKeyPk: serialRelation("apiKeyPk"),
+});

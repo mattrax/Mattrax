@@ -3,7 +3,7 @@ import { A } from "@solidjs/router";
 import { JSX } from "solid-js";
 
 import { PageLayout, PageLayoutHeading } from "./PageLayout";
-import { AuthContext } from "./AuthContext";
+import { AuthContext } from "../AuthContext";
 import { Breadcrumb } from "~/components/Breadcrumbs";
 
 const navigation = [{ name: "API Keys", href: "api-keys" }];

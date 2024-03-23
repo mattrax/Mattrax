@@ -1,4 +1,9 @@
-import { createSignal, type JSX, type ParentProps } from "solid-js";
+import {
+	createSignal,
+	useTransition,
+	type JSX,
+	type ParentProps,
+} from "solid-js";
 import { A, useNavigate } from "@solidjs/router";
 import { As } from "@kobalte/core";
 import clsx from "clsx";
@@ -21,13 +26,19 @@ import {
 import { trpc } from "~/lib";
 import Logo from "~/assets/MATTRAX.png";
 import { Breadcrumbs } from "~/components/Breadcrumbs";
-import { AuthContext, useAuth } from "../AuthContext";
+import { AuthContext, useAuth } from "~/app/AuthContext";
 import { NavItems, useNavItemsContext } from "./NavItems";
+import { useQueryClient } from "@tanstack/solid-query";
 
 export function TopBar(): JSX.Element {
 	const navigate = useNavigate();
+	const queryClient = useQueryClient();
+	const [_, start] = useTransition();
 	const logout = trpc.auth.logout.useMutation(() => ({
-		onSuccess: () => navigate("/login"),
+		onSuccess: async () => {
+			await start(() => navigate("/login"));
+			queryClient.clear();
+		},
 	}));
 	const { lastEntry } = useNavItemsContext();
 

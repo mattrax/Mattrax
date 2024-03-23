@@ -14,7 +14,7 @@ import {
 	CardTitle,
 } from "@mattrax/ui";
 import { trpc } from "~/lib";
-import { useAuth } from "../../AuthContext";
+import { useAuth } from "~/app/AuthContext";
 import { useTenant } from "../../TenantContext";
 import { useTenantSlug } from "../../[tenantSlug]";
 
