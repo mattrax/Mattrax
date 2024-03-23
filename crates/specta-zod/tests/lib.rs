@@ -57,7 +57,7 @@ pub(crate) use assert_ts_export;
 fn typescript_types() {
     assert_zod!(
         Vec<MyEnum>,
-        r#"z.array(z.union([z.object({ "A": z.string() }), z.object({ "B": z.number() })]))"#
+        r#"z.array(z.union([z.object({ A: z.string() }), z.object({ B: z.number() })]))"#
     );
 
     assert_zod!(i8, "z.number()");
@@ -110,11 +110,8 @@ fn typescript_types() {
     assert_zod!(Unit3, "z.tuple([])");
     assert_zod!(Unit4, "z.null()");
     assert_zod!(Unit5, r#"z.literal("A")"#);
-    assert_zod!(Unit6, r#"z.object({ "A": z.tuple([]) })"#);
-    assert_zod!(
-        Unit7,
-        r#"z.object({ "A": z.record(z.string(), z.never()) })"#
-    );
+    assert_zod!(Unit6, r#"z.object({ A: z.tuple([]) })"#);
+    assert_zod!(Unit7, r#"z.object({ A: z.record(z.string(), z.never()) })"#);
 
     assert_zod!(
         SimpleStruct,
@@ -128,7 +125,7 @@ fn typescript_types() {
 
     assert_zod!(
         TestEnum,
-        r#"z.union([z.literal("Unit"), z.object({ "Single": z.number() }), z.object({ "Multiple": z.tuple([z.number(), z.number()]) }), z.object({ "Struct": z.object({ a: z.number() }) })])"#
+        r#"z.union([z.literal("Unit"), z.object({ Single: z.number() }), z.object({ Multiple: z.tuple([z.number(), z.number()]) }), z.object({ Struct: z.object({ a: z.number() }) })])"#
     );
     assert_zod!(RefStruct, "TestEnum");
 
@@ -142,25 +139,25 @@ fn typescript_types() {
 
     assert_zod!(
         FlattenEnumStruct,
-        r#"z.union([z.object({ "tag": z.literal("One") }), z.object({ "tag": z.literal("Two") }), z.object({ "tag": z.literal("Three") })]).and(z.object({ outer: z.string() }))"#
+        r#"z.union([z.object({ tag: z.literal("One") }), z.object({ tag: z.literal("Two") }), z.object({ tag: z.literal("Three") })]).and(z.object({ outer: z.string() }))"#
     );
 
     assert_zod!(OverridenStruct, "z.object({ overriden_field: z.string() })");
     assert_zod!(HasGenericAlias, "z.record(z.number(), z.string())");
 
-    assert_zod!(SkipVariant, r#"z.object({ "A": z.string() })"#);
+    assert_zod!(SkipVariant, r#"z.object({ A: z.string() })"#);
     assert_zod!(
         SkipVariant2,
         r#"z.object({ tag: z.literal("A"), data: z.string() })"#
     );
     assert_zod!(
         SkipVariant3,
-        r#"z.object({ "A": z.object({ a: z.string() }) })"#
+        r#"z.object({ A: z.object({ a: z.string() }) })"#
     );
 
     assert_zod!(
         EnumMacroAttributes,
-        r#"z.union([z.object({ "A": z.string() }), z.object({ "bbb": z.number() }), z.object({ "cccc": z.number() }), z.object({ "D": z.object({ a: z.string(), bbbbbb: z.number() }) })])"#
+        r#"z.union([z.object({ A: z.string() }), z.object({ bbb: z.number() }), z.object({ cccc: z.number() }), z.object({ D: z.object({ a: z.string(), bbbbbb: z.number() }) })])"#
     );
 
     assert_zod!(
@@ -170,7 +167,7 @@ fn typescript_types() {
 
     assert_zod!(
         InlineEnumField,
-        r#"z.object({ "A": z.object({ a: z.string() }) })"#
+        r#"z.object({ A: z.object({ a: z.string() }) })"#
     );
 
     assert_zod!(
@@ -290,7 +287,7 @@ fn typescript_types() {
     // https://github.com/oscartbeaumont/specta/issues/148
     assert_zod!(
         ExtraBracketsInTupleVariant,
-        r#"z.object({ "A": z.string() })"#
+        r#"z.object({ A: z.string() })"#
     );
     assert_zod!(ExtraBracketsInUnnamedStruct, "z.string()");
 
@@ -309,9 +306,9 @@ fn typescript_types() {
         ExportError::InvalidName(
             NamedLocation::Type,
             #[cfg(not(windows))]
-            ExportPath::new_unsafe("crates/specta-zod/tests/lib.rs:664:10"),
+            ExportPath::new_unsafe("crates/specta-zod/tests/lib.rs:661:10"),
             #[cfg(windows)]
-            ExportPath::new_unsafe("crates\\specta-zod\\tests\\lib.rs:664:10"),
+            ExportPath::new_unsafe("crates\\specta-zod\\tests\\lib.rs:661:10"),
             r#"@odata.context"#.to_string()
         )
     );
@@ -321,9 +318,9 @@ fn typescript_types() {
         ExportError::InvalidName(
             NamedLocation::Type,
             #[cfg(not(windows))]
-            ExportPath::new_unsafe("crates/specta-zod/tests/lib.rs:668:10"),
+            ExportPath::new_unsafe("crates/specta-zod/tests/lib.rs:665:10"),
             #[cfg(windows)]
-            ExportPath::new_unsafe("crates\\specta-zod\\tests\\lib.rs:668:10"),
+            ExportPath::new_unsafe("crates\\specta-zod\\tests\\lib.rs:665:10"),
             r#"@odata.context"#.to_string()
         )
     );
@@ -331,7 +328,7 @@ fn typescript_types() {
     // https://github.com/oscartbeaumont/specta/issues/156
     assert_zod!(
         Vec<MyEnum>,
-        r#"z.array(z.union([z.object({ "A": z.string() }), z.object({ "B": z.number() })]))"#
+        r#"z.array(z.union([z.object({ A: z.string() }), z.object({ B: z.number() })]))"#
     );
 
     assert_zod!(

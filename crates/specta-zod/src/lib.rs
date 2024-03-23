@@ -335,7 +335,10 @@ fn struct_datatype(ctx: ExportContext, key: &str, s: &StructType, type_map: &Typ
                 return Ok(s
                     .tag()
                     .as_ref()
-                    .map(|tag| format!(r#"z.object({{ "{tag}": z.literal("{key}") }})"#))
+                    .map(|tag| {
+                        let tag = sanitise_key(tag.clone(), false);
+                        format!(r#"z.object({{ {tag}: z.literal("{key}") }})"#)
+                    })
                     .unwrap_or_else(|| format!("z.record({STRING}, {NEVER})")));
             }
 
@@ -380,7 +383,8 @@ fn struct_datatype(ctx: ExportContext, key: &str, s: &StructType, type_map: &Typ
                 .collect::<Result<Vec<_>>>()?;
 
             if let Some(tag) = &s.tag() {
-                unflattened_fields.push(format!(r#""{tag}": z.literal("{key}")"#));
+                let tag = sanitise_key(tag.clone(), false);
+                unflattened_fields.push(format!(r#"{tag}: z.literal("{key}")"#));
             }
 
             if !unflattened_fields.is_empty() {
@@ -416,7 +420,8 @@ fn enum_variant_datatype(
         EnumVariants::Named(obj) => {
             let mut fields = if let Some(tag) = &obj.tag() {
                 let sanitised_name = sanitise_key(name, true);
-                vec![format!(r#""{tag}": z.literal({sanitised_name})"#)]
+                let tag = sanitise_key(tag.clone(), false);
+                vec![format!(r#"{tag}: z.literal({sanitised_name})"#)]
             } else {
                 vec![]
             };
@@ -522,9 +527,11 @@ fn enum_datatype(ctx: ExportContext, e: &EnumType, type_map: &TypeMap) -> Output
                         match (repr, &variant.inner()) {
                             (EnumRepr::Untagged, _) => unreachable!(),
                             (EnumRepr::Internal { tag }, EnumVariants::Unit) => {
-                                format!(r#"z.object({{ "{tag}": {sanitised_name} }})"#)
+                            	let tag = sanitise_key(tag.clone(), false);
+                                format!(r#"z.object({{ {tag}: {sanitised_name} }})"#)
                             }
                             (EnumRepr::Internal { tag }, EnumVariants::Unnamed(tuple)) => {
+                           	 	let tag = sanitise_key(tag.clone(), false);
                                 let fields = skip_fields(tuple.fields()).collect::<Vec<_>>();
 
                                 // This field is only required for `{ty}` not `[...]` so we only need to check when there one field
@@ -543,14 +550,15 @@ fn enum_datatype(ctx: ExportContext, e: &EnumType, type_map: &TypeMap) -> Output
                                     unnamed_fields_datatype(ctx.clone(), &fields, type_map)?;
 
                                 if dont_join_ty {
-                                    format!(r#"z.object({{ "{tag}": {sanitised_name} }})"#)
+                                    format!(r#"z.object({{ {tag}: {sanitised_name} }})"#)
                                 } else {
                                     format!(
-                                        r#"z.and(z.object({{ "{tag}": {sanitised_name} }}), {typ})"#
+                                        r#"z.and(z.object({{ {tag}: {sanitised_name} }}), {typ})"#
                                     )
                                 }
                             }
                             (EnumRepr::Internal { tag }, EnumVariants::Named(obj)) => {
+                         	 	let tag = sanitise_key(tag.clone(), false);
                                 let mut fields = vec![format!("{tag}: {sanitised_name}")];
 
                                 fields.extend(
@@ -576,7 +584,7 @@ fn enum_datatype(ctx: ExportContext, e: &EnumType, type_map: &TypeMap) -> Output
                                     variant_name.clone(),
                                     variant,
                                 )?;
-                                let sanitised_name = sanitise_key(variant_name.clone(), true);
+                                let sanitised_name = sanitise_key(variant_name.clone(), false);
 
                                 match ts_values {
                                     Some(ts_values) => {
@@ -586,9 +594,11 @@ fn enum_datatype(ctx: ExportContext, e: &EnumType, type_map: &TypeMap) -> Output
                                 }
                             }
                             (EnumRepr::Adjacent { tag, .. }, EnumVariants::Unit) => {
-                                format!(r#"z.object({{ "{tag}": z.literal({sanitised_name}) }})"#)
+                         	 	let tag = sanitise_key(tag.clone(), false);
+                                format!(r#"z.object({{ {tag}: z.literal({sanitised_name}) }})"#)
                             }
                             (EnumRepr::Adjacent { tag, content }, _) => {
+                         	 	let tag = sanitise_key(tag.clone(), false);
                                 let content_values = enum_variant_datatype(
                                     ctx.with(PathItem::Variant(variant_name.clone())),
                                     type_map,
@@ -651,7 +661,7 @@ fn object_field_to_ts(
 
     // https://github.com/oscartbeaumont/rspc/issues/100#issuecomment-1373092211
     let (key, ty) = match field.optional() {
-        true => (format!("{field_name_safe}?").into(), ty),
+        true => (format!("{field_name_safe}").into(), ty), // TODO: optional
         false => (field_name_safe, ty),
     };
 
