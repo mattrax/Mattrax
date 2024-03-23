@@ -19,7 +19,7 @@
 		"@fontsource/inter": "^5.0.17",
 		"@kobalte/core": "^0.12.3",
 		"@mattrax/ui": "workspace:*",
-		"@solidjs/router": "^0.13.0",
+		"@solidjs/router": "^0.13.1",
 		"@solidjs/start": "^0.7.5",
 		"h3": "^1.11.1",
 		"solid-js": "^1.8.15",

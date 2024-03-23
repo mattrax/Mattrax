@@ -8,6 +8,8 @@ import {
 	For,
 	createEffect,
 	startTransition,
+	ErrorBoundary,
+	catchError,
 } from "solid-js";
 import { debounce } from "@solid-primitives/scheduled";
 
@@ -141,7 +143,10 @@ const APPLICATION_TARGETS = {
 			queryFn: async () => {
 				// TODO: Pagination support
 				const res = await fetch(
-					`https://itunes.apple.com/search?term=${search()}&entity=software`,
+					`https://itunes.apple.com/search?${new URLSearchParams({
+						entity: "software",
+						...(search() && { search: search() }),
+					})}`,
 				);
 
 				return IOS_APP_SCHEMA.parse(await res.json());
@@ -181,11 +186,12 @@ function CreateApplicationSheet(props: ParentProps) {
 	const [search, setSearch] = createSignal("");
 
 	const query = createQuery(
-		queryOptions(() =>
-			APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
+		queryOptions(() => ({
+			...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
 				search,
 			),
-		),
+			throwOnError: false,
+		})),
 	);
 
 	createEffect(() => {

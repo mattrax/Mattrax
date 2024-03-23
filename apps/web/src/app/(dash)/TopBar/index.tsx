@@ -1,9 +1,4 @@
-import {
-	createSignal,
-	useTransition,
-	type JSX,
-	type ParentProps,
-} from "solid-js";
+import { useQueryClient } from "@tanstack/solid-query";
 import { A, useNavigate } from "@solidjs/router";
 import { As } from "@kobalte/core";
 import clsx from "clsx";
@@ -22,15 +17,15 @@ import {
 	PopoverTrigger,
 	Textarea,
 } from "@mattrax/ui";
+import { createSignal, useTransition, type ParentProps } from "solid-js";
 
 import { trpc } from "~/lib";
 import Logo from "~/assets/MATTRAX.png";
 import { Breadcrumbs } from "~/components/Breadcrumbs";
 import { AuthContext, useAuth } from "~/app/AuthContext";
 import { NavItems, useNavItemsContext } from "./NavItems";
-import { useQueryClient } from "@tanstack/solid-query";
 
-export function TopBar(): JSX.Element {
+export function TopBar() {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const [_, start] = useTransition();
@@ -40,14 +35,14 @@ export function TopBar(): JSX.Element {
 			queryClient.clear();
 		},
 	}));
-	const { lastEntry } = useNavItemsContext();
+	const { items } = useNavItemsContext();
 
 	return (
 		<>
 			<div
 				class={clsx(
 					"relative flex flex-row items-center px-6 gap-2 h-16 shrink-0",
-					!lastEntry() && "border-b border-gray-200",
+					!items() && "border-b border-gray-200",
 				)}
 			>
 				<A href="">

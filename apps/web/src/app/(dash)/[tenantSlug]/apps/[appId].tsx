@@ -9,14 +9,16 @@ import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 import type { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { useNavbarItems } from "../../TopBar/NavItems";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
+
+const NAV_ITEMS = [{ title: "Application", href: "" }];
 
 export const route = {
 	load: ({ params }) =>
 		trpc.useContext().app.get.ensureData({
 			id: params.appId!,
 		}),
+	info: { NAV_ITEMS },
 } satisfies RouteDefinition;
 
 export const [AppContextProvider, useApp] = createContextProvider(
@@ -33,8 +35,6 @@ export default function Layout(props: ParentProps) {
 	const query = trpc.app.get.useQuery(() => ({
 		id: params.appId,
 	}));
-
-	useNavbarItems(NAV_ITEMS);
 
 	return (
 		<Show when={query.data !== undefined}>
@@ -58,5 +58,3 @@ function NotFound() {
 	// necessary since '..' adds trailing slash -_-
 	return <Navigate href="../../apps" />;
 }
-
-const NAV_ITEMS = [{ title: "Application", href: "" }];

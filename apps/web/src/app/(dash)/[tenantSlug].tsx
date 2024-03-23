@@ -1,8 +1,7 @@
 import { type ParentProps, Show, Suspense, startTransition } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { RouteDefinition, useNavigate } from "@solidjs/router";
 import { z } from "zod";
 
-import { useNavbarItems } from "./TopBar/NavItems";
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
 import { Breadcrumb } from "~/components/Breadcrumbs";
@@ -15,11 +14,21 @@ export function useTenantSlug() {
 	return () => params.tenantSlug;
 }
 
+const NAV_ITEMS = [
+	{ title: "Dashboard", href: "" },
+	{ title: "Users", href: "users" },
+	{ title: "Devices", href: "devices" },
+	{ title: "Policies", href: "policies" },
+	{ title: "Applications", href: "apps" },
+	{ title: "Groups", href: "groups" },
+	{ title: "Settings", href: "settings" },
+];
+
+export const route = { info: { NAV_ITEMS } } satisfies RouteDefinition;
+
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ tenantSlug: z.string() });
 	const navigate = useNavigate();
-
-	useNavbarItems(NAV_ITEMS);
 
 	return (
 		<>
@@ -44,34 +53,3 @@ export default function Layout(props: ParentProps) {
 		</>
 	);
 }
-
-const NAV_ITEMS = [
-	{
-		title: "Dashboard",
-		href: "",
-	},
-	{
-		title: "Users",
-		href: "users",
-	},
-	{
-		title: "Devices",
-		href: "devices",
-	},
-	{
-		title: "Policies",
-		href: "policies",
-	},
-	{
-		title: "Applications",
-		href: "apps",
-	},
-	{
-		title: "Groups",
-		href: "groups",
-	},
-	{
-		title: "Settings",
-		href: "settings",
-	},
-];

@@ -38,10 +38,8 @@
 		"patchedDependencies": {
 			"drizzle-kit@0.20.14": "patches/drizzle-kit@0.20.14.patch",
 			"@tanstack/solid-form@0.16.0": "patches/@tanstack__solid-form@0.16.0.patch",
-			"@tanstack/solid-query@5.28.5": "patches/@tanstack__solid-query@5.28.5.patch"
-		},
-		"peerDependencyRules": {
-			"allowAny": ["@solidjs/start", "vinxi", "nitropack"]
+			"@tanstack/solid-query@5.28.5": "patches/@tanstack__solid-query@5.28.5.patch",
+			"@solidjs/router@0.13.1": "patches/@solidjs__router@0.13.1.patch"
 		}
 	}
 }
