@@ -1,9 +1,15 @@
-use internal::{skip_fields, skip_fields_named};
-use specta::{
-    ts::{BigIntExportBehavior, ExportContext, ExportError, NamedLocation, PathItem},
-    *,
-};
+mod context;
+mod error;
+mod export_config;
+
+use context::{ExportContext, PathItem};
+use internal::{skip_fields, skip_fields_named, NonSkipField};
+use specta::*;
 use std::{borrow::Cow, collections::VecDeque};
+
+pub use context::*;
+pub use error::*;
+pub use export_config::*;
 
 macro_rules! primitive_def {
     ($($t:ident)+) => {
@@ -16,152 +22,145 @@ pub type Result<T> = std::result::Result<T, ExportError>;
 
 pub(crate) type Output = Result<String>;
 
-// /// Convert a type which implements [`Type`](crate::Type) to a TypeScript string with an export.
-// ///
-// /// Eg. `export type Foo = { demo: string; };`
-// pub fn export_ref<T: NamedType>(_: &T, conf: &ExportConfig) -> Output {
-//     export::<T>(conf)
-// }
+/// Convert a type which implements [`Type`](crate::Type) to a TypeScript string with an export.
+///
+/// Eg. `export const Foo = z.object({ demo: z.string() });`
+pub fn export_ref<T: NamedType>(_: &T, conf: &ExportConfig) -> Output {
+    export::<T>(conf)
+}
 
-// /// Convert a type which implements [`Type`](crate::Type) to a TypeScript string with an export.
-// ///
-// /// Eg. `export type Foo = { demo: string; };`
-// pub fn export<T: NamedType>(conf: &ExportConfig) -> Output {
-//     let mut type_map = TypeMap::default();
-//     let named_data_type = T::definition_named_data_type(&mut type_map);
-//     is_valid_ty(&named_data_type.inner, &type_map)?;
-//     let result = export_named_datatype(conf, &named_data_type, &type_map);
+/// Convert a type which implements [`Type`](crate::Type) to a TypeScript string with an export.
+///
+/// Eg. `export const Foo = z.object({ demo: string; });`
+pub fn export<T: NamedType>(conf: &ExportConfig) -> Output {
+    let mut type_map = TypeMap::default();
+    let named_data_type = T::definition_named_data_type(&mut type_map);
+    // is_valid_ty(&named_data_type.inner, &type_map)?;
+    let result = export_named_datatype(conf, &named_data_type, &type_map);
 
-//     if let Some((ty_name, l0, l1)) = detect_duplicate_type_names(&type_map).into_iter().next() {
-//         return Err(ExportError::DuplicateTypeName(ty_name, l0, l1));
-//     }
+    if let Some((ty_name, l0, l1)) = detect_duplicate_type_names(&type_map).into_iter().next() {
+        return Err(ExportError::DuplicateTypeName(ty_name, l0, l1));
+    }
 
-//     result
-// }
+    result
+}
 
-// /// Convert a type which implements [`Type`](crate::Type) to a TypeScript string.
-// ///
-// /// Eg. `{ demo: string; };`
-// pub fn inline_ref<T: Type>(_: &T, conf: &ExportConfig) -> Output {
-//     inline::<T>(conf)
-// }
+/// Convert a type which implements [`Type`](crate::Type) to a TypeScript string.
+///
+/// Eg. `z.object({ demo: z.string() });`
+pub fn inline_ref<T: Type>(_: &T, conf: &ExportConfig) -> Output {
+    inline::<T>(conf)
+}
 
-// /// Convert a type which implements [`Type`](crate::Type) to a TypeScript string.
-// ///
-// /// Eg. `{ demo: string; };`
-// pub fn inline<T: Type>(conf: &ExportConfig) -> Output {
-//     let mut type_map = TypeMap::default();
-//     let ty = T::inline(&mut type_map, &[]);
-//     is_valid_ty(&ty, &type_map)?;
-//     let result = datatype(conf, &ty, &type_map);
+/// Convert a type which implements [`Type`](crate::Type) to a TypeScript string.
+///
+/// Eg. `z.object({ demo: z.string() });`
+pub fn inline<T: Type>(conf: &ExportConfig) -> Output {
+    let mut type_map = TypeMap::default();
+    let ty = T::inline(&mut type_map, &[]);
+    // is_valid_ty(&ty, &type_map)?;
+    let result = datatype(conf, &ty, &type_map);
 
-//     if let Some((ty_name, l0, l1)) = detect_duplicate_type_names(&type_map).into_iter().next() {
-//         return Err(ExportError::DuplicateTypeName(ty_name, l0, l1));
-//     }
+    if let Some((ty_name, l0, l1)) = detect_duplicate_type_names(&type_map).into_iter().next() {
+        return Err(ExportError::DuplicateTypeName(ty_name, l0, l1));
+    }
 
-//     result
-// }
+    result
+}
 
-// /// Convert a DataType to a TypeScript string
-// ///
-// /// Eg. `export Name = { demo: string; }`
-// pub fn export_named_datatype(
-//     conf: &ExportConfig,
-//     typ: &NamedDataType,
-//     type_map: &TypeMap,
-// ) -> Output {
-//     // TODO: Duplicate type name detection?
+/// Convert a DataType to a Zod validator
+///
+/// Eg. `export const Name = z.object({ demo: z.string() });`
+pub fn export_named_datatype(
+    conf: &ExportConfig,
+    typ: &NamedDataType,
+    type_map: &TypeMap,
+) -> Output {
+    // TODO: Duplicate type name detection?
 
-//     is_valid_ty(&typ.inner, type_map)?;
-//     export_datatype_inner(
-//         ExportContext {
-//             cfg: conf,
-//             path: vec![],
-//             is_export: true,
-//         },
-//         typ,
-//         type_map,
-//     )
-// }
+    // is_valid_ty(&typ.inner, type_map)?;
+    export_datatype_inner(
+        ExportContext {
+            cfg: conf,
+            path: vec![],
+            is_export: true,
+        },
+        typ,
+        type_map,
+    )
+}
 
-// #[allow(clippy::ptr_arg)]
-// fn inner_comments(
-//     ctx: ExportContext,
-//     deprecated: Option<&DeprecatedType>,
-//     docs: &Cow<'static, str>,
-//     other: String,
-//     start_with_newline: bool,
-// ) -> String {
-//     if !ctx.is_export {
-//         return other;
-//     }
+#[allow(clippy::ptr_arg)]
+fn inner_comments(
+    ctx: ExportContext,
+    deprecated: Option<&DeprecatedType>,
+    docs: &Cow<'static, str>,
+    other: String,
+    start_with_newline: bool,
+) -> String {
+    if !ctx.is_export {
+        return other;
+    }
 
-//     let comments = ctx
-//         .cfg
-//         .comment_exporter
-//         .map(|v| v(CommentFormatterArgs { docs, deprecated }))
-//         .unwrap_or_default();
+    // let comments = ctx
+    //     .cfg
+    //     .comment_exporter
+    //     .map(|v| v(CommentFormatterArgs { docs, deprecated }))
+    //     .unwrap_or_default();
+    let comments = "";
 
-//     let prefix = match start_with_newline && !comments.is_empty() {
-//         true => "\n",
-//         false => "",
-//     };
+    let prefix = match start_with_newline && !comments.is_empty() {
+        true => "\n",
+        false => "",
+    };
 
-//     format!("{prefix}{comments}{other}")
-// }
+    format!("{prefix}{comments}{other}")
+}
 
-// fn export_datatype_inner(
-//     ctx: ExportContext,
-//     typ @ NamedDataType {
-//         name,
-//         ext,
-//         docs,
-//         deprecated,
-//         inner: item,
-//         ..
-//     }: &NamedDataType,
-//     type_map: &TypeMap,
-// ) -> Output {
-//     let ctx = ctx.with(
-//         ext.clone()
-//             .map(|v| PathItem::TypeExtended(name.clone(), v.impl_location))
-//             .unwrap_or_else(|| PathItem::Type(name.clone())),
-//     );
-//     let name = sanitise_type_name(ctx.clone(), NamedLocation::Type, name)?;
+fn export_datatype_inner(ctx: ExportContext, typ: &NamedDataType, type_map: &TypeMap) -> Output {
+    let ctx = ctx.with(
+        typ.ext()
+            .clone()
+            .map(|v| PathItem::TypeExtended(typ.name().clone(), v.impl_location().clone()))
+            .unwrap_or_else(|| PathItem::Type(typ.name().clone())),
+    );
+    let name = sanitise_type_name(ctx.clone(), NamedLocation::Type, typ.name())?;
 
-//     let generics = item
-//         .generics()
-//         .filter(|generics| !generics.is_empty())
-//         .map(|generics| format!("<{}>", generics.join(", ")))
-//         .unwrap_or_default();
+    let generics = typ
+        .inner
+        .generics()
+        .filter(|generics| !generics.is_empty())
+        .map(|generics| format!("<{}>", generics.join(", ")))
+        .unwrap_or_default();
 
-//     let inline_ts = datatype_inner(ctx.clone(), &typ.inner, type_map)?;
+    let inline_zod = datatype_inner(ctx.clone(), &typ.inner, type_map)?;
 
-//     Ok(inner_comments(
-//         ctx,
-//         deprecated.as_ref(),
-//         docs,
-//         format!("export type {name}{generics} = {inline_ts}"),
-//         false,
-//     ))
-// }
+    // {generics}
+    Ok(inner_comments(
+        ctx,
+        typ.deprecated(),
+        typ.docs(),
+        format!("export const {name} = {inline_zod}"),
+        false,
+    ))
+}
 
-// /// Convert a DataType to a TypeScript string
-// ///
-// /// Eg. `{ demo: string; }`
-// pub fn datatype(conf: &ExportConfig, typ: &DataType, type_map: &TypeMap) -> Output {
-//     // TODO: Duplicate type name detection?
+/// Convert a DataType to a Zod validator
+///
+/// Eg. `z.object({ demo: z.string(); })`
+pub fn datatype(conf: &ExportConfig, typ: &DataType, type_map: &TypeMap) -> Output {
+    // TODO: Duplicate type name detection?
 
-//     datatype_inner(
-//         ExportContext {
-//             cfg: conf,
-//             path: vec![],
-//             is_export: false,
-//         },
-//         typ,
-//         type_map,
-//     )
-// }
+    datatype_inner(
+        ExportContext {
+            cfg: conf,
+            path: vec![],
+            is_export: false,
+        },
+        typ,
+        type_map,
+    )
+}
 
 pub(crate) fn datatype_inner(ctx: ExportContext, typ: &DataType, type_map: &TypeMap) -> Output {
     Ok(match &typ {
@@ -206,11 +205,11 @@ pub(crate) fn datatype_inner(ctx: ExportContext, typ: &DataType, type_map: &Type
         }
         // We use `T[]` instead of `Array<T>` to avoid issues with circular references.
         DataType::List(def) => {
-            let dt = datatype_inner(ctx, &def.ty, type_map)?;
+            let dt = datatype_inner(ctx, def.ty(), type_map)?;
 
-            if let Some(length) = def.length {
+            if let Some(length) = def.length() {
                 format!(
-                    "z.tuple({})",
+                    "z.tuple([{}])",
                     (0..length)
                         .map(|_| dt.clone())
                         .collect::<Vec<_>>()
@@ -221,13 +220,14 @@ pub(crate) fn datatype_inner(ctx: ExportContext, typ: &DataType, type_map: &Type
             }
         }
         DataType::Struct(item) => struct_datatype(
-            ctx.with(
-                item.sid
-                    .and_then(|sid| type_map.get(sid))
-                    .and_then(|v| v.ext())
-                    .map(|v| PathItem::TypeExtended(item.name().clone(), v.impl_location))
-                    .unwrap_or_else(|| PathItem::Type(item.name().clone())),
-            ),
+            ctx,
+            // ctx.with(
+            //     item.sid
+            //         .and_then(|sid| type_map.get(sid))
+            //         .and_then(|v| v.ext())
+            //         .map(|v| PathItem::TypeExtended(item.name().clone(), v.impl_location()))
+            //         .unwrap_or_else(|| PathItem::Type(item.name().clone())),
+            // ),
             item.name(),
             item,
             type_map,
@@ -235,12 +235,12 @@ pub(crate) fn datatype_inner(ctx: ExportContext, typ: &DataType, type_map: &Type
         DataType::Enum(item) => {
             let mut ctx = ctx.clone();
             let cfg = ctx.cfg.clone().bigint(BigIntExportBehavior::Number);
-            if item.skip_bigint_checks {
-                ctx.cfg = &cfg;
-            }
+            // if item.skip_bigint_checks {
+            //     ctx.cfg = &cfg;
+            // }
 
             enum_datatype(
-                ctx.with(PathItem::Variant(item.name.clone())),
+                ctx.with(PathItem::Variant(item.name().clone())),
                 item,
                 type_map,
             )?
@@ -252,7 +252,11 @@ pub(crate) fn datatype_inner(ctx: ExportContext, typ: &DataType, type_map: &Type
                 datatype_inner(ctx, &result.1, type_map)?,
             ];
             variants.dedup();
-            format!("z.union({})", variants.join(", "))
+            if variants.len() == 1 {
+                variants.pop().expect("Vec is not empty")
+            } else {
+                format!("z.union([{}])", variants.join(", "))
+            }
         }
         DataType::Reference(reference) => match &reference.generics()[..] {
             [] => reference.name().to_string(),
@@ -289,7 +293,7 @@ fn unnamed_fields_datatype(
             true,
         )),
         fields => Ok(format!(
-            "[{}]",
+            "z.tuple([{}])",
             fields
                 .iter()
                 .map(|(field, ty)| Ok(inner_comments(
@@ -307,7 +311,7 @@ fn unnamed_fields_datatype(
 
 fn tuple_datatype(ctx: ExportContext, tuple: &TupleType, type_map: &TypeMap) -> Output {
     match &tuple.elements()[..] {
-        [] => Ok(format!("z.literal({NULL})")),
+        [] => Ok(NULL.into()),
         tys => Ok(format!(
             "z.tuple([{}])",
             tys.iter()
@@ -347,7 +351,7 @@ fn struct_datatype(ctx: ExportContext, key: &str, s: &StructType, type_map: &Typ
                                 ctx.clone(),
                                 field.deprecated(),
                                 field.docs(),
-                                format!("({type_str})"),
+                                type_str,
                                 true,
                             )
                         },
@@ -380,13 +384,22 @@ fn struct_datatype(ctx: ExportContext, key: &str, s: &StructType, type_map: &Typ
             }
 
             if !unflattened_fields.is_empty() {
-                field_sections.push(format!(
-                    ".and(z.object({{ {} }}))",
-                    unflattened_fields.join(",")
-                ));
+                if field_sections.is_empty() {
+                    field_sections
+                        .push_back(format!("z.object({{ {} }})", unflattened_fields.join(", ")));
+                } else {
+                    field_sections.push_back(format!(
+                        ".and(z.object({{ {} }}))",
+                        unflattened_fields.join(", ")
+                    ));
+                }
             }
 
-            Ok(field_sections.pop_front()? + field_sections.join(""))
+            Ok(field_sections.pop_front().expect("field_sections is empty")
+                + &{
+                    let vec: Vec<_> = field_sections.into();
+                    vec.join("")
+                })
         }
     }
 }
@@ -488,7 +501,11 @@ fn enum_datatype(ctx: ExportContext, e: &EnumType, type_map: &TypeMap) -> Output
                 })
                 .collect::<Result<Vec<_>>>()?;
             variants.dedup();
-            format!("z.union({})", variants.join(","))
+            if variants.len() == 1 {
+                variants.pop().expect("variants is empty")
+            } else {
+                format!("z.union([{}])", variants.join(", "))
+            }
         }
         repr => {
             let mut variants = e
@@ -549,9 +566,9 @@ fn enum_datatype(ctx: ExportContext, e: &EnumType, type_map: &TypeMap) -> Output
                                         .collect::<Result<Vec<_>>>()?,
                                 );
 
-                                format!("z.object({{ {} }})", fields.join(","))
+                                format!("z.object({{ {} }})", fields.join(", "))
                             }
-                            (EnumRepr::External, EnumVariants::Unit) => sanitised_name.to_string(),
+                            (EnumRepr::External, EnumVariants::Unit) => format!("z.literal({})", sanitised_name.to_string()),
                             (EnumRepr::External, _) => {
                                 let ts_values = enum_variant_datatype(
                                     ctx.with(PathItem::Variant(variant_name.clone())),
@@ -580,7 +597,7 @@ fn enum_datatype(ctx: ExportContext, e: &EnumType, type_map: &TypeMap) -> Output
                                 )?
                                 .expect("Invalid Serde type");
 
-                                format!(r#"z.object({{ {tag}: z.literal({sanitised_name}); {content}: {content_values} }})"#)
+                                format!(r#"z.object({{ {tag}: z.literal({sanitised_name}), {content}: {content_values} }})"#)
                             }
                         },
                         true,
@@ -588,7 +605,11 @@ fn enum_datatype(ctx: ExportContext, e: &EnumType, type_map: &TypeMap) -> Output
                 })
                 .collect::<Result<Vec<_>>>()?;
             variants.dedup();
-            format!("z.union({})", variants.join(","))
+            if variants.len() == 1 {
+                variants.swap_remove(0)
+            } else {
+                format!("z.union([{}])", variants.join(", "))
+            }
         }
     })
 }
@@ -612,7 +633,8 @@ impl ToZod for LiteralType {
                 Self::bool(v) => v.to_string(),
                 Self::String(v) => format!(r#""{v}""#),
                 Self::char(v) => format!(r#""{v}""#),
-                Self::None => NULL.to_string(),
+                Self::None => return NULL.to_string(),
+                _ => panic!("unhandled literal type!"),
             }
         )
     }
@@ -628,7 +650,7 @@ fn object_field_to_ts(
     let field_name_safe = sanitise_key(key, false);
 
     // https://github.com/oscartbeaumont/rspc/issues/100#issuecomment-1373092211
-    let (key, ty) = match field.optional {
+    let (key, ty) = match field.optional() {
         true => (format!("{field_name_safe}?").into(), ty),
         false => (field_name_safe, ty),
     };
@@ -655,9 +677,9 @@ fn sanitise_key<'a>(field_name: Cow<'static, str>, force_string: bool) -> Cow<'a
 }
 
 pub(crate) fn sanitise_type_name(ctx: ExportContext, loc: NamedLocation, ident: &str) -> Output {
-    if let Some(name) = RESERVED_TYPE_NAMES.iter().find(|v| **v == ident) {
-        return Err(ExportError::ForbiddenName(loc, ctx.export_path(), name));
-    }
+    // if let Some(name) = RESERVED_TYPE_NAMES.iter().find(|v| **v == ident) {
+    //     return Err(ExportError::ForbiddenName(loc, ctx.export_path(), name));
+    // }
 
     if let Some(first_char) = ident.chars().next() {
         if !first_char.is_alphabetic() && first_char != '_' {
@@ -758,7 +780,7 @@ const UNKNOWN: &str = "z.unknown()";
 const NUMBER: &str = "z.number()";
 const STRING: &str = "z.string()";
 const BOOLEAN: &str = "z.boolean()";
-const NULL: &str = "null";
-const NULLABLE: &str = "z.nullable()";
-const NEVER: &str = "never";
+const NULL: &str = "z.null()";
+const NULLABLE: &str = ".nullable()";
+const NEVER: &str = "z.never()";
 const BIGINT: &str = "z.bigint()";

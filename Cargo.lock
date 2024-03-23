@@ -3644,6 +3644,7 @@ name = "specta-zod"
 version = "0.1.0"
 dependencies = [
  "specta",
+ "thiserror",
 ]
 
 [[package]]
