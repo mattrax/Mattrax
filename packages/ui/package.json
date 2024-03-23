@@ -17,7 +17,7 @@
 	},
 	"dependencies": {
 		"@kobalte/core": "^0.12.3",
-		"@solidjs/router": "^0.13.0",
+		"@solidjs/router": "^0.13.1",
 		"@tanstack/solid-form": "^0.16.0",
 		"@tanstack/zod-form-adapter": "^0.16.0",
 		"class-variance-authority": "^0.7.0",
