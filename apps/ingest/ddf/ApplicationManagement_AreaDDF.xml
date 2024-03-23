@@ -1,0 +1,866 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE MgmtTree PUBLIC " -//OMA//DTD-DM-DDF 1.2//EN"
+  "http://www.openmobilealliance.org/tech/DTD/DM_DDF-V1_2.dtd"
+  [<?oma-dm-ddf-ver supported-versions="1.2"?>]>
+<MgmtTree xmlns:MSFT="http://schemas.microsoft.com/MobileDevice/DM">
+  <VerDTD>1.2</VerDTD>
+  <Node>
+    <NodeName>ApplicationManagement</NodeName>
+    <Path>./User/Vendor/MSFT/Policy/Config</Path>
+    <DFProperties>
+      <AccessType>
+        <Get />
+      </AccessType>
+      <DFFormat>
+        <node />
+      </DFFormat>
+      <Occurrence>
+        <One />
+      </Occurrence>
+      <Scope>
+        <Permanent />
+      </Scope>
+      <DFType>
+        <MIME>com.microsoft/11/MDM/Policy</MIME>
+      </DFType>
+    </DFProperties>
+    <Node>
+      <NodeName>RequirePrivateStoreOnly</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Allows disabling of the retail catalog and only enables the Private store. Most restricted value is 1.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.14393</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>4.1</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x88;0xAB;0xAC;0xAF;0xBC;0xBF;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Allow both public and Private store.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Only Private store is enabled.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="RequirePrivateStoreOnly" GpAreaPath="WindowsStore~AT~WindowsComponents~WindowsStore" />
+        <MSFT:ConflictResolution>HighestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>MSIAlwaysInstallWithElevatedPrivileges</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting directs Windows Installer to use elevated permissions when it installs any program on the system. If you enable this policy setting, privileges are extended to all programs. These privileges are usually reserved for programs that have been assigned to the user (offered on the desktop), assigned to the computer (installed automatically), or made available in Add or Remove Programs in Control Panel. This profile setting lets users install programs that require access to directories that the user might not have permission to view or change, including directories on highly restricted computers. If you disable or do not configure this policy setting, the system applies the current user's permissions when it installs programs that a system administrator does not distribute or offer. Note: This policy setting appears both in the Computer Configuration and User Configuration folders. To make this policy setting effective, you must enable it in both folders. Caution: Skilled users can take advantage of the permissions this policy setting grants to change their privileges and gain permanent access to restricted files and folders. Note that the User Configuration version of this policy setting is not guaranteed to be secure.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.17134</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>7.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Disabled</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Enabled</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="AlwaysInstallElevated" GpAreaPath="MSI~AT~WindowsComponents~MSI" />
+        <MSFT:ConflictResolution>HighestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+  </Node>
+  <Node>
+    <NodeName>ApplicationManagement</NodeName>
+    <Path>./Device/Vendor/MSFT/Policy/Config</Path>
+    <DFProperties>
+      <AccessType>
+        <Get />
+      </AccessType>
+      <DFFormat>
+        <node />
+      </DFFormat>
+      <Occurrence>
+        <One />
+      </Occurrence>
+      <Scope>
+        <Permanent />
+      </Scope>
+      <DFType>
+        <MIME>com.microsoft/11/MDM/Policy</MIME>
+      </DFType>
+    </DFProperties>
+    <Node>
+      <NodeName>AllowAllTrustedApps</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Specifies whether non Microsoft Store apps are allowed. Most restricted value is 0.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>65535</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x62;0x63;0x64;0x65;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x88;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Explicit deny.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Explicit allow unlock.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>65535</MSFT:Value>
+            <MSFT:ValueDescription>Not configured.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="AppxDeploymentAllowAllTrustedApps" GpAreaPath="AppxPackageManager~AT~WindowsComponents~AppxDeployment" />
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowAppStoreAutoUpdate</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Specifies whether automatic update of apps from Microsoft Store are allowed. Most restricted value is 0.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>2</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x88;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Not allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>2</MSFT:Value>
+            <MSFT:ValueDescription>Not configured.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="DisableAutoInstall" GpAreaPath="WindowsStore~AT~WindowsComponents~WindowsStore" />
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowAutomaticAppArchiving</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting controls whether the system can archive infrequently used apps. If you enable this policy setting, then the system will periodically check for and archive infrequently used apps. If you disable this policy setting, then the system will not archive any apps. If you do not configure this policy setting (default), then the system will follow default behavior, which is to periodically check for and archive infrequently used apps, and the user will be able to configure this setting themselves.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>65535</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.22000</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>11.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x62;0x63;0x64;0x65;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Explicit deny.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Explicit enable.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>65535</MSFT:Value>
+            <MSFT:ValueDescription>Not configured. User's Choice.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="AllowAutomaticAppArchiving" GpAreaPath="AppxPackageManager~AT~WindowsComponents~AllowAutomaticAppArchiving" />
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowDeveloperUnlock</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Specifies whether developer unlock is allowed. Most restricted value is 0.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>65535</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x88;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Explicit deny.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Explicit allow unlock.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>65535</MSFT:Value>
+            <MSFT:ValueDescription>Not configured.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="AllowDevelopmentWithoutDevLicense" GpAreaPath="AppxPackageManager~AT~WindowsComponents~AppxDeployment" />
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowGameDVR</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Note The policy is only enforced in Windows 10 for desktop. Specifies whether DVR and broadcasting is allowed. Most restricted value is 0.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Not allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="AllowGameDVR" GpAreaPath="GameDVR~AT~WindowsComponents~GAMEDVR" />
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowSharedUserAppData</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>With this policy, you can configure Windows 10 to share application data among multiple users on the system and with other instances of that app. Data shared through the SharedLocal folder is available through the Windows. Storage API. If you previously enabled this policy and now want to disable it, any shared app data remains in the SharedLocal folder.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Prevented/not allowed, but Microsoft Edge downloads book files to a per-user folder for each user.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Allowed. Microsoft Edge downloads book files into a shared folder. For this policy to work correctly, you must also enable the Allow a Windows app to share application data between users group policy. Also, the users must be signed in with a school or work account.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="AllowSharedLocalAppData" GpAreaPath="AppxPackageManager~AT~WindowsComponents~AppxDeployment" />
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowStore</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy is deprecated</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0xAB;0xAC;0xAF;0xBC;0xBF;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Disallow.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Allow.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:Deprecated OsBuildDeprecated="10.0.22000" />
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>ApplicationRestrictions</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy is deprecated</Description>
+        <DFFormat>
+          <chr />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:Deprecated OsBuildDeprecated="10.0.22000" />
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>LaunchAppAfterLogOn</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>List of semi-colon delimited Package Family Names of Windows apps. Listed Windows apps are to be launched after logon.</Description>
+        <DFFormat>
+          <chr />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.17763</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>8.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="None">
+          <MSFT:List Delimiter=";" />
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>RequirePrivateStoreOnly</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Allows disabling of the retail catalog and only enables the Private store. Most restricted value is 1.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.14393</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>4.1</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x88;0xAB;0xAC;0xAF;0xBC;0xBF;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Allow both public and Private store.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Only Private store is enabled.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="RequirePrivateStoreOnly" GpAreaPath="WindowsStore~AT~WindowsComponents~WindowsStore" />
+        <MSFT:ConflictResolution>HighestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>MSIAlwaysInstallWithElevatedPrivileges</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting directs Windows Installer to use elevated permissions when it installs any program on the system. If you enable this policy setting, privileges are extended to all programs. These privileges are usually reserved for programs that have been assigned to the user (offered on the desktop), assigned to the computer (installed automatically), or made available in Add or Remove Programs in Control Panel. This profile setting lets users install programs that require access to directories that the user might not have permission to view or change, including directories on highly restricted computers. If you disable or do not configure this policy setting, the system applies the current user's permissions when it installs programs that a system administrator does not distribute or offer. Note: This policy setting appears both in the Computer Configuration and User Configuration folders. To make this policy setting effective, you must enable it in both folders. Caution: Skilled users can take advantage of the permissions this policy setting grants to change their privileges and gain permanent access to restricted files and folders. Note that the User Configuration version of this policy setting is not guaranteed to be secure.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.17134</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>7.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Disabled</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Enabled</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="AlwaysInstallElevated" GpAreaPath="MSI~AT~WindowsComponents~MSI" />
+        <MSFT:ConflictResolution>HighestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>MSIAllowUserControlOverInstall</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting permits users to change installation options that typically are available only to system administrators. If you enable this policy setting, some of the security features of Windows Installer are bypassed. It permits installations to complete that otherwise would be halted due to a security violation. If you disable or do not configure this policy setting, the security features of Windows Installer prevent users from changing installation options typically reserved for system administrators, such as specifying the directory to which files are installed. If Windows Installer detects that an installation package has permitted the user to change a protected option, it stops the installation and displays a message. These security features operate only when the installation program is running in a privileged security context in which it has access to directories denied to the user. This policy setting is designed for less restrictive environments. It can be used to circumvent errors in an installation program that prevents software from being installed.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.17134</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>7.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Disabled</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Enabled</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="EnableUserControl" GpAreaPath="MSI~AT~WindowsComponents~MSI" />
+        <MSFT:ConflictResolution>HighestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>RestrictAppDataToSystemVolume</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Specifies whether application data is restricted to the system drive. Most restricted value is 1.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Not restricted.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Restricted.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="RestrictAppDataToSystemVolume" GpAreaPath="AppxPackageManager~AT~WindowsComponents~AppxDeployment" />
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>RestrictAppToSystemVolume</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Specifies whether the installation of applications is restricted to the system drive. Most restricted value is 1.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Not restricted.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Restricted.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="DisableDeploymentToNonSystemVolumes" GpAreaPath="AppxPackageManager~AT~WindowsComponents~AppxDeployment" />
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>DisableStoreOriginatedApps</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Boolean value that disables the launch of all apps from Microsoft Store that came pre-installed or were downloaded.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.14393</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>4.1</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0xAB;0xAC;0xAF;0xBC;0xBF;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Enable launch of apps.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Disable launch of apps.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="DisableStoreApps" GpAreaPath="WindowsStore~AT~WindowsComponents~WindowsStore" />
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>BlockNonAdminUserInstall</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Manages non-administrator users' ability to install Windows app packages. If you enable this policy, non-administrators will be unable to initiate installation of Windows app packages. Administrators who wish to install an app will need to do so from an Administrator context (for example, an Administrator PowerShell window). All users will still be able to install Windows app packages via the Microsoft Store, if permitted by other policies. If you disable or do not configure this policy, all users will be able to initiate installation of Windows app packages.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.19041</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>10.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0xAB;0xAC;0xAF;0xBC;0xBF;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Disabled. All users will be able to initiate installation of Windows app packages.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Enabled. Non-administrator users will not be able to initiate installation of Windows app packages.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="BlockNonAdminUserInstall" GpAreaPath="AppxPackageManager~AT~WindowsComponents~AppxDeployment" />
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>ScheduleForceRestartForUpdateFailures</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>To ensure apps are up-to-date, this policy allows the admins to set a recurring or one time date to restart apps whose update failed due to the app being in use allowing the update to be applied. Value type is string.</Description>
+        <DFFormat>
+          <chr />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.17763</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>8.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x88;0xAB;0xAC;0xAF;0xBC;0xBF;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="XSD">
+          <MSFT:Value><![CDATA[<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:simpleType name="recurrence" final="restriction">
+    <xs:restriction base="xs:string">
+        <xs:enumeration value="None" />
+        <xs:enumeration value="Daily" />
+        <xs:enumeration value="Weekly" />
+        <xs:enumeration value="Monthly" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="daysOfWeek" final="restriction">
+    <xs:restriction base="xs:unsignedByte">
+      <xs:minInclusive value="1" />
+      <xs:maxInclusive value="127" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="daysOfMonth" final="restriction">
+    <xs:restriction base="xs:unsignedInt">
+      <xs:minInclusive value="1" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:element name="ForceRestart">
+    <xs:complexType>
+      <xs:attribute name="StartDateTime" type="xs:dateTime" use="required"/> 
+      <xs:attribute name="Recurrence" type="recurrence" use="required"/> 
+      <xs:attribute name="RunIfTaskIsMissed" type="xs:boolean" use="required"/> 
+      <xs:attribute name="DaysOfWeek" type="daysOfWeek"/> 
+      <xs:attribute name="DaysOfMonth" type="daysOfMonth"/> 
+    </xs:complexType>
+  </xs:element>
+</xs:schema>]]></MSFT:Value>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+  </Node>
+</MgmtTree>

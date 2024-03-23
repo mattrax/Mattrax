@@ -1,0 +1,315 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE MgmtTree PUBLIC " -//OMA//DTD-DM-DDF 1.2//EN"
+  "http://www.openmobilealliance.org/tech/DTD/DM_DDF-V1_2.dtd"
+  [<?oma-dm-ddf-ver supported-versions="1.2"?>]>
+<MgmtTree xmlns:MSFT="http://schemas.microsoft.com/MobileDevice/DM">
+  <VerDTD>1.2</VerDTD>
+  <Node>
+    <NodeName>NetworkIsolation</NodeName>
+    <Path>./Device/Vendor/MSFT/Policy/Config</Path>
+    <DFProperties>
+      <AccessType>
+        <Get />
+      </AccessType>
+      <DFFormat>
+        <node />
+      </DFFormat>
+      <Occurrence>
+        <One />
+      </Occurrence>
+      <Scope>
+        <Permanent />
+      </Scope>
+      <DFType>
+        <MIME>com.microsoft/11/MDM/Policy</MIME>
+      </DFType>
+    </DFProperties>
+    <Node>
+      <NodeName>EnterpriseCloudResources</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Contains a list of Enterprise resource domains hosted in the cloud that need to be protected. Connections to these resources are considered enterprise data. If a proxy is paired with a cloud resource, traffic to the cloud resource will be routed through the enterprise network via the denoted proxy server (on Port 80). A proxy server used for this purpose must also be configured using the EnterpriseInternalProxyServers policy. This domain list is a pipe-separated list of cloud resources. Each cloud resource can also be paired optionally with an internal proxy server by using a trailing comma followed by the proxy address. For example, &lt;cloudresource&gt;|&lt;cloudresource&gt;|&lt;cloudresource&gt;,&lt;proxy&gt;|&lt;cloudresource&gt;|&lt;cloudresource&gt;,&lt;proxy&gt;|.</Description>
+        <DFFormat>
+          <chr />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.14393</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>4.1</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="None">
+          <MSFT:List Delimiter="|" />
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="WF_NetIsolation_EnterpriseCloudResources" GpAreaPath="NetworkIsolation~AT~Network~WF_Isolation" GpElement="WF_NetIsolation_EnterpriseCloudResourcesBox" />
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>EnterpriseInternalProxyServers</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This is the comma-separated list of internal proxy servers. For example 157.54.14.28, 157.54.11.118, 10.202.14.167, 157.53.14.163, 157.69.210.59. These proxies have been configured by the admin to connect to specific resources on the Internet. They are considered to be enterprise network locations. The proxies are only leveraged in configuring the EnterpriseCloudResources policy to force traffic to the matched cloud resources through these proxies.</Description>
+        <DFFormat>
+          <chr />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="None">
+          <MSFT:List Delimiter="," />
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="WF_NetIsolation_Intranet_Proxies" GpAreaPath="NetworkIsolation~AT~Network~WF_Isolation" GpElement="WF_NetIsolation_Intranet_ProxiesBox" />
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>EnterpriseIPRange</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Sets the enterprise IP ranges that define the computers in the enterprise network. Data that comes from those computers will be considered part of the enterprise and protected. These locations will be considered a safe destination for enterprise data to be shared to. This is a comma-separated list of IPv4 and IPv6 ranges.</Description>
+        <DFFormat>
+          <chr />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="None">
+          <MSFT:List Delimiter="," />
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="WF_NetIsolation_PrivateSubnet" GpAreaPath="NetworkIsolation~AT~Network~WF_Isolation" GpElement="WF_NetIsolation_PrivateSubnetBox" />
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>EnterpriseIPRangesAreAuthoritative</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Boolean value that tells the client to accept the configured list and not to use heuristics to attempt to find other subnets.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.14393</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>4.1</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Enable</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Disable</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="WF_NetIsolation_Authoritative_Subnet" GpAreaPath="NetworkIsolation~AT~Network~WF_Isolation" />
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>EnterpriseNetworkDomainNames</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This is the list of domains that comprise the boundaries of the enterprise. Data from one of these domains that is sent to a device will be considered enterprise data and protected These locations will be considered a safe destination for enterprise data to be shared to. This is a comma-separated list of domains, for example contoso. sharepoint. com, Fabrikam. com. Note The client requires domain name to be canonical, otherwise the setting will be rejected by the client.  Here are the steps to create canonical domain names:Transform the ASCII characters (A-Z only) to lower case. For example, Microsoft. COM -&gt; microsoft. com. Call IdnToAscii with IDN_USE_STD3_ASCII_RULES as the flags. Call IdnToUnicode with no flags set (dwFlags = 0).</Description>
+        <DFFormat>
+          <chr />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="None">
+          <MSFT:List Delimiter="," />
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>EnterpriseProxyServers</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This is a comma-separated list of proxy servers. Any server on this list is considered non-enterprise. For example 157.54.14.28, 157.54.11.118, 10.202.14.167, 157.53.14.163, 157.69.210.59.</Description>
+        <DFFormat>
+          <chr />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>1.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="None">
+          <MSFT:List Delimiter="," />
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="WF_NetIsolation_Domain_Proxies" GpAreaPath="NetworkIsolation~AT~Network~WF_Isolation" GpElement="WF_NetIsolation_Domain_ProxiesBox" />
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>EnterpriseProxyServersAreAuthoritative</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Boolean value that tells the client to accept the configured list of proxies and not try to detect other work proxies.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.14393</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>4.1</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Enable</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Disable</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="WF_NetIsolation_Authoritative_Proxies" GpAreaPath="NetworkIsolation~AT~Network~WF_Isolation" />
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>NeutralResources</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>List of domain names that can used for work or personal resource.</Description>
+        <DFFormat>
+          <chr />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.14393</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>4.1</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="None">
+          <MSFT:List Delimiter="," />
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="WF_NetIsolation_NeutralResources" GpAreaPath="NetworkIsolation~AT~Network~WF_Isolation" GpElement="WF_NetIsolation_NeutralResourcesBox" />
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+  </Node>
+</MgmtTree>

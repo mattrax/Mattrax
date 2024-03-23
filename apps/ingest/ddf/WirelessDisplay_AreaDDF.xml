@@ -1,0 +1,485 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE MgmtTree PUBLIC " -//OMA//DTD-DM-DDF 1.2//EN"
+  "http://www.openmobilealliance.org/tech/DTD/DM_DDF-V1_2.dtd"
+  [<?oma-dm-ddf-ver supported-versions="1.2"?>]>
+<MgmtTree xmlns:MSFT="http://schemas.microsoft.com/MobileDevice/DM">
+  <VerDTD>1.2</VerDTD>
+  <Node>
+    <NodeName>WirelessDisplay</NodeName>
+    <Path>./Device/Vendor/MSFT/Policy/Config</Path>
+    <DFProperties>
+      <AccessType>
+        <Get />
+      </AccessType>
+      <DFFormat>
+        <node />
+      </DFFormat>
+      <Occurrence>
+        <One />
+      </Occurrence>
+      <Scope>
+        <Permanent />
+      </Scope>
+      <DFType>
+        <MIME>com.microsoft/11/MDM/Policy</MIME>
+      </DFType>
+    </DFProperties>
+    <Node>
+      <NodeName>AllowProjectionFromPC</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy allows you to turn off projection from a PC.                             If you set it to 0, your PC cannot discover or project to other devices.                             If you set it to 1, your PC can discover and project to other devices.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.15063</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>5.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Your PC cannot discover or project to other devices.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Your PC can discover and project to other devices.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowProjectionFromPCOverInfrastructure</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy allows you to turn off projection from a PC over infrastructure.                             If you set it to 0, your PC cannot discover or project to other infrastructure devices, though it may still be possible to discover and project over WiFi Direct.                             If you set it to 1, your PC can discover and project to other devices over infrastructure.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.15063</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>5.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Your PC cannot discover or project to other infrastructure devices, although it is possible to discover and project over WiFi Direct.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Your PC can discover and project to other devices over infrastructure.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowProjectionToPC</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting allows you to turn off projection to a PC                             If you set it to 0, your PC can't be discoverable or projected to over Wi-Fi Direct.                              If you set it to 1, your PC can be discoverable and projected to over Wi-Fi Direct. The user has an option to turn it always on or off except for manual launch, too.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.14393</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>4.1</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Projection to PC is not allowed. Always off and the user cannot enable it.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Projection to PC is allowed. Enabled only above the lock screen.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="AllowProjectionToPC" GpAreaPath="WirelessDisplay~AT~WindowsComponents~Connect" />
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowProjectionToPCOverInfrastructure</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting allows you to turn off projection to a PC over infrastructure.                             If you set it to 0, your PC cannot be discoverable and can't be projected to over infrastructure, though it may still be possible to project over WiFi Direct.                             If you set it to 1, your PC can be discoverable and can be projected to over infrastructure.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.15063</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>5.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Your PC is not discoverable and other devices cannot project to it over infrastructure, although it is possible to project to it over WiFi Direct.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Your PC is discoverable and other devices can project to it over infrastructure.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowUserInputFromWirelessDisplayReceiver</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>Setting this policy controls whether or not the wireless display can send input—keyboard, mouse, pen, and touch input if the display supports it—back to the source device.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.10586</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>4.1</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Wireless display input disabled.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Wireless display input enabled.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>RequirePinForPairing</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting allows you to require a pin for pairing.                             If you set this to 0, a pin isn't required for pairing.                             If you set this to 1, the pairing ceremony for new devices will always require a PIN.                             If you set this to 2, all pairings will require PIN.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.14393</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>4.1</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>PIN is not required.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Pairing ceremony for new devices will always require a PIN</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>2</MSFT:Value>
+            <MSFT:ValueDescription>All pairings will require PIN</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:GpMapping GpEnglishName="RequirePinForPairing" GpAreaPath="WirelessDisplay~AT~WindowsComponents~Connect" />
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowMdnsAdvertisement</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting allows you to turn off the Wireless Display multicast DNS service advertisement from a Wireless Display receiver.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.16299</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>6.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Not allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowMdnsDiscovery</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting allows you to turn off discovering the display service advertised over multicast DNS by a Wireless Display receiver.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.16299</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>6.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Not allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowMovementDetectionOnInfrastructure</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting allows you to disable the infrastructure movement detection feature.                     If you set it to 0, your PC may stay connected and continue to project if you walk away from a Wireless Display receiver to which you are projecting over infrastructure.                     If you set it to 1, your PC will detect that you have moved and will automatically disconnect your infrastructure Wireless Display session.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.22000</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>11.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Not allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowPCSenderToBeTCPClient</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting allows a PC acting as a Wireless Display sender to be a TCP client for the TCP session carrying the projection stream to the receiver.                             If you set it to 0, your PC will only participate in an outgoing projection as a TCP server.                             If you set it to 1, your PC may start an outgoing projection as a TCP client.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.22000</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>11.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Not allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AllowPCReceiverToBeTCPServer</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting allows a PC acting as a Wireless Display receiver to be a TCP server for the TCP session carrying the projection stream to the receiver.                             If you set it to 0, your PC receiver will start the outbound connection as a TCP client.                             If you set it to 1, your PC may receive the incoming projection as a TCP server.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>1</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.22000</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>11.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Not allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Allowed.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+  </Node>
+</MgmtTree>

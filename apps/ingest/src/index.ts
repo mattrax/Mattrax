@@ -2,6 +2,8 @@ import { parseString } from "xml2js";
 import fs from "node:fs";
 import path from "node:path";
 
+// TODO: Properly account for wildcard's in the URI -> Idk how Serde will support that
+
 function handleNode(node: any, path_prefix: string, results: any[]) {
 	const name = node.NodeName[0];
 	let path = path_prefix;
@@ -58,9 +60,18 @@ function handleNode(node: any, path_prefix: string, results: any[]) {
 		type = "u64";
 	} else if (datatype === "chr") {
 		type = "String";
+	} else if (datatype === "b64") {
+		type = "String"; // TODO
+	} else if (datatype === "bin") {
+		type = "Vec<u8>"; // TODO
 	} else {
-		// TODO: Error
+		throw new Error(`Found unsupported datatype: ${datatype}`);
 	}
+
+	// TODO: Default
+	// node.DFProperties[0].DefaultValue?.[0] ?? null
+
+	// TODO: Scope - path.startsWith("./Device") ? "device" : "user",
 
 	console.log(datatype);
 
@@ -70,7 +81,7 @@ function handleNode(node: any, path_prefix: string, results: any[]) {
 				"\n\t///",
 		  )}\n\t`
 		: "";
-	results.push(`\t${comment}#[serde(rename = "${path}")] ${name}(${type})`);
+	results.push(`\t${comment}#[serde(rename = "${path}")]\n\t${name}(${type})`);
 }
 
 async function parseDDF(name: string, raw: string) {
@@ -92,50 +103,51 @@ async function parseDDF(name: string, raw: string) {
 	return parts;
 }
 
+// TODO: Automatically find all files
 const parts = [
 	...(await parseDDF(
 		"Policy",
-		fs.readFileSync(path.join(__dirname, "../ddf/PolicyDDF_all.xml"), "utf8"),
+		fs.readFileSync(path.join(__dirname, "../ddf/Policy.xml"), "utf8"),
 	)),
-	...(await parseDDF(
-		"ActiveSync",
-		fs.readFileSync(
-			path.join(__dirname, "../ddf/ActiveSyncCSP_DDF.xml"),
-			"utf8",
-		),
-	)),
-	...(await parseDDF(
-		"AssignedAccess",
-		fs.readFileSync(
-			path.join(__dirname, "../ddf/AssignedAccessDDF.xml"),
-			"utf8",
-		),
-	)),
-	...(await parseDDF(
-		"CertificateStore",
-		fs.readFileSync(
-			path.join(__dirname, "../ddf/CertificateStore_DDF.xml"),
-			"utf8",
-		),
-	)),
-	...(await parseDDF(
-		"ClientCertificateInstall",
-		fs.readFileSync(
-			path.join(__dirname, "../ddf/ClientCertificateInstall_DDF.xml"),
-			"utf8",
-		),
-	)),
-	...(await parseDDF(
-		"CMPolicyEnterprise",
-		fs.readFileSync(
-			path.join(__dirname, "../ddf/CMPolicyEnterprise_DDF.xml"),
-			"utf8",
-		),
-	)),
-	...(await parseDDF(
-		"Defender",
-		fs.readFileSync(path.join(__dirname, "../ddf/DefenderDDF.xml"), "utf8"),
-	)),
+	// ...(await parseDDF(
+	// 	"ActiveSync",
+	// 	fs.readFileSync(
+	// 		path.join(__dirname, "../ddf/ActiveSyncCSP_DDF.xml"),
+	// 		"utf8",
+	// 	),
+	// )),
+	// ...(await parseDDF(
+	// 	"AssignedAccess",
+	// 	fs.readFileSync(
+	// 		path.join(__dirname, "../ddf/AssignedAccessDDF.xml"),
+	// 		"utf8",
+	// 	),
+	// )),
+	// ...(await parseDDF(
+	// 	"CertificateStore",
+	// 	fs.readFileSync(
+	// 		path.join(__dirname, "../ddf/CertificateStore_DDF.xml"),
+	// 		"utf8",
+	// 	),
+	// )),
+	// ...(await parseDDF(
+	// 	"ClientCertificateInstall",
+	// 	fs.readFileSync(
+	// 		path.join(__dirname, "../ddf/ClientCertificateInstall_DDF.xml"),
+	// 		"utf8",
+	// 	),
+	// )),
+	// ...(await parseDDF(
+	// 	"CMPolicyEnterprise",
+	// 	fs.readFileSync(
+	// 		path.join(__dirname, "../ddf/CMPolicyEnterprise_DDF.xml"),
+	// 		"utf8",
+	// 	),
+	// )),
+	// ...(await parseDDF(
+	// 	"Defender",
+	// 	fs.readFileSync(path.join(__dirname, "../ddf/DefenderDDF.xml"), "utf8"),
+	// )),
 	// 		// TODO: ...
 	// 		await parseDDF(
 	// 			"Win32AppInventory",

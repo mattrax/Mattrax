@@ -1,0 +1,597 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE MgmtTree PUBLIC " -//OMA//DTD-DM-DDF 1.2//EN"
+  "http://www.openmobilealliance.org/tech/DTD/DM_DDF-V1_2.dtd"
+  [<?oma-dm-ddf-ver supported-versions="1.2"?>]>
+<MgmtTree xmlns:MSFT="http://schemas.microsoft.com/MobileDevice/DM">
+  <VerDTD>1.2</VerDTD>
+  <MSFT:Diagnostics></MSFT:Diagnostics>
+  <Node>
+    <NodeName>Policy</NodeName>
+    <Path>./User/Vendor/MSFT</Path>
+    <DFProperties>
+      <AccessType>
+        <Get />
+      </AccessType>
+      <Description>The root node for the Policy configuration service provider.</Description>
+      <DFFormat>
+        <node />
+      </DFFormat>
+      <Occurrence>
+        <One />
+      </Occurrence>
+      <Scope>
+        <Permanent />
+      </Scope>
+      <DFType>
+        <MIME />
+      </DFType>
+    </DFProperties>
+    <Node>
+      <NodeName>Config</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+        </AccessType>
+        <Description>Node for grouping all policies configured by one source. The configuration source can use this path to set policy values and later query any policy value that it previously set. One policy can be configured by multiple configuration sources. If a configuration source wants to query the result of conflict resolution (for example, if Exchange and MDM both attempt to set a value,) the configuration source can use the Policy/Result path to retrieve the resulting value.</Description>
+        <DFFormat>
+          <node />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <DDFName />
+        </DFType>
+      </DFProperties>
+      <Node>
+        <NodeName></NodeName>
+        <DFProperties>
+          <AccessType>
+            <Add />
+            <Delete />
+            <Get />
+          </AccessType>
+          <Description>The area group that can be configured by a single technology for a single provider. Once added, you cannot change the value.  See the individual Area DDFs for Policy CSP for a list of Areas that can be configured.</Description>
+          <DFFormat>
+            <node />
+          </DFFormat>
+          <Occurrence>
+            <ZeroOrMore />
+          </Occurrence>
+          <Scope>
+            <Dynamic />
+          </Scope>
+          <DFTitle>AreaName</DFTitle>
+          <DFType>
+            <DDFName />
+          </DFType>
+          <MSFT:DynamicNodeNaming>
+            <MSFT:ClientInventory />
+          </MSFT:DynamicNodeNaming>
+        </DFProperties>
+        <Node>
+          <NodeName></NodeName>
+          <DFProperties>
+            <AccessType>
+              <Add />
+              <Delete />
+              <Get />
+              <Replace />
+            </AccessType>
+            <Description>Specifies the name/value pair used in the policy.  See the individual Area DDFs for more information about the policies available to configure.</Description>
+            <DFFormat>
+              <null />
+            </DFFormat>
+            <Occurrence>
+              <ZeroOrMore />
+            </Occurrence>
+            <Scope>
+              <Dynamic />
+            </Scope>
+            <DFTitle>PolicyName</DFTitle>
+            <DFType>
+              <MIME />
+            </DFType>
+            <MSFT:DynamicNodeNaming>
+              <MSFT:ClientInventory />
+            </MSFT:DynamicNodeNaming>
+            <MSFT:AllowedValues ValueType="None"></MSFT:AllowedValues>
+          </DFProperties>
+        </Node>
+      </Node>
+    </Node>
+    <Node>
+      <NodeName>Result</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Get />
+        </AccessType>
+        <Description>Groups the evaluated policies from all providers that can be configured.</Description>
+        <DFFormat>
+          <node />
+        </DFFormat>
+        <Occurrence>
+          <One />
+        </Occurrence>
+        <Scope>
+          <Permanent />
+        </Scope>
+        <DFType>
+          <DDFName />
+        </DFType>
+      </DFProperties>
+      <Node>
+        <NodeName></NodeName>
+        <DFProperties>
+          <AccessType>
+            <Get />
+          </AccessType>
+          <Description>The area group that can be configured by a single technology independent of the providers. See the individual Area DDFs for Policy CSP for a list of Areas that can be configured.</Description>
+          <DFFormat>
+            <node />
+          </DFFormat>
+          <Occurrence>
+            <OneOrMore />
+          </Occurrence>
+          <Scope>
+            <Dynamic />
+          </Scope>
+          <DFTitle>AreaName</DFTitle>
+          <DFType>
+            <DDFName />
+          </DFType>
+          <MSFT:DynamicNodeNaming>
+            <MSFT:ClientInventory />
+          </MSFT:DynamicNodeNaming>
+        </DFProperties>
+        <Node>
+          <NodeName></NodeName>
+          <DFProperties>
+            <AccessType>
+              <Get />
+            </AccessType>
+            <Description>Specifies the name/value pair used in the policy. See the individual Area DDFs for more information about the policies available to configure.</Description>
+            <DFFormat>
+              <null />
+            </DFFormat>
+            <Occurrence>
+              <OneOrMore />
+            </Occurrence>
+            <Scope>
+              <Dynamic />
+            </Scope>
+            <DFTitle>PolicyName</DFTitle>
+            <DFType>
+              <MIME />
+            </DFType>
+            <MSFT:DynamicNodeNaming>
+              <MSFT:ServerGeneratedUniqueIdentifier />
+            </MSFT:DynamicNodeNaming>
+          </DFProperties>
+        </Node>
+      </Node>
+    </Node>
+  </Node>
+  <Node>
+    <NodeName>Policy</NodeName>
+    <Path>./Device/Vendor/MSFT</Path>
+    <DFProperties>
+      <AccessType>
+        <Get />
+      </AccessType>
+      <Description>The root node for the Policy configuration service provider.</Description>
+      <DFFormat>
+        <node />
+      </DFFormat>
+      <Occurrence>
+        <One />
+      </Occurrence>
+      <Scope>
+        <Permanent />
+      </Scope>
+      <DFType>
+        <MIME />
+      </DFType>
+      <MSFT:Applicability>
+        <MSFT:OsBuildVersion>10.0.10240</MSFT:OsBuildVersion>
+        <MSFT:CspVersion>1.0</MSFT:CspVersion>
+        <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x62;0x63;0x64;0x65;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x88;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xAF;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+      </MSFT:Applicability>
+    </DFProperties>
+    <Node>
+      <NodeName>ConfigOperations</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+        </AccessType>
+        <Description>The root node for grouping different configuration operations.</Description>
+        <DFFormat>
+          <node />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <DDFName />
+        </DFType>
+      </DFProperties>
+      <Node>
+        <NodeName>ADMXInstall</NodeName>
+        <DFProperties>
+          <AccessType>
+            <Add />
+            <Delete />
+            <Get />
+          </AccessType>
+          <Description>Allows settings for ADMX files for Win32 and Desktop Bridge apps to be imported (ingested) by your device and processed into new ADMX-backed policies or preferences. By using ADMXInstall, you can add ADMX-backed policies for those Win32 or Desktop Bridge apps that have been added between OS releases. ADMX-backed policies are ingested to your device by using the Policy CSP URI: ./Vendor/MSFT/Policy/ConfigOperations/ADMXInstall. Each ADMX-backed policy or preference that is added is assigned a unique ID. ADMX files that have been installed by using ConfigOperations/ADMXInstall can later be deleted by using the URI delete operation. Deleting an ADMX file will delete the ADMX file from disk, remove the metadata from the ADMXdefault registry hive, and delete all the policies that were set from the file. The MDM server can also delete all ADMX policies that are tied to a particular app by calling delete on the URI, ./Vendor/MSFT/Policy/ConfigOperations/ADMXInstall/{AppName}.</Description>
+          <DFFormat>
+            <node />
+          </DFFormat>
+          <Occurrence>
+            <ZeroOrOne />
+          </Occurrence>
+          <Scope>
+            <Dynamic />
+          </Scope>
+          <DFType>
+            <DDFName />
+          </DFType>
+          <MSFT:Applicability>
+            <MSFT:OsBuildVersion>10.0.16299</MSFT:OsBuildVersion>
+            <MSFT:CspVersion>6.0</MSFT:CspVersion>
+          </MSFT:Applicability>
+        </DFProperties>
+        <Node>
+          <NodeName></NodeName>
+          <DFProperties>
+            <AccessType>
+              <Add />
+              <Delete />
+              <Get />
+            </AccessType>
+            <Description>Specifies the name of the Win32 or Desktop Bridge app associated with the ADMX file.</Description>
+            <DFFormat>
+              <node />
+            </DFFormat>
+            <Occurrence>
+              <ZeroOrMore />
+            </Occurrence>
+            <Scope>
+              <Dynamic />
+            </Scope>
+            <DFTitle>AppName</DFTitle>
+            <DFType>
+              <DDFName />
+            </DFType>
+            <MSFT:DynamicNodeNaming>
+              <MSFT:UniqueName>Specifies the name of the Win32 or Desktop Bridge app associated with the ADMX file.</MSFT:UniqueName>
+            </MSFT:DynamicNodeNaming>
+          </DFProperties>
+          <Node>
+            <NodeName>Properties</NodeName>
+            <DFProperties>
+              <AccessType>
+                <Add />
+                <Delete />
+                <Get />
+              </AccessType>
+              <Description>Properties of Win32 App ADMX Ingestion</Description>
+              <DFFormat>
+                <node />
+              </DFFormat>
+              <Occurrence>
+                <ZeroOrOne />
+              </Occurrence>
+              <Scope>
+                <Dynamic />
+              </Scope>
+              <DFType>
+                <DDFName />
+              </DFType>
+              <MSFT:Applicability>
+                <MSFT:OsBuildVersion>10.0.18363, 10.0.18362.387, 10.0.17763.832, 10.0.17134.1099, 10.0.16299.1481</MSFT:OsBuildVersion>
+                <MSFT:CspVersion>6.0</MSFT:CspVersion>
+              </MSFT:Applicability>
+            </DFProperties>
+            <Node>
+              <NodeName></NodeName>
+              <DFProperties>
+                <AccessType>
+                  <Add />
+                  <Delete />
+                  <Get />
+                </AccessType>
+                <Description>Setting Type of Win32 App. Policy Or Preference</Description>
+                <DFFormat>
+                  <node />
+                </DFFormat>
+                <Occurrence>
+                  <ZeroOrOne />
+                </Occurrence>
+                <Scope>
+                  <Dynamic />
+                </Scope>
+                <DFTitle>SettingsType</DFTitle>
+                <DFType>
+                  <DDFName />
+                </DFType>
+                <MSFT:DynamicNodeNaming>
+                  <MSFT:UniqueName>Setting Type of Win32 App. Policy Or Preference</MSFT:UniqueName>
+                </MSFT:DynamicNodeNaming>
+              </DFProperties>
+              <Node>
+                <NodeName></NodeName>
+                <DFProperties>
+                  <AccessType>
+                    <Add />
+                    <Delete />
+                    <Get />
+                  </AccessType>
+                  <Description>Unique ID of ADMX file</Description>
+                  <DFFormat>
+                    <node />
+                  </DFFormat>
+                  <Occurrence>
+                    <ZeroOrOne />
+                  </Occurrence>
+                  <Scope>
+                    <Dynamic />
+                  </Scope>
+                  <DFTitle>AdmxFileId</DFTitle>
+                  <DFType>
+                    <DDFName />
+                  </DFType>
+                  <MSFT:DynamicNodeNaming>
+                    <MSFT:ServerGeneratedUniqueIdentifier />
+                  </MSFT:DynamicNodeNaming>
+                </DFProperties>
+                <Node>
+                  <NodeName>Version</NodeName>
+                  <DFProperties>
+                    <AccessType>
+                      <Add />
+                      <Delete />
+                      <Get />
+                      <Replace />
+                    </AccessType>
+                    <Description>Version of ADMX file.  This can be set by the server to keep a record of the versioning of the ADMX file ingested by the device.</Description>
+                    <DFFormat>
+                      <chr />
+                    </DFFormat>
+                    <Occurrence>
+                      <ZeroOrOne />
+                    </Occurrence>
+                    <Scope>
+                      <Dynamic />
+                    </Scope>
+                    <DFType>
+                      <DDFName />
+                    </DFType>
+                    <MSFT:AllowedValues ValueType="None"></MSFT:AllowedValues>
+                  </DFProperties>
+                </Node>
+              </Node>
+            </Node>
+          </Node>
+          <Node>
+            <NodeName></NodeName>
+            <DFProperties>
+              <AccessType>
+                <Add />
+                <Delete />
+                <Get />
+              </AccessType>
+              <Description>Setting Type of Win32 App. Policy Or Preference</Description>
+              <DFFormat>
+                <node />
+              </DFFormat>
+              <Occurrence>
+                <ZeroOrOne />
+              </Occurrence>
+              <Scope>
+                <Dynamic />
+              </Scope>
+              <DFTitle>SettingsType</DFTitle>
+              <DFType>
+                <DDFName />
+              </DFType>
+              <MSFT:DynamicNodeNaming>
+                <MSFT:UniqueName>Setting Type of Win32 App. Policy Or Preference</MSFT:UniqueName>
+              </MSFT:DynamicNodeNaming>
+            </DFProperties>
+            <Node>
+              <NodeName></NodeName>
+              <DFProperties>
+                <AccessType>
+                  <Add />
+                  <Delete />
+                  <Get />
+                  <Replace />
+                </AccessType>
+                <Description>Unique ID of ADMX file</Description>
+                <DFFormat>
+                  <chr />
+                </DFFormat>
+                <Occurrence>
+                  <ZeroOrOne />
+                </Occurrence>
+                <Scope>
+                  <Dynamic />
+                </Scope>
+                <DFTitle>AdmxFileId</DFTitle>
+                <DFType>
+                  <DDFName />
+                </DFType>
+                <MSFT:DynamicNodeNaming>
+                  <MSFT:ServerGeneratedUniqueIdentifier />
+                </MSFT:DynamicNodeNaming>
+                <MSFT:AllowedValues ValueType="None"></MSFT:AllowedValues>
+              </DFProperties>
+            </Node>
+          </Node>
+        </Node>
+      </Node>
+    </Node>
+    <Node>
+      <NodeName>Config</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+        </AccessType>
+        <Description>Node for grouping all policies configured by one source. The configuration source can use this path to set policy values and later query any policy value that it previously set. One policy can be configured by multiple configuration sources. If a configuration source wants to query the result of conflict resolution (for example, if Exchange and MDM both attempt to set a value,) the configuration source can use the Policy/Result path to retrieve the resulting value.</Description>
+        <DFFormat>
+          <node />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <DDFName />
+        </DFType>
+      </DFProperties>
+      <Node>
+        <NodeName></NodeName>
+        <DFProperties>
+          <AccessType>
+            <Add />
+            <Delete />
+            <Get />
+          </AccessType>
+          <Description>The area group that can be configured by a single technology for a single provider. Once added, you cannot change the value.  See the individual Area DDFs for Policy CSP for a list of Areas that can be configured.</Description>
+          <DFFormat>
+            <node />
+          </DFFormat>
+          <Occurrence>
+            <ZeroOrMore />
+          </Occurrence>
+          <Scope>
+            <Dynamic />
+          </Scope>
+          <DFTitle>AreaName</DFTitle>
+          <DFType>
+            <DDFName />
+          </DFType>
+          <MSFT:DynamicNodeNaming>
+            <MSFT:ClientInventory />
+          </MSFT:DynamicNodeNaming>
+        </DFProperties>
+        <Node>
+          <NodeName></NodeName>
+          <DFProperties>
+            <AccessType>
+              <Add />
+              <Delete />
+              <Get />
+              <Replace />
+            </AccessType>
+            <Description>Specifies the name/value pair used in the policy.  See the individual Area DDFs for more information about the policies available to configure.</Description>
+            <DFFormat>
+              <null />
+            </DFFormat>
+            <Occurrence>
+              <ZeroOrMore />
+            </Occurrence>
+            <Scope>
+              <Dynamic />
+            </Scope>
+            <DFTitle>PolicyName</DFTitle>
+            <DFType>
+              <MIME />
+            </DFType>
+            <MSFT:DynamicNodeNaming>
+              <MSFT:ClientInventory />
+            </MSFT:DynamicNodeNaming>
+            <MSFT:AllowedValues ValueType="None"></MSFT:AllowedValues>
+          </DFProperties>
+        </Node>
+      </Node>
+    </Node>
+    <Node>
+      <NodeName>Result</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Get />
+        </AccessType>
+        <Description>Groups the evaluated policies from all providers that can be configured.</Description>
+        <DFFormat>
+          <node />
+        </DFFormat>
+        <Occurrence>
+          <One />
+        </Occurrence>
+        <Scope>
+          <Permanent />
+        </Scope>
+        <DFType>
+          <DDFName />
+        </DFType>
+      </DFProperties>
+      <Node>
+        <NodeName></NodeName>
+        <DFProperties>
+          <AccessType>
+            <Get />
+          </AccessType>
+          <Description>The area group that can be configured by a single technology independent of the providers. See the individual Area DDFs for Policy CSP for a list of Areas that can be configured.</Description>
+          <DFFormat>
+            <node />
+          </DFFormat>
+          <Occurrence>
+            <OneOrMore />
+          </Occurrence>
+          <Scope>
+            <Dynamic />
+          </Scope>
+          <DFTitle>AreaName</DFTitle>
+          <DFType>
+            <DDFName />
+          </DFType>
+          <MSFT:DynamicNodeNaming>
+            <MSFT:ClientInventory />
+          </MSFT:DynamicNodeNaming>
+        </DFProperties>
+        <Node>
+          <NodeName></NodeName>
+          <DFProperties>
+            <AccessType>
+              <Get />
+            </AccessType>
+            <Description>Specifies the name/value pair used in the policy. See the individual Area DDFs for more information about the policies available to configure.</Description>
+            <DFFormat>
+              <null />
+            </DFFormat>
+            <Occurrence>
+              <OneOrMore />
+            </Occurrence>
+            <Scope>
+              <Dynamic />
+            </Scope>
+            <DFTitle>PolicyName</DFTitle>
+            <DFType>
+              <MIME />
+            </DFType>
+            <MSFT:DynamicNodeNaming>
+              <MSFT:ClientInventory />
+            </MSFT:DynamicNodeNaming>
+            <MSFT:AllowedValues ValueType="None"></MSFT:AllowedValues>
+          </DFProperties>
+        </Node>
+      </Node>
+    </Node>
+  </Node>
+</MgmtTree>

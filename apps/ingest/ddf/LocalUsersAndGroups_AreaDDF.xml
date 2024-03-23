@@ -1,0 +1,118 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE MgmtTree PUBLIC " -//OMA//DTD-DM-DDF 1.2//EN"
+  "http://www.openmobilealliance.org/tech/DTD/DM_DDF-V1_2.dtd"
+  [<?oma-dm-ddf-ver supported-versions="1.2"?>]>
+<MgmtTree xmlns:MSFT="http://schemas.microsoft.com/MobileDevice/DM">
+  <VerDTD>1.2</VerDTD>
+  <Node>
+    <NodeName>LocalUsersAndGroups</NodeName>
+    <Path>./Device/Vendor/MSFT/Policy/Config</Path>
+    <DFProperties>
+      <AccessType>
+        <Get />
+      </AccessType>
+      <DFFormat>
+        <node />
+      </DFFormat>
+      <Occurrence>
+        <One />
+      </Occurrence>
+      <Scope>
+        <Permanent />
+      </Scope>
+      <DFType>
+        <MIME>com.microsoft/11/MDM/Policy</MIME>
+      </DFType>
+    </DFProperties>
+    <Node>
+      <NodeName>Configure</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This Setting allows an administrator to manage local groups on a Device.                             Possible settings:                             1. Update Group Membership: Update a group and add and/or remove members though the 'U' action.                             When using Update, existing group members that are not specified in the policy remain untouched.                             2. Replace Group Membership: Restrict a group by replacing group membership through the 'R' action.                             When using Replace, existing group membership is replaced by the list of members specified in                             the add member section. This option works in the same way as a Restricted Group and any group                             members that are not specified in the policy are removed.                             Caution: If the same group is configured with both Replace and Update, then Replace will win.</Description>
+        <DFFormat>
+          <chr />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>10.0.19042</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>10.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x1B;0x30;0x31;0x48;0x54;0x79;0x7A;0x7D;0x7E;0x81;0x82;0x88;0x8A;0x8B;0xA1;0xA2;0xA4;0xA5;0xAB;0xAC;0xBC;0xBF;0xCA;0xCB;0xCD;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="XSD">
+          <MSFT:Value><![CDATA[<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" version="1.0">
+                          <xs:simpleType name="name">
+                            <xs:restriction base="xs:string">
+                              <xs:maxLength value="255" />
+                            </xs:restriction>
+                          </xs:simpleType>
+                          <xs:element name="accessgroup">
+                            <xs:complexType>
+                                <xs:sequence>
+                                    <xs:element name="group" minOccurs="1" maxOccurs="1">
+                                      <xs:annotation>
+                                        <xs:documentation>Group Configuration Action</xs:documentation>
+                                      </xs:annotation>
+                                      <xs:complexType>
+                                        <xs:attribute name="action" type="name" use="required"/>
+                                      </xs:complexType>
+                                    </xs:element>
+                                    <xs:element name="add" minOccurs="0" maxOccurs="unbounded">
+                                      <xs:annotation>
+                                        <xs:documentation>Group Member to Add</xs:documentation>
+                                      </xs:annotation>
+                                      <xs:complexType>
+                                        <xs:attribute name="member" type="name" use="required"/>
+                                      </xs:complexType>
+                                    </xs:element>
+                                    <xs:element name="remove" minOccurs="0" maxOccurs="unbounded">
+                                      <xs:annotation>
+                                        <xs:documentation>Group Member to Remove</xs:documentation>
+                                      </xs:annotation>
+                                      <xs:complexType>
+                                        <xs:attribute name="member" type="name" use="required"/>
+                                      </xs:complexType>
+                                    </xs:element>
+                                    <xs:element name="property" minOccurs="0" maxOccurs="unbounded">
+                                      <xs:annotation>
+                                        <xs:documentation>Group property to configure</xs:documentation>
+                                      </xs:annotation>
+                                      <xs:complexType>
+                                        <xs:attribute name="desc" type="name" use="required"/>
+                                        <xs:attribute name="value" type="name" use="required"/>
+                                      </xs:complexType>
+                                    </xs:element>
+                                  </xs:sequence>
+                              <xs:attribute name="desc" type="name" use="required"/>
+                            </xs:complexType>
+                          </xs:element>
+                          <xs:element name="GroupConfiguration">
+                            <xs:complexType>
+                              <xs:sequence>
+                                <xs:element name="accessgroup" minOccurs="0" maxOccurs="unbounded">
+                                  <xs:annotation>
+                              <xs:documentation>Local Group Configuration</xs:documentation>
+                            </xs:annotation>
+                                </xs:element>
+                              </xs:sequence>
+                            </xs:complexType>
+                          </xs:element>
+                      </xs:schema>]]></MSFT:Value>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+  </Node>
+</MgmtTree>
