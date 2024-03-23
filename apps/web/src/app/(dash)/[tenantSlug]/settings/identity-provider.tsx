@@ -3,7 +3,6 @@ import type { RouteDefinition } from "@solidjs/router";
 import { toast } from "solid-sonner";
 import { As } from "@kobalte/core";
 import clsx from "clsx";
-
 import {
 	Badge,
 	Button,
@@ -15,12 +14,14 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@mattrax/ui";
+
+import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import IconIcOutlineClose from "~icons/ic/outline-close.jsx";
 import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
-import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
 import ENTRA_ID_ICON from "~/assets/EntraIDLogo.svg";
 import { useTenantSlug } from "../../[tenantSlug]";
+import { trpc } from "~/lib";
 
 export const route = {
 	load: ({ params }) => {

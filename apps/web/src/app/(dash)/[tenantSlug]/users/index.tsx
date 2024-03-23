@@ -1,8 +1,17 @@
-import { As } from "@kobalte/core";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Show, Suspense } from "solid-js";
+import { As } from "@kobalte/core";
+import {
+	Badge,
+	Button,
+	Input,
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+} from "@mattrax/ui";
 
+import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import IconCarbonCaretSort from "~icons/carbon/caret-sort.jsx";
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import type { RouterOutput } from "~/api/trpc";
@@ -13,15 +22,7 @@ import {
 	createSearchParamPagination,
 	selectCheckboxColumn,
 } from "~/components/StandardTable";
-import {
-	Badge,
-	Button,
-	Input,
-	Tooltip,
-	TooltipContent,
-	TooltipTrigger,
-} from "@mattrax/ui";
-import { trpc, untrackScopeFromSuspense } from "~/lib";
+import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 import { PageLayout, PageLayoutHeading } from "~/app/(dash)/PageLayout";
 import { useTenantSlug } from "../../[tenantSlug]";
