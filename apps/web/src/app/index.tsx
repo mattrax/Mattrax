@@ -8,9 +8,7 @@ import { AuthContext, useAuth } from "./AuthContext";
 import { trpc } from "~/lib";
 
 export const route = {
-	load: () => {
-		trpc.useContext().auth.me.ensureData();
-	},
+	load: () => trpc.useContext().auth.me.ensureData()
 };
 
 export default function Page() {
