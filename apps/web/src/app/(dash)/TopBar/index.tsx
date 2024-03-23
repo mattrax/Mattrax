@@ -40,14 +40,14 @@ export function TopBar(): JSX.Element {
 			queryClient.clear();
 		},
 	}));
-	const { lastEntry } = useNavItemsContext();
+	const { items } = useNavItemsContext();
 
 	return (
 		<>
 			<div
 				class={clsx(
 					"relative flex flex-row items-center px-6 gap-2 h-16 shrink-0",
-					!lastEntry() && "border-b border-gray-200",
+					!items() && "border-b border-gray-200",
 				)}
 			>
 				<A href="">

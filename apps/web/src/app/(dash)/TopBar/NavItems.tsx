@@ -17,14 +17,6 @@ export type NavItemConfig = {
 
 export const [NavItemsProvider, useNavItemsContext] = createContextProvider(
 	() => {
-		const [entries, setEntries] = createStore<
-			Array<{
-				items: Array<NavItemConfig>;
-				value: Accessor<string>;
-				prefix: Accessor<string>;
-			}>
-		>([]);
-
 		const matches = useMatches();
 
 		const route = createMemo(() => {
@@ -34,7 +26,7 @@ export const [NavItemsProvider, useNavItemsContext] = createContextProvider(
 			return m.find((m) => Array.isArray(m.route.info?.NAV_ITEMS));
 		});
 
-		const lastEntry = createMemo(() => {
+		const items = createMemo(() => {
 			const r = route();
 			if (!r) return;
 
@@ -44,16 +36,16 @@ export const [NavItemsProvider, useNavItemsContext] = createContextProvider(
 			};
 		});
 
-		return { entries, setEntries, lastEntry };
+		return { items: items };
 	},
 	null!,
 );
 
 export function NavItems() {
-	const { lastEntry } = useNavItemsContext();
+	const { items } = useNavItemsContext();
 
 	return (
-		<Show when={lastEntry()} keyed>
+		<Show when={items()} keyed>
 			{(entry) => (
 				<Tabs.Root
 					as="nav"
