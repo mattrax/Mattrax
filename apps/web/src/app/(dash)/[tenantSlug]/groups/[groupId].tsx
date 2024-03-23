@@ -9,13 +9,15 @@ import { GroupContextProvider } from "./[groupId]/Context";
 import { Breadcrumb } from "~/components/Breadcrumbs";
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
-import { useNavbarItems } from "../../TopBar/NavItems";
+
+const NAV_ITEMS = [{ title: "Group", href: "" }];
 
 export const route = {
 	load: ({ params }) =>
 		trpc.useContext().group.get.ensureData({
 			id: params.groupId!,
 		}),
+	info: { NAV_ITEMS },
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
@@ -23,8 +25,6 @@ export default function Layout(props: ParentProps) {
 	const query = trpc.group.get.useQuery(() => ({
 		id: params.groupId,
 	}));
-
-	useNavbarItems(NAV_ITEMS);
 
 	return (
 		<Show when={query.data !== undefined}>
@@ -48,5 +48,3 @@ function NotFound() {
 	// necessary since '..' adds trailing slash -_-
 	return <Navigate href="../../groups" />;
 }
-
-const NAV_ITEMS = [{ title: "Group", href: "" }];

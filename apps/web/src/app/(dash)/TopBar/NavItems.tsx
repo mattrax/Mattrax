@@ -1,7 +1,13 @@
 import { As, Tabs } from "@kobalte/core";
 import { createContextProvider } from "@solid-primitives/context";
-import { A, useMatch, useResolvedPath } from "@solidjs/router";
-import { type Accessor, For, Show, createMemo, onCleanup } from "solid-js";
+import { A, useMatch, useMatches, useResolvedPath } from "@solidjs/router";
+import {
+	type Accessor,
+	For,
+	Show,
+	createMemo,
+	onCleanup,
+} from "solid-js";
 import { createStore, produce } from "solid-js/store";
 
 export type NavItemConfig = {
@@ -19,9 +25,24 @@ export const [NavItemsProvider, useNavItemsContext] = createContextProvider(
 			}>
 		>([]);
 
-		const lastEntry = createMemo(() =>
-			entries.length < 1 ? undefined : entries[entries.length - 1],
-		);
+		const matches = useMatches();
+
+		const route = createMemo(() => {
+			const m = matches();
+			m.reverse();
+
+			return m.find((m) => Array.isArray(m.route.info?.NAV_ITEMS));
+		});
+
+		const lastEntry = createMemo(() => {
+			const r = route();
+			if (!r) return;
+
+			return {
+				items: r.route.info?.NAV_ITEMS as Array<NavItemConfig>,
+				prefix: () => r.path,
+			};
+		});
 
 		return { entries, setEntries, lastEntry };
 	},
@@ -36,7 +57,7 @@ export function NavItems() {
 			{(entry) => (
 				<Tabs.Root
 					as="nav"
-					value={entry.value()}
+					// value={entry.value()}
 					class="text-white sticky top-0 border-b border-gray-200 z-10 bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
 				>
 					<Tabs.List class="flex flex-row px-2">
@@ -70,25 +91,4 @@ export function NavItems() {
 			)}
 		</Show>
 	);
-}
-
-export function useNavbarItems(items: Array<NavItemConfig>) {
-	const { setEntries } = useNavItemsContext();
-
-	const prefix = useResolvedPath(() => "");
-	const match = useMatch(() => `${prefix()}/*rest`);
-
-	const value = createMemo(() => match()?.params.rest?.split("/")[0] ?? "");
-
-	setEntries(
-		produce((prev) => {
-			prev.push({
-				items,
-				value,
-				prefix: () => prefix()!,
-			});
-		}),
-	);
-
-	onCleanup(() => setEntries(produce((value) => value.pop())));
 }

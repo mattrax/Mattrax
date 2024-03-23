@@ -1,23 +1,26 @@
-import { createContextProvider } from "@solid-primitives/context";
 import { type ParentProps, Show } from "solid-js";
-import { A, Navigate, type RouteDefinition } from "@solidjs/router";
+import { Navigate, type RouteDefinition } from "@solidjs/router";
 import { toast } from "solid-sonner";
 import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
-import { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
 import { Badge } from "@mattrax/ui";
-import { useNavbarItems } from "../../TopBar/NavItems";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
 import { UserContextProvider } from "./[userId]/Context";
+
+const NAV_ITEMS = [
+	{ title: "User", href: "" },
+	{ title: "Scope", href: "scope" },
+];
 
 export const route = {
 	load: ({ params }) =>
 		trpc.useContext().user.get.ensureData({
 			id: params.userId!,
 		}),
+	info: { NAV_ITEMS },
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
@@ -26,8 +29,6 @@ export default function Layout(props: ParentProps) {
 	const query = trpc.user.get.useQuery(() => ({
 		id: params.userId,
 	}));
-
-	useNavbarItems(NAV_ITEMS);
 
 	return (
 		<Show when={query.data !== undefined}>
@@ -51,14 +52,3 @@ function NotFound() {
 	// necessary since '..' adds trailing slash -_-
 	return <Navigate href="../../users" />;
 }
-
-const NAV_ITEMS = [
-	{
-		title: "User",
-		href: "",
-	},
-	{
-		title: "Scope",
-		href: "scope",
-	},
-];

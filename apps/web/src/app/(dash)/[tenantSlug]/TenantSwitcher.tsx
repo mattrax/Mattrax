@@ -1,6 +1,6 @@
 import { As, DropdownMenu as KDropdownMenu } from "@kobalte/core";
-import { createEffect, For, Suspense } from "solid-js";
-import { A, useMatch, useResolvedPath } from "@solidjs/router";
+import { For, Suspense } from "solid-js";
+import { A, useMatch } from "@solidjs/router";
 
 import {
 	Button,
