@@ -4,7 +4,7 @@
 	"type": "module",
 	"private": true,
 	"scripts": {
-		"run": "bun run ./src/index.ts"
+		"start": "bun run ./src/index.ts"
 	},
 	"dependencies": {
 		"xml2js": "^0.6.2"

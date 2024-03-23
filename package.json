@@ -7,6 +7,7 @@
 		"landing": "pnpm --filter @mattrax/landing --",
 		"configure": "pnpm --filter @mattrax/configure --",
 		"email": "pnpm --filter @mattrax/email --",
+		"ingest": "pnpm --filter @mattrax/ingest --",
 		"doc": "pnpm --filter @mattrax/docs --",
 		"web": "pnpm --filter @mattrax/web --",
 		"db:push": "drizzle-kit push:mysql && bun run ./apps/web/src/db/rust.ts",
