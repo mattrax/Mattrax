@@ -9,7 +9,6 @@ import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 import type { RouterOutput } from "~/api";
 import { Breadcrumb } from "~/components/Breadcrumbs";
-import { useNavbarItems } from "../../TopBar/NavItems";
 import { MErrorBoundary } from "~/components/MattraxErrorBoundary";
 
 const NAV_ITEMS = [{ title: "Application", href: "" }];

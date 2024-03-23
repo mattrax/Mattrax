@@ -1,68 +1,31 @@
+import { A } from "@solidjs/router";
 import { As, Tabs } from "@kobalte/core";
-import { createContextProvider } from "@solid-primitives/context";
-import { A, useMatch, useMatches, useResolvedPath } from "@solidjs/router";
-import {
-	type Accessor,
-	For,
-	Show,
-	createMemo,
-	onCleanup,
-} from "solid-js";
-import { createStore, produce } from "solid-js/store";
+import { For, Show } from "solid-js";
 
-export type NavItemConfig = {
-	title: string;
-	href: string;
-};
+import { useNavItemsContext } from "./Context";
 
-export const [NavItemsProvider, useNavItemsContext] = createContextProvider(
-	() => {
-		const matches = useMatches();
-
-		const route = createMemo(() => {
-			const m = matches();
-			m.reverse();
-
-			return m.find((m) => Array.isArray(m.route.info?.NAV_ITEMS));
-		});
-
-		const items = createMemo(() => {
-			const r = route();
-			if (!r) return;
-
-			return {
-				items: r.route.info?.NAV_ITEMS as Array<NavItemConfig>,
-				prefix: () => r.path,
-			};
-		});
-
-		return { items: items };
-	},
-	null!,
-);
+export * from "./Context";
 
 export function NavItems() {
-	const { items } = useNavItemsContext();
+	const { items, value, prefix } = useNavItemsContext();
 
 	return (
 		<Show when={items()} keyed>
-			{(entry) => (
+			{(items) => (
 				<Tabs.Root
 					as="nav"
-					// value={entry.value()}
+					value={value()}
 					class="text-white sticky top-0 border-b border-gray-200 z-10 bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
 				>
 					<Tabs.List class="flex flex-row px-2">
-						<For each={entry.items}>
+						<For each={items}>
 							{(item) => (
 								<Tabs.Trigger asChild value={item.href}>
 									<As
 										component={A}
 										end={item.href === ""}
 										href={
-											item.href === ""
-												? entry.prefix()
-												: `${entry.prefix()}/${item.href}`
+											item.href === "" ? prefix() : `${prefix()}/${item.href}`
 										}
 										activeClass="text-black selected"
 										inactiveClass="text-gray-500"
