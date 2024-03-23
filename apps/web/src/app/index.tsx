@@ -1,20 +1,22 @@
+import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
+import { InputField, Form, createZodForm } from "@mattrax/ui/forms";
 import { Navigate, useNavigate } from "@solidjs/router";
 import { Show, startTransition } from "solid-js";
 import { z } from "zod";
 
-import { Form, createZodForm } from "@mattrax/ui/forms";
-import { InputField } from "@mattrax/ui/forms";
-import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
+import { AuthContext, useAuth } from "./AuthContext";
 import { trpc } from "~/lib";
-import { AuthContext, useAuth } from "../AuthContext";
+
+export const route = {
+	load: () => {
+		trpc.useContext().auth.me.ensureData();
+	},
+};
 
 export default function Page() {
 	const defaultTenant = () => {
 		const tenants = useAuth()().tenants;
 		if (tenants.length < 1) return;
-
-		// const persistedTenant = tenants.find((t) => t.id === tenantId());
-		// if (persistedTenant) return persistedTenant;
 
 		return tenants[0];
 	};
