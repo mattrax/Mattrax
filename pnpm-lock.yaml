@@ -225,6 +225,19 @@ importers:
         specifier: ^5.4.2
         version: 5.4.2
 
+  apps/ingest:
+    dependencies:
+      xml2js:
+        specifier: ^0.6.2
+        version: 0.6.2
+    devDependencies:
+      '@types/node':
+        specifier: ^20.11.25
+        version: 20.11.28
+      '@types/xml2js':
+        specifier: ^0.4.14
+        version: 0.4.14
+
   apps/landing:
     dependencies:
       '@fontsource-variable/inter':
@@ -5243,6 +5256,12 @@ packages:
       - uglify-js
       - webpack-cli
     dev: false
+
+  /@types/xml2js@0.4.14:
+    resolution: {integrity: sha512-4YnrRemBShWRO2QjvUin8ESA41rH+9nQGLUGZV/1IDhi3SL9OhdpNC/MrulTWuptXKwhx/aDxE7toV0f/ypIXQ==}
+    dependencies:
+      '@types/node': 20.11.28
+    dev: true
 
   /@typescript-eslint/parser@6.21.0(eslint@8.57.0)(typescript@5.4.2):
     resolution: {integrity: sha512-tbsV1jPne5CkFQCgPBcDOt30ItF7aJoZL997JSF7MhGQqOeT3svWRYxiqlfA5RUdlHN6Fi+EI9bxqbdyAUZjYQ==}

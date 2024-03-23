@@ -60,7 +60,9 @@ process.on("exit", () => {
 	// So we ship the env with the worker code.
 	fs.writeFileSync(
 		path.join(workerCode, "../env.mjs"),
-		`const process={env:${JSON.stringify(process.env)}};globalThis.process=process;`,
+		`const process={env:${JSON.stringify(
+			process.env,
+		)}};globalThis.process=process;`,
 	);
 
 	fs.writeFileSync(

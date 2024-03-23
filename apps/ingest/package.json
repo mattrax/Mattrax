@@ -1,0 +1,16 @@
+{
+	"name": "@mattrax/ingest",
+	"description": "Tool for ingesting policies into Mattrax",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"run": "bun run ./src/index.ts"
+	},
+	"dependencies": {
+		"xml2js": "^0.6.2"
+	},
+	"devDependencies": {
+		"@types/node": "^20.11.25",
+		"@types/xml2js": "^0.4.14"
+	}
+}

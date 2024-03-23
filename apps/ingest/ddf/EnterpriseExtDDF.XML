@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE MgmtTree PUBLIC " -//OMA//DTD-DM-DDF 1.2//EN"
+    "http://www.openmobilealliance.org/tech/DTD/DM_DDF-V1_2.dtd"
+    [<?oma-dm-ddf-ver supported-versions="1.2"?>]>
+<MgmtTree xmlns:MSFT="http://schemas.microsoft.com/MobileDevice/DM">
+    <VerDTD>1.2</VerDTD>
+    <Node>
+        <NodeName>EnterpriseExt</NodeName>
+        <Path>./Vendor/MSFT</Path>
+        <DFProperties>
+            <AccessType>
+                <Get />
+            </AccessType>
+            <DFFormat>
+                <node />
+            </DFFormat>
+            <Occurrence>
+                <One />
+            </Occurrence>
+            <Scope>
+                <Permanent />
+            </Scope>
+            <DFType>
+                <DDFName></DDFName>
+            </DFType>
+        </DFProperties>
+        <Node>
+            <NodeName>DeviceCustomData</NodeName>
+            <DFProperties>
+                <AccessType>
+                    <Get />
+                    <Replace />
+                    <Add />
+                    <Delete />
+                </AccessType>
+                <DFFormat>
+                    <node />
+                </DFFormat>
+                <Occurrence>
+                    <One />
+                </Occurrence>
+                <Scope>
+                    <Permanent />
+                </Scope>
+                <DFType>
+                    <DDFName></DDFName>
+                </DFType>
+            </DFProperties>
+            <Node>
+                <NodeName>CustomID</NodeName>
+                <DFProperties>
+                    <AccessType>
+                        <Get />
+                        <Replace />
+                    </AccessType>
+                    <DFFormat>
+                        <chr />
+                    </DFFormat>
+                    <Occurrence>
+                        <One />
+                    </Occurrence>
+                    <Scope>
+                        <Permanent />
+                    </Scope>
+                    <DFType>
+                        <MIME>text/plain</MIME>
+                    </DFType>
+                </DFProperties>
+            </Node>
+            <Node>
+                <NodeName>CustomString</NodeName>
+                <DFProperties>
+                    <AccessType>
+                        <Get />
+                        <Replace />
+                    </AccessType>
+                    <DFFormat>
+                        <chr />
+                    </DFFormat>
+                    <Occurrence>
+                        <One />
+                    </Occurrence>
+                    <Scope>
+                        <Permanent />
+                    </Scope>
+                    <DFType>
+                        <MIME>text/plain</MIME>
+                    </DFType>
+                </DFProperties>
+            </Node>
+        </Node>
+        <Node>
+            <NodeName>Brightness</NodeName>
+            <DFProperties>
+                <AccessType>
+                    <Get />
+                    <Replace />
+                    <Add />
+                    <Delete />
+                </AccessType>
+                <DFFormat>
+                    <node />
+                </DFFormat>
+                <Occurrence>
+                    <One />
+                </Occurrence>
+                <Scope>
+                    <Permanent />
+                </Scope>
+                <DFType>
+                    <DDFName></DDFName>
+                </DFType>
+            </DFProperties>
+            <Node>
+                <NodeName>Default</NodeName>
+                <DFProperties>
+                    <AccessType>
+                        <Get />
+                        <Replace />
+                    </AccessType>
+                    <DFFormat>
+                        <chr />
+                    </DFFormat>
+                    <Occurrence>
+                        <One />
+                    </Occurrence>
+                    <Scope>
+                        <Permanent />
+                    </Scope>
+                    <DFType>
+                        <MIME>text/plain</MIME>
+                    </DFType>
+                </DFProperties>
+            </Node>
+            <Node>
+                <NodeName>MaxAuto</NodeName>
+                <DFProperties>
+                    <AccessType>
+                        <Get />
+                        <Replace />
+                    </AccessType>
+                    <DFFormat>
+                        <chr />
+                    </DFFormat>
+                    <Occurrence>
+                        <One />
+                    </Occurrence>
+                    <Scope>
+                        <Permanent />
+                    </Scope>
+                    <DFType>
+                        <MIME>text/plain</MIME>
+                    </DFType>
+                </DFProperties>
+            </Node>
+        </Node>
+        <Node>
+            <NodeName>LedAlertNotification</NodeName>
+            <DFProperties>
+                <AccessType>
+                    <Get />
+                    <Replace />
+                    <Add />
+                    <Delete />
+                </AccessType>
+                <DFFormat>
+                    <node />
+                </DFFormat>
+                <Occurrence>
+                    <One />
+                </Occurrence>
+                <Scope>
+                    <Permanent />
+                </Scope>
+                <DFType>
+                    <DDFName></DDFName>
+                </DFType>
+            </DFProperties>
+            <Node>
+                <NodeName>State</NodeName>
+                <DFProperties>
+                    <AccessType>
+                        <Get />
+                        <Replace />
+                    </AccessType>
+                    <DFFormat>
+                        <int />
+                    </DFFormat>
+                    <Occurrence>
+                        <One />
+                    </Occurrence>
+                    <Scope>
+                        <Permanent />
+                    </Scope>
+                    <DFType>
+                        <MIME>text/plain</MIME>
+                    </DFType>
+                </DFProperties>
+            </Node>
+            <Node>
+                <NodeName>Intensity</NodeName>
+                <DFProperties>
+                    <AccessType>
+                        <Get />
+                        <Replace />
+                    </AccessType>
+                    <DFFormat>
+                        <int />
+                    </DFFormat>
+                    <Occurrence>
+                        <One />
+                    </Occurrence>
+                    <Scope>
+                        <Permanent />
+                    </Scope>
+                    <DFType>
+                        <MIME>text/plain</MIME>
+                    </DFType>
+                </DFProperties>
+            </Node>
+            <Node>
+                <NodeName>Period</NodeName>
+                <DFProperties>
+                    <AccessType>
+                        <Get />
+                        <Replace />
+                    </AccessType>
+                    <DFFormat>
+                        <int />
+                    </DFFormat>
+                    <Occurrence>
+                        <One />
+                    </Occurrence>
+                    <Scope>
+                        <Permanent />
+                    </Scope>
+                    <DFType>
+                        <MIME>text/plain</MIME>
+                    </DFType>
+                </DFProperties>
+            </Node>
+            <Node>
+                <NodeName>DutyCycle</NodeName>
+                <DFProperties>
+                    <AccessType>
+                        <Get />
+                        <Replace />
+                    </AccessType>
+                    <DFFormat>
+                        <int />
+                    </DFFormat>
+                    <Occurrence>
+                        <One />
+                    </Occurrence>
+                    <Scope>
+                        <Permanent />
+                    </Scope>
+                    <DFType>
+                        <MIME>text/plain</MIME>
+                    </DFType>
+                </DFProperties>
+            </Node>
+            <Node>
+                <NodeName>Cyclecount</NodeName>
+                <DFProperties>
+                    <AccessType>
+                        <Get />
+                        <Replace />
+                    </AccessType>
+                    <DFFormat>
+                        <int />
+                    </DFFormat>
+                    <Occurrence>
+                        <One />
+                    </Occurrence>
+                    <Scope>
+                        <Permanent />
+                    </Scope>
+                    <DFType>
+                        <MIME>text/plain</MIME>
+                    </DFType>
+                </DFProperties>
+            </Node>
+        </Node>
+    </Node>
+</MgmtTree>
