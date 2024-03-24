@@ -15,9 +15,9 @@ export function NavItems() {
 				<Tabs.Root
 					as="nav"
 					value={value()}
-					class="text-white sticky top-0 border-b border-gray-200 z-10 bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
+					class="text-white sticky top-0 z-10 bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
 				>
-					<Tabs.List class="flex flex-row px-2">
+					<Tabs.List class="flex flex-row px-2 border-b border-gray-200">
 						<For each={items}>
 							{(item) => (
 								<Tabs.Trigger asChild value={item.href}>
@@ -39,8 +39,8 @@ export function NavItems() {
 							)}
 						</For>
 					</Tabs.List>
-					<Tabs.Indicator class="absolute transition-all duration-200 -bottom-px flex flex-row px-2 h-[2px]">
-						<div class="bg-brand flex-1" />
+					<Tabs.Indicator class="absolute transition-all duration-200 bottom-0 flex flex-row px-2 h-[2px]">
+						<div class="bg-brand flex-1 rounded-full" />
 					</Tabs.Indicator>
 				</Tabs.Root>
 			)}

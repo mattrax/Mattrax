@@ -10,14 +10,14 @@ import { Breadcrumb } from "~/components/Breadcrumbs";
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 
-const NAV_ITEMS = [{ title: "Group", href: "" }];
+// const NAV_ITEMS = [{ title: "Group", href: "" }];
 
 export const route = {
 	load: ({ params }) =>
 		trpc.useContext().group.get.ensureData({
 			id: params.groupId!,
 		}),
-	info: { NAV_ITEMS },
+	// info: { NAV_ITEMS },
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {

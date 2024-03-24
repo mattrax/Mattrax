@@ -144,8 +144,8 @@ const APPLICATION_TARGETS = {
 				// TODO: Pagination support
 				const res = await fetch(
 					`https://itunes.apple.com/search?${new URLSearchParams({
+						...(search() && { term: search() }),
 						entity: "software",
-						...(search() && { search: search() }),
 					})}`,
 				);
 
