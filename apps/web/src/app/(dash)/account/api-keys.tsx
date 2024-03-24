@@ -20,7 +20,7 @@ import {
 	StandardTable,
 	createStandardTable,
 	selectCheckboxColumn,
-} from "~/components/StandardTable";
+} from "~c/StandardTable";
 
 import { trpc } from "~/lib";
 

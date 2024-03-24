@@ -2,9 +2,9 @@ import { For, type ParentProps, Suspense } from "solid-js";
 import { A } from "@solidjs/router";
 import type { JSX } from "solid-js";
 
-import { PageLayout, PageLayoutHeading } from "./PageLayout";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { AuthContext } from "../AuthContext";
-import { Breadcrumb } from "~/components/Breadcrumbs";
+import { Breadcrumb } from "~c/Breadcrumbs";
 
 const navigation = [{ name: "General", href: "general" }];
 

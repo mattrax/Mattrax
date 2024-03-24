@@ -21,7 +21,7 @@ import { createSignal, useTransition, type ParentProps } from "solid-js";
 
 import { trpc } from "~/lib";
 import Logo from "~/assets/MATTRAX.png";
-import { Breadcrumbs } from "~/components/Breadcrumbs";
+import { Breadcrumbs } from "~c/Breadcrumbs";
 import { AuthContext, useAuth } from "~/app/AuthContext";
 import { NavItems, useNavItemsContext } from "./NavItems";
 

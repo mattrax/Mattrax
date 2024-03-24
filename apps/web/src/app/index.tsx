@@ -8,7 +8,7 @@ import { AuthContext, useAuth } from "./AuthContext";
 import { trpc } from "~/lib";
 
 export const route = {
-	load: () => trpc.useContext().auth.me.ensureData()
+	load: () => trpc.useContext().auth.me.ensureData(),
 };
 
 export default function Page() {
@@ -24,7 +24,7 @@ export default function Page() {
 			<Show when={defaultTenant()} fallback={<CreateTenant />}>
 				{(
 					tenant, // If we have an active tenant, send the user to it
-				) => <Navigate href={tenant().slug} />}
+				) => <Navigate href={`/t/${tenant().slug}`} />}
 			</Show>
 		</AuthContext>
 	);

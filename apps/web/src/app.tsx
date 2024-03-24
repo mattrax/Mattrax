@@ -13,7 +13,7 @@ import { Suspense, lazy, onCleanup, startTransition } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 import { FileRoutes } from "@solidjs/start/router";
 
-import { MErrorBoundary } from "./components/MattraxErrorBoundary";
+import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { isTRPCClientError, trpc } from "./lib";
 
 import "@mattrax/ui/css";

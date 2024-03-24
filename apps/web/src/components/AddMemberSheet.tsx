@@ -14,7 +14,7 @@ import {
 	SheetTitle,
 	SheetTrigger,
 } from "@mattrax/ui";
-import { useTenantSlug } from "~/app/(dash)/[tenantSlug]";
+import { useTenantSlug } from "~/app/(dash)/t.[tenantSlug]";
 import { trpc } from "~/lib";
 import {
 	StandardTable,
