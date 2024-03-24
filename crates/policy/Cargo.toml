@@ -2,6 +2,7 @@
 name = "mattrax-policy"
 version = "0.0.1"
 edition = "2021"
+repository = "https://github.com/mattrax/Mattrax"
 
 [dependencies]
 serde = { version = "1.0.197", features = ["derive"] }

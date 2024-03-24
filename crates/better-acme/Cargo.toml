@@ -13,8 +13,8 @@ base91 = "0.1.0"
 chrono = "0.4.35"
 futures = "0.3.30"
 pem = "3.0.3"
-rustls = "0.23.3"
+rustls = "=0.22.2"                                        # TODO: Upgrade
 rustls-acme = { version = "0.9.2", features = ["tokio"] }
 sha2 = "0.10.8"
 tokio = { version = "1", features = ["rt", "fs"] }
-x509-parser = "0.16.0"
+x509-parser = "=0.15.1"                                   # TODO: Upgrade
