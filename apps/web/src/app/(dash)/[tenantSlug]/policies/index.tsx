@@ -19,7 +19,7 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "@mattrax/ui";
-import { trpc, untrackScopeFromSuspense } from "~/lib";
+import { trpc } from "~/lib";
 
 export const route = {
 	load: ({ params }) => {

@@ -6,7 +6,7 @@ import {
 	CardContent,
 	Switch,
 } from "@mattrax/ui";
-import { trpc, untrackScopeFromSuspense } from "~/lib";
+import { trpc } from "~/lib";
 import { useTenantSlug } from "../../[tenantSlug]";
 
 export default function Page() {
