@@ -17,7 +17,7 @@ export function NavItems() {
 					value={value()}
 					class="text-white sticky top-0 z-10 bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
 				>
-					<Tabs.List class="flex flex-row px-2 border-b border-gray-200">
+					<Tabs.List class="flex flex-row px-2 border-b border-gray-200 w-full">
 						<For each={items}>
 							{(item) => (
 								<Tabs.Trigger asChild value={item.href}>
