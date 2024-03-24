@@ -6,15 +6,15 @@ import { PageLayout, PageLayoutHeading } from "./PageLayout";
 import { AuthContext } from "../AuthContext";
 import { Breadcrumb } from "~/components/Breadcrumbs";
 
-const navigation = [{ name: "API Keys", href: "api-keys" }];
+const navigation = [{ name: "General", href: "general" }];
 
 export default function Layout(props: ParentProps) {
 	return (
 		<PageLayout
 			size="lg"
-			heading={<PageLayoutHeading>Account</PageLayoutHeading>}
+			heading={<PageLayoutHeading>Settings</PageLayoutHeading>}
 		>
-			<Breadcrumb>Account</Breadcrumb>
+			<Breadcrumb>Settings</Breadcrumb>
 			<div class="flex flex-row">
 				<nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pl-4">
 					<ul class="space-y-1">

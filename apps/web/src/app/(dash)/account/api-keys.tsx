@@ -15,7 +15,7 @@ import { createColumnHelper } from "@tanstack/solid-table";
 import { Show, createSignal } from "solid-js";
 import { Suspense } from "solid-js";
 import { z } from "zod";
-import { RouterOutput } from "~/api";
+import type { RouterOutput } from "~/api";
 import {
 	StandardTable,
 	createStandardTable,
@@ -53,6 +53,7 @@ export default function Page() {
 				<a
 					href="https://github.com/mattrax/Mattrax/tree/main/apps/mttx"
 					target="_blank"
+					rel="noreferrer"
 				>
 					<code class="p-1 bg-gray-100 rounded">mttx</code>
 				</a>{" "}
