@@ -28,6 +28,8 @@ declare global {
 	const IconPhBookDuotone: typeof import("~icons/ph/book-duotone.jsx")["default"];
 	const IconPhBoundingBoxDuotone: typeof import("~icons/ph/bounding-box-duotone.jsx")["default"];
 	const IconPhCaretUpDown: typeof import("~icons/ph/caret-up-down.jsx")["default"];
+	const IconPhCheckCircleDuotone: typeof import("~icons/ph/check-circle-duotone.jsx")["default"];
+	const IconPhCheckDuotone: typeof import("~icons/ph/check-duotone.jsx")["default"];
 	const IconPhClipboardDuotone: typeof import("~icons/ph/clipboard-duotone.jsx")["default"];
 	const IconPhCogDuotone: typeof import("~icons/ph/cog-duotone.jsx")["default"];
 	const IconPhCookingPotDuotone: typeof import("~icons/ph/cooking-pot-duotone.jsx")["default"];
@@ -43,6 +45,8 @@ declare global {
 	const IconPhStackDuotone: typeof import("~icons/ph/stack-duotone.jsx")["default"];
 	const IconPhUserDuotone: typeof import("~icons/ph/user-duotone.jsx")["default"];
 	const IconPhUsersDuotone: typeof import("~icons/ph/users-duotone.jsx")["default"];
+	const IconPhWarningCircleDuotone: typeof import("~icons/ph/warning-circle-duotone.jsx")["default"];
+	const IconPhWarningDuotone: typeof import("~icons/ph/warning-duotone.jsx")["default"];
 	const IconPrimeExternalLink: typeof import("~icons/prime/external-link.jsx")["default"];
 	const IconTablerCheck: typeof import("~icons/tabler/check.jsx")["default"];
 	const IconTablerChevronDown: typeof import("~icons/tabler/chevron-down.jsx")["default"];

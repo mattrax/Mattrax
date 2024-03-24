@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router";
-import { For, createEffect } from "solid-js";
+import { For, Suspense, createEffect } from "solid-js";
 import { toast } from "solid-sonner";
 import { isTRPCClientError, trpc } from "~/lib";
 
@@ -20,13 +20,15 @@ export default function Page() {
 		<div class="p-2">
 			<h1 class="text-4xl pb-4">Top-secret dashboard</h1>
 			<div class="flex flex-col space-y-2">
-				<For each={stats.data ?? []}>
-					{(row) => (
-						<p>
-							{row.variant}: {row.count}
-						</p>
-					)}
-				</For>
+				<Suspense fallback={<p>Loading...</p>}>
+					<For each={stats.data ?? []}>
+						{(row) => (
+							<p>
+								{row.variant}: {row.count}
+							</p>
+						)}
+					</For>
+				</Suspense>
 			</div>
 		</div>
 	);
