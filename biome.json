@@ -8,7 +8,13 @@
 			"packages/*/*",
 			"*"
 		],
-		"ignore": [".next", "auto-import.d.ts", "node_modules", "dist"]
+		"ignore": [
+			".next",
+			"auto-import.d.ts",
+			"node_modules",
+			"dist",
+			"apps/android"
+		]
 	},
 	"organizeImports": {
 		"enabled": true
