@@ -8,7 +8,9 @@
 		"types": ["vinxi/client", "vite/client", "@mattrax/ui/types"],
 		"paths": {
 			"~/*": ["./src/*"],
-			"~c/*": ["./src/components/*"]
+			"~c/*": ["./src/components/*"],
+			"~dash/*": ["./src/app/(dash)/*"],
+			"~[tenantSlug]/*": ["./src/app/(dash)/o.[orgSlug]/t.[tenantSlug]/*"]
 		}
 	},
 	"include": ["src/"],

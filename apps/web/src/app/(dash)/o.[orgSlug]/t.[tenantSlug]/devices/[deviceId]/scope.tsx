@@ -5,8 +5,11 @@ import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { useDevice } from "./Context";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { AddMemberSheet, memberSheetColumns } from "~c/AddMemberSheet";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
+import {
+	AddMemberSheet,
+	memberSheetColumns,
+} from "~[tenantSlug]/AddMemberSheet";
 
 export default function Page() {
 	const device = useDevice();

@@ -4,7 +4,7 @@ import { Navigate, useNavigate } from "@solidjs/router";
 import { Show, startTransition } from "solid-js";
 import { z } from "zod";
 
-import { AuthContext, useAuth } from "./AuthContext";
+import { AuthContext, useAuth } from "~c/AuthContext";
 import { trpc } from "~/lib";
 
 export const route = {
@@ -24,7 +24,7 @@ export default function Page() {
 			<Show when={defaultTenant()} fallback={<CreateTenant />}>
 				{(
 					tenant, // If we have an active tenant, send the user to it
-				) => <Navigate href={`/t/${tenant().slug}`} />}
+				) => <Navigate href={`/o/TODO/t/${tenant().slug}`} />}
 			</Show>
 		</AuthContext>
 	);

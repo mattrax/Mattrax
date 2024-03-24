@@ -8,8 +8,11 @@ import IconIcRoundCheck from "~icons/ic/round-check.jsx";
 import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { AddMemberSheet, memberSheetColumns } from "~c/AddMemberSheet";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
+import {
+	AddMemberSheet,
+	memberSheetColumns,
+} from "~[tenantSlug]/AddMemberSheet";
 import { useGroup } from "./Context";
 
 export default function Page() {

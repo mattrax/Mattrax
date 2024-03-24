@@ -22,7 +22,7 @@ import { createSignal, useTransition, type ParentProps } from "solid-js";
 import { trpc } from "~/lib";
 import Logo from "~/assets/MATTRAX.png";
 import { Breadcrumbs } from "~c/Breadcrumbs";
-import { AuthContext, useAuth } from "~/app/AuthContext";
+import { AuthContext, useAuth } from "~c/AuthContext";
 import { NavItems, useNavItemsContext } from "./NavItems";
 
 export function TopBar() {

@@ -13,8 +13,8 @@ import { z } from "zod";
 
 import { checkAuth } from "~/api/auth";
 import { createAPIKey } from "~/api/trpc/routers/apiKey";
-import { AuthContext, useAuth } from "~/app/AuthContext";
-import { apiKeys, cliAuthCodes, db } from "~/db";
+import { AuthContext, useAuth } from "~c/AuthContext";
+import { cliAuthCodes, db } from "~/db";
 import { useZodParams } from "~/lib/useZodParams";
 
 const getCode = cache(async (code: string) => {

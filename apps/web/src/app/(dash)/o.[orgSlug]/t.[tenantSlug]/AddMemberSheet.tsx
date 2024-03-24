@@ -14,14 +14,15 @@ import {
 	SheetTitle,
 	SheetTrigger,
 } from "@mattrax/ui";
-import { useTenantSlug } from "~/app/(dash)/t.[tenantSlug]";
+
+import { useTenantSlug } from "../t.[tenantSlug]";
 import { trpc } from "~/lib";
 import {
 	StandardTable,
 	createStandardTable,
 	selectCheckboxColumn,
-} from "./StandardTable";
-import { ConfirmDialog } from "./ConfirmDialog";
+} from "~c/StandardTable";
+import { ConfirmDialog } from "~c/ConfirmDialog";
 
 const VariantDisplay = {
 	user: "User",

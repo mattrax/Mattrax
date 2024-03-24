@@ -3,16 +3,19 @@ import { Suspense } from "solid-js";
 
 import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
-import { useUser } from "./Context";
+import { usePolicy } from "./Context";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { AddMemberSheet, memberSheetColumns } from "~c/AddMemberSheet";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
+import {
+	AddMemberSheet,
+	memberSheetColumns,
+} from "~[tenantSlug]/AddMemberSheet";
 
 export default function Page() {
-	const user = useUser();
+	const policy = usePolicy();
 
-	const members = trpc.user.members.useQuery(() => ({
-		id: user().id,
+	const members = trpc.policy.members.useQuery(() => ({
+		id: policy().id,
 	}));
 
 	const table = createStandardTable({
@@ -23,7 +26,7 @@ export default function Page() {
 		pagination: true,
 	});
 
-	const addMembers = trpc.user.addMembers.useMutation(() => ({
+	const addMembers = trpc.policy.addMembers.useMutation(() => ({
 		onSuccess: () => members.refetch(),
 	}));
 
@@ -35,7 +38,7 @@ export default function Page() {
 					<AddMemberSheet
 						addMember={(members) =>
 							addMembers.mutateAsync({
-								id: user().id,
+								id: policy().id,
 								members,
 							})
 						}

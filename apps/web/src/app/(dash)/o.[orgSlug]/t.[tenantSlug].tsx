@@ -5,7 +5,7 @@ import { z } from "zod";
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { Breadcrumb } from "~c/Breadcrumbs";
-import { AuthContext } from "../AuthContext";
+import { AuthContext } from "~c/AuthContext";
 import { TenantContext } from "./t.[tenantSlug]/Context";
 import { TenantSwitcher } from "./t.[tenantSlug]/TenantSwitcher";
 
