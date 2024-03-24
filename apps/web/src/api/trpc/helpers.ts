@@ -1,17 +1,19 @@
 import { TRPCError, initTRPC } from "@trpc/server";
+import { cache } from "@solidjs/router";
 import { and, eq } from "drizzle-orm";
 import { User } from "lucia";
 import superjson from "superjson";
-import {
-	H3Event,
-	appendResponseHeader,
-	getCookie,
-	setCookie,
-} from "vinxi/server";
+import { H3Event } from "vinxi/server";
 import { ZodError, z } from "zod";
 
-import { db, tenantAccounts, tenants } from "~/db";
-import { checkAuth, lucia } from "../auth";
+import {
+	db,
+	organisationAccounts as organisationMembers,
+	organisations,
+	tenantAccounts,
+	tenants,
+} from "~/db";
+import { checkAuth } from "../auth";
 
 export const createTRPCContext = async (event: H3Event) => {
 	return {
@@ -39,30 +41,47 @@ export const createTRPCRouter = t.router;
 // Public (unauthenticated) procedure
 export const publicProcedure = t.procedure;
 
+const isOrganisationMember = cache(async (orgPk: number, accountPk: number) => {
+	const [org] = await db
+		.select({})
+		.from(organisations)
+		.where(eq(organisations.pk, orgPk))
+		.innerJoin(
+			organisationMembers,
+			and(
+				eq(organisations.pk, organisationMembers.orgPk),
+				eq(organisationMembers.accountPk, accountPk),
+			),
+		);
+
+	return org !== undefined;
+}, "isOrganisationMember");
+
+const getTenantList = cache(
+	(accountPk: number) =>
+		db
+			.select({ pk: tenants.pk, name: tenants.name })
+			.from(tenants)
+			.where(eq(tenantAccounts.accountPk, accountPk))
+			.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk)),
+	"getTenantList",
+);
+
 // Authenticated procedure
 export const authedProcedure = t.procedure.use(async (opts) => {
 	const data = await checkAuth(opts.ctx.event);
 	if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-	let tenantList: Array<{ pk: number; name: string }> | undefined;
-
-	const getTenantList = async () => {
-		if (!tenantList)
-			tenantList = await db
-				.select({ pk: tenants.pk, name: tenants.name })
-				.from(tenants)
-				.where(eq(tenantAccounts.accountPk, data.account.pk))
-				.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk));
-
-		return tenantList;
-	};
-
 	return opts.next({
 		ctx: {
 			...opts.ctx,
 			...data,
-			ensureTenantAccount: async (tenantPk: number) => {
-				const tenantList = await getTenantList();
+			ensureOrganisationMember: async (orgPk: number) => {
+				if (!isOrganisationMember(orgPk, data.account.pk))
+					throw new TRPCError({ code: "FORBIDDEN", message: "organisation" });
+			},
+			ensureTenantMember: async (tenantPk: number) => {
+				const tenantList = await getTenantList(data.account.pk);
 
 				const tenant = tenantList.find((t) => t.pk === tenantPk);
 				if (!tenant)
@@ -86,33 +105,60 @@ export const superAdminProcedure = authedProcedure.use((opts) => {
 	return opts.next({ ctx });
 });
 
-// Authenticated procedure w/ a tenant
-export const tenantProcedure = authedProcedure
-	.input(
-		z.object({
-			tenantSlug: z.string(),
-		}),
-	)
+const getMemberOrg = cache(async (slug: string, accountPk: number) => {
+	const [org] = await db
+		.select({
+			pk: organisations.pk,
+			slug: organisations.slug,
+			name: organisations.name,
+		})
+		.from(organisations)
+		.where(
+			and(
+				eq(organisations.slug, slug),
+				eq(organisationMembers.accountPk, accountPk),
+			),
+		)
+		.innerJoin(
+			organisationMembers,
+			eq(organisations.pk, organisationMembers.orgPk),
+		);
+
+	return org;
+}, "getMemberOrg");
+
+export const orgProcedure = authedProcedure
+	.input(z.object({ orgSlug: z.string() }))
 	.use(async (opts) => {
 		const { ctx, input } = opts;
 
-		const [tenant] = await db
-			.select({ pk: tenants.pk, name: tenants.name, ownerPk: tenants.ownerPk })
-			.from(tenants)
-			.where(
-				and(
-					eq(tenantAccounts.accountPk, ctx.account.pk),
-					eq(tenants.slug, input.tenantSlug),
-				),
-			)
-			.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk));
+		const org = await getMemberOrg(input.orgSlug, ctx.account.pk);
+
+		if (!org)
+			throw new TRPCError({ code: "FORBIDDEN", message: "organisation" });
+
+		return opts.next({ ctx: { ...ctx, org } });
+	});
+
+const getMemberTenant = cache(async (slug: string, accountPk: number) => {
+	const [tenant] = await db
+		.select({ pk: tenants.pk, name: tenants.name, ownerPk: tenants.ownerPk })
+		.from(tenants)
+		.where(and(eq(tenants.slug, slug), eq(tenantAccounts.accountPk, accountPk)))
+		.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk));
+
+	return tenant;
+}, "getMemberTenant");
+
+// Authenticated procedure w/ a tenant
+export const tenantProcedure = authedProcedure
+	.input(z.object({ tenantSlug: z.string() }))
+	.use(async (opts) => {
+		const { ctx, input } = opts;
+
+		const tenant = await getMemberTenant(input.tenantSlug, ctx.account.pk);
 
 		if (!tenant) throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
 
-		return opts.next({
-			ctx: {
-				...ctx,
-				tenant,
-			},
-		});
+		return opts.next({ ctx: { ...ctx, tenant } });
 	});

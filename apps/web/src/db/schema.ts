@@ -75,17 +75,54 @@ export const sessions = mysqlTable("session", {
 	expiresAt: datetime("expires_at").notNull(),
 });
 
-export const tenants = mysqlTable("tenant", {
+export const organisations = mysqlTable("organisations", {
 	pk: serial("id").primaryKey(),
 	id: cuid("cuid").notNull().unique(),
 	name: varchar("name", { length: 100 }).notNull(),
 	slug: varchar("slug", { length: 256 }).notNull().unique(),
 	billingEmail: varchar("billingEmail", { length: 256 }),
 	stripeCustomerId: varchar("stripeCustomerId", { length: 256 }),
+	ownerPk: serialRelation("ownerPk")
+		.references(() => accounts.pk)
+		.notNull(),
+});
+
+export const organisationAccounts = mysqlTable(
+	"oranisation_account",
+	{
+		orgPk: serialRelation("orgPk")
+			.references(() => organisations.pk)
+			.notNull(),
+		accountPk: serialRelation("accountPk")
+			.references(() => accounts.pk)
+			.notNull(),
+	},
+	(table) => ({ pk: primaryKey({ columns: [table.orgPk, table.accountPk] }) }),
+);
+
+export const organisationTenants = mysqlTable(
+	"oranisation_tenant",
+	{
+		orgPk: serialRelation("orgPk")
+			.references(() => organisations.pk)
+			.notNull(),
+		tenantPk: serialRelation("tenantPk")
+			.references(() => tenants.pk)
+			.notNull(),
+	},
+	(table) => ({ pk: primaryKey({ columns: [table.orgPk, table.tenantPk] }) }),
+);
+
+export const tenants = mysqlTable("tenant", {
+	pk: serial("id").primaryKey(),
+	id: cuid("cuid").notNull().unique(),
+	name: varchar("name", { length: 100 }).notNull(),
+	slug: varchar("slug", { length: 256 }).notNull().unique(),
 	enrollmentEnabled: boolean("enrollmentEnabled").notNull().default(true),
 	ownerPk: serialRelation("ownerId")
 		.references(() => accounts.pk)
 		.notNull(),
+	orgPk: serialRelation("orgPk").references(() => accounts.pk),
 });
 
 export const tenantAccounts = mysqlTable(

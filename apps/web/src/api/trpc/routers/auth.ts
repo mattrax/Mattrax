@@ -7,8 +7,18 @@ import { z } from "zod";
 
 import { lucia } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
-import { accountLoginCodes, accounts, db, tenantAccounts, tenants } from "~/db";
+import {
+	accountLoginCodes,
+	accounts,
+	db,
+	organisationAccounts,
+	organisations,
+	tenantAccounts,
+	tenants,
+} from "~/db";
 import { authedProcedure, createTRPCRouter, publicProcedure } from "../helpers";
+import { randomSlug } from "~/api/utils";
+import { createId } from "@paralleldrive/cuid2";
 
 type UserResult = {
 	id: number;
@@ -29,6 +39,22 @@ const fetchTenants = (accountPk: number) =>
 		.where(eq(tenantAccounts.accountPk, accountPk))
 		.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk))
 		.innerJoin(accounts, eq(tenants.ownerPk, accounts.pk));
+
+const fetchOrgs = (accountPk: number) =>
+	db
+		.select({
+			id: organisations.id,
+			name: organisations.name,
+			slug: organisations.slug,
+			ownerId: accounts.id,
+		})
+		.from(organisations)
+		.where(eq(organisationAccounts.accountPk, accountPk))
+		.innerJoin(
+			organisationAccounts,
+			eq(organisations.pk, organisationAccounts.orgPk),
+		)
+		.innerJoin(accounts, eq(organisations.ownerPk, accounts.pk));
 
 export const authRouter = createTRPCRouter({
 	sendLoginCode: publicProcedure
@@ -69,7 +95,6 @@ export const authRouter = createTRPCRouter({
 
 			return { accountId };
 		}),
-
 	verifyLoginCode: publicProcedure
 		.input(z.object({ code: z.string() }))
 		.mutation(async ({ input, ctx }) => {
@@ -84,15 +109,36 @@ export const authRouter = createTRPCRouter({
 				.delete(accountLoginCodes)
 				.where(eq(accountLoginCodes.code, input.code));
 
-			const account = await db.query.accounts.findFirst({
-				where: eq(accounts.pk, code.accountPk),
-			});
+			const [[account], [orgConnection]] = await Promise.all([
+				db
+					.select({ pk: accounts.pk, id: accounts.id, email: accounts.email })
+					.from(accounts)
+					.where(eq(accounts.pk, code.accountPk)),
+				db
+					.select({ orgPk: organisationAccounts.orgPk })
+					.from(organisationAccounts)
+					.where(eq(organisationAccounts.accountPk, code.accountPk)),
+			]);
 
 			if (!account)
 				throw new TRPCError({
 					code: "NOT_FOUND",
 					message: "Account not found",
 				});
+
+			if (!orgConnection) {
+				const id = createId();
+				const slug = randomSlug(account.email.split("@")[0]!);
+
+				await db.transaction(async (db) => {
+					const org = await db
+						.insert(organisations)
+						.values({ id, slug, name: slug, ownerPk: account.pk });
+					await db
+						.insert(organisationAccounts)
+						.values({ accountPk: account.pk, orgPk: parseInt(org.insertId) });
+				});
+			}
 
 			const session = await lucia.createSession(account.id, {});
 
@@ -108,12 +154,12 @@ export const authRouter = createTRPCRouter({
 
 			return true;
 		}),
-
 	me: authedProcedure.query(async ({ ctx: { account } }) => {
 		return {
 			id: account.id,
 			name: account.name,
 			email: account.email,
+			orgs: await fetchOrgs(account.pk),
 			tenants: await fetchTenants(account.pk),
 		};
 	}),

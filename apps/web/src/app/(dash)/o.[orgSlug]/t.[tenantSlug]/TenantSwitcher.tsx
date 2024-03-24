@@ -29,7 +29,7 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
 	const auth = useAuth();
 	const tenant = useTenant();
 
-	const segmentMatch = useMatch(() => "/t/:tenantId/:segment/:subSegment/*");
+	const segmentMatch = useMatch(() => "./:segment/:subSegment/*");
 
 	return (
 		<div class="relative inline-block text-left">

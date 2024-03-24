@@ -1,7 +1,7 @@
 import { trpc } from "~/lib";
 
 export default function Page() {
-	const stripePortalUrl = trpc.tenant.billing.portalUrl.useMutation(() => ({
+	const stripePortalUrl = trpc.org.billing.portalUrl.useMutation(() => ({
 		onSuccess: async (url) => {
 			window.open(url, "_self");
 

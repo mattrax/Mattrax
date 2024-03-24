@@ -3,14 +3,9 @@ import { A } from "@solidjs/router";
 
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { AuthContext } from "~c/AuthContext";
-import { TenantContext } from "./Context";
+import { OrgContext } from "./Context";
 
-const navigation = [
-	{ name: "General", href: "" },
-	{ name: "Administrators", href: "administrators" },
-	{ name: "Identity Provider", href: "identity-provider" },
-	{ name: "Enrollment", href: "enrollment" },
-];
+const navigation = [{ name: "Billing", href: "billing" }];
 
 export default function Layout(props: ParentProps) {
 	return (
@@ -31,7 +26,7 @@ export default function Layout(props: ParentProps) {
 				<main class="flex-1 overflow-y-auto px-4">
 					<Suspense>
 						<AuthContext>
-							<TenantContext>{props.children}</TenantContext>
+							<OrgContext>{props.children}</OrgContext>
 						</AuthContext>
 					</Suspense>
 				</main>

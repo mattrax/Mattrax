@@ -58,7 +58,7 @@ export const deviceRouter = createTRPCRouter({
 				.where(eq(devices.id, input.deviceId));
 			if (!device) return null;
 
-			await ctx.ensureTenantAccount(device.tenantPk);
+			await ctx.ensureTenantMember(device.tenantPk);
 
 			return omit(device, ["tenantPk"]);
 		}),
@@ -76,7 +76,7 @@ export const deviceRouter = createTRPCRouter({
 			});
 			if (!device) return null;
 
-			await ctx.ensureTenantAccount(device.tenantPk);
+			await ctx.ensureTenantMember(device.tenantPk);
 
 			if (input.action !== "sync") {
 				await db.insert(deviceActions).values({
@@ -101,7 +101,7 @@ export const deviceRouter = createTRPCRouter({
 			if (!policy)
 				throw new TRPCError({ code: "NOT_FOUND", message: "Device not found" });
 
-			await ctx.ensureTenantAccount(policy.tenantPk);
+			await ctx.ensureTenantMember(policy.tenantPk);
 
 			// TODO: Finish this
 			return [] as any[];
@@ -165,7 +165,7 @@ export const deviceRouter = createTRPCRouter({
 			if (!policy)
 				throw new TRPCError({ code: "NOT_FOUND", message: "Device not found" });
 
-			await ctx.ensureTenantAccount(policy.tenantPk);
+			await ctx.ensureTenantMember(policy.tenantPk);
 
 			// TODO: Finish this
 			// await db.insert(policyAssignables).values(

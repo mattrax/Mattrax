@@ -36,7 +36,7 @@ export const applicationRouter = createTRPCRouter({
 			});
 			if (!app) return null;
 
-			await ctx.ensureTenantAccount(app.tenantPk);
+			await ctx.ensureTenantMember(app.tenantPk);
 
 			return app;
 		}),

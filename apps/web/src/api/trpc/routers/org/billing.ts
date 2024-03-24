@@ -1,34 +1,36 @@
 import { eq } from "drizzle-orm";
 import type Stripe from "stripe";
 import { stripe } from "~/api/stripe";
-import { db, tenants } from "~/db";
+import { db, organisations } from "~/db";
 import { env } from "~/env";
-import { createTRPCRouter, tenantProcedure } from "../../helpers";
+import { createTRPCRouter, orgProcedure } from "../../helpers";
+import { TRPCError } from "@trpc/server";
 
 export const billingRouter = createTRPCRouter({
-	portalUrl: tenantProcedure.mutation(async ({ ctx }) => {
-		const [tenant] = await db
+	portalUrl: orgProcedure.mutation(async ({ ctx }) => {
+		const [org] = await db
 			.select({
-				name: tenants.name,
-				billingEmail: tenants.billingEmail,
-				stripeCustomerId: tenants.stripeCustomerId,
+				name: organisations.name,
+				billingEmail: organisations.billingEmail,
+				stripeCustomerId: organisations.stripeCustomerId,
 			})
-			.from(tenants)
-			.where(eq(tenants.pk, ctx.tenant.pk));
-		if (!tenant) throw new Error("Tenant not found!"); // TODO: Proper error code which the frontend knows how to handle
+			.from(organisations)
+			.where(eq(organisations.pk, ctx.org.pk));
+		if (!org)
+			throw new TRPCError({ code: "NOT_FOUND", message: "organisation" }); // TODO: Proper error code which the frontend knows how to handle
 
 		let customerId: string;
-		if (!tenant.stripeCustomerId) {
+		if (!org.stripeCustomerId) {
 			try {
 				const customer = await stripe.customers.create({
-					name: tenant.name,
-					email: tenant.billingEmail || undefined,
+					name: org.name,
+					email: org.billingEmail || undefined,
 				});
 
 				await db
-					.update(tenants)
+					.update(organisations)
 					.set({ stripeCustomerId: customer.id })
-					.where(eq(tenants.pk, ctx.tenant.pk));
+					.where(eq(organisations.pk, ctx.org.pk));
 
 				customerId = customer.id;
 			} catch (err) {
@@ -36,7 +38,7 @@ export const billingRouter = createTRPCRouter({
 				throw new Error("Error creating customer");
 			}
 		} else {
-			customerId = tenant.stripeCustomerId;
+			customerId = org.stripeCustomerId;
 		}
 
 		// TODO: When using the official Stripe SDK, this endpoint causes the entire Edge Function to hang and i'm at a loss to why.
@@ -44,7 +46,7 @@ export const billingRouter = createTRPCRouter({
 
 		const body = new URLSearchParams({
 			customer: customerId,
-			return_url: `${env.PROD_URL}/${ctx.tenant.pk}/settings`,
+			return_url: `${env.PROD_URL}/o/${ctx.org.slug}/settings`,
 		});
 
 		const resp = await fetch(

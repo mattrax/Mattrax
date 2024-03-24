@@ -8,20 +8,17 @@ import {
 	db,
 	devices,
 	groups,
+	organisationTenants,
 	policies,
 	tenantAccounts,
 	tenants,
 	users,
 } from "~/db";
-import {
-	authedProcedure,
-	createTRPCRouter,
-	tenantProcedure,
-} from "../../helpers";
+import { createTRPCRouter, orgProcedure, tenantProcedure } from "../../helpers";
 import { adminsRouter } from "./admins";
-import { billingRouter } from "./billing";
 import { identityProviderRouter } from "./identityProvider";
 import { membersRouter } from "./members";
+import { randomSlug } from "~/api/utils";
 
 export type StatsTarget =
 	| "devices"
@@ -51,7 +48,7 @@ export const restrictedUsernames = new Set([
 ]);
 
 export const tenantRouter = createTRPCRouter({
-	create: authedProcedure
+	create: orgProcedure
 		.input(z.object({ name: z.string().min(1) }))
 		.mutation(async ({ ctx, input }) => {
 			const tenantId = await db.transaction(async (db) => {
@@ -60,16 +57,18 @@ export const tenantRouter = createTRPCRouter({
 					id,
 					name: input.name,
 					ownerPk: ctx.account.pk,
-					slug: `${input.name
-						.toLowerCase()
-						.replace(/\ /g, "-")
-						.replace(/[^a-z0-9-v]/g, "")}-${createId().slice(0, 4)}`,
+					orgPk: ctx.org.pk,
+					slug: randomSlug(input.name),
 				});
 				const tenantPk = Number.parseInt(result.insertId);
 
 				await db.insert(tenantAccounts).values({
 					tenantPk,
 					accountPk: ctx.account.pk,
+				});
+				await db.insert(organisationTenants).values({
+					tenantPk,
+					orgPk: ctx.org.pk,
 				});
 
 				return id;
@@ -112,7 +111,6 @@ export const tenantRouter = createTRPCRouter({
 			.where(eq(tenants.pk, ctx.tenant.pk))
 			.then((rows) => rows[0]),
 	),
-
 	setEnrollmentInfo: tenantProcedure
 		.input(z.object({ enrollmentEnabled: z.boolean() }))
 		.mutation(async ({ ctx, input }) =>
@@ -148,7 +146,6 @@ export const tenantRouter = createTRPCRouter({
 				.where(eq(groups.tenantPk, ctx.tenant.pk)),
 		),
 	),
-
 	delete: tenantProcedure.mutation(async ({ ctx }) => {
 		// TODO: Ensure no outstanding bills
 
@@ -164,9 +161,7 @@ export const tenantRouter = createTRPCRouter({
 
 		// TODO: Schedule all devices for unenrolment
 	}),
-
 	admins: adminsRouter,
-	billing: billingRouter,
 	identityProvider: identityProviderRouter,
 	members: membersRouter,
 });

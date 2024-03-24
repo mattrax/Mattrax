@@ -61,7 +61,7 @@ export const policyRouter = createTRPCRouter({
 			]);
 			if (!policy) return null;
 
-			await ctx.ensureTenantAccount(policy.tenantPk);
+			await ctx.ensureTenantMember(policy.tenantPk);
 
 			return {
 				// Compare to last deployed version or default (empty object)
@@ -135,7 +135,7 @@ export const policyRouter = createTRPCRouter({
 				.where(eq(policies.id, input.policyId));
 			if (!policy) throw new Error("policy not found"); // TODO: Error and have frontend catch and handle it
 
-			await ctx.ensureTenantAccount(policy.tenantPk);
+			await ctx.ensureTenantMember(policy.tenantPk);
 
 			await db.insert(policyVersions).values({
 				policyPk: policy.pk,
@@ -163,7 +163,7 @@ export const policyRouter = createTRPCRouter({
 					message: "policy",
 				});
 
-			await ctx.ensureTenantAccount(policy.tenantPk);
+			await ctx.ensureTenantMember(policy.tenantPk);
 
 			await db
 				.update(policies)
@@ -382,7 +382,7 @@ export const policyRouter = createTRPCRouter({
 			if (!policy)
 				throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
 
-			await ctx.ensureTenantAccount(policy.tenantPk);
+			await ctx.ensureTenantMember(policy.tenantPk);
 
 			return await db
 				.select({
@@ -443,7 +443,7 @@ export const policyRouter = createTRPCRouter({
 			if (!policy)
 				throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
 
-			await ctx.ensureTenantAccount(policy.tenantPk);
+			await ctx.ensureTenantMember(policy.tenantPk);
 
 			await db.insert(policyAssignables).values(
 				input.members.map((member) => ({

@@ -65,7 +65,7 @@ export const groupRouter = createTRPCRouter({
 			});
 			if (!group) return null;
 
-			await ctx.ensureTenantAccount(group.tenantPk);
+			await ctx.ensureTenantMember(group.tenantPk);
 
 			return group;
 		}),
@@ -83,7 +83,7 @@ export const groupRouter = createTRPCRouter({
 			});
 			if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
 
-			await ctx.ensureTenantAccount(group.tenantPk);
+			await ctx.ensureTenantMember(group.tenantPk);
 
 			await db
 				.update(groups)
@@ -99,7 +99,7 @@ export const groupRouter = createTRPCRouter({
 			});
 			if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
 
-			await ctx.ensureTenantAccount(group.tenantPk);
+			await ctx.ensureTenantMember(group.tenantPk);
 
 			return await db
 				.select({
@@ -152,7 +152,7 @@ export const groupRouter = createTRPCRouter({
 			if (!group)
 				throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
 
-			await ctx.ensureTenantAccount(group.tenantPk);
+			await ctx.ensureTenantMember(group.tenantPk);
 
 			await db
 				.insert(groupAssignables)

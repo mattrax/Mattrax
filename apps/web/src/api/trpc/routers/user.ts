@@ -71,7 +71,7 @@ export const userRouter = createTRPCRouter({
 				);
 
 			if (!user) return null;
-			await ctx.ensureTenantAccount(user.tenantPk);
+			await ctx.ensureTenantMember(user.tenantPk);
 			return omit(user, ["tenantPk"]);
 		}),
 
@@ -87,7 +87,7 @@ export const userRouter = createTRPCRouter({
 					message: "user",
 				});
 
-			const tenant = await ctx.ensureTenantAccount(user.tenantPk);
+			const tenant = await ctx.ensureTenantMember(user.tenantPk);
 
 			// TODO: "On behalf of {tenant_name}" in the content + render `input.message` inside the email.
 			await sendEmail({
@@ -107,7 +107,7 @@ export const userRouter = createTRPCRouter({
 			if (!policy)
 				throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
 
-			await ctx.ensureTenantAccount(policy.tenantPk);
+			await ctx.ensureTenantMember(policy.tenantPk);
 
 			return [] as any[]; // TODO
 
@@ -170,7 +170,7 @@ export const userRouter = createTRPCRouter({
 			if (!policy)
 				throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
 
-			await ctx.ensureTenantAccount(policy.tenantPk);
+			await ctx.ensureTenantMember(policy.tenantPk);
 
 			// TODO
 			// await db.insert(policyAssignables).values(

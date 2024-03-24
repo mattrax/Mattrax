@@ -34,14 +34,12 @@ export function AuthContext(props: ParentProps) {
 	}));
 
 	return (
-		<Suspense>
-			<Show when={meQuery.data}>
-				{(me) => (
-					<AuthContextProvider me={me()} query={meQuery}>
-						{props.children}
-					</AuthContextProvider>
-				)}
-			</Show>
-		</Suspense>
+		<Show when={meQuery.data}>
+			{(me) => (
+				<AuthContextProvider me={me()} query={meQuery}>
+					{props.children}
+				</AuthContextProvider>
+			)}
+		</Show>
 	);
 }

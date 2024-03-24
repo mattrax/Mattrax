@@ -1,7 +1,8 @@
 import { createContextProvider } from "@solid-primitives/context";
-import { ParentProps, createSignal } from "solid-js";
+import { ParentProps, Suspense, createSignal } from "solid-js";
 import { Portal } from "solid-js/web";
 import { A } from "@solidjs/router";
+import IconMdiSlashForward from "~icons/mdi/slash-forward.jsx";
 
 const [ContextProvider, useContext] = createContextProvider(() => {
 	const [ref, setRef] = createSignal<HTMLDivElement>(null!);
@@ -16,7 +17,12 @@ export function BreadcrumbsRoot(props: ParentProps) {
 export function Breadcrumbs() {
 	const { setRef } = useContext();
 
-	return <div class="flex flex-row items-center" ref={setRef} />;
+	return (
+		<div
+			class="flex flex-row items-center text-sm font-medium space-x-2 text-gray-800"
+			ref={setRef}
+		/>
+	);
 }
 
 export function Breadcrumb(props: ParentProps) {
@@ -24,12 +30,14 @@ export function Breadcrumb(props: ParentProps) {
 
 	return (
 		<Portal mount={ref()}>
-			<A href="" class="flex flex-row items-center gap-2">
-				<div class="flex flex-row items-center gap-2">
-					<span class="text-xl text-gray-300 mx-2">/</span>
-					{props.children}
-				</div>
-			</A>
+			<Suspense>
+				<A href="" class="flex flex-row items-center">
+					<div class="flex flex-row items-center gap-2">
+						<IconMdiSlashForward class="text-lg text-gray-300" />
+						{props.children}
+					</div>
+				</A>
+			</Suspense>
 		</Portal>
 	);
 }

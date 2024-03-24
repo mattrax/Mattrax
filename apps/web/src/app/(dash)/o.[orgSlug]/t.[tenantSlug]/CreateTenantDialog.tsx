@@ -10,6 +10,7 @@ import {
 	DialogTitle,
 } from "@mattrax/ui";
 import { trpc } from "~/lib";
+import { useOrgSlug } from "../../o.[orgSlug]";
 
 // TODO: Use form abstraction
 
@@ -33,11 +34,12 @@ export function CreateTenantDialog(
 		},
 	}));
 
+	const orgSlug = useOrgSlug();
+
 	const form = createZodForm({
-		schema: z.object({
-			name: z.string(),
-		}),
-		onSubmit: ({ value }) => mutation.mutateAsync({ name: value.name }),
+		schema: z.object({ name: z.string() }),
+		onSubmit: ({ value }) =>
+			mutation.mutateAsync({ name: value.name, orgSlug: orgSlug() }),
 	});
 
 	return (
