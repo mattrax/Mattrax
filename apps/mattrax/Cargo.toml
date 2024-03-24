@@ -6,6 +6,9 @@ edition = "2021"
 publish = false
 default-run = "mattrax"
 
+[package.metadata.dist]
+dist = true
+
 [dependencies]
 mattrax-utils = { path = "../../crates/utils" }
 better-acme = { path = "../../crates/better-acme" }

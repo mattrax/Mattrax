@@ -5,6 +5,9 @@ version = "0.0.1"
 edition = "2021"
 publish = false
 
+[package.metadata.dist]
+dist = true
+
 [dependencies]
 mattrax-utils = { path = "../../crates/utils" }
 mattrax-policy = { path = "../../crates/policy" }
