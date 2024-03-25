@@ -11,6 +11,11 @@ permissions:
 jobs:
   sst:
     runs-on: ubuntu-latest
+    # This is required to workaround the lack of wildcard for OIDC scope
+    # https://github.com/Azure/azure-workload-identity/issues/373
+    #
+    # I swear to god Microsoft have never tried anything they have built.
+    environment: production
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v3
