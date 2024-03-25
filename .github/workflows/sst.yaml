@@ -42,4 +42,4 @@ jobs:
         run: curl -fsSL https://ion.sst.dev/install | bash
 
       - name: Deploy app
-        run: source "~/.bashrc" && pnpm i && pnpm infra deploy --stage prod
+        run: pnpm i && pnpm infra deploy --stage prod
