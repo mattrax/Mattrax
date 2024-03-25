@@ -1,0 +1,8 @@
+{
+	"name": "@mattrax/infra",
+	"private": true,
+	"devDependencies": {
+		"@pulumi/aws": "^6.27.0",
+		"@pulumi/azuread": "^5.47.2"
+	}
+}
