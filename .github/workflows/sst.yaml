@@ -42,7 +42,7 @@ jobs:
         run: curl -fsSL https://ion.sst.dev/install | bash
 
       - name: Test # TODO: Remove this
-        run: sst --help
+        run: /home/runner/.sst/bin/sst --help
 
       - name: Deploy app
         run: pnpm i && pnpm infra deploy --stage prod
