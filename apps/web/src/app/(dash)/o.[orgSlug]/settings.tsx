@@ -11,7 +11,7 @@ export default function Layout(props: ParentProps) {
 	return (
 		<PageLayout
 			size="lg"
-			heading={<PageLayoutHeading>Tenant Settings</PageLayoutHeading>}
+			heading={<PageLayoutHeading>Organisation Settings</PageLayoutHeading>}
 		>
 			<div class="flex flex-row">
 				<nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pl-4">
