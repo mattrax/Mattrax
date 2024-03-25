@@ -41,8 +41,5 @@ jobs:
       - name: Install SST
         run: curl -fsSL https://ion.sst.dev/install | bash
 
-      - name: Fix SST command
-        run: alias sst="/home/runner/.sst/bin/sst"
-
       - name: Deploy app
-        run: pnpm i && pnpm infra deploy --stage prod
+        run: pnpm i && PATH=/home/runner/.sst/bin:$PATH pnpm infra deploy --stage prod
