@@ -38,6 +38,8 @@ jobs:
         with:
           version: latest
 
+      - name: Install SST
+        run: curl -fsSL https://ion.sst.dev/install | bash
+
       - name: Deploy app
-        run: |
-          pnpm i && pnpm infra deploy --stage prod
+        run: pnpm i && pnpm infra deploy --stage prod
