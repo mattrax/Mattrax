@@ -30,7 +30,10 @@ jobs:
       # TODO: We don't use OIDC because I can't work out the permissions.
       # - How tf do you make an app registration global administrator. That doesn't even makes sense.
       - name: Configure Azure credentials
-        uses: az login --identity --username ${{ secrets.AZURE_USERNAME }} --password ${{ secrets.AZURE_APP_SPECIFIC_PASSWORD }}
+        uses: az login --identity --username "$AZURE_USERNAME" --password "$AZURE_APP_SPECIFIC_PASSWORD"
+        env:
+          AZURE_USERNAME: ${{ secrets.AZURE_USERNAME }}
+          AZURE_APP_SPECIFIC_PASSWORD: ${{ secrets.AZURE_APP_SPECIFIC_PASSWORD }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
