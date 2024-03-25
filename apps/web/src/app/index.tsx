@@ -16,6 +16,13 @@ export default function Page() {
 		return orgs[0];
 	};
 
+	const defaultTenant = () => {
+		const tenants = useAuth()().tenants;
+		if (tenants.length < 1) return;
+
+		return tenants[0];
+	};
+
 	return (
 		<AuthContext>
 			<Show
@@ -30,7 +37,16 @@ export default function Page() {
 			>
 				{(
 					org, // If we have an active tenant, send the user to it
-				) => <Navigate href={`o/${org().slug}`} />}
+				) => (
+					<Show
+						when={defaultTenant()}
+						fallback={<Navigate href={`o/${org().slug}`} />}
+					>
+						{(tenant) => (
+							<Navigate href={`o/${org().slug}/t/${tenant().slug}`} />
+						)}
+					</Show>
+				)}
 			</Show>
 		</AuthContext>
 	);

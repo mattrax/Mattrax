@@ -10,7 +10,7 @@
 		],
 		"ignore": [
 			".next",
-			"auto-import.d.ts",
+			"auto-imports.d.ts",
 			"node_modules",
 			"dist",
 			"apps/android"
