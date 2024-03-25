@@ -20,12 +20,17 @@ jobs:
       - name: Git clone the repository
         uses: actions/checkout@v3
 
+      # - name: Configure Azure credentials
+      #   uses: azure/login@v1
+      #   with:
+      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #     allow-no-subscriptions: true
+
+      # TODO: We don't use OIDC because I can't work out the permissions.
+      # - How tf do you make an app registration global administrator. That doesn't even makes sense.
       - name: Configure Azure credentials
-        uses: azure/login@v1
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          allow-no-subscriptions: true
+        uses: az login --identity --username ${{ secrets.AZURE_USERNAME }} --password ${{ secrets.AZURE_APP_SPECIFIC_PASSWORD }}
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
