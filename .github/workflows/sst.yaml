@@ -41,5 +41,8 @@ jobs:
       - name: Install SST
         run: curl -fsSL https://ion.sst.dev/install | bash
 
+      - name: Test # TODO: Remove this
+        run: sst --help
+
       - name: Deploy app
         run: pnpm i && pnpm infra deploy --stage prod
