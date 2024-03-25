@@ -15,5 +15,5 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - using: "docker"
-        image: "ghcr.io/microsoftgraph/msgraph-cli:latest"
+      - uses: docker://ghcr.io/microsoftgraph/msgraph-cli:latest
+        run: mgc --version
