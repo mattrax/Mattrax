@@ -1,4 +1,10 @@
-import { Component, For, ParentProps, Suspense, createMemo } from "solid-js";
+import {
+	type Component,
+	For,
+	type ParentProps,
+	Suspense,
+	createMemo,
+} from "solid-js";
 import { A, useMatches } from "@solidjs/router";
 
 export function Breadcrumbs() {

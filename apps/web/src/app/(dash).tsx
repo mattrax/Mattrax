@@ -1,6 +1,5 @@
-import { ParentProps, Suspense } from "solid-js";
+import { type ParentProps, Suspense } from "solid-js";
 
-import { BreadcrumbsRoot } from "~c/Breadcrumbs";
 import { NavItemsProvider } from "./(dash)/TopBar/NavItems";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { trpc } from "~/lib";

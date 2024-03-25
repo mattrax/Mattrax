@@ -10,17 +10,27 @@ export const metaRouter = createTRPCRouter({
 				throw new Error("Feedback webhook not configured");
 			}
 
-			const content = [
-				...input.content.split("\n").map((l) => `> ${l}`),
-				`\`${ctx.account.email}\``,
-			].join("\n");
-
-			const body = new FormData();
-			body.set("content", content);
-
-			await fetch(env.FEEDBACK_DISCORD_WEBHOOK_URL, {
-				method: "POST",
-				body,
-			});
+			await sendDiscordMessage(
+				[
+					...input.content.split("\n").map((l) => `> ${l}`),
+					`\`${ctx.account.email}\``,
+				].join("\n"),
+				env.FEEDBACK_DISCORD_WEBHOOK_URL,
+			);
 		}),
 });
+
+export async function sendDiscordMessage(
+	content: string,
+	url: string | undefined,
+) {
+	if (!url) throw new Error("Discord webhook not configured");
+
+	const body = new FormData();
+	body.set("content", content);
+
+	await fetch(url, {
+		method: "POST",
+		body,
+	});
+}
