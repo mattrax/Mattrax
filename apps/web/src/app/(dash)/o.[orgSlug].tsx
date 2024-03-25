@@ -4,18 +4,16 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
-	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@mattrax/ui";
 import { A, useMatch, useNavigate } from "@solidjs/router";
 import { For, ParentProps, Suspense } from "solid-js";
+import { z } from "zod";
 
 import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
 import { AuthContext, useAuth } from "~/components/AuthContext";
-import { Breadcrumb } from "~/components/Breadcrumbs";
 import { OrgContext, useOrg } from "./o.[orgSlug]/Context";
 import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
 
 export function useOrgSlug() {
 	const params = useZodParams({ orgSlug: z.string() });
@@ -23,18 +21,7 @@ export function useOrgSlug() {
 }
 
 export default function Layout(props: ParentProps) {
-	return (
-		<>
-			<Breadcrumb>
-				<AuthContext>
-					<OrgContext>
-						<OrgSwitcher />
-					</OrgContext>
-				</AuthContext>
-			</Breadcrumb>
-			{props.children}
-		</>
-	);
+	return <>{props.children}</>;
 }
 
 function OrgSwitcher() {
@@ -43,14 +30,10 @@ function OrgSwitcher() {
 
 	const navigate = useNavigate();
 
-	const segmentMatch = useMatch(() => "./:segment/:subSegment/*");
-
 	return (
 		<DropdownMenu>
 			<div class="flex flex-row items-center gap-2">
-				<A href={segmentMatch()?.params.segment ?? ""} class="block">
-					{org().name}
-				</A>
+				<span>{org().name}</span>
 				<DropdownMenuTrigger asChild>
 					<As component={Button} variant="ghost" size="iconSmall">
 						<KDropdownMenu.Icon>
@@ -87,5 +70,16 @@ const NAV_ITEMS = [
 ];
 
 export const route = {
-	info: { NAV_ITEMS },
+	info: {
+		NAV_ITEMS,
+		BREADCRUMB: () => {
+			return (
+				<AuthContext>
+					<OrgContext>
+						<OrgSwitcher />
+					</OrgContext>
+				</AuthContext>
+			);
+		},
+	},
 };

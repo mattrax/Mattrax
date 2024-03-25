@@ -18,6 +18,7 @@ declare global {
   const IconLogosSlackIcon: typeof import("~icons/logos/slack-icon.jsx")["default"]
   const IconMaterialSymbolsEditOutline: typeof import("~icons/material-symbols/edit-outline.jsx")["default"]
   const IconMaterialSymbolsWarningRounded: typeof import("~icons/material-symbols/warning-rounded.jsx")["default"]
+  const IconMdiSlashForward: typeof import('~icons/mdi/slash-forward.jsx')['default']
   const IconPhAlarmBold: typeof import("~icons/ph/alarm-bold.jsx")["default"]
   const IconPhAppDuotone: typeof import("~icons/ph/app-duotone.jsx")["default"]
   const IconPhAppWindowDuotone: typeof import("~icons/ph/app-window-duotone.jsx")["default"]

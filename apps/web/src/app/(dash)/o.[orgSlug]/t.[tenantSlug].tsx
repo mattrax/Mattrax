@@ -24,15 +24,13 @@ const NAV_ITEMS = [
 	{ title: "Settings", href: "settings" },
 ];
 
-export const route = { info: { NAV_ITEMS } } satisfies RouteDefinition;
+export const route = {
+	info: {
+		NAV_ITEMS,
+		BREADCRUMB: () => {
+			const navigate = useNavigate();
 
-export default function Layout(props: ParentProps) {
-	const params = useZodParams({ tenantSlug: z.string() });
-	const navigate = useNavigate();
-
-	return (
-		<>
-			<Breadcrumb>
+			return (
 				<AuthContext>
 					<TenantContext>
 						<TenantSwitcher
@@ -42,7 +40,16 @@ export default function Layout(props: ParentProps) {
 						/>
 					</TenantContext>
 				</AuthContext>
-			</Breadcrumb>
+			);
+		},
+	},
+} satisfies RouteDefinition;
+
+export default function Layout(props: ParentProps) {
+	const params = useZodParams({ tenantSlug: z.string() });
+
+	return (
+		<>
 			{/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
 			<MErrorBoundary>
 				{/* we key here on purpose - tenants are the root-most unit of isolation */}

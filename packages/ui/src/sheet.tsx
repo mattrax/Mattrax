@@ -144,6 +144,7 @@ const sheetVariants = cva(
 		defaultVariants: {
 			position: "right",
 			size: "default",
+			padding: "default",
 		},
 	},
 );
@@ -162,6 +163,7 @@ const SheetContent: Component<DialogContentProps & { transparent?: boolean }> =
 			"class",
 			"children",
 			"transparent",
+			"padding",
 		]);
 
 		return (
@@ -169,7 +171,11 @@ const SheetContent: Component<DialogContentProps & { transparent?: boolean }> =
 				<SheetOverlay transparent={props.transparent ?? true} />
 				<SheetPrimitive.Content
 					class={cn(
-						sheetVariants({ position: props.position, size: props.size }),
+						sheetVariants({
+							position: props.position,
+							size: props.size,
+							padding: props.padding,
+						}),
 						props.class,
 					)}
 					{...rest}

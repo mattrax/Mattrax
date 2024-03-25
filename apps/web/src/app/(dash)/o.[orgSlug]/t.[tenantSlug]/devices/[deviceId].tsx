@@ -23,7 +23,20 @@ export const route = {
 		trpc.useContext().device.get.ensureData({
 			deviceId: params.deviceId!,
 		}),
-	info: { NAV_ITEMS },
+	info: {
+		NAV_ITEMS,
+		BREADCRUMB: () => {
+			const params = useZodParams({ deviceId: z.string() });
+			const query = trpc.device.get.useQuery(() => params);
+
+			return (
+				<>
+					<span>{query.data?.name}</span>
+					<Badge variant="outline">Device</Badge>
+				</>
+			);
+		},
+	},
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
@@ -35,10 +48,6 @@ export default function Layout(props: ParentProps) {
 			<Show when={query.data} fallback={<NotFound />}>
 				{(data) => (
 					<DeviceContextProvider device={data()} query={query}>
-						<Breadcrumb>
-							<span>{data().name}</span>
-							<Badge variant="outline">Device</Badge>
-						</Breadcrumb>
 						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</DeviceContextProvider>
 				)}

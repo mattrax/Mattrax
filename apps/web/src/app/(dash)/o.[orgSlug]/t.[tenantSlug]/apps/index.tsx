@@ -216,7 +216,7 @@ function CreateApplicationSheet(props: ParentProps) {
 	return (
 		<Sheet>
 			<SheetTrigger asChild>{props.children}</SheetTrigger>
-			<SheetContent asChild>
+			<SheetContent asChild padding="none">
 				<As
 					component={Form}
 					form={form}

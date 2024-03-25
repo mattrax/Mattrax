@@ -20,7 +20,23 @@ export const route = {
 		trpc.useContext().user.get.ensureData({
 			id: params.userId!,
 		}),
-	info: { NAV_ITEMS },
+	info: {
+		NAV_ITEMS,
+		BREADCRUMB: () => {
+			const params = useZodParams({ userId: z.string() });
+
+			const query = trpc.user.get.useQuery(() => ({
+				id: params.userId,
+			}));
+
+			return (
+				<>
+					<span>{query.data?.name}</span>
+					<Badge variant="outline">User</Badge>
+				</>
+			);
+		},
+	},
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
@@ -35,10 +51,6 @@ export default function Layout(props: ParentProps) {
 			<Show when={query.data} fallback={<NotFound />}>
 				{(data) => (
 					<UserContextProvider user={data()} query={query}>
-						<Breadcrumb>
-							<span>{data().name}</span>
-							<Badge variant="outline">User</Badge>
-						</Breadcrumb>
 						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</UserContextProvider>
 				)}

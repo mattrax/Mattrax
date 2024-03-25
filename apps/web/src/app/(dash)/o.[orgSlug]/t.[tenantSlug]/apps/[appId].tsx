@@ -18,14 +18,32 @@ export const route = {
 		trpc.useContext().app.get.ensureData({
 			id: params.appId!,
 		}),
-	info: { NAV_ITEMS },
+	info: {
+		NAV_ITEMS,
+		BREADCRUMB: () => {
+			const params = useZodParams({ appId: z.string() });
+
+			const query = trpc.app.get.useQuery(() => ({
+				id: params.appId,
+			}));
+
+			return (
+				<>
+					<span>{query.data?.name}</span>
+					<Badge variant="outline">App</Badge>
+				</>
+			);
+		},
+	},
 } satisfies RouteDefinition;
 
 export const [AppContextProvider, useApp] = createContextProvider(
 	(props: {
 		app: NonNullable<RouterOutput["app"]["get"]>;
 		query: ReturnType<typeof trpc.app.get.useQuery>;
-	}) => Object.assign(() => props.app, { query: props.query }),
+	}) => {
+		return Object.assign(() => props.app, { query: props.query });
+	},
 	null!,
 );
 
@@ -41,10 +59,6 @@ export default function Layout(props: ParentProps) {
 			<Show when={query.data} fallback={<NotFound />}>
 				{(data) => (
 					<AppContextProvider app={data()} query={query}>
-						<Breadcrumb>
-							<span>{data().name}</span>
-							<Badge variant="outline">App</Badge>
-						</Breadcrumb>
 						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</AppContextProvider>
 				)}

@@ -6,7 +6,6 @@ import { z } from "zod";
 
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { GroupContextProvider } from "./[groupId]/Context";
-import { Breadcrumb } from "~c/Breadcrumbs";
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 
@@ -17,7 +16,22 @@ export const route = {
 		trpc.useContext().group.get.ensureData({
 			id: params.groupId!,
 		}),
-	// info: { NAV_ITEMS },
+	info: {
+		// NAV_ITEMS
+		BREADCRUMB: () => {
+			const params = useZodParams({ groupId: z.string() });
+			const query = trpc.group.get.useQuery(() => ({
+				id: params.groupId,
+			}));
+
+			return (
+				<>
+					<span>{query.data?.name}</span>
+					<Badge variant="outline">Group</Badge>
+				</>
+			);
+		},
+	},
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
@@ -31,10 +45,6 @@ export default function Layout(props: ParentProps) {
 			<Show when={query.data} fallback={<NotFound />}>
 				{(data) => (
 					<GroupContextProvider group={data()} query={query}>
-						<Breadcrumb>
-							<span>{data().name}</span>
-							<Badge variant="outline">Group</Badge>
-						</Breadcrumb>
 						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</GroupContextProvider>
 				)}

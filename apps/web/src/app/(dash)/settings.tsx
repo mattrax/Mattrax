@@ -8,13 +8,18 @@ import { Breadcrumb } from "~c/Breadcrumbs";
 
 const navigation = [{ name: "General", href: "general" }];
 
+export const route = {
+	info: {
+		BREADCRUMB: () => <>Settings</>,
+	},
+};
+
 export default function Layout(props: ParentProps) {
 	return (
 		<PageLayout
 			size="lg"
 			heading={<PageLayoutHeading>Settings</PageLayoutHeading>}
 		>
-			<Breadcrumb>Settings</Breadcrumb>
 			<div class="flex flex-row">
 				<nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pl-4">
 					<ul class="space-y-1">

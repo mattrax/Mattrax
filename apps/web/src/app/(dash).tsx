@@ -15,12 +15,10 @@ export const route = {
 export default function Layout(props: ParentProps) {
 	return (
 		<MErrorBoundary>
-			<BreadcrumbsRoot>
-				<NavItemsProvider>
-					<TopBar />
-					<Suspense>{props.children}</Suspense>
-				</NavItemsProvider>
-			</BreadcrumbsRoot>
+			<NavItemsProvider>
+				<TopBar />
+				<Suspense>{props.children}</Suspense>
+			</NavItemsProvider>
 		</MErrorBoundary>
 	);
 }

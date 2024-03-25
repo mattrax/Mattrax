@@ -155,7 +155,7 @@ export function AddMemberSheet(props: ParentProps & Props) {
 							</SheetDescription>
 						</SheetHeader>
 						<Suspense>
-							<div class="flex flex-row justify-between w-full items-center">
+							<div class="flex flex-row justify-between w-full items-center my-4">
 								<Tabs
 									value={
 										(table.getColumn("variant")!.getFilterValue() as

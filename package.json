@@ -22,7 +22,7 @@
 	},
 	"dependencies": {
 		"@biomejs/biome": "^1.6.0",
-		"@solidjs/start": "^0.7.5",
+		"@solidjs/start": "1.0.0-rc.0",
 		"dotenv": "^16.4.5",
 		"drizzle-kit": "^0.20.14",
 		"mysql2": "^3.9.2",

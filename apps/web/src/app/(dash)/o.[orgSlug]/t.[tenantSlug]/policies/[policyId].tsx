@@ -23,7 +23,20 @@ export const route = {
 		trpc.useContext().policy.get.ensureData({
 			policyId: params.policyId!,
 		}),
-	info: { NAV_ITEMS },
+	info: {
+		NAV_ITEMS,
+		BREADCRUMB: () => {
+			const params = useZodParams({ policyId: z.string() });
+			const query = trpc.policy.get.useQuery(() => params);
+
+			return (
+				<>
+					<span>{query.data?.name}</span>
+					<Badge variant="outline">Policy</Badge>
+				</>
+			);
+		},
+	},
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
@@ -36,10 +49,6 @@ export default function Layout(props: ParentProps) {
 			<Show when={query.data} fallback={<NotFound />}>
 				{(policy) => (
 					<PolicyContextProvider policy={policy()} query={query}>
-						<Breadcrumb>
-							<span>{policy().name}</span>
-							<Badge variant="outline">Policy</Badge>
-						</Breadcrumb>
 						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</PolicyContextProvider>
 				)}

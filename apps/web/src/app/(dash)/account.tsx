@@ -4,9 +4,14 @@ import type { JSX } from "solid-js";
 
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { AuthContext } from "~c/AuthContext";
-import { Breadcrumb } from "~c/Breadcrumbs";
 
 const navigation = [{ name: "API Keys", href: "api-keys" }];
+
+export const route = {
+	info: {
+		BREADCRUMB: () => <>Account</>,
+	},
+};
 
 export default function Layout(props: ParentProps) {
 	return (
@@ -14,9 +19,8 @@ export default function Layout(props: ParentProps) {
 			size="lg"
 			heading={<PageLayoutHeading>Account</PageLayoutHeading>}
 		>
-			<Breadcrumb>Account</Breadcrumb>
 			<div class="flex flex-row">
-				<nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pl-4">
+				<nav class="sticky top-0 flex w-44 flex-col gap-y-5 bg-white pl-4">
 					<ul class="space-y-1">
 						<For each={navigation}>
 							{(item) => (
@@ -45,7 +49,7 @@ const SidebarItem = (
 	<A
 		end
 		href={props.href}
-		class="block group rounded-md p-2 text-sm leading-6 font-semibold"
+		class="group block rounded-md p-2 text-sm font-semibold leading-6"
 		activeClass="bg-gray-50 text-brand active-page"
 		inactiveClass="text-gray-700 hover:text-brand hover:bg-gray-50 inactive-page"
 	>
@@ -53,7 +57,7 @@ const SidebarItem = (
 			{props.icon && (
 				<props.icon
 					class={
-						"h-6 w-6 shrink-0 group-[.active-page]:text-brand group-[.inactive-page]:text-gray-400 group-[.inactive-page]:group-hover:text-brand"
+						"group-[.active-page]:text-brand group-[.inactive-page]:group-hover:text-brand h-6 w-6 shrink-0 group-[.inactive-page]:text-gray-400"
 					}
 					aria-hidden="true"
 				/>

@@ -1,43 +1,38 @@
-import { createContextProvider } from "@solid-primitives/context";
-import { ParentProps, Suspense, createSignal } from "solid-js";
-import { Portal } from "solid-js/web";
-import { A } from "@solidjs/router";
-import IconMdiSlashForward from "~icons/mdi/slash-forward.jsx";
-
-const [ContextProvider, useContext] = createContextProvider(() => {
-	const [ref, setRef] = createSignal<HTMLDivElement>(null!);
-
-	return { ref, setRef };
-}, null!);
-
-export function BreadcrumbsRoot(props: ParentProps) {
-	return <ContextProvider>{props.children}</ContextProvider>;
-}
+import { Component, For, ParentProps, Suspense, createMemo } from "solid-js";
+import { A, useMatches } from "@solidjs/router";
 
 export function Breadcrumbs() {
-	const { setRef } = useContext();
+	const matches = useMatches();
+
+	const breadcrumbs = createMemo(() =>
+		matches().flatMap((match) => {
+			const Inner: Component | undefined = match.route.info?.BREADCRUMB;
+			return Inner ? [{ Inner, match }] : [];
+		}),
+	);
 
 	return (
-		<div
-			class="flex flex-row items-center text-sm font-medium space-x-2 text-gray-800"
-			ref={setRef}
-		/>
+		<div class="flex flex-row items-center text-sm font-medium space-x-2 text-gray-800">
+			<For each={breadcrumbs()}>
+				{({ Inner, match }) => (
+					<Breadcrumb href={match.path}>
+						<Inner />
+					</Breadcrumb>
+				)}
+			</For>
+		</div>
 	);
 }
 
-export function Breadcrumb(props: ParentProps) {
-	const { ref } = useContext();
-
+export function Breadcrumb(props: ParentProps<{ href: string }>) {
 	return (
-		<Portal mount={ref()}>
-			<Suspense>
-				<A href="" class="flex flex-row items-center">
-					<div class="flex flex-row items-center gap-2">
-						<IconMdiSlashForward class="text-lg text-gray-300" />
-						{props.children}
-					</div>
+		<Suspense>
+			<div class="flex flex-row items-center gap-2">
+				<IconMdiSlashForward class="text-lg text-gray-300" />
+				<A href={props.href} class="flex flex-row items-center py-1 gap-2">
+					{props.children}
 				</A>
-			</Suspense>
-		</Portal>
+			</div>
+		</Suspense>
 	);
 }

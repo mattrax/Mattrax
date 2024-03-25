@@ -31,6 +31,9 @@
 			}
 		}
 	},
+	"formatter": {
+		"indentStyle": "tab"
+	},
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
