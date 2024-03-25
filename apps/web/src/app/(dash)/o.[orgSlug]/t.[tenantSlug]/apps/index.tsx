@@ -4,7 +4,7 @@ import {
 	type ParentProps,
 	Suspense,
 	createSignal,
-	Accessor,
+	type Accessor,
 	For,
 	createEffect,
 	startTransition,
@@ -279,7 +279,11 @@ function CreateApplicationSheet(props: ParentProps) {
 															"border-2 border-transparent ui-checked:border-brand peer-focus-visible:outline outline-brand",
 														)}
 													>
-														<img src={app.artworkUrl512} class="rounded h-12" />
+														<img
+															src={app.artworkUrl512}
+															alt=""
+															class="rounded h-12"
+														/>
 														<div class="flex flex-col text-sm flex-1">
 															<span class="font-semibold">{app.trackName}</span>
 															<span class="text-gray-700">

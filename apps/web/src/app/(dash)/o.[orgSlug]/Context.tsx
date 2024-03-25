@@ -1,9 +1,9 @@
 import { createContextProvider } from "@solid-primitives/context";
-import { ParentProps, Show, createMemo } from "solid-js";
+import { type ParentProps, Show, createMemo } from "solid-js";
 import { z } from "zod";
 import { Navigate } from "@solidjs/router";
 
-import { RouterOutput } from "~/api";
+import type { RouterOutput } from "~/api";
 import { useAuth } from "~c/AuthContext";
 import { useZodParams } from "~/lib/useZodParams";
 

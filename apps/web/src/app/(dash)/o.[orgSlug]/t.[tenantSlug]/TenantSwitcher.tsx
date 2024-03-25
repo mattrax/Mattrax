@@ -15,9 +15,6 @@ import { CreateTenantDialog } from "./CreateTenantDialog";
 import { useAuth } from "~c/AuthContext";
 import { useTenant } from "./Context";
 
-// TODO: When shrinking window and scrolling to move the trigger offscreen the popover comes with it. This is Kolate behavior but I don't like it.
-// TODO: Transition on dropdown open/close
-
 export type TenantSwitcherProps = {
 	setActiveTenant: (id: string) => void;
 };

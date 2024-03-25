@@ -12,8 +12,6 @@ import {
 import { trpc } from "~/lib";
 import { useOrgSlug } from "../../o.[orgSlug]";
 
-// TODO: Use form abstraction
-
 export function CreateTenantDialog(
 	props: {
 		setActiveTenant: (id: string) => void;

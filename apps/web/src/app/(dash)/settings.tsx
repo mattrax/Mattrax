@@ -4,7 +4,6 @@ import type { JSX } from "solid-js";
 
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { AuthContext } from "~c/AuthContext";
-import { Breadcrumb } from "~c/Breadcrumbs";
 
 const navigation = [{ name: "General", href: "general" }];
 

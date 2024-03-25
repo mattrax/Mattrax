@@ -206,7 +206,7 @@ export default function Page() {
 					on
 					<a
 						href="https://github.com/mattrax/Mattrax"
-						class="text-center w-full underline"
+						class="text-center w-full underline px-2"
 						rel="external"
 					>
 						GitHub

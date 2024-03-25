@@ -1,6 +1,6 @@
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@mattrax/ui";
 import {
-	RouteDefinition,
+	type RouteDefinition,
 	action,
 	cache,
 	createAsync,

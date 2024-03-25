@@ -1,6 +1,6 @@
 import { createContextProvider } from "@solid-primitives/context";
-import { RouterOutput } from "~/api";
-import { trpc } from "~/lib";
+import type { RouterOutput } from "~/api";
+import type { trpc } from "~/lib";
 
 export const [PolicyContextProvider, usePolicy] = createContextProvider(
 	(props: {

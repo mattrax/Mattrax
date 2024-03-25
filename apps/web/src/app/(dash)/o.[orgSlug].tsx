@@ -6,8 +6,8 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@mattrax/ui";
-import { A, useMatch, useNavigate } from "@solidjs/router";
-import { For, ParentProps, Suspense } from "solid-js";
+import { A, useNavigate } from "@solidjs/router";
+import { For, type ParentProps, Suspense } from "solid-js";
 import { z } from "zod";
 
 import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
