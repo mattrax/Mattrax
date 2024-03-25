@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/solid-query";
-import { A, useNavigate } from "@solidjs/router";
+import { A, useMatch, useNavigate } from "@solidjs/router";
 import { As } from "@kobalte/core";
 import clsx from "clsx";
 import {
@@ -17,7 +17,12 @@ import {
 	PopoverTrigger,
 	Textarea,
 } from "@mattrax/ui";
-import { createSignal, useTransition, type ParentProps } from "solid-js";
+import {
+	createEffect,
+	createSignal,
+	useTransition,
+	type ParentProps,
+} from "solid-js";
 
 import { trpc } from "~/lib";
 import Logo from "~/assets/MATTRAX.png";
@@ -37,6 +42,8 @@ export function TopBar() {
 	}));
 	const { items } = useNavItemsContext();
 
+	const org = useMatch(() => "o/:orgSlug/*");
+
 	return (
 		<>
 			<div
@@ -45,7 +52,7 @@ export function TopBar() {
 					!items() && "border-b border-gray-200",
 				)}
 			>
-				<A href="">
+				<A href={org()?.path ?? "/"}>
 					<img src={Logo} class="h-5" alt="Mattrax icon" />
 				</A>
 				<Breadcrumbs />
