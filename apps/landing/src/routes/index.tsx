@@ -203,10 +203,10 @@ export default function Page() {
 					>
 						Mattrax Inc.
 					</a>
-					on
+					<span class="px-2">on</span>
 					<a
 						href="https://github.com/mattrax/Mattrax"
-						class="text-center w-full underline px-2"
+						class="text-center w-full underline"
 						rel="external"
 					>
 						GitHub

@@ -33,9 +33,9 @@ export const waitlistRouter = new Hono<HonoEnv>().post("/", async (c) => {
 
 	await sendDiscordMessage(
 		[
-			result.data.name,
-			result.data.interest,
-			result.data.deployment,
+			`**name**: ${result.data.name}`,
+			`**interest**: ${result.data.interest}`,
+			`**deployment**: ${result.data.deployment}`,
 			`\`${result.data.email}\``,
 		].join("\n"),
 		env.WAITLIST_DISCORD_WEBHOOK_URL,
