@@ -1,0 +1,40 @@
+name: SST Deploy
+on: push
+
+concurrency:
+  group: "merge-${{ github.ref }}"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  sst:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v3
+
+      - name: "Az CLI login"
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+
+      - name: TODO # TODO: Remove this
+        run: az ad signed-in-user show
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: "arn:aws:iam::101829795063:role/mattrax-gh-actions"
+          aws-region: us-east-1
+          role-session-name: mattrax-sst-workflow
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
+      - name: Deploy app
+        run: |
+          pnpm i && pnpm infra deploy --stage prod
