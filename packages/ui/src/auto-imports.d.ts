@@ -60,7 +60,7 @@ declare global {
   const IconPhWarningDuotone: typeof import("~icons/ph/warning-duotone.jsx")["default"]
   const IconPhXBold: typeof import('~icons/ph/x-bold.jsx')['default']
   const IconPhXCircleDuotone: typeof import('~icons/ph/x-circle-duotone.jsx')['default']
-  const IconPrimeExternalLink: typeof import("~icons/prime/external-link.jsx")["default"]
+  const IconPrimeExternalLink: typeof import('~icons/prime/external-link.jsx')['default']
   const IconTablerCheck: typeof import('~icons/tabler/check.jsx')['default']
   const IconTablerChevronDown: typeof import('~icons/tabler/chevron-down.jsx')['default']
   const IconTablerChevronLeft: typeof import('~icons/tabler/chevron-left.jsx')['default']
