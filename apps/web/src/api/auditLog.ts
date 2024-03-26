@@ -11,7 +11,7 @@ export function withAuditLog<T, K extends keyof typeof auditLogDefinition>(
 	// TODO: I know Planetscale's HTTP adapter does a request to open and close the transaction + one for every operation
 	// TODO: Can we make our own HTTP edge that can do this in a single HTTP request???
 
-	db.transaction<T>(async (db) => {
+	return db.transaction<T>(async (db) => {
 		await db.insert(auditLog).values({
 			tenantPk,
 			action,
