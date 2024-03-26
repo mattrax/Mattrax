@@ -13,7 +13,9 @@ const [TenantContextProvider, useTenant] = createContextProvider(
 	}) =>
 		() =>
 			props.tenant,
-	null!,
+	() => {
+		throw new Error("`useTenant` used without `TenantContext` mounted above.");
+	},
 );
 
 export { useTenant };

@@ -76,7 +76,7 @@ export function TopBar() {
 
 						<a
 							href="https://docs.mattrax.app"
-							class="text-gray-900 text-sm px-2"
+							class="text-gray-900 text-sm px-2 hover:text-gray-600"
 							rel="noreferrer noopener"
 							target="_blank"
 						>

@@ -8,6 +8,7 @@ import {
 	db,
 	devices,
 	groups,
+	identityProviders,
 	organisationTenants,
 	policies,
 	tenantAccounts,
@@ -146,6 +147,44 @@ export const tenantRouter = createTRPCRouter({
 				.where(eq(groups.tenantPk, ctx.tenant.pk)),
 		),
 	),
+
+	recentActivity: tenantProcedure.query(async ({ ctx }) => {
+		// TODO: Recently created or modified
+
+		// TODO: identityProviders
+
+		return [];
+	}),
+
+	gettingStarted: tenantProcedure.query(async ({ ctx }) => {
+		const data = await Promise.all([
+			db
+				.select({ count: count() })
+				.from(identityProviders)
+				.where(eq(identityProviders.tenantPk, ctx.tenant.pk))
+				// We don't care about the actual count, just if there are any
+				.limit(1),
+			db
+				.select({ count: count() })
+				.from(devices)
+				.where(eq(devices.tenantPk, ctx.tenant.pk))
+				// We don't care about the actual count, just if there are any
+				.limit(1),
+			db
+				.select({ count: count() })
+				.from(policies)
+				.where(eq(policies.tenantPk, ctx.tenant.pk))
+				// We don't care about the actual count, just if there are any
+				.limit(1),
+		]);
+
+		return {
+			connectedIdentityProvider: data[0][0].count > 0,
+			enrolledADevice: data[1][0].count > 0,
+			createdFirstPolicy: data[2][0].count > 0,
+		};
+	}),
+
 	delete: tenantProcedure.mutation(async ({ ctx }) => {
 		// TODO: Ensure no outstanding bills
 

@@ -112,10 +112,12 @@ import { useTenantSlug } from "../../t.[tenantSlug]";
 function CreatePolicyButton() {
 	const tenantSlug = useTenantSlug();
 	const navigate = useNavigate();
+	const trpcCtx = trpc.useContext();
 
 	const createPolicy = trpc.policy.create.useMutation(() => ({
 		onSuccess: async (policyId) => {
 			await startTransition(() => navigate(policyId));
+			trpcCtx.tenant.gettingStarted.invalidate();
 		},
 	}));
 

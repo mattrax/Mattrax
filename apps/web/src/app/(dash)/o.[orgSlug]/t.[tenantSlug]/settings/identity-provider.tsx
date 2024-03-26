@@ -49,6 +49,7 @@ export default function Page() {
 
 function IdentityProviderCard() {
 	const tenantSlug = useTenantSlug();
+	const trpcCtx = trpc.useContext();
 
 	const provider = trpc.tenant.identityProvider.get.useQuery(() => ({
 		tenantSlug: tenantSlug(),
@@ -79,6 +80,7 @@ function IdentityProviderCard() {
 
 				popupWindow?.close();
 				provider.refetch();
+				trpcCtx.tenant.gettingStarted.invalidate();
 				syncProvider.mutate({
 					tenantSlug: tenantSlug(),
 				});
