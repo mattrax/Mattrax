@@ -1,4 +1,12 @@
-import { For, Match, Show, Suspense, Switch, createMemo } from "solid-js";
+import {
+	For,
+	Match,
+	Show,
+	Suspense,
+	Switch,
+	createMemo,
+	createSignal,
+} from "solid-js";
 import type { RouteDefinition } from "@solidjs/router";
 import { toast } from "solid-sonner";
 import { As } from "@kobalte/core";
@@ -14,6 +22,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@mattrax/ui";
+import { makeEventListener } from "@solid-primitives/event-listener";
 
 import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import IconIcOutlineClose from "~icons/ic/outline-close.jsx";
@@ -22,6 +31,7 @@ import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
 import ENTRA_ID_ICON from "~/assets/EntraIDLogo.svg";
 import { useTenantSlug } from "../../t.[tenantSlug]";
 import { trpc } from "~/lib";
+import { env } from "~/env";
 
 export const route = {
 	load: ({ params }) => {
@@ -67,26 +77,49 @@ function IdentityProviderCard() {
 		}),
 	);
 
-	const linkEntra = trpc.tenant.identityProvider.linkEntra.useMutation(() => ({
-		onSuccess: async (url) => {
-			const popupWindow = window.open(
-				url,
-				"entraOAuth",
-				"toolbar=no, menubar=no, width=600, height=700, top=100, left=100",
-			);
+	const [adminConsentPopupActive, setAdminConsentPopupActive] =
+		createSignal(false);
+	const linkEntra = trpc.tenant.identityProvider.linkEntraState.useMutation(
+		() => ({
+			onSuccess: (state) => {
+				// This `setTimeout` causes Safari's popup blocker to not active.
+				setTimeout(() => {
+					const popupWindow = window.open(
+						`${env.VITE_PROD_URL}/api/ms/popup?state=${state}`,
+						"entraOAuth",
+						"toolbar=no, menubar=no, width=600, height=700, top=100, left=100",
+					);
+					if (!popupWindow) {
+						alert(
+							"Failed to open admin consent dialog!\nPlease disable your pop-up blocker.",
+						);
+						return;
+					}
+					setAdminConsentPopupActive(true);
 
-			window.addEventListener("message", (e) => {
-				if (e.source !== popupWindow || e.origin !== location.origin) return;
+					// Detect the popup being closed manually
+					const timer = setInterval(() => {
+						setAdminConsentPopupActive(!popupWindow.closed);
+						if (popupWindow.closed) clearInterval(timer);
+					}, 500);
 
-				popupWindow?.close();
-				provider.refetch();
-				trpcCtx.tenant.gettingStarted.invalidate();
-				syncProvider.mutate({
-					tenantSlug: tenantSlug(),
+					// Handle `postMessage` from `/api/ms/link` oauth callback
+					window.addEventListener("message", (e) => {
+						if (e.source !== popupWindow || e.origin !== location.origin)
+							return;
+
+						popupWindow?.close();
+						provider.refetch();
+						trpcCtx.tenant.gettingStarted.invalidate();
+						syncProvider.mutate({
+							tenantSlug: tenantSlug(),
+						});
+						setAdminConsentPopupActive(false);
+					});
 				});
-			});
-		},
-	}));
+			},
+		}),
+	);
 
 	return (
 		<Card class="p-4 flex flex-row items-center">
@@ -97,7 +130,7 @@ function IdentityProviderCard() {
 						variant="outline"
 						class="space-x-2"
 						onClick={() => linkEntra.mutate({ tenantSlug: tenantSlug() })}
-						disabled={linkEntra.isPending}
+						disabled={linkEntra.isPending || adminConsentPopupActive()}
 					>
 						<img src={ENTRA_ID_ICON} class="w-6" alt="Entra ID Logo" />
 						<span>Entra ID</span>

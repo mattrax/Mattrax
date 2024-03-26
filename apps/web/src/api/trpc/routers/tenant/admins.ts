@@ -82,7 +82,7 @@ export const adminsRouter = createTRPCRouter({
 				type: "tenantAdminInvite",
 				invitedByEmail: ctx.account.email,
 				tenantName: tenant.name,
-				inviteLink: `${env.PROD_URL}/invite/tenant/${code}`,
+				inviteLink: `${env.VITE_PROD_URL}/invite/tenant/${code}`,
 			});
 		}),
 	acceptInvite: publicProcedure
@@ -106,7 +106,7 @@ export const adminsRouter = createTRPCRouter({
 					set: { email: invite.email },
 				});
 
-			let accountPk = parseInt(result.insertId);
+			let accountPk = Number.parseInt(result.insertId);
 			let accountId = id;
 
 			if (accountPk === 0) {

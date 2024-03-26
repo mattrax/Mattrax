@@ -1,5 +1,4 @@
 import { createEnv } from "@t3-oss/env-core";
-import "dotenv/config";
 import { z } from "zod";
 
 function optional_in_dev<T extends z.ZodTypeAny>(
@@ -18,7 +17,6 @@ export const env = createEnv({
 		// This token is also used to authenticate `apps/web` with the Rust code when making HTTP requests
 		INTERNAL_SECRET: z.string(),
 		DATABASE_URL: z.string(),
-		PROD_URL: z.string(),
 		MDM_URL: z.string(),
 		EMAIL_URL: z.string(),
 		FROM_ADDRESS: z.string(),
@@ -37,7 +35,9 @@ export const env = createEnv({
 		WAITLIST_DISCORD_WEBHOOK_URL: z.string().optional(),
 	},
 	clientPrefix: "VITE_",
-	client: {},
-	runtimeEnv: process.env,
+	client: {
+		VITE_PROD_URL: z.string(),
+	},
+	runtimeEnv: { ...process.env, VITE_PROD_URL: import.meta.env.VITE_PROD_URL },
 	emptyStringAsUndefined: true,
 });
