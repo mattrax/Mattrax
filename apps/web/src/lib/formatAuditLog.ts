@@ -35,7 +35,7 @@ export function formatAuditLogEvent<
 					href: null,
 				}))
 				.with("addPolicy", () => ({
-					title: `Created policy ${data.name}`,
+					title: `Created policy '${data.name}'`,
 					href: `policies/${encodeURIComponent(data.id)}`,
 				}))
 				.with("deployPolicy", () => ({
@@ -43,11 +43,11 @@ export function formatAuditLogEvent<
 					href: null,
 				}))
 				.with("deletePolicy", () => ({
-					title: `Removed policy ${data.name}`,
+					title: `Removed policy '${data.name}'`,
 					href: null,
 				}))
 				.with("addApp", () => ({
-					title: `Added app ${data.name}`,
+					title: `Added application '${data.name}'`,
 					href: `apps/${encodeURIComponent(data.id)}`,
 				}))
 				.with("editApp", () => ({
@@ -59,7 +59,7 @@ export function formatAuditLogEvent<
 					href: null,
 				}))
 				.with("addGroup", () => ({
-					title: `Added group ${data.name}`,
+					title: `Added group '${data.name}'`,
 					href: `groups/${encodeURIComponent(data.id)}`,
 				}))
 				.with("editGroup", () => ({
