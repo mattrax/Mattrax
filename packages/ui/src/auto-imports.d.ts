@@ -30,6 +30,7 @@ declare global {
   const IconPhBookDuotone: typeof import("~icons/ph/book-duotone.jsx")["default"]
   const IconPhBoundingBoxDuotone: typeof import("~icons/ph/bounding-box-duotone.jsx")["default"]
   const IconPhCaretUpDown: typeof import('~icons/ph/caret-up-down.jsx')['default']
+  const IconPhCheck: typeof import('~icons/ph/check.jsx')['default']
   const IconPhCheckBold: typeof import('~icons/ph/check-bold.jsx')['default']
   const IconPhCheckCircleDuotone: typeof import('~icons/ph/check-circle-duotone.jsx')['default']
   const IconPhCheckDuotone: typeof import("~icons/ph/check-duotone.jsx")["default"]
@@ -67,5 +68,6 @@ declare global {
   const IconTablerChevronRight: typeof import('~icons/tabler/chevron-right.jsx')['default']
   const IconTablerCircle: typeof import('~icons/tabler/circle.jsx')['default']
   const IconTablerDots: typeof import('~icons/tabler/dots.jsx')['default']
+  const IconTablerSelector: typeof import('~icons/tabler/selector.jsx')['default']
   const IconTablerX: typeof import('~icons/tabler/x.jsx')['default']
 }

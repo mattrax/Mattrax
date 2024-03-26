@@ -41,6 +41,7 @@ export function TopBar() {
 		},
 	}));
 	const { items } = useNavItemsContext();
+	const user = trpc.auth.me.useQuery();
 
 	const org = useMatch(() => "o/:orgSlug/*");
 
@@ -101,14 +102,16 @@ export function TopBar() {
 										Account
 									</As>
 								</DropdownMenuItem>
-								<DropdownMenuItem asChild>
-									<As component={A} href="settings">
-										Settings{" "}
-										<span class="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
-											Superadmin
-										</span>
-									</As>
-								</DropdownMenuItem>
+								{user.latest?.superadmin && (
+									<DropdownMenuItem asChild>
+										<As component={A} href="settings">
+											Settings{" "}
+											<span class="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
+												Superadmin
+											</span>
+										</As>
+									</DropdownMenuItem>
+								)}
 								<DropdownMenuItem onClick={() => logout.mutate()}>
 									Logout
 								</DropdownMenuItem>

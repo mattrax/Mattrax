@@ -4,6 +4,7 @@ import type { JSX } from "solid-js";
 
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { AuthContext } from "~c/AuthContext";
+import { trpc } from "~/lib";
 
 const navigation = [
 	{ name: "General", href: "general" },
@@ -17,6 +18,8 @@ export const route = {
 };
 
 export default function Layout(props: ParentProps) {
+	const user = trpc.auth.me.useQuery();
+
 	return (
 		<PageLayout
 			size="lg"
@@ -30,6 +33,9 @@ export default function Layout(props: ParentProps) {
 								<SidebarItem href={item.href}>{item.name}</SidebarItem>
 							)}
 						</For>
+						{(user.latest?.superadmin || user.latest?.features) && (
+							<SidebarItem href="features">Features</SidebarItem>
+						)}
 					</ul>
 				</nav>
 				<main class="flex-1 overflow-y-auto px-4">

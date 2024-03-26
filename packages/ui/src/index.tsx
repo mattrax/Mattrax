@@ -24,3 +24,4 @@ export * from "./popover";
 export * from "./avatar";
 export * from "./collapsible";
 export * from "./command";
+export * from "./combobox";

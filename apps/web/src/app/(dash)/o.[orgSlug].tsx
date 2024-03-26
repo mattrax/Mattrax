@@ -6,7 +6,7 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@mattrax/ui";
-import { A, RouteDefinition, useNavigate } from "@solidjs/router";
+import { type RouteDefinition, useNavigate } from "@solidjs/router";
 import { For, type ParentProps, Suspense } from "solid-js";
 import { z } from "zod";
 

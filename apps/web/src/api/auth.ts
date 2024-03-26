@@ -1,7 +1,7 @@
 import { DrizzleMySQLAdapter } from "@lucia-auth/adapter-drizzle";
 import { Lucia } from "lucia";
 import {
-	HTTPEvent,
+	type HTTPEvent,
 	appendResponseHeader,
 	getCookie,
 	setCookie,
@@ -9,6 +9,7 @@ import {
 
 import { accounts, db, sessions } from "~/db";
 import { env } from "~/env";
+import type { Features } from "~/lib/featureFlags";
 
 const adapter = new DrizzleMySQLAdapter(db, sessions, accounts);
 
@@ -24,6 +25,7 @@ export const lucia = new Lucia(adapter, {
 		id: data.id,
 		email: data.email,
 		name: data.name,
+		features: data.features,
 	}),
 });
 
@@ -39,6 +41,7 @@ interface DatabaseUserAttributes {
 	id: string;
 	email: string;
 	name: string;
+	features: Features[];
 }
 
 export async function checkAuth(event: HTTPEvent) {

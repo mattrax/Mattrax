@@ -93,7 +93,13 @@ export const authedProcedure = t.procedure.use(async (opts) => {
 	});
 });
 
-export const isSuperAdmin = (account: User) =>
+export const isSuperAdmin = (
+	account:
+		| {
+				email: string;
+		  }
+		| User,
+) =>
 	account.email.endsWith("@otbeaumont.me") ||
 	account.email.endsWith("@mattrax.app");
 

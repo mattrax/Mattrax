@@ -17,6 +17,7 @@ import {
 import { auditLogDefinition } from "../api/auditLogDefinition";
 import { getObjectKeys } from "../api/utils";
 import type { Configuration } from "~/lib/policy";
+import type { Features } from "~/lib/featureFlags";
 
 const serialRelation = (name: string) =>
 	bigint(name, { mode: "number", unsigned: true });
@@ -55,6 +56,7 @@ export const accounts = mysqlTable("accounts", {
 	id: varchar("luciaId", { length: 16 }).notNull().unique(),
 	email: varchar("email", { length: 256 }).unique().notNull(),
 	name: varchar("name", { length: 256 }).notNull(),
+	features: json("features").$type<Features[]>(),
 });
 
 export const apiKeys = mysqlTable("api_keys", {

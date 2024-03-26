@@ -30,8 +30,6 @@ export function isTRPCClientError(
 	return cause instanceof TRPCClientError;
 }
 
-export const isDebugMode = () => localStorage.getItem("mttxDebug") === "1";
-
 export function getInitials(string: string) {
 	const names = string.split(" ");
 	// @ts-expect-error

@@ -5,7 +5,10 @@ import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { AuthContext } from "~c/AuthContext";
 import { OrgContext } from "./Context";
 
-const navigation = [{ name: "Billing", href: "billing" }];
+const navigation = [
+	{ name: "General", href: "general" },
+	{ name: "Billing", href: "billing" },
+];
 
 export default function Layout(props: ParentProps) {
 	return (

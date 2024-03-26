@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { generateId } from "lucia";
 import { alphabet, generateRandomString } from "oslo/crypto";
 import { appendResponseHeader, setCookie } from "vinxi/server";
@@ -21,9 +21,11 @@ import {
 	createTRPCRouter,
 	isSuperAdmin,
 	publicProcedure,
+	superAdminProcedure,
 } from "../helpers";
-import { randomSlug } from "~/api/utils";
+import { getObjectKeys, randomSlug } from "~/api/utils";
 import { createId } from "@paralleldrive/cuid2";
+import { type Features, features } from "~/lib/featureFlags";
 
 type UserResult = {
 	id: number;
@@ -169,6 +171,7 @@ export const authRouter = createTRPCRouter({
 			email: account.email,
 			orgs: await fetchOrgs(account.pk),
 			tenants: await fetchTenants(account.pk),
+			...(account.features?.length > 0 ? { features: account.features } : {}),
 			...(isSuperAdmin(account) ? { superadmin: true } : {}),
 		};
 	}),
@@ -209,4 +212,72 @@ export const authRouter = createTRPCRouter({
 	//     await ctx.session.clear();
 	//     return {};
 	//   }),
+
+	admin: createTRPCRouter({
+		getFeatures: superAdminProcedure
+			.input(
+				z.object({
+					email: z.string(),
+				}),
+			)
+			.query(async ({ input }) => {
+				const [user] = await db
+					.select({ features: accounts.features })
+					.from(accounts)
+					.where(eq(accounts.email, input.email));
+				if (!user) throw new Error("User not found");
+				return user.features || [];
+			}),
+
+		enableFeature: authedProcedure
+			.input(
+				z.object({
+					feature: z.enum(getObjectKeys(features)),
+					// Not providing an email will enable the feature for current user
+					email: z.string().optional(),
+				}),
+			)
+			.mutation(async ({ ctx, input }) => {
+				let account: {
+					pk: number;
+					email: string;
+					features: Features[] | null;
+				} = ctx.account;
+
+				// Only superadmins can enable features for other users
+				if (input.email) {
+					if (!isSuperAdmin(ctx.account))
+						throw new TRPCError({ code: "FORBIDDEN" });
+
+					const [actualAccount] = await db
+						.select({
+							pk: accounts.pk,
+							email: accounts.email,
+							features: accounts.features,
+						})
+						.from(accounts)
+						.where(eq(accounts.email, input.email));
+					if (!actualAccount) throw new Error("Account not found");
+					account = actualAccount;
+				}
+
+				const existingFeatures = account?.features || [];
+
+				const [features, change] = existingFeatures.includes(input.feature)
+					? [existingFeatures.filter((f) => f !== input.feature), "delete"]
+					: [[...existingFeatures, input.feature], "add"];
+
+				// If not superadmins, you can only remove features
+				if (!isSuperAdmin(ctx.account) && change !== "delete") {
+					throw new TRPCError({ code: "FORBIDDEN" });
+				}
+
+				await db
+					.update(accounts)
+					.set({
+						features: features.length === 0 ? sql`NULL` : features,
+					})
+					.where(eq(accounts.pk, account.pk));
+			}),
+	}),
 });

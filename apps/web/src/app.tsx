@@ -43,7 +43,6 @@ function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 				retry: false,
 				gcTime: 1000 * 60 * 60 * 24, // 24 hours
 				refetchInterval: 1000 * 60, // 1 minute
-				throwOnError: true,
 				placeholderData: keepPreviousData,
 			},
 			mutations: {

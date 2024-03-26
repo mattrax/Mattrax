@@ -188,7 +188,6 @@ function CreateApplicationSheet(props: ParentProps) {
 			...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
 				search,
 			),
-			throwOnError: false,
 		})),
 	);
 
