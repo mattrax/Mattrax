@@ -76,7 +76,7 @@ export default function Page() {
 				/>
 			</div>
 
-			<div class="flex space-x-4">
+			<div class="grid gap-4 grid-cols-2">
 				<RecentActivity />
 				<GettingStarted />
 			</div>
