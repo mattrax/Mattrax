@@ -6,7 +6,7 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@mattrax/ui";
-import { A, useNavigate } from "@solidjs/router";
+import { A, RouteDefinition, useNavigate } from "@solidjs/router";
 import { For, type ParentProps, Suspense } from "solid-js";
 import { z } from "zod";
 
@@ -14,6 +14,7 @@ import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
 import { AuthContext, useAuth } from "~/components/AuthContext";
 import { OrgContext, useOrg } from "./o.[orgSlug]/Context";
 import { useZodParams } from "~/lib/useZodParams";
+import { trpc } from "~/lib";
 
 export function useOrgSlug() {
 	const params = useZodParams({ orgSlug: z.string() });
@@ -70,6 +71,8 @@ const NAV_ITEMS = [
 ];
 
 export const route = {
+	load: ({ params }) =>
+		trpc.useContext().org.tenants.ensureData({ orgSlug: params.orgSlug! }),
 	info: {
 		NAV_ITEMS,
 		BREADCRUMB: () => {
@@ -82,4 +85,4 @@ export const route = {
 			);
 		},
 	},
-};
+} satisfies RouteDefinition;
