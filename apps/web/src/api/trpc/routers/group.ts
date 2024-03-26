@@ -5,7 +5,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { union } from "drizzle-orm/mysql-core";
 
 import {
-	GroupAssignableVariant,
+	type GroupAssignableVariant,
 	GroupAssignableVariants,
 	db,
 	devices,
@@ -15,6 +15,7 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { withAuditLog } from "~/api/auditLog";
 
 export const groupRouter = createTRPCRouter({
 	list: tenantProcedure
@@ -43,16 +44,24 @@ export const groupRouter = createTRPCRouter({
 				.leftJoin(groupAssignables, eq(groups.pk, groupAssignables.groupPk))
 				.groupBy(groups.pk);
 		}),
+
 	create: tenantProcedure
 		.input(z.object({ name: z.string() }))
 		.mutation(async ({ ctx, input }) => {
 			const id = createId();
 
-			await db.insert(groups).values({
-				id,
-				name: input.name,
-				tenantPk: ctx.tenant.pk,
-			});
+			await withAuditLog(
+				"addGroup",
+				{ id, name: input.name },
+				[ctx.tenant.pk, ctx.account.pk],
+				async () => {
+					await db.insert(groups).values({
+						id,
+						name: input.name,
+						tenantPk: ctx.tenant.pk,
+					});
+				},
+			);
 
 			return id;
 		}),

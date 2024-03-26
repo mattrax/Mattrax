@@ -12,14 +12,16 @@ import {
 	CardTitle,
 } from "@mattrax/ui";
 import { makeTimer } from "@solid-primitives/timer";
-import { trpc } from "~/lib";
+import { getInitials, trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import type { StatsTarget } from "~/api/trpc/routers/tenant";
 import { StatItem } from "~c/StatItem";
 import { useZodParams } from "~/lib/useZodParams";
 import { BruhIconPhCheckBold, BruhIconPhXBold } from "./bruh";
-import { type ParentProps, Suspense } from "solid-js";
+import { type ParentProps, Suspense, For } from "solid-js";
 import { useTenantSlug } from "../t.[tenantSlug]";
+import { formatAuditLogEvent } from "~/lib/formatAuditLog";
+import { createTimeAgo } from "@solid-primitives/date";
 
 export const route = {
 	load: ({ params }) => {
@@ -54,76 +56,69 @@ export default function Page() {
 }
 
 function RecentActivity() {
+	const tenantSlug = useTenantSlug();
+	const auditLog = trpc.tenant.auditLog.useQuery(() => ({
+		tenantSlug: tenantSlug(),
+	}));
+
 	return (
 		<Card>
 			<CardHeader>
 				<CardTitle>Recent activity</CardTitle>
 				<CardDescription>
-					A timeline of recent events in your tenant!
+					A timeline of recent activity across your tenant!
 				</CardDescription>
 			</CardHeader>
-			<CardContent>
-				<div class="space-y-8">
-					<div class="flex items-center">
-						<Avatar class="h-9 w-9">
-							<AvatarImage src="/avatars/01.png" alt="Avatar" />
-							<AvatarFallback>OM</AvatarFallback>
-						</Avatar>
-						<div class="ml-4 space-y-1">
-							<p class="text-sm font-medium leading-none">Olivia Martin</p>
-							<p class="text-sm text-muted-foreground">
-								olivia.martin@email.com
-							</p>
-						</div>
-						<div class="ml-auto font-medium">+$1,999.00</div>
+			<CardContent class="space-y-3 space-y-reverse">
+				<Suspense>
+					<div>
+						{auditLog.data?.length === 0 && (
+							<p class="text-muted-foreground opacity-70">No activity!</p>
+						)}
 					</div>
-					{/* <div class="flex items-center">
-						<Avatar class="flex h-9 w-9 items-center justify-center space-y-0 border">
-							<AvatarImage src="/avatars/02.png" alt="Avatar" />
-							<AvatarFallback>JL</AvatarFallback>
-						</Avatar>
-						<div class="ml-4 space-y-1">
-							<p class="text-sm font-medium leading-none">Jackson Lee</p>
-							<p class="text-sm text-muted-foreground">jackson.lee@email.com</p>
-						</div>
-						<div class="ml-auto font-medium">+$39.00</div>
-					</div>
-					<div class="flex items-center">
-						<Avatar class="h-9 w-9">
-							<AvatarImage src="/avatars/03.png" alt="Avatar" />
-							<AvatarFallback>IN</AvatarFallback>
-						</Avatar>
-						<div class="ml-4 space-y-1">
-							<p class="text-sm font-medium leading-none">Isabella Nguyen</p>
-							<p class="text-sm text-muted-foreground">
-								isabella.nguyen@email.com
-							</p>
-						</div>
-						<div class="ml-auto font-medium">+$299.00</div>
-					</div>
-					<div class="flex items-center">
-						<Avatar class="h-9 w-9">
-							<AvatarImage src="/avatars/04.png" alt="Avatar" />
-							<AvatarFallback>WK</AvatarFallback>
-						</Avatar>
-						<div class="ml-4 space-y-1">
-							<p class="text-sm font-medium leading-none">William Kim</p>
-							<p class="text-sm text-muted-foreground">will@email.com</p>
-						</div>
-						<div class="ml-auto font-medium">+$99.00</div>
-					</div>
-					<div class="flex items-center">
-						<Avatar class="h-9 w-9">
-							<AvatarImage src="/avatars/05.png" alt="Avatar" />
-							<AvatarFallback>SD</AvatarFallback>
-						</Avatar>
-						<div class="ml-4 space-y-1">
-							<p class="text-sm font-medium leading-none">Sofia Davis</p>
-							<p class="text-sm text-muted-foreground">sofia.davis@email.com</p>
-						</div>
-						<div class="ml-auto font-medium">+$39.00</div>
-					</div> */}
-				</div>
+					<For each={auditLog.data}>
+						{(entry) => {
+							const formatted = formatAuditLogEvent(
+								entry.action,
+								entry.data as any,
+							);
+							if (formatted === null) return null;
+
+							const [timeago] = createTimeAgo(entry.doneAt);
+
+							const inner = (
+								<p class="text-sm font-medium leading-none">
+									{formatted.title}
+								</p>
+							);
+
+							return (
+								<div class="flex items-center">
+									<Avatar class="h-9 w-9">
+										{/* TODO: Finish this */}
+										{/* <AvatarImage src="/avatars/01.png" alt="Avatar" /> */}
+										<AvatarFallback>{getInitials(entry.user)}</AvatarFallback>
+									</Avatar>
+									<div class="ml-4 space-y-1">
+										{formatted.href ? (
+											<A
+												href={formatted.href}
+												class="underline-offset-2 hover:underline"
+											>
+												{inner}
+											</A>
+										) : (
+											inner
+										)}
+										<p class="text-sm text-muted-foreground">
+											{entry.user} - {timeago()}
+										</p>
+									</div>
+								</div>
+							);
+						}}
+					</For>
+				</Suspense>
 			</CardContent>
 		</Card>
 	);

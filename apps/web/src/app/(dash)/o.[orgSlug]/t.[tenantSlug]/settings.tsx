@@ -10,6 +10,7 @@ const navigation = [
 	{ name: "Administrators", href: "administrators" },
 	{ name: "Identity Provider", href: "identity-provider" },
 	{ name: "Enrollment", href: "enrollment" },
+	{ name: "Audit Log", href: "audit-log" },
 ];
 
 export default function Layout(props: ParentProps) {

@@ -1,10 +1,12 @@
 import { createId } from "@paralleldrive/cuid2";
-import { count, eq, sql } from "drizzle-orm";
+import { count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { union } from "drizzle-orm/mysql-core";
 
 import {
+	accounts,
 	applications,
+	auditLog,
 	db,
 	devices,
 	groups,
@@ -148,13 +150,26 @@ export const tenantRouter = createTRPCRouter({
 		),
 	),
 
-	recentActivity: tenantProcedure.query(async ({ ctx }) => {
-		// TODO: Recently created or modified
-
-		// TODO: identityProviders
-
-		return [];
-	}),
+	// TODO: Pagination
+	auditLog: tenantProcedure
+		.input(
+			z.object({
+				limit: z.number().optional(),
+			}),
+		)
+		.query(({ ctx, input }) =>
+			db
+				.select({
+					action: auditLog.action,
+					data: auditLog.data,
+					doneAt: auditLog.doneAt,
+					user: sql`IFNULL(${accounts.name}, "system")`,
+				})
+				.from(auditLog)
+				.leftJoin(accounts, eq(accounts.pk, auditLog.userPk))
+				.orderBy(desc(auditLog.doneAt))
+				.limit(input.limit ?? 9999999),
+		),
 
 	gettingStarted: tenantProcedure.query(async ({ ctx }) => {
 		const data = await Promise.all([

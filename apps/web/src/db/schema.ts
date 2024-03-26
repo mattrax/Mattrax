@@ -14,6 +14,8 @@ import {
 	varbinary,
 	varchar,
 } from "drizzle-orm/mysql-core";
+import { auditLogDefinition } from "../api/auditLogDefinition";
+import { getObjectKeys } from "../api/utils";
 import type { Configuration } from "~/lib/policy";
 
 const serialRelation = (name: string) =>
@@ -465,4 +467,16 @@ export const cliAuthCodes = mysqlTable("cli_auth_codes", {
 	code: cuid("code").notNull().primaryKey(),
 	createdAt: timestamp("createdAt").notNull().defaultNow(),
 	apiKeyPk: serialRelation("apiKeyPk"),
+});
+
+export const auditLog = mysqlTable("audit_log", {
+	id: serial("id").primaryKey(),
+	tenantPk: serialRelation("tenantId")
+		.references(() => tenants.pk)
+		.notNull(),
+	action: mysqlEnum("action", getObjectKeys(auditLogDefinition)).notNull(),
+	data: json("data").notNull(),
+	// This value should be set to `NULL` if this action was performed by the system.
+	userPk: serialRelation("userId").references(() => users.id),
+	doneAt: timestamp("createdAt").notNull().defaultNow(),
 });

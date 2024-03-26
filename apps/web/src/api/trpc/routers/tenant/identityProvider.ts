@@ -9,6 +9,7 @@ import { db, domains, identityProviders, users } from "~/db";
 import { env } from "~/env";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
 import { encryptJWT } from "~/api/jwt";
+import { withAuditLog } from "~/api/auditLog";
 
 export const identityProviderRouter = createTRPCRouter({
 	get: tenantProcedure.query(async ({ ctx }) => {
@@ -72,15 +73,20 @@ export const identityProviderRouter = createTRPCRouter({
 			console.error(err);
 		}
 
-		await db.transaction(async (db) => {
-			await db
-				.delete(domains)
-				.where(eq(domains.identityProviderPk, provider.pk));
-			await db.delete(users).where(eq(users.providerPk, provider.pk));
-			await db
-				.delete(identityProviders)
-				.where(eq(identityProviders.tenantPk, ctx.tenant.pk));
-		});
+		await withAuditLog(
+			"removeIdp",
+			{ variant: "entraId" },
+			[ctx.tenant.pk, ctx.account.pk],
+			async () => {
+				await db
+					.delete(domains)
+					.where(eq(domains.identityProviderPk, provider.pk));
+				await db.delete(users).where(eq(users.providerPk, provider.pk));
+				await db
+					.delete(identityProviders)
+					.where(eq(identityProviders.tenantPk, ctx.tenant.pk));
+			},
+		);
 	}),
 
 	domains: tenantProcedure.query(async ({ ctx }) => {
@@ -125,12 +131,19 @@ export const identityProviderRouter = createTRPCRouter({
 					message: "Domain not found",
 				});
 
-			await db.insert(domains).values({
-				tenantPk: ctx.tenant.pk,
-				identityProviderPk: provider.pk,
-				domain: input.domain,
-				enterpriseEnrollmentAvailable: await enterpriseEnrollmentAvailable,
-			});
+			await withAuditLog(
+				"connectDomain",
+				{ domain: input.domain },
+				[ctx.tenant.pk, ctx.account.pk],
+				async () => {
+					await db.insert(domains).values({
+						tenantPk: ctx.tenant.pk,
+						identityProviderPk: provider.pk,
+						domain: input.domain,
+						enterpriseEnrollmentAvailable: await enterpriseEnrollmentAvailable,
+					});
+				},
+			);
 
 			// TODO: `event.waitUntil`???
 			await syncEntraUsersWithDomains(
@@ -176,14 +189,21 @@ export const identityProviderRouter = createTRPCRouter({
 		.mutation(async ({ ctx, input }) => {
 			const provider = await ensureIdentityProvider(ctx.tenant.pk);
 
-			await db
-				.delete(domains)
-				.where(
-					and(
-						eq(domains.identityProviderPk, provider.pk),
-						eq(domains.domain, input.domain),
-					),
-				);
+			await withAuditLog(
+				"disconnectDomain",
+				{ domain: input.domain },
+				[ctx.tenant.pk, ctx.account.pk],
+				async () => {
+					await db
+						.delete(domains)
+						.where(
+							and(
+								eq(domains.identityProviderPk, provider.pk),
+								eq(domains.domain, input.domain),
+							),
+						);
+				},
+			);
 
 			return true;
 		}),

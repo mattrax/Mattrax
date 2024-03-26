@@ -19,6 +19,7 @@ import {
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { omit } from "~/api/utils";
+import { withAuditLog } from "~/api/auditLog";
 
 function getPolicy(args: { policyId: string; tenantPk: number }) {
 	return db.query.policies.findFirst({
@@ -39,6 +40,7 @@ export const policyRouter = createTRPCRouter({
 			.from(policies)
 			.where(eq(policies.tenantPk, ctx.tenant.pk)),
 	),
+
 	get: authedProcedure
 		.input(z.object({ policyId: z.string() }))
 		.query(async ({ ctx, input }) => {
@@ -502,17 +504,23 @@ export const policyRouter = createTRPCRouter({
 
 	create: tenantProcedure
 		.input(z.object({ name: z.string().min(1).max(100) }))
-		.mutation(({ ctx, input }) =>
-			db.transaction(async (db) => {
-				const policyId = createId();
-				const policyInsert = await db.insert(policies).values({
-					id: policyId,
-					name: input.name,
-					tenantPk: ctx.tenant.pk,
-				});
-				return policyId;
-			}),
-		),
+		.mutation(({ ctx, input }) => {
+			const id = createId();
+			return withAuditLog(
+				"addPolicy",
+				{ id, name: input.name },
+				[ctx.tenant.pk, ctx.account.pk],
+				async () => {
+					await db.insert(policies).values({
+						id,
+						name: input.name,
+						tenantPk: ctx.tenant.pk,
+					});
+
+					return id;
+				},
+			);
+		}),
 
 	delete: authedProcedure
 		.input(z.object({ policyId: z.string() }))
@@ -523,7 +531,14 @@ export const policyRouter = createTRPCRouter({
 			if (!policy)
 				throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
 
-			await db.delete(policies).where(eq(policies.id, input.policyId));
+			await withAuditLog(
+				"deletePolicy",
+				{ name: policy.name },
+				[policy.tenantPk, ctx.account.pk],
+				async () => {
+					await db.delete(policies).where(eq(policies.id, input.policyId));
+				},
+			);
 		}),
 });
 
