@@ -4,24 +4,32 @@ import { z } from "zod";
 import {
 	Avatar,
 	AvatarFallback,
-	AvatarImage,
 	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
 	CardTitle,
 } from "@mattrax/ui";
+import type { JSX } from "solid-js";
 import { makeTimer } from "@solid-primitives/timer";
 import { getInitials, trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import type { StatsTarget } from "~/api/trpc/routers/tenant";
-import { StatItem } from "~c/StatItem";
 import { useZodParams } from "~/lib/useZodParams";
-import { BruhIconPhCheckBold, BruhIconPhXBold } from "./bruh";
 import { type ParentProps, Suspense, For } from "solid-js";
 import { useTenantSlug } from "../t.[tenantSlug]";
 import { formatAuditLogEvent } from "~/lib/formatAuditLog";
 import { createTimeAgo } from "@solid-primitives/date";
+import Counter from "~/components/Counter";
+import {
+	BruhIconPhCheckBold,
+	BruhIconPhXBold,
+	BruhIconPhAppWindow,
+	BruhIconPhDevices,
+	BruhIconPhScroll,
+	BruhIconPhSelection,
+	BruhIconPhUser,
+} from "./bruh";
 
 export const route = {
 	load: ({ params }) => {
@@ -40,13 +48,34 @@ export default function Page() {
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Dashboard</PageLayoutHeading>}>
-			<dl class="gap-5 flex">
-				<StatItem title="Users" value={getValue("users")} />
-				<StatItem title="Devices" value={getValue("devices")} />
-				<StatItem title="Policies" value={getValue("policies")} />
-				<StatItem title="Applications" value={getValue("applications")} />
-				<StatItem title="Groups" value={getValue("groups")} />
-			</dl>
+			<div class="grid gap-4 grid-cols-5">
+				<StatItem
+					title="Users"
+					icon={<BruhIconPhUser />}
+					value={getValue("users")}
+				/>
+				<StatItem
+					title="Devices"
+					icon={<BruhIconPhDevices />}
+					value={getValue("devices")}
+				/>
+				<StatItem
+					title="Policies"
+					icon={<BruhIconPhScroll />}
+					value={getValue("policies")}
+				/>
+				<StatItem
+					title="Applications"
+					icon={<BruhIconPhAppWindow />}
+					value={getValue("applications")}
+				/>
+				<StatItem
+					title="Groups"
+					icon={<BruhIconPhSelection />}
+					value={getValue("groups")}
+				/>
+			</div>
+
 			<div class="flex space-x-4">
 				<RecentActivity />
 				<GettingStarted />
@@ -55,10 +84,34 @@ export default function Page() {
 	);
 }
 
+function StatItem(props: { title: string; icon: JSX.Element; value: number }) {
+	return (
+		<Card>
+			<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+				<CardTitle class="text-sm font-medium">{props.title}</CardTitle>
+
+				{props.icon}
+			</CardHeader>
+			<CardContent>
+				<div class="text-2xl font-bold">
+					<Counter value={props.value} duration={1700}>
+						{(count) => (
+							<dd class="mt-1 text-3xl font-semibold tracking-tight">
+								{count().toLocaleString()}
+							</dd>
+						)}
+					</Counter>
+				</div>
+			</CardContent>
+		</Card>
+	);
+}
+
 function RecentActivity() {
 	const tenantSlug = useTenantSlug();
 	const auditLog = trpc.tenant.auditLog.useQuery(() => ({
 		tenantSlug: tenantSlug(),
+		limit: 5,
 	}));
 
 	return (
@@ -164,7 +217,7 @@ function GettingStarted() {
 						</GettingStartedRow>
 						<GettingStartedRow
 							href="policies"
-							enabled={data.data?.enrolledADevice || false}
+							enabled={data.data?.createdFirstPolicy || false}
 						>
 							Create a policy
 						</GettingStartedRow>

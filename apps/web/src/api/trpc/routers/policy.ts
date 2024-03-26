@@ -1,5 +1,4 @@
-import { and, count, eq, sql } from "drizzle-orm";
-import { union } from "drizzle-orm/mysql-core";
+import { and, eq, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -7,7 +6,6 @@ import { z } from "zod";
 import {
 	type PolicyAssignableVariant,
 	PolicyAssignableVariants,
-	accounts,
 	db,
 	devices,
 	groups,
