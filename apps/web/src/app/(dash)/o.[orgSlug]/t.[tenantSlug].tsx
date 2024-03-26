@@ -26,7 +26,7 @@ const NAV_ITEMS = [
 export const route = {
 	info: {
 		NAV_ITEMS,
-		BREADCRUMB: () => {
+		BREADCRUMB: (props: any) => {
 			const navigate = useNavigate();
 
 			return (
@@ -34,7 +34,7 @@ export const route = {
 					<TenantContext>
 						<TenantSwitcher
 							setActiveTenant={(slug) => {
-								startTransition(() => navigate(`../${slug}`));
+								startTransition(() => navigate(`${props.path}/../${slug}`));
 							}}
 						/>
 					</TenantContext>

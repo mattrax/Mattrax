@@ -96,10 +96,12 @@ function StatItem(props: {
 	value: number;
 }) {
 	return (
-		<Card>
+		<Card class="relative hover:shadow-md transition-shadow">
 			<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
 				<CardTitle class="text-sm font-medium">
-					<A href={props.href}>{props.title}</A>
+					<span class="hover:underline">
+						{props.title}
+					</span>
 				</CardTitle>
 
 				{props.icon}
@@ -115,6 +117,7 @@ function StatItem(props: {
 					</Counter>
 				</div>
 			</CardContent>
+			<A class="absolute inset-0" href={props.href} />
 		</Card>
 	);
 }

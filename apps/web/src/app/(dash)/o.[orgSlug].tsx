@@ -50,7 +50,7 @@ function OrgSwitcher() {
 								class={
 									"block px-4 py-2 text-sm text-left w-full truncate hover:bg-gray-200"
 								}
-								onSelect={() => navigate(`../${org.slug}`)}
+								onSelect={() => navigate(`/o/${org.slug}`)}
 							>
 								{org.name}
 							</DropdownMenuItem>

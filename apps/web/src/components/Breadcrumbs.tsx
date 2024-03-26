@@ -12,7 +12,8 @@ export function Breadcrumbs() {
 
 	const breadcrumbs = createMemo(() =>
 		matches().flatMap((match) => {
-			const Inner: Component | undefined = match.route.info?.BREADCRUMB;
+			const Inner: Component<{ path: string }> | undefined =
+				match.route.info?.BREADCRUMB;
 			return Inner ? [{ Inner, match }] : [];
 		}),
 	);
@@ -22,7 +23,7 @@ export function Breadcrumbs() {
 			<For each={breadcrumbs()}>
 				{({ Inner, match }) => (
 					<Breadcrumb href={match.path}>
-						<Inner />
+						<Inner path={match.path} />
 					</Breadcrumb>
 				)}
 			</For>

@@ -54,14 +54,15 @@ export const tenantRouter = createTRPCRouter({
 	create: orgProcedure
 		.input(z.object({ name: z.string().min(1) }))
 		.mutation(async ({ ctx, input }) => {
-			const tenantId = await db.transaction(async (db) => {
-				const id = createId();
+			const slug = await db.transaction(async (db) => {
+				const slug = randomSlug(input.name);
+
 				const result = await db.insert(tenants).values({
-					id,
+					slug,
+					id: createId(),
 					name: input.name,
 					ownerPk: ctx.account.pk,
 					orgPk: ctx.org.pk,
-					slug: randomSlug(input.name),
 				});
 				const tenantPk = Number.parseInt(result.insertId);
 
@@ -74,12 +75,12 @@ export const tenantRouter = createTRPCRouter({
 					orgPk: ctx.org.pk,
 				});
 
-				return id;
+				return slug;
 			});
 
 			// TODO: Invalidate `tenants`
 
-			return tenantId;
+			return slug;
 		}),
 
 	edit: tenantProcedure
@@ -152,11 +153,7 @@ export const tenantRouter = createTRPCRouter({
 
 	// TODO: Pagination
 	auditLog: tenantProcedure
-		.input(
-			z.object({
-				limit: z.number().optional(),
-			}),
-		)
+		.input(z.object({ limit: z.number().optional() }))
 		.query(({ ctx, input }) =>
 			db
 				.select({
@@ -166,6 +163,7 @@ export const tenantRouter = createTRPCRouter({
 					user: sql`IFNULL(${accounts.name}, "system")`,
 				})
 				.from(auditLog)
+				.where(eq(auditLog.tenantPk, ctx.tenant.pk))
 				.leftJoin(accounts, eq(accounts.pk, auditLog.userPk))
 				.orderBy(desc(auditLog.doneAt))
 				.limit(input.limit ?? 9999999),
