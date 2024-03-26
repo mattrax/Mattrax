@@ -51,26 +51,31 @@ export default function Page() {
 			<div class="grid gap-4 grid-cols-5">
 				<StatItem
 					title="Users"
+					href="users"
 					icon={<BruhIconPhUser />}
 					value={getValue("users")}
 				/>
 				<StatItem
 					title="Devices"
+					href="devices"
 					icon={<BruhIconPhDevices />}
 					value={getValue("devices")}
 				/>
 				<StatItem
 					title="Policies"
+					href="policies"
 					icon={<BruhIconPhScroll />}
 					value={getValue("policies")}
 				/>
 				<StatItem
 					title="Applications"
+					href="apps"
 					icon={<BruhIconPhAppWindow />}
 					value={getValue("applications")}
 				/>
 				<StatItem
 					title="Groups"
+					href="groups"
 					icon={<BruhIconPhSelection />}
 					value={getValue("groups")}
 				/>
@@ -84,11 +89,18 @@ export default function Page() {
 	);
 }
 
-function StatItem(props: { title: string; icon: JSX.Element; value: number }) {
+function StatItem(props: {
+	title: string;
+	href: string;
+	icon: JSX.Element;
+	value: number;
+}) {
 	return (
 		<Card>
 			<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-				<CardTitle class="text-sm font-medium">{props.title}</CardTitle>
+				<CardTitle class="text-sm font-medium">
+					<A href={props.href}>{props.title}</A>
+				</CardTitle>
 
 				{props.icon}
 			</CardHeader>
