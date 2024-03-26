@@ -52,7 +52,7 @@ export default function Page() {
 										<div class="ml-4 space-y-1">
 											{formatted.href ? (
 												<A
-													href={formatted.href}
+													href={`../../${formatted.href}`}
 													class="underline-offset-2 hover:underline"
 												>
 													{inner}
