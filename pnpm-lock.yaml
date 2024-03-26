@@ -261,6 +261,9 @@ importers:
       '@solidjs/start':
         specifier: ^0.7.5
         version: 0.7.7(solid-js@1.8.15)(vinxi@0.3.10)(vite@5.1.6)
+      '@tanstack/solid-form':
+        specifier: ^0.16.0
+        version: 0.16.0(patch_hash=wsolznlrgivobzbyoqfvs3sypy)(solid-js@1.8.15)
       h3:
         specifier: ^1.11.1
         version: 1.11.1
