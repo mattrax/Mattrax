@@ -1,4 +1,4 @@
-import { AuthenticationProvider } from "@microsoft/microsoft-graph-client";
+import type { AuthenticationProvider } from "@microsoft/microsoft-graph-client";
 import { z } from "zod";
 
 const authenticateResponse = z.object({
@@ -48,7 +48,7 @@ export class AuthProvider implements AuthenticationProvider {
 			throw new FetchError(
 				resp.status,
 				body,
-				`Failed to get access token from Microsoft`,
+				"Failed to get access token from Microsoft",
 			);
 		}
 		const result = authenticateResponse.safeParse(await resp.json());
@@ -66,7 +66,7 @@ export class AuthProvider implements AuthenticationProvider {
 }
 
 export class FetchError {
-	status: number = 0;
+	status = 0;
 	body: string | undefined = undefined;
 	msg: string | undefined = undefined;
 

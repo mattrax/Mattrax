@@ -1,8 +1,13 @@
-import { As, DropdownMenu as KDropdownMenu } from "@kobalte/core";
-import { For, Suspense } from "solid-js";
+import { As, Combobox, DropdownMenu as KDropdownMenu } from "@kobalte/core";
+import { Suspense } from "solid-js";
 
 import {
 	Button,
+	Command,
+	CommandInput,
+	CommandItem,
+	CommandItemLabel,
+	CommandList,
 	DialogTrigger,
 	DropdownMenu,
 	DropdownMenuContent,
@@ -39,36 +44,56 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
 							</As>
 						</DropdownMenuTrigger>
 					</div>
+
 					<DropdownMenuContent>
 						<Suspense>
-							<For each={auth().tenants}>
-								{(tenant) => (
-									<DropdownMenuItem
-										class={
-											"block px-4 py-2 text-sm text-left w-full truncate hover:bg-gray-200"
-										}
-										onSelect={() => props.setActiveTenant(tenant.slug)}
-									>
-										{/* TODO: Use a link here instead of JS for accessibility */}
-										{tenant.name}
-									</DropdownMenuItem>
+							<Command
+								optionLabel="label"
+								optionGroupChildren="options"
+								options={[
+									{
+										options: auth().tenants,
+									},
+									{
+										options: ["create-tenant"],
+									},
+								]}
+								itemComponent={(iprops) => {
+									if (iprops.item.rawValue === "create-tenant")
+										return (
+											<>
+												<DropdownMenuSeparator />
+												<DialogTrigger asChild>
+													<As component={CommandItem} item={iprops.item}>
+														Create new tenant
+													</As>
+												</DialogTrigger>
+											</>
+										);
+
+									return (
+										<CommandItem
+											item={iprops.item}
+											onClick={() =>
+												props.setActiveTenant(iprops.item.rawValue.slug)
+											}
+										>
+											<CommandItemLabel>
+												{iprops.item.rawValue.name}
+											</CommandItemLabel>
+										</CommandItem>
+									);
+								}}
+								sectionComponent={(props) => (
+									<Combobox.Section>
+										{props.section.rawValue.label}
+									</Combobox.Section>
 								)}
-							</For>
-
-							{auth().tenants.length !== 0 && <DropdownMenuSeparator />}
-						</Suspense>
-
-						<DialogTrigger asChild>
-							<As
-								component={DropdownMenuItem}
-								as="button"
-								class={
-									"block px-4 py-2 text-sm text-left w-full hover:bg-gray-200 rounded-b-md"
-								}
 							>
-								Create new tenant
-							</As>
-						</DialogTrigger>
+								<CommandInput />
+								<CommandList />
+							</Command>
+						</Suspense>
 					</DropdownMenuContent>
 				</DropdownMenu>
 			</CreateTenantDialog>

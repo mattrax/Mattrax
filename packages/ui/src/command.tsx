@@ -48,7 +48,7 @@ const CommandInput: VoidComponent<ComboboxPrimitive.ComboboxInputProps> = (
 			class="flex items-center border-b px-3"
 			cmdk-input-wrapper=""
 		>
-			<IconPhMagnifyingGlassFill class="mr-2 size-4 shrink-0 opacity-50" />
+			<IconPhMagnifyingGlassLight class="mr-2 size-4 shrink-0 opacity-50" />
 			<ComboboxPrimitive.Input
 				cmdk-input=""
 				class={cn(
