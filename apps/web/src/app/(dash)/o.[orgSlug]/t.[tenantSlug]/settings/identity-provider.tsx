@@ -222,184 +222,186 @@ function Domains() {
 			</div>
 			<Show when={provider.data}>
 				<Suspense>
-					<ul class="rounded border border-gray-200 divide-y divide-gray-200">
-						<For each={allDomains()}>
-							{(domain) => {
-								const connectionData = createMemo(() =>
-									domains.data?.connectedDomains.find(
-										(d) => d.domain === domain,
-									),
-								);
+					<Show when={allDomains().length > 0}>
+						<ul class="rounded border border-gray-200 divide-y divide-gray-200">
+							<For each={allDomains()}>
+								{(domain) => {
+									const connectionData = createMemo(() =>
+										domains.data?.connectedDomains.find(
+											(d) => d.domain === domain,
+										),
+									);
 
-								const state = createMemo(() => {
-									const data = connectionData();
+									const state = createMemo(() => {
+										const data = connectionData();
 
-									if (data) {
-										if (!domains.data?.remoteDomains.includes(domain))
-											return { variant: "dangling" } as const;
+										if (data) {
+											if (!domains.data?.remoteDomains.includes(domain))
+												return { variant: "dangling" } as const;
 
-										return { variant: "connected", data } as const;
-									}
+											return { variant: "connected", data } as const;
+										}
 
-									return { variant: "unconnected" };
-								});
+										return { variant: "unconnected" };
+									});
 
-								return (
-									<li class="p-4 flex flex-row gap-2 items-center">
-										<div class="flex flex-col gap-1">
-											<div class="font-medium flex flex-row items-center">
-												{domain}
-												<Show when={state().variant === "connected"}>
-													<Badge class="ml-2">Connected</Badge>
-												</Show>
-												<Show when={state().variant !== "connected"}>
-													<Badge class="ml-2" variant="outline">
-														Unconnected
-													</Badge>
-												</Show>
+									return (
+										<li class="p-4 flex flex-row gap-2 items-center">
+											<div class="flex flex-col gap-1">
+												<div class="font-medium flex flex-row items-center">
+													{domain}
+													<Show when={state().variant === "connected"}>
+														<Badge class="ml-2">Connected</Badge>
+													</Show>
+													<Show when={state().variant !== "connected"}>
+														<Badge class="ml-2" variant="outline">
+															Unconnected
+														</Badge>
+													</Show>
+												</div>
+												<div class="flex flex-row items-center gap-1.5 mt-0.5">
+													<Switch>
+														<Match when={state().variant === "dangling"}>
+															<div class="w-6 h-6">
+																<IconMaterialSymbolsWarningRounded class="w-6 h-6 text-yellow-600" />
+															</div>
+															<span class="text-sm text-gray-600">
+																Domain is no longer connected to the identity
+																provider
+															</span>
+														</Match>
+														<Match when={state().variant === "unconnected"}>
+															<span class="text-sm text-gray-600">
+																Domain found in identity provider
+															</span>
+														</Match>
+														<Match
+															when={(() => {
+																const s = state();
+																if (s.variant === "connected") return s.data;
+															})()}
+														>
+															{(connectionData) => {
+																const enterpriseEnrollment = () =>
+																	connectionData().enterpriseEnrollmentAvailable;
+
+																return (
+																	<>
+																		<div
+																			class={clsx(
+																				"w-5 h-5 rounded-full flex items-center justify-center text-white",
+																				enterpriseEnrollment()
+																					? "bg-green-600"
+																					: "bg-red-600",
+																			)}
+																		>
+																			{enterpriseEnrollment() ? (
+																				<IconIcRoundCheck class="w-4 h-4" />
+																			) : (
+																				<IconIcOutlineClose class="w-4 h-4" />
+																			)}
+																		</div>
+																		<span class="text-sm text-gray-600">
+																			{enterpriseEnrollment() ? (
+																				"Windows Automatic Enrollment configured"
+																			) : (
+																				<>
+																					Windows Automatic Enrollment not
+																					configured
+																					<DialogRoot>
+																						<DialogTrigger asChild>
+																							<As
+																								component={Button}
+																								class="ml-2"
+																								variant="outline"
+																								size="iconSmall"
+																							>
+																								?
+																							</As>
+																						</DialogTrigger>
+																						<DialogContent class="max-w-auto">
+																							<DialogHeader>
+																								<DialogTitle>
+																									Windows Automatic Enrollment
+																								</DialogTitle>
+																								<DialogDescription>
+																									To configure{" "}
+																									<code>{domain}</code> for
+																									Windows Automatic Enrollment,
+																									add the following CNAME record
+																									to it
+																								</DialogDescription>
+																							</DialogHeader>
+																							<code>
+																								{`CNAME enterpriseenrollment.${domain} mdm.mattrax.app`}
+																							</code>
+																						</DialogContent>
+																					</DialogRoot>
+																				</>
+																			)}
+																		</span>
+																	</>
+																);
+															}}
+														</Match>
+													</Switch>
+												</div>
 											</div>
-											<div class="flex flex-row items-center gap-1.5 mt-0.5">
-												<Switch>
-													<Match when={state().variant === "dangling"}>
-														<div class="w-6 h-6">
-															<IconMaterialSymbolsWarningRounded class="w-6 h-6 text-yellow-600" />
-														</div>
-														<span class="text-sm text-gray-600">
-															Domain is no longer connected to the identity
-															provider
-														</span>
-													</Match>
-													<Match when={state().variant === "unconnected"}>
-														<span class="text-sm text-gray-600">
-															Domain found in identity provider
-														</span>
-													</Match>
-													<Match
-														when={(() => {
-															const s = state();
-															if (s.variant === "connected") return s.data;
-														})()}
-													>
-														{(connectionData) => {
-															const enterpriseEnrollment = () =>
-																connectionData().enterpriseEnrollmentAvailable;
-
-															return (
-																<>
-																	<div
-																		class={clsx(
-																			"w-5 h-5 rounded-full flex items-center justify-center text-white",
-																			enterpriseEnrollment()
-																				? "bg-green-600"
-																				: "bg-red-600",
-																		)}
-																	>
-																		{enterpriseEnrollment() ? (
-																			<IconIcRoundCheck class="w-4 h-4" />
-																		) : (
-																			<IconIcOutlineClose class="w-4 h-4" />
-																		)}
-																	</div>
-																	<span class="text-sm text-gray-600">
-																		{enterpriseEnrollment() ? (
-																			"Windows Automatic Enrollment configured"
-																		) : (
-																			<>
-																				Windows Automatic Enrollment not
-																				configured
-																				<DialogRoot>
-																					<DialogTrigger asChild>
-																						<As
-																							component={Button}
-																							class="ml-2"
-																							variant="outline"
-																							size="iconSmall"
-																						>
-																							?
-																						</As>
-																					</DialogTrigger>
-																					<DialogContent class="max-w-auto">
-																						<DialogHeader>
-																							<DialogTitle>
-																								Windows Automatic Enrollment
-																							</DialogTitle>
-																							<DialogDescription>
-																								To configure{" "}
-																								<code>{domain}</code> for
-																								Windows Automatic Enrollment,
-																								add the following CNAME record
-																								to it
-																							</DialogDescription>
-																						</DialogHeader>
-																						<code>
-																							{`CNAME enterpriseenrollment.${domain} mdm.mattrax.app`}
-																						</code>
-																					</DialogContent>
-																				</DialogRoot>
-																			</>
-																		)}
-																	</span>
-																</>
+											<div class="flex-1" />
+											<Switch>
+												<Match when={state().variant !== "unconnected"}>
+													{(_) => {
+														const removeDomain =
+															trpc.tenant.identityProvider.removeDomain.useMutation(
+																() => ({
+																	onSuccess: () => domains.refetch(),
+																}),
 															);
-														}}
-													</Match>
-												</Switch>
-											</div>
-										</div>
-										<div class="flex-1" />
-										<Switch>
-											<Match when={state().variant !== "unconnected"}>
-												{(_) => {
-													const removeDomain =
-														trpc.tenant.identityProvider.removeDomain.useMutation(
-															() => ({
-																onSuccess: () => domains.refetch(),
-															}),
-														);
 
-													return (
-														<Button
-															onClick={() =>
-																removeDomain.mutate({
-																	tenantSlug: tenantSlug(),
-																	domain,
-																})
-															}
-															disabled={removeDomain.isPending}
-														>
-															Disconnect
-														</Button>
-													);
-												}}
-											</Match>
-											<Match when={state().variant === "unconnected"}>
-												{(_) => {
-													const enableDomain =
-														trpc.tenant.identityProvider.connectDomain.useMutation(
-															() => ({ onSuccess: () => domains.refetch() }),
+														return (
+															<Button
+																onClick={() =>
+																	removeDomain.mutate({
+																		tenantSlug: tenantSlug(),
+																		domain,
+																	})
+																}
+																disabled={removeDomain.isPending}
+															>
+																Disconnect
+															</Button>
 														);
+													}}
+												</Match>
+												<Match when={state().variant === "unconnected"}>
+													{(_) => {
+														const enableDomain =
+															trpc.tenant.identityProvider.connectDomain.useMutation(
+																() => ({ onSuccess: () => domains.refetch() }),
+															);
 
-													return (
-														<Button
-															disabled={enableDomain.isPending}
-															onClick={() =>
-																enableDomain.mutate({
-																	tenantSlug: tenantSlug(),
-																	domain,
-																})
-															}
-														>
-															Connect
-														</Button>
-													);
-												}}
-											</Match>
-										</Switch>
-									</li>
-								);
-							}}
-						</For>
-					</ul>
+														return (
+															<Button
+																disabled={enableDomain.isPending}
+																onClick={() =>
+																	enableDomain.mutate({
+																		tenantSlug: tenantSlug(),
+																		domain,
+																	})
+																}
+															>
+																Connect
+															</Button>
+														);
+													}}
+												</Match>
+											</Switch>
+										</li>
+									);
+								}}
+							</For>
+						</ul>
+					</Show>
 				</Suspense>
 			</Show>
 		</>
