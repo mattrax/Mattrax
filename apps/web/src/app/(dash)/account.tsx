@@ -5,7 +5,10 @@ import type { JSX } from "solid-js";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { AuthContext } from "~c/AuthContext";
 
-const navigation = [{ name: "API Keys", href: "api-keys" }];
+const navigation = [
+	{ name: "General", href: "general" },
+	{ name: "API Keys", href: "api-keys" },
+];
 
 export const route = {
 	info: {

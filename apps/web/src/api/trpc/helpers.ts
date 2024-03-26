@@ -1,9 +1,9 @@
 import { TRPCError, initTRPC } from "@trpc/server";
 import { cache } from "@solidjs/router";
 import { and, eq } from "drizzle-orm";
-import { User } from "lucia";
+import type { User } from "lucia";
 import superjson from "superjson";
-import { H3Event } from "vinxi/server";
+import type { H3Event } from "vinxi/server";
 import { ZodError, z } from "zod";
 
 import {

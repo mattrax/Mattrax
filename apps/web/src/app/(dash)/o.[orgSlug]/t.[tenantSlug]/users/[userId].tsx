@@ -5,15 +5,9 @@ import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
-import { Breadcrumb } from "~c/Breadcrumbs";
 import { Badge } from "@mattrax/ui";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { UserContextProvider } from "./[userId]/Context";
-
-const NAV_ITEMS = [
-	{ title: "User", href: "" },
-	{ title: "Scope", href: "scope" },
-];
 
 export const route = {
 	load: ({ params }) =>
@@ -21,7 +15,6 @@ export const route = {
 			id: params.userId!,
 		}),
 	info: {
-		NAV_ITEMS,
 		BREADCRUMB: () => {
 			const params = useZodParams({ userId: z.string() });
 

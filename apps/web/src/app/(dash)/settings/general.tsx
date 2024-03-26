@@ -18,7 +18,7 @@ export default function Page() {
 
 	return (
 		<div class="p-2">
-			<h1 class="text-4xl pb-4">Top-secret dashboard</h1>
+			<h1 class="text-4xl pb-4">Mattrax Installation Stats</h1>
 			<div class="flex flex-col space-y-2">
 				<Suspense fallback={<p>Loading...</p>}>
 					<For each={stats.data ?? []}>

@@ -4,16 +4,16 @@ import { z } from "zod";
 import { sendEmail } from "~/api/emails";
 import {
 	db,
+	devices,
 	identityProviders,
 	policyAssignableVariants,
-	tenantAccounts,
-	tenants,
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { omit } from "~/api/utils";
 
 export const userRouter = createTRPCRouter({
+	// TODO: Pagination
 	list: tenantProcedure
 		// .input(
 		//   z.object({
@@ -25,9 +25,6 @@ export const userRouter = createTRPCRouter({
 		// )
 		.query(async ({ ctx, input }) => {
 			// TODO: Full-text search???
-			// TODO: Pagination abstraction
-			// TODO: Can a cursor make this more efficent???
-			// TODO: Switch to DB
 
 			return await db
 				.select({
@@ -73,6 +70,33 @@ export const userRouter = createTRPCRouter({
 			if (!user) return null;
 			await ctx.ensureTenantMember(user.tenantPk);
 			return omit(user, ["tenantPk"]);
+		}),
+
+	getDevices: authedProcedure
+		.input(z.object({ id: z.string() }))
+		.query(async ({ ctx, input }) => {
+			const [user] = await db
+				.select({
+					pk: users.pk,
+					tenantPk: users.tenantPk,
+				})
+				.from(users)
+				.where(eq(users.id, input.id))
+				.innerJoin(
+					identityProviders,
+					eq(users.providerPk, identityProviders.pk),
+				);
+
+			if (!user) return null;
+			await ctx.ensureTenantMember(user.tenantPk);
+
+			return await db
+				.select({
+					id: devices.id,
+					name: devices.name,
+				})
+				.from(devices)
+				.where(eq(devices.owner, user.pk));
 		}),
 
 	invite: authedProcedure

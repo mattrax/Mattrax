@@ -16,7 +16,12 @@ import {
 	tenantAccounts,
 	tenants,
 } from "~/db";
-import { authedProcedure, createTRPCRouter, publicProcedure } from "../helpers";
+import {
+	authedProcedure,
+	createTRPCRouter,
+	isSuperAdmin,
+	publicProcedure,
+} from "../helpers";
 import { randomSlug } from "~/api/utils";
 import { createId } from "@paralleldrive/cuid2";
 
@@ -71,7 +76,7 @@ export const authRouter = createTRPCRouter({
 					set: { email: input.email },
 				});
 
-			let accountPk = parseInt(result.insertId);
+			let accountPk = Number.parseInt(result.insertId);
 			let accountId = id;
 
 			if (accountPk === 0) {
@@ -95,6 +100,7 @@ export const authRouter = createTRPCRouter({
 
 			return { accountId };
 		}),
+
 	verifyLoginCode: publicProcedure
 		.input(z.object({ code: z.string() }))
 		.mutation(async ({ input, ctx }) => {
@@ -134,9 +140,10 @@ export const authRouter = createTRPCRouter({
 					const org = await db
 						.insert(organisations)
 						.values({ id, slug, name: slug, ownerPk: account.pk });
-					await db
-						.insert(organisationAccounts)
-						.values({ accountPk: account.pk, orgPk: parseInt(org.insertId) });
+					await db.insert(organisationAccounts).values({
+						accountPk: account.pk,
+						orgPk: Number.parseInt(org.insertId),
+					});
 				});
 			}
 
@@ -154,6 +161,7 @@ export const authRouter = createTRPCRouter({
 
 			return true;
 		}),
+
 	me: authedProcedure.query(async ({ ctx: { account } }) => {
 		return {
 			id: account.id,
@@ -161,8 +169,10 @@ export const authRouter = createTRPCRouter({
 			email: account.email,
 			orgs: await fetchOrgs(account.pk),
 			tenants: await fetchTenants(account.pk),
+			...(isSuperAdmin(account) ? { superadmin: true } : {}),
 		};
 	}),
+
 	update: authedProcedure
 		.input(
 			z.object({

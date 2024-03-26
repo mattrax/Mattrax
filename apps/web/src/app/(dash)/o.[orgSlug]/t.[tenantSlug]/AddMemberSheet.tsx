@@ -58,7 +58,17 @@ type Props =
 			) => Promise<void>;
 	  }
 	| {
+			omitUsers?: true;
+			addMember: (
+				selected: {
+					pk: number;
+					variant: Exclude<Variant, "user">;
+				}[],
+			) => Promise<void>;
+	  }
+	| {
 			omitGroups?: false;
+			omitUsers?: false;
 			addMember: (
 				selected: {
 					pk: number;
@@ -74,14 +84,14 @@ export function AddMemberSheet(props: ParentProps & Props) {
 
 	const AddMemberTableOptions = () => ({
 		all: "All",
-		user: "Users",
+		...(props.omitUsers ? {} : { user: "Users" }),
 		device: "Devices",
 		...(props.omitGroups ? {} : { group: "Groups" }),
 	});
 
 	const possibleUsers = trpc.tenant.members.users.useQuery(
 		() => ({ tenantSlug: tenantSlug() }),
-		() => ({ enabled: open() }),
+		() => ({ enabled: props.omitUsers !== true && open() }),
 	);
 	const possibleDevices = trpc.tenant.members.devices.useQuery(
 		() => ({ tenantSlug: tenantSlug() }),
@@ -89,7 +99,7 @@ export function AddMemberSheet(props: ParentProps & Props) {
 	);
 	const possibleGroups = trpc.tenant.members.groups.useQuery(
 		() => ({ tenantSlug: tenantSlug() }),
-		() => ({ enabled: props.omitGroups === true && open() }),
+		() => ({ enabled: props.omitGroups !== true && open() }),
 	);
 
 	const possibleMembers = () => {
@@ -151,6 +161,7 @@ export function AddMemberSheet(props: ParentProps & Props) {
 						<SheetHeader>
 							<SheetTitle>Add Member</SheetTitle>
 							<SheetDescription>
+								{/* TODO: Dynamically build this */}
 								Add users, devices, and policies to this group
 							</SheetDescription>
 						</SheetHeader>
