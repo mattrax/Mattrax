@@ -52,8 +52,11 @@ export function TopBar() {
 					!items() && "border-b border-gray-200",
 				)}
 			>
-				<A href={org()?.path ?? "/"}>
+				<A href={org()?.path ?? "/"} class="flex">
 					<img src={Logo} class="h-5" alt="Mattrax icon" />
+					<span class="ml-2 items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
+						Alpha
+					</span>
 				</A>
 				<Breadcrumbs />
 				<div class="flex-1" />
