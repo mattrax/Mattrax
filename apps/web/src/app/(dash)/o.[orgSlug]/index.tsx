@@ -1,47 +1,61 @@
-import { For, Show, Suspense, startTransition } from "solid-js";
+import { For, Match, Show, Switch, startTransition } from "solid-js";
 import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
 import { InputField, Form, createZodForm } from "@mattrax/ui/forms";
-import { A, useNavigate } from "@solidjs/router";
+import { A, Navigate, RouteDefinition, useNavigate } from "@solidjs/router";
 import { z } from "zod";
 
 import { trpc } from "~/lib";
 import { useOrgSlug } from "../o.[orgSlug]";
 import { PageLayout } from "~/components/PageLayout";
 
+export const route = {
+	load: ({ params }) =>
+		trpc.useContext().org.tenants.ensureData({ orgSlug: params.orgSlug! }),
+} satisfies RouteDefinition;
+
 export default function Page() {
 	const orgSlug = useOrgSlug();
 	const tenants = trpc.org.tenants.useQuery(() => ({ orgSlug: orgSlug() }));
 
 	return (
-		<Suspense>
-			<Show
-				when={tenants.data && tenants.data.length > 0}
-				fallback={<CreateTenant />}
-			>
-				<PageLayout class="pt-6">
-					<span class="p-1 text-sm text-gray-800 font-semibold">Tenants</span>
-					<ul>
-						<For each={tenants.data ?? []}>
-							{(tenant) => (
-								<li class="w-full text-sm">
-									<A
-										class="flex flex-col items-stretch gap-1 block w-full p-4 border border-gray-300 shadow rounded-lg"
-										href={`t/${tenant.slug}`}
-									>
-										<span class="hover:underline font-semibold">
-											{tenant.name}
-										</span>
-										<span class="hover:underline text-gray-700">
-											{tenant.slug}
-										</span>
-									</A>
-								</li>
-							)}
-						</For>
-					</ul>
-				</PageLayout>
-			</Show>
-		</Suspense>
+		<Show when={tenants.data}>
+			{(tenants) => (
+				<Switch>
+					<Match when={tenants().length < 1}>
+						<CreateTenant />
+					</Match>
+					<Match when={tenants().length === 1 && tenants()[0]!}>
+						{(tenant) => <Navigate href={`t/${tenant().slug}`} />}
+					</Match>
+					<Match when={tenants().length > 1}>
+						<PageLayout class="pt-6">
+							<span class="p-1 text-sm text-gray-800 font-semibold">
+								Tenants
+							</span>
+							<ul>
+								<For each={tenants.data ?? []}>
+									{(tenant) => (
+										<li class="w-full text-sm">
+											<A
+												class="flex flex-col items-stretch gap-1 block w-full p-4 border border-gray-300 shadow rounded-lg"
+												href={`t/${tenant.slug}`}
+											>
+												<span class="hover:underline font-semibold">
+													{tenant.name}
+												</span>
+												<span class="hover:underline text-gray-700">
+													{tenant.slug}
+												</span>
+											</A>
+										</li>
+									)}
+								</For>
+							</ul>
+						</PageLayout>
+					</Match>
+				</Switch>
+			)}
+		</Show>
 	);
 }
 

@@ -8,8 +8,6 @@ import {
 	For,
 	createEffect,
 	startTransition,
-	ErrorBoundary,
-	catchError,
 } from "solid-js";
 import { debounce } from "@solid-primitives/scheduled";
 

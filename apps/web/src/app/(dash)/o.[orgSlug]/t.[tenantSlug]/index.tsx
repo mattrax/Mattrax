@@ -99,9 +99,7 @@ function StatItem(props: {
 		<Card class="relative hover:shadow-md transition-shadow">
 			<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
 				<CardTitle class="text-sm font-medium">
-					<span class="hover:underline">
-						{props.title}
-					</span>
+					<span class="hover:underline">{props.title}</span>
 				</CardTitle>
 
 				{props.icon}

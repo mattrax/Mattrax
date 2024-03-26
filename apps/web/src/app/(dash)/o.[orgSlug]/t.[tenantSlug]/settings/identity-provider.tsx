@@ -283,7 +283,8 @@ function Domains() {
 														>
 															{(connectionData) => {
 																const enterpriseEnrollment = () =>
-																	connectionData().enterpriseEnrollmentAvailable;
+																	connectionData()
+																		.enterpriseEnrollmentAvailable;
 
 																return (
 																	<>

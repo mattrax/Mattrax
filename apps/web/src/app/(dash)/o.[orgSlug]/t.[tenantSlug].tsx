@@ -49,7 +49,6 @@ export default function Layout(props: ParentProps) {
 
 	return (
 		<>
-			{/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
 			<MErrorBoundary>
 				{/* we key here on purpose - tenants are the root-most unit of isolation */}
 				<Show when={params.tenantSlug} keyed>
