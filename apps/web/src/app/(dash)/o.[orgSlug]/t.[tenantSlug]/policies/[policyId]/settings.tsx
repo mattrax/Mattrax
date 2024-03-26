@@ -11,10 +11,13 @@ import { usePolicy } from "./Context";
 
 export default function Page() {
 	const navigate = useNavigate();
+	const trpcCtx = trpc.useContext();
 
 	const policy = usePolicy();
 
-	const deletePolicy = trpc.policy.delete.useMutation();
+	const deletePolicy = trpc.policy.delete.useMutation(() => ({
+		onSuccess: () => trpcCtx.policy.list.invalidate(),
+	}));
 	// const updatePolicy = trpc.policy.update.useMutation(() => ({
 	// 	onSuccess: () => policy.refetch(),
 	// }));

@@ -1,15 +1,15 @@
-import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getCookie } from "vinxi/server";
 import { z } from "zod";
 
-import { db, domains, identityProviders } from "~/db";
+import { accounts, db, identityProviders } from "~/db";
 import { env } from "~/env";
 import { lucia } from "../auth";
 import { msGraphClient } from "../microsoft";
-import { syncEntraUsersWithDomains } from "../trpc/routers/tenant/identityProvider";
 import type { HonoEnv } from "../types";
 import { decryptJWT } from "../jwt";
+import { withAuditLog } from "../auditLog";
+import { eq } from "drizzle-orm";
 
 const tokenEndpointResponse = z.object({
 	access_token: z.string(),
@@ -120,25 +120,39 @@ export const msRouter = new Hono<HonoEnv>().get("/link", async (c) => {
 
 	const entraTenantId = tenant.id;
 
-	// the actually important bit
-	await db
-		.insert(identityProviders)
-		.values({
-			variant: "entraId",
-			remoteId: entraTenantId,
-			linkerUpn: userData.data.userPrincipalName,
-			linkerRefreshToken: tokenData.data.refresh_token,
-			tenantPk,
+	const [account] = await db
+		.select({
+			pk: accounts.pk,
 		})
-		// We don't care if it already exists so no need for that to cause an error.
-		.onDuplicateKeyUpdate({
-			// Drizzle requires at least one item or it will error.
-			set: {
-				variant: "entraId",
-				remoteId: entraTenantId,
-				tenantPk,
-			},
-		});
+		.from(accounts)
+		.where(eq(accounts.id, session.userId));
+	if (!account) return new Response("Failed to find account"); // TODO: Proper error UI as the user may land here
+
+	await withAuditLog(
+		"addIdp",
+		{ variant: "entraId", remoteId: entraTenantId },
+		[tenantPk, account.pk],
+		async () => {
+			await db
+				.insert(identityProviders)
+				.values({
+					variant: "entraId",
+					remoteId: entraTenantId,
+					linkerUpn: userData.data.userPrincipalName,
+					linkerRefreshToken: tokenData.data.refresh_token,
+					tenantPk,
+				})
+				// We don't care if it already exists so no need for that to cause an error.
+				.onDuplicateKeyUpdate({
+					// Drizzle requires at least one item or it will error.
+					set: {
+						variant: "entraId",
+						remoteId: entraTenantId,
+						tenantPk,
+					},
+				});
+		},
+	);
 
 	let skipSubscription = false;
 	try {

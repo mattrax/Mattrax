@@ -24,7 +24,7 @@ import {
 	type ParentProps,
 } from "solid-js";
 
-import { trpc } from "~/lib";
+import { getInitials, trpc } from "~/lib";
 import Logo from "~/assets/MATTRAX.png";
 import { Breadcrumbs } from "~c/Breadcrumbs";
 import { AuthContext, useAuth } from "~c/AuthContext";
@@ -145,16 +145,4 @@ function FeedbackPopover(props: ParentProps) {
 			</PopoverContent>
 		</Popover>
 	);
-}
-
-function getInitials(string: string) {
-	const names = string.split(" ");
-	// @ts-expect-error
-	let initials = names[0].substring(0, 1).toUpperCase();
-
-	if (names.length > 1) {
-		// @ts-expect-error
-		initials += names[names.length - 1].substring(0, 1).toUpperCase();
-	}
-	return initials;
 }
