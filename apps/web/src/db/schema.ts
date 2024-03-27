@@ -280,7 +280,7 @@ export const policyVersions = mysqlTable("policy_versions", {
 		.default("deploying"),
 	data: policyDataCol,
 	comment: varchar("comment", { length: 256 }).notNull(),
-	createdBy: serialRelation("createdBy")
+	author: serialRelation("createdBy") // TODO: Rename field
 		.references(() => accounts.pk)
 		.notNull(),
 	createdAt: timestamp("createdAt").notNull().defaultNow(),

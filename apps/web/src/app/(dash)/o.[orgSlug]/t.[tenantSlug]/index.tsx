@@ -10,7 +10,6 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@mattrax/ui";
-import type { JSX } from "solid-js";
 import { makeTimer } from "@solid-primitives/timer";
 import { getInitials, trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
@@ -20,7 +19,6 @@ import { type ParentProps, Suspense, For } from "solid-js";
 import { useTenantSlug } from "../t.[tenantSlug]";
 import { formatAuditLogEvent } from "~/lib/formatAuditLog";
 import { createTimeAgo } from "@solid-primitives/date";
-import Counter from "~/components/Counter";
 import {
 	BruhIconPhCheckBold,
 	BruhIconPhXBold,
@@ -30,6 +28,7 @@ import {
 	BruhIconPhSelection,
 	BruhIconPhUser,
 } from "./bruh";
+import { StatItem } from "~/components/StatItem";
 
 export const route = {
 	load: ({ params }) => {
@@ -86,37 +85,6 @@ export default function Page() {
 				<GettingStarted />
 			</div>
 		</PageLayout>
-	);
-}
-
-function StatItem(props: {
-	title: string;
-	href: string;
-	icon: JSX.Element;
-	value: number;
-}) {
-	return (
-		<Card class="relative hover:shadow-md transition-shadow">
-			<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-				<CardTitle class="text-sm font-medium">
-					<span class="hover:underline">{props.title}</span>
-				</CardTitle>
-
-				{props.icon}
-			</CardHeader>
-			<CardContent>
-				<div class="text-2xl font-bold">
-					<Counter value={props.value} duration={1700}>
-						{(count) => (
-							<dd class="mt-1 text-3xl font-semibold tracking-tight">
-								{count().toLocaleString()}
-							</dd>
-						)}
-					</Counter>
-				</div>
-			</CardContent>
-			<A class="absolute inset-0" href={props.href} />
-		</Card>
 	);
 }
 

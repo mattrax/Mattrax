@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -14,6 +14,7 @@ import {
 	policyAssignables,
 	policyVersions,
 	users,
+	accounts,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { omit } from "~/api/utils";
@@ -65,7 +66,9 @@ export const policyRouter = createTRPCRouter({
 
 			return {
 				// Compare to last deployed version or default (empty object)
-				isDirty: !deepEqual(policy.data, lastVersion?.data ?? {}),
+				isDirty: !deepEqual(policy.data, lastVersion?.data ?? []), // TODO: Probs drop this
+				// diff: getDiff(policy.data, lastVersion?.data ?? []),
+				// diff2: deepDiff(policy.data, lastVersion?.data ?? []),
 				...omit(policy, ["tenantPk"]),
 			};
 		}),
@@ -73,305 +76,25 @@ export const policyRouter = createTRPCRouter({
 	overview: authedProcedure
 		.input(z.object({ policyId: z.string() }))
 		.query(async ({ ctx, input }) => {
-			// TODO: History of deploys and track there process
-
-			return {
-				// TODO: Active deploy information
-				// TODO: Scope info
-				timeline: [],
-			}; // TODO
-		}),
-
-	getDeploySummary: authedProcedure
-		.input(z.object({ policyId: z.string() }))
-		.query(async ({ ctx, input }) => {
-			// const policy = await getPolicy({
-			// 	policyId: input.policyId,
-			// 	tenantPk: ctx.tenant.pk,
-			// });
-
-			// TODO: Check policy is within the current tenant safely? Can we do this with a join on the second query?
-			// db
-			// 		.select({
-			// 			id: policies.id,
-			// 			name: policies.name,
-			// 			data: policies.data,
-			// 		})
-			// 		.from(policies)
-			// 		.where(
-			// 			and(
-			// 				eq(policies.id, input.policyId),
-			// 				eq(policies.tenantPk, ctx.tenant.pk),
-			// 			),
-			// 		),
-			// TODO: Also count through groups
-			// const [result] = await db
-			// 	.select({
-			// 		count: count(),
-			// 	})
-			// 	.from(policyAssignables)
-			// 	.where(eq(policyAssignables.policyPk, input.policyId));
-			// return result?.count;
-
-			return {
-				numScoped: 5, // TODO
-				// TODO: Implement this
-				changes: {
-					"./Testing/Testing/Testing": "123",
-				},
-			};
-		}),
-
-	deploy: authedProcedure
-		.input(z.object({ policyId: z.string(), comment: z.string() }))
-		.mutation(async ({ ctx, input }) => {
 			const [policy] = await db
 				.select({
-					pk: policies.pk,
-					data: policies.data,
 					tenantPk: policies.tenantPk,
 				})
 				.from(policies)
 				.where(eq(policies.id, input.policyId));
-			if (!policy) throw new Error("policy not found"); // TODO: Error and have frontend catch and handle it
+			if (!policy) return null;
 
 			await ctx.ensureTenantMember(policy.tenantPk);
 
-			await db.insert(policyVersions).values({
-				policyPk: policy.pk,
-				data: policy.data,
-				comment: input.comment,
-				createdBy: ctx.account.pk,
-			});
+			// TODO: Calculate these
+			const devices = 5;
+			const users = 0;
+
+			return {
+				devices,
+				users,
+			};
 		}),
-
-	update: authedProcedure
-		.input(
-			z.object({
-				policyId: z.string(),
-				name: z.string().optional(),
-				data: z.any().optional(),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			const policy = await db.query.policies.findFirst({
-				where: eq(policies.id, input.policyId),
-			});
-			if (!policy)
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "policy",
-				});
-
-			await ctx.ensureTenantMember(policy.tenantPk);
-
-			await db
-				.update(policies)
-				.set({
-					name: input.name ?? sql`${policies.name}`,
-					data: input.data ?? sql`${policies.data}`,
-				})
-				.where(eq(policies.id, input.policyId));
-		}),
-
-	// getVersions: tenantProcedure
-	// 	.input(z.object({ policyId: z.string() }))
-	// 	.query(async ({ ctx, input }) => {
-	// 		const versions = await db
-	// 			.select({
-	// 				// TODO: Don't return everything here
-	// 				id: policyVersions.id,
-	// 				status: policyVersions.status,
-	// 				data: policyVersions.data,
-	// 				deployedBy: accounts.name,
-	// 				deployedAt: policyVersions.deployedAt,
-	// 				deployComment: policyVersions.deployComment,
-	// 				createdAt: policyVersions.createdAt,
-	// 			})
-	// 			.from(policyVersions)
-	// 			.innerJoin(policies, eq(policyVersions.policyPk, policies.pk))
-	// 			.leftJoin(accounts, eq(policyVersions.deployedBy, accounts.pk))
-	// 			.where(
-	// 				and(
-	// 					eq(policies.id, input.policyId),
-	// 					eq(policies.tenantPk, ctx.tenant.pk),
-	// 				),
-	// 			);
-
-	// 		return versions;
-	// 	}),
-
-	// getVersion: tenantProcedure
-	// 	.input(z.object({ policyId: z.string(), versionId: z.string() }))
-	// 	.query(async ({ ctx, input }) => {
-	// 		const [version] = await db
-	// 			.select({
-	// 				id: policyVersions.id,
-	// 				status: policyVersions.status,
-	// 				data: policyVersions.data,
-	// 				deployedBy: accounts.name,
-	// 				deployedAt: policyVersions.deployedAt,
-	// 				deployComment: policyVersions.deployComment,
-	// 				createdAt: policyVersions.createdAt,
-	// 			})
-	// 			.from(policyVersions)
-	// 			.innerJoin(policies, eq(policyVersions.policyPk, policies.pk))
-	// 			.leftJoin(accounts, eq(policyVersions.deployedBy, accounts.pk))
-	// 			.where(
-	// 				and(
-	// 					eq(policies.id, input.policyId),
-	// 					eq(policies.tenantPk, ctx.tenant.pk),
-	// 					eq(policyVersions.id, input.versionId),
-	// 				),
-	// 			);
-
-	// 		return version;
-	// 	}),
-
-	// updateVersion: tenantProcedure
-	// 	.input(
-	// 		z.object({
-	// 			policyId: z.string(),
-	// 			versionId: z.string(),
-	// 			data: z.any(),
-	// 		}),
-	// 	)
-	// 	.mutation(async ({ ctx, input }) => {
-	// 		// TODO: Check no-one has edited this policy since we read it.
-
-	// 		await db
-	// 			.update(policyVersions)
-	// 			.set({
-	// 				data: input.data,
-	// 			})
-	// 			.where(
-	// 				and(
-	// 					eq(policyVersions.id, input.versionId),
-	// 					// TODO: tenant id  // eq(policyVersions.policyPk, input.policyId) // TODO
-	// 					// You can only update non-deployed versions
-	// 					eq(policyVersions.status, "open"),
-	// 				),
-	// 			);
-
-	// 		return {};
-	// 	}),
-
-	// deployVersion: tenantProcedure
-	// 	.input(z.object({ policyId: z.string(), comment: z.string() }))
-	// 	.mutation(async ({ ctx, input }) => {
-	// 		// TODO: Maybe transaction for this?
-
-	// 		const [policy] = await db
-	// 			.select({
-	// 				id: policies.id,
-	// 				pk: policies.pk,
-	// 				activeVersion: policies.activeVersion,
-	// 			})
-	// 			.from(policies)
-	// 			.where(
-	// 				and(
-	// 					eq(policies.id, input.policyId),
-	// 					eq(policies.tenantPk, ctx.tenant.pk),
-	// 				),
-	// 			);
-	// 		if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
-
-	// 		const status = await db
-	// 			.update(policyVersions)
-	// 			.set({
-	// 				status: "deploying",
-	// 				deployComment: input.comment,
-	// 				deployedBy: ctx.account.pk,
-	// 				deployedAt: new Date(),
-	// 			})
-	// 			.where(
-	// 				and(
-	// 					eq(policyVersions.policyPk, policy.pk),
-	// 					eq(policyVersions.status, "open"),
-	// 				),
-	// 			);
-	// 		const versionId = parseInt(status.insertId);
-
-	// 		await db
-	// 			.update(policies)
-	// 			.set({ activeVersion: versionId })
-	// 			.where(
-	// 				and(
-	// 					eq(policies.id, input.policyId),
-	// 					eq(policies.tenantPk, ctx.tenant.pk),
-	// 				),
-	// 			);
-
-	// 		if (status.rowsAffected !== 0) {
-	// 			// TODO: Send push notification to all devices
-	// 			// TODO: Push into device page
-	// 		}
-	// 	}),
-
-	// createVersion: tenantProcedure
-	// 	.input(z.object({ policyId: z.string() }))
-	// 	.mutation(async ({ ctx, input }) => {
-	// 		// TODO: Maybe transaction for this?
-
-	// 		const [policy] = await db
-	// 			.select({
-	// 				pk: policies.pk,
-	// 				activeVersion: policies.activeVersion,
-	// 			})
-	// 			.from(policies)
-	// 			.where(
-	// 				and(
-	// 					eq(policies.id, input.policyId),
-	// 					eq(policies.tenantPk, ctx.tenant.pk),
-	// 				),
-	// 			);
-	// 		if (!policy) throw new Error("todo: error handling"); // TODO: Error and have frontend catch and handle it
-
-	// 		const [result] = await db
-	// 			.select({
-	// 				count: count(),
-	// 			})
-	// 			.from(policyVersions)
-	// 			.where(
-	// 				and(
-	// 					eq(policyVersions.id, input.policyId),
-	// 					// eq(policyVersions.tenantPk, ctx.tenant.pk),
-	// 					eq(policyVersions.status, "open"),
-	// 				),
-	// 			);
-	// 		const numOpenPolicies = result?.count;
-
-	// 		if (numOpenPolicies !== 0)
-	// 			throw new Error("There is already an open policy version");
-
-	// 		const [activeVersion] = await db
-	// 			.select({
-	// 				id: policyVersions.pk,
-	// 				data: policyVersions.data,
-	// 			})
-	// 			.from(policyVersions)
-	// 			.where(
-	// 				and(
-	// 					// @ts-expect-error
-	// 					eq(policyVersions.pk, policy.activeVersion), // TODO: This should probs not be this. It should be the latest version???
-	// 					// eq(policyVersions.policyPk, policy.id), // TODO
-	// 				),
-	// 			);
-
-	// 		const newVersionId = createId();
-	// 		const newVersion = await db.insert(policyVersions).values({
-	// 			id: newVersionId,
-	// 			policyPk: policy.pk,
-	// 			data: activeVersion?.data || {},
-	// 		});
-
-	// 		await db
-	// 			.update(policies)
-	// 			.set({ activeVersion: parseInt(newVersion.insertId) })
-	// 			.where(eq(policies.pk, policy.pk));
-
-	// 		return newVersionId;
-	// 	}),
 
 	members: authedProcedure
 		.input(z.object({ id: z.string() }))
@@ -454,52 +177,6 @@ export const policyRouter = createTRPCRouter({
 			);
 		}),
 
-	// duplicate: tenantProcedure
-	//   .input(z.object({ policyId: z.string() }))
-	//   .mutation(async ({ ctx, input }) => {
-	//     throw new Error("TODO: Bring this back!");
-	//     // const id = input.policyId;
-	//     // let [row] = (
-	//     //   await db.select().from(policies).where(eq(policies.id, id))
-	//     // );
-	//     // if (!row) throw new Error("todo: error handling");
-
-	//     // // @ts-expect-error
-	//     // delete row.id;
-	//     // // @ts-expect-error
-	//     // delete row.intuneId;
-	//     // // @ts-expect-error
-	//     // delete row.policyHash;
-
-	//     // const result = await db.insert(policies).values(row);
-	//     // return parseInt(result.insertId);
-	//   }),
-
-	// updateVersion: tenantProcedure
-	//   .input(
-	//     z.object({
-	//       policyId: z.number(),
-	//       versionId: z.number(),
-	//       // TODO: Proper Zod type here
-	//       data: z.any(),
-	//     })
-	//   )
-	//   .mutation(async ({ ctx, input }) => {
-	//     await db
-	//       .update(policyVersions)
-	//       .set({
-	//         data: input.data,
-	//       })
-	//       .where(
-	//         and(
-	//           eq(policyVersions.pk, input.versionId),
-	//           eq(policyVersions.policyPk, input.policyId)
-	//         )
-	//       );
-
-	//     return {};
-	//   }),
-
 	create: tenantProcedure
 		.input(z.object({ name: z.string().min(1).max(100) }))
 		.mutation(({ ctx, input }) => {
@@ -520,6 +197,33 @@ export const policyRouter = createTRPCRouter({
 			);
 		}),
 
+	update: authedProcedure
+		.input(
+			z.object({
+				policyId: z.string(),
+				name: z.string().optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const policy = await db.query.policies.findFirst({
+				where: eq(policies.id, input.policyId),
+			});
+			if (!policy)
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "policy",
+				});
+
+			await ctx.ensureTenantMember(policy.tenantPk);
+
+			await db
+				.update(policies)
+				.set({
+					name: input.name ?? sql`${policies.name}`,
+				})
+				.where(eq(policies.id, input.policyId));
+		}),
+
 	delete: authedProcedure
 		.input(z.object({ policyId: z.string() }))
 		.mutation(async ({ ctx, input }) => {
@@ -538,6 +242,96 @@ export const policyRouter = createTRPCRouter({
 				},
 			);
 		}),
+
+	deploy: authedProcedure
+		.input(z.object({ policyId: z.string(), comment: z.string() }))
+		.mutation(async ({ ctx, input }) => {
+			const [policy] = await db
+				.select({
+					pk: policies.pk,
+					data: policies.data,
+					tenantPk: policies.tenantPk,
+				})
+				.from(policies)
+				.where(eq(policies.id, input.policyId));
+			if (!policy) throw new Error("policy not found"); // TODO: Error and have frontend catch and handle it
+
+			await ctx.ensureTenantMember(policy.tenantPk);
+
+			// TODO: Only allow deploying if the policy has changed
+			// if(policy.data)
+
+			await db.insert(policyVersions).values({
+				policyPk: policy.pk,
+				data: policy.data,
+				comment: input.comment,
+				author: ctx.account.pk,
+			});
+
+			// TODO: Send push notification to all devices
+		}),
+
+	versions: createTRPCRouter({
+		list: authedProcedure
+			.input(z.object({ policyId: z.string(), limit: z.number().optional() }))
+			.query(async ({ ctx, input }) => {
+				const [policy] = await db
+					.select({ tenantPk: policies.tenantPk })
+					.from(policies)
+					.where(eq(policies.id, input.policyId));
+				if (!policy) throw new Error("policy not found"); // TODO: Error and have frontend catch and handle it
+
+				await ctx.ensureTenantMember(policy.tenantPk);
+
+				const versions = await db
+					.select({
+						id: policyVersions.id,
+						status: policyVersions.status,
+						author: accounts.name,
+						authorEmail: accounts.email,
+						comment: policyVersions.comment,
+						deployedAt: policyVersions.createdAt,
+					})
+					.from(policyVersions)
+					.innerJoin(policies, eq(policyVersions.policyPk, policies.pk))
+					.leftJoin(accounts, eq(policyVersions.author, accounts.pk))
+					.where(
+						and(
+							eq(policies.id, input.policyId),
+							eq(policies.tenantPk, policy.tenantPk),
+						),
+					)
+					.orderBy(desc(policyVersions.createdAt))
+					.limit(input.limit ?? 99999999);
+
+				return versions;
+			}),
+
+		get: authedProcedure.query(({ ctx }) => {
+			// TODO
+			// 		const [version] = await db
+			// 			.select({
+			// 				id: policyVersions.id,
+			// 				status: policyVersions.status,
+			// 				data: policyVersions.data,
+			// 				deployedBy: accounts.name,
+			// 				deployedAt: policyVersions.deployedAt,
+			// 				deployComment: policyVersions.deployComment,
+			// 				createdAt: policyVersions.createdAt,
+			// 			})
+			// 			.from(policyVersions)
+			// 			.innerJoin(policies, eq(policyVersions.policyPk, policies.pk))
+			// 			.leftJoin(accounts, eq(policyVersions.deployedBy, accounts.pk))
+			// 			.where(
+			// 				and(
+			// 					eq(policies.id, input.policyId),
+			// 					eq(policies.tenantPk, ctx.tenant.pk),
+			// 					eq(policyVersions.id, input.versionId),
+			// 				),
+			// 			);
+			// 		return version;
+		}),
+	}),
 });
 
 function deepEqual(object1: Record<any, any>, object2: Record<any, any>) {

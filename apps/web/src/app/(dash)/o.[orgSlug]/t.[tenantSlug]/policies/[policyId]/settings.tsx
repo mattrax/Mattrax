@@ -18,20 +18,18 @@ export default function Page() {
 	const deletePolicy = trpc.policy.delete.useMutation(() => ({
 		onSuccess: () => trpcCtx.policy.list.invalidate(),
 	}));
-	// const updatePolicy = trpc.policy.update.useMutation(() => ({
-	// 	onSuccess: () => policy.refetch(),
-	// }));
+	const updatePolicy = trpc.policy.update.useMutation(() => ({
+		onSuccess: () => policy.query.refetch(),
+	}));
 
 	const form = createZodForm({
 		schema: z.object({ name: z.string() }),
 		defaultValues: { name: policy().name || "" },
 		onSubmit: ({ value }) => {
-			// updatePolicy.mutateAsync({
-			// 	tenantSlug: tenant().slug,
-			// 	policyId: params.policyId,
-			// 	name: value.name,
-			// });
-			alert("TODO");
+			updatePolicy.mutateAsync({
+				policyId: policy().id,
+				name: value.name,
+			});
 		},
 	});
 

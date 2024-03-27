@@ -69,7 +69,7 @@ export default function Page() {
 					<PageLayoutHeading
 						ref={nameEl!}
 						class="p-2 -m-2"
-						contenteditable={editingName()}
+						contenteditable
 						onKeyDown={(e) => {
 							if (e.key === "Enter") {
 								e.preventDefault();

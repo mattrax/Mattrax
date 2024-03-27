@@ -50,9 +50,8 @@ export default function Page() {
 			<h1 class="text-2xl font-semibold">API Keys</h1>
 			<p class="mt-2 mb-3 text-gray-700 text-sm">
 				API Keys allow you to access the Mattrax API, as well as use the{" "}
-				{/* // TODO: Link to our docs */}
 				<a
-					href="https://github.com/mattrax/Mattrax/tree/main/apps/mttx"
+					href="http://docs.mattrax.app/components/mttx"
 					target="_blank"
 					rel="noreferrer"
 				>

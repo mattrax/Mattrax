@@ -38,16 +38,16 @@ function PageLink({
 }
 
 function PageNavigation() {
-	let pathname = usePathname();
-	let allPages = navigation.flatMap((group) => group.links);
-	let currentPageIndex = allPages.findIndex((page) => page.href === pathname);
+	const pathname = usePathname();
+	const allPages = navigation.flatMap((group) => group.links);
+	const currentPageIndex = allPages.findIndex((page) => page.href === pathname);
 
 	if (currentPageIndex === -1) {
 		return null;
 	}
 
-	let previousPage = allPages[currentPageIndex - 1];
-	let nextPage = allPages[currentPageIndex + 1];
+	const previousPage = allPages[currentPageIndex - 1];
+	const nextPage = allPages[currentPageIndex + 1];
 
 	if (!previousPage && !nextPage) {
 		return null;
@@ -127,9 +127,9 @@ function SmallPrint() {
 				<SocialLink href="https://github.com/mattrax" icon={GitHubIcon}>
 					Follow us on GitHub
 				</SocialLink>
-				{/* <SocialLink href="#" icon={DiscordIcon}>
-          Join our Discord server
-        </SocialLink> */}
+				<SocialLink href="https://discord.gg/WPBHmDSfAn" icon={DiscordIcon}>
+					Join our Discord server
+				</SocialLink>
 			</div>
 		</div>
 	);
