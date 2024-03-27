@@ -32,6 +32,8 @@ import {
 	StandardTable,
 } from "~/components/StandardTable";
 import { renderStatusBadge } from "../bruh";
+import { formatPolicy } from "~/lib/formatPolicy";
+import { match } from "ts-pattern";
 
 const column =
 	createColumnHelper<RouterOutput["policy"]["versions"]["list"][number]>();
@@ -109,7 +111,7 @@ export default function Page() {
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Versions</PageLayoutHeading>}>
-			{policy().isDirty && <DirtyPolicyPanel />}
+			{policy().diff.length > 0 && <DirtyPolicyPanel />}
 
 			<Suspense>
 				<StandardTable table={table} />
@@ -135,12 +137,31 @@ function DirtyPolicyPanel() {
 				</div>
 			</CardHeader>
 			<CardContent>
-				{/* TODO: Policy diff */}
-				{/* <For each={policy().data}>
-					{(configuration) => <p>{formatPolicy(configuration)}</p>}
-				</For> */}
+				<RenderPolicyDiff />
 			</CardContent>
 		</Card>
+	);
+}
+
+function RenderPolicyDiff() {
+	const policy = usePolicy();
+
+	return (
+		<For each={policy().diff}>
+			{(change) => (
+				<li>
+					<span
+						class={match(change.change)
+							.with("added", () => "text-green-600")
+							.with("modified", () => "text-yellow-600")
+							.with("deleted", () => "text-red-600")
+							.exhaustive()}
+					>
+						{formatPolicy(change.data)}
+					</span>
+				</li>
+			)}
+		</For>
 	);
 }
 
@@ -153,7 +174,7 @@ function DeployButton() {
 			<DialogTrigger asChild>
 				<As
 					component={Button}
-					disabled={!(policy().isDirty ?? true)}
+					disabled={policy().diff.length === 0}
 					onMouseEnter={() => {
 						trpcCtx.policy.overview.ensureData({
 							policyId: policy().id,
@@ -203,16 +224,7 @@ function DeployDialog() {
 			{page() === 0 && (
 				<>
 					<ul class="list-disc pl-4 text-md leading-none tracking-tight text-semibold flex flex-col space-y-2 py-2">
-						<Suspense fallback="">
-							{/* TODO: Policy diff */}
-							{/* <For each={Object.entries(getDeploySummary.data?.changes || {})}>
-								{([key, value]) => (
-									<li>
-										<p>{`${key} changed to ${value}`}</p>
-									</li>
-								)}
-							</For> */}
-						</Suspense>
+						<RenderPolicyDiff />
 					</ul>
 					<Button type="button" onClick={() => setPage(1)}>
 						Confirm Changes

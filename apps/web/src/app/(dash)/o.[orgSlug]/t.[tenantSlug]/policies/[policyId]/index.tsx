@@ -51,7 +51,7 @@ export default function Page() {
 					<PageLayoutHeading>Overview</PageLayoutHeading>
 
 					<div class="ml-4">
-						{policy().isDirty && (
+						{policy().diff.length > 0 && (
 							<Tooltip placement="bottom-start">
 								<TooltipTrigger>
 									<A href="versions">
@@ -117,13 +117,14 @@ function PolicyContent() {
 				</CardDescription>
 			</CardHeader>
 			<CardContent class="space-y-3 space-y-reverse">
-				<Show when={!policy().data || policy().data.length === 0}>
-					<h2 class="text-muted-foreground opacity-70">Policy is empty!</h2>
-				</Show>
-
 				<ul class="list-disc px-4">
-					<For each={policy().data}>
-						{(configuration) => <li>{formatPolicy(configuration)}</li>}
+					<For
+						each={Object.entries(policy().data)}
+						fallback={
+							<h2 class="text-muted-foreground opacity-70">Policy is empty!</h2>
+						}
+					>
+						{([_, configuration]) => <li>{formatPolicy(configuration)}</li>}
 					</For>
 				</ul>
 			</CardContent>

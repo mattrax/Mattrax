@@ -220,8 +220,8 @@ export const users = mysqlTable(
 
 const policyDataCol = json("data")
 	.notNull()
-	.default([])
-	.$type<Configuration[]>();
+	.default({})
+	.$type<Record<string, Configuration>>();
 
 export const policies = mysqlTable("policies", {
 	pk: serial("id").primaryKey(),

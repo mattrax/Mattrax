@@ -42,6 +42,10 @@ impl Command {
             .await
             .map_err(|err| format!("Error doing HTTP request to Mattrax API: {err}"))?;
 
+        if response.status() == 404 {
+            return Err(format!("Policy with id '{}' not found", policy.id));
+        }
+
         if !response.status().is_success() {
             return Err(format!(
                 "Error pushing policy to Mattrax: {:?}",

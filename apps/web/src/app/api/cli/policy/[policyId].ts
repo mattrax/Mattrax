@@ -36,13 +36,17 @@ export async function POST({ request, params }: APIEvent) {
 			status: 400,
 		});
 
-	await db
+	const result = await db
 		.update(policies)
 		.set({
 			name: body.data.name,
 			data: body.data.data,
 		})
 		.where(eq(policies.id, policyId));
+	if (result.rowsAffected === 0)
+		return new Response("404: Policy not found", {
+			status: 404,
+		});
 
 	return new Response("", {
 		status: 201,

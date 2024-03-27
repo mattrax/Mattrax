@@ -19,6 +19,7 @@ import {
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { omit } from "~/api/utils";
 import { withAuditLog } from "~/api/auditLog";
+import type { Configuration } from "~/lib/policy";
 
 function getPolicy(args: { policyId: string; tenantPk: number }) {
 	return db.query.policies.findFirst({
@@ -43,32 +44,30 @@ export const policyRouter = createTRPCRouter({
 	get: authedProcedure
 		.input(z.object({ policyId: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const [[policy], [lastVersion]] = await Promise.all([
-				db
-					.select({
-						id: policies.id,
-						name: policies.name,
-						data: policies.data,
-						tenantPk: policies.tenantPk,
-					})
-					.from(policies)
-					.where(eq(policies.id, input.policyId)),
-				db
-					.select({ data: policyVersions.data })
-					.from(policyVersions)
-					.where(and(eq(policyVersions.id, input.policyId)))
-					.orderBy(policyVersions.createdAt)
-					.limit(1),
-			]);
-			if (!policy) return null;
+			const [policy] = await db
+				.select({
+					id: policies.id,
+					pk: policies.pk,
+					name: policies.name,
+					data: policies.data,
+					tenantPk: policies.tenantPk,
+				})
+				.from(policies)
+				.where(eq(policies.id, input.policyId));
+			if (!policy) throw new Error("policy not found"); // TODO: Error and have frontend catch and handle it
 
 			await ctx.ensureTenantMember(policy.tenantPk);
 
+			const [lastVersion] = await db
+				.select({ data: policyVersions.data })
+				.from(policyVersions)
+				.where(and(eq(policyVersions.policyPk, policy.pk)))
+				.orderBy(desc(policyVersions.createdAt))
+				.limit(1);
+
 			return {
-				// Compare to last deployed version or default (empty object)
-				isDirty: !deepEqual(policy.data, lastVersion?.data ?? []), // TODO: Probs drop this
-				// diff: getDiff(policy.data, lastVersion?.data ?? []),
-				// diff2: deepDiff(policy.data, lastVersion?.data ?? []),
+				// The differences between the policies state and the last deployed version
+				diff: generatePolicyDiff(lastVersion?.data ?? {}, policy.data),
 				...omit(policy, ["tenantPk"]),
 			};
 		}),
@@ -82,7 +81,7 @@ export const policyRouter = createTRPCRouter({
 				})
 				.from(policies)
 				.where(eq(policies.id, input.policyId));
-			if (!policy) return null;
+			if (!policy) throw new Error("policy not found"); // TODO: Error and have frontend catch and handle it
 
 			await ctx.ensureTenantMember(policy.tenantPk);
 
@@ -334,7 +333,37 @@ export const policyRouter = createTRPCRouter({
 	}),
 });
 
-function deepEqual(object1: Record<any, any>, object2: Record<any, any>) {
+// `p1` should be older than `p2` for the result to be correct
+function generatePolicyDiff(
+	p1: Record<string, Configuration>,
+	p2: Record<string, Configuration>,
+) {
+	const result: { change: "added" | "deleted" | "modified"; data: any }[] = [];
+
+	for (const [key, value] of Object.entries(p1)) {
+		const otherValue = p2[key];
+		if (otherValue === undefined) {
+			result.push({ change: "deleted", data: value });
+		} else {
+			if (!deepEqual(value, otherValue)) {
+				result.push({ change: "modified", data: value });
+			}
+		}
+	}
+
+	for (const [key, value] of Object.entries(p2)) {
+		if (p1[key] === undefined) {
+			result.push({ change: "added", data: value });
+		}
+	}
+
+	return result;
+}
+
+function deepEqual(
+	object1: Record<any, any> | any[],
+	object2: Record<any, any> | any[],
+) {
 	const keys1 = Object.keys(object1);
 	const keys2 = Object.keys(object2);
 
@@ -343,7 +372,9 @@ function deepEqual(object1: Record<any, any>, object2: Record<any, any>) {
 	}
 
 	for (const key of keys1) {
+		// @ts-expect-error
 		const val1 = object1[key];
+		// @ts-expect-error
 		const val2 = object2[key];
 		const areObjects = isObject(val1) && isObject(val2);
 		if (
