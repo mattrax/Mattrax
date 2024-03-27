@@ -1,0 +1,53 @@
+name: SST Deploy
+on: push # TODO: Only on prod
+
+concurrency:
+  group: "merge-${{ github.ref }}"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  sst:
+    runs-on: ubuntu-latest
+    # This is required to workaround the lack of wildcard for OIDC scope
+    # https://github.com/Azure/azure-workload-identity/issues/373
+    #
+    # I swear to god Microsoft have never tried anything they have built.
+    environment: production
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v3
+
+      # - name: Configure Azure credentials
+      #   uses: azure/login@v1
+      #   with:
+      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #     allow-no-subscriptions: true
+
+      # TODO: We don't use OIDC because I can't work out the permissions.
+      # - How tf do you make an app registration global administrator. That doesn't even makes sense.
+      - name: Configure Azure credentials
+        run: az login --username "$AZURE_USERNAME" --password "$AZURE_APP_SPECIFIC_PASSWORD"
+        env:
+          AZURE_USERNAME: ${{ secrets.AZURE_USERNAME }}
+          AZURE_APP_SPECIFIC_PASSWORD: ${{ secrets.AZURE_APP_SPECIFIC_PASSWORD }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: "arn:aws:iam::101829795063:role/mattrax-gh-actions"
+          aws-region: us-east-1
+          role-session-name: mattrax-sst-workflow
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
+      - name: Install SST
+        run: curl -fsSL https://ion.sst.dev/install | bash
+
+      - name: Deploy app
+        run: pnpm i && PATH=/home/runner/.sst/bin:$PATH pnpm infra deploy --stage prod
