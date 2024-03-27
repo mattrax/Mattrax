@@ -15,19 +15,21 @@ export const route = {
 			id: params.userId!,
 		}),
 	info: {
-		BREADCRUMB: () => {
-			const params = useZodParams({ userId: z.string() });
+		BREADCRUMB: {
+			Component: () => {
+				const params = useZodParams({ userId: z.string() });
 
-			const query = trpc.user.get.useQuery(() => ({
-				id: params.userId,
-			}));
+				const query = trpc.user.get.useQuery(() => ({
+					id: params.userId,
+				}));
 
-			return (
-				<>
-					<span>{query.data?.name}</span>
-					<Badge variant="outline">User</Badge>
-				</>
-			);
+				return (
+					<>
+						<span>{query.data?.name}</span>
+						<Badge variant="outline">User</Badge>
+					</>
+				);
+			},
 		},
 	},
 } satisfies RouteDefinition;

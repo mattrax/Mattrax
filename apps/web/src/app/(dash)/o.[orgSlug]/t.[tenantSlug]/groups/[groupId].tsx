@@ -18,18 +18,20 @@ export const route = {
 		}),
 	info: {
 		// NAV_ITEMS
-		BREADCRUMB: () => {
-			const params = useZodParams({ groupId: z.string() });
-			const query = trpc.group.get.useQuery(() => ({
-				id: params.groupId,
-			}));
+		BREADCRUMB: {
+			Component: () => {
+				const params = useZodParams({ groupId: z.string() });
+				const query = trpc.group.get.useQuery(() => ({
+					id: params.groupId,
+				}));
 
-			return (
-				<>
-					<span>{query.data?.name}</span>
-					<Badge variant="outline">Group</Badge>
-				</>
-			);
+				return (
+					<>
+						<span>{query.data?.name}</span>
+						<Badge variant="outline">Group</Badge>
+					</>
+				);
+			},
 		},
 	},
 } satisfies RouteDefinition;

@@ -4,7 +4,7 @@ import { A } from "@solidjs/router";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { AuthContext } from "~c/AuthContext";
 import { TenantContext } from "./Context";
-import IcRoundArrowForward from "~icons/ic/round-arrow-forward"
+import IcRoundArrowForward from "~icons/ic/round-arrow-forward";
 
 const navigation = [
 	{ name: "General", href: "" },
@@ -29,11 +29,19 @@ export default function Layout(props: ParentProps) {
 							)}
 						</For>
 					</ul>
-					<span class="text-sm text-gray-500 font-medium mt-4 mb-2">Organisation Settings</span>
+					<span class="text-sm text-gray-500 font-medium mt-4 mb-2">
+						Organisation Settings
+					</span>
 					<ul class="space-y-1">
-						<For each={[{name: "Billing", href: "../../../settings/billing"}]}>
+						<For
+							each={[{ name: "Billing", href: "../../../settings/billing" }]}
+						>
 							{(item) => (
-								<SidebarItem href={item.href}><div class="flex flex-row items-center justify-between ">{item.name} <IcRoundArrowForward class="block" /></div></SidebarItem>
+								<SidebarItem href={item.href}>
+									<div class="flex flex-row items-center justify-between ">
+										{item.name} <IcRoundArrowForward class="block" />
+									</div>
+								</SidebarItem>
 							)}
 						</For>
 					</ul>

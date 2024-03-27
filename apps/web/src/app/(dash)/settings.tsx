@@ -9,7 +9,7 @@ const navigation = [{ name: "General", href: "general" }];
 
 export const route = {
 	info: {
-		BREADCRUMB: () => <>Settings</>,
+		BREADCRUMB: { Component: () => <>Settings</> },
 	},
 };
 

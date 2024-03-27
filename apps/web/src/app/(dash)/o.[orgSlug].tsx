@@ -75,14 +75,16 @@ export const route = {
 		trpc.useContext().org.tenants.ensureData({ orgSlug: params.orgSlug! }),
 	info: {
 		NAV_ITEMS,
-		BREADCRUMB: () => {
-			return (
-				<AuthContext>
-					<OrgContext>
-						<OrgSwitcher />
-					</OrgContext>
-				</AuthContext>
-			);
+		BREADCRUMB: {
+			Component: () => {
+				return (
+					<AuthContext>
+						<OrgContext>
+							<OrgSwitcher />
+						</OrgContext>
+					</AuthContext>
+				);
+			},
 		},
 	},
 } satisfies RouteDefinition;

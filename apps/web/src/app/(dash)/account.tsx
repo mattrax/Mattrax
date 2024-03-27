@@ -13,7 +13,7 @@ const navigation = [
 
 export const route = {
 	info: {
-		BREADCRUMB: () => <>Account</>,
+		BREADCRUMB: { Component: () => <>Account</> },
 	},
 };
 

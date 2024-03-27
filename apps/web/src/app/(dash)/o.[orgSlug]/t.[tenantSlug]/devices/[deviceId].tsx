@@ -25,16 +25,18 @@ export const route = {
 		}),
 	info: {
 		NAV_ITEMS,
-		BREADCRUMB: () => {
-			const params = useZodParams({ deviceId: z.string() });
-			const query = trpc.device.get.useQuery(() => params);
+		BREADCRUMB: {
+			Component: () => {
+				const params = useZodParams({ deviceId: z.string() });
+				const query = trpc.device.get.useQuery(() => params);
 
-			return (
-				<>
-					<span>{query.data?.name}</span>
-					<Badge variant="outline">Device</Badge>
-				</>
-			);
+				return (
+					<>
+						<span>{query.data?.name}</span>
+						<Badge variant="outline">Device</Badge>
+					</>
+				);
+			},
 		},
 	},
 } satisfies RouteDefinition;

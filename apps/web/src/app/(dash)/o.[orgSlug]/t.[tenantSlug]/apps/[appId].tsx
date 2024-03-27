@@ -20,19 +20,21 @@ export const route = {
 		}),
 	info: {
 		NAV_ITEMS,
-		BREADCRUMB: () => {
-			const params = useZodParams({ appId: z.string() });
+		BREADCRUMB: {
+			Component: () => {
+				const params = useZodParams({ appId: z.string() });
 
-			const query = trpc.app.get.useQuery(() => ({
-				id: params.appId,
-			}));
+				const query = trpc.app.get.useQuery(() => ({
+					id: params.appId,
+				}));
 
-			return (
-				<>
-					<span>{query.data?.name}</span>
-					<Badge variant="outline">App</Badge>
-				</>
-			);
+				return (
+					<>
+						<span>{query.data?.name}</span>
+						<Badge variant="outline">App</Badge>
+					</>
+				);
+			},
 		},
 	},
 } satisfies RouteDefinition;

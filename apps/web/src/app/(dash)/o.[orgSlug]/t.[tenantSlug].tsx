@@ -26,20 +26,23 @@ const NAV_ITEMS = [
 export const route = {
 	info: {
 		NAV_ITEMS,
-		BREADCRUMB: (props: any) => {
-			const navigate = useNavigate();
+		BREADCRUMB: {
+			hasNestedSegments: true,
+			Component: (props: any) => {
+				const navigate = useNavigate();
 
-			return (
-				<AuthContext>
-					<TenantContext>
-						<TenantSwitcher
-							setActiveTenant={(slug) => {
-								startTransition(() => navigate(`${props.path}/../${slug}`));
-							}}
-						/>
-					</TenantContext>
-				</AuthContext>
-			);
+				return (
+					<AuthContext>
+						<TenantContext>
+							<TenantSwitcher
+								setActiveTenant={(slug) => {
+									startTransition(() => navigate(`${props.path}/../${slug}`));
+								}}
+							/>
+						</TenantContext>
+					</AuthContext>
+				);
+			},
 		},
 	},
 } satisfies RouteDefinition;
