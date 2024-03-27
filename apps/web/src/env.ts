@@ -38,6 +38,7 @@ export const env = createEnv({
 	client: {
 		VITE_PROD_URL: z.string(),
 	},
-	runtimeEnv: { ...process.env, VITE_PROD_URL: import.meta.env.VITE_PROD_URL },
+	// We need to manually list the env's for the frontend bundle
+	runtimeEnv: { VITE_PROD_URL: import.meta.env?.VITE_PROD_URL, ...process.env },
 	emptyStringAsUndefined: true,
 });
