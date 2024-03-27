@@ -31,3 +31,20 @@ cargo run -p mattrax -- serve
 # Configure
 pnpm configure tauri dev
 ```
+
+## Things to know:
+
+### Unidirectional dataflow
+
+All data follows the following order:
+ - User or device -> API (Typescript) -> Rust -> DB
+ - I *will not* flow backwards,
+ - It may and probably will skip layers
+
+### tRPC
+
+`authedProcedure` vs `tenantProcedure` and when to pick each.
+
+### Drizzle to RS
+
+TODO: Explain why we have this
