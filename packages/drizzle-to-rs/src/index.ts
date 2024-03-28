@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { execSync } from "node:child_process";
-import { TypedQueryBuilder } from "drizzle-orm/query-builders/query-builder";
-import { SQLWrapper } from "drizzle-orm";
+import type { TypedQueryBuilder } from "drizzle-orm/query-builders/query-builder";
+import type { SQLWrapper } from "drizzle-orm";
 
 // TODO: Allow array of arguments (insert many)
 
@@ -17,7 +17,7 @@ const snakeToCamel = (str: string) => {
 	return a[0]?.toUpperCase() + a.slice(1);
 };
 
-type RustType = "String" | "NaiveDateTime" | "Vec<u8>" | "i32"; // TODO: Rest of types
+type RustType = "String" | "NaiveDateTime" | "Vec<u8>" | "u64"; // TODO: Rest of types
 type RustArgs = Record<string, RustType>;
 
 type MapArgsToTs<T> = {
@@ -46,8 +46,9 @@ class Placeholder {
 		this.name = name;
 	}
 
+	// Drizzle converts dates to strings so we need a way to know when to convert them to a Rust param.
 	toISOString() {
-		return `${this}_`; // TODO: I have no idea why this `_` is required but it prevents the string missing the last char
+		return `####rs#${this.name}_`; // Drizzle strips the last char
 	}
 }
 
@@ -121,6 +122,10 @@ export function defineOperation<const T extends RustArgs = never>(
 								// @ts-expect-error
 								if (p instanceof Placeholder) {
 									return `${camelToSnakeCase(p.name)}.clone().into()`;
+								} else if (typeof p === "string" && p.startsWith("####rs#")) {
+									return `${camelToSnakeCase(
+										p.replaceAll("####rs#", ""),
+									)}.clone().into()`;
 								}
 
 								return `"${p}".into()`;

@@ -15,6 +15,11 @@ pub struct GetPoliciesForDeviceResult {
     pub id: String,
     pub name: String,
 }
+#[derive(Debug)]
+pub struct GetDeviceResult {
+    pub pk: u64,
+    pub tenant_pk: u64,
+}
 
 #[derive(Debug)]
 pub struct QueuedDeviceActionsResult {
@@ -57,7 +62,7 @@ impl Db {
         last_modified: NaiveDateTime,
     ) -> Result<(), mysql_async::Error> {
         r#"insert into `certificates` (`key`, `certificate`, `lastModified`) values (?, ?, ?) on duplicate key update `certificate` = ?, `lastModified` = ?"#
-            .with(mysql_async::Params::Positional(vec![key.clone().into(),certificate.clone().into(),"[object Object]".into(),certificate.clone().into(),"[object Object]".into()]))
+            .with(mysql_async::Params::Positional(vec![key.clone().into(),certificate.clone().into(),last_modified.clone().into(),certificate.clone().into(),last_modified.clone().into()]))
             .run(&self.pool)
             .await
             .map(|_| ())
@@ -71,8 +76,8 @@ impl Db {
         enrollment_type: String,
         os: String,
         serial_number: String,
-        tenant_pk: i32,
-        owner_pk: i32,
+        tenant_pk: u64,
+        owner_pk: u64,
     ) -> Result<(), mysql_async::Error> {
         r#"insert into `devices` (`id`, `cuid`, `name`, `description`, `enrollmentType`, `os`, `serialNumber`, `manufacturer`, `model`, `osVersion`, `imei`, `freeStorageSpaceInBytes`, `totalStorageSpaceInBytes`, `owner`, `azureADDeviceId`, `enrolledAt`, `lastSynced`, `tenantId`) values (default, ?, ?, default, ?, ?, ?, default, default, default, default, default, default, ?, default, default, default, ?) on duplicate key update `name` = ?, `tenantId` = ?, `owner` = ?"#
             .with(mysql_async::Params::Positional(vec![id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.clone().into(),tenant_pk.clone().into(),name.clone().into(),tenant_pk.clone().into(),owner_pk.clone().into()]))
@@ -84,7 +89,7 @@ impl Db {
 impl Db {
     pub async fn get_policies_for_device(
         &self,
-        device_id: i32,
+        device_id: u64,
     ) -> Result<Vec<GetPoliciesForDeviceResult>, mysql_async::Error> {
         r#"(select `policies`.`id`, `policies`.`cuid`, `policies`.`name` from `policies` inner join `policy_assignables` on `policies`.`id` = `policy_assignables`.`policyPk` where (`policy_assignables`.`groupableVariant` = ? and `policy_assignables`.`groupableId` = ?)) union (select `policies`.`id`, `policies`.`cuid`, `policies`.`name` from `policies` inner join `policy_assignables` on `policies`.`id` = `policy_assignables`.`policyPk` inner join `group_assignables` on (`group_assignables`.`groupId` = `policy_assignables`.`groupableId` and `policy_assignables`.`groupableVariant` = ?) where (`group_assignables`.`groupableVariant` = ? and `group_assignables`.`groupableId` = ?))"#
             .with(mysql_async::Params::Positional(vec!["device".into(),device_id.clone().into(),"group".into(),"device".into(),device_id.clone().into()]))
@@ -95,14 +100,32 @@ impl Db {
     }
 }
 impl Db {
-    pub async fn set_device_data(
+    pub async fn get_device(
         &self,
-        device_id: i32,
-        key: String,
-        value: String,
+        device_id: String,
+    ) -> Result<Vec<GetDeviceResult>, mysql_async::Error> {
+        r#"select `id`, `tenantId` from `devices` where `devices`.`cuid` = ?"#
+            .with(mysql_async::Params::Positional(vec![device_id
+                .clone()
+                .into()]))
+            .map(&self.pool, |p: (u64, u64)| GetDeviceResult {
+                pk: p.0,
+                tenant_pk: p.1,
+            })
+            .await
+    }
+}
+impl Db {
+    pub async fn update_device_lastseen(
+        &self,
+        device_id: u64,
+        last_synced: NaiveDateTime,
     ) -> Result<(), mysql_async::Error> {
-        r#"insert into `device_windows_data_temp` (`id`, `key`, `key`, `deviceId`, `lastModified`) values (default, ?, ?, ?, default)"#
-            .with(mysql_async::Params::Positional(vec![key.clone().into(),value.clone().into(),device_id.clone().into()]))
+        r#"update `devices` set `lastSynced` = ? where `devices`.`id` = ?"#
+            .with(mysql_async::Params::Positional(vec![
+                last_synced.clone().into(),
+                device_id.clone().into(),
+            ]))
             .run(&self.pool)
             .await
             .map(|_| ())
@@ -111,7 +134,7 @@ impl Db {
 impl Db {
     pub async fn queued_device_actions(
         &self,
-        device_id: i32,
+        device_id: u64,
     ) -> Result<Vec<QueuedDeviceActionsResult>, mysql_async::Error> {
         r#"select `id`, `action`, `deviceId`, `createdBy`, `createdAt`, `deployedAt` from `device_actions` where (`device_actions`.`deviceId` = ? and `device_actions`.`deployedAt` is null)"#
             .with(mysql_async::Params::Positional(vec![device_id.clone().into()]))

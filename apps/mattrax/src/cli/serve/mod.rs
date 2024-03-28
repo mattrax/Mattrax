@@ -13,6 +13,7 @@ use rustls::{
 };
 use tokio::{net::TcpListener, sync::mpsc};
 use tracing::{error, info, warn};
+use x509_parser::{certificate::X509Certificate, der_parser::asn1_rs::FromDer};
 
 use crate::{api, cli::serve::acme::MattraxAcmeStore, config::ConfigManager, db::Db};
 
@@ -62,14 +63,10 @@ impl Command {
             port
         };
 
-        let params = CertificateParams::from_ca_cert_der(
-            &fs::read(data_dir.join("certs").join("identity.der")).unwrap(),
-        )
-        .unwrap();
-
-        let key_pair =
+        let identity_key =
             KeyPair::from_der(&fs::read(data_dir.join("certs").join("identity-key.der")).unwrap())
                 .unwrap();
+        let identity_cert = fs::read(data_dir.join("certs").join("identity.der")).unwrap();
         let db = Db::new(&config_manager.get().db_url);
         let shared_secret =
             Hmac::new_from_slice(config_manager.get().internal_secret.as_bytes()).unwrap();
@@ -79,9 +76,17 @@ impl Command {
             is_dev: cfg!(debug_assertions),
             server_port: port,
             db,
-            // TODO: Is calling generate each time, okay????
-            identity_cert: Certificate::generate_self_signed(params, &key_pair).unwrap(),
-            identity_key: key_pair,
+            identity_cert_rcgen: Certificate::generate_self_signed(
+                CertificateParams::from_ca_cert_der(&identity_cert).unwrap(),
+                &identity_key,
+            )
+            .unwrap(),
+            identity_cert_x509: {
+                // TODO: We *have* to leak memory right because of how `x509_parser` is built. Should be fixed by https://github.com/rusticata/x509-parser/issues/76
+                let public_key = Vec::leak(identity_cert);
+                X509Certificate::from_der(public_key).unwrap().1.to_owned()
+            },
+            identity_key,
             shared_secret,
             acme_tx,
         });
