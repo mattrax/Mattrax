@@ -13,6 +13,7 @@ pub struct Policy {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
+    // The key can be anything and is used to properly diff the policy between versions.
     #[serde(default)]
     pub configurations: HashMap<String, Configuration>,
 }

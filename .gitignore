@@ -60,3 +60,5 @@ result.mobileconfig
 
 # Oscar's staging area
 /_
+/policy.yaml
+/out

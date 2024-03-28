@@ -11,6 +11,7 @@ dist = true
 [dependencies]
 mattrax-utils = { path = "../../crates/utils" }
 mattrax-policy = { path = "../../crates/policy" }
+ms-mdm = { path = "../../crates/ms-mdm" }
 
 clap = { version = "4.5.3", features = ["derive"] }
 tracing-subscriber = "0.3.18"
@@ -23,3 +24,4 @@ graph-rs-sdk = "2.0.0-beta.0"
 reqwest = { version = "0.12.0", features = ["json"] }
 urlencoding = "2.1.3"
 open = "5.1.2"
+easy-xml = "0.1.4"

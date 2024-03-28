@@ -1,9 +1,10 @@
-use std::{error::Error, fs, path::PathBuf};
+use std::path::PathBuf;
 
-use mattrax_policy::Policy;
 use reqwest::{Client, Url};
 use serde_json::json;
 use tracing::info;
+
+use crate::load;
 
 #[derive(clap::Args)]
 #[command(about = "Deploy a policy to Mattrax")]
@@ -24,15 +25,9 @@ pub struct Command {
 
 impl Command {
     pub async fn run(&self, base_url: Url, client: Client) -> Result<(), String> {
-        if !self.path.exists() {
-            return Err(format!("Policy file does not exist {:?}", self.path));
-        }
+        let policy = load::policy(&self.path)?;
 
-        let yaml = fs::read_to_string(&self.path)
-            .map_err(|err| format!("Error reading policy file: {err}"))?;
-
-        let policy = serde_yaml::from_str::<Policy>(&yaml)
-            .map_err(|err| format!("Error parsing policy file: {err}"))?;
+        // TODO: Warning for any yaml comments as they will be lost
 
         let url = base_url
             .join(&format!(

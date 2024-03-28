@@ -3,7 +3,7 @@ use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 use crate::{Add, Alert, Atomic, Delete, Exec, Final, Get, Replace, Results, Status};
 
 /// The SyncBody element type serves as the container for the body or contents of the SyncML message.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, XmlDeserialize, XmlSerialize)]
 /// This *SHOULD* be set when 'SyncApplicationVersion' is greater than '3.0' in the DMCLient CSP but we just set it regardless.
 #[easy_xml(namespace = { "msft": "http://schemas.microsoft.com/MobileDevice/MDM" })]
 pub struct SyncBody {

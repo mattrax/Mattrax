@@ -4,6 +4,7 @@ use tracing::error;
 use tracing_subscriber::EnvFilter;
 
 mod cli;
+mod load;
 
 #[tokio::main]
 async fn main() {
@@ -50,6 +51,7 @@ async fn main() {
         cli::Commands::Deploy(cmd) => cmd.run(base_uri, client).await,
         cli::Commands::Login(cmd) => cmd.run(base_uri, client).await,
         cli::Commands::Open(cmd) => cmd.run(base_uri).await,
+        cli::Commands::Export(cmd) => cmd.run().await,
     };
 
     if let Err(e) = result {
