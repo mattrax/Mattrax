@@ -369,15 +369,6 @@ export const deviceActions = mysqlTable("device_actions", {
 	deployedAt: timestamp("deployedAt"),
 });
 
-// TODO: Remove this table
-export const deviceWindowsData = mysqlTable("device_windows_data_temp", {
-	id: serial("id").primaryKey(),
-	key: varchar("key", { length: 256 }).notNull(),
-	value: varchar("key", { length: 2048 }).notNull(),
-	devicePk: serialRelation("deviceId").references(() => devices.pk),
-	lastModified: timestamp("lastModified").notNull().defaultNow(),
-});
-
 // export const deviceSoftwareInventories = mysqlTable("device_software_inventory", {});
 
 export const GroupAssignableVariants = {

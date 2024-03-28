@@ -1,14 +1,29 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use axum::{extract::State, routing::post, Router};
-use hyper::header;
+use axum::{
+    extract::{ConnectInfo, State},
+    response::IntoResponse,
+    routing::post,
+    Router,
+};
+use chrono::Local;
+use hyper::{header, StatusCode};
+use mattrax_policy::{
+    windows::{AnyValue, WindowsConfiguration},
+    Configuration, Policy,
+};
+use ms_mde::MICROSOFT_DEVICE_ID_EXTENSION;
 use ms_mdm::{
     Add, Cmd, CmdId, CmdRef, Data, Exec, Final, Format, Item, Meta, MsgRef, Replace, Source,
     Status, SyncBody, SyncBodyChild, SyncHdr, SyncML, Target, MAX_REQUEST_BODY_SIZE,
 };
-use tracing::error;
+use tracing::{debug, error, info, Instrument};
+use x509_parser::{
+    certificate::X509Certificate,
+    der_parser::{asn1_rs::FromDer, Oid},
+};
 
-use crate::api::Context;
+use crate::api::{ConnectInfoTy, Context};
 
 // // CommandID is a helper for generating SyncML Command ID's
 // type CommandID int32
@@ -22,8 +37,33 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
     Router::new().route(
         "/Manage.svc",
         post(
-            |State(state): State<Arc<Context>>, body: String| async move {
-                // TODO: Mutual TLS authentication
+            |ConnectInfo(info): ConnectInfo<ConnectInfoTy>,
+             State(state): State<Arc<Context>>,
+             body: String| async move {
+                let Some((common_name, device_id)) = authenticate(&state.identity_cert_x509, info)
+                else {
+                    return StatusCode::UNAUTHORIZED.into_response();
+                };
+
+                // TODO: Account for the AzureAD user (`Authorization` header) in this
+                let upn = if common_name == device_id {
+                    None
+                } else {
+                    Some(common_name)
+                };
+
+                info!(
+                    "MDM Checkin from device '{}' as '{}'",
+                    device_id,
+                    upn.as_deref().unwrap_or("system")
+                );
+
+                // TODO
+                // async move {
+
+                // }.instrument(span).await
+
+                // TODO: Update devices last checkin time
 
                 let cmd = match SyncML::from_str(&body) {
                     Ok(cmd) => cmd,
@@ -35,6 +75,24 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                 // println!("{:#?}", cmd);
 
                 println!("{:?}", body);
+
+                // TODO: Error handling
+                let Some(device) = state
+                    .db
+                    .get_device(device_id)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .nth(0)
+                else {
+                    return StatusCode::NOT_FOUND.into_response(); // TODO: Proper SyncML error
+                };
+
+                state
+                    .db
+                    .update_device_lastseen(device.pk, Local::now().naive_utc())
+                    .await
+                    .unwrap(); // TODO: Error handling
 
                 // TODO: How to properly report errors to the device so they show up in logs????
                 // if cmd.Header.VerDTD != "1.2" {
@@ -129,8 +187,6 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
 
                 // TODO: Take into account max message size
 
-                let device_id = 1; // TODO: Work this out properly after auth
-
                 for cmd in cmd.child.children.iter() {
                     println!("{:#?}", cmd);
                     match cmd {
@@ -174,7 +230,81 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
 
                 // TODO: Do stuff on more than the first request.
                 if cmd.hdr.msg_id == "1" {
-                    let actions = state.db.queued_device_actions(device_id).await.unwrap(); // TODO: Error handling
+                    {
+                        let policies = state.db.get_device_policies(device.pk).await.unwrap(); // TODO: Error handling
+
+                        println!("POLICIES: {:?}", policies); // TODO
+
+                        // TODO: This is an N + 1, avoid that + only deploy a certain number of policies at once so we don't overflow the SyncML body
+                        for policy in policies {
+                            let latest_version = state
+                                .db
+                                .get_policy_latest_version(policy.pk)
+                                .await
+                                .unwrap()
+                                .into_iter()
+                                .nth(0)
+                                .unwrap(); // TODO: Error handling
+
+                            info!(
+                                "Deploying policy '{}' of version '{}' to device '{}'",
+                                policy.pk, latest_version.pk, device.pk
+                            );
+
+                            let configurations: HashMap<String, Configuration> =
+                                serde_json::from_value(latest_version.data.0).unwrap();
+                            // TODO: Error handling
+
+                            let mut windows_entries = HashMap::new();
+                            for (_, configuration) in configurations {
+                                match configuration {
+                                    Configuration::Windows(windows) => match windows {
+                                        WindowsConfiguration::Custom { custom } => {
+                                            for entry in custom {
+                                                windows_entries
+                                                    .insert(entry.oma_uri.clone(), entry);
+                                            }
+                                        }
+                                    },
+                                    // Skip anything that's not for Windows
+                                    Configuration::Apple(_)
+                                    | Configuration::Android(_)
+                                    | Configuration::Script(_) => {}
+                                }
+                            }
+
+                            // TODO: How do we deal with conflicting configurations being set across different policies???
+
+                            for (_, entry) in windows_entries {
+                                // TODO: Do a proper diff to work out the type of SyncML command should be `Add` or `Replace`.
+                                // TODO: Also work out if any properties needing to be `Removed`
+                                children.push(SyncBodyChild::Add(Add {
+                                    cmd_id: next_cmd_id(),
+                                    meta: None,
+                                    item: vec![Item {
+                                        source: None,
+                                        target: Some(Target::new(entry.oma_uri)),
+                                        meta: Some(Meta {
+                                            // TODO: Derive this from the configuration itself
+                                            format: Some(Format {
+                                                xmlns: "syncml:metinf".into(),
+                                                value: "int".into(),
+                                            }),
+                                            ttype: Some("text/plain".into()),
+                                        }),
+                                        data: Some(match entry.value {
+                                            AnyValue::String(value) => value,
+                                            AnyValue::Int(value) => value.to_string(),
+                                            AnyValue::Bool(value) => value.to_string(),
+                                            AnyValue::Float(value) => value.to_string(),
+                                        }),
+                                    }],
+                                }));
+                            }
+                        }
+                    }
+
+                    let actions = state.db.queued_device_actions(device.pk).await.unwrap(); // TODO: Error handling
                     for action in actions {
                         // TODO: Can we make this export as a Rust enum so it's typesafe??
                         match &*action.action {
@@ -278,24 +408,24 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                                 // }));
 
                                 // This works cause it's user scoped.
-                                children.push(SyncBodyChild::Add(Add {
-                                    cmd_id: next_cmd_id(),
-                                    meta: None,
-                                    item: vec![Item {
-                                        source: None,
-                                        target: Some(Target::new(
-                                            "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator",
-                                        )),
-                                        meta: Some(Meta {
-                                            format: Some(Format {
-                                                xmlns: "syncml:metinf".into(),
-                                                value: "int".into(),
-                                            }),
-                                            ttype: Some("text/plain".into()),
-                                        }),
-                                        data: Some("0".into()),
-                                    }],
-                                }));
+                                // children.push(SyncBodyChild::Add(Add {
+                                //     cmd_id: next_cmd_id(),
+                                //     meta: None,
+                                //     item: vec![Item {
+                                //         source: None,
+                                //         target: Some(Target::new(
+                                //             "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator",
+                                //         )),
+                                //         meta: Some(Meta {
+                                //             format: Some(Format {
+                                //                 xmlns: "syncml:metinf".into(),
+                                //                 value: "int".into(),
+                                //             }),
+                                //             ttype: Some("text/plain".into()),
+                                //         }),
+                                //         data: Some("0".into()),
+                                //     }],
+                                // }));
 
                                 // TODO: Deal with result and mark as done so it doesn't reboot on every checkin.
                             }
@@ -336,9 +466,59 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                     [(header::CONTENT_TYPE, "application/vnd.syncml.dm+xml")],
                     result,
                 )
+                    .into_response()
             },
         ),
     )
+}
+
+fn authenticate(
+    root_cert: &X509Certificate<'static>,
+    info: ConnectInfoTy,
+) -> Option<(String, String)> {
+    let Some(certs) = info.client_cert else {
+        debug!("No client certificate provided");
+        return None;
+    };
+
+    let first = certs.first();
+    let Some(cert) = first else {
+        debug!("No client certificate provided");
+        return None;
+    };
+
+    let (_, cert) = X509Certificate::from_der(&cert).unwrap(); // TODO: Error handling
+
+    let Ok(_) = cert.verify_signature(Some(root_cert.public_key())) else {
+        debug!("Client certificate was not signed by Mattrax!");
+        return None;
+    };
+
+    // TODO: Error handling
+    let device_id = String::from_utf8(
+        cert.extensions_map()
+            .unwrap()
+            .get(&Oid::from(MICROSOFT_DEVICE_ID_EXTENSION).unwrap())
+            .unwrap()
+            .value
+            .to_vec(),
+    )
+    .unwrap();
+
+    let common_name = cert
+        .subject()
+        .iter_common_name()
+        .nth(0)
+        .unwrap()
+        .attr_value()
+        .as_string()
+        .unwrap(); // TODO: Error handling
+
+    if !cert.validity().is_valid() {
+        info!("Client certificate for device '{}' has expired", device_id);
+    }
+
+    Some((common_name, device_id))
 }
 
 // TODO:

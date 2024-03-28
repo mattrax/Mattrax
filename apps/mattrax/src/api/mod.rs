@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    extract::{Request, State},
+    extract::{connect_info::Connected, Request, State},
     http::HeaderValue,
     middleware::{self, Next},
     response::Response,
@@ -10,13 +10,27 @@ use axum::{
 };
 use hmac::Hmac;
 use rcgen::{Certificate, KeyPair};
+use rustls::pki_types::CertificateDer;
 use sha2::Sha256;
 use tokio::sync::mpsc;
+use x509_parser::certificate::X509Certificate;
 
 use crate::{config::ConfigManager, db::Db};
 
 mod internal;
 mod mdm;
+
+#[derive(Clone, Debug)]
+pub struct ConnectInfoTy {
+    pub remote_addr: SocketAddr,
+    pub client_cert: Option<Vec<CertificateDer<'static>>>,
+}
+
+impl Connected<Self> for ConnectInfoTy {
+    fn connect_info(this: Self) -> Self {
+        this
+    }
+}
 
 pub struct Context {
     pub config: ConfigManager,
@@ -26,7 +40,8 @@ pub struct Context {
 
     pub shared_secret: Hmac<Sha256>,
 
-    pub identity_cert: Certificate,
+    pub identity_cert_rcgen: Certificate,
+    pub identity_cert_x509: X509Certificate<'static>,
     pub identity_key: KeyPair,
 
     pub acme_tx: mpsc::Sender<Vec<String>>,

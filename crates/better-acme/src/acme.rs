@@ -194,7 +194,7 @@ impl<S: Store> Acme<S> {
             None => {
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
-                    "Unable to find certificate for domain '{server_name}'",
+                    format!("Unable to find certificate for domain '{server_name}'"),
                 ));
             }
         };

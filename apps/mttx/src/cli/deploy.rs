@@ -15,9 +15,9 @@ pub struct Command {
     #[arg(
         short,
         long,
-        help = "Update policy in Mattrax without creating a new version. You will be required to click deploy manually."
+        help = "Update the policy without triggering a deployment. You can deploy manually from the UI!"
     )]
-    no_deploy: bool,
+    push_only: bool,
 
     #[arg(short, long, help = "The message to include with the policy version")]
     message: Option<String>,
@@ -36,7 +36,7 @@ impl Command {
             ))
             .map_err(|err| format!("Error constructing url to Mattrax API: {err}"))?;
 
-        let comment = (!self.no_deploy).then(|| {
+        let comment = (!self.push_only).then(|| {
             self.message.clone().unwrap_or_else(|| {
                 std::process::Command::new("git")
                     .args(["rev-parse", "--short", "HEAD"])
