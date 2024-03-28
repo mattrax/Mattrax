@@ -133,7 +133,7 @@ function FeedbackPopover(props: ParentProps) {
 	return (
 		<Popover open={open()} onOpenChange={setOpen}>
 			<PopoverTrigger asChild>{props.children}</PopoverTrigger>
-			<PopoverContent class="flex flex-col gap-2 md:w-[350px]">
+			<PopoverContent class="flex flex-col gap-2 md:w-[350px] p-4">
 				<p class="text-sm text-gray-700">
 					We welcome all feedback or bug reports:
 				</p>

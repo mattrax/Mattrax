@@ -6,14 +6,15 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@mattrax/ui";
-import { type RouteDefinition, useNavigate } from "@solidjs/router";
+import { type RouteDefinition, useNavigate, A } from "@solidjs/router";
 import { For, type ParentProps, Suspense } from "solid-js";
 import { z } from "zod";
 
-import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
 import { AuthContext, useAuth } from "~/components/AuthContext";
+import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
 import { OrgContext, useOrg } from "./o.[orgSlug]/Context";
 import { useZodParams } from "~/lib/useZodParams";
+import { MultiSwitcher } from "./MultiSwitcher";
 import { trpc } from "~/lib";
 
 export function useOrgSlug() {
@@ -76,11 +77,18 @@ export const route = {
 	info: {
 		NAV_ITEMS,
 		BREADCRUMB: {
-			Component: () => {
+			Component: (props: any) => {
 				return (
 					<AuthContext>
 						<OrgContext>
-							<OrgSwitcher />
+							<div class="flex flex-row items-center py-1 gap-2">
+								<A href={props.href}>{useOrg()().name}</A>
+								<MultiSwitcher>
+									<As component={Button} variant="ghost" size="iconSmall">
+										<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+									</As>
+								</MultiSwitcher>
+							</div>
 						</OrgContext>
 					</AuthContext>
 				);
