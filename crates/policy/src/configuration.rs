@@ -18,6 +18,12 @@ pub enum Configuration {
         // raw: String,
     },
 
+    Script {
+        run: String,
+        // r#type: String, // TODO: Maybe autodetection from shebang???
+        // trigger: String,
+    },
+
     /// TODO
     WiFi {
         // TODO: Enterprise WiFi's

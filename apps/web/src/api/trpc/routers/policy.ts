@@ -257,8 +257,15 @@ export const policyRouter = createTRPCRouter({
 
 			await ctx.ensureTenantMember(policy.tenantPk);
 
-			// TODO: Only allow deploying if the policy has changed
-			// if(policy.data)
+			const [lastVersion] = await db
+				.select({ data: policyVersions.data })
+				.from(policyVersions)
+				.where(and(eq(policyVersions.policyPk, policy.pk)))
+				.orderBy(desc(policyVersions.createdAt))
+				.limit(1);
+
+			if (generatePolicyDiff(lastVersion?.data ?? {}, policy.data).length === 0)
+				throw new Error("policy has not changed");
 
 			await db.insert(policyVersions).values({
 				policyPk: policy.pk,
@@ -334,7 +341,7 @@ export const policyRouter = createTRPCRouter({
 });
 
 // `p1` should be older than `p2` for the result to be correct
-function generatePolicyDiff(
+export function generatePolicyDiff(
 	p1: Record<string, Configuration>,
 	p2: Record<string, Configuration>,
 ) {

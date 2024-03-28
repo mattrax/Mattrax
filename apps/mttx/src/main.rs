@@ -47,8 +47,9 @@ async fn main() {
     let result = match cli.command {
         cli::Commands::Validate(cmd) => cmd.run(),
         cli::Commands::Pull(cmd) => cmd.run(base_uri, client).await,
-        cli::Commands::Push(cmd) => cmd.run(base_uri, client).await,
+        cli::Commands::Deploy(cmd) => cmd.run(base_uri, client).await,
         cli::Commands::Login(cmd) => cmd.run(base_uri, client).await,
+        cli::Commands::Open(cmd) => cmd.run(base_uri).await,
     };
 
     if let Err(e) = result {

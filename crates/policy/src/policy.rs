@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -12,5 +14,5 @@ pub struct Policy {
     pub description: Option<String>,
 
     #[serde(default)]
-    pub configurations: Vec<Configuration>,
+    pub configurations: HashMap<String, Configuration>,
 }

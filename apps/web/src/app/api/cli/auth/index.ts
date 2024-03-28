@@ -5,6 +5,8 @@ import { cliAuthCodes, db } from "~/db";
 import { env } from "~/env";
 
 export async function POST() {
+	// TODO: Authenticated user
+
 	const id = createId();
 
 	await db.insert(cliAuthCodes).values({ code: id });
