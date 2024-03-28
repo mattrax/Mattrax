@@ -1,7 +1,12 @@
 import { For, Match, Show, Switch, startTransition } from "solid-js";
 import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
 import { InputField, Form, createZodForm } from "@mattrax/ui/forms";
-import { A, Navigate, RouteDefinition, useNavigate } from "@solidjs/router";
+import {
+	A,
+	Navigate,
+	type RouteDefinition,
+	useNavigate,
+} from "@solidjs/router";
 import { z } from "zod";
 
 import { trpc } from "~/lib";

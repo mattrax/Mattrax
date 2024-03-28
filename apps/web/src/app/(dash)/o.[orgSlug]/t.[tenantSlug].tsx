@@ -1,11 +1,11 @@
 import { type ParentProps, Show, Suspense, startTransition } from "solid-js";
-import { type RouteDefinition, useNavigate } from "@solidjs/router";
+import { type RouteDefinition, useNavigate, A } from "@solidjs/router";
 import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { AuthContext } from "~c/AuthContext";
-import { TenantContext } from "./t.[tenantSlug]/Context";
+import { TenantContext, useTenant } from "./t.[tenantSlug]/Context";
 import { TenantSwitcher } from "./t.[tenantSlug]/TenantSwitcher";
 
 export function useTenantSlug() {
@@ -34,11 +34,14 @@ export const route = {
 				return (
 					<AuthContext>
 						<TenantContext>
-							<TenantSwitcher
-								setActiveTenant={(slug) => {
-									startTransition(() => navigate(`${props.path}/../${slug}`));
-								}}
-							/>
+							<div class="flex flex-row items-center py-1 gap-2">
+								<A href={props.href}>{useTenant()().name}</A>
+								<TenantSwitcher
+									setActiveTenant={(slug) => {
+										startTransition(() => navigate(`${props.path}/../${slug}`));
+									}}
+								/>
+							</div>
 						</TenantContext>
 					</AuthContext>
 				);

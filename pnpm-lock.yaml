@@ -316,9 +316,6 @@ importers:
       '@mattrax/email':
         specifier: workspace:*
         version: link:../email
-      '@mattrax/mdm':
-        specifier: workspace:*
-        version: link:../../packages/mdm
       '@mattrax/ms-graph':
         specifier: workspace:*
         version: link:../../packages/ms-graph
@@ -536,22 +533,6 @@ importers:
       drizzle-orm:
         specifier: ^0.30.1
         version: 0.30.1(@planetscale/database@1.16.0)(mysql2@3.9.2)(react@18.2.0)
-      plist:
-        specifier: ^3.1.0
-        version: 3.1.0
-      zod:
-        specifier: ^3.22.4
-        version: 3.22.4
-    devDependencies:
-      '@types/plist':
-        specifier: ^3.0.5
-        version: 3.0.5
-
-  packages/mdm:
-    dependencies:
-      '@mattrax/ms-graph':
-        specifier: workspace:*
-        version: link:../ms-graph
       plist:
         specifier: ^3.1.0
         version: 3.1.0

@@ -17,7 +17,6 @@
 		"@lucia-auth/adapter-drizzle": "^1.0.3",
 		"@mattrax/drizzle-to-rs": "workspace:*",
 		"@mattrax/email": "workspace:*",
-		"@mattrax/mdm": "workspace:*",
 		"@mattrax/ms-graph": "workspace:*",
 		"@mattrax/ui": "workspace:*",
 		"@microsoft/microsoft-graph-client": "^3.0.7",
