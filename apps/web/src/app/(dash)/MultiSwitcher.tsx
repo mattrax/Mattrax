@@ -8,7 +8,7 @@ import {
 	PopoverTrigger,
 } from "@mattrax/ui";
 import { Combobox } from "@kobalte/core";
-import { For, ParentProps, createMemo, createSignal } from "solid-js";
+import { For, type ParentProps, createMemo, createSignal } from "solid-js";
 
 import { OrgContext } from "./o.[orgSlug]/Context";
 import { TenantContext } from "./o.[orgSlug]/t.[tenantSlug]/Context";
