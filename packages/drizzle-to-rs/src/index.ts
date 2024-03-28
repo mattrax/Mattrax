@@ -61,6 +61,7 @@ export function defineOperation<const T extends RustArgs = never>(
 		number: "u64",
 		date: "NaiveDateTime",
 		boolean: "bool",
+		json: "mysql_async::Deserialized<serde_json::Value>",
 	};
 
 	const op = query.query(
@@ -128,7 +129,7 @@ export function defineOperation<const T extends RustArgs = never>(
 									)}.clone().into()`;
 								}
 
-								return `"${p}".into()`;
+								return `${typeof p === "number" ? p : `"${p}"`}.into()`;
 							}) // TODO: Only call `.clone()` when the value is used multiple times
 							.join(",")}]))
             ` +

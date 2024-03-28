@@ -1,7 +1,7 @@
 import path from "node:path";
 import { defineOperation, exportQueries } from "@mattrax/drizzle-to-rs";
 import dotenv from "dotenv";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { union } from "drizzle-orm/mysql-core";
 import {
 	certificates,
@@ -11,6 +11,7 @@ import {
 	groupAssignables,
 	policies,
 	policyAssignables,
+	policyVersions,
 } from ".";
 
 dotenv.config({
@@ -87,7 +88,7 @@ exportQueries(
 					}),
 		}),
 		defineOperation({
-			name: "get_policies_for_device",
+			name: "get_device_policies",
 			args: {
 				device_id: "u64",
 			},
@@ -110,7 +111,6 @@ exportQueries(
 							eq(policyAssignables.pk, args.device_id),
 						),
 					);
-
 				// Any policy scoped to a group containing the device.
 				const b = db
 					.select({
@@ -136,9 +136,22 @@ exportQueries(
 							eq(groupAssignables.pk, args.device_id),
 						),
 					);
-
 				return union(a, b);
 			},
+		}),
+		// TODO: Can we squash this into the top query to avoid N + 1 problems???
+		defineOperation({
+			name: "get_policy_latest_version",
+			args: {
+				policy_id: "u64",
+			},
+			query: (args) =>
+				db
+					.select({ pk: policyVersions.pk, data: policyVersions.data })
+					.from(policyVersions)
+					.where(and(eq(policyVersions.policyPk, args.policy_id)))
+					.orderBy(desc(policyVersions.createdAt))
+					.limit(1),
 		}),
 		defineOperation({
 			name: "get_device",

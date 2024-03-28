@@ -14,6 +14,7 @@ mattrax-utils = { path = "../../crates/utils" }
 better-acme = { path = "../../crates/better-acme" }
 ms-mdm = { path = "../../crates/ms-mdm" }
 ms-mde = { path = "../../crates/ms-mde" }
+mattrax-policy = { path = "../../crates/policy" }
 
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"

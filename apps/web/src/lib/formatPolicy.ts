@@ -6,7 +6,6 @@ import type { Configuration } from "./policy";
 export function formatPolicy(configuration: Configuration) {
 	return match(configuration.type)
 		.with("script", () => `${true ? "Bash" : "Powershell"} Script`) // TODO: Properly render script type
-		.with("apple_custom", () => "Apple Custom") // TODO: Render OMA URI's
-		.with("windows_custom", () => "Windows Custom") // TODO: Render OMA URI's
+		.with("windows", () => "Windows") // TODO: Make this render more specific
 		.exhaustive();
 }

@@ -10,10 +10,15 @@ pub struct GetCertificateResult {
 }
 
 #[derive(Debug)]
-pub struct GetPoliciesForDeviceResult {
+pub struct GetDevicePoliciesResult {
     pub pk: u64,
     pub id: String,
     pub name: String,
+}
+#[derive(Debug)]
+pub struct GetPolicyLatestVersionResult {
+    pub pk: u64,
+    pub data: mysql_async::Deserialized<serde_json::Value>,
 }
 #[derive(Debug)]
 pub struct GetDeviceResult {
@@ -87,14 +92,27 @@ impl Db {
     }
 }
 impl Db {
-    pub async fn get_policies_for_device(
+    pub async fn get_device_policies(
         &self,
         device_id: u64,
-    ) -> Result<Vec<GetPoliciesForDeviceResult>, mysql_async::Error> {
+    ) -> Result<Vec<GetDevicePoliciesResult>, mysql_async::Error> {
         r#"(select `policies`.`id`, `policies`.`cuid`, `policies`.`name` from `policies` inner join `policy_assignables` on `policies`.`id` = `policy_assignables`.`policyPk` where (`policy_assignables`.`groupableVariant` = ? and `policy_assignables`.`groupableId` = ?)) union (select `policies`.`id`, `policies`.`cuid`, `policies`.`name` from `policies` inner join `policy_assignables` on `policies`.`id` = `policy_assignables`.`policyPk` inner join `group_assignables` on (`group_assignables`.`groupId` = `policy_assignables`.`groupableId` and `policy_assignables`.`groupableVariant` = ?) where (`group_assignables`.`groupableVariant` = ? and `group_assignables`.`groupableId` = ?))"#
             .with(mysql_async::Params::Positional(vec!["device".into(),device_id.clone().into(),"group".into(),"device".into(),device_id.clone().into()]))
-            .map(&self.pool, |p: (u64,String,String,)| GetPoliciesForDeviceResult {
+            .map(&self.pool, |p: (u64,String,String,)| GetDevicePoliciesResult {
                 pk: p.0,id: p.1,name: p.2
+              })
+            .await
+    }
+}
+impl Db {
+    pub async fn get_policy_latest_version(
+        &self,
+        policy_id: u64,
+    ) -> Result<Vec<GetPolicyLatestVersionResult>, mysql_async::Error> {
+        r#"select `id`, `data` from `policy_versions` where `policy_versions`.`policyId` = ? order by `policy_versions`.`createdAt` desc limit ?"#
+            .with(mysql_async::Params::Positional(vec![policy_id.clone().into(),1.into()]))
+            .map(&self.pool, |p: (u64,mysql_async::Deserialized<serde_json::Value>,)| GetPolicyLatestVersionResult {
+                pk: p.0,data: p.1
               })
             .await
     }
