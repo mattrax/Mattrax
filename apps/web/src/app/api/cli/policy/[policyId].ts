@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { APIEvent } from "@solidjs/start/server";
-import { db, policies, policyVersions } from "~/db";
+import { db, policies, policyDeploy } from "~/db";
 import { and, eq, desc } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { generatePolicyDiff } from "~/api/trpc/routers/policy";
@@ -56,10 +56,10 @@ export async function POST({ request, params }: APIEvent) {
 	const authorId = 2;
 
 	const [lastVersion] = await db
-		.select({ data: policyVersions.data })
-		.from(policyVersions)
-		.where(and(eq(policyVersions.policyPk, policy.pk)))
-		.orderBy(desc(policyVersions.createdAt))
+		.select({ data: policyDeploy.data })
+		.from(policyDeploy)
+		.where(and(eq(policyDeploy.policyPk, policy.pk)))
+		.orderBy(desc(policyDeploy.doneAt))
 		.limit(1);
 
 	if (generatePolicyDiff(lastVersion?.data ?? {}, body.data.data).length === 0)
@@ -80,7 +80,7 @@ export async function POST({ request, params }: APIEvent) {
 		const versionId = createId();
 		await db.transaction(async (db) => {
 			await updatePolicy();
-			await db.insert(policyVersions).values({
+			await db.insert(policyDeploy).values({
 				id: versionId,
 				policyPk: policy.pk,
 				data: body.data.data,

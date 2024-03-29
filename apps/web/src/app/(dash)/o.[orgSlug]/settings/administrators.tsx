@@ -15,33 +15,33 @@ import {
 } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { useAuth } from "~c/AuthContext";
-import { useTenant } from "../Context";
-import { useTenantSlug } from "../../t.[tenantSlug]";
+import { useOrg } from "../Context";
+import { useOrgSlug } from "../../o.[orgSlug]";
 
 export const route = {
 	load: ({ params }) => {
-		trpc.useContext().tenant.admins.list.ensureData({
-			tenantSlug: params.tenantSlug!,
+		trpc.useContext().org.admins.list.ensureData({
+			orgSlug: params.orgSlug!,
 		});
 	},
 } satisfies RouteDefinition;
 
 export default function Page() {
 	const auth = useAuth();
-	const tenant = useTenant();
+	const org = useOrg();
 
-	const invites = trpc.tenant.admins.invites.useQuery(() => ({
-		tenantSlug: tenant().slug,
+	const invites = trpc.org.admins.invites.useQuery(() => ({
+		orgSlug: org().slug,
 	}));
 
-	const administrators = trpc.tenant.admins.list.useQuery(() => ({
-		tenantSlug: tenant().slug,
+	const administrators = trpc.org.admins.list.useQuery(() => ({
+		orgSlug: org().slug,
 	}));
 
-	const removeInvite = trpc.tenant.admins.removeInvite.useMutation(() => ({
+	const removeInvite = trpc.org.admins.removeInvite.useMutation(() => ({
 		onSuccess: () => invites.refetch(),
 	}));
-	const removeAdmin = trpc.tenant.admins.remove.useMutation(() => ({
+	const removeAdmin = trpc.org.admins.remove.useMutation(() => ({
 		onSuccess: () => administrators.refetch(),
 	}));
 
@@ -69,7 +69,7 @@ export default function Page() {
 												</div>
 											</div>
 											<div>
-												{auth().id === tenant().ownerId && (
+												{auth().id === org().ownerId && (
 													<Button
 														variant="destructive"
 														size="sm"
@@ -85,7 +85,7 @@ export default function Page() {
 																action: "Remove",
 																onConfirm: async () =>
 																	await removeInvite.mutateAsync({
-																		tenantSlug: tenant().slug,
+																		orgSlug: org().slug,
 																		email: invite.email,
 																	}),
 															});
@@ -113,7 +113,7 @@ export default function Page() {
 												)}
 											</div>
 											<div>
-												{auth().id === tenant().ownerId && !admin.isOwner && (
+												{auth().id === org().ownerId && !admin.isOwner && (
 													<Button
 														variant="destructive"
 														size="sm"
@@ -130,7 +130,7 @@ export default function Page() {
 																action: "Remove",
 																onConfirm: async () =>
 																	await removeAdmin.mutateAsync({
-																		tenantSlug: tenant().slug,
+																		orgSlug: org().slug,
 																		adminId: admin.id,
 																	}),
 															});
@@ -153,14 +153,14 @@ export default function Page() {
 }
 
 function InviteAdminCard() {
-	const tenantSlug = useTenantSlug();
+	const orgSlug = useOrgSlug();
 	const trpcCtx = trpc.useContext();
 
-	const inviteAdmin = trpc.tenant.admins.sendInvite.useMutation(() => ({
+	const inviteAdmin = trpc.org.admins.sendInvite.useMutation(() => ({
 		onSuccess: async () => {
 			await Promise.allSettled([
-				trpcCtx.tenant.admins.invites.refetch(),
-				trpcCtx.tenant.admins.list.refetch(),
+				trpcCtx.org.admins.invites.refetch(),
+				trpcCtx.org.admins.list.refetch(),
 			]);
 			form.setFieldValue("email", "");
 		},
@@ -171,7 +171,7 @@ function InviteAdminCard() {
 		onSubmit: ({ value }) =>
 			inviteAdmin.mutateAsync({
 				email: value.email,
-				tenantSlug: tenantSlug(),
+				orgSlug: orgSlug(),
 			}),
 	});
 

@@ -1,4 +1,3 @@
-import { createId } from "@paralleldrive/cuid2";
 import { count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { union } from "drizzle-orm/mysql-core";
@@ -8,17 +7,20 @@ import {
 	applications,
 	auditLog,
 	db,
+	deviceActions,
 	devices,
+	domains,
+	groupAssignables,
 	groups,
 	identityProviders,
-	organisationTenants,
 	policies,
-	tenantAccounts,
+	policyAssignables,
+	policyDeploy,
+	policyDeployStatus,
 	tenants,
 	users,
 } from "~/db";
 import { createTRPCRouter, orgProcedure, tenantProcedure } from "../../helpers";
-import { adminsRouter } from "./admins";
 import { identityProviderRouter } from "./identityProvider";
 import { membersRouter } from "./members";
 import { randomSlug } from "~/api/utils";
@@ -57,21 +59,9 @@ export const tenantRouter = createTRPCRouter({
 			const slug = await db.transaction(async (db) => {
 				const slug = randomSlug(input.name);
 
-				const result = await db.insert(tenants).values({
-					slug,
-					id: createId(),
+				await db.insert(tenants).values({
 					name: input.name,
-					ownerPk: ctx.account.pk,
-					orgPk: ctx.org.pk,
-				});
-				const tenantPk = Number.parseInt(result.insertId);
-
-				await db.insert(tenantAccounts).values({
-					tenantPk,
-					accountPk: ctx.account.pk,
-				});
-				await db.insert(organisationTenants).values({
-					tenantPk,
+					slug,
 					orgPk: ctx.org.pk,
 				});
 
@@ -105,26 +95,6 @@ export const tenantRouter = createTRPCRouter({
 				})
 				.where(eq(tenants.pk, ctx.tenant.pk));
 		}),
-
-	enrollmentInfo: tenantProcedure.query(async ({ ctx }) =>
-		db
-			.select({
-				enrollmentEnabled: tenants.enrollmentEnabled,
-			})
-			.from(tenants)
-			.where(eq(tenants.pk, ctx.tenant.pk))
-			.then((rows) => rows[0]),
-	),
-	setEnrollmentInfo: tenantProcedure
-		.input(z.object({ enrollmentEnabled: z.boolean() }))
-		.mutation(async ({ ctx, input }) =>
-			db
-				.update(tenants)
-				.set({
-					enrollmentEnabled: input.enrollmentEnabled,
-				})
-				.where(eq(tenants.pk, ctx.tenant.pk)),
-		),
 
 	stats: tenantProcedure.query(({ ctx }) =>
 		union(
@@ -160,7 +130,7 @@ export const tenantRouter = createTRPCRouter({
 					action: auditLog.action,
 					data: auditLog.data,
 					doneAt: auditLog.doneAt,
-					user: sql`IFNULL(${accounts.name}, "system")`,
+					user: sql<string>`IFNULL(${accounts.name}, "system")`,
 				})
 				.from(auditLog)
 				.where(eq(auditLog.tenantPk, ctx.tenant.pk))
@@ -170,7 +140,7 @@ export const tenantRouter = createTRPCRouter({
 		),
 
 	gettingStarted: tenantProcedure.query(async ({ ctx }) => {
-		const data = await Promise.all([
+		const [[a], [b], [c]] = await Promise.all([
 			db
 				.select({ count: count() })
 				.from(identityProviders)
@@ -192,28 +162,102 @@ export const tenantRouter = createTRPCRouter({
 		]);
 
 		return {
-			connectedIdentityProvider: data[0][0].count > 0,
-			enrolledADevice: data[1][0].count > 0,
-			createdFirstPolicy: data[2][0].count > 0,
+			connectedIdentityProvider: a!.count > 0,
+			enrolledADevice: b!.count > 0,
+			createdFirstPolicy: c!.count > 0,
 		};
 	}),
 
 	delete: tenantProcedure.mutation(async ({ ctx }) => {
-		// TODO: Ensure no outstanding bills
+		const [[a], [b]] = await Promise.all([
+			db
+				.select({ count: count() })
+				.from(devices)
+				.where(eq(devices.tenantPk, ctx.tenant.pk)),
+			db
+				.select({ count: count() })
+				.from(identityProviders)
+				.where(eq(users.tenantPk, ctx.tenant.pk)),
+		]);
+
+		if (a!.count !== 0) throw new Error("Cannot delete tenant with devices"); // TODO: handle this error on the frontend
+		if (b!.count !== 0)
+			throw new Error("Cannot delete tenant with identity providers"); // TODO: handle this error on the frontend
 
 		await db.transaction(async (db) => {
-			await db.delete(tenants).where(eq(tenants.pk, ctx.tenant.pk));
-			await db
-				.delete(tenantAccounts)
-				.where(eq(tenantAccounts.tenantPk, ctx.tenant.pk));
 			await db.delete(users).where(eq(users.tenantPk, ctx.tenant.pk));
-			await db.delete(policies).where(eq(policies.tenantPk, ctx.tenant.pk));
-			await db.delete(devices).where(eq(devices.tenantPk, ctx.tenant.pk)); // TODO: Don't do this
-		});
 
-		// TODO: Schedule all devices for unenrolment
+			const device_actions = db
+				.$with("device_actions")
+				.as(
+					db
+						.select({ id: devices.id })
+						.from(deviceActions)
+						.innerJoin(devices, eq(devices.pk, deviceActions.devicePk))
+						.where(eq(devices.tenantPk, ctx.tenant.pk)),
+				);
+			await db
+				.with(device_actions)
+				.delete(deviceActions)
+				.where(eq(deviceActions.devicePk, device_actions.id));
+			await db.delete(devices).where(eq(devices.tenantPk, ctx.tenant.pk));
+
+			const group_assignable = db
+				.$with("group_assignables")
+				.as(
+					db
+						.select({ id: groups.id })
+						.from(groupAssignables)
+						.innerJoin(groups, eq(groups.pk, groupAssignables.groupPk))
+						.where(eq(groups.tenantPk, ctx.tenant.pk)),
+				);
+			await db
+				.with(group_assignable)
+				.delete(groupAssignables)
+				.where(eq(groupAssignables.groupPk, group_assignable.id));
+			await db.delete(groups).where(eq(groups.tenantPk, ctx.tenant.pk));
+
+			const policy_assignable = db
+				.$with("policy_assignables")
+				.as(
+					db
+						.select({ id: policies.id })
+						.from(policyAssignables)
+						.innerJoin(policies, eq(policies.pk, policyAssignables.policyPk))
+						.where(eq(policies.tenantPk, ctx.tenant.pk)),
+				);
+			await db
+				.with(policy_assignable)
+				.delete(policyAssignables)
+				.where(eq(policyAssignables.policyPk, policy_assignable.id));
+			const policy_deploy_status = db
+				.$with("policy_deploy_status")
+				.as(
+					db
+						.select({ id: policyDeploy.id })
+						.from(policyDeployStatus)
+						.innerJoin(
+							policyDeploy,
+							eq(policyDeploy.pk, policyDeployStatus.deployPk),
+						)
+						.innerJoin(policies, eq(policies.pk, policyDeploy.policyPk))
+						.where(eq(policies.tenantPk, ctx.tenant.pk)),
+				);
+			await db
+				.with(policy_deploy_status)
+				.delete(policyDeployStatus)
+				.where(eq(policyDeployStatus.deployPk, policy_deploy_status.id));
+			await db.delete(policies).where(eq(policies.tenantPk, ctx.tenant.pk));
+
+			await db
+				.delete(applications)
+				.where(eq(applications.tenantPk, ctx.tenant.pk));
+			await db.delete(domains).where(eq(domains.tenantPk, ctx.tenant.pk));
+			await db.delete(auditLog).where(eq(auditLog.tenantPk, ctx.tenant.pk));
+
+			await db.delete(tenants).where(eq(tenants.pk, ctx.tenant.pk));
+		});
 	}),
-	admins: adminsRouter,
 	identityProvider: identityProviderRouter,
 	members: membersRouter,
 });

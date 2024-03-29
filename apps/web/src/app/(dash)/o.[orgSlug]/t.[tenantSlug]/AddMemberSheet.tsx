@@ -84,13 +84,16 @@ export function AddMemberSheet(props: ParentProps & Props) {
 
 	const AddMemberTableOptions = () => ({
 		all: "All",
+		// @ts-expect-error // TODO
 		...(props.omitUsers ? {} : { user: "Users" }),
 		device: "Devices",
+		// @ts-expect-error // TODO
 		...(props.omitGroups ? {} : { group: "Groups" }),
 	});
 
 	const possibleUsers = trpc.tenant.members.users.useQuery(
 		() => ({ tenantSlug: tenantSlug() }),
+		// @ts-expect-error // TODO
 		() => ({ enabled: props.omitUsers !== true && open() }),
 	);
 	const possibleDevices = trpc.tenant.members.devices.useQuery(
@@ -99,6 +102,7 @@ export function AddMemberSheet(props: ParentProps & Props) {
 	);
 	const possibleGroups = trpc.tenant.members.groups.useQuery(
 		() => ({ tenantSlug: tenantSlug() }),
+		// @ts-expect-error // TODO
 		() => ({ enabled: props.omitGroups !== true && open() }),
 	);
 

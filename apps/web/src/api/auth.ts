@@ -27,12 +27,17 @@ export const lucia = new Lucia(adapter, {
 		name: data.name,
 		features: data.features,
 	}),
+	getSessionAttributes: (data) => ({
+		userAgent: data.userAgent,
+		location: data.location,
+	}),
 });
 
 declare module "lucia" {
 	interface Register {
 		Lucia: typeof lucia;
 		DatabaseUserAttributes: DatabaseUserAttributes;
+		DatabaseSessionAttributes: DatabaseSessionAttributes;
 	}
 }
 
@@ -42,6 +47,12 @@ interface DatabaseUserAttributes {
 	email: string;
 	name: string;
 	features: Features[];
+}
+
+interface DatabaseSessionAttributes {
+	// Web or CLI session
+	userAgent: `${"w" | "c"}${string}`;
+	location: string;
 }
 
 export async function checkAuth(event: HTTPEvent) {

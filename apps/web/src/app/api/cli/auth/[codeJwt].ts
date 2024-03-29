@@ -1,26 +1,41 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { eq } from "drizzle-orm";
 
-import { verifyJWT } from "~/api/jwt";
-import { accounts, apiKeys, cliAuthCodes, db } from "~/db";
+import { signJWT, verifyJWT } from "~/api/jwt";
+import { accounts, cliAuthCodes, db, sessions } from "~/db";
 
 export async function POST({ params }: APIEvent) {
 	const { code } = await verifyJWT<{ code: string }>(params.codeJwt!);
 
-	const [codeRecord] = await db
+	const [result] = await db
 		.select({
 			code: cliAuthCodes.code,
-			apiKey: apiKeys.value,
+			sessionId: sessions.id,
 			email: accounts.email,
 		})
 		.from(cliAuthCodes)
 		.where(eq(cliAuthCodes.code, code))
-		.leftJoin(apiKeys, eq(cliAuthCodes.apiKeyPk, apiKeys.pk))
-		.leftJoin(accounts, eq(apiKeys.accountPk, accounts.pk));
-	if (!codeRecord) return { status: 404, body: "Code not found" };
+		.leftJoin(sessions, eq(cliAuthCodes.sessionId, sessions.id))
+		.leftJoin(accounts, eq(sessions.userId, accounts.id));
+	if (!result) return new Response("Code not found", { status: 404 });
+	if (!result.sessionId)
+		return new Response(
+			"User has not completed the login flow, try again later!",
+			{
+				status: 202,
+			},
+		);
+	if (!result.email) return new Response("User not found!", { status: 404 });
 
-	if (codeRecord.apiKey)
-		await db.delete(cliAuthCodes).where(eq(cliAuthCodes.code, code));
+	await db.delete(cliAuthCodes).where(eq(cliAuthCodes.code, code));
 
-	return Response.json(codeRecord);
+	return Response.json({
+		apiKey: await signJWT(
+			{ id: result.sessionId },
+			{
+				audience: "cli",
+			},
+		),
+		email: result.email,
+	});
 }

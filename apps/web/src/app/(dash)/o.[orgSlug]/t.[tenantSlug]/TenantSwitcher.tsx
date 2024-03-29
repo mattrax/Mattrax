@@ -48,6 +48,7 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
 					<DropdownMenuContent>
 						<Suspense>
 							<Command
+								// @ts-expect-error // TODO
 								optionLabel="label"
 								optionGroupChildren="options"
 								options={[
@@ -59,6 +60,7 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
 									},
 								]}
 								itemComponent={(iprops) => {
+									// @ts-expect-error // TODO
 									if (iprops.item.rawValue === "create-tenant")
 										return (
 											<>
@@ -75,18 +77,25 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
 										<CommandItem
 											item={iprops.item}
 											onClick={() =>
+												// @ts-expect-error // TODO
 												props.setActiveTenant(iprops.item.rawValue.slug)
 											}
 										>
 											<CommandItemLabel>
-												{iprops.item.rawValue.name}
+												{
+													// @ts-expect-error // TODO
+													iprops.item.rawValue.name
+												}
 											</CommandItemLabel>
 										</CommandItem>
 									);
 								}}
 								sectionComponent={(props) => (
 									<Combobox.Section>
-										{props.section.rawValue.label}
+										{
+											// @ts-expect-error // TODO
+											props.section.rawValue.label
+										}
 									</Combobox.Section>
 								)}
 							>

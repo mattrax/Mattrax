@@ -28,7 +28,6 @@ pub struct GetDeviceResult {
 
 #[derive(Debug)]
 pub struct QueuedDeviceActionsResult {
-    pub id: u64,
     pub action: String,
     pub device_pk: u64,
     pub created_by: u64,
@@ -109,7 +108,7 @@ impl Db {
         &self,
         policy_id: u64,
     ) -> Result<Vec<GetPolicyLatestVersionResult>, mysql_async::Error> {
-        r#"select `id`, `data` from `policy_versions` where `policy_versions`.`policyId` = ? order by `policy_versions`.`createdAt` desc limit ?"#
+        r#"select `id`, `data` from `policy_deploy` where `policy_deploy`.`policyId` = ? order by `policy_deploy`.`doneAt` desc limit ?"#
             .with(mysql_async::Params::Positional(vec![policy_id.clone().into(),1.into()]))
             .map(&self.pool, |p: (u64,mysql_async::Deserialized<serde_json::Value>,)| GetPolicyLatestVersionResult {
                 pk: p.0,data: p.1
@@ -154,10 +153,10 @@ impl Db {
         &self,
         device_id: u64,
     ) -> Result<Vec<QueuedDeviceActionsResult>, mysql_async::Error> {
-        r#"select `id`, `action`, `deviceId`, `createdBy`, `createdAt`, `deployedAt` from `device_actions` where (`device_actions`.`deviceId` = ? and `device_actions`.`deployedAt` is null)"#
+        r#"select `action`, `deviceId`, `createdBy`, `createdAt`, `deployedAt` from `device_actions2` where (`device_actions2`.`deviceId` = ? and `device_actions2`.`deployedAt` is null)"#
             .with(mysql_async::Params::Positional(vec![device_id.clone().into()]))
-            .map(&self.pool, |p: (u64,String,u64,u64,NaiveDateTime,Option<NaiveDateTime>,)| QueuedDeviceActionsResult {
-                id: p.0,action: p.1,device_pk: p.2,created_by: p.3,created_at: p.4,deployed_at: p.5
+            .map(&self.pool, |p: (String,u64,u64,NaiveDateTime,Option<NaiveDateTime>,)| QueuedDeviceActionsResult {
+                action: p.0,device_pk: p.1,created_by: p.2,created_at: p.3,deployed_at: p.4
               })
             .await
     }

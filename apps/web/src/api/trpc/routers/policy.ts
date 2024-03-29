@@ -12,7 +12,7 @@ import {
 	policies,
 	policyAssignableVariants,
 	policyAssignables,
-	policyVersions,
+	policyDeploy,
 	users,
 	accounts,
 } from "~/db";
@@ -59,10 +59,10 @@ export const policyRouter = createTRPCRouter({
 			await ctx.ensureTenantMember(policy.tenantPk);
 
 			const [lastVersion] = await db
-				.select({ data: policyVersions.data })
-				.from(policyVersions)
-				.where(and(eq(policyVersions.policyPk, policy.pk)))
-				.orderBy(desc(policyVersions.createdAt))
+				.select({ data: policyDeploy.data })
+				.from(policyDeploy)
+				.where(and(eq(policyDeploy.policyPk, policy.pk)))
+				.orderBy(desc(policyDeploy.doneAt))
 				.limit(1);
 
 			return {
@@ -258,16 +258,16 @@ export const policyRouter = createTRPCRouter({
 			await ctx.ensureTenantMember(policy.tenantPk);
 
 			const [lastVersion] = await db
-				.select({ data: policyVersions.data })
-				.from(policyVersions)
-				.where(and(eq(policyVersions.policyPk, policy.pk)))
-				.orderBy(desc(policyVersions.createdAt))
+				.select({ data: policyDeploy.data })
+				.from(policyDeploy)
+				.where(and(eq(policyDeploy.policyPk, policy.pk)))
+				.orderBy(desc(policyDeploy.doneAt))
 				.limit(1);
 
 			if (generatePolicyDiff(lastVersion?.data ?? {}, policy.data).length === 0)
 				throw new Error("policy has not changed");
 
-			await db.insert(policyVersions).values({
+			await db.insert(policyDeploy).values({
 				policyPk: policy.pk,
 				data: policy.data,
 				comment: input.comment,
@@ -291,23 +291,22 @@ export const policyRouter = createTRPCRouter({
 
 				const versions = await db
 					.select({
-						id: policyVersions.id,
-						status: policyVersions.status,
+						id: policyDeploy.id,
 						author: accounts.name,
 						authorEmail: accounts.email,
-						comment: policyVersions.comment,
-						deployedAt: policyVersions.createdAt,
+						comment: policyDeploy.comment,
+						deployedAt: policyDeploy.doneAt,
 					})
-					.from(policyVersions)
-					.innerJoin(policies, eq(policyVersions.policyPk, policies.pk))
-					.leftJoin(accounts, eq(policyVersions.author, accounts.pk))
+					.from(policyDeploy)
+					.innerJoin(policies, eq(policyDeploy.policyPk, policies.pk))
+					.leftJoin(accounts, eq(policyDeploy.author, accounts.pk))
 					.where(
 						and(
 							eq(policies.id, input.policyId),
 							eq(policies.tenantPk, policy.tenantPk),
 						),
 					)
-					.orderBy(desc(policyVersions.createdAt))
+					.orderBy(desc(policyDeploy.doneAt))
 					.limit(input.limit ?? 99999999);
 
 				return versions;

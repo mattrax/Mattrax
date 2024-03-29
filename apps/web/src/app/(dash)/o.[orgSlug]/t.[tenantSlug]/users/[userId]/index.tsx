@@ -147,6 +147,7 @@ function Policies() {
 					<CardTitle>Policies</CardTitle>
 
 					<AddMemberSheet
+						// @ts-expect-error // TODO: Fix this
 						addMember={(members) =>
 							addMembers.mutateAsync({
 								id: user().id,

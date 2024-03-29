@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { generateId } from "lucia";
 import { alphabet, generateRandomString } from "oslo/crypto";
 import { appendResponseHeader, setCookie } from "vinxi/server";
@@ -11,9 +11,8 @@ import {
 	accountLoginCodes,
 	accounts,
 	db,
-	organisationAccounts,
+	organisationMembers,
 	organisations,
-	tenantAccounts,
 	tenants,
 } from "~/db";
 import {
@@ -40,12 +39,14 @@ const fetchTenants = (accountPk: number) =>
 			id: tenants.id,
 			name: tenants.name,
 			slug: tenants.slug,
-			ownerId: accounts.id,
 		})
 		.from(tenants)
-		.where(eq(tenantAccounts.accountPk, accountPk))
-		.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk))
-		.innerJoin(accounts, eq(tenants.ownerPk, accounts.pk));
+		.innerJoin(organisations, eq(tenants.orgPk, organisations.pk))
+		.innerJoin(
+			organisationMembers,
+			eq(organisations.pk, organisationMembers.orgPk),
+		)
+		.where(eq(organisationMembers.accountPk, accountPk));
 
 const fetchOrgs = (accountPk: number) =>
 	db
@@ -56,10 +57,10 @@ const fetchOrgs = (accountPk: number) =>
 			ownerId: accounts.id,
 		})
 		.from(organisations)
-		.where(eq(organisationAccounts.accountPk, accountPk))
+		.where(eq(organisationMembers.accountPk, accountPk))
 		.innerJoin(
-			organisationAccounts,
-			eq(organisations.pk, organisationAccounts.orgPk),
+			organisationMembers,
+			eq(organisations.pk, organisationMembers.orgPk),
 		)
 		.innerJoin(accounts, eq(organisations.ownerPk, accounts.pk));
 
@@ -123,9 +124,9 @@ export const authRouter = createTRPCRouter({
 					.from(accounts)
 					.where(eq(accounts.pk, code.accountPk)),
 				db
-					.select({ orgPk: organisationAccounts.orgPk })
-					.from(organisationAccounts)
-					.where(eq(organisationAccounts.accountPk, code.accountPk)),
+					.select({ orgPk: organisationMembers.orgPk })
+					.from(organisationMembers)
+					.where(eq(organisationMembers.accountPk, code.accountPk)),
 			]);
 
 			if (!account)
@@ -142,14 +143,17 @@ export const authRouter = createTRPCRouter({
 					const org = await db
 						.insert(organisations)
 						.values({ id, slug, name: slug, ownerPk: account.pk });
-					await db.insert(organisationAccounts).values({
+					await db.insert(organisationMembers).values({
 						accountPk: account.pk,
 						orgPk: Number.parseInt(org.insertId),
 					});
 				});
 			}
 
-			const session = await lucia.createSession(account.id, {});
+			const session = await lucia.createSession(account.id, {
+				userAgent: `w${"web"}`, // TODO
+				location: "earth", // TODO
+			});
 
 			appendResponseHeader(
 				ctx.event,
