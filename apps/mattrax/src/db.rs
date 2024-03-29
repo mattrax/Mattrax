@@ -16,7 +16,7 @@ pub struct GetDevicePoliciesResult {
     pub name: String,
 }
 #[derive(Debug)]
-pub struct GetPolicyLatestVersionResult {
+pub struct GetPolicyDeployInfoResult {
     pub pk: u64,
     pub data: Deserialized<serde_json::Value>,
 }
@@ -110,13 +110,14 @@ impl Db {
     }
 }
 impl Db {
-    pub async fn get_policy_latest_version(
+    pub async fn get_policy_deploy_info(
         &self,
-        policy_id: u64,
-    ) -> Result<Vec<GetPolicyLatestVersionResult>, mysql_async::Error> {
-        r#"select `pk`, `data` from `policy_deploy` where `policy_deploy`.`policy` = ? order by `policy_deploy`.`done_at` desc limit ?"#
-            .with(mysql_async::Params::Positional(vec![policy_id.clone().into(),1.into()]))
-            .map(&self.pool, |p: (u64,Deserialized<serde_json::Value>,)| GetPolicyLatestVersionResult {
+        policy_pk: u64,
+        device_pk: u64,
+    ) -> Result<Vec<GetPolicyDeployInfoResult>, mysql_async::Error> {
+        r#"(select `pk`, `data` from `policy_deploy` where `policy_deploy`.`policy` = ? order by `policy_deploy`.`done_at` desc limit ?) union all (select `policy_deploy`.`pk`, `policy_deploy`.`data` from `policy_deploy` left join `policy_deploy_status` on (`policy_deploy_status`.`deploy` = `policy_deploy`.`pk` and `policy_deploy_status`.`device` = ?) where (`policy_deploy_status`.`deploy` is not null and `policy_deploy`.`policy` = ?) order by `policy_deploy`.`done_at` desc limit ?)"#
+            .with(mysql_async::Params::Positional(vec![policy_pk.clone().into(),1.into(),device_pk.clone().into(),policy_pk.clone().into(),1.into()]))
+            .map(&self.pool, |p: (u64,Deserialized<serde_json::Value>,)| GetPolicyDeployInfoResult {
                 pk: p.0,data: p.1
               })
             .await
@@ -158,12 +159,13 @@ impl Db {
     pub async fn update_policy_deploy_status(
         &self,
         deploy_pk: u64,
+        device_id: u64,
         key: String,
         status: String,
         data: Serialized<serde_json::Value>,
     ) -> Result<(), mysql_async::Error> {
-        r#"insert into `policy_deploy_status` (`deploy`, `key`, `status`, `data`, `done_at`) values (?, ?, ?, ?, default) on duplicate key update `status` = ?, `data` = ?"#
-            .with(mysql_async::Params::Positional(vec![deploy_pk.clone().into(),key.clone().into(),status.clone().into(),data.clone().into(),status.clone().into(),data.clone().into()]))
+        r#"insert into `policy_deploy_status` (`deploy`, `device`, `status`, `data`, `done_at`, `key`) values (?, ?, ?, ?, default, ?) on duplicate key update `status` = ?, `data` = ?"#
+            .with(mysql_async::Params::Positional(vec![deploy_pk.clone().into(),device_id.clone().into(),status.clone().into(),data.clone().into(),key.clone().into(),status.clone().into(),data.clone().into()]))
             .run(&self.pool)
             .await
             .map(|_| ())

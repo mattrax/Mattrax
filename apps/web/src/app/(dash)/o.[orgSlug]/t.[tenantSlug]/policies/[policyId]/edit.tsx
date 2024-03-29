@@ -1,7 +1,9 @@
 import {
+	Checkbox,
 	Collapsible,
 	CollapsibleContent,
 	CollapsibleTrigger,
+	Label,
 	Tabs,
 	TabsContent,
 	TabsList,
@@ -12,11 +14,14 @@ import { usePolicy } from "./Context";
 import { createSignal } from "solid-js";
 import { createContentEditableController } from "@mattrax/ui/lib";
 import { BruhIconPhArrowsVerticalBold } from "./bruh";
+import { useFeatures } from "~/lib/featureFlags";
+import { trpc } from "~/lib";
 
 export default function Page() {
 	const policy = usePolicy();
 	const [policyName, setPolicyName] = createSignal("./policy.yaml");
 	const policyNameController = createContentEditableController(setPolicyName);
+	const features = useFeatures();
 
 	// TODO: Probs replace tabs with proper routes so it's in the URL (when we add the visual editor).
 
@@ -68,11 +73,60 @@ export default function Page() {
 					</Collapsible>
 				</TabsContent>
 				<TabsContent value="visual">
-					<h2 class="text-muted-foreground opacity-70">
-						Visual editor coming soon...
-					</h2>
+					{features.visual_editor ? (
+						<WipVisualEditor />
+					) : (
+						<h2 class="text-muted-foreground opacity-70">
+							Visual editor coming soon...
+						</h2>
+					)}
 				</TabsContent>
 			</PageLayout>
 		</Tabs>
+	);
+}
+
+function WipVisualEditor() {
+	const policy = usePolicy();
+	const update = trpc.policy.update.useMutation(() => ({
+		onSuccess: () => policy.query.refetch(),
+	}));
+
+	return (
+		<div class="space-y-2">
+			<h3 class="font-semibold pt-4">Visual Editor</h3>
+
+			<div class="flex pl-2">
+				{/* TODO: Properly link label to checkbox */}
+				<Label>Disable graphing calculator nerd</Label>
+				<Checkbox
+					checked={"no_graphing_calculator_nerd" in policy().data}
+					disabled={update.isPending}
+					onChange={(checked) =>
+						update.mutate({
+							policyId: policy().id,
+							data: checked
+								? {
+										...policy().data,
+										no_graphing_calculator_nerd: {
+											type: "windows",
+											custom: [
+												{
+													value: 0,
+													oma_uri:
+														"./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator",
+												},
+											],
+										},
+								  }
+								: {
+										...policy().data,
+										no_graphing_calculator_nerd: undefined,
+								  },
+						})
+					}
+				/>
+			</div>
+		</div>
 	);
 }

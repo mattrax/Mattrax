@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 /// TODO
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum WindowsConfiguration {
     // A set of raw OMA-URI configurations
@@ -10,7 +10,7 @@ pub enum WindowsConfiguration {
 }
 
 /// TODO
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub struct CustomConfiguration {
     pub oma_uri: String,
     // TODO: Handle datatype's exactly like Intune
@@ -18,11 +18,11 @@ pub struct CustomConfiguration {
 }
 
 /// TODO
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum AnyValue {
     String(String),
     Int(i32),
     Bool(bool),
-    Float(f32),
+    // Float(f32),
 }

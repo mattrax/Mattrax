@@ -1,3 +1,4 @@
+use core::panic;
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
@@ -14,8 +15,8 @@ use mattrax_policy::{
 };
 use ms_mde::MICROSOFT_DEVICE_ID_EXTENSION;
 use ms_mdm::{
-    Add, Cmd, CmdId, CmdRef, Data, Exec, Final, Format, Item, Meta, MsgRef, Replace, Source,
-    Status, SyncBody, SyncBodyChild, SyncHdr, SyncML, Target, MAX_REQUEST_BODY_SIZE,
+    Add, Cmd, CmdId, CmdRef, Data, Delete, Exec, Final, Format, Item, Meta, MsgRef, Replace,
+    Source, Status, SyncBody, SyncBodyChild, SyncHdr, SyncML, Target, MAX_REQUEST_BODY_SIZE,
 };
 use mysql_async::Serialized;
 use serde_json::json;
@@ -25,7 +26,10 @@ use x509_parser::{
     der_parser::{asn1_rs::FromDer, Oid},
 };
 
-use crate::api::{ConnectInfoTy, Context};
+use crate::api::{
+    mdm::hash_map_diff::{hash_map_diff, HashMapDiff},
+    ConnectInfoTy, Context,
+};
 
 // // CommandID is a helper for generating SyncML Command ID's
 // type CommandID int32
@@ -229,6 +233,7 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                                 .db
                                 .update_policy_deploy_status(
                                     deploy_status.deploy_pk,
+                                    device.pk,
                                     deploy_status.key,
                                     "success".into(), // TODO: Actually check the damn code & retry if a fix is easily possible
                                     // TODO: Could this be nullable and null means in-progress, idk how we would represent success then
@@ -285,103 +290,106 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
 
                         // TODO: This is an N + 1, avoid that + only deploy a certain number of policies at once so we don't overflow the SyncML body
                         for policy in policies {
-                            let latest_deploy = state
-                                .db
-                                .get_policy_latest_version(policy.pk)
-                                .await
-                                .unwrap()
-                                .into_iter()
-                                .nth(0)
-                                .unwrap(); // TODO: Error handling
+                            let (latest_deploy, latest_deployed) = {
+                                let mut result = state
+                                    .db
+                                    .get_policy_deploy_info(policy.pk, device.pk)
+                                    .await
+                                    // TODO: Error handling
+                                    .unwrap()
+                                    .into_iter();
 
-                            info!(
-                                "Deploying policy '{}' of version '{}' to device '{}'",
-                                policy.pk, latest_deploy.pk, device.pk
-                            );
+                                (result.next().unwrap(), result.next())
+                            };
 
-                            let configurations: HashMap<String, Configuration> =
-                                serde_json::from_value(latest_deploy.data.0).unwrap();
-                            // TODO: Error handling
+                            if Some(latest_deploy.pk) == latest_deployed.as_ref().map(|v| v.pk) {
+                                info!("The device is already on the latest version of the policy");
+                                continue;
+                            }
 
-                            let mut windows_entries = HashMap::new();
-                            for (configuration_key, configuration) in configurations {
-                                match configuration {
-                                    Configuration::Windows(windows) => match windows {
-                                        WindowsConfiguration::Custom { custom } => {
-                                            for entry in custom {
-                                                windows_entries.insert(
-                                                    entry.oma_uri.clone(),
-                                                    (configuration_key.clone(), entry),
-                                                );
-                                            }
-                                        }
-                                    },
-                                    // Skip anything that's not for Windows
-                                    Configuration::Apple(_)
-                                    | Configuration::Android(_)
-                                    | Configuration::Script(_) => {}
+                            let latest_deploy_configuration = configuration(latest_deploy.data.0);
+                            let diff = if let Some(latest_deployed) = latest_deployed {
+                                info!(
+                                    "The device is on version {:?} but latest version is {:?}",
+                                    latest_deployed.pk, latest_deploy.pk
+                                );
+
+                                let latest_deployed_configuration =
+                                    configuration(latest_deployed.data.0);
+
+                                // We diff the devices current state to the state we want it to be in
+                                hash_map_diff(
+                                    &latest_deployed_configuration,
+                                    &latest_deploy_configuration,
+                                )
+                            } else {
+                                info!("The device is deploying policy for the first time!");
+
+                                HashMapDiff {
+                                    updated: latest_deploy_configuration,
+                                    removed: Default::default(),
+                                }
+                            };
+
+                            // TODO: Deduplicate OMA-URIs + handle add/remove in the same diff
+                            // {
+                            //     let mut windows_entries = HashMap::new();
+                            // }
+
+                            println!("{:?}", diff); // TODO
+
+                            for (configuration_key, entry) in diff.updated {
+                                let WindowsConfiguration::Custom { custom } = entry;
+
+                                for entry in custom {
+                                    // TODO: Determine if `Add` or `Replace`
+
+                                    let cmd_id = next_cmd_id();
+                                    children.push(SyncBodyChild::Add(Add {
+                                        cmd_id: cmd_id.clone(),
+                                        meta: None,
+                                        item: vec![Item {
+                                            source: None,
+                                            target: Some(Target::new(entry.oma_uri)),
+                                            meta: Some(Meta {
+                                                // TODO: Derive this from the configuration itself
+                                                format: Some(Format {
+                                                    xmlns: "syncml:metinf".into(),
+                                                    value: "int".into(),
+                                                }),
+                                                ttype: Some("text/plain".into()),
+                                            }),
+                                            data: Some(match entry.value {
+                                                AnyValue::String(value) => value,
+                                                AnyValue::Int(value) => value.to_string(),
+                                                AnyValue::Bool(value) => value.to_string(),
+                                                // AnyValue::Float(value) => value.to_string(),
+                                            }),
+                                        }],
+                                    }));
+
+                                    // TODO: Deal with status reporting stuff
                                 }
                             }
 
-                            // TODO: How do we deal with conflicting configurations being set across different policies???
+                            for (configuration_key, entry) in diff.removed {
+                                let WindowsConfiguration::Custom { custom } = entry;
 
-                            for (_, (configuration_key, entry)) in windows_entries {
-                                info!(
-                                    "Deploying key '{}' of deploy '{}'",
-                                    configuration_key, latest_deploy.pk
-                                );
+                                for entry in custom {
+                                    let cmd_id = next_cmd_id();
+                                    children.push(SyncBodyChild::Delete(Delete {
+                                        cmd_id: cmd_id.clone(),
+                                        meta: None,
+                                        item: vec![Item {
+                                            source: None,
+                                            target: Some(Target::new(entry.oma_uri)),
+                                            meta: None,
+                                            data: None,
+                                        }],
+                                    }));
 
-                                // TODO: Do a proper diff to work out the type of SyncML command should be `Add` or `Replace`.
-                                // TODO: Also work out if any properties needing to be `Removed`
-                                let cmd_id = next_cmd_id();
-                                children.push(SyncBodyChild::Add(Add {
-                                    cmd_id: cmd_id.clone(),
-                                    meta: None,
-                                    item: vec![Item {
-                                        source: None,
-                                        target: Some(Target::new(entry.oma_uri)),
-                                        meta: Some(Meta {
-                                            // TODO: Derive this from the configuration itself
-                                            format: Some(Format {
-                                                xmlns: "syncml:metinf".into(),
-                                                value: "int".into(),
-                                            }),
-                                            ttype: Some("text/plain".into()),
-                                        }),
-                                        data: Some(match entry.value {
-                                            AnyValue::String(value) => value,
-                                            AnyValue::Int(value) => value.to_string(),
-                                            AnyValue::Bool(value) => value.to_string(),
-                                            AnyValue::Float(value) => value.to_string(),
-                                        }),
-                                    }],
-                                }));
-
-                                // TODO: Do this in a bulk insert
-                                // TODO: We should probs do this last so that any error wouldn't cause the policy to be marked as being sent when it was not.
-                                state
-                                    .db
-                                    .update_policy_deploy_status(
-                                        latest_deploy.pk,
-                                        configuration_key.clone(),
-                                        "sent".into(),
-                                        Serialized(serde_json::Value::Null),
-                                    )
-                                    .await
-                                    .unwrap(); // TODO: Error handling
-
-                                // TODO: Do this in parallel with the last update?
-                                state
-                                    .db
-                                    .set_windows_ephemeral_state(
-                                        cmd.hdr.session_id.as_str(),
-                                        cmd.hdr.msg_id.clone(),
-                                        cmd_id.as_str().into(),
-                                        latest_deploy.pk,
-                                        configuration_key,
-                                    )
-                                    .await
-                                    .unwrap(); // TODO: Error handling
+                                    // TODO: Deal with status reporting stuff
+                                }
                             }
                         }
                     }
@@ -601,6 +609,21 @@ fn authenticate(
     }
 
     Some((common_name, device_id))
+}
+
+fn configuration(data: serde_json::Value) -> HashMap<String, WindowsConfiguration> {
+    let configurations: HashMap<String, Configuration> =
+    // TODO: Error handling
+        serde_json::from_value(data).unwrap();
+
+    configurations
+        .into_iter()
+        .filter_map(|(key, configuration)| match configuration {
+            Configuration::Windows(windows) => Some((key, windows)),
+            // Skip anything that's not for Windows
+            Configuration::Apple(_) | Configuration::Android(_) | Configuration::Script(_) => None,
+        })
+        .collect::<HashMap<_, _>>()
 }
 
 // TODO:

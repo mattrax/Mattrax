@@ -2,8 +2,7 @@ import { getObjectKeys } from "~/api/utils";
 import { trpc } from ".";
 
 export const features = {
-	a: "Feature A",
-	b: "Feature B",
+	visual_editor: "Policy Visual Editor",
 } as const;
 
 export type Features = keyof typeof features;
@@ -20,5 +19,5 @@ export function useFeatures() {
 			},
 		});
 	}
-	return result;
+	return result as Record<Features, boolean>;
 }

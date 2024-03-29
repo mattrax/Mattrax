@@ -201,6 +201,8 @@ export const policyRouter = createTRPCRouter({
 			z.object({
 				policyId: z.string(),
 				name: z.string().optional(),
+				// TODO: Validate the input type
+				data: z.any().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -219,6 +221,7 @@ export const policyRouter = createTRPCRouter({
 				.update(policies)
 				.set({
 					name: input.name ?? sql`${policies.name}`,
+					data: input.data ?? sql`${policies.data}`,
 				})
 				.where(eq(policies.id, input.policyId));
 		}),

@@ -1,8 +1,8 @@
 import path from "node:path";
 import { defineOperation, exportQueries } from "@mattrax/drizzle-to-rs";
 import dotenv from "dotenv";
-import { and, desc, eq, isNull } from "drizzle-orm";
-import { union } from "drizzle-orm/mysql-core";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { union, unionAll } from "drizzle-orm/mysql-core";
 import {
 	certificates,
 	db,
@@ -141,19 +141,54 @@ exportQueries(
 				return union(a, b);
 			},
 		}),
-		// TODO: Can we squash this into the top query to avoid N + 1 problems???
 		defineOperation({
-			name: "get_policy_latest_version",
+			// TODO: Can we merge this whole thing with the query above to avoid N + 1
+			name: "get_policy_deploy_info",
 			args: {
-				policy_id: "u64",
+				policy_pk: "u64",
+				device_pk: "u64",
 			},
-			query: (args) =>
-				db
-					.select({ pk: policyDeploy.pk, data: policyDeploy.data })
+			query: (args) => {
+				// Get the latest deploy for the policy
+				const latestDeploy = db
+					.select({
+						pk: policyDeploy.pk,
+						data: policyDeploy.data,
+					})
 					.from(policyDeploy)
-					.where(and(eq(policyDeploy.policyPk, args.policy_id)))
+					.where(eq(policyDeploy.policyPk, args.policy_pk))
 					.orderBy(desc(policyDeploy.doneAt))
-					.limit(1),
+					.limit(1);
+
+				// Get the last deploy applied to this device for this policy
+				const latestDeployForDevice = db
+					.select({
+						pk: policyDeploy.pk,
+						data: policyDeploy.data,
+					})
+					.from(policyDeploy)
+					.leftJoin(
+						policyDeployStatus,
+						and(
+							// Is targeting this policy
+							eq(policyDeployStatus.deployPk, policyDeploy.pk),
+							// And it's targeting this device
+							eq(policyDeployStatus.deviceId, args.device_pk),
+						),
+					)
+					.where(
+						and(
+							// All policies that have been deployed (hence have a status) // TODO: Account for `sent` state
+							isNotNull(policyDeployStatus.deployPk),
+							// For the current policy
+							eq(policyDeploy.policyPk, args.policy_pk),
+						),
+					)
+					.orderBy(desc(policyDeploy.doneAt))
+					.limit(1);
+
+				return unionAll(latestDeploy, latestDeployForDevice);
+			},
 		}),
 		defineOperation({
 			name: "get_device",
@@ -187,6 +222,7 @@ exportQueries(
 			name: "update_policy_deploy_status",
 			args: {
 				deploy_pk: "u64",
+				device_id: "u64",
 				key: "String",
 				status: "String", // TODO: Proper Rust enum
 				data: "Serialized<serde_json::Value>",
@@ -196,6 +232,7 @@ exportQueries(
 					.insert(policyDeployStatus)
 					.values({
 						deployPk: args.deploy_pk,
+						deviceId: args.device_id,
 						key: args.key,
 						status: args.status as any,
 						data: args.data,
