@@ -18,7 +18,7 @@ export const identityProviderRouter = createTRPCRouter({
 				columns: {
 					pk: true,
 					name: true,
-					variant: true,
+					provider: true,
 					linkerUpn: true,
 					remoteId: true,
 					lastSynced: true,
@@ -86,7 +86,7 @@ export const identityProviderRouter = createTRPCRouter({
 
 		let identityProvider!: IdentityProvider;
 
-		if (provider.variant === "entraId")
+		if (provider.provider === "entraId")
 			identityProvider = createEntraIDUserProvider(provider.remoteId);
 
 		const [remoteDomains, connectedDomains] = await Promise.all([
@@ -110,7 +110,7 @@ export const identityProviderRouter = createTRPCRouter({
 
 			let identityProvider!: IdentityProvider;
 
-			if (provider.variant === "entraId")
+			if (provider.provider === "entraId")
 				identityProvider = createEntraIDUserProvider(provider.remoteId);
 
 			const remoteDomains = await identityProvider.getDomains();
@@ -339,7 +339,7 @@ export function upsertEntraIdUser(
 			email: u.userPrincipalName!,
 			tenantPk: tenantPk,
 			providerPk: identityProviderPk,
-			providerResourceId: u.id!,
+			resourceId: u.id!,
 		})
 		.onDuplicateKeyUpdate({
 			set: {
