@@ -2,7 +2,7 @@
 #![allow(unused)]
 
 use chrono::NaiveDateTime;
-use mysql_async::prelude::*;
+use mysql_async::{prelude::*, Deserialized, Serialized};
 
 #[derive(Debug)]
 pub struct GetCertificateResult {
@@ -18,12 +18,18 @@ pub struct GetDevicePoliciesResult {
 #[derive(Debug)]
 pub struct GetPolicyLatestVersionResult {
     pub pk: u64,
-    pub data: mysql_async::Deserialized<serde_json::Value>,
+    pub data: Deserialized<serde_json::Value>,
 }
 #[derive(Debug)]
 pub struct GetDeviceResult {
     pub pk: u64,
     pub tenant_pk: u64,
+}
+
+#[derive(Debug)]
+pub struct GetWindowsEphemeralStateResult {
+    pub deploy_pk: u64,
+    pub key: String,
 }
 
 #[derive(Debug)]
@@ -110,7 +116,7 @@ impl Db {
     ) -> Result<Vec<GetPolicyLatestVersionResult>, mysql_async::Error> {
         r#"select `pk`, `data` from `policy_deploy` where `policy_deploy`.`policy` = ? order by `policy_deploy`.`done_at` desc limit ?"#
             .with(mysql_async::Params::Positional(vec![policy_id.clone().into(),1.into()]))
-            .map(&self.pool, |p: (u64,mysql_async::Deserialized<serde_json::Value>,)| GetPolicyLatestVersionResult {
+            .map(&self.pool, |p: (u64,Deserialized<serde_json::Value>,)| GetPolicyLatestVersionResult {
                 pk: p.0,data: p.1
               })
             .await
@@ -143,6 +149,66 @@ impl Db {
                 last_synced.clone().into(),
                 device_id.clone().into(),
             ]))
+            .run(&self.pool)
+            .await
+            .map(|_| ())
+    }
+}
+impl Db {
+    pub async fn update_policy_deploy_status(
+        &self,
+        deploy_pk: u64,
+        key: String,
+        status: String,
+        data: Serialized<serde_json::Value>,
+    ) -> Result<(), mysql_async::Error> {
+        r#"insert into `policy_deploy_status` (`deploy`, `key`, `status`, `data`, `done_at`) values (?, ?, ?, ?, default) on duplicate key update `status` = ?, `data` = ?"#
+            .with(mysql_async::Params::Positional(vec![deploy_pk.clone().into(),key.clone().into(),status.clone().into(),data.clone().into(),status.clone().into(),data.clone().into()]))
+            .run(&self.pool)
+            .await
+            .map(|_| ())
+    }
+}
+impl Db {
+    pub async fn set_windows_ephemeral_state(
+        &self,
+        session_id: String,
+        msg_id: String,
+        cmd_id: String,
+        deploy_pk: u64,
+        key: String,
+    ) -> Result<(), mysql_async::Error> {
+        r#"insert into `windows_ephemeral_state` (`session_id`, `msg_id`, `cmd_id`, `deploy`, `key`) values (?, ?, ?, ?, ?) on duplicate key update `deploy` = ?, `key` = ?"#
+            .with(mysql_async::Params::Positional(vec![session_id.clone().into(),msg_id.clone().into(),cmd_id.clone().into(),deploy_pk.clone().into(),key.clone().into(),deploy_pk.clone().into(),key.clone().into()]))
+            .run(&self.pool)
+            .await
+            .map(|_| ())
+    }
+}
+impl Db {
+    pub async fn get_windows_ephemeral_state(
+        &self,
+        session_id: String,
+        msg_id: String,
+        cmd_id: String,
+    ) -> Result<Vec<GetWindowsEphemeralStateResult>, mysql_async::Error> {
+        r#"select `deploy`, `key` from `windows_ephemeral_state` where (`windows_ephemeral_state`.`session_id` = ? and `windows_ephemeral_state`.`msg_id` = ? and `windows_ephemeral_state`.`cmd_id` = ?)"#
+            .with(mysql_async::Params::Positional(vec![session_id.clone().into(),msg_id.clone().into(),cmd_id.clone().into()]))
+            .map(&self.pool, |p: (u64,String,)| GetWindowsEphemeralStateResult {
+                deploy_pk: p.0,key: p.1
+              })
+            .await
+    }
+}
+impl Db {
+    pub async fn delete_windows_ephemeral_state(
+        &self,
+        session_id: String,
+        msg_id: String,
+        cmd_id: String,
+    ) -> Result<(), mysql_async::Error> {
+        r#"delete from `windows_ephemeral_state` where (`windows_ephemeral_state`.`session_id` = ? and `windows_ephemeral_state`.`msg_id` = ? and `windows_ephemeral_state`.`cmd_id` = ?)"#
+            .with(mysql_async::Params::Positional(vec![session_id.clone().into(),msg_id.clone().into(),cmd_id.clone().into()]))
             .run(&self.pool)
             .await
             .map(|_| ())

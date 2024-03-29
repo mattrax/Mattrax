@@ -300,6 +300,26 @@ export const policyDeployStatus = mysqlTable(
 	}),
 );
 
+// A cache for storing the state of Windows management commands.
+export const windowsEphemeralState = mysqlTable(
+	"windows_ephemeral_state",
+	{
+		// TODO: Datatypes
+		sessionId: varchar("session_id", { length: 256 }).notNull(),
+		msgId: varchar("msg_id", { length: 256 }).notNull(),
+		cmdId: varchar("cmd_id", { length: 256 }).notNull(),
+		deployPk: serialRelation("deploy")
+			.references(() => policyDeploy.pk)
+			.notNull(),
+		key: varchar("key", { length: 256 }).notNull(),
+	},
+	(table) => ({
+		pk: primaryKey({
+			columns: [table.sessionId, table.msgId, table.cmdId],
+		}),
+	}),
+);
+
 export const possibleOSes = [
 	"Windows",
 	"iOS",

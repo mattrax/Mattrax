@@ -17,6 +17,8 @@ use ms_mdm::{
     Add, Cmd, CmdId, CmdRef, Data, Exec, Final, Format, Item, Meta, MsgRef, Replace, Source,
     Status, SyncBody, SyncBodyChild, SyncHdr, SyncML, Target, MAX_REQUEST_BODY_SIZE,
 };
+use mysql_async::Serialized;
+use serde_json::json;
 use tracing::{debug, error, info, Instrument};
 use x509_parser::{
     certificate::X509Certificate,
@@ -187,9 +189,10 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
 
                 // TODO: Take into account max message size
 
-                for cmd in cmd.child.children.iter() {
-                    println!("{:#?}", cmd);
-                    match cmd {
+                for child in cmd.child.children.iter() {
+                    println!("CHILD: {:#?}\n\n", child);
+
+                    match child {
                         SyncBodyChild::Replace(cmd) => {
                             for item in cmd.item.iter() {
                                 // println!("{:#?} {:?} {:?}", item, item.source, item.data);
@@ -200,6 +203,51 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                                 //     &item.data,
                                 // ).await.unwrap(); // TODO: Error handling
                             }
+                        }
+                        SyncBodyChild::Status(status) => {
+                            let Ok(Some(deploy_status)) = state
+                                .db
+                                .get_windows_ephemeral_state(
+                                    cmd.hdr.session_id.as_str(),
+                                    status.msg_ref.as_str().into(),
+                                    status.cmd_ref.as_str().into(),
+                                )
+                                .await
+                                .map(|v| v.into_iter().nth(0))
+                            else {
+                                println!(
+                                    "TODO: NO STATUS FOUND for {:?} {:?} {:?}",
+                                    cmd.hdr.session_id, status.msg_ref, status.cmd_ref
+                                );
+                                continue;
+                            };
+
+                            // TODO: Tracing log
+                            println!("\n\n\nYOOOOOOOO\n{:#?}\n", deploy_status);
+
+                            state
+                                .db
+                                .update_policy_deploy_status(
+                                    deploy_status.deploy_pk,
+                                    deploy_status.key,
+                                    "success".into(), // TODO: Actually check the damn code & retry if a fix is easily possible
+                                    // TODO: Could this be nullable and null means in-progress, idk how we would represent success then
+                                    Serialized(json!({
+                                        "status": status.data
+                                    })),
+                                )
+                                .await
+                                .unwrap(); // TODO: Error handling
+
+                            state
+                                .db
+                                .delete_windows_ephemeral_state(
+                                    cmd.hdr.session_id.as_str(),
+                                    status.msg_ref.as_str().into(),
+                                    status.cmd_ref.as_str().into(),
+                                )
+                                .await
+                                .unwrap(); // TODO: Error handling
                         }
                         _ => {}
                     }
@@ -237,7 +285,7 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
 
                         // TODO: This is an N + 1, avoid that + only deploy a certain number of policies at once so we don't overflow the SyncML body
                         for policy in policies {
-                            let latest_version = state
+                            let latest_deploy = state
                                 .db
                                 .get_policy_latest_version(policy.pk)
                                 .await
@@ -248,21 +296,23 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
 
                             info!(
                                 "Deploying policy '{}' of version '{}' to device '{}'",
-                                policy.pk, latest_version.pk, device.pk
+                                policy.pk, latest_deploy.pk, device.pk
                             );
 
                             let configurations: HashMap<String, Configuration> =
-                                serde_json::from_value(latest_version.data.0).unwrap();
+                                serde_json::from_value(latest_deploy.data.0).unwrap();
                             // TODO: Error handling
 
                             let mut windows_entries = HashMap::new();
-                            for (_, configuration) in configurations {
+                            for (configuration_key, configuration) in configurations {
                                 match configuration {
                                     Configuration::Windows(windows) => match windows {
                                         WindowsConfiguration::Custom { custom } => {
                                             for entry in custom {
-                                                windows_entries
-                                                    .insert(entry.oma_uri.clone(), entry);
+                                                windows_entries.insert(
+                                                    entry.oma_uri.clone(),
+                                                    (configuration_key.clone(), entry),
+                                                );
                                             }
                                         }
                                     },
@@ -275,11 +325,17 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
 
                             // TODO: How do we deal with conflicting configurations being set across different policies???
 
-                            for (_, entry) in windows_entries {
+                            for (_, (configuration_key, entry)) in windows_entries {
+                                info!(
+                                    "Deploying key '{}' of deploy '{}'",
+                                    configuration_key, latest_deploy.pk
+                                );
+
                                 // TODO: Do a proper diff to work out the type of SyncML command should be `Add` or `Replace`.
                                 // TODO: Also work out if any properties needing to be `Removed`
+                                let cmd_id = next_cmd_id();
                                 children.push(SyncBodyChild::Add(Add {
-                                    cmd_id: next_cmd_id(),
+                                    cmd_id: cmd_id.clone(),
                                     meta: None,
                                     item: vec![Item {
                                         source: None,
@@ -300,6 +356,32 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                                         }),
                                     }],
                                 }));
+
+                                // TODO: Do this in a bulk insert
+                                // TODO: We should probs do this last so that any error wouldn't cause the policy to be marked as being sent when it was not.
+                                state
+                                    .db
+                                    .update_policy_deploy_status(
+                                        latest_deploy.pk,
+                                        configuration_key.clone(),
+                                        "sent".into(),
+                                        Serialized(serde_json::Value::Null),
+                                    )
+                                    .await
+                                    .unwrap(); // TODO: Error handling
+
+                                // TODO: Do this in parallel with the last update?
+                                state
+                                    .db
+                                    .set_windows_ephemeral_state(
+                                        cmd.hdr.session_id.as_str(),
+                                        cmd.hdr.msg_id.clone(),
+                                        cmd_id.as_str().into(),
+                                        latest_deploy.pk,
+                                        configuration_key,
+                                    )
+                                    .await
+                                    .unwrap(); // TODO: Error handling
                             }
                         }
                     }

@@ -12,6 +12,8 @@ import {
 	policies,
 	policyAssignables,
 	policyDeploy,
+	policyDeployStatus,
+	windowsEphemeralState,
 } from ".";
 
 dotenv.config({
@@ -180,6 +182,96 @@ exportQueries(
 						lastSynced: args.last_synced,
 					})
 					.where(eq(devices.pk, args.device_id)),
+		}),
+		defineOperation({
+			name: "update_policy_deploy_status",
+			args: {
+				deploy_pk: "u64",
+				key: "String",
+				status: "String", // TODO: Proper Rust enum
+				data: "Serialized<serde_json::Value>",
+			},
+			query: (args) =>
+				db
+					.insert(policyDeployStatus)
+					.values({
+						deployPk: args.deploy_pk,
+						key: args.key,
+						status: args.status as any,
+						data: args.data,
+					})
+					.onDuplicateKeyUpdate({
+						set: {
+							status: args.status as any,
+							data: args.data,
+						},
+					}),
+		}),
+		defineOperation({
+			name: "set_windows_ephemeral_state",
+			args: {
+				session_id: "String",
+				msg_id: "String",
+				cmd_id: "String",
+				deploy_pk: "u64",
+				key: "String",
+			},
+			query: (args) =>
+				db
+					.insert(windowsEphemeralState)
+					.values({
+						sessionId: args.session_id,
+						msgId: args.msg_id,
+						cmdId: args.cmd_id,
+						deployPk: args.deploy_pk,
+						key: args.key,
+					})
+					.onDuplicateKeyUpdate({
+						set: {
+							deployPk: args.deploy_pk,
+							key: args.key,
+						},
+					}),
+		}),
+		defineOperation({
+			name: "get_windows_ephemeral_state",
+			args: {
+				session_id: "String",
+				msg_id: "String",
+				cmd_id: "String",
+			},
+			query: (args) =>
+				db
+					.select({
+						deployPk: windowsEphemeralState.deployPk,
+						key: windowsEphemeralState.key,
+					})
+					.from(windowsEphemeralState)
+					.where(
+						and(
+							eq(windowsEphemeralState.sessionId, args.session_id),
+							eq(windowsEphemeralState.msgId, args.msg_id),
+							eq(windowsEphemeralState.cmdId, args.cmd_id),
+						),
+					),
+		}),
+		defineOperation({
+			name: "delete_windows_ephemeral_state",
+			args: {
+				session_id: "String",
+				msg_id: "String",
+				cmd_id: "String",
+			},
+			query: (args) =>
+				db
+					.delete(windowsEphemeralState)
+					.where(
+						and(
+							eq(windowsEphemeralState.sessionId, args.session_id),
+							eq(windowsEphemeralState.msgId, args.msg_id),
+							eq(windowsEphemeralState.cmdId, args.cmd_id),
+						),
+					),
 		}),
 		defineOperation({
 			name: "queued_device_actions",
