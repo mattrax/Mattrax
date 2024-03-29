@@ -170,7 +170,7 @@ export const msRouter = new Hono<HonoEnv>()
 				await db
 					.insert(identityProviders)
 					.values({
-						variant: "entraId",
+						provider: "entraId",
 						remoteId: entraTenantId,
 						linkerUpn: userData.data.userPrincipalName,
 						linkerRefreshToken: tokenData.data.refresh_token,

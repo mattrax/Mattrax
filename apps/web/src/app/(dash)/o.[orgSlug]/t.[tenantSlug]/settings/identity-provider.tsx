@@ -142,11 +142,11 @@ function IdentityProviderCard() {
 						<div class="flex flex-col text-sm gap-1 items-start">
 							<a
 								class="font-semibold hover:underline flex flex-row items-center gap-1"
-								href={authProviderUrl(provider().variant, provider().remoteId)}
+								href={authProviderUrl(provider().provider, provider().remoteId)}
 								target="_blank"
 								rel="noreferrer"
 							>
-								{provider().name ?? AUTH_PROVIDER_DISPLAY[provider().variant]}
+								{provider().name ?? AUTH_PROVIDER_DISPLAY[provider().provider]}
 								<IconPrimeExternalLink class="inline" />
 							</a>
 							<span class="text-gray-600">{provider().remoteId}</span>
