@@ -180,7 +180,7 @@ export const msRouter = new Hono<HonoEnv>()
 					.onDuplicateKeyUpdate({
 						// Drizzle requires at least one item or it will error.
 						set: {
-							variant: "entraId",
+							provider: "entraId",
 							remoteId: entraTenantId,
 							tenantPk,
 						},
