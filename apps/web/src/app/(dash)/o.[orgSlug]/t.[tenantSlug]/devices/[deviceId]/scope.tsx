@@ -36,6 +36,7 @@ export default function Page() {
 				<>
 					<PageLayoutHeading>Scope</PageLayoutHeading>
 					<AddMemberSheet
+						// @ts-expect-error // TODO
 						addMember={(members) =>
 							addMembers.mutateAsync({
 								id: device().id,

@@ -28,7 +28,6 @@ pub struct GetDeviceResult {
 
 #[derive(Debug)]
 pub struct QueuedDeviceActionsResult {
-    pub id: u64,
     pub action: String,
     pub device_pk: u64,
     pub created_by: u64,
@@ -66,7 +65,7 @@ impl Db {
         certificate: Vec<u8>,
         last_modified: NaiveDateTime,
     ) -> Result<(), mysql_async::Error> {
-        r#"insert into `certificates` (`key`, `certificate`, `lastModified`) values (?, ?, ?) on duplicate key update `certificate` = ?, `lastModified` = ?"#
+        r#"insert into `certificates` (`key`, `certificate`, `last_modified`) values (?, ?, ?) on duplicate key update `certificate` = ?, `last_modified` = ?"#
             .with(mysql_async::Params::Positional(vec![key.clone().into(),certificate.clone().into(),last_modified.clone().into(),certificate.clone().into(),last_modified.clone().into()]))
             .run(&self.pool)
             .await
@@ -84,7 +83,7 @@ impl Db {
         tenant_pk: u64,
         owner_pk: u64,
     ) -> Result<(), mysql_async::Error> {
-        r#"insert into `devices` (`id`, `cuid`, `name`, `description`, `enrollmentType`, `os`, `serialNumber`, `manufacturer`, `model`, `osVersion`, `imei`, `freeStorageSpaceInBytes`, `totalStorageSpaceInBytes`, `owner`, `azureADDeviceId`, `enrolledAt`, `lastSynced`, `tenantId`) values (default, ?, ?, default, ?, ?, ?, default, default, default, default, default, default, ?, default, default, default, ?) on duplicate key update `name` = ?, `tenantId` = ?, `owner` = ?"#
+        r#"insert into `devices` (`pk`, `id`, `name`, `description`, `enrollment_type`, `os`, `serial_number`, `manufacturer`, `model`, `os_version`, `imei`, `free_storage`, `total_storage`, `owner`, `azure_ad_did`, `enrolled_at`, `last_synced`, `tenant`) values (default, ?, ?, default, ?, ?, ?, default, default, default, default, default, default, ?, default, default, default, ?) on duplicate key update `name` = ?, `tenant` = ?, `owner` = ?"#
             .with(mysql_async::Params::Positional(vec![id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.clone().into(),tenant_pk.clone().into(),name.clone().into(),tenant_pk.clone().into(),owner_pk.clone().into()]))
             .run(&self.pool)
             .await
@@ -96,7 +95,7 @@ impl Db {
         &self,
         device_id: u64,
     ) -> Result<Vec<GetDevicePoliciesResult>, mysql_async::Error> {
-        r#"(select `policies`.`id`, `policies`.`cuid`, `policies`.`name` from `policies` inner join `policy_assignables` on `policies`.`id` = `policy_assignables`.`policyPk` where (`policy_assignables`.`groupableVariant` = ? and `policy_assignables`.`groupableId` = ?)) union (select `policies`.`id`, `policies`.`cuid`, `policies`.`name` from `policies` inner join `policy_assignables` on `policies`.`id` = `policy_assignables`.`policyPk` inner join `group_assignables` on (`group_assignables`.`groupId` = `policy_assignables`.`groupableId` and `policy_assignables`.`groupableVariant` = ?) where (`group_assignables`.`groupableVariant` = ? and `group_assignables`.`groupableId` = ?))"#
+        r#"(select `policies`.`pk`, `policies`.`id`, `policies`.`name` from `policies` inner join `policy_assignables` on `policies`.`pk` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ?)) union (select `policies`.`pk`, `policies`.`id`, `policies`.`name` from `policies` inner join `policy_assignables` on `policies`.`pk` = `policy_assignables`.`policy` inner join `group_assignables` on (`group_assignables`.`group` = `policy_assignables`.`pk` and `policy_assignables`.`variant` = ?) where (`group_assignables`.`variant` = ? and `group_assignables`.`pk` = ?))"#
             .with(mysql_async::Params::Positional(vec!["device".into(),device_id.clone().into(),"group".into(),"device".into(),device_id.clone().into()]))
             .map(&self.pool, |p: (u64,String,String,)| GetDevicePoliciesResult {
                 pk: p.0,id: p.1,name: p.2
@@ -109,7 +108,7 @@ impl Db {
         &self,
         policy_id: u64,
     ) -> Result<Vec<GetPolicyLatestVersionResult>, mysql_async::Error> {
-        r#"select `id`, `data` from `policy_versions` where `policy_versions`.`policyId` = ? order by `policy_versions`.`createdAt` desc limit ?"#
+        r#"select `pk`, `data` from `policy_deploy` where `policy_deploy`.`policy` = ? order by `policy_deploy`.`done_at` desc limit ?"#
             .with(mysql_async::Params::Positional(vec![policy_id.clone().into(),1.into()]))
             .map(&self.pool, |p: (u64,mysql_async::Deserialized<serde_json::Value>,)| GetPolicyLatestVersionResult {
                 pk: p.0,data: p.1
@@ -122,7 +121,7 @@ impl Db {
         &self,
         device_id: String,
     ) -> Result<Vec<GetDeviceResult>, mysql_async::Error> {
-        r#"select `id`, `tenantId` from `devices` where `devices`.`cuid` = ?"#
+        r#"select `pk`, `tenant` from `devices` where `devices`.`id` = ?"#
             .with(mysql_async::Params::Positional(vec![device_id
                 .clone()
                 .into()]))
@@ -139,7 +138,7 @@ impl Db {
         device_id: u64,
         last_synced: NaiveDateTime,
     ) -> Result<(), mysql_async::Error> {
-        r#"update `devices` set `lastSynced` = ? where `devices`.`id` = ?"#
+        r#"update `devices` set `last_synced` = ? where `devices`.`pk` = ?"#
             .with(mysql_async::Params::Positional(vec![
                 last_synced.clone().into(),
                 device_id.clone().into(),
@@ -154,10 +153,10 @@ impl Db {
         &self,
         device_id: u64,
     ) -> Result<Vec<QueuedDeviceActionsResult>, mysql_async::Error> {
-        r#"select `id`, `action`, `deviceId`, `createdBy`, `createdAt`, `deployedAt` from `device_actions` where (`device_actions`.`deviceId` = ? and `device_actions`.`deployedAt` is null)"#
+        r#"select `action`, `device`, `created_by`, `created_at`, `deployed_at` from `device_actions` where (`device_actions`.`device` = ? and `device_actions`.`deployed_at` is null)"#
             .with(mysql_async::Params::Positional(vec![device_id.clone().into()]))
-            .map(&self.pool, |p: (u64,String,u64,u64,NaiveDateTime,Option<NaiveDateTime>,)| QueuedDeviceActionsResult {
-                id: p.0,action: p.1,device_pk: p.2,created_by: p.3,created_at: p.4,deployed_at: p.5
+            .map(&self.pool, |p: (String,u64,u64,NaiveDateTime,Option<NaiveDateTime>,)| QueuedDeviceActionsResult {
+                action: p.0,device_pk: p.1,created_by: p.2,created_at: p.3,deployed_at: p.4
               })
             .await
     }

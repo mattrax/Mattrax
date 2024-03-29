@@ -31,7 +31,6 @@ import {
 	createSearchParamPagination,
 	StandardTable,
 } from "~/components/StandardTable";
-import { renderStatusBadge } from "../bruh";
 import { formatPolicy } from "~/lib/formatPolicy";
 import { match } from "ts-pattern";
 
@@ -44,10 +43,6 @@ const columns = [
 		header: "Number",
 		cell: ({ row }) => <A href={row.original.id}># {row.index + 1}</A>,
 		size: 1,
-	}),
-	column.accessor("status", {
-		header: "Status",
-		cell: ({ row }) => renderStatusBadge(row.original.status),
 	}),
 	column.accessor("author", {
 		header: "Author",

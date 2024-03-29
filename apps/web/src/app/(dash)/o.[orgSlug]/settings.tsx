@@ -7,6 +7,7 @@ import { OrgContext } from "./Context";
 
 const navigation = [
 	{ name: "General", href: "general" },
+	{ name: "Administrators", href: "administrators" },
 	{ name: "Billing", href: "billing" },
 ];
 

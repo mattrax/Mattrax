@@ -171,13 +171,8 @@ async function handleUserChangeNotification(
 function handleUserDeleted(userId: string, providerPk: number) {
 	return db
 		.update(users)
-		.set({ providerResourceId: null })
-		.where(
-			and(
-				eq(users.providerResourceId, userId),
-				eq(users.providerPk, providerPk),
-			),
-		);
+		.set({ resourceId: null })
+		.where(and(eq(users.resourceId, userId), eq(users.providerPk, providerPk)));
 }
 
 async function handleLifecycleNotification(

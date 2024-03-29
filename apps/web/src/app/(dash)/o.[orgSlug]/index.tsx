@@ -38,7 +38,7 @@ export default function Page() {
 								Tenants
 							</span>
 							<ul>
-								<For each={tenants.data ?? []}>
+								<For each={tenants()}>
 									{(tenant) => (
 										<li class="w-full text-sm">
 											<A

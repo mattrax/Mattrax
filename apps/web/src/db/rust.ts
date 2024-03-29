@@ -11,7 +11,7 @@ import {
 	groupAssignables,
 	policies,
 	policyAssignables,
-	policyVersions,
+	policyDeploy,
 } from ".";
 
 dotenv.config({
@@ -147,10 +147,10 @@ exportQueries(
 			},
 			query: (args) =>
 				db
-					.select({ pk: policyVersions.pk, data: policyVersions.data })
-					.from(policyVersions)
-					.where(and(eq(policyVersions.policyPk, args.policy_id)))
-					.orderBy(desc(policyVersions.createdAt))
+					.select({ pk: policyDeploy.pk, data: policyDeploy.data })
+					.from(policyDeploy)
+					.where(and(eq(policyDeploy.policyPk, args.policy_id)))
+					.orderBy(desc(policyDeploy.doneAt))
 					.limit(1),
 		}),
 		defineOperation({

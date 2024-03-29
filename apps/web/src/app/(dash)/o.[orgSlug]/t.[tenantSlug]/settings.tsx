@@ -8,10 +8,15 @@ import IcRoundArrowForward from "~icons/ic/round-arrow-forward";
 
 const navigation = [
 	{ name: "General", href: "" },
-	{ name: "Administrators", href: "administrators" },
 	{ name: "Identity Provider", href: "identity-provider" },
 	{ name: "Enrollment", href: "enrollment" },
 	{ name: "Audit Log", href: "audit-log" },
+];
+
+const orgSection = [
+	{ name: "General", href: "../../../settings/general" },
+	{ name: "Administrators", href: "../../../settings/administrators" },
+	{ name: "Billing", href: "../../../settings/billing" },
 ];
 
 export default function Layout(props: ParentProps) {
@@ -33,9 +38,7 @@ export default function Layout(props: ParentProps) {
 						Organisation Settings
 					</span>
 					<ul class="space-y-1">
-						<For
-							each={[{ name: "Billing", href: "../../../settings/billing" }]}
-						>
+						<For each={orgSection}>
 							{(item) => (
 								<SidebarItem href={item.href}>
 									<div class="flex flex-row items-center justify-between ">

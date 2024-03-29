@@ -7,40 +7,113 @@ export type Policy = {
 	id: string;
 	name: string;
 	description?: string | null;
-	configurations?: Configuration[];
+	configurations?: { [key in string]: Configuration };
 };
+
+/**
+ * TODO
+ */
+export type AndroidConfiguration = never;
+
+/**
+ * TODO
+ */
+export type AnyValue = string | number | boolean | number;
+
+/**
+ * TODO
+ */
+export type AppleConfiguration = never;
 
 /**
  * TODO
  */
 export type Configuration =
 	/**
-	 * TODO
+	 * Windows-specific configurations
 	 */
-	| { type: "windows_custom"; oma_uri: string; value: string }
+	| ({ type: "windows" } & WindowsConfiguration)
 	/**
-	 * TODO
+	 * Apple-specific configurations
 	 */
-	| { type: "apple_custom"; path: string }
-	| { type: "script"; run: string }
+	| ({ type: "apple" } & AppleConfiguration)
 	/**
-	 * TODO
+	 * Android-specific configurations
 	 */
-	| { type: "wi_fi" }
+	| ({ type: "android" } & AndroidConfiguration)
 	/**
-	 * TODO
+	 * Script to run via `mattraxd`
 	 */
-	| { type: "chromium" }
+	| ({ type: "script" } & Script);
+
+/**
+ * TODO
+ */
+export type CustomConfiguration = { oma_uri: string; value: AnyValue };
+
+/**
+ * TODO
+ */
+export type Platform =
+	| "windows"
+	| "macOS"
+	| "iOS"
+	| "iPadOS"
+	| "tvOS"
+	| "watchOS"
+	| "linux"
+	| "android"
+	| "ChromeOS";
+
+/**
+ * TODO
+ */
+export type Script = {
+	shell: Shell;
+	supported?: Platform[];
+	trigger?: Trigger;
+	run: string;
+};
+
+/**
+ * TODO
+ */
+export type Shell = "powershell" | "bash" | "zsh";
+
+/**
+ * TODO
+ */
+export type Trigger =
 	/**
-	 * TODO
+	 * Only run the script once. If you modify the script it will run again.
 	 */
-	| { type: "edge" }
+	| { type: "once" }
 	/**
-	 * TODO
+	 * Trigger anytime a user logs in
 	 */
-	| { type: "brave" }
+	| { type: "login" }
 	/**
-	 * Configuration for Slack desktop app.
-	 * Reference: https://slack.com/intl/en-au/help/articles/11906214948755-Manage-desktop-app-configurations
+	 * Trigger anytime a user logs out
 	 */
-	| { type: "slack"; auto_update: boolean | null };
+	| { type: "logout" }
+	/**
+	 * Trigger anytime a device starts up
+	 */
+	| { type: "startup" }
+	/**
+	 * Trigger anytime the network state changes
+	 */
+	| { type: "network_state_change" }
+	/**
+	 * Trigger after the device has been enrolled.
+	 */
+	| { type: "enrollment_complete" }
+	/**
+	 * Trigger every time the device talks with Mattrax.
+	 */
+	| { type: "checkin" };
+
+/**
+ * TODO
+ */
+export type WindowsConfiguration = { custom: CustomConfiguration[] };

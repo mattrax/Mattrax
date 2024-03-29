@@ -24,7 +24,6 @@ import {
 	BruhIconPhDevices,
 	BruhIconPhPuzzlePiece,
 	BruhIconPhUser,
-	renderStatusBadge,
 } from "./bruh";
 import { A } from "@solidjs/router";
 import { formatPolicy } from "~/lib/formatPolicy";
@@ -164,17 +163,14 @@ function VersionHistory() {
 									</Avatar>
 									<div class="ml-4 space-y-1">
 										<div class="flex flex-col">
-											<div class="flex space-x-4">
-												<p>
-													<A
-														href={`versions/${version.id}`}
-														class="underline-offset-2 hover:underline !mb-0"
-													>
-														{version.comment}
-													</A>
-												</p>
-												{renderStatusBadge(version.status)}
-											</div>
+											<p>
+												<A
+													href={`versions/${version.id}`}
+													class="underline-offset-2 hover:underline !mb-0"
+												>
+													{version.comment}
+												</A>
+											</p>
 											<p class="text-sm text-muted-foreground !mt-0">
 												{version.author} - {timeago()}
 											</p>

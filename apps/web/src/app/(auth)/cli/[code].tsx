@@ -12,10 +12,10 @@ import { Match, Show, Suspense, Switch, getRequestEvent } from "solid-js/web";
 import { z } from "zod";
 
 import { checkAuth } from "~/api/auth";
-import { createAPIKey } from "~/api/trpc/routers/apiKey";
 import { AuthContext, useAuth } from "~c/AuthContext";
 import { cliAuthCodes, db } from "~/db";
 import { useZodParams } from "~/lib/useZodParams";
+import { createAPIKey } from "~/api/trpc/routers/apiKey";
 
 const getCode = cache(async (code: string) => {
 	"use server";
@@ -38,11 +38,11 @@ const authorizeCodeAction = action(async (code: string) => {
 	const auth = await checkAuth(getRequestEvent()!.nativeEvent);
 	if (!auth) throw new Error("UNAUTHORIZED");
 
-	const apiKey = await createAPIKey("Mattrax CLI", auth.account.pk);
+	const apiKey = await createAPIKey("Mattrax CLI", auth.account.id);
 
 	await db
 		.update(cliAuthCodes)
-		.set({ apiKeyPk: apiKey.pk })
+		.set({ sessionId: apiKey.id })
 		.where(eq(cliAuthCodes.code, code));
 
 	return true;

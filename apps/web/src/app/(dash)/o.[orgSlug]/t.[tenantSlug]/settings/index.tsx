@@ -19,9 +19,7 @@ import { useTenant } from "../Context";
 
 export const route = {
 	load: ({ params }) => {
-		trpc.useContext().tenant.enrollmentInfo.ensureData({
-			tenantSlug: params.tenantSlug!,
-		});
+		// TODO
 	},
 } satisfies RouteDefinition;
 

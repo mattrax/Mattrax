@@ -6,13 +6,7 @@ import superjson from "superjson";
 import type { H3Event } from "vinxi/server";
 import { ZodError, z } from "zod";
 
-import {
-	db,
-	organisationAccounts as organisationMembers,
-	organisations,
-	tenantAccounts,
-	tenants,
-} from "~/db";
+import { db, organisationMembers, organisations, tenants } from "~/db";
 import { checkAuth } from "../auth";
 
 export const createTRPCContext = async (event: H3Event) => {
@@ -62,8 +56,12 @@ const getTenantList = cache(
 		db
 			.select({ pk: tenants.pk, name: tenants.name })
 			.from(tenants)
-			.where(eq(tenantAccounts.accountPk, accountPk))
-			.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk)),
+			.innerJoin(organisations, eq(tenants.orgPk, organisations.pk))
+			.innerJoin(
+				organisationMembers,
+				eq(organisations.pk, organisationMembers.orgPk),
+			)
+			.where(eq(organisationMembers.accountPk, accountPk)),
 	"getTenantList",
 );
 
@@ -117,6 +115,7 @@ const getMemberOrg = cache(async (slug: string, accountPk: number) => {
 			pk: organisations.pk,
 			slug: organisations.slug,
 			name: organisations.name,
+			ownerPk: organisations.ownerPk,
 		})
 		.from(organisations)
 		.where(
@@ -148,10 +147,16 @@ export const orgProcedure = authedProcedure
 
 const getMemberTenant = cache(async (slug: string, accountPk: number) => {
 	const [tenant] = await db
-		.select({ pk: tenants.pk, name: tenants.name, ownerPk: tenants.ownerPk })
+		.select({ pk: tenants.pk, name: tenants.name })
 		.from(tenants)
-		.where(and(eq(tenants.slug, slug), eq(tenantAccounts.accountPk, accountPk)))
-		.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk));
+		.innerJoin(organisations, eq(tenants.orgPk, organisations.pk))
+		.innerJoin(
+			organisationMembers,
+			eq(organisations.pk, organisationMembers.orgPk),
+		)
+		.where(
+			and(eq(tenants.slug, slug), eq(organisationMembers.accountPk, accountPk)),
+		);
 
 	return tenant;
 }, "getMemberTenant");

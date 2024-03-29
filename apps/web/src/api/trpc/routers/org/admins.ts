@@ -9,25 +9,20 @@ import { sendEmail } from "~/api/emails";
 import {
 	accounts,
 	db,
-	tenantAccountInvites,
-	tenantAccounts,
-	tenants,
+	organisationInvites,
+	organisationMembers,
+	organisations,
 } from "~/db";
 import { env } from "~/env";
-import {
-	createTRPCRouter,
-	publicProcedure,
-	tenantProcedure,
-} from "../../helpers";
+import { createTRPCRouter, orgProcedure, publicProcedure } from "../../helpers";
 
 export const adminsRouter = createTRPCRouter({
-	list: tenantProcedure.query(async ({ ctx }) => {
+	list: orgProcedure.query(async ({ ctx }) => {
 		const [ownerId, rows] = await Promise.allSettled([
 			db
-				.select({ ownerId: accounts.id })
-				.from(tenants)
-				.where(eq(tenants.pk, ctx.tenant.pk))
-				.innerJoin(accounts, eq(tenants.ownerPk, accounts.pk))
+				.select({ ownerId: organisations.id })
+				.from(organisations)
+				.where(eq(organisations.pk, ctx.org.pk))
 				.then((v) => v?.[0]?.ownerId),
 			db
 				.select({
@@ -36,9 +31,13 @@ export const adminsRouter = createTRPCRouter({
 					email: accounts.email,
 				})
 				.from(accounts)
-				.leftJoin(tenantAccounts, eq(tenantAccounts.accountPk, accounts.pk))
-				.where(eq(tenantAccounts.tenantPk, ctx.tenant.pk)),
+				.leftJoin(
+					organisationMembers,
+					eq(organisationMembers.accountPk, accounts.pk),
+				)
+				.where(eq(organisationMembers.orgPk, ctx.org.pk)),
 		]);
+
 		// This is required. If the owner is not found, we gracefully continue.
 		if (rows.status === "rejected") throw rows.reason;
 
@@ -48,14 +47,15 @@ export const adminsRouter = createTRPCRouter({
 				ownerId.status === "fulfilled" ? row.id === ownerId.value : false,
 		}));
 	}),
-	sendInvite: tenantProcedure
+
+	sendInvite: orgProcedure
 		.input(z.object({ email: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const tenant = await db.query.tenants.findFirst({
+			const org = await db.query.organisations.findFirst({
 				columns: { name: true },
-				where: eq(tenants.pk, ctx.tenant.pk),
+				where: eq(organisations.pk, ctx.org.pk),
 			});
-			if (!tenant)
+			if (!org)
 				throw new TRPCError({
 					code: "NOT_FOUND",
 					message: "tenant",
@@ -64,8 +64,8 @@ export const adminsRouter = createTRPCRouter({
 			const code = crypto.randomUUID();
 
 			// try {
-			await db.insert(tenantAccountInvites).values({
-				tenantPk: ctx.tenant.pk,
+			await db.insert(organisationInvites).values({
+				orgPk: ctx.org.pk,
 				email: input.email,
 				code,
 			});
@@ -81,15 +81,16 @@ export const adminsRouter = createTRPCRouter({
 				subject: "Invitation to Mattrax Tenant",
 				type: "tenantAdminInvite",
 				invitedByEmail: ctx.account.email,
-				tenantName: tenant.name,
-				inviteLink: `${env.VITE_PROD_URL}/invite/tenant/${code}`,
+				tenantName: org.name,
+				inviteLink: `${env.VITE_PROD_URL}/invite/organisation/${code}`,
 			});
 		}),
+
 	acceptInvite: publicProcedure
 		.input(z.object({ code: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const invite = await db.query.tenantAccountInvites.findFirst({
-				where: eq(tenantAccountInvites.code, input.code),
+			const invite = await db.query.organisationInvites.findFirst({
+				where: eq(organisationInvites.code, input.code),
 			});
 			if (!invite)
 				throw new TRPCError({
@@ -120,17 +121,20 @@ export const adminsRouter = createTRPCRouter({
 			}
 
 			await db.transaction(async (db) => {
-				await db.insert(tenantAccounts).values({
-					tenantPk: invite.tenantPk,
+				await db.insert(organisationMembers).values({
+					orgPk: invite.orgPk,
 					accountPk: accountPk,
 				});
 
 				await db
-					.delete(tenantAccountInvites)
-					.where(eq(tenantAccountInvites.code, input.code));
+					.delete(organisationInvites)
+					.where(eq(organisationInvites.code, input.code));
 			});
 
-			const session = await lucia.createSession(accountId, {});
+			const session = await lucia.createSession(accountId, {
+				userAgent: "web", // TODO
+				location: "earth", // TODO
+			});
 			appendResponseHeader(
 				ctx.event,
 				"Set-Cookie",
@@ -140,18 +144,19 @@ export const adminsRouter = createTRPCRouter({
 				httpOnly: false,
 			});
 
-			const tenant = await db.query.tenants.findFirst({
-				where: eq(tenants.pk, invite.tenantPk),
+			const org = await db.query.organisations.findFirst({
+				where: eq(organisations.pk, invite.orgPk),
 			});
-			if (!tenant)
+			if (!org)
 				throw new TRPCError({
 					code: "NOT_FOUND",
 					message: "tenant",
 				});
 
-			return { id: tenant.id, name: tenant.name };
+			return { id: org.id, name: org.name };
 		}),
-	remove: tenantProcedure
+
+	remove: orgProcedure
 		.input(z.object({ adminId: z.string() }))
 		.mutation(async ({ ctx, input }) => {
 			const account = await db.query.accounts.findFirst({
@@ -163,35 +168,37 @@ export const adminsRouter = createTRPCRouter({
 					message: "account",
 				});
 
-			if (account.pk === ctx.tenant.ownerPk)
+			if (account.pk === ctx.org.ownerPk)
 				throw new TRPCError({
 					code: "PRECONDITION_FAILED",
 					message: "Cannot remove tenant owner",
 				});
 
 			await db
-				.delete(tenantAccounts)
+				.delete(organisationMembers)
 				.where(
 					and(
-						eq(tenantAccounts.accountPk, account.pk),
-						eq(tenantAccounts.tenantPk, ctx.tenant.pk),
+						eq(organisationMembers.accountPk, account.pk),
+						eq(organisationMembers.orgPk, ctx.org.pk),
 					),
 				);
 		}),
-	invites: tenantProcedure.query(async ({ ctx }) => {
-		return await db.query.tenantAccountInvites.findMany({
-			where: eq(tenantAccountInvites.tenantPk, ctx.tenant.pk),
+
+	invites: orgProcedure.query(async ({ ctx }) => {
+		return await db.query.organisationInvites.findMany({
+			where: eq(organisationInvites.orgPk, ctx.org.pk),
 		});
 	}),
-	removeInvite: tenantProcedure
+
+	removeInvite: orgProcedure
 		.input(z.object({ email: z.string() }))
 		.mutation(async ({ ctx, input }) => {
 			await db
-				.delete(tenantAccountInvites)
+				.delete(organisationInvites)
 				.where(
 					and(
-						eq(tenantAccountInvites.tenantPk, ctx.tenant.pk),
-						eq(tenantAccountInvites.email, input.email),
+						eq(organisationInvites.orgPk, ctx.org.pk),
+						eq(organisationInvites.email, input.email),
 					),
 				);
 		}),

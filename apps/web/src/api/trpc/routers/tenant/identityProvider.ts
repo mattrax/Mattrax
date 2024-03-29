@@ -345,7 +345,7 @@ export function upsertEntraIdUser(
 			set: {
 				// TODO: Update `email` if the `providerResourceId` matches.
 				name: u.displayName!,
-				providerResourceId: u.id!,
+				resourceId: u.id!,
 			},
 		});
 }
