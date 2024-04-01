@@ -169,12 +169,14 @@ exportQueries(
 					.select({
 						pk: policyDeploy.pk,
 						data: policyDeploy.data,
+						priority: policies.priority,
 					})
 					.from(policyDeploy)
 					.innerJoin(
 						policyAssignables,
 						eq(policyDeploy.policyPk, policyAssignables.policyPk),
 					)
+					.innerJoin(policies, eq(policies.pk, policyAssignables.policyPk))
 					.where(
 						and(
 							eq(policyAssignables.variant, "group"),

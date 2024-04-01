@@ -30,6 +30,7 @@ pub struct GetDeviceGroupsResult {
 pub struct GetGroupPolicyDeploysResult {
     pub pk: u64,
     pub data: Deserialized<serde_json::Value>,
+    pub priority: u64,
 }
 #[derive(Debug)]
 pub struct QueuedDeviceActionsResult {
@@ -143,10 +144,10 @@ impl Db {
         &self,
         group_pk: u64,
     ) -> Result<Vec<GetGroupPolicyDeploysResult>, mysql_async::Error> {
-        r#"select `policy_deploy`.`pk`, `policy_deploy`.`data` from `policy_deploy` inner join `policy_assignables` on `policy_deploy`.`policy` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ? and `policy_deploy`.`done_at` = (SELECT MAX(`policy_deploy`.`done_at`) FROM `policy_deploy` WHERE `policy_deploy`.`policy` = `policy_assignables`.`policy`))"#
+        r#"select `policy_deploy`.`pk`, `policy_deploy`.`data`, `policies`.`priority` from `policy_deploy` inner join `policy_assignables` on `policy_deploy`.`policy` = `policy_assignables`.`policy` inner join `policies` on `policies`.`pk` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ? and `policy_deploy`.`done_at` = (SELECT MAX(`policy_deploy`.`done_at`) FROM `policy_deploy` WHERE `policy_deploy`.`policy` = `policy_assignables`.`policy`))"#
             .with(mysql_async::Params::Positional(vec!["group".into(),group_pk.clone().into()]))
-            .map(&self.pool, |p: (u64,Deserialized<serde_json::Value>,)| GetGroupPolicyDeploysResult {
-                pk: p.0,data: p.1
+            .map(&self.pool, |p: (u64,Deserialized<serde_json::Value>,u64,)| GetGroupPolicyDeploysResult {
+                pk: p.0,data: p.1,priority: p.2
               })
             .await
     }

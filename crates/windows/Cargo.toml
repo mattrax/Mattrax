@@ -10,12 +10,13 @@ mx-policy = { path = "../policy" }
 mx-graph = { path = "../graph" }
 ms-mdm = { path = "../ms-mdm" }
 ms-mde = { path = "../ms-mde" }
+mx-dmvalue = { path = "../dmvalue" }
 
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.115"
 tracing = "0.1.40"
 rustls = "0.23.4"
-x509-parser = "0.16.0"
+x509-parser = { version = "0.16.0", features = ["verify"] }
 futures = { version = "0.3.30", no-default-features = true, features = [
     "async-await",
 ] }

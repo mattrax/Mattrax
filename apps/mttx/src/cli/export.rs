@@ -4,12 +4,12 @@ use std::{
     path::PathBuf,
 };
 
-use mattrax_policy::{
+use ms_mdm::{Add, CmdId, Item, SyncBody, Target};
+use mx_policy::{
     script::{Shell, Trigger},
-    windows::{AnyValue, WindowsConfiguration},
+    windows::{WindowsConfiguration, WindowsValue},
     Configuration,
 };
-use ms_mdm::{Add, CmdId, Item, SyncBody, Target};
 use tracing::info;
 
 use crate::load;
@@ -48,6 +48,10 @@ impl Command {
         for (config_name, configuration) in policy.configurations {
             match configuration {
                 Configuration::Windows(windows) => match windows {
+                    WindowsConfiguration::PolicyConfigBrowserHomePages { homepages } => todo!(),
+                    WindowsConfiguration::PolicyEducationAllowGraphingCalculator {
+                        allow_graphing_calculator,
+                    } => todo!(),
                     WindowsConfiguration::Custom { custom } => {
                         for entry in custom {
                             windows_entries.insert(entry.oma_uri.clone(), entry);
@@ -111,10 +115,8 @@ impl Command {
                         target: Some(Target::new(oma_uri)),
                         meta: None,
                         data: Some(match entry.value {
-                            AnyValue::String(value) => value,
-                            AnyValue::Int(value) => value.to_string(),
-                            AnyValue::Bool(value) => value.to_string(),
-                            AnyValue::Float(value) => value.to_string(),
+                            WindowsValue::String(value) => value,
+                            _ => todo!(),
                         }),
                     }],
                 }

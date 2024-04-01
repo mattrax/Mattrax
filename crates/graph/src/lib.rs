@@ -9,7 +9,5 @@
 mod deploy;
 mod graph;
 
-pub use deploy::Deploy;
-pub use graph::{Graph, Reference};
-
-// TODO: public the stuff that needs it
+pub use deploy::{Configuration, ConflictResolutionStrategy, Deploy};
+pub use graph::{Conflict, Graph, Reference};

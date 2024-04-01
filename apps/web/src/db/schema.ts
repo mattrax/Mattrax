@@ -10,6 +10,7 @@ import {
 	primaryKey,
 	serial,
 	timestamp,
+	tinyint,
 	unique,
 	varbinary,
 	varchar,
@@ -224,6 +225,11 @@ const policyDataCol = json("data")
 export const policies = mysqlTable("policies", {
 	pk: serial("pk").primaryKey(),
 	id: cuid("id").notNull().unique(),
+	priority: tinyint("priority", {
+		unsigned: true,
+	})
+		.notNull()
+		.default(128),
 	name: varchar("name", { length: 256 }).notNull(),
 	data: policyDataCol,
 	tenantPk: serialRelation("tenant")
