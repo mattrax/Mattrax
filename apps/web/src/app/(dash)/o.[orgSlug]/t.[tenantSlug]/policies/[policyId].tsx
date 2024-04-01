@@ -13,7 +13,7 @@ import { PolicyContextProvider } from "./[policyId]/Context";
 const NAV_ITEMS = [
 	{ title: "Policy", href: "" },
 	{ title: "Edit", href: "edit" },
-	{ title: "Versions", href: "versions" },
+	{ title: "Deploys", href: "deploys" },
 	{ title: "Assignees", href: "assignees" },
 	{ title: "Settings", href: "settings" },
 ];

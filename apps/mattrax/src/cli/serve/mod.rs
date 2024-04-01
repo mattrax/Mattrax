@@ -7,6 +7,7 @@ use std::{
 
 use better_acme::{Acme, FsStore};
 use hmac::{Hmac, Mac};
+use mx_db::Db;
 use rcgen::{Certificate, CertificateParams, KeyPair};
 use rustls::{
     pki_types::CertificateDer, server::WebPkiClientVerifier, RootCertStore, ServerConfig,
@@ -15,7 +16,7 @@ use tokio::{net::TcpListener, sync::mpsc};
 use tracing::{error, info, warn};
 use x509_parser::{certificate::X509Certificate, der_parser::asn1_rs::FromDer};
 
-use crate::{api, cli::serve::acme::MattraxAcmeStore, config::ConfigManager, db::Db};
+use crate::{api, cli::serve::acme::MattraxAcmeStore, config::ConfigManager};
 
 mod acme;
 mod server;

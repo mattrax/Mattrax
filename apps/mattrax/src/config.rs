@@ -38,7 +38,7 @@ pub struct Config {
     pub acme_email: String,
     #[serde(default, skip_serializing_if = "AcmeServer::is_default")]
     pub acme_server: AcmeServer,
-    #[serde(with = "mattrax_utils::serde_with_hex")]
+    #[serde(with = "mx_utils::serde_with_hex")]
     pub secret: [u8; 32],
     pub db_url: String,
     pub internal_secret: String,

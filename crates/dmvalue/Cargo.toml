@@ -1,0 +1,10 @@
+[package]
+name = "mx-dmvalue"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+chrono = { version = "0.4.37", features = ["serde"] }
+rust_decimal = "1.35.0"
+serde = { version = "1.0.197", features = ["derive"] }

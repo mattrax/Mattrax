@@ -35,7 +35,7 @@ import { formatPolicy } from "~/lib/formatPolicy";
 import { match } from "ts-pattern";
 
 const column =
-	createColumnHelper<RouterOutput["policy"]["versions"]["list"][number]>();
+	createColumnHelper<RouterOutput["policy"]["deploys"]["list"][number]>();
 
 const columns = [
 	column.display({
@@ -75,22 +75,22 @@ const columns = [
 	}),
 ];
 
-function createVersionsQuery() {
+function createDeploysQuery() {
 	const policy = usePolicy();
 	return {
 		policy,
-		versions: trpc.policy.versions.list.useQuery(() => ({
+		deploys: trpc.policy.deploys.list.useQuery(() => ({
 			policyId: policy().id,
 		})),
 	};
 }
 
-function createVersionTable() {
-	const { policy, versions } = createVersionsQuery();
+function createDeployTable() {
+	const { policy, deploys } = createDeploysQuery();
 
 	const table = createStandardTable({
 		get data() {
-			return versions.data || [];
+			return deploys.data || [];
 		},
 		columns,
 		pagination: true,
@@ -98,14 +98,14 @@ function createVersionTable() {
 
 	createSearchParamPagination(table, "page");
 
-	return { table, policy, versions };
+	return { table, policy, deploys };
 }
 
 export default function Page() {
-	const { table, policy } = createVersionTable();
+	const { table, policy } = createDeployTable();
 
 	return (
-		<PageLayout heading={<PageLayoutHeading>Versions</PageLayoutHeading>}>
+		<PageLayout heading={<PageLayoutHeading>Deploys</PageLayoutHeading>}>
 			{policy().diff.length > 0 && <DirtyPolicyPanel />}
 
 			<Suspense>
@@ -187,7 +187,7 @@ function DeployButton() {
 }
 
 function DeployDialog() {
-	const { policy, versions } = createVersionsQuery();
+	const { policy, deploys } = createDeploysQuery();
 
 	const [page, setPage] = createSignal(0);
 	const controller = useController();
@@ -196,9 +196,9 @@ function DeployDialog() {
 	const overview = trpc.policy.overview.useQuery(() => ({
 		policyId: policy().id,
 	}));
-	const deployVersion = trpc.policy.deploy.useMutation(() => ({
+	const deploy = trpc.policy.deploy.useMutation(() => ({
 		onSuccess: async () => {
-			Promise.all([policy.query.refetch(), versions.refetch()]);
+			Promise.all([policy.query.refetch(), deploys.refetch()]);
 			await controller.setOpen(false);
 		},
 	}));
@@ -236,7 +236,7 @@ function DeployDialog() {
 					<Button
 						variant="destructive"
 						onClick={() =>
-							deployVersion.mutate({
+							deploy.mutate({
 								policyId: policy().id,
 								comment: comment(),
 							})

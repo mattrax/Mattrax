@@ -1,8 +1,8 @@
 import path from "node:path";
 import { defineOperation, exportQueries } from "@mattrax/drizzle-to-rs";
 import dotenv from "dotenv";
-import { and, desc, eq, isNull } from "drizzle-orm";
-import { union } from "drizzle-orm/mysql-core";
+import { and, desc, eq, exists, isNotNull, isNull, sql } from "drizzle-orm";
+import { union, unionAll } from "drizzle-orm/mysql-core";
 import {
 	certificates,
 	db,
@@ -12,6 +12,8 @@ import {
 	policies,
 	policyAssignables,
 	policyDeploy,
+	policyDeployStatus,
+	windowsEphemeralState,
 } from ".";
 
 dotenv.config({
@@ -38,7 +40,7 @@ exportQueries(
 			args: {
 				key: "String",
 				certificate: "Vec<u8>",
-				last_modified: "NaiveDateTime",
+				last_modified: "Now",
 			},
 			query: (args) =>
 				db
@@ -88,13 +90,27 @@ exportQueries(
 					}),
 		}),
 		defineOperation({
-			name: "get_device_policies",
+			name: "get_device",
 			args: {
-				device_id: "u64",
+				device_id: "String",
 			},
-			query: (args) => {
-				// Any policy scoped directly to device
-				const a = db
+			query: (args) =>
+				db
+					.select({
+						pk: devices.pk,
+						tenantPk: devices.tenantPk,
+					})
+					.from(devices)
+					.where(eq(devices.id, args.device_id)),
+		}),
+		defineOperation({
+			name: "get_device_directly_scoped_policies",
+			args: {
+				device_pk: "u64",
+			},
+			// TODO: Maybe just get the policy deploys now???
+			query: (args) =>
+				db
 					.select({
 						pk: policies.pk,
 						id: policies.id,
@@ -108,11 +124,17 @@ exportQueries(
 					.where(
 						and(
 							eq(policyAssignables.variant, "device"),
-							eq(policyAssignables.pk, args.device_id),
+							eq(policyAssignables.pk, args.device_pk),
 						),
-					);
-				// Any policy scoped to a group containing the device.
-				const b = db
+					),
+		}),
+		defineOperation({
+			name: "get_device_groups",
+			args: {
+				device_pk: "u64",
+			},
+			query: (args) =>
+				db
 					.select({
 						pk: policies.pk,
 						id: policies.id,
@@ -133,53 +155,39 @@ exportQueries(
 					.where(
 						and(
 							eq(groupAssignables.variant, "device"),
-							eq(groupAssignables.pk, args.device_id),
+							eq(groupAssignables.pk, args.device_pk),
 						),
-					);
-				return union(a, b);
-			},
-		}),
-		// TODO: Can we squash this into the top query to avoid N + 1 problems???
-		defineOperation({
-			name: "get_policy_latest_version",
-			args: {
-				policy_id: "u64",
-			},
-			query: (args) =>
-				db
-					.select({ pk: policyDeploy.pk, data: policyDeploy.data })
-					.from(policyDeploy)
-					.where(and(eq(policyDeploy.policyPk, args.policy_id)))
-					.orderBy(desc(policyDeploy.doneAt))
-					.limit(1),
+					),
 		}),
 		defineOperation({
-			name: "get_device",
+			name: "get_group_policy_deploys",
 			args: {
-				device_id: "String",
+				group_pk: "u64",
 			},
 			query: (args) =>
 				db
 					.select({
-						pk: devices.pk,
-						tenantPk: devices.tenantPk,
+						pk: policyDeploy.pk,
+						data: policyDeploy.data,
+						priority: policies.priority,
 					})
-					.from(devices)
-					.where(eq(devices.id, args.device_id)),
-		}),
-		defineOperation({
-			name: "update_device_lastseen",
-			args: {
-				device_id: "u64",
-				last_synced: "NaiveDateTime",
-			},
-			query: (args) =>
-				db
-					.update(devices)
-					.set({
-						lastSynced: args.last_synced,
-					})
-					.where(eq(devices.pk, args.device_id)),
+					.from(policyDeploy)
+					.innerJoin(
+						policyAssignables,
+						eq(policyDeploy.policyPk, policyAssignables.policyPk),
+					)
+					.innerJoin(policies, eq(policies.pk, policyAssignables.policyPk))
+					.where(
+						and(
+							eq(policyAssignables.variant, "group"),
+							eq(policyAssignables.pk, args.group_pk),
+							eq(
+								policyDeploy.doneAt,
+								// TODO: Can we do this without manual SQL
+								sql`(SELECT MAX(${policyDeploy.doneAt}) FROM ${policyDeploy} WHERE ${policyDeploy.policyPk} = ${policyAssignables.policyPk})`,
+							),
+						),
+					),
 		}),
 		defineOperation({
 			name: "queued_device_actions",
@@ -198,6 +206,21 @@ exportQueries(
 						),
 					),
 		}),
+		// TODO: Queued applications
+		defineOperation({
+			name: "update_device_lastseen",
+			args: {
+				device_id: "u64",
+				last_synced: "Now",
+			},
+			query: (args) =>
+				db
+					.update(devices)
+					.set({
+						lastSynced: args.last_synced,
+					})
+					.where(eq(devices.pk, args.device_id)),
+		}),
 	],
-	path.join(__dirname, "../../../../apps/mattrax/src/db.rs"),
+	path.join(__dirname, "../../../../crates/db/src/db.rs"),
 );

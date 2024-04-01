@@ -10,6 +10,7 @@ import {
 	primaryKey,
 	serial,
 	timestamp,
+	tinyint,
 	unique,
 	varbinary,
 	varchar,
@@ -224,6 +225,11 @@ const policyDataCol = json("data")
 export const policies = mysqlTable("policies", {
 	pk: serial("pk").primaryKey(),
 	id: cuid("id").notNull().unique(),
+	priority: tinyint("priority", {
+		unsigned: true,
+	})
+		.notNull()
+		.default(128),
 	name: varchar("name", { length: 256 }).notNull(),
 	data: policyDataCol,
 	tenantPk: serialRelation("tenant")
@@ -287,15 +293,39 @@ export const policyDeployStatus = mysqlTable(
 		deployPk: serialRelation("deploy")
 			.references(() => policyDeploy.pk)
 			.notNull(),
-		// The key of the specific configuration this is referring to.
+		deviceId: serialRelation("device")
+			.references(() => devices.pk)
+			.notNull(),
+		// The key in `policyDeploy.data` that was applied.
+		// We track this as each OS only applies a subset of the policy.
 		key: varchar("key", { length: 256 }).notNull(),
-		status: mysqlEnum("status", ["sent", "success", "failed"]).notNull(),
+		status: mysqlEnum("status", ["success", "failed"]).notNull(),
 		data: json("data").notNull().$type<never>(), // TODO: Should we properly type errors?
 		doneAt: timestamp("done_at").notNull().defaultNow(),
 	},
 	(table) => ({
 		pk: primaryKey({
 			columns: [table.deployPk, table.key],
+		}),
+	}),
+);
+
+// A cache for storing the state of Windows management commands.
+export const windowsEphemeralState = mysqlTable(
+	"windows_ephemeral_state",
+	{
+		// TODO: Datatypes
+		sessionId: varchar("session_id", { length: 256 }).notNull(),
+		msgId: varchar("msg_id", { length: 256 }).notNull(),
+		cmdId: varchar("cmd_id", { length: 256 }).notNull(),
+		deployPk: serialRelation("deploy")
+			.references(() => policyDeploy.pk)
+			.notNull(),
+		key: varchar("key", { length: 256 }).notNull(),
+	},
+	(table) => ({
+		pk: primaryKey({
+			columns: [table.sessionId, table.msgId, table.cmdId],
 		}),
 	}),
 );

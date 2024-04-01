@@ -9,13 +9,14 @@ use axum::{
     Router,
 };
 use hmac::Hmac;
+use mx_db::Db;
 use rcgen::{Certificate, KeyPair};
 use rustls::pki_types::CertificateDer;
 use sha2::Sha256;
 use tokio::sync::mpsc;
 use x509_parser::certificate::X509Certificate;
 
-use crate::{config::ConfigManager, db::Db};
+use crate::config::ConfigManager;
 
 mod internal;
 mod mdm;

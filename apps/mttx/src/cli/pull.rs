@@ -1,6 +1,6 @@
 use std::{fs, path::PathBuf};
 
-use mattrax_policy::Policy;
+use mx_policy::Policy;
 use reqwest::{Client, Url};
 use serde_json::Value;
 use tracing::info;

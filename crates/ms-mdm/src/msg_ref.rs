@@ -15,4 +15,8 @@ impl MsgRef {
             child: header.msg_id.clone(),
         }
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.child
+    }
 }

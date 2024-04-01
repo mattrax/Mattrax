@@ -1,6 +1,6 @@
 use std::{fs, path::PathBuf};
 
-use mattrax_policy::Policy;
+use mx_policy::Policy;
 
 /// Load a policy from a file and run any preprocessor directives
 pub fn policy(path: &PathBuf) -> Result<Policy, String> {
