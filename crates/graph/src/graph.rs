@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
 
+use mx_dmvalue::DmValue;
 use serde::{Deserialize, Serialize};
 
-use crate::{ConflictResolutionStrategy, Deploy};
+use crate::{json_map::JsonMap, ConflictResolutionStrategy, Deploy};
 
 // The order policies are applied to the graph should not affect the result -> So we need to sort everything.
 
@@ -31,7 +32,16 @@ impl Graph {
             if let Some(entry) = self.nodes.get_mut(&oma_uri) {
                 let Child::Node(node) = entry;
 
-                // TODO: If the values match skip the conflict resolution stuff
+                // If this policies attempts to set the same value we can just add a reference as it won't conflict.
+                if let Some(references) = node.values.0.get_mut(&config.value) {
+                    references.push(Reference {
+                        deploy_pk: deploy.pk,
+                        key: config.key,
+                    });
+                    continue;
+                }
+
+                // TODO: Datatype conflicts
 
                 match (config.conflict_resolution_strategy, &node.strategy) {
                     (
@@ -41,27 +51,43 @@ impl Graph {
                         // If the definition of the most restrictive policy is different we can reconcile it.
                         // So we remove the node from the result and mark it as a conflict.
                         if a != *b {
-                            let Child::Node(mut node) = self
+                            let Child::Node(node) = self
                                 .nodes
                                 .remove(&oma_uri)
                                 .expect("we check it exists and have exclusive access");
 
-                            node.references.push(Reference {
+                            let mut references = node
+                                .values
+                                .0
+                                .into_iter()
+                                .map(|(_, v)| v)
+                                .flatten()
+                                .collect::<Vec<_>>();
+
+                            references.push(Reference {
                                 deploy_pk: deploy.pk,
                                 key: config.key,
                             });
                             self.conflicts.push(Conflict {
                                 node: oma_uri,
                                 cause: ConflictCause::InvalidInValueOrderDefinition,
-                                references: node.references,
+                                references: references,
                             });
+                            continue;
                         }
 
                         // TODO: If datatype doesn't match error out
 
                         // TODO: If value is in the same bucket we can just add the reference
 
-                        todo!();
+                        node.values
+                            .0
+                            .get_mut(&config.value)
+                            .get_or_insert(&mut Default::default())
+                            .push(Reference {
+                                deploy_pk: deploy.pk,
+                                key: config.key,
+                            });
                     }
                     (
                         ConflictResolutionStrategy::InValueOrder(_),
@@ -78,19 +104,27 @@ impl Graph {
                         // If either is marked as conflict we can reconcile it.
                         // So we remove the node from the result and mark it as a conflict.
 
-                        let Child::Node(mut node) = self
+                        let Child::Node(node) = self
                             .nodes
                             .remove(&oma_uri)
                             .expect("we check it exists and have exclusive access");
 
-                        node.references.push(Reference {
+                        let mut references = node
+                            .values
+                            .0
+                            .into_iter()
+                            .map(|(_, v)| v)
+                            .flatten()
+                            .collect::<Vec<_>>();
+
+                        references.push(Reference {
                             deploy_pk: deploy.pk,
                             key: config.key,
                         });
                         self.conflicts.push(Conflict {
                             node: oma_uri,
                             cause: ConflictCause::ExplicitConflict,
-                            references: node.references,
+                            references: references,
                         });
                     }
                 }
@@ -99,10 +133,13 @@ impl Graph {
                     oma_uri,
                     Child::Node(Node {
                         strategy: config.conflict_resolution_strategy,
-                        references: vec![Reference {
-                            deploy_pk: deploy.pk,
-                            key: config.key,
-                        }],
+                        values: JsonMap(HashMap::from([(
+                            config.value.clone(),
+                            vec![Reference {
+                                deploy_pk: deploy.pk,
+                                key: config.key,
+                            }],
+                        )])),
                     }),
                 );
             }
@@ -128,8 +165,11 @@ enum Child {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct Node {
     strategy: ConflictResolutionStrategy,
-    // TODO: Probs bucket by similar values so we can detect changes just from the graph
-    references: Vec<Reference>,
+    #[serde(
+        skip_serializing_if = "JsonMap::is_empty",
+        default = "Default::default"
+    )]
+    values: JsonMap<DmValue, Vec<Reference>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]

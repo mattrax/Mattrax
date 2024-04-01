@@ -6,14 +6,6 @@ use mx_graph::{Configuration, ConflictResolutionStrategy, Deploy, Graph};
 mod util;
 
 #[test]
-fn custom_policy() {
-    // TODO: Test custom policy with non-conflicting values
-}
-
-// A custom policy, with a conflicting value should result in:
-// - neither being applied
-// - a conflict being reported
-#[test]
 fn custom_policy_conflicting_value() {
     let mut graph = Graph::default();
 
@@ -42,7 +34,10 @@ fn custom_policy_conflicting_value() {
         )]),
     });
 
-    util::assert_graph_eq(&graph, r#""#);
+    util::assert_graph_eq(
+        &graph,
+        r#"{"c":[{"node":"./Mattrax/Node","cause":"e","references":[{"deploy_pk":0,"key":"a"},{"deploy_pk":1,"key":"a"}]}]}"#,
+    );
 }
 
 // TODO: Multiple properties in a single `WindowsConfiguration::Custom`

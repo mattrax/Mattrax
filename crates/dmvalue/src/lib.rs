@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 /// The abstract representation of a value that can be applied via an MDM protocol.
 ///
 /// This is an approximation so all variants may not be valid on all platforms.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DmValue {
     String(String),
     Xml(String),

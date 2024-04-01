@@ -37,7 +37,7 @@ fn graph_with_no_overlap() {
 
     util::assert_graph_eq(
         &graph,
-        r#"{"n":{"./Mattrax/Node":{"Node":{"strategy":"Conflict","references":[{"deploy_pk":0,"key":"a"}]}},"./Mattrax/Node2":{"Node":{"strategy":"Conflict","references":[{"deploy_pk":0,"key":"a"}]}}}}"#,
+        r#"{"n":{"./Mattrax/Node":{"Node":{"strategy":"Conflict","values":[[{"Boolean":true},[{"deploy_pk":0,"key":"a"}]]]}},"./Mattrax/Node2":{"Node":{"strategy":"Conflict","values":[[{"Boolean":false},[{"deploy_pk":0,"key":"a"}]]]}}}}"#,
     );
 }
 
@@ -58,7 +58,7 @@ fn graph_with_overlap_but_no_conflict() {
         )]),
     });
 
-    // This value is a different configuration setting the same value, which we don't treat as a conflict.
+    // This value comes from a different configuration but sets the same value, which we don't treat as a conflict.
     graph.add(Deploy {
         pk: 1,
         priority: 0,
@@ -72,5 +72,8 @@ fn graph_with_overlap_but_no_conflict() {
         )]),
     });
 
-    util::assert_graph_eq(&graph, r#""#);
+    util::assert_graph_eq(
+        &graph,
+        r#"{"n":{"./Mattrax/Node":{"Node":{"strategy":"Conflict","values":[[{"Boolean":true},[{"deploy_pk":0,"key":"a"},{"deploy_pk":1,"key":"b"}]]]}}}}"#,
+    );
 }
