@@ -280,7 +280,7 @@ export const policyRouter = createTRPCRouter({
 			// TODO: Send push notification to all devices
 		}),
 
-	versions: createTRPCRouter({
+	deploys: createTRPCRouter({
 		list: authedProcedure
 			.input(z.object({ policyId: z.string(), limit: z.number().optional() }))
 			.query(async ({ ctx, input }) => {
@@ -292,7 +292,7 @@ export const policyRouter = createTRPCRouter({
 
 				await ctx.ensureTenantMember(policy.tenantPk);
 
-				const versions = await db
+				const deploys = await db
 					.select({
 						id: policyDeploy.id,
 						author: accounts.name,
@@ -312,7 +312,7 @@ export const policyRouter = createTRPCRouter({
 					.orderBy(desc(policyDeploy.doneAt))
 					.limit(input.limit ?? 99999999);
 
-				return versions;
+				return deploys;
 			}),
 
 		get: authedProcedure.query(({ ctx }) => {

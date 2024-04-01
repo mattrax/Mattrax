@@ -5,8 +5,18 @@ use specta::Type;
 #[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum WindowsConfiguration {
+    // TODO: Proper nested enums
+    PolicyConfigBrowserHomePages(String),
+    PolicyEducationAllowGraphingCalculator(bool),
+
     // A set of raw OMA-URI configurations
     Custom { custom: Vec<CustomConfiguration> },
+}
+
+impl From<Vec<CustomConfiguration>> for WindowsConfiguration {
+    fn from(value: Vec<CustomConfiguration>) -> Self {
+        Self::Custom { custom: value }
+    }
 }
 
 /// TODO

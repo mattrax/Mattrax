@@ -284,27 +284,18 @@ export const policyDeploy = mysqlTable("policy_deploy", {
 export const policyDeployStatus = mysqlTable(
 	"policy_deploy_status",
 	{
-		// TODO: When removing policies `key` isn't present.
-		// TODO: How do we track the partial application of a policy cause scripts aren't MDM???
-
-		// TODO: We could bring scripts into Windows MDM with the management framework
-
-		// TODO: What if only part of the policy can deploy successfully -> We could use an `Atomic`???
-
 		deployPk: serialRelation("deploy")
 			.references(() => policyDeploy.pk)
 			.notNull(),
 		deviceId: serialRelation("device")
 			.references(() => devices.pk)
 			.notNull(),
-
-		status: mysqlEnum("status", ["sent", "success", "failed"]).notNull(),
+		// The key in `policyDeploy.data` that was applied.
+		// We track this as each OS only applies a subset of the policy.
+		key: varchar("key", { length: 256 }).notNull(),
+		status: mysqlEnum("status", ["success", "failed"]).notNull(),
 		data: json("data").notNull().$type<never>(), // TODO: Should we properly type errors?
 		doneAt: timestamp("done_at").notNull().defaultNow(),
-
-		// TODO: This has to go
-		// The key of the specific configuration this is referring to.
-		key: varchar("key", { length: 256 }).notNull(),
 	},
 	(table) => ({
 		pk: primaryKey({

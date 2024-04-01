@@ -9,8 +9,8 @@ publish = false
 dist = true
 
 [dependencies]
-mattrax-utils = { path = "../../crates/utils" }
-mattrax-policy = { path = "../../crates/policy" }
+mx-utils = { path = "../../crates/utils" }
+mx-policy = { path = "../../crates/policy" }
 ms-mdm = { path = "../../crates/ms-mdm" }
 
 clap = { version = "4.5.3", features = ["derive"] }

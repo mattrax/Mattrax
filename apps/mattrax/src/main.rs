@@ -1,12 +1,11 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use mattrax_utils::file_logger;
+use mx_utils::file_logger;
 
 pub(crate) mod api;
 mod cli;
 pub(crate) mod config;
-pub(crate) mod db;
 
 #[tokio::main]
 async fn main() {

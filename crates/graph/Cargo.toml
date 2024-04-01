@@ -1,10 +1,9 @@
 [package]
-name = "mx-policy"
+name = "mx-graph"
 version = "0.0.1"
 edition = "2021"
-repository = "https://github.com/mattrax/Mattrax"
 publish = false
 
 [dependencies]
 serde = { version = "1.0.197", features = ["derive"] }
-specta = { workspace = true, features = ["typescript"] }
+serde_json = "1.0.115"

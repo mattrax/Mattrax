@@ -13,7 +13,7 @@ use jwt::VerifyWithKey;
 use ms_mde::{
     Action, ActivityId, BinarySecurityToken, DiscoverRequest, DiscoverResponse, DiscoverResponseBody, DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult, EnrollmentRequest, EnrollmentResponse, EnrollmentResponseBody, RequestHeaderSecurity, RequestSecurityTokenResponse, RequestSecurityTokenResponseCollection, RequestedSecurityToken, ResponseHeader, ACTIVITY_ID_XMLNS, DISCOVER_ACTION_REQUEST, DISCOVER_ACTION_RESPONSE, DISCOVER_RESPONSE_XMLNS, ENROLLMENT_ACTION_REQUEST, ENROLLMENT_ACTION_RESPONSE, ENROLLMENT_REQUEST_TYPE_ISSUE, ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION, REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION, REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE
 };
-use mysql_common::time::OffsetDateTime;
+use time::OffsetDateTime;
 use rcgen::{
     Certificate, CertificateSigningRequestParams, CustomExtension, DistinguishedName, DnType,
     ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose, SerialNumber,

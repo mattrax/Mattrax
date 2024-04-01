@@ -2,8 +2,7 @@ use std::io::ErrorKind;
 
 use better_acme::Store;
 use chrono::Utc;
-
-use crate::db::Db;
+use mx_db::Db;
 
 /// A storage backend for `better-acme` that uses MySQL as the source of truth.
 pub struct MattraxAcmeStore {

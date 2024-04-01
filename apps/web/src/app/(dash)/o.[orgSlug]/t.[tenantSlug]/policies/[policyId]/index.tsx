@@ -133,7 +133,7 @@ function PolicyContent() {
 
 function VersionHistory() {
 	const policy = usePolicy();
-	const versions = trpc.policy.versions.list.useQuery(() => ({
+	const versions = trpc.policy.deploys.list.useQuery(() => ({
 		policyId: policy().id,
 		limit: 5,
 	}));

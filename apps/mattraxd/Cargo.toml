@@ -9,7 +9,7 @@ publish = false
 dist = true
 
 [dependencies]
-mattrax-utils = { path = "../../crates/utils" }
+mx-utils = { path = "../../crates/utils" }
 
 clap = { version = "4.5.3", features = ["derive"] }
 tracing-subscriber = "0.3.18"
