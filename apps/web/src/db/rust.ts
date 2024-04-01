@@ -40,7 +40,7 @@ exportQueries(
 			args: {
 				key: "String",
 				certificate: "Vec<u8>",
-				last_modified: "NaiveDateTime",
+				last_modified: "Now",
 			},
 			query: (args) =>
 				db
@@ -103,134 +103,90 @@ exportQueries(
 					.from(devices)
 					.where(eq(devices.id, args.device_id)),
 		}),
-		// defineOperation({
-		// 	name: "get_policy_information",
-		// 	args: {
-		// 		device_pk: "u64",
-		// 	},
-		// 	query: (args) => {
-		// 		// Any policies scoped directly to device
-		// 		const directlyScoped = db
-		// 			.select({
-		// 				pk: policies.pk,
-		// 				id: policies.id,
-		// 				name: policies.name,
-		// 			})
-		// 			.from(policies)
-		// 			.innerJoin(
-		// 				policyAssignables,
-		// 				eq(policies.pk, policyAssignables.policyPk),
-		// 			)
-		// 			.where(
-		// 				and(
-		// 					eq(policyAssignables.variant, "device"),
-		// 					eq(policyAssignables.pk, args.device_pk),
-		// 				),
-		// 			);
-
-		// 		// Any policies scoped to a group containing the device.
-		// 		const scopedThroughGroup = db
-		// 			.select({
-		// 				pk: policies.pk,
-		// 				id: policies.id,
-		// 				name: policies.name,
-		// 			})
-		// 			.from(policies)
-		// 			.innerJoin(
-		// 				policyAssignables,
-		// 				eq(policies.pk, policyAssignables.policyPk),
-		// 			)
-		// 			.innerJoin(
-		// 				groupAssignables,
-		// 				and(
-		// 					eq(groupAssignables.groupPk, policyAssignables.pk),
-		// 					eq(policyAssignables.variant, "group"),
-		// 				),
-		// 			)
-		// 			.where(
-		// 				and(
-		// 					eq(groupAssignables.variant, "device"),
-		// 					eq(groupAssignables.pk, args.device_pk),
-		// 				),
-		// 			);
-
-		// 		// A query representing all policies scoped to the device
-		// 		const policySubquery = db
-		// 			.$with("p")
-		// 			.as(union(directlyScoped, scopedThroughGroup));
-
-		// 		// return db
-		// 		// 	.with(policySubquery)
-		// 		// 	.select({
-		// 		// 		// testing: union(sql``, sql``),
-		// 		// 	})
-		// 		// 	.from(policySubquery);
-
-		// 		// db
-		// 		// 	.with(policySubquery)
-		// 		// 	.select()
-		// 		// 	.from(policySubquery)
-		// 		// 	.where(eq(policyDeploy.policyPk, policySubquery.pk)),
-
-		// 		// // Get the latest deploy for the policy
-		// 		// const latestDeploy = db
-		// 		// 	.select({
-		// 		// 		pk: policyDeploy.pk,
-		// 		// 		data: policyDeploy.data,
-		// 		// 		policyPk: policyDeploy.policyPk,
-		// 		// 	})
-		// 		// 	.from(policyDeploy)
-		// 		// 	.where(
-		// 		// 		exists(
-		// 		// 			db
-		// 		// 				.with(policySubquery)
-		// 		// 				.select()
-		// 		// 				.from(policySubquery)
-		// 		// 				.where(eq(policyDeploy.policyPk, policySubquery.pk)),
-		// 		// 		),
-		// 		// 	)
-		// 		// 	.orderBy(desc(policyDeploy.doneAt))
-		// 		// 	.limit(1);
-
-		// 		// // Get the latest deploy for the policy that has been applied to this device
-		// 		// const latestDeployForDevice = db
-		// 		// 	.select({
-		// 		// 		pk: policyDeploy.pk,
-		// 		// 		data: policyDeploy.data,
-		// 		// 		policyPk: policyDeploy.policyPk,
-		// 		// 	})
-		// 		// 	.from(policyDeploy)
-		// 		// 	.leftJoin(
-		// 		// 		policyDeployStatus,
-		// 		// 		and(
-		// 		// 			// Is targeting this policy
-		// 		// 			eq(policyDeployStatus.deployPk, policyDeploy.pk),
-		// 		// 			// And it's targeting this device
-		// 		// 			eq(policyDeployStatus.deviceId, args.device_pk),
-		// 		// 		),
-		// 		// 	)
-		// 		// 	.where(
-		// 		// 		and(
-		// 		// 			// All policies that have been deployed (hence have a status)
-		// 		// 			isNotNull(policyDeployStatus.deployPk),
-		// 		// 			// For the current policy
-		// 		// 			// eq(policyDeploy.policyPk, policySubquery.pk),
-		// 		// 			exists(
-		// 		// 				db
-		// 		// 					.with(policySubquery)
-		// 		// 					.select()
-		// 		// 					.from(policySubquery)
-		// 		// 					.where(eq(policyDeploy.policyPk, policySubquery.pk)),
-		// 		// 			),
-		// 		// 		),
-		// 		// 	)
-		// 		// 	.orderBy(desc(policyDeploy.doneAt))
-		// 		// 	.limit(1);
-
-		// 		// // The result is repeating pattern of [latestDeploy, latestDeployForDevice]
-		// 		// return unionAll(latestDeploy, latestDeployForDevice);
-		// 	},
-		// }),
+		defineOperation({
+			name: "get_device_directly_scoped_policies",
+			args: {
+				device_pk: "u64",
+			},
+			// TODO: Maybe just get the policy deploys now???
+			query: (args) =>
+				db
+					.select({
+						pk: policies.pk,
+						id: policies.id,
+						name: policies.name,
+					})
+					.from(policies)
+					.innerJoin(
+						policyAssignables,
+						eq(policies.pk, policyAssignables.policyPk),
+					)
+					.where(
+						and(
+							eq(policyAssignables.variant, "device"),
+							eq(policyAssignables.pk, args.device_pk),
+						),
+					),
+		}),
+		defineOperation({
+			name: "get_device_groups",
+			args: {
+				device_pk: "u64",
+			},
+			query: (args) =>
+				db
+					.select({
+						pk: policies.pk,
+						id: policies.id,
+						name: policies.name,
+					})
+					.from(policies)
+					.innerJoin(
+						policyAssignables,
+						eq(policies.pk, policyAssignables.policyPk),
+					)
+					.innerJoin(
+						groupAssignables,
+						and(
+							eq(groupAssignables.groupPk, policyAssignables.pk),
+							eq(policyAssignables.variant, "group"),
+						),
+					)
+					.where(
+						and(
+							eq(groupAssignables.variant, "device"),
+							eq(groupAssignables.pk, args.device_pk),
+						),
+					),
+		}),
+		defineOperation({
+			name: "get_group_policy_deploys",
+			args: {
+				group_pk: "u64",
+			},
+			query: (args) =>
+				db
+					.select({
+						pk: policyDeploy.pk,
+						data: policyDeploy.data,
+					})
+					.from(policyDeploy)
+					.innerJoin(
+						policyAssignables,
+						eq(policyDeploy.policyPk, policyAssignables.policyPk),
+					)
+					.where(
+						and(
+							eq(policyAssignables.variant, "group"),
+							eq(policyAssignables.pk, args.group_pk),
+							eq(
+								policyDeploy.doneAt,
+								// TODO: Can we do this without manual SQL
+								sql`(SELECT MAX(${policyDeploy.doneAt}) FROM ${policyDeploy} WHERE ${policyDeploy.policyPk} = ${policyAssignables.policyPk})`,
+							),
+						),
+					),
+		}),
 		defineOperation({
 			name: "queued_device_actions",
 			args: {
@@ -253,7 +209,7 @@ exportQueries(
 			name: "update_device_lastseen",
 			args: {
 				device_id: "u64",
-				last_synced: "NaiveDateTime",
+				last_synced: "Now",
 			},
 			query: (args) =>
 				db
@@ -263,19 +219,6 @@ exportQueries(
 					})
 					.where(eq(devices.pk, args.device_id)),
 		}),
-		// defineOperation({
-		// 	name: "get_groups_for_device",
-		// 	args: {
-		// 		device_id: "u64",
-		// 	},
-		// 	query: (args) =>
-		// 		db
-		// 			.select(policy)
-		// 			.set({
-		// 				lastSynced: args.last_synced,
-		// 			})
-		// 			.where(eq(devices.pk, args.device_id)),
-		// }),
 	],
 	path.join(__dirname, "../../../../crates/db/src/db.rs"),
 );

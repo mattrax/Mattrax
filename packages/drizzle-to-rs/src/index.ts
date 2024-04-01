@@ -21,6 +21,7 @@ const snakeToCamel = (str: string) => {
 type RustType =
 	| "String"
 	| "NaiveDateTime"
+	| "Now"
 	| "Vec<u8>"
 	| "u64"
 	| "Serialized<serde_json::Value>"; // TODO: Rest of types
@@ -91,12 +92,21 @@ export function defineOperation<const T extends RustArgs = never>(
 	const resultTyName = `${snakeToCamel(query.name)}Result`;
 
 	let fn_args = "";
+	let defined = "";
 	if (query.args && Object.keys(query.args).length > 0) {
 		fn_args =
 			", " +
 			Object.entries(query.args || {})
+				.filter(([k, v]) => v !== "Now")
 				.map(([k, v]) => `${camelToSnakeCase(k)}: ${v}`)
 				.join(",");
+		defined = Object.entries(query.args || {})
+			.filter(([k, v]) => v === "Now")
+			.map(
+				([k, v]) =>
+					`let ${camelToSnakeCase(k)} = chrono::Utc::now().naive_utc();`,
+			)
+			.join("\n");
 	}
 
 	return {
@@ -127,6 +137,7 @@ export function defineOperation<const T extends RustArgs = never>(
         pub async fn ${query.name}(&self${fn_args}) -> Result<` +
 			(!isQuery ? "()" : `Vec<${resultTyName}>`) +
 			`, mysql_async::Error> {
+		  ${defined}
           r#"${sql.sql}"#
             .with(mysql_async::Params::Positional(vec![${sql.params
 							// TODO: If the user puts a static value, this will snake case it.

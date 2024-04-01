@@ -8,7 +8,12 @@ pub struct Deploy {
     configuration: HashMap<String, ()>,
 }
 
-pub struct Entry {}
+pub enum Entry {
+    Bool(bool, ()),
+    Conflict(()),
+}
+
+// TODO: How do we deal with conflict
 
 // TODO: Deduplicate the following stuff???
 

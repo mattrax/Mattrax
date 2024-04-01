@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
+// The order policies are applied to the graph should not affect the result.
+
 /// TODO: Explain this
 #[derive(Debug)]
 pub struct Graph {

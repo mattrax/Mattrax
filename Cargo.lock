@@ -2141,7 +2141,6 @@ dependencies = [
  "axum",
  "base64 0.22.0",
  "better-acme",
- "chrono",
  "clap",
  "cuid2",
  "futures",
@@ -2322,6 +2321,7 @@ dependencies = [
 name = "mx-windows"
 version = "0.0.1"
 dependencies = [
+ "futures",
  "ms-mde",
  "ms-mdm",
  "mx-db",

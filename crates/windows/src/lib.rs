@@ -2,6 +2,7 @@
 
 // TODO: Tracing instrumentation
 
+use futures::join;
 use ms_mdm::{CmdId, CmdRef, Final, MsgRef, Status, SyncBody, SyncHdr, SyncML};
 use mx_db::Db;
 use rustls::pki_types::CertificateDer;
@@ -66,32 +67,37 @@ pub async fn handler(
     }
     .into()];
 
-    // TODO: Parallelize the body - So the DB queries can be done in parallel hence reducing the time taken
+    let cmd = &cmd;
+    let device = &device;
+    let (mut a, mut b, (), ()) = join!(
+        async move {
+            if cmd.hdr.msg_id == "1" {
+                policies::handler(db, &device, &cmd).await
+            } else {
+                vec![]
+            }
+        },
+        actions::handler(),
+        async move {
+            if cmd.hdr.msg_id == "1" {
+                db.update_device_lastseen(device.pk).await.unwrap(); // TODO: Error handling
+            }
+        },
+        results::handler(&cmd),
+        // TODO: Deploy applications
+    );
+    children.append(&mut a);
+    children.append(&mut b);
 
-    println!("{:?}", cmd.hdr); // TODO
-    let first_msg = cmd.hdr.msg_id == "1";
-    // if first_msg {
-    //     // db.update_device_lastseen(device.pk, Local::now().naive_utc())
-    //     //     .await
-    //     //     .unwrap(); // TODO: Error handling
-    // }
-
-    results::handler(&cmd).await;
-    if cmd.hdr.msg_id == "1" {
-        children.append(&mut policies::handler(&cmd).await);
-    }
-    children.append(&mut policies::handler(&cmd).await);
-
-    // TODO: Deploy applications
-
+    let hdr = cmd.hdr.clone();
     let response = SyncML {
         hdr: SyncHdr {
-            version: cmd.hdr.version,
-            version_protocol: cmd.hdr.version_protocol,
-            session_id: cmd.hdr.session_id,
-            msg_id: cmd.hdr.msg_id,
-            target: cmd.hdr.source.into(),
-            source: cmd.hdr.target.into(),
+            version: hdr.version,
+            version_protocol: hdr.version_protocol,
+            session_id: hdr.session_id,
+            msg_id: hdr.msg_id,
+            target: hdr.source.into(),
+            source: hdr.target.into(),
             // TODO: Make this work
             meta: None,
             // meta: Some(Meta {
