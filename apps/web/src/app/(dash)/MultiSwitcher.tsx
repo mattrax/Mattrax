@@ -80,8 +80,8 @@ export function MultiSwitcher(props: ParentProps) {
         }}
       >
         <PopoverTrigger asChild>{props.children}</PopoverTrigger>
-        <PopoverContent class="flex flex-row divide-x divide-gray-300 text-sm">
-          <div class="w-[12rem] flex flex-col">
+        <PopoverContent class="flex flex-row divide-x divide-gray-300 text-sm max-h-80 overflow-hidden">
+          <div class="w-[12rem] flex flex-col overflow-y-auto">
             {/* <div class="p-1 border-b">
             <input
               type="text"
@@ -132,7 +132,7 @@ export function MultiSwitcher(props: ParentProps) {
               </li>
             </ul>
           </div>
-          <div class="w-[12rem] flex flex-col">
+          <div class="w-[12rem] flex flex-col overflow-y-auto">
             <Show when={tenants()}>
               {/* <div class="p-1 border-b">
             <input
