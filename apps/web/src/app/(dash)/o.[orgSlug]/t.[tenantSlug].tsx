@@ -5,8 +5,11 @@ import { z } from "zod";
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { AuthContext } from "~c/AuthContext";
+import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
 import { TenantContext, useTenant } from "./t.[tenantSlug]/Context";
-import { TenantSwitcher } from "./t.[tenantSlug]/TenantSwitcher";
+import { MultiSwitcher } from "../MultiSwitcher";
+import { As } from "@kobalte/core";
+import { Button } from "@mattrax/ui";
 
 export function useTenantSlug() {
 	const params = useZodParams({ tenantSlug: z.string() });
@@ -29,18 +32,16 @@ export const route = {
 		BREADCRUMB: {
 			hasNestedSegments: true,
 			Component: (props: any) => {
-				const navigate = useNavigate();
-
 				return (
 					<AuthContext>
 						<TenantContext>
 							<div class="flex flex-row items-center py-1 gap-2">
 								<A href={props.href}>{useTenant()().name}</A>
-								<TenantSwitcher
-									setActiveTenant={(slug) => {
-										startTransition(() => navigate(`${props.path}/../${slug}`));
-									}}
-								/>
+								<MultiSwitcher>
+									<As component={Button} variant="ghost" size="iconSmall">
+										<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+									</As>
+								</MultiSwitcher>
 							</div>
 						</TenantContext>
 					</AuthContext>
