@@ -30,7 +30,9 @@ export default function Page() {
 						<CreateTenant />
 					</Match>
 					<Match when={tenants().length === 1 && tenants()[0]!}>
-						{(tenant) => <Navigate href={`t/${tenant().slug}`} />}
+						{(tenant) => (
+							<Navigate href={`/o/${orgSlug()}/t/${tenant().slug}`} />
+						)}
 					</Match>
 					<Match when={tenants().length > 1}>
 						<PageLayout class="pt-6">

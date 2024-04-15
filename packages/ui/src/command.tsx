@@ -12,7 +12,7 @@ type CommandProps<Option, OptGroup> = Omit<
 	| "open"
 	| "defaultOpen"
 	| "multiple"
-	| "value"
+	// | "value"
 	| "defaultValue"
 	| "removeOnBackspace"
 	| "readOnly"
@@ -27,10 +27,10 @@ const Command = <Option, OptGroup>(props: CommandProps<Option, OptGroup>) => {
 			// force render list
 			open
 			// @ts-ignore -- prevent select
-			value=""
+			// value=""
 			allowsEmptyCollection
 			class={cn(
-				"flex size-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground",
+				"flex flex-col overflow-hidden rounded-md bg-popover text-popover-foreground",
 				local.class,
 			)}
 			{...rest}

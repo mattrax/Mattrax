@@ -136,7 +136,7 @@ function CreatePolicyButton() {
 			<PopoverTrigger asChild>
 				<As component={Button}>Add New</As>
 			</PopoverTrigger>
-			<PopoverContent>
+			<PopoverContent class="p-4">
 				<Form
 					form={form}
 					class="w-full"

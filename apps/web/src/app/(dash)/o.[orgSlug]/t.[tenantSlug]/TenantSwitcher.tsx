@@ -28,84 +28,69 @@ export function TenantSwitcher(props: TenantSwitcherProps) {
 	const controller = createController();
 
 	const auth = useAuth();
-	const tenant = useTenant();
 
 	return (
-		<div class="relative inline-block text-left">
-			<CreateTenantDialog {...props}>
-				<DropdownMenu controller={controller} sameWidth placement="bottom">
-					<div class="flex flex-row items-center gap-2">
-						<span>{tenant().name}</span>
-						<DropdownMenuTrigger asChild>
-							<As component={Button} variant="ghost" size="iconSmall">
-								<KDropdownMenu.Icon>
-									<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
-								</KDropdownMenu.Icon>
-							</As>
-						</DropdownMenuTrigger>
-					</div>
+		<CreateTenantDialog {...props}>
+			<DropdownMenu controller={controller} sameWidth placement="bottom">
+				<DropdownMenuTrigger asChild>
+					<As component={Button} variant="ghost" size="iconSmall">
+						<KDropdownMenu.Icon>
+							<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+						</KDropdownMenu.Icon>
+					</As>
+				</DropdownMenuTrigger>
 
-					<DropdownMenuContent>
-						<Suspense>
-							<Command
-								// @ts-expect-error // TODO
-								optionLabel="label"
-								optionGroupChildren="options"
-								options={[
-									{
-										options: auth().tenants,
-									},
-									{
-										options: ["create-tenant"],
-									},
-								]}
-								itemComponent={(iprops) => {
-									// @ts-expect-error // TODO
-									if (iprops.item.rawValue === "create-tenant")
-										return (
-											<>
-												<DropdownMenuSeparator />
-												<DialogTrigger asChild>
-													<As component={CommandItem} item={iprops.item}>
-														Create new tenant
-													</As>
-												</DialogTrigger>
-											</>
-										);
-
+				<DropdownMenuContent>
+					<Suspense>
+						<Command
+							optionLabel="label"
+							optionGroupChildren="options"
+							options={[
+								{
+									options: auth().tenants,
+								},
+								{
+									options: ["create-tenant"],
+								},
+							]}
+							itemComponent={(iprops) => {
+								if (iprops.item.rawValue === "create-tenant")
 									return (
-										<CommandItem
-											item={iprops.item}
-											onClick={() =>
-												// @ts-expect-error // TODO
-												props.setActiveTenant(iprops.item.rawValue.slug)
-											}
-										>
-											<CommandItemLabel>
-												{
-													// @ts-expect-error // TODO
-													iprops.item.rawValue.name
-												}
-											</CommandItemLabel>
-										</CommandItem>
+										<>
+											<DropdownMenuSeparator />
+											<DialogTrigger asChild>
+												<As component={CommandItem} item={iprops.item}>
+													Create new tenant
+												</As>
+											</DialogTrigger>
+										</>
 									);
-								}}
-								sectionComponent={(props) => (
-									<Combobox.Section>
-										{
-											// @ts-expect-error // TODO
-											props.section.rawValue.label
+
+								return (
+									<CommandItem
+										item={iprops.item}
+										onClick={() =>
+											props.setActiveTenant(iprops.item.rawValue.slug)
 										}
-									</Combobox.Section>
-								)}
-							>
-								<CommandInput />
-								<CommandList />
-							</Command>
-						</Suspense>
-					</DropdownMenuContent>
-				</DropdownMenu>
-			</CreateTenantDialog>
-		</div>
+									>
+										<CommandItemLabel>
+											{iprops.item.rawValue.name}
+										</CommandItemLabel>
+									</CommandItem>
+								);
+							}}
+							sectionComponent={(props) => (
+								<Combobox.Section>
+									{props.section.rawValue.label}
+								</Combobox.Section>
+							)}
+						>
+							<CommandInput />
+							<CommandList />
+						</Command>
+					</Suspense>
+				</DropdownMenuContent>
+			</DropdownMenu>
+		</CreateTenantDialog>
 	);
 }

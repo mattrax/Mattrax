@@ -1,12 +1,15 @@
 import { type ParentProps, Show, Suspense, startTransition } from "solid-js";
-import { type RouteDefinition, useNavigate } from "@solidjs/router";
+import { type RouteDefinition, useNavigate, A } from "@solidjs/router";
 import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { AuthContext } from "~c/AuthContext";
-import { TenantContext } from "./t.[tenantSlug]/Context";
-import { TenantSwitcher } from "./t.[tenantSlug]/TenantSwitcher";
+import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
+import { TenantContext, useTenant } from "./t.[tenantSlug]/Context";
+import { MultiSwitcher } from "../MultiSwitcher";
+import { As } from "@kobalte/core";
+import { Button } from "@mattrax/ui";
 
 export function useTenantSlug() {
 	const params = useZodParams({ tenantSlug: z.string() });
@@ -29,16 +32,17 @@ export const route = {
 		BREADCRUMB: {
 			hasNestedSegments: true,
 			Component: (props: any) => {
-				const navigate = useNavigate();
-
 				return (
 					<AuthContext>
 						<TenantContext>
-							<TenantSwitcher
-								setActiveTenant={(slug) => {
-									startTransition(() => navigate(`${props.path}/../${slug}`));
-								}}
-							/>
+							<div class="flex flex-row items-center py-1 gap-2">
+								<A href={props.href}>{useTenant()().name}</A>
+								<MultiSwitcher>
+									<As component={Button} variant="ghost" size="iconSmall">
+										<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+									</As>
+								</MultiSwitcher>
+							</div>
 						</TenantContext>
 					</AuthContext>
 				);

@@ -40,10 +40,10 @@ export default function Page() {
 				) => (
 					<Show
 						when={defaultTenant()}
-						fallback={<Navigate href={`o/${org().slug}`} />}
+						fallback={<Navigate href={`/o/${org().slug}`} />}
 					>
 						{(tenant) => (
-							<Navigate href={`o/${org().slug}/t/${tenant().slug}`} />
+							<Navigate href={`/o/${org().slug}/t/${tenant().slug}`} />
 						)}
 					</Show>
 				)}

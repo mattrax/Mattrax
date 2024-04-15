@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { generateId } from "lucia";
 import { alphabet, generateRandomString } from "oslo/crypto";
 import { appendResponseHeader, setCookie } from "vinxi/server";
@@ -39,6 +39,7 @@ const fetchTenants = (accountPk: number) =>
 			id: tenants.id,
 			name: tenants.name,
 			slug: tenants.slug,
+			orgSlug: organisations.slug,
 		})
 		.from(tenants)
 		.innerJoin(organisations, eq(tenants.orgPk, organisations.pk))

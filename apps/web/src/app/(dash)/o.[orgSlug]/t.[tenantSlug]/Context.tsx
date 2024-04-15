@@ -8,11 +8,8 @@ import { useAuth } from "~c/AuthContext";
 import { useZodParams } from "~/lib/useZodParams";
 
 const [TenantContextProvider, useTenant] = createContextProvider(
-	(props: {
-		tenant: RouterOutput["auth"]["me"]["tenants"][number];
-	}) =>
-		() =>
-			props.tenant,
+	(props: { tenant: RouterOutput["auth"]["me"]["tenants"][number] }) => () =>
+		props.tenant,
 	() => {
 		throw new Error("`useTenant` used without `TenantContext` mounted above.");
 	},
@@ -21,7 +18,7 @@ const [TenantContextProvider, useTenant] = createContextProvider(
 export { useTenant };
 
 export function TenantContext(props: ParentProps) {
-	const params = useZodParams({ tenantSlug: z.string() });
+	const params = useZodParams({ tenantSlug: z.string(), orgSlug: z.string() });
 	const auth = useAuth();
 
 	const activeTenant = createMemo(() =>
@@ -35,7 +32,9 @@ export function TenantContext(props: ParentProps) {
 				<Navigate
 					href={() => {
 						const firstTenant = auth().tenants[0];
-						return firstTenant?.slug ? `../${firstTenant.slug}` : "/";
+						return firstTenant?.slug
+							? `/o/${params.orgSlug}/t/${firstTenant.slug}`
+							: "/";
 					}}
 				/>
 			}

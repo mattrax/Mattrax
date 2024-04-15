@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router";
-import { ParentProps, Show, Suspense, onMount } from "solid-js";
+import { ParentProps, Show, onMount } from "solid-js";
 import { parse } from "cookie-es";
 import { createContextProvider } from "@solid-primitives/context";
 

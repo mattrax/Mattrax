@@ -1,4 +1,5 @@
 import { count, eq } from "drizzle-orm";
+import { z } from "zod";
 
 import {
 	db,
@@ -7,13 +8,15 @@ import {
 	organisations,
 	tenants,
 } from "~/db";
-import { createTRPCRouter, orgProcedure } from "../../helpers";
-import { billingRouter } from "./billing";
+import { authedProcedure, createTRPCRouter, orgProcedure } from "../../helpers";
+import { randomSlug } from "~/api/utils";
+
 import { adminsRouter } from "./admins";
+import { billingRouter } from "./billing";
 
 export const orgRouter = createTRPCRouter({
-	billing: billingRouter,
 	admins: adminsRouter,
+	billing: billingRouter,
 
 	tenants: orgProcedure.query(async ({ ctx }) => {
 		return db
@@ -59,4 +62,27 @@ export const orgRouter = createTRPCRouter({
 				.where(eq(organisations.pk, ctx.org.pk));
 		});
 	}),
+
+	create: authedProcedure
+		.input(z.object({ name: z.string().min(1) }))
+		.mutation(async ({ ctx, input }) => {
+			const slug = await db.transaction(async (db) => {
+				const slug = randomSlug(input.name);
+
+				const { insertId } = await db.insert(organisations).values({
+					name: input.name,
+					slug,
+					ownerPk: ctx.account.pk,
+				});
+
+				await db.insert(organisationMembers).values({
+					orgPk: parseInt(insertId),
+					accountPk: ctx.account.pk,
+				});
+
+				return slug;
+			});
+
+			return slug;
+		}),
 });
