@@ -1,9 +1,12 @@
+/* @refresh skip */
+
 import {
 	type Component,
 	For,
 	type ParentProps,
 	Suspense,
 	createMemo,
+	createEffect,
 } from "solid-js";
 import { useMatch, useMatches } from "@solidjs/router";
 
@@ -31,9 +34,11 @@ export function Breadcrumbs() {
 					const href = createMemo(() => {
 						const __match = hasNestedSegments ? _match() : undefined;
 
-						return __match
-							? `${__match.path}/${__match.params.segment}`
+						const ret = __match
+							? `${match.path}/${__match.params.segment}`
 							: match.path;
+
+						return ret;
 					});
 
 					return (

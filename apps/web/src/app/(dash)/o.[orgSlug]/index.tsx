@@ -36,33 +36,38 @@ export default function Page() {
 					</Match>
 					<Match when={tenants().length > 1}>
 						<PageLayout class="pt-6">
-							<span class="p-1 text-sm text-gray-800 font-semibold">
-								Tenants
-							</span>
-							<ul>
-								<For each={tenants()}>
-									{(tenant) => (
-										<li class="w-full text-sm">
-											<A
-												class="flex flex-col items-stretch gap-1 block w-full p-4 border border-gray-300 shadow rounded-lg"
-												href={`t/${tenant.slug}`}
-											>
-												<span class="hover:underline font-semibold">
-													{tenant.name}
-												</span>
-												<span class="hover:underline text-gray-700">
-													{tenant.slug}
-												</span>
-											</A>
-										</li>
-									)}
-								</For>
-							</ul>
+							<TenantList />
 						</PageLayout>
 					</Match>
 				</Switch>
 			)}
 		</Show>
+	);
+}
+
+function TenantList() {
+	const orgSlug = useOrgSlug();
+	const tenants = trpc.org.tenants.useQuery(() => ({ orgSlug: orgSlug() }));
+
+	return (
+		<>
+			<span class="p-1 text-sm text-gray-800 font-semibold">Tenants</span>
+			<ul class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+				<For each={tenants.data}>
+					{(tenant) => (
+						<li class="w-full text-sm">
+							<A
+								class="flex flex-col items-start gap-1 block w-full p-4 border border-gray-300 shadow-sm hover:shadow-md rounded-lg transition-shadow"
+								href={`t/${tenant.slug}`}
+							>
+								<span class="hover:underline font-semibold">{tenant.name}</span>
+								<span class="hover:underline text-gray-700">{tenant.slug}</span>
+							</A>
+						</li>
+					)}
+				</For>
+			</ul>
+		</>
 	);
 }
 

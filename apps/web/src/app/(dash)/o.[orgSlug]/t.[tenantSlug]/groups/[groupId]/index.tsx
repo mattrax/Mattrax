@@ -1,11 +1,12 @@
-import { As } from "@kobalte/core";
 import { Suspense, createMemo, createSignal } from "solid-js";
+import { RouteDefinition } from "@solidjs/router";
 import { Dynamic } from "solid-js/web";
 import { toast } from "solid-sonner";
+import { Button } from "@mattrax/ui";
+import { As } from "@kobalte/core";
 
 import IconMaterialSymbolsEditOutline from "~icons/material-symbols/edit-outline.jsx";
 import IconIcRoundCheck from "~icons/ic/round-check.jsx";
-import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
@@ -14,6 +15,14 @@ import {
 	memberSheetColumns,
 } from "~[tenantSlug]/AddMemberSheet";
 import { useGroup } from "./Context";
+
+export const route = {
+	load: ({ params }) => {
+		trpc.useContext().group.members.ensureData({
+			id: params.groupId!,
+		});
+	},
+} satisfies RouteDefinition;
 
 export default function Page() {
 	const group = useGroup();

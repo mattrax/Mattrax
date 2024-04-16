@@ -1,3 +1,5 @@
+/* @refresh skip */
+
 import { As } from "@kobalte/core";
 import { Button } from "@mattrax/ui";
 import { type RouteDefinition, A } from "@solidjs/router";
@@ -31,7 +33,7 @@ export const route = {
 	info: {
 		NAV_ITEMS,
 		BREADCRUMB: {
-			Component: (props: any) => {
+			Component: (props: { href: string }) => {
 				return (
 					<AuthContext>
 						<OrgContext>

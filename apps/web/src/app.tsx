@@ -86,84 +86,82 @@ export default function App() {
 	return (
 		<QueryClientProvider client={queryClient}>
 			<trpc.Provider queryClient={queryClient}>
-				<Suspense>
-					<Router
-						root={(props) => {
-							const navigate = useNavigate();
+				<Router
+					root={(props) => {
+						const navigate = useNavigate();
 
-							onCleanup(
-								errorBus.listen(([scopeMsg, error]) => {
-									let errorMsg = (
-										<>
-											{scopeMsg},
-											<br />
-											Please reload to try again!
-										</>
-									);
+						onCleanup(
+							errorBus.listen(([scopeMsg, error]) => {
+								let errorMsg = (
+									<>
+										{scopeMsg},
+										<br />
+										Please reload to try again!
+									</>
+								);
 
-									if (isTRPCClientError(error)) {
-										if (error.data?.code === "UNAUTHORIZED") {
-											startTransition(() => navigate("/login"));
-											return;
-										}
-
-										if (error.data?.code === "FORBIDDEN") {
-											if (error.message === "tenant") navigate("/");
-											else
-												errorMsg =
-													"You are not allowed to access this resource!,";
-										}
-									}
-
-									// TODO: Prevent this for auth errors
-									toast.error(errorMsg, {
-										id: "network-error",
-									});
-								}),
-							);
-
-							onCleanup(
-								onlineManager.subscribe((isOnline) => {
-									if (isOnline) {
-										// TODO: This dismiss doesn't animate the toast close which is ugly.
-										toast.dismiss("network-offline");
+								if (isTRPCClientError(error)) {
+									if (error.data?.code === "UNAUTHORIZED") {
+										startTransition(() => navigate("/login"));
 										return;
 									}
 
-									toast.error(
-										<>
-											You are offline!,
-											<br />
-											Please reconnect to continue!
-										</>,
-										{
-											id: "network-offline",
-											duration: Number.POSITIVE_INFINITY,
-										},
-									);
-								}),
-							);
+									if (error.data?.code === "FORBIDDEN") {
+										if (error.message === "tenant") navigate("/");
+										else
+											errorMsg =
+												"You are not allowed to access this resource!,";
+									}
+								}
 
-							return (
-								// <PersistQueryClientProvider
-								//   client={queryClient}
-								//   persistOptions={persistOptions}
-								// >
+								// TODO: Prevent this for auth errors
+								toast.error(errorMsg, {
+									id: "network-error",
+								});
+							}),
+						);
 
-								<>
-									{import.meta.env.DEV && <SolidQueryDevtools />}
-									<MErrorBoundary>
-										<Toaster />
-										{props.children}
-									</MErrorBoundary>
-								</>
-								// </PersistQueryClientProvider>
-							);
-						}}
-					>
-						<FileRoutes />
-					</Router>
-				</Suspense>
+						onCleanup(
+							onlineManager.subscribe((isOnline) => {
+								if (isOnline) {
+									// TODO: This dismiss doesn't animate the toast close which is ugly.
+									toast.dismiss("network-offline");
+									return;
+								}
+
+								toast.error(
+									<>
+										You are offline!,
+										<br />
+										Please reconnect to continue!
+									</>,
+									{
+										id: "network-offline",
+										duration: Number.POSITIVE_INFINITY,
+									},
+								);
+							}),
+						);
+
+						return (
+							// <PersistQueryClientProvider
+							//   client={queryClient}
+							//   persistOptions={persistOptions}
+							// >
+
+							<>
+								{import.meta.env.DEV && <SolidQueryDevtools />}
+								<MErrorBoundary>
+									<Toaster />
+									{props.children}
+								</MErrorBoundary>
+							</>
+							// </PersistQueryClientProvider>
+						);
+					}}
+				>
+					<FileRoutes />
+				</Router>
 			</trpc.Provider>
 		</QueryClientProvider>
 	);

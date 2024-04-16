@@ -31,7 +31,7 @@ export const route = {
 		NAV_ITEMS,
 		BREADCRUMB: {
 			hasNestedSegments: true,
-			Component: (props: any) => {
+			Component: (props: { href: string }) => {
 				return (
 					<AuthContext>
 						<TenantContext>

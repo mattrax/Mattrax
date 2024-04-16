@@ -21,7 +21,7 @@
 		"@mattrax/ui": "workspace:*",
 		"@solidjs/router": "^0.13.1",
 		"@solidjs/start": "1.0.0-rc.0",
-		"@tanstack/solid-form": "^0.16.0",
+		"@tanstack/solid-form": "^0.19.0",
 		"h3": "^1.11.1",
 		"solid-js": "^1.8.15",
 		"vinxi": "^0.3.10",

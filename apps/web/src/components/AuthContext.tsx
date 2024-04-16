@@ -30,7 +30,7 @@ export function AuthContext(props: ParentProps) {
 	// TODO: Use the auth cookie trick for better UX
 	const meQuery = trpc.auth.me.useQuery(void 0, () => ({
 		// This will *always* stay in the cache. Avoids need for `localStorage` shenanigans.
-		// gcTime: Infinity,
+		gcTime: Infinity,
 	}));
 
 	return (

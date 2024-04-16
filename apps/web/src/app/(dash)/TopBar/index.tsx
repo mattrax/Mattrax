@@ -18,6 +18,7 @@ import {
 	Textarea,
 } from "@mattrax/ui";
 import {
+	Suspense,
 	createEffect,
 	createSignal,
 	useTransition,
@@ -62,63 +63,71 @@ export function TopBar() {
 				<Breadcrumbs />
 				<div class="flex-1" />
 
-				<AuthContext>
-					<div class="flex space-x-2 justify-center items-center">
-						<FeedbackPopover>
-							<As
-								component={Button}
-								variant="outline"
-								size="sm"
-								class="hidden md:block"
-							>
-								Feedback
-							</As>
-						</FeedbackPopover>
-
-						<a
-							href="https://docs.mattrax.app"
-							class="text-gray-900 text-sm px-2 hover:text-gray-600"
-							rel="noreferrer noopener"
-							target="_blank"
+				<div class="flex space-x-2 justify-center items-center">
+					<FeedbackPopover>
+						<As
+							component={Button}
+							variant="outline"
+							size="sm"
+							class="hidden md:block"
 						>
-							Docs
-						</a>
+							Feedback
+						</As>
+					</FeedbackPopover>
 
-						<DropdownMenu>
-							<DropdownMenuTrigger asChild>
-								<As component={Avatar}>
-									{/* TODO: Properly hook this up + Gravatar support */}
-									{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
-									<AvatarFallback>
-										{getInitials(useAuth()().name)}
-									</AvatarFallback>
-								</As>
-							</DropdownMenuTrigger>
-							<DropdownMenuContent>
-								<DropdownMenuLabel>{useAuth()().email}</DropdownMenuLabel>
-								<DropdownMenuSeparator />
-								<DropdownMenuItem asChild>
-									<As component={A} href="account">
-										Account
+					<a
+						href="https://docs.mattrax.app"
+						class="text-gray-900 text-sm px-2 hover:text-gray-600"
+						rel="noreferrer noopener"
+						target="_blank"
+					>
+						Docs
+					</a>
+
+					<Suspense
+						fallback={
+							<Avatar>
+								<AvatarFallback class="animate-pulse" />
+							</Avatar>
+						}
+					>
+						<AuthContext>
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<As component={Avatar}>
+										{/* TODO: Properly hook this up + Gravatar support */}
+										{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
+										<AvatarFallback>
+											{getInitials(useAuth()().name)}
+										</AvatarFallback>
 									</As>
-								</DropdownMenuItem>
-								{user.latest?.superadmin && (
+								</DropdownMenuTrigger>
+								<DropdownMenuContent>
+									<DropdownMenuLabel>{useAuth()().email}</DropdownMenuLabel>
+									<DropdownMenuSeparator />
 									<DropdownMenuItem asChild>
-										<As component={A} href="settings">
-											Settings{" "}
-											<span class="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
-												Superadmin
-											</span>
+										<As component={A} href="account">
+											Account
 										</As>
 									</DropdownMenuItem>
-								)}
-								<DropdownMenuItem onClick={() => logout.mutate()}>
-									Logout
-								</DropdownMenuItem>
-							</DropdownMenuContent>
-						</DropdownMenu>
-					</div>
-				</AuthContext>
+									{user.latest?.superadmin && (
+										<DropdownMenuItem asChild>
+											<As component={A} href="settings">
+												Settings{" "}
+												<span class="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
+													Superadmin
+												</span>
+											</As>
+										</DropdownMenuItem>
+									)}
+									<DropdownMenuItem onClick={() => logout.mutate()}>
+										Logout
+									</DropdownMenuItem>
+								</DropdownMenuContent>
+							</DropdownMenu>
+						</AuthContext>
+					</Suspense>
+				</div>
 			</div>
 			<NavItems />
 		</>

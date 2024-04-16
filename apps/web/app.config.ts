@@ -1,6 +1,7 @@
 import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig } from "@solidjs/start/config";
 import tsconfigPaths from "vite-tsconfig-paths";
+import devtools from "solid-devtools/vite";
 import mattraxUI from "@mattrax/ui/vite";
 import path from "node:path";
 import fs from "node:fs";
@@ -18,6 +19,7 @@ export default defineConfig({
 			target: "es2015",
 		},
 		plugins: [
+			devtools(),
 			tsconfigPaths({
 				// If this isn't set Vinxi hangs on startup
 				root: ".",

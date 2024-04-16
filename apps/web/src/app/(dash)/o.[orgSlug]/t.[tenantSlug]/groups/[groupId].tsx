@@ -1,5 +1,5 @@
 import { Navigate, type RouteDefinition } from "@solidjs/router";
-import { type ParentProps, Show } from "solid-js";
+import { type ParentProps, Show, Match, Switch } from "solid-js";
 import { toast } from "solid-sonner";
 import { Badge } from "@mattrax/ui";
 import { z } from "zod";
@@ -43,15 +43,18 @@ export default function Layout(props: ParentProps) {
 	}));
 
 	return (
-		<Show when={query.data !== undefined}>
-			<Show when={query.data} fallback={<NotFound />}>
+		<Switch>
+			<Match when={query.data === null}>
+				<NotFound />
+			</Match>
+			<Match when={query.data}>
 				{(data) => (
 					<GroupContextProvider group={data()} query={query}>
 						<MErrorBoundary>{props.children}</MErrorBoundary>
 					</GroupContextProvider>
 				)}
-			</Show>
-		</Show>
+			</Match>
+		</Switch>
 	);
 }
 
