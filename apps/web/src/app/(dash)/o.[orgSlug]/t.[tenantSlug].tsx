@@ -12,56 +12,56 @@ import { As } from "@kobalte/core";
 import { Button } from "@mattrax/ui";
 
 export function useTenantSlug() {
-  const params = useZodParams({ tenantSlug: z.string() });
-  return () => params.tenantSlug;
+	const params = useZodParams({ tenantSlug: z.string() });
+	return () => params.tenantSlug;
 }
 
 const NAV_ITEMS = [
-  { title: "Dashboard", href: "" },
-  { title: "Users", href: "users" },
-  { title: "Devices", href: "devices" },
-  { title: "Policies", href: "policies" },
-  { title: "Applications", href: "apps" },
-  { title: "Groups", href: "groups" },
-  { title: "Settings", href: "settings" },
+	{ title: "Dashboard", href: "" },
+	{ title: "Users", href: "users" },
+	{ title: "Devices", href: "devices" },
+	{ title: "Policies", href: "policies" },
+	{ title: "Applications", href: "apps" },
+	{ title: "Groups", href: "groups" },
+	{ title: "Settings", href: "settings" },
 ];
 
 export const route = {
-  info: {
-    NAV_ITEMS,
-    BREADCRUMB: {
-      hasNestedSegments: true,
-      Component: (props: { href: string }) => {
-        return (
-          <AuthContext>
-            <TenantContext>
-              <div class="flex flex-row items-center py-1 gap-2">
-                <A href={props.href}>{useTenant()().name}</A>
-                <MultiSwitcher>
-                  <As component={Button} variant="ghost" size="iconSmall">
-                    <IconPhCaretUpDown class="h-5 w-5 -mx-1" />
-                  </As>
-                </MultiSwitcher>
-              </div>
-            </TenantContext>
-          </AuthContext>
-        );
-      },
-    },
-  },
+	info: {
+		NAV_ITEMS,
+		BREADCRUMB: {
+			hasNestedSegments: true,
+			Component: (props: { href: string }) => {
+				return (
+					<AuthContext>
+						<TenantContext>
+							<div class="flex flex-row items-center py-1 gap-2">
+								<A href={props.href}>{useTenant()().name}</A>
+								<MultiSwitcher>
+									<As component={Button} variant="ghost" size="iconSmall">
+										<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+									</As>
+								</MultiSwitcher>
+							</div>
+						</TenantContext>
+					</AuthContext>
+				);
+			},
+		},
+	},
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
-  const params = useZodParams({ tenantSlug: z.string() });
+	const params = useZodParams({ tenantSlug: z.string() });
 
-  return (
-    <>
-      <MErrorBoundary>
-        {/* we key here on purpose - tenants are the root-most unit of isolation */}
-        <Show when={params.tenantSlug} keyed>
-          <Suspense>{props.children}</Suspense>
-        </Show>
-      </MErrorBoundary>
-    </>
-  );
+	return (
+		<>
+			<MErrorBoundary>
+				{/* we key here on purpose - tenants are the root-most unit of isolation */}
+				<Show when={params.tenantSlug} keyed>
+					<Suspense>{props.children}</Suspense>
+				</Show>
+			</MErrorBoundary>
+		</>
+	);
 }
