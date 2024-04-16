@@ -5,7 +5,7 @@ import { isTRPCClientError, trpc } from "~/lib";
 
 export default function Page() {
 	const navigate = useNavigate();
-	const stats = trpc.internal.stats.useQuery();
+	const stats = trpc.internal.stats.createQuery();
 
 	createEffect(() => {
 		if (isTRPCClientError(stats.error)) {

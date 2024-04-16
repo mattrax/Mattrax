@@ -21,7 +21,7 @@ export const route = {
 		BREADCRUMB: {
 			Component: () => {
 				const params = useZodParams({ groupId: z.string() });
-				const query = trpc.group.get.useQuery(() => ({
+				const query = trpc.group.get.createQuery(() => ({
 					id: params.groupId,
 				}));
 
@@ -38,7 +38,7 @@ export const route = {
 
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ groupId: z.string() });
-	const query = trpc.group.get.useQuery(() => ({
+	const query = trpc.group.get.createQuery(() => ({
 		id: params.groupId,
 	}));
 

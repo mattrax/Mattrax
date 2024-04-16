@@ -9,9 +9,11 @@ export default function Page() {
 	const params = useZodParams({ code: z.string() });
 
 	const trpcCtx = trpc.useContext();
-	const acceptTenantInvite = trpc.org.admins.acceptInvite.useMutation(() => ({
-		onSuccess: async () => await trpcCtx.auth.me.refetch(),
-	}));
+	const acceptTenantInvite = trpc.org.admins.acceptInvite.createMutation(
+		() => ({
+			onSuccess: async () => await trpcCtx.auth.me.refetch(),
+		}),
+	);
 
 	onMount(() => acceptTenantInvite.mutateAsync(params));
 

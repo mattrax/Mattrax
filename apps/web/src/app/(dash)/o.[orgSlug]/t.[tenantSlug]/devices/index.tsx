@@ -66,7 +66,7 @@ const columns = [
 
 function createDevicesTable() {
 	const params = useZodParams({ tenantSlug: z.string() });
-	const devices = trpc.device.list.useQuery(() => params);
+	const devices = trpc.device.list.createQuery(() => params);
 
 	const table = createStandardTable({
 		get data() {

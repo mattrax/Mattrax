@@ -6,7 +6,7 @@ import { trpc } from "~/lib";
 import { features } from "~/lib/featureFlags";
 
 export default function Page() {
-	const user = trpc.auth.me.useQuery();
+	const user = trpc.auth.me.createQuery();
 
 	return (
 		<div>
@@ -19,7 +19,7 @@ export default function Page() {
 					<Show when={user.data} keyed>
 						{(activeUser) => {
 							const [email, setEmail] = createSignal(activeUser.email);
-							const getFeatures = trpc.auth.admin.getFeatures.useQuery(
+							const getFeatures = trpc.auth.admin.getFeatures.createQuery(
 								() => ({
 									email: email(),
 								}),
@@ -40,16 +40,15 @@ export default function Page() {
 									? activeUser.features ?? []
 									: getFeatures.data ?? [];
 
-							const enableFeature = trpc.auth.admin.enableFeature.useMutation(
-								() => ({
+							const enableFeature =
+								trpc.auth.admin.enableFeature.createMutation(() => ({
 									onSuccess: async () => {
 										await (email() === activeUser.email
 											? user
 											: getFeatures
 										).refetch();
 									},
-								}),
-							);
+								}));
 
 							return (
 								<>

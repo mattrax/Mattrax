@@ -61,15 +61,15 @@ function IdentityProviderCard() {
 	const tenantSlug = useTenantSlug();
 	const trpcCtx = trpc.useContext();
 
-	const provider = trpc.tenant.identityProvider.get.useQuery(() => ({
+	const provider = trpc.tenant.identityProvider.get.createQuery(() => ({
 		tenantSlug: tenantSlug(),
 	}));
 
-	const syncProvider = trpc.tenant.identityProvider.sync.useMutation(() => ({
+	const syncProvider = trpc.tenant.identityProvider.sync.createMutation(() => ({
 		onSuccess: () => provider.refetch(),
 	}));
 
-	const removeProvider = trpc.tenant.identityProvider.remove.useMutation(
+	const removeProvider = trpc.tenant.identityProvider.remove.createMutation(
 		() => ({
 			onSuccess: () => {
 				provider.refetch();
@@ -79,7 +79,7 @@ function IdentityProviderCard() {
 
 	const [adminConsentPopupActive, setAdminConsentPopupActive] =
 		createSignal(false);
-	const linkEntra = trpc.tenant.identityProvider.linkEntraState.useMutation(
+	const linkEntra = trpc.tenant.identityProvider.linkEntraState.createMutation(
 		() => ({
 			onSuccess: (state) => {
 				// This `setTimeout` causes Safari's popup blocker to not active.
@@ -197,19 +197,19 @@ function Domains() {
 	const tenantSlug = useTenantSlug();
 	const trpcCtx = trpc.useContext();
 
-	const provider = trpc.tenant.identityProvider.get.useQuery(() => ({
+	const provider = trpc.tenant.identityProvider.get.createQuery(() => ({
 		tenantSlug: tenantSlug(),
 	}));
 
 	const refreshDomains =
-		trpc.tenant.identityProvider.refreshDomains.useMutation(() => ({
+		trpc.tenant.identityProvider.refreshDomains.createMutation(() => ({
 			onSuccess: () =>
 				trpcCtx.tenant.identityProvider.domains.refetch({
 					tenantSlug: tenantSlug(),
 				}),
 		}));
 
-	const domains = trpc.tenant.identityProvider.domains.useQuery(() => ({
+	const domains = trpc.tenant.identityProvider.domains.createQuery(() => ({
 		tenantSlug: tenantSlug(),
 	}));
 
@@ -386,7 +386,7 @@ function Domains() {
 												<Match when={state().variant !== "unconnected"}>
 													{(_) => {
 														const removeDomain =
-															trpc.tenant.identityProvider.removeDomain.useMutation(
+															trpc.tenant.identityProvider.removeDomain.createMutation(
 																() => ({
 																	onSuccess: () => domains.refetch(),
 																}),
@@ -410,7 +410,7 @@ function Domains() {
 												<Match when={state().variant === "unconnected"}>
 													{(_) => {
 														const enableDomain =
-															trpc.tenant.identityProvider.connectDomain.useMutation(
+															trpc.tenant.identityProvider.connectDomain.createMutation(
 																() => ({ onSuccess: () => domains.refetch() }),
 															);
 

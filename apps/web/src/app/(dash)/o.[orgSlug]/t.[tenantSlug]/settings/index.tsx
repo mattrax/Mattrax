@@ -37,7 +37,7 @@ function SettingsCard() {
 	const tenant = useTenant();
 
 	// TODO: rollback form on failure
-	const updateTenant = trpc.tenant.edit.useMutation(() => ({
+	const updateTenant = trpc.tenant.edit.createMutation(() => ({
 		onSuccess: () => auth.query.refetch(),
 	}));
 

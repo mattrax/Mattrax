@@ -47,7 +47,7 @@ import { Button } from "@mattrax/ui";
 
 function createGroupsTable() {
 	const params = useZodParams({ tenantSlug: z.string() });
-	const groups = trpc.group.list.useQuery(() => params);
+	const groups = trpc.group.list.createQuery(() => params);
 
 	const table = createStandardTable({
 		get data() {
@@ -119,7 +119,7 @@ function CreateGroupDialog(props: ParentProps) {
 	const params = useZodParams({ tenantSlug: z.string() });
 	const navigate = useNavigate();
 
-	const mutation = trpc.group.create.useMutation(() => ({
+	const mutation = trpc.group.create.createMutation(() => ({
 		onSuccess: async (groupId) => {
 			await startTransition(() => navigate(groupId));
 		},

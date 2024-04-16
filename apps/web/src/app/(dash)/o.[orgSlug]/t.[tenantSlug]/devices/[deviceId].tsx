@@ -28,7 +28,7 @@ export const route = {
 		BREADCRUMB: {
 			Component: () => {
 				const params = useZodParams({ deviceId: z.string() });
-				const query = trpc.device.get.useQuery(() => params);
+				const query = trpc.device.get.createQuery(() => params);
 
 				return (
 					<>
@@ -43,7 +43,7 @@ export const route = {
 
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ deviceId: z.string() });
-	const query = trpc.device.get.useQuery(() => params);
+	const query = trpc.device.get.createQuery(() => params);
 
 	return (
 		<Show when={query.data !== undefined}>

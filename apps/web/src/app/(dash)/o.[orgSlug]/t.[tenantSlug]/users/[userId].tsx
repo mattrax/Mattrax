@@ -19,7 +19,7 @@ export const route = {
 			Component: () => {
 				const params = useZodParams({ userId: z.string() });
 
-				const query = trpc.user.get.useQuery(() => ({
+				const query = trpc.user.get.createQuery(() => ({
 					id: params.userId,
 				}));
 
@@ -37,7 +37,7 @@ export const route = {
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ userId: z.string() });
 
-	const query = trpc.user.get.useQuery(() => ({
+	const query = trpc.user.get.createQuery(() => ({
 		id: params.userId,
 	}));
 

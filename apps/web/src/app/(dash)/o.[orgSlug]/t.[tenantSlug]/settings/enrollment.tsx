@@ -90,11 +90,11 @@ function Section(
 // function ConfigureEnrollmentCard() {
 // 	const tenantSlug = useTenantSlug();
 
-// 	const info = trpc.tenant.enrollmentInfo.useQuery(() => ({
+// 	const info = trpc.tenant.enrollmentInfo.createQuery(() => ({
 // 		tenantSlug: tenantSlug(),
 // 	}));
 // 	// TODO: Show correct state on the UI while the mutation is pending but keep fields disabled.
-// 	const setEnrollmentInfo = trpc.tenant.setEnrollmentInfo.useMutation(() => ({
+// 	const setEnrollmentInfo = trpc.tenant.setEnrollmentInfo.createMutation(() => ({
 // 		onSuccess: () => info.refetch(),
 // 	}));
 

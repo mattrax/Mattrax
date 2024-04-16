@@ -1,5 +1,5 @@
-import { createMutation } from "@tanstack/solid-query";
-import { For, type ParentProps, Suspense, createSignal } from "solid-js";
+import { CreateQueryResult } from "@tanstack/solid-query";
+import { type ParentProps, Suspense, createSignal, Index } from "solid-js";
 import { createColumnHelper } from "@tanstack/solid-table";
 import {
   Badge,
@@ -14,10 +14,9 @@ import {
   SheetTitle,
   SheetTrigger,
   TabsIndicator,
+  AsyncButton,
 } from "@mattrax/ui";
 
-import { useTenantSlug } from "../t.[tenantSlug]";
-import { trpc } from "~/lib";
 import {
   StandardTable,
   createStandardTable,
@@ -25,94 +24,56 @@ import {
 } from "~c/StandardTable";
 import { ConfirmDialog } from "~c/ConfirmDialog";
 
-const VariantDisplay = {
-  user: "User",
-  device: "Device",
-  group: "Group",
-} as const;
-
-type Variant = keyof typeof VariantDisplay;
-
 const columnHelper = createColumnHelper<{
   pk: number;
   name: string;
-  variant: Variant;
+  variant: string;
 }>();
+
+function toTitleCase(str: string) {
+  return str.replace(/\w\S*/g, (txt) => {
+    return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+  });
+}
 
 export const memberSheetColumns = [
   selectCheckboxColumn,
   columnHelper.accessor("name", { header: "Name" }),
   columnHelper.accessor("variant", {
     header: "Variant",
-    cell: (info) => <Badge>{VariantDisplay[info.getValue()]}</Badge>,
+    id: "variant",
+    cell: (info) => <Badge>{toTitleCase(info.getValue())}</Badge>,
   }),
 ];
 
-type Props =
-  | {
-      omitGroups: true;
-      addMember: (
-        selected: {
-          pk: number;
-          variant: Exclude<Variant, "group">;
-        }[],
-      ) => Promise<void>;
+export function AddMemberSheet<
+  T extends Record<
+    string,
+    {
+      label: string;
+      query: CreateQueryResult<
+        Array<{ pk: number; name: string }> | undefined,
+        any
+      >;
     }
-  | {
-      omitUsers?: true;
-      addMember: (
-        selected: {
-          pk: number;
-          variant: Exclude<Variant, "user">;
-        }[],
-      ) => Promise<void>;
-    }
-  | {
-      omitGroups?: false;
-      omitUsers?: false;
-      addMember: (
-        selected: {
-          pk: number;
-          variant: Variant;
-        }[],
-      ) => Promise<void>;
-    };
-
-export function AddMemberSheet(props: ParentProps & Props) {
-  const tenantSlug = useTenantSlug();
-
+  >,
+>(
+  props: ParentProps<{
+    variants: T;
+    onSubmit(items: Array<{ variant: keyof T; pk: number }>): Promise<void>;
+  }>,
+) {
   const [open, setOpen] = createSignal(false);
 
-  const AddMemberTableOptions = () => ({
-    all: "All",
-    // @ts-expect-error // TODO
-    ...(props.omitUsers ? {} : { user: "Users" }),
-    device: "Devices",
-    // @ts-expect-error // TODO
-    ...(props.omitGroups ? {} : { group: "Groups" }),
-  });
-
-  const possibleUsers = trpc.tenant.members.users.useQuery(
-    () => ({ tenantSlug: tenantSlug() }),
-    // @ts-expect-error // TODO
-    () => ({ enabled: props.omitUsers !== true && open() }),
-  );
-  const possibleDevices = trpc.tenant.members.devices.useQuery(
-    () => ({ tenantSlug: tenantSlug() }),
-    () => ({ enabled: open() }),
-  );
-  const possibleGroups = trpc.tenant.members.groups.useQuery(
-    () => ({ tenantSlug: tenantSlug() }),
-    // @ts-expect-error // TODO
-    () => ({ enabled: props.omitGroups !== true && open() }),
-  );
-
   const possibleMembers = () => {
-    return [
-      ...(possibleUsers.data ?? []),
-      ...(possibleDevices.data ?? []),
-      ...(possibleGroups.data ?? []),
-    ].sort((a, b) => a.name.localeCompare(b.name));
+    return Object.entries(props.variants)
+      .flatMap(([value, { query }]) =>
+        (query.data ?? []).map((d) => ({
+          ...d,
+          variant: value,
+        })),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
   };
 
   const table = createStandardTable({
@@ -123,17 +84,17 @@ export function AddMemberSheet(props: ParentProps & Props) {
     // pagination: true, // TODO: Pagination
   });
 
-  const addMembers = createMutation<
-    void,
-    Error,
-    {
-      pk: number;
-      variant: Variant;
-    }[]
-  >(() => ({
-    mutationFn: props.addMember as any,
-    onSuccess: () => setOpen(false),
-  }));
+  // const addMembers = createMutation<
+  //   void,
+  //   Error,
+  //   {
+  //     pk: number;
+  //     variant: Variant;
+  //   }[]
+  // >(() => ({
+  //   mutationFn: props.addMember as any,
+  //   onSuccess: () => setOpen(false),
+  // }));
 
   return (
     <ConfirmDialog>
@@ -174,7 +135,7 @@ export function AddMemberSheet(props: ParentProps & Props) {
               <Tabs
                 value={
                   (table.getColumn("variant")!.getFilterValue() as
-                    | Variant
+                    | string
                     | undefined) ?? "all"
                 }
                 onChange={(t) =>
@@ -185,32 +146,45 @@ export function AddMemberSheet(props: ParentProps & Props) {
                 class="relative"
               >
                 <TabsList>
-                  <For each={Object.entries(AddMemberTableOptions())}>
-                    {([value, name]) => (
-                      <TabsTrigger value={value}>{name}</TabsTrigger>
+                  <Index
+                    each={[
+                      { value: "all", display: "All" },
+                      ...Object.entries(props.variants).map(
+                        ([value, { label: multiple }]) => ({
+                          value,
+                          display: multiple,
+                        }),
+                      ),
+                    ]}
+                  >
+                    {(props) => (
+                      <TabsTrigger value={props().value}>
+                        {props().display}
+                      </TabsTrigger>
                     )}
-                  </For>
+                  </Index>
                 </TabsList>
                 <TabsIndicator />
               </Tabs>
               <Suspense fallback={<Button disabled>Loading...</Button>}>
-                <Button
-                  disabled={
-                    !table.getSelectedRowModel().rows.length ||
-                    addMembers.isPending
-                  }
+                <AsyncButton
+                  disabled={!table.getSelectedRowModel().rows.length}
                   onClick={() =>
-                    addMembers.mutate(
-                      table.getSelectedRowModel().rows.map((row) => ({
-                        pk: row.original.pk,
-                        variant: row.original.variant,
-                      })),
-                    )
+                    props
+                      .onSubmit(
+                        table.getSelectedRowModel().rows.map((row) => ({
+                          pk: row.original.pk,
+                          variant: row.original.variant,
+                        })),
+                      )
+                      .then(() => {
+                        setOpen(false);
+                      })
                   }
                 >
                   Add {table.getSelectedRowModel().rows.length} Member
                   {table.getSelectedRowModel().rows.length !== 1 && "s"}
-                </Button>
+                </AsyncButton>
               </Suspense>
             </div>
             <Suspense>

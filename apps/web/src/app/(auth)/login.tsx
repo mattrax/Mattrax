@@ -41,7 +41,7 @@ export default function Page() {
 							})()}
 						>
 							{(_) => {
-								const login = trpc.auth.sendLoginCode.useMutation(() => ({
+								const login = trpc.auth.sendLoginCode.createMutation(() => ({
 									onSuccess: (_, { email }) => {
 										setState({ variant: "verifyCode", email });
 									},
@@ -79,7 +79,7 @@ export default function Page() {
 						>
 							{(state) => {
 								const navigate = useNavigate();
-								const verify = trpc.auth.verifyLoginCode.useMutation(() => ({
+								const verify = trpc.auth.verifyLoginCode.createMutation(() => ({
 									onSuccess: () => startTransition(() => navigate("/")),
 								}));
 

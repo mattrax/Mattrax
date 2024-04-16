@@ -8,14 +8,14 @@ export const features = {
 export type Features = keyof typeof features;
 
 export function useFeatures() {
-	const me = trpc.auth.me.useQuery();
+	const me = trpc.auth.me.createQuery();
 
 	const result = {};
 	for (const feature of getObjectKeys(features)) {
 		Object.defineProperty(result, feature, {
 			get() {
 				// TODO: Should this suspend or not?
-				return me.latest?.features?.includes(feature);
+				return me.data?.features?.includes(feature);
 			},
 		});
 	}

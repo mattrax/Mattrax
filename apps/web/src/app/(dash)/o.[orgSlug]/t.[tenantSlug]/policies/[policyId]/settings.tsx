@@ -15,10 +15,10 @@ export default function Page() {
 
 	const policy = usePolicy();
 
-	const deletePolicy = trpc.policy.delete.useMutation(() => ({
+	const deletePolicy = trpc.policy.delete.createMutation(() => ({
 		onSuccess: () => trpcCtx.policy.list.invalidate(),
 	}));
-	const updatePolicy = trpc.policy.update.useMutation(() => ({
+	const updatePolicy = trpc.policy.update.createMutation(() => ({
 		onSuccess: () => policy.query.refetch(),
 	}));
 

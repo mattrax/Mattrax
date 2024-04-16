@@ -23,7 +23,7 @@ import { Item } from "~/components/Item";
 export default function Page() {
 	const device = useDevice();
 
-	const triggerAction = trpc.device.action.useMutation(() => ({
+	const triggerAction = trpc.device.action.createMutation(() => ({
 		onSuccess: (_, data) => {
 			device.query.refetch();
 			toast.success(`Triggered ${data.action} successfully`);

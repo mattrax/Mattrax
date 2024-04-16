@@ -8,7 +8,7 @@ import { createTimeAgo } from "@solid-primitives/date";
 
 export default function Page() {
 	const tenantSlug = useTenantSlug();
-	const auditLog = trpc.tenant.auditLog.useQuery(() => ({
+	const auditLog = trpc.tenant.auditLog.createQuery(() => ({
 		tenantSlug: tenantSlug(),
 	}));
 

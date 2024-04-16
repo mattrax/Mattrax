@@ -36,7 +36,7 @@ const columns = [
 ];
 
 export default function Page() {
-	const apiKeys = trpc.apiKey.list.useQuery();
+	const apiKeys = trpc.apiKey.list.createQuery();
 
 	const table = createStandardTable({
 		get data() {
@@ -77,7 +77,7 @@ function CreateAPIKeyCard() {
 	});
 
 	const trpcCtx = trpc.useContext();
-	const createAPIKey = trpc.apiKey.create.useMutation(() => ({
+	const createAPIKey = trpc.apiKey.create.createMutation(() => ({
 		onSuccess: async (apiKey) => {
 			await trpcCtx.apiKey.list.refetch();
 			setDialogState({ open: true, apiKey });

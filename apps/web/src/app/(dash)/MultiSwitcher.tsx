@@ -202,7 +202,7 @@ export function CreateTenantDialog(props: {
 	const navigate = useNavigate();
 	const trpcCtx = trpc.useContext();
 
-	const mutation = trpc.tenant.create.useMutation(() => ({
+	const mutation = trpc.tenant.create.createMutation(() => ({
 		onSuccess: async (slug, { orgSlug }) => {
 			// TODO: Get the data back in the response instead of a separate request
 			// Session also holds tenants
@@ -251,7 +251,7 @@ function CreateOrgDialog(props: {
 	const navigate = useNavigate();
 	const trpcCtx = trpc.useContext();
 
-	const mutation = trpc.org.create.useMutation(() => ({
+	const mutation = trpc.org.create.createMutation(() => ({
 		onSuccess: async (slug) => {
 			// TODO: Get the data back in the response instead of a separate request
 			// Session also holds tenants

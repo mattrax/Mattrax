@@ -20,7 +20,7 @@ export const route = {
 
 export default function Page() {
 	const orgSlug = useOrgSlug();
-	const tenants = trpc.org.tenants.useQuery(() => ({ orgSlug: orgSlug() }));
+	const tenants = trpc.org.tenants.createQuery(() => ({ orgSlug: orgSlug() }));
 
 	return (
 		<Show when={tenants.data}>
@@ -47,7 +47,7 @@ export default function Page() {
 
 function TenantList() {
 	const orgSlug = useOrgSlug();
-	const tenants = trpc.org.tenants.useQuery(() => ({ orgSlug: orgSlug() }));
+	const tenants = trpc.org.tenants.createQuery(() => ({ orgSlug: orgSlug() }));
 
 	return (
 		<>
@@ -73,7 +73,7 @@ function TenantList() {
 
 function CreateTenant() {
 	const orgSlug = useOrgSlug();
-	const createTenant = trpc.tenant.create.useMutation();
+	const createTenant = trpc.tenant.create.createMutation();
 
 	const navigate = useNavigate();
 	const trpcCtx = trpc.useContext();

@@ -88,7 +88,7 @@ export default function Page() {
 
 function WipVisualEditor() {
 	const policy = usePolicy();
-	const update = trpc.policy.update.useMutation(() => ({
+	const update = trpc.policy.update.createMutation(() => ({
 		onSuccess: () => policy.query.refetch(),
 	}));
 

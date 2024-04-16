@@ -79,7 +79,7 @@ function createDeploysQuery() {
 	const policy = usePolicy();
 	return {
 		policy,
-		deploys: trpc.policy.deploys.list.useQuery(() => ({
+		deploys: trpc.policy.deploys.list.createQuery(() => ({
 			policyId: policy().id,
 		})),
 	};
@@ -193,10 +193,10 @@ function DeployDialog() {
 	const controller = useController();
 	const [comment, setComment] = createSignal("");
 
-	const overview = trpc.policy.overview.useQuery(() => ({
+	const overview = trpc.policy.overview.createQuery(() => ({
 		policyId: policy().id,
 	}));
-	const deploy = trpc.policy.deploy.useMutation(() => ({
+	const deploy = trpc.policy.deploy.createMutation(() => ({
 		onSuccess: async () => {
 			Promise.all([policy.query.refetch(), deploys.refetch()]);
 			await controller.setOpen(false);

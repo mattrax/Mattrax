@@ -51,7 +51,7 @@ const columns = [
 
 function createPoliciesTable() {
 	const params = useZodParams({ tenantSlug: z.string() });
-	const policies = trpc.policy.list.useQuery(() => params);
+	const policies = trpc.policy.list.createQuery(() => params);
 
 	const table = createStandardTable({
 		get data() {
@@ -114,7 +114,7 @@ function CreatePolicyButton() {
 	const navigate = useNavigate();
 	const trpcCtx = trpc.useContext();
 
-	const createPolicy = trpc.policy.create.useMutation(() => ({
+	const createPolicy = trpc.policy.create.createMutation(() => ({
 		onSuccess: async (policyId) => {
 			trpcCtx.policy.list.invalidate();
 			trpcCtx.tenant.gettingStarted.invalidate();

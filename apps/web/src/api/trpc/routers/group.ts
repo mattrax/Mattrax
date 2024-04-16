@@ -5,116 +5,116 @@ import { createId } from "@paralleldrive/cuid2";
 import { union } from "drizzle-orm/mysql-core";
 
 import {
-	type GroupAssignableVariant,
-	GroupAssignableVariants,
-	db,
-	devices,
-	groupAssignableVariants,
-	groupAssignables,
-	groups,
-	users,
+  type GroupAssignableVariant,
+  GroupAssignableVariants,
+  db,
+  devices,
+  groupAssignableVariants,
+  groupAssignables,
+  groups,
+  users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { withAuditLog } from "~/api/auditLog";
 
 export const groupRouter = createTRPCRouter({
-	list: tenantProcedure
-		// .input(
-		//   z.object({
-		//     // TODO: Constrain offset and limit to specific max/min values
-		//     offset: z.number().default(0),
-		//     limit: z.number().default(50),
-		//     // query: z.string().optional(),
-		//   })
-		// )
-		.query(async ({ ctx, input }) => {
-			// TODO: Full-text search???
-			// TODO: Pagination abstraction
-			// TODO: Can a cursor make this more efficent???
-			// TODO: Switch to DB
+  list: tenantProcedure
+    // .input(
+    //   z.object({
+    //     // TODO: Constrain offset and limit to specific max/min values
+    //     offset: z.number().default(0),
+    //     limit: z.number().default(50),
+    //     // query: z.string().optional(),
+    //   })
+    // )
+    .query(async ({ ctx, input }) => {
+      // TODO: Full-text search???
+      // TODO: Pagination abstraction
+      // TODO: Can a cursor make this more efficent???
+      // TODO: Switch to DB
 
-			return await db
-				.select({
-					id: groups.id,
-					name: groups.name,
-					memberCount: sql`count(${groupAssignables.groupPk})`,
-				})
-				.from(groups)
-				.where(eq(groups.tenantPk, ctx.tenant.pk))
-				.leftJoin(groupAssignables, eq(groups.pk, groupAssignables.groupPk))
-				.groupBy(groups.pk);
-		}),
+      return await db
+        .select({
+          id: groups.id,
+          name: groups.name,
+          memberCount: sql`count(${groupAssignables.groupPk})`,
+        })
+        .from(groups)
+        .where(eq(groups.tenantPk, ctx.tenant.pk))
+        .leftJoin(groupAssignables, eq(groups.pk, groupAssignables.groupPk))
+        .groupBy(groups.pk);
+    }),
 
-	create: tenantProcedure
-		.input(z.object({ name: z.string() }))
-		.mutation(async ({ ctx, input }) => {
-			const id = createId();
+  create: tenantProcedure
+    .input(z.object({ name: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const id = createId();
 
-			await withAuditLog(
-				"addGroup",
-				{ id, name: input.name },
-				[ctx.tenant.pk, ctx.account.pk],
-				async () => {
-					await db.insert(groups).values({
-						id,
-						name: input.name,
-						tenantPk: ctx.tenant.pk,
-					});
-				},
-			);
+      await withAuditLog(
+        "addGroup",
+        { id, name: input.name },
+        [ctx.tenant.pk, ctx.account.pk],
+        async () => {
+          await db.insert(groups).values({
+            id,
+            name: input.name,
+            tenantPk: ctx.tenant.pk,
+          });
+        },
+      );
 
-			return id;
-		}),
+      return id;
+    }),
 
-	get: authedProcedure
-		.input(z.object({ id: z.string() }))
-		.query(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
-				where: eq(groups.id, input.id),
-			});
-			if (!group) return null;
+  get: authedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const group = await db.query.groups.findFirst({
+        where: eq(groups.id, input.id),
+      });
+      if (!group) return null;
 
-			await ctx.ensureTenantMember(group.tenantPk);
+      await ctx.ensureTenantMember(group.tenantPk);
 
-			return group;
-		}),
+      return group;
+    }),
 
-	update: authedProcedure
-		.input(
-			z.object({
-				id: z.string(),
-				name: z.string().optional(),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
-				where: eq(groups.id, input.id),
-			});
-			if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
+  update: authedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const group = await db.query.groups.findFirst({
+        where: eq(groups.id, input.id),
+      });
+      if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
 
-			await ctx.ensureTenantMember(group.tenantPk);
+      await ctx.ensureTenantMember(group.tenantPk);
 
-			await db
-				.update(groups)
-				.set({ ...(input.name && { name: input.name }) })
-				.where(eq(groups.id, input.id));
-		}),
+      await db
+        .update(groups)
+        .set({ ...(input.name && { name: input.name }) })
+        .where(eq(groups.id, input.id));
+    }),
 
-	members: authedProcedure
-		.input(z.object({ id: z.string() }))
-		.query(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
-				where: eq(groups.id, input.id),
-			});
-			if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
+  members: authedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const group = await db.query.groups.findFirst({
+        where: eq(groups.id, input.id),
+      });
+      if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
 
-			await ctx.ensureTenantMember(group.tenantPk);
+      await ctx.ensureTenantMember(group.tenantPk);
 
-			return await db
-				.select({
-					pk: groupAssignables.pk,
-					variant: groupAssignables.variant,
-					name: sql<GroupAssignableVariant>`
+      return await db
+        .select({
+          pk: groupAssignables.pk,
+          variant: groupAssignables.variant,
+          name: sql<string>`
           	GROUP_CONCAT(
            		CASE
            			WHEN ${groupAssignables.variant} = ${GroupAssignableVariants.device} THEN ${devices.name}
@@ -122,58 +122,58 @@ export const groupRouter = createTRPCRouter({
              	END
            	)
           `.as("name"),
-				})
-				.from(groupAssignables)
-				.where(eq(groupAssignables.groupPk, group.pk))
-				.leftJoin(
-					devices,
-					and(
-						eq(devices.pk, groupAssignables.pk),
-						eq(groupAssignables.variant, GroupAssignableVariants.device),
-					),
-				)
-				.leftJoin(
-					users,
-					and(
-						eq(users.pk, groupAssignables.pk),
-						eq(groupAssignables.variant, GroupAssignableVariants.user),
-					),
-				)
-				.groupBy(groupAssignables.variant, groupAssignables.pk);
-		}),
+        })
+        .from(groupAssignables)
+        .where(eq(groupAssignables.groupPk, group.pk))
+        .leftJoin(
+          devices,
+          and(
+            eq(devices.pk, groupAssignables.pk),
+            eq(groupAssignables.variant, GroupAssignableVariants.device),
+          ),
+        )
+        .leftJoin(
+          users,
+          and(
+            eq(users.pk, groupAssignables.pk),
+            eq(groupAssignables.variant, GroupAssignableVariants.user),
+          ),
+        )
+        .groupBy(groupAssignables.variant, groupAssignables.pk);
+    }),
 
-	addMembers: authedProcedure
-		.input(
-			z.object({
-				id: z.string(),
-				members: z.array(
-					z.object({
-						pk: z.number(),
-						variant: z.enum(groupAssignableVariants),
-					}),
-				),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
-				where: and(eq(groups.id, input.id)),
-			});
-			if (!group)
-				throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
+  addMembers: authedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        members: z.array(
+          z.object({
+            pk: z.number(),
+            variant: z.enum(groupAssignableVariants),
+          }),
+        ),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const group = await db.query.groups.findFirst({
+        where: and(eq(groups.id, input.id)),
+      });
+      if (!group)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
 
-			await ctx.ensureTenantMember(group.tenantPk);
+      await ctx.ensureTenantMember(group.tenantPk);
 
-			await db
-				.insert(groupAssignables)
-				.values(
-					input.members.map((member) => ({
-						groupPk: group.pk,
-						pk: member.pk,
-						variant: member.variant,
-					})),
-				)
-				.onDuplicateKeyUpdate({
-					set: { groupPk: sql`${groupAssignables.groupPk}` },
-				});
-		}),
+      await db
+        .insert(groupAssignables)
+        .values(
+          input.members.map((member) => ({
+            groupPk: group.pk,
+            pk: member.pk,
+            variant: member.variant,
+          })),
+        )
+        .onDuplicateKeyUpdate({
+          set: { groupPk: sql`${groupAssignables.groupPk}` },
+        });
+    }),
 });

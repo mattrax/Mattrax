@@ -47,7 +47,7 @@ const columns = [
 
 function createApplicationsTable() {
 	const tenantSlug = useTenantSlug();
-	const apps = trpc.app.list.useQuery(() => ({
+	const apps = trpc.app.list.createQuery(() => ({
 		tenantSlug: tenantSlug(),
 	}));
 
@@ -160,7 +160,7 @@ function CreateApplicationSheet(props: ParentProps) {
 	const tenantSlug = useTenantSlug();
 	const navigate = useNavigate();
 
-	const createApplication = trpc.app.create.useMutation();
+	const createApplication = trpc.app.create.createMutation();
 	const form = createZodForm({
 		schema: z.object({
 			targetType: z.custom<keyof typeof APPLICATION_TARGETS>(),

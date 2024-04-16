@@ -30,18 +30,18 @@ export default function Page() {
 	const auth = useAuth();
 	const org = useOrg();
 
-	const invites = trpc.org.admins.invites.useQuery(() => ({
+	const invites = trpc.org.admins.invites.createQuery(() => ({
 		orgSlug: org().slug,
 	}));
 
-	const administrators = trpc.org.admins.list.useQuery(() => ({
+	const administrators = trpc.org.admins.list.createQuery(() => ({
 		orgSlug: org().slug,
 	}));
 
-	const removeInvite = trpc.org.admins.removeInvite.useMutation(() => ({
+	const removeInvite = trpc.org.admins.removeInvite.createMutation(() => ({
 		onSuccess: () => invites.refetch(),
 	}));
-	const removeAdmin = trpc.org.admins.remove.useMutation(() => ({
+	const removeAdmin = trpc.org.admins.remove.createMutation(() => ({
 		onSuccess: () => administrators.refetch(),
 	}));
 
@@ -156,7 +156,7 @@ function InviteAdminCard() {
 	const orgSlug = useOrgSlug();
 	const trpcCtx = trpc.useContext();
 
-	const inviteAdmin = trpc.org.admins.sendInvite.useMutation(() => ({
+	const inviteAdmin = trpc.org.admins.sendInvite.createMutation(() => ({
 		onSuccess: async () => {
 			await Promise.allSettled([
 				trpcCtx.org.admins.invites.refetch(),

@@ -91,7 +91,7 @@ const columns = [
 
 function createUsersTable() {
 	const tenantSlug = useTenantSlug();
-	const users = trpc.user.list.useQuery(() => ({
+	const users = trpc.user.list.createQuery(() => ({
 		tenantSlug: tenantSlug(),
 	}));
 
