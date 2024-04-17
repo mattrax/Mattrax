@@ -10,7 +10,7 @@ import {
 	devices,
 	groupMembers,
 	policies,
-	policyAssignables,
+	policyAssignments,
 	policyDeploy,
 	policyDeployStatus,
 	windowsEphemeralState,
@@ -118,13 +118,13 @@ exportQueries(
 					})
 					.from(policies)
 					.innerJoin(
-						policyAssignables,
-						eq(policies.pk, policyAssignables.policyPk),
+						policyAssignments,
+						eq(policies.pk, policyAssignments.policyPk),
 					)
 					.where(
 						and(
-							eq(policyAssignables.variant, "device"),
-							eq(policyAssignables.pk, args.device_pk),
+							eq(policyAssignments.variant, "device"),
+							eq(policyAssignments.pk, args.device_pk),
 						),
 					),
 		}),
@@ -142,14 +142,14 @@ exportQueries(
 					})
 					.from(policies)
 					.innerJoin(
-						policyAssignables,
-						eq(policies.pk, policyAssignables.policyPk),
+						policyAssignments,
+						eq(policies.pk, policyAssignments.policyPk),
 					)
 					.innerJoin(
 						groupMembers,
 						and(
-							eq(groupMembers.groupPk, policyAssignables.pk),
-							eq(policyAssignables.variant, "group"),
+							eq(groupMembers.groupPk, policyAssignments.pk),
+							eq(policyAssignments.variant, "group"),
 						),
 					)
 					.where(
@@ -173,18 +173,18 @@ exportQueries(
 					})
 					.from(policyDeploy)
 					.innerJoin(
-						policyAssignables,
-						eq(policyDeploy.policyPk, policyAssignables.policyPk),
+						policyAssignments,
+						eq(policyDeploy.policyPk, policyAssignments.policyPk),
 					)
-					.innerJoin(policies, eq(policies.pk, policyAssignables.policyPk))
+					.innerJoin(policies, eq(policies.pk, policyAssignments.policyPk))
 					.where(
 						and(
-							eq(policyAssignables.variant, "group"),
-							eq(policyAssignables.pk, args.group_pk),
+							eq(policyAssignments.variant, "group"),
+							eq(policyAssignments.pk, args.group_pk),
 							eq(
 								policyDeploy.doneAt,
 								// TODO: Can we do this without manual SQL
-								sql`(SELECT MAX(${policyDeploy.doneAt}) FROM ${policyDeploy} WHERE ${policyDeploy.policyPk} = ${policyAssignables.policyPk})`,
+								sql`(SELECT MAX(${policyDeploy.doneAt}) FROM ${policyDeploy} WHERE ${policyDeploy.policyPk} = ${policyAssignments.policyPk})`,
 							),
 						),
 					),

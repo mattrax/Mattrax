@@ -11,7 +11,7 @@ import {
 	groups,
 	policies,
 	policyAssignableVariants,
-	policyAssignables,
+	policyAssignments,
 	policyDeploy,
 	users,
 	accounts,
@@ -108,42 +108,42 @@ export const policyRouter = createTRPCRouter({
 
 			return await db
 				.select({
-					pk: policyAssignables.pk,
-					variant: policyAssignables.variant,
+					pk: policyAssignments.pk,
+					variant: policyAssignments.variant,
 					name: sql<PolicyAssignableVariant>`
             GROUP_CONCAT(
                 CASE
-                    WHEN ${policyAssignables.variant} = ${PolicyAssignableVariants.device} THEN ${devices.name}
-                    WHEN ${policyAssignables.variant} = ${PolicyAssignableVariants.user} THEN ${users.name}
-                    WHEN ${policyAssignables.variant} = ${PolicyAssignableVariants.group} THEN ${groups.name}
+                    WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.device} THEN ${devices.name}
+                    WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.user} THEN ${users.name}
+                    WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.group} THEN ${groups.name}
                 END
             )
           `.as("name"),
 				})
-				.from(policyAssignables)
-				.where(eq(policyAssignables.policyPk, policy.pk))
+				.from(policyAssignments)
+				.where(eq(policyAssignments.policyPk, policy.pk))
 				.leftJoin(
 					devices,
 					and(
-						eq(devices.pk, policyAssignables.pk),
-						eq(policyAssignables.variant, PolicyAssignableVariants.device),
+						eq(devices.pk, policyAssignments.pk),
+						eq(policyAssignments.variant, PolicyAssignableVariants.device),
 					),
 				)
 				.leftJoin(
 					users,
 					and(
-						eq(users.pk, policyAssignables.pk),
-						eq(policyAssignables.variant, PolicyAssignableVariants.user),
+						eq(users.pk, policyAssignments.pk),
+						eq(policyAssignments.variant, PolicyAssignableVariants.user),
 					),
 				)
 				.leftJoin(
 					groups,
 					and(
-						eq(groups.pk, policyAssignables.pk),
-						eq(policyAssignables.variant, PolicyAssignableVariants.group),
+						eq(groups.pk, policyAssignments.pk),
+						eq(policyAssignments.variant, PolicyAssignableVariants.group),
 					),
 				)
-				.groupBy(policyAssignables.variant, policyAssignables.pk);
+				.groupBy(policyAssignments.variant, policyAssignments.pk);
 		}),
 
 	addMembers: authedProcedure
@@ -167,7 +167,7 @@ export const policyRouter = createTRPCRouter({
 
 			await ctx.ensureTenantMember(policy.tenantPk);
 
-			await db.insert(policyAssignables).values(
+			await db.insert(policyAssignments).values(
 				input.members.map((member) => ({
 					policyPk: policy.pk,
 					pk: member.pk,

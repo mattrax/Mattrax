@@ -6,14 +6,13 @@ import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
-import { Breadcrumb } from "~c/Breadcrumbs";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { DeviceContextProvider } from "./[deviceId]/Context";
 
 const NAV_ITEMS = [
 	{ title: "Device", href: "" },
 	{ title: "Configuration", href: "configuration" },
-	{ title: "Scope", href: "scope" },
+	{ title: "Assignments", href: "assignments" },
 	{ title: "Inventory", href: "inventory" },
 	{ title: "Settings", href: "settings" },
 ];
