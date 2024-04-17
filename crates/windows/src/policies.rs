@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use ms_mdm::{SyncBodyChild, SyncML};
+use mx_conflict::{ConflictResolutionStrategy, Deploy, Graph};
 use mx_db::{Db, GetDeviceResult};
 use mx_dmvalue::DmValue;
-use mx_graph::{ConflictResolutionStrategy, Deploy, Graph};
 use mx_policy::{windows::WindowsConfiguration, Configuration};
 
 // TODO: Policies
