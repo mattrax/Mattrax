@@ -1,10 +1,10 @@
 import { type ParentProps, Show, createSignal, For, Suspense } from "solid-js";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { A } from "@solidjs/router";
 import { As } from "@kobalte/core";
+import pluralize from "pluralize";
 import clsx from "clsx";
 import { z } from "zod";
-
-import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
-import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import {
   Button,
   Card,
@@ -19,16 +19,14 @@ import {
   DialogTrigger,
   buttonVariants,
 } from "@mattrax/ui";
+
+import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
+import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { trpc } from "~/lib";
 import { useUser } from "./Context";
 import { BruhIconPhLaptop } from "./bruh";
-import { A } from "@solidjs/router";
-import {
-  AddMemberSheet,
-  memberSheetColumns,
-} from "~[tenantSlug]/AddMemberSheet";
+import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
 import { StandardTable, createStandardTable } from "~/components/StandardTable";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 
@@ -134,7 +132,7 @@ function Policies() {
     get data() {
       return members.data ?? [];
     },
-    columns: memberSheetColumns,
+    columns: variantTableColumns,
     pagination: true,
   });
 
@@ -145,19 +143,19 @@ function Policies() {
   const variants = {
     device: {
       label: "Devices",
-      query: trpc.tenant.members.devices.createQuery(() => ({
+      query: trpc.tenant.variantTable.devices.createQuery(() => ({
         tenantSlug: tenantSlug(),
       })),
     },
     user: {
       label: "Users",
-      query: trpc.tenant.members.users.createQuery(() => ({
+      query: trpc.tenant.variantTable.users.createQuery(() => ({
         tenantSlug: tenantSlug(),
       })),
     },
     group: {
       label: "Groups",
-      query: trpc.tenant.members.groups.createQuery(() => ({
+      query: trpc.tenant.variantTable.groups.createQuery(() => ({
         tenantSlug: tenantSlug(),
       })),
     },
@@ -169,7 +167,12 @@ function Policies() {
         <div class="flex justify-between items-center">
           <CardTitle>Policies</CardTitle>
 
-          <AddMemberSheet
+          <VariantTableSheet
+            title="Add Members"
+            description="Add devices, users, and groups to this policy."
+            getSubmitText={(count) =>
+              `Add ${count} ${pluralize("Member", count)}`
+            }
             variants={variants}
             onSubmit={(members) =>
               addMembers.mutateAsync({
@@ -181,7 +184,7 @@ function Policies() {
             <As component={Button} class="ml-auto">
               Add Member
             </As>
-          </AddMemberSheet>
+          </VariantTableSheet>
         </div>
       </CardHeader>
       <CardContent>

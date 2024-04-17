@@ -1,15 +1,13 @@
 import { As } from "@kobalte/core";
 import { Suspense } from "solid-js";
-
 import { Button } from "@mattrax/ui";
+import pluralize from "pluralize";
+
 import { trpc } from "~/lib";
 import { useDevice } from "./Context";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
-import {
-  AddMemberSheet,
-  memberSheetColumns,
-} from "~[tenantSlug]/AddMemberSheet";
+import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 
 export default function Page() {
@@ -24,7 +22,7 @@ export default function Page() {
     get data() {
       return members.data ?? [];
     },
-    columns: memberSheetColumns,
+    columns: variantTableColumns,
     pagination: true,
   });
 
@@ -35,19 +33,19 @@ export default function Page() {
   const variants = {
     device: {
       label: "Devices",
-      query: trpc.tenant.members.devices.createQuery(() => ({
+      query: trpc.tenant.variantTable.devices.createQuery(() => ({
         tenantSlug: tenantSlug(),
       })),
     },
     user: {
       label: "Users",
-      query: trpc.tenant.members.users.createQuery(() => ({
+      query: trpc.tenant.variantTable.users.createQuery(() => ({
         tenantSlug: tenantSlug(),
       })),
     },
     group: {
       label: "Groups",
-      query: trpc.tenant.members.groups.createQuery(() => ({
+      query: trpc.tenant.variantTable.groups.createQuery(() => ({
         tenantSlug: tenantSlug(),
       })),
     },
@@ -58,7 +56,12 @@ export default function Page() {
       heading={
         <>
           <PageLayoutHeading>Scope</PageLayoutHeading>
-          <AddMemberSheet
+          <VariantTableSheet
+            title="Assign Policy"
+            description="Assign this policy to devices, users, or groups."
+            getSubmitText={(count) =>
+              `Assign ${count} ${pluralize("Policy", count)}`
+            }
             variants={variants}
             onSubmit={(members) =>
               addMembers.mutateAsync({
@@ -70,7 +73,7 @@ export default function Page() {
             <As component={Button} class="ml-auto">
               Add Member
             </As>
-          </AddMemberSheet>
+          </VariantTableSheet>
         </>
       }
     >

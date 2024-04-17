@@ -36,7 +36,7 @@ function toTitleCase(str: string) {
   });
 }
 
-export const memberSheetColumns = [
+export const variantTableColumns = [
   selectCheckboxColumn,
   columnHelper.accessor("name", { header: "Name" }),
   columnHelper.accessor("variant", {
@@ -46,7 +46,7 @@ export const memberSheetColumns = [
   }),
 ];
 
-export function AddMemberSheet<
+export function VariantTableSheet<
   T extends Record<
     string,
     {
@@ -59,6 +59,9 @@ export function AddMemberSheet<
   >,
 >(
   props: ParentProps<{
+    title: string;
+    getSubmitText(count: number): string;
+    description?: string;
     variants: T;
     onSubmit(items: Array<{ variant: keyof T; pk: number }>): Promise<void>;
   }>,
@@ -80,21 +83,9 @@ export function AddMemberSheet<
     get data() {
       return possibleMembers();
     },
-    columns: memberSheetColumns,
+    columns: variantTableColumns,
     // pagination: true, // TODO: Pagination
   });
-
-  // const addMembers = createMutation<
-  //   void,
-  //   Error,
-  //   {
-  //     pk: number;
-  //     variant: Variant;
-  //   }[]
-  // >(() => ({
-  //   mutationFn: props.addMember as any,
-  //   onSuccess: () => setOpen(false),
-  // }));
 
   return (
     <ConfirmDialog>
@@ -125,11 +116,10 @@ export function AddMemberSheet<
             class="overflow-y-auto flex flex-col"
           >
             <SheetHeader>
-              <SheetTitle>Add Member</SheetTitle>
-              <SheetDescription>
-                {/* TODO: Dynamically build this */}
-                Add users, devices, and policies to this group
-              </SheetDescription>
+              <SheetTitle>{props.title}</SheetTitle>
+              {props.description && (
+                <SheetDescription>{props.description}</SheetDescription>
+              )}
             </SheetHeader>
             <div class="flex flex-row justify-between w-full items-center my-4">
               <Tabs
@@ -182,8 +172,7 @@ export function AddMemberSheet<
                       })
                   }
                 >
-                  Add {table.getSelectedRowModel().rows.length} Member
-                  {table.getSelectedRowModel().rows.length !== 1 && "s"}
+                  {props.getSubmitText(table.getSelectedRowModel().rows.length)}
                 </AsyncButton>
               </Suspense>
             </div>

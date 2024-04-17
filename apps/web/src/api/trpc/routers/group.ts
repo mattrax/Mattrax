@@ -5,13 +5,17 @@ import { createId } from "@paralleldrive/cuid2";
 import { union } from "drizzle-orm/mysql-core";
 
 import {
-  type GroupAssignableVariant,
-  GroupAssignableVariants,
+  GroupAssignmentVariants,
+  GroupMemberVariants,
+  applications,
   db,
   devices,
-  groupAssignableVariants,
-  groupAssignables,
+  groupAssignmentVariants,
+  groupAssignments,
+  groupMemberVariants,
+  groupMembers,
   groups,
+  policies,
   users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
@@ -37,11 +41,11 @@ export const groupRouter = createTRPCRouter({
         .select({
           id: groups.id,
           name: groups.name,
-          memberCount: sql`count(${groupAssignables.groupPk})`,
+          memberCount: sql`count(${groupMembers.groupPk})`,
         })
         .from(groups)
         .where(eq(groups.tenantPk, ctx.tenant.pk))
-        .leftJoin(groupAssignables, eq(groups.pk, groupAssignables.groupPk))
+        .leftJoin(groupMembers, eq(groups.pk, groupMembers.groupPk))
         .groupBy(groups.pk);
     }),
 
@@ -112,34 +116,34 @@ export const groupRouter = createTRPCRouter({
 
       return await db
         .select({
-          pk: groupAssignables.pk,
-          variant: groupAssignables.variant,
+          pk: groupMembers.pk,
+          variant: groupMembers.variant,
           name: sql<string>`
           	GROUP_CONCAT(
            		CASE
-           			WHEN ${groupAssignables.variant} = ${GroupAssignableVariants.device} THEN ${devices.name}
-             		WHEN ${groupAssignables.variant} = ${GroupAssignableVariants.user} THEN ${users.name}
+           			WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.name}
+             		WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.name}
              	END
            	)
           `.as("name"),
         })
-        .from(groupAssignables)
-        .where(eq(groupAssignables.groupPk, group.pk))
+        .from(groupMembers)
+        .where(eq(groupMembers.groupPk, group.pk))
         .leftJoin(
           devices,
           and(
-            eq(devices.pk, groupAssignables.pk),
-            eq(groupAssignables.variant, GroupAssignableVariants.device),
+            eq(devices.pk, groupMembers.pk),
+            eq(groupMembers.variant, GroupMemberVariants.device),
           ),
         )
         .leftJoin(
           users,
           and(
-            eq(users.pk, groupAssignables.pk),
-            eq(groupAssignables.variant, GroupAssignableVariants.user),
+            eq(users.pk, groupMembers.pk),
+            eq(groupMembers.variant, GroupMemberVariants.user),
           ),
         )
-        .groupBy(groupAssignables.variant, groupAssignables.pk);
+        .groupBy(groupMembers.variant, groupMembers.pk);
     }),
 
   addMembers: authedProcedure
@@ -149,7 +153,7 @@ export const groupRouter = createTRPCRouter({
         members: z.array(
           z.object({
             pk: z.number(),
-            variant: z.enum(groupAssignableVariants),
+            variant: z.enum(groupMemberVariants),
           }),
         ),
       }),
@@ -164,7 +168,7 @@ export const groupRouter = createTRPCRouter({
       await ctx.ensureTenantMember(group.tenantPk);
 
       await db
-        .insert(groupAssignables)
+        .insert(groupMembers)
         .values(
           input.members.map((member) => ({
             groupPk: group.pk,
@@ -173,7 +177,83 @@ export const groupRouter = createTRPCRouter({
           })),
         )
         .onDuplicateKeyUpdate({
-          set: { groupPk: sql`${groupAssignables.groupPk}` },
+          set: { groupPk: sql`${groupMembers.groupPk}` },
+        });
+    }),
+
+  assignments: authedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const group = await db.query.groups.findFirst({
+        where: eq(groups.id, input.id),
+      });
+      if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
+
+      await ctx.ensureTenantMember(group.tenantPk);
+
+      return await db
+        .select({
+          pk: groupAssignments.pk,
+          variant: groupAssignments.variant,
+          name: sql<string>`
+          	GROUP_CONCAT(
+           		CASE
+           			WHEN ${groupAssignments.variant} = ${GroupAssignmentVariants.policy} THEN ${policies.name}
+             		WHEN ${groupAssignments.variant} = ${GroupAssignmentVariants.app} THEN ${applications.name}
+             	END
+           	)
+          `.as("name"),
+        })
+        .from(groupAssignments)
+        .where(eq(groupAssignments.groupPk, group.pk))
+        .leftJoin(
+          policies,
+          and(
+            eq(policies.pk, groupAssignments.pk),
+            eq(groupAssignments.variant, GroupAssignmentVariants.policy),
+          ),
+        )
+        .leftJoin(
+          applications,
+          and(
+            eq(applications.pk, groupAssignments.pk),
+            eq(groupAssignments.variant, GroupAssignmentVariants.app),
+          ),
+        )
+        .groupBy(groupAssignments.variant, groupAssignments.pk);
+    }),
+  addAssignments: authedProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        assignments: z.array(
+          z.object({
+            pk: z.number(),
+            variant: z.enum(groupAssignmentVariants),
+          }),
+        ),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const group = await db.query.groups.findFirst({
+        where: and(eq(groups.id, input.id)),
+      });
+      if (!group)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
+
+      await ctx.ensureTenantMember(group.tenantPk);
+
+      await db
+        .insert(groupAssignments)
+        .values(
+          input.assignments.map((assignment) => ({
+            groupPk: group.pk,
+            pk: assignment.pk,
+            variant: assignment.variant,
+          })),
+        )
+        .onDuplicateKeyUpdate({
+          set: { groupPk: sql`${groupAssignments.groupPk}` },
         });
     }),
 });
