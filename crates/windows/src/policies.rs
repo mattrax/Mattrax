@@ -20,37 +20,46 @@ use mx_policy::{windows::WindowsConfiguration, Configuration};
 pub(crate) async fn handler(db: &Db, device: &GetDeviceResult, cmd: &SyncML) -> Vec<SyncBodyChild> {
     // TODO: db.get_device_directly_scoped_policies
 
-    let result = db.get_device_groups(device.pk).await.unwrap();
+    // TODO: Get latest policies in groups
+    // TODO: Get all policies in group + status records
 
-    println!("{:?}", result); // TODO
+    // TODO: Diff the old and new policy
 
-    let mut graph = Graph::default();
+    // TODO: Do conflict resolution on the new policy and take into account the status record
 
-    for group in result {
-        println!("GROUP {:?} {:?}", group.id, group.name); // TODO
+    // let result = db.get_device_groups(device.pk).await.unwrap();
 
-        // TODO: Can we avoid N+1 queries here or is it fine cause this will be cached???
-        let deploys = db.get_group_policy_deploys(group.pk).await.unwrap();
+    // println!("{:?}", result); // TODO
 
-        // println!("{:?}", policies); // TODO
+    // let mut graph = Graph::default();
 
-        for deploy in deploys {
-            println!("{:?} {:?}", group.pk, deploy.pk); // TODO
+    // for group in result {
+    //     println!("GROUP {:?} {:?}", group.id, group.name); // TODO
 
-            graph.add(render_deploy_for_windows(
-                deploy.pk,
-                deploy
-                    .priority
-                    .try_into()
-                    .expect("MySQL 'UNSIGNED TINYINT' won't overflow u8"),
-                deploy.data.0,
-            ));
-        }
-    }
+    //     // TODO: Can we avoid N+1 queries here or is it fine cause this will be cached???
+    //     let deploys = db.get_group_policy_deploys(group.pk).await.unwrap();
 
-    // TODO: Join graph of group with device's graph and make sure the devices graph wins (maybe without needing to store them together???)
+    //     // println!("{:?}", policies); // TODO
 
-    println!("\n{:#?}", graph); // TODO
+    //     for deploy in deploys {
+    //         println!("{:?} {:?}", group.pk, deploy.pk); // TODO
+
+    //         graph.add(render_deploy_for_windows(
+    //             deploy.pk,
+    //             deploy
+    //                 .priority
+    //                 .try_into()
+    //                 .expect("MySQL 'UNSIGNED TINYINT' won't overflow u8"),
+    //             deploy.data.0,
+    //         ));
+    //     }
+    // }
+
+    // // TODO: Join graph of group with device's graph and make sure the devices graph wins (maybe without needing to store them together???)
+
+    // println!("\n{:#?}", graph); // TODO
+
+    // let y = graph.result(); // TODO
 
     vec![]
 }
@@ -75,7 +84,7 @@ fn render_deploy_for_windows(deploy_pk: u64, priority: u8, data: serde_json::Val
     };
 
     for (key, config) in windows_configurations {
-        // TODO: Probs break this render logic out into another crate
+        // TODO: Probs break this render logic out into `mx-policy-win`
         match config {
             WindowsConfiguration::PolicyConfigBrowserHomePages { homepages } => {
                 let mut result = String::new();
@@ -87,7 +96,7 @@ fn render_deploy_for_windows(deploy_pk: u64, priority: u8, data: serde_json::Val
 
                 deploy.configuration.insert(
                     "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator".into(),
-                    mx_graph::Configuration {
+                    mx_conflict::Configuration {
                         key: key.clone(),
                         value: DmValue::String(result),
                         conflict_resolution_strategy: ConflictResolutionStrategy::Conflict,
@@ -99,7 +108,7 @@ fn render_deploy_for_windows(deploy_pk: u64, priority: u8, data: serde_json::Val
             } => {
                 deploy.configuration.insert(
                     "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator".into(),
-                    mx_graph::Configuration {
+                    mx_conflict::Configuration {
                         key: key.clone(),
                         value: DmValue::Integer(allow_graphing_calculator as u64),
                         conflict_resolution_strategy: ConflictResolutionStrategy::InValueOrder(
@@ -112,7 +121,7 @@ fn render_deploy_for_windows(deploy_pk: u64, priority: u8, data: serde_json::Val
                 for custom in custom {
                     deploy.configuration.insert(
                         custom.oma_uri,
-                        mx_graph::Configuration {
+                        mx_conflict::Configuration {
                             key: key.clone(),
                             value: custom.value.into(),
                             // We don't do automatic conflict resolution for custom configurations as we don't know what they are.

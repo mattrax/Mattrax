@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 mx-db = { path = "../db" }
 mx-policy = { path = "../policy" }
-mx-graph = { path = "../graph" }
+mx-conflict = { path = "../conflict" }
 ms-mdm = { path = "../ms-mdm" }
 ms-mde = { path = "../ms-mde" }
 mx-dmvalue = { path = "../dmvalue" }
