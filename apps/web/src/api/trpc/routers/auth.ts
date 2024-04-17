@@ -1,288 +1,300 @@
+import { appendResponseHeader, deleteCookie, setCookie } from "vinxi/server";
+import { flushResponse } from "@mattrax/trpc-server-function/server";
+import { alphabet, generateRandomString } from "oslo/crypto";
+import { createId } from "@paralleldrive/cuid2";
 import { TRPCError } from "@trpc/server";
 import { eq, sql } from "drizzle-orm";
 import { generateId } from "lucia";
-import { alphabet, generateRandomString } from "oslo/crypto";
-import { appendResponseHeader, setCookie } from "vinxi/server";
 import { z } from "zod";
 
-import { lucia } from "~/api/auth";
+import { checkAuth, lucia } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
 import {
-	accountLoginCodes,
-	accounts,
-	db,
-	organisationMembers,
-	organisations,
-	tenants,
+  accountLoginCodes,
+  accounts,
+  db,
+  organisationMembers,
+  organisations,
+  tenants,
 } from "~/db";
 import {
-	authedProcedure,
-	createTRPCRouter,
-	isSuperAdmin,
-	publicProcedure,
-	superAdminProcedure,
+  authedProcedure,
+  createTRPCRouter,
+  isSuperAdmin,
+  publicProcedure,
+  superAdminProcedure,
 } from "../helpers";
 import { getObjectKeys, randomSlug } from "~/api/utils";
-import { createId } from "@paralleldrive/cuid2";
 import { type Features, features } from "~/lib/featureFlags";
 
 type UserResult = {
-	id: number;
-	name: string;
-	email: string;
-	tenants: Awaited<ReturnType<typeof fetchTenants>>;
+  id: number;
+  name: string;
+  email: string;
+  tenants: Awaited<ReturnType<typeof fetchTenants>>;
 };
 
 const fetchTenants = (accountPk: number) =>
-	db
-		.select({
-			id: tenants.id,
-			name: tenants.name,
-			slug: tenants.slug,
-			orgSlug: organisations.slug,
-		})
-		.from(tenants)
-		.innerJoin(organisations, eq(tenants.orgPk, organisations.pk))
-		.innerJoin(
-			organisationMembers,
-			eq(organisations.pk, organisationMembers.orgPk),
-		)
-		.where(eq(organisationMembers.accountPk, accountPk));
+  db
+    .select({
+      id: tenants.id,
+      name: tenants.name,
+      slug: tenants.slug,
+      orgSlug: organisations.slug,
+    })
+    .from(tenants)
+    .innerJoin(organisations, eq(tenants.orgPk, organisations.pk))
+    .innerJoin(
+      organisationMembers,
+      eq(organisations.pk, organisationMembers.orgPk),
+    )
+    .where(eq(organisationMembers.accountPk, accountPk));
 
 const fetchOrgs = (accountPk: number) =>
-	db
-		.select({
-			id: organisations.id,
-			name: organisations.name,
-			slug: organisations.slug,
-			ownerId: accounts.id,
-		})
-		.from(organisations)
-		.where(eq(organisationMembers.accountPk, accountPk))
-		.innerJoin(
-			organisationMembers,
-			eq(organisations.pk, organisationMembers.orgPk),
-		)
-		.innerJoin(accounts, eq(organisations.ownerPk, accounts.pk));
+  db
+    .select({
+      id: organisations.id,
+      name: organisations.name,
+      slug: organisations.slug,
+      ownerId: accounts.id,
+    })
+    .from(organisations)
+    .where(eq(organisationMembers.accountPk, accountPk))
+    .innerJoin(
+      organisationMembers,
+      eq(organisations.pk, organisationMembers.orgPk),
+    )
+    .innerJoin(accounts, eq(organisations.ownerPk, accounts.pk));
 
 export const authRouter = createTRPCRouter({
-	sendLoginCode: publicProcedure
-		.input(z.object({ email: z.string().email() }))
-		.mutation(async ({ input }) => {
-			const name = input.email.split("@")[0] ?? "";
-			const code = generateRandomString(8, alphabet("0-9"));
+  sendLoginCode: publicProcedure
+    .input(z.object({ email: z.string().email() }))
+    .mutation(async ({ input }) => {
+      flushResponse();
 
-			const id = generateId(16);
-			const result = await db
-				.insert(accounts)
-				.values({ name, email: input.email, id })
-				.onDuplicateKeyUpdate({
-					set: { email: input.email },
-				});
+      const name = input.email.split("@")[0] ?? "";
+      const code = generateRandomString(8, alphabet("0-9"));
 
-			let accountPk = Number.parseInt(result.insertId);
-			let accountId = id;
+      const id = generateId(16);
+      const result = await db
+        .insert(accounts)
+        .values({ name, email: input.email, id })
+        .onDuplicateKeyUpdate({
+          set: { email: input.email },
+        });
 
-			if (accountPk === 0) {
-				const account = await db.query.accounts.findFirst({
-					where: eq(accounts.email, input.email),
-				});
-				if (!account)
-					throw new Error("Error getting account we just inserted!");
-				accountPk = account.pk;
-				accountId = account.id;
-			}
+      let accountPk = Number.parseInt(result.insertId);
+      let accountId = id;
 
-			await db.insert(accountLoginCodes).values({ accountPk, code });
+      if (accountPk === 0) {
+        const account = await db.query.accounts.findFirst({
+          where: eq(accounts.email, input.email),
+        });
+        if (!account)
+          throw new Error("Error getting account we just inserted!");
+        accountPk = account.pk;
+        accountId = account.id;
+      }
 
-			await sendEmail({
-				type: "loginCode",
-				to: input.email,
-				subject: "Mattrax Login Code",
-				code,
-			});
+      await db.insert(accountLoginCodes).values({ accountPk, code });
 
-			return { accountId };
-		}),
+      await sendEmail({
+        type: "loginCode",
+        to: input.email,
+        subject: "Mattrax Login Code",
+        code,
+      });
 
-	verifyLoginCode: publicProcedure
-		.input(z.object({ code: z.string() }))
-		.mutation(async ({ input, ctx }) => {
-			const code = await db.query.accountLoginCodes.findFirst({
-				where: eq(accountLoginCodes.code, input.code),
-			});
+      return { accountId };
+    }),
 
-			if (!code)
-				throw new TRPCError({ code: "NOT_FOUND", message: "Invalid code" });
+  verifyLoginCode: publicProcedure
+    .input(z.object({ code: z.string() }))
+    .mutation(async ({ input }) => {
+      const code = await db.query.accountLoginCodes.findFirst({
+        where: eq(accountLoginCodes.code, input.code),
+      });
 
-			await db
-				.delete(accountLoginCodes)
-				.where(eq(accountLoginCodes.code, input.code));
+      if (!code)
+        throw new TRPCError({ code: "NOT_FOUND", message: "Invalid code" });
 
-			const [[account], [orgConnection]] = await Promise.all([
-				db
-					.select({ pk: accounts.pk, id: accounts.id, email: accounts.email })
-					.from(accounts)
-					.where(eq(accounts.pk, code.accountPk)),
-				db
-					.select({ orgPk: organisationMembers.orgPk })
-					.from(organisationMembers)
-					.where(eq(organisationMembers.accountPk, code.accountPk)),
-			]);
+      await db
+        .delete(accountLoginCodes)
+        .where(eq(accountLoginCodes.code, input.code));
 
-			if (!account)
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "Account not found",
-				});
+      const [[account], [orgConnection]] = await Promise.all([
+        db
+          .select({ pk: accounts.pk, id: accounts.id, email: accounts.email })
+          .from(accounts)
+          .where(eq(accounts.pk, code.accountPk)),
+        db
+          .select({ orgPk: organisationMembers.orgPk })
+          .from(organisationMembers)
+          .where(eq(organisationMembers.accountPk, code.accountPk)),
+      ]);
 
-			if (!orgConnection) {
-				const id = createId();
-				const slug = randomSlug(account.email.split("@")[0]!);
+      if (!account)
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Account not found",
+        });
 
-				await db.transaction(async (db) => {
-					const org = await db
-						.insert(organisations)
-						.values({ id, slug, name: slug, ownerPk: account.pk });
-					await db.insert(organisationMembers).values({
-						accountPk: account.pk,
-						orgPk: Number.parseInt(org.insertId),
-					});
-				});
-			}
+      if (!orgConnection) {
+        const id = createId();
+        const slug = randomSlug(account.email.split("@")[0]!);
 
-			const session = await lucia.createSession(account.id, {
-				userAgent: `w${"web"}`, // TODO
-				location: "earth", // TODO
-			});
+        await db.transaction(async (db) => {
+          const org = await db
+            .insert(organisations)
+            .values({ id, slug, name: slug, ownerPk: account.pk });
+          await db.insert(organisationMembers).values({
+            accountPk: account.pk,
+            orgPk: Number.parseInt(org.insertId),
+          });
+        });
+      }
 
-			appendResponseHeader(
-				ctx.event,
-				"Set-Cookie",
-				lucia.createSessionCookie(session.id).serialize(),
-			);
+      const session = await lucia.createSession(account.id, {
+        userAgent: `w${"web"}`, // TODO
+        location: "earth", // TODO
+      });
 
-			setCookie(ctx.event, "isLoggedIn", "true", {
-				httpOnly: false,
-			});
+      appendResponseHeader(
+        "Set-Cookie",
+        lucia.createSessionCookie(session.id).serialize(),
+      );
 
-			return true;
-		}),
+      setCookie("isLoggedIn", "true", {
+        httpOnly: false,
+      });
 
-	me: authedProcedure.query(async ({ ctx: { account } }) => {
-		return {
-			id: account.id,
-			name: account.name,
-			email: account.email,
-			orgs: await fetchOrgs(account.pk),
-			tenants: await fetchTenants(account.pk),
-			...(account.features?.length > 0 ? { features: account.features } : {}),
-			...(isSuperAdmin(account) ? { superadmin: true } : {}),
-		};
-	}),
+      flushResponse();
 
-	update: authedProcedure
-		.input(
-			z.object({
-				name: z.string().optional(),
-			}),
-		)
-		.mutation(async ({ ctx: { account }, input }) => {
-			// Skip DB if we have nothing to update
-			if (input.name !== undefined) {
-				await db
-					.update(accounts)
-					.set({ name: input.name })
-					.where(eq(accounts.pk, account.pk));
-			}
+      return true;
+    }),
 
-			return {
-				id: account.pk,
-				name: input.name || account.name,
-				email: account.email,
-				tenants: await fetchTenants(account.pk),
-			} satisfies UserResult;
-		}),
+  me: authedProcedure.query(async ({ ctx: { account } }) => {
+    return {
+      id: account.id,
+      name: account.name,
+      email: account.email,
+      orgs: await fetchOrgs(account.pk),
+      tenants: await fetchTenants(account.pk),
+      ...(account.features?.length > 0 ? { features: account.features } : {}),
+      ...(isSuperAdmin(account) ? { superadmin: true } : {}),
+    };
+  }),
 
-	logout: authedProcedure.mutation(async ({ ctx: { session } }) => {
-		await lucia.invalidateSession(session.id);
-	}),
+  update: authedProcedure
+    .input(
+      z.object({
+        name: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx: { account }, input }) => {
+      // Skip DB if we have nothing to update
+      if (input.name !== undefined) {
+        await db
+          .update(accounts)
+          .set({ name: input.name })
+          .where(eq(accounts.pk, account.pk));
+      }
 
-	//   delete: authedProcedure.mutation(async ({ ctx }) => {
-	//     const session = ctx.session.data;
+      return {
+        id: account.pk,
+        name: input.name || account.name,
+        email: account.email,
+        tenants: await fetchTenants(account.pk),
+      } satisfies UserResult;
+    }),
 
-	//     // TODO: Require the user to leave/delete all tenant's first
+  logout: publicProcedure.mutation(async () => {
+    const data = await checkAuth();
+    if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-	//     await db.delete(accounts).where(eq(accounts.id, session.id));
-	//     await ctx.session.clear();
-	//     return {};
-	//   }),
+    deleteCookie(lucia.sessionCookieName);
+    deleteCookie("isLoggedIn");
 
-	admin: createTRPCRouter({
-		getFeatures: superAdminProcedure
-			.input(
-				z.object({
-					email: z.string(),
-				}),
-			)
-			.query(async ({ input }) => {
-				const [user] = await db
-					.select({ features: accounts.features })
-					.from(accounts)
-					.where(eq(accounts.email, input.email));
-				if (!user) throw new Error("User not found");
-				return user.features || [];
-			}),
+    flushResponse();
 
-		enableFeature: authedProcedure
-			.input(
-				z.object({
-					feature: z.enum(getObjectKeys(features)),
-					// Not providing an email will enable the feature for current user
-					email: z.string().optional(),
-				}),
-			)
-			.mutation(async ({ ctx, input }) => {
-				let account: {
-					pk: number;
-					email: string;
-					features: Features[] | null;
-				} = ctx.account;
+    await lucia.invalidateSession(data.session.id);
+  }),
 
-				// Only superadmins can enable features for other users
-				if (input.email) {
-					if (!isSuperAdmin(ctx.account))
-						throw new TRPCError({ code: "FORBIDDEN" });
+  //   delete: authedProcedure.mutation(async ({ ctx }) => {
+  //     const session = ctx.session.data;
 
-					const [actualAccount] = await db
-						.select({
-							pk: accounts.pk,
-							email: accounts.email,
-							features: accounts.features,
-						})
-						.from(accounts)
-						.where(eq(accounts.email, input.email));
-					if (!actualAccount) throw new Error("Account not found");
-					account = actualAccount;
-				}
+  //     // TODO: Require the user to leave/delete all tenant's first
 
-				const existingFeatures = account?.features || [];
+  //     await db.delete(accounts).where(eq(accounts.id, session.id));
+  //     await ctx.session.clear();
+  //     return {};
+  //   }),
 
-				const [features, change] = existingFeatures.includes(input.feature)
-					? [existingFeatures.filter((f) => f !== input.feature), "delete"]
-					: [[...existingFeatures, input.feature], "add"];
+  admin: createTRPCRouter({
+    getFeatures: superAdminProcedure
+      .input(
+        z.object({
+          email: z.string(),
+        }),
+      )
+      .query(async ({ input }) => {
+        const [user] = await db
+          .select({ features: accounts.features })
+          .from(accounts)
+          .where(eq(accounts.email, input.email));
+        if (!user) throw new Error("User not found");
+        return user.features || [];
+      }),
 
-				// If not superadmins, you can only remove features
-				if (!isSuperAdmin(ctx.account) && change !== "delete") {
-					throw new TRPCError({ code: "FORBIDDEN" });
-				}
+    enableFeature: authedProcedure
+      .input(
+        z.object({
+          feature: z.enum(getObjectKeys(features)),
+          // Not providing an email will enable the feature for current user
+          email: z.string().optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        let account: {
+          pk: number;
+          email: string;
+          features: Features[] | null;
+        } = ctx.account;
 
-				await db
-					.update(accounts)
-					.set({
-						features: features.length === 0 ? sql`NULL` : features,
-					})
-					.where(eq(accounts.pk, account.pk));
-			}),
-	}),
+        // Only superadmins can enable features for other users
+        if (input.email) {
+          if (!isSuperAdmin(ctx.account))
+            throw new TRPCError({ code: "FORBIDDEN" });
+
+          const [actualAccount] = await db
+            .select({
+              pk: accounts.pk,
+              email: accounts.email,
+              features: accounts.features,
+            })
+            .from(accounts)
+            .where(eq(accounts.email, input.email));
+          if (!actualAccount) throw new Error("Account not found");
+          account = actualAccount;
+        }
+
+        const existingFeatures = account?.features || [];
+
+        const [features, change] = existingFeatures.includes(input.feature)
+          ? [existingFeatures.filter((f) => f !== input.feature), "delete"]
+          : [[...existingFeatures, input.feature], "add"];
+
+        // If not superadmins, you can only remove features
+        if (!isSuperAdmin(ctx.account) && change !== "delete") {
+          throw new TRPCError({ code: "FORBIDDEN" });
+        }
+
+        await db
+          .update(accounts)
+          .set({
+            features: features.length === 0 ? sql`NULL` : features,
+          })
+          .where(eq(accounts.pk, account.pk));
+      }),
+  }),
 });
