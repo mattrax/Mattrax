@@ -1,4 +1,5 @@
 import {
+	Button,
 	Checkbox,
 	Collapsible,
 	CollapsibleContent,
@@ -8,10 +9,11 @@ import {
 	TabsContent,
 	TabsList,
 	TabsTrigger,
+	Toggle,
 } from "@mattrax/ui";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { usePolicy } from "./Context";
-import { createSignal } from "solid-js";
+import { type ParentProps, createSignal } from "solid-js";
 import { createContentEditableController } from "@mattrax/ui/lib";
 import { BruhIconPhArrowsVerticalBold } from "./bruh";
 import { useFeatures } from "~/lib/featureFlags";
@@ -98,7 +100,8 @@ function WipVisualEditor() {
 
 			<div class="flex pl-2">
 				{/* TODO: Properly link label to checkbox */}
-				<Label>Disable graphing calculator nerd</Label>
+				<Label>Disable graphing calculator</Label>
+
 				<Checkbox
 					checked={"no_graphing_calculator_nerd" in policy().data}
 					disabled={update.isPending}
@@ -126,7 +129,61 @@ function WipVisualEditor() {
 						})
 					}
 				/>
+
+				<span class="isolate inline-flex rounded-md shadow-sm">
+					<button
+						type="button"
+						class="relative inline-flex items-center rounded-l-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-10"
+					>
+						Years
+					</button>
+					<button
+						type="button"
+						class="relative -ml-px inline-flex items-center bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-10"
+					>
+						Months
+					</button>
+					<button
+						type="button"
+						class="relative -ml-px inline-flex items-center rounded-r-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 focus:z-10"
+					>
+						Days
+					</button>
+				</span>
+
+				<Button class="rounded-r-none bg-primary/70 hover:bg-primary/80">
+					A
+				</Button>
+				<Button class="rounded-none">Inherit</Button>
+				<Button class="rounded-l-none">Inherit</Button>
+
+				<ToggleGroup
+					options={[
+						{ label: "Allow", value: "allow" },
+						{ label: "Inherit", value: "block" },
+						{ label: "Block", value: "block" },
+					]}
+				/>
+
+				{/* // TODO: This API is nice but how do we style based on state? */}
+				{/* <ToggleGroup>
+					<Button>Allow</Button>
+				</ToggleGroup> */}
 			</div>
 		</div>
 	);
+}
+
+// TODO: move into `@mattrax/ui`
+// TODO: JSX options API plz
+function ToggleGroup(
+	props: ParentProps<{
+		// TODO: Remove this?
+		options?: { label: string; value: string }[];
+		// TODO: `onChange`, `value`
+	}>,
+) {
+	// return <>{/* <For each={[]}></For> */}</>;
+
+	return <div class="">{props.children}</div>;
 }
