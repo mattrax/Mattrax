@@ -2,24 +2,36 @@ import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
-import { union } from "drizzle-orm/mysql-core";
 
+import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { withAuditLog } from "~/api/auditLog";
 import {
-  GroupAssignmentVariants,
   GroupMemberVariants,
+  applicationAssignments,
   applications,
   db,
   devices,
-  groupAssignmentVariants,
-  groupAssignments,
   groupMemberVariants,
   groupMembers,
   groups,
   policies,
+  policyAssignments,
   users,
 } from "~/db";
-import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import { withAuditLog } from "~/api/auditLog";
+
+const groupProcedure = authedProcedure
+  .input(z.object({ id: z.string() }))
+  .use(async ({ next, input, ctx }) => {
+    const group = await db.query.groups.findFirst({
+      where: and(eq(groups.id, input.id)),
+    });
+    if (!group)
+      throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
+
+    const tenant = await ctx.ensureTenantMember(group.tenantPk);
+
+    return await next({ ctx: { group, tenant } });
+  });
 
 export const groupRouter = createTRPCRouter({
   list: tenantProcedure
@@ -181,79 +193,90 @@ export const groupRouter = createTRPCRouter({
         });
     }),
 
-  assignments: authedProcedure
-    .input(z.object({ id: z.string() }))
-    .query(async ({ ctx, input }) => {
-      const group = await db.query.groups.findFirst({
-        where: eq(groups.id, input.id),
-      });
-      if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
+  assignments: groupProcedure.query(async ({ ctx }) => {
+    const { group } = ctx;
 
-      await ctx.ensureTenantMember(group.tenantPk);
-
-      return await db
+    const [p, a] = await Promise.all([
+      db
+        .select({ pk: policies.pk, id: policies.id, name: policies.name })
+        .from(policyAssignments)
+        .where(
+          and(
+            eq(policyAssignments.variant, "group"),
+            eq(policyAssignments.pk, group.pk),
+          ),
+        )
+        .innerJoin(policies, eq(policyAssignments.policyPk, policies.pk)),
+      db
         .select({
-          pk: groupAssignments.pk,
-          variant: groupAssignments.variant,
-          name: sql<string>`
-          	GROUP_CONCAT(
-           		CASE
-           			WHEN ${groupAssignments.variant} = ${GroupAssignmentVariants.policy} THEN ${policies.name}
-             		WHEN ${groupAssignments.variant} = ${GroupAssignmentVariants.app} THEN ${applications.name}
-             	END
-           	)
-          `.as("name"),
+          pk: applications.pk,
+          id: applications.id,
+          name: applications.name,
         })
-        .from(groupAssignments)
-        .where(eq(groupAssignments.groupPk, group.pk))
-        .leftJoin(
-          policies,
+        .from(applicationAssignments)
+        .where(
           and(
-            eq(policies.pk, groupAssignments.pk),
-            eq(groupAssignments.variant, GroupAssignmentVariants.policy),
+            eq(applicationAssignments.variant, "group"),
+            eq(applicationAssignments.pk, group.pk),
           ),
         )
-        .leftJoin(
+        .innerJoin(
           applications,
-          and(
-            eq(applications.pk, groupAssignments.pk),
-            eq(groupAssignments.variant, GroupAssignmentVariants.app),
-          ),
-        )
-        .groupBy(groupAssignments.variant, groupAssignments.pk);
-    }),
-  addAssignments: authedProcedure
+          eq(applicationAssignments.applicationPk, applications.pk),
+        ),
+    ]);
+
+    return { policies: p, apps: a };
+  }),
+  addAssignments: groupProcedure
     .input(
       z.object({
-        id: z.string(),
         assignments: z.array(
           z.object({
             pk: z.number(),
-            variant: z.enum(groupAssignmentVariants),
+            variant: z.enum(["policy", "application"]),
           }),
         ),
       }),
     )
-    .mutation(async ({ ctx, input }) => {
-      const group = await db.query.groups.findFirst({
-        where: and(eq(groups.id, input.id)),
+    .mutation(async ({ ctx: { group }, input }) => {
+      const pols: Array<number> = [],
+        apps: Array<number> = [];
+
+      input.assignments.forEach((a) => {
+        if (a.variant === "policy") pols.push(a.pk);
+        else apps.push(a.pk);
       });
-      if (!group)
-        throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
 
-      await ctx.ensureTenantMember(group.tenantPk);
-
-      await db
-        .insert(groupAssignments)
-        .values(
-          input.assignments.map((assignment) => ({
-            groupPk: group.pk,
-            pk: assignment.pk,
-            variant: assignment.variant,
-          })),
-        )
-        .onDuplicateKeyUpdate({
-          set: { groupPk: sql`${groupAssignments.groupPk}` },
-        });
+      await db.transaction((db) =>
+        Promise.all([
+          db
+            .insert(policyAssignments)
+            .values(
+              pols.map((pk) => ({
+                pk: group.pk,
+                policyPk: pk,
+                variant: sql`"group"`,
+              })),
+            )
+            .onDuplicateKeyUpdate({
+              set: { policyPk: sql`${policyAssignments.policyPk}` },
+            }),
+          db
+            .insert(applicationAssignments)
+            .values(
+              apps.map((pk) => ({
+                pk: group.pk,
+                applicationPk: pk,
+                variant: sql`"group"`,
+              })),
+            )
+            .onDuplicateKeyUpdate({
+              set: {
+                applicationPk: sql`${applicationAssignments.applicationPk}`,
+              },
+            }),
+        ]),
+      );
     }),
 });

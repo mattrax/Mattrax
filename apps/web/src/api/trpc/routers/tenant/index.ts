@@ -14,7 +14,7 @@ import {
   groups,
   identityProviders,
   policies,
-  policyAssignables,
+  policyAssignments,
   policyDeploy,
   policyDeployStatus,
   tenants,
@@ -222,14 +222,14 @@ export const tenantRouter = createTRPCRouter({
         .as(
           db
             .select({ id: policies.id })
-            .from(policyAssignables)
-            .innerJoin(policies, eq(policies.pk, policyAssignables.policyPk))
+            .from(policyAssignments)
+            .innerJoin(policies, eq(policies.pk, policyAssignments.policyPk))
             .where(eq(policies.tenantPk, ctx.tenant.pk)),
         );
       await db
         .with(policy_assignable)
-        .delete(policyAssignables)
-        .where(eq(policyAssignables.policyPk, policy_assignable.id));
+        .delete(policyAssignments)
+        .where(eq(policyAssignments.policyPk, policy_assignable.id));
       const policy_deploy_status = db
         .$with("policy_deploy_status")
         .as(

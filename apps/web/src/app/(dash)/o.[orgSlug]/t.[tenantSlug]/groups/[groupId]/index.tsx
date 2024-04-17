@@ -193,7 +193,12 @@ function Assignments() {
 
   const table = createStandardTable({
     get data() {
-      return assignments.data ?? [];
+      if (!assignments.data) return [];
+
+      return [
+        ...assignments.data.policies.map((d) => ({ ...d, variant: "policy" })),
+        ...assignments.data.apps.map((d) => ({ ...d, variant: "application" })),
+      ];
     },
     columns: variantTableColumns,
     // pagination: true, // TODO: Pagination
@@ -210,7 +215,7 @@ function Assignments() {
         tenantSlug: tenantSlug(),
       })),
     },
-    app: {
+    application: {
       label: "Applications",
       query: trpc.tenant.variantTable.apps.createQuery(() => ({
         tenantSlug: tenantSlug(),

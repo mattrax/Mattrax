@@ -244,6 +244,7 @@ export const PolicyAssignableVariants = {
   device: "device",
   group: "group",
 } as const;
+
 export const policyAssignableVariants = [
   PolicyAssignableVariants.user,
   PolicyAssignableVariants.device,
@@ -251,7 +252,7 @@ export const policyAssignableVariants = [
 ] as const;
 export type PolicyAssignableVariant = (typeof policyAssignableVariants)[number];
 
-export const policyAssignables = mysqlTable(
+export const policyAssignments = mysqlTable(
   "policy_assignables",
   {
     policyPk: serialRelation("policy")
@@ -430,33 +431,6 @@ export const groupMembers = mysqlTable(
   }),
 );
 
-export const GroupAssignmentVariants = {
-  policy: "policy",
-  app: "app",
-} as const;
-
-export const groupAssignmentVariants = [
-  GroupAssignmentVariants.policy,
-  GroupAssignmentVariants.app,
-] as const;
-export type GroupAssignmentVariant = (typeof groupMemberVariants)[number];
-
-export const groupAssignments = mysqlTable(
-  "group_assignments",
-  {
-    groupPk: serialRelation("group")
-      .references(() => groups.pk)
-      .notNull(),
-    // The primary key of the user or device
-    pk: serialRelation("pk").notNull(),
-    variant: mysqlEnum("variant", groupAssignmentVariants).notNull(),
-  },
-
-  (table) => ({
-    pk: primaryKey({ columns: [table.groupPk, table.pk, table.variant] }),
-  }),
-);
-
 export const groups = mysqlTable("groups", {
   pk: serial("pk").primaryKey(),
   id: cuid("id").notNull().unique(),
@@ -475,6 +449,37 @@ export const applications = mysqlTable("apps", {
     .references(() => tenants.pk)
     .notNull(),
 });
+
+export const ApplicationAssignableVariants = {
+  user: "user",
+  device: "device",
+  group: "group",
+} as const;
+
+export const applicationAssignableVariants = [
+  ApplicationAssignableVariants.user,
+  ApplicationAssignableVariants.device,
+  ApplicationAssignableVariants.group,
+] as const;
+export type ApplicationAssignableVariant =
+  (typeof applicationAssignableVariants)[number];
+
+export const applicationAssignments = mysqlTable(
+  "application_assignments",
+  {
+    applicationPk: serialRelation("appPk")
+      .references(() => applications.pk)
+      .notNull(),
+    // The primary key of the user or device or group
+    pk: serialRelation("pk").notNull(),
+    variant: mysqlEnum("variant", applicationAssignableVariants).notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.applicationPk, table.pk, table.variant],
+    }),
+  }),
+);
 
 export const domains = mysqlTable("domains", {
   domain: varchar("domain", { length: 256 }).primaryKey(),

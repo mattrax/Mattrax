@@ -9,43 +9,49 @@ import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
 import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
+import { RouteDefinition } from "@solidjs/router";
+
+export const route = {
+  load: ({ params }) => {
+    trpc.useContext().device.assignments.ensureData({ id: params.userId! });
+  },
+} satisfies RouteDefinition;
 
 export default function Page() {
   const tenantSlug = useTenantSlug();
   const device = useDevice();
 
-  const members = trpc.device.members.createQuery(() => ({
+  const assignments = trpc.device.assignments.createQuery(() => ({
     id: device().id,
   }));
 
   const table = createStandardTable({
     get data() {
-      return members.data ?? [];
+      if (!assignments.data) return [];
+
+      return [
+        ...assignments.data.policies.map((d) => ({ ...d, variant: "policy" })),
+        ...assignments.data.apps.map((d) => ({ ...d, variant: "application" })),
+      ];
     },
     columns: variantTableColumns,
     pagination: true,
   });
 
-  const addMembers = trpc.device.addMembers.createMutation(() => ({
-    onSuccess: () => members.refetch(),
+  const addAssignments = trpc.device.addAssignments.createMutation(() => ({
+    onSuccess: () => assignments.refetch(),
   }));
 
   const variants = {
-    device: {
-      label: "Devices",
-      query: trpc.tenant.variantTable.devices.createQuery(() => ({
+    policy: {
+      label: "Policies",
+      query: trpc.tenant.variantTable.policies.createQuery(() => ({
         tenantSlug: tenantSlug(),
       })),
     },
-    user: {
-      label: "Users",
-      query: trpc.tenant.variantTable.users.createQuery(() => ({
-        tenantSlug: tenantSlug(),
-      })),
-    },
-    group: {
-      label: "Groups",
-      query: trpc.tenant.variantTable.groups.createQuery(() => ({
+    application: {
+      label: "Applications",
+      query: trpc.tenant.variantTable.apps.createQuery(() => ({
         tenantSlug: tenantSlug(),
       })),
     },
@@ -55,23 +61,23 @@ export default function Page() {
     <PageLayout
       heading={
         <>
-          <PageLayoutHeading>Scope</PageLayoutHeading>
+          <PageLayoutHeading>Assignments</PageLayoutHeading>
           <VariantTableSheet
-            title="Assign Policy"
-            description="Assign this policy to devices, users, or groups."
+            title="Add Assignments"
+            description="Assign policies and apps to this device."
             getSubmitText={(count) =>
-              `Assign ${count} ${pluralize("Policy", count)}`
+              `Add ${count} ${pluralize("Assignment", count)}`
             }
             variants={variants}
-            onSubmit={(members) =>
-              addMembers.mutateAsync({
+            onSubmit={(assignments) =>
+              addAssignments.mutateAsync({
                 id: device().id,
-                members,
+                assignments,
               })
             }
           >
             <As component={Button} class="ml-auto">
-              Add Member
+              Add Assignments
             </As>
           </VariantTableSheet>
         </>

@@ -67,16 +67,15 @@ const getTenantList = cache(
 );
 
 // Authenticated procedure
-export const authedProcedure = t.procedure.use(async (opts) => {
+export const authedProcedure = t.procedure.use(async ({ next }) => {
   const data = await checkAuth();
 
   flushResponse();
 
   if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-  return opts.next({
+  return next({
     ctx: {
-      ...opts.ctx,
       ...data,
       ensureOrganisationMember: async (orgPk: number) => {
         if (!isOrganisationMember(orgPk, data.account.pk))
@@ -95,13 +94,7 @@ export const authedProcedure = t.procedure.use(async (opts) => {
   });
 });
 
-export const isSuperAdmin = (
-  account:
-    | {
-        email: string;
-      }
-    | User,
-) =>
+export const isSuperAdmin = (account: { email: string } | User) =>
   account.email.endsWith("@otbeaumont.me") ||
   account.email.endsWith("@mattrax.app");
 
