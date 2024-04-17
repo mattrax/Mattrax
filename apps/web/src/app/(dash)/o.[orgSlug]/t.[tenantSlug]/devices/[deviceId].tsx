@@ -10,55 +10,55 @@ import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { DeviceContextProvider } from "./[deviceId]/Context";
 
 const NAV_ITEMS = [
-  { title: "Device", href: "" },
-  { title: "Configuration", href: "configuration" },
-  { title: "Assignments", href: "assignments" },
-  { title: "Inventory", href: "inventory" },
-  { title: "Settings", href: "settings" },
+	{ title: "Device", href: "" },
+	{ title: "Configuration", href: "configuration" },
+	{ title: "Assignments", href: "assignments" },
+	{ title: "Inventory", href: "inventory" },
+	{ title: "Settings", href: "settings" },
 ];
 
 export const route = {
-  load: ({ params }) =>
-    trpc.useContext().device.get.ensureData({
-      deviceId: params.deviceId!,
-    }),
-  info: {
-    NAV_ITEMS,
-    BREADCRUMB: {
-      Component: () => {
-        const params = useZodParams({ deviceId: z.string() });
-        const query = trpc.device.get.createQuery(() => params);
+	load: ({ params }) =>
+		trpc.useContext().device.get.ensureData({
+			deviceId: params.deviceId!,
+		}),
+	info: {
+		NAV_ITEMS,
+		BREADCRUMB: {
+			Component: () => {
+				const params = useZodParams({ deviceId: z.string() });
+				const query = trpc.device.get.createQuery(() => params);
 
-        return (
-          <>
-            <span>{query.data?.name}</span>
-            <Badge variant="outline">Device</Badge>
-          </>
-        );
-      },
-    },
-  },
+				return (
+					<>
+						<span>{query.data?.name}</span>
+						<Badge variant="outline">Device</Badge>
+					</>
+				);
+			},
+		},
+	},
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
-  const params = useZodParams({ deviceId: z.string() });
-  const query = trpc.device.get.createQuery(() => params);
+	const params = useZodParams({ deviceId: z.string() });
+	const query = trpc.device.get.createQuery(() => params);
 
-  return (
-    <Show when={query.data !== undefined}>
-      <Show when={query.data} fallback={<NotFound />}>
-        {(data) => (
-          <DeviceContextProvider device={data()} query={query}>
-            <MErrorBoundary>{props.children}</MErrorBoundary>
-          </DeviceContextProvider>
-        )}
-      </Show>
-    </Show>
-  );
+	return (
+		<Show when={query.data !== undefined}>
+			<Show when={query.data} fallback={<NotFound />}>
+				{(data) => (
+					<DeviceContextProvider device={data()} query={query}>
+						<MErrorBoundary>{props.children}</MErrorBoundary>
+					</DeviceContextProvider>
+				)}
+			</Show>
+		</Show>
+	);
 }
 
 function NotFound() {
-  toast.error("Device not found");
-  // necessary since '..' adds trailing slash -_-
-  return <Navigate href="../../devices" />;
+	toast.error("Device not found");
+	// necessary since '..' adds trailing slash -_-
+	return <Navigate href="../../devices" />;
 }
