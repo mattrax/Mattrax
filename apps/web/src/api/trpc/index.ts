@@ -1,4 +1,4 @@
-import { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
+import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { createTRPCContext, createTRPCRouter } from "./helpers";
 import { applicationRouter } from "./routers/app";
 import { authRouter } from "./routers/auth";
@@ -13,17 +13,17 @@ import { apiKeyRouter } from "./routers/apiKey";
 import { orgRouter } from "./routers/org";
 
 export const appRouter = createTRPCRouter({
-  app: applicationRouter,
-  auth: authRouter,
-  device: deviceRouter,
-  group: groupRouter,
-  internal: internalRouter,
-  policy: policyRouter,
-  tenant: tenantRouter,
-  user: userRouter,
-  meta: metaRouter,
-  apiKey: apiKeyRouter,
-  org: orgRouter,
+	app: applicationRouter,
+	auth: authRouter,
+	device: deviceRouter,
+	group: groupRouter,
+	internal: internalRouter,
+	policy: policyRouter,
+	tenant: tenantRouter,
+	user: userRouter,
+	meta: metaRouter,
+	apiKey: apiKeyRouter,
+	org: orgRouter,
 });
 
 export const createContext = createTRPCContext;

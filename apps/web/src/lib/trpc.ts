@@ -1,21 +1,21 @@
 import {
-  TrpcServerFunctionOpts,
-  createServerFunctionLink,
-  seroval,
-  trpcServerFunction,
+	type TrpcServerFunctionOpts,
+	createServerFunctionLink,
+	seroval,
+	trpcServerFunction,
 } from "@mattrax/trpc-server-function";
 import { createTRPCSolidStart } from "@solid-mediakit/trpc";
-import { router, createContext, AppRouter } from "~/api/trpc";
+import { router, createContext, type AppRouter } from "~/api/trpc";
 
 function serverFunction(opts: TrpcServerFunctionOpts) {
-  "use server";
+	"use server";
 
-  return trpcServerFunction({ router, createContext, opts });
+	return trpcServerFunction({ router, createContext, opts });
 }
 
 export const trpc = createTRPCSolidStart<AppRouter>({
-  config: () => ({
-    links: [createServerFunctionLink(serverFunction)],
-    transformer: seroval,
-  }),
+	config: () => ({
+		links: [createServerFunctionLink(serverFunction)],
+		transformer: seroval,
+	}),
 });
