@@ -6,6 +6,12 @@ import {
 	Avatar,
 	AvatarFallback,
 	Button,
+	ContextMenu,
+	ContextMenuContent,
+	ContextMenuGroup,
+	ContextMenuGroupLabel,
+	ContextMenuItem,
+	ContextMenuTrigger,
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
@@ -54,12 +60,27 @@ export function TopBar() {
 					!items() && "border-b border-gray-200",
 				)}
 			>
-				<A href={org()?.path ?? "/"} class="flex">
-					<img src={Logo} class="h-5" alt="Mattrax icon" />
-					<span class="ml-2 items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
-						Alpha
-					</span>
-				</A>
+				<ContextMenu>
+					<ContextMenuTrigger asChild>
+						<As component={A} href={org()?.path ?? "/"} class="flex">
+							<img src={Logo} class="h-5" alt="Mattrax icon" />
+							<span class="ml-2 items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
+								Alpha
+							</span>
+						</As>
+					</ContextMenuTrigger>
+					<ContextMenuContent>
+						<ContextMenuGroup>
+							<ContextMenuGroupLabel>Links</ContextMenuGroupLabel>
+							<ContextMenuItem>
+								<a href="https://github.com/mattrax/mattrax" target="_blank">
+									GitHub
+								</a>
+							</ContextMenuItem>
+							<ContextMenuItem>Twitter</ContextMenuItem>
+						</ContextMenuGroup>
+					</ContextMenuContent>
+				</ContextMenu>
 				<Breadcrumbs />
 				<div class="flex-1" />
 

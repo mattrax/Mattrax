@@ -1,18 +1,10 @@
-import { Client } from "@planetscale/database";
-import { drizzle } from "drizzle-orm/planetscale-serverless";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 
 import { env } from "../env";
 
 export * from "./schema";
 import * as schema from "./schema";
 
-const client = new Client({
-	url: env.DATABASE_URL,
-	// Cloudflare Worker's doesn't like `cache`
-	fetch: (url, init) => {
-		(init as any).cache = undefined;
-		return fetch(url, init);
-	},
-});
-
+const client = postgres(env.DATABASE_URL);
 export const db = drizzle(client, { schema, logger: false });

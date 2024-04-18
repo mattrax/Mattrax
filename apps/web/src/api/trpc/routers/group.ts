@@ -188,9 +188,7 @@ export const groupRouter = createTRPCRouter({
             variant: member.variant,
           })),
         )
-        .onDuplicateKeyUpdate({
-          set: { groupPk: sql`${groupMembers.groupPk}` },
-        });
+        .onConflictDoNothing();
     }),
 
   assignments: groupProcedure.query(async ({ ctx }) => {
@@ -259,9 +257,7 @@ export const groupRouter = createTRPCRouter({
                 variant: sql`"group"`,
               })),
             )
-            .onDuplicateKeyUpdate({
-              set: { policyPk: sql`${policyAssignments.policyPk}` },
-            }),
+            .onConflictDoNothing(),
           db
             .insert(applicationAssignments)
             .values(
@@ -271,11 +267,7 @@ export const groupRouter = createTRPCRouter({
                 variant: sql`"group"`,
               })),
             )
-            .onDuplicateKeyUpdate({
-              set: {
-                applicationPk: sql`${applicationAssignments.applicationPk}`,
-              },
-            }),
+            .onConflictDoNothing(),
         ]),
       );
     }),

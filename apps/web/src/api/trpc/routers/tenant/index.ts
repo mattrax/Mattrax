@@ -1,11 +1,6 @@
 import { count, desc, eq, sql } from "drizzle-orm";
+import { union } from "drizzle-orm/pg-core";
 import { z } from "zod";
-import {
-  MySqlDialect,
-  type MySqlSelectBase,
-  union,
-  type MySqlTableWithColumns,
-} from "drizzle-orm/mysql-core";
 
 import {
   accounts,
@@ -25,12 +20,7 @@ import {
   tenants,
   users,
 } from "~/db";
-import {
-  createTRPCRouter,
-  orgProcedure,
-  publicProcedure,
-  tenantProcedure,
-} from "../../helpers";
+import { createTRPCRouter, orgProcedure, tenantProcedure } from "../../helpers";
 import { identityProviderRouter } from "./identityProvider";
 import { variantTableRouter } from "./members";
 import { randomSlug } from "~/api/utils";
