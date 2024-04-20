@@ -1,0 +1,13 @@
+{
+  "version": "5",
+  "dialect": "pg",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1713533574678,
+      "tag": "0000_clumsy_doctor_strange",
+      "breakpoints": true
+    }
+  ]
+}

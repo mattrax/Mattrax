@@ -16,3 +16,7 @@ mysql_common = { version = "=0.31.0", features = [
 ] } # This is a dependency of `mysql_async`
 chrono = { version = "0.4.35", features = ["serde"] }
 serde_json = "1.0.114"
+tokio-postgres = { version = "0.7.10", features = ["with-chrono-0_4", "with-serde_json-1"] }
+postgres-native-tls = "0.5.0"
+native-tls = "0.2.11"
+tokio = "1.37.0"

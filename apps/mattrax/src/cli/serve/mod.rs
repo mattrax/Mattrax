@@ -68,7 +68,7 @@ impl Command {
             KeyPair::from_der(&fs::read(data_dir.join("certs").join("identity-key.der")).unwrap())
                 .unwrap();
         let identity_cert = fs::read(data_dir.join("certs").join("identity.der")).unwrap();
-        let db = Db::new(&config_manager.get().db_url);
+        let db = Db::new(&config_manager.get().db_url).await;
         let shared_secret =
             Hmac::new_from_slice(config_manager.get().internal_secret.as_bytes()).unwrap();
         let (acme_tx, acme_rx) = mpsc::channel(25);

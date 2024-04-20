@@ -43,7 +43,7 @@ pub(crate) async fn handler(db: &Db, device: &GetDeviceResult, cmd: &SyncML) -> 
                     .priority
                     .try_into()
                     .expect("MySQL 'UNSIGNED TINYINT' won't overflow u8"),
-                deploy.data.0,
+                deploy.data,
             ));
         }
     }
@@ -55,7 +55,7 @@ pub(crate) async fn handler(db: &Db, device: &GetDeviceResult, cmd: &SyncML) -> 
     vec![]
 }
 
-fn render_deploy_for_windows(deploy_pk: u64, priority: u8, data: serde_json::Value) -> Deploy {
+fn render_deploy_for_windows(deploy_pk: i64, priority: u8, data: serde_json::Value) -> Deploy {
     let configurations: HashMap<String, Configuration> =
         // TODO: Error handling
         serde_json::from_value(data).unwrap();

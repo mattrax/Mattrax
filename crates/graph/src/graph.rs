@@ -174,7 +174,7 @@ struct Node {
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reference {
-    deploy_pk: u64,
+    deploy_pk: i64,
     key: String,
 }
 
