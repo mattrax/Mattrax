@@ -1,5 +1,5 @@
 [package]
-name = "mx-graph"
+name = "mx-conflict"
 version = "0.0.1"
 edition = "2021"
 publish = false
