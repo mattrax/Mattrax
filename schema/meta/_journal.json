@@ -15,6 +15,13 @@
 			"when": 1713324788437,
 			"tag": "0001_milky_whiplash",
 			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "5",
+			"when": 1713372406604,
+			"tag": "0002_long_cassandra_nova",
+			"breakpoints": true
 		}
 	]
 }

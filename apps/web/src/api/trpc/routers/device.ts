@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
@@ -9,9 +9,26 @@ import {
 	users,
 	deviceActions,
 	possibleDeviceActions,
+	policyAssignments,
+	applicationAssignments,
+	policies,
+	applications,
 } from "~/db";
 import { omit } from "~/api/utils";
 import { TRPCError } from "@trpc/server";
+
+const deviceProcedure = authedProcedure
+	.input(z.object({ id: z.string() }))
+	.use(async ({ next, input, ctx }) => {
+		const device = await db.query.devices.findFirst({
+			where: eq(devices.id, input.id),
+		});
+		if (!device) throw new TRPCError({ code: "NOT_FOUND", message: "device" });
+
+		const tenant = await ctx.ensureTenantMember(device.tenantPk);
+
+		return next({ ctx: { device, tenant } });
+	});
 
 export const deviceRouter = createTRPCRouter({
 	list: tenantProcedure.query(async ({ ctx }) => {
@@ -92,88 +109,91 @@ export const deviceRouter = createTRPCRouter({
 			return {};
 		}),
 
-	members: authedProcedure
-		.input(z.object({ id: z.string() }))
-		.query(async ({ ctx, input }) => {
-			const policy = await db.query.devices.findFirst({
-				where: eq(devices.id, input.id),
-			});
-			if (!policy)
-				throw new TRPCError({ code: "NOT_FOUND", message: "Device not found" });
+	assignments: deviceProcedure.query(async ({ ctx }) => {
+		const { device } = ctx;
 
-			await ctx.ensureTenantMember(policy.tenantPk);
+		const [p, a] = await Promise.all([
+			db
+				.select({ pk: policies.pk, id: policies.id, name: policies.name })
+				.from(policyAssignments)
+				.where(
+					and(
+						eq(policyAssignments.variant, "device"),
+						eq(policyAssignments.pk, device.pk),
+					),
+				)
+				.innerJoin(policies, eq(policyAssignments.policyPk, policies.pk)),
+			db
+				.select({
+					pk: applications.pk,
+					id: applications.id,
+					name: applications.name,
+				})
+				.from(applicationAssignments)
+				.where(
+					and(
+						eq(applicationAssignments.variant, "device"),
+						eq(applicationAssignments.pk, device.pk),
+					),
+				)
+				.innerJoin(
+					applications,
+					eq(applicationAssignments.applicationPk, applications.pk),
+				),
+		]);
 
-			// TODO: Finish this
-			return [] as any[];
+		return { policies: p, apps: a };
+	}),
 
-			// 	return await db
-			// 		.select({
-			// 			pk: policyAssignables.pk,
-			// 			variant: policyAssignables.variant,
-			// 			name: sql<PolicyAssignableVariant>`
-			//     GROUP_CONCAT(
-			//         CASE
-			//             WHEN ${policyAssignables.variant} = ${PolicyAssignableVariants.device} THEN ${devices.name}
-			//             WHEN ${policyAssignables.variant} = ${PolicyAssignableVariants.user} THEN ${users.name}
-			//             WHEN ${policyAssignables.variant} = ${PolicyAssignableVariants.group} THEN ${groups.name}
-			//         END
-			//     )
-			//   `.as("name"),
-			// 		})
-			// 		.from(policyAssignables)
-			// 		.where(eq(policyAssignables.policyPk, policy.pk))
-			// 		.leftJoin(
-			// 			devices,
-			// 			and(
-			// 				eq(devices.pk, policyAssignables.pk),
-			// 				eq(policyAssignables.variant, PolicyAssignableVariants.device),
-			// 			),
-			// 		)
-			// 		.leftJoin(
-			// 			users,
-			// 			and(
-			// 				eq(users.pk, policyAssignables.pk),
-			// 				eq(policyAssignables.variant, PolicyAssignableVariants.user),
-			// 			),
-			// 		)
-			// 		.leftJoin(
-			// 			groups,
-			// 			and(
-			// 				eq(groups.pk, policyAssignables.pk),
-			// 				eq(policyAssignables.variant, PolicyAssignableVariants.group),
-			// 			),
-			// 		)
-			// 		.groupBy(policyAssignables.variant, policyAssignables.pk);
-		}),
-
-	addMembers: authedProcedure
+	addAssignments: deviceProcedure
 		.input(
 			z.object({
-				id: z.string(),
-				members: z.array(
+				assignments: z.array(
 					z.object({
 						pk: z.number(),
-						variant: z.enum(policyAssignableVariants), // TODO
+						variant: z.enum(["policy", "application"]),
 					}),
 				),
 			}),
 		)
-		.mutation(async ({ ctx, input }) => {
-			const policy = await db.query.devices.findFirst({
-				where: eq(devices.id, input.id),
+		.mutation(async ({ ctx: { device }, input }) => {
+			const pols: Array<number> = [],
+				apps: Array<number> = [];
+
+			input.assignments.forEach((a) => {
+				if (a.variant === "policy") pols.push(a.pk);
+				else apps.push(a.pk);
 			});
-			if (!policy)
-				throw new TRPCError({ code: "NOT_FOUND", message: "Device not found" });
 
-			await ctx.ensureTenantMember(policy.tenantPk);
-
-			// TODO: Finish this
-			// await db.insert(policyAssignables).values(
-			// 	input.members.map((member) => ({
-			// 		policyPk: policy.pk,
-			// 		pk: member.pk,
-			// 		variant: member.variant,
-			// 	})),
-			// );
+			await db.transaction((db) =>
+				Promise.all([
+					db
+						.insert(policyAssignments)
+						.values(
+							pols.map((pk) => ({
+								pk: device.pk,
+								policyPk: pk,
+								variant: sql`"device"`,
+							})),
+						)
+						.onDuplicateKeyUpdate({
+							set: { policyPk: sql`${policyAssignments.policyPk}` },
+						}),
+					db
+						.insert(applicationAssignments)
+						.values(
+							apps.map((pk) => ({
+								pk: device.pk,
+								applicationPk: pk,
+								variant: sql`"device"`,
+							})),
+						)
+						.onDuplicateKeyUpdate({
+							set: {
+								applicationPk: sql`${applicationAssignments.applicationPk}`,
+							},
+						}),
+				]),
+			);
 		}),
 });

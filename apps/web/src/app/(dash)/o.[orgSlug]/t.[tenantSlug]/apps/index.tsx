@@ -160,6 +160,8 @@ function CreateApplicationSheet(props: ParentProps) {
 	const tenantSlug = useTenantSlug();
 	const navigate = useNavigate();
 
+	const [open, setOpen] = createSignal(false);
+
 	const createApplication = trpc.app.create.createMutation();
 	const form = createZodForm({
 		schema: z.object({
@@ -188,6 +190,7 @@ function CreateApplicationSheet(props: ParentProps) {
 			...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
 				search,
 			),
+			enabled: open(),
 		})),
 	);
 
@@ -211,7 +214,7 @@ function CreateApplicationSheet(props: ParentProps) {
 	});
 
 	return (
-		<Sheet>
+		<Sheet open={open()} onOpenChange={setOpen}>
 			<SheetTrigger asChild>{props.children}</SheetTrigger>
 			<SheetContent asChild padding="none">
 				<As
