@@ -1,26 +1,32 @@
-import { auditLog, db } from "~/db";
+import { sql, type ExtractTablesWithRelations } from "drizzle-orm";
+import type { PgTransaction } from "drizzle-orm/pg-core";
+import type { PostgresJsQueryResultHKT } from "drizzle-orm/postgres-js";
+import { auditLog, getDb } from "~/db";
+import type * as schema from "~/db/schema";
 import type { auditLogDefinition } from "./auditLogDefinition";
-import { sql } from "drizzle-orm";
 
 export function withAuditLog<T, K extends keyof typeof auditLogDefinition>(
-	action: K,
-	data: (typeof auditLogDefinition)[K]["#ty"],
-	[tenantPk, userPk]: [number, number | undefined],
-	cb: Parameters<typeof db.transaction<T>>[0],
+  action: K,
+  data: (typeof auditLogDefinition)[K]["#ty"],
+  [tenantPk, userPk]: [number, number | undefined],
+  cb: (
+    tx: PgTransaction<
+      PostgresJsQueryResultHKT,
+      typeof schema,
+      ExtractTablesWithRelations<typeof schema>
+    >,
+  ) => Promise<T>,
 ) {
-	// TODO: I know Planetscale's HTTP adapter does a request to open and close the transaction + one for every operation
-	// TODO: Can we make our own HTTP edge that can do this in a single HTTP request???
+  return getDb().transaction<T>(async (db) => {
+    await db.insert(auditLog).values({
+      tenantPk,
+      action,
+      data,
+      userPk: userPk || sql`NULL`,
+    });
 
-	return db.transaction<T>(async (db) => {
-		await db.insert(auditLog).values({
-			tenantPk,
-			action,
-			data,
-			userPk: userPk || sql`NULL`,
-		});
-
-		return await cb(db);
-	});
+    return await cb(db);
+  });
 }
 
 export type AuditLogDefinition = typeof auditLogDefinition;

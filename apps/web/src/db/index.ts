@@ -1,10 +1,14 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
-import { env } from "../env";
-
 export * from "./schema";
 import * as schema from "./schema";
+import { env } from "../env";
+import { localsCache } from "~/lib/utils";
 
-const client = postgres(env.DATABASE_URL);
-export const db = drizzle(client, { schema, logger: false });
+export const getDb = localsCache(() => {
+  const client = postgres(env.DATABASE_URL, { prepare: false });
+  return drizzle(client, { schema, logger: false });
+}, Symbol("db"));
+
+export type Db = ReturnType<typeof getDb>;

@@ -575,8 +575,8 @@ importers:
         specifier: ^0.13.2
         version: 0.13.2(patch_hash=elelxothihlzsb57xki6usvf5m)(solid-js@1.8.16)
       '@tanstack/form-core':
-        specifier: ^0.19.2
-        version: 0.19.2
+        specifier: '=0.19.0'
+        version: 0.19.0
       '@tanstack/solid-form':
         specifier: '=0.19.0'
         version: 0.19.0(patch_hash=q4rg6hlmscew6hzqinl5fmzg4e)(solid-js@1.8.16)
@@ -630,8 +630,8 @@ importers:
         specifier: ^0.13.2
         version: 0.13.2(patch_hash=elelxothihlzsb57xki6usvf5m)(solid-js@1.8.16)
       '@tanstack/form-core':
-        specifier: ^0.19.2
-        version: 0.19.2
+        specifier: '=0.19.0'
+        version: 0.19.0
       '@tanstack/solid-form':
         specifier: '=0.19.0'
         version: 0.19.0(patch_hash=q4rg6hlmscew6hzqinl5fmzg4e)(solid-js@1.8.16)
