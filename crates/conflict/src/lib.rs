@@ -8,7 +8,6 @@
 
 mod deploy;
 mod graph;
-pub(crate) mod json_map;
 
 pub use deploy::{Configuration, ConflictResolutionStrategy, Deploy};
 pub use graph::{Conflict, Graph, Reference};

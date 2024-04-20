@@ -1,17 +1,14 @@
 use std::collections::{BTreeMap, HashMap};
 
 use mx_dmvalue::DmValue;
-use serde::{Deserialize, Serialize};
 
-use crate::{json_map::JsonMap, ConflictResolutionStrategy, Deploy};
+use crate::{ConflictResolutionStrategy, Deploy};
 
 // The order policies are applied to the graph should not affect the result -> So we need to sort everything.
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Graph {
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty", rename = "n")]
     nodes: BTreeMap<String, Child>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "c")]
     conflicts: Vec<Conflict>,
 }
 
@@ -33,7 +30,7 @@ impl Graph {
                 let Child::Node(node) = entry;
 
                 // If this policies attempts to set the same value we can just add a reference as it won't conflict.
-                if let Some(references) = node.values.0.get_mut(&config.value) {
+                if let Some(references) = node.values.get_mut(&config.value) {
                     references.push(Reference {
                         deploy_pk: deploy.pk,
                         key: config.key,
@@ -58,7 +55,6 @@ impl Graph {
 
                             let mut references = node
                                 .values
-                                .0
                                 .into_iter()
                                 .map(|(_, v)| v)
                                 .flatten()
@@ -81,7 +77,6 @@ impl Graph {
                         // TODO: If value is in the same bucket we can just add the reference
 
                         node.values
-                            .0
                             .get_mut(&config.value)
                             .get_or_insert(&mut Default::default())
                             .push(Reference {
@@ -111,7 +106,6 @@ impl Graph {
 
                         let mut references = node
                             .values
-                            .0
                             .into_iter()
                             .map(|(_, v)| v)
                             .flatten()
@@ -133,13 +127,13 @@ impl Graph {
                     oma_uri,
                     Child::Node(Node {
                         strategy: config.conflict_resolution_strategy,
-                        values: JsonMap(HashMap::from([(
+                        values: HashMap::from([(
                             config.value.clone(),
                             vec![Reference {
                                 deploy_pk: deploy.pk,
                                 key: config.key,
                             }],
-                        )])),
+                        )]),
                     }),
                 );
             }
@@ -155,42 +149,36 @@ impl Graph {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq)]
 enum Child {
     // TODO: Use edges between nodes instead of full URI as the key so it's more efficient to store
     // Edge(BTreeMap<String, Child>),
     Node(Node),
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq)]
 struct Node {
     strategy: ConflictResolutionStrategy,
-    #[serde(
-        skip_serializing_if = "JsonMap::is_empty",
-        default = "Default::default"
-    )]
-    values: JsonMap<DmValue, Vec<Reference>>,
+    values: HashMap<DmValue, Vec<Reference>>,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Reference {
     deploy_pk: i64,
     key: String,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Conflict {
     node: String,
     cause: ConflictCause,
     references: Vec<Reference>,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ConflictCause {
     /// A multiple configurations setting this node were marked as [ConflictResolutionStrategy::InValueOrder] but had conflicting definitions of the most restrictive policy.
-    #[serde(rename = "i")]
     InvalidInValueOrderDefinition,
     /// A configuration setting this node was marked as [ConflictResolutionStrategy::Conflict] and multiple nodes were found.
-    #[serde(rename = "e")]
     ExplicitConflict,
 }
