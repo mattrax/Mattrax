@@ -123,11 +123,11 @@ function WipVisualEditor() {
 												},
 											],
 										},
-								  }
+									}
 								: {
 										...policy().data,
 										no_graphing_calculator_nerd: undefined,
-								  },
+									},
 						})
 					}
 				/>

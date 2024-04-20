@@ -101,7 +101,7 @@ export function StandardTable<TData>(props: {
 												: flexRender(
 														header.column.columnDef.header,
 														header.getContext(),
-												  )}
+													)}
 										</TableHead>
 									))}
 								</TableRow>
