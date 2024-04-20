@@ -18,9 +18,6 @@ export default defineConfig({
 		build: {
 			// Safari mobile has problems with newer syntax
 			target: "es2015",
-			rollupConfig: {
-				external: ["cloudflare:sockets"],
-			},
 		},
 		plugins: [
 			devtools(),
@@ -33,18 +30,12 @@ export default defineConfig({
 				? visualizer({ brotliSize: true, gzipSize: true })
 				: undefined,
 		],
-		ssr: {
-			external: ["cloudflare:sockets"],
-		},
 	},
 	server: {
 		unenv: cloudflare,
 		// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
 		// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
 		// exportConditions: ["worker"],
-		esbuild: {
-			external: ["cloudflare:sockets"],
-		},
 		experimental: {
 			asyncContext: true,
 		},
