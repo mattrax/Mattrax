@@ -19,9 +19,6 @@ export default defineConfig({
 			// Safari mobile has problems with newer syntax
 			target: "es2015",
 		},
-		ssr: {
-			external: ["cloudflare:sockets"],
-		},
 		plugins: [
 			devtools(),
 			tsconfigPaths({
@@ -49,6 +46,11 @@ export default defineConfig({
 		// 		target: "es2020",
 		// 	},
 		// },
+		esbuild: {
+			options: {
+				external: ["cloudflare:sockets"],
+			},
+		},
 		experimental: {
 			asyncContext: true,
 		},
