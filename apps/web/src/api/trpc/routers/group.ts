@@ -131,12 +131,10 @@ export const groupRouter = createTRPCRouter({
 					pk: groupMembers.pk,
 					variant: groupMembers.variant,
 					name: sql<string>`
-          	GROUP_CONCAT(
-           		CASE
-           			WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.name}
-             		WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.name}
-             	END
-           	)
+					CASE
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.name}
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.name}
+					END
           `.as("name"),
 				})
 				.from(groupMembers)
@@ -155,7 +153,12 @@ export const groupRouter = createTRPCRouter({
 						eq(groupMembers.variant, GroupMemberVariants.user),
 					),
 				)
-				.groupBy(groupMembers.variant, groupMembers.pk);
+				.groupBy(
+					groupMembers.variant,
+					groupMembers.pk,
+					devices.name,
+					users.name,
+				);
 		}),
 
 	addMembers: authedProcedure

@@ -111,13 +111,11 @@ export const policyRouter = createTRPCRouter({
 					pk: policyAssignments.pk,
 					variant: policyAssignments.variant,
 					name: sql<PolicyAssignableVariant>`
-            GROUP_CONCAT(
-                CASE
-                    WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.device} THEN ${devices.name}
-                    WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.user} THEN ${users.name}
-                    WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.group} THEN ${groups.name}
-                END
-            )
+					CASE
+						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.device} THEN ${devices.name}
+						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.user} THEN ${users.name}
+						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.group} THEN ${groups.name}
+					END
           `.as("name"),
 				})
 				.from(policyAssignments)
@@ -143,7 +141,13 @@ export const policyRouter = createTRPCRouter({
 						eq(policyAssignments.variant, PolicyAssignableVariants.group),
 					),
 				)
-				.groupBy(policyAssignments.variant, policyAssignments.pk);
+				.groupBy(
+					policyAssignments.variant,
+					policyAssignments.pk,
+					devices.name,
+					users.name,
+					groups.name,
+				);
 		}),
 
 	addMembers: authedProcedure
