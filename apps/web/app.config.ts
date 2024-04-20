@@ -11,66 +11,69 @@ import { monorepoRoot } from "./loadEnv";
 import "./src/env";
 
 export default defineConfig({
-  ssr: false,
-  routeDir: "app",
-  vite: {
-    envDir: monorepoRoot,
-    build: {
-      // Safari mobile has problems with newer syntax
-      target: "es2015",
-    },
-    plugins: [
-      devtools(),
-      tsconfigPaths({
-        // If this isn't set Vinxi hangs on startup
-        root: ".",
-      }),
-      mattraxUI,
-      !(process.env.VERCEL === "1")
-        ? visualizer({ brotliSize: true, gzipSize: true })
-        : undefined,
-    ],
-  },
-  server: {
-    unenv: cloudflare,
-    // vercel: {
-    //   regions: ["iad1"],
-    // },
-    // This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
-    // TODO: We could probs PR this to the Vercel Edge preset in Nitro.
-    // exportConditions: ["worker"],
-    // esbuild: {
-    // 	options: {
-    // 		/// Required for `@paralleldrive/cuid2` to work.
-    // 		/// https://github.com/paralleldrive/cuid2/issues/62
-    // 		target: "es2020",
-    // 	},
-    // },
-    experimental: {
-      asyncContext: true,
-    },
-  },
+	ssr: false,
+	routeDir: "app",
+	vite: {
+		envDir: monorepoRoot,
+		build: {
+			// Safari mobile has problems with newer syntax
+			target: "es2015",
+		},
+		ssr: {
+			external: ["cloudflare:sockets"],
+		},
+		plugins: [
+			devtools(),
+			tsconfigPaths({
+				// If this isn't set Vinxi hangs on startup
+				root: ".",
+			}),
+			mattraxUI,
+			!(process.env.VERCEL === "1")
+				? visualizer({ brotliSize: true, gzipSize: true })
+				: undefined,
+		],
+	},
+	server: {
+		unenv: cloudflare,
+		// vercel: {
+		//   regions: ["iad1"],
+		// },
+		// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
+		// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
+		// exportConditions: ["worker"],
+		// esbuild: {
+		// 	options: {
+		// 		/// Required for `@paralleldrive/cuid2` to work.
+		// 		/// https://github.com/paralleldrive/cuid2/issues/62
+		// 		target: "es2020",
+		// 	},
+		// },
+		experimental: {
+			asyncContext: true,
+		},
+	},
 });
 
 process.on("exit", () => {
-  const workerCode = path.join("dist", "_worker.js", "chunks", "runtime.mjs");
+	const workerCode = path.join("dist", "_worker.js", "chunks", "runtime.mjs");
 
-  if (!fs.existsSync(workerCode)) {
-    console.warn("Skipping Cloudflare env patching...");
-    return;
-  }
+	if (!fs.existsSync(workerCode)) {
+		console.warn("Skipping Cloudflare env patching...");
+		return;
+	}
 
-  // Cloudflare doesn't allow access to env outside the handler.
-  // So we ship the env with the worker code.
-  fs.writeFileSync(
-    path.join(workerCode, "../env.mjs"),
-    `const process={env:${JSON.stringify(
-      process.env,
-    )}};globalThis.process=process;`,
-  );
+	// Cloudflare doesn't allow access to env outside the handler.
+	// So we ship the env with the worker code.
+	fs.writeFileSync(
+		path.join(workerCode, "../env.mjs"),
+		`const process={env:${JSON.stringify(
+			process.env,
+		)}};globalThis.process=process;`,
+	);
 
-  fs.writeFileSync(
-    workerCode,
-    `import "./env.mjs";\n${fs.readFileSync(workerCode)}`,
-  );
+	fs.writeFileSync(
+		workerCode,
+		`import "./env.mjs";\n${fs.readFileSync(workerCode)}`,
+	);
 });

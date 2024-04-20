@@ -1,6 +1,6 @@
 // @refresh reload
 import { type EventBus, createEventBus } from "@solid-primitives/event-bus";
-import { Router, useNavigate, useMatches } from "@solidjs/router";
+import { Router, useNavigate } from "@solidjs/router";
 import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
 import {
 	QueryCache,
