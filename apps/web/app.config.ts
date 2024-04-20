@@ -48,6 +48,9 @@ export default defineConfig({
 		experimental: {
 			asyncContext: true,
 		},
+		rollupConfig: {
+			external: ["cloudflare:sockets"],
+		},
 	},
 });
 
