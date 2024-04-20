@@ -18,6 +18,9 @@ export default defineConfig({
 		build: {
 			// Safari mobile has problems with newer syntax
 			target: "es2015",
+			rollupConfig: {
+				external: ["@mattrax/ui"],
+			},
 		},
 		plugins: [
 			devtools(),
@@ -30,6 +33,9 @@ export default defineConfig({
 				? visualizer({ brotliSize: true, gzipSize: true })
 				: undefined,
 		],
+		ssr: {
+			external: ["@mattrax/ui"],
+		},
 	},
 	server: {
 		unenv: cloudflare,
