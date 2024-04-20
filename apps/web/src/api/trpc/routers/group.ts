@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 
@@ -7,6 +7,7 @@ import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { withAuditLog } from "~/api/auditLog";
 import {
 	GroupMemberVariants,
+	PolicyAssignableVariants,
 	applicationAssignments,
 	applications,
 	db,
@@ -53,7 +54,7 @@ export const groupRouter = createTRPCRouter({
 				.select({
 					id: groups.id,
 					name: groups.name,
-					memberCount: sql`count(${groupMembers.groupPk})`,
+					memberCount: count(groupMembers.groupPk),
 				})
 				.from(groups)
 				.where(eq(groups.tenantPk, ctx.tenant.pk))
@@ -229,6 +230,7 @@ export const groupRouter = createTRPCRouter({
 
 		return { policies: p, apps: a };
 	}),
+
 	addAssignments: groupProcedure
 		.input(
 			z.object({
@@ -249,29 +251,36 @@ export const groupRouter = createTRPCRouter({
 				else apps.push(a.pk);
 			});
 
-			await db.transaction((db) =>
-				Promise.all([
+			const ops: Promise<any>[] = [];
+
+			if (pols.length > 0)
+				ops.push(
 					db
 						.insert(policyAssignments)
 						.values(
 							pols.map((pk) => ({
 								pk: group.pk,
 								policyPk: pk,
-								variant: sql`"group"`,
+								variant: PolicyAssignableVariants.group,
 							})),
 						)
 						.onConflictDoNothing(),
+				);
+
+			if (apps.length > 0)
+				ops.push(
 					db
 						.insert(applicationAssignments)
 						.values(
 							apps.map((pk) => ({
 								pk: group.pk,
 								applicationPk: pk,
-								variant: sql`"group"`,
+								variant: PolicyAssignableVariants.group,
 							})),
 						)
 						.onConflictDoNothing(),
-				]),
-			);
+				);
+
+			await db.transaction((db) => Promise.all(ops));
 		}),
 });
