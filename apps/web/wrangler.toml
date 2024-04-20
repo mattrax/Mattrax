@@ -1,7 +1,0 @@
-name = "mattrax"
-compatibility_date = "2024-04-19"
-compatibility_flags = ["nodejs_compat"]
-
-[[hyperdrive]]
-binding = "HYPERDRIVE"
-id = "d4a32b68ad894672ad709ae136f4aaaa"

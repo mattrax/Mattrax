@@ -19,7 +19,7 @@ export default defineConfig({
 			// Safari mobile has problems with newer syntax
 			target: "es2015",
 			rollupConfig: {
-				external: ["@mattrax/ui"],
+				external: ["cloudflare:sockets"],
 			},
 		},
 		plugins: [
@@ -34,7 +34,7 @@ export default defineConfig({
 				: undefined,
 		],
 		ssr: {
-			external: ["@mattrax/ui"],
+			external: ["cloudflare:sockets"],
 		},
 	},
 	server: {
