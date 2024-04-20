@@ -22,13 +22,13 @@
 		"node": ">=18"
 	},
 	"dependencies": {
-		"@biomejs/biome": "^1.6.0",
+		"@biomejs/biome": "^1.7.0",
 		"@solidjs/start": "1.0.0-rc.0",
 		"dotenv": "^16.4.5",
-		"drizzle-kit": "^0.20.14",
+		"drizzle-kit": "^0.20.16",
 		"pg": "^8.11.5",
-		"typescript": "^5.4.2",
-		"vinxi": "^0.3.10"
+		"typescript": "^5.4.5",
+		"vinxi": "^0.3.11"
 	},
 	"resolutions": {
 		"@solidjs/start": "^0.7.5",
@@ -37,8 +37,7 @@
 	},
 	"pnpm": {
 		"patchedDependencies": {
-			"drizzle-kit@0.20.14": "patches/drizzle-kit@0.20.14.patch",
-			"@solidjs/router@0.13.1": "patches/@solidjs__router@0.13.1.patch",
+			"@solidjs/router@0.13.2": "patches/@solidjs__router@0.13.2.patch",
 			"@tanstack/solid-form@0.19.0": "patches/@tanstack__solid-form@0.19.0.patch"
 		}
 	}

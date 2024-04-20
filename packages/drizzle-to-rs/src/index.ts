@@ -139,6 +139,7 @@ export function defineOperation<const T extends RustArgs = never>(
             // TODO: If the user puts a static value, this will snake case it.
             // We should detect a special suffix which the `Proxy` will return.
             .map((p) => {
+              // @ts-expect-error
               if (p instanceof Placeholder) {
                 return `&${camelToSnakeCase(p.name)}`;
               }
