@@ -1,3 +1,6 @@
+//! Export Drizzle queries to Rust
+//! This entire thing is cobbled together using some of the worse code I've ever written.
+
 import fs from "node:fs";
 import { execSync } from "node:child_process";
 import type { TypedQueryBuilder } from "drizzle-orm/query-builders/query-builder";
@@ -31,8 +34,8 @@ type MapArgsToTs<T> = {
 	[K in keyof T]: T[K] extends "String"
 		? string
 		: T[K] extends "i32"
-			? number
-			: never;
+		  ? number
+		  : never;
 };
 
 type QueryDefinition<T> = {
@@ -65,19 +68,27 @@ class Placeholder {
 	}
 }
 
+/// This function hints to `drizzle-to-rs` the contents of this object is all from a left join.
+/// So it will be exported as `Option` in Rust.
+///
+/// If you misuse this hint you'll get runtime errors from Rust.
+///
+/// I can't find an automatic way to detect this, so this is the best we are getting.
+export function leftJoinHint<T extends object>(t: T): T {
+	const proto = {
+		leftJoinThis() {
+			return true;
+		},
+	};
+
+	const obj = Object.create(proto);
+	Object.assign(obj, t);
+	return obj;
+}
+
 export function defineOperation<const T extends RustArgs = never>(
 	query: QueryDefinition<T>,
 ): Query {
-	// TODO: Bun is broken if this is a global
-	const sqlDatatypeToRust = {
-		string: "String",
-		number: "i64",
-		date: "NaiveDateTime",
-		boolean: "bool",
-		json: "serde_json::Value",
-		custom: "Vec<u8>",
-	};
-
 	const op = query.query(
 		new Proxy(
 			{},
@@ -89,8 +100,6 @@ export function defineOperation<const T extends RustArgs = never>(
 	// @ts-expect-error
 	const sql: { sql: string; params: string[] } = op.toSQL();
 	const isQuery = "_" in op;
-
-	const resultTyName = `${snakeToCamel(query.name)}Result`;
 
 	let fn_args = "";
 	let defined = "";
@@ -108,34 +117,24 @@ export function defineOperation<const T extends RustArgs = never>(
 			.join("\n");
 	}
 
+	const rustTypes = new Map();
+	let resultType = "()";
+	let impl = "Ok(())";
+
+	if (isQuery) {
+		const tyName = buildResultType(rustTypes, op._.selectedFields, query.name);
+		resultType = `Vec<${tyName}>`;
+		impl = `Ok(resp.into_iter().map(|row| ${
+			rustTypes.get(tyName).impl
+		}).collect())`;
+	}
+
 	return {
-		renderedResultType: !isQuery
-			? ""
-			: `#[derive(Debug)]\npub struct ${resultTyName} {
-    ${Object.entries(op._.selectedFields)
-			.map(([k, v]) => {
-				const v2 = v as any;
-				if (!(v2.dataType in sqlDatatypeToRust)) {
-					console.log(v2);
-					throw new Error(`Unknown datatype: ${v2.dataType}`);
-				}
-
-				let ty =
-					v2.columnType === "MySqlVarBinary"
-						? "Vec<u8>"
-						: (sqlDatatypeToRust as any)[v2.dataType];
-				if (!v2.notNull) {
-					ty = `Option<${ty}>`;
-				}
-
-				return `pub ${camelToSnakeCase(k)}: ${ty}`;
-			})
-			.join(",")}
-}`,
+		renderedResultType: [...rustTypes.values()]
+			.map((t) => t.declaration)
+			.join("\n"),
 		renderedFn: `impl Db {
-				pub async fn ${query.name}(&self${fn_args}) -> Result<${
-					!isQuery ? "()" : `Vec<${resultTyName}>`
-				}, tokio_postgres::Error> {
+				pub async fn ${query.name}(&self${fn_args}) -> Result<${resultType}, tokio_postgres::Error> {
 		      ${defined}
           let resp = self.0.client.query(r#"${sql.sql}"#, &[${sql.params
 						// TODO: If the user puts a static value, this will snake case it.
@@ -156,18 +155,7 @@ export function defineOperation<const T extends RustArgs = never>(
 
 							return `${typeof p === "number" ? p : `&"${p}"`}`;
 						}) // TODO: Only call `.clone()` when the value is used multiple times
-						.join(",")}]).await?;
-            ${
-							!isQuery
-								? "Ok(())"
-								: `Ok(resp.into_iter().map(|row| ${resultTyName} {
-                ${Object.entries(op._.selectedFields)
-									.map(([k, v], i) => {
-										return `${camelToSnakeCase(k)}: row.get("${k}")`;
-									})
-									.join(",")}
-                }).collect())`
-						}
+						.join(",")}]).await?;\n${impl}
         }
       }`,
 	};
@@ -228,6 +216,99 @@ export function exportQueries(queries: Query[], path: string) {
 	execSync(`rustfmt --edition 2021 ${path}`);
 
 	console.log(`Exported Rust Drizzle bindings to '${path}'`);
+}
+
+const sqlDatatypeToRust = {
+	string: "String",
+	number: "i64",
+	date: "NaiveDateTime",
+	boolean: "bool",
+	json: "serde_json::Value",
+	custom: "Vec<u8>",
+};
+
+type RustTypeDeclaration = {
+	usage: string;
+	declaration: string;
+	impl: string;
+};
+
+function buildResultType(
+	resultTypes: Map<string, RustTypeDeclaration>,
+	value: any,
+	name: string,
+) {
+	if ("dataType" in value) {
+		if (!(value.dataType in sqlDatatypeToRust))
+			throw new Error(`Unknown datatype: ${value.dataType}`);
+
+		let ty =
+			value.columnType === "MySqlVarBinary"
+				? "Vec<u8>"
+				: (sqlDatatypeToRust as any)[value.dataType];
+		if (!value.notNull) ty = `Option<${ty}>`;
+
+		return ty;
+	}
+
+	if (typeof value === "object") {
+		const structName = `${snakeToCamel(name)}Result`;
+
+		const field_decls = [];
+		const fields = new Map();
+		for (const [k, v] of Object.entries(value)) {
+			const ty = buildResultType(
+				resultTypes,
+				v,
+				`${name}_${camelToSnakeCase(k)}`,
+			);
+			const tyUsage = resultTypes.get(ty)?.usage ?? ty;
+			field_decls.push(`pub ${camelToSnakeCase(k)}: ${tyUsage}`);
+			fields.set(k, ty);
+		}
+
+		let impl = "";
+		const isALeftJoin = typeof value?.leftJoinThis === "function"; // Injected by `leftJoinHint`
+		if (isALeftJoin) {
+			const keys = [...fields.keys()].map((k) => camelToSnakeCase(k));
+
+			impl = `{
+				${[...fields.entries()]
+					.map(([k, _ty]) => {
+						return `let ${camelToSnakeCase(k)} = row.try_get("${k}");`; // We don't support furthur nesting, rn.
+					})
+					.join("\n")}
+
+				match (${keys.join(", ")}) {
+					(${keys.map((k) => `Ok(${k})`).join(", ")}) => {
+						Some(${structName} { ${keys.join(", ")} })
+					}
+					_ => None,
+				}
+			}`;
+		} else {
+			impl = `${structName} {
+				${[...fields.entries()]
+					.map(([k, ty]) => {
+						const impl = resultTypes.get(ty)?.impl ?? `row.get("${k}")`;
+						return `${camelToSnakeCase(k)}: ${impl}`;
+					})
+					.join(",\n")}
+			}`;
+		}
+
+		resultTypes.set(structName, {
+			usage: isALeftJoin ? `Option<${structName}>` : structName,
+			declaration: `#[derive(Debug)]\npub struct ${structName} {
+				${field_decls.join(",\n")}
+			}`,
+			impl,
+		});
+
+		return structName;
+	}
+
+	throw new Error(`Unknown datatype value: ${value}`);
 }
 
 function isJsonPlaceholder(s: any) {

@@ -307,30 +307,31 @@ export const policyDeploy = pgTable("policy_deploy", {
 	doneAt: timestamp("done_at").notNull().defaultNow(),
 });
 
-export const policyDeployStatusVariantEnum = pgEnum(
-	"policy_deploy_status_variant",
+export const policyDeployStatusResultEnum = pgEnum(
+	"policy_deploy_status_result",
 	["success", "failed"],
 );
 
+// The status of applying a policy deploy to a specific device.
+//
+// Policy deploy status's are not immutable. A redeploy will cause it to update.
 export const policyDeployStatus = pgTable(
 	"policy_deploy_status",
 	{
 		deployPk: serialRelation("deploy")
 			.references(() => policyDeploy.pk)
 			.notNull(),
-		deviceId: serialRelation("device")
+		devicePk: serialRelation("device")
 			.references(() => devices.pk)
 			.notNull(),
-		// The key in `policyDeploy.data` that was applied.
-		// We track this as each OS only applies a subset of the policy.
-		key: varchar("key", { length: 256 }).notNull(),
-		variant: policyDeployStatusVariantEnum("variant").notNull(),
-		data: json("data").notNull().$type<never>(), // TODO: Should we properly type errors?
+		status: policyDeployStatusResultEnum("variant").notNull(),
+		// The result of applying the policy, including errors and conflicts, etc.
+		result: json("result").notNull().$type<never>(), // TODO: Proper type using Specta
 		doneAt: timestamp("done_at").notNull().defaultNow(),
 	},
 	(table) => ({
 		pk: primaryKey({
-			columns: [table.deployPk, table.key],
+			columns: [table.deployPk, table.devicePk],
 		}),
 	}),
 );
@@ -559,7 +560,7 @@ export const auditLog = pgTable("audit_log", {
 	action: auditLogActionEnum("action").notNull(),
 	data: json("data").notNull(),
 	// This value should be set to `NULL` if this action was performed by the system.
-	userPk: serialRelation("user_id").references(() => users.pk),
+	userPk: serialRelation("user_id").references(() => accounts.pk),
 	doneAt: timestamp("created_at").notNull().defaultNow(),
 });
 

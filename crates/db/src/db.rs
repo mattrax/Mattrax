@@ -14,22 +14,27 @@ pub struct GetDeviceResult {
     pub tenant_pk: i64,
 }
 #[derive(Debug)]
-pub struct GetDeviceDirectlyScopedPoliciesResult {
-    pub pk: i64,
-    pub id: String,
-    pub name: String,
-}
-#[derive(Debug)]
-pub struct GetDeviceGroupsResult {
-    pub pk: i64,
-    pub id: String,
-    pub name: String,
-}
-#[derive(Debug)]
-pub struct GetGroupPolicyDeploysResult {
+pub struct GetPolicyDataForCheckinLatestDeployResult {
     pub pk: i64,
     pub data: serde_json::Value,
-    pub priority: i64,
+}
+#[derive(Debug)]
+pub struct GetPolicyDataForCheckinLastDeployResult {
+    pub pk: i64,
+    pub data: serde_json::Value,
+    pub result: serde_json::Value,
+}
+#[derive(Debug)]
+pub struct GetPolicyDataForCheckinResult {
+    pub latest_deploy: GetPolicyDataForCheckinLatestDeployResult,
+    pub last_deploy: Option<GetPolicyDataForCheckinLastDeployResult>,
+}
+#[derive(Debug)]
+pub struct GetPoliciesRequiringRemovalResult {
+    pub pk: i64,
+    pub policy_pk: i64,
+    pub data: serde_json::Value,
+    pub result: serde_json::Value,
 }
 #[derive(Debug)]
 pub struct QueuedDeviceActionsResult {
@@ -119,7 +124,7 @@ impl Db {
         tenant_pk: i64,
         owner_pk: i64,
     ) -> Result<(), tokio_postgres::Error> {
-        let resp = self.0.client.query(r#"insert into "devices" ("pk", "id", "name", "description", "enrollment_type", "os", "serial_number", "manufacturer", "model", "os_version", "imei", "free_storage", "total_storage", "owner", "azure_ad_did", "enrolled_at", "last_synced", "tenant") values (default, $1, $2, default, $3, $4, $5, default, default, default, default, default, default, $6, default, default, default, $7) on conflict ("id") do update set "name" = $8, "tenant" = $9, "owner" = $10"#, &[&id,&name,&enrollment_type,&os,&serial_number,&owner_pk,&tenant_pk,&name,&tenant_pk,&owner_pk]).await?;
+        let resp = self.0.client.query(r#"insert into "devices" ("pk", "id", "name", "description", "enrollment_type", "os", "serial_number", "manufacturer", "model", "os_version", "imei", "free_storage", "total_storage", "owner", "azure_ad_did", "enrolled_at", "last_synced", "tenant") values (default, $1, $2, default, $3, $4, $5, default, default, default, default, default, default, $6, default, default, default, $7) on conflict ("id") do update set "name" = $8, "owner" = $9, "tenant" = $10"#, &[&id,&name,&enrollment_type,&os,&serial_number,&owner_pk,&tenant_pk,&name,&owner_pk,&tenant_pk]).await?;
         Ok(())
     }
 }
@@ -146,49 +151,47 @@ impl Db {
     }
 }
 impl Db {
-    pub async fn get_device_directly_scoped_policies(
+    pub async fn get_policy_data_for_checkin(
         &self,
         device_pk: i64,
-    ) -> Result<Vec<GetDeviceDirectlyScopedPoliciesResult>, tokio_postgres::Error> {
-        let resp = self.0.client.query(r#"select "policies"."pk", "policies"."id", "policies"."name" from "policies" inner join "policy_assignables" on "policies"."pk" = "policy_assignables"."policy" where ("policy_assignables"."variant" = $1 and "policy_assignables"."pk" = $2)"#, &[&"device",&device_pk]).await?;
+    ) -> Result<Vec<GetPolicyDataForCheckinResult>, tokio_postgres::Error> {
+        let resp = self.0.client.query(r#"select "l"."pk", "l"."data", "k"."pk", "k"."data", "k"."result" from (select distinct on ("i"."policy") "pk", "policy", "data" from (select "policy_deploy"."pk", "policy_deploy"."policy", "policy_deploy"."data" from ((select "policies"."pk" from "policies" inner join "policy_assignables" on "policies"."pk" = "policy_assignables"."policy" where ("policy_assignables"."variant" = $1 and "policy_assignables"."pk" = $2)) union (select "policies"."pk" from "policies" inner join "policy_assignables" on ("policies"."pk" = "policy_assignables"."policy" and "policy_assignables"."variant" = $3) inner join "group_assignables" on "group_assignables"."group" = "policy_assignables"."pk" where ("group_assignables"."variant" = $4 and "group_assignables"."pk" = $5))) "sp" inner join "policy_deploy" on "sp"."pk" = "policy_deploy"."policy" order by "policy_deploy"."done_at" desc) "i") "l" left join (select distinct on ("j"."policy") "pk", "policy", "result", "data" from (select "policy_deploy"."pk", "policy_deploy"."policy", "policy_deploy_status"."result", "policy_deploy"."data" from ((select "policies"."pk" from "policies" inner join "policy_assignables" on "policies"."pk" = "policy_assignables"."policy" where ("policy_assignables"."variant" = $6 and "policy_assignables"."pk" = $7)) union (select "policies"."pk" from "policies" inner join "policy_assignables" on ("policies"."pk" = "policy_assignables"."policy" and "policy_assignables"."variant" = $8) inner join "group_assignables" on "group_assignables"."group" = "policy_assignables"."pk" where ("group_assignables"."variant" = $9 and "group_assignables"."pk" = $10))) "sp" inner join "policy_deploy" on "sp"."pk" = "policy_deploy"."policy" inner join "policy_deploy_status" on ("policy_deploy"."pk" = "policy_deploy_status"."deploy" and "policy_deploy_status"."device" = $11) order by "policy_deploy"."done_at" desc) "j") "k" on "k"."policy" = "l"."policy""#, &[&"device",&device_pk,&"group",&"device",&device_pk,&"device",&device_pk,&"group",&"device",&device_pk,&device_pk]).await?;
         Ok(resp
             .into_iter()
-            .map(|row| GetDeviceDirectlyScopedPoliciesResult {
-                pk: row.get("pk"),
-                id: row.get("id"),
-                name: row.get("name"),
+            .map(|row| GetPolicyDataForCheckinResult {
+                latest_deploy: GetPolicyDataForCheckinLatestDeployResult {
+                    pk: row.get("pk"),
+                    data: row.get("data"),
+                },
+                last_deploy: {
+                    let pk = row.try_get("pk");
+                    let data = row.try_get("data");
+                    let result = row.try_get("result");
+
+                    match (pk, data, result) {
+                        (Ok(pk), Ok(data), Ok(result)) => {
+                            Some(GetPolicyDataForCheckinLastDeployResult { pk, data, result })
+                        }
+                        _ => None,
+                    }
+                },
             })
             .collect())
     }
 }
 impl Db {
-    pub async fn get_device_groups(
+    pub async fn get_policies_requiring_removal(
         &self,
         device_pk: i64,
-    ) -> Result<Vec<GetDeviceGroupsResult>, tokio_postgres::Error> {
-        let resp = self.0.client.query(r#"select "policies"."pk", "policies"."id", "policies"."name" from "policies" inner join "policy_assignables" on "policies"."pk" = "policy_assignables"."policy" inner join "group_assignables" on ("group_assignables"."group" = "policy_assignables"."pk" and "policy_assignables"."variant" = $1) where ("group_assignables"."variant" = $2 and "group_assignables"."pk" = $3)"#, &[&"group",&"device",&device_pk]).await?;
+    ) -> Result<Vec<GetPoliciesRequiringRemovalResult>, tokio_postgres::Error> {
+        let resp = self.0.client.query(r#"select "policy_deploy"."pk", "policy_deploy"."policy", "policy_deploy"."data", "policy_deploy_status"."result" from "policy_deploy" inner join "policy_deploy_status" on ("policy_deploy_status"."deploy" = "policy_deploy"."pk" and "policy_deploy_status"."device" = $1) left join ((select "policies"."pk" from "policies" inner join "policy_assignables" on "policies"."pk" = "policy_assignables"."policy" where ("policy_assignables"."variant" = $2 and "policy_assignables"."pk" = $3)) union (select "policies"."pk" from "policies" inner join "policy_assignables" on ("policies"."pk" = "policy_assignables"."policy" and "policy_assignables"."variant" = $4) inner join "group_assignables" on "group_assignables"."group" = "policy_assignables"."pk" where ("group_assignables"."variant" = $5 and "group_assignables"."pk" = $6))) "sp" on "sp"."pk" = "policy_deploy"."policy" where "sp"."pk" is null"#, &[&device_pk,&"device",&device_pk,&"group",&"device",&device_pk]).await?;
         Ok(resp
             .into_iter()
-            .map(|row| GetDeviceGroupsResult {
+            .map(|row| GetPoliciesRequiringRemovalResult {
                 pk: row.get("pk"),
-                id: row.get("id"),
-                name: row.get("name"),
-            })
-            .collect())
-    }
-}
-impl Db {
-    pub async fn get_group_policy_deploys(
-        &self,
-        group_pk: i64,
-    ) -> Result<Vec<GetGroupPolicyDeploysResult>, tokio_postgres::Error> {
-        let resp = self.0.client.query(r#"select "policy_deploy"."pk", "policy_deploy"."data", "policies"."priority" from "policy_deploy" inner join "policy_assignables" on "policy_deploy"."policy" = "policy_assignables"."policy" inner join "policies" on "policies"."pk" = "policy_assignables"."policy" where ("policy_assignables"."variant" = $1 and "policy_assignables"."pk" = $2 and "policy_deploy"."done_at" = (SELECT MAX("policy_deploy"."done_at") FROM "policy_deploy" WHERE "policy_deploy"."policy" = "policy_assignables"."policy"))"#, &[&"group",&group_pk]).await?;
-        Ok(resp
-            .into_iter()
-            .map(|row| GetGroupPolicyDeploysResult {
-                pk: row.get("pk"),
+                policy_pk: row.get("policyPk"),
                 data: row.get("data"),
-                priority: row.get("priority"),
+                result: row.get("result"),
             })
             .collect())
     }

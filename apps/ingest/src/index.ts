@@ -4,6 +4,9 @@ import path from "node:path";
 
 // TODO: Properly account for wildcard's in the URI -> Idk how Serde will support that
 
+let a = 0;
+let b = 0;
+
 function handleNode(node: any, path_prefix: string, results: any[]) {
 	const name = node.NodeName[0];
 	let path = path_prefix;
@@ -53,33 +56,48 @@ function handleNode(node: any, path_prefix: string, results: any[]) {
 	// 	// TODO: Valid operations on it
 	// });
 
-	let type = "()";
-	if (datatype === "bool") {
-		type = "bool";
-	} else if (datatype === "int") {
-		type = "u64";
-	} else if (datatype === "chr") {
-		type = "String";
-	} else if (datatype === "b64") {
-		type = "String"; // TODO
-	} else if (datatype === "bin") {
-		type = "Vec<u8>"; // TODO
-	} else {
-		throw new Error(`Found unsupported datatype: ${datatype}`);
+	// console.log(datatype);
+	if (datatype !== "bool" && datatype !== "int") {
+		console.log(datatype);
+		a = a + 1;
 	}
+	b = b + 1;
+
+	// if (path.includes("//")) {
+	// 	// TODO: these parts are bugged so look into that
+	// }
+
+	// if (path.startsWith("./User")) console.log(path); // TODO
+
+	// let type = "()";
+	// if (datatype === "bool") {
+	// 	type = "bool";
+	// } else if (datatype === "int") {
+	// 	type = "u64";
+	// } else if (datatype === "chr") {
+	// 	type = "String";
+	// } else if (datatype === "b64") {
+	// 	type = "String"; // TODO
+	// } else if (datatype === "bin") {
+	// 	type = "Vec<u8>"; // TODO
+	// } else {
+	// 	throw new Error(`Found unsupported datatype: ${datatype}`);
+	// }
 
 	// TODO: Default
 	// node.DFProperties[0].DefaultValue?.[0] ?? null
 
 	// TODO: Scope - path.startsWith("./Device") ? "device" : "user",
 
-	console.log(datatype);
+	// console.log(datatype);
+
+	const type = "()"; // TODO
 
 	const comment = node.DFProperties[0].Description?.[0]
 		? `/// ${node.DFProperties[0].Description?.[0].replace(
 				"\n",
 				"\n\t///",
-		  )}\n\t`
+			)}\n\t`
 		: "";
 	results.push(`\t${comment}#[serde(rename = "${path}")]\n\t${name}(${type})`);
 }
@@ -103,77 +121,18 @@ async function parseDDF(name: string, raw: string) {
 	return parts;
 }
 
-// TODO: Automatically find all files
-const parts = [
-	...(await parseDDF(
-		"Policy",
-		fs.readFileSync(path.join(__dirname, "../ddf/Policy.xml"), "utf8"),
-	)),
-	// ...(await parseDDF(
-	// 	"ActiveSync",
-	// 	fs.readFileSync(
-	// 		path.join(__dirname, "../ddf/ActiveSyncCSP_DDF.xml"),
-	// 		"utf8",
-	// 	),
-	// )),
-	// ...(await parseDDF(
-	// 	"AssignedAccess",
-	// 	fs.readFileSync(
-	// 		path.join(__dirname, "../ddf/AssignedAccessDDF.xml"),
-	// 		"utf8",
-	// 	),
-	// )),
-	// ...(await parseDDF(
-	// 	"CertificateStore",
-	// 	fs.readFileSync(
-	// 		path.join(__dirname, "../ddf/CertificateStore_DDF.xml"),
-	// 		"utf8",
-	// 	),
-	// )),
-	// ...(await parseDDF(
-	// 	"ClientCertificateInstall",
-	// 	fs.readFileSync(
-	// 		path.join(__dirname, "../ddf/ClientCertificateInstall_DDF.xml"),
-	// 		"utf8",
-	// 	),
-	// )),
-	// ...(await parseDDF(
-	// 	"CMPolicyEnterprise",
-	// 	fs.readFileSync(
-	// 		path.join(__dirname, "../ddf/CMPolicyEnterprise_DDF.xml"),
-	// 		"utf8",
-	// 	),
-	// )),
-	// ...(await parseDDF(
-	// 	"Defender",
-	// 	fs.readFileSync(path.join(__dirname, "../ddf/DefenderDDF.xml"), "utf8"),
-	// )),
-	// 		// TODO: ...
-	// 		await parseDDF(
-	// 			"Win32AppInventory",
-	// 			"TODO",
-	// 			fs.readFileSync(
-	// 				path.join(__dirname, "../ddf/Win32AppInventoryDDF.xml"),
-	// 				"utf8",
-	// 			),
-	// 		),
-	// 		// await parseDDF(
-	// 		// 	"WindowsLicensingDDF",
-	// 		// 	"TODO",
-	// 		// 	fs.readFileSync(
-	// 		// 		path.join(__dirname, "../ddf/WindowsLicensingDDF.XML"),
-	// 		// 		"utf8",
-	// 		// 	),
-	// 		// ),
-	// 		// await parseDDF(
-	// 		// 	"WindowsSecurityAuditing",
-	// 		// 	"TODO",
-	// 		// 	fs.readFileSync(
-	// 		// 		path.join(__dirname, "../ddf/WindowsSecurityAuditing_DDF.xml"),
-	// 		// 		"utf8",
-	// 		// 	),
-	// 		// ),
-];
+let parts = [];
+const ddfPath = path.join(__dirname, "../ddf");
+for (const file of fs.readdirSync(ddfPath)) {
+	if (!file.endsWith(".xml")) continue;
+
+	const filePath = path.join(ddfPath, file);
+	console.log(`Processing ${filePath}`);
+
+	parts = parts.concat(
+		await parseDDF("TODO", fs.readFileSync(filePath, "utf8")),
+	);
+}
 
 const result = `#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "oma_uri")]
@@ -185,6 +144,8 @@ ${parts.join("\n")}
 console.log("Done!");
 const outputPath = path.resolve(__dirname, "./windows.rs");
 fs.writeFileSync(outputPath, result);
+
+console.log(a, b, (a / b) * 100);
 
 // const schema = {
 // 	generated_at: new Date().toISOString().substring(0, 10),
