@@ -1,31 +1,31 @@
 {
-  "name": "@mattrax/landing",
-  "type": "module",
-  "private": true,
-  "scripts": {
-    "dev": "vinxi dev --host 0.0.0.0 --port 3001",
-    "build": "vinxi build",
-    "start": "vinxi start"
-  },
-  "devDependencies": {
-    "@iconify/json": "^2.2.202",
-    "@tailwindcss/forms": "^0.5.7",
-    "@tailwindcss/typography": "^0.5.12",
-    "autoprefixer": "^10.4.19",
-    "tailwindcss": "^3.4.3"
-  },
-  "dependencies": {
-    "@fontsource-variable/inter": "^5.0.17",
-    "@fontsource/inter": "^5.0.17",
-    "@kobalte/core": "^0.12.6",
-    "@mattrax/ui": "workspace:*",
-    "@solidjs/router": "^0.13.2",
-    "@solidjs/start": "1.0.0-rc.0",
-    "@tanstack/solid-form": "=0.19.0",
-    "h3": "^1.11.1",
-    "solid-js": "^1.8.16",
-    "vinxi": "=0.3.10",
-    "vite": "^5.2.9",
-    "zod": "^3.22.5"
-  }
+	"name": "@mattrax/landing",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"dev": "vinxi dev --host 0.0.0.0 --port 3001",
+		"build": "vinxi build",
+		"start": "vinxi start"
+	},
+	"devDependencies": {
+		"@iconify/json": "^2.2.202",
+		"@tailwindcss/forms": "^0.5.7",
+		"@tailwindcss/typography": "^0.5.12",
+		"autoprefixer": "^10.4.19",
+		"tailwindcss": "^3.4.3"
+	},
+	"dependencies": {
+		"@fontsource-variable/inter": "^5.0.17",
+		"@fontsource/inter": "^5.0.17",
+		"@kobalte/core": "^0.12.6",
+		"@mattrax/ui": "workspace:*",
+		"@solidjs/router": "^0.13.2",
+		"@solidjs/start": "1.0.0-rc.0",
+		"@tanstack/solid-form": "=0.19.0",
+		"h3": "^1.11.1",
+		"solid-js": "^1.8.16",
+		"vinxi": "=0.3.10",
+		"vite": "^5.2.9",
+		"zod": "^3.22.5"
+	}
 }

@@ -7,20 +7,20 @@ import { createTRPCRouter, superAdminProcedure } from "../helpers";
 type StatsTarget = "tenants" | "users" | "devices" | "policies";
 
 export const internalRouter = createTRPCRouter({
-  stats: superAdminProcedure.query(({ ctx }) =>
-    union(
-      ctx.db
-        .select({ count: count(), variant: sql<StatsTarget>`"tenants"` })
-        .from(tenants),
-      ctx.db
-        .select({ count: count(), variant: sql<StatsTarget>`"users"` })
-        .from(users),
-      ctx.db
-        .select({ count: count(), variant: sql<StatsTarget>`"devices"` })
-        .from(devices),
-      ctx.db
-        .select({ count: count(), variant: sql<StatsTarget>`"policies"` })
-        .from(policies),
-    ),
-  ),
+	stats: superAdminProcedure.query(({ ctx }) =>
+		union(
+			ctx.db
+				.select({ count: count(), variant: sql<StatsTarget>`"tenants"` })
+				.from(tenants),
+			ctx.db
+				.select({ count: count(), variant: sql<StatsTarget>`"users"` })
+				.from(users),
+			ctx.db
+				.select({ count: count(), variant: sql<StatsTarget>`"devices"` })
+				.from(devices),
+			ctx.db
+				.select({ count: count(), variant: sql<StatsTarget>`"policies"` })
+				.from(policies),
+		),
+	),
 });
