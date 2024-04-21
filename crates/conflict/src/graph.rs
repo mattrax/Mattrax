@@ -164,7 +164,7 @@ struct Node {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Reference {
-    deploy_pk: u64,
+    deploy_pk: i64,
     key: String,
 }
 

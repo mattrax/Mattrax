@@ -9,11 +9,11 @@ if ("DATABASE_URL" in process.env === false)
 	throw new Error("'DATABASE_URL' not set in env");
 
 export default defineConfig({
-	out: "./schema",
+	out: "./supabase/migrations",
 	schema: "./apps/web/src/db/schema.ts",
-	driver: "mysql2",
+	driver: "pg",
 	dbCredentials: {
-		uri: process.env.DATABASE_URL!,
+		connectionString: process.env.DATABASE_URL!,
 	},
 	verbose: true,
 	strict: true,

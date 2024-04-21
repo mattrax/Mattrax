@@ -33,21 +33,14 @@ export default defineConfig({
 	},
 	server: {
 		unenv: cloudflare,
-		// vercel: {
-		//   regions: ["iad1"],
-		// },
-		// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
 		// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
+		// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
 		// exportConditions: ["worker"],
-		// esbuild: {
-		// 	options: {
-		// 		/// Required for `@paralleldrive/cuid2` to work.
-		// 		/// https://github.com/paralleldrive/cuid2/issues/62
-		// 		target: "es2020",
-		// 	},
-		// },
 		experimental: {
 			asyncContext: true,
+		},
+		rollupConfig: {
+			external: ["cloudflare:sockets"],
 		},
 	},
 });

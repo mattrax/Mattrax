@@ -7,6 +7,7 @@ import {
 	Label,
 	Tabs,
 	TabsContent,
+	TabsIndicator,
 	TabsList,
 	TabsTrigger,
 	Toggle,
@@ -37,6 +38,7 @@ export default function Page() {
 						<TabsList class="grid w-full grid-cols-2">
 							<TabsTrigger value="cli">CLI</TabsTrigger>
 							<TabsTrigger value="visual">Visual</TabsTrigger>
+							<TabsIndicator />
 						</TabsList>
 					</div>
 				}
@@ -121,11 +123,11 @@ function WipVisualEditor() {
 												},
 											],
 										},
-								  }
+									}
 								: {
 										...policy().data,
 										no_graphing_calculator_nerd: undefined,
-								  },
+									},
 						})
 					}
 				/>

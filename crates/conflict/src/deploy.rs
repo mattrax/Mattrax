@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone)]
 pub struct Deploy {
     // Primary key of the deploy
-    pub pk: u64,
+    pub pk: i64,
     // Priority of the policy
     pub priority: u8,
     // The rendered MDM configuration

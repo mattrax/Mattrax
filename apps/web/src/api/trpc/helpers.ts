@@ -7,12 +7,14 @@ import type { User } from "lucia";
 import type { H3Event } from "vinxi/server";
 import { ZodError, z } from "zod";
 
-import { db, organisationMembers, organisations, tenants } from "~/db";
+import { getDb, organisationMembers, organisations, tenants } from "~/db";
 import { checkAuth } from "../auth";
 
-export const createTRPCContext = async (event: H3Event) => {
+export const createTRPCContext = (event: H3Event) => {
   return {
-    db,
+    get db() {
+      return getDb();
+    },
     event,
   };
 };
@@ -37,7 +39,7 @@ export const createTRPCRouter = t.router;
 export const publicProcedure = t.procedure;
 
 const isOrganisationMember = cache(async (orgPk: number, accountPk: number) => {
-  const [org] = await db
+  const [org] = await getDb()
     .select({})
     .from(organisations)
     .where(eq(organisations.pk, orgPk))
@@ -54,7 +56,7 @@ const isOrganisationMember = cache(async (orgPk: number, accountPk: number) => {
 
 const getTenantList = cache(
   (accountPk: number) =>
-    db
+    getDb()
       .select({ pk: tenants.pk, name: tenants.name })
       .from(tenants)
       .innerJoin(organisations, eq(tenants.orgPk, organisations.pk))
@@ -107,7 +109,7 @@ export const superAdminProcedure = authedProcedure.use((opts) => {
 });
 
 const getMemberOrg = cache(async (slug: string, accountPk: number) => {
-  const [org] = await db
+  const [org] = await getDb()
     .select({
       pk: organisations.pk,
       slug: organisations.slug,
@@ -143,7 +145,7 @@ export const orgProcedure = authedProcedure
   });
 
 const getMemberTenant = cache(async (slug: string, accountPk: number) => {
-  const [tenant] = await db
+  const [tenant] = await getDb()
     .select({ pk: tenants.pk, name: tenants.name })
     .from(tenants)
     .innerJoin(organisations, eq(tenants.orgPk, organisations.pk))

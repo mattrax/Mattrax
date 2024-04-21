@@ -26,3 +26,4 @@ export * from "./collapsible";
 export * from "./command";
 export * from "./combobox";
 export * from "./toggle";
+export * from "./context-menu";

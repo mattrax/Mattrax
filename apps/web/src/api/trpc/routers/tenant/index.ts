@@ -1,17 +1,11 @@
 import { count, desc, eq, sql } from "drizzle-orm";
+import { union } from "drizzle-orm/pg-core";
 import { z } from "zod";
-import {
-  MySqlDialect,
-  type MySqlSelectBase,
-  union,
-  type MySqlTableWithColumns,
-} from "drizzle-orm/mysql-core";
 
 import {
   accounts,
   applications,
   auditLog,
-  db,
   deviceActions,
   devices,
   domains,
@@ -25,12 +19,7 @@ import {
   tenants,
   users,
 } from "~/db";
-import {
-  createTRPCRouter,
-  orgProcedure,
-  publicProcedure,
-  tenantProcedure,
-} from "../../helpers";
+import { createTRPCRouter, orgProcedure, tenantProcedure } from "../../helpers";
 import { identityProviderRouter } from "./identityProvider";
 import { variantTableRouter } from "./members";
 import { randomSlug } from "~/api/utils";
@@ -66,10 +55,10 @@ export const tenantRouter = createTRPCRouter({
   create: orgProcedure
     .input(z.object({ name: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const slug = await db.transaction(async (db) => {
+      const slug = await ctx.db.transaction(async (db) => {
         const slug = randomSlug(input.name);
 
-        await db.insert(tenants).values({
+        await ctx.db.insert(tenants).values({
           name: input.name,
           slug,
           orgPk: ctx.org.pk,
@@ -97,7 +86,7 @@ export const tenantRouter = createTRPCRouter({
         throw new Error("Name is restricted"); // TODO: Properly handle this on the frontend
       }
 
-      await db
+      await ctx.db
         .update(tenants)
         .set({
           ...(input.name !== undefined && { name: input.name }),
@@ -108,23 +97,23 @@ export const tenantRouter = createTRPCRouter({
 
   stats: tenantProcedure.query(({ ctx }) =>
     union(
-      db
+      ctx.db
         .select({ count: count(), variant: sql<StatsTarget>`"users"` })
         .from(users)
         .where(eq(users.tenantPk, ctx.tenant.pk)),
-      db
+      ctx.db
         .select({ count: count(), variant: sql<StatsTarget>`"devices"` })
         .from(devices)
         .where(eq(devices.tenantPk, ctx.tenant.pk)),
-      db
+      ctx.db
         .select({ count: count(), variant: sql<StatsTarget>`"policies"` })
         .from(policies)
         .where(eq(policies.tenantPk, ctx.tenant.pk)),
-      db
+      ctx.db
         .select({ count: count(), variant: sql<StatsTarget>`"applications"` })
         .from(applications)
         .where(eq(applications.tenantPk, ctx.tenant.pk)),
-      db
+      ctx.db
         .select({ count: count(), variant: sql<StatsTarget>`"groups"` })
         .from(groups)
         .where(eq(groups.tenantPk, ctx.tenant.pk)),
@@ -135,7 +124,7 @@ export const tenantRouter = createTRPCRouter({
   auditLog: tenantProcedure
     .input(z.object({ limit: z.number().optional() }))
     .query(({ ctx, input }) =>
-      db
+      ctx.db
         .select({
           action: auditLog.action,
           data: auditLog.data,
@@ -151,19 +140,19 @@ export const tenantRouter = createTRPCRouter({
 
   gettingStarted: tenantProcedure.query(async ({ ctx }) => {
     const [[a], [b], [c]] = await Promise.all([
-      db
+      ctx.db
         .select({ count: count() })
         .from(identityProviders)
         .where(eq(identityProviders.tenantPk, ctx.tenant.pk))
         // We don't care about the actual count, just if there are any
         .limit(1),
-      db
+      ctx.db
         .select({ count: count() })
         .from(devices)
         .where(eq(devices.tenantPk, ctx.tenant.pk))
         // We don't care about the actual count, just if there are any
         .limit(1),
-      db
+      ctx.db
         .select({ count: count() })
         .from(policies)
         .where(eq(policies.tenantPk, ctx.tenant.pk))
@@ -180,11 +169,11 @@ export const tenantRouter = createTRPCRouter({
 
   delete: tenantProcedure.mutation(async ({ ctx }) => {
     const [[a], [b]] = await Promise.all([
-      db
+      ctx.db
         .select({ count: count() })
         .from(devices)
         .where(eq(devices.tenantPk, ctx.tenant.pk)),
-      db
+      ctx.db
         .select({ count: count() })
         .from(identityProviders)
         .where(eq(identityProviders.tenantPk, ctx.tenant.pk)),
@@ -195,7 +184,7 @@ export const tenantRouter = createTRPCRouter({
       throw new Error("Cannot delete tenant with identity providers"); // TODO: handle this error on the frontend
 
     // MySQL is really fussy about CTE's + deletes so we end up with a lotta raw SQL here sadly.
-    await db.transaction(async (db) => {
+    await ctx.db.transaction(async (db) => {
       await db.delete(users).where(eq(users.tenantPk, ctx.tenant.pk));
 
       const device_actions = db

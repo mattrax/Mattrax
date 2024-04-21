@@ -133,7 +133,6 @@ export function VariantTableSheet<
 										.getColumn("variant")!
 										.setFilterValue(t === "all" ? undefined : t)
 								}
-								class="relative"
 							>
 								<TabsList>
 									<Index
@@ -153,8 +152,8 @@ export function VariantTableSheet<
 											</TabsTrigger>
 										)}
 									</Index>
+									<TabsIndicator />
 								</TabsList>
-								<TabsIndicator />
 							</Tabs>
 							<Suspense fallback={<Button disabled>Loading...</Button>}>
 								<AsyncButton

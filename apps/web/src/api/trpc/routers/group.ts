@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 
@@ -7,9 +7,9 @@ import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { withAuditLog } from "~/api/auditLog";
 import {
   GroupMemberVariants,
+  PolicyAssignableVariants,
   applicationAssignments,
   applications,
-  db,
   devices,
   groupMemberVariants,
   groupMembers,
@@ -22,7 +22,7 @@ import {
 const groupProcedure = authedProcedure
   .input(z.object({ id: z.string() }))
   .use(async ({ next, input, ctx }) => {
-    const group = await db.query.groups.findFirst({
+    const group = await ctx.db.query.groups.findFirst({
       where: and(eq(groups.id, input.id)),
     });
     if (!group)
@@ -49,11 +49,11 @@ export const groupRouter = createTRPCRouter({
       // TODO: Can a cursor make this more efficent???
       // TODO: Switch to DB
 
-      return await db
+      return await ctx.db
         .select({
           id: groups.id,
           name: groups.name,
-          memberCount: sql`count(${groupMembers.groupPk})`,
+          memberCount: count(groupMembers.groupPk),
         })
         .from(groups)
         .where(eq(groups.tenantPk, ctx.tenant.pk))
@@ -71,7 +71,7 @@ export const groupRouter = createTRPCRouter({
         { id, name: input.name },
         [ctx.tenant.pk, ctx.account.pk],
         async () => {
-          await db.insert(groups).values({
+          await ctx.db.insert(groups).values({
             id,
             name: input.name,
             tenantPk: ctx.tenant.pk,
@@ -85,7 +85,7 @@ export const groupRouter = createTRPCRouter({
   get: authedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      const group = await db.query.groups.findFirst({
+      const group = await ctx.db.query.groups.findFirst({
         where: eq(groups.id, input.id),
       });
       if (!group) return null;
@@ -103,14 +103,14 @@ export const groupRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const group = await db.query.groups.findFirst({
+      const group = await ctx.db.query.groups.findFirst({
         where: eq(groups.id, input.id),
       });
       if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
 
       await ctx.ensureTenantMember(group.tenantPk);
 
-      await db
+      await ctx.db
         .update(groups)
         .set({ ...(input.name && { name: input.name }) })
         .where(eq(groups.id, input.id));
@@ -119,24 +119,22 @@ export const groupRouter = createTRPCRouter({
   members: authedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      const group = await db.query.groups.findFirst({
+      const group = await ctx.db.query.groups.findFirst({
         where: eq(groups.id, input.id),
       });
       if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
 
       await ctx.ensureTenantMember(group.tenantPk);
 
-      return await db
+      return await ctx.db
         .select({
           pk: groupMembers.pk,
           variant: groupMembers.variant,
           name: sql<string>`
-          	GROUP_CONCAT(
-           		CASE
-           			WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.name}
-             		WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.name}
-             	END
-           	)
+					CASE
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.name}
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.name}
+					END
           `.as("name"),
         })
         .from(groupMembers)
@@ -155,7 +153,12 @@ export const groupRouter = createTRPCRouter({
             eq(groupMembers.variant, GroupMemberVariants.user),
           ),
         )
-        .groupBy(groupMembers.variant, groupMembers.pk);
+        .groupBy(
+          groupMembers.variant,
+          groupMembers.pk,
+          devices.name,
+          users.name,
+        );
     }),
 
   addMembers: authedProcedure
@@ -171,7 +174,7 @@ export const groupRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const group = await db.query.groups.findFirst({
+      const group = await ctx.db.query.groups.findFirst({
         where: and(eq(groups.id, input.id)),
       });
       if (!group)
@@ -179,7 +182,7 @@ export const groupRouter = createTRPCRouter({
 
       await ctx.ensureTenantMember(group.tenantPk);
 
-      await db
+      await ctx.db
         .insert(groupMembers)
         .values(
           input.members.map((member) => ({
@@ -188,16 +191,14 @@ export const groupRouter = createTRPCRouter({
             variant: member.variant,
           })),
         )
-        .onDuplicateKeyUpdate({
-          set: { groupPk: sql`${groupMembers.groupPk}` },
-        });
+        .onConflictDoNothing();
     }),
 
   assignments: groupProcedure.query(async ({ ctx }) => {
     const { group } = ctx;
 
     const [p, a] = await Promise.all([
-      db
+      ctx.db
         .select({ pk: policies.pk, id: policies.id, name: policies.name })
         .from(policyAssignments)
         .where(
@@ -207,7 +208,7 @@ export const groupRouter = createTRPCRouter({
           ),
         )
         .innerJoin(policies, eq(policyAssignments.policyPk, policies.pk)),
-      db
+      ctx.db
         .select({
           pk: applications.pk,
           id: applications.id,
@@ -239,7 +240,7 @@ export const groupRouter = createTRPCRouter({
         ),
       }),
     )
-    .mutation(async ({ ctx: { group }, input }) => {
+    .mutation(async ({ ctx: { group, db }, input }) => {
       const pols: Array<number> = [],
         apps: Array<number> = [];
 
@@ -248,35 +249,38 @@ export const groupRouter = createTRPCRouter({
         else apps.push(a.pk);
       });
 
-      await db.transaction((db) =>
-        Promise.all([
-          db
-            .insert(policyAssignments)
-            .values(
-              pols.map((pk) => ({
-                pk: group.pk,
-                policyPk: pk,
-                variant: sql`"group"`,
-              })),
-            )
-            .onDuplicateKeyUpdate({
-              set: { policyPk: sql`${policyAssignments.policyPk}` },
-            }),
-          db
-            .insert(applicationAssignments)
-            .values(
-              apps.map((pk) => ({
-                pk: group.pk,
-                applicationPk: pk,
-                variant: sql`"group"`,
-              })),
-            )
-            .onDuplicateKeyUpdate({
-              set: {
-                applicationPk: sql`${applicationAssignments.applicationPk}`,
-              },
-            }),
-        ]),
-      );
+      await db.transaction((db) => {
+        const ops: Promise<any>[] = [];
+
+        if (pols.length > 0)
+          ops.push(
+            db
+              .insert(policyAssignments)
+              .values(
+                pols.map((pk) => ({
+                  pk: group.pk,
+                  policyPk: pk,
+                  variant: PolicyAssignableVariants.group,
+                })),
+              )
+              .onConflictDoNothing(),
+          );
+
+        if (apps.length > 0)
+          ops.push(
+            db
+              .insert(applicationAssignments)
+              .values(
+                apps.map((pk) => ({
+                  pk: group.pk,
+                  applicationPk: pk,
+                  variant: PolicyAssignableVariants.group,
+                })),
+              )
+              .onConflictDoNothing(),
+          );
+
+        return Promise.all(ops);
+      });
     }),
 });

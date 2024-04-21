@@ -23,7 +23,7 @@ type RustType =
 	| "NaiveDateTime"
 	| "Now"
 	| "Vec<u8>"
-	| "u64"
+	| "i64"
 	| "Serialized<serde_json::Value>"; // TODO: Rest of types
 type RustArgs = Record<string, RustType>;
 
@@ -31,8 +31,8 @@ type MapArgsToTs<T> = {
 	[K in keyof T]: T[K] extends "String"
 		? string
 		: T[K] extends "i32"
-		  ? number
-		  : never;
+			? number
+			: never;
 };
 
 type QueryDefinition<T> = {
@@ -61,7 +61,7 @@ class Placeholder {
 
 	// Drizzle converts dates to strings so we need a way to know when to convert them to a Rust param.
 	toISOString() {
-		return `####rs#${this.name}_`; // Drizzle strips the last char
+		return `####rs#${this.name}`; // Drizzle strips the last char
 	}
 }
 
@@ -71,10 +71,11 @@ export function defineOperation<const T extends RustArgs = never>(
 	// TODO: Bun is broken if this is a global
 	const sqlDatatypeToRust = {
 		string: "String",
-		number: "u64",
+		number: "i64",
 		date: "NaiveDateTime",
 		boolean: "bool",
-		json: "Deserialized<serde_json::Value>",
+		json: "serde_json::Value",
+		custom: "Vec<u8>",
 	};
 
 	const op = query.query(
@@ -94,12 +95,10 @@ export function defineOperation<const T extends RustArgs = never>(
 	let fn_args = "";
 	let defined = "";
 	if (query.args && Object.keys(query.args).length > 0) {
-		fn_args =
-			", " +
-			Object.entries(query.args || {})
-				.filter(([k, v]) => v !== "Now")
-				.map(([k, v]) => `${camelToSnakeCase(k)}: ${v}`)
-				.join(",");
+		fn_args = `, ${Object.entries(query.args || {})
+			.filter(([k, v]) => v !== "Now")
+			.map(([k, v]) => `${camelToSnakeCase(k)}: ${v}`)
+			.join(",")}`;
 		defined = Object.entries(query.args || {})
 			.filter(([k, v]) => v === "Now")
 			.map(
@@ -117,6 +116,7 @@ export function defineOperation<const T extends RustArgs = never>(
 			.map(([k, v]) => {
 				const v2 = v as any;
 				if (!(v2.dataType in sqlDatatypeToRust)) {
+					console.log(v2);
 					throw new Error(`Unknown datatype: ${v2.dataType}`);
 				}
 
@@ -132,99 +132,98 @@ export function defineOperation<const T extends RustArgs = never>(
 			})
 			.join(",")}
 }`,
-		renderedFn:
-			`impl Db {
-        pub async fn ${query.name}(&self${fn_args}) -> Result<` +
-			(!isQuery ? "()" : `Vec<${resultTyName}>`) +
-			`, mysql_async::Error> {
-		  ${defined}
-          r#"${sql.sql}"#
-            .with(mysql_async::Params::Positional(vec![${sql.params
-							// TODO: If the user puts a static value, this will snake case it.
-							// We should detect a special suffix which the `Proxy` will return.
-							.map((p) => {
-								// @ts-expect-error
-								if (p instanceof Placeholder) {
-									return `${camelToSnakeCase(p.name)}.clone().into()`;
-								} else if (typeof p === "string" && p.startsWith("####rs#")) {
-									return `${camelToSnakeCase(
-										p.replaceAll("####rs#", ""),
-									)}.clone().into()`;
-								}
-
-								const columnName = isJsonPlaceholder(p);
-								if (columnName) {
-									return `${camelToSnakeCase(columnName)}.clone().into()`;
-								}
-
-								return `${typeof p === "number" ? p : `"${p}"`}.into()`;
-							}) // TODO: Only call `.clone()` when the value is used multiple times
-							.join(",")}]))
-            ` +
-			(!isQuery
-				? ".run(&self.pool)"
-				: `.map(&self.pool, |p: (${Object.entries(op._.selectedFields)
-						.map(([k, v]) => {
-							const v2 = v as any;
-							if (!(v2.dataType in sqlDatatypeToRust)) {
-								throw new Error(`Unknown datatype: ${v2.dataType}`);
+		renderedFn: `impl Db {
+				pub async fn ${query.name}(&self${fn_args}) -> Result<${
+					!isQuery ? "()" : `Vec<${resultTyName}>`
+				}, tokio_postgres::Error> {
+		      ${defined}
+          let resp = self.0.client.query(r#"${sql.sql}"#, &[${sql.params
+						// TODO: If the user puts a static value, this will snake case it.
+						// We should detect a special suffix which the `Proxy` will return.
+						.map((p) => {
+							// @ts-expect-error
+							if (p instanceof Placeholder) {
+								return `&${camelToSnakeCase(p.name)}`;
+							}
+							if (typeof p === "string" && p.startsWith("####rs#")) {
+								return `&${camelToSnakeCase(p.replaceAll("####rs#", ""))}`;
 							}
 
-							let ty =
-								v2.columnType === "MySqlVarBinary"
-									? "Vec<u8>"
-									: (sqlDatatypeToRust as any)[v2.dataType];
-							if (!v2.notNull) {
-								ty = `Option<${ty}>`;
+							const columnName = isJsonPlaceholder(p);
+							if (columnName) {
+								return `&${camelToSnakeCase(columnName)}`;
 							}
 
-							return `${ty}`;
-						})
-						.join(",")},)| ${resultTyName} {
+							return `${typeof p === "number" ? p : `&"${p}"`}`;
+						}) // TODO: Only call `.clone()` when the value is used multiple times
+						.join(",")}]).await?;
+            ${
+							!isQuery
+								? "Ok(())"
+								: `Ok(resp.into_iter().map(|row| ${resultTyName} {
                 ${Object.entries(op._.selectedFields)
 									.map(([k, v], i) => {
-										return `${camelToSnakeCase(k)}: p.${i}`;
+										return `${camelToSnakeCase(k)}: row.get("${k}")`;
 									})
 									.join(",")}
-              })`) +
-			`
-            .await
-            ` +
-			(!isQuery ? ".map(|_| ())" : "") +
-			`
+                }).collect())`
+						}
         }
-    }`,
+      }`,
 	};
 }
 
 export function exportQueries(queries: Query[], path: string) {
 	console.log(`Exporting ${queries.length} queries...`);
 
-	const dbStruct = `#[derive(Clone)]
-  pub struct Db {
-    pool: mysql_async::Pool,
-  }`;
-	const dbStructConstructor = `impl Db {
-    pub fn new(db_url: &str) -> Self {
-        Self {
-          pool: mysql_async::Pool::new(db_url),
-        }
-    }
-  }`;
+	const rust = `
+      // This file was generated by '@mattrax/drizzle-to-rs'
+      #![allow(unused)]
+      use mysql_async::{Serialized, Deserialized, prelude::*};
+      use chrono::NaiveDateTime;
 
-	fs.writeFileSync(
-		path,
-		[
-			"// This file was generated by '@mattrax/drizzle-to-rs'",
-			"#![allow(unused)]\n",
-			"use mysql_async::{Serialized, Deserialized, prelude::*};",
-			"use chrono::NaiveDateTime;\n",
-			queries.map((q) => q.renderedResultType).join("\n"),
-			dbStruct,
-			dbStructConstructor,
-			queries.map((q) => q.renderedFn).join("\n"),
-		].join("\n"),
-	);
+      ${queries.map((q) => q.renderedResultType).join("\n")}
+
+      pub struct DbInner {
+          client: tokio_postgres::Client,
+      }
+
+      #[derive(Clone)]
+      pub struct Db(std::sync::Arc<DbInner>);
+
+      impl std::ops::Deref for Db {
+          type Target = DbInner;
+
+          fn deref(&self) -> &Self::Target {
+              &self.0
+          }
+      }
+
+      impl Db {
+          pub async fn new(db_url: &str) -> Self {
+              let (client, connection) = tokio_postgres::connect(
+                  db_url,
+                  postgres_native_tls::MakeTlsConnector::new(
+                      native_tls::TlsConnector::builder().build().unwrap(),
+                  ),
+              )
+              .await
+              .unwrap();
+
+              tokio::spawn(async move {
+                  if let Err(e) = connection.await {
+                      eprintln!("connection error: {}", e);
+                  }
+              });
+
+              Self(std::sync::Arc::new(DbInner { client }))
+          }
+      }
+
+      ${queries.map((q) => q.renderedFn).join("\n")}
+  `.trim();
+
+	fs.writeFileSync(path, rust);
 
 	execSync(`rustfmt --edition 2021 ${path}`);
 
