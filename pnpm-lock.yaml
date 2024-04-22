@@ -639,8 +639,8 @@ importers:
         specifier: '=0.19.0'
         version: 0.19.0(patch_hash=q4rg6hlmscew6hzqinl5fmzg4e)(solid-js@1.8.16)
       '@tanstack/zod-form-adapter':
-        specifier: ^0.19.2
-        version: 0.19.2(zod@3.22.5)
+        specifier: '=0.19.0'
+        version: 0.19.0(zod@3.22.5)
       class-variance-authority:
         specifier: ^0.7.0
         version: 0.7.0
@@ -3410,6 +3410,11 @@ packages:
 
   '@tanstack/virtual-core@3.4.0':
     resolution: {integrity: sha512-75jXqXxqq5M5Veb9KP1STi8kA5u408uOOAefk2ftHDGCpUk3RP6zX++QqfbmHJTBiU72NQ+ghgCZVts/Wocz8Q==}
+
+  '@tanstack/zod-form-adapter@0.19.0':
+    resolution: {integrity: sha512-qE/ZH8otgIBIGSwDStLCpX+HHrrSgc+Obii4DwogcWsU45ojjLUXktgzTOTfIJV954Gz0I3j737aTNAwGTSIUQ==}
+    peerDependencies:
+      zod: ^3.x
 
   '@tanstack/zod-form-adapter@0.19.2':
     resolution: {integrity: sha512-D2VYc/Ok/pmtEu2rTBpRNgw/2eimvoev8v37tGqN9hUQviQWUgTkI8Ab+HeogLswnQsSSs3Q6AJZsVYKwZWDyA==}
@@ -10159,6 +10164,11 @@ snapshots:
   '@tanstack/table-core@8.16.0': {}
 
   '@tanstack/virtual-core@3.4.0': {}
+
+  '@tanstack/zod-form-adapter@0.19.0(zod@3.22.5)':
+    dependencies:
+      '@tanstack/form-core': 0.19.0
+      zod: 3.22.5
 
   '@tanstack/zod-form-adapter@0.19.2(zod@3.22.5)':
     dependencies:

@@ -1,37 +1,37 @@
 {
-	"name": "@mattrax/ui",
-	"description": "Mattrax's UI component library. Based on ShadCN/Solid UI components",
-	"type": "module",
-	"private": true,
-	"sideEffects": false,
-	"main": "./src/index.tsx",
-	"types": "./src/index.tsx",
-	"exports": {
-		".": "./src/index.tsx",
-		"./forms": "./src/forms/index.tsx",
-		"./lib": "./src/lib/index.ts",
-		"./tailwind": "./tailwind.js",
-		"./vite": "./vite.js",
-		"./types": "./src/types.d.ts",
-		"./css": "./src/index.css"
-	},
-	"dependencies": {
-		"@kobalte/core": "^0.12.6",
-		"@solidjs/router": "^0.13.2",
-		"@tanstack/form-core": "=0.19.0",
-		"@tanstack/solid-form": "=0.19.0",
-		"@tanstack/zod-form-adapter": "^0.19.2",
-		"class-variance-authority": "^0.7.0",
-		"clsx": "^2.1.0",
-		"solid-js": "^1.8.16",
-		"tailwind-merge": "^2.3.0",
-		"zod": "^3.22.5"
-	},
-	"devDependencies": {
-		"@iconify/json": "^2.2.202",
-		"unplugin-auto-import": "^0.17.5",
-		"unplugin-icons": "^0.18.5",
-		"vite": "^5.2.9",
-		"vite-plugin-solid": "^2.10.2"
-	}
+  "name": "@mattrax/ui",
+  "description": "Mattrax's UI component library. Based on ShadCN/Solid UI components",
+  "type": "module",
+  "private": true,
+  "sideEffects": false,
+  "main": "./src/index.tsx",
+  "types": "./src/index.tsx",
+  "exports": {
+    ".": "./src/index.tsx",
+    "./forms": "./src/forms/index.tsx",
+    "./lib": "./src/lib/index.ts",
+    "./tailwind": "./tailwind.js",
+    "./vite": "./vite.js",
+    "./types": "./src/types.d.ts",
+    "./css": "./src/index.css"
+  },
+  "dependencies": {
+    "@kobalte/core": "^0.12.6",
+    "@solidjs/router": "^0.13.2",
+    "@tanstack/form-core": "=0.19.0",
+    "@tanstack/solid-form": "=0.19.0",
+    "@tanstack/zod-form-adapter": "=0.19.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.0",
+    "solid-js": "^1.8.16",
+    "tailwind-merge": "^2.3.0",
+    "zod": "^3.22.5"
+  },
+  "devDependencies": {
+    "@iconify/json": "^2.2.202",
+    "unplugin-auto-import": "^0.17.5",
+    "unplugin-icons": "^0.18.5",
+    "vite": "^5.2.9",
+    "vite-plugin-solid": "^2.10.2"
+  }
 }

@@ -15,6 +15,7 @@ import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import {
   ColumnsDropdown,
   StandardTable,
+  createSearchParamFilter,
   createStandardTable,
   selectCheckboxColumn,
 } from "~c/StandardTable";
