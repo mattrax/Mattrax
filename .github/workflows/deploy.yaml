@@ -21,6 +21,7 @@ jobs:
   #     - uses: dtolnay/rust-toolchain@stable
 
   # TODO: Connection environment & concurrency 1
+  # TODO: Don't do this on PR's
   production:
     name: Production
     runs-on: ubuntu-latest
@@ -36,7 +37,7 @@ jobs:
           tags: tag:ci
 
       - name: Test
-        run: ssh -t ec2-user@mattrax "echo 'hello' > ~/hello.txt"
+        run: ssh -o StrictHostKeyChecking=accept-new -t ec2-user@mattrax "echo 'hello' > ~/hello.txt"
 
   # TODO: Remove all Go from this and cleanup
   # mattrax:
