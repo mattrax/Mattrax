@@ -8,6 +8,8 @@
 
 mod deploy;
 mod graph;
+mod result;
 
-pub use deploy::{Configuration, ConflictResolutionStrategy, Deploy};
-pub use graph::{Conflict, Graph, Reference};
+// pub use deploy::{Configuration, ConflictResolutionStrategy, Deploy};
+// pub use graph::{Conflict, Graph, Reference};
+// pub use result::Result;

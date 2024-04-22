@@ -34,8 +34,8 @@ type MapArgsToTs<T> = {
 	[K in keyof T]: T[K] extends "String"
 		? string
 		: T[K] extends "i32"
-			? number
-			: never;
+		  ? number
+		  : never;
 };
 
 type QueryDefinition<T> = {
@@ -84,6 +84,11 @@ export function leftJoinHint<T extends object>(t: T): T {
 	const obj = Object.create(proto);
 	Object.assign(obj, t);
 	return obj;
+}
+
+/// Can we used with `sql`...`.mapWith(asString)` to ensure Rust knows the column is a string.
+export function asString(v: any): string {
+	return String(v);
 }
 
 export function defineOperation<const T extends RustArgs = never>(
@@ -238,6 +243,14 @@ function buildResultType(
 	value: any,
 	name: string,
 ) {
+	if ("fieldAlias" in value) {
+		if (value.sql.decoder.mapFromDriverValue === asString) return "String";
+
+		throw new Error(
+			"Unknown type for alias field. Did you forget to use `mapWith`?",
+		);
+	}
+
 	if ("dataType" in value) {
 		if (!(value.dataType in sqlDatatypeToRust))
 			throw new Error(`Unknown datatype: ${value.dataType}`);

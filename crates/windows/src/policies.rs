@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use ms_mdm::{SyncBodyChild, SyncML};
-use mx_conflict::{ConflictResolutionStrategy, Deploy, Graph};
+// use mx_conflict::{ConflictResolutionStrategy, Deploy, Graph};
 use mx_db::{Db, GetDeviceResult};
 use mx_dmvalue::DmValue;
 use mx_policy::{windows::WindowsConfiguration, Configuration};
@@ -18,6 +18,10 @@ use mx_policy::{windows::WindowsConfiguration, Configuration};
 // - apply the graph
 
 pub(crate) async fn handler(db: &Db, device: &GetDeviceResult, cmd: &SyncML) -> Vec<SyncBodyChild> {
+    let scope = db.get_policy_data_for_checkin(device.pk).await.unwrap();
+
+    println!("{:?}", scope); // TODO
+
     // TODO: db.get_device_directly_scoped_policies
 
     // TODO: Get latest policies in groups
@@ -74,74 +78,74 @@ pub(crate) async fn handler(db: &Db, device: &GetDeviceResult, cmd: &SyncML) -> 
     vec![]
 }
 
-fn render_deploy_for_windows(deploy_pk: i64, priority: u8, data: serde_json::Value) -> Deploy {
-    let configurations: HashMap<String, Configuration> =
-        // TODO: Error handling
-        serde_json::from_value(data).unwrap();
+// fn render_deploy_for_windows(deploy_pk: i64, priority: u8, data: serde_json::Value) -> Deploy {
+//     let configurations: HashMap<String, Configuration> =
+//         // TODO: Error handling
+//         serde_json::from_value(data).unwrap();
 
-    let windows_configurations = configurations
-        .into_iter()
-        .filter_map(|(key, configuration)| match configuration {
-            Configuration::Windows(windows) => Some((key, windows)),
-            // Skip anything that's not for Windows
-            Configuration::Apple(_) | Configuration::Android(_) | Configuration::Script(_) => None,
-        });
+//     let windows_configurations = configurations
+//         .into_iter()
+//         .filter_map(|(key, configuration)| match configuration {
+//             Configuration::Windows(windows) => Some((key, windows)),
+//             // Skip anything that's not for Windows
+//             Configuration::Apple(_) | Configuration::Android(_) | Configuration::Script(_) => None,
+//         });
 
-    let mut deploy = Deploy {
-        pk: deploy_pk,
-        priority,
-        configuration: Default::default(),
-    };
+//     let mut deploy = Deploy {
+//         pk: deploy_pk,
+//         priority,
+//         configuration: Default::default(),
+//     };
 
-    for (key, config) in windows_configurations {
-        // TODO: Probs break this render logic out into `mx-policy-win`
-        match config {
-            WindowsConfiguration::PolicyConfigBrowserHomePages { homepages } => {
-                let mut result = String::new();
-                for value in homepages {
-                    result.push('<');
-                    result.push_str(&value);
-                    result.push('>');
-                }
+//     for (key, config) in windows_configurations {
+//         // TODO: Probs break this render logic out into `mx-policy-win`
+//         match config {
+//             WindowsConfiguration::PolicyConfigBrowserHomePages { homepages } => {
+//                 let mut result = String::new();
+//                 for value in homepages {
+//                     result.push('<');
+//                     result.push_str(&value);
+//                     result.push('>');
+//                 }
 
-                deploy.configuration.insert(
-                    "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator".into(),
-                    mx_conflict::Configuration {
-                        key: key.clone(),
-                        value: DmValue::String(result),
-                        conflict_resolution_strategy: ConflictResolutionStrategy::Conflict,
-                    },
-                );
-            }
-            WindowsConfiguration::PolicyEducationAllowGraphingCalculator {
-                allow_graphing_calculator,
-            } => {
-                deploy.configuration.insert(
-                    "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator".into(),
-                    mx_conflict::Configuration {
-                        key: key.clone(),
-                        value: DmValue::Integer(allow_graphing_calculator as u64),
-                        conflict_resolution_strategy: ConflictResolutionStrategy::InValueOrder(
-                            vec![DmValue::Integer(0), DmValue::Integer(1)],
-                        ),
-                    },
-                );
-            }
-            WindowsConfiguration::Custom { custom } => {
-                for custom in custom {
-                    deploy.configuration.insert(
-                        custom.oma_uri,
-                        mx_conflict::Configuration {
-                            key: key.clone(),
-                            value: custom.value.into(),
-                            // We don't do automatic conflict resolution for custom configurations as we don't know what they are.
-                            conflict_resolution_strategy: ConflictResolutionStrategy::Conflict,
-                        },
-                    );
-                }
-            }
-        }
-    }
+//                 deploy.configuration.insert(
+//                     "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator".into(),
+//                     mx_conflict::Configuration {
+//                         key: key.clone(),
+//                         value: DmValue::String(result),
+//                         conflict_resolution_strategy: ConflictResolutionStrategy::Conflict,
+//                     },
+//                 );
+//             }
+//             WindowsConfiguration::PolicyEducationAllowGraphingCalculator {
+//                 allow_graphing_calculator,
+//             } => {
+//                 deploy.configuration.insert(
+//                     "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator".into(),
+//                     mx_conflict::Configuration {
+//                         key: key.clone(),
+//                         value: DmValue::Integer(allow_graphing_calculator as u64),
+//                         conflict_resolution_strategy: ConflictResolutionStrategy::InValueOrder(
+//                             vec![DmValue::Integer(0), DmValue::Integer(1)],
+//                         ),
+//                     },
+//                 );
+//             }
+//             WindowsConfiguration::Custom { custom } => {
+//                 for custom in custom {
+//                     deploy.configuration.insert(
+//                         custom.oma_uri,
+//                         mx_conflict::Configuration {
+//                             key: key.clone(),
+//                             value: custom.value.into(),
+//                             // We don't do automatic conflict resolution for custom configurations as we don't know what they are.
+//                             conflict_resolution_strategy: ConflictResolutionStrategy::Conflict,
+//                         },
+//                     );
+//                 }
+//             }
+//         }
+//     }
 
-    deploy
-}
+//     deploy
+// }

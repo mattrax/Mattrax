@@ -1,12 +1,13 @@
 import path from "node:path";
 import {
+	asString,
 	defineOperation,
 	exportQueries,
 	leftJoinHint,
 } from "@mattrax/drizzle-to-rs";
 import dotenv from "dotenv";
-import { and, desc, eq, exists, isNotNull, isNull, sql } from "drizzle-orm";
-import { union, unionAll } from "drizzle-orm/mysql-core";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { unionAll } from "drizzle-orm/mysql-core";
 import {
 	getDb,
 	certificates,
@@ -29,6 +30,7 @@ export function scopedPoliciesForDeviceSubquery(device_pk: number) {
 	const policiesScopedDirectly = db
 		.select({
 			pk: policies.pk,
+			scope: sql`"direct"`.mapWith(asString).as("scope"),
 		})
 		.from(policies)
 		.innerJoin(policyAssignments, eq(policies.pk, policyAssignments.policyPk))
@@ -42,6 +44,7 @@ export function scopedPoliciesForDeviceSubquery(device_pk: number) {
 	const policiesScopedViaGroup = db
 		.select({
 			pk: policies.pk,
+			scope: sql`"group"`.as("scope"),
 		})
 		.from(policies)
 		.innerJoin(
@@ -56,8 +59,26 @@ export function scopedPoliciesForDeviceSubquery(device_pk: number) {
 			and(eq(groupMembers.variant, "device"), eq(groupMembers.pk, device_pk)),
 		);
 
-	// All policies that are scoped to apply to this device
-	return union(policiesScopedDirectly, policiesScopedViaGroup).as("sp");
+	const allEntries = unionAll(
+		policiesScopedDirectly,
+		policiesScopedViaGroup,
+	).as("scoped");
+
+	// Being device scoped takes precedence over group scoped so we sort them first
+	const sorted = db
+		.select()
+		.from(allEntries)
+		.orderBy(asc(allEntries.scope))
+		.as("sorted");
+
+	// and remove duplicates
+	return db
+		.selectDistinctOn(sorted.scope, {
+			pk: sorted.pk,
+			scope: sorted.scope,
+		})
+		.from(sorted)
+		.as("sp");
 }
 
 exportQueries(
@@ -162,6 +183,7 @@ exportQueries(
 						deployPk: policyDeploy.pk,
 						policyPk: policyDeploy.policyPk,
 						data: policyDeploy.data,
+						scope: scopedPolicies.scope,
 					})
 					.from(scopedPolicies)
 					.innerJoin(policyDeploy, eq(scopedPolicies.pk, policyDeploy.policyPk))
@@ -173,6 +195,7 @@ exportQueries(
 						deployPk: allPolicyDeploys.deployPk,
 						policyPk: allPolicyDeploys.policyPk,
 						data: allPolicyDeploys.data,
+						scope: allPolicyDeploys.scope,
 					})
 					.from(allPolicyDeploys)
 					.as("l");
@@ -208,6 +231,7 @@ exportQueries(
 
 				return db
 					.select({
+						scope: latestDeployForPolicy.scope,
 						latestDeploy: {
 							pk: latestDeployForPolicy.deployPk,
 							data: latestDeployForPolicy.data,
