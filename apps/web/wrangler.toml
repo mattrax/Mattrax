@@ -1,0 +1,7 @@
+name = "mattrax"
+compatibility_date = "2022-07-12"
+node_compat = true
+
+[[hyperdrive]]
+binding = "DB"
+id = "d4a32b68ad894672ad709ae136f4aaaa"
