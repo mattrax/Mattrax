@@ -10,9 +10,12 @@ import {
 	type ProcedureType,
 	callProcedure,
 	type DataTransformer,
+	TRPCError,
+	type DefaultErrorShape,
 } from "@trpc/server";
+import { getHTTPStatusCodeFromError } from "@trpc/server/http";
 import { observable } from "@trpc/server/observable";
-import type { TRPCResponse } from "@trpc/server/rpc";
+import { TRPC_ERROR_CODES_BY_KEY, type TRPCResponse } from "@trpc/server/rpc";
 import { getEvent } from "vinxi/http";
 import { TRPC_REQUEST } from "./server";
 
@@ -40,21 +43,40 @@ export async function trpcServerFunction<TRouter extends AnyRouter>({
 	const ctx = createContext(event);
 
 	let flush!: () => void;
-	const flushPromise = new Promise<void>((res) => (flush = res));
+	const flushPromise = new Promise<void>((res) => {
+		flush = res;
+	});
 
 	(event as any)[TRPC_REQUEST] = { flush };
 
-	const responses = opts.operations.map(async (o) => ({
-		result: {
-			data: await callProcedure({
+	const responses = opts.operations.map(async (o) => {
+		// https://github.com/trpc/trpc/blob/a9b03d7f3b6d6b4cf17ba4bff8e19767d26c31a4/packages/server/src/unstable-core-do-not-import/http/resolveHTTPResponse.ts#L301
+
+		try {
+			const data = await callProcedure({
 				procedures: router._def.procedures,
 				path: o.path,
 				rawInput: o.input,
 				ctx,
 				type: opts.type,
-			}),
-		},
-	}));
+			});
+
+			return { result: { data } };
+		} catch (cause: unknown) {
+			const error = getTRPCErrorFromUnknown(cause);
+
+			return {
+				error: getErrorShape({
+					config: router._def._config,
+					error,
+					type: opts.type,
+					path: o.path,
+					input: o.input,
+					ctx,
+				}),
+			};
+		}
+	});
 
 	await flushPromise;
 
@@ -77,6 +99,8 @@ type RequesterFn = (requesterOpts: { type: ProcedureType }) => (
 	cancel: CancelFn;
 };
 
+// we stringify to reduce the payload size - seroval adds a whole bunch of metadata we don't need
+// will have to be removed once more than just JSON is supported
 type StringifiedOpts = string & { _brand: "TrpcServerFunctionOpts" };
 
 function stringifyOpts(opts: TrpcServerFunctionOptsObject): StringifiedOpts {
@@ -118,32 +142,16 @@ export const createServerFunctionLink = <TRouter extends AnyRouter>(
 					.then((p) => p)
 					.then((response) => {
 						if ("error" in response) {
-							observer.error(
-								TRPCClientError.from(
-									response,
-									// 	, {
-									// 	meta: response.meta,
-									// }
-								),
-							);
+							console.log({ response });
+							observer.error(TRPCClientError.from(response));
 							return;
-						} else {
-							observer.next({
-								// context: res.meta,
-								result: response.result,
-							});
-							observer.complete();
 						}
-					})
-					.catch((err) => {
-						observer.error(
-							TRPCClientError.from(
-								err,
-								// 	{
-								// 	meta: _res?.meta,
-								// }
-							),
-						);
+
+						observer.next({
+							// context: res.meta,
+							result: response.result,
+						});
+						observer.complete();
 					});
 
 				return cancel;
@@ -329,3 +337,52 @@ const throwFatalError = () => {
 		"Something went wrong. Please submit an issue at https://github.com/trpc/trpc/issues/new",
 	);
 };
+
+export function getTRPCErrorFromUnknown(cause: unknown): TRPCError {
+	if (cause instanceof TRPCError) {
+		return cause;
+	}
+	if (cause instanceof Error && cause.name === "TRPCError") {
+		// https://github.com/trpc/trpc/pull/4848
+		return cause as TRPCError;
+	}
+
+	const trpcError = new TRPCError({
+		code: "INTERNAL_SERVER_ERROR",
+		cause,
+	});
+
+	// Inherit stack from error
+	if (cause instanceof Error && cause.stack) {
+		trpcError.stack = cause.stack;
+	}
+
+	return trpcError;
+}
+
+export function getErrorShape(opts: {
+	config: any;
+	error: TRPCError;
+	type: ProcedureType | "unknown";
+	path: string | undefined;
+	input: unknown;
+	ctx: any | undefined;
+}) {
+	const { path, error, config } = opts;
+	const { code } = opts.error;
+	const shape: DefaultErrorShape = {
+		message: error.message,
+		code: TRPC_ERROR_CODES_BY_KEY[code],
+		data: {
+			code,
+			httpStatus: getHTTPStatusCodeFromError(error),
+		},
+	};
+	if (config.isDev && typeof opts.error.stack === "string") {
+		shape.data.stack = opts.error.stack;
+	}
+	if (typeof path === "string") {
+		shape.data.path = path;
+	}
+	return config.errorFormatter({ ...opts, shape });
+}

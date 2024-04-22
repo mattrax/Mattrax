@@ -77,7 +77,7 @@ export const orgRouter = createTRPCRouter({
 					})
 					.returning({ pk: organisations.pk });
 
-				await ctx.db.insert(organisationMembers).values({
+				await db.insert(organisationMembers).values({
 					orgPk: organisation!.pk,
 					accountPk: ctx.account.pk,
 				});

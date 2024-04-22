@@ -87,7 +87,7 @@ export const authRouter = createTRPCRouter({
 					.select({ pk: accounts.pk, id: accounts.id })
 					.from(accounts);
 
-				await ctx.db
+				await db
 					.insert(accountLoginCodes)
 					.values({ accountPk: account!.pk, code });
 
@@ -144,7 +144,7 @@ export const authRouter = createTRPCRouter({
 						.insert(organisations)
 						.values({ id, slug, name: slug, ownerPk: account.pk })
 						.returning({ pk: organisations.pk });
-					await ctx.db.insert(organisationMembers).values({
+					await db.insert(organisationMembers).values({
 						accountPk: account.pk,
 						orgPk: org!.pk,
 					});

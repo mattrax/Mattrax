@@ -58,7 +58,7 @@ export const tenantRouter = createTRPCRouter({
 			const slug = await ctx.db.transaction(async (db) => {
 				const slug = randomSlug(input.name);
 
-				await ctx.db.insert(tenants).values({
+				await db.insert(tenants).values({
 					name: input.name,
 					slug,
 					orgPk: ctx.org.pk,

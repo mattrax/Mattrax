@@ -1,6 +1,6 @@
 // @refresh reload
 import { type EventBus, createEventBus } from "@solid-primitives/event-bus";
-import { Router, useNavigate } from "@solidjs/router";
+import { Router, useLocation, useNavigate } from "@solidjs/router";
 import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
 import {
 	QueryCache,
@@ -30,7 +30,6 @@ declare module "solid-js" {
 
 function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 	const onErrorFactory = (scopeMsg: string) => (error: unknown) => {
-		console.error(scopeMsg, error);
 		errorBus.emit([scopeMsg, error]);
 	};
 
@@ -89,6 +88,7 @@ export default function App() {
 				<Router
 					root={(props) => {
 						const navigate = useNavigate();
+						const location = useLocation();
 
 						onCleanup(
 							errorBus.listen(([scopeMsg, error]) => {
@@ -101,13 +101,16 @@ export default function App() {
 								);
 
 								if (isTRPCClientError(error)) {
-									console.log({ error });
 									if (error.data?.code === "UNAUTHORIZED") {
-										startTransition(() => navigate("/login"));
-										return;
-									}
-
-									if (error.data?.code === "FORBIDDEN") {
+										errorMsg = "You must login to continue";
+										startTransition(() =>
+											navigate(
+												`/login?${new URLSearchParams({
+													continueTo: location.pathname,
+												})}`,
+											),
+										);
+									} else if (error.data?.code === "FORBIDDEN") {
 										if (error.message === "tenant") navigate("/");
 										else
 											errorMsg =

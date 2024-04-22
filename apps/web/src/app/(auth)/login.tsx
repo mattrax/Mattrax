@@ -1,7 +1,7 @@
 import { Match, Switch, createSignal, startTransition } from "solid-js";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
-import { useNavigate } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import { z } from "zod";
 
 import { trpc } from "~/lib";
@@ -13,6 +13,8 @@ export default function Page() {
 	const [state, setState] = createSignal<
 		{ variant: "sendCode" } | { variant: "verifyCode"; email: string }
 	>({ variant: "sendCode" });
+
+	const [searchParams] = useSearchParams<{ continueTo?: string }>();
 
 	return (
 		<div class="h-full flex flex-row justify-center p-4">
@@ -80,7 +82,20 @@ export default function Page() {
 							{(state) => {
 								const navigate = useNavigate();
 								const verify = trpc.auth.verifyLoginCode.createMutation(() => ({
-									onSuccess: () => startTransition(() => navigate("/")),
+									onSuccess: () => {
+										let to: string;
+
+										if (
+											searchParams.continueTo &&
+											URL.canParse(
+												`${window.location.origin}${searchParams.continueTo}`,
+											)
+										)
+											to = searchParams.continueTo;
+										else to = "/";
+
+										startTransition(() => navigate(to));
+									},
 								}));
 
 								const form = createZodForm({

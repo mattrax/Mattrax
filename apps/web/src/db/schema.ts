@@ -169,7 +169,7 @@ export const tenants = pgTable("tenant", {
 	id: cuid("id").notNull().unique(),
 	name: varchar("name", { length: 100 }).notNull(),
 	slug: varchar("slug", { length: 256 }).notNull().unique(),
-	orgPk: serialRelation("org").references(() => accounts.pk),
+	orgPk: serialRelation("org").references(() => organisations.pk),
 });
 
 const userProviderVariants = [

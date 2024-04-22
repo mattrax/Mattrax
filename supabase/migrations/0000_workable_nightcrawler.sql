@@ -35,7 +35,7 @@ EXCEPTION
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- CREATE TYPE "policy_deploy_status_variant" AS ENUM('success', 'failed');
+ CREATE TYPE "policy_deploy_status_result" AS ENUM('success', 'failed');
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -253,11 +253,10 @@ CREATE TABLE IF NOT EXISTS "policy_deploy" (
 CREATE TABLE IF NOT EXISTS "policy_deploy_status" (
 	"deploy" integer NOT NULL,
 	"device" integer NOT NULL,
-	"key" varchar(256) NOT NULL,
-	"variant" "policy_deploy_status_variant" NOT NULL,
-	"data" json NOT NULL,
+	"variant" "policy_deploy_status_result" NOT NULL,
+	"result" json NOT NULL,
 	"done_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "policy_deploy_status_deploy_key_pk" PRIMARY KEY("deploy","key")
+	CONSTRAINT "policy_deploy_status_deploy_device_pk" PRIMARY KEY("deploy","device")
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "session" (
@@ -335,7 +334,7 @@ EXCEPTION
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_user_id_users_pk_fk" FOREIGN KEY ("user_id") REFERENCES "users"("pk") ON DELETE no action ON UPDATE no action;
+ ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_user_id_accounts_pk_fk" FOREIGN KEY ("user_id") REFERENCES "accounts"("pk") ON DELETE no action ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -479,7 +478,7 @@ EXCEPTION
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- ALTER TABLE "tenant" ADD CONSTRAINT "tenant_org_accounts_pk_fk" FOREIGN KEY ("org") REFERENCES "accounts"("pk") ON DELETE no action ON UPDATE no action;
+ ALTER TABLE "tenant" ADD CONSTRAINT "tenant_org_organisations_pk_fk" FOREIGN KEY ("org") REFERENCES "organisations"("pk") ON DELETE no action ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;

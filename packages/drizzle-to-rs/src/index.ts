@@ -34,8 +34,8 @@ type MapArgsToTs<T> = {
 	[K in keyof T]: T[K] extends "String"
 		? string
 		: T[K] extends "i32"
-		  ? number
-		  : never;
+			? number
+			: never;
 };
 
 type QueryDefinition<T> = {
