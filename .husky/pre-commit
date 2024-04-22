@@ -1,0 +1,3 @@
+# I personally hate pre-commit hooks but we *NEED* consistency formatting to deal with merge conflicts.
+
+pnpm format

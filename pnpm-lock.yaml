@@ -45,6 +45,10 @@ importers:
       vinxi:
         specifier: '=0.3.10'
         version: 0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2)
+    devDependencies:
+      husky:
+        specifier: ^9.0.11
+        version: 9.0.11
 
   apps/docs:
     dependencies:
@@ -5231,6 +5235,11 @@ packages:
   human-signals@5.0.0:
     resolution: {integrity: sha512-AXcZb6vzzrFAUE61HnN4mpLqd/cSIwNQjtNWR0euPm6y0iqx3G4gOXaIDdtdDwZmhwe82LA6+zinmW4UBWVePQ==}
     engines: {node: '>=16.17.0'}
+
+  husky@9.0.11:
+    resolution: {integrity: sha512-AB6lFlbwwyIqMdHYhwPe+kjOC3Oc5P3nThEoW/AaO2BX3vJDjWPFxYLxokUZOo6RNX20He3AaT8sESs9NJcmEw==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   iconv-lite@0.6.3:
     resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
@@ -12387,6 +12396,8 @@ snapshots:
   human-signals@4.3.1: {}
 
   human-signals@5.0.0: {}
+
+  husky@9.0.11: {}
 
   iconv-lite@0.6.3:
     dependencies:

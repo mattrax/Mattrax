@@ -16,7 +16,8 @@
 		"db:rust": "bun run ./apps/web/src/db/rust.ts",
 		"typecheck": "tsc -b",
 		"lint": "biome lint .",
-		"format": "biome format --write ."
+		"format": "biome format --write .",
+		"prepare": "husky"
 	},
 	"engines": {
 		"node": ">=18"
@@ -29,6 +30,9 @@
 		"pg": "^8.11.5",
 		"typescript": "^5.4.5",
 		"vinxi": "=0.3.10"
+	},
+	"devDependencies": {
+		"husky": "^9.0.11"
 	},
 	"resolutions": {
 		"@solidjs/start": "^0.7.5",
