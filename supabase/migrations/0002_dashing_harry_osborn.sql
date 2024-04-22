@@ -1,0 +1,1 @@
+ALTER TYPE "policy_deploy_status_result" ADD VALUE 'todo';
