@@ -1,6 +1,5 @@
 name = "mattrax"
-compatibility_date = "2022-07-12"
-node_compat = true
+pages_build_output_dir = "./dist"
 
 [[hyperdrive]]
 binding = "DB"
