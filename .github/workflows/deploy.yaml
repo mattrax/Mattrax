@@ -3,77 +3,101 @@ name: Deploy
 on:
   push:
     branches: [main]
-    paths:
-      - "**/*.rs"
-      - "**/Cargo.toml"
-      - "Cargo.lock"
+    # paths:
+    #   - "**/*.rs"
+    #   - "**/Cargo.toml"
+    #   - "Cargo.lock"
   workflow_dispatch:
 
 jobs:
-  # TODO: Remove all Go from this and cleanup
-  mattrax:
-    name: Build and deploy `mattrax` server
+  # build:
+  #   name: Build
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v3
+  #     - uses: dtolnay/rust-toolchain@stable
+
+  production:
+    name: Production
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
+      - name: Tailscale
+        uses: tailscale/github-action@v2
         with:
-          cache-on-failure: "true"
+          # Client must have device read & write scope
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: tag:ci
 
-      - name: Install Zig toolchain
-        uses: korandoru/setup-zig@v1
-        with:
-          zig-version: 0.11.0
+      - name: Test
+        run: ssh -t ec2-user@mattrax "echo 'hello' > ~/hello.txt"
 
-      - name:
-          Install 'cargo-zigbuild'
-          # The Rust cache action is not happy with `cargo bininstall` so we do a manual install.
-        run: |
-          curl -s https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/latest \
-              | grep "browser_download_url.*.x86_64-unknown-linux-musl.tar.gz\"" \
-              | cut -d : -f 2,3 \
-              | tr -d \" \
-              | wget -qi -
-          tar -xf cargo-zigbuild-*.tar.gz
-          mv cargo-zigbuild /usr/local/bin
+  # TODO: Remove all Go from this and cleanup
+  # mattrax:
+  #   name: Build and deploy `mattrax` server
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v3
 
-      - name: Add 'aarch64-unknown-linux-gnu' target
-        run: rustup target add aarch64-unknown-linux-gnu
+  #     - uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Rust
-        run: cargo zigbuild --locked --release -p mattrax --target aarch64-unknown-linux-gnu
+  #     - uses: Swatinem/rust-cache@v2
+  #       with:
+  #         cache-on-failure: "true"
 
-      - name: Bundle all server files to push to server
-        run: |
-          mkdir server-dist
-          cp target/aarch64-unknown-linux-gnu/release/mattrax server-dist/mattrax
-          cp aws/mattrax.service server-dist/mattrax.service
+  #     - name: Install Zig toolchain
+  #       uses: korandoru/setup-zig@v1
+  #       with:
+  #         zig-version: 0.11.0
 
-      # TODO: We should probs have concurrency 1 for these steps
+  #     - name:
+  #         Install 'cargo-zigbuild'
+  #         # The Rust cache action is not happy with `cargo bininstall` so we do a manual install.
+  #       run: |
+  #         curl -s https://api.github.com/repos/rust-cross/cargo-zigbuild/releases/latest \
+  #             | grep "browser_download_url.*.x86_64-unknown-linux-musl.tar.gz\"" \
+  #             | cut -d : -f 2,3 \
+  #             | tr -d \" \
+  #             | wget -qi -
+  #         tar -xf cargo-zigbuild-*.tar.gz
+  #         mv cargo-zigbuild /usr/local/bin
 
-      - name: Copy files to production server
-        uses: appleboy/scp-action@v0.1.7
-        if: github.ref == 'refs/heads/main'
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          source: "server-dist/*"
-          target: /home/ec2-user
-          strip_components: 1
+  #     - name: Add 'aarch64-unknown-linux-gnu' target
+  #       run: rustup target add aarch64-unknown-linux-gnu
 
-      - name: executing remote ssh commands using password
-        uses: appleboy/ssh-action@v1.0.3
-        if: github.ref == 'refs/heads/main'
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            sudo cp /home/ec2-user/mattrax.service /etc/systemd/system/mattrax.service
-            sudo systemctl daemon-reload
-            sudo systemctl enable mattrax
-            sudo systemctl restart mattrax
+  #     - name: Build Rust
+  #       run: cargo zigbuild --locked --release -p mattrax --target aarch64-unknown-linux-gnu
+
+  #     - name: Bundle all server files to push to server
+  #       run: |
+  #         mkdir server-dist
+  #         cp target/aarch64-unknown-linux-gnu/release/mattrax server-dist/mattrax
+  #         cp aws/mattrax.service server-dist/mattrax.service
+
+  #     # TODO: We should probs have concurrency 1 for these steps
+
+  #     - name: Copy files to production server
+  #       uses: appleboy/scp-action@v0.1.7
+  #       if: github.ref == 'refs/heads/main'
+  #       with:
+  #         host: ${{ secrets.SSH_HOST }}
+  #         username: ${{ secrets.SSH_USERNAME }}
+  #         key: ${{ secrets.SSH_KEY }}
+  #         source: "server-dist/*"
+  #         target: /home/ec2-user
+  #         strip_components: 1
+
+  #     - name: executing remote ssh commands using password
+  #       uses: appleboy/ssh-action@v1.0.3
+  #       if: github.ref == 'refs/heads/main'
+  #       with:
+  #         host: ${{ secrets.SSH_HOST }}
+  #         username: ${{ secrets.SSH_USERNAME }}
+  #         key: ${{ secrets.SSH_KEY }}
+  #         script: |
+  #           sudo cp /home/ec2-user/mattrax.service /etc/systemd/system/mattrax.service
+  #           sudo systemctl daemon-reload
+  #           sudo systemctl enable mattrax
+  #           sudo systemctl restart mattrax
