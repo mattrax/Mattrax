@@ -8,7 +8,7 @@ import { isNotFoundGraphError } from "@mattrax/ms-graph";
 import { msGraphClient } from "~/api/microsoft";
 import { upsertEntraIdUser } from "~/api/trpc/routers/tenant/identityProvider";
 import { getEmailDomain } from "~/api/utils";
-import { domains, getDb, identityProviders, users } from "~/db";
+import { db, domains, identityProviders, users } from "~/db";
 import { env } from "~/env";
 
 const CHANGE_TYPE = z.enum(["created", "updated", "deleted"]);
@@ -98,7 +98,7 @@ async function handleChangeNotification(
 
 	const entraTenantId = notification.tenantId;
 
-	const [identityProvider] = await getDb()
+	const [identityProvider] = await db
 		.select()
 		.from(identityProviders)
 		.where(eq(identityProviders.remoteId, entraTenantId));
@@ -139,7 +139,7 @@ async function handleUserChangeNotification(
 					.get();
 
 				const userDomain = getEmailDomain(user.userPrincipalName!)!;
-				const domain = await getDb().query.domains.findFirst({
+				const domain = await db.query.domains.findFirst({
 					where: and(
 						eq(domains.identityProviderPk, identityProvider.pk),
 						eq(domains.domain, userDomain),
@@ -169,7 +169,7 @@ async function handleUserChangeNotification(
 }
 
 function handleUserDeleted(userId: string, providerPk: number) {
-	return getDb()
+	return db
 		.update(users)
 		.set({ resourceId: null })
 		.where(and(eq(users.resourceId, userId), eq(users.providerPk, providerPk)));

@@ -68,17 +68,15 @@ export const orgRouter = createTRPCRouter({
 			const slug = await ctx.db.transaction(async (db) => {
 				const slug = randomSlug(input.name);
 
-				const [organisation] = await db
-					.insert(organisations)
-					.values({
-						name: input.name,
-						slug,
-						ownerPk: ctx.account.pk,
-					})
-					.returning({ pk: organisations.pk });
+				const result = await db.insert(organisations).values({
+					name: input.name,
+					slug,
+					ownerPk: ctx.account.pk,
+				});
 
+				const orgPk = Number.parseInt(result.insertId);
 				await db.insert(organisationMembers).values({
-					orgPk: organisation!.pk,
+					orgPk,
 					accountPk: ctx.account.pk,
 				});
 

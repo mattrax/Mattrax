@@ -1,5 +1,5 @@
 import { count, desc, eq, sql } from "drizzle-orm";
-import { union } from "drizzle-orm/pg-core";
+import { union } from "drizzle-orm/mysql-core";
 import { z } from "zod";
 
 import {
@@ -133,7 +133,7 @@ export const tenantRouter = createTRPCRouter({
 				})
 				.from(auditLog)
 				.where(eq(auditLog.tenantPk, ctx.tenant.pk))
-				.leftJoin(accounts, eq(accounts.pk, auditLog.accountPK))
+				.leftJoin(accounts, eq(accounts.pk, auditLog.accountPk))
 				.orderBy(desc(auditLog.doneAt))
 				.limit(input.limit ?? 9999999),
 		),

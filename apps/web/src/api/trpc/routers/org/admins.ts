@@ -1,11 +1,11 @@
 import { flushResponse } from "@mattrax/trpc-server-function/server";
 import { appendResponseHeader, setCookie } from "vinxi/server";
 import { TRPCError } from "@trpc/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { generateId } from "lucia";
 import { z } from "zod";
 
-import { getLucia } from "~/api/auth";
+import { lucia } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
 import {
 	accounts,
@@ -104,7 +104,11 @@ export const adminsRouter = createTRPCRouter({
 				await db
 					.insert(accounts)
 					.values({ name, email: invite.email, id: generateId(16) })
-					.onConflictDoNothing();
+					.onDuplicateKeyUpdate({
+						set: {
+							pk: sql`${accounts.pk}`,
+						},
+					});
 
 				const [account] = await db
 					.select({ pk: accounts.pk, id: accounts.id })
@@ -122,14 +126,14 @@ export const adminsRouter = createTRPCRouter({
 				return account!;
 			});
 
-			const session = await getLucia().createSession(account.id, {
+			const session = await lucia.createSession(account.id, {
 				userAgent: "web", // TODO
 				location: "earth", // TODO
 			});
 
 			appendResponseHeader(
 				"Set-Cookie",
-				getLucia().createSessionCookie(session.id).serialize(),
+				lucia.createSessionCookie(session.id).serialize(),
 			);
 
 			setCookie("isLoggedIn", "true", {

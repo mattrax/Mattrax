@@ -23,8 +23,5 @@ export default createHandler(
 			)}
 		/>
 	),
-	(event) => {
-		console.log(event);
-		return { mode: "async" };
-	},
+	() => ({ mode: "async" }),
 );

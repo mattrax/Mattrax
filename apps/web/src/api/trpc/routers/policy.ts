@@ -14,7 +14,7 @@ import {
 	policyDeploy,
 	users,
 	accounts,
-	getDb,
+	db,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { omit } from "~/api/utils";
@@ -22,7 +22,7 @@ import { withAuditLog } from "~/api/auditLog";
 import type { Configuration } from "~/lib/policy";
 
 function getPolicy(args: { policyId: string; tenantPk: number }) {
-	return getDb().query.policies.findFirst({
+	return db.query.policies.findFirst({
 		where: and(
 			eq(policies.id, args.policyId),
 			eq(policies.tenantPk, args.tenantPk),
@@ -109,11 +109,11 @@ export const policyRouter = createTRPCRouter({
 					pk: policyAssignments.pk,
 					variant: policyAssignments.variant,
 					name: sql<PolicyAssignableVariant>`
-					CASE
+					GROUP_CONCAT(CASE
 						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.device} THEN ${devices.name}
 						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.user} THEN ${users.name}
 						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.group} THEN ${groups.name}
-					END
+					END)
           `.as("name"),
 				})
 				.from(policyAssignments)
@@ -139,13 +139,7 @@ export const policyRouter = createTRPCRouter({
 						eq(policyAssignments.variant, PolicyAssignableVariants.group),
 					),
 				)
-				.groupBy(
-					policyAssignments.variant,
-					policyAssignments.pk,
-					devices.name,
-					users.name,
-					groups.name,
-				);
+				.groupBy(policyAssignments.variant, policyAssignments.pk);
 		}),
 
 	addMembers: authedProcedure

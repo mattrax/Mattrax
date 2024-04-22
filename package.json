@@ -10,10 +10,10 @@
 		"ingest": "pnpm --filter @mattrax/ingest --",
 		"doc": "pnpm --filter @mattrax/docs --",
 		"web": "pnpm --filter @mattrax/web --",
-		"db:push": "drizzle-kit push:pg && bun run ./apps/web/src/db/rust.ts",
+		"db:push": "drizzle-kit push:mysql && bun run ./apps/web/src/db/rust.ts",
+		"db:gen": "drizzle-kit generate:mysql && bun run ./apps/web/src/db/rust.ts",
 		"db:studio": "drizzle-kit studio",
-		"db:gen": "bun run ./apps/web/src/db/rust.ts",
-		"db:generate": "drizzle-kit generate:pg",
+		"db:rust": "bun run ./apps/web/src/db/rust.ts",
 		"typecheck": "tsc -b",
 		"lint": "biome lint .",
 		"format": "biome format --write ."

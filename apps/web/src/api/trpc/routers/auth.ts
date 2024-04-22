@@ -7,12 +7,12 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { generateId } from "lucia";
 import { z } from "zod";
 
-import { checkAuth, getLucia } from "~/api/auth";
+import { checkAuth, lucia } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
 import {
 	accountLoginCodes,
 	accounts,
-	getDb,
+	db,
 	organisationMembers,
 	organisations,
 	tenants,
@@ -26,7 +26,6 @@ import {
 } from "../helpers";
 import { getObjectKeys, randomSlug } from "~/api/utils";
 import { type Features, features } from "~/lib/featureFlags";
-import { union } from "drizzle-orm/pg-core";
 
 type UserResult = {
 	id: number;
@@ -36,7 +35,7 @@ type UserResult = {
 };
 
 const fetchTenants = (accountPk: number) =>
-	getDb()
+	db
 		.select({
 			id: tenants.id,
 			name: tenants.name,
@@ -52,7 +51,7 @@ const fetchTenants = (accountPk: number) =>
 		.where(eq(organisationMembers.accountPk, accountPk));
 
 const fetchOrgs = (accountPk: number) => {
-	return getDb()
+	return db
 		.select({
 			id: organisations.id,
 			name: organisations.name,
@@ -81,7 +80,11 @@ export const authRouter = createTRPCRouter({
 				await db
 					.insert(accounts)
 					.values({ name, email: input.email, id: generateId(16) })
-					.onConflictDoNothing();
+					.onDuplicateKeyUpdate({
+						set: {
+							name: sql`${accounts.name}`,
+						},
+					});
 
 				const [account] = await db
 					.select({ pk: accounts.pk, id: accounts.id })
@@ -140,25 +143,26 @@ export const authRouter = createTRPCRouter({
 				const slug = randomSlug(account.email.split("@")[0]!);
 
 				await ctx.db.transaction(async (db) => {
-					const [org] = await db
+					const org = await db
 						.insert(organisations)
-						.values({ id, slug, name: slug, ownerPk: account.pk })
-						.returning({ pk: organisations.pk });
+						.values({ id, slug, name: slug, ownerPk: account.pk });
+
+					const orgPk = Number.parseInt(org.insertId);
 					await db.insert(organisationMembers).values({
 						accountPk: account.pk,
-						orgPk: org!.pk,
+						orgPk,
 					});
 				});
 			}
 
-			const session = await getLucia().createSession(account.id, {
+			const session = await lucia.createSession(account.id, {
 				userAgent: `w${"web"}`, // TODO
 				location: "earth", // TODO
 			});
 
 			appendResponseHeader(
 				"Set-Cookie",
-				getLucia().createSessionCookie(session.id).serialize(),
+				lucia.createSessionCookie(session.id).serialize(),
 			);
 
 			setCookie("isLoggedIn", "true", {
@@ -209,12 +213,12 @@ export const authRouter = createTRPCRouter({
 		const data = await checkAuth();
 		if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-		deleteCookie(getLucia().sessionCookieName);
+		deleteCookie(lucia.sessionCookieName);
 		deleteCookie("isLoggedIn");
 
 		flushResponse();
 
-		await getLucia().invalidateSession(data.session.id);
+		await lucia.invalidateSession(data.session.id);
 	}),
 
 	//   delete: authedProcedure.mutation(async ({ ctx }) => {

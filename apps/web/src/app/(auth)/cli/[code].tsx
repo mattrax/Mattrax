@@ -13,7 +13,7 @@ import { z } from "zod";
 
 import { checkAuth } from "~/api/auth";
 import { AuthContext, useAuth } from "~c/AuthContext";
-import { cliAuthCodes, getDb } from "~/db";
+import { cliAuthCodes, db } from "~/db";
 import { useZodParams } from "~/lib/useZodParams";
 import { createAPIKey } from "~/api/trpc/routers/apiKey";
 
@@ -23,7 +23,7 @@ const getCode = cache(async (code: string) => {
 	const auth = await checkAuth();
 	if (!auth) throw new Error("UNAUTHORIZED");
 
-	return getDb().query.cliAuthCodes.findFirst({
+	return db.query.cliAuthCodes.findFirst({
 		where: eq(cliAuthCodes.code, code),
 		columns: {
 			code: true,
@@ -40,7 +40,7 @@ const authorizeCodeAction = action(async (code: string) => {
 
 	const apiKey = await createAPIKey("Mattrax CLI", auth.account.id);
 
-	await getDb()
+	await db
 		.update(cliAuthCodes)
 		.set({ sessionId: apiKey.id })
 		.where(eq(cliAuthCodes.code, code));

@@ -2,12 +2,12 @@ import type { APIEvent } from "@solidjs/start/server";
 import { eq } from "drizzle-orm";
 
 import { signJWT, verifyJWT } from "~/api/jwt";
-import { accounts, cliAuthCodes, getDb, sessions } from "~/db";
+import { accounts, cliAuthCodes, db, sessions } from "~/db";
 
 export async function POST({ params }: APIEvent) {
 	const { code } = await verifyJWT<{ code: string }>(params.codeJwt!);
 
-	const [result] = await getDb()
+	const [result] = await db
 		.select({
 			code: cliAuthCodes.code,
 			sessionId: sessions.id,
@@ -27,7 +27,7 @@ export async function POST({ params }: APIEvent) {
 		);
 	if (!result.email) return new Response("User not found!", { status: 404 });
 
-	await getDb().delete(cliAuthCodes).where(eq(cliAuthCodes.code, code));
+	await db.delete(cliAuthCodes).where(eq(cliAuthCodes.code, code));
 
 	return Response.json({
 		apiKey: await signJWT(

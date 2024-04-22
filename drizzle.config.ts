@@ -8,12 +8,17 @@ dotenv.config({
 if ("DATABASE_URL" in process.env === false)
 	throw new Error("'DATABASE_URL' not set in env");
 
+if (!process.env.DATABASE_URL?.startsWith("mysql://"))
+	throw new Error(
+		"DATABASE_URL must be a 'mysql://' URI. Drizzle Kit doesn't support the fetch adapter!",
+	);
+
 export default defineConfig({
-	out: "./supabase/migrations",
+	out: "./migrations",
 	schema: "./apps/web/src/db/schema.ts",
-	driver: "pg",
+	driver: "mysql2",
 	dbCredentials: {
-		connectionString: process.env.DATABASE_URL!,
+		uri: process.env.DATABASE_URL!,
 	},
 	verbose: true,
 	strict: true,

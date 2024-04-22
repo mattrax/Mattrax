@@ -156,9 +156,11 @@ export const deviceRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx: { device, db }, input }) => {
+			// biome-ignore lint/style/useSingleVarDeclarator: <explanation>
 			const pols: Array<number> = [],
 				apps: Array<number> = [];
 
+			// biome-ignore lint/complexity/noForEach: <explanation>
 			input.assignments.forEach((a) => {
 				if (a.variant === "policy") pols.push(a.pk);
 				else apps.push(a.pk);
@@ -175,7 +177,11 @@ export const deviceRouter = createTRPCRouter({
 								variant: sql`"device"`,
 							})),
 						)
-						.onConflictDoNothing(),
+						.onDuplicateKeyUpdate({
+							set: {
+								pk: sql`${policyAssignments.pk}`,
+							},
+						}),
 					db
 						.insert(applicationAssignments)
 						.values(
@@ -185,7 +191,11 @@ export const deviceRouter = createTRPCRouter({
 								variant: sql`"device"`,
 							})),
 						)
-						.onConflictDoNothing(),
+						.onDuplicateKeyUpdate({
+							set: {
+								pk: sql`${applicationAssignments.pk}`,
+							},
+						}),
 				]),
 			);
 		}),
