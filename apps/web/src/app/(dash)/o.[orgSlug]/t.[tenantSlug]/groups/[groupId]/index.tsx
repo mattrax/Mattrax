@@ -1,8 +1,8 @@
 import { Suspense, createMemo, createSignal } from "solid-js";
-import { type RouteDefinition } from "@solidjs/router";
+import { A, type RouteDefinition } from "@solidjs/router";
 import { Dynamic } from "solid-js/web";
 import { toast } from "solid-sonner";
-import { Button, Label } from "@mattrax/ui";
+import { Button, Input, Label } from "@mattrax/ui";
 import { As } from "@kobalte/core";
 import pluralize from "pluralize";
 
@@ -14,6 +14,7 @@ import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { useGroup } from "./Context";
 import { trpc } from "~/lib";
+import { StatItem } from "~/components/StatItem";
 
 export const route = {
   load: ({ params }) => {
@@ -25,6 +26,9 @@ export const route = {
     });
   },
 } satisfies RouteDefinition;
+
+import IconPhDevices from "~icons/ph/devices";
+import IconPhUser from "~icons/ph/user";
 
 export default function Page() {
   return (
@@ -119,7 +123,6 @@ function NameEditor() {
 }
 
 function Members() {
-  const tenantSlug = useTenantSlug();
   const group = useGroup();
 
   const members = trpc.group.members.createQuery(() => ({
@@ -130,34 +133,36 @@ function Members() {
     get data() {
       return members.data ?? [];
     },
-    columns: variantTableColumns,
+    columns: variantTableColumns.slice(1),
     // pagination: true, // TODO: Pagination
   });
 
-  const addMembers = trpc.group.addMembers.createMutation(() => ({
-    onSuccess: () => members.refetch(),
-  }));
-
-  const variants = {
-    user: {
-      label: "Users",
-      query: trpc.tenant.variantTable.users.createQuery(() => ({
-        tenantSlug: tenantSlug(),
-      })),
-    },
-    device: {
-      label: "Devices",
-      query: trpc.tenant.variantTable.devices.createQuery(() => ({
-        tenantSlug: tenantSlug(),
-      })),
-    },
-  };
-
   return (
     <>
+      <div class="grid grid-cols-2 gap-4">
+        <StatItem
+          title="Users"
+          href="members?variant=user"
+          icon={<IconPhUser />}
+          value={members.data?.filter((m) => m.variant === "user").length ?? 0}
+        />
+        <StatItem
+          title="Devices"
+          href="members?variant=device"
+          icon={<IconPhDevices />}
+          value={
+            members.data?.filter((m) => m.variant === "device").length ?? 0
+          }
+        />
+      </div>
       <div class="flex flex-row items-center justify-between">
-        <Label>Members</Label>
-        <VariantTableSheet
+        <Label class="flex-1">
+          <A href="members" class="hover:underline w-full block">
+            Members
+          </A>
+        </Label>
+        <Input class="max-w-72" placeholder="Search members" disabled />
+        {/* <VariantTableSheet
           title="Add Members"
           description="Add users and devices to this group."
           getSubmitText={(count) =>
@@ -174,7 +179,7 @@ function Members() {
           <As component={Button} class="ml-auto" size="sm">
             Add Members
           </As>
-        </VariantTableSheet>
+        </VariantTableSheet> */}
       </div>
       <Suspense>
         <StandardTable table={membersTable} />
@@ -184,7 +189,6 @@ function Members() {
 }
 
 function Assignments() {
-  const tenantSlug = useTenantSlug();
   const group = useGroup();
 
   const assignments = trpc.group.assignments.createQuery(() => ({
@@ -200,51 +204,33 @@ function Assignments() {
         ...assignments.data.apps.map((d) => ({ ...d, variant: "application" })),
       ];
     },
-    columns: variantTableColumns,
+    columns: variantTableColumns.slice(1),
     // pagination: true, // TODO: Pagination
   });
 
-  const addAssignments = trpc.group.addAssignments.createMutation(() => ({
-    onSuccess: () => assignments.refetch(),
-  }));
-
-  const variants = {
-    policy: {
-      label: "Policies",
-      query: trpc.tenant.variantTable.policies.createQuery(() => ({
-        tenantSlug: tenantSlug(),
-      })),
-    },
-    application: {
-      label: "Applications",
-      query: trpc.tenant.variantTable.apps.createQuery(() => ({
-        tenantSlug: tenantSlug(),
-      })),
-    },
-  };
-
   return (
     <>
+      <div class="grid grid-cols-2 gap-4">
+        <StatItem
+          title="Policies"
+          href="assignments?variant=policy"
+          icon={<IconPhUser />}
+          value={assignments.data?.policies.length ?? 0}
+        />
+        <StatItem
+          title="Apps"
+          href="assignments?variant=app"
+          icon={<IconPhDevices />}
+          value={assignments.data?.apps.length ?? 0}
+        />
+      </div>
       <div class="flex flex-row items-center justify-between">
-        <Label>Assignments</Label>
-        <VariantTableSheet
-          title="Add Assigments"
-          description="Assign policies and apps to this group."
-          getSubmitText={(count) =>
-            `Add ${count} ${pluralize("Assignment", count)}`
-          }
-          variants={variants}
-          onSubmit={(assignments) =>
-            addAssignments.mutateAsync({
-              id: group().id,
-              assignments,
-            })
-          }
-        >
-          <As component={Button} class="ml-auto" size="sm">
-            Add Assignments
-          </As>
-        </VariantTableSheet>
+        <Label class="flex-1">
+          <A href="assignments" class="hover:underline w-full block">
+            Assignments
+          </A>
+        </Label>
+        <Input class="max-w-72" placeholder="Search assignments" disabled />
       </div>
       <Suspense>
         <StandardTable table={table} />

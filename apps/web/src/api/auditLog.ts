@@ -8,7 +8,7 @@ import type { auditLogDefinition } from "./auditLogDefinition";
 export function withAuditLog<T, K extends keyof typeof auditLogDefinition>(
   action: K,
   data: (typeof auditLogDefinition)[K]["#ty"],
-  [tenantPk, userPk]: [number, number | undefined],
+  [tenantPk, accountPk]: [number, number | undefined],
   cb: (
     tx: PgTransaction<
       PostgresJsQueryResultHKT,
@@ -22,7 +22,7 @@ export function withAuditLog<T, K extends keyof typeof auditLogDefinition>(
       tenantPk,
       action,
       data,
-      accountPk: userPk || null,
+      accountPk: accountPk ?? null,
     });
 
     const ret = await cb(db);

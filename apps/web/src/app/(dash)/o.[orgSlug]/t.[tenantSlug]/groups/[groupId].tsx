@@ -9,7 +9,11 @@ import { GroupContextProvider } from "./[groupId]/Context";
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 
-// const NAV_ITEMS = [{ title: "Group", href: "" }];
+const NAV_ITEMS = [
+	{ title: "Group", href: "" },
+	{ title: "Members", href: "members" },
+	{ title: "Assignments", href: "assignments" },
+];
 
 export const route = {
 	load: ({ params }) =>
@@ -17,7 +21,7 @@ export const route = {
 			id: params.groupId!,
 		}),
 	info: {
-		// NAV_ITEMS
+		NAV_ITEMS,
 		BREADCRUMB: {
 			Component: () => {
 				const params = useZodParams({ groupId: z.string() });
