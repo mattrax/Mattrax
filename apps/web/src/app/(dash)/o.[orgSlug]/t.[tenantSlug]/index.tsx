@@ -42,8 +42,6 @@ export default function Page() {
 	const params = useZodParams({ tenantSlug: z.string() });
 	const stats = trpc.tenant.stats.createQuery(() => params);
 
-	console.log({ ...params });
-
 	const getValue = (v: StatsTarget) =>
 		stats.data?.find((i) => i.variant === v)?.count ?? 0;
 

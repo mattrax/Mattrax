@@ -7,8 +7,6 @@ import { OscarTriedToDesignAMattraxLogoButFailedPrettyHard } from "~c/OscarTried
 export default function NotFound() {
 	const navigate = useNavigate();
 
-	console.log(FileRoutes());
-
 	return (
 		<div class="p-4 flex flex-col justify-center items-center">
 			<OscarTriedToDesignAMattraxLogoButFailedPrettyHard class="w-60" />
