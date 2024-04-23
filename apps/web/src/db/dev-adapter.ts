@@ -14,7 +14,7 @@ import {
 } from "mysql2/promise";
 
 export function setup(uri: string): NonNullable<Config["fetch"]> {
-	const pool = createPool({ uri });
+	const pool = createPool({ uri, rowsAsArray: true });
 	const enc = new TextEncoder();
 	const transactions = new Map<string, PoolConnection>();
 
