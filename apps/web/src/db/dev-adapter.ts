@@ -9,6 +9,8 @@ import {
 	createPool,
 	type ResultSetHeader,
 	type PoolConnection,
+	type FieldPacket,
+	type QueryResult,
 } from "mysql2/promise";
 
 export function setup(uri: string): NonNullable<Config["fetch"]> {
@@ -20,7 +22,7 @@ export function setup(uri: string): NonNullable<Config["fetch"]> {
 		if (input.endsWith("/Execute")) {
 			const req: {
 				query: string;
-				session: null;
+				session: string | null;
 			} = JSON.parse(init!.body);
 
 			if (req.query === "BEGIN") {
@@ -32,32 +34,33 @@ export function setup(uri: string): NonNullable<Config["fetch"]> {
 				return Response.json({ session: id, result: {}, timing: 0 });
 			}
 
-			let conn: any;
+			let result: [QueryResult, FieldPacket[]];
 			if (req.session) {
 				if (req.query === "COMMIT") {
 					const conn = transactions.get(req.session);
 					if (conn) {
 						await conn.commit();
+						conn.release();
 						transactions.delete(req.session);
 					}
-					return Response.json({});
+					return Response.json({ session: req.session, result: {}, timing: 0 });
 				}
 
 				if (req.query === "ROLLBACK") {
 					const conn = transactions.get(req.session);
 					if (conn) {
 						await conn.rollback();
+						conn.release();
 						transactions.delete(req.session);
 					}
-					return Response.json({});
+					return Response.json({ session: req.session, result: {}, timing: 0 });
 				}
 
-				conn = transactions.get(req.session);
+				result = await transactions.get(req.session)!.execute(req.query, []);
+			} else {
+				result = await pool.execute(req.query, []);
 			}
-
-			if (!conn) conn = await pool.getConnection();
-
-			const [results, resultFields] = await pool.execute(req.query, []);
+			const [results, resultFields] = result;
 
 			const fields = (resultFields || []).map((f) => {
 				const flags = parseFlags(f.flags);
@@ -73,14 +76,12 @@ export function setup(uri: string): NonNullable<Config["fetch"]> {
 			}
 
 			let rows: any[] = [];
-			let rowsAffected = 0;
-			let insertId = "0";
+			let rowsAffected = "0";
+			let insertId = null;
 			if (isResultSetHeader(results)) {
-				rowsAffected = results.affectedRows;
+				rowsAffected = String(results.affectedRows);
 				insertId = String(results.insertId);
 			} else {
-				console.log(req.query, results); // TODO
-
 				rows = (results as object[]).map((r) => {
 					const lengths: number[] = [];
 					let result: ArrayBufferLike = new Uint8Array(0);
@@ -105,7 +106,6 @@ export function setup(uri: string): NonNullable<Config["fetch"]> {
 								-2,
 							)}-${("0" + v.getDate()).slice(-2)}`;
 
-							console.log(fields[i]!.type);
 							if (fields[i]!.type !== "DATETIME") {
 								vv = `${vv} ${("0" + v.getHours()).slice(-2)}:${(
 									"0" + v.getMinutes()

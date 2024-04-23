@@ -76,26 +76,28 @@ export const authRouter = createTRPCRouter({
 			const name = input.email.split("@")[0] ?? "";
 			const code = generateRandomString(8, alphabet("0-9"));
 
-			const account = await ctx.db.transaction(async (db) => {
-				await db
-					.insert(accounts)
-					.values({ name, email: input.email, id: generateId(16) })
-					.onDuplicateKeyUpdate({
-						set: {
-							name: sql`${accounts.name}`,
-						},
-					});
+			const id = generateId(16);
+			const result = await db
+				.insert(accounts)
+				.values({ name, email: input.email, id })
+				.onDuplicateKeyUpdate({
+					set: { email: input.email },
+				});
 
-				const [account] = await db
-					.select({ pk: accounts.pk, id: accounts.id })
-					.from(accounts);
+			let accountPk = Number.parseInt(result.insertId);
+			let accountId = id;
 
-				await db
-					.insert(accountLoginCodes)
-					.values({ accountPk: account!.pk, code });
+			if (accountPk === 0) {
+				const account = await db.query.accounts.findFirst({
+					where: eq(accounts.email, input.email),
+				});
+				if (!account)
+					throw new Error("Error getting account we just inserted!");
+				accountPk = account.pk;
+				accountId = account.id;
+			}
 
-				return account;
-			});
+			await db.insert(accountLoginCodes).values({ accountPk, code });
 
 			await sendEmail({
 				type: "loginCode",
@@ -104,7 +106,7 @@ export const authRouter = createTRPCRouter({
 				code,
 			});
 
-			return { accountId: account!.id };
+			return { accountId };
 		}),
 
 	verifyLoginCode: publicProcedure
@@ -147,10 +149,9 @@ export const authRouter = createTRPCRouter({
 						.insert(organisations)
 						.values({ id, slug, name: slug, ownerPk: account.pk });
 
-					const orgPk = Number.parseInt(org.insertId);
 					await db.insert(organisationMembers).values({
 						accountPk: account.pk,
-						orgPk,
+						orgPk: Number.parseInt(org.insertId),
 					});
 				});
 			}

@@ -37,7 +37,7 @@
 	"resolutions": {
 		"@solidjs/start": "^0.7.5",
 		"vinxi": "=0.3.10",
-		"drizzle-orm": "^0.30.1"
+		"drizzle-orm": "^0.30.8"
 	},
 	"pnpm": {
 		"patchedDependencies": {

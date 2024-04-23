@@ -71,8 +71,7 @@ export const checkAuth = cache(async () => {
 				httpOnly: false,
 			});
 		}
-	}
-	if (!session) {
+	} else {
 		appendResponseHeader(
 			"Set-Cookie",
 			lucia.createBlankSessionCookie().serialize(),
