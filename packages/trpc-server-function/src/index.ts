@@ -142,6 +142,7 @@ export const createServerFunctionLink = <TRouter extends AnyRouter>(
 					.then((p) => p)
 					.then((response) => {
 						if ("error" in response) {
+							observer.error(TRPCClientError.from(response));
 							return;
 						}
 
