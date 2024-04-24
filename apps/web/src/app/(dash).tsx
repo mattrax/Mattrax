@@ -16,7 +16,7 @@ export default function Layout(props: ParentProps) {
 		<MErrorBoundary>
 			<NavItemsProvider>
 				<TopBar />
-				<Suspense>{props.children}</Suspense>
+				{props.children}
 			</NavItemsProvider>
 		</MErrorBoundary>
 	);

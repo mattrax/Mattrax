@@ -9,7 +9,7 @@ import {
 	keepPreviousData,
 	onlineManager,
 } from "@tanstack/solid-query";
-import { lazy, onCleanup, startTransition } from "solid-js";
+import { Suspense, lazy, onCleanup, startTransition } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 import { FileRoutes } from "@solidjs/start/router";
 
@@ -157,7 +157,7 @@ export default function App() {
 								{import.meta.env.DEV && <SolidQueryDevtools />}
 								<MErrorBoundary>
 									<Toaster />
-									{props.children}
+									<Suspense>{props.children}</Suspense>
 								</MErrorBoundary>
 							</>
 							// </PersistQueryClientProvider>
