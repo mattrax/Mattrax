@@ -4,7 +4,6 @@ import { Button } from "@mattrax/ui";
 import pluralize from "pluralize";
 
 import { trpc } from "~/lib";
-import { usePolicy } from "./Context";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
 import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";

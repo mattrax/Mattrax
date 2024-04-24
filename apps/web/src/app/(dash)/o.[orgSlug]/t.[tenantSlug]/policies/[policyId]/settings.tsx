@@ -21,7 +21,7 @@ export default function Page() {
 						const navigate = useNavigate();
 
 						const deletePolicy = trpc.policy.delete.createMutation(() => ({
-							onSuccess: () => trpcCtx.policy.list.invalidate(),
+							onSuccess: () => trpcCtx.user.list.invalidate(),
 						}));
 
 						const updatePolicy = trpc.policy.update.createMutation(() => ({

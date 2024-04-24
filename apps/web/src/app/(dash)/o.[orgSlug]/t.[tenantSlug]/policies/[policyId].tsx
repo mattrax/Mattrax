@@ -39,7 +39,7 @@ export const route = {
 				}));
 
 				const nameFromList = useNameFromListQuery(
-					(trpc) => trpc.policy.list.getData({ tenantSlug: tenantSlug() }),
+					(trpc) => trpc.user.list.getData({ tenantSlug: tenantSlug() }),
 					() => params.policyId,
 				);
 

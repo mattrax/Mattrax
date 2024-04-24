@@ -105,7 +105,7 @@ function CreatePolicyButton() {
 
 	const createPolicy = trpc.policy.create.createMutation(() => ({
 		onSuccess: async (policyId) => {
-			trpcCtx.policy.list.invalidate();
+			trpcCtx.user.list.invalidate();
 			trpcCtx.tenant.gettingStarted.invalidate();
 			await startTransition(() => navigate(policyId));
 		},

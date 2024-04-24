@@ -184,19 +184,24 @@ function DeployButton() {
 }
 
 function DeployDialog() {
-	const { policy, deploys } = createDeploysQuery();
-
 	const [page, setPage] = createSignal(0);
 	const controller = useController();
+	const policyId = usePolicyId();
 	const [comment, setComment] = createSignal("");
 
-	const overview = trpc.policy.overview.createQuery(() => ({
-		policyId: policy().id,
+	const policy = usePolicy();
+	const deploys = trpc.policy.deploys.list.createQuery(() => ({
+		policyId: policyId(),
 	}));
+
+	const overview = trpc.policy.overview.createQuery(() => ({
+		policyId: policyId(),
+	}));
+
 	const deploy = trpc.policy.deploy.createMutation(() => ({
 		onSuccess: async () => {
 			Promise.all([policy.query.refetch(), deploys.refetch()]);
-			await controller.setOpen(false);
+			controller.setOpen(false);
 		},
 	}));
 
@@ -234,7 +239,7 @@ function DeployDialog() {
 						variant="destructive"
 						onClick={() =>
 							deploy.mutate({
-								policyId: policy().id,
+								policyId: policyId(),
 								comment: comment(),
 							})
 						}
