@@ -1,3 +1,4 @@
 # I personally hate pre-commit hooks but we *NEED* consistency formatting to deal with merge conflicts.
 
-pnpm format
+# We don't use `pnpm format` because it's slower
+node_modules/.bin/biome format --write .
