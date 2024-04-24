@@ -95,8 +95,8 @@ export const tenantRouter = createTRPCRouter({
 				.where(eq(tenants.pk, ctx.tenant.pk));
 		}),
 
-	stats: tenantProcedure.query(({ ctx }) =>
-		union(
+	stats: tenantProcedure.query(async ({ ctx }) => {
+		return await union(
 			ctx.db
 				.select({ count: count(), variant: sql<StatsTarget>`"users"` })
 				.from(users)
@@ -117,8 +117,8 @@ export const tenantRouter = createTRPCRouter({
 				.select({ count: count(), variant: sql<StatsTarget>`"groups"` })
 				.from(groups)
 				.where(eq(groups.tenantPk, ctx.tenant.pk)),
-		),
-	),
+		);
+	}),
 
 	// TODO: Pagination
 	auditLog: tenantProcedure
