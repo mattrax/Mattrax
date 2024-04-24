@@ -1,4 +1,4 @@
 packages:
     - apps/*
+    - apps/web/.react-email
     - packages/*
-    - apps/email/.react-email

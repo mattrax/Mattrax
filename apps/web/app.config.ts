@@ -4,6 +4,7 @@ import tsconfigPaths from "vite-tsconfig-paths";
 import devtools from "solid-devtools/vite";
 import mattraxUI from "@mattrax/ui/vite";
 import { cloudflare } from "unenv";
+import react from "@vitejs/plugin-react";
 import path from "node:path";
 import fs from "node:fs";
 
@@ -13,6 +14,10 @@ import "./src/env";
 export default defineConfig({
 	ssr: false,
 	routeDir: "app",
+	// @ts-expect-error: SS's types are wrong. This is piped into Solid's Vite plugin so all options are not required.
+	solid: {
+		exclude: "src/emails/*",
+	},
 	vite: {
 		envDir: monorepoRoot,
 		css: {
@@ -29,6 +34,9 @@ export default defineConfig({
 			tsconfigPaths({
 				// If this isn't set Vinxi hangs on startup
 				root: ".",
+			}),
+			react({
+				include: "**/*.email.tsx",
 			}),
 			mattraxUI,
 			!(process.env.VERCEL === "1")

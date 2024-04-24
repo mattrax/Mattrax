@@ -1,12 +1,11 @@
 {
 	"name": "@mattrax/monorepo",
 	"private": true,
-	"workspaces": ["apps/*", "packages/*", "apps/email/*"],
+	"workspaces": ["apps/*", "packages/*"],
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/web dev",
 		"landing": "pnpm --filter @mattrax/landing --",
 		"configure": "pnpm --filter @mattrax/configure --",
-		"email": "pnpm --filter @mattrax/email --",
 		"ingest": "pnpm --filter @mattrax/ingest --",
 		"doc": "pnpm --filter @mattrax/docs --",
 		"web": "pnpm --filter @mattrax/web --",
