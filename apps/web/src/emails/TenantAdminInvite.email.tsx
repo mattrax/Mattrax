@@ -1,7 +1,7 @@
 /** @jsx h */
 
 function h(...args: any[]) {
-	return React.createElement(args);
+	return React.createElement(...args);
 }
 
 import {
@@ -17,7 +17,7 @@ import {
 	Text,
 } from "@react-email/components";
 import { Tailwind } from "@react-email/tailwind";
-import React from "react";
+import React, { JSX } from "react";
 
 interface Props {
 	invitedByEmail: string;
