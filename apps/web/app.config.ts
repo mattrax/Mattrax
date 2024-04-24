@@ -15,6 +15,11 @@ export default defineConfig({
 	routeDir: "app",
 	vite: {
 		envDir: monorepoRoot,
+		css: {
+			modules: {
+				localsConvention: "camelCaseOnly",
+			},
+		},
 		build: {
 			// Safari mobile has problems with newer syntax
 			target: "es2015",

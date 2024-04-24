@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/solid-query";
-import { A, useMatch, useNavigate } from "@solidjs/router";
+import { A, useIsRouting, useMatch, useNavigate } from "@solidjs/router";
 import { As } from "@kobalte/core";
 import clsx from "clsx";
 import {
@@ -36,6 +36,7 @@ import Logo from "~/assets/MATTRAX.png";
 import { Breadcrumbs } from "~c/Breadcrumbs";
 import { AuthContext, useAuth } from "~c/AuthContext";
 import { NavItems, useNavItemsContext } from "./NavItems";
+import classes from "./NavIndicator.module.css";
 
 export function TopBar() {
 	const navigate = useNavigate();
@@ -60,6 +61,20 @@ export function TopBar() {
 					!items() && "border-b border-gray-200",
 				)}
 			>
+				{useIsRouting()() && (
+					<div
+						class={clsx(
+							"animate-in fade-in duration-500 absolute h-1 top-0 inset-x-0",
+						)}
+					>
+						<div
+							class={clsx(
+								"bg-blue-400 w-full h-full delay-500",
+								classes.navIndicatorAnimation,
+							)}
+						/>
+					</div>
+				)}
 				<ContextMenu>
 					<ContextMenuTrigger asChild>
 						<As component={A} href={org()?.path ?? "/"} class="flex">
