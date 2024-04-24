@@ -13,7 +13,7 @@
 		"db:push": "drizzle-kit push:mysql && bun run ./apps/web/src/db/rust.ts",
 		"db:gen": "drizzle-kit generate:mysql && bun run ./apps/web/src/db/rust.ts",
 		"db:studio": "drizzle-kit studio",
-		"db:rust": "bun run ./apps/web/src/db/rust.ts",
+		"db:rs": "bun run ./apps/web/src/db/rust.ts",
 		"typecheck": "tsc -b",
 		"lint": "biome lint .",
 		"format": "biome format --write .",

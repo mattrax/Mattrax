@@ -124,8 +124,8 @@ exportQueries(
 				enrollmentType: "String", // TODO: Enum
 				os: "String", // TODO: Enum
 				serial_number: "String",
-				tenant_pk: "i64",
-				owner_pk: "i64",
+				tenant_pk: "u64",
+				owner_pk: "u64",
 			},
 			query: (args) =>
 				db
@@ -165,7 +165,7 @@ exportQueries(
 		// defineOperation({
 		// 	name: "get_policy_data_for_checkin",
 		// 	args: {
-		// 		device_pk: "i64",
+		// 		device_pk: "u64",
 		// 	},
 		// 	query: (args) => {
 		// 		const scopedPolicies = scopedPoliciesForDeviceSubquery(args.device_pk);
@@ -251,7 +251,7 @@ exportQueries(
 		// defineOperation({
 		// 	name: "get_policies_requiring_removal",
 		// 	args: {
-		// 		device_pk: "i64",
+		// 		device_pk: "u64",
 		// 	},
 		// 	query: (args) => {
 		// 		const scopedPolicies = scopedPoliciesForDeviceSubquery(args.device_pk);
@@ -283,7 +283,7 @@ exportQueries(
 		defineOperation({
 			name: "queued_device_actions",
 			args: {
-				device_id: "i64",
+				device_id: "u64",
 			},
 			// TODO: Enum on `action` field of the result
 			query: (args) =>
@@ -301,7 +301,7 @@ exportQueries(
 		defineOperation({
 			name: "update_device_lastseen",
 			args: {
-				device_id: "i64",
+				device_id: "u64",
 				last_synced: "Now",
 			},
 			query: (args) =>
