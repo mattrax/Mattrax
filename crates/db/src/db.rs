@@ -27,6 +27,14 @@ pub struct Db {
     pool: mysql_async::Pool,
 }
 
+impl std::ops::Deref for Db {
+    type Target = mysql_async::Pool;
+
+    fn deref(&self) -> &Self::Target {
+        &self.pool
+    }
+}
+
 impl Db {
     pub fn new(db_url: &str) -> Self {
         Self {

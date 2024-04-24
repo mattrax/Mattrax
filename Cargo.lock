@@ -2155,6 +2155,7 @@ dependencies = [
  "mx-db",
  "mx-utils",
  "mx-windows",
+ "mysql_async",
  "rcgen 0.13.0",
  "rustls 0.22.2",
  "serde",

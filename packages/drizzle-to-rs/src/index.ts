@@ -134,12 +134,6 @@ export function defineOperation<const T extends RustArgs = never>(
 			ret.push(${rustTypes.get(tyName).impl});
 		}
 		Ok(ret)`;
-		// impl = `.map(|row: QueryResult<BinaryProtocol>| ${
-		// 	rustTypes.get(tyName).impl
-		// })`;
-		// Ok(resp.into_iter().map(|row| ${
-		// 	rustTypes.get(tyName).impl
-		// }).collect())`;
 	}
 
 	return {
@@ -194,6 +188,14 @@ export function exportQueries(queries: Query[], path: string) {
       pub struct Db {
 		pool: mysql_async::Pool,
 	  }
+
+	  impl std::ops::Deref for Db {
+		type Target = mysql_async::Pool;
+
+		fn deref(&self) -> &Self::Target {
+			&self.pool
+		}
+	 }
 
       impl Db {
           pub fn new(db_url: &str) -> Self {
