@@ -1,13 +1,17 @@
 import { Navigate, type RouteDefinition } from "@solidjs/router";
-import { type ParentProps, Show, Match, Switch } from "solid-js";
+import { type ParentProps } from "solid-js";
 import { toast } from "solid-sonner";
 import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { GroupContextProvider } from "./[groupId]/Context";
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
+
+export function useGroupId() {
+	const params = useZodParams({ groupId: z.string() });
+	return () => params.groupId;
+}
 
 const NAV_ITEMS = [
 	{ title: "Group", href: "" },
@@ -41,25 +45,7 @@ export const route = {
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ groupId: z.string() });
-	const query = trpc.group.get.createQuery(() => ({
-		id: params.groupId,
-	}));
-
-	return (
-		<Switch>
-			<Match when={query.data === null}>
-				<NotFound />
-			</Match>
-			<Match when={query.data}>
-				{(data) => (
-					<GroupContextProvider group={data()} query={query}>
-						<MErrorBoundary>{props.children}</MErrorBoundary>
-					</GroupContextProvider>
-				)}
-			</Match>
-		</Switch>
-	);
+	return <MErrorBoundary>{props.children}</MErrorBoundary>;
 }
 
 function NotFound() {

@@ -2,6 +2,7 @@ import { count, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import {
+	accounts,
 	organisationInvites,
 	organisationMembers,
 	organisations,
@@ -16,6 +17,23 @@ import { billingRouter } from "./billing";
 export const orgRouter = createTRPCRouter({
 	admins: adminsRouter,
 	billing: billingRouter,
+
+	list: authedProcedure.query(async ({ ctx }) =>
+		ctx.db
+			.select({
+				id: organisations.id,
+				name: organisations.name,
+				slug: organisations.slug,
+				ownerId: accounts.id,
+			})
+			.from(organisations)
+			.where(eq(organisationMembers.accountPk, ctx.account.pk))
+			.innerJoin(
+				organisationMembers,
+				eq(organisations.pk, organisationMembers.orgPk),
+			)
+			.innerJoin(accounts, eq(organisations.ownerPk, accounts.pk)),
+	),
 
 	tenants: orgProcedure.query(async ({ ctx }) => {
 		return ctx.db

@@ -31,40 +31,6 @@ type UserResult = {
 	id: number;
 	name: string;
 	email: string;
-	tenants: Awaited<ReturnType<typeof fetchTenants>>;
-};
-
-const fetchTenants = (accountPk: number) =>
-	db
-		.select({
-			id: tenants.id,
-			name: tenants.name,
-			slug: tenants.slug,
-			orgSlug: organisations.slug,
-		})
-		.from(tenants)
-		.innerJoin(organisations, eq(tenants.orgPk, organisations.pk))
-		.innerJoin(
-			organisationMembers,
-			eq(organisations.pk, organisationMembers.orgPk),
-		)
-		.where(eq(organisationMembers.accountPk, accountPk));
-
-const fetchOrgs = (accountPk: number) => {
-	return db
-		.select({
-			id: organisations.id,
-			name: organisations.name,
-			slug: organisations.slug,
-			ownerId: accounts.id,
-		})
-		.from(organisations)
-		.where(eq(organisationMembers.accountPk, accountPk))
-		.innerJoin(
-			organisationMembers,
-			eq(organisations.pk, organisationMembers.orgPk),
-		)
-		.innerJoin(accounts, eq(organisations.ownerPk, accounts.pk));
 };
 
 export const authRouter = createTRPCRouter({
@@ -180,19 +146,15 @@ export const authRouter = createTRPCRouter({
 			id: account.id,
 			name: account.name,
 			email: account.email,
-			orgs: await fetchOrgs(account.pk),
-			tenants: await fetchTenants(account.pk),
+			// orgs: await fetchOrgs(account.pk),
+			// tenants: await fetchTenants(account.pk),
 			...(account.features?.length > 0 ? { features: account.features } : {}),
 			...(isSuperAdmin(account) ? { superadmin: true } : {}),
 		};
 	}),
 
 	update: authedProcedure
-		.input(
-			z.object({
-				name: z.string().optional(),
-			}),
-		)
+		.input(z.object({ name: z.string().optional() }))
 		.mutation(async ({ ctx: { account, db }, input }) => {
 			// Skip DB if we have nothing to update
 			if (input.name !== undefined) {
@@ -206,7 +168,6 @@ export const authRouter = createTRPCRouter({
 				id: account.pk,
 				name: input.name || account.name,
 				email: account.email,
-				tenants: await fetchTenants(account.pk),
 			} satisfies UserResult;
 		}),
 
@@ -234,11 +195,7 @@ export const authRouter = createTRPCRouter({
 
 	admin: createTRPCRouter({
 		getFeatures: superAdminProcedure
-			.input(
-				z.object({
-					email: z.string(),
-				}),
-			)
+			.input(z.object({ email: z.string() }))
 			.query(async ({ input, ctx }) => {
 				const [user] = await ctx.db
 					.select({ features: accounts.features })

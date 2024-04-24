@@ -21,27 +21,17 @@ export function MultiSwitcher(props: ParentProps) {
 		tenantSlug: z.string().optional(),
 	});
 
-	const auth = useAuth();
-
-	const orgs = createMemo(() => auth().orgs);
-
 	const [open, setOpen] = createSignal(false);
 
 	const [selectedOrg, setSelectedOrg] = createSignal<
 		{ type: "org"; slug: string } | "create"
 	>({ type: "org", slug: params.orgSlug });
 
-	const tenants = () => {
-		const selOrg = selectedOrg();
-		if (typeof selOrg !== "object") return;
-
-		return auth().tenants.filter((t) => t.orgSlug === selOrg.slug);
-	};
+	const orgs = trpc.org.list.createQuery();
 
 	const [selectedTenant, setSelectedTenant] = createWritableMemo<
 		string | null | undefined
 	>(() => {
-		tenants();
 		return undefined;
 	});
 
@@ -91,7 +81,7 @@ export function MultiSwitcher(props: ParentProps) {
           </div> */}
 						<div class="text-xs text-gray-600 px-3 pt-5">Organisations</div>
 						<ul class="p-1 pt-2 flex flex-col">
-							<For each={orgs()}>
+							<For each={orgs.data}>
 								{(org) => (
 									<li>
 										<a
@@ -133,47 +123,58 @@ export function MultiSwitcher(props: ParentProps) {
 						</ul>
 					</div>
 					<div class="w-[12rem] flex flex-col overflow-y-auto">
-						<Show when={tenants()}>
-							{/* <div class="p-1 border-b">
-            <input
-              type="text"
-              class="outline-none m-2"
-              placeholder="Find Tenant..."
-            />
-          </div> */}
-							<div class="text-xs text-gray-600 px-3 pt-5">Tenants</div>
-							<ul class="p-1 pt-2 flex flex-col">
-								<For each={tenants()}>
-									{(tenant) => (
-										<li>
-											<a
-												class={clsx(
-													"block px-2 py-1.5 text-sm rounded flex flex-row justify-between items-center focus:outline-none",
-													selectedTenant() === tenant.slug && "bg-neutral-200",
+						<Show
+							when={(() => {
+								const o = selectedOrg();
+								if (typeof o === "object") return o;
+							})()}
+						>
+							{(org) => {
+								const tenants = trpc.tenant.list.createQuery(() => ({
+									orgSlug: org().slug,
+								}));
+
+								return (
+									<>
+										<div class="text-xs text-gray-600 px-3 pt-5">Tenants</div>
+										<ul class="p-1 pt-2 flex flex-col">
+											<For each={tenants.data}>
+												{(tenant) => (
+													<li>
+														<a
+															class={clsx(
+																"block px-2 py-1.5 text-sm rounded flex flex-row justify-between items-center focus:outline-none",
+																selectedTenant() === tenant.slug &&
+																	"bg-neutral-200",
+															)}
+															href={`/o/${org().slug}/t/${tenant.slug}`}
+															onMouseOver={() => setSelectedTenant(tenant.slug)}
+														>
+															{tenant.name}
+															{tenant.slug === params.tenantSlug && (
+																<IconPhCheck />
+															)}
+														</a>
+													</li>
 												)}
-												href={`/o/${tenant.orgSlug}/t/${tenant.slug}`}
-												onMouseOver={() => setSelectedTenant(tenant.slug)}
-											>
-												{tenant.name}
-												{tenant.slug === params.tenantSlug && <IconPhCheck />}
-											</a>
-										</li>
-									)}
-								</For>
-								<li>
-									<button
-										class={clsx(
-											"flex flex-row items-center gap-1 px-2 py-1.5 text-sm rounded w-full",
-											selectedTenant() === null && "bg-neutral-200",
-										)}
-										onMouseEnter={() => setSelectedTenant(null)}
-										onClick={() => setModal("tenant")}
-									>
-										<IconPhPlusCircle />
-										Create Tenant
-									</button>
-								</li>
-							</ul>
+											</For>
+											<li>
+												<button
+													class={clsx(
+														"flex flex-row items-center gap-1 px-2 py-1.5 text-sm rounded w-full",
+														selectedTenant() === null && "bg-neutral-200",
+													)}
+													onMouseEnter={() => setSelectedTenant(null)}
+													onClick={() => setModal("tenant")}
+												>
+													<IconPhPlusCircle />
+													Create Tenant
+												</button>
+											</li>
+										</ul>
+									</>
+								);
+							}}
 						</Show>
 					</div>
 				</PopoverContent>

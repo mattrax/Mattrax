@@ -1,10 +1,9 @@
+import { Button } from "@mattrax/ui";
+import { Suspense } from "solid-js";
 import { As } from "@kobalte/core";
-import { Suspense, createEffect } from "solid-js";
-import { Button, Input } from "@mattrax/ui";
 import pluralize from "pluralize";
 
 import { trpc } from "~/lib";
-import { useGroup } from "./Context";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	StandardTable,
@@ -14,14 +13,20 @@ import {
 import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
-import { useSearchParams } from "@solidjs/router";
+import { useGroupId } from "../[groupId]";
+import { RouteDefinition } from "@solidjs/router";
+
+export const route = {
+	load: ({ params }) =>
+		trpc.useContext().group.assignments.ensureData({ id: params.groupId! }),
+} satisfies RouteDefinition;
 
 export default function Page() {
-	const group = useGroup();
 	const tenantSlug = useTenantSlug();
+	const groupId = useGroupId();
 
 	const assignments = trpc.group.assignments.createQuery(() => ({
-		id: group().id,
+		id: groupId(),
 	}));
 
 	const table = createStandardTable({
@@ -71,10 +76,7 @@ export default function Page() {
 						}
 						variants={variants}
 						onSubmit={(assignments) =>
-							addAssignments.mutateAsync({
-								id: group().id,
-								assignments,
-							})
+							addAssignments.mutateAsync({ id: groupId(), assignments })
 						}
 					>
 						<As component={Button} class="ml-auto">

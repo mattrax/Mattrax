@@ -1,23 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@mattrax/ui";
+import { Switch, Match, Suspense, type JSX } from "solid-js";
 import { A } from "@solidjs/router";
-import { Suspense, type JSX } from "solid-js";
-import Counter, { createCounter } from "./Counter";
-import { Switch } from "solid-js";
-import { Match } from "solid-js";
+
+import { createCounter } from "./Counter";
 
 export function StatItem(
 	props: {
 		title: string;
 		href: string;
 		icon: JSX.Element;
-	} & (
-		| {
-				value: number;
-		  }
-		| {
-				body: JSX.Element;
-		  }
-	),
+	} & ({ value: number } | { body: JSX.Element }),
 ) {
 	return (
 		<Card class="relative hover:shadow-md transition-shadow">

@@ -1,18 +1,15 @@
 import { Suspense, createMemo, createSignal } from "solid-js";
 import { A, type RouteDefinition } from "@solidjs/router";
+import { Button, Input, Label } from "@mattrax/ui";
 import { Dynamic } from "solid-js/web";
 import { toast } from "solid-sonner";
-import { Button, Input, Label } from "@mattrax/ui";
-import { As } from "@kobalte/core";
-import pluralize from "pluralize";
 
 import IconMaterialSymbolsEditOutline from "~icons/material-symbols/edit-outline.jsx";
 import IconIcRoundCheck from "~icons/ic/round-check.jsx";
-import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
+import { variantTableColumns } from "~c/VariantTableSheet";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { useTenantSlug } from "../../../t.[tenantSlug]";
-import { useGroup } from "./Context";
+import { GroupContext, useGroup } from "./Context";
 import { trpc } from "~/lib";
 import { StatItem } from "~/components/StatItem";
 
@@ -29,13 +26,29 @@ export const route = {
 
 import IconPhDevices from "~icons/ph/devices";
 import IconPhUser from "~icons/ph/user";
+import { useZodParams } from "~/lib/useZodParams";
+import { z } from "zod";
+import { useGroupId } from "../[groupId]";
 
 export default function Page() {
 	return (
 		<PageLayout
 			heading={
 				<>
-					<NameEditor />
+					<Suspense
+						fallback={
+							<span class="relative">
+								<PageLayoutHeading class="opacity-0">
+									Loading...
+								</PageLayoutHeading>
+								<div class="w-full bg-neutral-200 animate-pulse absolute inset-y-0 rounded-full" />
+							</span>
+						}
+					>
+						<GroupContext>
+							<NameEditor />
+						</GroupContext>
+					</Suspense>
 					{/* TODO: This show show policies */}
 				</>
 			}
@@ -81,8 +94,8 @@ function NameEditor() {
 	return (
 		<>
 			<PageLayoutHeading
+				class="p-2 -m-2 relative"
 				ref={nameEl!}
-				class="p-2 -m-2"
 				contenteditable={editingName()}
 				onKeyDown={(e) => {
 					if (e.key === "Enter") {
@@ -123,10 +136,10 @@ function NameEditor() {
 }
 
 function Members() {
-	const group = useGroup();
+	const groupId = useGroupId();
 
 	const members = trpc.group.members.createQuery(() => ({
-		id: group().id,
+		id: groupId(),
 	}));
 
 	const membersTable = createStandardTable({
@@ -189,10 +202,10 @@ function Members() {
 }
 
 function Assignments() {
-	const group = useGroup();
+	const groupId = useGroupId();
 
 	const assignments = trpc.group.assignments.createQuery(() => ({
-		id: group().id,
+		id: groupId(),
 	}));
 
 	const table = createStandardTable({

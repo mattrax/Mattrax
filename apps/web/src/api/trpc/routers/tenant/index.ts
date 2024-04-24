@@ -12,6 +12,8 @@ import {
 	groupMembers,
 	groups,
 	identityProviders,
+	organisationMembers,
+	organisations,
 	policies,
 	policyAssignments,
 	policyDeploy,
@@ -19,7 +21,12 @@ import {
 	tenants,
 	users,
 } from "~/db";
-import { createTRPCRouter, orgProcedure, tenantProcedure } from "../../helpers";
+import {
+	authedProcedure,
+	createTRPCRouter,
+	orgProcedure,
+	tenantProcedure,
+} from "../../helpers";
 import { identityProviderRouter } from "./identityProvider";
 import { variantTableRouter } from "./members";
 import { randomSlug } from "~/api/utils";
@@ -52,6 +59,17 @@ export const restrictedUsernames = new Set([
 ]);
 
 export const tenantRouter = createTRPCRouter({
+	list: orgProcedure.query(async ({ ctx }) =>
+		ctx.db
+			.select({
+				id: tenants.id,
+				name: tenants.name,
+				slug: tenants.slug,
+			})
+			.from(tenants)
+			.where(eq(tenants.orgPk, ctx.org.pk)),
+	),
+
 	create: orgProcedure
 		.input(z.object({ name: z.string().min(1) }))
 		.mutation(async ({ ctx, input }) => {

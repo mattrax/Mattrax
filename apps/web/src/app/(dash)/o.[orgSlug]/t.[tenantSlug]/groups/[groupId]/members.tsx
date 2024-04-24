@@ -1,8 +1,8 @@
-import { RouteDefinition, useSearchParams } from "@solidjs/router";
+import { RouteDefinition } from "@solidjs/router";
 import { As } from "@kobalte/core";
 import { Button } from "@mattrax/ui";
 import pluralize from "pluralize";
-import { Suspense, createEffect } from "solid-js";
+import { Suspense } from "solid-js";
 
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
@@ -14,22 +14,21 @@ import {
 import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
-import { useGroup } from "./Context";
+import { useGroupId } from "../[groupId]";
 
 export const route = {
-	load: ({ params }) => {
+	load: ({ params }) =>
 		trpc.useContext().group.members.ensureData({
 			id: params.groupId!,
-		});
-	},
+		}),
 } satisfies RouteDefinition;
 
 export default function Page() {
-	const group = useGroup();
 	const tenantSlug = useTenantSlug();
+	const groupId = useGroupId();
 
 	const members = trpc.group.members.createQuery(() => ({
-		id: group().id,
+		id: groupId(),
 	}));
 
 	const table = createStandardTable({
@@ -74,10 +73,7 @@ export default function Page() {
 						}
 						variants={variants}
 						onSubmit={(members) =>
-							addMembers.mutateAsync({
-								id: group().id,
-								members,
-							})
+							addMembers.mutateAsync({ id: groupId(), members })
 						}
 					>
 						<As component={Button} class="ml-auto">
