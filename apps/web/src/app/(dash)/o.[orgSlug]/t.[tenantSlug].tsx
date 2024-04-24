@@ -10,6 +10,7 @@ import { TenantContext, useTenant } from "./t.[tenantSlug]/Context";
 import { MultiSwitcher } from "../MultiSwitcher";
 import { As } from "@kobalte/core";
 import { Button } from "@mattrax/ui";
+import { trpc } from "~/lib";
 
 export function useTenantSlug() {
 	const params = useZodParams({ tenantSlug: z.string() });
@@ -27,6 +28,9 @@ const NAV_ITEMS = [
 ];
 
 export const route = {
+	load: ({ params }) => {
+		trpc.useContext().tenant.list.ensureData({ orgSlug: params.orgSlug! });
+	},
 	info: {
 		NAV_ITEMS,
 		BREADCRUMB: {

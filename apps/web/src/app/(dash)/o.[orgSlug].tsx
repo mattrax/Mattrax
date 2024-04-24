@@ -28,8 +28,10 @@ const NAV_ITEMS = [
 ];
 
 export const route = {
-	load: ({ params }) =>
-		trpc.useContext().org.tenants.ensureData({ orgSlug: params.orgSlug! }),
+	load: ({ params }) => {
+		trpc.useContext().org.tenants.ensureData({ orgSlug: params.orgSlug! });
+		trpc.useContext().org.list.ensureData();
+	},
 	info: {
 		NAV_ITEMS,
 		BREADCRUMB: {
