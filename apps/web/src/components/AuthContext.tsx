@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router";
-import { type ParentProps, Show, onMount } from "solid-js";
+import { type ParentProps, Show, onMount, startTransition } from "solid-js";
 import { parse } from "cookie-es";
 import { createContextProvider } from "@solid-primitives/context";
 
@@ -23,7 +23,13 @@ export function AuthContext(props: ParentProps) {
 		// isLoggedIn cookie trick for quick login navigation
 		const cookies = parse(document.cookie);
 		if (cookies.isLoggedIn !== "true") {
-			navigate("/login");
+			startTransition(() =>
+				navigate(
+					`/login?${new URLSearchParams({
+						continueTo: location.pathname,
+					})}`,
+				),
+			);
 		}
 	});
 
