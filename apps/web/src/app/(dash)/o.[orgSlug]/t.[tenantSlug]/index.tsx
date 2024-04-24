@@ -34,9 +34,16 @@ import clsx from "clsx";
 
 export const route = {
 	load: ({ params }) => {
-		trpc
-			.useContext()
-			.tenant.stats.ensureData({ tenantSlug: params.tenantSlug! });
+		const ctx = trpc.useContext();
+
+		ctx.tenant.stats.ensureData({ tenantSlug: params.tenantSlug! });
+		ctx.tenant.auditLog.ensureData({
+			tenantSlug: params.tenantSlug!,
+			limit: 5,
+		});
+		ctx.tenant.gettingStarted.ensureData({
+			tenantSlug: params.tenantSlug!,
+		});
 	},
 } satisfies RouteDefinition;
 
