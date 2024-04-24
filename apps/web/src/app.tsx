@@ -102,13 +102,18 @@ export default function App() {
 
 								if (isTRPCClientError(error)) {
 									if (error.data?.code === "UNAUTHORIZED") {
-										startTransition(() =>
-											navigate(
-												`/login?${new URLSearchParams({
+										startTransition(() => {
+											let query = "";
+											if (
+												location.pathname !== "/" &&
+												location.pathname !== "/login"
+											)
+												query = `?${new URLSearchParams({
 													continueTo: location.pathname,
-												})}`,
-											),
-										);
+												})}`;
+
+											navigate(`/login${query}`);
+										});
 										return;
 										// biome-ignore lint/style/noUselessElse:
 									} else if (error.data?.code === "FORBIDDEN") {
