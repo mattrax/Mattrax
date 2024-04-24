@@ -197,6 +197,12 @@ export function exportQueries(queries: Query[], path: string) {
 		}
 	 }
 
+	 impl std::ops::DerefMut for Db {
+		fn deref_mut(&mut self) -> &mut Self::Target {
+			&mut self.pool
+		}
+	 }
+
       impl Db {
           pub fn new(db_url: &str) -> Self {
 			Self {

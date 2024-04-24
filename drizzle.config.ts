@@ -1,3 +1,5 @@
+import path from "node:path";
+import fs from "node:fs";
 import dotenv from "dotenv";
 import { defineConfig } from "drizzle-kit";
 
@@ -22,4 +24,29 @@ export default defineConfig({
 	},
 	verbose: true,
 	strict: true,
+});
+
+// Drizzle and refinery use different migration formats
+process.on("exit", () => {
+	const migrations = path.join("migrations");
+	const refineryMigrations = path.join(migrations, "refinery");
+	if (fs.existsSync(refineryMigrations)) {
+		fs.rmdirSync(refineryMigrations, { recursive: true });
+	}
+	fs.mkdirSync(refineryMigrations);
+
+	for (const fileName of fs.readdirSync(migrations)) {
+		const p = path.join(migrations, fileName);
+		if (!fs.lstatSync(p).isFile()) continue;
+
+		const [num, ...rest] = path.parse(fileName).name.split("_");
+		const src = fs.readFileSync(p, "utf-8");
+		fs.writeFileSync(
+			path.join(refineryMigrations, `V${num}__${rest.join("_")}.sql`),
+			// @ts-expect-error
+			src.replaceAll("--> statement-breakpoint", ""),
+		);
+	}
+
+	console.log("Successfully converted Drizzle migrations to Refinery format!");
 });
