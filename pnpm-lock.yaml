@@ -10,6 +10,9 @@ overrides:
   drizzle-orm: ^0.30.8
 
 patchedDependencies:
+  '@react-email/tailwind@0.0.15':
+    hash: qlxvhixnwrppybmtz5ddkeulrq
+    path: patches/@react-email__tailwind@0.0.15.patch
   '@solidjs/router@0.13.2':
     hash: elelxothihlzsb57xki6usvf5m
     path: patches/@solidjs__router@0.13.2.patch
@@ -288,7 +291,7 @@ importers:
         version: 0.0.12
       '@react-email/tailwind':
         specifier: ^0.0.15
-        version: 0.0.15(react@18.2.0)
+        version: 0.0.15(patch_hash=qlxvhixnwrppybmtz5ddkeulrq)(react@18.2.0)
       '@solid-mediakit/trpc':
         specifier: ^3.0.2
         version: 3.0.2(@solidjs/router@0.13.2(patch_hash=elelxothihlzsb57xki6usvf5m)(solid-js@1.8.16))(@solidjs/start@0.7.7(rollup@4.14.3)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))(vite@5.2.9(@types/node@20.12.7)(terser@5.30.3)))(@tanstack/solid-query@5.30.6(solid-js@1.8.16))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))
@@ -9596,7 +9599,7 @@ snapshots:
       '@react-email/render': 0.0.12
       '@react-email/row': 0.0.7(react@18.2.0)
       '@react-email/section': 0.0.11(react@18.2.0)
-      '@react-email/tailwind': 0.0.15(react@18.2.0)
+      '@react-email/tailwind': 0.0.15(patch_hash=qlxvhixnwrppybmtz5ddkeulrq)(react@18.2.0)
       '@react-email/text': 0.0.7(react@18.2.0)
       react: 18.2.0
     transitivePeerDependencies:
@@ -9661,7 +9664,7 @@ snapshots:
     dependencies:
       react: 18.2.0
 
-  '@react-email/tailwind@0.0.15(react@18.2.0)':
+  '@react-email/tailwind@0.0.15(patch_hash=qlxvhixnwrppybmtz5ddkeulrq)(react@18.2.0)':
     dependencies:
       react: 18.2.0
 
