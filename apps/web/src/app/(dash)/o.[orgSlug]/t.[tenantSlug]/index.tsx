@@ -30,6 +30,7 @@ import {
 	BruhIconSvgSpinners90Ring,
 } from "./bruh";
 import { StatItem } from "~/components/StatItem";
+import clsx from "clsx";
 
 export const route = {
 	load: ({ params }) => {
@@ -188,18 +189,21 @@ function GettingStarted() {
 						<GettingStartedRow
 							href="settings/identity-provider"
 							enabled={data.data?.connectedIdentityProvider || false}
+							disabled={data.isLoading}
 						>
 							Connect an identity provider
 						</GettingStartedRow>
 						<GettingStartedRow
 							href="devices"
 							enabled={data.data?.enrolledADevice || false}
+							disabled={data.isLoading}
 						>
 							Enroll your first device
 						</GettingStartedRow>
 						<GettingStartedRow
 							href="policies"
 							enabled={data.data?.createdFirstPolicy || false}
+							disabled={data.isLoading}
 						>
 							Create a policy
 						</GettingStartedRow>
@@ -211,7 +215,7 @@ function GettingStarted() {
 }
 
 function GettingStartedRow(
-	props: ParentProps<{ enabled: boolean; href: string }>,
+	props: ParentProps<{ enabled: boolean; href: string; disabled?: boolean }>,
 ) {
 	return (
 		<div class="flex items-center">
@@ -228,7 +232,12 @@ function GettingStartedRow(
 			</Suspense>
 			<div class="ml-4 space-y-1">
 				<A href={props.href}>
-					<p class="text-sm font-medium leading-none underline-offset-2 hover:underline">
+					<p
+						class={clsx(
+							"text-sm font-medium leading-none underline-offset-2 hover:underline transition-opacity",
+							props.disabled && "opacity-60",
+						)}
+					>
 						{props.children}
 					</p>
 				</A>
