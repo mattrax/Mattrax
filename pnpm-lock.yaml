@@ -458,9 +458,6 @@ importers:
       '@types/react':
         specifier: ^18.2.79
         version: 18.2.79
-      '@vitejs/plugin-react':
-        specifier: ^4.2.1
-        version: 4.2.1(vite@5.2.9(@types/node@20.12.7)(terser@5.30.3))
       autoprefixer:
         specifier: ^10.4.19
         version: 10.4.19(postcss@8.4.38)
@@ -821,18 +818,6 @@ packages:
 
   '@babel/plugin-syntax-typescript@7.24.1':
     resolution: {integrity: sha512-Yhnmvy5HZEnHUty6i++gcfH1/l68AHnItFHnaCv6hn9dNh0hQvvQJsxpi4BMBFN5DLeHBuucT/0DgzXif/OyRw==}
-    engines: {node: '>=6.9.0'}
-    peerDependencies:
-      '@babel/core': ^7.0.0-0
-
-  '@babel/plugin-transform-react-jsx-self@7.24.1':
-    resolution: {integrity: sha512-kDJgnPujTmAZ/9q2CN4m2/lRsUUPDvsG3+tSHWUJIzMGTt5U/b/fwWd3RO3n+5mjLrsBrVa5eKFRVSQbi3dF1w==}
-    engines: {node: '>=6.9.0'}
-    peerDependencies:
-      '@babel/core': ^7.0.0-0
-
-  '@babel/plugin-transform-react-jsx-source@7.24.1':
-    resolution: {integrity: sha512-1v202n7aUq4uXAieRTKcwPzNyphlCuqHHDcdSNc+vdhoTEZcFMh+L5yZuCmGaIO7bs1nJUNfHB89TZyoL48xNA==}
     engines: {node: '>=6.9.0'}
     peerDependencies:
       '@babel/core': ^7.0.0-0
@@ -3565,12 +3550,6 @@ packages:
     resolution: {integrity: sha512-PoARb1X480UE9jysPqltpzginBftna34GmZ3HyvRT+pnPfsGcuHOzZe/a18V/K04qk2yMRd7eeW42JF5O+wunw==}
     peerDependencies:
       vinxi: '=0.3.10'
-
-  '@vitejs/plugin-react@4.2.1':
-    resolution: {integrity: sha512-oojO9IDc4nCUUi8qIR11KoQm0XFFLIwsRBwHRR4d/88IWghn1y6ckz/bJ8GHDCsYEJee8mDzqtJxh15/cisJNQ==}
-    engines: {node: ^14.18.0 || >=16.0.0}
-    peerDependencies:
-      vite: ^4.2.0 || ^5.0.0
 
   '@webassemblyjs/ast@1.12.1':
     resolution: {integrity: sha512-EKfMUOPRRUTy5UII4qJDGPpqfwjOmZ5jeGFwid9mnoqIFK+e0vqoi1qH56JpmZSzEL53jKnNzScdmftJyG5xWg==}
@@ -6606,10 +6585,6 @@ packages:
   react-is@16.13.1:
     resolution: {integrity: sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==}
 
-  react-refresh@0.14.0:
-    resolution: {integrity: sha512-wViHqhAd8OHeLS/IRMJjTSDHF3U9eWi62F/MledQGPdJGDhodXJ9PBLNGr6WWL7qlH12Mt3TyTpbS+hGXMjCzQ==}
-    engines: {node: '>=0.10.0'}
-
   react-remove-scroll-bar@2.3.6:
     resolution: {integrity: sha512-DtSYaao4mBmX+HDo5YWYdBWQwYIQQshUV/dVxFxK+KM26Wjwp1gZ6rv6OC3oujI6Bfu6Xyg3TwK533AQutsn/g==}
     engines: {node: '>=10'}
@@ -8040,16 +8015,6 @@ snapshots:
       '@babel/helper-plugin-utils': 7.24.0
 
   '@babel/plugin-syntax-typescript@7.24.1(@babel/core@7.24.4)':
-    dependencies:
-      '@babel/core': 7.24.4
-      '@babel/helper-plugin-utils': 7.24.0
-
-  '@babel/plugin-transform-react-jsx-self@7.24.1(@babel/core@7.24.4)':
-    dependencies:
-      '@babel/core': 7.24.4
-      '@babel/helper-plugin-utils': 7.24.0
-
-  '@babel/plugin-transform-react-jsx-source@7.24.1(@babel/core@7.24.4)':
     dependencies:
       '@babel/core': 7.24.4
       '@babel/helper-plugin-utils': 7.24.0
@@ -10417,17 +10382,6 @@ snapshots:
       magicast: 0.2.11
       recast: 0.23.6
       vinxi: 0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2)
-
-  '@vitejs/plugin-react@4.2.1(vite@5.2.9(@types/node@20.12.7)(terser@5.30.3))':
-    dependencies:
-      '@babel/core': 7.24.4
-      '@babel/plugin-transform-react-jsx-self': 7.24.1(@babel/core@7.24.4)
-      '@babel/plugin-transform-react-jsx-source': 7.24.1(@babel/core@7.24.4)
-      '@types/babel__core': 7.20.5
-      react-refresh: 0.14.0
-      vite: 5.2.9(@types/node@20.12.7)(terser@5.30.3)
-    transitivePeerDependencies:
-      - supports-color
 
   '@webassemblyjs/ast@1.12.1':
     dependencies:
@@ -14121,8 +14075,6 @@ snapshots:
       react: 18.2.0
 
   react-is@16.13.1: {}
-
-  react-refresh@0.14.0: {}
 
   react-remove-scroll-bar@2.3.6(@types/react@18.2.79)(react@18.2.0):
     dependencies:

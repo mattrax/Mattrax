@@ -1,4 +1,8 @@
-/** @jsxImportSource react */
+/** @jsx h */
+
+function h(...args: any[]) {
+	return React.createElement(args);
+}
 
 import {
 	Body,
@@ -13,7 +17,7 @@ import {
 	Text,
 } from "@react-email/components";
 import { Tailwind } from "@react-email/tailwind";
-import * as React from "react";
+import React from "react";
 
 interface Props {
 	invitedByEmail: string;
