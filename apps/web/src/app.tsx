@@ -102,7 +102,6 @@ export default function App() {
 
 								if (isTRPCClientError(error)) {
 									if (error.data?.code === "UNAUTHORIZED") {
-										errorMsg = "You must login to continue";
 										startTransition(() =>
 											navigate(
 												`/login?${new URLSearchParams({
@@ -110,6 +109,8 @@ export default function App() {
 												})}`,
 											),
 										);
+										return;
+										// biome-ignore lint/style/noUselessElse:
 									} else if (error.data?.code === "FORBIDDEN") {
 										if (error.message === "tenant") navigate("/");
 										else
@@ -121,7 +122,6 @@ export default function App() {
 									}
 								}
 
-								// TODO: Prevent this for auth errors
 								toast.error(errorMsg, {
 									id: "network-error",
 								});
