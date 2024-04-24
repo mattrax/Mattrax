@@ -27,6 +27,7 @@ import {
 	BruhIconPhScroll,
 	BruhIconPhSelection,
 	BruhIconPhUser,
+	BruhIconSvgSpinners90Ring,
 } from "./bruh";
 import { StatItem } from "~/components/StatItem";
 
@@ -214,9 +215,17 @@ function GettingStartedRow(
 ) {
 	return (
 		<div class="flex items-center">
-			<span class={props.enabled ? "text-green-500" : ""}>
-				{props.enabled ? <BruhIconPhCheckBold /> : <BruhIconPhXBold />}
-			</span>
+			<Suspense
+				fallback={
+					<span>
+						<BruhIconSvgSpinners90Ring />
+					</span>
+				}
+			>
+				<span class={props.enabled ? "text-green-500" : ""}>
+					{props.enabled ? <BruhIconPhCheckBold /> : <BruhIconPhXBold />}
+				</span>
+			</Suspense>
 			<div class="ml-4 space-y-1">
 				<A href={props.href}>
 					<p class="text-sm font-medium leading-none underline-offset-2 hover:underline">
