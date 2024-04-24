@@ -53,7 +53,12 @@ export default defineConfig({
 			asyncContext: true,
 		},
 		rollupConfig: {
-			external: ["cloudflare:sockets"],
+			external: ["cloudflare:sockets", "@react-email/tailwind"],
+			// output: {
+			// 	manualChunks: {
+			// 		reactemailtailwind: ["@react-email/tailwind"],
+			// 	},
+			// },
 		},
 	},
 });
