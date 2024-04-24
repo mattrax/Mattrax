@@ -115,6 +115,9 @@ export default function App() {
 										else
 											errorMsg =
 												"You are not allowed to access this resource!,";
+									} else if (error.data?.code === "NOT_FOUND") {
+										// not founds are handled at an app level with `.get` queries returning `null`
+										return;
 									}
 								}
 

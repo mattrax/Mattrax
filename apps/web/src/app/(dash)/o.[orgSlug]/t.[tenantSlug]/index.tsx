@@ -52,7 +52,7 @@ export default function Page() {
 	const stats = trpc.tenant.stats.createQuery(() => params);
 
 	const getValue = (v: StatsTarget) =>
-		stats.data?.find((i) => i.variant === v)?.count ?? 0;
+		stats.data?.find((i) => i.variant === v)?.count;
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Dashboard</PageLayoutHeading>}>

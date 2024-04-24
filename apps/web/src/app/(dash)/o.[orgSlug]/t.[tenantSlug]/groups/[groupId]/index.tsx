@@ -26,8 +26,6 @@ export const route = {
 
 import IconPhDevices from "~icons/ph/devices";
 import IconPhUser from "~icons/ph/user";
-import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
 import { useGroupId } from "../[groupId]";
 
 export default function Page() {
@@ -157,15 +155,13 @@ function Members() {
 					title="Users"
 					href="members?variant=user"
 					icon={<IconPhUser />}
-					value={members.data?.filter((m) => m.variant === "user").length ?? 0}
+					value={members.data?.filter((m) => m.variant === "user").length}
 				/>
 				<StatItem
 					title="Devices"
 					href="members?variant=device"
 					icon={<IconPhDevices />}
-					value={
-						members.data?.filter((m) => m.variant === "device").length ?? 0
-					}
+					value={members.data?.filter((m) => m.variant === "device").length}
 				/>
 			</div>
 			<div class="flex flex-row items-center justify-between">
@@ -228,13 +224,13 @@ function Assignments() {
 					title="Policies"
 					href="assignments?variant=policy"
 					icon={<IconPhUser />}
-					value={assignments.data?.policies.length ?? 0}
+					value={assignments.data?.policies.length}
 				/>
 				<StatItem
 					title="Apps"
 					href="assignments?variant=app"
 					icon={<IconPhDevices />}
-					value={assignments.data?.apps.length ?? 0}
+					value={assignments.data?.apps.length}
 				/>
 			</div>
 			<div class="flex flex-row items-center justify-between">

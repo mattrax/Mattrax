@@ -42,7 +42,7 @@ export const policyRouter = createTRPCRouter({
 	),
 
 	get: authedProcedure
-		.input(z.object({ policyId: z.string() }))
+		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
 			const [policy] = await ctx.db
 				.select({
@@ -53,8 +53,8 @@ export const policyRouter = createTRPCRouter({
 					tenantPk: policies.tenantPk,
 				})
 				.from(policies)
-				.where(eq(policies.id, input.policyId));
-			if (!policy) throw new Error("policy not found"); // TODO: Error and have frontend catch and handle it
+				.where(eq(policies.id, input.id));
+			if (!policy) return null; // TODO: Error and have frontend catch and handle it
 
 			await ctx.ensureTenantMember(policy.tenantPk);
 

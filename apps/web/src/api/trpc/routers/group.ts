@@ -25,8 +25,7 @@ const groupProcedure = authedProcedure
 		const group = await ctx.db.query.groups.findFirst({
 			where: and(eq(groups.id, input.id)),
 		});
-		if (!group)
-			throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
+		if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
 
 		const tenant = await ctx.ensureTenantMember(group.tenantPk);
 

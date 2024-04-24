@@ -9,13 +9,14 @@ import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
 import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
+import { usePolicyId } from "../[policyId]";
 
 export default function Page() {
-	const policy = usePolicy();
+	const policyId = usePolicyId();
 	const tenantSlug = useTenantSlug();
 
 	const members = trpc.policy.members.createQuery(() => ({
-		id: policy().id,
+		id: policyId(),
 	}));
 
 	const table = createStandardTable({
@@ -65,7 +66,7 @@ export default function Page() {
 						variants={variants}
 						onSubmit={(members) =>
 							addMembers.mutateAsync({
-								id: policy().id,
+								id: policyId(),
 								members,
 							})
 						}

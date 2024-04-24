@@ -18,7 +18,7 @@ import {
 	TooltipTrigger,
 	useController,
 } from "@mattrax/ui";
-import { usePolicy } from "../Context";
+import { PolicyContext, usePolicy } from "../Context";
 import { createSignal, Suspense, For } from "solid-js";
 import { trpc } from "~/lib";
 import { As } from "@kobalte/core";
@@ -33,6 +33,7 @@ import {
 } from "~/components/StandardTable";
 import { formatPolicy } from "~/lib/formatPolicy";
 import { match } from "ts-pattern";
+import { usePolicyId } from "../../[policyId]";
 
 const column =
 	createColumnHelper<RouterOutput["policy"]["deploys"]["list"][number]>();
@@ -75,18 +76,12 @@ const columns = [
 	}),
 ];
 
-function createDeploysQuery() {
-	const policy = usePolicy();
-	return {
-		policy,
-		deploys: trpc.policy.deploys.list.createQuery(() => ({
-			policyId: policy().id,
-		})),
-	};
-}
-
 function createDeployTable() {
-	const { policy, deploys } = createDeploysQuery();
+	const policyId = usePolicyId();
+
+	const deploys = trpc.policy.deploys.list.createQuery(() => ({
+		policyId: policyId(),
+	}));
 
 	const table = createStandardTable({
 		get data() {
@@ -98,17 +93,19 @@ function createDeployTable() {
 
 	createSearchParamPagination(table, "page");
 
-	return { table, policy, deploys };
+	return { table, deploys };
 }
 
 export default function Page() {
-	const { table, policy } = createDeployTable();
+	const { table } = createDeployTable();
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Deploys</PageLayoutHeading>}>
-			{policy().diff.length > 0 && <DirtyPolicyPanel />}
-
 			<Suspense>
+				<PolicyContext>
+					{usePolicy()().diff.length > 0 && <DirtyPolicyPanel />}
+				</PolicyContext>
+
 				<StandardTable table={table} />
 			</Suspense>
 		</PageLayout>

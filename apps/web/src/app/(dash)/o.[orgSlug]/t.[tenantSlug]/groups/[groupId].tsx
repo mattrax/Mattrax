@@ -1,12 +1,13 @@
-import { Navigate, type RouteDefinition } from "@solidjs/router";
+import { type RouteDefinition } from "@solidjs/router";
 import { type ParentProps } from "solid-js";
-import { toast } from "solid-sonner";
 import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
+import { useTenantSlug } from "../../t.[tenantSlug]";
+import { createNotFoundRedirect, useNameFromListQuery } from "~/lib/utils";
 
 export function useGroupId() {
 	const params = useZodParams({ groupId: z.string() });
@@ -29,13 +30,20 @@ export const route = {
 		BREADCRUMB: {
 			Component: () => {
 				const params = useZodParams({ groupId: z.string() });
+				const tenantSlug = useTenantSlug();
+
 				const query = trpc.group.get.createQuery(() => ({
 					id: params.groupId,
 				}));
 
+				const nameFromList = useNameFromListQuery(
+					(trpc) => trpc.group.list.getData({ tenantSlug: tenantSlug() }),
+					() => params.groupId,
+				);
+
 				return (
 					<>
-						<span>{query.data?.name}</span>
+						<span>{nameFromList() ?? query.data?.name}</span>
 						<Badge variant="outline">Group</Badge>
 					</>
 				);
@@ -45,11 +53,13 @@ export const route = {
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
-	return <MErrorBoundary>{props.children}</MErrorBoundary>;
-}
+	const params = useZodParams({ groupId: z.string() });
 
-function NotFound() {
-	toast.error("Group not found");
-	// necessary since '..' adds trailing slash -_-
-	return <Navigate href="../../groups" />;
+	createNotFoundRedirect({
+		query: trpc.group.get.createQuery(() => ({ id: params.groupId })),
+		toast: "Group not found",
+		to: "../../groups",
+	});
+
+	return <MErrorBoundary>{props.children}</MErrorBoundary>;
 }

@@ -5,6 +5,7 @@ import {
 	trpcServerFunction,
 } from "@mattrax/trpc-server-function";
 import { createTRPCSolidStart } from "@solid-mediakit/trpc";
+import { createMemo } from "solid-js";
 import { router, createContext, type AppRouter } from "~/api/trpc";
 
 function serverFunction(opts: TrpcServerFunctionOpts) {

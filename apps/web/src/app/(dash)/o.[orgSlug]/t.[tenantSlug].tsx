@@ -36,19 +36,27 @@ export const route = {
 		BREADCRUMB: {
 			hasNestedSegments: true,
 			Component: (props: { href: string }) => {
+				const params = useZodParams({
+					orgSlug: z.string(),
+					tenantSlug: z.string(),
+				});
+
+				const tenants = trpc.tenant.list.createQuery(() => ({
+					orgSlug: params.orgSlug,
+				}));
+
+				const tenant = () =>
+					tenants.data?.find((t) => t.slug === params.tenantSlug);
+
 				return (
-					<AuthContext>
-						<TenantContext>
-							<div class="flex flex-row items-center py-1 gap-2">
-								<A href={props.href}>{useTenant()().name}</A>
-								<MultiSwitcher>
-									<As component={Button} variant="ghost" size="iconSmall">
-										<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
-									</As>
-								</MultiSwitcher>
-							</div>
-						</TenantContext>
-					</AuthContext>
+					<div class="flex flex-row items-center py-1 gap-2">
+						<A href={props.href}>{tenant()?.name}</A>
+						<MultiSwitcher>
+							<As component={Button} variant="ghost" size="iconSmall">
+								<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+							</As>
+						</MultiSwitcher>
+					</div>
 				);
 			},
 		},

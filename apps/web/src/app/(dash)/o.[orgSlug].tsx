@@ -36,19 +36,21 @@ export const route = {
 		NAV_ITEMS,
 		BREADCRUMB: {
 			Component: (props: { href: string }) => {
+				const params = useZodParams({ orgSlug: z.string() });
+
+				const orgs = trpc.org.list.createQuery();
+
+				const org = () => orgs.data?.find((o) => o.slug === params.orgSlug);
+
 				return (
-					<AuthContext>
-						<OrgContext>
-							<div class="flex flex-row items-center py-1 gap-2">
-								<A href={props.href}>{useOrg()().name}</A>
-								<MultiSwitcher>
-									<As component={Button} variant="ghost" size="iconSmall">
-										<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
-									</As>
-								</MultiSwitcher>
-							</div>
-						</OrgContext>
-					</AuthContext>
+					<div class="flex flex-row items-center py-1 gap-2">
+						<A href={props.href}>{org()?.name}</A>
+						<MultiSwitcher>
+							<As component={Button} variant="ghost" size="iconSmall">
+								<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+							</As>
+						</MultiSwitcher>
+					</div>
 				);
 			},
 		},

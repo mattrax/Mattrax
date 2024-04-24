@@ -1,13 +1,13 @@
-import { type ParentProps, Show } from "solid-js";
-import { Navigate, type RouteDefinition } from "@solidjs/router";
-import { toast } from "solid-sonner";
+import { type ParentProps } from "solid-js";
+import { type RouteDefinition } from "@solidjs/router";
 import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 import { Badge } from "@mattrax/ui";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { UserContextProvider } from "./[userId]/Context";
+import { useTenantSlug } from "../../t.[tenantSlug]";
+import { createNotFoundRedirect, useNameFromListQuery } from "~/lib/utils";
 
 export const route = {
 	load: ({ params }) =>
@@ -18,14 +18,20 @@ export const route = {
 		BREADCRUMB: {
 			Component: () => {
 				const params = useZodParams({ userId: z.string() });
+				const tenantSlug = useTenantSlug();
 
 				const query = trpc.user.get.createQuery(() => ({
 					id: params.userId,
 				}));
 
+				const nameFromList = useNameFromListQuery(
+					(trpc) => trpc.user.list.getData({ tenantSlug: tenantSlug() }),
+					() => params.userId,
+				);
+
 				return (
 					<>
-						<span>{query.data?.name}</span>
+						<span>{nameFromList() ?? query.data?.name}</span>
 						<Badge variant="outline">User</Badge>
 					</>
 				);
@@ -37,25 +43,11 @@ export const route = {
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ userId: z.string() });
 
-	const query = trpc.user.get.createQuery(() => ({
-		id: params.userId,
-	}));
+	createNotFoundRedirect({
+		query: trpc.user.get.createQuery(() => ({ id: params.userId })),
+		toast: "User not found",
+		to: "../../users",
+	});
 
-	return (
-		<Show when={query.data !== undefined}>
-			<Show when={query.data} fallback={<NotFound />}>
-				{(data) => (
-					<UserContextProvider user={data()} query={query}>
-						<MErrorBoundary>{props.children}</MErrorBoundary>
-					</UserContextProvider>
-				)}
-			</Show>
-		</Show>
-	);
-}
-
-function NotFound() {
-	toast.error("User not found");
-	// necessary since '..' adds trailing slash -_-
-	return <Navigate href="../../users" />;
+	return <MErrorBoundary>{props.children}</MErrorBoundary>;
 }
