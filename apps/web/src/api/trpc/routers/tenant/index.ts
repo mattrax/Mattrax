@@ -1,5 +1,5 @@
 import { count, desc, eq, sql } from "drizzle-orm";
-import { union } from "drizzle-orm/pg-core";
+import { union } from "drizzle-orm/mysql-core";
 import { z } from "zod";
 
 import {
@@ -12,6 +12,8 @@ import {
 	groupMembers,
 	groups,
 	identityProviders,
+	organisationMembers,
+	organisations,
 	policies,
 	policyAssignments,
 	policyDeploy,
@@ -19,7 +21,12 @@ import {
 	tenants,
 	users,
 } from "~/db";
-import { createTRPCRouter, orgProcedure, tenantProcedure } from "../../helpers";
+import {
+	authedProcedure,
+	createTRPCRouter,
+	orgProcedure,
+	tenantProcedure,
+} from "../../helpers";
 import { identityProviderRouter } from "./identityProvider";
 import { variantTableRouter } from "./members";
 import { randomSlug } from "~/api/utils";
@@ -52,13 +59,24 @@ export const restrictedUsernames = new Set([
 ]);
 
 export const tenantRouter = createTRPCRouter({
+	list: orgProcedure.query(async ({ ctx }) =>
+		ctx.db
+			.select({
+				id: tenants.id,
+				name: tenants.name,
+				slug: tenants.slug,
+			})
+			.from(tenants)
+			.where(eq(tenants.orgPk, ctx.org.pk)),
+	),
+
 	create: orgProcedure
 		.input(z.object({ name: z.string().min(1) }))
 		.mutation(async ({ ctx, input }) => {
 			const slug = await ctx.db.transaction(async (db) => {
 				const slug = randomSlug(input.name);
 
-				await ctx.db.insert(tenants).values({
+				await db.insert(tenants).values({
 					name: input.name,
 					slug,
 					orgPk: ctx.org.pk,
@@ -95,8 +113,8 @@ export const tenantRouter = createTRPCRouter({
 				.where(eq(tenants.pk, ctx.tenant.pk));
 		}),
 
-	stats: tenantProcedure.query(({ ctx }) =>
-		union(
+	stats: tenantProcedure.query(async ({ ctx }) => {
+		return await union(
 			ctx.db
 				.select({ count: count(), variant: sql<StatsTarget>`"users"` })
 				.from(users)
@@ -117,8 +135,8 @@ export const tenantRouter = createTRPCRouter({
 				.select({ count: count(), variant: sql<StatsTarget>`"groups"` })
 				.from(groups)
 				.where(eq(groups.tenantPk, ctx.tenant.pk)),
-		),
-	),
+		);
+	}),
 
 	// TODO: Pagination
 	auditLog: tenantProcedure
@@ -133,7 +151,7 @@ export const tenantRouter = createTRPCRouter({
 				})
 				.from(auditLog)
 				.where(eq(auditLog.tenantPk, ctx.tenant.pk))
-				.leftJoin(accounts, eq(accounts.pk, auditLog.userPk))
+				.leftJoin(accounts, eq(accounts.pk, auditLog.accountPk))
 				.orderBy(desc(auditLog.doneAt))
 				.limit(input.limit ?? 9999999),
 		),

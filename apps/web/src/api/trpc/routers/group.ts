@@ -25,8 +25,7 @@ const groupProcedure = authedProcedure
 		const group = await ctx.db.query.groups.findFirst({
 			where: and(eq(groups.id, input.id)),
 		});
-		if (!group)
-			throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
+		if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
 
 		const tenant = await ctx.ensureTenantMember(group.tenantPk);
 
@@ -131,10 +130,10 @@ export const groupRouter = createTRPCRouter({
 					pk: groupMembers.pk,
 					variant: groupMembers.variant,
 					name: sql<string>`
-					CASE
+					GROUP_CONCAT(CASE
 						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.name}
 						WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.name}
-					END
+					END)
           `.as("name"),
 				})
 				.from(groupMembers)
@@ -153,12 +152,7 @@ export const groupRouter = createTRPCRouter({
 						eq(groupMembers.variant, GroupMemberVariants.user),
 					),
 				)
-				.groupBy(
-					groupMembers.variant,
-					groupMembers.pk,
-					devices.name,
-					users.name,
-				);
+				.groupBy(groupMembers.variant, groupMembers.pk);
 		}),
 
 	addMembers: authedProcedure
@@ -191,7 +185,11 @@ export const groupRouter = createTRPCRouter({
 						variant: member.variant,
 					})),
 				)
-				.onConflictDoNothing();
+				.onDuplicateKeyUpdate({
+					set: {
+						pk: sql`${groupMembers.pk}`,
+					},
+				});
 		}),
 
 	assignments: groupProcedure.query(async ({ ctx }) => {
@@ -263,7 +261,11 @@ export const groupRouter = createTRPCRouter({
 									variant: PolicyAssignableVariants.group,
 								})),
 							)
-							.onConflictDoNothing(),
+							.onDuplicateKeyUpdate({
+								set: {
+									pk: sql`${policyAssignments.pk}`,
+								},
+							}),
 					);
 
 				if (apps.length > 0)
@@ -277,7 +279,11 @@ export const groupRouter = createTRPCRouter({
 									variant: PolicyAssignableVariants.group,
 								})),
 							)
-							.onConflictDoNothing(),
+							.onDuplicateKeyUpdate({
+								set: {
+									pk: sql`${applicationAssignments.pk}`,
+								},
+							}),
 					);
 
 				return Promise.all(ops);

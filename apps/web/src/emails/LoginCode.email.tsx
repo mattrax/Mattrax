@@ -1,3 +1,5 @@
+/** @jsx React.createElement */
+
 import {
 	Body,
 	Button,
@@ -11,6 +13,7 @@ import {
 	Text,
 } from "@react-email/components";
 import { Tailwind } from "@react-email/tailwind";
+import React from "react";
 
 interface Props {
 	code: string;

@@ -13,6 +13,8 @@ use tracing::error;
 
 use super::Context;
 
+pub mod sql;
+
 async fn internal_auth(
     State(state): State<Arc<Context>>,
     request: Request,
@@ -38,7 +40,6 @@ struct IssueCertParams {
 pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
     Router::new()
         .route("/", get(|| async move { "Hello World" }))
-        .layer(middleware::from_fn_with_state(state.clone(), internal_auth))
         .route(
             "/issue-cert",
             post(
@@ -56,5 +57,6 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 },
             ),
         )
+        .layer(middleware::from_fn_with_state(state.clone(), internal_auth))
         .with_state(state)
 }

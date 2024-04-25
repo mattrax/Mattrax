@@ -1,18 +1,13 @@
 import { createContextProvider } from "@solid-primitives/context";
 import { type ParentProps, Show, createMemo } from "solid-js";
 import { z } from "zod";
-import { Navigate } from "@solidjs/router";
 
 import type { RouterOutput } from "~/api";
-import { useAuth } from "~c/AuthContext";
 import { useZodParams } from "~/lib/useZodParams";
+import { trpc } from "~/lib";
 
 const [OrgContextProvider, useOrg] = createContextProvider(
-	(props: {
-		org: RouterOutput["auth"]["me"]["orgs"][number];
-	}) =>
-		() =>
-			props.org,
+	(props: { org: RouterOutput["org"]["list"][number] }) => () => props.org,
 	null!,
 );
 
@@ -20,10 +15,10 @@ export { useOrg };
 
 export function OrgContext(props: ParentProps) {
 	const params = useZodParams({ orgSlug: z.string() });
-	const auth = useAuth();
+	const orgs = trpc.org.list.createQuery();
 
 	const activeOrg = createMemo(() =>
-		auth().orgs.find((o) => o.slug === params.orgSlug),
+		orgs.data?.find((o) => o.slug === params.orgSlug),
 	);
 
 	return (

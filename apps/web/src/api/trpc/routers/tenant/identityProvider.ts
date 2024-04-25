@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { msGraphClient } from "~/api/microsoft";
 import { getEmailDomain } from "~/api/utils";
-import { domains, getDb, identityProviders, users } from "~/db";
+import { domains, db, identityProviders, users } from "~/db";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
 import { encryptJWT } from "~/api/jwt";
 import { withAuditLog } from "~/api/auditLog";
@@ -223,7 +223,7 @@ interface IdentityProvider {
 }
 
 async function ensureIdentityProvider(tenantPk: number) {
-	const provider = await getDb().query.identityProviders.findFirst({
+	const provider = await db.query.identityProviders.findFirst({
 		where: eq(identityProviders.tenantPk, tenantPk),
 	});
 	if (!provider)
@@ -327,7 +327,7 @@ export async function upsertEntraIdUser(
 	tenantPk: number,
 	identityProviderPk: number,
 ) {
-	const [user] = await getDb()
+	const result = await db
 		.insert(users)
 		.values({
 			name: u.displayName!,
@@ -336,11 +336,15 @@ export async function upsertEntraIdUser(
 			providerPk: identityProviderPk,
 			resourceId: u.id!,
 		})
-		.onConflictDoUpdate({
-			target: [users.resourceId, users.providerPk],
-			set: { name: u.displayName! },
-		})
-		.returning({ pk: users.pk });
+		.onDuplicateKeyUpdate({
+			set: {
+				// TODO: Update `email` if the `providerResourceId` matches.
+				name: u.displayName!,
+				resourceId: u.id!,
+			},
+		});
 
-	return user!;
+	return {
+		pk: Number.parseInt(result.insertId),
+	};
 }

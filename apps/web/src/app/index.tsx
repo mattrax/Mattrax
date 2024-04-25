@@ -1,7 +1,6 @@
 import { Navigate } from "@solidjs/router";
-import { Show } from "solid-js";
+import { Match, Switch } from "solid-js";
 
-import { AuthContext, useAuth } from "~c/AuthContext";
 import { trpc } from "~/lib";
 
 export const route = {
@@ -9,45 +8,55 @@ export const route = {
 };
 
 export default function Page() {
+	const orgs = trpc.org.list.createQuery();
+
 	const defaultOrg = () => {
-		const orgs = useAuth()().orgs;
-		if (orgs.length < 1) return;
+		if (!orgs.data) return;
+		if (orgs.data.length < 1) return null;
 
-		return orgs[0];
-	};
-
-	const defaultTenant = () => {
-		const tenants = useAuth()().tenants;
-		if (tenants.length < 1) return;
-
-		return tenants[0];
+		return orgs.data[0];
 	};
 
 	return (
-		<AuthContext>
-			<Show
-				when={defaultOrg()}
-				fallback={
+		<Switch>
+			<Match when={defaultOrg() === null}>
+				{
 					(() => {
 						throw new Error(
 							"No organisations found, re-login to create a default one.",
 						);
 					}) as any
 				}
-			>
+			</Match>
+			<Match when={defaultOrg()}>
 				{(
 					org, // If we have an active tenant, send the user to it
-				) => (
-					<Show
-						when={defaultTenant()}
-						fallback={<Navigate href={`/o/${org().slug}`} />}
-					>
-						{(tenant) => (
-							<Navigate href={`/o/${org().slug}/t/${tenant().slug}`} />
-						)}
-					</Show>
-				)}
-			</Show>
-		</AuthContext>
+				) => {
+					const tenants = trpc.tenant.list.createQuery(() => ({
+						orgSlug: org().slug,
+					}));
+
+					const defaultTenant = () => {
+						if (!tenants.data) return;
+						if (tenants.data.length < 1) return null;
+
+						return tenants.data[0];
+					};
+
+					return (
+						<Switch>
+							<Match when={defaultTenant() === null}>
+								<Navigate href={`/o/${org().slug}`} />
+							</Match>
+							<Match when={defaultTenant()}>
+								{(tenant) => (
+									<Navigate href={`/o/${org().slug}/t/${tenant().slug}`} />
+								)}
+							</Match>
+						</Switch>
+					);
+				}}
+			</Match>
+		</Switch>
 	);
 }

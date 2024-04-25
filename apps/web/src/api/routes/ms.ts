@@ -2,14 +2,14 @@ import { Hono } from "hono";
 import { getCookie } from "vinxi/server";
 import { z } from "zod";
 
-import { accounts, getDb, identityProviders } from "~/db";
+import { accounts, db, identityProviders } from "~/db";
 import { env } from "~/env";
-import { getLucia } from "../auth";
+import { lucia } from "../auth";
 import { msGraphClient } from "../microsoft";
 import type { HonoEnv } from "../types";
 import { decryptJWT } from "../jwt";
 import { withAuditLog } from "../auditLog";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 const tokenEndpointResponse = z.object({
 	access_token: z.string(),
@@ -80,11 +80,10 @@ export const msRouter = new Hono<HonoEnv>()
 			(await decryptJWT(rawState)).payload,
 		);
 
-		const sessionId =
-			getCookie(c.env.h3Event, getLucia().sessionCookieName) ?? null;
+		const sessionId = getCookie(c.env.h3Event, lucia.sessionCookieName) ?? null;
 		if (sessionId === null) return new Response("Unauthorised!"); // TODO: Proper error UI as the user may land here
 
-		const { session } = await getLucia().validateSession(sessionId);
+		const { session } = await lucia.validateSession(sessionId);
 		if (!session) return new Response("Unauthorised!"); // TODO: Proper error UI as the user may land here
 
 		const body = new URLSearchParams({
@@ -155,7 +154,7 @@ export const msRouter = new Hono<HonoEnv>()
 
 		const entraTenantId = tenant.id;
 
-		const [account] = await getDb()
+		const [account] = await db
 			.select({ pk: accounts.pk })
 			.from(accounts)
 			.where(eq(accounts.id, session.userId));
@@ -176,7 +175,11 @@ export const msRouter = new Hono<HonoEnv>()
 						tenantPk,
 					})
 					// We don't care if it already exists so no need for that to cause an error.
-					.onConflictDoNothing();
+					.onDuplicateKeyUpdate({
+						set: {
+							tenantPk: sql`${identityProviders.tenantPk}`,
+						},
+					});
 			},
 		);
 

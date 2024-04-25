@@ -1,15 +1,24 @@
-import { Navigate, type RouteDefinition } from "@solidjs/router";
-import { type ParentProps, Show, Match, Switch } from "solid-js";
-import { toast } from "solid-sonner";
+import { type RouteDefinition } from "@solidjs/router";
+import { type ParentProps } from "solid-js";
 import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { GroupContextProvider } from "./[groupId]/Context";
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
+import { useTenantSlug } from "../../t.[tenantSlug]";
+import { createNotFoundRedirect, useNameFromListQuery } from "~/lib/utils";
 
-// const NAV_ITEMS = [{ title: "Group", href: "" }];
+export function useGroupId() {
+	const params = useZodParams({ groupId: z.string() });
+	return () => params.groupId;
+}
+
+const NAV_ITEMS = [
+	{ title: "Group", href: "" },
+	{ title: "Members", href: "members" },
+	{ title: "Assignments", href: "assignments" },
+];
 
 export const route = {
 	load: ({ params }) =>
@@ -17,17 +26,24 @@ export const route = {
 			id: params.groupId!,
 		}),
 	info: {
-		// NAV_ITEMS
+		NAV_ITEMS,
 		BREADCRUMB: {
 			Component: () => {
 				const params = useZodParams({ groupId: z.string() });
+				const tenantSlug = useTenantSlug();
+
 				const query = trpc.group.get.createQuery(() => ({
 					id: params.groupId,
 				}));
 
+				const nameFromList = useNameFromListQuery(
+					(trpc) => trpc.group.list.getData({ tenantSlug: tenantSlug() }),
+					() => params.groupId,
+				);
+
 				return (
 					<>
-						<span>{query.data?.name}</span>
+						<span>{nameFromList() ?? query.data?.name}</span>
 						<Badge variant="outline">Group</Badge>
 					</>
 				);
@@ -38,28 +54,12 @@ export const route = {
 
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ groupId: z.string() });
-	const query = trpc.group.get.createQuery(() => ({
-		id: params.groupId,
-	}));
 
-	return (
-		<Switch>
-			<Match when={query.data === null}>
-				<NotFound />
-			</Match>
-			<Match when={query.data}>
-				{(data) => (
-					<GroupContextProvider group={data()} query={query}>
-						<MErrorBoundary>{props.children}</MErrorBoundary>
-					</GroupContextProvider>
-				)}
-			</Match>
-		</Switch>
-	);
-}
+	createNotFoundRedirect({
+		query: trpc.group.get.createQuery(() => ({ id: params.groupId })),
+		toast: "Group not found",
+		to: "../../groups",
+	});
 
-function NotFound() {
-	toast.error("Group not found");
-	// necessary since '..' adds trailing slash -_-
-	return <Navigate href="../../groups" />;
+	return <MErrorBoundary>{props.children}</MErrorBoundary>;
 }

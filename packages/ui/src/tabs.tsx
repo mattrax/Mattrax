@@ -51,7 +51,7 @@ const TabsIndicator: Component<TabsPrimitive.TabsIndicatorProps> = (props) => {
 	return (
 		<TabsPrimitive.Indicator
 			class={cn(
-				"z-[1] duration-250ms absolute transition-all rounded-sm shadow-sm inset-y-1",
+				"z-[1] duration-250ms absolute transition-all rounded-sm shadow-sm inset-y-1 left-0",
 				"bg-background ring-offset-2 ring-offset-background peer-has-[:focus-visible]:ring-ring peer-has-[:focus-visible]:ring-2",
 				props.class,
 			)}

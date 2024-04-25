@@ -1,13 +1,15 @@
 /* @refresh skip */
 
+import { useMatch, useMatches } from "@solidjs/router";
 import {
 	type Component,
-	For,
+	Index,
 	type ParentProps,
 	Suspense,
 	createMemo,
+	SuspenseList,
 } from "solid-js";
-import { useMatch, useMatches } from "@solidjs/router";
+import { Dynamic } from "solid-js/web";
 
 export function Breadcrumbs() {
 	const matches = useMatches();
@@ -26,34 +28,45 @@ export function Breadcrumbs() {
 
 	return (
 		<div class="flex flex-row items-center text-sm font-medium space-x-2 text-gray-800">
-			<For each={breadcrumbs()}>
-				{({ Component, hasNestedSegments, match }) => {
-					const _match = useMatch(() => `${match.path}/:segment/:subSegment/*`);
+			<SuspenseList revealOrder="forwards" tail="collapsed">
+				<Index each={breadcrumbs()}>
+					{(b) => {
+						const _match = useMatch(
+							() => `${b().match.path}/:segment/:subSegment/*`,
+						);
 
-					const href = createMemo(() => {
-						const __match = hasNestedSegments ? _match() : undefined;
+						const href = createMemo(() => {
+							const __match = b().hasNestedSegments ? _match() : undefined;
 
-						const ret = __match
-							? `${match.path}/${__match.params.segment}`
-							: match.path;
+							const ret = __match
+								? `${b().match.path}/${__match.params.segment}`
+								: b().match.path;
 
-						return ret;
-					});
+							return ret;
+						});
 
-					return (
-						<Breadcrumb>
-							<Component href={href()} />
-						</Breadcrumb>
-					);
-				}}
-			</For>
+						return (
+							<Breadcrumb>
+								<Dynamic component={b().Component} href={href()} />
+							</Breadcrumb>
+						);
+					}}
+				</Index>
+			</SuspenseList>
 		</div>
 	);
 }
 
 export function Breadcrumb(props: ParentProps) {
 	return (
-		<Suspense>
+		<Suspense
+			fallback={
+				<div class="flex flex-row items-center gap-2">
+					<IconMdiSlashForward class="text-lg text-gray-300" />
+					<div class="w-24 h-4 rounded-full bg-neutral-200 animate-pulse" />
+				</div>
+			}
+		>
 			<div class="flex flex-row items-center gap-2">
 				<IconMdiSlashForward class="text-lg text-gray-300" />
 				{props.children}

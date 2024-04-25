@@ -11,15 +11,22 @@ use base64::prelude::*;
 use hyper::header;
 use jwt::VerifyWithKey;
 use ms_mde::{
-    Action, ActivityId, BinarySecurityToken, DiscoverRequest, DiscoverResponse, DiscoverResponseBody, DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult, EnrollmentRequest, EnrollmentResponse, EnrollmentResponseBody, RequestHeaderSecurity, RequestSecurityTokenResponse, RequestSecurityTokenResponseCollection, RequestedSecurityToken, ResponseHeader, ACTIVITY_ID_XMLNS, DISCOVER_ACTION_REQUEST, DISCOVER_ACTION_RESPONSE, DISCOVER_RESPONSE_XMLNS, ENROLLMENT_ACTION_REQUEST, ENROLLMENT_ACTION_RESPONSE, ENROLLMENT_REQUEST_TYPE_ISSUE, ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION, REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION, REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE
+    Action, ActivityId, BinarySecurityToken, DiscoverRequest, DiscoverResponse,
+    DiscoverResponseBody, DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult,
+    EnrollmentRequest, EnrollmentResponse, EnrollmentResponseBody, RequestHeaderSecurity,
+    RequestSecurityTokenResponse, RequestSecurityTokenResponseCollection, RequestedSecurityToken,
+    ResponseHeader, ACTIVITY_ID_XMLNS, DISCOVER_ACTION_REQUEST, DISCOVER_ACTION_RESPONSE,
+    DISCOVER_RESPONSE_XMLNS, ENROLLMENT_ACTION_REQUEST, ENROLLMENT_ACTION_RESPONSE,
+    ENROLLMENT_REQUEST_TYPE_ISSUE, ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION,
+    REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION, REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE,
 };
-use time::OffsetDateTime;
 use rcgen::{
     Certificate, CertificateSigningRequestParams, CustomExtension, DistinguishedName, DnType,
     ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose, SerialNumber,
 };
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
+use time::OffsetDateTime;
 use tracing::error;
 
 use crate::api::Context;
@@ -309,13 +316,13 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 //         fault.Fault(fmt.Errorf("pkcs7 required for authenticating renewal"), "the users authenticity could not be verified", soap.FaultCodeAuthentication)
                 //         return ""
                 //     }
-            
+
                 //     signer := p7.GetOnlySigner()
                 //     if signer == nil {
                 //         fault.Fault(fmt.Errorf("pkcs7: binary security token has no signer"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
                 //         return ""
                 //     }
-            
+
                 //     if now := time.Now(); now.Before(signer.NotBefore) || now.After(signer.NotAfter) /* Check that the certificate has not expired */ {
                 //         fault.Fault(fmt.Errorf("pkcs7: pkcs7 signer is expired"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
                 //         return ""
@@ -329,7 +336,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 //         fault.Fault(fmt.Errorf("pkcs7: certificate command name does match renewal request DeviceID"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
                 //         return ""
                 //     }
-            
+
                 //     return cmd.Header.WSSESecurity.Username
                 // }
             };

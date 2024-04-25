@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { APIEvent } from "@solidjs/start/server";
-import { getDb, policies, policyDeploy } from "~/db";
+import { db, policies, policyDeploy } from "~/db";
 import { and, eq, desc } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { generatePolicyDiff } from "~/api/trpc/routers/policy";
@@ -10,7 +10,7 @@ export async function GET({ params }: APIEvent) {
 
 	// TODO: Auth and Authz
 
-	const [policy] = await getDb()
+	const [policy] = await db
 		.select({
 			name: policies.name,
 			data: policies.data,
@@ -39,7 +39,7 @@ export async function POST({ request, params }: APIEvent) {
 			status: 400,
 		});
 
-	const [policy] = await getDb()
+	const [policy] = await db
 		.select({
 			pk: policies.pk,
 			tenantPk: policies.tenantPk,
@@ -55,7 +55,7 @@ export async function POST({ request, params }: APIEvent) {
 	// TODO: Auth and Authz
 	const authorId = 2;
 
-	const [lastVersion] = await getDb()
+	const [lastVersion] = await db
 		.select({ data: policyDeploy.data })
 		.from(policyDeploy)
 		.where(and(eq(policyDeploy.policyPk, policy.pk)))
@@ -66,7 +66,7 @@ export async function POST({ request, params }: APIEvent) {
 		return Response.json(["unchanged", null]);
 
 	const updatePolicy = () =>
-		getDb()
+		db
 			.update(policies)
 			.set({
 				name: body.data.name,
@@ -78,7 +78,7 @@ export async function POST({ request, params }: APIEvent) {
 		const comment = body.data.comment;
 
 		const versionId = createId();
-		await getDb().transaction(async (db) => {
+		await db.transaction(async (db) => {
 			await updatePolicy();
 			await db.insert(policyDeploy).values({
 				id: versionId,

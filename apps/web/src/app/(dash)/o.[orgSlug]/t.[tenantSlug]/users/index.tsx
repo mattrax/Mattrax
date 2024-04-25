@@ -21,11 +21,13 @@ import {
 	createStandardTable,
 	createSearchParamPagination,
 	selectCheckboxColumn,
+	createSearchParamFilter,
 } from "~c/StandardTable";
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useTenantSlug } from "../../t.[tenantSlug]";
+import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 
 export const route = {
 	load: ({ params }) => {
@@ -89,7 +91,7 @@ const columns = [
 	// TODO: Actions
 ];
 
-function createUsersTable() {
+export default function Page() {
 	const tenantSlug = useTenantSlug();
 	const users = trpc.user.list.createQuery(() => ({
 		tenantSlug: tenantSlug(),
@@ -104,25 +106,12 @@ function createUsersTable() {
 	});
 
 	createSearchParamPagination(table, "page");
-
-	return { table, users };
-}
-
-export default function Page() {
-	const { table, users } = createUsersTable();
+	createSearchParamFilter(table, "name", "search");
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Users</PageLayoutHeading>}>
 			<div class="flex flex-row items-center gap-4">
-				<Input
-					placeholder={users.isLoading ? "Loading..." : "Search..."}
-					disabled={users.isLoading}
-					value={(table.getColumn("email")?.getFilterValue() as string) ?? ""}
-					onInput={(event) =>
-						table.getColumn("email")?.setFilterValue(event.target.value)
-					}
-					class="flex-1"
-				/>
+				<TableSearchParamsInput query={users} class="flex-1" />
 				<ColumnsDropdown table={table}>
 					<As component={Button} variant="outline" class="ml-auto select-none">
 						Columns

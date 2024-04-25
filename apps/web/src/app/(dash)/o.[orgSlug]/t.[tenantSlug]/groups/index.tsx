@@ -1,7 +1,12 @@
 import { As } from "@kobalte/core";
 import { A, type RouteDefinition, useNavigate } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { type ParentProps, Suspense, startTransition } from "solid-js";
+import {
+	type ParentProps,
+	Suspense,
+	startTransition,
+	createEffect,
+} from "solid-js";
 import { z } from "zod";
 
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
@@ -42,10 +47,13 @@ import {
 	createStandardTable,
 	createSearchParamPagination,
 	selectCheckboxColumn,
+	createSearchParamFilter,
 } from "~c/StandardTable";
 import { Button } from "@mattrax/ui";
 
-function createGroupsTable() {
+// TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
+
+export default function Page() {
 	const params = useZodParams({ tenantSlug: z.string() });
 	const groups = trpc.group.list.createQuery(() => params);
 
@@ -58,14 +66,7 @@ function createGroupsTable() {
 	});
 
 	createSearchParamPagination(table, "page");
-
-	return { groups, table };
-}
-
-// TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
-
-export default function Page() {
-	const { table, groups } = createGroupsTable();
+	createSearchParamFilter(table, "name", "search");
 
 	return (
 		<PageLayout
@@ -81,14 +82,7 @@ export default function Page() {
 			}
 		>
 			<div class="flex items-center gap-4">
-				<Input
-					placeholder={groups.isLoading ? "Loading..." : "Search..."}
-					disabled={groups.isLoading}
-					value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-					onInput={(event) =>
-						table.getColumn("name")?.setFilterValue(event.target.value)
-					}
-				/>
+				<TableSearchParamsInput query={groups} />
 				<ColumnsDropdown table={table}>
 					<As component={Button} variant="outline" class="ml-auto select-none">
 						Columns
@@ -114,6 +108,7 @@ import {
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
+import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 
 function CreateGroupDialog(props: ParentProps) {
 	const params = useZodParams({ tenantSlug: z.string() });

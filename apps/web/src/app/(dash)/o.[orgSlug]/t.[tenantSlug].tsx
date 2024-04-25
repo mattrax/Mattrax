@@ -1,5 +1,5 @@
-import { type ParentProps, Show, Suspense, startTransition } from "solid-js";
-import { type RouteDefinition, useNavigate, A } from "@solidjs/router";
+import { type ParentProps, Show, Suspense } from "solid-js";
+import { type RouteDefinition, A } from "@solidjs/router";
 import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
@@ -10,6 +10,7 @@ import { TenantContext, useTenant } from "./t.[tenantSlug]/Context";
 import { MultiSwitcher } from "../MultiSwitcher";
 import { As } from "@kobalte/core";
 import { Button } from "@mattrax/ui";
+import { trpc } from "~/lib";
 
 export function useTenantSlug() {
 	const params = useZodParams({ tenantSlug: z.string() });
@@ -27,24 +28,35 @@ const NAV_ITEMS = [
 ];
 
 export const route = {
+	load: ({ params }) => {
+		trpc.useContext().tenant.list.ensureData({ orgSlug: params.orgSlug! });
+	},
 	info: {
 		NAV_ITEMS,
 		BREADCRUMB: {
 			hasNestedSegments: true,
 			Component: (props: { href: string }) => {
+				const params = useZodParams({
+					orgSlug: z.string(),
+					tenantSlug: z.string(),
+				});
+
+				const tenants = trpc.tenant.list.createQuery(() => ({
+					orgSlug: params.orgSlug,
+				}));
+
+				const tenant = () =>
+					tenants.data?.find((t) => t.slug === params.tenantSlug);
+
 				return (
-					<AuthContext>
-						<TenantContext>
-							<div class="flex flex-row items-center py-1 gap-2">
-								<A href={props.href}>{useTenant()().name}</A>
-								<MultiSwitcher>
-									<As component={Button} variant="ghost" size="iconSmall">
-										<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
-									</As>
-								</MultiSwitcher>
-							</div>
-						</TenantContext>
-					</AuthContext>
+					<div class="flex flex-row items-center py-1 gap-2">
+						<A href={props.href}>{tenant()?.name}</A>
+						<MultiSwitcher>
+							<As component={Button} variant="ghost" size="iconSmall">
+								<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+							</As>
+						</MultiSwitcher>
+					</div>
 				);
 			},
 		},

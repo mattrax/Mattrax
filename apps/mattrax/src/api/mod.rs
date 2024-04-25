@@ -98,6 +98,10 @@ pub fn mount(state: Arc<Context>) -> Router {
     Router::new()
         .route("/", get(|| async move { "Mattrax MDM!".to_string() }))
         .nest("/internal", internal::mount(state.clone()))
+        .nest(
+            "/psdb.v1alpha1.Database",
+            internal::sql::mount(state.clone()),
+        )
         .nest("/EnrollmentServer", mdm::enrollment::mount(state.clone()))
         .nest("/ManagementServer", mdm::manage::mount(state.clone()))
         .layer(middleware::from_fn_with_state(state.clone(), headers))

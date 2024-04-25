@@ -34,3 +34,6 @@ rustls-acme = { git = "https://github.com/oscartbeaumont/rustls-acme", rev = "f9
 # Some minor improvements
 easy-xml = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }
 easy-xml-derive = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }
+
+# Support for latest mysql-async
+refinery-core = { git = "https://github.com/oscartbeaumont/refinery.git", rev = "03744dc3257ae734a9d2f305e59b95485da53468" }

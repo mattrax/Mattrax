@@ -24,7 +24,7 @@ import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
 import { StandardTable, createStandardTable } from "~/components/StandardTable";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { BruhIconPhLaptop } from "./bruh";
-import { useUser } from "./Context";
+import { UserContext, useUser } from "./Context";
 import { trpc } from "~/lib";
 
 export const route = {
@@ -35,27 +35,29 @@ export const route = {
 } satisfies RouteDefinition;
 
 export default function Page() {
-	const user = useUser();
+	const user = () => useUser()();
 
 	return (
-		<div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col">
-			<div class="flex flex-row justify-between">
-				<div>
-					<h1 class="text-3xl font-bold">{user().name}</h1>
-					<span class="block mt-1 text-gray-700 text-sm">{user().email}</span>
+		<UserContext>
+			<div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col">
+				<div class="flex flex-row justify-between">
+					<div>
+						<h1 class="text-3xl font-bold">{user().name}</h1>
+						<span class="block mt-1 text-gray-700 text-sm">{user().email}</span>
+					</div>
+					<IdPLink />
 				</div>
-				<IdPLink />
+				<hr class="w-full h-px my-4 border-gray-200" />
+				<div class="flex flex-row gap-8">
+					<div class="flex-1 space-y-4">
+						<Devices />
+					</div>
+					<div class="flex-1 space-y-4">
+						<Assignments />
+					</div>
+				</div>
 			</div>
-			<hr class="w-full h-px my-4 border-gray-200" />
-			<div class="flex flex-row gap-8">
-				<div class="flex-1 space-y-4">
-					<Devices />
-				</div>
-				<div class="flex-1 space-y-4">
-					<Assignments />
-				</div>
-			</div>
-		</div>
+		</UserContext>
 	);
 }
 

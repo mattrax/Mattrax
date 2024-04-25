@@ -1,7 +1,6 @@
 import { createContextProvider } from "@solid-primitives/context";
-import { A, Navigate, type RouteDefinition } from "@solidjs/router";
-import { type ParentProps, Show } from "solid-js";
-import { toast } from "solid-sonner";
+import { type RouteDefinition } from "@solidjs/router";
+import { type ParentProps } from "solid-js";
 import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 
@@ -9,6 +8,8 @@ import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 import type { RouterOutput } from "~/api";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
+import { useTenantSlug } from "../../t.[tenantSlug]";
+import { createNotFoundRedirect, useNameFromListQuery } from "~/lib/utils";
 
 // const NAV_ITEMS = [{ title: "Application", href: "" }];
 
@@ -22,14 +23,20 @@ export const route = {
 		BREADCRUMB: {
 			Component: () => {
 				const params = useZodParams({ appId: z.string() });
+				const tenantSlug = useTenantSlug();
 
 				const query = trpc.app.get.createQuery(() => ({
 					id: params.appId,
 				}));
 
+				const nameFromList = useNameFromListQuery(
+					(trpc) => trpc.app.list.getData({ tenantSlug: tenantSlug() }),
+					() => params.appId,
+				);
+
 				return (
 					<>
-						<span>{query.data?.name}</span>
+						<span>{nameFromList() ?? query.data?.name}</span>
 						<Badge variant="outline">App</Badge>
 					</>
 				);
@@ -37,6 +44,11 @@ export const route = {
 		},
 	},
 } satisfies RouteDefinition;
+
+function useAppId() {
+	const params = useZodParams({ appId: z.string() });
+	return () => params.appId;
+}
 
 export const [AppContextProvider, useApp] = createContextProvider(
 	(props: {
@@ -49,27 +61,13 @@ export const [AppContextProvider, useApp] = createContextProvider(
 );
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ appId: z.string() });
+	const appId = useAppId();
 
-	const query = trpc.app.get.createQuery(() => ({
-		id: params.appId,
-	}));
+	createNotFoundRedirect({
+		query: trpc.app.get.createQuery(() => ({ id: appId() })),
+		toast: "Application not found",
+		to: "../../apps",
+	});
 
-	return (
-		<Show when={query.data !== undefined}>
-			<Show when={query.data} fallback={<NotFound />}>
-				{(data) => (
-					<AppContextProvider app={data()} query={query}>
-						<MErrorBoundary>{props.children}</MErrorBoundary>
-					</AppContextProvider>
-				)}
-			</Show>
-		</Show>
-	);
-}
-
-function NotFound() {
-	toast.error("Application not found");
-	// necessary since '..' adds trailing slash -_-
-	return <Navigate href="../../apps" />;
+	return <MErrorBoundary>{props.children}</MErrorBoundary>;
 }

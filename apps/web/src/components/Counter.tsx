@@ -1,6 +1,12 @@
 // This amazing counter component was written by @Brendonovich
 
-import { Accessor, JSX, createEffect, createSignal, onCleanup } from "solid-js";
+import {
+	Accessor,
+	createEffect,
+	createMemo,
+	createSignal,
+	onCleanup,
+} from "solid-js";
 
 function ease(x: number) {
 	return 1 - (1 - x) ** 3;
@@ -10,14 +16,13 @@ interface Props {
 	start?: number;
 	value: number;
 	duration: number;
-	children: (value: Accessor<number>) => JSX.Element;
 }
 
-const Count = (props: Props) => {
-	const [value, setValue] = createSignal(props.value);
+export function createCounter(props: Accessor<Props>) {
+	const [value, setValue] = createSignal<number>();
 
 	createEffect<number>((start: number) => {
-		const end = props.value;
+		const end = props().value;
 
 		if (end !== undefined) {
 			const startTime = performance.now();
@@ -26,7 +31,7 @@ const Count = (props: Props) => {
 			const tick = () => {
 				lastFrame = requestAnimationFrame(() => {
 					const now = performance.now();
-					const t = Math.min((now - startTime) / props.duration, 1);
+					const t = Math.min((now - startTime) / props().duration, 1);
 
 					if (t === 1) {
 						setValue(end);
@@ -49,9 +54,9 @@ const Count = (props: Props) => {
 		}
 
 		return start;
-	}, props.start ?? 0);
+	}, props().start ?? 0);
 
-	return props.children(value);
-};
-
-export default Count;
+	return () => {
+		return value() ?? props().start ?? 0;
+	};
+}

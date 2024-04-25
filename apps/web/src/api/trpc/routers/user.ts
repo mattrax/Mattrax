@@ -196,7 +196,11 @@ export const userRouter = createTRPCRouter({
 								variant: sql`"user"`,
 							})),
 						)
-						.onConflictDoNothing(),
+						.onDuplicateKeyUpdate({
+							set: {
+								pk: sql`${policyAssignments.pk}`,
+							},
+						}),
 					db
 						.insert(applicationAssignments)
 						.values(
@@ -206,7 +210,11 @@ export const userRouter = createTRPCRouter({
 								variant: sql`"user"`,
 							})),
 						)
-						.onConflictDoNothing(),
+						.onDuplicateKeyUpdate({
+							set: {
+								pk: sql`${applicationAssignments.pk}`,
+							},
+						}),
 				]),
 			);
 		}),

@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import * as jose from "jose";
 import { renderToString } from "solid-js/web";
 
-import { domains, getDb, identityProviders } from "~/db";
+import { domains, db, identityProviders } from "~/db";
 import { env } from "~/env";
 import { getEmailDomain } from "../utils";
 import { upsertEntraIdUser } from "../trpc/routers/tenant/identityProvider";
@@ -62,7 +62,7 @@ export const enrollmentRouter = new Hono()
 		const domain = getEmailDomain(email);
 		if (domain === undefined) return c.text("Invalid email address");
 
-		const [domainRecord] = await getDb()
+		const [domainRecord] = await db
 			.select({
 				identityProvider: {
 					remoteId: identityProviders.remoteId,

@@ -1,6 +1,6 @@
 // @refresh reload
 import { type EventBus, createEventBus } from "@solid-primitives/event-bus";
-import { Router, useNavigate } from "@solidjs/router";
+import { Router, useLocation, useNavigate } from "@solidjs/router";
 import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
 import {
 	QueryCache,
@@ -9,7 +9,7 @@ import {
 	keepPreviousData,
 	onlineManager,
 } from "@tanstack/solid-query";
-import { lazy, onCleanup, startTransition } from "solid-js";
+import { Suspense, lazy, onCleanup, startTransition } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 import { FileRoutes } from "@solidjs/start/router";
 
@@ -30,7 +30,6 @@ declare module "solid-js" {
 
 function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 	const onErrorFactory = (scopeMsg: string) => (error: unknown) => {
-		console.error(scopeMsg, error);
 		errorBus.emit([scopeMsg, error]);
 	};
 
@@ -89,6 +88,7 @@ export default function App() {
 				<Router
 					root={(props) => {
 						const navigate = useNavigate();
+						const location = useLocation();
 
 						onCleanup(
 							errorBus.listen(([scopeMsg, error]) => {
@@ -101,21 +101,32 @@ export default function App() {
 								);
 
 								if (isTRPCClientError(error)) {
-									console.log({ error });
 									if (error.data?.code === "UNAUTHORIZED") {
-										startTransition(() => navigate("/login"));
-										return;
-									}
+										startTransition(() => {
+											let query = "";
+											if (
+												location.pathname !== "/" &&
+												location.pathname !== "/login"
+											)
+												query = `?${new URLSearchParams({
+													continueTo: location.pathname,
+												})}`;
 
-									if (error.data?.code === "FORBIDDEN") {
+											navigate(`/login${query}`);
+										});
+										return;
+										// biome-ignore lint/style/noUselessElse:
+									} else if (error.data?.code === "FORBIDDEN") {
 										if (error.message === "tenant") navigate("/");
 										else
 											errorMsg =
 												"You are not allowed to access this resource!,";
+									} else if (error.data?.code === "NOT_FOUND") {
+										// not founds are handled at an app level with `.get` queries returning `null`
+										return;
 									}
 								}
 
-								// TODO: Prevent this for auth errors
 								toast.error(errorMsg, {
 									id: "network-error",
 								});
@@ -154,7 +165,7 @@ export default function App() {
 								{import.meta.env.DEV && <SolidQueryDevtools />}
 								<MErrorBoundary>
 									<Toaster />
-									{props.children}
+									<Suspense>{props.children}</Suspense>
 								</MErrorBoundary>
 							</>
 							// </PersistQueryClientProvider>

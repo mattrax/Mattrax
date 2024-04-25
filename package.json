@@ -1,25 +1,26 @@
 {
 	"name": "@mattrax/monorepo",
 	"private": true,
-	"workspaces": ["apps/*", "packages/*", "apps/email/*"],
+	"workspaces": ["apps/*", "packages/*"],
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/web dev",
 		"landing": "pnpm --filter @mattrax/landing --",
 		"configure": "pnpm --filter @mattrax/configure --",
-		"email": "pnpm --filter @mattrax/email --",
 		"ingest": "pnpm --filter @mattrax/ingest --",
 		"doc": "pnpm --filter @mattrax/docs --",
 		"web": "pnpm --filter @mattrax/web --",
-		"db:push": "drizzle-kit push:pg && bun run ./apps/web/src/db/rust.ts",
+		"db:push": "drizzle-kit push:mysql && bun run ./apps/web/src/db/rust.ts",
+		"db:gen": "drizzle-kit generate:mysql && bun run ./apps/web/src/db/rust.ts",
 		"db:studio": "drizzle-kit studio",
-		"db:gen": "bun run ./apps/web/src/db/rust.ts",
-		"db:generate": "drizzle-kit generate:pg",
+		"db:rs": "bun run ./apps/web/src/db/rust.ts",
 		"typecheck": "tsc -b",
 		"lint": "biome lint .",
-		"format": "biome format --write ."
+		"format": "biome format --write .",
+		"prepare": "husky"
 	},
 	"engines": {
-		"node": ">=18"
+		"node": ">=18",
+		"pnpm": "^9"
 	},
 	"dependencies": {
 		"@biomejs/biome": "^1.7.0",
@@ -30,16 +31,20 @@
 		"typescript": "^5.4.5",
 		"vinxi": "=0.3.10"
 	},
+	"devDependencies": {
+		"husky": "^9.0.11"
+	},
 	"resolutions": {
 		"@solidjs/start": "^0.7.5",
 		"vinxi": "=0.3.10",
-		"drizzle-orm": "^0.30.1"
+		"drizzle-orm": "^0.30.8"
 	},
 	"pnpm": {
 		"patchedDependencies": {
 			"@solidjs/router@0.13.2": "patches/@solidjs__router@0.13.2.patch",
 			"@tanstack/solid-form@0.19.0": "patches/@tanstack__solid-form@0.19.0.patch",
-			"drizzle-orm@0.30.8": "patches/drizzle-orm@0.30.8.patch"
+			"drizzle-orm@0.30.8": "patches/drizzle-orm@0.30.8.patch",
+			"@react-email/tailwind@0.0.15": "patches/@react-email__tailwind@0.0.15.patch"
 		}
 	}
 }

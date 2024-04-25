@@ -1,5 +1,5 @@
 import { count, sql } from "drizzle-orm";
-import { union } from "drizzle-orm/pg-core";
+import { union } from "drizzle-orm/mysql-core";
 
 import { devices, policies, tenants, users } from "~/db";
 import { createTRPCRouter, superAdminProcedure } from "../helpers";

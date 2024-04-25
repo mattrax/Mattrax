@@ -1,4 +1,4 @@
-import { type ParentProps, Suspense } from "solid-js";
+import { type ParentProps } from "solid-js";
 
 import { NavItemsProvider } from "./(dash)/TopBar/NavItems";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
@@ -16,7 +16,7 @@ export default function Layout(props: ParentProps) {
 		<MErrorBoundary>
 			<NavItemsProvider>
 				<TopBar />
-				<Suspense>{props.children}</Suspense>
+				{props.children}
 			</NavItemsProvider>
 		</MErrorBoundary>
 	);

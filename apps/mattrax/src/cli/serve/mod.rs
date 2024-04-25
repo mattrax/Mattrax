@@ -9,6 +9,7 @@ use better_acme::{Acme, FsStore};
 use hmac::{Hmac, Mac};
 use mx_db::Db;
 use rcgen::{Certificate, CertificateParams, KeyPair};
+use refinery::embed_migrations;
 use rustls::{
     pki_types::CertificateDer, server::WebPkiClientVerifier, RootCertStore, ServerConfig,
 };
@@ -20,6 +21,8 @@ use crate::{api, cli::serve::acme::MattraxAcmeStore, config::ConfigManager};
 
 mod acme;
 mod server;
+
+embed_migrations!("../../migrations/refinery");
 
 #[derive(clap::Args)]
 #[command(about = "Serve Mattrax.")]
@@ -68,7 +71,12 @@ impl Command {
             KeyPair::from_der(&fs::read(data_dir.join("certs").join("identity-key.der")).unwrap())
                 .unwrap();
         let identity_cert = fs::read(data_dir.join("certs").join("identity.der")).unwrap();
-        let db = Db::new(&config_manager.get().db_url).await;
+        let mut db = Db::new(&config_manager.get().db_url);
+        migrations::runner()
+            .set_migration_table_name("_migrations")
+            .run_async(&mut *db)
+            .await
+            .unwrap();
         let shared_secret =
             Hmac::new_from_slice(config_manager.get().internal_secret.as_bytes()).unwrap();
         let (acme_tx, acme_rx) = mpsc::channel(25);

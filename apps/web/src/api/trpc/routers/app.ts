@@ -58,8 +58,8 @@ export const applicationRouter = createTRPCRouter({
 				"addApp",
 				{ id, name: input.name },
 				[ctx.tenant.pk, ctx.account.pk],
-				async () => {
-					await ctx.db.insert(applications).values({
+				async (db) => {
+					await db.insert(applications).values({
 						id,
 						name: input.name,
 						tenantPk: ctx.tenant.pk,

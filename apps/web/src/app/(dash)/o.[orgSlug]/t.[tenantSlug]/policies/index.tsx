@@ -11,6 +11,7 @@ import {
 	createStandardTable,
 	createSearchParamPagination,
 	selectCheckboxColumn,
+	createSearchParamFilter,
 } from "~c/StandardTable";
 import {
 	Button,
@@ -49,7 +50,11 @@ const columns = [
 	// TODO: Supported OS's
 ];
 
-function createPoliciesTable() {
+// TODO: Infinite scroll
+
+// TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
+
+export default function Page() {
 	const params = useZodParams({ tenantSlug: z.string() });
 	const policies = trpc.policy.list.createQuery(() => params);
 
@@ -62,35 +67,18 @@ function createPoliciesTable() {
 	});
 
 	createSearchParamPagination(table, "page");
-
-	return { policies, table };
-}
-
-// TODO: Infinite scroll
-
-// TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
-
-export default function Page() {
-	const { table, policies } = createPoliciesTable();
+	createSearchParamFilter(table, "name", "search");
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Policies</PageLayoutHeading>}>
 			<div class="flex flex-row gap-4">
-				<Input
-					placeholder={policies.isLoading ? "Loading..." : "Search..."}
-					disabled={policies.isLoading}
-					value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-					onInput={(event) =>
-						table.getColumn("name")?.setFilterValue(event.target.value)
-					}
-					class="flex-1"
-				/>
-				<ColumnsDropdown table={table}>
+				<TableSearchParamsInput query={policies} class="flex-1" />
+				{/* <ColumnsDropdown table={table}>
 					<As component={Button} variant="outline" class="ml-auto select-none">
 						Columns
 						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
 					</As>
-				</ColumnsDropdown>
+				</ColumnsDropdown> */}
 
 				<CreatePolicyButton />
 			</div>
@@ -108,6 +96,7 @@ import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 import { useTenantSlug } from "../../t.[tenantSlug]";
+import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 
 function CreatePolicyButton() {
 	const tenantSlug = useTenantSlug();
@@ -116,7 +105,7 @@ function CreatePolicyButton() {
 
 	const createPolicy = trpc.policy.create.createMutation(() => ({
 		onSuccess: async (policyId) => {
-			trpcCtx.policy.list.invalidate();
+			trpcCtx.user.list.invalidate();
 			trpcCtx.tenant.gettingStarted.invalidate();
 			await startTransition(() => navigate(policyId));
 		},

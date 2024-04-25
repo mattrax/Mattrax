@@ -65,6 +65,18 @@ export function createSearchParamPagination<TData extends RowData>(
 	);
 }
 
+export function createSearchParamFilter<TData extends RowData>(
+	table: TTable<TData>,
+	column: string,
+	searchParam: string,
+) {
+	const [searchParams] = useSearchParams();
+
+	createEffect(() => {
+		table.getColumn(column)?.setFilterValue(searchParams[searchParam]);
+	});
+}
+
 import {
 	Button,
 	Checkbox,

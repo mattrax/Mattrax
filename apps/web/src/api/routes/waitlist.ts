@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { HonoEnv } from "../types";
 import { z } from "zod";
 import {
-	getDb,
+	db,
 	waitlist,
 	waitlistDeploymentMethod,
 	waitlistInterestReasons,
@@ -39,7 +39,7 @@ export const waitlistRouter = new Hono<HonoEnv>().post("/", async (c) => {
 		console.error("Failed to send discord message", err);
 	}
 
-	await getDb().insert(waitlist).values({
+	await db.insert(waitlist).values({
 		email: result.data.email,
 		name: result.data.name,
 		interest: result.data.interest,

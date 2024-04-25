@@ -14,8 +14,8 @@ import {
 	CardTitle,
 } from "@mattrax/ui";
 import { trpc } from "~/lib";
-import { useAuth } from "~c/AuthContext";
-import { useOrg } from "../Context";
+import { AuthContext, useAuth } from "~c/AuthContext";
+import { OrgContext, useOrg } from "../Context";
 import { useOrgSlug } from "../../o.[orgSlug]";
 
 export const route = {
@@ -27,15 +27,14 @@ export const route = {
 } satisfies RouteDefinition;
 
 export default function Page() {
-	const auth = useAuth();
-	const org = useOrg();
+	const orgSlug = useOrgSlug();
 
 	const invites = trpc.org.admins.invites.createQuery(() => ({
-		orgSlug: org().slug,
+		orgSlug: orgSlug(),
 	}));
 
 	const administrators = trpc.org.admins.list.createQuery(() => ({
-		orgSlug: org().slug,
+		orgSlug: orgSlug(),
 	}));
 
 	const removeInvite = trpc.org.admins.removeInvite.createMutation(() => ({
@@ -54,98 +53,110 @@ export default function Page() {
 			<div class="flex flex-col gap-4">
 				<InviteAdminCard />
 				<Suspense>
-					<ConfirmDialog>
-						{(confirm) => (
-							<ul class="rounded border border-gray-200 divide-y divide-gray-200">
-								<For each={invites.data}>
-									{(invite) => (
-										<li class="p-4 flex flex-row justify-between">
-											<div class="flex-1 flex flex-row space-x-4 items-center">
-												<div class="flex flex-col text-sm">
-													<span class="font-semibold text-yellow-700">
-														Pending Invitation
-													</span>
-													<span class="text-gray-500">{invite.email}</span>
-												</div>
-											</div>
-											<div>
-												{auth().id === org().ownerId && (
-													<Button
-														variant="destructive"
-														size="sm"
-														onClick={() => {
-															confirm({
-																title: "Remove Invite",
-																description: (
-																	<>
-																		Are you sure you want to remove the invite
-																		for <b>{invite.email}</b>?
-																	</>
-																),
-																action: "Remove",
-																onConfirm: async () =>
-																	await removeInvite.mutateAsync({
-																		orgSlug: org().slug,
-																		email: invite.email,
-																	}),
-															});
-														}}
-													>
-														Remove
-													</Button>
+					<AuthContext>
+						<OrgContext>
+							<ConfirmDialog>
+								{(confirm) => {
+									const auth = useAuth();
+									const org = useOrg();
+
+									return (
+										<ul class="rounded border border-gray-200 divide-y divide-gray-200">
+											<For each={invites.data}>
+												{(invite) => (
+													<li class="p-4 flex flex-row justify-between">
+														<div class="flex-1 flex flex-row space-x-4 items-center">
+															<div class="flex flex-col text-sm">
+																<span class="font-semibold text-yellow-700">
+																	Pending Invitation
+																</span>
+																<span class="text-gray-500">
+																	{invite.email}
+																</span>
+															</div>
+														</div>
+														<div>
+															{auth().id === org().ownerId && (
+																<Button
+																	variant="destructive"
+																	size="sm"
+																	onClick={() => {
+																		confirm({
+																			title: "Remove Invite",
+																			description: (
+																				<>
+																					Are you sure you want to remove the
+																					invite for <b>{invite.email}</b>?
+																				</>
+																			),
+																			action: "Remove",
+																			onConfirm: async () =>
+																				await removeInvite.mutateAsync({
+																					orgSlug: orgSlug(),
+																					email: invite.email,
+																				}),
+																		});
+																	}}
+																>
+																	Remove
+																</Button>
+															)}
+														</div>
+													</li>
 												)}
-											</div>
-										</li>
-									)}
-								</For>
-								<For each={administrators.data}>
-									{(admin) => (
-										<li class="p-4 flex flex-row justify-between">
-											<div class="flex-1 flex flex-row space-x-4 items-center">
-												<div class="flex flex-col text-sm">
-													<span class="font-semibold">{admin.name}</span>
-													<span class="text-gray-500">{admin.email}</span>
-												</div>
-												{admin.isOwner && (
-													<div>
-														<Badge>Owner</Badge>
-													</div>
+											</For>
+											<For each={administrators.data}>
+												{(admin) => (
+													<li class="p-4 flex flex-row justify-between">
+														<div class="flex-1 flex flex-row space-x-4 items-center">
+															<div class="flex flex-col text-sm">
+																<span class="font-semibold">{admin.name}</span>
+																<span class="text-gray-500">{admin.email}</span>
+															</div>
+															{admin.isOwner && (
+																<div>
+																	<Badge>Owner</Badge>
+																</div>
+															)}
+														</div>
+														<div>
+															{auth().id === org().ownerId &&
+																!admin.isOwner && (
+																	<Button
+																		variant="destructive"
+																		size="sm"
+																		onClick={() => {
+																			confirm({
+																				title: "Remove Administrator",
+																				description: (
+																					<>
+																						Are you sure you want to remove{" "}
+																						<b>{admin.email}</b> from this
+																						tenant's administrators?
+																					</>
+																				),
+																				action: "Remove",
+																				onConfirm: async () =>
+																					await removeAdmin.mutateAsync({
+																						orgSlug: org().slug,
+																						adminId: admin.id,
+																					}),
+																			});
+																		}}
+																	>
+																		Remove
+																	</Button>
+																)}
+														</div>
+													</li>
 												)}
-											</div>
-											<div>
-												{auth().id === org().ownerId && !admin.isOwner && (
-													<Button
-														variant="destructive"
-														size="sm"
-														onClick={() => {
-															confirm({
-																title: "Remove Administrator",
-																description: (
-																	<>
-																		Are you sure you want to remove{" "}
-																		<b>{admin.email}</b> from this tenant's
-																		administrators?
-																	</>
-																),
-																action: "Remove",
-																onConfirm: async () =>
-																	await removeAdmin.mutateAsync({
-																		orgSlug: org().slug,
-																		adminId: admin.id,
-																	}),
-															});
-														}}
-													>
-														Remove
-													</Button>
-												)}
-											</div>
-										</li>
-									)}
-								</For>
-							</ul>
-						)}
-					</ConfirmDialog>
+											</For>
+										</ul>
+									);
+								}}
+							</ConfirmDialog>
+						</OrgContext>
+					</AuthContext>
 				</Suspense>
 			</div>
 		</div>

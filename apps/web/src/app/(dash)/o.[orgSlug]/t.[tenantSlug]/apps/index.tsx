@@ -15,6 +15,7 @@ import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import {
 	ColumnsDropdown,
 	StandardTable,
+	createSearchParamFilter,
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
@@ -45,7 +46,7 @@ const columns = [
 	// TODO: Descriptions, supported OS's.
 ];
 
-function createApplicationsTable() {
+export default function Page() {
 	const tenantSlug = useTenantSlug();
 	const apps = trpc.app.list.createQuery(() => ({
 		tenantSlug: tenantSlug(),
@@ -58,11 +59,7 @@ function createApplicationsTable() {
 		columns,
 	});
 
-	return { table, apps };
-}
-
-export default function Page() {
-	const { table, apps } = createApplicationsTable();
+	createSearchParamFilter(table, "name", "search");
 
 	return (
 		<PageLayout
@@ -78,14 +75,7 @@ export default function Page() {
 			}
 		>
 			<div class="flex flex-row items-center gap-4">
-				<Input
-					placeholder={apps.isLoading ? "Loading..." : "Search..."}
-					disabled={apps.isLoading}
-					value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-					onInput={(event) =>
-						table.getColumn("name")?.setFilterValue(event.target.value)
-					}
-				/>
+				<TableSearchParamsInput query={apps} />
 				<ColumnsDropdown table={table}>
 					<As component={Button} variant="outline" class="ml-auto select-none">
 						Columns
@@ -100,7 +90,12 @@ export default function Page() {
 	);
 }
 
-import { A, useNavigate, type RouteDefinition } from "@solidjs/router";
+import {
+	A,
+	useNavigate,
+	useSearchParams,
+	type RouteDefinition,
+} from "@solidjs/router";
 import { createQuery, queryOptions } from "@tanstack/solid-query";
 import {
 	Button,
@@ -121,6 +116,7 @@ import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { z } from "zod";
 import clsx from "clsx";
 import { useTenantSlug } from "../../t.[tenantSlug]";
+import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 
 const IOS_APP_SCHEMA = z.object({
 	results: z.array(

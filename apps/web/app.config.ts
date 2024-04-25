@@ -13,8 +13,18 @@ import "./src/env";
 export default defineConfig({
 	ssr: false,
 	routeDir: "app",
+	// @ts-expect-error: SS's types are wrong. This is piped into Solid's Vite plugin so all options are not required.
+	solid: {
+		// We don't wanna apply Solid's JSX transform to the React emails.
+		exclude: "src/emails/*",
+	},
 	vite: {
 		envDir: monorepoRoot,
+		css: {
+			modules: {
+				localsConvention: "camelCaseOnly",
+			},
+		},
 		build: {
 			// Safari mobile has problems with newer syntax
 			target: "es2015",

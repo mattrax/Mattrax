@@ -4,7 +4,7 @@ import { sessions } from "~/db";
 import { authedProcedure, createTRPCRouter } from "../helpers";
 import { createId } from "@paralleldrive/cuid2";
 import { z } from "zod";
-import { getLucia } from "~/api/auth";
+import { lucia } from "~/api/auth";
 
 export const apiKeyRouter = createTRPCRouter({
 	// TODO: move this to `sessions.list` and don't filter (then render them differently in the UI)
@@ -34,7 +34,7 @@ export const apiKeyRouter = createTRPCRouter({
 });
 
 export async function createAPIKey(name: string, accountId: string) {
-	const session = await getLucia().createSession(accountId, {
+	const session = await lucia.createSession(accountId, {
 		userAgent: `c${name}`,
 		location: "earth", // TODO
 	});

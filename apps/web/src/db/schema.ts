@@ -4,17 +4,16 @@ import {
 	bigint,
 	boolean,
 	json,
-	pgEnum,
-	pgTable,
+	mysqlEnum,
+	mysqlTable,
 	primaryKey,
 	serial,
 	timestamp,
 	smallint,
 	unique,
-	customType,
-	integer,
 	varchar,
-} from "drizzle-orm/pg-core";
+	varbinary,
+} from "drizzle-orm/mysql-core";
 import { auditLogDefinition } from "../api/auditLogDefinition";
 import { getObjectKeys } from "../api/utils";
 import type { Configuration } from "~/lib/policy";
@@ -27,13 +26,8 @@ import type { Features } from "~/lib/featureFlags";
 
 // TODO: Planetscale reports all `id` columns containing an unnecessary index. We probs need Drizzle to fix that.
 
-const blob = customType<{ data: Array<number> }>({
-	dataType() {
-		return "bytea";
-	},
-});
-
-const serialRelation = (name: string) => integer(name);
+const serialRelation = (name: string) =>
+	bigint(name, { mode: "number", unsigned: true });
 
 const cuid = (name: string) =>
 	varchar(name, { length: 24 }).$default(() => createId());
@@ -54,28 +48,19 @@ export const waitlistDeploymentMethod = [
 	"other",
 ] as const;
 
-export const waitlistInterestEnum = pgEnum(
-	"waitlist_interest",
-	waitlistInterestReasons,
-);
-export const waitlistDeploymentEnum = pgEnum(
-	"waitlist_deployment",
-	waitlistDeploymentMethod,
-);
-
 // Waitlist is a table of people who have signed up to be notified when Mattrax is available.
 // This is exposed as an API that is called by `apps/landing`
-export const waitlist = pgTable("waitlist", {
+export const waitlist = mysqlTable("waitlist", {
 	id: serial("id").primaryKey(),
 	email: varchar("email", { length: 256 }).notNull().unique(),
 	name: varchar("name", { length: 256 }),
-	interest: waitlistInterestEnum("interest").notNull(),
-	deployment: waitlistDeploymentEnum("deployment").notNull(),
+	interest: mysqlEnum("interest", waitlistInterestReasons).notNull(),
+	deployment: mysqlEnum("deployment", waitlistDeploymentMethod).notNull(),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 // An account represents the login of an *administrator*.
-export const accounts = pgTable("accounts", {
+export const accounts = mysqlTable("accounts", {
 	pk: serial("pk").primaryKey(),
 	id: varchar("id", { length: 16 }).notNull().unique(),
 	email: varchar("email", { length: 256 }).unique().notNull(),
@@ -85,7 +70,7 @@ export const accounts = pgTable("accounts", {
 
 // Each session represents an authenticated context with a Mattrax account.
 // This could represent a browser or a CLI session.
-export const sessions = pgTable("session", {
+export const sessions = mysqlTable("session", {
 	id: varchar("id", {
 		length: 255,
 	}).primaryKey(),
@@ -102,7 +87,7 @@ export const sessions = pgTable("session", {
 
 // When authenticating with a browser, the user will be sent a code to their email.
 // We store it in the DB to ensure it can only be redeemed once.
-export const accountLoginCodes = pgTable("account_login_codes", {
+export const accountLoginCodes = mysqlTable("account_login_codes", {
 	code: varchar("code", { length: 8 }).notNull().primaryKey(),
 	accountPk: serialRelation("account")
 		.references(() => accounts.pk)
@@ -111,7 +96,7 @@ export const accountLoginCodes = pgTable("account_login_codes", {
 });
 
 // When authenticating with the CLI, this code will be used to authenticate.
-export const cliAuthCodes = pgTable("cli_auth_codes", {
+export const cliAuthCodes = mysqlTable("cli_auth_codes", {
 	code: cuid("code").notNull().primaryKey(),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	sessionId: varchar("session", {
@@ -124,7 +109,7 @@ export const cliAuthCodes = pgTable("cli_auth_codes", {
 //
 // An organisation is just a collect of many tenants, billing information and a set of accounts which have access to it.
 //
-export const organisations = pgTable("organisations", {
+export const organisations = mysqlTable("organisations", {
 	pk: serial("pk").primaryKey(),
 	id: cuid("id").notNull().unique(),
 	name: varchar("name", { length: 100 }).notNull(),
@@ -136,7 +121,7 @@ export const organisations = pgTable("organisations", {
 		.notNull(),
 });
 
-export const organisationMembers = pgTable(
+export const organisationMembers = mysqlTable(
 	"organisation_members",
 	{
 		orgPk: serialRelation("org")
@@ -149,7 +134,7 @@ export const organisationMembers = pgTable(
 	(table) => ({ pk: primaryKey({ columns: [table.orgPk, table.accountPk] }) }),
 );
 
-export const organisationInvites = pgTable(
+export const organisationInvites = mysqlTable(
 	"organisation_invites",
 	{
 		code: varchar("code", { length: 256 }).primaryKey(),
@@ -164,12 +149,12 @@ export const organisationInvites = pgTable(
 	}),
 );
 
-export const tenants = pgTable("tenant", {
+export const tenants = mysqlTable("tenant", {
 	pk: serial("pk").primaryKey(),
 	id: cuid("id").notNull().unique(),
 	name: varchar("name", { length: 100 }).notNull(),
 	slug: varchar("slug", { length: 256 }).notNull().unique(),
-	orgPk: serialRelation("org").references(() => accounts.pk),
+	orgPk: serialRelation("org").references(() => organisations.pk),
 });
 
 const userProviderVariants = [
@@ -179,19 +164,14 @@ const userProviderVariants = [
 
 export type UserProviderVariant = (typeof userProviderVariants)[number];
 
-export const identityProviderEnum = pgEnum(
-	"identity_provider",
-	userProviderVariants,
-);
-
 // A link between a tenant and an external authentication provider.
-export const identityProviders = pgTable(
+export const identityProviders = mysqlTable(
 	"identity_providers",
 	{
 		pk: serial("pk").primaryKey(),
 		id: cuid("id").notNull().unique(),
 		name: varchar("name", { length: 256 }),
-		provider: identityProviderEnum("provider").notNull(),
+		provider: mysqlEnum("provider", userProviderVariants).notNull(),
 		tenantPk: serialRelation("tenant")
 			.notNull()
 			.unique()
@@ -214,7 +194,7 @@ export const identityProviders = pgTable(
 
 // An account represents the login of an *end-user*.
 // These are scoped to a tenant and can't login to the Mattrax dashboard.
-export const users = pgTable(
+export const users = mysqlTable(
 	"users",
 	{
 		pk: serial("pk").primaryKey(),
@@ -241,7 +221,7 @@ const policyDataCol = json("data")
 	.default({})
 	.$type<Record<string, Configuration>>();
 
-export const policies = pgTable("policies", {
+export const policies = mysqlTable("policies", {
 	pk: serial("pk").primaryKey(),
 	id: cuid("id").notNull().unique(),
 	priority: smallint("priority").notNull().default(128),
@@ -266,12 +246,8 @@ export const policyAssignableVariants = [
 	PolicyAssignableVariants.group,
 ] as const;
 export type PolicyAssignableVariant = (typeof policyAssignableVariants)[number];
-export const policyAssignableVariantEnum = pgEnum(
-	"policy_assignable_variant",
-	policyAssignableVariants,
-);
 
-export const policyAssignments = pgTable(
+export const policyAssignments = mysqlTable(
 	"policy_assignables",
 	{
 		policyPk: serialRelation("policy")
@@ -279,7 +255,7 @@ export const policyAssignments = pgTable(
 			.notNull(),
 		// The primary key of the user or device or group
 		pk: serialRelation("pk").notNull(),
-		variant: policyAssignableVariantEnum("variant").notNull(),
+		variant: mysqlEnum("variant", policyAssignableVariants).notNull(),
 	},
 	(table) => ({
 		pk: primaryKey({
@@ -290,7 +266,7 @@ export const policyAssignments = pgTable(
 
 // A deployment is an immutable snapshot of the policy at a point in time when it was deployed.
 // Deployments are linear by `createdAt` and are immutable.
-export const policyDeploy = pgTable("policy_deploy", {
+export const policyDeploy = mysqlTable("policy_deploy", {
 	pk: serial("pk").primaryKey(),
 	id: cuid("id")
 		.notNull()
@@ -307,15 +283,10 @@ export const policyDeploy = pgTable("policy_deploy", {
 	doneAt: timestamp("done_at").notNull().defaultNow(),
 });
 
-export const policyDeployStatusResultEnum = pgEnum(
-	"policy_deploy_status_result",
-	["success", "failed"],
-);
-
 // The status of applying a policy deploy to a specific device.
 //
 // Policy deploy status's are not immutable. A redeploy will cause it to update.
-export const policyDeployStatus = pgTable(
+export const policyDeployStatus = mysqlTable(
 	"policy_deploy_status",
 	{
 		deployPk: serialRelation("deploy")
@@ -324,7 +295,7 @@ export const policyDeployStatus = pgTable(
 		devicePk: serialRelation("device")
 			.references(() => devices.pk)
 			.notNull(),
-		status: policyDeployStatusResultEnum("variant").notNull(),
+		status: mysqlEnum("variant", ["success", "failed"]).notNull(),
 		// The result of applying the policy, including errors and conflicts, etc.
 		result: json("result").notNull().$type<never>(), // TODO: Proper type using Specta
 		doneAt: timestamp("done_at").notNull().defaultNow(),
@@ -337,7 +308,7 @@ export const policyDeployStatus = pgTable(
 );
 
 // A cache for storing the state of Windows management commands.
-export const windowsEphemeralState = pgTable(
+export const windowsEphemeralState = mysqlTable(
 	"windows_ephemeral_state",
 	{
 		// TODO: Datatypes
@@ -365,20 +336,14 @@ export const possibleOSes = [
 	"ChromeOS",
 ] as const;
 
-export const possibleOSesEnum = pgEnum("device_os", possibleOSes);
-export const deviceEnrollmentTypeEnum = pgEnum("device_enrollment_type", [
-	"user",
-	"device",
-]);
-
-export const devices = pgTable("devices", {
+export const devices = mysqlTable("devices", {
 	pk: serial("pk").primaryKey(),
 	id: cuid("id").notNull().unique(),
 	name: varchar("name", { length: 256 }).notNull(),
 	description: varchar("description", { length: 256 }),
 
-	enrollmentType: deviceEnrollmentTypeEnum("enrollment_type").notNull(),
-	os: possibleOSesEnum("os").notNull(),
+	enrollmentType: mysqlEnum("enrollment_type", ["user", "device"]).notNull(),
+	os: mysqlEnum("os", possibleOSes).notNull(),
 
 	// This must be a unique *hardware* identifier
 	serialNumber: varchar("serial_number", { length: 256 }).unique().notNull(),
@@ -411,15 +376,10 @@ export const possibleDeviceActions = [
 	"retire",
 ] as const;
 
-export const possibleDeviceActionsEnum = pgEnum(
-	"possible_device_action",
-	possibleDeviceActions,
-);
-
-export const deviceActions = pgTable(
+export const deviceActions = mysqlTable(
 	"device_actions",
 	{
-		action: possibleDeviceActionsEnum("action").notNull(),
+		action: mysqlEnum("action", possibleDeviceActions).notNull(),
 		devicePk: serialRelation("device")
 			.notNull()
 			.references(() => devices.pk),
@@ -445,9 +405,8 @@ export const groupMemberVariants = [
 	GroupMemberVariants.device,
 ] as const;
 export type GroupMemberVariant = (typeof groupMemberVariants)[number];
-export const groupMemberVariantEnum = pgEnum("variant", groupMemberVariants);
 
-export const groupMembers = pgTable(
+export const groupMembers = mysqlTable(
 	"group_assignables",
 	{
 		groupPk: serialRelation("group")
@@ -455,14 +414,14 @@ export const groupMembers = pgTable(
 			.notNull(),
 		// The primary key of the user or device
 		pk: serialRelation("pk").notNull(),
-		variant: groupMemberVariantEnum("variant").notNull(),
+		variant: mysqlEnum("variant", groupMemberVariants).notNull(),
 	},
 	(table) => ({
 		pk: primaryKey({ columns: [table.groupPk, table.pk, table.variant] }),
 	}),
 );
 
-export const groups = pgTable("groups", {
+export const groups = mysqlTable("groups", {
 	pk: serial("pk").primaryKey(),
 	id: cuid("id").notNull().unique(),
 	name: varchar("name", { length: 256 }).notNull(),
@@ -471,7 +430,7 @@ export const groups = pgTable("groups", {
 		.notNull(),
 });
 
-export const applications = pgTable("apps", {
+export const applications = mysqlTable("apps", {
 	pk: serial("pk").primaryKey(),
 	id: cuid("id").notNull().unique(),
 	name: varchar("name", { length: 256 }).notNull(),
@@ -495,12 +454,7 @@ export const applicationAssignableVariants = [
 export type ApplicationAssignableVariant =
 	(typeof applicationAssignableVariants)[number];
 
-export const applicationAssignableVariantEnum = pgEnum(
-	"application_assignment_variant",
-	applicationAssignableVariants,
-);
-
-export const applicationAssignments = pgTable(
+export const applicationAssignments = mysqlTable(
 	"application_assignments",
 	{
 		applicationPk: serialRelation("appPk")
@@ -508,7 +462,7 @@ export const applicationAssignments = pgTable(
 			.notNull(),
 		// The primary key of the user or device or group
 		pk: serialRelation("pk").notNull(),
-		variant: applicationAssignableVariantEnum("variant").notNull(),
+		variant: mysqlEnum("variant", applicationAssignableVariants).notNull(),
 	},
 	(table) => ({
 		pk: primaryKey({
@@ -517,7 +471,7 @@ export const applicationAssignments = pgTable(
 	}),
 );
 
-export const domains = pgTable("domains", {
+export const domains = mysqlTable("domains", {
 	domain: varchar("domain", { length: 256 }).primaryKey(),
 	tenantPk: serialRelation("tenant")
 		.references(() => tenants.pk)
@@ -541,39 +495,20 @@ export const domainToCertificateRelation = relations(domains, ({ one }) => ({
 // The backend for Rust's ACME.
 // This will contain the certificate for the primary server domain and any user-provided via `domains`.
 // The `key` will either be a comma separated list of domains (for a certificate) or comma separated list of email address (for an ACME account).
-export const certificates = pgTable("certificates", {
+export const certificates = mysqlTable("certificates", {
 	key: varchar("key", { length: 256 }).primaryKey(),
-	certificate: blob("certificate", { length: 9068 }).notNull(),
+	certificate: varbinary("certificate", { length: 9068 }).notNull(),
 	lastModified: timestamp("last_modified").notNull().defaultNow(),
 });
 
-export const auditLogActionEnum = pgEnum(
-	"audit_log_action",
-	getObjectKeys(auditLogDefinition),
-);
-
-export const auditLog = pgTable("audit_log", {
+export const auditLog = mysqlTable("audit_log", {
 	id: serial("id").primaryKey(),
 	tenantPk: serialRelation("tenant")
 		.references(() => tenants.pk)
 		.notNull(),
-	action: auditLogActionEnum("action").notNull(),
+	action: mysqlEnum("action", getObjectKeys(auditLogDefinition)).notNull(),
 	data: json("data").notNull(),
 	// This value should be set to `NULL` if this action was performed by the system.
-	userPk: serialRelation("user_id").references(() => accounts.pk),
+	accountPk: serialRelation("account").references(() => accounts.pk),
 	doneAt: timestamp("created_at").notNull().defaultNow(),
 });
-
-// TODO: Remove this
-export const organisationAccountsOld = pgTable(
-	"oranisation_account",
-	{
-		orgPk: serialRelation("org")
-			.references(() => organisations.pk)
-			.notNull(),
-		accountPk: serialRelation("account")
-			.references(() => accounts.pk)
-			.notNull(),
-	},
-	(table) => ({ pk: primaryKey({ columns: [table.orgPk, table.accountPk] }) }),
-);

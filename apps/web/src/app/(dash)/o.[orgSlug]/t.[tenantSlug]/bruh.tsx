@@ -11,3 +11,5 @@ export const BruhIconPhScroll = () => <IconPhScroll />;
 export const BruhIconPhAppWindow = () => <IconPhAppWindow />;
 
 export const BruhIconPhSelection = () => <IconPhSelection />;
+
+export const BruhIconSvgSpinners90Ring = () => <IconSvgSpinners90Ring />;

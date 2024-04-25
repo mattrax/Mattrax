@@ -1,3 +1,5 @@
+/** @jsx React.createElement */
+
 import {
 	Body,
 	Container,
@@ -8,7 +10,7 @@ import {
 	Text,
 } from "@react-email/components";
 import { Tailwind } from "@react-email/tailwind";
-import * as React from "react";
+import React from "react";
 
 interface Props {
 	tenantName: string;

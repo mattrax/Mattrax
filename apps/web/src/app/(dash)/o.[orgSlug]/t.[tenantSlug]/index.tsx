@@ -27,14 +27,23 @@ import {
 	BruhIconPhScroll,
 	BruhIconPhSelection,
 	BruhIconPhUser,
+	BruhIconSvgSpinners90Ring,
 } from "./bruh";
 import { StatItem } from "~/components/StatItem";
+import clsx from "clsx";
 
 export const route = {
 	load: ({ params }) => {
-		trpc
-			.useContext()
-			.tenant.stats.ensureData({ tenantSlug: params.tenantSlug! });
+		const ctx = trpc.useContext();
+
+		ctx.tenant.stats.ensureData({ tenantSlug: params.tenantSlug! });
+		ctx.tenant.auditLog.ensureData({
+			tenantSlug: params.tenantSlug!,
+			limit: 5,
+		});
+		ctx.tenant.gettingStarted.ensureData({
+			tenantSlug: params.tenantSlug!,
+		});
 	},
 } satisfies RouteDefinition;
 
@@ -42,10 +51,8 @@ export default function Page() {
 	const params = useZodParams({ tenantSlug: z.string() });
 	const stats = trpc.tenant.stats.createQuery(() => params);
 
-	console.log({ ...params });
-
 	const getValue = (v: StatsTarget) =>
-		stats.data?.find((i) => i.variant === v)?.count ?? 0;
+		stats.data?.find((i) => i.variant === v)?.count;
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Dashboard</PageLayoutHeading>}>
@@ -189,18 +196,21 @@ function GettingStarted() {
 						<GettingStartedRow
 							href="settings/identity-provider"
 							enabled={data.data?.connectedIdentityProvider || false}
+							disabled={data.isLoading}
 						>
 							Connect an identity provider
 						</GettingStartedRow>
 						<GettingStartedRow
 							href="devices"
 							enabled={data.data?.enrolledADevice || false}
+							disabled={data.isLoading}
 						>
 							Enroll your first device
 						</GettingStartedRow>
 						<GettingStartedRow
 							href="policies"
 							enabled={data.data?.createdFirstPolicy || false}
+							disabled={data.isLoading}
 						>
 							Create a policy
 						</GettingStartedRow>
@@ -212,16 +222,29 @@ function GettingStarted() {
 }
 
 function GettingStartedRow(
-	props: ParentProps<{ enabled: boolean; href: string }>,
+	props: ParentProps<{ enabled: boolean; href: string; disabled?: boolean }>,
 ) {
 	return (
 		<div class="flex items-center">
-			<span class={props.enabled ? "text-green-500" : ""}>
-				{props.enabled ? <BruhIconPhCheckBold /> : <BruhIconPhXBold />}
-			</span>
+			<Suspense
+				fallback={
+					<span>
+						<BruhIconSvgSpinners90Ring />
+					</span>
+				}
+			>
+				<span class={props.enabled ? "text-green-500" : ""}>
+					{props.enabled ? <BruhIconPhCheckBold /> : <BruhIconPhXBold />}
+				</span>
+			</Suspense>
 			<div class="ml-4 space-y-1">
 				<A href={props.href}>
-					<p class="text-sm font-medium leading-none underline-offset-2 hover:underline">
+					<p
+						class={clsx(
+							"text-sm font-medium leading-none underline-offset-2 hover:underline transition-opacity",
+							props.disabled && "opacity-60",
+						)}
+					>
 						{props.children}
 					</p>
 				</A>
