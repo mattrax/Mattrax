@@ -45,6 +45,9 @@ jobs:
         with:
           version: latest
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v1
+
       - name: Install dependencies
         run: pnpm i
 
@@ -57,5 +60,22 @@ jobs:
             echo "  🔴 Detected missing migrations!"
             exit 1
           fi
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: pnpm i
+
+      - name: Generate migrations
+        run: pnpm exec biome ci .
 
   # TODO: Rust tests + Clippy (maybe in separate jobs)
