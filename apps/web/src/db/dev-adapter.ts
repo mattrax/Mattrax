@@ -88,6 +88,8 @@ export function setup(uri: string): NonNullable<Config["fetch"]> {
 					let currentOffset = 0;
 					let i = 0;
 					for (const [_, v] of Object.entries(r)) {
+						const field = fields[i]!;
+
 						let buf: Uint8Array;
 						if (v === null) {
 							lengths.push(-1);
@@ -106,13 +108,15 @@ export function setup(uri: string): NonNullable<Config["fetch"]> {
 								-2,
 							)}-${("0" + v.getDate()).slice(-2)}`;
 
-							if (fields[i]!.type !== "DATETIME") {
+							if (field.type !== "DATETIME") {
 								vv = `${vv} ${("0" + v.getHours()).slice(-2)}:${(
 									"0" + v.getMinutes()
 								).slice(-2)}:${("0" + v.getSeconds()).slice(-2)}`;
 							}
 
 							buf = enc.encode(vv);
+						} else if (typeof v === "object" && field.type === "JSON") {
+							buf = enc.encode(JSON.stringify(v));
 						} else {
 							throw new Error(`unexpected type '${typeof v}' with value: ${v}`);
 						}

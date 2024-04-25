@@ -168,9 +168,7 @@ function DeployButton() {
 					component={Button}
 					disabled={policy().diff.length === 0}
 					onMouseEnter={() => {
-						trpcCtx.policy.overview.ensureData({
-							policyId: policy().id,
-						});
+						trpcCtx.policy.overview.ensureData({ id: policy().id });
 					}}
 				>
 					Deploy
@@ -194,9 +192,7 @@ function DeployDialog() {
 		policyId: policyId(),
 	}));
 
-	const overview = trpc.policy.overview.createQuery(() => ({
-		policyId: policyId(),
-	}));
+	const overview = trpc.policy.overview.createQuery(() => ({ id: policyId() }));
 
 	const deploy = trpc.policy.deploy.createMutation(() => ({
 		onSuccess: async () => {
@@ -239,7 +235,7 @@ function DeployDialog() {
 						variant="destructive"
 						onClick={() =>
 							deploy.mutate({
-								policyId: policyId(),
+								id: policyId(),
 								comment: comment(),
 							})
 						}

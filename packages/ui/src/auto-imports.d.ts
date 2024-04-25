@@ -47,6 +47,7 @@ declare global {
   const IconPhCookingPotDuotone: typeof import("~icons/ph/cooking-pot-duotone.jsx")["default"]
   const IconPhDevices: typeof import('~icons/ph/devices.jsx')['default']
   const IconPhDevicesDuotone: typeof import('~icons/ph/devices-duotone.jsx')['default']
+  const IconPhDotsThreeVerticalBold: typeof import('~icons/ph/dots-three-vertical-bold.jsx')['default']
   const IconPhGearDuotone: typeof import("~icons/ph/gear-duotone.jsx")["default"]
   const IconPhHouseDuotone: typeof import("~icons/ph/house-duotone.jsx")["default"]
   const IconPhHouseLight: typeof import("~icons/ph/house-light.jsx")["default"]

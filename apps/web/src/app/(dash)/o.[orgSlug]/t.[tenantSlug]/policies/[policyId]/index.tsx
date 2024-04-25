@@ -40,7 +40,7 @@ export default function Page() {
 	}));
 
 	const overview = trpc.policy.overview.createQuery(() => ({
-		policyId: params.policyId,
+		id: params.policyId,
 	}));
 
 	return (
