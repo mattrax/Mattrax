@@ -10,7 +10,7 @@ import {
 	Text,
 } from "@react-email/components";
 import { Tailwind } from "@react-email/tailwind";
-import React, { type JSX } from "react";
+import React from "react";
 
 interface Props {
 	tenantName: string;
