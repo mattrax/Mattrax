@@ -34,5 +34,5 @@ export async function sendEmail(args: RequestSchema) {
 	}
 
 	// We lazy load to keep React + React email outta the main bundle
-	(await import("../emails/index").then((mod) => mod._sender))(args);
+	await (await import("../emails/index").then((mod) => mod._sender))(args);
 }
