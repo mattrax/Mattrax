@@ -1,6 +1,7 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { TRPCError } from "@trpc/server";
+import { cache } from "@solidjs/router";
 import { z } from "zod";
 
 import {
@@ -21,18 +22,27 @@ import { omit } from "~/api/utils";
 import { withAuditLog } from "~/api/auditLog";
 import type { Configuration } from "~/lib/policy";
 
-function getPolicy(args: { policyId: string; tenantPk: number }) {
-	return db.query.policies.findFirst({
-		where: and(
-			eq(policies.id, args.policyId),
-			eq(policies.tenantPk, args.tenantPk),
-		),
+const getPolicy = cache(async (id: string) => {
+	return await db.query.policies.findFirst({
+		where: eq(policies.id, id),
 	});
-}
+}, "getPolicy");
+
+const policyProcedure = authedProcedure
+	.input(z.object({ id: z.string() }))
+	.use(async ({ next, input, ctx }) => {
+		const policy = await getPolicy(input.id);
+		if (!policy)
+			throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
+
+		const tenant = await ctx.ensureTenantMember(policy.tenantPk);
+
+		return await next({ ctx: { policy, tenant } });
+	});
 
 export const policyRouter = createTRPCRouter({
 	list: tenantProcedure.query(({ ctx }) =>
-		ctx.db
+		db
 			.select({
 				id: policies.id,
 				name: policies.name,
@@ -44,7 +54,7 @@ export const policyRouter = createTRPCRouter({
 	get: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const [policy] = await ctx.db
+			const [policy] = await db
 				.select({
 					id: policies.id,
 					pk: policies.pk,
@@ -58,7 +68,7 @@ export const policyRouter = createTRPCRouter({
 
 			await ctx.ensureTenantMember(policy.tenantPk);
 
-			const [lastVersion] = await ctx.db
+			const [lastVersion] = await db
 				.select({ data: policyDeploy.data })
 				.from(policyDeploy)
 				.where(and(eq(policyDeploy.policyPk, policy.pk)))
@@ -72,81 +82,60 @@ export const policyRouter = createTRPCRouter({
 			};
 		}),
 
-	overview: authedProcedure
-		.input(z.object({ policyId: z.string() }))
-		.query(async ({ ctx, input }) => {
-			const [policy] = await ctx.db
-				.select({ tenantPk: policies.tenantPk })
-				.from(policies)
-				.where(eq(policies.id, input.policyId));
-			if (!policy) throw new Error("policy not found"); // TODO: Error and have frontend catch and handle it
+	overview: policyProcedure.query(async () => {
+		// TODO: Calculate these
+		const devices = 5;
+		const users = 0;
 
-			await ctx.ensureTenantMember(policy.tenantPk);
+		return {
+			devices,
+			users,
+		};
+	}),
 
-			// TODO: Calculate these
-			const devices = 5;
-			const users = 0;
-
-			return {
-				devices,
-				users,
-			};
-		}),
-
-	members: authedProcedure
-		.input(z.object({ id: z.string() }))
-		.query(async ({ ctx, input }) => {
-			const policy = await ctx.db.query.policies.findFirst({
-				where: eq(policies.id, input.id),
-			});
-			if (!policy)
-				throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
-
-			await ctx.ensureTenantMember(policy.tenantPk);
-
-			return await ctx.db
-				.select({
-					pk: policyAssignments.pk,
-					variant: policyAssignments.variant,
-					name: sql<PolicyAssignableVariant>`
+	assignees: policyProcedure.query(async ({ ctx }) => {
+		return await db
+			.select({
+				pk: policyAssignments.pk,
+				variant: policyAssignments.variant,
+				name: sql<PolicyAssignableVariant>`
 					GROUP_CONCAT(CASE
 						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.device} THEN ${devices.name}
 						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.user} THEN ${users.name}
 						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.group} THEN ${groups.name}
 					END)
           `.as("name"),
-				})
-				.from(policyAssignments)
-				.where(eq(policyAssignments.policyPk, policy.pk))
-				.leftJoin(
-					devices,
-					and(
-						eq(devices.pk, policyAssignments.pk),
-						eq(policyAssignments.variant, PolicyAssignableVariants.device),
-					),
-				)
-				.leftJoin(
-					users,
-					and(
-						eq(users.pk, policyAssignments.pk),
-						eq(policyAssignments.variant, PolicyAssignableVariants.user),
-					),
-				)
-				.leftJoin(
-					groups,
-					and(
-						eq(groups.pk, policyAssignments.pk),
-						eq(policyAssignments.variant, PolicyAssignableVariants.group),
-					),
-				)
-				.groupBy(policyAssignments.variant, policyAssignments.pk);
-		}),
+			})
+			.from(policyAssignments)
+			.where(eq(policyAssignments.policyPk, ctx.policy.pk))
+			.leftJoin(
+				devices,
+				and(
+					eq(devices.pk, policyAssignments.pk),
+					eq(policyAssignments.variant, PolicyAssignableVariants.device),
+				),
+			)
+			.leftJoin(
+				users,
+				and(
+					eq(users.pk, policyAssignments.pk),
+					eq(policyAssignments.variant, PolicyAssignableVariants.user),
+				),
+			)
+			.leftJoin(
+				groups,
+				and(
+					eq(groups.pk, policyAssignments.pk),
+					eq(policyAssignments.variant, PolicyAssignableVariants.group),
+				),
+			)
+			.groupBy(policyAssignments.variant, policyAssignments.pk);
+	}),
 
-	addMembers: authedProcedure
+	addAssignees: policyProcedure
 		.input(
 			z.object({
-				id: z.string(),
-				members: z.array(
+				assignees: z.array(
 					z.object({
 						pk: z.number(),
 						variant: z.enum(policyAssignableVariants),
@@ -155,23 +144,40 @@ export const policyRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const policy = await ctx.db.query.policies.findFirst({
-				where: eq(policies.id, input.id),
-			});
-			if (!policy)
-				throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
-
-			await ctx.ensureTenantMember(policy.tenantPk);
-
-			await ctx.db.insert(policyAssignments).values(
-				input.members.map((member) => ({
-					policyPk: policy.pk,
+			await db.insert(policyAssignments).values(
+				input.assignees.map((member) => ({
+					policyPk: ctx.policy.pk,
 					pk: member.pk,
 					variant: member.variant,
 				})),
 			);
 		}),
-
+	removeAssignees: policyProcedure
+		.input(
+			z.object({
+				assignees: z.array(
+					z.object({
+						pk: z.number(),
+						variant: z.enum(policyAssignableVariants),
+					}),
+				),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			await db
+				.delete(policyAssignments)
+				.where(
+					or(
+						...input.assignees.map((assignee) =>
+							and(
+								eq(policyAssignments.policyPk, ctx.policy.pk),
+								eq(policyAssignments.pk, assignee.pk),
+								eq(policyAssignments.variant, assignee.variant),
+							),
+						),
+					),
+				);
+		}),
 	create: tenantProcedure
 		.input(z.object({ name: z.string().min(1).max(100) }))
 		.mutation(({ ctx, input }) => {
@@ -192,83 +198,54 @@ export const policyRouter = createTRPCRouter({
 			);
 		}),
 
-	update: authedProcedure
+	update: policyProcedure
 		.input(
 			z.object({
-				policyId: z.string(),
 				name: z.string().optional(),
 				// TODO: Validate the input type
 				data: z.any().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const policy = await ctx.db.query.policies.findFirst({
-				where: eq(policies.id, input.policyId),
-			});
-			if (!policy)
-				throw new TRPCError({
-					code: "NOT_FOUND",
-					message: "policy",
-				});
-
-			await ctx.ensureTenantMember(policy.tenantPk);
-
-			await ctx.db
+			await db
 				.update(policies)
 				.set({
 					name: input.name ?? sql`${policies.name}`,
 					data: input.data ?? sql`${policies.data}`,
 				})
-				.where(eq(policies.id, input.policyId));
+				.where(eq(policies.pk, ctx.policy.pk));
 		}),
 
-	delete: authedProcedure
-		.input(z.object({ policyId: z.string() }))
+	delete: policyProcedure.mutation(async ({ ctx }) => {
+		await withAuditLog(
+			"deletePolicy",
+			{ name: ctx.policy.name },
+			[ctx.tenant.pk, ctx.account.pk],
+			async () => {
+				await db.delete(policies).where(eq(policies.pk, ctx.policy.pk));
+			},
+		);
+	}),
+
+	deploy: policyProcedure
+		.input(z.object({ comment: z.string() }))
 		.mutation(async ({ ctx, input }) => {
-			const policy = await ctx.db.query.policies.findFirst({
-				where: eq(policies.id, input.policyId),
-			});
-			if (!policy)
-				throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
-
-			await withAuditLog(
-				"deletePolicy",
-				{ name: policy.name },
-				[policy.tenantPk, ctx.account.pk],
-				async () => {
-					await ctx.db.delete(policies).where(eq(policies.id, input.policyId));
-				},
-			);
-		}),
-
-	deploy: authedProcedure
-		.input(z.object({ policyId: z.string(), comment: z.string() }))
-		.mutation(async ({ ctx, input }) => {
-			const [policy] = await ctx.db
-				.select({
-					pk: policies.pk,
-					data: policies.data,
-					tenantPk: policies.tenantPk,
-				})
-				.from(policies)
-				.where(eq(policies.id, input.policyId));
-			if (!policy) throw new Error("policy not found"); // TODO: Error and have frontend catch and handle it
-
-			await ctx.ensureTenantMember(policy.tenantPk);
-
-			const [lastVersion] = await ctx.db
+			const [lastVersion] = await db
 				.select({ data: policyDeploy.data })
 				.from(policyDeploy)
-				.where(and(eq(policyDeploy.policyPk, policy.pk)))
+				.where(and(eq(policyDeploy.policyPk, ctx.policy.pk)))
 				.orderBy(desc(policyDeploy.doneAt))
 				.limit(1);
 
-			if (generatePolicyDiff(lastVersion?.data ?? {}, policy.data).length === 0)
+			if (
+				generatePolicyDiff(lastVersion?.data ?? {}, ctx.policy.data).length ===
+				0
+			)
 				throw new Error("policy has not changed");
 
-			await ctx.db.insert(policyDeploy).values({
-				policyPk: policy.pk,
-				data: policy.data,
+			await db.insert(policyDeploy).values({
+				policyPk: ctx.policy.pk,
+				data: ctx.policy.data,
 				comment: input.comment,
 				author: ctx.account.pk,
 			});
@@ -280,7 +257,7 @@ export const policyRouter = createTRPCRouter({
 		list: authedProcedure
 			.input(z.object({ policyId: z.string(), limit: z.number().optional() }))
 			.query(async ({ ctx, input }) => {
-				const [policy] = await ctx.db
+				const [policy] = await db
 					.select({ tenantPk: policies.tenantPk })
 					.from(policies)
 					.where(eq(policies.id, input.policyId));
@@ -288,7 +265,7 @@ export const policyRouter = createTRPCRouter({
 
 				await ctx.ensureTenantMember(policy.tenantPk);
 
-				const deploys = await ctx.db
+				const deploys = await db
 					.select({
 						id: policyDeploy.id,
 						author: accounts.name,

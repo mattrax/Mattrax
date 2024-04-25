@@ -33,7 +33,7 @@ export default function Page() {
 							defaultValues: { name: policy().name || "" },
 							onSubmit: ({ value }) => {
 								updatePolicy.mutateAsync({
-									policyId: policy().id,
+									id: policy().id,
 									name: value.name,
 								});
 							},
@@ -68,9 +68,7 @@ export default function Page() {
 													),
 													inputText: policy().name,
 													async onConfirm() {
-														await deletePolicy.mutateAsync({
-															policyId: policy().id,
-														});
+														await deletePolicy.mutateAsync({ id: policy().id });
 
 														await startTransition(() => navigate("../.."));
 													},

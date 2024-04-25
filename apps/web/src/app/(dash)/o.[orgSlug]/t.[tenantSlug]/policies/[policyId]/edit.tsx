@@ -10,7 +10,6 @@ import {
 	TabsIndicator,
 	TabsList,
 	TabsTrigger,
-	Toggle,
 } from "@mattrax/ui";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { PolicyContext, usePolicy } from "./Context";
@@ -112,7 +111,7 @@ function WipVisualEditor() {
 					disabled={update.isPending}
 					onChange={(checked) =>
 						update.mutate({
-							policyId: policy().id,
+							id: policy().id,
 							data: checked
 								? {
 										...policy().data,

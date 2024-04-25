@@ -23,18 +23,13 @@ import {
 	selectCheckboxColumn,
 } from "~c/StandardTable";
 import { ConfirmDialog } from "~c/ConfirmDialog";
+import { toTitleCase } from "~/lib/utils";
 
 const columnHelper = createColumnHelper<{
 	pk: number;
 	name: string;
 	variant: string;
 }>();
-
-function toTitleCase(str: string) {
-	return str.replace(/\w\S*/g, (txt) => {
-		return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
-	});
-}
 
 export const variantTableColumns = [
 	selectCheckboxColumn,
@@ -43,6 +38,7 @@ export const variantTableColumns = [
 		header: "Variant",
 		id: "variant",
 		cell: (info) => <Badge>{toTitleCase(info.getValue())}</Badge>,
+		size: 1,
 	}),
 ];
 
