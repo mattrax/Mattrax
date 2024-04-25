@@ -1,3 +1,5 @@
+// @jsxImportSource react
+
 import {
 	Body,
 	Button,
