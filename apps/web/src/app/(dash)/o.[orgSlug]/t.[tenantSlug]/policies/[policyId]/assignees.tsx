@@ -10,23 +10,22 @@ import {
 	DialogHeader,
 	DialogRoot,
 	DialogTitle,
-	DropdownMenu,
-	DropdownMenuContent,
 	DropdownMenuItem,
-	DropdownMenuTrigger,
 } from "@mattrax/ui";
 import pluralize from "pluralize";
 
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { StandardTable, createStandardTable } from "~c/StandardTable";
+import {
+	StandardTable,
+	createActionsColumn,
+	createStandardTable,
+} from "~c/StandardTable";
 import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
-import IconPhDotsThreeBold from "~icons/ph/dots-three-bold";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { usePolicyId } from "../[policyId]";
 import { trpc } from "~/lib";
 import { RouteDefinition } from "@solidjs/router";
 import { toTitleCase } from "~/lib/utils";
-import { inferProcedureOutput } from "@trpc/server";
 
 export const route = {
 	load: ({ params }) =>
@@ -56,73 +55,40 @@ export default function Page() {
 		},
 		columns: [
 			...variantTableColumns,
-			{
-				id: "actions",
-				header: ({ table }) => {
-					return (
-						<DropdownMenu>
-							<DropdownMenuTrigger asChild>
-								<As
-									component={Button}
-									variant="ghost"
-									size="iconSmall"
-									class="block"
-								>
-									<IconPhDotsThreeBold class="w-6 h-6" />
-								</As>
-							</DropdownMenuTrigger>
-							<DropdownMenuContent>
-								<DropdownMenuItem
-									disabled={table.getSelectedRowModel().rows.length === 0}
-									class="text-red-600 data-[disabled]:text-black"
-									onSelect={() =>
-										setDialog({
-											open: true,
-											data: {
-												type: "removeMany",
-												data: table
-													.getSelectedRowModel()
-													.rows.map(({ original }) => original as any),
-											},
-										})
-									}
-								>
-									Unassign from Policy (
-									{table.getSelectedRowModel().rows.length})
-								</DropdownMenuItem>
-							</DropdownMenuContent>
-						</DropdownMenu>
-					);
-				},
-				cell: ({ row }) => (
-					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							<As
-								component={Button}
-								variant="ghost"
-								size="iconSmall"
-								class="block"
-							>
-								<IconPhDotsThreeBold class="w-6 h-6" />
-							</As>
-						</DropdownMenuTrigger>
-						<DropdownMenuContent>
-							<DropdownMenuItem
-								class="text-red-600"
-								onSelect={() =>
-									setDialog({
-										open: true,
-										data: { type: "removeSingle", data: row.original as any },
-									})
-								}
-							>
-								Unassign from Policy
-							</DropdownMenuItem>
-						</DropdownMenuContent>
-					</DropdownMenu>
+			createActionsColumn({
+				headerDropdownContent: ({ table }) => (
+					<DropdownMenuItem
+						disabled={table.getSelectedRowModel().rows.length === 0}
+						class="text-red-600 data-[disabled]:text-black"
+						onSelect={() =>
+							setDialog({
+								open: true,
+								data: {
+									type: "removeMany",
+									data: table
+										.getSelectedRowModel()
+										.rows.map(({ original }) => original as any),
+								},
+							})
+						}
+					>
+						Unassign from Policy ({table.getSelectedRowModel().rows.length})
+					</DropdownMenuItem>
 				),
-				size: 1,
-			},
+				cellDropdownContent: ({ row }) => (
+					<DropdownMenuItem
+						class="text-red-600"
+						onSelect={() =>
+							setDialog({
+								open: true,
+								data: { type: "removeSingle", data: row.original as any },
+							})
+						}
+					>
+						Unassign from Policy
+					</DropdownMenuItem>
+				),
+			}),
 		],
 		pagination: true,
 	});

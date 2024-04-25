@@ -206,12 +206,7 @@ function Assignments() {
 
 	const table = createStandardTable({
 		get data() {
-			if (!assignments.data) return [];
-
-			return [
-				...assignments.data.policies.map((d) => ({ ...d, variant: "policy" })),
-				...assignments.data.apps.map((d) => ({ ...d, variant: "application" })),
-			];
+			return assignments.data ?? [];
 		},
 		columns: variantTableColumns.slice(1),
 		// pagination: true, // TODO: Pagination
@@ -224,13 +219,15 @@ function Assignments() {
 					title="Policies"
 					href="assignments?variant=policy"
 					icon={<IconPhUser />}
-					value={assignments.data?.policies.length}
+					value={assignments.data?.filter((a) => a.variant === "policy").length}
 				/>
 				<StatItem
 					title="Apps"
 					href="assignments?variant=app"
 					icon={<IconPhDevices />}
-					value={assignments.data?.apps.length}
+					value={
+						assignments.data?.filter((a) => a.variant === "application").length
+					}
 				/>
 			</div>
 			<div class="flex flex-row items-center justify-between">
