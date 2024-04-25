@@ -10,6 +10,9 @@ overrides:
   drizzle-orm: ^0.30.8
 
 patchedDependencies:
+  '@react-email/tailwind@0.0.15':
+    hash: bwbyj74l7btlaty4zlch4r7y4y
+    path: patches/@react-email__tailwind@0.0.15.patch
   '@solidjs/router@0.13.2':
     hash: elelxothihlzsb57xki6usvf5m
     path: patches/@solidjs__router@0.13.2.patch
@@ -177,58 +180,6 @@ importers:
         specifier: 0.33.3
         version: 0.33.3
 
-  apps/email:
-    dependencies:
-      '@react-email/button':
-        specifier: ^0.0.14
-        version: 0.0.14(react@18.2.0)
-      '@react-email/components':
-        specifier: 0.0.16
-        version: 0.0.16(@types/react@18.2.79)(react@18.2.0)
-      '@react-email/html':
-        specifier: ^0.0.7
-        version: 0.0.7(react@18.2.0)
-      '@react-email/render':
-        specifier: ^0.0.12
-        version: 0.0.12
-      '@react-email/tailwind':
-        specifier: ^0.0.15
-        version: 0.0.15(react@18.2.0)
-      '@t3-oss/env-core':
-        specifier: ^0.9.2
-        version: 0.9.2(typescript@5.4.5)(zod@3.22.5)
-      aws4fetch:
-        specifier: ^1.0.18
-        version: 1.0.18
-      next:
-        specifier: 14.2.2
-        version: 14.2.2(@babel/core@7.24.4)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
-      react:
-        specifier: ^18.2.0
-        version: 18.2.0
-      react-dom:
-        specifier: ^18.2.0
-        version: 18.2.0(react@18.2.0)
-      react-email:
-        specifier: 2.1.1
-        version: 2.1.1(@babel/core@7.24.4)(@swc/helpers@0.5.10)(eslint@9.1.0)
-      zod:
-        specifier: ^3.22.5
-        version: 3.22.5
-    devDependencies:
-      '@types/node':
-        specifier: ^20.12.7
-        version: 20.12.7
-      '@types/react':
-        specifier: ^18.2.79
-        version: 18.2.79
-      '@types/react-dom':
-        specifier: ^18.2.25
-        version: 18.2.25
-      typescript:
-        specifier: ^5.4.5
-        version: 5.4.5
-
   apps/ingest:
     dependencies:
       xml2js:
@@ -314,9 +265,6 @@ importers:
       '@mattrax/drizzle-to-rs':
         specifier: workspace:*
         version: link:../../packages/drizzle-to-rs
-      '@mattrax/email':
-        specifier: workspace:*
-        version: link:../email
       '@mattrax/ms-graph':
         specifier: workspace:*
         version: link:../../packages/ms-graph
@@ -335,9 +283,15 @@ importers:
       '@planetscale/database':
         specifier: ^1.16.0
         version: 1.16.0
+      '@react-email/components':
+        specifier: 0.0.16
+        version: 0.0.16(@types/react@18.2.79)(react@18.2.0)
       '@react-email/render':
         specifier: ^0.0.12
         version: 0.0.12
+      '@react-email/tailwind':
+        specifier: ^0.0.15
+        version: 0.0.15(patch_hash=bwbyj74l7btlaty4zlch4r7y4y)(react@18.2.0)
       '@solid-mediakit/trpc':
         specifier: ^3.0.2
         version: 3.0.2(@solidjs/router@0.13.2(patch_hash=elelxothihlzsb57xki6usvf5m)(solid-js@1.8.16))(@solidjs/start@0.7.7(rollup@4.14.3)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))(vite@5.2.9(@types/node@20.12.7)(terser@5.30.3)))(@tanstack/solid-query@5.30.6(solid-js@1.8.16))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))
@@ -501,6 +455,9 @@ importers:
       '@types/prismjs':
         specifier: ^1.26.3
         version: 1.26.3
+      '@types/react':
+        specifier: ^18.2.79
+        version: 18.2.79
       autoprefixer:
         specifier: ^10.4.19
         version: 10.4.19(postcss@8.4.38)
@@ -510,6 +467,9 @@ importers:
       postcss:
         specifier: ^8.4.38
         version: 8.4.38
+      react-email:
+        specifier: ^2.1.1
+        version: 2.1.1(@babel/core@7.24.4)(@swc/helpers@0.5.10)(eslint@9.1.0)
       rollup-plugin-visualizer:
         specifier: ^5.12.0
         version: 5.12.0(rollup@4.14.3)
@@ -8726,7 +8686,7 @@ snapshots:
     dependencies:
       '@mdx-js/mdx': 3.0.1
       source-map: 0.7.4
-      webpack: 5.91.0(esbuild@0.19.12)
+      webpack: 5.91.0(@swc/core@1.3.101(@swc/helpers@0.5.10))(esbuild@0.19.11)
     transitivePeerDependencies:
       - supports-color
 
@@ -9604,7 +9564,7 @@ snapshots:
       '@react-email/render': 0.0.12
       '@react-email/row': 0.0.7(react@18.2.0)
       '@react-email/section': 0.0.11(react@18.2.0)
-      '@react-email/tailwind': 0.0.15(react@18.2.0)
+      '@react-email/tailwind': 0.0.15(patch_hash=bwbyj74l7btlaty4zlch4r7y4y)(react@18.2.0)
       '@react-email/text': 0.0.7(react@18.2.0)
       react: 18.2.0
     transitivePeerDependencies:
@@ -9669,7 +9629,7 @@ snapshots:
     dependencies:
       react: 18.2.0
 
-  '@react-email/tailwind@0.0.15(react@18.2.0)':
+  '@react-email/tailwind@0.0.15(patch_hash=bwbyj74l7btlaty4zlch4r7y4y)(react@18.2.0)':
     dependencies:
       react: 18.2.0
 
@@ -13916,13 +13876,6 @@ snapshots:
 
   possible-typed-array-names@1.0.0: {}
 
-  postcss-import@15.1.0(postcss@8.4.35):
-    dependencies:
-      postcss: 8.4.35
-      postcss-value-parser: 4.2.0
-      read-cache: 1.0.0
-      resolve: 1.22.8
-
   postcss-import@15.1.0(postcss@8.4.38):
     dependencies:
       postcss: 8.4.38
@@ -13930,22 +13883,10 @@ snapshots:
       read-cache: 1.0.0
       resolve: 1.22.8
 
-  postcss-js@4.0.1(postcss@8.4.35):
-    dependencies:
-      camelcase-css: 2.0.1
-      postcss: 8.4.35
-
   postcss-js@4.0.1(postcss@8.4.38):
     dependencies:
       camelcase-css: 2.0.1
       postcss: 8.4.38
-
-  postcss-load-config@4.0.2(postcss@8.4.35):
-    dependencies:
-      lilconfig: 3.1.1
-      yaml: 2.4.1
-    optionalDependencies:
-      postcss: 8.4.35
 
   postcss-load-config@4.0.2(postcss@8.4.38):
     dependencies:
@@ -13953,11 +13894,6 @@ snapshots:
       yaml: 2.4.1
     optionalDependencies:
       postcss: 8.4.38
-
-  postcss-nested@6.0.1(postcss@8.4.35):
-    dependencies:
-      postcss: 8.4.35
-      postcss-selector-parser: 6.0.16
 
   postcss-nested@6.0.1(postcss@8.4.38):
     dependencies:
@@ -13986,7 +13922,7 @@ snapshots:
     dependencies:
       nanoid: 3.3.7
       picocolors: 1.0.0
-      source-map-js: 1.0.2
+      source-map-js: 1.2.0
 
   postcss@8.4.38:
     dependencies:
@@ -14839,7 +14775,7 @@ snapshots:
     dependencies:
       '@alloc/quick-lru': 5.2.0
       arg: 5.0.2
-      chokidar: 3.5.3
+      chokidar: 3.6.0
       didyoumean: 1.2.2
       dlv: 1.1.3
       fast-glob: 3.3.2
@@ -14851,11 +14787,11 @@ snapshots:
       normalize-path: 3.0.0
       object-hash: 3.0.0
       picocolors: 1.0.0
-      postcss: 8.4.35
-      postcss-import: 15.1.0(postcss@8.4.35)
-      postcss-js: 4.0.1(postcss@8.4.35)
-      postcss-load-config: 4.0.2(postcss@8.4.35)
-      postcss-nested: 6.0.1(postcss@8.4.35)
+      postcss: 8.4.38
+      postcss-import: 15.1.0(postcss@8.4.38)
+      postcss-js: 4.0.1(postcss@8.4.38)
+      postcss-load-config: 4.0.2(postcss@8.4.38)
+      postcss-nested: 6.0.1(postcss@8.4.38)
       postcss-selector-parser: 6.0.16
       resolve: 1.22.8
       sucrase: 3.35.0
@@ -14911,7 +14847,7 @@ snapshots:
       solid-js: 1.8.16
       solid-use: 0.8.0(solid-js@1.8.16)
 
-  terser-webpack-plugin@5.3.10(@swc/core@1.3.101(@swc/helpers@0.5.10))(esbuild@0.19.11)(webpack@5.91.0(esbuild@0.19.12)):
+  terser-webpack-plugin@5.3.10(esbuild@0.19.12)(webpack@5.91.0(@swc/core@1.3.101(@swc/helpers@0.5.10))(esbuild@0.19.11)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.25
       jest-worker: 27.5.1
@@ -14919,18 +14855,6 @@ snapshots:
       serialize-javascript: 6.0.2
       terser: 5.30.3
       webpack: 5.91.0(@swc/core@1.3.101(@swc/helpers@0.5.10))(esbuild@0.19.11)
-    optionalDependencies:
-      '@swc/core': 1.3.101(@swc/helpers@0.5.10)
-      esbuild: 0.19.11
-
-  terser-webpack-plugin@5.3.10(esbuild@0.19.12)(webpack@5.91.0(esbuild@0.19.12)):
-    dependencies:
-      '@jridgewell/trace-mapping': 0.3.25
-      jest-worker: 27.5.1
-      schema-utils: 3.3.0
-      serialize-javascript: 6.0.2
-      terser: 5.30.3
-      webpack: 5.91.0(esbuild@0.19.12)
     optionalDependencies:
       esbuild: 0.19.12
 
@@ -15473,38 +15397,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 3.3.0
       tapable: 2.2.1
-      terser-webpack-plugin: 5.3.10(@swc/core@1.3.101(@swc/helpers@0.5.10))(esbuild@0.19.11)(webpack@5.91.0(esbuild@0.19.12))
-      watchpack: 2.4.1
-      webpack-sources: 3.2.3
-    transitivePeerDependencies:
-      - '@swc/core'
-      - esbuild
-      - uglify-js
-
-  webpack@5.91.0(esbuild@0.19.12):
-    dependencies:
-      '@types/eslint-scope': 3.7.7
-      '@types/estree': 1.0.5
-      '@webassemblyjs/ast': 1.12.1
-      '@webassemblyjs/wasm-edit': 1.12.1
-      '@webassemblyjs/wasm-parser': 1.12.1
-      acorn: 8.11.3
-      acorn-import-assertions: 1.9.0(acorn@8.11.3)
-      browserslist: 4.23.0
-      chrome-trace-event: 1.0.3
-      enhanced-resolve: 5.16.0
-      es-module-lexer: 1.5.0
-      eslint-scope: 5.1.1
-      events: 3.3.0
-      glob-to-regexp: 0.4.1
-      graceful-fs: 4.2.11
-      json-parse-even-better-errors: 2.3.1
-      loader-runner: 4.3.0
-      mime-types: 2.1.35
-      neo-async: 2.6.2
-      schema-utils: 3.3.0
-      tapable: 2.2.1
-      terser-webpack-plugin: 5.3.10(esbuild@0.19.12)(webpack@5.91.0(esbuild@0.19.12))
+      terser-webpack-plugin: 5.3.10(esbuild@0.19.12)(webpack@5.91.0(@swc/core@1.3.101(@swc/helpers@0.5.10))(esbuild@0.19.11))
       watchpack: 2.4.1
       webpack-sources: 3.2.3
     transitivePeerDependencies:

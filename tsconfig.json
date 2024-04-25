@@ -3,7 +3,6 @@
 	"references": [
 		{ "path": "./apps/web" },
 		{ "path": "./apps/landing" },
-		{ "path": "./apps/email" },
 		{ "path": "./packages/drizzle-to-rs" },
 		{ "path": "./packages/ui" }
 	],
