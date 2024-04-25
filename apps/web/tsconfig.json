@@ -10,6 +10,7 @@
 			"~/*": ["./src/*"],
 			"~c/*": ["./src/components/*"],
 			"~dash/*": ["./src/app/(dash)/*"],
+			"~[tenantSlug]": ["./src/app/(dash)/o.[orgSlug]/t.[tenantSlug].tsx"],
 			"~[tenantSlug]/*": ["./src/app/(dash)/o.[orgSlug]/t.[tenantSlug]/*"]
 		}
 	},

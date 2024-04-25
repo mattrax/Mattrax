@@ -116,6 +116,12 @@ export const groupRouter = createTRPCRouter({
 			.select({
 				pk: groupMembers.pk,
 				variant: groupMembers.variant,
+				id: sql<string>`
+					GROUP_CONCAT(CASE
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.id}
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.id}
+					END)
+          `.as("id"),
 				name: sql<string>`
 					GROUP_CONCAT(CASE
 						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.name}

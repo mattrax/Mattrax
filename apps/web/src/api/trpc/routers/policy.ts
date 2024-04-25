@@ -98,7 +98,14 @@ export const policyRouter = createTRPCRouter({
 			.select({
 				pk: policyAssignments.pk,
 				variant: policyAssignments.variant,
-				name: sql<PolicyAssignableVariant>`
+				id: sql<string>`
+					GROUP_CONCAT(CASE
+						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.device} THEN ${devices.id}
+						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.user} THEN ${users.id}
+						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.group} THEN ${groups.id}
+					END)
+          `.as("id"),
+				name: sql<string>`
 					GROUP_CONCAT(CASE
 						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.device} THEN ${devices.name}
 						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.user} THEN ${users.name}

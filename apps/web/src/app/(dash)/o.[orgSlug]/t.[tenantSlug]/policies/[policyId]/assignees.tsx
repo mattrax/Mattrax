@@ -18,9 +18,14 @@ import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	StandardTable,
 	createActionsColumn,
+	createSearchParamPagination,
 	createStandardTable,
 } from "~c/StandardTable";
-import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
+import {
+	VariantTableSheet,
+	VariantTableVariants,
+	createVariantTableColumns,
+} from "~c/VariantTableSheet";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { usePolicyId } from "../[policyId]";
 import { trpc } from "~/lib";
@@ -49,12 +54,14 @@ export default function Page() {
 			| { type: "removeMany"; data: NonNullable<typeof assignees.data> };
 	}>({ open: false, data: { type: "removeMany", data: [] } });
 
+	const variants = createVariants();
+
 	const table = createStandardTable({
 		get data() {
 			return assignees.data ?? [];
 		},
 		columns: [
-			...variantTableColumns,
+			...createVariantTableColumns(variants),
 			createActionsColumn({
 				headerDropdownContent: ({ table }) => (
 					<DropdownMenuItem
@@ -93,11 +100,11 @@ export default function Page() {
 		pagination: true,
 	});
 
+	createSearchParamPagination(table, "page");
+
 	const addAssignees = trpc.policy.addAssignees.createMutation(() => ({
 		onSuccess: () => assignees.refetch(),
 	}));
-
-	const variants = createVariants();
 
 	const removeAssignees = trpc.policy.removeAssignees.createMutation(() => ({
 		onSuccess: () =>
@@ -245,18 +252,21 @@ function createVariants() {
 			query: trpc.tenant.variantTable.devices.createQuery(() => ({
 				tenantSlug: tenantSlug(),
 			})),
+			href: (item) => `../../../devices/${item.id}`,
 		},
 		user: {
 			label: "Users",
 			query: trpc.tenant.variantTable.users.createQuery(() => ({
 				tenantSlug: tenantSlug(),
 			})),
+			href: (item) => `../../../users/${item.id}`,
 		},
 		group: {
 			label: "Groups",
 			query: trpc.tenant.variantTable.groups.createQuery(() => ({
 				tenantSlug: tenantSlug(),
 			})),
+			href: (item) => `../../../groups/${item.id}`,
 		},
-	};
+	} satisfies VariantTableVariants;
 }

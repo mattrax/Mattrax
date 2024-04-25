@@ -6,7 +6,7 @@ import { toast } from "solid-sonner";
 
 import IconMaterialSymbolsEditOutline from "~icons/material-symbols/edit-outline.jsx";
 import IconIcRoundCheck from "~icons/ic/round-check.jsx";
-import { variantTableColumns } from "~c/VariantTableSheet";
+import { createVariantTableColumns } from "~c/VariantTableSheet";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { GroupContext, useGroup } from "./Context";
@@ -27,6 +27,7 @@ export const route = {
 import IconPhDevices from "~icons/ph/devices";
 import IconPhUser from "~icons/ph/user";
 import { useGroupId } from "../[groupId]";
+import { createAssignmentsVariants, createMembersVariants } from "./utils";
 
 export default function Page() {
 	return (
@@ -140,11 +141,13 @@ function Members() {
 		id: groupId(),
 	}));
 
+	const variants = createMembersVariants("../../");
+
 	const membersTable = createStandardTable({
 		get data() {
 			return members.data ?? [];
 		},
-		columns: variantTableColumns.slice(1),
+		columns: createVariantTableColumns(variants).slice(1),
 		// pagination: true, // TODO: Pagination
 	});
 
@@ -204,11 +207,13 @@ function Assignments() {
 		id: groupId(),
 	}));
 
+	const variants = createAssignmentsVariants("../../");
+
 	const table = createStandardTable({
 		get data() {
 			return assignments.data ?? [];
 		},
-		columns: variantTableColumns.slice(1),
+		columns: createVariantTableColumns(variants).slice(1),
 		// pagination: true, // TODO: Pagination
 	});
 

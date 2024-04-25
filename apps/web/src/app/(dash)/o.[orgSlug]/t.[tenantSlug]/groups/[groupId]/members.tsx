@@ -23,11 +23,14 @@ import {
 	createSearchParamFilter,
 	createStandardTable,
 } from "~c/StandardTable";
-import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
+import {
+	VariantTableSheet,
+	createVariantTableColumns,
+} from "~c/VariantTableSheet";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
-import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { useGroupId } from "../[groupId]";
 import { toTitleCase } from "~/lib/utils";
+import { createMembersVariants } from "./utils";
 
 export const route = {
 	load: ({ params }) =>
@@ -53,12 +56,14 @@ export default function Page() {
 			| { type: "removeMany"; data: NonNullable<typeof members.data> };
 	}>({ open: false, data: { type: "removeMany", data: [] } });
 
+	const variants = createMembersVariants("../../../");
+
 	const table = createStandardTable({
 		get data() {
 			return members.data ?? [];
 		},
 		columns: [
-			...variantTableColumns,
+			...createVariantTableColumns(variants),
 			createActionsColumn({
 				headerDropdownContent: ({ table }) => (
 					<DropdownMenuItem
@@ -102,8 +107,6 @@ export default function Page() {
 	const addMembers = trpc.group.addMembers.createMutation(() => ({
 		onSuccess: () => members.refetch(),
 	}));
-
-	const variants = createVariants();
 
 	const removeMembers = trpc.group.removeMembers.createMutation(() => ({
 		onSuccess: () =>
@@ -237,23 +240,4 @@ export default function Page() {
 			</Suspense>
 		</PageLayout>
 	);
-}
-
-function createVariants() {
-	const tenantSlug = useTenantSlug();
-
-	return {
-		user: {
-			label: "Users",
-			query: trpc.tenant.variantTable.users.createQuery(() => ({
-				tenantSlug: tenantSlug(),
-			})),
-		},
-		device: {
-			label: "Devices",
-			query: trpc.tenant.variantTable.devices.createQuery(() => ({
-				tenantSlug: tenantSlug(),
-			})),
-		},
-	};
 }

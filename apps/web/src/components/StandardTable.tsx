@@ -63,7 +63,7 @@ export function createSearchParamPagination<TData extends RowData>(
 		on(
 			() => table.getState().pagination.pageIndex,
 			(index) =>
-				setSearchParams({ [key]: index || undefined }, { replace: true }),
+				setSearchParams({ [key]: index || undefined }, { replace: false }),
 		),
 	);
 

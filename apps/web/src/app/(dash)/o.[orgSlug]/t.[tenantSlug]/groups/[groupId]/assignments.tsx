@@ -22,12 +22,17 @@ import {
 	createSearchParamFilter,
 	createStandardTable,
 } from "~c/StandardTable";
-import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
+import {
+	VariantTableSheet,
+	VariantTableVariants,
+	createVariantTableColumns,
+} from "~c/VariantTableSheet";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 import { useGroupId } from "../[groupId]";
 import { RouteDefinition } from "@solidjs/router";
 import { toTitleCase } from "~/lib/utils";
+import { createAssignmentsVariants } from "./utils";
 
 export const route = {
 	load: ({ params }) =>
@@ -51,12 +56,14 @@ export default function Page() {
 			| { type: "removeMany"; data: NonNullable<typeof assignments.data> };
 	}>({ open: false, data: { type: "removeMany", data: [] } });
 
+	const variants = createAssignmentsVariants("../../../");
+
 	const table = createStandardTable({
 		get data() {
 			return assignments.data ?? [];
 		},
 		columns: [
-			...variantTableColumns,
+			...createVariantTableColumns(variants),
 			createActionsColumn({
 				headerDropdownContent: ({ table }) => (
 					<DropdownMenuItem
@@ -108,8 +115,6 @@ export default function Page() {
 				setDialog({ ...dialog(), open: false });
 			}),
 	}));
-
-	const variants = createVariants();
 
 	return (
 		<PageLayout
@@ -235,23 +240,4 @@ export default function Page() {
 			</Suspense>
 		</PageLayout>
 	);
-}
-
-function createVariants() {
-	const tenantSlug = useTenantSlug();
-
-	return {
-		policy: {
-			label: "Policies",
-			query: trpc.tenant.variantTable.policies.createQuery(() => ({
-				tenantSlug: tenantSlug(),
-			})),
-		},
-		application: {
-			label: "Applications",
-			query: trpc.tenant.variantTable.apps.createQuery(() => ({
-				tenantSlug: tenantSlug(),
-			})),
-		},
-	};
 }
