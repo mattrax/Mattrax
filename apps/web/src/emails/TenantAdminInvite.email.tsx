@@ -1,9 +1,4 @@
-/** @jsx h */
-
-function h(...args: any[]): JSX.Element {
-	console.log("h", ...args);
-	return React.createElement(...args);
-}
+/** @jsx React.createElement */
 
 import {
 	Body,
