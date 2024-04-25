@@ -30,27 +30,13 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:latest
-        # service environment variables
-        # `POSTGRES_HOST` is `postgres`
+        image: mysql:latest
         env:
-          # optional (defaults to `postgres`)
-          POSTGRES_DB: postgres_db
-          # required
-          POSTGRES_PASSWORD: postgres_password
-          # optional (defaults to `5432`)
-          POSTGRES_PORT: 5432
-          # optional (defaults to `postgres`)
-          POSTGRES_USER: postgres_user
+          MYSQL_ROOT_PASSWORD: mysql
         ports:
-          # maps tcp port 5432 on service container to the host
-          - 5432:5432
-        # set health checks to wait until postgres has started
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          - 3306:3306
+    env:
+      DATABASE_URL: mysql://root:mysql@localhost:3306/mattrax
     steps:
       - name: Checkout
         uses: actions/checkout@v3
