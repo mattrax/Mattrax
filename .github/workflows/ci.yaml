@@ -49,7 +49,7 @@ jobs:
         run: pnpm i
 
       - name: Generate migrations
-        run: pnpm db:generate
+        run: pnpm db:gen
 
       - name: Detect
         run: |
