@@ -20,6 +20,7 @@ import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { cacheMetadata } from "../metadataCache";
 
 export const route = {
 	load: ({ params }) => {
@@ -74,6 +75,7 @@ export default function Page() {
 	// const location = useLocation();
 	const params = useZodParams({ tenantSlug: z.string() });
 	const devices = trpc.device.list.createQuery(() => params);
+	cacheMetadata("device", () => devices.data ?? []);
 
 	const table = createStandardTable({
 		get data() {

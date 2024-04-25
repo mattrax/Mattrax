@@ -24,15 +24,14 @@ import {
 } from "~c/StandardTable";
 import {
 	VariantTableSheet,
-	VariantTableVariants,
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
-import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 import { useGroupId } from "../[groupId]";
 import { RouteDefinition } from "@solidjs/router";
 import { toTitleCase } from "~/lib/utils";
 import { createAssignmentsVariants } from "./utils";
+import { cacheMetadata } from "../../metadataCache";
 
 export const route = {
 	load: ({ params }) =>
@@ -45,6 +44,14 @@ export default function Page() {
 	const assignments = trpc.group.assignments.createQuery(() => ({
 		id: groupId(),
 	}));
+	const cacheAssignmentsWithVariant = (v: "policy" | "application") =>
+		cacheMetadata(
+			v,
+			() => assignments.data?.filter((a) => a.variant === v) ?? [],
+		);
+
+	cacheAssignmentsWithVariant("policy");
+	cacheAssignmentsWithVariant("application");
 
 	const [dialog, setDialog] = createSignal<{
 		open: boolean;

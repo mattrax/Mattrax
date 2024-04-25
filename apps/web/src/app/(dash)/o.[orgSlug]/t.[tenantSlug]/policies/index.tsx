@@ -56,7 +56,9 @@ const columns = [
 
 export default function Page() {
 	const params = useZodParams({ tenantSlug: z.string() });
+
 	const policies = trpc.policy.list.createQuery(() => params);
+	cacheMetadata("policy", () => policies.data ?? []);
 
 	const table = createStandardTable({
 		get data() {
@@ -97,6 +99,7 @@ import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 import { useTenantSlug } from "../../t.[tenantSlug]";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { cacheMetadata } from "../metadataCache";
 
 function CreatePolicyButton() {
 	const tenantSlug = useTenantSlug();

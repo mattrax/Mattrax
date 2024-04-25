@@ -31,6 +31,7 @@ import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 import { useGroupId } from "../[groupId]";
 import { toTitleCase } from "~/lib/utils";
 import { createMembersVariants } from "./utils";
+import { cacheMetadata } from "../../metadataCache";
 
 export const route = {
 	load: ({ params }) =>
@@ -42,9 +43,12 @@ export const route = {
 export default function Page() {
 	const groupId = useGroupId();
 
-	const members = trpc.group.members.createQuery(() => ({
-		id: groupId(),
-	}));
+	const members = trpc.group.members.createQuery(() => ({ id: groupId() }));
+	const cacheMembersWithVariant = (v: "user" | "device") =>
+		cacheMetadata(v, () => members.data?.filter((a) => a.variant === v) ?? []);
+
+	cacheMembersWithVariant("user");
+	cacheMembersWithVariant("device");
 
 	const [dialog, setDialog] = createSignal<{
 		open: boolean;

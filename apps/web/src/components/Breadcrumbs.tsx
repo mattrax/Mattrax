@@ -8,6 +8,7 @@ import {
 	Suspense,
 	createMemo,
 	SuspenseList,
+	Show,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 
@@ -46,9 +47,11 @@ export function Breadcrumbs() {
 						});
 
 						return (
-							<Breadcrumb>
-								<Dynamic component={b().Component} href={href()} />
-							</Breadcrumb>
+							<Show when={b().Component} keyed>
+								<Breadcrumb>
+									<Dynamic component={b().Component} href={href()} />
+								</Breadcrumb>
+							</Show>
 						);
 					}}
 				</Index>
@@ -59,18 +62,18 @@ export function Breadcrumbs() {
 
 export function Breadcrumb(props: ParentProps) {
 	return (
-		<Suspense
-			fallback={
-				<div class="flex flex-row items-center gap-2">
-					<IconMdiSlashForward class="text-lg text-gray-300" />
-					<div class="w-24 h-4 rounded-full bg-neutral-200 animate-pulse" />
-				</div>
-			}
-		>
-			<div class="flex flex-row items-center gap-2">
+		<div class="flex flex-row items-center gap-2">
+			<Suspense
+				fallback={
+					<>
+						<IconMdiSlashForward class="text-lg text-gray-300" />
+						<div class="w-24 h-4 rounded-full bg-neutral-200 animate-pulse" />
+					</>
+				}
+			>
 				<IconMdiSlashForward class="text-lg text-gray-300" />
 				{props.children}
-			</div>
-		</Suspense>
+			</Suspense>
+		</div>
 	);
 }

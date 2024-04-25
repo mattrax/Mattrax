@@ -48,9 +48,9 @@ const columns = [
 
 export default function Page() {
 	const tenantSlug = useTenantSlug();
-	const apps = trpc.app.list.createQuery(() => ({
-		tenantSlug: tenantSlug(),
-	}));
+
+	const apps = trpc.app.list.createQuery(() => ({ tenantSlug: tenantSlug() }));
+	cacheMetadata("application", () => apps.data ?? []);
 
 	const table = createStandardTable({
 		get data() {
@@ -117,6 +117,7 @@ import { z } from "zod";
 import clsx from "clsx";
 import { useTenantSlug } from "../../t.[tenantSlug]";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
+import { cacheMetadata } from "../metadataCache";
 
 const IOS_APP_SCHEMA = z.object({
 	results: z.array(
