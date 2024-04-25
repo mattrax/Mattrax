@@ -1,33 +1,42 @@
-import { AwsClient } from "aws4fetch";
+import { type AwsClient } from "aws4fetch";
 import { render } from "@react-email/render";
-import { env } from "~/env";
-import {
-	LoginCodeEmail,
-	TenantAdminInviteEmail,
-	UserEnrollmentInviteEmail,
-} from "../emails";
-import type { RequestSchema } from "~/api/emails";
+import { z } from "zod";
 
-const aws =
-	env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
-		? new AwsClient({
-				region: "us-east-1",
-				accessKeyId: env.AWS_ACCESS_KEY_ID,
-				secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-			})
-		: undefined;
+import LoginCodeEmail from "./LoginCode";
+import TenantAdminInviteEmail from "./TenantAdminInvite";
+import UserEnrollmentInviteEmail from "./UserEnrollmentInvite";
 
-export { default as TenantAdminInviteEmail } from "./TenantAdminInvite.email";
-export { default as LoginCodeEmail } from "./LoginCode.email";
-export { default as UserEnrollmentInviteEmail } from "./UserEnrollmentInvite.email";
+const REQUEST_SCHEMA = z
+	.object({
+		to: z.string(),
+		subject: z.string(),
+	})
+	.and(
+		z.union([
+			z.object({
+				type: z.literal("tenantAdminInvite"),
+				invitedByEmail: z.string(),
+				tenantName: z.string(),
+				inviteLink: z.string(),
+			}),
+			z.object({
+				type: z.literal("loginCode"),
+				code: z.string(),
+			}),
+			z.object({
+				type: z.literal("userEnrollmentInvite"),
+				tenantName: z.string(),
+			}),
+		]),
+	);
 
-export async function _sender(args: RequestSchema) {
-	if (!aws) {
-		const msg = "AWS client not setup but 'FROM_ADDRESS' provided!";
-		console.error(msg);
-		throw new Error(msg);
-	}
+export type RequestSchema = z.infer<typeof REQUEST_SCHEMA>;
 
+export async function _sender(
+	args: RequestSchema,
+	aws: AwsClient,
+	fromAddress: string,
+) {
 	let component: any;
 	if (args.type === "tenantAdminInvite") {
 		component = TenantAdminInviteEmail(args);
@@ -46,7 +55,7 @@ export async function _sender(args: RequestSchema) {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
-				FromEmailAddress: env.FROM_ADDRESS,
+				FromEmailAddress: fromAddress,
 				Destination: {
 					ToAddresses: [args.to],
 				},

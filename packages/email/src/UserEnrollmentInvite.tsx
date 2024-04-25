@@ -1,5 +1,3 @@
-/** @jsx React.createElement */
-
 import {
 	Body,
 	Container,
@@ -10,13 +8,12 @@ import {
 	Text,
 } from "@react-email/components";
 import { Tailwind } from "@react-email/tailwind";
-import React from "react";
 
 interface Props {
 	tenantName: string;
 }
 
-export function UserEnrollmentInvite(props: Props) {
+function UserEnrollmentInvite(props: Props) {
 	const previewText = `Join ${props.tenantName} on Mattrax`;
 
 	return (
