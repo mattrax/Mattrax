@@ -1,6 +1,7 @@
 /** @jsx h */
 
-function h(...args: any[]) {
+function h(...args: any[]): JSX.Element {
+	console.log("h", ...args);
 	return React.createElement(...args);
 }
 
@@ -14,7 +15,7 @@ import {
 	Text,
 } from "@react-email/components";
 import { Tailwind } from "@react-email/tailwind";
-import React, { JSX } from "react";
+import React, { type JSX } from "react";
 
 interface Props {
 	tenantName: string;
