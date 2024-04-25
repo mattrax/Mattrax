@@ -61,8 +61,8 @@ jobs:
             exit 1
           fi
 
-  format:
-    name: Format
+  format-biome:
+    name: Format (Biome)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -75,7 +75,19 @@ jobs:
       - name: Install dependencies
         run: pnpm i
 
-      - name: Generate migrations
+      - name: Check formatting
         run: pnpm exec biome ci .
+
+  format-rust:
+    name: Format (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Check formatting
+        run: cargo fmt --check
 
   # TODO: Rust tests + Clippy (maybe in separate jobs)
