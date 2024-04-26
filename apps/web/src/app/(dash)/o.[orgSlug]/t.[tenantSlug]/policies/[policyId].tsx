@@ -6,8 +6,7 @@ import { z } from "zod";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { createNotFoundRedirect, useNameFromListQuery } from "~/lib/utils";
-import { useTenantSlug } from "../../t.[tenantSlug]";
+import { createNotFoundRedirect } from "~/lib/utils";
 import { getMetadata } from "../metadataCache";
 
 export function usePolicyId() {
