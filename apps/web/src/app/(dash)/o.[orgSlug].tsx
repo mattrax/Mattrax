@@ -6,9 +6,7 @@ import { type RouteDefinition, A } from "@solidjs/router";
 import type { ParentProps } from "solid-js";
 import { z } from "zod";
 
-import { AuthContext } from "~/components/AuthContext";
 import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
-import { OrgContext, useOrg } from "./o.[orgSlug]/Context";
 import { useZodParams } from "~/lib/useZodParams";
 import { MultiSwitcher } from "./MultiSwitcher";
 import { trpc } from "~/lib";

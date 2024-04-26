@@ -83,7 +83,7 @@ export function MultiSwitcher(props: ParentProps) {
 							<ul class="p-1 pt-2 flex flex-col">
 								<For each={orgs.data}>
 									{(org) => (
-										<li>
+										<li onClick={() => setOpen(false)}>
 											<a
 												class={clsx(
 													"block px-2 py-1.5 text-sm rounded flex flex-row justify-between items-center focus:outline-none",
@@ -143,7 +143,7 @@ export function MultiSwitcher(props: ParentProps) {
 											<ul class="p-1 pt-2 flex flex-col">
 												<For each={tenants.data}>
 													{(tenant) => (
-														<li>
+														<li onClick={() => setOpen(false)}>
 															<a
 																class={clsx(
 																	"block px-2 py-1.5 text-sm rounded flex flex-row justify-between items-center focus:outline-none",

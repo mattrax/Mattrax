@@ -1,4 +1,11 @@
-import { For, Match, Show, Switch, startTransition } from "solid-js";
+import {
+	For,
+	Match,
+	Show,
+	Switch,
+	createSignal,
+	startTransition,
+} from "solid-js";
 import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
 import { InputField, Form, createZodForm } from "@mattrax/ui/forms";
 import {
@@ -21,6 +28,9 @@ export const route = {
 export default function Page() {
 	const orgSlug = useOrgSlug();
 	const tenants = trpc.org.tenants.createQuery(() => ({ orgSlug: orgSlug() }));
+
+	const [open, setOpen] = createSignal(true);
+	setInterval(() => setOpen(!open()), 5000);
 
 	return (
 		<Show when={tenants.data}>

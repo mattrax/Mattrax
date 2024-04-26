@@ -3,7 +3,7 @@ import { flushResponse } from "@mattrax/trpc-server-function/server";
 import { alphabet, generateRandomString } from "oslo/crypto";
 import { createId } from "@paralleldrive/cuid2";
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { generateId } from "lucia";
 import { z } from "zod";
 
@@ -15,7 +15,6 @@ import {
 	db,
 	organisationMembers,
 	organisations,
-	tenants,
 } from "~/db";
 import {
 	authedProcedure,
