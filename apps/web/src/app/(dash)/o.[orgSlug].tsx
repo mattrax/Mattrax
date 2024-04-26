@@ -10,7 +10,8 @@ import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
 import { useZodParams } from "~/lib/useZodParams";
 import { MultiSwitcher } from "./MultiSwitcher";
 import { trpc } from "~/lib";
-import { cache, createQueryCacher, useCachedQueryData } from "~/cache";
+import { createQueryCacher, useCachedQueryData } from "~/cache";
+import { cachedOrgs } from "./utils";
 
 export function useOrgSlug() {
 	const params = useZodParams({ orgSlug: z.string() });
@@ -18,7 +19,7 @@ export function useOrgSlug() {
 }
 
 export default function Layout(props: ParentProps) {
-	createMemo(createAsync(() => cache.orgs.toArray()));
+	createMemo(createAsync(() => cachedOrgs()));
 
 	return <>{props.children}</>;
 }
@@ -45,7 +46,7 @@ export const route = {
 					name: org.name,
 					slug: org.slug,
 				}));
-				const orgs = useCachedQueryData(query, cache.orgs.toArray());
+				const orgs = useCachedQueryData(query, () => cachedOrgs());
 
 				const org = () => orgs()?.find((o) => o.slug === params.orgSlug);
 

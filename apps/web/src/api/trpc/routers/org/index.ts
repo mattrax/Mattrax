@@ -32,7 +32,8 @@ export const orgRouter = createTRPCRouter({
 				organisationMembers,
 				eq(organisations.pk, organisationMembers.orgPk),
 			)
-			.innerJoin(accounts, eq(organisations.ownerPk, accounts.pk)),
+			.innerJoin(accounts, eq(organisations.ownerPk, accounts.pk))
+			.orderBy(organisations.id),
 	),
 
 	tenants: orgProcedure.query(async ({ ctx }) => {
@@ -41,10 +42,12 @@ export const orgRouter = createTRPCRouter({
 				id: tenants.id,
 				name: tenants.name,
 				slug: tenants.slug,
+				orgId: organisations.id,
 			})
 			.from(tenants)
 			.where(eq(organisations.pk, ctx.org.pk))
-			.innerJoin(organisations, eq(organisations.pk, tenants.orgPk));
+			.innerJoin(organisations, eq(organisations.pk, tenants.orgPk))
+			.orderBy(tenants.id);
 	}),
 
 	delete: orgProcedure.query(async ({ ctx }) => {

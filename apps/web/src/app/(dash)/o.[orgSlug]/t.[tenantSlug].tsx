@@ -9,7 +9,9 @@ import { MultiSwitcher } from "../MultiSwitcher";
 import { As } from "@kobalte/core";
 import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
-import { cache, createQueryCacher, useCachedQueryData } from "~/cache";
+import { createQueryCacher, useCachedQueryData } from "~/cache";
+import { cachedOrgs } from "../utils";
+import { cachedTenantsForOrg } from "./utils";
 
 export function useTenantSlug() {
 	const params = useZodParams({ tenantSlug: z.string() });
@@ -41,7 +43,7 @@ export const route = {
 				});
 
 				const query = trpc.org.list.createQuery();
-				const orgs = useCachedQueryData(query, cache.orgs.toArray());
+				const orgs = useCachedQueryData(query, () => cachedOrgs());
 				const org = () => orgs()?.find((o) => o.slug === params.orgSlug);
 
 				return (
@@ -51,9 +53,8 @@ export const route = {
 								orgSlug: params.orgSlug,
 							}));
 							createQueryCacher(query, "tenants", (t) => ({ ...t }));
-							const tenants = useCachedQueryData(
-								query,
-								cache.tenants.where("orgId").equals(org().id).toArray(),
+							const tenants = useCachedQueryData(query, () =>
+								cachedTenantsForOrg(org().id),
 							);
 
 							const tenant = () =>
@@ -78,7 +79,17 @@ export const route = {
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ tenantSlug: z.string() });
+	const params = useZodParams({ orgSlug: z.string(), tenantSlug: z.string() });
+
+	const orgs = createAsync(() => cachedOrgs());
+
+	createMemo(
+		createAsync(async () => {
+			const org = orgs()?.find((o) => o.slug === params.orgSlug);
+			if (!org) return;
+			return await cachedTenantsForOrg(org.id);
+		}),
+	);
 
 	return (
 		<>

@@ -26,11 +26,15 @@ class MattraxCache
 	}
 }
 
-type TableData<TTable extends Dexie.Table> = TTable extends Dexie.Table<infer T>
+export type { MattraxCache };
+
+export type TableData<TTable extends Dexie.Table> = TTable extends Dexie.Table<
+	infer T
+>
 	? T
 	: never;
 
-export const cache = new MattraxCache();
+export const mattraxCache = new MattraxCache();
 
 export function createQueryCacher<TData extends any, TTable extends TableNames>(
 	query: CreateQueryResult<Array<TData>, any>,
@@ -39,19 +43,19 @@ export function createQueryCacher<TData extends any, TTable extends TableNames>(
 ) {
 	createEffect(() => {
 		if (!query.data) return;
-		cache[table].bulkPut(query.data.map(transform) as any);
+		mattraxCache[table].bulkPut(query.data.map(transform) as any);
 	});
 }
 
 export function useCachedQueryData<TData extends any>(
 	query: CreateQueryResult<Array<TData>, any>,
-	cacheQuery: Promise<Array<TData>>,
+	cacheQuery: () => Promise<Array<TData>>,
 ): Accessor<Array<TData> | undefined> {
-	const cached = createAsync(() => cacheQuery);
+	const cachedQuery = createAsync(() => cacheQuery());
 
 	return () => {
 		if (query.isLoading) {
-			const c = cached();
+			const c = cachedQuery();
 			if (!c || (c && c.length > 0)) return c;
 		}
 

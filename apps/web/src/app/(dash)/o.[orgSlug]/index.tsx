@@ -2,6 +2,7 @@ import {
 	For,
 	Match,
 	Show,
+	Suspense,
 	Switch,
 	createSignal,
 	startTransition,
@@ -19,6 +20,9 @@ import { z } from "zod";
 import { trpc } from "~/lib";
 import { useOrgSlug } from "../o.[orgSlug]";
 import { PageLayout } from "~/components/PageLayout";
+import { MattraxCache, TableData, useCachedQueryData } from "~/cache";
+import { cachedOrgs } from "../utils";
+import { cachedTenantsForOrg } from "./utils";
 
 export const route = {
 	load: ({ params }) =>
@@ -27,43 +31,55 @@ export const route = {
 
 export default function Page() {
 	const orgSlug = useOrgSlug();
-	const tenants = trpc.org.tenants.createQuery(() => ({ orgSlug: orgSlug() }));
+
+	const tenantsQuery = trpc.org.tenants.createQuery(() => ({
+		orgSlug: orgSlug(),
+	}));
+	const tenants = useCachedQueryData(tenantsQuery, async () => {
+		const slug = orgSlug();
+		const orgs = await cachedOrgs();
+		const org = orgs.find((o) => o.slug === slug);
+		if (!org) return [];
+
+		return await cachedTenantsForOrg(org.id);
+	});
 
 	const [open, setOpen] = createSignal(true);
 	setInterval(() => setOpen(!open()), 5000);
 
 	return (
-		<Show when={tenants.data}>
-			{(tenants) => (
-				<Switch>
-					<Match when={tenants().length < 1}>
-						<CreateTenant />
-					</Match>
-					<Match when={tenants().length === 1 && tenants()[0]!}>
-						{(tenant) => (
-							<Navigate href={`/o/${orgSlug()}/t/${tenant().slug}`} />
-						)}
-					</Match>
-					<Match when={tenants().length > 1}>
-						<PageLayout class="pt-6">
-							<TenantList />
-						</PageLayout>
-					</Match>
-				</Switch>
-			)}
-		</Show>
+		<Suspense>
+			<Show when={tenants()}>
+				{(tenants) => (
+					<Switch>
+						<Match when={tenants().length < 1}>
+							<CreateTenant />
+						</Match>
+						<Match when={tenants().length === 1 && tenants()[0]!}>
+							{(tenant) => (
+								<Navigate href={`/o/${orgSlug()}/t/${tenant().slug}`} />
+							)}
+						</Match>
+						<Match when={tenants().length > 1}>
+							<PageLayout class="pt-6">
+								<TenantList tenants={tenants()} />
+							</PageLayout>
+						</Match>
+					</Switch>
+				)}
+			</Show>
+		</Suspense>
 	);
 }
 
-function TenantList() {
-	const orgSlug = useOrgSlug();
-	const tenants = trpc.org.tenants.createQuery(() => ({ orgSlug: orgSlug() }));
-
+function TenantList(props: {
+	tenants: Array<TableData<MattraxCache["tenants"]>>;
+}) {
 	return (
 		<>
 			<span class="p-1 text-sm text-gray-800 font-semibold">Tenants</span>
 			<ul class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-				<For each={tenants.data}>
+				<For each={props.tenants}>
 					{(tenant) => (
 						<li class="w-full text-sm">
 							<A

@@ -27,7 +27,7 @@ export function MultiSwitcher(props: ParentProps) {
 	>();
 
 	const query = trpc.org.list.createQuery();
-	const orgs = useCachedQueryData(query, cache.orgs.toArray());
+	const orgs = useCachedQueryData(query, () => cachedOrgs());
 
 	const [selectedTenant, setSelectedTenant] = createSignal<
 		string | null | undefined
@@ -147,23 +147,27 @@ export function MultiSwitcher(props: ParentProps) {
 							keyed
 						>
 							{(org) => {
-								const tenants = trpc.tenant.list.createQuery(() => ({
+								const query = trpc.tenant.list.createQuery(() => ({
 									orgSlug: org.slug,
 								}));
 
-								createQueryCacher(tenants, "tenants", (tenant) => ({
+								createQueryCacher(query, "tenants", (tenant) => ({
 									id: tenant.id,
 									name: tenant.name,
 									slug: tenant.slug,
 									orgId: org.id,
 								}));
 
+								const tenants = useCachedQueryData(query, () =>
+									cachedTenantsForOrg(org.id),
+								);
+
 								return (
 									<>
 										<div class="text-xs text-gray-600 px-3 pt-5">Tenants</div>
 										<Suspense>
 											<ul class="p-1 pt-2 flex flex-col">
-												<For each={tenants.data}>
+												<For each={tenants()}>
 													{(tenant) => (
 														<li onClick={() => setOpen(false)}>
 															<a
@@ -220,9 +224,11 @@ import {
 	DialogTitle,
 } from "@mattrax/ui";
 import { trpc } from "~/lib";
-import { createAsync, useNavigate } from "@solidjs/router";
+import { useNavigate } from "@solidjs/router";
 import clsx from "clsx";
-import { cache, createQueryCacher, useCachedQueryData } from "~/cache";
+import { createQueryCacher, useCachedQueryData } from "~/cache";
+import { cachedOrgs } from "./utils";
+import { cachedTenantsForOrg } from "./o.[orgSlug]/utils";
 
 export function CreateTenantDialog(props: {
 	open: boolean;
