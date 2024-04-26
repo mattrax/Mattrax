@@ -9,7 +9,6 @@ import IconIcRoundCheck from "~icons/ic/round-check.jsx";
 import { createVariantTableColumns } from "~c/VariantTableSheet";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { GroupContext, useGroup } from "./Context";
 import { trpc } from "~/lib";
 import { StatItem } from "~/components/StatItem";
 
@@ -79,7 +78,7 @@ function NameEditor(props: { groupId: string }) {
 			return;
 		}
 
-		toast.promise(updateGroup.mutateAsync({ id: group().id, name }), {
+		toast.promise(updateGroup.mutateAsync({ id: props.groupId, name }), {
 			loading: "Updating group name...",
 			success: "Group name updated",
 			error: "Failed to update group name",

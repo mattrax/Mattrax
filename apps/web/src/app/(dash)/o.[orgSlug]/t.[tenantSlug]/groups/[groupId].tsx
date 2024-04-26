@@ -6,8 +6,7 @@ import { z } from "zod";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
-import { useTenantSlug } from "../../t.[tenantSlug]";
-import { createNotFoundRedirect, useNameFromListQuery } from "~/lib/utils";
+import { createNotFoundRedirect } from "~/lib/utils";
 import { getMetadata } from "../metadataCache";
 
 export function useGroupId() {
