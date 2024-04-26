@@ -33,18 +33,18 @@ function Root({
 
 	return (
 		<_OTPInput
-			maxLength={6}
+			maxLength={8}
 			containerClassName="group flex items-center has-[:disabled]:opacity-30"
 			render={({ slots }) => (
 				<>
 					<div className="flex">
-						{slots.slice(0, 3).map((slot, idx) => (
+						{slots.slice(0, 4).map((slot, idx) => (
 							<Slot key={idx} {...slot} />
 						))}
 					</div>
 					<FakeDash />
 					<div className="flex">
-						{slots.slice(3).map((slot, idx) => (
+						{slots.slice(4).map((slot, idx) => (
 							<Slot key={idx} {...slot} />
 						))}
 					</div>

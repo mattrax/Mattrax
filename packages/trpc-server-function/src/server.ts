@@ -1,11 +1,11 @@
-import { getEvent } from "vinxi/http";
+import { AsyncLocalStorage } from "node:async_hooks";
 
-export const TRPC_REQUEST = Symbol("tRPC Request");
+export const TRPC_LOCAL_STORAGE = new AsyncLocalStorage<() => void>();
 
 export function flushResponse() {
-	const ctx = (getEvent() as any)[TRPC_REQUEST];
-	if (!ctx)
+	const flush = TRPC_LOCAL_STORAGE.getStore();
+	if (!flush)
 		throw new Error("Cannot call flushResponse outside of a trpc handler");
 
-	ctx.flush();
+	flush();
 }
