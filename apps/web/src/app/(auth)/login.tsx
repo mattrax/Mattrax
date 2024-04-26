@@ -123,7 +123,13 @@ export default function Page() {
 											<OTPInput
 												name="code"
 												disabled={form.state.isSubmitting}
-												onInput={(value) => form.setFieldValue("code", value)}
+												onInput={(value) => {
+													form.setFieldValue("code", value);
+													if (value.length === 6) form.handleSubmit();
+												}}
+												onKeyDown={(e) => {
+													if (e.key === "Enter") form.handleSubmit();
+												}}
 											/>
 										</div>
 

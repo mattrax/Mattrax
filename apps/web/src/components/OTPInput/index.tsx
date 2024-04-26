@@ -7,6 +7,7 @@ export type Props = {
 	name?: string;
 	disabled?: boolean;
 	onInput?: (value: string) => void;
+	onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 	afterRender?: () => void;
 };
 

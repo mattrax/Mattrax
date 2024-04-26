@@ -26,7 +26,7 @@ export default function OTPInput(props: Props) {
 }
 
 function Root({
-	props: { onInput, ...props },
+	props: { onInput, onKeyDown, ...props },
 	resolve,
 }: { props: Props; resolve: () => void }) {
 	useEffect(resolve);
@@ -52,6 +52,9 @@ function Root({
 			)}
 			onInput={(e) => {
 				if (onInput) onInput(e.target.value);
+			}}
+			onKeyDown={(e) => {
+				if (onKeyDown) onKeyDown(e);
 			}}
 			{...props}
 		/>
