@@ -1,5 +1,5 @@
-import { type ParentProps, Show, Suspense } from "solid-js";
-import { type RouteDefinition, A } from "@solidjs/router";
+import { type ParentProps, Show, Suspense, createMemo } from "solid-js";
+import { type RouteDefinition, A, createAsync } from "@solidjs/router";
 import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";

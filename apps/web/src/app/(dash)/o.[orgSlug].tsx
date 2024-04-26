@@ -2,8 +2,8 @@
 
 import { As } from "@kobalte/core";
 import { Button } from "@mattrax/ui";
-import { type RouteDefinition, A } from "@solidjs/router";
-import type { ParentProps } from "solid-js";
+import { type RouteDefinition, A, createAsync } from "@solidjs/router";
+import { createMemo, type ParentProps } from "solid-js";
 import { z } from "zod";
 
 import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
@@ -18,6 +18,8 @@ export function useOrgSlug() {
 }
 
 export default function Layout(props: ParentProps) {
+	createMemo(createAsync(() => cache.orgs.toArray()));
+
 	return <>{props.children}</>;
 }
 
