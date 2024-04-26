@@ -1,12 +1,18 @@
-import { Match, Switch, createSignal, startTransition } from "solid-js";
+import {
+	Match,
+	Switch,
+	createSignal,
+	onMount,
+	startTransition,
+} from "solid-js";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { z } from "zod";
 
 import { trpc } from "~/lib";
+import { OTPInput, preloadOTPInput } from "~/components/OTPInput";
 
-// TODO: Autocomplete attributes
 // TODO: Use Mattrax colors on this page
 
 export default function Page() {
@@ -15,6 +21,9 @@ export default function Page() {
 	>({ variant: "sendCode" });
 
 	const [searchParams] = useSearchParams<{ continueTo?: string }>();
+
+	// We load this in the background on the email input page.
+	onMount(() => preloadOTPInput());
 
 	return (
 		<div class="h-full flex flex-row justify-center p-4">
@@ -44,9 +53,10 @@ export default function Page() {
 						>
 							{(_) => {
 								const login = trpc.auth.sendLoginCode.createMutation(() => ({
-									onSuccess: (_, { email }) => {
-										setState({ variant: "verifyCode", email });
-									},
+									onSuccess: (_, { email }) =>
+										startTransition(() =>
+											setState({ variant: "verifyCode", email }),
+										),
 								}));
 
 								const form = createZodForm({
@@ -108,16 +118,14 @@ export default function Page() {
 										<p>
 											Enter the code sent to <b>{state().email}</b>
 										</p>
-										<InputField
-											form={form}
-											type="text"
-											name="code"
-											class="text-center font-mono"
-											autocomplete="one-time-code"
-											inputmode="numeric"
-											maxlength="8"
-											pattern="\d{8}"
-										/>
+
+										<div class="flex justify-center">
+											<OTPInput
+												name="code"
+												disabled={form.state.isSubmitting}
+												onInput={(value) => form.setFieldValue("code", value)}
+											/>
+										</div>
 
 										<Button type="submit" class="w-full">
 											<span class="text-sm font-semibold leading-6">Login</span>
