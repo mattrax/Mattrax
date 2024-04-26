@@ -10,6 +10,7 @@ import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
 import { useZodParams } from "~/lib/useZodParams";
 import { MultiSwitcher } from "./MultiSwitcher";
 import { trpc } from "~/lib";
+import { cache, createQueryCacher, useCachedQueryData } from "~/cache";
 
 export function useOrgSlug() {
 	const params = useZodParams({ orgSlug: z.string() });
@@ -36,9 +37,15 @@ export const route = {
 			Component: (props: { href: string }) => {
 				const params = useZodParams({ orgSlug: z.string() });
 
-				const orgs = trpc.org.list.createQuery();
+				const query = trpc.org.list.createQuery();
+				createQueryCacher(query, "orgs", (org) => ({
+					id: org.id,
+					name: org.name,
+					slug: org.slug,
+				}));
+				const orgs = useCachedQueryData(query, cache.orgs.toArray());
 
-				const org = () => orgs.data?.find((o) => o.slug === params.orgSlug);
+				const org = () => orgs()?.find((o) => o.slug === params.orgSlug);
 
 				return (
 					<div class="flex flex-row items-center py-1 gap-2">

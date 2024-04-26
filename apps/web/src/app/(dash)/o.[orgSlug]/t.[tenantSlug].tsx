@@ -4,13 +4,12 @@ import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { AuthContext } from "~c/AuthContext";
 import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
-import { TenantContext, useTenant } from "./t.[tenantSlug]/Context";
 import { MultiSwitcher } from "../MultiSwitcher";
 import { As } from "@kobalte/core";
 import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
+import { cache, createQueryCacher, useCachedQueryData } from "~/cache";
 
 export function useTenantSlug() {
 	const params = useZodParams({ tenantSlug: z.string() });
@@ -41,22 +40,37 @@ export const route = {
 					tenantSlug: z.string(),
 				});
 
-				const tenants = trpc.tenant.list.createQuery(() => ({
-					orgSlug: params.orgSlug,
-				}));
-
-				const tenant = () =>
-					tenants.data?.find((t) => t.slug === params.tenantSlug);
+				const query = trpc.org.list.createQuery();
+				const orgs = useCachedQueryData(query, cache.orgs.toArray());
+				const org = () => orgs()?.find((o) => o.slug === params.orgSlug);
 
 				return (
-					<div class="flex flex-row items-center py-1 gap-2">
-						<A href={props.href}>{tenant()?.name}</A>
-						<MultiSwitcher>
-							<As component={Button} variant="ghost" size="iconSmall">
-								<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
-							</As>
-						</MultiSwitcher>
-					</div>
+					<Show when={org()}>
+						{(org) => {
+							const query = trpc.tenant.list.createQuery(() => ({
+								orgSlug: params.orgSlug,
+							}));
+							createQueryCacher(query, "tenants", (t) => ({ ...t }));
+							const tenants = useCachedQueryData(
+								query,
+								cache.tenants.where("orgId").equals(org().id).toArray(),
+							);
+
+							const tenant = () =>
+								tenants()?.find((t) => t.slug === params.tenantSlug);
+
+							return (
+								<div class="flex flex-row items-center py-1 gap-2">
+									<A href={props.href}>{tenant()?.name}</A>
+									<MultiSwitcher>
+										<As component={Button} variant="ghost" size="iconSmall">
+											<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+										</As>
+									</MultiSwitcher>
+								</div>
+							);
+						}}
+					</Show>
 				);
 			},
 		},

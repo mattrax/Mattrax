@@ -8,7 +8,6 @@ import {
 	Suspense,
 	createEffect,
 } from "solid-js";
-import { createWritableMemo } from "@solid-primitives/memo";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
@@ -24,16 +23,27 @@ export function MultiSwitcher(props: ParentProps) {
 	const [open, setOpen] = createSignal(false);
 
 	const [selectedOrg, setSelectedOrg] = createSignal<
-		{ type: "org"; slug: string } | "create"
-	>({ type: "org", slug: params.orgSlug });
+		{ type: "org"; slug: string; id: string } | "create"
+	>();
 
-	const orgs = trpc.org.list.createQuery();
+	const query = trpc.org.list.createQuery();
+	const orgs = useCachedQueryData(query, cache.orgs.toArray());
 
-	const [selectedTenant, setSelectedTenant] = createWritableMemo<
+	const [selectedTenant, setSelectedTenant] = createSignal<
 		string | null | undefined
-	>(() => {
-		return undefined;
+	>();
+
+	createEffect(() => {
+		const firstOrg = orgs()?.[0];
+		if (selectedOrg() || !firstOrg) return;
+		setSelectedOrg({
+			type: "org",
+			slug: firstOrg.slug,
+			id: firstOrg.id,
+		});
 	});
+
+	const thisOrg = () => orgs()?.find((o) => o.slug === params.orgSlug);
 
 	return (
 		<>
@@ -63,7 +73,9 @@ export function MultiSwitcher(props: ParentProps) {
 				open={open()}
 				setOpen={(o) => {
 					if (o) {
-						setSelectedOrg({ type: "org", slug: params.orgSlug });
+						const thisO = thisOrg();
+						if (thisO) setSelectedOrg({ type: "org", ...thisO });
+
 						setSelectedTenant(params.tenantSlug);
 					}
 					setOpen(o);
@@ -80,49 +92,51 @@ export function MultiSwitcher(props: ParentProps) {
             />
           </div> */}
 						<div class="text-xs text-gray-600 px-3 pt-5">Organisations</div>
-						<Suspense>
-							<ul class="p-1 pt-2 flex flex-col">
-								<For each={orgs.data}>
-									{(org) => (
-										<li onClick={() => setOpen(false)}>
-											<a
-												class={clsx(
-													"block px-2 py-1.5 text-sm rounded flex flex-row justify-between items-center focus:outline-none",
-													(() => {
-														const selOrg = selectedOrg();
-														if (
-															typeof selOrg === "object" &&
-															selOrg.slug === org.slug
-														)
-															return "bg-neutral-200";
-													})(),
-												)}
-												onMouseEnter={() =>
-													setSelectedOrg({ type: "org", slug: org.slug })
-												}
-												href={`/o/${org.slug}`}
-											>
-												{org.name}
-												{org.slug === params.orgSlug && <IconPhCheck />}
-											</a>
-										</li>
+						<ul class="p-1 pt-2 flex flex-col">
+							<For each={orgs()}>
+								{(org) => (
+									<li onClick={() => setOpen(false)}>
+										<a
+											class={clsx(
+												"block px-2 py-1.5 text-sm rounded flex flex-row justify-between items-center focus:outline-none",
+												(() => {
+													const selOrg = selectedOrg();
+													if (
+														typeof selOrg === "object" &&
+														selOrg.slug === org.slug
+													)
+														return "bg-neutral-200";
+												})(),
+											)}
+											onMouseEnter={() =>
+												setSelectedOrg({
+													type: "org",
+													slug: org.slug,
+													id: org.id,
+												})
+											}
+											href={`/o/${org.slug}`}
+										>
+											{org.name}
+											{org.slug === params.orgSlug && <IconPhCheck />}
+										</a>
+									</li>
+								)}
+							</For>
+							<li>
+								<button
+									class={clsx(
+										"flex flex-row items-center gap-1 px-2 py-1.5 text-sm rounded w-full",
+										selectedOrg() === "create" && "bg-neutral-200",
 									)}
-								</For>
-								<li>
-									<button
-										class={clsx(
-											"flex flex-row items-center gap-1 px-2 py-1.5 text-sm rounded w-full",
-											selectedOrg() === "create" && "bg-neutral-200",
-										)}
-										onMouseEnter={() => setSelectedOrg("create")}
-										onClick={() => setModal("org")}
-									>
-										<IconPhPlusCircle />
-										Create Organisation
-									</button>
-								</li>
-							</ul>
-						</Suspense>
+									onMouseEnter={() => setSelectedOrg("create")}
+									onClick={() => setModal("org")}
+								>
+									<IconPhPlusCircle />
+									Create Organisation
+								</button>
+							</li>
+						</ul>
 					</div>
 					<div class="w-[12rem] flex flex-col overflow-y-auto">
 						<Show
@@ -135,6 +149,13 @@ export function MultiSwitcher(props: ParentProps) {
 							{(org) => {
 								const tenants = trpc.tenant.list.createQuery(() => ({
 									orgSlug: org.slug,
+								}));
+
+								createQueryCacher(tenants, "tenants", (tenant) => ({
+									id: tenant.id,
+									name: tenant.name,
+									slug: tenant.slug,
+									orgId: org.id,
 								}));
 
 								return (
@@ -199,8 +220,9 @@ import {
 	DialogTitle,
 } from "@mattrax/ui";
 import { trpc } from "~/lib";
-import { useNavigate } from "@solidjs/router";
+import { createAsync, useNavigate } from "@solidjs/router";
 import clsx from "clsx";
+import { cache, createQueryCacher, useCachedQueryData } from "~/cache";
 
 export function CreateTenantDialog(props: {
 	open: boolean;
