@@ -125,7 +125,7 @@ export default function Page() {
 												disabled={form.state.isSubmitting}
 												onInput={(value) => {
 													form.setFieldValue("code", value);
-													if (value.length === 6) form.handleSubmit();
+													if (value.length === 8) form.handleSubmit();
 												}}
 												onKeyDown={(e) => {
 													if (e.key === "Enter") form.handleSubmit();
