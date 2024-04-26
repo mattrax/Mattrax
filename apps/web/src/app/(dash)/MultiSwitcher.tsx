@@ -6,6 +6,7 @@ import {
 	startTransition,
 	Show,
 	Suspense,
+	createEffect,
 } from "solid-js";
 import { createWritableMemo } from "@solid-primitives/memo";
 
@@ -228,6 +229,10 @@ export function CreateTenantDialog(props: {
 			mutation.mutateAsync({ name: value.name, orgSlug: props.orgSlug }),
 	});
 
+	createEffect(() => {
+		if (props.open) form.reset();
+	});
+
 	return (
 		<DialogRoot open={props.open} setOpen={props.setOpen}>
 			{/* // TODO: Fix mx-4 only offsetting from the left on mobile Safari */}
@@ -274,6 +279,10 @@ function CreateOrgDialog(props: {
 	const form = createZodForm({
 		schema: z.object({ name: z.string() }),
 		onSubmit: ({ value }) => mutation.mutateAsync({ name: value.name }),
+	});
+
+	createEffect(() => {
+		if (props.open) form.reset();
 	});
 
 	return (
