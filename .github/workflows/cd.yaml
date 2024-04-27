@@ -77,7 +77,6 @@ jobs:
             x86_64-unknown-linux-gnu,
             aarch64-apple-darwin,
             x86_64-apple-darwin,
-            x86_64-pc-windows-gnu,
           ]
     steps:
       - uses: actions/checkout@v4
@@ -89,7 +88,7 @@ jobs:
           cache-on-failure: "true"
 
       - name: OpenSSL
-        run: sudo apt-get install -y libssl-dev
+        run: sudo apt-get install -y pkg-config libssl-dev
 
       - name: Install Zig toolchain
         uses: korandoru/setup-zig@v1
