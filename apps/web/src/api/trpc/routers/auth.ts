@@ -1,5 +1,5 @@
 import { appendResponseHeader, deleteCookie, setCookie } from "vinxi/server";
-import { flushResponse } from "@mattrax/trpc-server-function/server";
+import { flushResponse, waitUntil } from "@mattrax/trpc-server-function/server";
 import { alphabet, generateRandomString } from "oslo/crypto";
 import { createId } from "@paralleldrive/cuid2";
 import { TRPCError } from "@trpc/server";
@@ -64,11 +64,13 @@ export const authRouter = createTRPCRouter({
 
 			await db.insert(accountLoginCodes).values({ accountPk, code });
 
-			await sendEmail({
-				type: "loginCode",
-				to: input.email,
-				subject: "Mattrax Login Code",
-				code,
+			waitUntil(async () => {
+				await sendEmail({
+					type: "loginCode",
+					to: input.email,
+					subject: "Mattrax Login Code",
+					code,
+				});
 			});
 
 			return { accountId };
