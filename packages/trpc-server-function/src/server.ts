@@ -13,7 +13,11 @@ export function flushResponse() {
 
 export function waitUntil(fn: () => Promise<void>) {
 	console.log("TODO");
-	console.log(getEvent());
+	console.log(
+		getEvent()?.waitUntil,
+		getEvent().context?.waitUntil,
+		getEvent()?.web?.waitUntil,
+	);
 	// const waitUtil = getEvent().context?.waitUntil;
 	// if (!waitUtil) throw new Error("Not found 'waitUtil'");
 	// waitUntil(fn);
