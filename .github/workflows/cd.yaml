@@ -14,6 +14,7 @@ jobs:
       pull-requests: read
     outputs:
       updater: ${{ steps.filter.outputs.updater }}
+      web: ${{ steps.filter.outputs.web }}
       rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: dorny/paths-filter@v3
@@ -22,6 +23,11 @@ jobs:
           filters: |
             updater:
               - 'apps/updater/**'
+            web:
+              - 'apps/web/**'
+              - 'packages/**'
+              - package.json
+              - pnpm-lock.yaml
             rust:
               - 'apps/mattrax/**'
               - 'apps/mattraxd/**'
@@ -47,6 +53,15 @@ jobs:
           project: mattrax-updater
           entrypoint: src/main.ts
           root: apps/updater
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.web == 'true' }}
+    steps:
+      # TODO: Deploy `apps/web` as a *preview build*
+      - run: echo "Hello World"
 
   rust:
     name: Rust
@@ -101,18 +116,10 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
-    needs: rust
+    needs: [rust, web]
     steps:
       - run: echo "Hello World"
 
       # TODO: Trigger Rust deploy and wait for it to finish (so we know migrations have run)
 
-  cloudflare:
-    name: Cloudflare
-    runs-on: ubuntu-latest
-    needs: deploy
-    steps:
-      # TODO: Deploy `apps/web`
-      - run: echo "Hello World"
-
-  # TODO: Cloudflare workers deploy
+      # TODO: Promote web to be a production deploy
