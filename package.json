@@ -29,7 +29,7 @@
 		"drizzle-kit": "^0.20.16",
 		"pg": "^8.11.5",
 		"typescript": "^5.4.5",
-		"vinxi": "=0.3.10"
+		"vinxi": "^0.3.11"
 	},
 	"devDependencies": {
 		"husky": "^9.0.11"
