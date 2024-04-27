@@ -11,14 +11,8 @@ export function flushResponse() {
 	flush();
 }
 
-export function waitUntil(fn: () => Promise<void>) {
-	console.log("TODO");
-	console.log(
-		getEvent()?.waitUntil,
-		getEvent().context?.waitUntil,
-		getEvent()?.web?.waitUntil,
-	);
-	// const waitUtil = getEvent().context?.waitUntil;
-	// if (!waitUtil) throw new Error("Not found 'waitUtil'");
-	// waitUntil(fn);
+export function waitUntil(promise: Promise<void> | (() => Promise<void>)) {
+	const waitUntil = getEvent().context?.waitUntil;
+	if (!waitUntil) throw new Error("Not found 'waitUtil'");
+	waitUntil(typeof promise === "function" ? promise() : promise);
 }
