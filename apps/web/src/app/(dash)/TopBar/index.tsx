@@ -25,7 +25,6 @@ import {
 } from "@mattrax/ui";
 import {
 	Suspense,
-	createEffect,
 	createSignal,
 	useTransition,
 	type ParentProps,

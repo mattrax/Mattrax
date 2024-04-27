@@ -2,16 +2,16 @@
 
 import { As } from "@kobalte/core";
 import { Button } from "@mattrax/ui";
-import { type RouteDefinition, A } from "@solidjs/router";
-import type { ParentProps } from "solid-js";
+import { type RouteDefinition, A, createAsync } from "@solidjs/router";
+import { createMemo, type ParentProps } from "solid-js";
 import { z } from "zod";
 
-import { AuthContext } from "~/components/AuthContext";
 import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
-import { OrgContext, useOrg } from "./o.[orgSlug]/Context";
 import { useZodParams } from "~/lib/useZodParams";
 import { MultiSwitcher } from "./MultiSwitcher";
 import { trpc } from "~/lib";
+import { createQueryCacher, useCachedQueryData } from "~/cache";
+import { cachedOrgs } from "./utils";
 
 export function useOrgSlug() {
 	const params = useZodParams({ orgSlug: z.string() });
@@ -19,6 +19,8 @@ export function useOrgSlug() {
 }
 
 export default function Layout(props: ParentProps) {
+	createMemo(createAsync(() => cachedOrgs()));
+
 	return <>{props.children}</>;
 }
 
@@ -38,9 +40,15 @@ export const route = {
 			Component: (props: { href: string }) => {
 				const params = useZodParams({ orgSlug: z.string() });
 
-				const orgs = trpc.org.list.createQuery();
+				const query = trpc.org.list.createQuery();
+				createQueryCacher(query, "orgs", (org) => ({
+					id: org.id,
+					name: org.name,
+					slug: org.slug,
+				}));
+				const orgs = useCachedQueryData(query, () => cachedOrgs());
 
-				const org = () => orgs.data?.find((o) => o.slug === params.orgSlug);
+				const org = () => orgs()?.find((o) => o.slug === params.orgSlug);
 
 				return (
 					<div class="flex flex-row items-center py-1 gap-2">

@@ -65,9 +65,12 @@ export const tenantRouter = createTRPCRouter({
 				id: tenants.id,
 				name: tenants.name,
 				slug: tenants.slug,
+				orgId: organisations.id,
 			})
 			.from(tenants)
-			.where(eq(tenants.orgPk, ctx.org.pk)),
+			.where(eq(tenants.orgPk, ctx.org.pk))
+			.innerJoin(organisations, eq(organisations.pk, tenants.orgPk))
+			.orderBy(tenants.id),
 	),
 
 	create: orgProcedure

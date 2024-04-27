@@ -131,7 +131,7 @@ export function defineOperation<const T extends RustArgs = never>(
 		resultType = `Vec<${tyName}>`;
 		impl = `let mut ret = vec![];
 		while let Some(mut row) = result.next().await.unwrap() {
-			ret.push(${rustTypes.get(tyName).impl});
+			ret.push(${rustTypes.get(tyName).impl({ i: -1 })});
 		}
 		Ok(ret)`;
 	}
@@ -161,7 +161,7 @@ export function defineOperation<const T extends RustArgs = never>(
 							return `${camelToSnakeCase(columnName)}`;
 						}
 
-						return `${typeof p === "number" ? p : `&"${p}"`}`;
+						return `${typeof p === "number" ? p : `"${p}"`}`;
 					})
 					// TODO: Only call `.clone()` when the value is used multiple times
 					.map((p) => `${p}.clone().into()`)
@@ -233,7 +233,8 @@ const sqlDatatypeToRust = {
 type RustTypeDeclaration = {
 	usage: string;
 	declaration: string;
-	impl: string;
+	// It's an object to pass by reference
+	impl: (index: { i: number }) => string;
 };
 
 function buildResultType(
@@ -278,36 +279,34 @@ function buildResultType(
 			fields.set(k, ty);
 		}
 
-		let impl = "";
+		let impl: (index: { i: number }) => string;
 		const isALeftJoin = typeof value?.leftJoinThis === "function"; // Injected by `leftJoinHint`
 		if (isALeftJoin) {
 			const keys = [...fields.keys()].map((k) => camelToSnakeCase(k));
 
-			let i = -1;
-			impl = `{
+			impl = (index) => `{
 				${[...fields.entries()]
 					.map(([k, _ty]) => {
 						return `let ${camelToSnakeCase(
 							k,
-						)} = FromValue::from_value(row.take(${(i += 1)}).unwrap());`; // We don't support furthur nesting, rn.
+						)} = row.take(${(index.i += 1)}).map(FromValue::from_value);`; // We don't support further nesting, rn.
 					})
 					.join("\n")}
 
 				match (${keys.join(", ")}) {
-					(${keys.map((k) => `Ok(${k})`).join(", ")}) => {
+					(${keys.map((k) => `Some(${k})`).join(", ")}) => {
 						Some(${structName} { ${keys.join(", ")} })
 					}
 					_ => None,
 				}
 			}`;
 		} else {
-			let i = -1;
-			impl = `${structName} {
+			impl = (index) => `${structName} {
 				${[...fields.entries()]
 					.map(([k, ty]) => {
 						const impl =
-							resultTypes.get(ty)?.impl ??
-							`FromValue::from_value(row.take(${(i += 1)}).unwrap())`;
+							resultTypes.get(ty)?.impl(index) ??
+							`FromValue::from_value(row.take(${(index.i += 1)}).unwrap())`;
 						return `${camelToSnakeCase(k)}: ${impl}`;
 					})
 					.join(",\n")}

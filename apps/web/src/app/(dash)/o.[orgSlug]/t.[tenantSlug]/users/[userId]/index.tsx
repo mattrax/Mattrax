@@ -20,7 +20,11 @@ import {
 import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
-import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
+import {
+	VariantTableSheet,
+	VariantTableVariants,
+	createVariantTableColumns,
+} from "~c/VariantTableSheet";
 import { StandardTable, createStandardTable } from "~/components/StandardTable";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { BruhIconPhLaptop } from "./bruh";
@@ -144,11 +148,12 @@ function Devices() {
 
 function Assignments() {
 	const user = useUser();
-	const tenantSlug = useTenantSlug();
 
 	const assignments = trpc.user.assignments.createQuery(() => ({
 		id: user().id,
 	}));
+
+	const variants = createAssignmentsVariants("../../");
 
 	const table = createStandardTable({
 		get data() {
@@ -159,28 +164,13 @@ function Assignments() {
 				...assignments.data.apps.map((d) => ({ ...d, variant: "application" })),
 			];
 		},
-		columns: variantTableColumns,
+		columns: createVariantTableColumns(variants),
 		pagination: true,
 	});
 
 	const addAssignments = trpc.user.addAssignments.createMutation(() => ({
 		onSuccess: () => assignments.refetch(),
 	}));
-
-	const variants = {
-		policy: {
-			label: "Policies",
-			query: trpc.tenant.variantTable.policies.createQuery(() => ({
-				tenantSlug: tenantSlug(),
-			})),
-		},
-		application: {
-			label: "Applications",
-			query: trpc.tenant.variantTable.apps.createQuery(() => ({
-				tenantSlug: tenantSlug(),
-			})),
-		},
-	};
 
 	return (
 		<>
@@ -212,6 +202,27 @@ function Assignments() {
 			</Suspense>
 		</>
 	);
+}
+
+function createAssignmentsVariants(pathToTenant: string) {
+	const tenantSlug = useTenantSlug();
+
+	return {
+		policy: {
+			label: "Policies",
+			query: trpc.tenant.variantTable.policies.createQuery(() => ({
+				tenantSlug: tenantSlug(),
+			})),
+			href: (item) => `${pathToTenant}/policies/${item.id}`,
+		},
+		application: {
+			label: "Applications",
+			query: trpc.tenant.variantTable.apps.createQuery(() => ({
+				tenantSlug: tenantSlug(),
+			})),
+			href: (item) => `${pathToTenant}/apps/${item.id}`,
+		},
+	} satisfies VariantTableVariants;
 }
 
 function SendInstructionsDialog(

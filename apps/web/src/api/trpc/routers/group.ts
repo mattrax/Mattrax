@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq, or, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
 
@@ -10,6 +10,7 @@ import {
 	PolicyAssignableVariants,
 	applicationAssignments,
 	applications,
+	db,
 	devices,
 	groupMemberVariants,
 	groupMembers,
@@ -95,12 +96,7 @@ export const groupRouter = createTRPCRouter({
 		}),
 
 	update: authedProcedure
-		.input(
-			z.object({
-				id: z.string(),
-				name: z.string().optional(),
-			}),
-		)
+		.input(z.object({ id: z.string(), name: z.string().optional() }))
 		.mutation(async ({ ctx, input }) => {
 			const group = await ctx.db.query.groups.findFirst({
 				where: eq(groups.id, input.id),
@@ -115,50 +111,46 @@ export const groupRouter = createTRPCRouter({
 				.where(eq(groups.id, input.id));
 		}),
 
-	members: authedProcedure
-		.input(z.object({ id: z.string() }))
-		.query(async ({ ctx, input }) => {
-			const group = await ctx.db.query.groups.findFirst({
-				where: eq(groups.id, input.id),
-			});
-			if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
-
-			await ctx.ensureTenantMember(group.tenantPk);
-
-			return await ctx.db
-				.select({
-					pk: groupMembers.pk,
-					variant: groupMembers.variant,
-					name: sql<string>`
+	members: groupProcedure.query(async ({ ctx }) => {
+		return await ctx.db
+			.select({
+				pk: groupMembers.pk,
+				variant: groupMembers.variant,
+				id: sql<string>`
+					GROUP_CONCAT(CASE
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.id}
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.id}
+					END)
+          `.as("id"),
+				name: sql<string>`
 					GROUP_CONCAT(CASE
 						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.name}
 						WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.name}
 					END)
           `.as("name"),
-				})
-				.from(groupMembers)
-				.where(eq(groupMembers.groupPk, group.pk))
-				.leftJoin(
-					devices,
-					and(
-						eq(devices.pk, groupMembers.pk),
-						eq(groupMembers.variant, GroupMemberVariants.device),
-					),
-				)
-				.leftJoin(
-					users,
-					and(
-						eq(users.pk, groupMembers.pk),
-						eq(groupMembers.variant, GroupMemberVariants.user),
-					),
-				)
-				.groupBy(groupMembers.variant, groupMembers.pk);
-		}),
+			})
+			.from(groupMembers)
+			.where(eq(groupMembers.groupPk, ctx.group.pk))
+			.leftJoin(
+				devices,
+				and(
+					eq(devices.pk, groupMembers.pk),
+					eq(groupMembers.variant, GroupMemberVariants.device),
+				),
+			)
+			.leftJoin(
+				users,
+				and(
+					eq(users.pk, groupMembers.pk),
+					eq(groupMembers.variant, GroupMemberVariants.user),
+				),
+			)
+			.groupBy(groupMembers.variant, groupMembers.pk);
+	}),
 
-	addMembers: authedProcedure
+	addMembers: groupProcedure
 		.input(
 			z.object({
-				id: z.string(),
 				members: z.array(
 					z.object({
 						pk: z.number(),
@@ -168,28 +160,44 @@ export const groupRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const group = await ctx.db.query.groups.findFirst({
-				where: and(eq(groups.id, input.id)),
-			});
-			if (!group)
-				throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
-
-			await ctx.ensureTenantMember(group.tenantPk);
-
 			await ctx.db
 				.insert(groupMembers)
 				.values(
 					input.members.map((member) => ({
-						groupPk: group.pk,
+						groupPk: ctx.group.pk,
 						pk: member.pk,
 						variant: member.variant,
 					})),
 				)
 				.onDuplicateKeyUpdate({
-					set: {
-						pk: sql`${groupMembers.pk}`,
-					},
+					set: { pk: sql`${groupMembers.pk}` },
 				});
+		}),
+	removeMembers: groupProcedure
+		.input(
+			z.object({
+				members: z.array(
+					z.object({
+						pk: z.number(),
+						variant: z.enum(groupMemberVariants),
+					}),
+				),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			await ctx.db
+				.delete(groupMembers)
+				.where(
+					or(
+						...input.members.map((member) =>
+							and(
+								eq(groupMembers.groupPk, ctx.group.pk),
+								eq(groupMembers.pk, member.pk),
+								eq(groupMembers.variant, member.variant),
+							),
+						),
+					),
+				);
 		}),
 
 	assignments: groupProcedure.query(async ({ ctx }) => {
@@ -205,7 +213,10 @@ export const groupRouter = createTRPCRouter({
 						eq(policyAssignments.pk, group.pk),
 					),
 				)
-				.innerJoin(policies, eq(policyAssignments.policyPk, policies.pk)),
+				.innerJoin(policies, eq(policyAssignments.policyPk, policies.pk))
+				.then((rows) =>
+					rows.map((row) => Object.assign(row, { variant: "policy" as const })),
+				),
 			ctx.db
 				.select({
 					pk: applications.pk,
@@ -222,10 +233,16 @@ export const groupRouter = createTRPCRouter({
 				.innerJoin(
 					applications,
 					eq(applicationAssignments.applicationPk, applications.pk),
+				)
+				.then((rows) =>
+					rows.map((row) =>
+						Object.assign(row, { variant: "application" as const }),
+					),
 				),
+			,
 		]);
 
-		return { policies: p, apps: a };
+		return [...p, ...a];
 	}),
 	addAssignments: groupProcedure
 		.input(
@@ -284,6 +301,58 @@ export const groupRouter = createTRPCRouter({
 									pk: sql`${applicationAssignments.pk}`,
 								},
 							}),
+					);
+
+				return Promise.all(ops);
+			});
+		}),
+	removeAssignments: groupProcedure
+		.input(
+			z.object({
+				assignments: z.array(
+					z.object({
+						pk: z.number(),
+						variant: z.enum(["policy", "application"]),
+					}),
+				),
+			}),
+		)
+		.mutation(async ({ ctx: { group, db }, input }) => {
+			const pols: Array<number> = [],
+				apps: Array<number> = [];
+
+			input.assignments.forEach((a) => {
+				if (a.variant === "policy") pols.push(a.pk);
+				else apps.push(a.pk);
+			});
+
+			await db.transaction((db) => {
+				const ops: Promise<any>[] = [];
+
+				if (pols.length > 0)
+					ops.push(
+						db
+							.delete(policyAssignments)
+							.where(
+								and(
+									eq(policyAssignments.pk, group.pk),
+									eq(policyAssignments.variant, "group"),
+									inArray(policyAssignments.policyPk, pols),
+								),
+							),
+					);
+
+				if (apps.length > 0)
+					ops.push(
+						db
+							.delete(applicationAssignments)
+							.where(
+								and(
+									eq(applicationAssignments.pk, group.pk),
+									eq(applicationAssignments.variant, "group"),
+									inArray(applicationAssignments.applicationPk, apps),
+								),
+							),
 					);
 
 				return Promise.all(ops);

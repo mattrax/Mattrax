@@ -166,8 +166,9 @@ export const deviceRouter = createTRPCRouter({
 				else apps.push(a.pk);
 			});
 
-			await db.transaction((db) =>
-				Promise.all([
+			const ops: Promise<unknown>[] = [];
+			if (pols.length > 0)
+				ops.push(
 					db
 						.insert(policyAssignments)
 						.values(
@@ -182,6 +183,10 @@ export const deviceRouter = createTRPCRouter({
 								pk: sql`${policyAssignments.pk}`,
 							},
 						}),
+				);
+
+			if (apps.length > 0)
+				ops.push(
 					db
 						.insert(applicationAssignments)
 						.values(
@@ -196,7 +201,8 @@ export const deviceRouter = createTRPCRouter({
 								pk: sql`${applicationAssignments.pk}`,
 							},
 						}),
-				]),
-			);
+				);
+
+			await db.transaction((db) => Promise.all(ops));
 		}),
 });

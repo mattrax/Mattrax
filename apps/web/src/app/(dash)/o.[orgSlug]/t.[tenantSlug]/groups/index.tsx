@@ -55,7 +55,9 @@ import { Button } from "@mattrax/ui";
 
 export default function Page() {
 	const params = useZodParams({ tenantSlug: z.string() });
+
 	const groups = trpc.group.list.createQuery(() => params);
+	cacheMetadata("group", () => groups.data ?? []);
 
 	const table = createStandardTable({
 		get data() {
@@ -109,6 +111,7 @@ import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { cacheMetadata } from "../metadataCache";
 
 function CreateGroupDialog(props: ParentProps) {
 	const params = useZodParams({ tenantSlug: z.string() });

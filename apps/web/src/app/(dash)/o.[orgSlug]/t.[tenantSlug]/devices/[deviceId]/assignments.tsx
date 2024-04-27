@@ -7,7 +7,10 @@ import { trpc } from "~/lib";
 import { useDevice } from "./Context";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
-import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
+import {
+	VariantTableSheet,
+	createVariantTableColumns,
+} from "~c/VariantTableSheet";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { RouteDefinition } from "@solidjs/router";
 
@@ -34,7 +37,7 @@ export default function Page() {
 				...assignments.data.apps.map((d) => ({ ...d, variant: "application" })),
 			];
 		},
-		columns: variantTableColumns,
+		columns: createVariantTableColumns(),
 		pagination: true,
 	});
 

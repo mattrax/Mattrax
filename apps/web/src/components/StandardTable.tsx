@@ -9,9 +9,18 @@ import {
 	getCoreRowModel,
 	getPaginationRowModel,
 	getFilteredRowModel,
+	HeaderContext,
+	CellContext,
 } from "@tanstack/solid-table";
 import clsx from "clsx";
-import { For, type ParentProps, createEffect, mergeProps, on } from "solid-js";
+import {
+	JSX,
+	For,
+	type ParentProps,
+	createEffect,
+	mergeProps,
+	on,
+} from "solid-js";
 
 export function createStandardTable<TData extends RowData>(
 	options: Omit<
@@ -54,7 +63,7 @@ export function createSearchParamPagination<TData extends RowData>(
 		on(
 			() => table.getState().pagination.pageIndex,
 			(index) =>
-				setSearchParams({ [key]: index || undefined }, { replace: true }),
+				setSearchParams({ [key]: index || undefined }, { replace: false }),
 		),
 	);
 
@@ -80,6 +89,7 @@ export function createSearchParamFilter<TData extends RowData>(
 import {
 	Button,
 	Checkbox,
+	DropdownMenuItem,
 	Table,
 	TableBody,
 	TableCell,
@@ -196,6 +206,7 @@ import { useSearchParams } from "@solidjs/router";
 import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
 import { createMemo } from "solid-js";
+import { As } from "@kobalte/core";
 
 export function ColumnsDropdown<TData>(
 	props: ParentProps & { table: TTable<TData> },
@@ -247,3 +258,37 @@ export const selectCheckboxColumn = {
 	enableSorting: false,
 	enableHiding: false,
 } satisfies ColumnDef<any>;
+
+export function createActionsColumn<TData extends RowData>(props: {
+	headerDropdownContent: (ctx: HeaderContext<TData, unknown>) => JSX.Element;
+	cellDropdownContent: (ctx: CellContext<TData, unknown>) => JSX.Element;
+}) {
+	return {
+		id: "actions",
+		header: (ctx) => (
+			<DropdownMenu>
+				<DropdownMenuTrigger asChild>
+					<As component={Button} variant="ghost" size="iconSmall" class="block">
+						<IconPhDotsThreeBold class="w-6 h-6" />
+					</As>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent>
+					{props.headerDropdownContent(ctx)}
+				</DropdownMenuContent>
+			</DropdownMenu>
+		),
+		cell: (ctx) => (
+			<DropdownMenu>
+				<DropdownMenuTrigger asChild>
+					<As component={Button} variant="ghost" size="iconSmall" class="block">
+						<IconPhDotsThreeBold class="w-6 h-6" />
+					</As>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent>
+					{props.cellDropdownContent(ctx)}
+				</DropdownMenuContent>
+			</DropdownMenu>
+		),
+		size: 1,
+	} satisfies ColumnDef<any>;
+}
