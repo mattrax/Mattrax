@@ -55,8 +55,14 @@ jobs:
     if: ${{ needs.changes.outputs.updater == 'true' }}
     strategy:
       matrix:
-        # TODO: Build for macOS, Linux, and Windows
-        target: [unknown-linux-gnu, apple-darwin, windows-gnu]
+        target:
+          [
+            aarch64-unknown-linux-gnu,
+            x86_64-unknown-linux-gnu,
+            aarch64-apple-darwin,
+            x86_64-apple-darwin,
+            x86_64-pc-windows-gnu,
+          ]
     steps:
       - uses: actions/checkout@v4
 
@@ -83,17 +89,11 @@ jobs:
           tar -xf cargo-zigbuild-*.tar.gz
           mv cargo-zigbuild /usr/local/bin
 
-      - name: Add 'aarch64-${{ matrix.target }}' target
-        run: rustup target add aarch64-${{ matrix.target }}
+      - name: Add '${{ matrix.target }}' target
+        run: rustup target add ${{ matrix.target }}
 
-      - name: Add 'x86_64-${{ matrix.target }}' target
-        run: rustup target add x86_64-${{ matrix.target }}
-
-      - name: Build (x86_64)
-        run: cargo zigbuild --locked --release --target aarch64-${{ matrix.target }}
-
-      - name: Build (arm64)
-        run: cargo zigbuild --locked --release --target x86_64-${{ matrix.target }}
+      - name: Build
+        run: cargo zigbuild --locked --release --target ${{ matrix.target }}
 
       # TODO: Upload to R2
 
