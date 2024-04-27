@@ -5,7 +5,6 @@ import { cache } from "@solidjs/router";
 import { z } from "zod";
 
 import {
-	type PolicyAssignableVariant,
 	PolicyAssignableVariants,
 	devices,
 	groups,

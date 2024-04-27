@@ -32,7 +32,7 @@ export default function Page() {
 					}) as any
 				}
 			</Match>
-			<Match when={defaultOrg()}>
+			<Match when={(console.log(defaultOrg()), defaultOrg())}>
 				{(
 					org, // If we have an active tenant, send the user to it
 				) => {

@@ -1,7 +1,7 @@
 import { createAsync } from "@solidjs/router";
 import { CreateQueryResult } from "@tanstack/solid-query";
 import Dexie from "dexie";
-import { Accessor, createEffect, createMemo } from "solid-js";
+import { Accessor, createEffect, createMemo, untrack } from "solid-js";
 
 type TableNames = "orgs" | "tenants";
 
@@ -54,9 +54,11 @@ export function useCachedQueryData<TData extends any>(
 	const cachedQuery = createAsync(() => cacheQuery());
 
 	return () => {
-		if (query.isLoading) {
+		if (untrack(() => query.isLoading)) {
 			const c = cachedQuery();
-			if (!c || (c && c.length > 0)) return c;
+			if (c) query.data;
+
+			return c;
 		}
 
 		return query.data;

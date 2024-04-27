@@ -7,11 +7,18 @@ import {
 } from "solid-js";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
-import { useNavigate, useSearchParams } from "@solidjs/router";
+import {
+	action,
+	revalidate,
+	useNavigate,
+	useSearchParams,
+} from "@solidjs/router";
 import { z } from "zod";
 
 import { trpc } from "~/lib";
 import { OTPInput, preloadOTPInput } from "~/components/OTPInput";
+import { useQueryClient } from "@tanstack/solid-query";
+import { cachedOrgs } from "../(dash)/utils";
 
 // TODO: Use Mattrax colors on this page
 
@@ -91,6 +98,8 @@ export default function Page() {
 						>
 							{(state) => {
 								const navigate = useNavigate();
+								const queryClient = useQueryClient();
+
 								const verify = trpc.auth.verifyLoginCode.createMutation(() => ({
 									onSuccess: async () => {
 										let to: string;
@@ -103,6 +112,9 @@ export default function Page() {
 										)
 											to = searchParams.continueTo;
 										else to = "/";
+
+										queryClient.clear();
+										revalidate(cachedOrgs.key);
 
 										await startTransition(() => navigate(to));
 									},
