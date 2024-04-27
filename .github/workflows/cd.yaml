@@ -119,6 +119,7 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    # TODO: https://stackoverflow.com/questions/69354003/github-action-job-fire-when-previous-job-skipped
     needs: [rust, web]
     steps:
       - run: echo "Hello World"
