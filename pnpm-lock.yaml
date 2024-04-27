@@ -22,7 +22,7 @@ patchedDependencies:
     hash: kbhw3lxqs5ui6og332q7mjjsdu
     path: patches/drizzle-orm@0.30.8.patch
   nitropack@2.9.6:
-    hash: ggdiopmznmjnqdcsmqtas4ctai
+    hash: shvq57icrh5cxnne4exzarffoa
     path: patches/nitropack@2.9.6.patch
 
 importers:
@@ -13485,7 +13485,7 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
-  nitropack@2.9.6(patch_hash=ggdiopmznmjnqdcsmqtas4ctai)(@planetscale/database@1.16.0)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(xml2js@0.6.2):
+  nitropack@2.9.6(patch_hash=shvq57icrh5cxnne4exzarffoa)(@planetscale/database@1.16.0)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(xml2js@0.6.2):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.3.1
       '@netlify/functions': 2.6.0
@@ -15274,7 +15274,7 @@ snapshots:
       hookable: 5.5.3
       http-proxy: 1.18.1
       micromatch: 4.0.5
-      nitropack: 2.9.6(patch_hash=ggdiopmznmjnqdcsmqtas4ctai)(@planetscale/database@1.16.0)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(xml2js@0.6.2)
+      nitropack: 2.9.6(patch_hash=shvq57icrh5cxnne4exzarffoa)(@planetscale/database@1.16.0)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(xml2js@0.6.2)
       node-fetch-native: 1.6.4
       path-to-regexp: 6.2.2
       pathe: 1.1.2
