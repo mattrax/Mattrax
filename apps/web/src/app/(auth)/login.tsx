@@ -92,7 +92,7 @@ export default function Page() {
 							{(state) => {
 								const navigate = useNavigate();
 								const verify = trpc.auth.verifyLoginCode.createMutation(() => ({
-									onSuccess: () => {
+									onSuccess: async () => {
 										let to: string;
 
 										if (
@@ -104,7 +104,7 @@ export default function Page() {
 											to = searchParams.continueTo;
 										else to = "/";
 
-										startTransition(() => navigate(to));
+										await startTransition(() => navigate(to));
 									},
 								}));
 
