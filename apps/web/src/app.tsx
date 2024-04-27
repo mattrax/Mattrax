@@ -1,7 +1,7 @@
 // @refresh reload
 import { type EventBus, createEventBus } from "@solid-primitives/event-bus";
 import { Router, useLocation, useNavigate } from "@solidjs/router";
-import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
+// import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
 import {
 	QueryCache,
 	QueryClient,
@@ -50,10 +50,10 @@ function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 		},
 	});
 
-	broadcastQueryClient({
-		queryClient,
-		broadcastChannel: "rq",
-	});
+	// broadcastQueryClient({
+	// 	queryClient,
+	// 	broadcastChannel: "rq",
+	// });
 
 	// const persister = createSyncStoragePersister({
 	//   // TODO: IndexedDB
