@@ -1,0 +1,10 @@
+{
+	"name": "@mattrax/updater",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"run": "deno run ./src/main.ts"
+	},
+	"devDependencies": {},
+	"dependencies": {}
+}

@@ -17,5 +17,9 @@
 	"editor.codeActionsOnSave": {
 		"quickfix.biome": "explicit"
 	},
-	"typescript.tsdk": "node_modules/typescript/lib"
+	"typescript.tsdk": "node_modules/typescript/lib",
+	"deno": {
+		"enabled": true,
+		"enablePaths": ["apps/updater"]
+	}
 }

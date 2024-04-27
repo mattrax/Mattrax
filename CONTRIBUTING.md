@@ -15,6 +15,7 @@ And have the following software installed:
  - [pnpm](https://pnpm.io)
  - [Node.js](https://nodejs.org)
  - (for some internal tooling) [Bun](https://bun.sh)
+ - (for the updater) [Deno](https://deno.com)
 
 ```bash
 # API & Web UI
