@@ -64,13 +64,11 @@ export const authRouter = createTRPCRouter({
 
 			await db.insert(accountLoginCodes).values({ accountPk, code });
 
-			waitUntil(async () => {
-				await sendEmail({
-					type: "loginCode",
-					to: input.email,
-					subject: "Mattrax Login Code",
-					code,
-				});
+			sendEmail({
+				type: "loginCode",
+				to: input.email,
+				subject: "Mattrax Login Code",
+				code,
 			});
 
 			return { accountId };

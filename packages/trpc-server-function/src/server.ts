@@ -13,6 +13,7 @@ export function flushResponse() {
 
 export function waitUntil(promise: Promise<void> | (() => Promise<void>)) {
 	const waitUntil = getEvent().context?.waitUntil;
-	if (!waitUntil) throw new Error("Not found 'waitUtil'");
-	waitUntil(typeof promise === "function" ? promise() : promise);
+	const p = typeof promise === "function" ? promise() : promise;
+	if (waitUntil) waitUntil(p);
+	// Promises are eager so if we aren't in Cloudflare Workers, we don't need to await it.
 }
