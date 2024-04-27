@@ -43,7 +43,8 @@
 			"@solidjs/router@0.13.2": "patches/@solidjs__router@0.13.2.patch",
 			"@tanstack/solid-form@0.19.0": "patches/@tanstack__solid-form@0.19.0.patch",
 			"drizzle-orm@0.30.8": "patches/drizzle-orm@0.30.8.patch",
-			"@react-email/tailwind@0.0.15": "patches/@react-email__tailwind@0.0.15.patch"
+			"@react-email/tailwind@0.0.15": "patches/@react-email__tailwind@0.0.15.patch",
+			"nitropack@2.9.6": "patches/nitropack@2.9.6.patch"
 		}
 	}
 }
