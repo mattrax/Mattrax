@@ -1,49 +1,49 @@
 {
-  "name": "@mattrax/monorepo",
-  "private": true,
-  "workspaces": ["apps/*", "packages/*"],
-  "scripts": {
-    "dev": "pnpm --filter @mattrax/web dev",
-    "landing": "pnpm --filter @mattrax/landing --",
-    "configure": "pnpm --filter @mattrax/configure --",
-    "ingest": "pnpm --filter @mattrax/ingest --",
-    "doc": "pnpm --filter @mattrax/docs --",
-    "web": "pnpm --filter @mattrax/web --",
-    "db:push": "drizzle-kit push:mysql && bun run ./apps/web/src/db/rust.ts",
-    "db:gen": "drizzle-kit generate:mysql && bun run ./apps/web/src/db/rust.ts",
-    "db:studio": "drizzle-kit studio",
-    "db:rs": "bun run ./apps/web/src/db/rust.ts",
-    "typecheck": "tsc -b",
-    "lint": "biome lint .",
-    "format": "biome format --write .",
-    "prepare": "husky"
-  },
-  "engines": {
-    "node": ">=18",
-    "pnpm": "^9"
-  },
-  "dependencies": {
-    "@biomejs/biome": "^1.7.0",
-    "@solidjs/start": "1.0.0-rc.0",
-    "dotenv": "^16.4.5",
-    "drizzle-kit": "^0.20.16",
-    "pg": "^8.11.5",
-    "typescript": "^5.4.5",
-    "vinxi": "=0.3.10"
-  },
-  "devDependencies": {
-    "husky": "^9.0.11"
-  },
-  "resolutions": {
-    "vinxi": "=0.3.10",
-    "drizzle-orm": "^0.30.8"
-  },
-  "pnpm": {
-    "patchedDependencies": {
-      "@solidjs/router@0.13.2": "patches/@solidjs__router@0.13.2.patch",
-      "@tanstack/solid-form@0.19.0": "patches/@tanstack__solid-form@0.19.0.patch",
-      "drizzle-orm@0.30.8": "patches/drizzle-orm@0.30.8.patch",
-      "@react-email/tailwind@0.0.15": "patches/@react-email__tailwind@0.0.15.patch"
-    }
-  }
+	"name": "@mattrax/monorepo",
+	"private": true,
+	"workspaces": ["apps/*", "packages/*"],
+	"scripts": {
+		"dev": "pnpm --filter @mattrax/web dev",
+		"landing": "pnpm --filter @mattrax/landing --",
+		"configure": "pnpm --filter @mattrax/configure --",
+		"ingest": "pnpm --filter @mattrax/ingest --",
+		"doc": "pnpm --filter @mattrax/docs --",
+		"web": "pnpm --filter @mattrax/web --",
+		"db:push": "drizzle-kit push:mysql && bun run ./apps/web/src/db/rust.ts",
+		"db:gen": "drizzle-kit generate:mysql && bun run ./apps/web/src/db/rust.ts",
+		"db:studio": "drizzle-kit studio",
+		"db:rs": "bun run ./apps/web/src/db/rust.ts",
+		"typecheck": "tsc -b",
+		"lint": "biome lint .",
+		"format": "biome format --write .",
+		"prepare": "husky"
+	},
+	"engines": {
+		"node": ">=18",
+		"pnpm": "^9"
+	},
+	"dependencies": {
+		"@biomejs/biome": "^1.7.0",
+		"@solidjs/start": "1.0.0-rc.0",
+		"dotenv": "^16.4.5",
+		"drizzle-kit": "^0.20.16",
+		"pg": "^8.11.5",
+		"typescript": "^5.4.5",
+		"vinxi": "=0.3.10"
+	},
+	"devDependencies": {
+		"husky": "^9.0.11"
+	},
+	"resolutions": {
+		"vinxi": "=0.3.10",
+		"drizzle-orm": "^0.30.8"
+	},
+	"pnpm": {
+		"patchedDependencies": {
+			"@solidjs/router@0.13.2": "patches/@solidjs__router@0.13.2.patch",
+			"@tanstack/solid-form@0.19.0": "patches/@tanstack__solid-form@0.19.0.patch",
+			"drizzle-orm@0.30.8": "patches/drizzle-orm@0.30.8.patch",
+			"@react-email/tailwind@0.0.15": "patches/@react-email__tailwind@0.0.15.patch"
+		}
+	}
 }
