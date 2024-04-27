@@ -1,7 +1,16 @@
 diff --git a/dist/nitro.mjs b/dist/nitro.mjs
-index 1d07b0e073af941065e3677ad46118b7009a38e6..a1cc6839dc1fa7fcb3f6d31f77e44dc2c14c0017 100644
+index 1d07b0e073af941065e3677ad46118b7009a38e6..b02a21ddf60f4e13189174205715b4e953c3b61d 100644
 --- a/dist/nitro.mjs
 +++ b/dist/nitro.mjs
+@@ -49,7 +49,7 @@ import escapeRE from 'escape-string-regexp';
+ import { withLeadingSlash, withoutTrailingSlash, withBase, joinURL, withoutLeadingSlash, withTrailingSlash } from 'ufo';
+ import jiti from 'jiti';
+ import { getProperty } from 'dot-prop';
+-import { resolve as resolve$1 } from 'node:path';
++import { resolve as resolve$1, parse } from 'node:path';
+ import archiver from 'archiver';
+ import MagicString from 'magic-string';
+ 
 @@ -930,9 +930,9 @@ function externals(opts) {
              const warn = `Multiple major versions of package \`${pkgName}\` are being externalized. Picking latest version:
  
