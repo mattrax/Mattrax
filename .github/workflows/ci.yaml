@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v2
         with:
@@ -39,7 +39,7 @@ jobs:
       DATABASE_URL: mysql://root:mysql@localhost:3306/mattrax
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v2
         with:
@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
 
