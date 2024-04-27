@@ -55,6 +55,7 @@ jobs:
     if: ${{ needs.changes.outputs.updater == 'true' }}
     strategy:
       matrix:
+        fail-fast: false
         target:
           [
             aarch64-unknown-linux-gnu,
