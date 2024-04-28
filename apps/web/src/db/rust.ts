@@ -18,6 +18,7 @@ import {
 	policyAssignments,
 	policyDeploy,
 	policyDeployStatus,
+	kv,
 } from ".";
 
 dotenv.config({
@@ -75,6 +76,67 @@ export function scopedPoliciesForDeviceSubquery(device_pk: number) {
 
 exportQueries(
 	[
+		defineOperation({
+			name: "get_config",
+			args: {},
+			query: (args) =>
+				db
+					.select({
+						value: kv.value,
+					})
+					.from(kv)
+					.where(eq(kv.key, "config")),
+		}),
+		defineOperation({
+			name: "set_config",
+			args: {
+				config: "String",
+			},
+			query: (args) =>
+				db
+					.insert(kv)
+					.values({
+						key: "config",
+						value: args.config,
+					})
+					.onDuplicateKeyUpdate({
+						set: {
+							value: args.config,
+						},
+					}),
+		}),
+		defineOperation({
+			name: "get_node",
+			args: {
+				id: "String",
+			},
+			query: (args) =>
+				db
+					.select({
+						value: kv.value,
+					})
+					.from(kv)
+					.where(eq(kv.key, sql`CONCAT("node:", ${args.id})`)),
+		}),
+		defineOperation({
+			name: "update_node",
+			args: {
+				id: "String",
+				config: "String",
+			},
+			query: (args) =>
+				db
+					.insert(kv)
+					.values({
+						key: sql`CONCAT("node:", ${args.id})`,
+						value: args.config,
+					})
+					.onDuplicateKeyUpdate({
+						set: {
+							value: args.config,
+						},
+					}),
+		}),
 		defineOperation({
 			name: "get_certificate",
 			args: {

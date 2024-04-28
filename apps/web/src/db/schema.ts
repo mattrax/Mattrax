@@ -59,6 +59,16 @@ export const waitlist = mysqlTable("waitlist", {
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const kvKey = ["config", "cluster"] as const;
+
+export const kv = mysqlTable("kv", {
+	key: varchar("key", { length: 256 })
+		.$type<(typeof kvKey)[number]>()
+		.primaryKey(),
+	value: varbinary("value", { length: 9068 }).notNull(), // TODO: Json column???
+	lastModified: timestamp("last_modified").notNull().defaultNow().onUpdateNow(),
+});
+
 // An account represents the login of an *administrator*.
 export const accounts = mysqlTable("accounts", {
 	pk: serial("pk").primaryKey(),

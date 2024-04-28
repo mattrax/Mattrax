@@ -1,16 +1,14 @@
 use serde::{Deserialize, Deserializer};
 
-pub fn deserialize<'de, D>(d: D) -> Result<[u8; 32], D::Error>
+pub fn deserialize<'de, D>(d: D) -> Result<Vec<u8>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let mut bytes = [0; 32];
     let s: &str = Deserialize::deserialize(d)?;
-    hex::decode_to_slice(s, &mut bytes).map_err(serde::de::Error::custom)?;
-    Ok(bytes)
+    hex::decode(s).map_err(serde::de::Error::custom)
 }
 
-pub fn serialize<S>(bytes: &[u8; 32], s: S) -> Result<S::Ok, S::Error>
+pub fn serialize<S>(bytes: &Vec<u8>, s: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
