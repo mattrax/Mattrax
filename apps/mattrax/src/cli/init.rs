@@ -109,7 +109,7 @@ impl Command {
         let node_id = cuid2::create_id();
 
         let node = Node {
-            version: env!("CARGO_PKG_VERSION").to_string(),
+            version: env!("GIT_HASH").to_string(),
         };
 
         db.update_node(node_id.clone(), serde_json::to_string(&node).unwrap())

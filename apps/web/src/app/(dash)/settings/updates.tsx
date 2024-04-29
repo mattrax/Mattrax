@@ -17,11 +17,21 @@ export default function Page() {
 		}
 	});
 
+	// TODO: Option to set update channel
+
+	// TODO: Check for updates button
+	// TODO: Show current version and latest version
+	// TODO: Button to start update
+
+	// TODO: Show deploy progress if we are currently doing an update
+
+	// TODO: List of nodes
+	// TODO: Allow removing a node
+
 	return (
 		<div class="p-2">
-			<PageLayoutHeading class="pb-4">Overview</PageLayoutHeading>
-
-			<div class="flex flex-col space-y-2">
+			<PageLayoutHeading>Updates</PageLayoutHeading>
+			{/* <div class="flex flex-col space-y-2">
 				<Suspense fallback={<p>Loading...</p>}>
 					<For each={stats.data ?? []}>
 						{(row) => (
@@ -31,7 +41,7 @@ export default function Page() {
 						)}
 					</For>
 				</Suspense>
-			</div>
+			</div> */}
 		</div>
 	);
 }
