@@ -20,7 +20,7 @@
 	},
 	"engines": {
 		"node": ">=18",
-		"pnpm": "^9"
+		"pnpm": "^8"
 	},
 	"dependencies": {
 		"@biomejs/biome": "^1.7.0",
