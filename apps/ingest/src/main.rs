@@ -128,7 +128,6 @@ fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyCollection {
         return collection;
     }
 
-    dbg!(&path);
     collection.insert(
         path,
         WindowsDFFPolicy {
