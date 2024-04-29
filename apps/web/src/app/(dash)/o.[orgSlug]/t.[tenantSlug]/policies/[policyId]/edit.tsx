@@ -38,8 +38,8 @@ export default function Page() {
 							<PageLayoutHeading class="pr-2">Edit</PageLayoutHeading>
 
 							<TabsList class="grid w-full grid-cols-2">
-								<TabsTrigger value="cli">CLI</TabsTrigger>
 								<TabsTrigger value="visual">Visual</TabsTrigger>
+								<TabsTrigger value="cli">CLI</TabsTrigger>
 								<TabsIndicator />
 							</TabsList>
 						</div>
