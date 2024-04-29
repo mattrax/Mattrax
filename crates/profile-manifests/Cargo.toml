@@ -1,0 +1,15 @@
+[package]
+name = "profile-manifests"
+description = "Parser for ProfilePayloads framework"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+phf = { version = "0.11.2", features = ["macros"] }
+plist = "1.6.1"
+serde = { version = "1.0.199", features = ["derive"] }
+thiserror = "1.0.59"
+
+[dev-dependencies]
+pretty_assertions = "1.4.0"
