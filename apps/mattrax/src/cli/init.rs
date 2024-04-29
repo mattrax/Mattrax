@@ -17,7 +17,10 @@ use crate::{
 
 #[derive(clap::Args)]
 #[command(about = "Initialise a new Mattrax server or installation.")]
-pub struct Command {}
+pub struct Command {
+    #[arg(help = "The URL to the MySQL database.")]
+    db: Option<String>,
+}
 
 impl Command {
     pub async fn run(&self, data_dir: PathBuf) {
@@ -31,19 +34,21 @@ impl Command {
 
         warn!("Mattrax does not officially support self-hosting at this time. Do so at your own risk!");
 
-        println!("Enter the MySQL database URL (eg. mysql://user:password@localhost/mattrax):");
-        print!(" > ");
-        io::stdout().flush().ok();
-        let mut db_url = String::new();
-        while db_url.is_empty() {
-            io::stdin().read_line(&mut db_url).unwrap();
-            if db_url.trim().is_empty() {
-                error!("Database URL cannot be empty!");
+        let db_url = self.db.clone().unwrap_or_else(|| {
+            println!("Enter the MySQL database URL (eg. mysql://user:password@localhost/mattrax):");
+            print!(" > ");
+            io::stdout().flush().ok();
+            let mut db_url = String::new();
+            while db_url.is_empty() {
+                io::stdin().read_line(&mut db_url).unwrap();
+                if db_url.trim().is_empty() {
+                    error!("Database URL cannot be empty!");
+                }
             }
-        }
-        let db_url = db_url.trim();
+            db_url.trim().to_string()
+        });
 
-        let (db, config) = helpers::get_db_and_config(db_url).await;
+        let (db, config) = helpers::get_db_and_config(&db_url).await;
         if let Some(config) = config {
             info!("Found Mattrax installation for '{}'", config.domain);
         } else {
@@ -112,10 +117,13 @@ impl Command {
             version: env!("GIT_HASH").to_string(),
         };
 
-        db.update_node(node_id.clone(), serde_json::to_string(&node).unwrap())
-            .await
-            .map_err(|err| error!("Failed to initialise node in DB: {err}"))
-            .unwrap();
+        db.update_node(
+            format!("server:{node_id}"),
+            serde_json::to_string(&node).unwrap(),
+        )
+        .await
+        .map_err(|err| error!("Failed to initialise node in DB: {err}"))
+        .unwrap();
 
         fs::create_dir_all(&data_dir).unwrap();
         let Ok(_) = LocalConfig {

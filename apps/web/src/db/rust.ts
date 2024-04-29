@@ -116,7 +116,7 @@ exportQueries(
 						value: kv.value,
 					})
 					.from(kv)
-					.where(eq(kv.key, sql`CONCAT("node:", ${args.id})`)),
+					.where(eq(kv.key, sql`CONCAT("server:", ${args.id})`)),
 		}),
 		defineOperation({
 			name: "update_node",
@@ -128,7 +128,9 @@ exportQueries(
 				db
 					.insert(kv)
 					.values({
-						key: sql`CONCAT("node:", ${args.id})`,
+						// TODO: For some reason this isn't okay
+						// key: sql`CONCAT("server:", ${args.id})`,
+						key: args.id as any,
 						value: args.config,
 					})
 					.onDuplicateKeyUpdate({

@@ -14,7 +14,8 @@ main() {
     if [ "$(uname)" == "Darwin" ]; then
         echo "Mattrax does not support installation on macOS at this stage."
         exit 1
-    # elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+    elif [ "$(expr substr $(uname -s) 1 5)" == "Linux" ]; then
+        echo "Detected Linux"
     else
         echo "Mattrax does not support installation on '$(uname)' at this stage."
         exit 1
@@ -37,17 +38,16 @@ main() {
     # fi
 
     # We download to a temp dir, incase the download fails, we don't end up with a partial file.
-    curl -f -o /temp/mattrax "$MTTX_LANDING_URL/api/releases/mattrax/$MTTX_CHANNEL/$(uname -m)-unknown-linux"
-    sudo mv /temp/mattrax /usr/bin/mattrax
+    curl -f -L -o /tmp/mattrax "$MTTX_LANDING_URL/api/releases/mattrax/$CHANNEL/$(uname -m)-unknown-linux"
+    sudo mv /tmp/mattrax /usr/bin/mattrax
     sudo chmod +x /usr/bin/mattrax
 
     # TODO: Run as non-root user
-    sudo cat >/etc/systemd/system/mattrax.service <<EOL
+    sudo tee /etc/systemd/system/mattrax.service > /dev/null << EOL
 [Unit]
 ConditionPathExists=/var/lib/mattrax/config.json
 
 [Service]
-# WorkingDirectory=/home/ec2-user
 ExecStart=mattrax serve
 Restart=always
 PrivateTmp=true

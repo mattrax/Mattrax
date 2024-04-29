@@ -103,7 +103,7 @@ impl Db {
 }
 impl Db {
     pub async fn get_node(&self, id: String) -> Result<Vec<GetNodeResult>, mysql_async::Error> {
-        let mut result = r#"select `value` from `kv` where `kv`.`key` = CONCAT("node:", ?)"#
+        let mut result = r#"select `value` from `kv` where `kv`.`key` = CONCAT("server:", ?)"#
             .with(mysql_async::Params::Positional(vec![id.clone().into()]))
             .run(&self.pool)
             .await?;
@@ -118,7 +118,7 @@ impl Db {
 }
 impl Db {
     pub async fn update_node(&self, id: String, config: String) -> Result<(), mysql_async::Error> {
-        let mut result = r#"insert into `kv` (`key`, `value`, `last_modified`) values (CONCAT("node:", ?), ?, default) on duplicate key update `value` = ?"#
+        let mut result = r#"insert into `kv` (`key`, `value`, `last_modified`) values (?, ?, default) on duplicate key update `value` = ?"#
 			  .with(mysql_async::Params::Positional(vec![id.clone().into(),config.clone().into(),config.clone().into()]))
 					.run(&self.pool).await?;
         Ok(())

@@ -124,6 +124,7 @@ impl Command {
             );
             axum::serve(listener, router).await.unwrap();
         } else {
+            let identity_cert = config.certificates.identity_cert.clone();
             let acme = Arc::new(Acme::new(
                 &config.acme_email,
                 FsStore::new(
@@ -152,10 +153,7 @@ impl Command {
                                 WebPkiClientVerifier::builder({
                                     // TODO: Allow this to be rotated at runtime for renewal
                                     let mut root = RootCertStore::empty();
-                                    let cert: CertificateDer =
-                                        fs::read(data_dir.join("certs").join("identity.der"))
-                                            .unwrap()
-                                            .into();
+                                    let cert: CertificateDer = identity_cert.clone().into();
                                     let (added_certs, invalid_certs) =
                                         root.add_parsable_certificates([cert]);
                                     if added_certs != 1 && invalid_certs != 0 {
