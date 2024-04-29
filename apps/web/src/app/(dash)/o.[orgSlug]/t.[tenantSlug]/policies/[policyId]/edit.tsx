@@ -13,11 +13,12 @@ import {
 } from "@mattrax/ui";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { PolicyContext, usePolicy } from "./Context";
-import { type ParentProps, createSignal } from "solid-js";
+import { type ParentProps, createSignal, Show } from "solid-js";
 import { createContentEditableController } from "@mattrax/ui/lib";
 import { BruhIconPhArrowsVerticalBold } from "./bruh";
 import { useFeatures } from "~/lib/featureFlags";
 import { trpc } from "~/lib";
+import { VisualEditor, createVisualEditor } from "./VisualEditor";
 
 export default function Page() {
 	const policy = () => usePolicy()();
@@ -29,7 +30,7 @@ export default function Page() {
 
 	return (
 		<PolicyContext>
-			<Tabs defaultValue="cli">
+			<Tabs defaultValue="visual">
 				<PageLayout
 					heading={
 						<div class="flex space-x-4">
@@ -78,13 +79,19 @@ export default function Page() {
 						</Collapsible>
 					</TabsContent>
 					<TabsContent value="visual">
-						{features.visual_editor ? (
-							<WipVisualEditor />
-						) : (
-							<h2 class="text-muted-foreground opacity-70">
-								Visual editor coming soon...
-							</h2>
-						)}
+						<Show
+							when={features.visual_editor}
+							fallback={
+								<h2 class="text-muted-foreground opacity-70">
+									Visual editor coming soon...
+								</h2>
+							}
+						>
+							{(_) => {
+								const controller = createVisualEditor();
+								return <VisualEditor controller={controller} />;
+							}}
+						</Show>
 					</TabsContent>
 				</PageLayout>
 			</Tabs>

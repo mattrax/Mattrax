@@ -6,22 +6,24 @@ use std::{
 
 use ms_ddf::{AllowedValueGroupedNodes, DFFormatVariant, MgmtTree, Node};
 use serde::Serialize;
+use specta::{ts::ExportConfig, NamedType, Type};
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Type)]
 #[serde(rename_all = "camelCase")]
-struct WindowsDFFPolicy {
+struct WindowsDDFPolicy {
     name: String,
     description: Option<String>,
     #[serde(flatten)]
     format: Format,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Type)]
 #[serde(tag = "format", rename_all = "camelCase")]
 enum Format {
+    #[serde(rename_all = "camelCase")]
     Int {
         default_value: i32,
-        #[serde(flatten)]
+        #[specta(optional)]
         allowed_values: Option<IntAllowedValues>,
     },
     Unknown,
@@ -40,7 +42,7 @@ impl Format {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Type)]
 #[serde(tag = "valueType", rename_all = "camelCase")]
 enum IntAllowedValues {
     Range {
@@ -100,15 +102,15 @@ impl IntAllowedValues {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Type)]
 struct EnumContent {
     description: Option<String>,
 }
 
-type WindowsDFFPolicyCollection = BTreeMap<PathBuf, WindowsDFFPolicy>;
+type WindowsDFFPolicyGroup = BTreeMap<PathBuf, WindowsDDFPolicy>;
 
-fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyCollection {
-    let mut collection = WindowsDFFPolicyCollection::default();
+fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyGroup {
+    let mut collection = WindowsDFFPolicyGroup::default();
 
     let path = node
         .path
@@ -124,13 +126,14 @@ fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyCollection {
     }
 
     let access_type = &node.properties.access_type;
-    if access_type.len() == 1 && (access_type.add.is_some() || access_type.exec.is_some()) {
+
+    if access_type.len() == 1 && (access_type.get.is_some() || access_type.exec.is_some()) {
         return collection;
     }
 
     collection.insert(
         path,
-        WindowsDFFPolicy {
+        WindowsDDFPolicy {
             name: node.node_name.clone(),
             description: node.properties.description.clone(),
             format: Format::parse(&node),
@@ -140,8 +143,8 @@ fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyCollection {
     collection
 }
 
-fn handle_mgmt_tree(tree: MgmtTree) -> WindowsDFFPolicyCollection {
-    let mut policies = WindowsDFFPolicyCollection::new();
+fn handle_mgmt_tree(tree: MgmtTree) -> WindowsDFFPolicyGroup {
+    let mut policies = WindowsDFFPolicyGroup::new();
 
     for node in tree.nodes {
         policies.extend(handle_node(&node, &PathBuf::new()))
@@ -149,6 +152,9 @@ fn handle_mgmt_tree(tree: MgmtTree) -> WindowsDFFPolicyCollection {
 
     policies
 }
+
+#[derive(Type, Default, Serialize)]
+struct WindowsDFFPolicyCollection(WindowsDFFPolicyGroup);
 
 fn main() {
     let manifests = profile_manifests::parse_from_dir(
@@ -161,7 +167,7 @@ fn main() {
 
     let files = fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("./ddf")).unwrap();
 
-    let mut policy_collection = WindowsDFFPolicyCollection::new();
+    let mut policy_collection = WindowsDFFPolicyCollection::default();
 
     for file in files {
         let file = file.unwrap();
@@ -173,12 +179,36 @@ fn main() {
         let root: MgmtTree = easy_xml::de::from_bytes(contents.as_slice())
             .expect(&format!("Failed to parse {:?}", file.path()));
 
-        policy_collection.extend(handle_mgmt_tree(root));
+        policy_collection.0.extend(handle_mgmt_tree(root));
     }
 
     fs::write(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("out.json"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("generated/dff.json"),
         serde_json::to_string_pretty(&policy_collection).unwrap(),
+    )
+    .unwrap();
+
+    let mut types = String::new();
+    let mut type_map = Default::default();
+
+    specta::ts::export_named_datatype(
+        &ExportConfig::default(),
+        &WindowsDFFPolicyCollection::definition_named_data_type(&mut type_map),
+        &mut type_map,
+    )
+    .unwrap();
+
+    type_map.iter().for_each(|(_, ty)| {
+        types.push_str(
+            &specta::ts::export_named_datatype(&Default::default(), ty, &mut type_map.clone())
+                .unwrap(),
+        );
+        types.push('\n');
+    });
+
+    fs::write(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("generated/dff.ts"),
+        types,
     )
     .unwrap();
 }

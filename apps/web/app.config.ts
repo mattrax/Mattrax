@@ -18,7 +18,7 @@ export default defineConfig({
 		// We don't wanna apply Solid's JSX transform to the React emails.
 		exclude: ["src/emails/*", "src/components/OTPInput/react.tsx"],
 	},
-	vite: {
+	vite: ({ router }) => ({
 		envDir: monorepoRoot,
 		css: {
 			modules: {
@@ -36,11 +36,11 @@ export default defineConfig({
 				root: ".",
 			}),
 			mattraxUI,
-			!(process.env.VERCEL === "1")
+			router === "client"
 				? visualizer({ brotliSize: true, gzipSize: true })
 				: undefined,
 		],
-	},
+	}),
 	server: {
 		unenv: cloudflare,
 		// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
