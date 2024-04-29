@@ -25,7 +25,7 @@ import { WindowsDDFPolicy } from "../../../../../../../../ingest/generated/dff";
 //
 // if codegen is done in rust we can reuse the specta structs and convert them to json
 const config = {
-	windows: windowsConfig as any,
+	windows: windowsConfig,
 } as { windows: Record<string, WindowsDDFPolicy> };
 
 export function createVisualEditor() {
@@ -62,18 +62,15 @@ export function VisualEditor(props: { controller: VisualEditorController }) {
 									<div>
 										<Card class="p-4 space-y-4">
 											<CardTitle>{(config.windows as any)[key].name}</CardTitle>
-											<Switch fallback="bruh">
+											<Switch
+												fallback={`unimplemented format (${itemConfig.format})`}
+											>
 												<Match
 													when={itemConfig.format === "int" && itemConfig}
 													keyed
 												>
 													{(itemConfig) => (
-														<Switch
-															fallback={() => {
-																console.log(itemConfig);
-																return <>lmao</>;
-															}}
-														>
+														<Switch fallback="unimplemented or lack of allowedValues">
 															<Match
 																when={
 																	itemConfig.allowedValues &&

@@ -128,6 +128,24 @@ pub enum DFFormatVariant {
     Float,
 }
 
+impl ToString for DFFormatVariant {
+    fn to_string(&self) -> String {
+        match self {
+            DFFormatVariant::Base64 => "b64".to_string(),
+            DFFormatVariant::Bin => "bin".to_string(),
+            DFFormatVariant::Bool => "bool".to_string(),
+            DFFormatVariant::String => "chr".to_string(),
+            DFFormatVariant::Int => "int".to_string(),
+            DFFormatVariant::Node => "node".to_string(),
+            DFFormatVariant::Null => "null".to_string(),
+            DFFormatVariant::Xml => "xml".to_string(),
+            DFFormatVariant::Date => "date".to_string(),
+            DFFormatVariant::Time => "time".to_string(),
+            DFFormatVariant::Float => "float".to_string(),
+        }
+    }
+}
+
 #[derive(XmlDeserialize, Debug)]
 pub struct Occurrence {
     #[easy_xml(rename = "One|ZeroOrOne|ZeroOrMore|OneOrMore|ZeroOrN|OneOrN")]

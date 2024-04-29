@@ -26,19 +26,35 @@ enum Format {
         #[specta(optional)]
         allowed_values: Option<IntAllowedValues>,
     },
-    Unknown,
+    Bool,
+    String,
+    Node,
+    Null,
+    Base64,
+    Time,
+    Float,
+    Xml,
+    Bin,
 }
 
 impl Format {
     fn parse(node: &Node) -> Self {
-        if matches!(*node.properties.df_format, DFFormatVariant::Int) {
-            return Self::Int {
+        match &*node.properties.df_format {
+            DFFormatVariant::Bool => Self::Bool,
+            DFFormatVariant::String => Self::String,
+            DFFormatVariant::Node => Self::Node,
+            DFFormatVariant::Null => Self::Null,
+            DFFormatVariant::Base64 => Self::Base64,
+            DFFormatVariant::Time => Self::Time,
+            DFFormatVariant::Float => Self::Float,
+            DFFormatVariant::Xml => Self::Xml,
+            DFFormatVariant::Bin => Self::Bin,
+            DFFormatVariant::Int => Self::Int {
                 default_value: 0,
                 allowed_values: IntAllowedValues::parse(node),
-            };
+            },
+            format => todo!("{}", format.to_string()),
         }
-
-        Self::Unknown
     }
 }
 
