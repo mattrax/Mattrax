@@ -183,19 +183,6 @@ importers:
         specifier: 0.33.3
         version: 0.33.3
 
-  apps/ingest:
-    dependencies:
-      xml2js:
-        specifier: ^0.6.2
-        version: 0.6.2
-    devDependencies:
-      '@types/node':
-        specifier: ^20.12.7
-        version: 20.12.7
-      '@types/xml2js':
-        specifier: ^0.4.14
-        version: 0.4.14
-
   apps/landing:
     dependencies:
       '@fontsource-variable/inter':
@@ -265,12 +252,18 @@ importers:
       '@lucia-auth/adapter-drizzle':
         specifier: ^1.0.7
         version: 1.0.7(lucia@3.1.1)
+      '@mattrax/configuration-schemas':
+        specifier: workspace:*
+        version: link:../../packages/configuration-schemas
       '@mattrax/drizzle-to-rs':
         specifier: workspace:*
         version: link:../../packages/drizzle-to-rs
       '@mattrax/ms-graph':
         specifier: workspace:*
         version: link:../../packages/ms-graph
+      '@mattrax/policy-composer':
+        specifier: workspace:*
+        version: link:../../packages/policy-composer
       '@mattrax/trpc-server-function':
         specifier: workspace:^
         version: link:../../packages/trpc-server-function
@@ -522,6 +515,8 @@ importers:
         specifier: ^4.3.2
         version: 4.3.2(typescript@5.4.5)(vite@5.2.9(@types/node@20.12.7)(terser@5.30.3))
 
+  packages/configuration-schemas: {}
+
   packages/drizzle-to-rs:
     dependencies:
       '@mattrax/ms-graph':
@@ -553,6 +548,18 @@ importers:
       '@microsoft/microsoft-graph-types':
         specifier: ^2.40.0
         version: 2.40.0
+
+  packages/policy-composer:
+    dependencies:
+      '@mattrax/configuration-schemas':
+        specifier: workspace:*
+        version: link:../configuration-schemas
+      '@mattrax/ui':
+        specifier: workspace:*
+        version: link:../ui
+      solid-js:
+        specifier: ^1.8.16
+        version: 1.8.16
 
   packages/trpc-server-function:
     dependencies:
@@ -3516,9 +3523,6 @@ packages:
 
   '@types/webpack@5.28.5':
     resolution: {integrity: sha512-wR87cgvxj3p6D0Crt1r5avwqffqPXUkNlnQ1mjU93G7gCuFjufZR4I6j8cz5g1F1tTYpfOOFvly+cmIQwL9wvw==}
-
-  '@types/xml2js@0.4.14':
-    resolution: {integrity: sha512-4YnrRemBShWRO2QjvUin8ESA41rH+9nQGLUGZV/1IDhi3SL9OhdpNC/MrulTWuptXKwhx/aDxE7toV0f/ypIXQ==}
 
   '@typescript-eslint/parser@7.2.0':
     resolution: {integrity: sha512-5FKsVcHTk6TafQKQbuIVkXq58Fnbkd2wDL4LB7AURN7RUOu1utVP+G8+6u3ZhEroW3DF6hyo3ZEXxgKgp4KeCg==}
@@ -10308,10 +10312,6 @@ snapshots:
       - esbuild
       - uglify-js
       - webpack-cli
-
-  '@types/xml2js@0.4.14':
-    dependencies:
-      '@types/node': 20.12.7
 
   '@typescript-eslint/parser@7.2.0(eslint@9.1.0)(typescript@5.4.5)':
     dependencies:

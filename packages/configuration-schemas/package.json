@@ -1,0 +1,15 @@
+{
+	"name": "@mattrax/configuration-schemas",
+	"type": "module",
+	"private": true,
+	"sideEffects": false,
+	"exports": {
+		"./windows": {
+			"import": "./src/windows/ddf.ts",
+			"types": "./src/windows/ddf.ts"
+		},
+		"./windows/ddf.json": {
+			"import": "./src/windows/ddf.json"
+		}
+	}
+}
