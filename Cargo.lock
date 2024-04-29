@@ -1916,10 +1916,11 @@ dependencies = [
 
 [[package]]
 name = "ingest"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "easy-xml",
  "ms-ddf",
+ "profile-manifests",
  "serde",
  "serde_json",
 ]

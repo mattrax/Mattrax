@@ -13,11 +13,13 @@ pub struct Manifest {
     pub pfm_documentation_url: Option<String>,
     /// Scope where this payload is valid.
     /// If this payload is only for iOS and tvOS this should be set to only system.
-    ///  On macOS you include all scopes this payload is valid to install to.
+    /// On macOS you include all scopes this payload is valid to install to.
     /// If this is not included, it will default to system AND user.
+    #[serde(default)]
     pub pfm_targets: Vec<Target>,
     /// The platforms where this payload is valid.
     /// If this is not included, it will default to only macOS.
+    #[serde(default)]
     pub pfm_platforms: Vec<Platform>,
     /// A description of the payload.
     pub pfm_description: String,
@@ -35,7 +37,7 @@ pub struct Manifest {
     /// The title of the manifest
     pub pfm_title: String,
     /// This determines if there can be more than one payload in the profile for this PayloadType
-    pub pfm_unique: bool,
+    pub pfm_unique: Option<bool>,
     /// The version number of this manifest, it's used to determine which manifest to load if two manifests with identical "pfm_domain" is found
     pub pfm_version: u64,
     /// An array of all keys this payload can configure. They will be shown in order
@@ -71,4 +73,8 @@ pub enum Platform {
     #[default]
     #[serde(rename = "macOS")]
     MacOS,
+    #[serde(rename = "iOS")]
+    Ios,
+    #[serde(rename = "tvOS")]
+    TvOs,
 }

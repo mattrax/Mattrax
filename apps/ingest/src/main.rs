@@ -151,6 +151,14 @@ fn handle_mgmt_tree(tree: MgmtTree) -> WindowsDFFPolicyCollection {
 }
 
 fn main() {
+    let manifests = profile_manifests::parse_from_dir(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("./manifests"),
+    )
+    .unwrap();
+
+    // TODO: Hook this up to the rest of the code
+    // println!("{:#?}", manifests);
+
     let files = fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("./ddf")).unwrap();
 
     let mut policy_collection = WindowsDFFPolicyCollection::new();

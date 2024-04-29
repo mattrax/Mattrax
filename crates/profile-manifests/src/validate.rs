@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::Manifest;
 
-static REQUIRED_PROPERTIES: phf::Map<&'static str, &'static str> = phf_map! {
+static ALL_PROPERTIES: phf::Map<&'static str, &'static str> = phf_map! {
     "PayloadDescription" => "string",
     "PayloadDisplayName" => "string",
     "PayloadIdentifier" => "string",
@@ -13,13 +13,19 @@ static REQUIRED_PROPERTIES: phf::Map<&'static str, &'static str> = phf_map! {
     "PayloadOrganization" => "string",
 };
 
+static REQUIRED_PROPERTIES: phf::Map<&'static str, ()> = phf_map! {
+    "PayloadIdentifier" => (),
+    "PayloadUUID" => (),
+    "PayloadVersion" => (),
+};
+
 /// Validate a manifest has the minimum required keys.
 pub fn validate_manifest(manifest: &Manifest) -> Vec<Error> {
     let mut errors = Vec::new();
-    let mut found = Vec::with_capacity(REQUIRED_PROPERTIES.len());
+    let mut found = Vec::with_capacity(ALL_PROPERTIES.len());
 
     for key in &manifest.pfm_subkeys {
-        if let Some(expected_ty) = REQUIRED_PROPERTIES.get(&key.pfm_name) {
+        if let Some(expected_ty) = ALL_PROPERTIES.get(&key.pfm_name) {
             found.push(key.pfm_name.clone());
             if key.pfm_type != *expected_ty {
                 errors.push(Error::RequiredPropertyInvalidType {
