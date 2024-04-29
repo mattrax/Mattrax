@@ -200,7 +200,7 @@ fn main() {
 
     fs::write(
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../packages/mx-configuration-schemas/src/windows/ddf.json"),
+            .join("../../packages/configuration-schemas/src/windows/ddf.json"),
         serde_json::to_string_pretty(&policy_collection).unwrap(),
     )
     .unwrap();
@@ -225,7 +225,7 @@ fn main() {
 
     fs::write(
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../packages/mx-configuration-schemas/src/windows/ddf.ts"),
+            .join("../../packages/configuration-schemas/src/windows/ddf.ts"),
         types,
     )
     .unwrap();
