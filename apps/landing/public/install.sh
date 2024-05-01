@@ -41,26 +41,6 @@ main() {
     curl -f -L -o /tmp/mattrax "$MTTX_LANDING_URL/api/releases/mattrax/$CHANNEL/$(uname -m)-unknown-linux"
     sudo mv /tmp/mattrax /usr/bin/mattrax
     sudo chmod +x /usr/bin/mattrax
-
-    # TODO: Run as non-root user
-    sudo tee /etc/systemd/system/mattrax.service > /dev/null << EOL
-[Unit]
-ConditionPathExists=/var/lib/mattrax/config.json
-
-[Service]
-ExecStart=mattrax serve
-Restart=always
-PrivateTmp=true
-NoNewPrivileges=true
-
-[Install]
-Alias=mattrax
-WantedBy=default.target
-EOL
-
-    sudo chmod 664 /etc/systemd/system/mattrax.service
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now mattrax
 }
 
 main

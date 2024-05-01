@@ -24,6 +24,14 @@ pub struct Command {
 
 impl Command {
     pub async fn run(&self, data_dir: PathBuf) {
+        let path = PathBuf::from("/run/systemd/system");
+        let is_systemd_found = path.exists();
+
+        if is_systemd_found && unsafe { libc::geteuid() } != 0 {
+            error!("Mattrax must not be run as root to install the systemd service.!");
+            return;
+        }
+
         if data_dir.join("config.json").exists() {
             error!(
                 "Mattrax is already initialised, found 'config.json'. Run `{} serve` to get started!",
@@ -139,5 +147,49 @@ impl Command {
             "Initialised node '{node_id}'. Run '{} serve' to start the server.",
             binary_name()
         );
+
+        if path.exists() {
+            info!("Found systemd, installing and enabling service...");
+
+            fs::write(
+                "/etc/systemd/system/mattrax.service",
+                r#"[Unit]
+ConditionPathExists=/var/lib/mattrax/config.json
+
+[Service]
+ExecStart=mattrax serve
+Restart=always
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+Alias=mattrax
+WantedBy=default.target"#,
+            )
+            .unwrap();
+
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+
+                fs::set_permissions(
+                    "/etc/systemd/system/mattrax.service",
+                    fs::Permissions::from_mode(0o664),
+                )
+                .unwrap();
+            }
+
+            process::Command::new("systemctl")
+                .arg("daemon-reload")
+                .status()
+                .unwrap();
+
+            process::Command::new("systemctl")
+                .arg("enable")
+                .arg("--now")
+                .arg("mattrax")
+                .status()
+                .unwrap();
+        }
     }
 }
