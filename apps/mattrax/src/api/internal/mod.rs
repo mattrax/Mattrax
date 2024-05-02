@@ -26,7 +26,11 @@ async fn internal_auth(
         .get("authorization")
         .and_then(|v| v.to_str().ok());
 
-    if authorization != Some(&STANDARD.encode(format!(":{}", &state.config.get().internal_secret)))
+    if authorization
+        != Some(&format!(
+            "Basic {}",
+            STANDARD.encode(format!(":{}", &state.config.get().internal_secret))
+        ))
         && authorization != Some(&format!("Bearer {:?}", state.config.get().internal_secret))
     {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
