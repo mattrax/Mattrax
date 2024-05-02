@@ -153,7 +153,7 @@ exportQueries(
 			name: "store_certificate",
 			args: {
 				key: "String",
-				certificate: "String",
+				certificate: "Vec<u8>",
 				last_modified: "Now",
 			},
 			query: (args) =>

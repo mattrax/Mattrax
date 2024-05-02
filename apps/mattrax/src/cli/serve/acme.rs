@@ -25,7 +25,7 @@ impl Store for MattraxAcmeStore {
             })?
             .into_iter()
             .next()
-            .map(|v| v.certificate))
+            .map(|v| v.value))
     }
 
     async fn set(&self, key: &str, value: &[u8]) -> Result<(), std::io::Error> {

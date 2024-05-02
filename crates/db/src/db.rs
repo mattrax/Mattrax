@@ -146,7 +146,7 @@ impl Db {
     pub async fn store_certificate(
         &self,
         key: String,
-        certificate: String,
+        certificate: Vec<u8>,
     ) -> Result<(), mysql_async::Error> {
         let last_modified = chrono::Utc::now().naive_utc();
         let mut result = r#"insert into `kv` (`key`, `value`, `last_modified`) values (CONCAT('cert:', ?), ?, default) on duplicate key update `value` = ?, `last_modified` = NOW()"#
