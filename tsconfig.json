@@ -4,6 +4,12 @@
 		{ "path": "./apps/web" },
 		{ "path": "./apps/landing" },
 		{ "path": "./packages/drizzle-to-rs" },
+		{ "path": "./packages/configuration-schema" },
+		{ "path": "./packages/drizzle-to-rs" },
+		{ "path": "./packages/ms-graph" },
+		{ "path": "./packages/mysql-planetscale" },
+		{ "path": "./packages/policy-composer" },
+		{ "path": "./packages/trpc-server-function" },
 		{ "path": "./packages/ui" }
 	],
 	"compilerOptions": {

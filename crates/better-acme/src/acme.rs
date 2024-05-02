@@ -8,6 +8,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, TimeZone, Utc};
 use futures::{
     future::{select, Either},
@@ -176,7 +177,7 @@ impl<S: Store> Acme<S> {
             hasher.update(server_name.as_bytes());
             hasher.update(self.server.directory_url().as_bytes());
             let result = hasher.finalize();
-            String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+            URL_SAFE_NO_PAD.encode(result.as_slice())
         };
 
         let output = match self.store.get(&key).await? {
@@ -267,7 +268,7 @@ impl<S: Store + Send + Sync> CertCache for StorageInterop<S> {
                 hasher.update(domain.as_bytes());
                 hasher.update(directory_url.as_bytes());
                 let result = hasher.finalize();
-                String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+                URL_SAFE_NO_PAD.encode(result.as_slice())
             };
 
             let Ok(cert) = self.0.get(&key).await else {
@@ -292,7 +293,7 @@ impl<S: Store + Send + Sync> CertCache for StorageInterop<S> {
                 hasher.update(domain.as_bytes());
                 hasher.update(directory_url.as_bytes());
                 let result = hasher.finalize();
-                String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+                URL_SAFE_NO_PAD.encode(result.as_slice())
             };
 
             self.0.set(&key, cert).await?;
@@ -318,7 +319,7 @@ impl<S: Store + Send + Sync> AccountCache for StorageInterop<S> {
             }
             hasher.update(directory_url.as_bytes());
             let result = hasher.finalize();
-            String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+            URL_SAFE_NO_PAD.encode(result.as_slice())
         };
 
         self.0.get(&key).await
@@ -337,7 +338,7 @@ impl<S: Store + Send + Sync> AccountCache for StorageInterop<S> {
             }
             hasher.update(directory_url.as_bytes());
             let result = hasher.finalize();
-            String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+            URL_SAFE_NO_PAD.encode(result.as_slice())
         };
 
         self.0.set(&key, account).await

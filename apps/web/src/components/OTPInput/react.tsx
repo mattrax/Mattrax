@@ -1,3 +1,4 @@
+// @ts-nocheck // TODO: Typescript
 /* @jsx React.createElement */
 // TODO: If you move this file ensure you update `app.config.ts` to exclude it from Solid's JSX transform.
 

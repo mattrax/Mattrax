@@ -1,3 +1,4 @@
+// @ts-nocheck // TODO: Typescript
 /** @jsx React.createElement */
 
 import {

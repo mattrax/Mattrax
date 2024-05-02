@@ -59,13 +59,11 @@ export const waitlist = mysqlTable("waitlist", {
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-export const kvKey = ["config", "cluster"] as const;
+type KvKey = "config" | `server:${string}` | `cert:${string}`;
 
 export const kv = mysqlTable("kv", {
-	key: varchar("key", { length: 256 })
-		.$type<(typeof kvKey)[number]>()
-		.primaryKey(),
-	value: varbinary("value", { length: 9068 }).notNull(), // TODO: Json column???
+	key: varchar("key", { length: 256 }).$type<KvKey>().primaryKey(),
+	value: varbinary("value", { length: 9068 }).notNull(),
 	lastModified: timestamp("last_modified").notNull().defaultNow().onUpdateNow(),
 });
 
@@ -493,22 +491,6 @@ export const domains = mysqlTable("domains", {
 	identityProviderPk: serialRelation("identity_provider")
 		.notNull()
 		.references(() => identityProviders.pk),
-});
-
-export const domainToCertificateRelation = relations(domains, ({ one }) => ({
-	certificate: one(certificates, {
-		fields: [domains.domain],
-		references: [certificates.key],
-	}),
-}));
-
-// The backend for Rust's ACME.
-// This will contain the certificate for the primary server domain and any user-provided via `domains`.
-// The `key` will either be a comma separated list of domains (for a certificate) or comma separated list of email address (for an ACME account).
-export const certificates = mysqlTable("certificates", {
-	key: varchar("key", { length: 256 }).primaryKey(),
-	certificate: varbinary("certificate", { length: 9068 }).notNull(),
-	lastModified: timestamp("last_modified").notNull().defaultNow(),
 });
 
 export const auditLog = mysqlTable("audit_log", {

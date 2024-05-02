@@ -27,7 +27,7 @@ impl Command {
         let path = PathBuf::from("/run/systemd/system");
         let is_systemd_found = path.exists();
 
-        if is_systemd_found && unsafe { libc::geteuid() } != 0 {
+        if is_systemd_found && nix::unistd::geteuid().as_raw() != 0 {
             error!("Mattrax must not be run as root to install the systemd service.!");
             return;
         }
@@ -125,13 +125,10 @@ impl Command {
             version: env!("GIT_HASH").to_string(),
         };
 
-        db.update_node(
-            format!("server:{node_id}"),
-            serde_json::to_string(&node).unwrap(),
-        )
-        .await
-        .map_err(|err| error!("Failed to initialise node in DB: {err}"))
-        .unwrap();
+        db.update_node(node_id.clone(), serde_json::to_string(&node).unwrap())
+            .await
+            .map_err(|err| error!("Failed to initialise node in DB: {err}"))
+            .unwrap();
 
         fs::create_dir_all(&data_dir).unwrap();
         let Ok(_) = LocalConfig {
@@ -151,25 +148,43 @@ impl Command {
         if path.exists() {
             info!("Found systemd, installing and enabling service...");
 
+            // TODO: Check for `useradd` cause it's doesn't exist on all systems
+            // process::Command::new("useradd")
+            //     .arg("mattrax")
+            //     .arg("-s")
+            //     .arg("/sbin/nologin")
+            //     .arg("-M")
+            //     .status()
+            //     .unwrap();
+
+            // TODO: non-root user
+            // User=mattrax
+            // Group=mattrax
             fs::write(
                 "/etc/systemd/system/mattrax.service",
-                r#"[Unit]
-ConditionPathExists=/var/lib/mattrax/config.json
-
+                format!(
+                    r#"[Unit]
+Description=Mattrax MDM
+ConditionPathExists={}
+After=network.target
+StartLimitIntervalSec=60
+    
 [Service]
+Type=simple
+Restart=on-failure
+RestartSec=10
 ExecStart=mattrax serve
-Restart=always
-PrivateTmp=true
-NoNewPrivileges=true
-
+    
 [Install]
-Alias=mattrax
-WantedBy=default.target"#,
+WantedBy=multi-user.target"#,
+                    data_dir.to_str().unwrap()
+                ),
             )
             .unwrap();
 
             #[cfg(unix)]
             {
+                use std::os::unix::fs::chown;
                 use std::os::unix::fs::PermissionsExt;
 
                 fs::set_permissions(
@@ -177,6 +192,11 @@ WantedBy=default.target"#,
                     fs::Permissions::from_mode(0o664),
                 )
                 .unwrap();
+
+                // fs::set_permissions(&data_dir, fs::Permissions::from_mode(0o664)).unwrap();
+
+                // let res = nix::unistd::User::from_name("mattrax").unwrap().unwrap();
+                // chownr::chownr(&data_dir, Some(res.uid), Some(res.gid)).unwrap();
             }
 
             process::Command::new("systemctl")
@@ -187,7 +207,7 @@ WantedBy=default.target"#,
             process::Command::new("systemctl")
                 .arg("enable")
                 .arg("--now")
-                .arg("mattrax")
+                .arg("mattrax.service")
                 .status()
                 .unwrap();
         }

@@ -6,11 +6,10 @@ import {
 	leftJoinHint,
 } from "@mattrax/drizzle-to-rs";
 import dotenv from "dotenv";
-import { and, asc, desc, eq, isNull, max, min, sql } from "drizzle-orm";
+import { and, eq, isNull, max, min, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/mysql-core";
 import {
 	db,
-	certificates,
 	deviceActions,
 	devices,
 	groupMembers,
@@ -116,7 +115,7 @@ exportQueries(
 						value: kv.value,
 					})
 					.from(kv)
-					.where(eq(kv.key, sql`CONCAT("server:", ${args.id})`)),
+					.where(eq(kv.key, sql`CONCAT('server:', ${args.id})`)),
 		}),
 		defineOperation({
 			name: "update_node",
@@ -128,9 +127,7 @@ exportQueries(
 				db
 					.insert(kv)
 					.values({
-						// TODO: For some reason this isn't okay
-						// key: sql`CONCAT("server:", ${args.id})`,
-						key: args.id as any,
+						key: sql`CONCAT('server:', ${args.id})`,
 						value: args.config,
 					})
 					.onDuplicateKeyUpdate({
@@ -147,30 +144,29 @@ exportQueries(
 			query: (args) =>
 				db
 					.select({
-						certificate: certificates.certificate,
+						value: kv.value,
 					})
-					.from(certificates)
-					.where(eq(certificates.key, args.key)),
+					.from(kv)
+					.where(eq(kv.key, sql`CONCAT('cert:', ${args.key})`)),
 		}),
 		defineOperation({
 			name: "store_certificate",
 			args: {
 				key: "String",
-				certificate: "Vec<u8>",
+				certificate: "String",
 				last_modified: "Now",
 			},
 			query: (args) =>
 				db
-					.insert(certificates)
+					.insert(kv)
 					.values({
-						key: args.key,
-						certificate: args.certificate,
-						lastModified: args.last_modified, // TODO: A system for automatic `new Date()`
+						key: sql`CONCAT('cert:', ${args.key})`,
+						value: args.certificate,
 					})
 					.onDuplicateKeyUpdate({
 						set: {
-							certificate: args.certificate,
-							lastModified: args.last_modified,
+							value: args.certificate,
+							lastModified: sql`NOW()`,
 						},
 					}),
 		}),
