@@ -1,7 +1,7 @@
 import { createAsync } from "@solidjs/router";
-import { CreateQueryResult } from "@tanstack/solid-query";
+import type { CreateQueryResult } from "@tanstack/solid-query";
 import Dexie from "dexie";
-import { Accessor, createEffect, createMemo, untrack } from "solid-js";
+import { type Accessor, createEffect, createMemo, untrack } from "solid-js";
 
 type TableNames = "orgs" | "tenants";
 
@@ -36,7 +36,11 @@ export type TableData<TTable extends Dexie.Table> = TTable extends Dexie.Table<
 
 export const mattraxCache = new MattraxCache();
 
-export function createQueryCacher<TData extends any, TTable extends TableNames>(
+export function resetMattraxCache() {
+	mattraxCache.delete();
+}
+
+export function createQueryCacher<TData, TTable extends TableNames>(
 	query: CreateQueryResult<Array<TData>, any>,
 	table: TTable,
 	transform: (data: TData) => TableData<MattraxCache[TTable]>,
@@ -47,7 +51,7 @@ export function createQueryCacher<TData extends any, TTable extends TableNames>(
 	});
 }
 
-export function useCachedQueryData<TData extends any>(
+export function useCachedQueryData<TData>(
 	query: CreateQueryResult<Array<TData>, any>,
 	cacheQuery: () => Promise<Array<TData>>,
 ): Accessor<Array<TData> | undefined> {

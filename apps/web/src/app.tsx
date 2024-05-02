@@ -1,7 +1,6 @@
 // @refresh reload
 import { type EventBus, createEventBus } from "@solid-primitives/event-bus";
 import { Router, useLocation, useNavigate } from "@solidjs/router";
-// import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
 import {
 	QueryCache,
 	QueryClient,
@@ -33,7 +32,7 @@ function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 		errorBus.emit([scopeMsg, error]);
 	};
 
-	const queryClient = new QueryClient({
+	return new QueryClient({
 		queryCache: new QueryCache({
 			onError: onErrorFactory("Error fetching data from server!"),
 		}),
@@ -49,26 +48,6 @@ function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 			},
 		},
 	});
-
-	// broadcastQueryClient({
-	// 	queryClient,
-	// 	broadcastChannel: "rq",
-	// });
-
-	// const persister = createSyncStoragePersister({
-	//   // TODO: IndexedDB
-	//   storage: window.localStorage,
-	// });
-
-	return [
-		queryClient,
-		// {
-		//   persister,
-		//   dehydrateOptions: {
-		//     shouldDehydrateQuery: (q) => keysToPersist.includes(q.queryHash),
-		//   },
-		// } satisfies Omit<PersistQueryClientOptions, "queryClient">,
-	] as const;
 }
 
 const SolidQueryDevtools = lazy(() =>
@@ -80,7 +59,7 @@ const SolidQueryDevtools = lazy(() =>
 export default function App() {
 	const errorBus = createEventBus<[string, unknown]>();
 
-	const [queryClient /* persistOptions */] = createQueryClient(errorBus);
+	const queryClient = createQueryClient(errorBus);
 
 	return (
 		<QueryClientProvider client={queryClient}>
@@ -156,19 +135,11 @@ export default function App() {
 						);
 
 						return (
-							// <PersistQueryClientProvider
-							//   client={queryClient}
-							//   persistOptions={persistOptions}
-							// >
-
-							<>
+							<MErrorBoundary>
 								{import.meta.env.DEV && <SolidQueryDevtools />}
-								<MErrorBoundary>
-									<Toaster />
-									<Suspense>{props.children}</Suspense>
-								</MErrorBoundary>
-							</>
-							// </PersistQueryClientProvider>
+								<Toaster />
+								<Suspense>{props.children}</Suspense>
+							</MErrorBoundary>
 						);
 					}}
 				>

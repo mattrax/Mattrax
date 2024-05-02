@@ -12,7 +12,6 @@ import {
 	groupMembers,
 	groups,
 	identityProviders,
-	organisationMembers,
 	organisations,
 	policies,
 	policyAssignments,

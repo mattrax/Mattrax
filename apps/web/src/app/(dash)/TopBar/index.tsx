@@ -36,6 +36,7 @@ import { Breadcrumbs } from "~c/Breadcrumbs";
 import { AuthContext, useAuth } from "~c/AuthContext";
 import { NavItems, useNavItemsContext } from "./NavItems";
 import classes from "./NavIndicator.module.css";
+import { resetMattraxCache } from "~/cache";
 
 export function TopBar() {
 	const navigate = useNavigate();
@@ -44,6 +45,7 @@ export function TopBar() {
 	const logout = trpc.auth.logout.createMutation(() => ({
 		onSuccess: async () => {
 			await start(() => navigate("/login"));
+			resetMattraxCache();
 			queryClient.clear();
 		},
 	}));
@@ -87,7 +89,11 @@ export function TopBar() {
 						<ContextMenuGroup>
 							<ContextMenuGroupLabel>Links</ContextMenuGroupLabel>
 							<ContextMenuItem>
-								<a href="https://github.com/mattrax/mattrax" target="_blank">
+								<a
+									href="https://github.com/mattrax/mattrax"
+									target="_blank"
+									rel="noreferrer"
+								>
 									GitHub
 								</a>
 							</ContextMenuItem>
