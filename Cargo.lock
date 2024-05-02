@@ -138,6 +138,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "apple-pfm"
+version = "0.0.1"
+dependencies = [
+ "phf",
+ "plist",
+ "pretty_assertions",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "arc-swap"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1918,9 +1929,10 @@ dependencies = [
 name = "ingest"
 version = "0.0.1"
 dependencies = [
+ "apple-pfm",
  "easy-xml",
+ "glob",
  "ms-ddf",
- "profile-manifests",
  "serde",
  "serde_json",
  "specta",

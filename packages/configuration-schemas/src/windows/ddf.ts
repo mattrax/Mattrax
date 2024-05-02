@@ -17,4 +17,9 @@ export type WindowsDDFPolicy = (
 	| { format: "float" }
 	| { format: "xml" }
 	| { format: "bin" }
-) & { name: string; description: string | null };
+) & {
+	name: string;
+	title?: string | null;
+	description?: string | null;
+	nodes: { [key in string]: WindowsDDFPolicy };
+};

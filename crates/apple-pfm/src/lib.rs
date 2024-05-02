@@ -1,3 +1,5 @@
+use std::{collections::BTreeMap, path::Path};
+
 use plist::{Date, Value};
 use serde::Deserialize;
 
@@ -44,29 +46,99 @@ pub struct Manifest {
     pub pfm_subkeys: Vec<Preference>,
 }
 
-/// A key which can be configured in this payload.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Preference {
-    /// Configures Example Application configuration preferences
-    pub pfm_default: Option<Value>,
-    /// Description of the payload.
-    pub pfm_description: Option<String>,
-    /// A human-readable description of this payload. This description is shown on the Detail screen.
-    pub pfm_description_reference: Option<String>,
-    /// PayloadDescription
-    pub pfm_name: Option<String>,
-    /// Payload Description
-    pub pfm_title: Option<String>,
-    /// type
-    pub pfm_type: String,
-    /// subkeys
-    #[serde(default)]
-    pub pfm_subkeys: Vec<Preference>,
+impl Manifest {
+    pub fn from_file(path: impl AsRef<Path>) -> Self {
+        dbg!(path.as_ref());
+        plist::from_file(path).unwrap()
+    }
 }
 
-pub enum PreferenceInner {
-    Array,
+/// A key which can be configured in this payload.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct PreferenceBase {
+    pub pfm_default: Option<Value>,
+    pub pfm_description: Option<String>,
+    pub pfm_description_reference: Option<String>,
+    pub pfm_title: Option<String>,
+    pub pfm_name: Option<String>,
 }
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(tag = "pfm_type", rename_all = "lowercase")]
+pub enum Preference {
+    Array {
+        #[serde(flatten)]
+        base: PreferenceBase,
+        #[serde(default)]
+        pfm_subkeys: Vec<Preference>,
+    },
+    Boolean(PreferenceBase),
+    Date(PreferenceBase),
+    Data(PreferenceBase),
+    Dictionary {
+        #[serde(flatten)]
+        base: PreferenceBase,
+        #[serde(default)]
+        pfm_subkeys: Vec<Preference>,
+    },
+    Integer(PreferenceBase),
+    Real(PreferenceBase),
+    Float(PreferenceBase),
+    String(PreferenceBase),
+    Url(PreferenceBase),
+    Alias(PreferenceBase),
+    UnionPolicy(PreferenceBase),
+}
+
+impl std::ops::Deref for Preference {
+    type Target = PreferenceBase;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Preference::Array { base, .. } => base,
+            Preference::Boolean(p) => p,
+            Preference::Date(p) => p,
+            Preference::Data(p) => p,
+            Preference::Dictionary { base, .. } => base,
+            Preference::Integer(p) => p,
+            Preference::Real(p) => p,
+            Preference::Float(p) => p,
+            Preference::String(p) => p,
+            Preference::Url(p) => p,
+            Preference::Alias(p) => p,
+            Preference::UnionPolicy(p) => p,
+        }
+    }
+}
+
+impl Preference {
+    pub fn pfm_type(&self) -> &str {
+        match self {
+            Preference::Array { .. } => "array",
+            Preference::Boolean(_) => "boolean",
+            Preference::Date(_) => "date",
+            Preference::Data(_) => "data",
+            Preference::Dictionary { .. } => "dictionary",
+            Preference::Integer(_) => "integer",
+            Preference::Real(_) => "real",
+            Preference::Float(_) => "float",
+            Preference::String(_) => "string",
+            Preference::Url(_) => "url",
+            Preference::Alias(_) => "alias",
+            Preference::UnionPolicy(_) => "union policy",
+        }
+    }
+}
+
+// #[derive(Debug, Clone, PartialEq, Deserialize)]
+// pub struct ArrayPreference {
+//     pub pfm_title: Option<String>,
+//     pub pfm_name: Option<String>,
+//     pub pfm_description: Option<String>,
+//     pub pfm_description_reference: Option<String>,
+//     #[serde(flatten)]
+//     pub r#type: Preference,
+// }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]

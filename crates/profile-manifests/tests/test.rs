@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use plist::{Date, Integer, Value};
 use pretty_assertions::assert_eq;
-use profile_manifests::{Manifest, Platform, Subkey, Target};
+use profile_manifests::{Manifest, Platform, Preference, Target};
 
 #[test]
 fn test_example() {
@@ -25,7 +25,7 @@ fn test_example() {
             pfm_title: "Example Application".into(),
             pfm_unique: false,
             pfm_version: 1,
-            pfm_subkeys: vec![Subkey {
+            pfm_subkeys: vec![Preference {
                 pfm_default: Some(Value::String(
                     "Configures Example Application configuration preferences".into()
                 )),
@@ -41,7 +41,7 @@ fn test_example() {
                             ),
                             pfm_type: "string".into()
             },
-Subkey {
+Preference {
     pfm_default: Some(
         Value::String(
             "Example Application".into(),
@@ -59,7 +59,7 @@ Subkey {
     ),
     pfm_type: "string".into(),
 },
-Subkey {
+Preference {
     pfm_default: Some(
         Value::String(
             "com.github.ProfileManifests.exampleApplication".into(),
@@ -77,7 +77,7 @@ Subkey {
     ),
     pfm_type: "string".into(),
 },
-Subkey {
+Preference {
     pfm_default: Some(
         Value::String(
             "com.github.ProfileManifests.exampleApplication".into(),
@@ -95,7 +95,7 @@ Subkey {
     ),
     pfm_type: "string".into(),
 },
-Subkey {
+Preference {
     pfm_default: None,
     pfm_description: Some(
         "Unique identifier for the payload (format 01234567-89AB-CDEF-0123-456789ABCDEF)".into(),
@@ -109,7 +109,7 @@ Subkey {
     ),
     pfm_type: "string".into(),
 },
-Subkey {
+Preference {
     pfm_default: Some(
         Value::Integer(
             Integer::from(1),
@@ -127,7 +127,7 @@ Subkey {
     ),
     pfm_type: "integer".into(),
 },
-Subkey {
+Preference {
     pfm_default: None,
     pfm_description: Some(
         "This value describes the issuing organization of the profile, as displayed to the user".into(),
@@ -139,7 +139,7 @@ Subkey {
     ),
     pfm_type: "string".into(),
 },
-Subkey {
+Preference {
     pfm_default: None,
     pfm_description: None,
     pfm_description_reference: None,
@@ -147,7 +147,7 @@ Subkey {
     pfm_title: None,
     pfm_type: "string".into(),
 },
-Subkey {
+Preference {
     pfm_default: None,
     pfm_description: None,
     pfm_description_reference: None,
@@ -157,7 +157,7 @@ Subkey {
     ),
     pfm_type: "string".into(),
 },
-Subkey {
+Preference {
     pfm_default: None,
     pfm_description: Some(
         "This is the description of the ExampleDescriptions key.".into(),
@@ -171,7 +171,7 @@ Subkey {
     ),
     pfm_type: "date".into(),
 },
-Subkey {
+Preference {
     pfm_default: None,
     pfm_description: Some(
         "This is the description of the ExampleRequired key.".into(),
@@ -185,7 +185,7 @@ Subkey {
     ),
     pfm_type: "boolean".into(),
 },
-Subkey {
+Preference {
     pfm_default: Some(
         Value::String(
             "Default Value".into(),
@@ -203,7 +203,7 @@ Subkey {
     ),
     pfm_type: "string".into(),
 },
-Subkey {
+Preference {
     pfm_default: None,
     pfm_description: Some(
         "This is the description of the ExamplePlaceholderValue key.".into(),
@@ -217,7 +217,7 @@ Subkey {
     ),
     pfm_type: "string".into(),
 },
-Subkey {
+Preference {
     pfm_default: None,
     pfm_description: Some(
         "This is the description of the ExamplePopUpButtonInteger key.".into(),
@@ -231,7 +231,7 @@ Subkey {
     ),
     pfm_type: "integer".into(),
 },
-Subkey {
+Preference {
     pfm_default: None,
     pfm_description: Some(
         "This is the description of the ExampleDictinoary key.".into(),
@@ -245,7 +245,7 @@ Subkey {
     ),
     pfm_type: "dictionary".into(),
 },
-Subkey {
+Preference {
     pfm_default: None,
     pfm_description: Some(
         "This is the description of the ExampleArrayStrings key.".into(),
@@ -259,7 +259,7 @@ Subkey {
     ),
     pfm_type: "array".into(),
 },
-Subkey {
+Preference {
     pfm_default: None,
     pfm_description: Some(
         "This is the description of the ExampleArrayDictionaries key.".into(),

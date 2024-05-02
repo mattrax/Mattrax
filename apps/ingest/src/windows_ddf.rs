@@ -12,9 +12,14 @@ use specta::{ts::ExportConfig, NamedType, Type};
 #[serde(rename_all = "camelCase")]
 struct WindowsDDFPolicy {
     name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
     #[serde(flatten)]
     format: Format,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    nodes: WindowsDFFPolicyGroup,
 }
 
 #[derive(Serialize, Debug, Type)]
@@ -128,14 +133,24 @@ type WindowsDFFPolicyGroup = BTreeMap<PathBuf, WindowsDDFPolicy>;
 fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyGroup {
     let mut collection = WindowsDFFPolicyGroup::default();
 
-    let path = node
+    let mut path = node
         .path
         .as_ref()
         .map(|new_path| path.join(new_path))
-        .unwrap_or_else(|| path.clone())
-        .join(&node.node_name);
+        .unwrap_or_else(|| path.clone());
 
-    if !node.children.is_empty() {
+    let mut nodes = WindowsDFFPolicyGroup::new();
+
+    if let (Some(title), "") = (&node.properties.df_title, node.node_name.as_str()) {
+        dbg!(&title);
+        path = path.join(format!("{{{title}}}"));
+
+        for child in &node.children {
+            nodes.extend(handle_node(child, &PathBuf::new()));
+        }
+    } else {
+        path = path.join(&node.node_name);
+
         for child in &node.children {
             collection.extend(handle_node(child, &path));
         }
@@ -151,8 +166,10 @@ fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyGroup {
         path,
         WindowsDDFPolicy {
             name: node.node_name.clone(),
+            title: node.properties.df_title.clone(),
             description: node.properties.description.clone(),
             format: Format::parse(&node),
+            nodes,
         },
     );
 

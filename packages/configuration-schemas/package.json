@@ -10,6 +10,13 @@
 		},
 		"./windows/ddf.json": {
 			"import": "./src/windows/ddf.json"
+		},
+		"./apple": {
+			"import": "./src/apple/payloads.ts",
+			"types": "./src/apple/payloads.ts"
+		},
+		"./apple/payloads.json": {
+			"import": "./src/apple/payloads.json"
 		}
 	}
 }
