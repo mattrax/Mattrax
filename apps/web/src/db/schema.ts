@@ -16,7 +16,7 @@ import {
 } from "drizzle-orm/mysql-core";
 import { auditLogDefinition } from "../api/auditLogDefinition";
 import { getObjectKeys } from "../api/utils";
-import type { Configuration } from "~/lib/policy";
+import type { PolicyData } from "~/lib/policy";
 import type { Features } from "~/lib/featureFlags";
 
 // TS table name - plural, camelCase
@@ -224,10 +224,7 @@ export const users = mysqlTable(
 	}),
 );
 
-const policyDataCol = json("data")
-	.notNull()
-	.default({})
-	.$type<Record<string, Configuration>>();
+const policyDataCol = json("data").notNull().default({}).$type<PolicyData>();
 
 export const policies = mysqlTable("policies", {
 	pk: serial("pk").primaryKey(),

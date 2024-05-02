@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use reqwest::{Client, Url};
-use serde_json::json;
-use tracing::info;
+// use serde_json::json;
+// use tracing::info;
 
-use crate::load;
+// use crate::load;
 
 #[derive(clap::Args)]
 #[command(about = "Deploy a policy to Mattrax")]
@@ -25,81 +25,83 @@ pub struct Command {
 
 impl Command {
     pub async fn run(&self, base_url: Url, client: Client) -> Result<(), String> {
-        let policy = load::policy(&self.path)?;
+        todo!();
 
-        // TODO: Warning for any yaml comments as they will be lost
+        // let policy = load::policy(&self.path)?;
 
-        let url = base_url
-            .join(&format!(
-                "/api/cli/policy/{}",
-                urlencoding::encode(&policy.id)
-            ))
-            .map_err(|err| format!("Error constructing url to Mattrax API: {err}"))?;
+        // // TODO: Warning for any yaml comments as they will be lost
 
-        let comment = (!self.push_only).then(|| {
-            self.message.clone().unwrap_or_else(|| {
-                std::process::Command::new("git")
-                    .args(["rev-parse", "--short", "HEAD"])
-                    .output()
-                    .ok()
-                    .and_then(|output| {
-                        std::str::from_utf8(&output.stdout)
-                            .ok()
-                            .map(|s| format!("Deployed commit {s} via Mattrax CLI!"))
-                    })
-                    .unwrap_or_else(|| "Deployed from Mattrax CLI!".to_string())
-            })
-        });
+        // let url = base_url
+        //     .join(&format!(
+        //         "/api/cli/policy/{}",
+        //         urlencoding::encode(&policy.id)
+        //     ))
+        //     .map_err(|err| format!("Error constructing url to Mattrax API: {err}"))?;
 
-        let response = client
-            .post(url)
-            .json(&json!({
-                "name": policy.name,
-                "data": policy.configurations,
-                "comment": comment,
-            }))
-            .send()
-            .await
-            .map_err(|err| format!("Error doing HTTP request to Mattrax API: {err}"))?;
+        // let comment = (!self.push_only).then(|| {
+        //     self.message.clone().unwrap_or_else(|| {
+        //         std::process::Command::new("git")
+        //             .args(["rev-parse", "--short", "HEAD"])
+        //             .output()
+        //             .ok()
+        //             .and_then(|output| {
+        //                 std::str::from_utf8(&output.stdout)
+        //                     .ok()
+        //                     .map(|s| format!("Deployed commit {s} via Mattrax CLI!"))
+        //             })
+        //             .unwrap_or_else(|| "Deployed from Mattrax CLI!".to_string())
+        //     })
+        // });
 
-        if response.status() == 404 {
-            return Err(format!("Policy with id '{}' not found", policy.id));
-        }
+        // let response = client
+        //     .post(url)
+        //     .json(&json!({
+        //         "name": policy.name,
+        //         "data": policy.configurations,
+        //         "comment": comment,
+        //     }))
+        //     .send()
+        //     .await
+        //     .map_err(|err| format!("Error doing HTTP request to Mattrax API: {err}"))?;
 
-        if !response.status().is_success() {
-            return Err(format!(
-                "Error pushing policy to Mattrax: {:?}",
-                response.status()
-            ));
-        }
+        // if response.status() == 404 {
+        //     return Err(format!("Policy with id '{}' not found", policy.id));
+        // }
 
-        let (status, version_id): (String, Option<String>) = response.json().await.unwrap();
+        // if !response.status().is_success() {
+        //     return Err(format!(
+        //         "Error pushing policy to Mattrax: {:?}",
+        //         response.status()
+        //     ));
+        // }
 
-        // TODO: Work this out with auth stuff
-        let org_slug = "oscar-w4cw";
-        let tenant_slug = "acme-school-inc-pa1r";
+        // let (status, version_id): (String, Option<String>) = response.json().await.unwrap();
 
-        // TODO: Can we make a nice alias for these URL's
-        match (status.as_str(), version_id) {
-            ("unchanged", None) => {
-                info!("Policy '{}' is already up to date in Mattrax", policy.name);
-            }
-            ("deployed", Some(version_id)) => {
-                info!("Successfully deployed policy '{}' to Mattrax!", policy.name);
-                info!(
-                    "Check it out at: {base_url}o/{org_slug}/t/{tenant_slug}/policies/{}/versions/{version_id}",
-                    policy.id
-                );
-            }
-            ("updated", None) => {
-                info!("Successfully pushed '{}' to Mattrax!", policy.name);
-                info!(
-                    "To deploy go to: {base_url}o/{org_slug}/t/{tenant_slug}/policies/{}/versions",
-                    policy.id
-                );
-            }
-            _ => unreachable!(),
-        }
+        // // TODO: Work this out with auth stuff
+        // let org_slug = "oscar-w4cw";
+        // let tenant_slug = "acme-school-inc-pa1r";
+
+        // // TODO: Can we make a nice alias for these URL's
+        // match (status.as_str(), version_id) {
+        //     ("unchanged", None) => {
+        //         info!("Policy '{}' is already up to date in Mattrax", policy.name);
+        //     }
+        //     ("deployed", Some(version_id)) => {
+        //         info!("Successfully deployed policy '{}' to Mattrax!", policy.name);
+        //         info!(
+        //             "Check it out at: {base_url}o/{org_slug}/t/{tenant_slug}/policies/{}/versions/{version_id}",
+        //             policy.id
+        //         );
+        //     }
+        //     ("updated", None) => {
+        //         info!("Successfully pushed '{}' to Mattrax!", policy.name);
+        //         info!(
+        //             "To deploy go to: {base_url}o/{org_slug}/t/{tenant_slug}/policies/{}/versions",
+        //             policy.id
+        //         );
+        //     }
+        //     _ => unreachable!(),
+        // }
 
         Ok(())
     }

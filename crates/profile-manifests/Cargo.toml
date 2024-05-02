@@ -8,7 +8,7 @@ publish = false
 [dependencies]
 phf = { version = "0.11.2", features = ["macros"] }
 plist = "1.6.1"
-serde = { version = "1.0.199", features = ["derive"] }
+serde = { workspace = true }
 thiserror = "1.0.59"
 
 [dev-dependencies]

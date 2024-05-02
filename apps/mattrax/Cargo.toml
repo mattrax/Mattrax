@@ -33,8 +33,8 @@ hyper-util = { version = "0.1.3", features = [
     "tokio",
 ] }
 thiserror = "1.0.58"
-serde = { version = "1.0.197", features = ["derive"] }
-serde_json = "1.0.114"
+serde = { workspace = true }
+serde_json = { workspace = true }
 tokio-stream = "0.1.15"
 getrandom = "0.2.12"
 rcgen = { version = "=0.13.0", features = ["x509-parser"] }

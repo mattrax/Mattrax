@@ -2312,7 +2312,6 @@ dependencies = [
  "easy-xml",
  "graph-rs-sdk",
  "ms-mdm",
- "mx-policy",
  "mx-utils",
  "open",
  "reqwest 0.12.4",
@@ -2329,7 +2328,7 @@ dependencies = [
 name = "mx-conflict"
 version = "0.0.1"
 dependencies = [
- "mx-dmvalue",
+ "mx-policy",
  "pretty_assertions",
  "serde",
  "serde_json",
@@ -2347,30 +2346,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "mx-dmvalue"
-version = "0.0.1"
-dependencies = [
- "chrono",
- "rust_decimal",
- "serde",
-]
-
-[[package]]
 name = "mx-policy"
 version = "0.0.1"
 dependencies = [
  "chrono",
- "mx-dmvalue",
  "rust_decimal",
  "serde",
+ "serde_json",
  "specta",
-]
-
-[[package]]
-name = "mx-policy-win"
-version = "0.0.1"
-dependencies = [
- "mx-policy",
 ]
 
 [[package]]
@@ -2392,7 +2375,6 @@ dependencies = [
  "ms-mdm",
  "mx-conflict",
  "mx-db",
- "mx-dmvalue",
  "mx-policy",
  "rustls 0.23.5",
  "serde",
@@ -3924,24 +3906,25 @@ dependencies = [
 
 [[package]]
 name = "specta"
-version = "2.0.0-rc.7"
+version = "2.0.0-rc.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18938fc0c7c0e8b7c8f4702e8cb53c218d4442f5b7420dd8b3d9640ca9a46712"
+checksum = "1ed13baa3131e5b627ca78dca1097aa84dd83509b18ac9f876a0db5e70413636"
 dependencies = [
  "chrono",
  "once_cell",
  "paste",
  "rust_decimal",
  "serde",
+ "serde_json",
  "specta-macros",
  "thiserror",
 ]
 
 [[package]]
 name = "specta-macros"
-version = "2.0.0-rc.7"
+version = "2.0.0-rc.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05080358d47cc706229b854d51c6477208de2b022ec0e16f1572c8cdc5263c8e"
+checksum = "ef33e9678ae36993fcbfc46aa29568ef10d32fd54428808759c6a450998c43ec"
 dependencies = [
  "Inflector",
  "proc-macro2",

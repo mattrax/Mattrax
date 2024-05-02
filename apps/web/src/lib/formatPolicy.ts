@@ -1,17 +1,24 @@
 import { match } from "ts-pattern";
-import type { Configuration } from "./policy";
+import type { PolicyData } from "./policy";
 
 // TODO: Maybe render as categories instead instead of just each element?
 
-export function formatPolicy(configuration: Configuration) {
-	// TODO: Do an exhaustive match
-	// return match(configuration.type)
-	// 	.with("script", () => `${true ? "Bash" : "Powershell"} Script`) // TODO: Properly render script type
-	// 	.with("windows", () => "Windows") // TODO: Make this render more specific
-	// 	.exhaustive();
+export function formatPolicy(data: PolicyData) {
+	const result: string[] = [];
 
-	return match(configuration.type)
-		.with("script", () => "Bash Script")
-		.with("windows", () => "Windows")
-		.otherwise(() => "Unknown");
+	for (const [k, v] of Object.entries(data?.windows || {})) {
+		result.push("Windows");
+	}
+
+	if (data?.macos) {
+		result.push("macOS");
+	}
+
+	// TODO: Android
+
+	for (const entry of data?.scripts || []) {
+		result.push(`Script ${entry.shell}`);
+	}
+
+	return result;
 }

@@ -19,7 +19,7 @@ import {
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { omit } from "~/api/utils";
 import { withAuditLog } from "~/api/auditLog";
-import type { Configuration } from "~/lib/policy";
+import type { PolicyData } from "~/lib/policy";
 
 const getPolicy = cache(async (id: string) => {
 	return await db.query.policies.findFirst({
@@ -322,14 +322,11 @@ export const policyRouter = createTRPCRouter({
 });
 
 // `p1` should be older than `p2` for the result to be correct
-export function generatePolicyDiff(
-	p1: Record<string, Configuration>,
-	p2: Record<string, Configuration>,
-) {
+export function generatePolicyDiff(p1: PolicyData, p2: PolicyData) {
 	const result: { change: "added" | "deleted" | "modified"; data: any }[] = [];
 
-	for (const [key, value] of Object.entries(p1)) {
-		const otherValue = p2[key];
+	for (const [key, value] of Object.entries(p1?.windows || {})) {
+		const otherValue = p2?.windows?.[key];
 		if (otherValue === undefined) {
 			result.push({ change: "deleted", data: value });
 		} else {
@@ -339,11 +336,14 @@ export function generatePolicyDiff(
 		}
 	}
 
-	for (const [key, value] of Object.entries(p2)) {
-		if (p1[key] === undefined) {
+	for (const [key, value] of Object.entries(p2?.windows || {})) {
+		if (p1?.windows?.[key] === undefined) {
 			result.push({ change: "added", data: value });
 		}
 	}
+
+	// TODO: macOS support
+	// TODO: Android
 
 	return result;
 }

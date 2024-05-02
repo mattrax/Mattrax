@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use tracing::info;
+// use tracing::info;
 
-use crate::load;
+// use crate::load;
 
 #[derive(clap::Args)]
 #[command(about = "Validate a policy file is valid offline")]
@@ -13,8 +13,10 @@ pub struct Command {
 
 impl Command {
     pub fn run(&self) -> Result<(), String> {
-        let _ = load::policy(&self.path)?;
-        info!("Policy file is valid");
+        todo!();
+        // let _ = load::policy(&self.path)?;
+        // info!("Policy file is valid");
+
         Ok(())
     }
 }

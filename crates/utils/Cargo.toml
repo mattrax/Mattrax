@@ -6,6 +6,6 @@ publish = false
 
 [dependencies]
 hex = "0.4.3"
-serde = "1.0.197"
+serde = { workspace = true }
 tracing-appender = "0.2.3"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }

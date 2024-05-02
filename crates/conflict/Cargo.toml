@@ -5,10 +5,9 @@ edition = "2021"
 publish = false
 
 [dependencies]
-mx-dmvalue = { path = "../dmvalue" }
-
-serde = { version = "1.0.197", features = ["derive"] }
-serde_json = "1.0.115"
+mx-policy = { path = "../mx-policy" }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"

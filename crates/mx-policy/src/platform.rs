@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-/// TODO
+/// Define the platforms that are supported by Mattrax.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub enum Platform {
     #[serde(rename = "windows")]
