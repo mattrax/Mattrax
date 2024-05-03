@@ -57,7 +57,7 @@ pub fn inline_ref<T: Type>(_: &T, conf: &ExportConfig) -> Output {
 /// Eg. `z.object({ demo: z.string() });`
 pub fn inline<T: Type>(conf: &ExportConfig) -> Output {
     let mut type_map = TypeMap::default();
-    let ty = T::inline(&mut type_map, &[]);
+    let ty = T::inline(&mut type_map, specta::Generics::Definition);
     // is_valid_ty(&ty, &type_map)?;
     let result = datatype(conf, &ty, &type_map);
 
@@ -199,8 +199,8 @@ pub(crate) fn datatype_inner(ctx: ExportContext, typ: &DataType, type_map: &Type
             format!(
                 // We use this isn't of `Record<K, V>` to avoid issues with circular references.
                 "z.record({}, {})",
-                datatype_inner(ctx.clone(), &def.0, type_map)?,
-                datatype_inner(ctx, &def.1, type_map)?
+                datatype_inner(ctx.clone(), &def.key_ty(), type_map)?,
+                datatype_inner(ctx, &def.value_ty(), type_map)?
             )
         }
         // We use `T[]` instead of `Array<T>` to avoid issues with circular references.

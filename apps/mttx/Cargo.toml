@@ -9,7 +9,7 @@ publish = false
 dist = true
 
 [dependencies]
-mx-utils = { path = "../../crates/utils" }
+mx-utils = { path = "../../crates/mx-utils" }
 ms-mdm = { path = "../../crates/ms-mdm" }
 
 clap = { version = "4.5.3", features = ["derive"] }

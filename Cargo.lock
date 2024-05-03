@@ -3113,17 +3113,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "profile-manifests"
-version = "0.0.1"
-dependencies = [
- "phf",
- "plist",
- "pretty_assertions",
- "serde",
- "thiserror",
-]
-
-[[package]]
 name = "ptr_meta"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
