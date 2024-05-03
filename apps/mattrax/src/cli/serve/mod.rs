@@ -1,5 +1,4 @@
 use std::{
-    fs,
     net::{Ipv6Addr, SocketAddr},
     path::PathBuf,
     process,
@@ -63,12 +62,14 @@ impl Command {
         };
 
         let config_manager = ConfigManager::new(db.clone(), local_config, config).unwrap();
-        let updater = UpdateManager::new(db.clone(), config_manager.clone());
+        let _updater = UpdateManager::new(db.clone(), config_manager.clone());
 
         let port = {
             let config = config_manager.get();
 
-            let port = self.port.unwrap_or({
+            
+
+            self.port.unwrap_or({
                 #[cfg(debug_assertions)]
                 if config.domain == "localhost" {
                     9000
@@ -77,9 +78,7 @@ impl Command {
                 }
                 #[cfg(not(debug_assertions))]
                 443
-            });
-
-            port
+            })
         };
 
         let (acme_tx, acme_rx) = mpsc::channel(25);

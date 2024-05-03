@@ -22,8 +22,8 @@ impl CmdId {
     }
 }
 
-impl Into<String> for CmdId {
-    fn into(self) -> String {
-        self.child
+impl From<CmdId> for String {
+    fn from(val: CmdId) -> Self {
+        val.child
     }
 }

@@ -19,7 +19,7 @@ pub struct Command {
 }
 
 impl Command {
-    pub async fn run(&self, base_url: Url, client: Client) -> Result<(), String> {
+    pub async fn run(&self, _base_url: Url, _client: Client) -> Result<(), String> {
         todo!();
 
         // if !self.force && self.path.exists() {

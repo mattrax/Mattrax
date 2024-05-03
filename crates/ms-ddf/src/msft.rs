@@ -50,7 +50,7 @@ impl XmlDeserialize for AllowedValueGroupedNodes {
                 node.elements
                     .iter()
                     .filter(|e| matches!(e, XmlElement::Node(_)))
-                    .map(|element| ValueAndDescriptionGroup::deserialize(element))
+                    .map(ValueAndDescriptionGroup::deserialize)
                     .collect::<Result<Vec<_>, _>>()?,
             ),
             "AdmxBacked" => Self::Admx(AdmxBacked::deserialize(&node.elements[0])?),

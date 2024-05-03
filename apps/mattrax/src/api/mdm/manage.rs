@@ -21,7 +21,7 @@ pub fn mount(_state: Arc<Context>) -> Router<Arc<Context>> {
                     &state.db,
                     &state.identity_cert_x509,
                     body,
-                    info.client_cert.and_then(|x| x.into_iter().nth(0)),
+                    info.client_cert.and_then(|x| x.into_iter().next()),
                 )
                 .await;
 

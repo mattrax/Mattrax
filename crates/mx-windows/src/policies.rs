@@ -12,7 +12,7 @@ use mx_db::{Db, GetDeviceResult};
 //      - merge the extras into the graph
 // - apply the graph
 
-pub(crate) async fn handler(db: &Db, device: &GetDeviceResult, cmd: &SyncML) -> Vec<SyncBodyChild> {
+pub(crate) async fn handler(db: &Db, device: &GetDeviceResult, _cmd: &SyncML) -> Vec<SyncBodyChild> {
     let scope = db.get_policy_data_for_checkin(device.pk).await.unwrap();
 
     println!("{:?}", scope); // TODO

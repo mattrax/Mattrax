@@ -157,7 +157,7 @@ pub fn mount(ctx: Arc<Context>) -> Router<Arc<Context>> {
                         .map(|col|
                             json!({
                                 "name": col.name_str().to_string(),
-                                "type": column_type_to_str(&col),
+                                "type": column_type_to_str(col),
                                 "charset": col.character_set(),
                                 "flags": col.flags().bits()
                             })

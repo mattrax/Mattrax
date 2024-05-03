@@ -78,7 +78,7 @@ impl<S: Store> Acme<S> {
             None
         } else {
             let mut acme = AcmeConfig::new(domains)
-                .contact(&[format!("mailto:{}", contact)])
+                .contact([format!("mailto:{}", contact)])
                 .cache_option(Some(StorageInterop(store.clone())))
                 .directory_lets_encrypt(matches!(server, Server::LetsEncrypt))
                 .state();
@@ -347,7 +347,7 @@ impl<S: Store + Send + Sync> AccountCache for StorageInterop<S> {
 
 // Copied from: https://github.com/FlorianUekermann/rustls-acme/blob/f3dcfd169373b4593bb8b6c43febe0c6ead720f5/src/state.rs#L193
 fn parse_cert(pem: &[u8]) -> Result<(CertifiedKey, [DateTime<Utc>; 2]), CertParseError> {
-    let mut pems = pem::parse_many(&pem)?;
+    let mut pems = pem::parse_many(pem)?;
     if pems.len() < 2 {
         return Err(CertParseError::TooFewPem(pems.len()));
     }

@@ -33,12 +33,12 @@ async fn main() {
     };
 
     let Ok(client) = Client::builder()
-        .user_agent(format!(concat!(
+        .user_agent(concat!(
             "Mattrax ",
             env!("CARGO_PKG_VERSION"),
             "/",
             env!("GIT_HASH")
-        )))
+        ).to_string())
         .build()
         .map_err(|e| error!("Error constructing HTTP client: {e}"))
     else {

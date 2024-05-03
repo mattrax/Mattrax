@@ -6,7 +6,7 @@ pub(crate) async fn handler(cmd: &SyncML) {
 
         match child {
             SyncBodyChild::Replace(cmd) => {
-                for item in cmd.item.iter() {
+                for _item in cmd.item.iter() {
                     // println!("{:#?} {:?} {:?}", item, item.source, item.data);
                     // TODO: Do a insert many instead of multiple inserts
                     // state.db.set_device_data(
@@ -16,7 +16,7 @@ pub(crate) async fn handler(cmd: &SyncML) {
                     // ).await.unwrap(); // TODO: Error handling
                 }
             }
-            SyncBodyChild::Status(status) => {
+            SyncBodyChild::Status(_status) => {
                 // let Ok(Some(deploy_status)) = state
                 //     .db
                 //     .get_windows_ephemeral_state(

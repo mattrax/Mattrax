@@ -18,5 +18,5 @@ pub fn export() {
     )
     .unwrap();
 
-    Command::new("pnpm").args(&["format"]).status().unwrap();
+    Command::new("pnpm").args(["format"]).status().unwrap();
 }

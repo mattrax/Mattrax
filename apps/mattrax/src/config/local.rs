@@ -23,12 +23,12 @@ impl LocalConfig {
         file.read_to_string(&mut string).map_err(|err| {
             io::Error::new(err.kind(), format!("Failed to read file '{path:?}': {err}"))
         })?;
-        Ok(serde_json::from_str(&string).map_err(|err| {
+        serde_json::from_str(&string).map_err(|err| {
             io::Error::new(
                 ErrorKind::Other,
                 format!("Failed to deserialize 'LocalConfig' from file '{path:?}': {err}"),
             )
-        })?)
+        })
     }
 
     pub fn save(&self, path: impl AsRef<Path>) -> io::Result<()> {

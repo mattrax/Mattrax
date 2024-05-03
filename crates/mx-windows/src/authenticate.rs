@@ -35,8 +35,7 @@ pub(crate) fn handler(
 
     let common_name = cert
         .subject()
-        .iter_common_name()
-        .nth(0)
+        .iter_common_name().next()
         .unwrap()
         .attr_value()
         .as_string()

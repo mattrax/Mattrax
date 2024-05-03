@@ -37,7 +37,7 @@ impl PropertyType {
             Preference::Array { pfm_subkeys, .. } => PropertyType::Array(
                 pfm_subkeys
                     .into_iter()
-                    .map(|subkey| PropertyType::from_preference(subkey))
+                    .map(PropertyType::from_preference)
                     .collect(),
             ),
             Preference::Boolean(_) => PropertyType::Boolean,
@@ -95,7 +95,7 @@ type AppleProfilePayloadGroup = BTreeMap<String, AppleProfilePayload>;
 #[derive(Type, Default, Serialize)]
 struct AppleProfilePayloadCollection(AppleProfilePayloadGroup);
 
-pub static COMMON_PAYLOAD_KEYS: [&'static str; 7] = [
+pub static COMMON_PAYLOAD_KEYS: [&str; 7] = [
     "PayloadDescription",
     "PayloadDisplayName",
     "PayloadIdentifier",
@@ -122,7 +122,7 @@ pub fn generate_bindings() {
             .into_iter()
             .filter(|subkey| {
                 !COMMON_PAYLOAD_KEYS
-                    .contains(&subkey.pfm_name.as_ref().map(|n| n.as_str()).unwrap_or(""))
+                    .contains(&subkey.pfm_name.as_deref().unwrap_or(""))
             })
             .map(|subkey| (subkey.pfm_name.clone().unwrap(), Property::parse(subkey)))
             .collect();

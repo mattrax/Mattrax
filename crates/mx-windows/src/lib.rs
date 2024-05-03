@@ -20,7 +20,7 @@ pub async fn handler(
     body: String,
     client_cert: Option<CertificateDer<'_>>,
 ) -> String {
-    let Some((upn, device_id)) = authenticate::handler(&root_cert, client_cert) else {
+    let Some((upn, device_id)) = authenticate::handler(root_cert, client_cert) else {
         // return StatusCode::UNAUTHORIZED.into_response();
         panic!("Unauthorized"); // TODO: Error handling
     };
@@ -39,7 +39,7 @@ pub async fn handler(
         }
     };
 
-    let Some(device) = db.get_device(device_id).await.unwrap().into_iter().nth(0) else {
+    let Some(device) = db.get_device(device_id).await.unwrap().into_iter().next() else {
         // return StatusCode::NOT_FOUND.into_response(); // TODO: Proper SyncML error
         panic!("Device not found"); // TODO: Error handling
     };
@@ -72,7 +72,7 @@ pub async fn handler(
     let (mut a, mut b, (), ()) = join!(
         async move {
             if cmd.hdr.msg_id == "1" {
-                policies::handler(db, &device, &cmd).await
+                policies::handler(db, device, cmd).await
             } else {
                 vec![]
             }
@@ -83,7 +83,7 @@ pub async fn handler(
                 db.update_device_lastseen(device.pk).await.unwrap(); // TODO: Error handling
             }
         },
-        results::handler(&cmd),
+        results::handler(cmd),
         // TODO: Deploy applications
     );
     children.append(&mut a);

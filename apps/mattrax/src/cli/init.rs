@@ -184,7 +184,7 @@ WantedBy=multi-user.target"#,
 
             #[cfg(unix)]
             {
-                use std::os::unix::fs::chown;
+                
                 use std::os::unix::fs::PermissionsExt;
 
                 fs::set_permissions(

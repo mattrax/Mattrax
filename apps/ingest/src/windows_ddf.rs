@@ -95,7 +95,7 @@ impl IntAllowedValues {
                     return None;
                 };
 
-                let Some((min, max)) = value.value[1..value.value.len() - 2].split_once("-") else {
+                let Some((min, max)) = value.value[1..value.value.len() - 2].split_once('-') else {
                     return None;
                 };
 
@@ -175,7 +175,7 @@ fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyGroup {
             name: node.node_name.clone(),
             title: node.properties.df_title.clone(),
             description: node.properties.description.clone(),
-            format: Format::parse(&node),
+            format: Format::parse(node),
             nodes,
         },
     );
@@ -215,7 +215,7 @@ pub fn generate_bindings() {
         let contents = fs::read(file.path()).unwrap();
 
         let root: MgmtTree = easy_xml::de::from_bytes(contents.as_slice())
-            .expect(&format!("Failed to parse {:?}", file.path()));
+            .unwrap_or_else(|_| panic!("Failed to parse {:?}", file.path()));
 
         let (path, csp) = handle_mgmt_tree(root);
 
