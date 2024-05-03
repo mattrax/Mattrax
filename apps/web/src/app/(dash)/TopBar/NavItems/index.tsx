@@ -15,7 +15,7 @@ export function NavItems() {
 				<Tabs.Root
 					as="nav"
 					value={`${prefix()}/${value()}`}
-					class="text-white sticky top-0 z-10 bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
+					class="bg-white text-white sticky top-0 z-10 bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
 				>
 					<Tabs.List class="flex flex-row px-2 border-b border-gray-200 w-full">
 						<For each={items()}>
