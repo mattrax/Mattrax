@@ -28,7 +28,7 @@ export function scopedPoliciesForDeviceSubquery(device_pk: number) {
 	const policiesScopedDirectly = db
 		.select({
 			pk: policies.pk,
-			scope: sql`"direct"`.mapWith(asString).as("scope"),
+			scope: sql`'direct'`.mapWith(asString).as("scope"),
 		})
 		.from(policies)
 		.innerJoin(policyAssignments, eq(policies.pk, policyAssignments.policyPk))
@@ -41,7 +41,7 @@ export function scopedPoliciesForDeviceSubquery(device_pk: number) {
 	const policiesScopedViaGroup = db
 		.select({
 			pk: policies.pk,
-			scope: sql`"group"`.mapWith(asString).as("scope"),
+			scope: sql`'group'`.mapWith(asString).as("scope"),
 		})
 		.from(policies)
 		.innerJoin(

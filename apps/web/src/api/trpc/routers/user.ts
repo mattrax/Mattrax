@@ -193,7 +193,7 @@ export const userRouter = createTRPCRouter({
 							pols.map((pk) => ({
 								pk: user.pk,
 								policyPk: pk,
-								variant: sql`"user"`,
+								variant: sql`'user'`,
 							})),
 						)
 						.onDuplicateKeyUpdate({
@@ -207,7 +207,7 @@ export const userRouter = createTRPCRouter({
 							apps.map((pk) => ({
 								pk: user.pk,
 								applicationPk: pk,
-								variant: sql`"user"`,
+								variant: sql`'user'`,
 							})),
 						)
 						.onDuplicateKeyUpdate({

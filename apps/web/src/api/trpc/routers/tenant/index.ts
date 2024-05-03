@@ -118,23 +118,23 @@ export const tenantRouter = createTRPCRouter({
 	stats: tenantProcedure.query(async ({ ctx }) => {
 		return await union(
 			ctx.db
-				.select({ count: count(), variant: sql<StatsTarget>`"users"` })
+				.select({ count: count(), variant: sql<StatsTarget>`'users'` })
 				.from(users)
 				.where(eq(users.tenantPk, ctx.tenant.pk)),
 			ctx.db
-				.select({ count: count(), variant: sql<StatsTarget>`"devices"` })
+				.select({ count: count(), variant: sql<StatsTarget>`'devices'` })
 				.from(devices)
 				.where(eq(devices.tenantPk, ctx.tenant.pk)),
 			ctx.db
-				.select({ count: count(), variant: sql<StatsTarget>`"policies"` })
+				.select({ count: count(), variant: sql<StatsTarget>`'policies'` })
 				.from(policies)
 				.where(eq(policies.tenantPk, ctx.tenant.pk)),
 			ctx.db
-				.select({ count: count(), variant: sql<StatsTarget>`"applications"` })
+				.select({ count: count(), variant: sql<StatsTarget>`'applications'` })
 				.from(applications)
 				.where(eq(applications.tenantPk, ctx.tenant.pk)),
 			ctx.db
-				.select({ count: count(), variant: sql<StatsTarget>`"groups"` })
+				.select({ count: count(), variant: sql<StatsTarget>`'groups'` })
 				.from(groups)
 				.where(eq(groups.tenantPk, ctx.tenant.pk)),
 		);
@@ -149,7 +149,7 @@ export const tenantRouter = createTRPCRouter({
 					action: auditLog.action,
 					data: auditLog.data,
 					doneAt: auditLog.doneAt,
-					user: sql<string>`IFNULL(${accounts.name}, "system")`,
+					user: sql<string>`IFNULL(${accounts.name}, 'system')`,
 				})
 				.from(auditLog)
 				.where(eq(auditLog.tenantPk, ctx.tenant.pk))
