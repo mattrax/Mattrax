@@ -93,7 +93,7 @@ export default function Page() {
 								const controller = createPolicyComposerController();
 								return (
 									<PolicyComposer
-										windowsPolicies={windowsPolicies as any}
+										windowsCSPs={windowsPolicies as any}
 										applePayloads={applePayloads as any}
 										controller={controller}
 									/>

@@ -136,6 +136,8 @@ pub fn generate_bindings() {
         payloads.0.insert(manifest.pfm_domain, profile);
     }
 
+    payloads.0.remove("Configuration");
+
     let mut types = String::new();
     let mut type_map = Default::default();
 

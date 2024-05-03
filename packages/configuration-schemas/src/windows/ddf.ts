@@ -2,6 +2,10 @@ export type EnumContent = { description: string | null };
 export type IntAllowedValues =
 	| { valueType: "range"; min: number; max: number }
 	| { valueType: "enum"; enum: { [key in string]: EnumContent } };
+export type WindowsCSP = {
+	name: string;
+	policies: { [key in string]: WindowsDDFPolicy };
+};
 export type WindowsDDFPolicy = (
 	| {
 			format: "int";

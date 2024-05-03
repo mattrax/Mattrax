@@ -10,6 +10,13 @@ use specta::{ts::ExportConfig, NamedType, Type};
 
 #[derive(Serialize, Debug, Type)]
 #[serde(rename_all = "camelCase")]
+struct WindowsCSP {
+    name: String,
+    policies: BTreeMap<PathBuf, WindowsDDFPolicy>,
+}
+
+#[derive(Serialize, Debug, Type)]
+#[serde(rename_all = "camelCase")]
 struct WindowsDDFPolicy {
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -176,23 +183,29 @@ fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyGroup {
     collection
 }
 
-fn handle_mgmt_tree(tree: MgmtTree) -> WindowsDFFPolicyGroup {
-    let mut policies = WindowsDFFPolicyGroup::new();
+fn handle_mgmt_tree(tree: MgmtTree) -> (PathBuf, WindowsCSP) {
+    let mut csp = WindowsCSP {
+        name: tree.node.node_name.clone(),
+        policies: Default::default(),
+    };
 
-    for node in tree.nodes {
-        policies.extend(handle_node(&node, &PathBuf::new()))
+    for node in tree.node.children {
+        csp.policies.extend(handle_node(&node, &PathBuf::new()))
     }
 
-    policies
+    (
+        PathBuf::from(tree.node.path.unwrap()).join(tree.node.node_name),
+        csp,
+    )
 }
 
 #[derive(Type, Default, Serialize)]
-struct WindowsDFFPolicyCollection(WindowsDFFPolicyGroup);
+struct WindowsCSPCollection(BTreeMap<PathBuf, WindowsCSP>);
 
 pub fn generate_bindings() {
     let files = fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("./ddf")).unwrap();
 
-    let mut policy_collection = WindowsDFFPolicyCollection::default();
+    let mut policy_collection = WindowsCSPCollection::default();
 
     for file in files {
         let file = file.unwrap();
@@ -204,7 +217,11 @@ pub fn generate_bindings() {
         let root: MgmtTree = easy_xml::de::from_bytes(contents.as_slice())
             .expect(&format!("Failed to parse {:?}", file.path()));
 
-        policy_collection.0.extend(handle_mgmt_tree(root));
+        let (path, csp) = handle_mgmt_tree(root);
+
+        if !csp.policies.is_empty() {
+            policy_collection.0.insert(path, csp);
+        }
     }
 
     fs::write(
@@ -219,7 +236,7 @@ pub fn generate_bindings() {
 
     specta::ts::export_named_datatype(
         &ExportConfig::default(),
-        &WindowsDFFPolicyCollection::definition_named_data_type(&mut type_map),
+        &WindowsCSPCollection::definition_named_data_type(&mut type_map),
         &mut type_map,
     )
     .unwrap();

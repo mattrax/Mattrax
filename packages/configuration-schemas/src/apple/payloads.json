@@ -35,60 +35,6 @@
       }
     }
   },
-  "Configuration": {
-    "title": "General",
-    "description": "Use this section to define general settings",
-    "properties": {
-      "ConsentText": {
-        "title": "Consent Text",
-        "description": "Dictionary specifying localized consent text that will be displayed as a warning during profile installation.",
-        "type": {
-          "dictionary": {
-            "default": {
-              "title": "Default License Agreement",
-              "description": "The system chooses a localized version in the order of preference specified by the user (macOS) or based on the user's current language setting (iOS). If no exact match is found, the default localization is used. If there is no default localization, the en localization is used. If there is no en localization, then the first available localization is used.",
-              "type": "string"
-            },
-            "{{key}}": {
-              "title": "Language ID",
-              "description": "The IETF BCP 47 identifier for that language (for example, en or jp).",
-              "type": "string"
-            },
-            "{{value}}": {
-              "title": "Localized License Agreement",
-              "description": "The agreement localized to that language.",
-              "type": "string"
-            }
-          }
-        }
-      },
-      "DurationUntilRemoval": {
-        "title": "Duration Until Removal",
-        "description": "Number of seconds until the profile is automatically removed. If RemovalDate key is present, its value is used instead.",
-        "type": "real"
-      },
-      "HasRemovalPasscode": {
-        "title": "Has removal passcode",
-        "description": "Specifes if there is a removal passcode for the profile.",
-        "type": "boolean"
-      },
-      "PayloadExpirationDate": {
-        "title": "Expiration Date",
-        "description": "If provided, will show an OTA-delivered profile as \"expired\" on a specific date. Users will be offered an \"Update\" button when the profile has expired.",
-        "type": "date"
-      },
-      "PayloadRemovalDisallowed": {
-        "title": "Prevent users from removing this profile",
-        "description": "Prevent manual removal of profiles installed through an MDM. Profiles installed manually can be removed manually, but only by using administrative authority.",
-        "type": "boolean"
-      },
-      "RemovalDate": {
-        "title": "Removal Date",
-        "description": "The date on which the profile will be automatically removed.",
-        "type": "date"
-      }
-    }
-  },
   "ManagedInstalls": {
     "title": "Munki",
     "description": "Munki settings",
