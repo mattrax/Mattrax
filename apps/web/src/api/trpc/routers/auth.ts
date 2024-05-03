@@ -19,12 +19,14 @@ import {
 import {
 	authedProcedure,
 	createTRPCRouter,
+	getTenantList,
 	isSuperAdmin,
 	publicProcedure,
 	superAdminProcedure,
 } from "../helpers";
 import { getObjectKeys, randomSlug } from "~/api/utils";
 import { type Features, features } from "~/lib/featureFlags";
+import { revalidate } from "@solidjs/router";
 
 type UserResult = {
 	id: number;
@@ -86,13 +88,16 @@ export const authRouter = createTRPCRouter({
 			if (!code)
 				throw new TRPCError({ code: "NOT_FOUND", message: "Invalid code" });
 
-			await ctx.db
-				.delete(accountLoginCodes)
-				.where(eq(accountLoginCodes.code, input.code));
-
-			const [[account], [orgConnection]] = await Promise.all([
+			const [_, [account], [orgConnection]] = await Promise.all([
 				ctx.db
-					.select({ pk: accounts.pk, id: accounts.id, email: accounts.email })
+					.delete(accountLoginCodes)
+					.where(eq(accountLoginCodes.code, input.code)),
+				ctx.db
+					.select({
+						pk: accounts.pk,
+						id: accounts.id,
+						email: accounts.email,
+					})
 					.from(accounts)
 					.where(eq(accounts.pk, code.accountPk)),
 				ctx.db
@@ -138,6 +143,7 @@ export const authRouter = createTRPCRouter({
 			});
 
 			flushResponse();
+			revalidate([checkAuth.key, getTenantList.key]);
 
 			return true;
 		}),
@@ -147,8 +153,6 @@ export const authRouter = createTRPCRouter({
 			id: account.id,
 			name: account.name,
 			email: account.email,
-			// orgs: await fetchOrgs(account.pk),
-			// tenants: await fetchTenants(account.pk),
 			...(account.features?.length > 0 ? { features: account.features } : {}),
 			...(isSuperAdmin(account) ? { superadmin: true } : {}),
 		};

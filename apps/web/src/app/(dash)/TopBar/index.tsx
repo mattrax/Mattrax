@@ -36,11 +36,9 @@ import { Breadcrumbs } from "~c/Breadcrumbs";
 import { AuthContext, useAuth } from "~c/AuthContext";
 import { NavItems, useNavItemsContext } from "./NavItems";
 import classes from "./NavIndicator.module.css";
-import { resetMattraxCache } from "~/cache";
 
 export function TopBar() {
 	const navigate = useNavigate();
-	const queryClient = useQueryClient();
 	const [_, start] = useTransition();
 	const logout = trpc.auth.logout.createMutation(() => ({
 		// We reset caches on login

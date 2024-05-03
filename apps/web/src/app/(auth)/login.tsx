@@ -7,19 +7,14 @@ import {
 } from "solid-js";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
-import {
-	action,
-	revalidate,
-	useNavigate,
-	useSearchParams,
-} from "@solidjs/router";
+import { revalidate, useNavigate, useSearchParams } from "@solidjs/router";
 import { z } from "zod";
 
 import { trpc } from "~/lib";
 import { OTPInput, preloadOTPInput } from "~/components/OTPInput";
 import { useQueryClient } from "@tanstack/solid-query";
-import { cachedOrgs } from "../(dash)/utils";
 import { resetMattraxCache } from "~/cache";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 // TODO: Use Mattrax colors on this page
 
@@ -101,6 +96,13 @@ export default function Page() {
 								const navigate = useNavigate();
 								const queryClient = useQueryClient();
 
+								const me = trpc.auth.me.createQuery(undefined, () => ({
+									enabled: false,
+								}));
+								const orgs = trpc.org.list.createQuery(undefined, () => ({
+									enabled: false,
+								}));
+
 								const verify = trpc.auth.verifyLoginCode.createMutation(() => ({
 									onSuccess: async () => {
 										let to: string;
@@ -116,10 +118,11 @@ export default function Page() {
 
 										queryClient.clear();
 										await resetMattraxCache();
-										revalidate();
+										// revalidate();
 
 										await startTransition(() => navigate(to));
 									},
+									...withDependantQueries([me, orgs]),
 								}));
 
 								const form = createZodForm({

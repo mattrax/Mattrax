@@ -1,11 +1,8 @@
-import { useNavigate } from "@solidjs/router";
-import { type ParentProps, Show, onMount, startTransition } from "solid-js";
-import { parse } from "cookie-es";
+import { type ParentProps, Show } from "solid-js";
 import { createContextProvider } from "@solid-primitives/context";
 
 import { trpc } from "~/lib";
 import type { RouterOutput } from "~/api";
-import { isServer } from "solid-js/web";
 
 const [AuthContextProvider, useAuth] = createContextProvider(
 	(props: {

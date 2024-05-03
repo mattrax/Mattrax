@@ -59,7 +59,7 @@ const isOrganisationMember = cache(async (orgPk: number, accountPk: number) => {
 	return org !== undefined;
 }, "isOrganisationMember");
 
-const getTenantList = cache(
+export const getTenantList = cache(
 	(accountPk: number) =>
 		db
 			.select({ pk: tenants.pk, name: tenants.name })

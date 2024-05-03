@@ -15,6 +15,7 @@ import {
 } from "@trpc/server";
 import { getHTTPStatusCodeFromError } from "@trpc/server/http";
 import { observable } from "@trpc/server/observable";
+import type { QueryClient } from "@tanstack/query-core";
 import { TRPC_ERROR_CODES_BY_KEY, type TRPCResponse } from "@trpc/server/rpc";
 import { getEvent } from "vinxi/http";
 import { TRPC_LOCAL_STORAGE } from "./server";
@@ -67,7 +68,22 @@ export async function trpcServerFunction<TRouter extends AnyRouter>({
 					type: opts.type,
 				});
 
-				return { result: { data } };
+				const dependant = o?.context?.paths?.map(async (key) => {
+					const data = await callProcedure({
+						procedures: router._def.procedures,
+						path: key[0],
+						rawInput: key[1],
+						ctx: {
+							...ctx,
+							flushResponse: () => {}, // TODO: resolve,
+						},
+						type: "query",
+					});
+
+					return [key, data];
+				});
+
+				return { result: { data }, dependant };
 			} catch (cause: unknown) {
 				console.error(cause);
 				const error = getTRPCErrorFromUnknown(cause);
@@ -124,6 +140,7 @@ export const createServerFunctionLink = <TRouter extends AnyRouter>(
 	serverFunction: (
 		opts: StringifiedOpts,
 	) => ReturnType<typeof trpcServerFunction<TRouter>>,
+	queryClient: QueryClient,
 ): TRPCLink<TRouter> => {
 	return () => {
 		const batchLoader = (type: ProcedureType) => {
@@ -150,6 +167,12 @@ export const createServerFunctionLink = <TRouter extends AnyRouter>(
 				promise
 					.then((p) => p)
 					.then((response) => {
+						for (const promise of response?.dependant || []) {
+							promise.then(([key, result]) =>
+								queryClient.setQueryData(key, result),
+							);
+						}
+
 						if ("error" in response) {
 							observer.error(TRPCClientError.from(response));
 							return;

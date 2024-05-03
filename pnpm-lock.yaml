@@ -13,6 +13,9 @@ patchedDependencies:
   '@react-email/tailwind@0.0.15':
     hash: bwbyj74l7btlaty4zlch4r7y4y
     path: patches/@react-email__tailwind@0.0.15.patch
+  '@solid-mediakit/trpc@3.0.2':
+    hash: ryciblegz3ippw6jppam5tmf3q
+    path: patches/@solid-mediakit__trpc@3.0.2.patch
   '@solidjs/router@0.13.2':
     hash: elelxothihlzsb57xki6usvf5m
     path: patches/@solidjs__router@0.13.2.patch
@@ -293,7 +296,7 @@ importers:
         version: 0.0.15(patch_hash=bwbyj74l7btlaty4zlch4r7y4y)(react@18.2.0)
       '@solid-mediakit/trpc':
         specifier: ^3.0.2
-        version: 3.0.2(@solidjs/router@0.13.2(patch_hash=elelxothihlzsb57xki6usvf5m)(solid-js@1.8.16))(@solidjs/start@0.7.7(rollup@4.14.3)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))(vite@5.2.9(@types/node@20.12.7)(terser@5.30.3)))(@tanstack/solid-query@5.30.6(solid-js@1.8.16))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))
+        version: 3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.2(patch_hash=elelxothihlzsb57xki6usvf5m)(solid-js@1.8.16))(@solidjs/start@0.7.7(rollup@4.14.3)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))(vite@5.2.9(@types/node@20.12.7)(terser@5.30.3)))(@tanstack/solid-query@5.30.6(solid-js@1.8.16))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))
       '@solid-primitives/context':
         specifier: ^0.2.3
         version: 0.2.3(solid-js@1.8.16)
@@ -578,12 +581,18 @@ importers:
       '@kobalte/core':
         specifier: ^0.12.6
         version: 0.12.6(solid-js@1.8.16)
+      '@solid-mediakit/trpc':
+        specifier: ^3.0.2
+        version: 3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.2(patch_hash=elelxothihlzsb57xki6usvf5m)(solid-js@1.8.16))(@solidjs/start@0.7.7(rollup@4.14.3)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))(vite@5.2.9(@types/node@20.12.7)(terser@5.30.3)))(@tanstack/solid-query@5.30.6(solid-js@1.8.16))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))
       '@solidjs/router':
         specifier: ^0.13.2
         version: 0.13.2(patch_hash=elelxothihlzsb57xki6usvf5m)(solid-js@1.8.16)
       '@tanstack/form-core':
         specifier: '=0.19.0'
         version: 0.19.0
+      '@tanstack/query-core':
+        specifier: ^5.32.1
+        version: 5.32.1
       '@tanstack/solid-form':
         specifier: '=0.19.0'
         version: 0.19.0(patch_hash=q4rg6hlmscew6hzqinl5fmzg4e)(solid-js@1.8.16)
@@ -3365,6 +3374,9 @@ packages:
 
   '@tanstack/query-core@5.29.0':
     resolution: {integrity: sha512-WgPTRs58hm9CMzEr5jpISe8HXa3qKQ8CxewdYZeVnA54JrPY9B1CZiwsCoLpLkf0dGRZq+LcX5OiJb0bEsOFww==}
+
+  '@tanstack/query-core@5.32.1':
+    resolution: {integrity: sha512-mCWa1wdGb1jiny4+qYegbSeadcFj+Nq65KFSs4A1DRveoIq7SrTwUhqu7hrB6d54cQH5x59DfJvxusn3w1Cj/g==}
 
   '@tanstack/query-devtools@5.28.10':
     resolution: {integrity: sha512-5UN629fKa5/1K/2Pd26gaU7epxRrYiT1gy+V+pW5K6hnf1DeUKK3pANSb2eHKlecjIKIhTwyF7k9XdyE2gREvQ==}
@@ -8749,7 +8761,7 @@ snapshots:
     dependencies:
       '@mdx-js/mdx': 3.0.1
       source-map: 0.7.4
-      webpack: 5.91.0(@swc/core@1.3.101(@swc/helpers@0.5.11))(esbuild@0.19.11)
+      webpack: 5.91.0(esbuild@0.19.12)
     transitivePeerDependencies:
       - supports-color
 
@@ -9867,7 +9879,7 @@ snapshots:
       '@solid-primitives/utils': 6.2.3(solid-js@1.8.16)
       solid-js: 1.8.16
 
-  '@solid-mediakit/trpc@3.0.2(@solidjs/router@0.13.2(patch_hash=elelxothihlzsb57xki6usvf5m)(solid-js@1.8.16))(@solidjs/start@0.7.7(rollup@4.14.3)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))(vite@5.2.9(@types/node@20.12.7)(terser@5.30.3)))(@tanstack/solid-query@5.30.6(solid-js@1.8.16))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))':
+  '@solid-mediakit/trpc@3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.2(patch_hash=elelxothihlzsb57xki6usvf5m)(solid-js@1.8.16))(@solidjs/start@0.7.7(rollup@4.14.3)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))(vite@5.2.9(@types/node@20.12.7)(terser@5.30.3)))(@tanstack/solid-query@5.30.6(solid-js@1.8.16))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))':
     dependencies:
       '@solidjs/router': 0.13.2(patch_hash=elelxothihlzsb57xki6usvf5m)(solid-js@1.8.16)
       '@solidjs/start': 0.7.7(rollup@4.14.3)(solid-js@1.8.16)(vinxi@0.3.10(@planetscale/database@1.16.0)(@types/node@20.12.7)(drizzle-orm@0.30.8(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240419.0)(@planetscale/database@1.16.0)(@types/react@18.2.79)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.2.0))(ioredis@5.4.1)(terser@5.30.3)(xml2js@0.6.2))(vite@5.2.9(@types/node@20.12.7)(terser@5.30.3))
@@ -10135,6 +10147,8 @@ snapshots:
       broadcast-channel: 7.0.0
 
   '@tanstack/query-core@5.29.0': {}
+
+  '@tanstack/query-core@5.32.1': {}
 
   '@tanstack/query-devtools@5.28.10': {}
 
@@ -14913,7 +14927,7 @@ snapshots:
       solid-js: 1.8.16
       solid-use: 0.8.0(solid-js@1.8.16)
 
-  terser-webpack-plugin@5.3.10(esbuild@0.19.12)(webpack@5.91.0(@swc/core@1.3.101(@swc/helpers@0.5.11))(esbuild@0.19.11)):
+  terser-webpack-plugin@5.3.10(@swc/core@1.3.101(@swc/helpers@0.5.11))(esbuild@0.19.11)(webpack@5.91.0(esbuild@0.19.12)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.25
       jest-worker: 27.5.1
@@ -14921,6 +14935,18 @@ snapshots:
       serialize-javascript: 6.0.2
       terser: 5.30.3
       webpack: 5.91.0(@swc/core@1.3.101(@swc/helpers@0.5.11))(esbuild@0.19.11)
+    optionalDependencies:
+      '@swc/core': 1.3.101(@swc/helpers@0.5.11)
+      esbuild: 0.19.11
+
+  terser-webpack-plugin@5.3.10(esbuild@0.19.12)(webpack@5.91.0(esbuild@0.19.12)):
+    dependencies:
+      '@jridgewell/trace-mapping': 0.3.25
+      jest-worker: 27.5.1
+      schema-utils: 3.3.0
+      serialize-javascript: 6.0.2
+      terser: 5.30.3
+      webpack: 5.91.0(esbuild@0.19.12)
     optionalDependencies:
       esbuild: 0.19.12
 
@@ -15463,7 +15489,38 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 3.3.0
       tapable: 2.2.1
-      terser-webpack-plugin: 5.3.10(esbuild@0.19.12)(webpack@5.91.0(@swc/core@1.3.101(@swc/helpers@0.5.11))(esbuild@0.19.11))
+      terser-webpack-plugin: 5.3.10(@swc/core@1.3.101(@swc/helpers@0.5.11))(esbuild@0.19.11)(webpack@5.91.0(esbuild@0.19.12))
+      watchpack: 2.4.1
+      webpack-sources: 3.2.3
+    transitivePeerDependencies:
+      - '@swc/core'
+      - esbuild
+      - uglify-js
+
+  webpack@5.91.0(esbuild@0.19.12):
+    dependencies:
+      '@types/eslint-scope': 3.7.7
+      '@types/estree': 1.0.5
+      '@webassemblyjs/ast': 1.12.1
+      '@webassemblyjs/wasm-edit': 1.12.1
+      '@webassemblyjs/wasm-parser': 1.12.1
+      acorn: 8.11.3
+      acorn-import-assertions: 1.9.0(acorn@8.11.3)
+      browserslist: 4.23.0
+      chrome-trace-event: 1.0.3
+      enhanced-resolve: 5.16.0
+      es-module-lexer: 1.5.0
+      eslint-scope: 5.1.1
+      events: 3.3.0
+      glob-to-regexp: 0.4.1
+      graceful-fs: 4.2.11
+      json-parse-even-better-errors: 2.3.1
+      loader-runner: 4.3.0
+      mime-types: 2.1.35
+      neo-async: 2.6.2
+      schema-utils: 3.3.0
+      tapable: 2.2.1
+      terser-webpack-plugin: 5.3.10(esbuild@0.19.12)(webpack@5.91.0(esbuild@0.19.12))
       watchpack: 2.4.1
       webpack-sources: 3.2.3
     transitivePeerDependencies:
