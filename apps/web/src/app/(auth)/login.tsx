@@ -19,6 +19,7 @@ import { trpc } from "~/lib";
 import { OTPInput, preloadOTPInput } from "~/components/OTPInput";
 import { useQueryClient } from "@tanstack/solid-query";
 import { cachedOrgs } from "../(dash)/utils";
+import { resetMattraxCache } from "~/cache";
 
 // TODO: Use Mattrax colors on this page
 
@@ -114,7 +115,8 @@ export default function Page() {
 										else to = "/";
 
 										queryClient.clear();
-										revalidate(cachedOrgs.key);
+										await resetMattraxCache();
+										revalidate();
 
 										await startTransition(() => navigate(to));
 									},

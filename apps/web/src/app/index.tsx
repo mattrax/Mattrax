@@ -26,9 +26,10 @@ export default function Page() {
 			<Match when={defaultOrg() === null}>
 				{
 					(() => {
-						throw new Error(
-							"No organisations found, re-login to create a default one.",
-						);
+						if (query.data !== undefined)
+							throw new Error(
+								"No organisations found, re-login to create a default one.",
+							);
 					}) as any
 				}
 			</Match>

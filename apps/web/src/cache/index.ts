@@ -36,8 +36,9 @@ export type TableData<TTable extends Dexie.Table> = TTable extends Dexie.Table<
 
 export const mattraxCache = new MattraxCache();
 
-export function resetMattraxCache() {
-	mattraxCache.delete();
+export async function resetMattraxCache() {
+	await mattraxCache.delete();
+	await mattraxCache.open();
 }
 
 export function createQueryCacher<TData, TTable extends TableNames>(
@@ -60,6 +61,7 @@ export function useCachedQueryData<TData>(
 	return () => {
 		if (untrack(() => query.isLoading)) {
 			const c = cachedQuery();
+			// We subscribe to `query.data` once the cached data is available
 			if (c) query.data;
 
 			return c;

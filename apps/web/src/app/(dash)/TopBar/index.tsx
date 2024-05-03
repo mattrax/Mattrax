@@ -43,11 +43,8 @@ export function TopBar() {
 	const queryClient = useQueryClient();
 	const [_, start] = useTransition();
 	const logout = trpc.auth.logout.createMutation(() => ({
-		onSuccess: async () => {
-			await start(() => navigate("/login"));
-			resetMattraxCache();
-			queryClient.clear();
-		},
+		// We reset caches on login
+		onSuccess: () => start(() => navigate("/login")),
 	}));
 	const { items } = useNavItemsContext();
 	const user = trpc.auth.me.createQuery();
