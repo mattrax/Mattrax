@@ -2,7 +2,7 @@ import { getObjectKeys } from "~/api/utils";
 import { trpc } from ".";
 
 export const features = {
-	visual_editor: "Policy Visual Editor",
+	// visual_editor: "Policy Visual Editor",
 } as const;
 
 export type Features = keyof typeof features;

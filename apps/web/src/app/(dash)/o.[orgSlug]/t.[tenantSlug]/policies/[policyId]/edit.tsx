@@ -15,9 +15,7 @@ export default function Page() {
 	const policy = () => usePolicy()();
 	const [policyName, setPolicyName] = createSignal("./policy.yaml");
 	const policyNameController = createContentEditableController(setPolicyName);
-	const features = useFeatures();
-
-	// TODO: Probs replace tabs with proper routes so it's in the URL (when we add the visual editor).
+	const controller = createPolicyComposerController();
 
 	return (
 		<PolicyContext>
@@ -25,25 +23,11 @@ export default function Page() {
 				class="relative"
 				heading={<PageLayoutHeading class="pr-2">Edit</PageLayoutHeading>}
 			>
-				<Show
-					when={features.visual_editor}
-					fallback={
-						<h2 class="text-muted-foreground opacity-70">
-							Visual editor coming soon...
-						</h2>
-					}
-				>
-					{(_) => {
-						const controller = createPolicyComposerController();
-						return (
-							<PolicyComposer
-								windowsCSPs={windowsPolicies as any}
-								applePayloads={applePayloads as any}
-								controller={controller}
-							/>
-						);
-					}}
-				</Show>
+				<PolicyComposer
+					windowsCSPs={windowsPolicies as any}
+					applePayloads={applePayloads as any}
+					controller={controller}
+				/>
 			</PageLayout>
 		</PolicyContext>
 	);
