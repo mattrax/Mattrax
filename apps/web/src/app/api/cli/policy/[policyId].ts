@@ -6,6 +6,8 @@ import { createId } from "@paralleldrive/cuid2";
 import { generatePolicyDiff } from "~/api/trpc/routers/policy";
 
 export async function GET({ params }: APIEvent) {
+	throw new Error("THE CLI IS NOT SUPPORTED YET");
+
 	const policyId = params.policyId as string;
 
 	// TODO: Auth and Authz
@@ -31,6 +33,8 @@ const schema = z.object({
 
 // TODO: Use Specta for return type so it's E2E typesafe
 export async function POST({ request, params }: APIEvent) {
+	throw new Error("THE CLI IS NOT SUPPORTED YET");
+
 	const policyId = params.policyId as string;
 	const body = schema.safeParse(await request.json());
 
