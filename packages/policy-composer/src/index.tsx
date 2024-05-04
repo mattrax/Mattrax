@@ -45,16 +45,16 @@ export function PolicyComposer(props: {
 	applePayloads: Record<string, AppleProfilePayload>;
 }) {
 	return (
-		<Tabs class="w-full flex flex-col items-center" value="apple">
+		<Tabs class="w-full flex flex-col items-center">
 			<TabsList>
 				<TabsTrigger value="windows">Windows</TabsTrigger>
 				<TabsTrigger value="apple">Apple</TabsTrigger>
 				<TabsIndicator />
 			</TabsList>
-			<TabsContent value="windows" class="w-full h-full flex flex-row pt-2">
+			<TabsContent value="windows" class="w-full h-full flex flex-row">
 				<Windows controller={props.controller} csps={props.windowsCSPs} />
 			</TabsContent>
-			<TabsContent value="apple" class="w-full h-full flex flex-row gap-4">
+			<TabsContent value="apple" class="w-full h-full flex flex-row">
 				<Apple controller={props.controller} payloads={props.applePayloads} />
 			</TabsContent>
 		</Tabs>
@@ -67,7 +67,7 @@ function Windows(props: {
 }) {
 	return (
 		<>
-			<ul class="flex-1 gap-4 flex flex-col p-2">
+			<ul class="flex-1 gap-4 flex flex-col p-2 pb-0">
 				<For each={Object.entries(props.controller.selected.windows)}>
 					{([cspPath, csp]) => (
 						<For each={Object.entries(csp).filter(([_, v]) => v?.enabled)}>
@@ -273,7 +273,7 @@ function Windows(props: {
 					)}
 				</For>
 			</ul>
-			<div class="flex-1 flex sticky top-14 space-y-4 flex-col max-h-[calc(100vh-4rem)] overflow-hidden p-2">
+			<div class="flex-1 flex sticky top-14 space-y-4 flex-col max-h-[calc(100vh-3.5rem)] overflow-hidden p-2 pb-0">
 				<Input class="z-20" placeholder="Search Configurations" disabled />
 				<div class="flex-1 overflow-hidden flex">
 					<ul class="rounded-lg space-y-4 overflow-y-auto flex-1">
@@ -294,7 +294,7 @@ function Windows(props: {
 									<ul>
 										<For each={Object.entries(value.policies)}>
 											{([key, value]) => (
-												<li class="flex flex-row p-2 items-center gap-4">
+												<li class="flex flex-row py-2 px-4 items-center gap-4">
 													<Checkbox
 														checked={
 															props.controller.selected.windows[cspKey]?.[key]
@@ -334,7 +334,7 @@ function Apple(props: {
 }) {
 	return (
 		<>
-			<ul class="flex-1 gap-4 flex flex-col">
+			<ul class="flex-1 gap-4 flex flex-col p-2 pb-0">
 				<For
 					each={Object.entries(props.controller.selected.apple).filter(
 						([_, v]) => v?.enabled,
@@ -352,13 +352,14 @@ function Apple(props: {
 							<Show when={when()} keyed>
 								{({ itemConfig, value }) => (
 									<div>
-										<Card class="p-4">
-											<CardTitle>{itemConfig.title}</CardTitle>
-											<CardDescription class="mt-1">
-												{itemConfig.description}
-											</CardDescription>
-											<hr class="h-px w-full border-gray-300 my-2" />
-											<ul class="space-y-2">
+										<Card style="contain:paint">
+											<div class="shadow p-6 sticky top-12 bg-white z-10">
+												<CardTitle class="mb-1">{itemConfig.title}</CardTitle>
+												<CardDescription>
+													{itemConfig.description}
+												</CardDescription>
+											</div>
+											<ul class="space-y-2 p-6">
 												<For each={Object.entries(itemConfig.properties)}>
 													{([key, property]) => {
 														const id = createUniqueId();
@@ -381,7 +382,7 @@ function Apple(props: {
 																						undefined!,
 																					)
 																				}
-																				class="w-2 h-2 bg-brand rounded-full absolute -left-3 top-1.5"
+																				class="w-2 h-2 bg-brand rounded-full absolute -left-4 top-1.5"
 																			/>
 																		)}
 																		{property.title}
@@ -452,40 +453,43 @@ function Apple(props: {
 					}}
 				</For>
 			</ul>
-			<ul class="flex-1 overflow-hidden">
-				<For
-					each={Object.entries(props.payloads).sort(([a], [b]) => {
-						const aIsApple = a.startsWith("com.apple");
-						const bIsApple = b.startsWith("com.apple");
+			<div class="flex-1 flex sticky top-14 space-y-4 flex-col max-h-[calc(100vh-3.5rem)] overflow-hidden p-2 pb-0">
+				<Input placeholder="Search Payloads" disabled />
+				<ul class="rounded-lg overflow-y-auto flex-1">
+					<For
+						each={Object.entries(props.payloads).sort(([a], [b]) => {
+							const aIsApple = a.startsWith("com.apple");
+							const bIsApple = b.startsWith("com.apple");
 
-						if (aIsApple && !bIsApple) return -1;
-						if (!aIsApple && bIsApple) return 1;
-						else {
-							return a.localeCompare(b);
-						}
-					})}
-				>
-					{([key, value]) => (
-						<li class="flex flex-row p-2 items-center gap-4">
-							<Checkbox
-								onChange={(value) => {
-									if (value)
-										props.controller.setSelected("apple", key as any, {
-											enabled: value,
-											data: {},
-										});
-								}}
-							/>
-							<div class="overflow-hidden">
-								<span class="font-medium">{value.title}</span>
-								<p class="text-sm text-neutral-500 overflow-y-auto scrollbar-none">
-									{key}
-								</p>
-							</div>
-						</li>
-					)}
-				</For>
-			</ul>
+							if (aIsApple && !bIsApple) return -1;
+							if (!aIsApple && bIsApple) return 1;
+							else {
+								return a.localeCompare(b);
+							}
+						})}
+					>
+						{([key, value]) => (
+							<li class="flex flex-row p-2 items-center gap-4">
+								<Checkbox
+									onChange={(value) => {
+										if (value)
+											props.controller.setSelected("apple", key as any, {
+												enabled: value,
+												data: {},
+											});
+									}}
+								/>
+								<div class="overflow-hidden">
+									<span class="font-medium">{value.title}</span>
+									<p class="text-sm text-neutral-500 overflow-y-auto scrollbar-none">
+										{key}
+									</p>
+								</div>
+							</li>
+						)}
+					</For>
+				</ul>
+			</div>
 		</>
 	);
 }
