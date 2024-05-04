@@ -17,8 +17,10 @@ import {
 	TabsIndicator,
 	TabsList,
 	TabsTrigger,
+	CardDescription,
+	Toggle,
 } from "@mattrax/ui";
-import { Match, createMemo, Switch, Show } from "solid-js";
+import { Match, createMemo, Switch, Show, createUniqueId } from "solid-js";
 import { For } from "solid-js";
 import { createStore } from "solid-js/store";
 
@@ -28,7 +30,8 @@ import { AppleProfilePayload } from "@mattrax/configuration-schemas/apple";
 export function createPolicyComposerController() {
 	const [selected, setSelected] = createStore<{
 		windows: Record<string, Record<string, { enabled: boolean; data: any }>>;
-	}>({ windows: {} });
+		apple: Record<string, { enabled: boolean; data: Record<string, any> }>;
+	}>({ windows: {}, apple: {} });
 
 	return { selected, setSelected };
 }
@@ -43,7 +46,7 @@ export function PolicyComposer(props: {
 	applePayloads: Record<string, AppleProfilePayload>;
 }) {
 	return (
-		<Tabs class="w-full flex flex-col items-center">
+		<Tabs class="w-full flex flex-col items-center" value="apple">
 			<TabsList>
 				<TabsTrigger value="windows">Windows</TabsTrigger>
 				<TabsTrigger value="apple">Apple</TabsTrigger>
@@ -334,12 +337,12 @@ function Apple(props: {
 		<>
 			<ul class="flex-1 gap-4 flex flex-col">
 				<For
-					each={Object.entries(props.controller.selected).filter(
+					each={Object.entries(props.controller.selected.apple).filter(
 						([_, v]) => v?.enabled,
 					)}
 				>
-					{([key, value]) => {
-						const itemConfig = () => props.payloads[key];
+					{([payloadKey, value]) => {
+						const itemConfig = () => props.payloads[payloadKey];
 
 						const when = () => {
 							const c = itemConfig();
@@ -350,131 +353,98 @@ function Apple(props: {
 							<Show when={when()} keyed>
 								{({ itemConfig, value }) => (
 									<div>
-										<Card class="p-4 space-y-4">
-											<CardTitle>{itemConfig.name}</CardTitle>
-											<Switch
-												fallback={`unimplemented format (${itemConfig.format})`}
-											>
-												<Match
-													when={itemConfig.format === "int" && itemConfig}
-													keyed
-												>
-													{(itemConfig) => (
-														<Switch fallback="unimplemented or lack of allowedValues">
-															<Match
-																when={
-																	itemConfig.allowedValues &&
-																	itemConfig.allowedValues.valueType ===
-																		"enum" &&
-																	itemConfig.allowedValues
-																}
-															>
-																{(allowedValues) => {
-																	const options = createMemo(() =>
-																		Object.entries(allowedValues().enum).map(
-																			([value, config]) => ({
-																				...config,
-																				value,
-																			}),
-																		),
-																	);
+										<Card class="p-4">
+											<CardTitle>{itemConfig.title}</CardTitle>
+											<CardDescription class="mt-1">
+												{itemConfig.description}
+											</CardDescription>
+											<hr class="h-px w-full border-gray-300 my-2" />
+											<ul class="space-y-2">
+												<For each={Object.entries(itemConfig.properties)}>
+													{([key, property]) => {
+														const id = createUniqueId();
 
-																	const selectValue = createMemo(() =>
-																		options().find(
-																			(o) =>
-																				o.value ===
-																				(value.data ?? itemConfig.defaultValue),
-																		),
-																	);
-
-																	type Option = ReturnType<
-																		typeof options
-																	>[number];
-
-																	return (
-																		<Select<Option>
-																			options={options()}
-																			multiple={false}
-																			defaultValue={options().find(
-																				(o) =>
-																					o.value ===
-																					itemConfig.defaultValue.toString(),
-																			)}
-																			optionValue="value"
-																			optionTextValue="description"
-																			optionDisabled={() => false}
-																			itemComponent={(props) => (
-																				<SelectItem item={props.item}>
-																					{props.item.rawValue.description}
-																				</SelectItem>
-																			)}
-																			value={selectValue()}
-																			onChange={(option) => {
-																				console.log(option);
+														return (
+															<li class="flex flex-col">
+																<div class="flex flex-row items-center gap-2">
+																	<label
+																		class="font-medium mb-0.5 text-sm relative"
+																		for={id}
+																	>
+																		{key in value.data && (
+																			<button
+																				onClick={() =>
+																					props.controller.setSelected(
+																						"apple",
+																						payloadKey,
+																						"data",
+																						key,
+																						undefined!,
+																					)
+																				}
+																				class="w-2 h-2 bg-brand rounded-full absolute -left-3 top-1.5"
+																			/>
+																		)}
+																		{property.title}
+																	</label>
+																	<Show when={property.type === "boolean"}>
+																		<Checkbox
+																			checked={value.data[key] ?? false}
+																			onChange={(checked) =>
 																				props.controller.setSelected(
-																					key as any,
-																					{
-																						data: option.value,
-																					},
-																				);
-																			}}
-																		>
-																			<SelectTrigger>
-																				<SelectValue<Option>>
-																					{(state) => (
-																						<>
-																							{
-																								state.selectedOption()
-																									.description
-																							}
-																						</>
-																					)}
-																				</SelectValue>
-																			</SelectTrigger>
-																			<SelectContent />
-																		</Select>
-																	);
-																}}
-															</Match>
-															<Match
-																when={
-																	itemConfig.allowedValues &&
-																	itemConfig.allowedValues.valueType ===
-																		"range" &&
-																	itemConfig.allowedValues
-																}
-															>
-																{(allowedValues) => {
-																	return (
-																		<NumberInput
-																			minValue={allowedValues().min}
-																			maxValue={allowedValues().max}
-																			defaultValue={itemConfig.defaultValue}
-																			value={
-																				value.data ?? itemConfig.defaultValue
+																					"apple",
+																					payloadKey,
+																					"data",
+																					{ [key]: checked },
+																				)
 																			}
+																		/>
+																	</Show>
+																</div>
+																<Switch>
+																	<Match when={property.type === "string"}>
+																		<Input
+																			id={id}
+																			value={value.data[key] ?? ""}
+																			onChange={(e) =>
+																				props.controller.setSelected(
+																					"apple",
+																					payloadKey,
+																					"data",
+																					{ [key]: e.currentTarget.value },
+																				)
+																			}
+																		/>
+																	</Match>
+																	<Match
+																		when={
+																			property.type === "integer" && property
+																		}
+																	>
+																		<NumberInput
+																			value={value.data[key] ?? 0}
 																			onChange={(value) =>
 																				props.controller.setSelected(
-																					key as any,
-																					{
-																						data: value,
-																					},
+																					"apple",
+																					payloadKey,
+																					"data",
+																					{ [key]: parseInt(value) },
 																				)
 																			}
 																		>
 																			<div class="relative">
-																				<NumberInputControl />
+																				<NumberInputControl id={id} />
 																				<NumberInputIncrementTrigger />
 																				<NumberInputDecrementTrigger />
 																			</div>
 																		</NumberInput>
-																	);
-																}}
-															</Match>
-														</Switch>
-													)}
-												</Match>
-											</Switch>
+																	</Match>
+																</Switch>
+															</li>
+														);
+													}}
+												</For>
+											</ul>
 										</Card>
 									</div>
 								)}
@@ -501,8 +471,9 @@ function Apple(props: {
 							<Checkbox
 								onChange={(value) => {
 									if (value)
-										props.controller.setSelected(key as any, {
+										props.controller.setSelected("apple", key as any, {
 											enabled: value,
+											data: {},
 										});
 								}}
 							/>
