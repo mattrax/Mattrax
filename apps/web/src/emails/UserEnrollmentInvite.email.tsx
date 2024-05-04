@@ -1,6 +1,8 @@
 // @ts-nocheck // TODO: Typescript
 /** @jsx React.createElement */
 
+// biome-ignore lint: don't remove React
+import React from "react";
 import {
 	Body,
 	Container,

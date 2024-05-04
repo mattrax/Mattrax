@@ -15,7 +15,7 @@
 		"db:rs": "bun run ./apps/web/src/db/rust.ts",
 		"typecheck": "tsc -b",
 		"lint": "biome lint .",
-		"fix": "biome lint --apply . && biome format --write .",
+		"fix": "biome lint --config-path biome.fix.json --apply . || biome format --write .",
 		"format": "biome format --write .",
 		"prepare": "husky"
 	},
