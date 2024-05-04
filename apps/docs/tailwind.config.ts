@@ -1,4 +1,4 @@
-import { type Config } from "tailwindcss";
+import type { Config } from "tailwindcss";
 import typographyStyles from "./typography";
 import typographyPlugin from "@tailwindcss/typography";
 import headlessuiPlugin from "@headlessui/tailwindcss";

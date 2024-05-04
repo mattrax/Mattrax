@@ -2,7 +2,7 @@
 /* @jsx React.createElement */
 // TODO: If you move this file ensure you update `app.config.ts` to exclude it from Solid's JSX transform.
 
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { OTPInput as _OTPInput, type SlotProps } from "input-otp";
 import { onCleanup, onMount } from "solid-js";

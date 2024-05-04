@@ -7,7 +7,7 @@ import {
 } from "solid-js";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
-import { revalidate, useNavigate, useSearchParams } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import { z } from "zod";
 
 import { trpc } from "~/lib";

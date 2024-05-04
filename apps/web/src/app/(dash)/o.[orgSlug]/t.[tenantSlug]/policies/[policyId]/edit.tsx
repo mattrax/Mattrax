@@ -5,21 +5,10 @@ import {
 	PolicyComposer,
 	createPolicyComposerController,
 } from "@mattrax/policy-composer";
-import {
-	Collapsible,
-	CollapsibleContent,
-	CollapsibleTrigger,
-	Tabs,
-	TabsContent,
-	TabsIndicator,
-	TabsList,
-	TabsTrigger,
-} from "@mattrax/ui";
 
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { PolicyContext, usePolicy } from "./Context";
 import { createSignal, Show } from "solid-js";
-import { BruhIconPhArrowsVerticalBold } from "./bruh";
 import { useFeatures } from "~/lib/featureFlags";
 
 export default function Page() {

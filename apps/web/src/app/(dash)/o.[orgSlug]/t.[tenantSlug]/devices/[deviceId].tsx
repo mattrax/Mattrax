@@ -1,4 +1,4 @@
-import { A, Navigate, type RouteDefinition } from "@solidjs/router";
+import { Navigate, type RouteDefinition } from "@solidjs/router";
 import { type ParentProps, Show } from "solid-js";
 import { toast } from "solid-sonner";
 import { Badge } from "@mattrax/ui";

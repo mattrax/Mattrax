@@ -12,7 +12,7 @@ import {
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
-import { RouteDefinition } from "@solidjs/router";
+import type { RouteDefinition } from "@solidjs/router";
 
 export const route = {
 	load: ({ params }) => {

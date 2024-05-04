@@ -9,12 +9,12 @@ import {
 	getCoreRowModel,
 	getPaginationRowModel,
 	getFilteredRowModel,
-	HeaderContext,
-	CellContext,
+	type HeaderContext,
+	type CellContext,
 } from "@tanstack/solid-table";
 import clsx from "clsx";
 import {
-	JSX,
+	type JSX,
 	For,
 	type ParentProps,
 	createEffect,
@@ -89,7 +89,6 @@ export function createSearchParamFilter<TData extends RowData>(
 import {
 	Button,
 	Checkbox,
-	DropdownMenuItem,
 	Table,
 	TableBody,
 	TableCell,
@@ -203,7 +202,6 @@ import {
 	DropdownMenuTrigger,
 } from "@mattrax/ui";
 import { useSearchParams } from "@solidjs/router";
-import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
 import { createMemo } from "solid-js";
 import { As } from "@kobalte/core";

@@ -20,7 +20,7 @@ import { z } from "zod";
 import { trpc } from "~/lib";
 import { useOrgSlug } from "../o.[orgSlug]";
 import { PageLayout } from "~/components/PageLayout";
-import { MattraxCache, TableData, useCachedQueryData } from "~/cache";
+import { type MattraxCache, type TableData, useCachedQueryData } from "~/cache";
 import { cachedOrgs } from "../utils";
 import { cachedTenantsForOrg } from "./utils";
 

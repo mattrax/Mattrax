@@ -1,4 +1,3 @@
-import { match } from "ts-pattern";
 import type { PolicyData } from "./policy";
 
 // TODO: Maybe render as categories instead instead of just each element?

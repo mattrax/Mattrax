@@ -1,17 +1,11 @@
 import {
 	Card,
-	CardHeader,
 	CardTitle,
-	CardDescription,
 	CardContent,
-	Switch,
 	Collapsible,
 	CollapsibleTrigger,
 	CollapsibleContent,
-	Checkbox,
 } from "@mattrax/ui";
-import { trpc } from "~/lib";
-import { useTenantSlug } from "../../t.[tenantSlug]";
 import {
 	BruhIconPhCheckCircleDuotone,
 	BruhIconPhWarningCircleDuotone,

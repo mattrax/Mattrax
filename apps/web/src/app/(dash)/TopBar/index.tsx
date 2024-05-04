@@ -1,4 +1,3 @@
-import { useQueryClient } from "@tanstack/solid-query";
 import { A, useIsRouting, useMatch, useNavigate } from "@solidjs/router";
 import { As } from "@kobalte/core";
 import clsx from "clsx";

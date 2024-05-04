@@ -90,12 +90,7 @@ export default function Page() {
 	);
 }
 
-import {
-	A,
-	useNavigate,
-	useSearchParams,
-	type RouteDefinition,
-} from "@solidjs/router";
+import { A, useNavigate, type RouteDefinition } from "@solidjs/router";
 import { createQuery, queryOptions } from "@tanstack/solid-query";
 import {
 	Button,

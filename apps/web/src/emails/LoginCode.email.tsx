@@ -3,18 +3,13 @@
 
 import {
 	Body,
-	Button,
 	Container,
 	Head,
 	Heading,
 	Html,
-	Link,
-	Preview,
-	Section,
 	Text,
 } from "@react-email/components";
 import { Tailwind } from "@react-email/tailwind";
-import React from "react";
 
 interface Props {
 	code: string;

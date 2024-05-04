@@ -1,7 +1,7 @@
 import { createAsync } from "@solidjs/router";
 import type { CreateQueryResult } from "@tanstack/solid-query";
 import Dexie from "dexie";
-import { type Accessor, createEffect, createMemo, untrack } from "solid-js";
+import { type Accessor, createEffect, untrack } from "solid-js";
 
 type TableNames = "orgs" | "tenants";
 

@@ -6,20 +6,13 @@ import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import type { RouterOutput } from "~/api/trpc";
 import {
-	ColumnsDropdown,
 	StandardTable,
 	createStandardTable,
 	createSearchParamPagination,
 	selectCheckboxColumn,
 	createSearchParamFilter,
 } from "~c/StandardTable";
-import {
-	Button,
-	Input,
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from "@mattrax/ui";
+import { Button, Popover, PopoverContent, PopoverTrigger } from "@mattrax/ui";
 import { trpc } from "~/lib";
 
 export const route = {

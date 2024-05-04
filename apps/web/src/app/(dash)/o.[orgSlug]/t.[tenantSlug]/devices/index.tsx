@@ -1,8 +1,8 @@
-import { A, useSearchParams, type RouteDefinition } from "@solidjs/router";
+import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { createTimeAgo } from "@solid-primitives/date";
 import type { RouterOutput } from "~/api/trpc";
-import { Suspense, createEffect } from "solid-js";
+import { Suspense } from "solid-js";
 import { As } from "@kobalte/core";
 
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
@@ -14,7 +14,7 @@ import {
 	selectCheckboxColumn,
 	createSearchParamFilter,
 } from "~c/StandardTable";
-import { Button, Input } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";

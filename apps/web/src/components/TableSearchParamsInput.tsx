@@ -1,6 +1,6 @@
 import { useSearchParams } from "@solidjs/router";
-import { ComponentProps } from "solid-js";
-import { CreateQueryResult } from "@tanstack/solid-query";
+import type { ComponentProps } from "solid-js";
+import type { CreateQueryResult } from "@tanstack/solid-query";
 import { Input } from "@mattrax/ui";
 
 export function TableSearchParamsInput(

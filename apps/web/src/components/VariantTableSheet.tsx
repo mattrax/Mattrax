@@ -1,4 +1,4 @@
-import { type CreateQueryResult } from "@tanstack/solid-query";
+import type { CreateQueryResult } from "@tanstack/solid-query";
 import {
 	type ParentProps,
 	Suspense,

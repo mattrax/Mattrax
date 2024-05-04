@@ -18,14 +18,13 @@ import {
 	TabsList,
 	TabsTrigger,
 	CardDescription,
-	Toggle,
 } from "@mattrax/ui";
 import { Match, createMemo, Switch, Show, createUniqueId } from "solid-js";
 import { For } from "solid-js";
 import { createStore } from "solid-js/store";
 
-import { WindowsCSP } from "@mattrax/configuration-schemas/windows";
-import { AppleProfilePayload } from "@mattrax/configuration-schemas/apple";
+import type { WindowsCSP } from "@mattrax/configuration-schemas/windows";
+import type { AppleProfilePayload } from "@mattrax/configuration-schemas/apple";
 
 export function createPolicyComposerController() {
 	const [selected, setSelected] = createStore<{
@@ -428,7 +427,7 @@ function Apple(props: {
 																					"apple",
 																					payloadKey,
 																					"data",
-																					{ [key]: parseInt(value) },
+																					{ [key]: Number.parseInt(value) },
 																				)
 																			}
 																		>

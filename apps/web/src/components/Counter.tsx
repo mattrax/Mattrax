@@ -1,12 +1,6 @@
 // This amazing counter component was written by @Brendonovich
 
-import {
-	Accessor,
-	createEffect,
-	createMemo,
-	createSignal,
-	onCleanup,
-} from "solid-js";
+import { type Accessor, createEffect, createSignal, onCleanup } from "solid-js";
 
 function ease(x: number) {
 	return 1 - (1 - x) ** 3;

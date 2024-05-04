@@ -15,7 +15,6 @@ import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import { trpc } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
-import { useAuth } from "~c/AuthContext";
 import { useTenant } from "../Context";
 
 export const route = {

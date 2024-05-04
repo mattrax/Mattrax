@@ -20,12 +20,7 @@ import {
 	tenants,
 	users,
 } from "~/db";
-import {
-	authedProcedure,
-	createTRPCRouter,
-	orgProcedure,
-	tenantProcedure,
-} from "../../helpers";
+import { createTRPCRouter, orgProcedure, tenantProcedure } from "../../helpers";
 import { identityProviderRouter } from "./identityProvider";
 import { variantTableRouter } from "./members";
 import { randomSlug } from "~/api/utils";

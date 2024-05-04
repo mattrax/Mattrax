@@ -1,5 +1,5 @@
-import { type RouteDefinition } from "@solidjs/router";
-import { type ParentProps } from "solid-js";
+import type { RouteDefinition } from "@solidjs/router";
+import type { ParentProps } from "solid-js";
 import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 

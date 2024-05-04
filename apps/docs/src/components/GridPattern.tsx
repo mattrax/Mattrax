@@ -14,7 +14,7 @@ export function GridPattern({
 	y: string | number;
 	squares: Array<[x: number, y: number]>;
 }) {
-	let patternId = useId();
+	const patternId = useId();
 
 	return (
 		<svg aria-hidden="true" {...props}>

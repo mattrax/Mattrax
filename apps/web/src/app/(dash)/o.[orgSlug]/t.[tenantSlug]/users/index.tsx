@@ -5,7 +5,6 @@ import { As } from "@kobalte/core";
 import {
 	Badge,
 	Button,
-	Input,
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,

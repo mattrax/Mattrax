@@ -1,4 +1,4 @@
-import { UserProvider } from "~/api";
+import type { UserProvider } from "~/api";
 
 export const AUTH_PROVIDER_DISPLAY = {
 	entraId: "Microsoft Entra ID",

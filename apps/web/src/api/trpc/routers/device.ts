@@ -4,7 +4,6 @@ import { z } from "zod";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import {
 	devices,
-	policyAssignableVariants,
 	users,
 	deviceActions,
 	possibleDeviceActions,

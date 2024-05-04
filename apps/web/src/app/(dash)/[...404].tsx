@@ -1,4 +1,3 @@
-import { FileRoutes } from "@solidjs/start/router";
 import { useNavigate } from "@solidjs/router";
 import { Button } from "@mattrax/ui";
 
