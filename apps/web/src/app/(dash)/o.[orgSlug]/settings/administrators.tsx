@@ -17,6 +17,7 @@ import { trpc } from "~/lib";
 import { AuthContext, useAuth } from "~c/AuthContext";
 import { OrgContext, useOrg } from "../Context";
 import { useOrgSlug } from "../../o.[orgSlug]";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 export const route = {
 	load: ({ params }) => {
@@ -38,10 +39,10 @@ export default function Page() {
 	}));
 
 	const removeInvite = trpc.org.admins.removeInvite.createMutation(() => ({
-		onSuccess: () => invites.refetch(),
+		...withDependantQueries(invites),
 	}));
 	const removeAdmin = trpc.org.admins.remove.createMutation(() => ({
-		onSuccess: () => administrators.refetch(),
+		...withDependantQueries(administrators),
 	}));
 
 	return (
@@ -165,25 +166,32 @@ export default function Page() {
 
 function InviteAdminCard() {
 	const orgSlug = useOrgSlug();
-	const trpcCtx = trpc.useContext();
+	const invites = trpc.org.admins.invites.createQuery(
+		() => ({
+			orgSlug: orgSlug(),
+		}),
+		() => ({ enabled: false }),
+	);
+	const admins = trpc.org.admins.list.createQuery(
+		() => ({
+			orgSlug: orgSlug(),
+		}),
+		() => ({ enabled: false }),
+	);
 
 	const inviteAdmin = trpc.org.admins.sendInvite.createMutation(() => ({
-		onSuccess: async () => {
-			await Promise.allSettled([
-				trpcCtx.org.admins.invites.refetch(),
-				trpcCtx.org.admins.list.refetch(),
-			]);
-			form.setFieldValue("email", "");
-		},
+		...withDependantQueries([invites, admins]),
 	}));
 
 	const form = createZodForm({
 		schema: z.object({ email: z.string().email() }),
-		onSubmit: ({ value }) =>
-			inviteAdmin.mutateAsync({
+		onSubmit: async ({ value }) => {
+			await inviteAdmin.mutateAsync({
 				email: value.email,
 				orgSlug: orgSlug(),
-			}),
+			});
+			form.setFieldValue("email", "");
+		},
 	});
 
 	return (

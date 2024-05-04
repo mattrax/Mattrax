@@ -11,6 +11,7 @@ import {
 
 import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 export function MultiSwitcher(props: ParentProps) {
 	const [modal, setModal] = createSignal<"org" | "tenant">();
@@ -236,19 +237,19 @@ export function CreateTenantDialog(props: {
 	orgSlug: string;
 }) {
 	const navigate = useNavigate();
-	const trpcCtx = trpc.useContext();
+	const orgs = trpc.org.list.createQuery(void 0, () => ({ enabled: false }));
 
 	const mutation = trpc.tenant.create.createMutation(() => ({
 		onSuccess: async (slug, { orgSlug }) => {
 			// TODO: Get the data back in the response instead of a separate request
 			// Session also holds tenants
 			// await props.refetchSession();
-			await trpcCtx.auth.me.invalidate();
 			await startTransition(async () => {
 				navigate(`/o/${orgSlug}/t/${slug}`);
 				props.setOpen(false);
 			});
 		},
+		...withDependantQueries(orgs),
 	}));
 
 	const form = createZodForm({
@@ -289,19 +290,16 @@ function CreateOrgDialog(props: {
 	setOpen: (o: boolean) => void;
 }) {
 	const navigate = useNavigate();
-	const trpcCtx = trpc.useContext();
+	const orgs = trpc.org.list.createQuery(void 0, () => ({ enabled: false }));
 
 	const mutation = trpc.org.create.createMutation(() => ({
 		onSuccess: async (slug) => {
-			// TODO: Get the data back in the response instead of a separate request
-			// Session also holds tenants
-			// await props.refetchSession();
-			await trpcCtx.auth.me.invalidate();
 			await startTransition(() => {
 				navigate(`/o/${slug}`);
 				props.setOpen(false);
 			});
 		},
+		...withDependantQueries(orgs),
 	}));
 
 	const form = createZodForm({

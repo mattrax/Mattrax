@@ -41,6 +41,8 @@ function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 				retry: false,
 				gcTime: 1000 * 60 * 60 * 24, // 24 hours
 				refetchInterval: 1000 * 60, // 1 minute
+				staleTime: 1000 * 10, // 10 seconds
+				refetchOnMount: (query) => query.isStale(),
 				placeholderData: keepPreviousData,
 			},
 			mutations: {

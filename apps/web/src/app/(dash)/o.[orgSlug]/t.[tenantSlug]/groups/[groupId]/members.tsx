@@ -1,5 +1,5 @@
 import { As, Dialog as DialogPrimitive } from "@kobalte/core";
-import { RouteDefinition } from "@solidjs/router";
+import type { RouteDefinition } from "@solidjs/router";
 import {
 	AsyncButton,
 	Badge,
@@ -14,6 +14,7 @@ import {
 } from "@mattrax/ui";
 import pluralize from "pluralize";
 import { Match, Suspense, Switch, createSignal } from "solid-js";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
@@ -109,10 +110,11 @@ export default function Page() {
 	createSearchParamFilter(table, "name", "search");
 
 	const addMembers = trpc.group.addMembers.createMutation(() => ({
-		onSuccess: () => members.refetch(),
+		...withDependantQueries(members),
 	}));
 
 	const removeMembers = trpc.group.removeMembers.createMutation(() => ({
+		// TODO: `withDependantQueries`
 		onSuccess: () =>
 			members.refetch().then(() => {
 				table.resetRowSelection(true);

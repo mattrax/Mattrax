@@ -21,6 +21,7 @@ import {
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import { trpc } from "~/lib";
 
@@ -76,12 +77,12 @@ function CreateAPIKeyCard() {
 		open: false,
 	});
 
-	const trpcCtx = trpc.useContext();
+	const apiKeys = trpc.apiKey.list.createQuery(void 0, () => ({
+		enabled: false,
+	}));
 	const createAPIKey = trpc.apiKey.create.createMutation(() => ({
-		onSuccess: async (apiKey) => {
-			await trpcCtx.apiKey.list.refetch();
-			setDialogState({ open: true, apiKey });
-		},
+		onSuccess: (apiKey) => setDialogState({ open: true, apiKey }),
+		...withDependantQueries(apiKeys),
 	}));
 	const form = createZodForm({
 		schema: z.object({ name: z.string() }),

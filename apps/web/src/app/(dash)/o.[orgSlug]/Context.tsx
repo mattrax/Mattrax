@@ -7,7 +7,10 @@ import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 
 const [OrgContextProvider, useOrg] = createContextProvider(
-	(props: { org: RouterOutput["org"]["list"][number] }) => () => props.org,
+	(props: {
+		query: ReturnType<typeof trpc.tenant.list.createQuery>;
+		org: RouterOutput["org"]["list"][number];
+	}) => Object.assign(() => props.org, { query: props.query }),
 	null!,
 );
 
@@ -34,7 +37,9 @@ export function OrgContext(props: ParentProps) {
 			// }
 		>
 			{(org) => (
-				<OrgContextProvider org={org()}>{props.children}</OrgContextProvider>
+				<OrgContextProvider query={orgs} org={org()}>
+					{props.children}
+				</OrgContextProvider>
 			)}
 		</Show>
 	);

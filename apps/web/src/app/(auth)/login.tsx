@@ -55,11 +55,17 @@ export default function Page() {
 							})()}
 						>
 							{(_) => {
+								const queryClient = useQueryClient();
 								const login = trpc.auth.sendLoginCode.createMutation(() => ({
-									onSuccess: (_, { email }) =>
-										startTransition(() =>
+									onSuccess: async (_, { email }) => {
+										queryClient.clear();
+										await resetMattraxCache();
+										// revalidate(); // TODO: Wipe entire Solid cache (I can't see a method for it)
+
+										await startTransition(() =>
 											setState({ variant: "verifyCode", email }),
-										),
+										);
+									},
 								}));
 
 								const form = createZodForm({
@@ -94,7 +100,6 @@ export default function Page() {
 						>
 							{(state) => {
 								const navigate = useNavigate();
-								const queryClient = useQueryClient();
 
 								const me = trpc.auth.me.createQuery(undefined, () => ({
 									enabled: false,
@@ -104,7 +109,7 @@ export default function Page() {
 								}));
 
 								const verify = trpc.auth.verifyLoginCode.createMutation(() => ({
-									onSuccess: async () => {
+									onSuccess: () => {
 										let to: string;
 
 										if (
@@ -116,11 +121,7 @@ export default function Page() {
 											to = searchParams.continueTo;
 										else to = "/";
 
-										queryClient.clear();
-										await resetMattraxCache();
-										// revalidate();
-
-										await startTransition(() => navigate(to));
+										return startTransition(() => navigate(to));
 									},
 									...withDependantQueries([me, orgs]),
 								}));

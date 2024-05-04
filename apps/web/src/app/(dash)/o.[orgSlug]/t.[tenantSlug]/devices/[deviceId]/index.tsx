@@ -15,6 +15,7 @@ import { useDevice } from "./Context";
 import { trpc } from "~/lib";
 import { toast } from "solid-sonner";
 import { Item } from "~/components/Item";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 // TODO: Rename device
 // TODO: Rotate filevault keys
@@ -24,10 +25,9 @@ export default function Page() {
 	const device = useDevice();
 
 	const triggerAction = trpc.device.action.createMutation(() => ({
-		onSuccess: (_, data) => {
-			device.query.refetch();
-			toast.success(`Triggered ${data.action} successfully`);
-		},
+		onSuccess: (_, data) =>
+			toast.success(`Triggered ${data.action} successfully`),
+		...withDependantQueries(device.query),
 	}));
 
 	const [lastSeen] = createTimeAgo(device().lastSynced);

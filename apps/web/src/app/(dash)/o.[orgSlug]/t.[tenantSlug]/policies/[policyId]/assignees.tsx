@@ -13,6 +13,7 @@ import {
 	DropdownMenuItem,
 } from "@mattrax/ui";
 import pluralize from "pluralize";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
@@ -23,13 +24,13 @@ import {
 } from "~c/StandardTable";
 import {
 	VariantTableSheet,
-	VariantTableVariants,
+	type VariantTableVariants,
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { usePolicyId } from "../[policyId]";
 import { trpc } from "~/lib";
-import { RouteDefinition } from "@solidjs/router";
+import type { RouteDefinition } from "@solidjs/router";
 import { toTitleCase } from "~/lib/utils";
 
 export const route = {
@@ -103,10 +104,11 @@ export default function Page() {
 	createSearchParamPagination(table, "page");
 
 	const addAssignees = trpc.policy.addAssignees.createMutation(() => ({
-		onSuccess: () => assignees.refetch(),
+		...withDependantQueries(assignees),
 	}));
 
 	const removeAssignees = trpc.policy.removeAssignees.createMutation(() => ({
+		// TODO: `withDependantQueries`
 		onSuccess: () =>
 			assignees.refetch().then(() => {
 				table.resetRowSelection(true);

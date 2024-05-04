@@ -2,7 +2,7 @@ import type { UseTRPCQueryResult } from "@solid-mediakit/trpc";
 
 export function withDependantQueries(
 	queries: UseTRPCQueryResult<any, any> | UseTRPCQueryResult<any, any>[],
-) {
+): object {
 	return {
 		trpc: {
 			context: {
@@ -11,5 +11,5 @@ export function withDependantQueries(
 					: [queries.trpc.queryKey],
 			},
 		},
-	};
+	} as const;
 }

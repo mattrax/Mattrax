@@ -2,8 +2,8 @@ import { As } from "@kobalte/core";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Suspense, startTransition } from "solid-js";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
-import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import type { RouterOutput } from "~/api/trpc";
 import {
 	ColumnsDropdown,
@@ -104,14 +104,23 @@ import { cacheMetadata } from "../metadataCache";
 function CreatePolicyButton() {
 	const tenantSlug = useTenantSlug();
 	const navigate = useNavigate();
-	const trpcCtx = trpc.useContext();
+
+	const users = trpc.user.list.createQuery(
+		() => ({
+			tenantSlug: tenantSlug(),
+		}),
+		() => ({ enabled: false }),
+	);
+	const gettingStarted = trpc.tenant.gettingStarted.createQuery(
+		() => ({
+			tenantSlug: tenantSlug(),
+		}),
+		() => ({ enabled: false }),
+	);
 
 	const createPolicy = trpc.policy.create.createMutation(() => ({
-		onSuccess: async (policyId) => {
-			trpcCtx.user.list.invalidate();
-			trpcCtx.tenant.gettingStarted.invalidate();
-			await startTransition(() => navigate(policyId));
-		},
+		onSuccess: (policyId) => startTransition(() => navigate(policyId)),
+		...withDependantQueries([users, gettingStarted]),
 	}));
 
 	const form = createZodForm({

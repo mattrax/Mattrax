@@ -4,14 +4,15 @@ import { z } from "zod";
 import { Card, CardDescription, CardHeader, buttonVariants } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 export default function Page() {
 	const params = useZodParams({ code: z.string() });
 
-	const trpcCtx = trpc.useContext();
+	const me = trpc.auth.me.createQuery(void 0, () => ({ enabled: false }));
 	const acceptTenantInvite = trpc.org.admins.acceptInvite.createMutation(
 		() => ({
-			onSuccess: async () => await trpcCtx.auth.me.refetch(),
+			...withDependantQueries(me),
 		}),
 	);
 

@@ -28,10 +28,11 @@ import {
 } from "~c/VariantTableSheet";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 import { useGroupId } from "../[groupId]";
-import { RouteDefinition } from "@solidjs/router";
+import type { RouteDefinition } from "@solidjs/router";
 import { toTitleCase } from "~/lib/utils";
 import { createAssignmentsVariants } from "./utils";
 import { cacheMetadata } from "../../metadataCache";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 export const route = {
 	load: ({ params }) =>
@@ -112,10 +113,11 @@ export default function Page() {
 	createSearchParamFilter(table, "name", "search");
 
 	const addAssignments = trpc.group.addAssignments.createMutation(() => ({
-		onSuccess: () => assignments.refetch(),
+		...withDependantQueries(assignments),
 	}));
 
 	const removeAssignments = trpc.group.removeAssignments.createMutation(() => ({
+		// TODO: `withDependantQueries`???
 		onSuccess: () =>
 			assignments.refetch().then(() => {
 				table.resetRowSelection(true);

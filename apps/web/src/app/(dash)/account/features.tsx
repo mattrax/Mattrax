@@ -1,6 +1,7 @@
 import { ErrorBoundary, For, Show, Suspense, createSignal } from "solid-js";
 import { Checkbox, Input } from "@mattrax/ui";
 import { Navigate } from "@solidjs/router";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import { getObjectKeys } from "~/api/utils";
 import { trpc } from "~/lib";
@@ -43,12 +44,9 @@ export default function Page() {
 
 							const enableFeature =
 								trpc.auth.admin.enableFeature.createMutation(() => ({
-									onSuccess: async () => {
-										await (email() === activeUser.email
-											? user
-											: getFeatures
-										).refetch();
-									},
+									...withDependantQueries(
+										email() === activeUser.email ? user : getFeatures,
+									),
 								}));
 
 							return (

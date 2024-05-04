@@ -1,6 +1,6 @@
 import { type ParentProps, Show, createSignal, For, Suspense } from "solid-js";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { A, RouteDefinition } from "@solidjs/router";
+import { A, type RouteDefinition } from "@solidjs/router";
 import { As } from "@kobalte/core";
 import pluralize from "pluralize";
 import clsx from "clsx";
@@ -16,13 +16,14 @@ import {
 	Label,
 	buttonVariants,
 } from "@mattrax/ui";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
 import {
 	VariantTableSheet,
-	VariantTableVariants,
+	type VariantTableVariants,
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
 import { StandardTable, createStandardTable } from "~/components/StandardTable";
@@ -169,7 +170,7 @@ function Assignments() {
 	});
 
 	const addAssignments = trpc.user.addAssignments.createMutation(() => ({
-		onSuccess: () => assignments.refetch(),
+		...withDependantQueries(assignments),
 	}));
 
 	return (

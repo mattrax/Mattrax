@@ -11,6 +11,7 @@ import { StandardTable, createStandardTable } from "~c/StandardTable";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { trpc } from "~/lib";
 import { StatItem } from "~/components/StatItem";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 export const route = {
 	load: ({ params }) => {
@@ -69,7 +70,7 @@ function NameEditor(props: { groupId: string }) {
 	cacheMetadata("group", () => (group.data ? [group.data] : []));
 
 	const updateGroup = trpc.group.update.createMutation(() => ({
-		onSuccess: () => group.refetch(),
+		...withDependantQueries(group),
 	}));
 
 	const updateName = (name: string) => {
