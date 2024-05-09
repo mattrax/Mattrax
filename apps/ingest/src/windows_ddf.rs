@@ -183,20 +183,22 @@ fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyGroup {
     collection
 }
 
-fn handle_mgmt_tree(tree: MgmtTree) -> (PathBuf, WindowsCSP) {
-    let mut csp = WindowsCSP {
-        name: tree.node.node_name.clone(),
-        policies: Default::default(),
-    };
+fn handle_mgmt_tree(tree: MgmtTree) -> Vec<(PathBuf, WindowsCSP)> {
+    tree.nodes
+        .into_iter()
+        .map(|node| {
+            let mut csp = WindowsCSP {
+                name: node.node_name.clone(),
+                policies: Default::default(),
+            };
 
-    for node in tree.node.children {
-        csp.policies.extend(handle_node(&node, &PathBuf::new()))
-    }
+            for node in node.children {
+                csp.policies.extend(handle_node(&node, &PathBuf::new()))
+            }
 
-    (
-        PathBuf::from(tree.node.path.unwrap()).join(tree.node.node_name),
-        csp,
-    )
+            (PathBuf::from(node.path.unwrap()).join(node.node_name), csp)
+        })
+        .collect()
 }
 
 #[derive(Type, Default, Serialize)]
@@ -217,10 +219,10 @@ pub fn generate_bindings() {
         let root: MgmtTree = easy_xml::de::from_bytes(contents.as_slice())
             .unwrap_or_else(|_| panic!("Failed to parse {:?}", file.path()));
 
-        let (path, csp) = handle_mgmt_tree(root);
-
-        if !csp.policies.is_empty() {
-            policy_collection.0.insert(path, csp);
+        for (path, csp) in handle_mgmt_tree(root) {
+            if !csp.policies.is_empty() {
+                policy_collection.0.insert(path, csp);
+            }
         }
     }
 

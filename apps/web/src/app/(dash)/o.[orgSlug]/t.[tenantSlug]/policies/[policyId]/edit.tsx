@@ -19,16 +19,11 @@ export default function Page() {
 
 	return (
 		<PolicyContext>
-			<PageLayout
-				class="relative"
-				heading={<PageLayoutHeading class="pr-2">Edit</PageLayoutHeading>}
-			>
-				<PolicyComposer
-					windowsCSPs={windowsPolicies as any}
-					applePayloads={applePayloads as any}
-					controller={controller}
-				/>
-			</PageLayout>
+			<PolicyComposer
+				windowsCSPs={windowsPolicies as any}
+				applePayloads={applePayloads as any}
+				controller={controller}
+			/>
 		</PolicyContext>
 	);
 }

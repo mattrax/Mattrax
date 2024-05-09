@@ -8,7 +8,7 @@ pub struct MgmtTree {
     #[easy_xml(rename = "VerDTD")]
     pub ver_dtd: String,
     #[easy_xml(rename = "Node")]
-    pub node: Node,
+    pub nodes: Vec<Node>,
 }
 
 #[derive(XmlDeserialize, Debug)]

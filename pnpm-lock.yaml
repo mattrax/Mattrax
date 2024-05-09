@@ -566,6 +566,9 @@ importers:
 
   packages/policy-composer:
     dependencies:
+      '@kobalte/core':
+        specifier: ^0.12.6
+        version: 0.12.6(solid-js@1.8.16)
       '@mattrax/configuration-schemas':
         specifier: workspace:*
         version: link:../configuration-schemas
