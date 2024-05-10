@@ -140,7 +140,7 @@ export const createServerFunctionLink = <TRouter extends AnyRouter>(
 	serverFunction: (
 		opts: StringifiedOpts,
 	) => ReturnType<typeof trpcServerFunction<TRouter>>,
-	queryClient: QueryClient,
+	queryClient?: QueryClient,
 ): TRPCLink<TRouter> => {
 	return () => {
 		const batchLoader = (type: ProcedureType) => {
@@ -167,11 +167,12 @@ export const createServerFunctionLink = <TRouter extends AnyRouter>(
 				promise
 					.then((p) => p)
 					.then((response) => {
-						for (const promise of response?.dependant || []) {
-							promise.then(([key, result]) =>
-								queryClient.setQueryData(key, result),
-							);
-						}
+						if (queryClient)
+							for (const promise of response?.dependant || []) {
+								promise.then(([key, result]) =>
+									queryClient.setQueryData(key, result),
+								);
+							}
 
 						if ("error" in response) {
 							observer.error(TRPCClientError.from(response));
