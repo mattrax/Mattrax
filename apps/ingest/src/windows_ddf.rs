@@ -15,6 +15,13 @@ struct WindowsCSP {
     policies: BTreeMap<PathBuf, WindowsDDFPolicy>,
 }
 
+#[derive(Serialize, Debug, Type, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub enum Scope {
+    User,
+    Device,
+}
+
 #[derive(Serialize, Debug, Type)]
 #[serde(rename_all = "camelCase")]
 struct WindowsDDFPolicy {
@@ -27,6 +34,7 @@ struct WindowsDDFPolicy {
     format: Format,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     nodes: WindowsDFFPolicyGroup,
+    scope: Scope,
 }
 
 #[derive(Serialize, Debug, Type)]
@@ -137,7 +145,7 @@ struct EnumContent {
 
 type WindowsDFFPolicyGroup = BTreeMap<PathBuf, WindowsDDFPolicy>;
 
-fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyGroup {
+fn handle_node(node: &Node, path: &PathBuf, scope: Scope) -> WindowsDFFPolicyGroup {
     let mut collection = WindowsDFFPolicyGroup::default();
 
     let mut path = node
@@ -153,13 +161,13 @@ fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyGroup {
         path = path.join(format!("{{{title}}}"));
 
         for child in &node.children {
-            nodes.extend(handle_node(child, &PathBuf::new()));
+            nodes.extend(handle_node(child, &PathBuf::new(), scope));
         }
     } else {
         path = path.join(&node.node_name);
 
         for child in &node.children {
-            collection.extend(handle_node(child, &path));
+            collection.extend(handle_node(child, &path, scope));
         }
     }
 
@@ -177,6 +185,7 @@ fn handle_node(node: &Node, path: &PathBuf) -> WindowsDFFPolicyGroup {
             description: node.properties.description.clone(),
             format: Format::parse(node),
             nodes,
+            scope,
         },
     );
 
@@ -192,11 +201,20 @@ fn handle_mgmt_tree(tree: MgmtTree) -> Vec<(PathBuf, WindowsCSP)> {
                 policies: Default::default(),
             };
 
+            let path = node.path.unwrap();
+
+            let scope = if path.starts_with("./User") {
+                Scope::User
+            } else {
+                Scope::Device
+            };
+
             for node in node.children {
-                csp.policies.extend(handle_node(&node, &PathBuf::new()))
+                csp.policies
+                    .extend(handle_node(&node, &PathBuf::new(), scope))
             }
 
-            (PathBuf::from(node.path.unwrap()).join(node.node_name), csp)
+            (PathBuf::from(path).join(node.node_name), csp)
         })
         .collect()
 }

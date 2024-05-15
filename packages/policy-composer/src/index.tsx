@@ -18,6 +18,7 @@ import {
 	TabsList,
 	TabsTrigger,
 	CardDescription,
+	Badge,
 } from "@mattrax/ui";
 import { Match, createMemo, Switch, Show, createUniqueId } from "solid-js";
 import { For } from "solid-js";
@@ -119,6 +120,13 @@ function Windows(props: {
 															{key}
 														</p>
 													</div>
+													{value.scope && (
+														<div class="flex-1 text-right">
+															<Badge>
+																{value.scope === "user" ? "User" : "Device"}
+															</Badge>
+														</div>
+													)}
 												</li>
 											)}
 										</For>
