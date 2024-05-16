@@ -7,8 +7,10 @@ import { msGraphClient } from "~/api/microsoft";
 import { getEmailDomain } from "~/api/utils";
 import { domains, db, identityProviders, users } from "~/db";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
-import { encryptJWT } from "~/api/jwt";
-import { withAuditLog } from "~/api/auditLog";
+import { encryptJWT } from "~/api/utils/jwt";
+import { createAuditLog } from "~/api/auditLog";
+import { createTransaction } from "~/api/utils/transaction";
+import { OAUTH_STATE } from "~/api/rest/ms";
 
 export const identityProviderRouter = createTRPCRouter({
 	get: tenantProcedure.query(async ({ ctx }) => {
@@ -27,8 +29,8 @@ export const identityProviderRouter = createTRPCRouter({
 		);
 	}),
 
-	linkEntraState: tenantProcedure.mutation(({ ctx }) =>
-		encryptJWT({ tenantPk: ctx.tenant.pk }),
+	linkEntraState: tenantProcedure.mutation(({ ctx: { tenant } }) =>
+		encryptJWT<OAUTH_STATE>({ tenant: { pk: tenant.pk, id: tenant.id } }),
 	),
 
 	remove: tenantProcedure.mutation(async ({ ctx }) => {
@@ -61,20 +63,16 @@ export const identityProviderRouter = createTRPCRouter({
 			console.error(err);
 		}
 
-		await withAuditLog(
-			"removeIdp",
-			{ variant: "entraId" },
-			[ctx.tenant.pk, ctx.account.pk],
-			async (db) => {
-				await db
-					.delete(domains)
-					.where(eq(domains.identityProviderPk, provider.pk));
-				await ctx.db.delete(users).where(eq(users.providerPk, provider.pk));
-				await db
-					.delete(identityProviders)
-					.where(eq(identityProviders.tenantPk, ctx.tenant.pk));
-			},
-		);
+		await createTransaction(async (db) => {
+			await db
+				.delete(domains)
+				.where(eq(domains.identityProviderPk, provider.pk));
+			await ctx.db.delete(users).where(eq(users.providerPk, provider.pk));
+			await db
+				.delete(identityProviders)
+				.where(eq(identityProviders.tenantPk, ctx.tenant.pk));
+			await createAuditLog("removeIdp", { variant: "entraId" });
+		});
 	}),
 
 	domains: tenantProcedure.query(async ({ ctx }) => {
@@ -119,19 +117,15 @@ export const identityProviderRouter = createTRPCRouter({
 					message: "Domain not found",
 				});
 
-			await withAuditLog(
-				"connectDomain",
-				{ domain: input.domain },
-				[ctx.tenant.pk, ctx.account.pk],
-				async (db) => {
-					await db.insert(domains).values({
-						tenantPk: ctx.tenant.pk,
-						identityProviderPk: provider.pk,
-						domain: input.domain,
-						enterpriseEnrollmentAvailable: await enterpriseEnrollmentAvailable,
-					});
-				},
-			);
+			await createTransaction(async (db) => {
+				await db.insert(domains).values({
+					tenantPk: ctx.tenant.pk,
+					identityProviderPk: provider.pk,
+					domain: input.domain,
+					enterpriseEnrollmentAvailable: await enterpriseEnrollmentAvailable,
+				});
+				await createAuditLog("connectDomain", { domain: input.domain });
+			});
 
 			// TODO: `event.waitUntil`???
 			await syncEntraUsersWithDomains(
@@ -173,21 +167,17 @@ export const identityProviderRouter = createTRPCRouter({
 		.mutation(async ({ ctx, input }) => {
 			const provider = await ensureIdentityProvider(ctx.tenant.pk);
 
-			await withAuditLog(
-				"disconnectDomain",
-				{ domain: input.domain },
-				[ctx.tenant.pk, ctx.account.pk],
-				async (db) => {
-					await db
-						.delete(domains)
-						.where(
-							and(
-								eq(domains.identityProviderPk, provider.pk),
-								eq(domains.domain, input.domain),
-							),
-						);
-				},
-			);
+			await createTransaction(async (db) => {
+				await db
+					.delete(domains)
+					.where(
+						and(
+							eq(domains.identityProviderPk, provider.pk),
+							eq(domains.domain, input.domain),
+						),
+					);
+				await createAuditLog("disconnectDomain", { domain: input.domain });
+			});
 
 			return true;
 		}),

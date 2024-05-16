@@ -12,11 +12,11 @@ import { authedProcedure, createTRPCRouter, orgProcedure } from "../../helpers";
 import { randomSlug } from "~/api/utils";
 
 import { adminsRouter } from "./admins";
-import { billingRouter } from "./billing";
+// import { billingRouter } from "./billing";
 
 export const orgRouter = createTRPCRouter({
 	admins: adminsRouter,
-	billing: billingRouter,
+	// billing: billingRouter,
 
 	list: authedProcedure.query(async ({ ctx }) =>
 		ctx.db

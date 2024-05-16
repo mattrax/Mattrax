@@ -7,7 +7,7 @@ import { domains, db, identityProviders } from "~/db";
 import { env } from "~/env";
 import { getEmailDomain } from "../utils";
 import { upsertEntraIdUser } from "../trpc/routers/tenant/identityProvider";
-import { decryptJWT, encryptJWT, signJWT } from "../jwt";
+import { decryptJWT, encryptJWT, signJWT } from "../utils/jwt";
 
 export type EnrollmentProfileDescription = {
 	data: string;

@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
-import { signJWT } from "~/api/jwt";
+import { signJWT } from "~/api/utils/jwt";
 
 import { cliAuthCodes, db } from "~/db";
 import { env } from "~/env";

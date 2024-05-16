@@ -3,7 +3,8 @@ import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { applications } from "~/db";
 import { eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
-import { withAuditLog } from "~/api/auditLog";
+import { createAuditLog } from "~/api/auditLog";
+import { useTransaction } from "~/api/utils/transaction";
 
 export const applicationRouter = createTRPCRouter({
 	list: tenantProcedure
@@ -54,18 +55,14 @@ export const applicationRouter = createTRPCRouter({
 		.mutation(async ({ input, ctx }) => {
 			const id = createId();
 
-			await withAuditLog(
-				"addApp",
-				{ id, name: input.name },
-				[ctx.tenant.pk, ctx.account.pk],
-				async (db) => {
-					await db.insert(applications).values({
-						id,
-						name: input.name,
-						tenantPk: ctx.tenant.pk,
-					});
-				},
-			);
+			await useTransaction(async (db) => {
+				await db.insert(applications).values({
+					id,
+					name: input.name,
+					tenantPk: ctx.tenant.pk,
+				});
+				await createAuditLog("addApp", { id, name: input.name });
+			});
 
 			return { id };
 		}),

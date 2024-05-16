@@ -9,6 +9,8 @@ import { ZodError, z } from "zod";
 
 import { db, organisationMembers, organisations, tenants } from "~/db";
 import { checkAuth } from "../auth";
+import { withTenant } from "../tenant";
+import { withAccount } from "../account";
 
 export const createTRPCContext = (event: H3Event) => {
 	return {
@@ -84,24 +86,26 @@ export const authedProcedure = publicProcedure.use(async ({ next }) => {
 
 	if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-	return next({
-		ctx: {
-			...data,
-			ensureOrganisationMember: async (orgPk: number) => {
-				if (!isOrganisationMember(orgPk, data.account.pk))
-					throw new TRPCError({ code: "FORBIDDEN", message: "organisation" });
-			},
-			ensureTenantMember: async (tenantPk: number) => {
-				const tenantList = await getTenantList(data.account.pk);
+	return withAccount(data.account, () =>
+		next({
+			ctx: {
+				...data,
+				ensureOrganisationMember: async (orgPk: number) => {
+					if (!isOrganisationMember(orgPk, data.account.pk))
+						throw new TRPCError({ code: "FORBIDDEN", message: "organisation" });
+				},
+				ensureTenantMember: async (tenantPk: number) => {
+					const tenantList = await getTenantList(data.account.pk);
 
-				const tenant = tenantList.find((t) => t.pk === tenantPk);
-				if (!tenant)
-					throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
+					const tenant = tenantList.find((t) => t.pk === tenantPk);
+					if (!tenant)
+						throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
 
-				return tenant;
+					return tenant;
+				},
 			},
-		},
-	});
+		}),
+	);
 });
 
 export const isSuperAdmin = (account: { email: string } | User) =>
@@ -154,7 +158,7 @@ export const orgProcedure = authedProcedure
 
 const getMemberTenant = cache(async (slug: string, accountPk: number) => {
 	const [tenant] = await db
-		.select({ pk: tenants.pk, name: tenants.name })
+		.select({ pk: tenants.pk, id: tenants.id, name: tenants.name })
 		.from(tenants)
 		.innerJoin(organisations, eq(tenants.orgPk, organisations.pk))
 		.innerJoin(
@@ -178,5 +182,5 @@ export const tenantProcedure = authedProcedure
 
 		if (!tenant) throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
 
-		return opts.next({ ctx: { ...ctx, tenant } });
+		return withTenant(tenant, () => opts.next({ ctx: { ...ctx, tenant } }));
 	});

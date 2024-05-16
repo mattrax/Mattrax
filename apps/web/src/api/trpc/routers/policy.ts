@@ -18,8 +18,9 @@ import {
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { omit } from "~/api/utils";
-import { withAuditLog } from "~/api/auditLog";
+import { createAuditLog } from "~/api/auditLog";
 import type { PolicyData } from "~/lib/policy";
+import { createTransaction } from "~/api/utils/transaction";
 
 const getPolicy = cache(async (id: string) => {
 	return await db.query.policies.findFirst({
@@ -186,22 +187,19 @@ export const policyRouter = createTRPCRouter({
 		}),
 	create: tenantProcedure
 		.input(z.object({ name: z.string().min(1).max(100) }))
-		.mutation(({ ctx, input }) => {
+		.mutation(async ({ ctx, input }) => {
 			const id = createId();
-			return withAuditLog(
-				"addPolicy",
-				{ id, name: input.name },
-				[ctx.tenant.pk, ctx.account.pk],
-				async (db) => {
-					await db.insert(policies).values({
-						id,
-						name: input.name,
-						tenantPk: ctx.tenant.pk,
-					});
 
-					return id;
-				},
-			);
+			await createTransaction(async (db) => {
+				await db.insert(policies).values({
+					id,
+					name: input.name,
+					tenantPk: ctx.tenant.pk,
+				});
+				await createAuditLog("addPolicy", { id, name: input.name });
+			});
+
+			return id;
 		}),
 
 	update: policyProcedure
@@ -223,14 +221,10 @@ export const policyRouter = createTRPCRouter({
 		}),
 
 	delete: policyProcedure.mutation(async ({ ctx }) => {
-		await withAuditLog(
-			"deletePolicy",
-			{ name: ctx.policy.name },
-			[ctx.tenant.pk, ctx.account.pk],
-			async () => {
-				await db.delete(policies).where(eq(policies.pk, ctx.policy.pk));
-			},
-		);
+		await createTransaction(async (db) => {
+			await db.delete(policies).where(eq(policies.pk, ctx.policy.pk));
+			await createAuditLog("deletePolicy", { name: ctx.policy.name });
+		});
 	}),
 
 	deploy: policyProcedure

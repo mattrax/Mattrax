@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import type { HonoEnv } from "../types";
 import { z } from "zod";
 import {
 	db,
@@ -8,6 +7,7 @@ import {
 	waitlistInterestReasons,
 } from "~/db";
 import { sendDiscordMessage } from "../trpc/routers/meta";
+import type { HonoEnv } from ".";
 import { env } from "~/env";
 
 const waitlistRequest = z.object({

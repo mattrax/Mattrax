@@ -1,7 +1,7 @@
 import type { APIEvent } from "@solidjs/start/server";
 import { eq } from "drizzle-orm";
 
-import { signJWT, verifyJWT } from "~/api/jwt";
+import { signJWT, verifyJWT } from "~/api/utils/jwt";
 import { accounts, cliAuthCodes, db, sessions } from "~/db";
 
 export async function POST({ params }: APIEvent) {

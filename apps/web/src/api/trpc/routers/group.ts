@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import { withAuditLog } from "~/api/auditLog";
+import { createAuditLog } from "~/api/auditLog";
 import {
 	GroupMemberVariants,
 	PolicyAssignableVariants,
@@ -20,6 +20,7 @@ import {
 	users,
 } from "~/db";
 import { cache } from "@solidjs/router";
+import { createTransaction } from "~/api/utils/transaction";
 
 const getGroup = cache(
 	(id: string) =>
@@ -73,18 +74,14 @@ export const groupRouter = createTRPCRouter({
 		.mutation(async ({ ctx, input }) => {
 			const id = createId();
 
-			await withAuditLog(
-				"addGroup",
-				{ id, name: input.name },
-				[ctx.tenant.pk, ctx.account.pk],
-				async () => {
-					await ctx.db.insert(groups).values({
-						id,
-						name: input.name,
-						tenantPk: ctx.tenant.pk,
-					});
-				},
-			);
+			await createTransaction(async (db) => {
+				await db.insert(groups).values({
+					id,
+					name: input.name,
+					tenantPk: ctx.tenant.pk,
+				});
+				await createAuditLog("addGroup", { id, name: input.name });
+			});
 
 			return id;
 		}),

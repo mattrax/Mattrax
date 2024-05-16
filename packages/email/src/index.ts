@@ -2,9 +2,9 @@ import { type AwsClient } from "aws4fetch";
 import { render } from "@react-email/render";
 import { z } from "zod";
 
-import LoginCodeEmail from "./LoginCode";
-import TenantAdminInviteEmail from "./TenantAdminInvite";
-import UserEnrollmentInviteEmail from "./UserEnrollmentInvite";
+import LoginCodeEmail from "../emails/LoginCode";
+import TenantAdminInviteEmail from "../emails/TenantAdminInvite";
+import UserEnrollmentInviteEmail from "../emails/UserEnrollmentInvite";
 
 const REQUEST_SCHEMA = z
 	.object({
