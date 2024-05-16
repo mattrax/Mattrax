@@ -1,5 +1,11 @@
-import { type CreateQueryResult } from "@tanstack/solid-query";
-import { type ParentProps, Suspense, createSignal, Index } from "solid-js";
+import type { CreateQueryResult } from "@tanstack/solid-query";
+import {
+	type ParentProps,
+	Suspense,
+	createSignal,
+	Index,
+	Show,
+} from "solid-js";
 import { createColumnHelper } from "@tanstack/solid-table";
 import {
 	Badge,
@@ -24,16 +30,36 @@ import {
 } from "~c/StandardTable";
 import { ConfirmDialog } from "~c/ConfirmDialog";
 import { toTitleCase } from "~/lib/utils";
+import { A } from "@solidjs/router";
 
 const columnHelper = createColumnHelper<{
 	pk: number;
+	id: string;
 	name: string;
 	variant: string;
 }>();
 
-export const variantTableColumns = [
+export const createVariantTableColumns = (variants?: VariantTableVariants) => [
 	selectCheckboxColumn,
-	columnHelper.accessor("name", { header: "Name" }),
+	columnHelper.accessor("name", {
+		header: "Name",
+		cell: (props) => (
+			<Show
+				when={(variants ?? {})[props.row.original.variant]?.href}
+				fallback={props.getValue()}
+				keyed
+			>
+				{(href) => (
+					<A
+						class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
+						href={href(props.row.original)}
+					>
+						{props.getValue()}
+					</A>
+				)}
+			</Show>
+		),
+	}),
 	columnHelper.accessor("variant", {
 		header: "Variant",
 		id: "variant",
@@ -42,18 +68,16 @@ export const variantTableColumns = [
 	}),
 ];
 
-export function VariantTableSheet<
-	T extends Record<
-		string,
-		{
-			label: string;
-			query: CreateQueryResult<
-				Array<{ pk: number; name: string }> | undefined,
-				any
-			>;
-		}
-	>,
->(
+export type VariantTableItem = { pk: number; name: string; id: string };
+
+export type VariantTableVariant = {
+	label: string;
+	query: CreateQueryResult<Array<VariantTableItem> | undefined, any>;
+	href?: (item: VariantTableItem) => string;
+};
+export type VariantTableVariants = Record<string, VariantTableVariant>;
+
+export function VariantTableSheet<T extends VariantTableVariants>(
 	props: ParentProps<{
 		title: string;
 		getSubmitText(count: number): string;
@@ -79,7 +103,7 @@ export function VariantTableSheet<
 		get data() {
 			return possibleMembers();
 		},
-		columns: variantTableColumns,
+		columns: createVariantTableColumns(props.variants),
 		// pagination: true, // TODO: Pagination
 	});
 

@@ -1,4 +1,3 @@
-import { useQueryClient } from "@tanstack/solid-query";
 import { A, useIsRouting, useMatch, useNavigate } from "@solidjs/router";
 import { As } from "@kobalte/core";
 import clsx from "clsx";
@@ -25,7 +24,6 @@ import {
 } from "@mattrax/ui";
 import {
 	Suspense,
-	createEffect,
 	createSignal,
 	useTransition,
 	type ParentProps,
@@ -40,13 +38,10 @@ import classes from "./NavIndicator.module.css";
 
 export function TopBar() {
 	const navigate = useNavigate();
-	const queryClient = useQueryClient();
 	const [_, start] = useTransition();
 	const logout = trpc.auth.logout.createMutation(() => ({
-		onSuccess: async () => {
-			await start(() => navigate("/login"));
-			queryClient.clear();
-		},
+		// We reset caches on login
+		onSuccess: () => start(() => navigate("/login")),
 	}));
 	const { items } = useNavItemsContext();
 	const user = trpc.auth.me.createQuery();
@@ -88,7 +83,11 @@ export function TopBar() {
 						<ContextMenuGroup>
 							<ContextMenuGroupLabel>Links</ContextMenuGroupLabel>
 							<ContextMenuItem>
-								<a href="https://github.com/mattrax/mattrax" target="_blank">
+								<a
+									href="https://github.com/mattrax/mattrax"
+									target="_blank"
+									rel="noreferrer"
+								>
 									GitHub
 								</a>
 							</ContextMenuItem>

@@ -1,5 +1,5 @@
 import { As, Dialog as DialogPrimitive } from "@kobalte/core";
-import { RouteDefinition } from "@solidjs/router";
+import type { RouteDefinition } from "@solidjs/router";
 import {
 	AsyncButton,
 	Badge,
@@ -14,6 +14,7 @@ import {
 } from "@mattrax/ui";
 import pluralize from "pluralize";
 import { Match, Suspense, Switch, createSignal } from "solid-js";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
@@ -23,11 +24,15 @@ import {
 	createSearchParamFilter,
 	createStandardTable,
 } from "~c/StandardTable";
-import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
+import {
+	VariantTableSheet,
+	createVariantTableColumns,
+} from "~c/VariantTableSheet";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
-import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { useGroupId } from "../[groupId]";
 import { toTitleCase } from "~/lib/utils";
+import { createMembersVariants } from "./utils";
+import { cacheMetadata } from "../../metadataCache";
 
 export const route = {
 	load: ({ params }) =>
@@ -39,9 +44,12 @@ export const route = {
 export default function Page() {
 	const groupId = useGroupId();
 
-	const members = trpc.group.members.createQuery(() => ({
-		id: groupId(),
-	}));
+	const members = trpc.group.members.createQuery(() => ({ id: groupId() }));
+	const cacheMembersWithVariant = (v: "user" | "device") =>
+		cacheMetadata(v, () => members.data?.filter((a) => a.variant === v) ?? []);
+
+	cacheMembersWithVariant("user");
+	cacheMembersWithVariant("device");
 
 	const [dialog, setDialog] = createSignal<{
 		open: boolean;
@@ -53,12 +61,14 @@ export default function Page() {
 			| { type: "removeMany"; data: NonNullable<typeof members.data> };
 	}>({ open: false, data: { type: "removeMany", data: [] } });
 
+	const variants = createMembersVariants("../../../");
+
 	const table = createStandardTable({
 		get data() {
 			return members.data ?? [];
 		},
 		columns: [
-			...variantTableColumns,
+			...createVariantTableColumns(variants),
 			createActionsColumn({
 				headerDropdownContent: ({ table }) => (
 					<DropdownMenuItem
@@ -100,12 +110,11 @@ export default function Page() {
 	createSearchParamFilter(table, "name", "search");
 
 	const addMembers = trpc.group.addMembers.createMutation(() => ({
-		onSuccess: () => members.refetch(),
+		...withDependantQueries(members),
 	}));
 
-	const variants = createVariants();
-
 	const removeMembers = trpc.group.removeMembers.createMutation(() => ({
+		// TODO: `withDependantQueries`
 		onSuccess: () =>
 			members.refetch().then(() => {
 				table.resetRowSelection(true);
@@ -237,23 +246,4 @@ export default function Page() {
 			</Suspense>
 		</PageLayout>
 	);
-}
-
-function createVariants() {
-	const tenantSlug = useTenantSlug();
-
-	return {
-		user: {
-			label: "Users",
-			query: trpc.tenant.variantTable.users.createQuery(() => ({
-				tenantSlug: tenantSlug(),
-			})),
-		},
-		device: {
-			label: "Devices",
-			query: trpc.tenant.variantTable.devices.createQuery(() => ({
-				tenantSlug: tenantSlug(),
-			})),
-		},
-	};
 }

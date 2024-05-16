@@ -3,11 +3,13 @@ import { Suspense, startTransition } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { Button, Label } from "@mattrax/ui";
 import { z } from "zod";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { ConfirmDialog } from "~c/ConfirmDialog";
 import { PolicyContext, usePolicy } from "./Context";
+import { useTenantSlug } from "../../../t.[tenantSlug]";
 
 export default function Page() {
 	return (
@@ -15,17 +17,24 @@ export default function Page() {
 			<Suspense>
 				<PolicyContext>
 					{(() => {
+						const tenantSlug = useTenantSlug();
 						const policy = usePolicy();
 
-						const trpcCtx = trpc.useContext();
 						const navigate = useNavigate();
 
+						const userList = trpc.user.list.createQuery(
+							() => ({
+								tenantSlug: tenantSlug(),
+							}),
+							() => ({ enabled: false }),
+						);
+
 						const deletePolicy = trpc.policy.delete.createMutation(() => ({
-							onSuccess: () => trpcCtx.user.list.invalidate(),
+							...withDependantQueries(userList),
 						}));
 
 						const updatePolicy = trpc.policy.update.createMutation(() => ({
-							onSuccess: () => policy.query.refetch(),
+							...withDependantQueries(policy.query),
 						}));
 
 						const form = createZodForm({

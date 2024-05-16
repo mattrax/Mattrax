@@ -5,7 +5,6 @@ import { As } from "@kobalte/core";
 import {
 	Badge,
 	Button,
-	Input,
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
@@ -28,6 +27,7 @@ import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useTenantSlug } from "../../t.[tenantSlug]";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { cacheMetadata } from "../metadataCache";
 
 export const route = {
 	load: ({ params }) => {
@@ -93,9 +93,11 @@ const columns = [
 
 export default function Page() {
 	const tenantSlug = useTenantSlug();
+
 	const users = trpc.user.list.createQuery(() => ({
 		tenantSlug: tenantSlug(),
 	}));
+	cacheMetadata("user", () => users.data ?? []);
 
 	const table = createStandardTable({
 		get data() {

@@ -8,11 +8,11 @@ import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 
 const [TenantContextProvider, useTenant] = createContextProvider(
-	(props: { tenant: RouterOutput["tenant"]["list"][number] }) => () =>
-		props.tenant,
-	() => {
-		throw new Error("`useTenant` used without `TenantContext` mounted above.");
-	},
+	(props: {
+		query: ReturnType<typeof trpc.tenant.list.createQuery>;
+		tenant: RouterOutput["tenant"]["list"][number];
+	}) => Object.assign(() => props.tenant, { query: props.query }),
+	null!,
 );
 
 export { useTenant };
@@ -44,7 +44,7 @@ export function TenantContext(props: ParentProps) {
 			</Match>
 			<Match when={activeTenant()}>
 				{(tenant) => (
-					<TenantContextProvider tenant={tenant()}>
+					<TenantContextProvider query={tenants} tenant={tenant()}>
 						{props.children}
 					</TenantContextProvider>
 				)}

@@ -13,9 +13,9 @@ const client = new Client({
 		if (import.meta.env.MODE === "development") {
 			if (env.DATABASE_URL.startsWith("mysql://")) {
 				if (!fetchHandler)
-					fetchHandler = (await import("./dev-adapter")).setup(
-						env.DATABASE_URL,
-					);
+					fetchHandler = (
+						await import("@mattrax/mysql-planetscale")
+					).createFetchHandler(env.DATABASE_URL);
 			}
 		}
 

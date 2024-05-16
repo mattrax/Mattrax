@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm";
 
 import { sessions } from "~/db";
 import { authedProcedure, createTRPCRouter } from "../helpers";
-import { createId } from "@paralleldrive/cuid2";
 import { z } from "zod";
 import { lucia } from "~/api/auth";
 

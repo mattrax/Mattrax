@@ -13,7 +13,7 @@ impl SessionId {
         std::str::from_utf8(&self.0)
             .expect("validated in 'YaDeserialize'")
             // TODO: Do this properly + return `&str` not `String`
-            .replace("\0", "")
+            .replace('\0', "")
     }
 }
 
@@ -44,7 +44,7 @@ impl XmlSerialize for SessionId {
             name: OwnedName::local("SessionID"),
             attributes: vec![],
             namespace: Namespace::empty(),
-            elements: vec![easy_xml::XmlElement::Text(self.as_str().into())],
+            elements: vec![easy_xml::XmlElement::Text(self.as_str())],
             parent: None,
         })));
     }
@@ -68,7 +68,7 @@ impl XmlDeserialize for SessionId {
 fn try_into_or_pad<const N: usize>(arr: &[u8]) -> Option<[u8; N]> {
     (arr.len() <= N).then(|| {
         let mut b = [0; N];
-        b[..arr.len()].copy_from_slice(&arr);
+        b[..arr.len()].copy_from_slice(arr);
         b
     })
 }

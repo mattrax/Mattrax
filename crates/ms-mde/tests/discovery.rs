@@ -1,5 +1,5 @@
 use ms_mde::{util::strip_whitespace_from_xml, DiscoverRequest};
-use pretty_assertions::assert_eq;
+
 
 #[test]
 fn test_discovery_request() {

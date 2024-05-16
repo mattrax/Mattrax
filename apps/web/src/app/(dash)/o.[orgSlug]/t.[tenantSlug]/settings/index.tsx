@@ -11,10 +11,10 @@ import {
 	CardTitle,
 } from "@mattrax/ui";
 import { z } from "zod";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import { trpc } from "~/lib";
 import { DeleteTenantButton } from "./DeleteTenantButton";
-import { useAuth } from "~c/AuthContext";
 import { useTenant } from "../Context";
 
 export const route = {
@@ -33,12 +33,11 @@ export default function Page() {
 }
 
 function SettingsCard() {
-	const auth = useAuth();
 	const tenant = useTenant();
 
 	// TODO: rollback form on failure
 	const updateTenant = trpc.tenant.edit.createMutation(() => ({
-		onSuccess: () => auth.query.refetch(),
+		...withDependantQueries(tenant.query),
 	}));
 
 	const form = createZodForm({

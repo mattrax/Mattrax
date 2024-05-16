@@ -1,0 +1,19 @@
+[package]
+name = "mx-db"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+mysql_async = { version = "0.34.1", default-features = false, features = [
+    "default-rustls",
+    "derive",
+    "tracing",
+    "chrono",
+] }
+mysql_common = { version = "=0.31.0", features = [
+    "chrono",
+] } # This is a dependency of `mysql_async`
+chrono = { version = "0.4.35", features = ["serde"] }
+serde_json = { workspace = true }
+refinery = { version = "0.8.14", features = ["mysql_async"] }

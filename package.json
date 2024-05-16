@@ -15,6 +15,7 @@
 		"db:rs": "bun run ./apps/web/src/db/rust.ts",
 		"typecheck": "tsc -b",
 		"lint": "biome lint .",
+		"fix": "biome lint --config-path biome.fix.json --apply . || biome format --write .",
 		"format": "biome format --write .",
 		"prepare": "husky"
 	},
@@ -35,7 +36,7 @@
 		"husky": "^9.0.11"
 	},
 	"resolutions": {
-		"@solidjs/start": "^0.7.5",
+		"@solidjs/start": "=0.7.7",
 		"vinxi": "=0.3.10",
 		"drizzle-orm": "^0.30.8"
 	},
@@ -44,7 +45,9 @@
 			"@solidjs/router@0.13.2": "patches/@solidjs__router@0.13.2.patch",
 			"@tanstack/solid-form@0.19.0": "patches/@tanstack__solid-form@0.19.0.patch",
 			"drizzle-orm@0.30.8": "patches/drizzle-orm@0.30.8.patch",
-			"@react-email/tailwind@0.0.15": "patches/@react-email__tailwind@0.0.15.patch"
+			"@react-email/tailwind@0.0.15": "patches/@react-email__tailwind@0.0.15.patch",
+			"nitropack@2.9.6": "patches/nitropack@2.9.6.patch",
+			"@solid-mediakit/trpc@3.0.2": "patches/@solid-mediakit__trpc@3.0.2.patch"
 		}
 	}
 }

@@ -4,13 +4,13 @@ import { useEffect } from "react";
 import { ThemeProvider, useTheme } from "next-themes";
 
 function ThemeWatcher() {
-	let { resolvedTheme, setTheme } = useTheme();
+	const { resolvedTheme, setTheme } = useTheme();
 
 	useEffect(() => {
-		let media = window.matchMedia("(prefers-color-scheme: dark)");
+		const media = window.matchMedia("(prefers-color-scheme: dark)");
 
 		function onMediaChange() {
-			let systemTheme = media.matches ? "dark" : "light";
+			const systemTheme = media.matches ? "dark" : "light";
 			if (resolvedTheme === systemTheme) {
 				setTheme("system");
 			}

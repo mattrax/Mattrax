@@ -34,7 +34,14 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
 export const createTRPCRouter = t.router;
 
 // Public (unauthenticated) procedure
-export const publicProcedure = t.procedure;
+export const publicProcedure = t.procedure.use(async ({ next }) => {
+	try {
+		return next();
+	} catch (err) {
+		flushResponse();
+		throw err;
+	}
+});
 
 const isOrganisationMember = cache(async (orgPk: number, accountPk: number) => {
 	const [org] = await db
@@ -52,7 +59,7 @@ const isOrganisationMember = cache(async (orgPk: number, accountPk: number) => {
 	return org !== undefined;
 }, "isOrganisationMember");
 
-const getTenantList = cache(
+export const getTenantList = cache(
 	(accountPk: number) =>
 		db
 			.select({ pk: tenants.pk, name: tenants.name })
@@ -67,8 +74,11 @@ const getTenantList = cache(
 );
 
 // Authenticated procedure
-export const authedProcedure = t.procedure.use(async ({ next }) => {
-	const data = await checkAuth();
+export const authedProcedure = publicProcedure.use(async ({ next }) => {
+	const data = await checkAuth().catch((e) => {
+		flushResponse();
+		throw e;
+	});
 
 	flushResponse();
 

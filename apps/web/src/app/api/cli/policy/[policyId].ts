@@ -6,19 +6,21 @@ import { createId } from "@paralleldrive/cuid2";
 import { generatePolicyDiff } from "~/api/trpc/routers/policy";
 
 export async function GET({ params }: APIEvent) {
-	const policyId = params.policyId as string;
+	throw new Error("THE CLI IS NOT SUPPORTED YET");
 
-	// TODO: Auth and Authz
+	// const policyId = params.policyId as string;
 
-	const [policy] = await db
-		.select({
-			name: policies.name,
-			data: policies.data,
-		})
-		.from(policies)
-		.where(eq(policies.id, policyId));
+	// // TODO: Auth and Authz
 
-	return policy;
+	// const [policy] = await db
+	//   .select({
+	//     name: policies.name,
+	//     data: policies.data,
+	//   })
+	//   .from(policies)
+	//   .where(eq(policies.id, policyId));
+
+	// return policy;
 }
 
 const schema = z.object({
@@ -31,67 +33,72 @@ const schema = z.object({
 
 // TODO: Use Specta for return type so it's E2E typesafe
 export async function POST({ request, params }: APIEvent) {
-	const policyId = params.policyId as string;
-	const body = schema.safeParse(await request.json());
+	throw new Error("THE CLI IS NOT SUPPORTED YET");
 
-	if (!body.success)
-		return new Response("Error parsing request!", {
-			status: 400,
-		});
+	// const policyId = params.policyId as string;
+	// const body = schema.safeParse(await request.json());
 
-	const [policy] = await db
-		.select({
-			pk: policies.pk,
-			tenantPk: policies.tenantPk,
-			data: policies.data,
-		})
-		.from(policies)
-		.where(eq(policies.id, policyId));
-	if (!policy)
-		return new Response("404: Policy not found", {
-			status: 404,
-		});
+	// if (!body.success)
+	//   return new Response("Error parsing request!", {
+	//     status: 400,
+	//   });
 
-	// TODO: Auth and Authz
-	const authorId = 2;
+	// const [policy] = await db
+	//   .select({
+	//     pk: policies.pk,
+	//     tenantPk: policies.tenantPk,
+	//     data: policies.data,
+	//   })
+	//   .from(policies)
+	//   .where(eq(policies.id, policyId));
+	// if (!policy)
+	//   return new Response("404: Policy not found", {
+	//     status: 404,
+	//   });
 
-	const [lastVersion] = await db
-		.select({ data: policyDeploy.data })
-		.from(policyDeploy)
-		.where(and(eq(policyDeploy.policyPk, policy.pk)))
-		.orderBy(desc(policyDeploy.doneAt))
-		.limit(1);
+	// // TODO: Auth and Authz
+	// const authorId = 2;
 
-	if (generatePolicyDiff(lastVersion?.data ?? {}, body.data.data).length === 0)
-		return Response.json(["unchanged", null]);
+	// const [lastVersion] = await db
+	//   .select({ data: policyDeploy.data })
+	//   .from(policyDeploy)
+	//   .where(and(eq(policyDeploy.policyPk, policy.pk)))
+	//   .orderBy(desc(policyDeploy.doneAt))
+	//   .limit(1);
 
-	const updatePolicy = () =>
-		db
-			.update(policies)
-			.set({
-				name: body.data.name,
-				data: body.data.data,
-			})
-			.where(eq(policies.id, policyId));
+	// if (
+	//   generatePolicyDiff(lastVersion?.data ?? ({} as any), body.data.data)
+	//     .length === 0
+	// )
+	//   return Response.json(["unchanged", null]);
 
-	if (body.data.comment) {
-		const comment = body.data.comment;
+	// const updatePolicy = () =>
+	//   db
+	//     .update(policies)
+	//     .set({
+	//       name: body.data.name,
+	//       data: body.data.data,
+	//     })
+	//     .where(eq(policies.id, policyId));
 
-		const versionId = createId();
-		await db.transaction(async (db) => {
-			await updatePolicy();
-			await db.insert(policyDeploy).values({
-				id: versionId,
-				policyPk: policy.pk,
-				data: body.data.data,
-				comment,
-				author: authorId,
-			});
-		});
+	// if (body.data.comment) {
+	//   const comment = body.data.comment;
 
-		return Response.json(["deployed", versionId]);
-	}
+	//   const versionId = createId();
+	//   await db.transaction(async (db) => {
+	//     await updatePolicy();
+	//     await db.insert(policyDeploy).values({
+	//       id: versionId,
+	//       policyPk: policy.pk,
+	//       data: body.data.data,
+	//       comment,
+	//       author: authorId,
+	//     });
+	//   });
 
-	await updatePolicy();
-	return Response.json(["updated", null]);
+	//   return Response.json(["deployed", versionId]);
+	// }
+
+	// await updatePolicy();
+	// return Response.json(["updated", null]);
 }

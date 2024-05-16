@@ -4,7 +4,6 @@ import { z } from "zod";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import {
 	devices,
-	policyAssignableVariants,
 	users,
 	deviceActions,
 	possibleDeviceActions,
@@ -166,15 +165,16 @@ export const deviceRouter = createTRPCRouter({
 				else apps.push(a.pk);
 			});
 
-			await db.transaction((db) =>
-				Promise.all([
+			const ops: Promise<unknown>[] = [];
+			if (pols.length > 0)
+				ops.push(
 					db
 						.insert(policyAssignments)
 						.values(
 							pols.map((pk) => ({
 								pk: device.pk,
 								policyPk: pk,
-								variant: sql`"device"`,
+								variant: sql`'device'`,
 							})),
 						)
 						.onDuplicateKeyUpdate({
@@ -182,13 +182,17 @@ export const deviceRouter = createTRPCRouter({
 								pk: sql`${policyAssignments.pk}`,
 							},
 						}),
+				);
+
+			if (apps.length > 0)
+				ops.push(
 					db
 						.insert(applicationAssignments)
 						.values(
 							apps.map((pk) => ({
 								pk: device.pk,
 								applicationPk: pk,
-								variant: sql`"device"`,
+								variant: sql`'device'`,
 							})),
 						)
 						.onDuplicateKeyUpdate({
@@ -196,7 +200,8 @@ export const deviceRouter = createTRPCRouter({
 								pk: sql`${applicationAssignments.pk}`,
 							},
 						}),
-				]),
-			);
+				);
+
+			await db.transaction((db) => Promise.all(ops));
 		}),
 });

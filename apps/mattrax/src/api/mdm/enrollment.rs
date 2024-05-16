@@ -299,7 +299,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                         }
                     }
                 }
-                Some(RequestHeaderSecurity { username_token: Some(token), .. }) => {
+                Some(RequestHeaderSecurity { username_token: Some(_token), .. }) => {
                     // fault.Fault(fmt.Errorf("OnPremise authentication not supported"), "no valid authentication method was found", soap.FaultCodeInvalidSecurity)
                     error!("todo: proper soap fault. OnPremise authentication not supported");
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -359,7 +359,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 _ => ("User", upn.to_string(), ENROLLMENT_TYPE_USER),
             };
 
-            let Ok(csr) = cmd.body.request_security_token.binary_security_token.decode().map_err(|err| {
+            let Ok(csr) = cmd.body.request_security_token.binary_security_token.decode().map_err(|_err| {
                 // TODO: proper SOAP fault
                 error!("todo: error decoding the bst");
             }) else {
@@ -378,7 +378,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             // Issuer:
             csr.params.serial_number = Some(SerialNumber::from_slice(&[1])); // TODO: Encode proper Rust int type into the bytes
             csr.params.not_before = OffsetDateTime::now_utc();
-            csr.params.not_after = csr.params.not_before.clone().add(time::Duration::days(365));
+            csr.params.not_after = csr.params.not_before.add(time::Duration::days(365));
             csr.params.key_usages = vec![KeyUsagePurpose::DigitalSignature, KeyUsagePurpose::KeyEncipherment];
             csr.params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ClientAuth];
             // BasicConstraintsValid: true, // TODO
@@ -449,14 +449,14 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             let mut hasher = Sha1::new();
             hasher.update(state.identity_cert_rcgen.der());
             let identity_cert_fingerprint =  hasher.finalize();
-            let identity_cert_fingerprint =  hex::encode(&identity_cert_fingerprint).to_uppercase();
+            let identity_cert_fingerprint =  hex::encode(identity_cert_fingerprint).to_uppercase();
 
             let root_certificate_der = BASE64_STANDARD.encode(state.identity_cert_rcgen.der());
 
             let mut hasher = Sha1::new();
             hasher.update(certificate.der());
             let signed_client_cert_fingerprint = hasher.finalize();
-            let signed_client_cert_fingerprint = hex::encode(&signed_client_cert_fingerprint).to_uppercase();
+            let signed_client_cert_fingerprint = hex::encode(signed_client_cert_fingerprint).to_uppercase();
 
             let client_ctr_raw = BASE64_STANDARD.encode(certificate.der());
 

@@ -48,9 +48,9 @@ const columns = [
 
 export default function Page() {
 	const tenantSlug = useTenantSlug();
-	const apps = trpc.app.list.createQuery(() => ({
-		tenantSlug: tenantSlug(),
-	}));
+
+	const apps = trpc.app.list.createQuery(() => ({ tenantSlug: tenantSlug() }));
+	cacheMetadata("application", () => apps.data ?? []);
 
 	const table = createStandardTable({
 		get data() {
@@ -90,12 +90,7 @@ export default function Page() {
 	);
 }
 
-import {
-	A,
-	useNavigate,
-	useSearchParams,
-	type RouteDefinition,
-} from "@solidjs/router";
+import { A, useNavigate, type RouteDefinition } from "@solidjs/router";
 import { createQuery, queryOptions } from "@tanstack/solid-query";
 import {
 	Button,
@@ -117,6 +112,7 @@ import { z } from "zod";
 import clsx from "clsx";
 import { useTenantSlug } from "../../t.[tenantSlug]";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
+import { cacheMetadata } from "../metadataCache";
 
 const IOS_APP_SCHEMA = z.object({
 	results: z.array(
@@ -181,14 +177,12 @@ function CreateApplicationSheet(props: ParentProps) {
 
 	const [search, setSearch] = createSignal("");
 
-	const query = createQuery(
-		queryOptions(() => ({
-			...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
-				search,
-			),
-			enabled: open(),
-		})),
-	);
+	const query = createQuery(() => ({
+		...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
+			search,
+		),
+		enabled: open(),
+	}));
 
 	createEffect(() => {
 		const results = query.data?.results;

@@ -1,5 +1,4 @@
 import { createId } from "@paralleldrive/cuid2";
-import { relations } from "drizzle-orm";
 import {
 	bigint,
 	boolean,
@@ -16,7 +15,7 @@ import {
 } from "drizzle-orm/mysql-core";
 import { auditLogDefinition } from "../api/auditLogDefinition";
 import { getObjectKeys } from "../api/utils";
-import type { Configuration } from "~/lib/policy";
+import type { PolicyData } from "~/lib/policy";
 import type { Features } from "~/lib/featureFlags";
 
 // TS table name - plural, camelCase
@@ -57,6 +56,14 @@ export const waitlist = mysqlTable("waitlist", {
 	interest: mysqlEnum("interest", waitlistInterestReasons).notNull(),
 	deployment: mysqlEnum("deployment", waitlistDeploymentMethod).notNull(),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+type KvKey = "config" | `server:${string}` | `cert:${string}`;
+
+export const kv = mysqlTable("kv", {
+	key: varchar("key", { length: 256 }).$type<KvKey>().primaryKey(),
+	value: varbinary("value", { length: 9068 }).notNull(),
+	lastModified: timestamp("last_modified").notNull().defaultNow().onUpdateNow(),
 });
 
 // An account represents the login of an *administrator*.
@@ -216,10 +223,7 @@ export const users = mysqlTable(
 	}),
 );
 
-const policyDataCol = json("data")
-	.notNull()
-	.default({})
-	.$type<Record<string, Configuration>>();
+const policyDataCol = json("data").notNull().default({}).$type<PolicyData>();
 
 export const policies = mysqlTable("policies", {
 	pk: serial("pk").primaryKey(),
@@ -483,22 +487,6 @@ export const domains = mysqlTable("domains", {
 	identityProviderPk: serialRelation("identity_provider")
 		.notNull()
 		.references(() => identityProviders.pk),
-});
-
-export const domainToCertificateRelation = relations(domains, ({ one }) => ({
-	certificate: one(certificates, {
-		fields: [domains.domain],
-		references: [certificates.key],
-	}),
-}));
-
-// The backend for Rust's ACME.
-// This will contain the certificate for the primary server domain and any user-provided via `domains`.
-// The `key` will either be a comma separated list of domains (for a certificate) or comma separated list of email address (for an ACME account).
-export const certificates = mysqlTable("certificates", {
-	key: varchar("key", { length: 256 }).primaryKey(),
-	certificate: varbinary("certificate", { length: 9068 }).notNull(),
-	lastModified: timestamp("last_modified").notNull().defaultNow(),
 });
 
 export const auditLog = mysqlTable("audit_log", {

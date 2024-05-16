@@ -123,14 +123,14 @@ function PolicyContent() {
 					<PolicyContext>
 						<ul class="list-disc px-4">
 							<For
-								each={Object.entries(usePolicy()().data)}
+								each={formatPolicy(usePolicy()().data)}
 								fallback={
 									<h2 class="text-muted-foreground opacity-70">
 										Policy is empty!
 									</h2>
 								}
 							>
-								{([_, configuration]) => <li>{formatPolicy(configuration)}</li>}
+								{(txt) => <li>{txt}</li>}
 							</For>
 						</ul>
 					</PolicyContext>

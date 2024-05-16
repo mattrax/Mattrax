@@ -1,8 +1,7 @@
 use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 use crate::{
-    routing::{SourceRef, TargetRef},
-    Cmd, CmdId, CmdRef, Data, Item, MsgRef,
+    routing::{SourceRef, TargetRef}, CmdId, CmdRef, Item, MsgRef,
 };
 
 /// The Status element type specifies the request status code for a corresponding SyncML command.

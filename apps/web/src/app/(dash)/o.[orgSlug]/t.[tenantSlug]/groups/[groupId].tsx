@@ -1,13 +1,13 @@
-import { type RouteDefinition } from "@solidjs/router";
-import { type ParentProps } from "solid-js";
+import type { RouteDefinition } from "@solidjs/router";
+import type { ParentProps } from "solid-js";
 import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
-import { useTenantSlug } from "../../t.[tenantSlug]";
-import { createNotFoundRedirect, useNameFromListQuery } from "~/lib/utils";
+import { createNotFoundRedirect } from "~/lib/utils";
+import { getMetadata } from "../metadataCache";
 
 export function useGroupId() {
 	const params = useZodParams({ groupId: z.string() });
@@ -30,20 +30,16 @@ export const route = {
 		BREADCRUMB: {
 			Component: () => {
 				const params = useZodParams({ groupId: z.string() });
-				const tenantSlug = useTenantSlug();
 
 				const query = trpc.group.get.createQuery(() => ({
 					id: params.groupId,
 				}));
 
-				const nameFromList = useNameFromListQuery(
-					(trpc) => trpc.group.list.getData({ tenantSlug: tenantSlug() }),
-					() => params.groupId,
-				);
-
 				return (
 					<>
-						<span>{nameFromList() ?? query.data?.name}</span>
+						<span>
+							{getMetadata("group", params.groupId)?.name ?? query.data?.name}
+						</span>
 						<Badge variant="outline">Group</Badge>
 					</>
 				);

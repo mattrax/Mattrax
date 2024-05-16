@@ -1,6 +1,6 @@
 import { type ParentProps, Show, createSignal, For, Suspense } from "solid-js";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { A, RouteDefinition } from "@solidjs/router";
+import { A, type RouteDefinition } from "@solidjs/router";
 import { As } from "@kobalte/core";
 import pluralize from "pluralize";
 import clsx from "clsx";
@@ -16,11 +16,16 @@ import {
 	Label,
 	buttonVariants,
 } from "@mattrax/ui";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
-import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
+import {
+	VariantTableSheet,
+	type VariantTableVariants,
+	createVariantTableColumns,
+} from "~c/VariantTableSheet";
 import { StandardTable, createStandardTable } from "~/components/StandardTable";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { BruhIconPhLaptop } from "./bruh";
@@ -144,11 +149,12 @@ function Devices() {
 
 function Assignments() {
 	const user = useUser();
-	const tenantSlug = useTenantSlug();
 
 	const assignments = trpc.user.assignments.createQuery(() => ({
 		id: user().id,
 	}));
+
+	const variants = createAssignmentsVariants("../../");
 
 	const table = createStandardTable({
 		get data() {
@@ -159,28 +165,13 @@ function Assignments() {
 				...assignments.data.apps.map((d) => ({ ...d, variant: "application" })),
 			];
 		},
-		columns: variantTableColumns,
+		columns: createVariantTableColumns(variants),
 		pagination: true,
 	});
 
 	const addAssignments = trpc.user.addAssignments.createMutation(() => ({
-		onSuccess: () => assignments.refetch(),
+		...withDependantQueries(assignments),
 	}));
-
-	const variants = {
-		policy: {
-			label: "Policies",
-			query: trpc.tenant.variantTable.policies.createQuery(() => ({
-				tenantSlug: tenantSlug(),
-			})),
-		},
-		application: {
-			label: "Applications",
-			query: trpc.tenant.variantTable.apps.createQuery(() => ({
-				tenantSlug: tenantSlug(),
-			})),
-		},
-	};
 
 	return (
 		<>
@@ -212,6 +203,27 @@ function Assignments() {
 			</Suspense>
 		</>
 	);
+}
+
+function createAssignmentsVariants(pathToTenant: string) {
+	const tenantSlug = useTenantSlug();
+
+	return {
+		policy: {
+			label: "Policies",
+			query: trpc.tenant.variantTable.policies.createQuery(() => ({
+				tenantSlug: tenantSlug(),
+			})),
+			href: (item) => `${pathToTenant}/policies/${item.id}`,
+		},
+		application: {
+			label: "Applications",
+			query: trpc.tenant.variantTable.apps.createQuery(() => ({
+				tenantSlug: tenantSlug(),
+			})),
+			href: (item) => `${pathToTenant}/apps/${item.id}`,
+		},
+	} satisfies VariantTableVariants;
 }
 
 function SendInstructionsDialog(

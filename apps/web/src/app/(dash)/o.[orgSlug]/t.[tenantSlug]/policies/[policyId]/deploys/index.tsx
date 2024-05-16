@@ -26,6 +26,7 @@ import { createColumnHelper } from "@tanstack/solid-table";
 import { createTimeAgo } from "@solid-primitives/date";
 import type { RouterOutput } from "~/api";
 import { A } from "@solidjs/router";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	createStandardTable,
 	createSearchParamPagination,
@@ -195,10 +196,8 @@ function DeployDialog() {
 	const overview = trpc.policy.overview.createQuery(() => ({ id: policyId() }));
 
 	const deploy = trpc.policy.deploy.createMutation(() => ({
-		onSuccess: async () => {
-			Promise.all([policy.query.refetch(), deploys.refetch()]);
-			controller.setOpen(false);
-		},
+		onSuccess: () => controller.setOpen(false),
+		...withDependantQueries([policy.query, deploys]),
 	}));
 
 	const scopedEntities = () =>

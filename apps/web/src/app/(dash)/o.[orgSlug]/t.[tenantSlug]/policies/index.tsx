@@ -2,24 +2,17 @@ import { As } from "@kobalte/core";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Suspense, startTransition } from "solid-js";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
-import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import type { RouterOutput } from "~/api/trpc";
 import {
-	ColumnsDropdown,
 	StandardTable,
 	createStandardTable,
 	createSearchParamPagination,
 	selectCheckboxColumn,
 	createSearchParamFilter,
 } from "~c/StandardTable";
-import {
-	Button,
-	Input,
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from "@mattrax/ui";
+import { Button, Popover, PopoverContent, PopoverTrigger } from "@mattrax/ui";
 import { trpc } from "~/lib";
 
 export const route = {
@@ -56,7 +49,9 @@ const columns = [
 
 export default function Page() {
 	const params = useZodParams({ tenantSlug: z.string() });
+
 	const policies = trpc.policy.list.createQuery(() => params);
+	cacheMetadata("policy", () => policies.data ?? []);
 
 	const table = createStandardTable({
 		get data() {
@@ -97,18 +92,28 @@ import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 import { useTenantSlug } from "../../t.[tenantSlug]";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { cacheMetadata } from "../metadataCache";
 
 function CreatePolicyButton() {
 	const tenantSlug = useTenantSlug();
 	const navigate = useNavigate();
-	const trpcCtx = trpc.useContext();
+
+	const users = trpc.user.list.createQuery(
+		() => ({
+			tenantSlug: tenantSlug(),
+		}),
+		() => ({ enabled: false }),
+	);
+	const gettingStarted = trpc.tenant.gettingStarted.createQuery(
+		() => ({
+			tenantSlug: tenantSlug(),
+		}),
+		() => ({ enabled: false }),
+	);
 
 	const createPolicy = trpc.policy.create.createMutation(() => ({
-		onSuccess: async (policyId) => {
-			trpcCtx.user.list.invalidate();
-			trpcCtx.tenant.gettingStarted.invalidate();
-			await startTransition(() => navigate(policyId));
-		},
+		onSuccess: (policyId) => startTransition(() => navigate(policyId)),
+		...withDependantQueries([users, gettingStarted]),
 	}));
 
 	const form = createZodForm({

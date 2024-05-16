@@ -5,7 +5,6 @@ import { cache } from "@solidjs/router";
 import { z } from "zod";
 
 import {
-	type PolicyAssignableVariant,
 	PolicyAssignableVariants,
 	devices,
 	groups,
@@ -20,7 +19,7 @@ import {
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { omit } from "~/api/utils";
 import { withAuditLog } from "~/api/auditLog";
-import type { Configuration } from "~/lib/policy";
+import type { PolicyData } from "~/lib/policy";
 
 const getPolicy = cache(async (id: string) => {
 	return await db.query.policies.findFirst({
@@ -77,7 +76,7 @@ export const policyRouter = createTRPCRouter({
 
 			return {
 				// The differences between the policies state and the last deployed version
-				diff: generatePolicyDiff(lastVersion?.data ?? {}, policy.data),
+				diff: generatePolicyDiff(lastVersion?.data ?? ({} as any), policy.data),
 				...omit(policy, ["tenantPk"]),
 			};
 		}),
@@ -98,7 +97,14 @@ export const policyRouter = createTRPCRouter({
 			.select({
 				pk: policyAssignments.pk,
 				variant: policyAssignments.variant,
-				name: sql<PolicyAssignableVariant>`
+				id: sql<string>`
+					GROUP_CONCAT(CASE
+						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.device} THEN ${devices.id}
+						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.user} THEN ${users.id}
+						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.group} THEN ${groups.id}
+					END)
+          `.as("id"),
+				name: sql<string>`
 					GROUP_CONCAT(CASE
 						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.device} THEN ${devices.name}
 						WHEN ${policyAssignments.variant} = ${PolicyAssignableVariants.user} THEN ${users.name}
@@ -238,8 +244,8 @@ export const policyRouter = createTRPCRouter({
 				.limit(1);
 
 			if (
-				generatePolicyDiff(lastVersion?.data ?? {}, ctx.policy.data).length ===
-				0
+				generatePolicyDiff(lastVersion?.data ?? ({} as any), ctx.policy.data)
+					.length === 0
 			)
 				throw new Error("policy has not changed");
 
@@ -316,14 +322,11 @@ export const policyRouter = createTRPCRouter({
 });
 
 // `p1` should be older than `p2` for the result to be correct
-export function generatePolicyDiff(
-	p1: Record<string, Configuration>,
-	p2: Record<string, Configuration>,
-) {
+export function generatePolicyDiff(p1: PolicyData, p2: PolicyData) {
 	const result: { change: "added" | "deleted" | "modified"; data: any }[] = [];
 
-	for (const [key, value] of Object.entries(p1)) {
-		const otherValue = p2[key];
+	for (const [key, value] of Object.entries(p1?.windows || {})) {
+		const otherValue = p2?.windows?.[key];
 		if (otherValue === undefined) {
 			result.push({ change: "deleted", data: value });
 		} else {
@@ -333,11 +336,14 @@ export function generatePolicyDiff(
 		}
 	}
 
-	for (const [key, value] of Object.entries(p2)) {
-		if (p1[key] === undefined) {
+	for (const [key, value] of Object.entries(p2?.windows || {})) {
+		if (p1?.windows?.[key] === undefined) {
 			result.push({ change: "added", data: value });
 		}
 	}
+
+	// TODO: macOS support
+	// TODO: Android
 
 	return result;
 }

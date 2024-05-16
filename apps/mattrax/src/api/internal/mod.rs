@@ -8,6 +8,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Deserialize;
 use tracing::error;
 
@@ -20,11 +21,17 @@ async fn internal_auth(
     request: Request,
     next: Next,
 ) -> Response {
-    if request
+    let authorization = request
         .headers()
         .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        == Some(&format!("Bearer {:?}", state.config.get().internal_secret))
+        .and_then(|v| v.to_str().ok());
+
+    if authorization
+        != Some(&format!(
+            "Basic {}",
+            STANDARD.encode(format!(":{}", &state.config.get().internal_secret))
+        ))
+        && authorization != Some(&format!("Bearer {:?}", state.config.get().internal_secret))
     {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }

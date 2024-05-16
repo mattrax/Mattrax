@@ -1,6 +1,6 @@
 import { createContextProvider } from "@solid-primitives/context";
-import { type RouteDefinition } from "@solidjs/router";
-import { type ParentProps } from "solid-js";
+import type { RouteDefinition } from "@solidjs/router";
+import type { ParentProps } from "solid-js";
 import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 
@@ -8,8 +8,8 @@ import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 import type { RouterOutput } from "~/api";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { useTenantSlug } from "../../t.[tenantSlug]";
-import { createNotFoundRedirect, useNameFromListQuery } from "~/lib/utils";
+import { createNotFoundRedirect } from "~/lib/utils";
+import { getMetadata } from "../metadataCache";
 
 // const NAV_ITEMS = [{ title: "Application", href: "" }];
 
@@ -23,20 +23,17 @@ export const route = {
 		BREADCRUMB: {
 			Component: () => {
 				const params = useZodParams({ appId: z.string() });
-				const tenantSlug = useTenantSlug();
 
 				const query = trpc.app.get.createQuery(() => ({
 					id: params.appId,
 				}));
 
-				const nameFromList = useNameFromListQuery(
-					(trpc) => trpc.app.list.getData({ tenantSlug: tenantSlug() }),
-					() => params.appId,
-				);
-
 				return (
 					<>
-						<span>{nameFromList() ?? query.data?.name}</span>
+						<span>
+							{getMetadata("application", params.appId)?.name ??
+								query.data?.name}
+						</span>
 						<Badge variant="outline">App</Badge>
 					</>
 				);

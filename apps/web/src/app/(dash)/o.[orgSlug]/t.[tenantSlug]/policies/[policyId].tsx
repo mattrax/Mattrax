@@ -1,13 +1,13 @@
-import { type RouteDefinition } from "@solidjs/router";
-import { type ParentProps } from "solid-js";
+import type { RouteDefinition } from "@solidjs/router";
+import type { ParentProps } from "solid-js";
 import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { createNotFoundRedirect, useNameFromListQuery } from "~/lib/utils";
-import { useTenantSlug } from "../../t.[tenantSlug]";
+import { createNotFoundRedirect } from "~/lib/utils";
+import { getMetadata } from "../metadataCache";
 
 export function usePolicyId() {
 	const params = useZodParams({ policyId: z.string() });
@@ -32,20 +32,16 @@ export const route = {
 		BREADCRUMB: {
 			Component: () => {
 				const params = useZodParams({ policyId: z.string() });
-				const tenantSlug = useTenantSlug();
 
 				const query = trpc.policy.get.createQuery(() => ({
 					id: params.policyId,
 				}));
 
-				const nameFromList = useNameFromListQuery(
-					(trpc) => trpc.user.list.getData({ tenantSlug: tenantSlug() }),
-					() => params.policyId,
-				);
-
 				return (
 					<>
-						<span>{nameFromList() ?? query.data?.name}</span>
+						<span>
+							{getMetadata("policy", params.policyId)?.name ?? query.data?.name}
+						</span>
 						<Badge variant="outline">Policy</Badge>
 					</>
 				);

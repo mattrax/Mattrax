@@ -6,11 +6,12 @@ import {
 	startTransition,
 	Show,
 	Suspense,
+	createEffect,
 } from "solid-js";
-import { createWritableMemo } from "@solid-primitives/memo";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 export function MultiSwitcher(props: ParentProps) {
 	const [modal, setModal] = createSignal<"org" | "tenant">();
@@ -23,16 +24,27 @@ export function MultiSwitcher(props: ParentProps) {
 	const [open, setOpen] = createSignal(false);
 
 	const [selectedOrg, setSelectedOrg] = createSignal<
-		{ type: "org"; slug: string } | "create"
-	>({ type: "org", slug: params.orgSlug });
+		{ type: "org"; slug: string; id: string } | "create"
+	>();
 
-	const orgs = trpc.org.list.createQuery();
+	const query = trpc.org.list.createQuery();
+	const orgs = useCachedQueryData(query, () => cachedOrgs());
 
-	const [selectedTenant, setSelectedTenant] = createWritableMemo<
+	const [selectedTenant, setSelectedTenant] = createSignal<
 		string | null | undefined
-	>(() => {
-		return undefined;
+	>();
+
+	createEffect(() => {
+		const firstOrg = orgs()?.[0];
+		if (selectedOrg() || !firstOrg) return;
+		setSelectedOrg({
+			type: "org",
+			slug: firstOrg.slug,
+			id: firstOrg.id,
+		});
 	});
+
+	const thisOrg = () => orgs()?.find((o) => o.slug === params.orgSlug);
 
 	return (
 		<>
@@ -62,7 +74,9 @@ export function MultiSwitcher(props: ParentProps) {
 				open={open()}
 				setOpen={(o) => {
 					if (o) {
-						setSelectedOrg({ type: "org", slug: params.orgSlug });
+						const thisO = thisOrg();
+						if (thisO) setSelectedOrg({ type: "org", ...thisO });
+
 						setSelectedTenant(params.tenantSlug);
 					}
 					setOpen(o);
@@ -79,49 +93,51 @@ export function MultiSwitcher(props: ParentProps) {
             />
           </div> */}
 						<div class="text-xs text-gray-600 px-3 pt-5">Organisations</div>
-						<Suspense>
-							<ul class="p-1 pt-2 flex flex-col">
-								<For each={orgs.data}>
-									{(org) => (
-										<li>
-											<a
-												class={clsx(
-													"block px-2 py-1.5 text-sm rounded flex flex-row justify-between items-center focus:outline-none",
-													(() => {
-														const selOrg = selectedOrg();
-														if (
-															typeof selOrg === "object" &&
-															selOrg.slug === org.slug
-														)
-															return "bg-neutral-200";
-													})(),
-												)}
-												onMouseEnter={() =>
-													setSelectedOrg({ type: "org", slug: org.slug })
-												}
-												href={`/o/${org.slug}`}
-											>
-												{org.name}
-												{org.slug === params.orgSlug && <IconPhCheck />}
-											</a>
-										</li>
+						<ul class="p-1 pt-2 flex flex-col">
+							<For each={orgs()}>
+								{(org) => (
+									<li onClick={() => setOpen(false)}>
+										<a
+											class={clsx(
+												"block px-2 py-1.5 text-sm rounded flex flex-row justify-between items-center focus:outline-none",
+												(() => {
+													const selOrg = selectedOrg();
+													if (
+														typeof selOrg === "object" &&
+														selOrg.slug === org.slug
+													)
+														return "bg-neutral-200";
+												})(),
+											)}
+											onMouseEnter={() =>
+												setSelectedOrg({
+													type: "org",
+													slug: org.slug,
+													id: org.id,
+												})
+											}
+											href={`/o/${org.slug}`}
+										>
+											{org.name}
+											{org.slug === params.orgSlug && <IconPhCheck />}
+										</a>
+									</li>
+								)}
+							</For>
+							<li>
+								<button
+									class={clsx(
+										"flex flex-row items-center gap-1 px-2 py-1.5 text-sm rounded w-full",
+										selectedOrg() === "create" && "bg-neutral-200",
 									)}
-								</For>
-								<li>
-									<button
-										class={clsx(
-											"flex flex-row items-center gap-1 px-2 py-1.5 text-sm rounded w-full",
-											selectedOrg() === "create" && "bg-neutral-200",
-										)}
-										onMouseEnter={() => setSelectedOrg("create")}
-										onClick={() => setModal("org")}
-									>
-										<IconPhPlusCircle />
-										Create Organisation
-									</button>
-								</li>
-							</ul>
-						</Suspense>
+									onMouseEnter={() => setSelectedOrg("create")}
+									onClick={() => setModal("org")}
+								>
+									<IconPhPlusCircle />
+									Create Organisation
+								</button>
+							</li>
+						</ul>
 					</div>
 					<div class="w-[12rem] flex flex-col overflow-y-auto">
 						<Show
@@ -132,18 +148,29 @@ export function MultiSwitcher(props: ParentProps) {
 							keyed
 						>
 							{(org) => {
-								const tenants = trpc.tenant.list.createQuery(() => ({
+								const query = trpc.tenant.list.createQuery(() => ({
 									orgSlug: org.slug,
 								}));
+
+								createQueryCacher(query, "tenants", (tenant) => ({
+									id: tenant.id,
+									name: tenant.name,
+									slug: tenant.slug,
+									orgId: org.id,
+								}));
+
+								const tenants = useCachedQueryData(query, () =>
+									cachedTenantsForOrg(org.id),
+								);
 
 								return (
 									<>
 										<div class="text-xs text-gray-600 px-3 pt-5">Tenants</div>
 										<Suspense>
 											<ul class="p-1 pt-2 flex flex-col">
-												<For each={tenants.data}>
+												<For each={tenants()}>
 													{(tenant) => (
-														<li>
+														<li onClick={() => setOpen(false)}>
 															<a
 																class={clsx(
 																	"block px-2 py-1.5 text-sm rounded flex flex-row justify-between items-center focus:outline-none",
@@ -200,6 +227,9 @@ import {
 import { trpc } from "~/lib";
 import { useNavigate } from "@solidjs/router";
 import clsx from "clsx";
+import { createQueryCacher, useCachedQueryData } from "~/cache";
+import { cachedOrgs } from "./utils";
+import { cachedTenantsForOrg } from "./o.[orgSlug]/utils";
 
 export function CreateTenantDialog(props: {
 	open: boolean;
@@ -207,25 +237,29 @@ export function CreateTenantDialog(props: {
 	orgSlug: string;
 }) {
 	const navigate = useNavigate();
-	const trpcCtx = trpc.useContext();
+	const orgs = trpc.org.list.createQuery(void 0, () => ({ enabled: false }));
 
 	const mutation = trpc.tenant.create.createMutation(() => ({
 		onSuccess: async (slug, { orgSlug }) => {
 			// TODO: Get the data back in the response instead of a separate request
 			// Session also holds tenants
 			// await props.refetchSession();
-			await trpcCtx.auth.me.invalidate();
 			await startTransition(async () => {
 				navigate(`/o/${orgSlug}/t/${slug}`);
 				props.setOpen(false);
 			});
 		},
+		...withDependantQueries(orgs),
 	}));
 
 	const form = createZodForm({
 		schema: z.object({ name: z.string() }),
 		onSubmit: ({ value }) =>
 			mutation.mutateAsync({ name: value.name, orgSlug: props.orgSlug }),
+	});
+
+	createEffect(() => {
+		if (props.open) form.reset();
 	});
 
 	return (
@@ -256,24 +290,25 @@ function CreateOrgDialog(props: {
 	setOpen: (o: boolean) => void;
 }) {
 	const navigate = useNavigate();
-	const trpcCtx = trpc.useContext();
+	const orgs = trpc.org.list.createQuery(void 0, () => ({ enabled: false }));
 
 	const mutation = trpc.org.create.createMutation(() => ({
 		onSuccess: async (slug) => {
-			// TODO: Get the data back in the response instead of a separate request
-			// Session also holds tenants
-			// await props.refetchSession();
-			await trpcCtx.auth.me.invalidate();
 			await startTransition(() => {
 				navigate(`/o/${slug}`);
 				props.setOpen(false);
 			});
 		},
+		...withDependantQueries(orgs),
 	}));
 
 	const form = createZodForm({
 		schema: z.object({ name: z.string() }),
 		onSubmit: ({ value }) => mutation.mutateAsync({ name: value.name }),
+	});
+
+	createEffect(() => {
+		if (props.open) form.reset();
 	});
 
 	return (

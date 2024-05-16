@@ -57,7 +57,7 @@ pub fn inline_ref<T: Type>(_: &T, conf: &ExportConfig) -> Output {
 /// Eg. `z.object({ demo: z.string() });`
 pub fn inline<T: Type>(conf: &ExportConfig) -> Output {
     let mut type_map = TypeMap::default();
-    let ty = T::inline(&mut type_map, &[]);
+    let ty = T::inline(&mut type_map, specta::Generics::Definition);
     // is_valid_ty(&ty, &type_map)?;
     let result = datatype(conf, &ty, &type_map);
 
@@ -93,8 +93,8 @@ pub fn export_named_datatype(
 #[allow(clippy::ptr_arg)]
 fn inner_comments(
     ctx: ExportContext,
-    deprecated: Option<&DeprecatedType>,
-    docs: &Cow<'static, str>,
+    _deprecated: Option<&DeprecatedType>,
+    _docs: &Cow<'static, str>,
     other: String,
     start_with_newline: bool,
 ) -> String {
@@ -120,13 +120,12 @@ fn inner_comments(
 fn export_datatype_inner(ctx: ExportContext, typ: &NamedDataType, type_map: &TypeMap) -> Output {
     let ctx = ctx.with(
         typ.ext()
-            .clone()
-            .map(|v| PathItem::TypeExtended(typ.name().clone(), v.impl_location().clone()))
+            .map(|v| PathItem::TypeExtended(typ.name().clone(), *v.impl_location()))
             .unwrap_or_else(|| PathItem::Type(typ.name().clone())),
     );
     let name = sanitise_type_name(ctx.clone(), NamedLocation::Type, typ.name())?;
 
-    let generics = typ
+    let _generics = typ
         .inner
         .generics()
         .filter(|generics| !generics.is_empty())
@@ -199,8 +198,8 @@ pub(crate) fn datatype_inner(ctx: ExportContext, typ: &DataType, type_map: &Type
             format!(
                 // We use this isn't of `Record<K, V>` to avoid issues with circular references.
                 "z.record({}, {})",
-                datatype_inner(ctx.clone(), &def.0, type_map)?,
-                datatype_inner(ctx, &def.1, type_map)?
+                datatype_inner(ctx.clone(), def.key_ty(), type_map)?,
+                datatype_inner(ctx, def.value_ty(), type_map)?
             )
         }
         // We use `T[]` instead of `Array<T>` to avoid issues with circular references.
@@ -233,8 +232,8 @@ pub(crate) fn datatype_inner(ctx: ExportContext, typ: &DataType, type_map: &Type
             type_map,
         )?,
         DataType::Enum(item) => {
-            let mut ctx = ctx.clone();
-            let cfg = ctx.cfg.clone().bigint(BigIntExportBehavior::Number);
+            let ctx = ctx.clone();
+            let _cfg = ctx.cfg.clone().bigint(BigIntExportBehavior::Number);
             // if item.skip_bigint_checks {
             //     ctx.cfg = &cfg;
             // }
@@ -260,7 +259,7 @@ pub(crate) fn datatype_inner(ctx: ExportContext, typ: &DataType, type_map: &Type
         }
         DataType::Reference(reference) => match &reference.generics()[..] {
             [] => reference.name().to_string(),
-            generics => {
+            _generics => {
                 let name = reference.name();
                 let generics = reference
                     .generics()
@@ -546,7 +545,7 @@ fn enum_datatype(ctx: ExportContext, e: &EnumType, type_map: &TypeMap) -> Output
                                     false
                                 };
 
-                                let mut typ =
+                                let typ =
                                     unnamed_fields_datatype(ctx.clone(), &fields, type_map)?;
 
                                 if dont_join_ty {
@@ -576,7 +575,7 @@ fn enum_datatype(ctx: ExportContext, e: &EnumType, type_map: &TypeMap) -> Output
 
                                 format!("z.object({{ {} }})", fields.join(", "))
                             }
-                            (EnumRepr::External, EnumVariants::Unit) => format!("z.literal({})", sanitised_name.to_string()),
+                            (EnumRepr::External, EnumVariants::Unit) => format!("z.literal({})", sanitised_name),
                             (EnumRepr::External, _) => {
                                 let ts_values = enum_variant_datatype(
                                     ctx.with(PathItem::Variant(variant_name.clone())),

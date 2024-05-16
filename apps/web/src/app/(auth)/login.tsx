@@ -1,12 +1,21 @@
-import { Match, Switch, createSignal, startTransition } from "solid-js";
+import {
+	Match,
+	Switch,
+	createSignal,
+	onMount,
+	startTransition,
+} from "solid-js";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { z } from "zod";
 
 import { trpc } from "~/lib";
+import { OTPInput, preloadOTPInput } from "~/components/OTPInput";
+import { useQueryClient } from "@tanstack/solid-query";
+import { resetMattraxCache } from "~/cache";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
-// TODO: Autocomplete attributes
 // TODO: Use Mattrax colors on this page
 
 export default function Page() {
@@ -15,6 +24,9 @@ export default function Page() {
 	>({ variant: "sendCode" });
 
 	const [searchParams] = useSearchParams<{ continueTo?: string }>();
+
+	// We load this in the background on the email input page.
+	onMount(() => preloadOTPInput());
 
 	return (
 		<div class="h-full flex flex-row justify-center p-4">
@@ -43,9 +55,16 @@ export default function Page() {
 							})()}
 						>
 							{(_) => {
+								const queryClient = useQueryClient();
 								const login = trpc.auth.sendLoginCode.createMutation(() => ({
-									onSuccess: (_, { email }) => {
-										setState({ variant: "verifyCode", email });
+									onSuccess: async (_, { email }) => {
+										queryClient.clear();
+										await resetMattraxCache();
+										// revalidate(); // TODO: Wipe entire Solid cache (I can't see a method for it)
+
+										await startTransition(() =>
+											setState({ variant: "verifyCode", email }),
+										);
 									},
 								}));
 
@@ -81,6 +100,14 @@ export default function Page() {
 						>
 							{(state) => {
 								const navigate = useNavigate();
+
+								const me = trpc.auth.me.createQuery(undefined, () => ({
+									enabled: false,
+								}));
+								const orgs = trpc.org.list.createQuery(undefined, () => ({
+									enabled: false,
+								}));
+
 								const verify = trpc.auth.verifyLoginCode.createMutation(() => ({
 									onSuccess: () => {
 										let to: string;
@@ -94,8 +121,9 @@ export default function Page() {
 											to = searchParams.continueTo;
 										else to = "/";
 
-										startTransition(() => navigate(to));
+										return startTransition(() => navigate(to));
 									},
+									...withDependantQueries([me, orgs]),
 								}));
 
 								const form = createZodForm({
@@ -108,16 +136,20 @@ export default function Page() {
 										<p>
 											Enter the code sent to <b>{state().email}</b>
 										</p>
-										<InputField
-											form={form}
-											type="text"
-											name="code"
-											class="text-center font-mono"
-											autocomplete="one-time-code"
-											inputmode="numeric"
-											maxlength="8"
-											pattern="\d{8}"
-										/>
+
+										<div class="flex justify-center">
+											<OTPInput
+												name="code"
+												disabled={form.state.isSubmitting}
+												onInput={(value) => {
+													form.setFieldValue("code", value);
+													if (value.length === 8) form.handleSubmit();
+												}}
+												onKeyDown={(e) => {
+													if (e.key === "Enter") form.handleSubmit();
+												}}
+											/>
+										</div>
 
 										<Button type="submit" class="w-full">
 											<span class="text-sm font-semibold leading-6">Login</span>

@@ -15,9 +15,10 @@ import {
 } from "@trpc/server";
 import { getHTTPStatusCodeFromError } from "@trpc/server/http";
 import { observable } from "@trpc/server/observable";
+import type { QueryClient } from "@tanstack/query-core";
 import { TRPC_ERROR_CODES_BY_KEY, type TRPCResponse } from "@trpc/server/rpc";
 import { getEvent } from "vinxi/http";
-import { TRPC_REQUEST } from "./server";
+import { TRPC_LOCAL_STORAGE } from "./server";
 
 export type TrpcServerFunctionOpts = StringifiedOpts;
 
@@ -42,43 +43,69 @@ export async function trpcServerFunction<TRouter extends AnyRouter>({
 	const event = getEvent();
 	const ctx = createContext(event);
 
-	let flush!: () => void;
-	const flushPromise = new Promise<void>((res) => {
-		flush = res;
-	});
-
-	(event as any)[TRPC_REQUEST] = { flush };
-
+	const flushPromises: Promise<unknown>[] = [];
 	const responses = opts.operations.map(async (o) => {
 		// https://github.com/trpc/trpc/blob/a9b03d7f3b6d6b4cf17ba4bff8e19767d26c31a4/packages/server/src/unstable-core-do-not-import/http/resolveHTTPResponse.ts#L301
 
-		try {
-			const data = await callProcedure({
-				procedures: router._def.procedures,
-				path: o.path,
-				rawInput: o.input,
-				ctx,
-				type: opts.type,
-			});
+		// const { promise, resolve } = Promise.withResolvers<void>();
+		let resolve!: () => void;
+		const promise = new Promise<void>((res, rej) => {
+			resolve = res;
+		});
 
-			return { result: { data } };
-		} catch (cause: unknown) {
-			const error = getTRPCErrorFromUnknown(cause);
+		flushPromises.push(promise);
 
-			return {
-				error: getErrorShape({
-					config: router._def._config,
-					error,
-					type: opts.type,
+		return await TRPC_LOCAL_STORAGE.run(resolve, async () => {
+			try {
+				const data = await callProcedure({
+					procedures: router._def.procedures,
 					path: o.path,
-					input: o.input,
-					ctx,
-				}),
-			};
-		}
+					rawInput: o.input,
+					ctx: {
+						...ctx,
+						flushResponse: resolve,
+					},
+					type: opts.type,
+				});
+
+				const dependant = (o as any)?.context?.paths?.map(
+					async (key: any[]) => {
+						const data = await callProcedure({
+							procedures: router._def.procedures,
+							path: key[0],
+							rawInput: key[1],
+							ctx: {
+								...ctx,
+								flushResponse: () => {}, // TODO: resolve,
+							},
+							type: "query",
+						});
+
+						return [key, data];
+					},
+				);
+
+				return { result: { data }, dependant };
+			} catch (cause: unknown) {
+				console.error(cause);
+				const error = getTRPCErrorFromUnknown(cause);
+
+				return {
+					error: getErrorShape({
+						config: router._def._config,
+						error,
+						type: opts.type,
+						path: o.path,
+						input: o.input,
+						ctx,
+					}),
+				};
+			}
+		});
 	});
 
-	await flushPromise;
+	// Once all procedures have said they are ready, we can flush the response
+	await Promise.all(flushPromises);
 
 	return responses;
 }
@@ -115,6 +142,7 @@ export const createServerFunctionLink = <TRouter extends AnyRouter>(
 	serverFunction: (
 		opts: StringifiedOpts,
 	) => ReturnType<typeof trpcServerFunction<TRouter>>,
+	queryClient?: QueryClient,
 ): TRPCLink<TRouter> => {
 	return () => {
 		const batchLoader = (type: ProcedureType) => {
@@ -141,6 +169,13 @@ export const createServerFunctionLink = <TRouter extends AnyRouter>(
 				promise
 					.then((p) => p)
 					.then((response) => {
+						if (queryClient)
+							for (const promise of (response as any)?.dependant || []) {
+								promise.then(([key, result]: [any, any]) =>
+									queryClient.setQueryData(key, result),
+								);
+							}
+
 						if ("error" in response) {
 							observer.error(TRPCClientError.from(response));
 							return;

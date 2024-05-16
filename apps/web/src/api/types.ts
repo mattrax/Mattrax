@@ -1,5 +1,5 @@
-import { APIEvent } from "@solidjs/start/server";
-import { H3Event } from "h3";
+import type { APIEvent } from "@solidjs/start/server";
+import type { H3Event } from "h3";
 
 export type HonoEnv = {
 	Bindings: {

@@ -4,7 +4,11 @@ import { splitProps } from "solid-js";
 import { Popover as PopoverPrimitive } from "@kobalte/core";
 
 import { cn } from "./lib";
-import { Controller, ControllerProvider, createController } from "./controller";
+import {
+	type Controller,
+	ControllerProvider,
+	createController,
+} from "./controller";
 
 const Popover: Component<
 	Omit<PopoverPrimitive.PopoverRootProps, "open"> &

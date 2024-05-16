@@ -13,18 +13,24 @@ import {
 	DropdownMenuItem,
 } from "@mattrax/ui";
 import pluralize from "pluralize";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	StandardTable,
 	createActionsColumn,
+	createSearchParamPagination,
 	createStandardTable,
 } from "~c/StandardTable";
-import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
+import {
+	VariantTableSheet,
+	type VariantTableVariants,
+	createVariantTableColumns,
+} from "~c/VariantTableSheet";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
 import { usePolicyId } from "../[policyId]";
 import { trpc } from "~/lib";
-import { RouteDefinition } from "@solidjs/router";
+import type { RouteDefinition } from "@solidjs/router";
 import { toTitleCase } from "~/lib/utils";
 
 export const route = {
@@ -49,12 +55,14 @@ export default function Page() {
 			| { type: "removeMany"; data: NonNullable<typeof assignees.data> };
 	}>({ open: false, data: { type: "removeMany", data: [] } });
 
+	const variants = createVariants();
+
 	const table = createStandardTable({
 		get data() {
 			return assignees.data ?? [];
 		},
 		columns: [
-			...variantTableColumns,
+			...createVariantTableColumns(variants),
 			createActionsColumn({
 				headerDropdownContent: ({ table }) => (
 					<DropdownMenuItem
@@ -93,13 +101,14 @@ export default function Page() {
 		pagination: true,
 	});
 
+	createSearchParamPagination(table, "page");
+
 	const addAssignees = trpc.policy.addAssignees.createMutation(() => ({
-		onSuccess: () => assignees.refetch(),
+		...withDependantQueries(assignees),
 	}));
 
-	const variants = createVariants();
-
 	const removeAssignees = trpc.policy.removeAssignees.createMutation(() => ({
+		// TODO: `withDependantQueries`
 		onSuccess: () =>
 			assignees.refetch().then(() => {
 				table.resetRowSelection(true);
@@ -245,18 +254,21 @@ function createVariants() {
 			query: trpc.tenant.variantTable.devices.createQuery(() => ({
 				tenantSlug: tenantSlug(),
 			})),
+			href: (item) => `../../../devices/${item.id}`,
 		},
 		user: {
 			label: "Users",
 			query: trpc.tenant.variantTable.users.createQuery(() => ({
 				tenantSlug: tenantSlug(),
 			})),
+			href: (item) => `../../../users/${item.id}`,
 		},
 		group: {
 			label: "Groups",
 			query: trpc.tenant.variantTable.groups.createQuery(() => ({
 				tenantSlug: tenantSlug(),
 			})),
+			href: (item) => `../../../groups/${item.id}`,
 		},
-	};
+	} satisfies VariantTableVariants;
 }

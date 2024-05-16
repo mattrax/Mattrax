@@ -63,36 +63,39 @@ function createSectionStore(sections: Array<Section>) {
 }
 
 function useVisibleSections(sectionStore: StoreApi<SectionState>) {
-	let setVisibleSections = useStore(sectionStore, (s) => s.setVisibleSections);
-	let sections = useStore(sectionStore, (s) => s.sections);
+	const setVisibleSections = useStore(
+		sectionStore,
+		(s) => s.setVisibleSections,
+	);
+	const sections = useStore(sectionStore, (s) => s.sections);
 
 	useEffect(() => {
 		function checkVisibleSections() {
-			let { innerHeight, scrollY } = window;
-			let newVisibleSections = [];
+			const { innerHeight, scrollY } = window;
+			const newVisibleSections = [];
 
 			for (
 				let sectionIndex = 0;
 				sectionIndex < sections.length;
 				sectionIndex++
 			) {
-				let { id, headingRef, offsetRem = 0 } = sections[sectionIndex];
+				const { id, headingRef, offsetRem = 0 } = sections[sectionIndex];
 
 				if (!headingRef?.current) {
 					continue;
 				}
 
-				let offset = remToPx(offsetRem);
-				let top = headingRef.current.getBoundingClientRect().top + scrollY;
+				const offset = remToPx(offsetRem);
+				const top = headingRef.current.getBoundingClientRect().top + scrollY;
 
 				if (sectionIndex === 0 && top - offset > scrollY) {
 					newVisibleSections.push("_top");
 				}
 
-				let nextSection = sections[sectionIndex + 1];
-				let bottom =
+				const nextSection = sections[sectionIndex + 1];
+				const bottom =
 					(nextSection?.headingRef?.current?.getBoundingClientRect().top ??
-						Infinity) +
+						Number.POSITIVE_INFINITY) +
 					scrollY -
 					remToPx(nextSection?.offsetRem ?? 0);
 
@@ -108,7 +111,7 @@ function useVisibleSections(sectionStore: StoreApi<SectionState>) {
 			setVisibleSections(newVisibleSections);
 		}
 
-		let raf = window.requestAnimationFrame(() => checkVisibleSections());
+		const raf = window.requestAnimationFrame(() => checkVisibleSections());
 		window.addEventListener("scroll", checkVisibleSections, { passive: true });
 		window.addEventListener("resize", checkVisibleSections);
 
@@ -132,7 +135,7 @@ export function SectionProvider({
 	sections: Array<Section>;
 	children: React.ReactNode;
 }) {
-	let [sectionStore] = useState(() => createSectionStore(sections));
+	const [sectionStore] = useState(() => createSectionStore(sections));
 
 	useVisibleSections(sectionStore);
 
@@ -148,6 +151,6 @@ export function SectionProvider({
 }
 
 export function useSectionStore<T>(selector: (state: SectionState) => T) {
-	let store = useContext(SectionStoreContext);
+	const store = useContext(SectionStoreContext);
 	return useStore(store!, selector);
 }

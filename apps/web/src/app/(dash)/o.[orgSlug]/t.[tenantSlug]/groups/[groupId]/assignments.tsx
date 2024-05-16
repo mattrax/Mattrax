@@ -22,12 +22,17 @@ import {
 	createSearchParamFilter,
 	createStandardTable,
 } from "~c/StandardTable";
-import { VariantTableSheet, variantTableColumns } from "~c/VariantTableSheet";
-import { useTenantSlug } from "../../../t.[tenantSlug]";
+import {
+	VariantTableSheet,
+	createVariantTableColumns,
+} from "~c/VariantTableSheet";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 import { useGroupId } from "../[groupId]";
-import { RouteDefinition } from "@solidjs/router";
+import type { RouteDefinition } from "@solidjs/router";
 import { toTitleCase } from "~/lib/utils";
+import { createAssignmentsVariants } from "./utils";
+import { cacheMetadata } from "../../metadataCache";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 export const route = {
 	load: ({ params }) =>
@@ -40,6 +45,14 @@ export default function Page() {
 	const assignments = trpc.group.assignments.createQuery(() => ({
 		id: groupId(),
 	}));
+	const cacheAssignmentsWithVariant = (v: "policy" | "application") =>
+		cacheMetadata(
+			v,
+			() => assignments.data?.filter((a) => a.variant === v) ?? [],
+		);
+
+	cacheAssignmentsWithVariant("policy");
+	cacheAssignmentsWithVariant("application");
 
 	const [dialog, setDialog] = createSignal<{
 		open: boolean;
@@ -51,12 +64,14 @@ export default function Page() {
 			| { type: "removeMany"; data: NonNullable<typeof assignments.data> };
 	}>({ open: false, data: { type: "removeMany", data: [] } });
 
+	const variants = createAssignmentsVariants("../../../");
+
 	const table = createStandardTable({
 		get data() {
 			return assignments.data ?? [];
 		},
 		columns: [
-			...variantTableColumns,
+			...createVariantTableColumns(variants),
 			createActionsColumn({
 				headerDropdownContent: ({ table }) => (
 					<DropdownMenuItem
@@ -98,18 +113,17 @@ export default function Page() {
 	createSearchParamFilter(table, "name", "search");
 
 	const addAssignments = trpc.group.addAssignments.createMutation(() => ({
-		onSuccess: () => assignments.refetch(),
+		...withDependantQueries(assignments),
 	}));
 
 	const removeAssignments = trpc.group.removeAssignments.createMutation(() => ({
+		// TODO: `withDependantQueries`???
 		onSuccess: () =>
 			assignments.refetch().then(() => {
 				table.resetRowSelection(true);
 				setDialog({ ...dialog(), open: false });
 			}),
 	}));
-
-	const variants = createVariants();
 
 	return (
 		<PageLayout
@@ -235,23 +249,4 @@ export default function Page() {
 			</Suspense>
 		</PageLayout>
 	);
-}
-
-function createVariants() {
-	const tenantSlug = useTenantSlug();
-
-	return {
-		policy: {
-			label: "Policies",
-			query: trpc.tenant.variantTable.policies.createQuery(() => ({
-				tenantSlug: tenantSlug(),
-			})),
-		},
-		application: {
-			label: "Applications",
-			query: trpc.tenant.variantTable.apps.createQuery(() => ({
-				tenantSlug: tenantSlug(),
-			})),
-		},
-	};
 }

@@ -1,7 +1,7 @@
-import { TRPCError } from "@trpc/server";
 import { and, count, eq, or, sql, inArray } from "drizzle-orm";
-import { z } from "zod";
 import { createId } from "@paralleldrive/cuid2";
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 import { withAuditLog } from "~/api/auditLog";
@@ -19,13 +19,20 @@ import {
 	policyAssignments,
 	users,
 } from "~/db";
+import { cache } from "@solidjs/router";
+
+const getGroup = cache(
+	(id: string) =>
+		db.query.groups.findFirst({
+			where: and(eq(groups.id, id)),
+		}),
+	"getGroup",
+);
 
 const groupProcedure = authedProcedure
 	.input(z.object({ id: z.string() }))
 	.use(async ({ next, input, ctx }) => {
-		const group = await ctx.db.query.groups.findFirst({
-			where: and(eq(groups.id, input.id)),
-		});
+		const group = await getGroup(input.id);
 		if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
 
 		const tenant = await ctx.ensureTenantMember(group.tenantPk);
@@ -85,9 +92,7 @@ export const groupRouter = createTRPCRouter({
 	get: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const group = await ctx.db.query.groups.findFirst({
-				where: eq(groups.id, input.id),
-			});
+			const group = await getGroup(input.id);
 			if (!group) return null;
 
 			await ctx.ensureTenantMember(group.tenantPk);
@@ -95,20 +100,13 @@ export const groupRouter = createTRPCRouter({
 			return group;
 		}),
 
-	update: authedProcedure
-		.input(z.object({ id: z.string(), name: z.string().optional() }))
+	update: groupProcedure
+		.input(z.object({ name: z.string().optional() }))
 		.mutation(async ({ ctx, input }) => {
-			const group = await ctx.db.query.groups.findFirst({
-				where: eq(groups.id, input.id),
-			});
-			if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
-
-			await ctx.ensureTenantMember(group.tenantPk);
-
 			await ctx.db
 				.update(groups)
 				.set({ ...(input.name && { name: input.name }) })
-				.where(eq(groups.id, input.id));
+				.where(eq(groups.pk, ctx.group.pk));
 		}),
 
 	members: groupProcedure.query(async ({ ctx }) => {
@@ -116,6 +114,12 @@ export const groupRouter = createTRPCRouter({
 			.select({
 				pk: groupMembers.pk,
 				variant: groupMembers.variant,
+				id: sql<string>`
+					GROUP_CONCAT(CASE
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.id}
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.id}
+					END)
+          `.as("id"),
 				name: sql<string>`
 					GROUP_CONCAT(CASE
 						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.name}

@@ -5,7 +5,11 @@ import type { JSX } from "solid-js";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { AuthContext } from "~c/AuthContext";
 
-const navigation = [{ name: "General", href: "general" }];
+const navigation = [
+	{ name: "General", href: "general" },
+	{ name: "Updates", href: "updates" },
+	{ name: "Superadmins", href: "superadmins" },
+];
 
 export const route = {
 	info: {

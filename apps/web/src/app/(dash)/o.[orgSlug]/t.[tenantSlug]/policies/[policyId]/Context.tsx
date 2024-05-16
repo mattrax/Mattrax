@@ -1,5 +1,5 @@
 import { createContextProvider } from "@solid-primitives/context";
-import { ParentProps, Show } from "solid-js";
+import { type ParentProps, Show } from "solid-js";
 import { z } from "zod";
 
 import type { RouterOutput } from "~/api";

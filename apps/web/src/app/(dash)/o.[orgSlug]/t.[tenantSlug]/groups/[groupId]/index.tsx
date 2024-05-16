@@ -6,12 +6,12 @@ import { toast } from "solid-sonner";
 
 import IconMaterialSymbolsEditOutline from "~icons/material-symbols/edit-outline.jsx";
 import IconIcRoundCheck from "~icons/ic/round-check.jsx";
-import { variantTableColumns } from "~c/VariantTableSheet";
+import { createVariantTableColumns } from "~c/VariantTableSheet";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { GroupContext, useGroup } from "./Context";
 import { trpc } from "~/lib";
 import { StatItem } from "~/components/StatItem";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 export const route = {
 	load: ({ params }) => {
@@ -27,8 +27,12 @@ export const route = {
 import IconPhDevices from "~icons/ph/devices";
 import IconPhUser from "~icons/ph/user";
 import { useGroupId } from "../[groupId]";
+import { createAssignmentsVariants, createMembersVariants } from "./utils";
+import { cacheMetadata, getMetadata } from "../../metadataCache";
 
 export default function Page() {
+	const groupId = useGroupId();
+
 	return (
 		<PageLayout
 			heading={
@@ -43,9 +47,7 @@ export default function Page() {
 							</span>
 						}
 					>
-						<GroupContext>
-							<NameEditor />
-						</GroupContext>
+						<NameEditor groupId={groupId()} />
 					</Suspense>
 					{/* TODO: This show show policies */}
 				</>
@@ -63,11 +65,12 @@ export default function Page() {
 	);
 }
 
-function NameEditor() {
-	const group = useGroup();
+function NameEditor(props: { groupId: string }) {
+	const group = trpc.group.get.createQuery(() => ({ id: props.groupId }));
+	cacheMetadata("group", () => (group.data ? [group.data] : []));
 
 	const updateGroup = trpc.group.update.createMutation(() => ({
-		onSuccess: () => group.query.refetch(),
+		...withDependantQueries(group),
 	}));
 
 	const updateName = (name: string) => {
@@ -76,7 +79,7 @@ function NameEditor() {
 			return;
 		}
 
-		toast.promise(updateGroup.mutateAsync({ id: group().id, name }), {
+		toast.promise(updateGroup.mutateAsync({ id: props.groupId, name }), {
 			loading: "Updating group name...",
 			success: "Group name updated",
 			error: "Failed to update group name",
@@ -86,8 +89,12 @@ function NameEditor() {
 	const [editingName, setEditingName] = createSignal(false);
 	let nameEl: HTMLHeadingElement;
 
-	const [cachedName, setCachedName] = createSignal(group().name);
-	const name = createMemo(() => (editingName() ? cachedName() : group().name));
+	const getName = () =>
+		getMetadata("group", props.groupId)?.name ?? group.data?.name;
+
+	const [cachedName, setCachedName] = createSignal(getName());
+
+	const nameText = createMemo(() => (editingName() ? cachedName() : getName()));
 
 	return (
 		<>
@@ -105,7 +112,7 @@ function NameEditor() {
 					}
 				}}
 			>
-				{name()}
+				{nameText()}
 			</PageLayoutHeading>
 			<Button
 				variant="link"
@@ -115,7 +122,7 @@ function NameEditor() {
 					setEditingName((e) => !e);
 
 					if (editingName()) {
-						setCachedName(group().name);
+						setCachedName(getName());
 
 						nameEl.focus();
 					} else {
@@ -140,11 +147,13 @@ function Members() {
 		id: groupId(),
 	}));
 
+	const variants = createMembersVariants("../../");
+
 	const membersTable = createStandardTable({
 		get data() {
 			return members.data ?? [];
 		},
-		columns: variantTableColumns.slice(1),
+		columns: createVariantTableColumns(variants).slice(1),
 		// pagination: true, // TODO: Pagination
 	});
 
@@ -204,11 +213,13 @@ function Assignments() {
 		id: groupId(),
 	}));
 
+	const variants = createAssignmentsVariants("../../");
+
 	const table = createStandardTable({
 		get data() {
 			return assignments.data ?? [];
 		},
-		columns: variantTableColumns.slice(1),
+		columns: createVariantTableColumns(variants).slice(1),
 		// pagination: true, // TODO: Pagination
 	});
 

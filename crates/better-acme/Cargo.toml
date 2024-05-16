@@ -9,7 +9,7 @@ publish = false
 
 [dependencies]
 async-trait = "0.1.78"
-base91 = "0.1.0"
+base64 = "0.22.1"
 chrono = "0.4.35"
 futures = "0.3.30"
 pem = "3.0.3"

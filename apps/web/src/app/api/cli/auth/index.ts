@@ -5,6 +5,8 @@ import { cliAuthCodes, db } from "~/db";
 import { env } from "~/env";
 
 export async function POST() {
+	throw new Error("THE CLI IS NOT SUPPORTED YET");
+
 	// TODO: Authenticated user
 
 	const id = createId();

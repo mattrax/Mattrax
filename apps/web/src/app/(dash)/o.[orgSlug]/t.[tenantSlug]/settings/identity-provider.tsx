@@ -22,7 +22,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@mattrax/ui";
-import { makeEventListener } from "@solid-primitives/event-listener";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import IconIcOutlineClose from "~icons/ic/outline-close.jsx";
@@ -59,21 +59,27 @@ export default function Page() {
 
 function IdentityProviderCard() {
 	const tenantSlug = useTenantSlug();
-	const trpcCtx = trpc.useContext();
 
 	const provider = trpc.tenant.identityProvider.get.createQuery(() => ({
 		tenantSlug: tenantSlug(),
 	}));
 
 	const syncProvider = trpc.tenant.identityProvider.sync.createMutation(() => ({
-		onSuccess: () => provider.refetch(),
+		...withDependantQueries(provider),
 	}));
 
 	const removeProvider = trpc.tenant.identityProvider.remove.createMutation(
 		() => ({
-			onSuccess: () => {
-				provider.refetch();
-			},
+			...withDependantQueries(provider),
+		}),
+	);
+
+	const gettingStarted = trpc.tenant.gettingStarted.createQuery(
+		() => ({
+			tenantSlug: tenantSlug(),
+		}),
+		() => ({
+			enabled: false,
 		}),
 	);
 
@@ -109,8 +115,6 @@ function IdentityProviderCard() {
 							return;
 
 						popupWindow?.close();
-						provider.refetch();
-						trpcCtx.tenant.gettingStarted.invalidate();
 						syncProvider.mutate({
 							tenantSlug: tenantSlug(),
 						});
@@ -118,6 +122,7 @@ function IdentityProviderCard() {
 					});
 				});
 			},
+			...withDependantQueries([provider, gettingStarted]),
 		}),
 	);
 
@@ -201,17 +206,14 @@ function Domains() {
 		tenantSlug: tenantSlug(),
 	}));
 
-	const refreshDomains =
-		trpc.tenant.identityProvider.refreshDomains.createMutation(() => ({
-			onSuccess: () =>
-				trpcCtx.tenant.identityProvider.domains.refetch({
-					tenantSlug: tenantSlug(),
-				}),
-		}));
-
 	const domains = trpc.tenant.identityProvider.domains.createQuery(() => ({
 		tenantSlug: tenantSlug(),
 	}));
+
+	const refreshDomains =
+		trpc.tenant.identityProvider.refreshDomains.createMutation(() => ({
+			...withDependantQueries(domains),
+		}));
 
 	function allDomains() {
 		const arr = [
@@ -388,7 +390,7 @@ function Domains() {
 														const removeDomain =
 															trpc.tenant.identityProvider.removeDomain.createMutation(
 																() => ({
-																	onSuccess: () => domains.refetch(),
+																	...withDependantQueries(domains),
 																}),
 															);
 
@@ -411,7 +413,7 @@ function Domains() {
 													{(_) => {
 														const enableDomain =
 															trpc.tenant.identityProvider.connectDomain.createMutation(
-																() => ({ onSuccess: () => domains.refetch() }),
+																() => ({ ...withDependantQueries(domains) }),
 															);
 
 														return (

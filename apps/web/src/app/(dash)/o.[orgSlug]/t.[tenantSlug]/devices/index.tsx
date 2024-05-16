@@ -1,8 +1,8 @@
-import { A, useSearchParams, type RouteDefinition } from "@solidjs/router";
+import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { createTimeAgo } from "@solid-primitives/date";
 import type { RouterOutput } from "~/api/trpc";
-import { Suspense, createEffect } from "solid-js";
+import { Suspense } from "solid-js";
 import { As } from "@kobalte/core";
 
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
@@ -14,12 +14,13 @@ import {
 	selectCheckboxColumn,
 	createSearchParamFilter,
 } from "~c/StandardTable";
-import { Button, Input } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { cacheMetadata } from "../metadataCache";
 
 export const route = {
 	load: ({ params }) => {
@@ -74,6 +75,7 @@ export default function Page() {
 	// const location = useLocation();
 	const params = useZodParams({ tenantSlug: z.string() });
 	const devices = trpc.device.list.createQuery(() => params);
+	cacheMetadata("device", () => devices.data ?? []);
 
 	const table = createStandardTable({
 		get data() {
