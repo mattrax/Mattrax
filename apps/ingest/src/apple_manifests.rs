@@ -10,6 +10,12 @@ struct AppleProfilePayload {
     title: String,
     description: String,
     properties: BTreeMap<String, Property>,
+    #[serde(skip_serializing_if = "is_false")]
+    supervised: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 #[derive(Serialize, Debug, Type)]
@@ -112,6 +118,23 @@ pub fn generate_bindings() {
     ))
     .unwrap();
 
+    // let mut json = vec![];
+
+    // for file in plist_files {
+    //     json.push(
+    //         serde_json::to_value(
+    //             plist::from_file::<_, plist::Value>(file.unwrap().as_path()).unwrap(),
+    //         )
+    //         .unwrap(),
+    //     )
+    // }
+
+    // fs::write(
+    //     Path::new(env!("CARGO_MANIFEST_DIR")).join("json/apple-manifests.json"),
+    //     serde_json::to_string_pretty(&serde_json::to_value(json).unwrap()).unwrap(),
+    // )
+    // .unwrap();
+
     let mut payloads = AppleProfilePayloadCollection::default();
 
     for file in plist_files {
@@ -121,8 +144,7 @@ pub fn generate_bindings() {
             .pfm_subkeys
             .into_iter()
             .filter(|subkey| {
-                !COMMON_PAYLOAD_KEYS
-                    .contains(&subkey.pfm_name.as_deref().unwrap_or(""))
+                !COMMON_PAYLOAD_KEYS.contains(&subkey.pfm_name.as_deref().unwrap_or(""))
             })
             .map(|subkey| (subkey.pfm_name.clone().unwrap(), Property::parse(subkey)))
             .collect();
@@ -131,6 +153,7 @@ pub fn generate_bindings() {
             title: manifest.pfm_title,
             description: manifest.pfm_description,
             properties,
+            supervised: manifest.pfm_supervised.unwrap_or_default(),
         };
 
         payloads.0.insert(manifest.pfm_domain, profile);

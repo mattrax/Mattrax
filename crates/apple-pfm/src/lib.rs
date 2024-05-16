@@ -1,4 +1,4 @@
-use std::{path::Path};
+use std::path::Path;
 
 use plist::{Date, Value};
 use serde::Deserialize;
@@ -44,6 +44,7 @@ pub struct Manifest {
     pub pfm_version: u64,
     /// An array of all keys this payload can configure. They will be shown in order
     pub pfm_subkeys: Vec<Preference>,
+    pub pfm_supervised: Option<bool>,
 }
 
 impl Manifest {

@@ -1936,6 +1936,7 @@ dependencies = [
  "easy-xml",
  "glob",
  "ms-ddf",
+ "plist",
  "serde",
  "serde_json",
  "specta",

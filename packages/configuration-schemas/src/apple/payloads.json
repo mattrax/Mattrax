@@ -2235,7 +2235,8 @@
         "description": "Skips the iCloud Storage window.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": true
   },
   "com.apple.ShareKitHelper": {
     "title": "ShareKit",
@@ -3883,7 +3884,8 @@
           }
         }
       }
-    }
+    },
+    "supervised": true
   },
   "com.apple.applicationaccess": {
     "title": "Restrictions (tvOS)",
@@ -4483,7 +4485,8 @@
         "description": "A custom message displayed on the screen in Conference Room Display mode.",
         "type": "string"
       }
-    }
+    },
+    "supervised": true
   },
   "com.apple.configurationprofile.identification": {
     "title": "Identification",
@@ -8132,7 +8135,8 @@
           ]
         }
       }
-    }
+    },
+    "supervised": true
   },
   "com.apple.osxserver.account": {
     "title": "macOS Server Accounts",
@@ -8265,7 +8269,8 @@
         "description": "The password for profile removal.",
         "type": "string"
       }
-    }
+    },
+    "supervised": true
   },
   "com.apple.proxy.http.global": {
     "title": "Global HTTP Proxy",
@@ -8311,7 +8316,8 @@
         "description": "The user name used to authenticate to the proxy server. This setting is only used if the ProxyType is set to Manual, and is ignored if the ProxyType is set to Automatic.",
         "type": "string"
       }
-    }
+    },
+    "supervised": true
   },
   "com.apple.python": {
     "title": "Python",
@@ -9292,7 +9298,8 @@
         "description": "Displays a name, address, or phone number on the Login window and Lock screen.",
         "type": "string"
       }
-    }
+    },
+    "supervised": true
   },
   "com.apple.sharingd": {
     "title": "AirDrop Discoverability (macOS)",
@@ -10663,7 +10670,8 @@
           ]
         }
       }
-    }
+    },
+    "supervised": true
   },
   "com.apple.universalaccess": {
     "title": "Accessibility",
