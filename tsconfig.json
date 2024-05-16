@@ -4,7 +4,7 @@
 		{ "path": "./apps/web" },
 		{ "path": "./apps/landing" },
 		{ "path": "./packages/drizzle-to-rs" },
-		{ "path": "./packages/configuration-schema" },
+		{ "path": "./packages/configuration-schemas" },
 		{ "path": "./packages/drizzle-to-rs" },
 		{ "path": "./packages/ms-graph" },
 		{ "path": "./packages/mysql-planetscale" },

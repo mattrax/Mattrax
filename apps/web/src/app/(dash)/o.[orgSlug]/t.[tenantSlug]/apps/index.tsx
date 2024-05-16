@@ -177,14 +177,12 @@ function CreateApplicationSheet(props: ParentProps) {
 
 	const [search, setSearch] = createSignal("");
 
-	const query = createQuery(
-		queryOptions(() => ({
-			...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
-				search,
-			),
-			enabled: open(),
-		})),
-	);
+	const query = createQuery(() => ({
+		...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
+			search,
+		),
+		enabled: open(),
+	}));
 
 	createEffect(() => {
 		const results = query.data?.results;

@@ -1,5 +1,4 @@
-// @ts-nocheck // TODO: Typescript
-/** @jsx React.createElement */
+// @jsxImportSource react
 
 // biome-ignore lint: don't remove React
 import React from "react";
@@ -18,7 +17,7 @@ interface Props {
 	tenantName: string;
 }
 
-export function UserEnrollmentInvite(props: Props) {
+function UserEnrollmentInvite(props: Props) {
 	const previewText = `Join ${props.tenantName} on Mattrax`;
 
 	return (

@@ -8,5 +8,8 @@
 	"dependencies": {
 		"@planetscale/database": "^1.16.0",
 		"mysql2": "^3.9.7"
+	},
+	"devDependencies": {
+		"@types/node": "^20.12.7"
 	}
 }

@@ -68,20 +68,22 @@ export async function trpcServerFunction<TRouter extends AnyRouter>({
 					type: opts.type,
 				});
 
-				const dependant = o?.context?.paths?.map(async (key) => {
-					const data = await callProcedure({
-						procedures: router._def.procedures,
-						path: key[0],
-						rawInput: key[1],
-						ctx: {
-							...ctx,
-							flushResponse: () => {}, // TODO: resolve,
-						},
-						type: "query",
-					});
+				const dependant = (o as any)?.context?.paths?.map(
+					async (key: any[]) => {
+						const data = await callProcedure({
+							procedures: router._def.procedures,
+							path: key[0],
+							rawInput: key[1],
+							ctx: {
+								...ctx,
+								flushResponse: () => {}, // TODO: resolve,
+							},
+							type: "query",
+						});
 
-					return [key, data];
-				});
+						return [key, data];
+					},
+				);
 
 				return { result: { data }, dependant };
 			} catch (cause: unknown) {
@@ -168,8 +170,8 @@ export const createServerFunctionLink = <TRouter extends AnyRouter>(
 					.then((p) => p)
 					.then((response) => {
 						if (queryClient)
-							for (const promise of response?.dependant || []) {
-								promise.then(([key, result]) =>
+							for (const promise of (response as any)?.dependant || []) {
+								promise.then(([key, result]: [any, any]) =>
 									queryClient.setQueryData(key, result),
 								);
 							}

@@ -1,5 +1,4 @@
-// @ts-nocheck // TODO: Typescript
-/** @jsx React.createElement */
+// @jsxImportSource react
 
 // biome-ignore lint: don't remove React
 import React from "react";

@@ -16,7 +16,11 @@ export default defineConfig({
 	// @ts-expect-error: SS's types are wrong. This is piped into Solid's Vite plugin so all options are not required.
 	solid: {
 		// We don't wanna apply Solid's JSX transform to the React emails.
-		exclude: ["src/emails/*", "src/components/OTPInput/react.tsx"],
+		exclude: [
+			"src/emails/*",
+			"src/components/OTPInput/react.tsx",
+			"../../packages/email/**",
+		],
 	},
 	vite: ({ router }) => ({
 		envDir: monorepoRoot,
@@ -27,7 +31,7 @@ export default defineConfig({
 		},
 		build: {
 			// Safari mobile has problems with newer syntax
-			target: "es2015",
+			target: "es2020",
 		},
 		plugins: [
 			devtools(),
@@ -51,6 +55,9 @@ export default defineConfig({
 		},
 		rollupConfig: {
 			external: ["cloudflare:sockets"],
+		},
+		esbuild: {
+			options: { target: "es2020" },
 		},
 	},
 });

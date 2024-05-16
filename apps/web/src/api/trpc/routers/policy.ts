@@ -76,7 +76,7 @@ export const policyRouter = createTRPCRouter({
 
 			return {
 				// The differences between the policies state and the last deployed version
-				diff: generatePolicyDiff(lastVersion?.data ?? {}, policy.data),
+				diff: generatePolicyDiff(lastVersion?.data ?? ({} as any), policy.data),
 				...omit(policy, ["tenantPk"]),
 			};
 		}),
@@ -244,8 +244,8 @@ export const policyRouter = createTRPCRouter({
 				.limit(1);
 
 			if (
-				generatePolicyDiff(lastVersion?.data ?? {}, ctx.policy.data).length ===
-				0
+				generatePolicyDiff(lastVersion?.data ?? ({} as any), ctx.policy.data)
+					.length === 0
 			)
 				throw new Error("policy has not changed");
 
