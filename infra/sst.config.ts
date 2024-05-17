@@ -488,7 +488,7 @@ function MDMServerEC2({
 
   const userData = tailscale.prodKey.key.apply(
     (tailscaleKey) => `#!/bin/bash
-export DATABASE_URL="${process.env.DATABASE_URL}"
+export DATABASE_URL="${new sst.Secret("DatabaseURL").value}"
 export TAILSCALE_AUTH_KEY="${tailscaleKey}"
 
 curl -fsSL https://tailscale.com/install.sh | sh
