@@ -1,4 +1,3 @@
-import { As, Dialog as DialogPrimitive } from "@kobalte/core";
 import type { RouteDefinition } from "@solidjs/router";
 import {
 	AsyncButton,
@@ -11,6 +10,7 @@ import {
 	DialogRoot,
 	DialogTitle,
 	DropdownMenuItem,
+	SheetTrigger,
 } from "@mattrax/ui";
 import pluralize from "pluralize";
 import { Match, Suspense, Switch, createSignal } from "solid-js";
@@ -33,6 +33,7 @@ import { useGroupId } from "../[groupId]";
 import { toTitleCase } from "~/lib/utils";
 import { createMembersVariants } from "./utils";
 import { cacheMetadata } from "../../metadataCache";
+import { Dialog } from "@kobalte/core";
 
 export const route = {
 	load: ({ params }) =>
@@ -138,9 +139,9 @@ export default function Page() {
 							addMembers.mutateAsync({ id: groupId(), members })
 						}
 					>
-						<As component={Button} class="ml-auto">
+						<SheetTrigger as={Button} class="ml-auto">
 							Add Members
-						</As>
+						</SheetTrigger>
 					</VariantTableSheet>
 				</>
 			}
@@ -164,11 +165,9 @@ export default function Page() {
 								</DialogDescription>
 							</DialogHeader>
 							<DialogFooter>
-								<DialogPrimitive.CloseButton asChild>
-									<As component={Button} variant="secondary">
-										Cancel
-									</As>
-								</DialogPrimitive.CloseButton>
+								<Dialog.CloseButton as={Button} variant="secondary">
+									Cancel
+								</Dialog.CloseButton>
 								<div class="flex-1" />
 								<AsyncButton
 									onClick={() =>
@@ -212,11 +211,9 @@ export default function Page() {
 										</DialogDescription>
 									</DialogHeader>
 									<DialogFooter>
-										<DialogPrimitive.CloseButton asChild>
-											<As component={Button} variant="secondary">
-												Cancel
-											</As>
-										</DialogPrimitive.CloseButton>
+										<Dialog.CloseButton as={Button} variant="secondary">
+											Cancel
+										</Dialog.CloseButton>
 										<div class="flex-1" />
 										<AsyncButton
 											onClick={() =>

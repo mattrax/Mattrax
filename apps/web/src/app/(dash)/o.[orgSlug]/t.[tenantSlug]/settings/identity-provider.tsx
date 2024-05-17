@@ -9,7 +9,6 @@ import {
 } from "solid-js";
 import type { RouteDefinition } from "@solidjs/router";
 import { toast } from "solid-sonner";
-import { As } from "@kobalte/core";
 import clsx from "clsx";
 import {
 	Badge,
@@ -345,15 +344,13 @@ function Domains() {
 																					Windows Automatic Enrollment not
 																					configured
 																					<DialogRoot>
-																						<DialogTrigger asChild>
-																							<As
-																								component={Button}
-																								class="ml-2"
-																								variant="outline"
-																								size="iconSmall"
-																							>
-																								?
-																							</As>
+																						<DialogTrigger
+																							as={Button}
+																							class="ml-2"
+																							variant="outline"
+																							size="iconSmall"
+																						>
+																							?
 																						</DialogTrigger>
 																						<DialogContent class="max-w-auto">
 																							<DialogHeader>

@@ -13,7 +13,7 @@ import {
 	selectCheckboxColumn,
 	createSearchParamFilter,
 } from "~c/StandardTable";
-import { Button } from "@mattrax/ui";
+import { Button, DropdownMenuTrigger } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
@@ -110,10 +110,14 @@ export default function Page() {
 			<div class="flex flex-row items-center gap-4">
 				<TableSearchParamsInput class="flex-1" query={devices} />
 				<ColumnsDropdown table={table}>
-					<Button variant="outline" class="ml-auto select-none">
+					<DropdownMenuTrigger
+						as={Button}
+						variant="outline"
+						class="ml-auto select-none"
+					>
 						Columns
 						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
-					</Button>
+					</DropdownMenuTrigger>
 				</ColumnsDropdown>
 			</div>
 			<Suspense>

@@ -1,4 +1,3 @@
-import { As } from "@kobalte/core";
 import { A, type RouteDefinition, useNavigate } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { type ParentProps, Suspense, startTransition } from "solid-js";
@@ -44,7 +43,7 @@ import {
 	selectCheckboxColumn,
 	createSearchParamFilter,
 } from "~c/StandardTable";
-import { Button } from "@mattrax/ui";
+import { Button, DropdownMenuTrigger } from "@mattrax/ui";
 
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
@@ -71,9 +70,9 @@ export default function Page() {
 				<>
 					<PageLayoutHeading>Groups</PageLayoutHeading>
 					<CreateGroupDialog>
-						<As component={Button} class="ml-auto">
+						<DialogTrigger as={Button} class="ml-auto">
 							Create New Group
-						</As>
+						</DialogTrigger>
 					</CreateGroupDialog>
 				</>
 			}
@@ -81,10 +80,14 @@ export default function Page() {
 			<div class="flex items-center gap-4">
 				<TableSearchParamsInput query={groups} />
 				<ColumnsDropdown table={table}>
-					<As component={Button} variant="outline" class="ml-auto select-none">
+					<DropdownMenuTrigger
+						as={Button}
+						variant="outline"
+						class="ml-auto select-none"
+					>
 						Columns
 						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
-					</As>
+					</DropdownMenuTrigger>
 				</ColumnsDropdown>
 			</div>
 			<Suspense>
@@ -128,7 +131,7 @@ function CreateGroupDialog(props: ParentProps) {
 
 	return (
 		<DialogRoot>
-			<DialogTrigger asChild>{props.children}</DialogTrigger>
+			{props.children}
 			<DialogContent>
 				<DialogHeader>
 					<DialogTitle>Create Group</DialogTitle>

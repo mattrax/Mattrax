@@ -75,10 +75,14 @@ export default function Page() {
 			<div class="flex flex-row items-center gap-4">
 				<TableSearchParamsInput query={apps} />
 				<ColumnsDropdown table={table}>
-					<Button variant="outline" class="ml-auto select-none">
+					<DropdownMenuTrigger
+						as={Button}
+						variant="outline"
+						class="ml-auto select-none"
+					>
 						Columns
 						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
-					</Button>
+					</DropdownMenuTrigger>
 				</ColumnsDropdown>
 			</div>
 			<Suspense>
@@ -92,6 +96,7 @@ import { A, useNavigate, type RouteDefinition } from "@solidjs/router";
 import { createQuery, queryOptions } from "@tanstack/solid-query";
 import {
 	Button,
+	DropdownMenuTrigger,
 	Input,
 	Sheet,
 	SheetContent,

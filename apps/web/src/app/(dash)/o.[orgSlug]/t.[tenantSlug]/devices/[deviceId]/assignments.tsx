@@ -1,5 +1,5 @@
 import { Suspense } from "solid-js";
-import { Button } from "@mattrax/ui";
+import { Button, SheetTrigger } from "@mattrax/ui";
 import pluralize from "pluralize";
 
 import { trpc } from "~/lib";
@@ -78,7 +78,9 @@ export default function Page() {
 							})
 						}
 					>
-						<Button class="ml-auto">Add Assignments</Button>
+						<SheetTrigger as={Button} class="ml-auto">
+							Add Assignments
+						</SheetTrigger>
 					</VariantTableSheet>
 				</>
 			}

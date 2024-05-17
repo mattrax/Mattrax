@@ -1,10 +1,10 @@
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Show, Suspense } from "solid-js";
-import { As } from "@kobalte/core";
 import {
 	Badge,
 	Button,
+	DropdownMenuTrigger,
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
@@ -115,10 +115,14 @@ export default function Page() {
 			<div class="flex flex-row items-center gap-4">
 				<TableSearchParamsInput query={users} class="flex-1" />
 				<ColumnsDropdown table={table}>
-					<As component={Button} variant="outline" class="ml-auto select-none">
+					<DropdownMenuTrigger
+						as={Button}
+						variant="outline"
+						class="ml-auto select-none"
+					>
 						Columns
 						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
-					</As>
+					</DropdownMenuTrigger>
 				</ColumnsDropdown>
 			</div>
 			<Suspense>

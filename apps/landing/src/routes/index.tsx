@@ -12,6 +12,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 	useController,
+	DialogTrigger,
 } from "@mattrax/ui";
 import { z } from "zod";
 import {
@@ -219,7 +220,8 @@ export default function Page() {
 
 function Waitlist() {
 	return (
-		<Dialog trigger={<Button>Join Waitlist</Button>}>
+		<Dialog>
+			<DialogTrigger as={Button}>Join Waitlist</DialogTrigger>
 			<DialogContent class="md:w-auto w-11/12">
 				<DialogHeader>
 					<DialogTitle>Join Waitlist</DialogTitle>

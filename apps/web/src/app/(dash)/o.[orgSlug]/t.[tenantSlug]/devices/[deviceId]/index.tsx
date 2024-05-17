@@ -1,6 +1,5 @@
 import { A } from "@solidjs/router";
 import { createTimeAgo } from "@solid-primitives/date";
-import { As } from "@kobalte/core";
 
 import {
 	Button,
@@ -52,10 +51,8 @@ export default function Page() {
 					<PageLayoutHeading>Overview</PageLayoutHeading>
 
 					<DropdownMenu>
-						<DropdownMenuTrigger asChild>
-							{/* // TODO: Make this button's UI indicate dropdown menu not button */}
-							<As component={Button}>Actions</As>
-						</DropdownMenuTrigger>
+						{/* // TODO: Make this button's UI indicate dropdown menu not button */}
+						<DropdownMenuTrigger as={Button}>Actions</DropdownMenuTrigger>
 						<DropdownMenuContent>
 							<DropdownMenuItem
 								disabled={triggerAction.isPending}

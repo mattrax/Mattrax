@@ -1,4 +1,4 @@
-import { As, Dialog as KDialog } from "@kobalte/core";
+import { Dialog as KDialog } from "@kobalte/core";
 import type { JSX } from "solid-js";
 import { createStore } from "solid-js/store";
 import { z } from "zod";
@@ -97,10 +97,8 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 						)}
 
 						<DialogFooter>
-							<KDialog.CloseButton asChild>
-								<As component={Button} variant="outline">
-									Cancel
-								</As>
+							<KDialog.CloseButton as={Button} variant="outline">
+								Cancel
 							</KDialog.CloseButton>
 							<form.Subscribe>
 								{(form) => (
