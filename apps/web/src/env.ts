@@ -17,7 +17,6 @@ export const env = createEnv({
 		// This token is also used to authenticate `apps/web` with the Rust code when making HTTP requests
 		INTERNAL_SECRET: z.string(),
 		DATABASE_URL: z.string(),
-		MDM_URL: z.string(),
 		PROD_ORIGIN: z.string(),
 		FROM_ADDRESS: z.string(),
 		// Emails and other AWS services

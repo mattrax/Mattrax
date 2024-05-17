@@ -206,7 +206,6 @@ function WebPagesProject({
 				length: 64,
 			}).base64,
 			INTERNAL_SECRET: INTERNAL_SECRET(),
-			MDM_URL,
 			DATABASE_URL: INTERNAL_SECRET().apply(
 				(internal) => `https://:${internal}@${MDM_URL}`,
 			),
