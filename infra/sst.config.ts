@@ -1,5 +1,7 @@
 /// <reference path="./.sst/platform/config.d.ts" />
 
+import pulumi from "@pulumi/pulumi";
+
 const CLOUDFLARE_ACCOUNT = "f02b3ef168fe64129e9941b4fb2e4dc1";
 const CLOUDFLARE_ZONE = "mattrax.app";
 
@@ -486,9 +488,11 @@ function MDMServerEC2({
     subnetIds: [subnet.id],
   });
 
-  const userData = tailscale.prodKey.key.apply(
-    (tailscaleKey) => `#!/bin/bash
-export DATABASE_URL="${new sst.Secret("DatabaseURL").value}"
+  const userData = pulumi
+    .all([tailscale.prodKey.key, new sst.Secret("DatabaseURL").value])
+    .apply(
+      ([tailscaleKey, databaseUrl]) => `#!/bin/bash
+export DATABASE_URL="${databaseUrl}"
 export TAILSCALE_AUTH_KEY="${tailscaleKey}"
 
 curl -fsSL https://tailscale.com/install.sh | sh
@@ -498,7 +502,7 @@ sudo tailscale set --ssh
 
 curl -fsSL https://mattrax.app/install.sh | CHANNEL=nightly sh
 mattrax init "$DATABASE_URL"`,
-  );
+    );
 
   const instance = new aws.ec2.Instance("MattraxMDMServerInstance", {
     ami: "ami-0092a7ee6b8b2222a",
