@@ -192,6 +192,8 @@ function WebPagesProject({
 	awsUser: ReturnType<typeof WebAWSUser>;
 	entraID: ReturnType<typeof EntraID>;
 }) {
+	const PROD_HOST = "cloud.mattrax.app";
+
 	const deploymentConfig = {
 		compatibilityDate: "2024-04-03",
 		compatibilityFlags: ["nodejs_compat", "nodejs_als"],
@@ -217,6 +219,7 @@ function WebPagesProject({
 				.value,
 			WAITLIST_DISCORD_WEBHOOK_URL: new sst.Secret("WaitlistDiscordWebhookURL")
 				.value,
+			VITE_PROD_URL: `https://${PROD_HOST}`,
 		},
 		failOpen: true,
 		placement: { mode: "smart" },
@@ -255,7 +258,7 @@ function WebPagesProject({
 	new cloudflare.PagesDomain("MattraxWebDomain", {
 		accountId: CLOUDFLARE_ACCOUNT,
 		projectName: project.name,
-		domain: "cloud.mattrax.app",
+		domain: PROD_HOST,
 	});
 
 	return project;
