@@ -17,7 +17,7 @@ export const env = createEnv({
 		//
 		// This token is also used to authenticate `apps/web` with the Rust code when making HTTP requests
 		INTERNAL_SECRET: z.string(),
-		DATABASE_URL: z.string(),
+		PLANETSCALE_URL: z.string(),
 		PROD_URL: z.string(),
 		MDM_URL: z.string(),
 		EMAIL_URL: z.string(),
