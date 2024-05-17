@@ -70,8 +70,8 @@ function NavLink({
 				disabled
 					? "cursor-not-allowed text-zinc-900 dark:text-zinc-400"
 					: active
-					  ? "text-zinc-900 dark:text-white"
-					  : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white",
+						? "text-zinc-900 dark:text-white"
+						: "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white",
 			)}
 		>
 			<span className="truncate">{children}</span>

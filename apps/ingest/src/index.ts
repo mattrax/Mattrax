@@ -79,7 +79,7 @@ function handleNode(node: any, path_prefix: string, results: any[]) {
 		? `/// ${node.DFProperties[0].Description?.[0].replace(
 				"\n",
 				"\n\t///",
-		  )}\n\t`
+			)}\n\t`
 		: "";
 	results.push(`\t${comment}#[serde(rename = "${path}")]\n\t${name}(${type})`);
 }
