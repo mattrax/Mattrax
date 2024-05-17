@@ -82,7 +82,7 @@ export const enrollmentRouter = new Hono()
 		const params = new URLSearchParams({
 			client_id: env.ENTRA_CLIENT_ID,
 			scope: "https://graph.microsoft.com/.default",
-			redirect_uri: `${env.VITE_PROD_URL}/api/enrollment/callback`,
+			redirect_uri: `${env.PROD_ORIGIN}/api/enrollment/callback`,
 			response_type: "code",
 			response_mode: "query",
 			login_hint: email,
@@ -124,7 +124,7 @@ export const enrollmentRouter = new Hono()
 					client_id: env.ENTRA_CLIENT_ID,
 					client_secret: env.ENTRA_CLIENT_SECRET,
 					scope: "https://graph.microsoft.com/.default",
-					redirect_uri: `${env.VITE_PROD_URL}/api/enrollment/callback`,
+					redirect_uri: `${env.PROD_ORIGIN}/api/enrollment/callback`,
 					grant_type: "authorization_code",
 					code,
 				}),

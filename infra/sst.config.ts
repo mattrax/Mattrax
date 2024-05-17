@@ -221,7 +221,7 @@ function WebPagesProject({
 				.value,
 			WAITLIST_DISCORD_WEBHOOK_URL: new sst.Secret("WaitlistDiscordWebhookURL")
 				.value,
-			VITE_PROD_URL: `https://${PROD_HOST}`,
+			PROD_ORIGIN: `https://${PROD_HOST}`,
 		},
 		failOpen: true,
 		placement: { mode: "smart" },

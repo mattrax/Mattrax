@@ -14,7 +14,7 @@ export async function POST() {
 	await db.insert(cliAuthCodes).values({ code: id });
 
 	return Response.json({
-		url: `${env.VITE_PROD_URL}/cli/${id}`,
+		url: `${env.PROD_ORIGIN}/cli/${id}`,
 		jwt: await signJWT({ code: id }),
 	});
 }
