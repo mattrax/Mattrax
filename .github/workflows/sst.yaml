@@ -1,5 +1,8 @@
 name: SST Deploy
-on: push # TODO: Only on prod
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: "merge-${{ github.ref }}"
