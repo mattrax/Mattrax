@@ -207,7 +207,9 @@ function WebPagesProject({
 			}).base64,
 			INTERNAL_SECRET: INTERNAL_SECRET(),
 			MDM_URL,
-			DATABASE_URL: `https://:${INTERNAL_SECRET()}@${MDM_URL}`,
+			DATABASE_URL: INTERNAL_SECRET().apply(
+				(internal) => `https://:${internal}@${MDM_URL}`,
+			),
 			FROM_ADDRESS: process.env.FROM_ADDRESS ?? "noreply@mattrax.app",
 			PNPM_VERSION: "9.0.0",
 			STRIPE_PUBLISHABLE_KEY:
