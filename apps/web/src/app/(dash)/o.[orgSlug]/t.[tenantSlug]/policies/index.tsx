@@ -2,23 +2,17 @@ import { As } from "@kobalte/core";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Suspense, startTransition } from "solid-js";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
-import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import type { RouterOutput } from "~/api/trpc";
 import {
-	ColumnsDropdown,
 	StandardTable,
 	createStandardTable,
 	createSearchParamPagination,
 	selectCheckboxColumn,
+	createSearchParamFilter,
 } from "~c/StandardTable";
-import {
-	Button,
-	Input,
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from "@mattrax/ui";
+import { Button, Popover, PopoverContent, PopoverTrigger } from "@mattrax/ui";
 import { trpc } from "~/lib";
 
 export const route = {
@@ -49,9 +43,15 @@ const columns = [
 	// TODO: Supported OS's
 ];
 
-function createPoliciesTable() {
+// TODO: Infinite scroll
+
+// TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
+
+export default function Page() {
 	const params = useZodParams({ tenantSlug: z.string() });
-	const policies = trpc.policy.list.useQuery(() => params);
+
+	const policies = trpc.policy.list.createQuery(() => params);
+	cacheMetadata("policy", () => policies.data ?? []);
 
 	const table = createStandardTable({
 		get data() {
@@ -62,35 +62,18 @@ function createPoliciesTable() {
 	});
 
 	createSearchParamPagination(table, "page");
-
-	return { policies, table };
-}
-
-// TODO: Infinite scroll
-
-// TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
-
-export default function Page() {
-	const { table, policies } = createPoliciesTable();
+	createSearchParamFilter(table, "name", "search");
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Policies</PageLayoutHeading>}>
 			<div class="flex flex-row gap-4">
-				<Input
-					placeholder={!policies.data ? "Loading..." : "Search..."}
-					disabled={!policies.data}
-					value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-					onInput={(event) =>
-						table.getColumn("name")?.setFilterValue(event.target.value)
-					}
-					class="flex-1"
-				/>
-				<ColumnsDropdown table={table}>
+				<TableSearchParamsInput query={policies} class="flex-1" />
+				{/* <ColumnsDropdown table={table}>
 					<As component={Button} variant="outline" class="ml-auto select-none">
 						Columns
 						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
 					</As>
-				</ColumnsDropdown>
+				</ColumnsDropdown> */}
 
 				<CreatePolicyButton />
 			</div>
@@ -108,15 +91,29 @@ import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 import { useTenantSlug } from "../../t.[tenantSlug]";
+import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { cacheMetadata } from "../metadataCache";
 
 function CreatePolicyButton() {
 	const tenantSlug = useTenantSlug();
 	const navigate = useNavigate();
 
-	const createPolicy = trpc.policy.create.useMutation(() => ({
-		onSuccess: async (policyId) => {
-			await startTransition(() => navigate(policyId));
-		},
+	const users = trpc.user.list.createQuery(
+		() => ({
+			tenantSlug: tenantSlug(),
+		}),
+		() => ({ enabled: false }),
+	);
+	const gettingStarted = trpc.tenant.gettingStarted.createQuery(
+		() => ({
+			tenantSlug: tenantSlug(),
+		}),
+		() => ({ enabled: false }),
+	);
+
+	const createPolicy = trpc.policy.create.createMutation(() => ({
+		onSuccess: (policyId) => startTransition(() => navigate(policyId)),
+		...withDependantQueries([users, gettingStarted]),
 	}));
 
 	const form = createZodForm({
@@ -133,7 +130,7 @@ function CreatePolicyButton() {
 			<PopoverTrigger asChild>
 				<As component={Button}>Add New</As>
 			</PopoverTrigger>
-			<PopoverContent>
+			<PopoverContent class="p-4">
 				<Form
 					form={form}
 					class="w-full"

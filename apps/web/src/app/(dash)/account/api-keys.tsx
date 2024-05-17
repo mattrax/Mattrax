@@ -21,6 +21,7 @@ import {
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import { trpc } from "~/lib";
 
@@ -36,7 +37,7 @@ const columns = [
 ];
 
 export default function Page() {
-	const apiKeys = trpc.apiKey.list.useQuery();
+	const apiKeys = trpc.apiKey.list.createQuery();
 
 	const table = createStandardTable({
 		get data() {
@@ -51,7 +52,7 @@ export default function Page() {
 			<p class="mt-2 mb-3 text-gray-700 text-sm">
 				API Keys allow you to access the Mattrax API, as well as use the{" "}
 				<a
-					href="https://github.com/mattrax/Mattrax/tree/main/apps/mttx"
+					href="http://docs.mattrax.app/components/mttx"
 					target="_blank"
 					rel="noreferrer"
 				>
@@ -76,12 +77,12 @@ function CreateAPIKeyCard() {
 		open: false,
 	});
 
-	const trpcCtx = trpc.useContext();
-	const createAPIKey = trpc.apiKey.create.useMutation(() => ({
-		onSuccess: async (apiKey) => {
-			await trpcCtx.apiKey.list.refetch();
-			setDialogState({ open: true, apiKey });
-		},
+	const apiKeys = trpc.apiKey.list.createQuery(void 0, () => ({
+		enabled: false,
+	}));
+	const createAPIKey = trpc.apiKey.create.createMutation(() => ({
+		onSuccess: (apiKey) => setDialogState({ open: true, apiKey }),
+		...withDependantQueries(apiKeys),
 	}));
 	const form = createZodForm({
 		schema: z.object({ name: z.string() }),

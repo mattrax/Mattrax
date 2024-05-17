@@ -42,12 +42,17 @@ import {
 	createStandardTable,
 	createSearchParamPagination,
 	selectCheckboxColumn,
+	createSearchParamFilter,
 } from "~c/StandardTable";
 import { Button } from "@mattrax/ui";
 
-function createGroupsTable() {
+// TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
+
+export default function Page() {
 	const params = useZodParams({ tenantSlug: z.string() });
-	const groups = trpc.group.list.useQuery(() => params);
+
+	const groups = trpc.group.list.createQuery(() => params);
+	cacheMetadata("group", () => groups.data ?? []);
 
 	const table = createStandardTable({
 		get data() {
@@ -58,14 +63,7 @@ function createGroupsTable() {
 	});
 
 	createSearchParamPagination(table, "page");
-
-	return { groups, table };
-}
-
-// TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
-
-export default function Page() {
-	const { table, groups } = createGroupsTable();
+	createSearchParamFilter(table, "name", "search");
 
 	return (
 		<PageLayout
@@ -81,14 +79,7 @@ export default function Page() {
 			}
 		>
 			<div class="flex items-center gap-4">
-				<Input
-					placeholder={groups.isLoading ? "Loading..." : "Search..."}
-					disabled={groups.isLoading}
-					value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-					onInput={(event) =>
-						table.getColumn("name")?.setFilterValue(event.target.value)
-					}
-				/>
+				<TableSearchParamsInput query={groups} />
 				<ColumnsDropdown table={table}>
 					<As component={Button} variant="outline" class="ml-auto select-none">
 						Columns
@@ -109,17 +100,18 @@ import {
 	DialogRoot,
 	DialogTitle,
 	DialogTrigger,
-	Input,
 } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
+import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { cacheMetadata } from "../metadataCache";
 
 function CreateGroupDialog(props: ParentProps) {
 	const params = useZodParams({ tenantSlug: z.string() });
 	const navigate = useNavigate();
 
-	const mutation = trpc.group.create.useMutation(() => ({
+	const mutation = trpc.group.create.createMutation(() => ({
 		onSuccess: async (groupId) => {
 			await startTransition(() => navigate(groupId));
 		},

@@ -1,8 +1,8 @@
-import { UserProvider } from "~/api";
+import type { UserProvider } from "~/api";
 
 export const AUTH_PROVIDER_DISPLAY = {
 	entraId: "Microsoft Entra ID",
-	// gsuite: "Google Workspaces",
+	// gsuite: "Google Workspace",
 } satisfies Record<UserProvider, string>;
 
 export function authProviderUrl(

@@ -1,4 +1,3 @@
-import type { JSX } from "solid-js";
 import { A } from "@solidjs/router";
 import { createTimeAgo } from "@solid-primitives/date";
 import { As } from "@kobalte/core";
@@ -9,13 +8,14 @@ import {
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
-	Label,
 	Textarea,
 } from "@mattrax/ui";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useDevice } from "./Context";
 import { trpc } from "~/lib";
 import { toast } from "solid-sonner";
+import { Item } from "~/components/Item";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 // TODO: Rename device
 // TODO: Rotate filevault keys
@@ -24,11 +24,10 @@ import { toast } from "solid-sonner";
 export default function Page() {
 	const device = useDevice();
 
-	const triggerAction = trpc.device.action.useMutation(() => ({
-		onSuccess: (_, data) => {
-			device.query.refetch();
-			toast.success(`Triggered ${data.action} successfully`);
-		},
+	const triggerAction = trpc.device.action.createMutation(() => ({
+		onSuccess: (_, data) =>
+			toast.success(`Triggered ${data.action} successfully`),
+		...withDependantQueries(device.query),
 	}));
 
 	const [lastSeen] = createTimeAgo(device().lastSynced);
@@ -209,27 +208,5 @@ export default function Page() {
 			Jailbroken
 			Bootstrap token escrowed */}
 		</PageLayout>
-	);
-}
-
-function Item(props: {
-	label: string;
-	data: JSX.Element;
-}) {
-	// TODO: Make this not look like ass
-	return (
-		<div class="flex flex-col space-y-1.5">
-			<Label>{props.label}:</Label>
-			{/* Avoid nested p tags */}
-			{typeof props.data === "string" ? (
-				<p class="py-1 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
-					{props.data}
-				</p>
-			) : (
-				<div class="py-1 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
-					{props.data}
-				</div>
-			)}
-		</div>
 	);
 }

@@ -23,3 +23,8 @@ export * from "./badge";
 export * from "./popover";
 export * from "./avatar";
 export * from "./collapsible";
+export * from "./command";
+export * from "./combobox";
+export * from "./toggle";
+export * from "./context-menu";
+export * from "./number-input";

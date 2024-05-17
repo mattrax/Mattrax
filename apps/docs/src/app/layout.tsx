@@ -4,8 +4,8 @@ import { Providers } from "@/app/providers";
 import { Layout } from "@/components/Layout";
 
 import "@/styles/tailwind.css";
-import { type Metadata } from "next";
-import { type Section } from "@/components/SectionProvider";
+import type { Metadata } from "next";
+import type { Section } from "@/components/SectionProvider";
 
 export const metadata: Metadata = {
 	title: {
@@ -19,14 +19,14 @@ export default async function RootLayout({
 }: {
 	children: React.ReactNode;
 }) {
-	let pages = await glob("**/*.mdx", { cwd: "src/app" });
-	let allSectionsEntries = (await Promise.all(
+	const pages = await glob("**/*.mdx", { cwd: "src/app" });
+	const allSectionsEntries = (await Promise.all(
 		pages.map(async (filename) => [
 			"/" + filename.replace(/(^|\/)page\.mdx$/, ""),
 			(await import(`./${filename}`)).sections,
 		]),
 	)) as Array<[string, Array<Section>]>;
-	let allSections = Object.fromEntries(allSectionsEntries);
+	const allSections = Object.fromEntries(allSectionsEntries);
 
 	return (
 		<html lang="en" className="h-full" suppressHydrationWarning>

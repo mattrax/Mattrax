@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="Windows-1252"?>
+<xs:schema xmlns="http://tempuri.org/DM_DDF-V1_2" elementFormDefault="qualified" targetNamespace="http://tempuri.org/DM_DDF-V1_2"
+           xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:MSFT="http://schemas.microsoft.com/MobileDevice/DM">
+  <xs:import schemaLocation="DDFv2Msft.xsd" namespace="http://schemas.microsoft.com/MobileDevice/DM" />
+  <xs:element name="MgmtTree">
+    <xs:annotation>
+      <xs:documentation>Starting point for DDF</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="VerDTD" />
+        <xs:element minOccurs="1" ref="MSFT:Diagnostics" />
+        <xs:element minOccurs="1" maxOccurs="unbounded" ref="Node" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="VerDTD" type="xs:string" />
+  <xs:element name="Node">
+    <xs:annotation>
+      <xs:documentation>Main Recurring XML tag describing nodes of the CSP</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="NodeName" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="Path" />
+        <xs:element minOccurs="1" maxOccurs="1" ref="DFProperties" />
+        <xs:choice>
+          <xs:element minOccurs="0" maxOccurs="unbounded" ref="Node" />
+        </xs:choice>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="NodeName" type="xs:anyURI" />
+  <xs:element name="Path" type="xs:anyURI" />
+  <xs:element name="MIME" type="xs:string" />
+  <xs:element name="DDFName" type="xs:string" />
+  <xs:element name="DFProperties">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="AccessType" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="DefaultValue" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="Description" />
+        <xs:element ref="DFFormat" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="Occurrence" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="Scope" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="DFTitle" />
+        <xs:element ref="DFType" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="CaseSense" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="MSFT:Applicability" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="MSFT:DynamicNodeNaming" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="MSFT:AllowedValues" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="MSFT:ReplaceBehavior" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="MSFT:RebootBehavior" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="MSFT:GpMapping" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="MSFT:CommonErrorResults" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="MSFT:Deprecated" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="MSFT:DependencyBehavior" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="MSFT:ConflictResolution" />
+        <xs:element minOccurs="0" maxOccurs="1" ref="MSFT:AtomicRequired" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="AccessType">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element minOccurs="0" maxOccurs="1" name="Add" />
+        <xs:element minOccurs="0" maxOccurs="1" name="Copy" />
+        <xs:element minOccurs="0" maxOccurs="1" name="Delete" />
+        <xs:element minOccurs="0" maxOccurs="1" name="Exec" />
+        <xs:element minOccurs="0" maxOccurs="1" name="Get" />
+        <xs:element minOccurs="0" maxOccurs="1" name="Replace" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="DefaultValue" type="xs:string" />
+  <xs:element name="Description" type="xs:string" />
+  <xs:element name="DFFormat">
+    <xs:complexType>
+      <xs:choice>
+        <xs:element name="b64" />
+        <xs:element name="bin" />
+        <xs:element name="bool" />
+        <xs:element name="chr" />
+        <xs:element name="int" />
+        <xs:element name="node" />
+        <xs:element name="null" />
+        <xs:element name="xml" />
+        <xs:element name="date" />
+        <xs:element name="time" />
+        <xs:element name="float" />
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="Occurrence">
+    <xs:complexType>
+      <xs:choice>
+        <xs:element name="One" />
+        <xs:element name="ZeroOrOne" />
+        <xs:element name="ZeroOrMore" />
+        <xs:element name="OneOrMore" />
+        <xs:element name="ZeroOrN" type="xs:integer" />
+        <xs:element name="OneOrN" type="xs:integer" />
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="Scope">
+    <xs:complexType>
+      <xs:choice>
+        <xs:element name="Permanent" />
+        <xs:element name="Dynamic" />
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="DFTitle" type="xs:string" />
+  <xs:element name="DFType">
+    <xs:complexType>
+      <xs:choice>
+        <xs:element minOccurs="1" maxOccurs="unbounded" ref="MIME" />
+        <xs:element ref="DDFName" />
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="CaseSense">
+    <xs:complexType>
+      <xs:choice>
+        <xs:element name="CS" />
+        <xs:element name="CIS" />
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

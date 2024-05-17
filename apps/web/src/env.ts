@@ -1,5 +1,4 @@
 import { createEnv } from "@t3-oss/env-core";
-import "dotenv/config";
 import { z } from "zod";
 
 function optional_in_dev<T extends z.ZodTypeAny>(
@@ -20,7 +19,6 @@ export const env = createEnv({
 		PLANETSCALE_URL: z.string(),
 		PROD_URL: z.string(),
 		MDM_URL: z.string(),
-		EMAIL_URL: z.string(),
 		FROM_ADDRESS: z.string(),
 		// Emails and other AWS services
 		// Get these values from the output of the Cloudformation template
@@ -37,7 +35,10 @@ export const env = createEnv({
 		WAITLIST_DISCORD_WEBHOOK_URL: z.string().optional(),
 	},
 	clientPrefix: "VITE_",
-	client: {},
-	runtimeEnv: process.env,
+	client: {
+		VITE_PROD_URL: z.string(),
+	},
+	// We need to manually list the env's for the frontend bundle
+	runtimeEnv: { VITE_PROD_URL: import.meta.env?.VITE_PROD_URL, ...process.env },
 	emptyStringAsUndefined: true,
 });

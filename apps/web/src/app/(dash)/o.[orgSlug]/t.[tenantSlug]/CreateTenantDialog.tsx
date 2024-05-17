@@ -19,12 +19,12 @@ export function CreateTenantDialog(
 ) {
 	const [open, setOpen] = createSignal(false);
 
-	const mutation = trpc.tenant.create.useMutation(() => ({
-		onSuccess: async (tenantId) => {
+	const mutation = trpc.tenant.create.createMutation(() => ({
+		onSuccess: async (slug) => {
 			// TODO: Get the data back in the response instead of a separate request
 			// Session also holds tenants
 			// await props.refetchSession();
-			props.setActiveTenant(tenantId);
+			props.setActiveTenant(slug);
 			setOpen(false);
 
 			// Ensure the form stays disabled until the dialog is closed

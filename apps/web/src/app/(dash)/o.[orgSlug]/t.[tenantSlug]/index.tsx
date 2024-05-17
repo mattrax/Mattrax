@@ -1,133 +1,254 @@
-import type { RouteDefinition } from "@solidjs/router";
+import { A, type RouteDefinition } from "@solidjs/router";
 import { z } from "zod";
 
 import {
 	Avatar,
 	AvatarFallback,
-	AvatarImage,
 	Card,
 	CardContent,
 	CardDescription,
 	CardHeader,
 	CardTitle,
 } from "@mattrax/ui";
-import { isDebugMode, trpc } from "~/lib";
+import { makeTimer } from "@solid-primitives/timer";
+import { getInitials, trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import type { StatsTarget } from "~/api/trpc/routers/tenant";
-import { StatItem } from "~c/StatItem";
 import { useZodParams } from "~/lib/useZodParams";
+import { type ParentProps, Suspense, For } from "solid-js";
+import { useTenantSlug } from "../t.[tenantSlug]";
+import { formatAuditLogEvent } from "~/lib/formatAuditLog";
+import { createTimeAgo } from "@solid-primitives/date";
+import {
+	BruhIconPhCheckBold,
+	BruhIconPhXBold,
+	BruhIconPhAppWindow,
+	BruhIconPhDevices,
+	BruhIconPhScroll,
+	BruhIconPhSelection,
+	BruhIconPhUser,
+	BruhIconSvgSpinners90Ring,
+} from "./bruh";
+import { StatItem } from "~/components/StatItem";
+import clsx from "clsx";
 
 export const route = {
 	load: ({ params }) => {
-		trpc
-			.useContext()
-			.tenant.stats.ensureData({ tenantSlug: params.tenantSlug! });
+		const ctx = trpc.useContext();
+
+		ctx.tenant.stats.ensureData({ tenantSlug: params.tenantSlug! });
+		ctx.tenant.auditLog.ensureData({
+			tenantSlug: params.tenantSlug!,
+			limit: 5,
+		});
+		ctx.tenant.gettingStarted.ensureData({
+			tenantSlug: params.tenantSlug!,
+		});
 	},
 } satisfies RouteDefinition;
 
 export default function Page() {
 	const params = useZodParams({ tenantSlug: z.string() });
-	const stats = trpc.tenant.stats.useQuery(() => params);
+	const stats = trpc.tenant.stats.createQuery(() => params);
 
 	const getValue = (v: StatsTarget) =>
-		stats.latest?.find((i) => i.variant === v)?.count ?? 0;
+		stats.data?.find((i) => i.variant === v)?.count;
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Dashboard</PageLayoutHeading>}>
-			<dl class="gap-5 flex">
-				<StatItem title="Users" value={getValue("users")} />
-				<StatItem title="Devices" value={getValue("devices")} />
-				<StatItem title="Policies" value={getValue("policies")} />
-				<StatItem title="Applications" value={getValue("applications")} />
-				<StatItem title="Groups" value={getValue("groups")} />
-			</dl>
-			{isDebugMode() ? (
-				<div class="flex">
-					<RecentChanges />
-				</div>
-			) : (
-				<div>
-					<h1 class="text-muted-foreground opacity-70">
-						Dashboard coming soon...
-					</h1>
-				</div>
-			)}
+			<div class="grid gap-4 grid-cols-5">
+				<StatItem
+					title="Users"
+					href="users"
+					icon={<BruhIconPhUser />}
+					value={getValue("users")}
+				/>
+				<StatItem
+					title="Devices"
+					href="devices"
+					icon={<BruhIconPhDevices />}
+					value={getValue("devices")}
+				/>
+				<StatItem
+					title="Policies"
+					href="policies"
+					icon={<BruhIconPhScroll />}
+					value={getValue("policies")}
+				/>
+				<StatItem
+					title="Applications"
+					href="apps"
+					icon={<BruhIconPhAppWindow />}
+					value={getValue("applications")}
+				/>
+				<StatItem
+					title="Groups"
+					href="groups"
+					icon={<BruhIconPhSelection />}
+					value={getValue("groups")}
+				/>
+			</div>
+
+			<div class="grid gap-4 grid-cols-2">
+				<RecentActivity />
+				<GettingStarted />
+			</div>
 		</PageLayout>
 	);
 }
 
-function RecentChanges() {
+function RecentActivity() {
+	const tenantSlug = useTenantSlug();
+	const auditLog = trpc.tenant.auditLog.createQuery(() => ({
+		tenantSlug: tenantSlug(),
+		limit: 5,
+	}));
+
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle>Recent changes</CardTitle>
+				<CardTitle>Recent activity</CardTitle>
 				<CardDescription>
-					A timeline of recent events in your tenant!
+					A timeline of recent activity across your tenant!
+				</CardDescription>
+			</CardHeader>
+			<CardContent class="space-y-3 space-y-reverse">
+				<Suspense>
+					<div>
+						{auditLog.data?.length === 0 && (
+							<p class="text-muted-foreground opacity-70">No activity!</p>
+						)}
+					</div>
+					<For each={auditLog.data}>
+						{(entry) => {
+							const formatted = formatAuditLogEvent(
+								entry.action,
+								entry.data as any,
+							);
+							if (formatted === null) return null;
+
+							const [timeago] = createTimeAgo(entry.doneAt);
+
+							const inner = (
+								<p class="text-sm font-medium leading-none">
+									{formatted.title}
+								</p>
+							);
+
+							return (
+								<div class="flex items-center">
+									<Avatar class="h-9 w-9">
+										{/* TODO: Finish this */}
+										{/* <AvatarImage src="/avatars/01.png" alt="Avatar" /> */}
+										<AvatarFallback>{getInitials(entry.user)}</AvatarFallback>
+									</Avatar>
+									<div class="ml-4 space-y-1">
+										{formatted.href ? (
+											<A
+												href={formatted.href}
+												class="underline-offset-2 hover:underline"
+											>
+												{inner}
+											</A>
+										) : (
+											inner
+										)}
+										<p class="text-sm text-muted-foreground">
+											{entry.user} - {timeago()}
+										</p>
+									</div>
+								</div>
+							);
+						}}
+					</For>
+				</Suspense>
+			</CardContent>
+		</Card>
+	);
+}
+
+function GettingStarted() {
+	const tenantSlug = useTenantSlug();
+	const data = trpc.tenant.gettingStarted.createQuery(() => ({
+		tenantSlug: tenantSlug(),
+	}));
+
+	makeTimer(
+		() => {
+			// Keep refetching if setup is not complete (as a device enrollment is done out of band)
+			if (!Object.values(data.data || {}).every((v) => v)) data.refetch();
+		},
+		30 * 1000,
+		setTimeout,
+	);
+
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Getting Started</CardTitle>
+				<CardDescription>
+					A guide to getting setup with Mattrax!
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
-				<div class="space-y-8">
-					<div class="flex items-center">
-						<Avatar class="h-9 w-9">
-							<AvatarImage src="/avatars/01.png" alt="Avatar" />
-							<AvatarFallback>OM</AvatarFallback>
-						</Avatar>
-						<div class="ml-4 space-y-1">
-							<p class="text-sm font-medium leading-none">Olivia Martin</p>
-							<p class="text-sm text-muted-foreground">
-								olivia.martin@email.com
-							</p>
-						</div>
-						<div class="ml-auto font-medium">+$1,999.00</div>
-					</div>
-					<div class="flex items-center">
-						<Avatar class="flex h-9 w-9 items-center justify-center space-y-0 border">
-							<AvatarImage src="/avatars/02.png" alt="Avatar" />
-							<AvatarFallback>JL</AvatarFallback>
-						</Avatar>
-						<div class="ml-4 space-y-1">
-							<p class="text-sm font-medium leading-none">Jackson Lee</p>
-							<p class="text-sm text-muted-foreground">jackson.lee@email.com</p>
-						</div>
-						<div class="ml-auto font-medium">+$39.00</div>
-					</div>
-					<div class="flex items-center">
-						<Avatar class="h-9 w-9">
-							<AvatarImage src="/avatars/03.png" alt="Avatar" />
-							<AvatarFallback>IN</AvatarFallback>
-						</Avatar>
-						<div class="ml-4 space-y-1">
-							<p class="text-sm font-medium leading-none">Isabella Nguyen</p>
-							<p class="text-sm text-muted-foreground">
-								isabella.nguyen@email.com
-							</p>
-						</div>
-						<div class="ml-auto font-medium">+$299.00</div>
-					</div>
-					<div class="flex items-center">
-						<Avatar class="h-9 w-9">
-							<AvatarImage src="/avatars/04.png" alt="Avatar" />
-							<AvatarFallback>WK</AvatarFallback>
-						</Avatar>
-						<div class="ml-4 space-y-1">
-							<p class="text-sm font-medium leading-none">William Kim</p>
-							<p class="text-sm text-muted-foreground">will@email.com</p>
-						</div>
-						<div class="ml-auto font-medium">+$99.00</div>
-					</div>
-					<div class="flex items-center">
-						<Avatar class="h-9 w-9">
-							<AvatarImage src="/avatars/05.png" alt="Avatar" />
-							<AvatarFallback>SD</AvatarFallback>
-						</Avatar>
-						<div class="ml-4 space-y-1">
-							<p class="text-sm font-medium leading-none">Sofia Davis</p>
-							<p class="text-sm text-muted-foreground">sofia.davis@email.com</p>
-						</div>
-						<div class="ml-auto font-medium">+$39.00</div>
-					</div>
+				<div class="space-y-3">
+					<Suspense>
+						<GettingStartedRow
+							href="settings/identity-provider"
+							enabled={data.data?.connectedIdentityProvider || false}
+							disabled={data.isLoading}
+						>
+							Connect an identity provider
+						</GettingStartedRow>
+						<GettingStartedRow
+							href="devices"
+							enabled={data.data?.enrolledADevice || false}
+							disabled={data.isLoading}
+						>
+							Enroll your first device
+						</GettingStartedRow>
+						<GettingStartedRow
+							href="policies"
+							enabled={data.data?.createdFirstPolicy || false}
+							disabled={data.isLoading}
+						>
+							Create a policy
+						</GettingStartedRow>
+					</Suspense>
 				</div>
 			</CardContent>
 		</Card>
+	);
+}
+
+function GettingStartedRow(
+	props: ParentProps<{ enabled: boolean; href: string; disabled?: boolean }>,
+) {
+	return (
+		<div class="flex items-center">
+			<Suspense
+				fallback={
+					<span>
+						<BruhIconSvgSpinners90Ring />
+					</span>
+				}
+			>
+				<span class={props.enabled ? "text-green-500" : ""}>
+					{props.enabled ? <BruhIconPhCheckBold /> : <BruhIconPhXBold />}
+				</span>
+			</Suspense>
+			<div class="ml-4 space-y-1">
+				<A href={props.href}>
+					<p
+						class={clsx(
+							"text-sm font-medium leading-none underline-offset-2 hover:underline transition-opacity",
+							props.disabled && "opacity-60",
+						)}
+					>
+						{props.children}
+					</p>
+				</A>
+			</div>
+		</div>
 	);
 }

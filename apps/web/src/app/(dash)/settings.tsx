@@ -5,11 +5,15 @@ import type { JSX } from "solid-js";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { AuthContext } from "~c/AuthContext";
 
-const navigation = [{ name: "General", href: "general" }];
+const navigation = [
+	{ name: "General", href: "general" },
+	{ name: "Updates", href: "updates" },
+	{ name: "Superadmins", href: "superadmins" },
+];
 
 export const route = {
 	info: {
-		BREADCRUMB: () => <>Settings</>,
+		BREADCRUMB: { Component: () => <>Settings</> },
 	},
 };
 
@@ -17,7 +21,7 @@ export default function Layout(props: ParentProps) {
 	return (
 		<PageLayout
 			size="lg"
-			heading={<PageLayoutHeading>Settings</PageLayoutHeading>}
+			heading={<PageLayoutHeading>Installation Settings</PageLayoutHeading>}
 		>
 			<div class="flex flex-row">
 				<nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pl-4">

@@ -1,21 +1,18 @@
+import { seroval } from "@mattrax/trpc-server-function";
+import { flushResponse } from "@mattrax/trpc-server-function/server";
 import { TRPCError, initTRPC } from "@trpc/server";
 import { cache } from "@solidjs/router";
 import { and, eq } from "drizzle-orm";
-import { User } from "lucia";
-import superjson from "superjson";
-import { H3Event } from "vinxi/server";
+import type { User } from "lucia";
+import type { H3Event } from "vinxi/server";
 import { ZodError, z } from "zod";
 
-import {
-	db,
-	organisationAccounts as organisationMembers,
-	organisations,
-	tenantAccounts,
-	tenants,
-} from "~/db";
+import { db, organisationMembers, organisations, tenants } from "~/db";
 import { checkAuth } from "../auth";
+import { withTenant } from "../tenant";
+import { withAccount } from "../account";
 
-export const createTRPCContext = async (event: H3Event) => {
+export const createTRPCContext = (event: H3Event) => {
 	return {
 		db,
 		event,
@@ -23,7 +20,7 @@ export const createTRPCContext = async (event: H3Event) => {
 };
 
 const t = initTRPC.context<typeof createTRPCContext>().create({
-	transformer: superjson,
+	transformer: seroval,
 	errorFormatter({ shape, error }) {
 		return {
 			...shape,
@@ -39,7 +36,14 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
 export const createTRPCRouter = t.router;
 
 // Public (unauthenticated) procedure
-export const publicProcedure = t.procedure;
+export const publicProcedure = t.procedure.use(async ({ next }) => {
+	try {
+		return next();
+	} catch (err) {
+		flushResponse();
+		throw err;
+	}
+});
 
 const isOrganisationMember = cache(async (orgPk: number, accountPk: number) => {
 	const [org] = await db
@@ -57,43 +61,54 @@ const isOrganisationMember = cache(async (orgPk: number, accountPk: number) => {
 	return org !== undefined;
 }, "isOrganisationMember");
 
-const getTenantList = cache(
+export const getTenantList = cache(
 	(accountPk: number) =>
 		db
 			.select({ pk: tenants.pk, name: tenants.name })
 			.from(tenants)
-			.where(eq(tenantAccounts.accountPk, accountPk))
-			.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk)),
+			.innerJoin(organisations, eq(tenants.orgPk, organisations.pk))
+			.innerJoin(
+				organisationMembers,
+				eq(organisations.pk, organisationMembers.orgPk),
+			)
+			.where(eq(organisationMembers.accountPk, accountPk)),
 	"getTenantList",
 );
 
 // Authenticated procedure
-export const authedProcedure = t.procedure.use(async (opts) => {
-	const data = await checkAuth(opts.ctx.event);
+export const authedProcedure = publicProcedure.use(async ({ next }) => {
+	const data = await checkAuth().catch((e) => {
+		flushResponse();
+		throw e;
+	});
+
+	flushResponse();
+
 	if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-	return opts.next({
-		ctx: {
-			...opts.ctx,
-			...data,
-			ensureOrganisationMember: async (orgPk: number) => {
-				if (!isOrganisationMember(orgPk, data.account.pk))
-					throw new TRPCError({ code: "FORBIDDEN", message: "organisation" });
-			},
-			ensureTenantMember: async (tenantPk: number) => {
-				const tenantList = await getTenantList(data.account.pk);
+	return withAccount(data.account, () =>
+		next({
+			ctx: {
+				...data,
+				ensureOrganisationMember: async (orgPk: number) => {
+					if (!isOrganisationMember(orgPk, data.account.pk))
+						throw new TRPCError({ code: "FORBIDDEN", message: "organisation" });
+				},
+				ensureTenantMember: async (tenantPk: number) => {
+					const tenantList = await getTenantList(data.account.pk);
 
-				const tenant = tenantList.find((t) => t.pk === tenantPk);
-				if (!tenant)
-					throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
+					const tenant = tenantList.find((t) => t.pk === tenantPk);
+					if (!tenant)
+						throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
 
-				return tenant;
+					return tenant;
+				},
 			},
-		},
-	});
+		}),
+	);
 });
 
-export const isSuperAdmin = (account: User) =>
+export const isSuperAdmin = (account: { email: string } | User) =>
 	account.email.endsWith("@otbeaumont.me") ||
 	account.email.endsWith("@mattrax.app");
 
@@ -111,6 +126,7 @@ const getMemberOrg = cache(async (slug: string, accountPk: number) => {
 			pk: organisations.pk,
 			slug: organisations.slug,
 			name: organisations.name,
+			ownerPk: organisations.ownerPk,
 		})
 		.from(organisations)
 		.where(
@@ -142,10 +158,16 @@ export const orgProcedure = authedProcedure
 
 const getMemberTenant = cache(async (slug: string, accountPk: number) => {
 	const [tenant] = await db
-		.select({ pk: tenants.pk, name: tenants.name, ownerPk: tenants.ownerPk })
+		.select({ pk: tenants.pk, id: tenants.id, name: tenants.name })
 		.from(tenants)
-		.where(and(eq(tenants.slug, slug), eq(tenantAccounts.accountPk, accountPk)))
-		.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk));
+		.innerJoin(organisations, eq(tenants.orgPk, organisations.pk))
+		.innerJoin(
+			organisationMembers,
+			eq(organisations.pk, organisationMembers.orgPk),
+		)
+		.where(
+			and(eq(tenants.slug, slug), eq(organisationMembers.accountPk, accountPk)),
+		);
 
 	return tenant;
 }, "getMemberTenant");
@@ -160,5 +182,5 @@ export const tenantProcedure = authedProcedure
 
 		if (!tenant) throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
 
-		return opts.next({ ctx: { ...ctx, tenant } });
+		return withTenant(tenant, () => opts.next({ ctx: { ...ctx, tenant } }));
 	});

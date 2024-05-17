@@ -1,7 +1,6 @@
 // @refresh reload
 import { type EventBus, createEventBus } from "@solid-primitives/event-bus";
-import { Router, useNavigate, useMatches } from "@solidjs/router";
-import { broadcastQueryClient } from "@tanstack/query-broadcast-client-experimental";
+import { Router, useLocation, useNavigate } from "@solidjs/router";
 import {
 	QueryCache,
 	QueryClient,
@@ -30,11 +29,10 @@ declare module "solid-js" {
 
 function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 	const onErrorFactory = (scopeMsg: string) => (error: unknown) => {
-		console.error(scopeMsg, error);
 		errorBus.emit([scopeMsg, error]);
 	};
 
-	const queryClient = new QueryClient({
+	return new QueryClient({
 		queryCache: new QueryCache({
 			onError: onErrorFactory("Error fetching data from server!"),
 		}),
@@ -43,7 +41,8 @@ function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 				retry: false,
 				gcTime: 1000 * 60 * 60 * 24, // 24 hours
 				refetchInterval: 1000 * 60, // 1 minute
-				throwOnError: true,
+				staleTime: 1000 * 10, // 10 seconds
+				refetchOnMount: (query) => query.isStale(),
 				placeholderData: keepPreviousData,
 			},
 			mutations: {
@@ -51,26 +50,6 @@ function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 			},
 		},
 	});
-
-	broadcastQueryClient({
-		queryClient,
-		broadcastChannel: "rq",
-	});
-
-	// const persister = createSyncStoragePersister({
-	//   // TODO: IndexedDB
-	//   storage: window.localStorage,
-	// });
-
-	return [
-		queryClient,
-		// {
-		//   persister,
-		//   dehydrateOptions: {
-		//     shouldDehydrateQuery: (q) => keysToPersist.includes(q.queryHash),
-		//   },
-		// } satisfies Omit<PersistQueryClientOptions, "queryClient">,
-	] as const;
 }
 
 const SolidQueryDevtools = lazy(() =>
@@ -82,89 +61,92 @@ const SolidQueryDevtools = lazy(() =>
 export default function App() {
 	const errorBus = createEventBus<[string, unknown]>();
 
-	const [queryClient /* persistOptions */] = createQueryClient(errorBus);
+	const queryClient = createQueryClient(errorBus);
 
 	return (
 		<QueryClientProvider client={queryClient}>
 			<trpc.Provider queryClient={queryClient}>
-				<Suspense>
-					<Router
-						root={(props) => {
-							const navigate = useNavigate();
+				<Router
+					root={(props) => {
+						const navigate = useNavigate();
+						const location = useLocation();
 
-							onCleanup(
-								errorBus.listen(([scopeMsg, error]) => {
-									let errorMsg = (
-										<>
-											{scopeMsg},
-											<br />
-											Please reload to try again!
-										</>
-									);
+						onCleanup(
+							errorBus.listen(([scopeMsg, error]) => {
+								let errorMsg = (
+									<>
+										{scopeMsg},
+										<br />
+										Please reload to try again!
+									</>
+								);
 
-									if (isTRPCClientError(error)) {
-										if (error.data?.code === "UNAUTHORIZED") {
-											startTransition(() => navigate("/login"));
-											return;
-										}
+								if (isTRPCClientError(error)) {
+									if (error.data?.code === "UNAUTHORIZED") {
+										startTransition(() => {
+											let query = "";
+											if (
+												location.pathname !== "/" &&
+												location.pathname !== "/login"
+											)
+												query = `?${new URLSearchParams({
+													continueTo: location.pathname,
+												})}`;
 
-										if (error.data?.code === "FORBIDDEN") {
-											if (error.message === "tenant") navigate("/");
-											else
-												errorMsg =
-													"You are not allowed to access this resource!,";
-										}
-									}
-
-									// TODO: Prevent this for auth errors
-									toast.error(errorMsg, {
-										id: "network-error",
-									});
-								}),
-							);
-
-							onCleanup(
-								onlineManager.subscribe((isOnline) => {
-									if (isOnline) {
-										// TODO: This dismiss doesn't animate the toast close which is ugly.
-										toast.dismiss("network-offline");
+											navigate(`/login${query}`);
+										});
+										return;
+										// biome-ignore lint/style/noUselessElse:
+									} else if (error.data?.code === "FORBIDDEN") {
+										if (error.message === "tenant") navigate("/");
+										else
+											errorMsg =
+												"You are not allowed to access this resource!,";
+									} else if (error.data?.code === "NOT_FOUND") {
+										// not founds are handled at an app level with `.get` queries returning `null`
 										return;
 									}
+								}
 
-									toast.error(
-										<>
-											You are offline!,
-											<br />
-											Please reconnect to continue!
-										</>,
-										{
-											id: "network-offline",
-											duration: Number.POSITIVE_INFINITY,
-										},
-									);
-								}),
-							);
+								toast.error(errorMsg, {
+									id: "network-error",
+								});
+							}),
+						);
 
-							return (
-								// <PersistQueryClientProvider
-								//   client={queryClient}
-								//   persistOptions={persistOptions}
-								// >
+						onCleanup(
+							onlineManager.subscribe((isOnline) => {
+								if (isOnline) {
+									// TODO: This dismiss doesn't animate the toast close which is ugly.
+									toast.dismiss("network-offline");
+									return;
+								}
 
-								<>
-									{import.meta.env.DEV && <SolidQueryDevtools />}
-									<MErrorBoundary>
-										<Toaster />
-										{props.children}
-									</MErrorBoundary>
-								</>
-								// </PersistQueryClientProvider>
-							);
-						}}
-					>
-						<FileRoutes />
-					</Router>
-				</Suspense>
+								toast.error(
+									<>
+										You are offline!,
+										<br />
+										Please reconnect to continue!
+									</>,
+									{
+										id: "network-offline",
+										duration: Number.POSITIVE_INFINITY,
+									},
+								);
+							}),
+						);
+
+						return (
+							<MErrorBoundary>
+								{import.meta.env.DEV && <SolidQueryDevtools />}
+								<Toaster />
+								<Suspense>{props.children}</Suspense>
+							</MErrorBoundary>
+						);
+					}}
+				>
+					<FileRoutes />
+				</Router>
 			</trpc.Provider>
 		</QueryClientProvider>
 	);

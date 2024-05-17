@@ -1,17 +1,11 @@
 import {
 	Card,
-	CardHeader,
 	CardTitle,
-	CardDescription,
 	CardContent,
-	Switch,
 	Collapsible,
 	CollapsibleTrigger,
 	CollapsibleContent,
-	Checkbox,
 } from "@mattrax/ui";
-import { trpc } from "~/lib";
-import { useTenantSlug } from "../../t.[tenantSlug]";
 import {
 	BruhIconPhCheckCircleDuotone,
 	BruhIconPhWarningCircleDuotone,
@@ -90,11 +84,11 @@ function Section(
 // function ConfigureEnrollmentCard() {
 // 	const tenantSlug = useTenantSlug();
 
-// 	const info = trpc.tenant.enrollmentInfo.useQuery(() => ({
+// 	const info = trpc.tenant.enrollmentInfo.createQuery(() => ({
 // 		tenantSlug: tenantSlug(),
 // 	}));
 // 	// TODO: Show correct state on the UI while the mutation is pending but keep fields disabled.
-// 	const setEnrollmentInfo = trpc.tenant.setEnrollmentInfo.useMutation(() => ({
+// 	const setEnrollmentInfo = trpc.tenant.setEnrollmentInfo.createMutation(() => ({
 // 		onSuccess: () => info.refetch(),
 // 	}));
 

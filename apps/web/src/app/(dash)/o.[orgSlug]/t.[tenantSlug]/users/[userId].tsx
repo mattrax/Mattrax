@@ -1,19 +1,13 @@
-import { type ParentProps, Show } from "solid-js";
-import { Navigate, type RouteDefinition } from "@solidjs/router";
-import { toast } from "solid-sonner";
+import type { RouteDefinition } from "@solidjs/router";
+import type { ParentProps } from "solid-js";
+import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
-import { Breadcrumb } from "~c/Breadcrumbs";
-import { Badge } from "@mattrax/ui";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { UserContextProvider } from "./[userId]/Context";
-
-const NAV_ITEMS = [
-	{ title: "User", href: "" },
-	{ title: "Scope", href: "scope" },
-];
+import { createNotFoundRedirect } from "~/lib/utils";
+import { getMetadata } from "../metadataCache";
 
 export const route = {
 	load: ({ params }) =>
@@ -21,20 +15,23 @@ export const route = {
 			id: params.userId!,
 		}),
 	info: {
-		NAV_ITEMS,
-		BREADCRUMB: () => {
-			const params = useZodParams({ userId: z.string() });
+		BREADCRUMB: {
+			Component: () => {
+				const params = useZodParams({ userId: z.string() });
 
-			const query = trpc.user.get.useQuery(() => ({
-				id: params.userId,
-			}));
+				const query = trpc.user.get.createQuery(() => ({
+					id: params.userId,
+				}));
 
-			return (
-				<>
-					<span>{query.data?.name}</span>
-					<Badge variant="outline">User</Badge>
-				</>
-			);
+				return (
+					<>
+						<span>
+							{getMetadata("user", params.userId)?.name ?? query.data?.name}
+						</span>
+						<Badge variant="outline">User</Badge>
+					</>
+				);
+			},
 		},
 	},
 } satisfies RouteDefinition;
@@ -42,25 +39,11 @@ export const route = {
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ userId: z.string() });
 
-	const query = trpc.user.get.useQuery(() => ({
-		id: params.userId,
-	}));
+	createNotFoundRedirect({
+		query: trpc.user.get.createQuery(() => ({ id: params.userId })),
+		toast: "User not found",
+		to: "../../users",
+	});
 
-	return (
-		<Show when={query.data !== undefined}>
-			<Show when={query.data} fallback={<NotFound />}>
-				{(data) => (
-					<UserContextProvider user={data()} query={query}>
-						<MErrorBoundary>{props.children}</MErrorBoundary>
-					</UserContextProvider>
-				)}
-			</Show>
-		</Show>
-	);
-}
-
-function NotFound() {
-	toast.error("User not found");
-	// necessary since '..' adds trailing slash -_-
-	return <Navigate href="../../users" />;
+	return <MErrorBoundary>{props.children}</MErrorBoundary>;
 }

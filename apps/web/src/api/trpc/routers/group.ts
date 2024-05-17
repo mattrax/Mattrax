@@ -1,20 +1,45 @@
-import { TRPCError } from "@trpc/server";
-import { and, eq, sql } from "drizzle-orm";
-import { z } from "zod";
+import { and, count, eq, or, sql, inArray } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
-import { union } from "drizzle-orm/mysql-core";
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 
+import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { createAuditLog } from "~/api/auditLog";
 import {
-	GroupAssignableVariant,
-	GroupAssignableVariants,
+	GroupMemberVariants,
+	PolicyAssignableVariants,
+	applicationAssignments,
+	applications,
 	db,
 	devices,
-	groupAssignableVariants,
-	groupAssignables,
+	groupMemberVariants,
+	groupMembers,
 	groups,
+	policies,
+	policyAssignments,
 	users,
 } from "~/db";
-import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { cache } from "@solidjs/router";
+import { createTransaction } from "~/api/utils/transaction";
+
+const getGroup = cache(
+	(id: string) =>
+		db.query.groups.findFirst({
+			where: and(eq(groups.id, id)),
+		}),
+	"getGroup",
+);
+
+const groupProcedure = authedProcedure
+	.input(z.object({ id: z.string() }))
+	.use(async ({ next, input, ctx }) => {
+		const group = await getGroup(input.id);
+		if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
+
+		const tenant = await ctx.ensureTenantMember(group.tenantPk);
+
+		return await next({ ctx: { group, tenant } });
+	});
 
 export const groupRouter = createTRPCRouter({
 	list: tenantProcedure
@@ -32,26 +57,30 @@ export const groupRouter = createTRPCRouter({
 			// TODO: Can a cursor make this more efficent???
 			// TODO: Switch to DB
 
-			return await db
+			return await ctx.db
 				.select({
 					id: groups.id,
 					name: groups.name,
-					memberCount: sql`count(${groupAssignables.groupPk})`,
+					memberCount: count(groupMembers.groupPk),
 				})
 				.from(groups)
 				.where(eq(groups.tenantPk, ctx.tenant.pk))
-				.leftJoin(groupAssignables, eq(groups.pk, groupAssignables.groupPk))
+				.leftJoin(groupMembers, eq(groups.pk, groupMembers.groupPk))
 				.groupBy(groups.pk);
 		}),
+
 	create: tenantProcedure
 		.input(z.object({ name: z.string() }))
 		.mutation(async ({ ctx, input }) => {
 			const id = createId();
 
-			await db.insert(groups).values({
-				id,
-				name: input.name,
-				tenantPk: ctx.tenant.pk,
+			await createTransaction(async (db) => {
+				await db.insert(groups).values({
+					id,
+					name: input.name,
+					tenantPk: ctx.tenant.pk,
+				});
+				await createAuditLog("addGroup", { id, name: input.name });
 			});
 
 			return id;
@@ -60,9 +89,7 @@ export const groupRouter = createTRPCRouter({
 	get: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
-				where: eq(groups.id, input.id),
-			});
+			const group = await getGroup(input.id);
 			if (!group) return null;
 
 			await ctx.ensureTenantMember(group.tenantPk);
@@ -70,101 +97,260 @@ export const groupRouter = createTRPCRouter({
 			return group;
 		}),
 
-	update: authedProcedure
-		.input(
-			z.object({
-				id: z.string(),
-				name: z.string().optional(),
-			}),
-		)
+	update: groupProcedure
+		.input(z.object({ name: z.string().optional() }))
 		.mutation(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
-				where: eq(groups.id, input.id),
-			});
-			if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
-
-			await ctx.ensureTenantMember(group.tenantPk);
-
-			await db
+			await ctx.db
 				.update(groups)
 				.set({ ...(input.name && { name: input.name }) })
-				.where(eq(groups.id, input.id));
+				.where(eq(groups.pk, ctx.group.pk));
 		}),
 
-	members: authedProcedure
-		.input(z.object({ id: z.string() }))
-		.query(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
-				where: eq(groups.id, input.id),
-			});
-			if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
-
-			await ctx.ensureTenantMember(group.tenantPk);
-
-			return await db
-				.select({
-					pk: groupAssignables.pk,
-					variant: groupAssignables.variant,
-					name: sql<GroupAssignableVariant>`
-          	GROUP_CONCAT(
-           		CASE
-           			WHEN ${groupAssignables.variant} = ${GroupAssignableVariants.device} THEN ${devices.name}
-             		WHEN ${groupAssignables.variant} = ${GroupAssignableVariants.user} THEN ${users.name}
-             	END
-           	)
+	members: groupProcedure.query(async ({ ctx }) => {
+		return await ctx.db
+			.select({
+				pk: groupMembers.pk,
+				variant: groupMembers.variant,
+				id: sql<string>`
+					GROUP_CONCAT(CASE
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.id}
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.id}
+					END)
+          `.as("id"),
+				name: sql<string>`
+					GROUP_CONCAT(CASE
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.name}
+						WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.name}
+					END)
           `.as("name"),
-				})
-				.from(groupAssignables)
-				.where(eq(groupAssignables.groupPk, group.pk))
-				.leftJoin(
-					devices,
-					and(
-						eq(devices.pk, groupAssignables.pk),
-						eq(groupAssignables.variant, GroupAssignableVariants.device),
-					),
-				)
-				.leftJoin(
-					users,
-					and(
-						eq(users.pk, groupAssignables.pk),
-						eq(groupAssignables.variant, GroupAssignableVariants.user),
-					),
-				)
-				.groupBy(groupAssignables.variant, groupAssignables.pk);
-		}),
+			})
+			.from(groupMembers)
+			.where(eq(groupMembers.groupPk, ctx.group.pk))
+			.leftJoin(
+				devices,
+				and(
+					eq(devices.pk, groupMembers.pk),
+					eq(groupMembers.variant, GroupMemberVariants.device),
+				),
+			)
+			.leftJoin(
+				users,
+				and(
+					eq(users.pk, groupMembers.pk),
+					eq(groupMembers.variant, GroupMemberVariants.user),
+				),
+			)
+			.groupBy(groupMembers.variant, groupMembers.pk);
+	}),
 
-	addMembers: authedProcedure
+	addMembers: groupProcedure
 		.input(
 			z.object({
-				id: z.string(),
 				members: z.array(
 					z.object({
 						pk: z.number(),
-						variant: z.enum(groupAssignableVariants),
+						variant: z.enum(groupMemberVariants),
 					}),
 				),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const group = await db.query.groups.findFirst({
-				where: and(eq(groups.id, input.id)),
-			});
-			if (!group)
-				throw new TRPCError({ code: "NOT_FOUND", message: "Group not found" });
-
-			await ctx.ensureTenantMember(group.tenantPk);
-
-			await db
-				.insert(groupAssignables)
+			await ctx.db
+				.insert(groupMembers)
 				.values(
 					input.members.map((member) => ({
-						groupPk: group.pk,
+						groupPk: ctx.group.pk,
 						pk: member.pk,
 						variant: member.variant,
 					})),
 				)
 				.onDuplicateKeyUpdate({
-					set: { groupPk: sql`${groupAssignables.groupPk}` },
+					set: { pk: sql`${groupMembers.pk}` },
 				});
+		}),
+	removeMembers: groupProcedure
+		.input(
+			z.object({
+				members: z.array(
+					z.object({
+						pk: z.number(),
+						variant: z.enum(groupMemberVariants),
+					}),
+				),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			await ctx.db
+				.delete(groupMembers)
+				.where(
+					or(
+						...input.members.map((member) =>
+							and(
+								eq(groupMembers.groupPk, ctx.group.pk),
+								eq(groupMembers.pk, member.pk),
+								eq(groupMembers.variant, member.variant),
+							),
+						),
+					),
+				);
+		}),
+
+	assignments: groupProcedure.query(async ({ ctx }) => {
+		const { group } = ctx;
+
+		const [p, a] = await Promise.all([
+			ctx.db
+				.select({ pk: policies.pk, id: policies.id, name: policies.name })
+				.from(policyAssignments)
+				.where(
+					and(
+						eq(policyAssignments.variant, "group"),
+						eq(policyAssignments.pk, group.pk),
+					),
+				)
+				.innerJoin(policies, eq(policyAssignments.policyPk, policies.pk))
+				.then((rows) =>
+					rows.map((row) => Object.assign(row, { variant: "policy" as const })),
+				),
+			ctx.db
+				.select({
+					pk: applications.pk,
+					id: applications.id,
+					name: applications.name,
+				})
+				.from(applicationAssignments)
+				.where(
+					and(
+						eq(applicationAssignments.variant, "group"),
+						eq(applicationAssignments.pk, group.pk),
+					),
+				)
+				.innerJoin(
+					applications,
+					eq(applicationAssignments.applicationPk, applications.pk),
+				)
+				.then((rows) =>
+					rows.map((row) =>
+						Object.assign(row, { variant: "application" as const }),
+					),
+				),
+			,
+		]);
+
+		return [...p, ...a];
+	}),
+	addAssignments: groupProcedure
+		.input(
+			z.object({
+				assignments: z.array(
+					z.object({
+						pk: z.number(),
+						variant: z.enum(["policy", "application"]),
+					}),
+				),
+			}),
+		)
+		.mutation(async ({ ctx: { group, db }, input }) => {
+			const pols: Array<number> = [],
+				apps: Array<number> = [];
+
+			input.assignments.forEach((a) => {
+				if (a.variant === "policy") pols.push(a.pk);
+				else apps.push(a.pk);
+			});
+
+			await db.transaction((db) => {
+				const ops: Promise<any>[] = [];
+
+				if (pols.length > 0)
+					ops.push(
+						db
+							.insert(policyAssignments)
+							.values(
+								pols.map((pk) => ({
+									pk: group.pk,
+									policyPk: pk,
+									variant: PolicyAssignableVariants.group,
+								})),
+							)
+							.onDuplicateKeyUpdate({
+								set: {
+									pk: sql`${policyAssignments.pk}`,
+								},
+							}),
+					);
+
+				if (apps.length > 0)
+					ops.push(
+						db
+							.insert(applicationAssignments)
+							.values(
+								apps.map((pk) => ({
+									pk: group.pk,
+									applicationPk: pk,
+									variant: PolicyAssignableVariants.group,
+								})),
+							)
+							.onDuplicateKeyUpdate({
+								set: {
+									pk: sql`${applicationAssignments.pk}`,
+								},
+							}),
+					);
+
+				return Promise.all(ops);
+			});
+		}),
+	removeAssignments: groupProcedure
+		.input(
+			z.object({
+				assignments: z.array(
+					z.object({
+						pk: z.number(),
+						variant: z.enum(["policy", "application"]),
+					}),
+				),
+			}),
+		)
+		.mutation(async ({ ctx: { group, db }, input }) => {
+			const pols: Array<number> = [],
+				apps: Array<number> = [];
+
+			input.assignments.forEach((a) => {
+				if (a.variant === "policy") pols.push(a.pk);
+				else apps.push(a.pk);
+			});
+
+			await db.transaction((db) => {
+				const ops: Promise<any>[] = [];
+
+				if (pols.length > 0)
+					ops.push(
+						db
+							.delete(policyAssignments)
+							.where(
+								and(
+									eq(policyAssignments.pk, group.pk),
+									eq(policyAssignments.variant, "group"),
+									inArray(policyAssignments.policyPk, pols),
+								),
+							),
+					);
+
+				if (apps.length > 0)
+					ops.push(
+						db
+							.delete(applicationAssignments)
+							.where(
+								and(
+									eq(applicationAssignments.pk, group.pk),
+									eq(applicationAssignments.variant, "group"),
+									inArray(applicationAssignments.applicationPk, apps),
+								),
+							),
+					);
+
+				return Promise.all(ops);
+			});
 		}),
 });

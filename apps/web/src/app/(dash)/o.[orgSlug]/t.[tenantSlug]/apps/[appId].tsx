@@ -1,17 +1,17 @@
 import { createContextProvider } from "@solid-primitives/context";
-import { A, Navigate, type RouteDefinition } from "@solidjs/router";
-import { type ParentProps, Show } from "solid-js";
-import { toast } from "solid-sonner";
+import type { RouteDefinition } from "@solidjs/router";
+import type { ParentProps } from "solid-js";
 import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
 import type { RouterOutput } from "~/api";
-import { Breadcrumb } from "~c/Breadcrumbs";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
+import { createNotFoundRedirect } from "~/lib/utils";
+import { getMetadata } from "../metadataCache";
 
-const NAV_ITEMS = [{ title: "Application", href: "" }];
+// const NAV_ITEMS = [{ title: "Application", href: "" }];
 
 export const route = {
 	load: ({ params }) =>
@@ -19,28 +19,38 @@ export const route = {
 			id: params.appId!,
 		}),
 	info: {
-		NAV_ITEMS,
-		BREADCRUMB: () => {
-			const params = useZodParams({ appId: z.string() });
+		// NAV_ITEMS,
+		BREADCRUMB: {
+			Component: () => {
+				const params = useZodParams({ appId: z.string() });
 
-			const query = trpc.app.get.useQuery(() => ({
-				id: params.appId,
-			}));
+				const query = trpc.app.get.createQuery(() => ({
+					id: params.appId,
+				}));
 
-			return (
-				<>
-					<span>{query.data?.name}</span>
-					<Badge variant="outline">App</Badge>
-				</>
-			);
+				return (
+					<>
+						<span>
+							{getMetadata("application", params.appId)?.name ??
+								query.data?.name}
+						</span>
+						<Badge variant="outline">App</Badge>
+					</>
+				);
+			},
 		},
 	},
 } satisfies RouteDefinition;
 
+function useAppId() {
+	const params = useZodParams({ appId: z.string() });
+	return () => params.appId;
+}
+
 export const [AppContextProvider, useApp] = createContextProvider(
 	(props: {
 		app: NonNullable<RouterOutput["app"]["get"]>;
-		query: ReturnType<typeof trpc.app.get.useQuery>;
+		query: ReturnType<typeof trpc.app.get.createQuery>;
 	}) => {
 		return Object.assign(() => props.app, { query: props.query });
 	},
@@ -48,27 +58,13 @@ export const [AppContextProvider, useApp] = createContextProvider(
 );
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ appId: z.string() });
+	const appId = useAppId();
 
-	const query = trpc.app.get.useQuery(() => ({
-		id: params.appId,
-	}));
+	createNotFoundRedirect({
+		query: trpc.app.get.createQuery(() => ({ id: appId() })),
+		toast: "Application not found",
+		to: "../../apps",
+	});
 
-	return (
-		<Show when={query.data !== undefined}>
-			<Show when={query.data} fallback={<NotFound />}>
-				{(data) => (
-					<AppContextProvider app={data()} query={query}>
-						<MErrorBoundary>{props.children}</MErrorBoundary>
-					</AppContextProvider>
-				)}
-			</Show>
-		</Show>
-	);
-}
-
-function NotFound() {
-	toast.error("Application not found");
-	// necessary since '..' adds trailing slash -_-
-	return <Navigate href="../../apps" />;
+	return <MErrorBoundary>{props.children}</MErrorBoundary>;
 }

@@ -81,11 +81,11 @@ export function Heading<Level extends 2 | 3>({
 	anchor?: boolean;
 }) {
 	level = level ?? (2 as Level);
-	let Component = `h${level}` as "h2" | "h3";
-	let ref = useRef<HTMLHeadingElement>(null);
-	let registerHeading = useSectionStore((s) => s.registerHeading);
+	const Component = `h${level}` as "h2" | "h3";
+	const ref = useRef<HTMLHeadingElement>(null);
+	const registerHeading = useSectionStore((s) => s.registerHeading);
 
-	let inView = useInView(ref, {
+	const inView = useInView(ref, {
 		margin: `${remToPx(-3.5)}px 0px 0px 0px`,
 		amount: "all",
 	});

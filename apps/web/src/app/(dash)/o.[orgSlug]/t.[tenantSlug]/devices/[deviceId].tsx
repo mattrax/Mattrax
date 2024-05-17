@@ -1,4 +1,4 @@
-import { A, Navigate, type RouteDefinition } from "@solidjs/router";
+import { Navigate, type RouteDefinition } from "@solidjs/router";
 import { type ParentProps, Show } from "solid-js";
 import { toast } from "solid-sonner";
 import { Badge } from "@mattrax/ui";
@@ -6,14 +6,13 @@ import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
-import { Breadcrumb } from "~c/Breadcrumbs";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { DeviceContextProvider } from "./[deviceId]/Context";
 
 const NAV_ITEMS = [
 	{ title: "Device", href: "" },
 	{ title: "Configuration", href: "configuration" },
-	{ title: "Scope", href: "scope" },
+	{ title: "Assignments", href: "assignments" },
 	{ title: "Inventory", href: "inventory" },
 	{ title: "Settings", href: "settings" },
 ];
@@ -25,23 +24,25 @@ export const route = {
 		}),
 	info: {
 		NAV_ITEMS,
-		BREADCRUMB: () => {
-			const params = useZodParams({ deviceId: z.string() });
-			const query = trpc.device.get.useQuery(() => params);
+		BREADCRUMB: {
+			Component: () => {
+				const params = useZodParams({ deviceId: z.string() });
+				const query = trpc.device.get.createQuery(() => params);
 
-			return (
-				<>
-					<span>{query.data?.name}</span>
-					<Badge variant="outline">Device</Badge>
-				</>
-			);
+				return (
+					<>
+						<span>{query.data?.name}</span>
+						<Badge variant="outline">Device</Badge>
+					</>
+				);
+			},
 		},
 	},
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ deviceId: z.string() });
-	const query = trpc.device.get.useQuery(() => params);
+	const query = trpc.device.get.createQuery(() => params);
 
 	return (
 		<Show when={query.data !== undefined}>

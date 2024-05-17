@@ -1,0 +1,22 @@
+{
+	"name": "@mattrax/configuration-schemas",
+	"type": "module",
+	"private": true,
+	"sideEffects": false,
+	"exports": {
+		"./windows": {
+			"import": "./src/windows/ddf.ts",
+			"types": "./src/windows/ddf.ts"
+		},
+		"./windows/ddf.json": {
+			"import": "./src/windows/ddf.json"
+		},
+		"./apple": {
+			"import": "./src/apple/payloads.ts",
+			"types": "./src/apple/payloads.ts"
+		},
+		"./apple/payloads.json": {
+			"import": "./src/apple/payloads.json"
+		}
+	}
+}

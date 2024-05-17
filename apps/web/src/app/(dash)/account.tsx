@@ -1,19 +1,24 @@
-import { For, type ParentProps, Suspense } from "solid-js";
+import { For, type ParentProps } from "solid-js";
 import { A } from "@solidjs/router";
 import type { JSX } from "solid-js";
 
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { AuthContext } from "~c/AuthContext";
+import { trpc } from "~/lib";
 
-const navigation = [{ name: "API Keys", href: "api-keys" }];
+const navigation = [
+	{ name: "General", href: "general" },
+	{ name: "API Keys", href: "api-keys" },
+];
 
 export const route = {
 	info: {
-		BREADCRUMB: () => <>Account</>,
+		BREADCRUMB: { Component: () => <>Account</> },
 	},
 };
 
 export default function Layout(props: ParentProps) {
+	const user = trpc.auth.me.createQuery();
+
 	return (
 		<PageLayout
 			size="lg"
@@ -27,13 +32,12 @@ export default function Layout(props: ParentProps) {
 								<SidebarItem href={item.href}>{item.name}</SidebarItem>
 							)}
 						</For>
+						{(user.data?.superadmin || user.data?.features) && (
+							<SidebarItem href="features">Features</SidebarItem>
+						)}
 					</ul>
 				</nav>
-				<main class="flex-1 overflow-y-auto px-4">
-					<Suspense>
-						<AuthContext>{props.children}</AuthContext>
-					</Suspense>
-				</main>
+				<main class="flex-1 overflow-y-auto px-4">{props.children}</main>
 			</div>
 		</PageLayout>
 	);

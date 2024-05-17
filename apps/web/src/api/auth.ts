@@ -1,14 +1,11 @@
+import { appendResponseHeader, getCookie, setCookie } from "vinxi/server";
 import { DrizzleMySQLAdapter } from "@lucia-auth/adapter-drizzle";
+import { cache } from "@solidjs/router";
 import { Lucia } from "lucia";
-import {
-	HTTPEvent,
-	appendResponseHeader,
-	getCookie,
-	setCookie,
-} from "vinxi/server";
 
 import { accounts, db, sessions } from "~/db";
 import { env } from "~/env";
+import type { Features } from "~/lib/featureFlags";
 
 const adapter = new DrizzleMySQLAdapter(db, sessions, accounts);
 
@@ -24,6 +21,11 @@ export const lucia = new Lucia(adapter, {
 		id: data.id,
 		email: data.email,
 		name: data.name,
+		features: data.features,
+	}),
+	getSessionAttributes: (data) => ({
+		userAgent: data.userAgent,
+		location: data.location,
 	}),
 });
 
@@ -31,6 +33,7 @@ declare module "lucia" {
 	interface Register {
 		Lucia: typeof lucia;
 		DatabaseUserAttributes: DatabaseUserAttributes;
+		DatabaseSessionAttributes: DatabaseSessionAttributes;
 	}
 }
 
@@ -39,10 +42,18 @@ interface DatabaseUserAttributes {
 	id: string;
 	email: string;
 	name: string;
+	features: Features[];
 }
 
-export async function checkAuth(event: HTTPEvent) {
-	const sessionId = getCookie(event, lucia.sessionCookieName) ?? null;
+interface DatabaseSessionAttributes {
+	// Web or CLI session
+	userAgent: `${"w" | "c"}${string}`;
+	location: string;
+}
+
+export const checkAuth = cache(async () => {
+	"use server";
+	const sessionId = getCookie(lucia.sessionCookieName) ?? null;
 
 	if (sessionId === null) return;
 
@@ -51,24 +62,21 @@ export async function checkAuth(event: HTTPEvent) {
 	if (session) {
 		if (session.fresh)
 			appendResponseHeader(
-				event,
 				"Set-Cookie",
 				lucia.createSessionCookie(session.id).serialize(),
 			);
 
-		if (getCookie(event, "isLoggedIn") === undefined) {
-			setCookie(event, "isLoggedIn", "true", {
+		if (getCookie("isLoggedIn") === undefined) {
+			setCookie("isLoggedIn", "true", {
 				httpOnly: false,
 			});
 		}
-	}
-	if (!session) {
+	} else {
 		appendResponseHeader(
-			event,
 			"Set-Cookie",
 			lucia.createBlankSessionCookie().serialize(),
 		);
 	}
 
 	if (session && account) return { session, account };
-}
+}, "checkAuth");

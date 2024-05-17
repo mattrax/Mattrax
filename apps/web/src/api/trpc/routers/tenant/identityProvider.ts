@@ -5,19 +5,21 @@ import { z } from "zod";
 
 import { msGraphClient } from "~/api/microsoft";
 import { getEmailDomain } from "~/api/utils";
-import { db, domains, identityProviders, users } from "~/db";
-import { env } from "~/env";
+import { domains, db, identityProviders, users } from "~/db";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
-import { encryptJWT } from "~/api/jwt";
+import { encryptJWT } from "~/api/utils/jwt";
+import { createAuditLog } from "~/api/auditLog";
+import { createTransaction } from "~/api/utils/transaction";
+import { OAUTH_STATE } from "~/api/rest/ms";
 
 export const identityProviderRouter = createTRPCRouter({
 	get: tenantProcedure.query(async ({ ctx }) => {
 		return (
-			(await db.query.identityProviders.findFirst({
+			(await ctx.db.query.identityProviders.findFirst({
 				columns: {
 					pk: true,
 					name: true,
-					variant: true,
+					provider: true,
 					linkerUpn: true,
 					remoteId: true,
 					lastSynced: true,
@@ -27,23 +29,12 @@ export const identityProviderRouter = createTRPCRouter({
 		);
 	}),
 
-	linkEntra: tenantProcedure.mutation(async ({ ctx }) => {
-		const params = new URLSearchParams({
-			client_id: env.ENTRA_CLIENT_ID,
-			prompt: "login",
-			redirect_uri: `${env.PROD_URL}/api/ms/link`,
-			resource: "https://graph.microsoft.com",
-			response_type: "code",
-			state: await encryptJWT({ tenantPk: ctx.tenant.pk }),
-		});
-
-		// We use OAuth v1 (not v2) so that can be do admin consent, while also verifying the user is a tenant owner.
-		// From what we can tell the OAuth v2 endpoint doesn't support this flow.
-		return `https://login.microsoftonline.com/organizations/oauth2/authorize?${params.toString()}`;
-	}),
+	linkEntraState: tenantProcedure.mutation(({ ctx: { tenant } }) =>
+		encryptJWT<OAUTH_STATE>({ tenant: { pk: tenant.pk, id: tenant.id } }),
+	),
 
 	remove: tenantProcedure.mutation(async ({ ctx }) => {
-		const [provider] = await db
+		const [provider] = await ctx.db
 			.select({
 				pk: identityProviders.pk,
 				remoteId: identityProviders.remoteId,
@@ -72,14 +63,15 @@ export const identityProviderRouter = createTRPCRouter({
 			console.error(err);
 		}
 
-		await db.transaction(async (db) => {
+		await createTransaction(async (db) => {
 			await db
 				.delete(domains)
 				.where(eq(domains.identityProviderPk, provider.pk));
-			await db.delete(users).where(eq(users.providerPk, provider.pk));
+			await ctx.db.delete(users).where(eq(users.providerPk, provider.pk));
 			await db
 				.delete(identityProviders)
 				.where(eq(identityProviders.tenantPk, ctx.tenant.pk));
+			await createAuditLog("removeIdp", { variant: "entraId" });
 		});
 	}),
 
@@ -91,12 +83,12 @@ export const identityProviderRouter = createTRPCRouter({
 
 		let identityProvider!: IdentityProvider;
 
-		if (provider.variant === "entraId")
+		if (provider.provider === "entraId")
 			identityProvider = createEntraIDUserProvider(provider.remoteId);
 
 		const [remoteDomains, connectedDomains] = await Promise.all([
 			identityProvider.getDomains(),
-			db.query.domains.findMany({
+			ctx.db.query.domains.findMany({
 				where: eq(domains.identityProviderPk, provider.pk),
 			}),
 		]);
@@ -115,7 +107,7 @@ export const identityProviderRouter = createTRPCRouter({
 
 			let identityProvider!: IdentityProvider;
 
-			if (provider.variant === "entraId")
+			if (provider.provider === "entraId")
 				identityProvider = createEntraIDUserProvider(provider.remoteId);
 
 			const remoteDomains = await identityProvider.getDomains();
@@ -125,11 +117,14 @@ export const identityProviderRouter = createTRPCRouter({
 					message: "Domain not found",
 				});
 
-			await db.insert(domains).values({
-				tenantPk: ctx.tenant.pk,
-				identityProviderPk: provider.pk,
-				domain: input.domain,
-				enterpriseEnrollmentAvailable: await enterpriseEnrollmentAvailable,
+			await createTransaction(async (db) => {
+				await db.insert(domains).values({
+					tenantPk: ctx.tenant.pk,
+					identityProviderPk: provider.pk,
+					domain: input.domain,
+					enterpriseEnrollmentAvailable: await enterpriseEnrollmentAvailable,
+				});
+				await createAuditLog("connectDomain", { domain: input.domain });
 			});
 
 			// TODO: `event.waitUntil`???
@@ -146,12 +141,12 @@ export const identityProviderRouter = createTRPCRouter({
 	refreshDomains: tenantProcedure.mutation(async ({ ctx }) => {
 		const provider = await ensureIdentityProvider(ctx.tenant.pk);
 
-		const knownDomains = await db.query.domains.findMany({
+		const knownDomains = await ctx.db.query.domains.findMany({
 			where: eq(domains.identityProviderPk, provider.pk),
 		});
 
 		for (const domain of knownDomains) {
-			await db
+			await ctx.db
 				.update(domains)
 				.set({
 					enterpriseEnrollmentAvailable: await isEnterpriseEnrollmentAvailable(
@@ -168,28 +163,27 @@ export const identityProviderRouter = createTRPCRouter({
 	}),
 
 	removeDomain: tenantProcedure
-		.input(
-			z.object({
-				domain: z.string(),
-			}),
-		)
+		.input(z.object({ domain: z.string() }))
 		.mutation(async ({ ctx, input }) => {
 			const provider = await ensureIdentityProvider(ctx.tenant.pk);
 
-			await db
-				.delete(domains)
-				.where(
-					and(
-						eq(domains.identityProviderPk, provider.pk),
-						eq(domains.domain, input.domain),
-					),
-				);
+			await createTransaction(async (db) => {
+				await db
+					.delete(domains)
+					.where(
+						and(
+							eq(domains.identityProviderPk, provider.pk),
+							eq(domains.domain, input.domain),
+						),
+					);
+				await createAuditLog("disconnectDomain", { domain: input.domain });
+			});
 
 			return true;
 		}),
 
 	sync: tenantProcedure.mutation(async ({ ctx }) => {
-		const [tenantProvider] = await db
+		const [tenantProvider] = await ctx.db
 			.select({
 				pk: identityProviders.pk,
 				remoteId: identityProviders.remoteId,
@@ -201,7 +195,7 @@ export const identityProviderRouter = createTRPCRouter({
 				`Tenant '${ctx.tenant.pk}' not found or has no providers`,
 			); // TODO: make an error the frontend can handle
 
-		const domainList = await db.query.domains.findMany({
+		const domainList = await ctx.db.query.domains.findMany({
 			where: eq(domains.identityProviderPk, tenantProvider.pk),
 		});
 
@@ -318,25 +312,29 @@ export async function syncEntraUsersWithDomains(
 	}
 }
 
-export function upsertEntraIdUser(
+export async function upsertEntraIdUser(
 	u: Pick<MSGraph.User, "displayName" | "userPrincipalName" | "id">,
 	tenantPk: number,
 	identityProviderPk: number,
 ) {
-	return db
+	const result = await db
 		.insert(users)
 		.values({
 			name: u.displayName!,
 			email: u.userPrincipalName!,
 			tenantPk: tenantPk,
 			providerPk: identityProviderPk,
-			providerResourceId: u.id!,
+			resourceId: u.id!,
 		})
 		.onDuplicateKeyUpdate({
 			set: {
 				// TODO: Update `email` if the `providerResourceId` matches.
 				name: u.displayName!,
-				providerResourceId: u.id!,
+				resourceId: u.id!,
 			},
 		});
+
+	return {
+		pk: Number.parseInt(result.insertId),
+	};
 }

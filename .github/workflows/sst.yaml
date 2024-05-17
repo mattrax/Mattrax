@@ -48,5 +48,5 @@ jobs:
           CLOUDFLARE_DEFAULT_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
           CLOUDFLARE_EMAIL: brendonovich@outlook.com
           CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
-          OAUTH_CLIENT_ID: kEC8WgRCJo11CNTRL
+          OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
           OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}

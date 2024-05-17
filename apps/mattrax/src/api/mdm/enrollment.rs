@@ -11,15 +11,22 @@ use base64::prelude::*;
 use hyper::header;
 use jwt::VerifyWithKey;
 use ms_mde::{
-    Action, ActivityId, BinarySecurityToken, DiscoverRequest, DiscoverResponse, DiscoverResponseBody, DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult, EnrollmentRequest, EnrollmentResponse, EnrollmentResponseBody, RequestHeaderSecurity, RequestSecurityTokenResponse, RequestSecurityTokenResponseCollection, RequestedSecurityToken, ResponseHeader, ACTIVITY_ID_XMLNS, DISCOVER_ACTION_REQUEST, DISCOVER_ACTION_RESPONSE, DISCOVER_RESPONSE_XMLNS, ENROLLMENT_ACTION_REQUEST, ENROLLMENT_ACTION_RESPONSE, ENROLLMENT_REQUEST_TYPE_ISSUE, ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION, REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION, REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE
+    Action, ActivityId, BinarySecurityToken, DiscoverRequest, DiscoverResponse,
+    DiscoverResponseBody, DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult,
+    EnrollmentRequest, EnrollmentResponse, EnrollmentResponseBody, RequestHeaderSecurity,
+    RequestSecurityTokenResponse, RequestSecurityTokenResponseCollection, RequestedSecurityToken,
+    ResponseHeader, ACTIVITY_ID_XMLNS, DISCOVER_ACTION_REQUEST, DISCOVER_ACTION_RESPONSE,
+    DISCOVER_RESPONSE_XMLNS, ENROLLMENT_ACTION_REQUEST, ENROLLMENT_ACTION_RESPONSE,
+    ENROLLMENT_REQUEST_TYPE_ISSUE, ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION,
+    REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION, REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE,
 };
-use mysql_common::time::OffsetDateTime;
 use rcgen::{
     Certificate, CertificateSigningRequestParams, CustomExtension, DistinguishedName, DnType,
     ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose, SerialNumber,
 };
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
+use time::OffsetDateTime;
 use tracing::error;
 
 use crate::api::Context;
@@ -292,7 +299,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                         }
                     }
                 }
-                Some(RequestHeaderSecurity { username_token: Some(token), .. }) => {
+                Some(RequestHeaderSecurity { username_token: Some(_token), .. }) => {
                     // fault.Fault(fmt.Errorf("OnPremise authentication not supported"), "no valid authentication method was found", soap.FaultCodeInvalidSecurity)
                     error!("todo: proper soap fault. OnPremise authentication not supported");
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -309,13 +316,13 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 //         fault.Fault(fmt.Errorf("pkcs7 required for authenticating renewal"), "the users authenticity could not be verified", soap.FaultCodeAuthentication)
                 //         return ""
                 //     }
-            
+
                 //     signer := p7.GetOnlySigner()
                 //     if signer == nil {
                 //         fault.Fault(fmt.Errorf("pkcs7: binary security token has no signer"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
                 //         return ""
                 //     }
-            
+
                 //     if now := time.Now(); now.Before(signer.NotBefore) || now.After(signer.NotAfter) /* Check that the certificate has not expired */ {
                 //         fault.Fault(fmt.Errorf("pkcs7: pkcs7 signer is expired"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
                 //         return ""
@@ -329,7 +336,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 //         fault.Fault(fmt.Errorf("pkcs7: certificate command name does match renewal request DeviceID"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
                 //         return ""
                 //     }
-            
+
                 //     return cmd.Header.WSSESecurity.Username
                 // }
             };
@@ -348,17 +355,18 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             }
 
             let (cert_store, common_name, enrollment_type) = match additional_context.get("EnrollmentType") {
-                Some("Device") => ("System", device_id.to_string(), ENROLLMENT_TYPE_USER),
-                _ => ("User", upn.to_string(), ENROLLMENT_TYPE_DEVICE),
+                Some("Device") => ("System", device_id.to_string(), ENROLLMENT_TYPE_DEVICE),
+                _ => ("User", upn.to_string(), ENROLLMENT_TYPE_USER),
             };
 
-            let Ok(csr) = cmd.body.request_security_token.binary_security_token.decode().map_err(|err| {
+            let Ok(csr) = cmd.body.request_security_token.binary_security_token.decode().map_err(|_err| {
                 // TODO: proper SOAP fault
                 error!("todo: error decoding the bst");
             }) else {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             };
             let mut csr = CertificateSigningRequestParams::from_der(&csr).unwrap(); // TODO: Error handling
+            let device_id = cuid2::create_id();
 
             // Version:               csr.Version,
             // Signature:             csr.Signature,
@@ -370,16 +378,16 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             // Issuer:
             csr.params.serial_number = Some(SerialNumber::from_slice(&[1])); // TODO: Encode proper Rust int type into the bytes
             csr.params.not_before = OffsetDateTime::now_utc();
-            csr.params.not_after = csr.params.not_before.clone().add(time::Duration::days(365));
+            csr.params.not_after = csr.params.not_before.add(time::Duration::days(365));
             csr.params.key_usages = vec![KeyUsagePurpose::DigitalSignature, KeyUsagePurpose::KeyEncipherment];
             csr.params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ClientAuth];
             // BasicConstraintsValid: true, // TODO
             csr.params.is_ca = IsCa::ExplicitNoCa;
             csr.params.custom_extensions = vec![
-                CustomExtension::from_oid_content(MICROSOFT_DEVICE_ID_EXTENSION, "TODO".as_bytes().to_vec()),
+                CustomExtension::from_oid_content(MICROSOFT_DEVICE_ID_EXTENSION, device_id.as_bytes().to_vec()),
             ];
 
-            let certificate = Certificate::from_request(csr, &state.identity_cert, &state.identity_key).unwrap();  // TODO: Error handling
+            let certificate = Certificate::from_request(csr, &state.identity_cert_rcgen, &state.identity_key).unwrap();  // TODO: Error handling
 
             // var wapProvisioningDocCharacteristics = []wap.Characteristic{
             //     certStoreCharacteristic,
@@ -439,16 +447,16 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             // rawProvisioningProfile = append([]byte(`<?xml version="1.0" encoding="UTF-8"?>`), rawProvisioningProfile...)
 
             let mut hasher = Sha1::new();
-            hasher.update(state.identity_cert.der());
+            hasher.update(state.identity_cert_rcgen.der());
             let identity_cert_fingerprint =  hasher.finalize();
-            let identity_cert_fingerprint =  hex::encode(&identity_cert_fingerprint).to_uppercase();
+            let identity_cert_fingerprint =  hex::encode(identity_cert_fingerprint).to_uppercase();
 
-            let root_certificate_der = BASE64_STANDARD.encode(state.identity_cert.der());
+            let root_certificate_der = BASE64_STANDARD.encode(state.identity_cert_rcgen.der());
 
             let mut hasher = Sha1::new();
             hasher.update(certificate.der());
             let signed_client_cert_fingerprint = hasher.finalize();
-            let signed_client_cert_fingerprint = hex::encode(&signed_client_cert_fingerprint).to_uppercase();
+            let signed_client_cert_fingerprint = hex::encode(signed_client_cert_fingerprint).to_uppercase();
 
             let client_ctr_raw = BASE64_STANDARD.encode(certificate.der());
 
@@ -464,7 +472,6 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
 
             // TODO: `HWDevID`, `DeviceID`, `OSVersion`
 
-            let device_id = cuid2::create_id();
             state.db.create_device(device_id.clone(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), enrollment_type.into(), OS_WINDOWS.into(), hw_dev_id.into(), tenant_pk, owner_pk).await.unwrap();
 
             // TODO: Get the device's DB id and put into this

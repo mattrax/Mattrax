@@ -3,7 +3,11 @@ import type { Component, ComponentProps } from "solid-js";
 import { splitProps } from "solid-js";
 
 import { cn } from "./lib";
-import { Controller, ControllerProvider, createController } from "./controller";
+import {
+	type Controller,
+	ControllerProvider,
+	createController,
+} from "./controller";
 
 // TODO: Making a trigger prop work is hard cause the element attributes don't get set
 // // TODO: Build out a default setup
@@ -94,7 +98,7 @@ const DropdownMenuItem: Component<DropdownMenuPrimitive.DropdownMenuItemProps> =
 		return (
 			<DropdownMenuPrimitive.Item
 				class={cn(
-					"focus:bg-accent focus:text-accent-foreground relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+					"focus:bg-accent relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
 					props.class,
 				)}
 				{...rest}

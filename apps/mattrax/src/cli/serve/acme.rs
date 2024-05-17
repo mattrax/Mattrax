@@ -1,9 +1,7 @@
 use std::io::ErrorKind;
 
 use better_acme::Store;
-use chrono::Utc;
-
-use crate::db::Db;
+use mx_db::Db;
 
 /// A storage backend for `better-acme` that uses MySQL as the source of truth.
 pub struct MattraxAcmeStore {
@@ -27,12 +25,12 @@ impl Store for MattraxAcmeStore {
             })?
             .into_iter()
             .next()
-            .map(|v| v.certificate))
+            .map(|v| v.value))
     }
 
     async fn set(&self, key: &str, value: &[u8]) -> Result<(), std::io::Error> {
         self.db
-            .store_certificate(key.to_string(), value.to_vec(), Utc::now().naive_utc())
+            .store_certificate(key.to_string(), value.to_vec())
             .await
             .map_err(|err| std::io::Error::new(ErrorKind::Other, err))
     }

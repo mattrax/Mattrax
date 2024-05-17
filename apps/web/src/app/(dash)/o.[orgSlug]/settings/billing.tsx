@@ -1,14 +1,14 @@
 import { trpc } from "~/lib";
 
 export default function Page() {
-	const stripePortalUrl = trpc.org.billing.portalUrl.useMutation(() => ({
-		onSuccess: async (url) => {
-			window.open(url, "_self");
+	// const stripePortalUrl = trpc.org.billing.portalUrl.createMutation(() => ({
+	// 	onSuccess: async (url) => {
+	// 		window.open(url, "_self");
 
-			// Make sure the button is disabled until the user is in the new tab
-			await new Promise((resolve) => setTimeout(resolve, 500));
-		},
-	}));
+	// 		// Make sure the button is disabled until the user is in the new tab
+	// 		await new Promise((resolve) => setTimeout(resolve, 500));
+	// 	},
+	// }));
 
 	return (
 		<div>

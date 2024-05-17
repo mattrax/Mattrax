@@ -46,17 +46,14 @@ vendor/
 .DS_Store
 Thumbs.db
 
-# Temp
-result.mobileconfig
-/dominion/certs
-/dominion/*.key
-/dominion/*.crt
-/dominion/*.csr
-/dominion/*.key
-/dominion/*.pfx
-
 # Data directory
 /data
 
 # Oscar's staging area
 /_
+/policy.yaml
+/out
+
+# Temp
+result.mobileconfig
+/apps/ingest/src/windows.rs

@@ -68,7 +68,7 @@ impl BinarySecurityToken {
     pub fn decode(&self) -> Result<Vec<u8>, Box<dyn Error>> {
         match &*self.encoding_type {
             "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#base64binary" => {
-                BASE64_STANDARD.decode(&self.value.replace("\r\n", "")).map_err(Into::into)
+                BASE64_STANDARD.decode(self.value.replace("\r\n", "")).map_err(Into::into)
             }
             _ => Err("encoding not supported".into()),
         }

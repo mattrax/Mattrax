@@ -1,5 +1,5 @@
-import { ComponentProps, JSX, splitProps } from "solid-js";
 import clsx from "clsx";
+import { type ComponentProps, type JSX, splitProps } from "solid-js";
 
 export function PageLayout(
 	props: ComponentProps<"div"> & {

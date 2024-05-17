@@ -25,9 +25,9 @@ pnpm dev
 # pnpm db:studio
 
 # MDM backend
-cargo run -p mattrax -- init
-cargo run -p mattrax -- serve
+cargo mattrax init
+cargo mattrax serve
 
-# Configure
-pnpm configure tauri dev
+# CLI
+cargo mttx help
 ```

@@ -1,11 +1,12 @@
 import { useNavigate } from "@solidjs/router";
 import { For, Suspense, createEffect } from "solid-js";
 import { toast } from "solid-sonner";
+import { PageLayoutHeading } from "~/components/PageLayout";
 import { isTRPCClientError, trpc } from "~/lib";
 
 export default function Page() {
 	const navigate = useNavigate();
-	const stats = trpc.internal.stats.useQuery();
+	const stats = trpc.internal.stats.createQuery();
 
 	createEffect(() => {
 		if (isTRPCClientError(stats.error)) {
@@ -18,7 +19,8 @@ export default function Page() {
 
 	return (
 		<div class="p-2">
-			<h1 class="text-4xl pb-4">Top-secret dashboard</h1>
+			<PageLayoutHeading class="pb-4">Overview</PageLayoutHeading>
+
 			<div class="flex flex-col space-y-2">
 				<Suspense fallback={<p>Loading...</p>}>
 					<For each={stats.data ?? []}>

@@ -1,14 +1,14 @@
 import { eq } from "drizzle-orm";
 import type Stripe from "stripe";
 import { stripe } from "~/api/stripe";
-import { db, organisations } from "~/db";
+import { organisations } from "~/db";
 import { env } from "~/env";
 import { createTRPCRouter, orgProcedure } from "../../helpers";
 import { TRPCError } from "@trpc/server";
 
 export const billingRouter = createTRPCRouter({
 	portalUrl: orgProcedure.mutation(async ({ ctx }) => {
-		const [org] = await db
+		const [org] = await ctx.db
 			.select({
 				name: organisations.name,
 				billingEmail: organisations.billingEmail,
@@ -27,7 +27,7 @@ export const billingRouter = createTRPCRouter({
 					email: org.billingEmail || undefined,
 				});
 
-				await db
+				await ctx.db
 					.update(organisations)
 					.set({ stripeCustomerId: customer.id })
 					.where(eq(organisations.pk, ctx.org.pk));
@@ -46,7 +46,7 @@ export const billingRouter = createTRPCRouter({
 
 		const body = new URLSearchParams({
 			customer: customerId,
-			return_url: `${env.PROD_URL}/o/${ctx.org.slug}/settings`,
+			return_url: `${env.VITE_PROD_URL}/o/${ctx.org.slug}/settings`,
 		});
 
 		const resp = await fetch(

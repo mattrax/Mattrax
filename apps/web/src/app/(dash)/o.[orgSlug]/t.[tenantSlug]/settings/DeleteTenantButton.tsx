@@ -7,7 +7,7 @@ import { trpc } from "~/lib";
 import { useTenant } from "../Context";
 
 export function DeleteTenantButton() {
-	const deleteTenant = trpc.tenant.delete.useMutation();
+	const deleteTenant = trpc.tenant.delete.createMutation();
 	const navigate = useNavigate();
 	const tenant = useTenant();
 	const trpcCtx = trpc.useContext();

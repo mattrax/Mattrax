@@ -1,5 +1,5 @@
-import { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
-import { createTRPCRouter } from "./helpers";
+import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
+import { createTRPCContext, createTRPCRouter } from "./helpers";
 import { applicationRouter } from "./routers/app";
 import { authRouter } from "./routers/auth";
 import { deviceRouter } from "./routers/device";
@@ -25,6 +25,10 @@ export const appRouter = createTRPCRouter({
 	apiKey: apiKeyRouter,
 	org: orgRouter,
 });
+
+export const createContext = createTRPCContext;
+
+export const router = appRouter;
 
 export type AppRouter = typeof appRouter;
 

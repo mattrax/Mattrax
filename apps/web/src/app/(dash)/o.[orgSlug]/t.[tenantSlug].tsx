@@ -1,13 +1,17 @@
-import { type ParentProps, Show, Suspense, startTransition } from "solid-js";
-import { type RouteDefinition, useNavigate } from "@solidjs/router";
+import { type ParentProps, Show, Suspense, createMemo } from "solid-js";
+import { type RouteDefinition, A, createAsync } from "@solidjs/router";
 import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { Breadcrumb } from "~c/Breadcrumbs";
-import { AuthContext } from "~c/AuthContext";
-import { TenantContext } from "./t.[tenantSlug]/Context";
-import { TenantSwitcher } from "./t.[tenantSlug]/TenantSwitcher";
+import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
+import { MultiSwitcher } from "../MultiSwitcher";
+import { As } from "@kobalte/core";
+import { Button } from "@mattrax/ui";
+import { trpc } from "~/lib";
+import { createQueryCacher, useCachedQueryData } from "~/cache";
+import { cachedOrgs } from "../utils";
+import { cachedTenantsForOrg } from "./utils";
 
 export function useTenantSlug() {
 	const params = useZodParams({ tenantSlug: z.string() });
@@ -25,32 +29,70 @@ const NAV_ITEMS = [
 ];
 
 export const route = {
+	load: ({ params }) => {
+		trpc.useContext().tenant.list.ensureData({ orgSlug: params.orgSlug! });
+	},
 	info: {
 		NAV_ITEMS,
-		BREADCRUMB: () => {
-			const navigate = useNavigate();
+		BREADCRUMB: {
+			hasNestedSegments: true,
+			Component: (props: { href: string }) => {
+				const params = useZodParams({
+					orgSlug: z.string(),
+					tenantSlug: z.string(),
+				});
 
-			return (
-				<AuthContext>
-					<TenantContext>
-						<TenantSwitcher
-							setActiveTenant={(slug) => {
-								startTransition(() => navigate(`../${slug}`));
-							}}
-						/>
-					</TenantContext>
-				</AuthContext>
-			);
+				const query = trpc.org.list.createQuery();
+				const orgs = useCachedQueryData(query, () => cachedOrgs());
+				const org = () => orgs()?.find((o) => o.slug === params.orgSlug);
+
+				return (
+					<Show when={org()}>
+						{(org) => {
+							const query = trpc.tenant.list.createQuery(() => ({
+								orgSlug: params.orgSlug,
+							}));
+							createQueryCacher(query, "tenants", (t) => ({ ...t }));
+							const tenants = useCachedQueryData(query, () =>
+								cachedTenantsForOrg(org().id),
+							);
+
+							const tenant = () =>
+								tenants()?.find((t) => t.slug === params.tenantSlug);
+
+							return (
+								<div class="flex flex-row items-center py-1 gap-2">
+									<A href={props.href}>{tenant()?.name}</A>
+									<MultiSwitcher>
+										<As component={Button} variant="ghost" size="iconSmall">
+											<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+										</As>
+									</MultiSwitcher>
+								</div>
+							);
+						}}
+					</Show>
+				);
+			},
 		},
 	},
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ tenantSlug: z.string() });
+	const params = useZodParams({ orgSlug: z.string(), tenantSlug: z.string() });
+
+	const orgs = createAsync(() => cachedOrgs());
+
+	createMemo(
+		createAsync(async () => {
+			const org = orgs()?.find((o) => o.slug === params.orgSlug);
+			if (!org) return;
+			return await cachedTenantsForOrg(org.id);
+		}),
+	);
 
 	return (
 		<>
-			{/* we don't key the sidebar so that the tenant switcher closing animation can still play */}
 			<MErrorBoundary>
 				{/* we key here on purpose - tenants are the root-most unit of isolation */}
 				<Show when={params.tenantSlug} keyed>

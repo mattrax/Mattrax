@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
-    extract::{Request, State},
+    extract::{connect_info::Connected, Request, State},
     http::HeaderValue,
     middleware::{self, Next},
     response::Response,
@@ -9,14 +9,29 @@ use axum::{
     Router,
 };
 use hmac::Hmac;
+use mx_db::Db;
 use rcgen::{Certificate, KeyPair};
+use rustls::pki_types::CertificateDer;
 use sha2::Sha256;
 use tokio::sync::mpsc;
+use x509_parser::certificate::X509Certificate;
 
-use crate::{config::ConfigManager, db::Db};
+use crate::config::ConfigManager;
 
 mod internal;
 mod mdm;
+
+#[derive(Clone, Debug)]
+pub struct ConnectInfoTy {
+    pub remote_addr: SocketAddr,
+    pub client_cert: Option<Vec<CertificateDer<'static>>>,
+}
+
+impl Connected<Self> for ConnectInfoTy {
+    fn connect_info(this: Self) -> Self {
+        this
+    }
+}
 
 pub struct Context {
     pub config: ConfigManager,
@@ -26,7 +41,8 @@ pub struct Context {
 
     pub shared_secret: Hmac<Sha256>,
 
-    pub identity_cert: Certificate,
+    pub identity_cert_rcgen: Certificate,
+    pub identity_cert_x509: X509Certificate<'static>,
     pub identity_key: KeyPair,
 
     pub acme_tx: mpsc::Sender<Vec<String>>,
@@ -82,6 +98,10 @@ pub fn mount(state: Arc<Context>) -> Router {
     Router::new()
         .route("/", get(|| async move { "Mattrax MDM!".to_string() }))
         .nest("/internal", internal::mount(state.clone()))
+        .nest(
+            "/psdb.v1alpha1.Database",
+            internal::sql::mount(state.clone()),
+        )
         .nest("/EnrollmentServer", mdm::enrollment::mount(state.clone()))
         .nest("/ManagementServer", mdm::manage::mount(state.clone()))
         .layer(middleware::from_fn_with_state(state.clone(), headers))

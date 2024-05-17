@@ -4,12 +4,19 @@ import { A } from "@solidjs/router";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { AuthContext } from "~c/AuthContext";
 import { TenantContext } from "./Context";
+import IcRoundArrowForward from "~icons/ic/round-arrow-forward";
 
 const navigation = [
 	{ name: "General", href: "" },
-	{ name: "Administrators", href: "administrators" },
 	{ name: "Identity Provider", href: "identity-provider" },
 	{ name: "Enrollment", href: "enrollment" },
+	{ name: "Audit Log", href: "audit-log" },
+];
+
+const orgSection = [
+	{ name: "General", href: "../../../settings/general" },
+	{ name: "Administrators", href: "../../../settings/administrators" },
+	{ name: "Billing", href: "../../../settings/billing" },
 ];
 
 export default function Layout(props: ParentProps) {
@@ -19,11 +26,25 @@ export default function Layout(props: ParentProps) {
 			heading={<PageLayoutHeading>Tenant Settings</PageLayoutHeading>}
 		>
 			<div class="flex flex-row">
-				<nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pl-4">
+				<nav class="sticky top-0 w-44 flex flex-col bg-white pl-4">
 					<ul class="space-y-1">
 						<For each={navigation}>
 							{(item) => (
 								<SidebarItem href={item.href}>{item.name}</SidebarItem>
+							)}
+						</For>
+					</ul>
+					<span class="text-sm text-gray-500 font-medium mt-4 mb-2">
+						Organisation Settings
+					</span>
+					<ul class="space-y-1">
+						<For each={orgSection}>
+							{(item) => (
+								<SidebarItem href={item.href}>
+									<div class="flex flex-row items-center justify-between ">
+										{item.name} <IcRoundArrowForward class="block" />
+									</div>
+								</SidebarItem>
 							)}
 						</For>
 					</ul>

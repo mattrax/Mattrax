@@ -8,8 +8,6 @@ import {
 	For,
 	createEffect,
 	startTransition,
-	ErrorBoundary,
-	catchError,
 } from "solid-js";
 import { debounce } from "@solid-primitives/scheduled";
 
@@ -17,6 +15,7 @@ import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import {
 	ColumnsDropdown,
 	StandardTable,
+	createSearchParamFilter,
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
@@ -47,11 +46,11 @@ const columns = [
 	// TODO: Descriptions, supported OS's.
 ];
 
-function createApplicationsTable() {
+export default function Page() {
 	const tenantSlug = useTenantSlug();
-	const apps = trpc.app.list.useQuery(() => ({
-		tenantSlug: tenantSlug(),
-	}));
+
+	const apps = trpc.app.list.createQuery(() => ({ tenantSlug: tenantSlug() }));
+	cacheMetadata("application", () => apps.data ?? []);
 
 	const table = createStandardTable({
 		get data() {
@@ -60,11 +59,7 @@ function createApplicationsTable() {
 		columns,
 	});
 
-	return { table, apps };
-}
-
-export default function Page() {
-	const { table, apps } = createApplicationsTable();
+	createSearchParamFilter(table, "name", "search");
 
 	return (
 		<PageLayout
@@ -80,14 +75,7 @@ export default function Page() {
 			}
 		>
 			<div class="flex flex-row items-center gap-4">
-				<Input
-					placeholder={apps.isLoading ? "Loading..." : "Search..."}
-					disabled={apps.isLoading}
-					value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-					onInput={(event) =>
-						table.getColumn("name")?.setFilterValue(event.target.value)
-					}
-				/>
+				<TableSearchParamsInput query={apps} />
 				<ColumnsDropdown table={table}>
 					<As component={Button} variant="outline" class="ml-auto select-none">
 						Columns
@@ -123,6 +111,8 @@ import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { z } from "zod";
 import clsx from "clsx";
 import { useTenantSlug } from "../../t.[tenantSlug]";
+import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
+import { cacheMetadata } from "../metadataCache";
 
 const IOS_APP_SCHEMA = z.object({
 	results: z.array(
@@ -162,7 +152,9 @@ function CreateApplicationSheet(props: ParentProps) {
 	const tenantSlug = useTenantSlug();
 	const navigate = useNavigate();
 
-	const createApplication = trpc.app.create.useMutation();
+	const [open, setOpen] = createSignal(false);
+
+	const createApplication = trpc.app.create.createMutation();
 	const form = createZodForm({
 		schema: z.object({
 			targetType: z.custom<keyof typeof APPLICATION_TARGETS>(),
@@ -185,14 +177,12 @@ function CreateApplicationSheet(props: ParentProps) {
 
 	const [search, setSearch] = createSignal("");
 
-	const query = createQuery(
-		queryOptions(() => ({
-			...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
-				search,
-			),
-			throwOnError: false,
-		})),
-	);
+	const query = createQuery(() => ({
+		...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
+			search,
+		),
+		enabled: open(),
+	}));
 
 	createEffect(() => {
 		const results = query.data?.results;
@@ -214,7 +204,7 @@ function CreateApplicationSheet(props: ParentProps) {
 	});
 
 	return (
-		<Sheet>
+		<Sheet open={open()} onOpenChange={setOpen}>
 			<SheetTrigger asChild>{props.children}</SheetTrigger>
 			<SheetContent asChild padding="none">
 				<As

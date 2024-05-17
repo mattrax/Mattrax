@@ -1,29 +1,26 @@
 [workspace]
 resolver = "2"
-members = ["apps/mattrax", "apps/mattraxd", "apps/mttx", "crates/*"]
-
-[workspace.metadata.dist]
-cargo-dist-version = "0.12.0"
-ci = ["github"]
-installers = ["shell", "powershell", "homebrew"]
-tap = "mattrax/homebrew-tap"
-targets = [
-    "aarch64-apple-darwin",
-    "x86_64-apple-darwin",
-    "x86_64-unknown-linux-gnu",
-    "x86_64-unknown-linux-musl",
-    "x86_64-pc-windows-msvc",
+members = [
+  "apps/ingest",
+  "apps/mattrax",
+  "apps/mattraxd",
+  "apps/mttx",
+  "crates/*",
 ]
-publish-jobs = ["homebrew"]
-pr-run-mode = "plan"
-install-updater = true
 
 [profile.dist]
 inherits = "release"
 lto = "thin"
 
 [workspace.dependencies]
-specta = { version = "=2.0.0-rc.7" }
+serde = { version = "^1", features = ["derive"] }
+serde_json = { version = "^1" }
+specta = { version = "=2.0.0-rc.11", features = [
+  "typescript",
+  "serde_json",
+  "chrono",
+  "rust_decimal",
+] }
 
 [patch.crates-io]
 # TODO: This is likely a security risk, will fix it properly once the MVP is out.
@@ -34,3 +31,9 @@ rustls-acme = { git = "https://github.com/oscartbeaumont/rustls-acme", rev = "f9
 # Some minor improvements
 easy-xml = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }
 easy-xml-derive = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }
+
+# Support for latest mysql-async
+refinery-core = { git = "https://github.com/oscartbeaumont/refinery", rev = "03744dc3257ae734a9d2f305e59b95485da53468" }
+
+# https://github.com/zkat/chownr-rs/pull/1
+chownr = { git = "https://github.com/oscartbeaumont/chownr-rs", rev = "05101de6d2eb27a18374688f9339772aff827f85" }

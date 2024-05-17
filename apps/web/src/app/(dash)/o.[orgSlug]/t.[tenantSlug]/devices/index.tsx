@@ -12,12 +12,15 @@ import {
 	createStandardTable,
 	createSearchParamPagination,
 	selectCheckboxColumn,
+	createSearchParamFilter,
 } from "~c/StandardTable";
-import { Button, Input } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useZodParams } from "~/lib/useZodParams";
 import { z } from "zod";
+import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { cacheMetadata } from "../metadataCache";
 
 export const route = {
 	load: ({ params }) => {
@@ -64,9 +67,15 @@ const columns = [
 	}),
 ];
 
-function createDevicesTable() {
+// TODO: Infinite scroll
+
+// TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
+
+export default function Page() {
+	// const location = useLocation();
 	const params = useZodParams({ tenantSlug: z.string() });
-	const devices = trpc.device.list.useQuery(() => params);
+	const devices = trpc.device.list.createQuery(() => params);
+	cacheMetadata("device", () => devices.data ?? []);
 
 	const table = createStandardTable({
 		get data() {
@@ -77,17 +86,7 @@ function createDevicesTable() {
 	});
 
 	createSearchParamPagination(table, "page");
-
-	return { devices, table };
-}
-
-// TODO: Infinite scroll
-
-// TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
-
-export default function Page() {
-	// const location = useLocation();
-	const { table, devices } = createDevicesTable();
+	createSearchParamFilter(table, "name", "search");
 
 	return (
 		<PageLayout
@@ -110,15 +109,7 @@ export default function Page() {
 			}
 		>
 			<div class="flex flex-row items-center gap-4">
-				<Input
-					class="flex-1"
-					placeholder={devices.isLoading ? "Loading..." : "Search..."}
-					disabled={devices.isLoading}
-					value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-					onInput={(event) =>
-						table.getColumn("name")?.setFilterValue(event.target.value)
-					}
-				/>
+				<TableSearchParamsInput class="flex-1" query={devices} />
 				<ColumnsDropdown table={table}>
 					<As component={Button} variant="outline" class="ml-auto select-none">
 						Columns

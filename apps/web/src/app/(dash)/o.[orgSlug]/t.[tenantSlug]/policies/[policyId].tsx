@@ -1,40 +1,51 @@
-import { Navigate, type RouteDefinition } from "@solidjs/router";
-import { type ParentProps, Show } from "solid-js";
-import { toast } from "solid-sonner";
+import type { RouteDefinition } from "@solidjs/router";
+import type { ParentProps } from "solid-js";
 import { Badge } from "@mattrax/ui";
 import { z } from "zod";
 
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
-import { Breadcrumb } from "~c/Breadcrumbs";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { PolicyContextProvider } from "./[policyId]/Context";
+import { createNotFoundRedirect } from "~/lib/utils";
+import { getMetadata } from "../metadataCache";
+
+export function usePolicyId() {
+	const params = useZodParams({ policyId: z.string() });
+	return () => params.policyId;
+}
 
 const NAV_ITEMS = [
 	{ title: "Policy", href: "" },
 	{ title: "Edit", href: "edit" },
+	{ title: "Deploys", href: "deploys" },
 	{ title: "Assignees", href: "assignees" },
-	{ title: "History", href: "history" },
 	{ title: "Settings", href: "settings" },
 ];
 
 export const route = {
 	load: ({ params }) =>
 		trpc.useContext().policy.get.ensureData({
-			policyId: params.policyId!,
+			id: params.policyId!,
 		}),
 	info: {
 		NAV_ITEMS,
-		BREADCRUMB: () => {
-			const params = useZodParams({ policyId: z.string() });
-			const query = trpc.policy.get.useQuery(() => params);
+		BREADCRUMB: {
+			Component: () => {
+				const params = useZodParams({ policyId: z.string() });
 
-			return (
-				<>
-					<span>{query.data?.name}</span>
-					<Badge variant="outline">Policy</Badge>
-				</>
-			);
+				const query = trpc.policy.get.createQuery(() => ({
+					id: params.policyId,
+				}));
+
+				return (
+					<>
+						<span>
+							{getMetadata("policy", params.policyId)?.name ?? query.data?.name}
+						</span>
+						<Badge variant="outline">Policy</Badge>
+					</>
+				);
+			},
 		},
 	},
 } satisfies RouteDefinition;
@@ -42,23 +53,11 @@ export const route = {
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({ policyId: z.string() });
 
-	const query = trpc.policy.get.useQuery(() => params);
+	createNotFoundRedirect({
+		query: trpc.policy.get.createQuery(() => ({ id: params.policyId })),
+		toast: "Policy not found",
+		to: "../../policies",
+	});
 
-	return (
-		<Show when={query.data !== undefined}>
-			<Show when={query.data} fallback={<NotFound />}>
-				{(policy) => (
-					<PolicyContextProvider policy={policy()} query={query}>
-						<MErrorBoundary>{props.children}</MErrorBoundary>
-					</PolicyContextProvider>
-				)}
-			</Show>
-		</Show>
-	);
-}
-
-function NotFound() {
-	toast.error("Policy not found");
-	// necessary since '..' adds trailing slash -_-
-	return <Navigate href="../../policies" />;
+	return <MErrorBoundary>{props.children}</MErrorBoundary>;
 }

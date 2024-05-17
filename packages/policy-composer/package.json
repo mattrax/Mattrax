@@ -1,0 +1,19 @@
+{
+	"name": "@mattrax/policy-composer",
+	"type": "module",
+	"private": true,
+	"sideEffects": false,
+	"main": "./src/index.tsx",
+	"exports": {
+		".": {
+			"import": "./src/index.tsx",
+			"types": "./src/index.tsx"
+		}
+	},
+	"dependencies": {
+		"@kobalte/core": "^0.12.6",
+		"@mattrax/configuration-schemas": "workspace:*",
+		"@mattrax/ui": "workspace:*",
+		"solid-js": "^1.8.16"
+	}
+}

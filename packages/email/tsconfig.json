@@ -1,0 +1,20 @@
+{
+	"compilerOptions": {
+		"outDir": "./dist",
+		"incremental": true,
+		"strict": true,
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"jsx": "react-jsx",
+		"allowSyntheticDefaultImports": true,
+		"esModuleInterop": true,
+		"strictNullChecks": true,
+		"noUncheckedIndexedAccess": true,
+		"isolatedModules": true,
+		"composite": true,
+		"skipLibCheck": true
+	},
+	"include": ["src/", "emails/"],
+	"exclude": ["node_modules", "dist"]
+}
