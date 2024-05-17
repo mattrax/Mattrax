@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type Stripe from "stripe";
-import { stripe } from "~/api/stripe";
+import { useStripe } from "~/api/stripe";
 import { organisations } from "~/db";
 import { env } from "~/env";
 import { createTRPCRouter, orgProcedure } from "../../helpers";
@@ -22,7 +22,7 @@ export const billingRouter = createTRPCRouter({
 		let customerId: string;
 		if (!org.stripeCustomerId) {
 			try {
-				const customer = await stripe.customers.create({
+				const customer = await (await useStripe()).customers.create({
 					name: org.name,
 					email: org.billingEmail || undefined,
 				});

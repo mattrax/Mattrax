@@ -1,4 +1,4 @@
-import { type RequestSchema } from "@mattrax/email";
+import type { RequestSchema } from "@mattrax/email";
 import { AwsClient } from "aws4fetch";
 import { env } from "~/env";
 
