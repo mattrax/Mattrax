@@ -1,6 +1,13 @@
 import { type VariantProps, cva } from "class-variance-authority";
 import type { Component, ComponentProps } from "solid-js";
-import { Dialog as SheetPrimitive } from "@kobalte/core";
+import { type PolymorphicProps, Dialog as SheetPrimitive } from "@kobalte/core";
+import type {
+	DialogDescriptionProps,
+	DialogOverlayProps,
+	DialogPortalProps,
+	DialogTitleProps,
+	DialogContentProps as KDialogContentProps,
+} from "@kobalte/core/dialog";
 import { mergeProps, splitProps } from "solid-js";
 
 import { cn } from "./lib";
@@ -24,7 +31,7 @@ const portalVariants = cva("fixed inset-0 z-50 flex", {
 });
 
 interface SheetPortalProps
-	extends SheetPrimitive.DialogPortalProps,
+	extends DialogPortalProps,
 		VariantProps<typeof portalVariants> {}
 
 const SheetPortal: Component<SheetPortalProps> = (props) => {
@@ -39,7 +46,7 @@ const SheetPortal: Component<SheetPortalProps> = (props) => {
 };
 
 const SheetOverlay: Component<
-	SheetPrimitive.DialogOverlayProps & { transparent?: boolean }
+	PolymorphicProps<"div", DialogOverlayProps> & { transparent?: boolean }
 > = (props) => {
 	const [, rest] = splitProps(props, ["class", "transparent"]);
 	return (
@@ -150,7 +157,7 @@ const sheetVariants = cva(
 );
 
 export interface DialogContentProps
-	extends SheetPrimitive.DialogContentProps,
+	extends PolymorphicProps<"div", KDialogContentProps>,
 		VariantProps<typeof sheetVariants> {}
 
 const SheetContent: Component<DialogContentProps & { transparent?: boolean }> =
@@ -216,7 +223,9 @@ const SheetFooter: Component<ComponentProps<"div">> = (props) => {
 	);
 };
 
-const SheetTitle: Component<SheetPrimitive.DialogTitleProps> = (props) => {
+const SheetTitle: Component<PolymorphicProps<"h2", DialogTitleProps>> = (
+	props,
+) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<SheetPrimitive.Title
@@ -226,9 +235,9 @@ const SheetTitle: Component<SheetPrimitive.DialogTitleProps> = (props) => {
 	);
 };
 
-const SheetDescription: Component<SheetPrimitive.DialogDescriptionProps> = (
-	props,
-) => {
+const SheetDescription: Component<
+	PolymorphicProps<"p", DialogDescriptionProps>
+> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<SheetPrimitive.Description

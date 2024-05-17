@@ -6,7 +6,6 @@ import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
 import { MultiSwitcher } from "../MultiSwitcher";
-import { As } from "@kobalte/core";
 import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { createQueryCacher, useCachedQueryData } from "~/cache";
@@ -64,9 +63,9 @@ export const route = {
 								<div class="flex flex-row items-center py-1 gap-2">
 									<A href={props.href}>{tenant()?.name}</A>
 									<MultiSwitcher>
-										<As component={Button} variant="ghost" size="iconSmall">
+										<Button variant="ghost" size="iconSmall">
 											<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
-										</As>
+										</Button>
 									</MultiSwitcher>
 								</div>
 							);

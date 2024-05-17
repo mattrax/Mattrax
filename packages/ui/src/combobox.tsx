@@ -1,13 +1,27 @@
 import type { Component } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { Combobox as ComboboxPrimitive } from "@kobalte/core";
+import {
+	Combobox as ComboboxPrimitive,
+	type PolymorphicProps,
+} from "@kobalte/core";
+import type { ListboxSectionProps } from "@kobalte/core/listbox";
+import type {
+	ListboxItemIndicatorProps,
+	ListboxItemProps,
+} from "@kobalte/core/listbox";
 
 import { cn } from "./lib";
+import type {
+	ComboboxContentProps,
+	ComboboxControlProps,
+	ComboboxInputProps,
+	ComboboxTriggerProps,
+} from "@kobalte/core/combobox";
 
 const ComboboxRoot = ComboboxPrimitive.Root;
 
-const ComboboxItem: Component<ComboboxPrimitive.ComboboxItemProps> = (
+const ComboboxItem: Component<PolymorphicProps<"li", ListboxItemProps>> = (
 	props,
 ) => {
 	const [, rest] = splitProps(props, ["class"]);
@@ -25,7 +39,7 @@ const ComboboxItem: Component<ComboboxPrimitive.ComboboxItemProps> = (
 const ComboboxItemLabel = ComboboxPrimitive.ItemLabel;
 
 const ComboboxItemIndicator: Component<
-	ComboboxPrimitive.ComboboxItemIndicatorProps
+	PolymorphicProps<"div", ListboxItemIndicatorProps>
 > = (props) => {
 	const [, rest] = splitProps(props, ["children"]);
 	return (
@@ -35,23 +49,24 @@ const ComboboxItemIndicator: Component<
 	);
 };
 
-const ComboboxSection: Component<ComboboxPrimitive.ComboboxSectionProps> = (
-	props,
-) => {
-	const [, rest] = splitProps(props, ["class"]);
-	return (
-		<ComboboxPrimitive.Section
-			class={cn(
-				"overflow-hidden p-1 px-2 py-1.5 text-xs font-medium text-muted-foreground ",
-				props.class,
-			)}
-			{...rest}
-		/>
-	);
-};
+const ComboboxSection: Component<PolymorphicProps<"li", ListboxSectionProps>> =
+	(props) => {
+		const [, rest] = splitProps(props, ["class"]);
+		return (
+			<ComboboxPrimitive.Section
+				class={cn(
+					"overflow-hidden p-1 px-2 py-1.5 text-xs font-medium text-muted-foreground ",
+					props.class,
+				)}
+				{...rest}
+			/>
+		);
+	};
 
 // due to the generic typing this needs to be a function
-function ComboboxControl<T>(props: ComboboxPrimitive.ComboboxControlProps<T>) {
+function ComboboxControl<Option>(
+	props: PolymorphicProps<"div", ComboboxControlProps<Option>>,
+) {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<ComboboxPrimitive.Control
@@ -61,26 +76,25 @@ function ComboboxControl<T>(props: ComboboxPrimitive.ComboboxControlProps<T>) {
 	);
 }
 
-const ComboboxInput: Component<ComboboxPrimitive.ComboboxInputProps> = (
-	props,
-) => {
-	const [, rest] = splitProps(props, ["class"]);
-	return (
-		<ComboboxPrimitive.Input
-			class={cn(
-				"flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-				props.class,
-			)}
-			{...rest}
-		/>
-	);
-};
+const ComboboxInput: Component<PolymorphicProps<"input", ComboboxInputProps>> =
+	(props) => {
+		const [, rest] = splitProps(props, ["class"]);
+		return (
+			<ComboboxPrimitive.Input
+				class={cn(
+					"flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+					props.class,
+				)}
+				{...rest}
+			/>
+		);
+	};
 
 const ComboboxHiddenSelect = ComboboxPrimitive.HiddenSelect;
 
-const ComboboxTrigger: Component<ComboboxPrimitive.ComboboxTriggerProps> = (
-	props,
-) => {
+const ComboboxTrigger: Component<
+	PolymorphicProps<"button", ComboboxTriggerProps>
+> = (props) => {
 	const [, rest] = splitProps(props, ["class", "children"]);
 	return (
 		<ComboboxPrimitive.Trigger
@@ -94,9 +108,9 @@ const ComboboxTrigger: Component<ComboboxPrimitive.ComboboxTriggerProps> = (
 	);
 };
 
-const ComboboxContent: Component<ComboboxPrimitive.ComboboxContentProps> = (
-	props,
-) => {
+const ComboboxContent: Component<
+	PolymorphicProps<"div", ComboboxContentProps>
+> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<ComboboxPrimitive.Portal>

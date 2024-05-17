@@ -123,7 +123,7 @@ const TimelineItemBullet: Component<TimelineItemBulletProps> = (props) => {
 	return (
 		<div
 			class={cn(
-				`absolute top-0 flex items-center justify-center rounded-full border bg-background`,
+				"absolute top-0 flex items-center justify-center rounded-full border bg-background",
 				props.isActive && "border-primary",
 			)}
 			style={{

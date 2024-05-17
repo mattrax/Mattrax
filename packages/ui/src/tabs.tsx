@@ -1,13 +1,19 @@
 import type { Component } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { Tabs as TabsPrimitive } from "@kobalte/core";
+import { type PolymorphicProps, Tabs as TabsPrimitive } from "@kobalte/core";
+import type {
+	TabsContentProps,
+	TabsIndicatorProps,
+	TabsListProps,
+	TabsTriggerProps,
+} from "@kobalte/core/tabs";
 
 import { cn } from "./lib";
 
 const Tabs = TabsPrimitive.Root;
 
-const TabsList: Component<TabsPrimitive.TabsListProps> = (props) => {
+const TabsList: Component<PolymorphicProps<"div", TabsListProps>> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<TabsPrimitive.List
@@ -20,7 +26,9 @@ const TabsList: Component<TabsPrimitive.TabsListProps> = (props) => {
 	);
 };
 
-const TabsTrigger: Component<TabsPrimitive.TabsTriggerProps> = (props) => {
+const TabsTrigger: Component<PolymorphicProps<"button", TabsTriggerProps>> = (
+	props,
+) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<TabsPrimitive.Trigger
@@ -33,7 +41,9 @@ const TabsTrigger: Component<TabsPrimitive.TabsTriggerProps> = (props) => {
 	);
 };
 
-const TabsContent: Component<TabsPrimitive.TabsContentProps> = (props) => {
+const TabsContent: Component<PolymorphicProps<"div", TabsContentProps>> = (
+	props,
+) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<TabsPrimitive.Content
@@ -46,7 +56,9 @@ const TabsContent: Component<TabsPrimitive.TabsContentProps> = (props) => {
 	);
 };
 
-const TabsIndicator: Component<TabsPrimitive.TabsIndicatorProps> = (props) => {
+const TabsIndicator: Component<PolymorphicProps<"div", TabsIndicatorProps>> = (
+	props,
+) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<TabsPrimitive.Indicator

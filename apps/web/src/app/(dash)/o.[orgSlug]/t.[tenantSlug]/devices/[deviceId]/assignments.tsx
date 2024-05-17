@@ -1,4 +1,3 @@
-import { As } from "@kobalte/core";
 import { Suspense } from "solid-js";
 import { Button } from "@mattrax/ui";
 import pluralize from "pluralize";
@@ -79,9 +78,7 @@ export default function Page() {
 							})
 						}
 					>
-						<As component={Button} class="ml-auto">
-							Add Assignments
-						</As>
+						<Button class="ml-auto">Add Assignments</Button>
 					</VariantTableSheet>
 				</>
 			}

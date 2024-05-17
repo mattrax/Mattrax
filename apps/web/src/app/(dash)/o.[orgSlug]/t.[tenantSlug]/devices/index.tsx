@@ -3,7 +3,6 @@ import { createColumnHelper } from "@tanstack/solid-table";
 import { createTimeAgo } from "@solid-primitives/date";
 import type { RouterOutput } from "~/api/trpc";
 import { Suspense } from "solid-js";
-import { As } from "@kobalte/core";
 
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import {
@@ -111,10 +110,10 @@ export default function Page() {
 			<div class="flex flex-row items-center gap-4">
 				<TableSearchParamsInput class="flex-1" query={devices} />
 				<ColumnsDropdown table={table}>
-					<As component={Button} variant="outline" class="ml-auto select-none">
+					<Button variant="outline" class="ml-auto select-none">
 						Columns
 						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
-					</As>
+					</Button>
 				</ColumnsDropdown>
 			</div>
 			<Suspense>

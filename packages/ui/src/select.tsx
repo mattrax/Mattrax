@@ -1,14 +1,19 @@
-import { Select as SelectPrimitive } from "@kobalte/core";
+import {
+	type PolymorphicProps,
+	Select as SelectPrimitive,
+} from "@kobalte/core";
 import type { Component } from "solid-js";
 import { splitProps } from "solid-js";
 
 import { cn } from "./lib";
+import type { ListboxItemProps } from "@kobalte/core/listbox";
+import type { SelectContentProps, SelectTriggerProps } from "@kobalte/core/select";
 
 const Select = SelectPrimitive.Root;
 
 const SelectValue = SelectPrimitive.Value;
 
-const SelectTrigger: Component<SelectPrimitive.SelectTriggerProps> = (
+const SelectTrigger: Component<PolymorphicProps<"button", SelectTriggerProps>> = (
 	props,
 ) => {
 	const [, rest] = splitProps(props, ["class", "children"]);
@@ -28,7 +33,7 @@ const SelectTrigger: Component<SelectPrimitive.SelectTriggerProps> = (
 	);
 };
 
-const SelectContent: Component<SelectPrimitive.SelectContentProps> = (
+const SelectContent: Component<PolymorphicProps<"div", SelectContentProps>> = (
 	props,
 ) => {
 	const [, rest] = splitProps(props, ["class"]);
@@ -47,7 +52,9 @@ const SelectContent: Component<SelectPrimitive.SelectContentProps> = (
 	);
 };
 
-const SelectItem: Component<SelectPrimitive.SelectItemProps> = (props) => {
+const SelectItem: Component<PolymorphicProps<"li", ListboxItemProps>> = (
+	props,
+) => {
 	const [, rest] = splitProps(props, ["class", "children"]);
 	return (
 		<SelectPrimitive.Item

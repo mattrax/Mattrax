@@ -1,6 +1,5 @@
 /* @refresh skip */
 
-import { As } from "@kobalte/core";
 import { Button } from "@mattrax/ui";
 import { type RouteDefinition, A, createAsync } from "@solidjs/router";
 import { createMemo, type ParentProps } from "solid-js";
@@ -54,9 +53,9 @@ export const route = {
 					<div class="flex flex-row items-center py-1 gap-2">
 						<A href={props.href}>{org()?.name}</A>
 						<MultiSwitcher>
-							<As component={Button} variant="ghost" size="iconSmall">
+							<Button variant="ghost" size="iconSmall">
 								<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
-							</As>
+							</Button>
 						</MultiSwitcher>
 					</div>
 				);

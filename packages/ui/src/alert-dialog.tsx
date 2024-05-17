@@ -1,6 +1,15 @@
-import { AlertDialog as AlertDialogPrimitive } from "@kobalte/core";
+import {
+	AlertDialog as AlertDialogPrimitive,
+	type PolymorphicProps,
+} from "@kobalte/core";
 import type { Component } from "solid-js";
 import { splitProps } from "solid-js";
+import type {
+	DialogDescriptionProps,
+	DialogOverlayProps,
+	DialogTitleProps,
+} from "@kobalte/core/dialog";
+import type { AlertDialogContentProps } from "@kobalte/core/alert-dialog";
 
 import { cn } from "./lib";
 
@@ -9,7 +18,7 @@ const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
 const AlertDialogPortal = AlertDialogPrimitive.Portal;
 
 const AlertDialogOverlay: Component<
-	AlertDialogPrimitive.AlertDialogOverlayProps
+	PolymorphicProps<"div", DialogOverlayProps>
 > = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
@@ -24,7 +33,7 @@ const AlertDialogOverlay: Component<
 };
 
 const AlertDialogContent: Component<
-	AlertDialogPrimitive.AlertDialogContentProps
+	PolymorphicProps<"div", AlertDialogContentProps>
 > = (props) => {
 	const [, rest] = splitProps(props, ["class", "children"]);
 	return (
@@ -47,19 +56,20 @@ const AlertDialogContent: Component<
 	);
 };
 
-const AlertDialogTitle: Component<AlertDialogPrimitive.AlertDialogTitleProps> =
-	(props) => {
-		const [, rest] = splitProps(props, ["class"]);
-		return (
-			<AlertDialogPrimitive.Title
-				class={cn("text-lg font-semibold", props.class)}
-				{...rest}
-			/>
-		);
-	};
+const AlertDialogTitle: Component<PolymorphicProps<"h2", DialogTitleProps>> = (
+	props,
+) => {
+	const [, rest] = splitProps(props, ["class"]);
+	return (
+		<AlertDialogPrimitive.Title
+			class={cn("text-lg font-semibold", props.class)}
+			{...rest}
+		/>
+	);
+};
 
 const AlertDialogDescription: Component<
-	AlertDialogPrimitive.AlertDialogDescriptionProps
+	PolymorphicProps<"p", DialogDescriptionProps>
 > = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (

@@ -1,6 +1,21 @@
-import { DropdownMenu as DropdownMenuPrimitive } from "@kobalte/core";
+import {
+	DropdownMenu as DropdownMenuPrimitive,
+	type PolymorphicProps,
+} from "@kobalte/core";
 import type { Component, ComponentProps } from "solid-js";
 import { splitProps } from "solid-js";
+import type {
+	DropdownMenuContentProps,
+	DropdownMenuSubTriggerProps,
+} from "@kobalte/core/dropdown-menu";
+import type { SeparatorRootProps } from "@kobalte/core/separator";
+import type {
+	ContextMenuCheckboxItemProps,
+	ContextMenuGroupLabelProps,
+	ContextMenuItemProps,
+	ContextMenuRadioItemProps,
+	ContextMenuSubContentProps,
+} from "@kobalte/core/context-menu";
 
 import { cn } from "./lib";
 import {
@@ -76,7 +91,7 @@ const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
 
 const DropdownMenuContent: Component<
-	DropdownMenuPrimitive.DropdownMenuContentProps
+	PolymorphicProps<"div", DropdownMenuContentProps>
 > = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
@@ -92,19 +107,20 @@ const DropdownMenuContent: Component<
 	);
 };
 
-const DropdownMenuItem: Component<DropdownMenuPrimitive.DropdownMenuItemProps> =
-	(props) => {
-		const [, rest] = splitProps(props, ["class"]);
-		return (
-			<DropdownMenuPrimitive.Item
-				class={cn(
-					"focus:bg-accent relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-					props.class,
-				)}
-				{...rest}
-			/>
-		);
-	};
+const DropdownMenuItem: Component<
+	PolymorphicProps<"div", ContextMenuItemProps>
+> = (props) => {
+	const [, rest] = splitProps(props, ["class"]);
+	return (
+		<DropdownMenuPrimitive.Item
+			class={cn(
+				"focus:bg-accent relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+				props.class,
+			)}
+			{...rest}
+		/>
+	);
+};
 
 const DropdownMenuShortcut: Component<ComponentProps<"span">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
@@ -133,7 +149,7 @@ const DropdownMenuLabel: Component<
 };
 
 const DropdownMenuSeparator: Component<
-	DropdownMenuPrimitive.DropdownMenuSeparatorProps
+	PolymorphicProps<"hr", SeparatorRootProps>
 > = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
@@ -147,7 +163,7 @@ const DropdownMenuSeparator: Component<
 const DropdownMenuSub = DropdownMenuPrimitive.Sub;
 
 const DropdownMenuSubTrigger: Component<
-	DropdownMenuPrimitive.DropdownMenuSubTriggerProps
+	PolymorphicProps<"div", DropdownMenuSubTriggerProps>
 > = (props) => {
 	const [, rest] = splitProps(props, ["class", "children"]);
 	return (
@@ -165,7 +181,7 @@ const DropdownMenuSubTrigger: Component<
 };
 
 const DropdownMenuSubContent: Component<
-	DropdownMenuPrimitive.DropdownMenuSubContentProps
+	PolymorphicProps<"div", ContextMenuSubContentProps>
 > = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
@@ -180,7 +196,7 @@ const DropdownMenuSubContent: Component<
 };
 
 const DropdownMenuCheckboxItem: Component<
-	DropdownMenuPrimitive.DropdownMenuCheckboxItemProps
+	PolymorphicProps<"div", ContextMenuCheckboxItemProps>
 > = (props) => {
 	const [, rest] = splitProps(props, ["class", "children"]);
 	return (
@@ -204,7 +220,7 @@ const DropdownMenuCheckboxItem: Component<
 const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 
 const DropdownMenuGroupLabel: Component<
-	DropdownMenuPrimitive.DropdownMenuGroupLabelProps
+	PolymorphicProps<"span", ContextMenuGroupLabelProps>
 > = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
@@ -218,7 +234,7 @@ const DropdownMenuGroupLabel: Component<
 const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 
 const DropdownMenuRadioItem: Component<
-	DropdownMenuPrimitive.DropdownMenuRadioItemProps
+	PolymorphicProps<"div", ContextMenuRadioItemProps>
 > = (props) => {
 	const [, rest] = splitProps(props, ["class", "children"]);
 	return (

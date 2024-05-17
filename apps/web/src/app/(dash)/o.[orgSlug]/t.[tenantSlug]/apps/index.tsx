@@ -1,4 +1,4 @@
-import { As, RadioGroup } from "@kobalte/core";
+import { RadioGroup } from "@kobalte/core";
 import { createColumnHelper } from "@tanstack/solid-table";
 import {
 	type ParentProps,
@@ -67,9 +67,7 @@ export default function Page() {
 				<>
 					<PageLayoutHeading>Applications</PageLayoutHeading>
 					<CreateApplicationSheet>
-						<As component={Button} class="ml-auto">
-							Create Application
-						</As>
+						<Button class="ml-auto">Create Application</Button>
 					</CreateApplicationSheet>
 				</>
 			}
@@ -77,10 +75,10 @@ export default function Page() {
 			<div class="flex flex-row items-center gap-4">
 				<TableSearchParamsInput query={apps} />
 				<ColumnsDropdown table={table}>
-					<As component={Button} variant="outline" class="ml-auto select-none">
+					<Button variant="outline" class="ml-auto select-none">
 						Columns
 						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
-					</As>
+					</Button>
 				</ColumnsDropdown>
 			</div>
 			<Suspense>
@@ -205,10 +203,9 @@ function CreateApplicationSheet(props: ParentProps) {
 
 	return (
 		<Sheet open={open()} onOpenChange={setOpen}>
-			<SheetTrigger asChild>{props.children}</SheetTrigger>
-			<SheetContent asChild padding="none">
-				<As
-					component={Form}
+			<SheetTrigger>{props.children}</SheetTrigger>
+			<SheetContent padding="none">
+				<Form
 					form={form}
 					fieldsetClass="p-6 overflow-hidden space-y-4 h-full flex flex-col"
 				>
@@ -292,7 +289,7 @@ function CreateApplicationSheet(props: ParentProps) {
 					<Button type="submit" class="grow-0">
 						Create
 					</Button>
-				</As>
+				</Form>
 			</SheetContent>
 		</Sheet>
 	);
