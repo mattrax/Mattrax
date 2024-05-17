@@ -39,11 +39,11 @@ jobs:
       - run: cd infra && sst deploy --stage brendonovich
         env:
           ARM_USE_OIDC: true
-          ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
-          ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
-          AZURE_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
-          CLOUDFLARE_DEFAULT_ACCOUNT_ID: ${{ vars.CLOUDFLARE_DEFAULT_ACCOUNT_ID }}
-          CLOUDFLARE_EMAIL: ${{ vars.CLOUDFLARE_EMAIL }}
+          ARM_CLIENT_ID: 8aaf4dbe-001d-4003-9572-8dd6ab658c53
+          ARM_TENANT_ID: 3509b545-2799-4c5c-a0d2-f822ddbd416c
+          AZURE_SUBSCRIPTION_ID: 3509b545-2799-4c5c-a0d2-f822ddbd416c
+          CLOUDFLARE_DEFAULT_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
+          CLOUDFLARE_EMAIL: brendonovich@outlook.com
           CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
-          OAUTH_CLIENT_ID: ${{ vars.TAILSCALE_OAUTH_CLIENT_ID }}
+          OAUTH_CLIENT_ID: kEC8WgRCJo11CNTRL
           OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
