@@ -8,14 +8,14 @@ import * as schema from "./schema";
 let fetchHandler: Config["fetch"] = undefined;
 
 const client = new Client({
-	url: env.PLANETSCALE_URL,
+	url: env.DATABASE_URL,
 	fetch: async (input, init) => {
 		if (import.meta.env.MODE === "development") {
-			if (env.PLANETSCALE_URL.startsWith("mysql://")) {
+			if (env.DATABASE_URL.startsWith("mysql://")) {
 				if (!fetchHandler)
 					fetchHandler = (
 						await import("@mattrax/mysql-planetscale")
-					).createFetchHandler(env.PLANETSCALE_URL);
+					).createFetchHandler(env.DATABASE_URL);
 			}
 		}
 
