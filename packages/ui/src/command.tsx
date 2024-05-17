@@ -1,5 +1,5 @@
-import type { ComponentProps, VoidComponent, VoidProps } from "solid-js";
-import { splitProps, type ParentComponent } from "solid-js";
+import type { ComponentProps, ValidComponent, VoidProps } from "solid-js";
+import { splitProps } from "solid-js";
 
 import {
 	type PolymorphicProps,
@@ -31,13 +31,13 @@ type CommandProps<Option, OptGroup> = Omit<
 	| "allowsEmptyCollection"
 >;
 
-const Command = <Option, OptGroup = never>(
-	props: PolymorphicProps<"div", ComboboxRootProps<Option, OptGroup>>,
+const Command = <Option, OptGroup = never, T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, ComboboxRootProps<Option, OptGroup>>,
 ) => {
-	const [local, rest] = splitProps(props, ["class"]);
+	const [local, rest] = splitProps(props as any, ["class"]);
 
 	return (
-		<ComboboxPrimitive.Root
+		<ComboboxPrimitive.Root<Option, OptGroup>
 			// force render list
 			open
 			// @ts-ignore -- prevent select
@@ -52,10 +52,10 @@ const Command = <Option, OptGroup = never>(
 	);
 };
 
-const CommandInput: VoidComponent<
-	PolymorphicProps<"input", ComboboxInputProps>
-> = (props) => {
-	const [local, rest] = splitProps(props, ["class"]);
+const CommandInput = <T extends ValidComponent = "input">(
+	props: PolymorphicProps<T, ComboboxInputProps>,
+) => {
+	const [local, rest] = splitProps(props as any, ["class"]);
 
 	return (
 		<ComboboxPrimitive.Control
@@ -75,12 +75,10 @@ const CommandInput: VoidComponent<
 	);
 };
 
-const CommandList = <Option, OptGroup>(
-	props: VoidProps<
-		PolymorphicProps<"ul", ComboboxListboxProps<Option, OptGroup>>
-	>,
+const CommandList = <Option, OptGroup, T extends ValidComponent = "ul">(
+	props: VoidProps<PolymorphicProps<T, ComboboxListboxProps<Option, OptGroup>>>,
 ) => {
-	const [local, rest] = splitProps(props, ["class"]);
+	const [local, rest] = splitProps(props as any, ["class"]);
 
 	return (
 		<ComboboxPrimitive.Listbox
@@ -94,10 +92,10 @@ const CommandList = <Option, OptGroup>(
 	);
 };
 
-const CommandItem: ParentComponent<PolymorphicProps<"li", ListboxItemProps>> = (
-	props,
+const CommandItem = <T extends ValidComponent = "li">(
+	props: PolymorphicProps<T, ListboxItemProps>,
 ) => {
-	const [local, rest] = splitProps(props, ["class", "item"]);
+	const [local, rest] = splitProps(props as any, ["class", "item"]);
 
 	return (
 		<ComboboxPrimitive.Item
@@ -114,10 +112,10 @@ const CommandItem: ParentComponent<PolymorphicProps<"li", ListboxItemProps>> = (
 
 const CommandItemLabel = ComboboxPrimitive.ItemLabel;
 
-const CommandHeading: ParentComponent<
-	PolymorphicProps<"li", ListboxSectionProps>
-> = (props) => {
-	const [local, rest] = splitProps(props, ["class"]);
+const CommandHeading = <T extends ValidComponent = "li">(
+	props: PolymorphicProps<T, ListboxSectionProps>,
+) => {
+	const [local, rest] = splitProps(props as any, ["class"]);
 
 	return (
 		<ComboboxPrimitive.Section
@@ -131,10 +129,10 @@ const CommandHeading: ParentComponent<
 	);
 };
 
-const CommandItemShortcut: ParentComponent<ComponentProps<"span">> = (
-	props,
+const CommandItemShortcut = <T extends ValidComponent = "span">(
+	props: ComponentProps<T>,
 ) => {
-	const [local, rest] = splitProps(props, ["class"]);
+	const [local, rest] = splitProps(props as any, ["class"]);
 
 	return (
 		<span
@@ -147,11 +145,13 @@ const CommandItemShortcut: ParentComponent<ComponentProps<"span">> = (
 	);
 };
 
-type CommandDialogProps<Option, OptGroup = never> = DialogRootProps &
-	PolymorphicProps<"div", ComboboxRootProps<Option, OptGroup>>;
-
-const CommandDialog = <Option, OptGroup>(
-	props: CommandDialogProps<Option, OptGroup>,
+const CommandDialog = <
+	Option,
+	OptGroup = never,
+	T extends ValidComponent = "div",
+>(
+	props: DialogRootProps &
+		PolymorphicProps<T, ComboboxRootProps<Option, OptGroup>>,
 ) => {
 	const [local, rest] = splitProps(props, ["children"]);
 

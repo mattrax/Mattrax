@@ -1,4 +1,4 @@
-import type { Component } from "solid-js";
+import type { Component, ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
 import {
@@ -15,10 +15,10 @@ const HoverCard: Component<HoverCardPrimitive.HoverCardRootProps> = (props) => {
 
 const HoverCardTrigger = HoverCardPrimitive.Trigger;
 
-const HoverCardContent: Component<
-	PolymorphicProps<"div", HoverCardContentProps>
-> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const HoverCardContent = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, HoverCardContentProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<HoverCardPrimitive.Portal>
 			<HoverCardPrimitive.Content

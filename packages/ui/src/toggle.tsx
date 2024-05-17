@@ -1,4 +1,4 @@
-import type { Component } from "solid-js";
+import type { Component, ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
 import {
@@ -32,12 +32,14 @@ const toggleVariants = cva(
 	},
 );
 
-export interface ToggleProps
-	extends PolymorphicProps<"button", ToggleButtonRootProps>,
-		VariantProps<typeof toggleVariants> {}
+export type ToggleProps<T extends ValidComponent = "button"> = PolymorphicProps<
+	T,
+	ToggleButtonRootProps
+> &
+	VariantProps<typeof toggleVariants>;
 
-const Toggle: Component<ToggleProps> = (props) => {
-	const [, rest] = splitProps(props, ["class", "variant", "size"]);
+const Toggle = <T extends ValidComponent = "button">(props: ToggleProps<T>) => {
+	const [, rest] = splitProps(props as any, ["class", "variant", "size"]);
 	return (
 		<ToggleButtonPrimitive.Root
 			class={cn(

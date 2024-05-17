@@ -1,4 +1,4 @@
-import type { Component } from "solid-js";
+import type { Component, ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
 import { type PolymorphicProps, Tabs as TabsPrimitive } from "@kobalte/core";
@@ -13,8 +13,10 @@ import { cn } from "./lib";
 
 const Tabs = TabsPrimitive.Root;
 
-const TabsList: Component<PolymorphicProps<"div", TabsListProps>> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const TabsList = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, TabsListProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<TabsPrimitive.List
 			class={cn(
@@ -26,10 +28,10 @@ const TabsList: Component<PolymorphicProps<"div", TabsListProps>> = (props) => {
 	);
 };
 
-const TabsTrigger: Component<PolymorphicProps<"button", TabsTriggerProps>> = (
-	props,
+const TabsTrigger = <T extends ValidComponent = "button">(
+	props: PolymorphicProps<T, TabsTriggerProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class"]);
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<TabsPrimitive.Trigger
 			class={cn(
@@ -41,10 +43,10 @@ const TabsTrigger: Component<PolymorphicProps<"button", TabsTriggerProps>> = (
 	);
 };
 
-const TabsContent: Component<PolymorphicProps<"div", TabsContentProps>> = (
-	props,
+const TabsContent = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, TabsContentProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class"]);
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<TabsPrimitive.Content
 			class={cn(
@@ -56,10 +58,10 @@ const TabsContent: Component<PolymorphicProps<"div", TabsContentProps>> = (
 	);
 };
 
-const TabsIndicator: Component<PolymorphicProps<"div", TabsIndicatorProps>> = (
-	props,
+const TabsIndicator = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, TabsIndicatorProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class"]);
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<TabsPrimitive.Indicator
 			class={cn(

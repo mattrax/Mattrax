@@ -1,4 +1,4 @@
-import type { Component } from "solid-js";
+import type { Component, ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
 import {
@@ -21,15 +21,20 @@ import type {
 
 const ComboboxRoot = ComboboxPrimitive.Root;
 
-const ComboboxItem: Component<PolymorphicProps<"li", ListboxItemProps>> = (
-	props,
+const ComboboxItem = <T extends ValidComponent = "li">(
+	props: PolymorphicProps<T, ListboxItemProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class"]);
+	const [local, rest] = splitProps(
+		props as ComboboxPrimitive.ComboboxItemProps & {
+			class?: string | undefined;
+		},
+		["class"],
+	);
 	return (
 		<ComboboxPrimitive.Item
 			class={cn(
 				"relative flex cursor-default select-none items-center justify-between rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50",
-				props.class,
+				local.class,
 			)}
 			{...rest}
 		/>
@@ -38,10 +43,10 @@ const ComboboxItem: Component<PolymorphicProps<"li", ListboxItemProps>> = (
 
 const ComboboxItemLabel = ComboboxPrimitive.ItemLabel;
 
-const ComboboxItemIndicator: Component<
-	PolymorphicProps<"div", ListboxItemIndicatorProps>
-> = (props) => {
-	const [, rest] = splitProps(props, ["children"]);
+const ComboboxItemIndicator = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, ListboxItemIndicatorProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["children"]);
 	return (
 		<ComboboxPrimitive.ItemIndicator {...rest}>
 			{props.children ?? <IconPhCheck />}
@@ -49,19 +54,20 @@ const ComboboxItemIndicator: Component<
 	);
 };
 
-const ComboboxSection: Component<PolymorphicProps<"li", ListboxSectionProps>> =
-	(props) => {
-		const [, rest] = splitProps(props, ["class"]);
-		return (
-			<ComboboxPrimitive.Section
-				class={cn(
-					"overflow-hidden p-1 px-2 py-1.5 text-xs font-medium text-muted-foreground ",
-					props.class,
-				)}
-				{...rest}
-			/>
-		);
-	};
+const ComboboxSection = <T extends ValidComponent = "li">(
+	props: PolymorphicProps<T, ListboxSectionProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
+	return (
+		<ComboboxPrimitive.Section
+			class={cn(
+				"overflow-hidden p-1 px-2 py-1.5 text-xs font-medium text-muted-foreground ",
+				props.class,
+			)}
+			{...rest}
+		/>
+	);
+};
 
 // due to the generic typing this needs to be a function
 function ComboboxControl<Option>(
@@ -76,26 +82,27 @@ function ComboboxControl<Option>(
 	);
 }
 
-const ComboboxInput: Component<PolymorphicProps<"input", ComboboxInputProps>> =
-	(props) => {
-		const [, rest] = splitProps(props, ["class"]);
-		return (
-			<ComboboxPrimitive.Input
-				class={cn(
-					"flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-					props.class,
-				)}
-				{...rest}
-			/>
-		);
-	};
+const ComboboxInput = <T extends ValidComponent = "input">(
+	props: PolymorphicProps<T, ComboboxInputProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
+	return (
+		<ComboboxPrimitive.Input
+			class={cn(
+				"flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
+				props.class,
+			)}
+			{...rest}
+		/>
+	);
+};
 
 const ComboboxHiddenSelect = ComboboxPrimitive.HiddenSelect;
 
-const ComboboxTrigger: Component<
-	PolymorphicProps<"button", ComboboxTriggerProps>
-> = (props) => {
-	const [, rest] = splitProps(props, ["class", "children"]);
+const ComboboxTrigger = <T extends ValidComponent = "button">(
+	props: PolymorphicProps<T, ComboboxTriggerProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<ComboboxPrimitive.Trigger
 			class={cn("size-4 opacity-50", props.class)}
@@ -108,10 +115,10 @@ const ComboboxTrigger: Component<
 	);
 };
 
-const ComboboxContent: Component<
-	PolymorphicProps<"div", ComboboxContentProps>
-> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const ComboboxContent = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, ComboboxContentProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<ComboboxPrimitive.Portal>
 			<ComboboxPrimitive.Content

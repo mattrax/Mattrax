@@ -7,31 +7,33 @@ import { splitProps } from "solid-js";
 
 import { cn } from "./lib";
 import type { ListboxItemProps } from "@kobalte/core/listbox";
-import type { SelectContentProps, SelectTriggerProps } from "@kobalte/core/select";
+import type {
+	SelectContentProps,
+	SelectTriggerProps,
+} from "@kobalte/core/select";
 
 const Select = SelectPrimitive.Root;
 
 const SelectValue = SelectPrimitive.Value;
 
-const SelectTrigger: Component<PolymorphicProps<"button", SelectTriggerProps>> = (
-	props,
-) => {
-	const [, rest] = splitProps(props, ["class", "children"]);
-	return (
-		<SelectPrimitive.Trigger
-			class={cn(
-				"border-input ring-offset-background placeholder:text-muted-foreground focus:ring-ring flex h-10 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-				props.class,
-			)}
-			{...rest}
-		>
-			{props.children}
-			<SelectPrimitive.Icon>
-				<IconTablerChevronDown class="h-4 w-4 opacity-50" />
-			</SelectPrimitive.Icon>
-		</SelectPrimitive.Trigger>
-	);
-};
+const SelectTrigger: Component<PolymorphicProps<"button", SelectTriggerProps>> =
+	(props) => {
+		const [, rest] = splitProps(props, ["class", "children"]);
+		return (
+			<SelectPrimitive.Trigger
+				class={cn(
+					"border-input ring-offset-background placeholder:text-muted-foreground focus:ring-ring flex h-10 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+					props.class,
+				)}
+				{...rest}
+			>
+				{props.children}
+				<SelectPrimitive.Icon>
+					<IconTablerChevronDown class="h-4 w-4 opacity-50" />
+				</SelectPrimitive.Icon>
+			</SelectPrimitive.Trigger>
+		);
+	};
 
 const SelectContent: Component<PolymorphicProps<"div", SelectContentProps>> = (
 	props,

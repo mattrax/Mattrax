@@ -2,7 +2,7 @@ import {
 	Dialog as DialogPrimitive,
 	type PolymorphicProps,
 } from "@kobalte/core";
-import type { Component, ComponentProps, JSX, ParentProps } from "solid-js";
+import type { Component, ComponentProps, ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 import type {
 	DialogContentProps,
@@ -21,22 +21,7 @@ import {
 	createController,
 } from "./controller";
 
-// An easy wrapper on the dialog primitives
 const Dialog: Component<
-	ParentProps<{
-		controller?: Controller;
-		trigger?: JSX.Element;
-	}>
-> = (props) => (
-	<DialogRoot controller={props.controller}>
-		{props.trigger && <DialogTrigger>{props.trigger}</DialogTrigger>}
-		<DialogContent>
-			<DialogHeader>{props.children}</DialogHeader>
-		</DialogContent>
-	</DialogRoot>
-);
-
-const DialogRoot: Component<
 	Omit<DialogRootProps, "open"> &
 		(
 			| { open: boolean; setOpen: (open: boolean) => void }
@@ -62,15 +47,16 @@ const DialogRoot: Component<
 	);
 };
 
-const DialogTrigger: Component<PolymorphicProps<"button", DialogTriggerProps>> =
-	(props) => {
-		const [, rest] = splitProps(props, ["children"]);
-		return (
-			<DialogPrimitive.Trigger {...rest}>
-				{props.children}
-			</DialogPrimitive.Trigger>
-		);
-	};
+const DialogTrigger = <T extends ValidComponent = "button">(
+	props: PolymorphicProps<T, DialogTriggerProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["children"]);
+	return (
+		<DialogPrimitive.Trigger {...rest}>
+			{props.children}
+		</DialogPrimitive.Trigger>
+	);
+};
 
 const DialogPortal: Component<DialogPortalProps> = (props) => {
 	const [, rest] = splitProps(props, ["children"]);
@@ -83,10 +69,10 @@ const DialogPortal: Component<DialogPortalProps> = (props) => {
 	);
 };
 
-const DialogOverlay: Component<PolymorphicProps<"div", DialogOverlayProps>> = (
-	props,
+const DialogOverlay = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, DialogOverlayProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class"]);
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DialogPrimitive.Overlay
 			class={cn(
@@ -98,10 +84,10 @@ const DialogOverlay: Component<PolymorphicProps<"div", DialogOverlayProps>> = (
 	);
 };
 
-const DialogContent: Component<PolymorphicProps<"div", DialogContentProps>> = (
-	props,
+const DialogContent = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, DialogContentProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class", "children"]);
+	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<DialogPortal>
 			<DialogOverlay />
@@ -148,10 +134,10 @@ const DialogFooter: Component<ComponentProps<"div">> = (props) => {
 	);
 };
 
-const DialogTitle: Component<PolymorphicProps<"h2", DialogTitleProps>> = (
-	props,
+const DialogTitle = <T extends ValidComponent = "h2">(
+	props: PolymorphicProps<T, DialogTitleProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class"]);
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DialogPrimitive.Title
 			class={cn(
@@ -163,10 +149,10 @@ const DialogTitle: Component<PolymorphicProps<"h2", DialogTitleProps>> = (
 	);
 };
 
-const DialogDescription: Component<
-	PolymorphicProps<"p", DialogDescriptionProps>
-> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const DialogDescription = <T extends ValidComponent = "p">(
+	props: PolymorphicProps<T, DialogDescriptionProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DialogPrimitive.Description
 			class={cn("text-muted-foreground text-sm", props.class)}
@@ -177,7 +163,7 @@ const DialogDescription: Component<
 
 export {
 	Dialog,
-	DialogRoot,
+	Dialog as DialogRoot,
 	DialogTrigger,
 	DialogContent,
 	DialogHeader,
