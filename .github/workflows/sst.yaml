@@ -36,7 +36,7 @@ jobs:
 
       - run: pnpm i
 
-      - run: cd infra && sst deploy
+      - run: cd infra && sst deploy --stage brendan
         env:
           ARM_USE_OIDC: true
           ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
