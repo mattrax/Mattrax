@@ -1,0 +1,110 @@
+diff --git a/dist/source/createField.jsx b/dist/source/createField.jsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..43b4bd1e1bc5a2d39dd929cc206db96ef759cd51
+--- /dev/null
++++ b/dist/source/createField.jsx
+@@ -0,0 +1,32 @@
++import { FieldApi } from '@tanstack/form-core';
++import { createComponent, createComputed, createMemo, createSignal, onCleanup, onMount, } from 'solid-js';
++// ugly way to trick solid into triggering updates for changes on the fieldApi
++function makeFieldReactive(fieldApi) {
++    const [flag, setFlag] = createSignal(false);
++    const fieldApiMemo = createMemo(() => [flag(), fieldApi]);
++    const unsubscribeStore = fieldApi.store.subscribe(() => setFlag((f) => !f));
++    onCleanup(unsubscribeStore);
++    return () => fieldApiMemo()[1];
++}
++export function createField(opts) {
++    const options = opts();
++    const fieldApi = new FieldApi(options);
++    fieldApi.Field = Field;
++    /**
++     * fieldApi.update should not have any side effects. Think of it like a `useRef`
++     * that we need to keep updated every render with the most up-to-date information.
++     *
++     * createComputed to make sure this effect runs before render effects
++     */
++    createComputed(() => fieldApi.update(opts()));
++    // Instantiates field meta and removes it when unrendered
++    onMount(() => onCleanup(fieldApi.mount()));
++    return makeFieldReactive(fieldApi);
++}
++export function Field(props) {
++    const fieldApi = createField(() => {
++        const { children, ...fieldOptions } = props;
++        return fieldOptions;
++    });
++    return <>{createComponent(() => props.children(fieldApi), {})}</>;
++}
+diff --git a/dist/source/createForm.jsx b/dist/source/createForm.jsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..110400b156087a52238fe645d10b6446f0c092cf
+--- /dev/null
++++ b/dist/source/createForm.jsx
+@@ -0,0 +1,21 @@
++import { FormApi, functionalUpdate } from '@tanstack/form-core';
++import { createComputed, onMount } from 'solid-js';
++import { useStore } from '@tanstack/solid-store';
++import { Field, createField, } from './createField';
++export function createForm(opts) {
++    const options = opts?.();
++    const formApi = new FormApi(options);
++    formApi.Field = (props) => <Field {...props} form={formApi}/>;
++    formApi.createField = (props) => createField(() => {
++        return { ...props(), form: formApi };
++    });
++    formApi.useStore = (selector) => useStore(formApi.store, selector);
++    formApi.Subscribe = (props) => functionalUpdate(props.children, useStore(formApi.store, props.selector));
++    onMount(formApi.mount);
++    /**
++     * formApi.update should not have any side effects. Think of it like a `useRef`
++     * that we need to keep updated every render with the most up-to-date information.
++     */
++    createComputed(() => formApi.update(opts?.()));
++    return formApi;
++}
+diff --git a/dist/source/createFormFactory.js b/dist/source/createFormFactory.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..ffaea8f1e62d675c8d20e18f84fd71afe86ef8c9
+--- /dev/null
++++ b/dist/source/createFormFactory.js
+@@ -0,0 +1,10 @@
++import { mergeProps } from 'solid-js';
++import { Field, createField, } from './createField';
++import { createForm } from './createForm';
++export function createFormFactory(defaultOpts) {
++    return {
++        createForm: (opts) => createForm(() => mergeProps(defaultOpts?.() ?? {}, opts?.() ?? {})),
++        createField,
++        Field: Field,
++    };
++}
+diff --git a/dist/source/index.js b/dist/source/index.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..c6074e18b6fc21114c06443b61e30c78f224f993
+--- /dev/null
++++ b/dist/source/index.js
+@@ -0,0 +1,4 @@
++export { FormApi, FieldApi, functionalUpdate } from '@tanstack/form-core';
++export { createForm } from './createForm';
++export { createField, Field } from './createField';
++export { createFormFactory } from './createFormFactory';
+diff --git a/dist/source/types.js b/dist/source/types.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..cb0ff5c3b541f646105198ee23ac0fc3d805023e
+--- /dev/null
++++ b/dist/source/types.js
+@@ -0,0 +1 @@
++export {};
+diff --git a/package.json b/package.json
+index f8e715f0695a6ac417b07440e080101ee9ba1b3d..353b7a1f86d07636b672bf31654aa64ea86d9406 100644
+--- a/package.json
++++ b/package.json
+@@ -21,6 +21,7 @@
+   "module": "dist/esm/index.js",
+   "exports": {
+     ".": {
++      "solid": "./dist/source/index.js",
+       "import": {
+         "types": "./dist/esm/index.d.ts",
+         "default": "./dist/esm/index.js"

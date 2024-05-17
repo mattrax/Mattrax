@@ -24,10 +24,10 @@
 		"pnpm": "^9"
 	},
 	"dependencies": {
-		"@biomejs/biome": "^1.7.0",
-		"@solidjs/start": "1.0.0-rc.0",
+		"@biomejs/biome": "^1.7.3",
+		"@solidjs/start": "1.0.0-rc.1",
 		"dotenv": "^16.4.5",
-		"drizzle-kit": "^0.20.16",
+		"drizzle-kit": "^0.21.2",
 		"pg": "^8.11.5",
 		"typescript": "^5.4.5",
 		"vinxi": "=0.3.10"
@@ -42,10 +42,10 @@
 	},
 	"pnpm": {
 		"patchedDependencies": {
-			"@solidjs/router@0.13.2": "patches/@solidjs__router@0.13.2.patch",
-			"@tanstack/solid-form@0.19.0": "patches/@tanstack__solid-form@0.19.0.patch",
-			"drizzle-orm@0.30.8": "patches/drizzle-orm@0.30.8.patch",
-			"@react-email/tailwind@0.0.15": "patches/@react-email__tailwind@0.0.15.patch",
+			"@solidjs/router@0.13.3": "patches/@solidjs__router@0.13.3.patch",
+			"@tanstack/solid-form@0.19.5": "patches/@tanstack__solid-form@0.19.5.patch",
+			"drizzle-orm@0.30.10": "patches/drizzle-orm@0.30.10.patch",
+			"@react-email/tailwind@0.0.16": "patches/@react-email__tailwind@0.0.16.patch",
 			"nitropack@2.9.6": "patches/nitropack@2.9.6.patch",
 			"@solid-mediakit/trpc@3.0.2": "patches/@solid-mediakit__trpc@3.0.2.patch"
 		}

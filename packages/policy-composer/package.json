@@ -11,9 +11,9 @@
 		}
 	},
 	"dependencies": {
-		"@kobalte/core": "^0.12.6",
+		"@kobalte/core": "^0.13.1",
 		"@mattrax/configuration-schemas": "workspace:*",
 		"@mattrax/ui": "workspace:*",
-		"solid-js": "^1.8.16"
+		"solid-js": "^1.8.17"
 	}
 }

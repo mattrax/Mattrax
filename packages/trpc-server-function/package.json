@@ -12,8 +12,8 @@
 	},
 	"dependencies": {
 		"@solid-mediakit/trpc": "^3.0.2",
-		"@solidjs/router": "^0.13.2",
-		"@tanstack/query-core": "^5.35.1",
+		"@solidjs/router": "^0.13.3",
+		"@tanstack/query-core": "^5.36.1",
 		"@trpc/client": "^10.45.2",
 		"@trpc/server": "^10.45.2"
 	}

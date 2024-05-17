@@ -1,0 +1,98 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index aaeadb04c8f75934456ac6c34f42331f95897650..c7458aa032f80292dcbd58d09f4a220aff388763 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1,7 +1,7 @@
+ export * from "./routers/index.js";
+ export * from "./components.jsx";
+ export * from "./lifecycle.js";
+-export { useHref, useIsRouting, useLocation, useMatch, useCurrentMatches, useNavigate, useParams, useResolvedPath, useSearchParams, useBeforeLeave, } from "./routing.js";
++export { useHref, useIsRouting, useLocation, useMatch, useMatches, useCurrentMatches, useNavigate, useParams, useResolvedPath, useSearchParams, useBeforeLeave, } from "./routing.js";
+ export { mergeSearchString as _mergeSearchString } from "./utils.js";
+ export * from "./data/index.js";
+ export type { Location, LocationChange, NavigateOptions, Navigator, OutputMatch, Params, RouteSectionProps, RouteLoadFunc, RouteLoadFuncArgs, RouteDefinition, RouterIntegration, RouterUtils, SetParams, BeforeLeaveEventArgs } from "./types.js";
+diff --git a/dist/index.js b/dist/index.js
+index 919bc3f8649b85ccfb1bfed7d82a036360934e48..6ae512ca2115600ae0d9e5446765567d6d9f1b96 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -257,6 +257,7 @@ const useMatch = (path, matchFilters) => {
+   });
+ };
+ const useCurrentMatches = () => useRouter().matches();
++const useMatches = () => useRouter().matches;
+ const useParams = () => useRouter().params;
+ const useSearchParams = () => {
+   const location = useLocation();
+@@ -1374,7 +1375,7 @@ function HashRouter(props) {
+       if (replace) {
+         window.history.replaceState(keepDepth(state), "", "#" + value);
+       } else {
+-        window.location.hash = value;
++        window.history.pushState(state, "", "#" + value);
+       }
+       const hashIndex = value.indexOf("#");
+       const hash = hashIndex >= 0 ? value.slice(hashIndex + 1) : "";
+@@ -1639,4 +1640,4 @@ function json(data, init = {}) {
+   return response;
+ }
+ 
+-export { A, HashRouter, MemoryRouter, Navigate, Route, Router, StaticRouter, mergeSearchString as _mergeSearchString, action, cache, createAsync, createAsyncStore, createBeforeLeave, createMemoryHistory, createRouter, json, keepDepth, notifyIfNotBlocked, redirect, reload, revalidate, saveCurrentDepth, useAction, useBeforeLeave, useCurrentMatches, useHref, useIsRouting, useLocation, useMatch, useNavigate, useParams, useResolvedPath, useSearchParams, useSubmission, useSubmissions };
++export { A, HashRouter, MemoryRouter, Navigate, Route, Router, StaticRouter, mergeSearchString as _mergeSearchString, action, cache, createAsync, createAsyncStore, createBeforeLeave, createMemoryHistory, createRouter, json, keepDepth, notifyIfNotBlocked, redirect, reload, revalidate, saveCurrentDepth, useAction, useBeforeLeave, useCurrentMatches, useHref, useIsRouting, useLocation, useMatch, useMatches, useNavigate, useParams, useResolvedPath, useSearchParams, useSubmission, useSubmissions };
+diff --git a/dist/index.jsx b/dist/index.jsx
+index 55c77e472ea204cba861b07102045e93e75d7fca..638b480639bb7b2f0dfbb8c34047c52f9adb32e6 100644
+--- a/dist/index.jsx
++++ b/dist/index.jsx
+@@ -1,6 +1,6 @@
+ export * from "./routers/index.js";
+ export * from "./components.jsx";
+ export * from "./lifecycle.js";
+-export { useHref, useIsRouting, useLocation, useMatch, useCurrentMatches, useNavigate, useParams, useResolvedPath, useSearchParams, useBeforeLeave, } from "./routing.js";
++export { useHref, useIsRouting, useLocation, useMatch, useMatches, useCurrentMatches, useNavigate, useParams, useResolvedPath, useSearchParams, useBeforeLeave, } from "./routing.js";
+ export { mergeSearchString as _mergeSearchString } from "./utils.js";
+ export * from "./data/index.js";
+diff --git a/dist/routers/HashRouter.js b/dist/routers/HashRouter.js
+index 040d1ef767e2df86f5ef66064b037d06b24d6869..4cbd0cdea5e1243895ceae600ef3711b0438024a 100644
+--- a/dist/routers/HashRouter.js
++++ b/dist/routers/HashRouter.js
+@@ -22,7 +22,7 @@ export function HashRouter(props) {
+                 window.history.replaceState(keepDepth(state), "", "#" + value);
+             }
+             else {
+-                window.location.hash = value;
++                window.history.pushState(state, "", "#" + value);
+             }
+             const hashIndex = value.indexOf("#");
+             const hash = hashIndex >= 0 ? value.slice(hashIndex + 1) : "";
+diff --git a/dist/routers/createIntegration.d.ts b/dist/routers/createIntegration.d.ts
+deleted file mode 100644
+index c17f36a87d94b562b39263ec098652c645be2ec0..0000000000000000000000000000000000000000
+diff --git a/dist/routers/createIntegration.js b/dist/routers/createIntegration.js
+deleted file mode 100644
+index 41d46aa4ada71207bf0a914d0e61ffdf939f7133..0000000000000000000000000000000000000000
+diff --git a/dist/routers/createIntegration.jsx b/dist/routers/createIntegration.jsx
+deleted file mode 100644
+index af97761d216e9c9fff39b5534cde8d3740019156..0000000000000000000000000000000000000000
+diff --git a/dist/routing.d.ts b/dist/routing.d.ts
+index 9eb58efaaaeed6329a23f58d9c04a08798b680d0..90bcb81570f2ca8a341328ce1ea8d9158eb7f3b3 100644
+--- a/dist/routing.d.ts
++++ b/dist/routing.d.ts
+@@ -11,6 +11,7 @@ export declare const useLocation: <S = unknown>() => Location<S>;
+ export declare const useIsRouting: () => () => boolean;
+ export declare const useMatch: <S extends string>(path: () => S, matchFilters?: MatchFilters<S> | undefined) => Accessor<import("./types.js").PathMatch | undefined>;
+ export declare const useCurrentMatches: () => RouteMatch[];
++export declare const useMatches: () => () => RouteMatch[];
+ export declare const useParams: <T extends Params>() => T;
+ export declare const useSearchParams: <T extends Params>() => [Partial<T>, (params: SetParams, options?: Partial<NavigateOptions>) => void];
+ export declare const useBeforeLeave: (listener: (e: BeforeLeaveEventArgs) => void) => void;
+diff --git a/dist/routing.js b/dist/routing.js
+index 3e046f7cada491a5a6a01fa0369d6a83ead0312b..596660ffe89312c6d7d98955912b8cf1af1fcbff 100644
+--- a/dist/routing.js
++++ b/dist/routing.js
+@@ -35,6 +35,7 @@ export const useMatch = (path, matchFilters) => {
+     });
+ };
+ export const useCurrentMatches = () => useRouter().matches();
++export const useMatches = () => useRouter().matches;
+ export const useParams = () => useRouter().params;
+ export const useSearchParams = () => {
+     const location = useLocation();
