@@ -1,6 +1,7 @@
 # Derived
 *.tsbuildinfo
 stats.html
+stats-*.html
 dist
 .solid
 .output

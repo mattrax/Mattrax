@@ -16,11 +16,7 @@ export default defineConfig({
 	// @ts-expect-error: SS's types are wrong. This is piped into Solid's Vite plugin so all options are not required.
 	solid: {
 		// We don't wanna apply Solid's JSX transform to the React emails.
-		exclude: [
-			"src/emails/*",
-			"src/components/OTPInput/react.tsx",
-			"../../packages/email/**",
-		],
+		exclude: ["src/components/OTPInput/react.tsx", "../../packages/email/**"],
 	},
 	vite: ({ router }) => ({
 		envDir: monorepoRoot,
@@ -40,9 +36,11 @@ export default defineConfig({
 				root: ".",
 			}),
 			mattraxUI,
-			router === "client"
-				? visualizer({ brotliSize: true, gzipSize: true })
-				: undefined,
+			visualizer({
+				brotliSize: true,
+				gzipSize: true,
+				filename: `stats${router === "client" ? "" : `-${router}`}.html`,
+			}),
 		],
 	}),
 	server: {
