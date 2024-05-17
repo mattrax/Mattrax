@@ -36,7 +36,7 @@ jobs:
 
       - run: pnpm i
 
-      - run: sst deploy
+      - run: cd infra && sst deploy
         env:
           ARM_USE_OIDC: true
           ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
