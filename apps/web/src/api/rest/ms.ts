@@ -51,7 +51,7 @@ export const msRouter = new Hono<HonoEnv>()
 			const params = new URLSearchParams({
 				client_id: env.ENTRA_CLIENT_ID,
 				prompt: "login",
-				redirect_uri: `${env.VITE_PROD_URL}/api/ms/link`,
+				redirect_uri: `${env.PROD_ORIGIN}/api/ms/link`,
 				resource: "https://graph.microsoft.com",
 				response_type: "code",
 				state,
@@ -111,7 +111,7 @@ export const msRouter = new Hono<HonoEnv>()
 				client_secret: env.ENTRA_CLIENT_SECRET,
 				scope: "offline_access https://graph.microsoft.com/.default",
 				code: code,
-				redirect_uri: `${env.VITE_PROD_URL}/api/ms/link`,
+				redirect_uri: `${env.PROD_ORIGIN}/api/ms/link`,
 				grant_type: "authorization_code",
 			});
 
@@ -206,7 +206,7 @@ export const msRouter = new Hono<HonoEnv>()
 
 			let skipSubscription = false;
 			try {
-				const url = new URL(env.VITE_PROD_URL);
+				const url = new URL(env.PROD_ORIGIN);
 				if (url.hostname === "localhost") {
 					skipSubscription = true;
 				}
@@ -217,8 +217,8 @@ export const msRouter = new Hono<HonoEnv>()
 					.api("/subscriptions")
 					.post({
 						changeType: "created,updated,deleted",
-						notificationUrl: `${env.VITE_PROD_URL}/api/webhook/microsoft-graph`,
-						lifecycleNotificationUrl: `${env.VITE_PROD_URL}/api/webhook/microsoft-graph/lifecycle`,
+						notificationUrl: `${env.PROD_ORIGIN}/api/webhook/microsoft-graph`,
+						lifecycleNotificationUrl: `${env.PROD_ORIGIN}/api/webhook/microsoft-graph/lifecycle`,
 						resource: "/users",
 						expirationDateTime: new Date(
 							new Date().getTime() + 1000 * 60 * 60 * 24 * 25, // 25 days

@@ -90,7 +90,7 @@ function IdentityProviderCard() {
 				// This `setTimeout` causes Safari's popup blocker to not active.
 				setTimeout(() => {
 					const popupWindow = window.open(
-						`${env.VITE_PROD_URL}/api/ms/popup?state=${state}`,
+						`${location.origin}/api/ms/popup?state=${state}`,
 						"entraOAuth",
 						"toolbar=no, menubar=no, width=600, height=700, top=100, left=100",
 					);

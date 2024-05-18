@@ -1,0 +1,52 @@
+name: SST Deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: "merge-${{ github.ref }}"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  sst:
+    runs-on: ubuntu-latest
+    # This is required to workaround the lack of wildcard for OIDC scope
+    # https://github.com/Azure/azure-workload-identity/issues/373
+    #
+    # I swear to god Microsoft have never tried anything they have built.
+    environment: production
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: "arn:aws:iam::101829795063:role/mattrax-gh-actions"
+          aws-region: us-east-1
+          role-session-name: mattrax-sst-workflow
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
+      - name: Install SST
+        run: curl -fsSL https://ion.sst.dev/install | bash
+
+      - run: pnpm i
+
+      - run: cd infra && sst deploy --stage brendonovich
+        env:
+          ARM_USE_OIDC: true
+          ARM_CLIENT_ID: 8aaf4dbe-001d-4003-9572-8dd6ab658c53
+          ARM_TENANT_ID: 3509b545-2799-4c5c-a0d2-f822ddbd416c
+          AZURE_SUBSCRIPTION_ID: 3509b545-2799-4c5c-a0d2-f822ddbd416c
+          CLOUDFLARE_DEFAULT_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
+          CLOUDFLARE_EMAIL: brendonovich@outlook.com
+          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
+          OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
+          OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}

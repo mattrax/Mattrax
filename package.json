@@ -9,6 +9,7 @@
 		"ingest": "pnpm --filter @mattrax/ingest --",
 		"doc": "pnpm --filter @mattrax/docs --",
 		"web": "pnpm --filter @mattrax/web --",
+		"infra": "pnpm --filter @mattrax/infra exec sst",
 		"db:push": "drizzle-kit push:mysql && bun run ./apps/web/src/db/rust.ts",
 		"db:gen": "drizzle-kit generate:mysql && bun run ./apps/web/src/db/rust.ts",
 		"db:studio": "drizzle-kit studio",
