@@ -34,7 +34,7 @@
 
 import { type HTTPEvent, eventHandler } from "vinxi/http";
 
-eventHandler({
+export default eventHandler({
 	handler: (e: HTTPEvent) => {
 		return new Response("hello world");
 	},
