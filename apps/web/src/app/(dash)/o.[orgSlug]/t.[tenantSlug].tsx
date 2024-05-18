@@ -1,16 +1,19 @@
-import { type ParentProps, Show, Suspense, createMemo } from "solid-js";
+import { type ParentProps, Show, Suspense, createMemo, lazy } from "solid-js";
 import { type RouteDefinition, A, createAsync } from "@solidjs/router";
 import { z } from "zod";
 
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
-import { MultiSwitcher } from "../MultiSwitcher";
 import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { createQueryCacher, useCachedQueryData } from "~/cache";
 import { cachedOrgs } from "../utils";
 import { cachedTenantsForOrg } from "./utils";
+
+const MultiSwitcher = lazy(() =>
+	import("../MultiSwitcher").then((s) => ({ default: s.MultiSwitcher })),
+);
 
 export function useTenantSlug() {
 	const params = useZodParams({ tenantSlug: z.string() });

@@ -17,13 +17,13 @@ export default function Page() {
 	const controller = createPolicyComposerController();
 
 	const windowsPolicies = createAsync(() =>
-		import("@mattrax/configuration-schemas/windows/ddf.json").then(
-			(i) => i.default,
+		import("@mattrax/configuration-schemas/windows/ddf.json?raw").then(
+			({ default: str }) => JSON.parse(str),
 		),
 	);
 	const applePayloads = createAsync(() =>
-		import("@mattrax/configuration-schemas/apple/payloads.json").then(
-			(i) => i.default,
+		import("@mattrax/configuration-schemas/apple/payloads.json?raw").then(
+			({ default: str }) => JSON.parse(str),
 		),
 	);
 

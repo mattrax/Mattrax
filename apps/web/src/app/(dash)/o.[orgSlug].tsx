@@ -2,15 +2,18 @@
 
 import { Button } from "@mattrax/ui";
 import { type RouteDefinition, A, createAsync } from "@solidjs/router";
-import { createMemo, type ParentProps } from "solid-js";
+import { createMemo, lazy, type ParentProps } from "solid-js";
 import { z } from "zod";
 
 import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
 import { useZodParams } from "~/lib/useZodParams";
-import { MultiSwitcher } from "./MultiSwitcher";
 import { trpc } from "~/lib";
 import { createQueryCacher, useCachedQueryData } from "~/cache";
 import { cachedOrgs } from "./utils";
+
+const MultiSwitcher = lazy(() =>
+	import("./MultiSwitcher").then((s) => ({ default: s.MultiSwitcher })),
+);
 
 export function useOrgSlug() {
 	const params = useZodParams({ orgSlug: z.string() });
