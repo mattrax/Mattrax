@@ -57,6 +57,9 @@ export default defineConfig({
 		esbuild: {
 			options: { target: "es2020" },
 		},
+		analyze: {
+			filename: "stats-nitro.html",
+		},
 	},
 });
 
