@@ -1,4 +1,3 @@
-import { twMerge } from "tailwind-merge";
 import type { ClassValue } from "clsx";
 import { clsx } from "clsx";
 import type { CreateQueryResult } from "@tanstack/solid-query";
@@ -8,7 +7,7 @@ import { useNavigate } from "@solidjs/router";
 import { trpc } from "./trpc";
 
 export function cn(...inputs: ClassValue[]) {
-	return twMerge(clsx(inputs));
+	return clsx(inputs);
 }
 
 export function createNotFoundRedirect<T>(props: {
