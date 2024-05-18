@@ -22,10 +22,9 @@
 		"@tanstack/solid-form": "^0.19.5",
 		"@tanstack/zod-form-adapter": "^0.19.5",
 		"class-variance-authority": "^0.7.0",
-		"clsx": "^2.1.1",
-		"solid-js": "^1.8.17",
-		"tailwind-merge": "^2.3.0",
-		"zod": "^3.23.8"
+		"clsx": "^2.1.0",
+		"solid-js": "^1.8.16",
+		"zod": "^3.22.5"
 	},
 	"devDependencies": {
 		"@iconify/json": "^2.2.211",
