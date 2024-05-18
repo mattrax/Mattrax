@@ -4,7 +4,6 @@ import { and, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { isNotFoundGraphError } from "@mattrax/ms-graph";
 import { msGraphClient } from "~/api/microsoft";
 import { upsertEntraIdUser } from "~/api/trpc/routers/tenant/identityProvider";
 import { getEmailDomain } from "~/api/utils";
@@ -152,8 +151,8 @@ async function handleUserChangeNotification(
 					identityProvider.tenantPk,
 					identityProvider.pk,
 				);
-			} catch (e) {
-				if (isNotFoundGraphError(e)) {
+			} catch (e: any) {
+				if ("code" in e && e.code === "Request_ResourceNotFound") {
 					await handleUserDeleted(userId, identityProvider.pk);
 				}
 			}

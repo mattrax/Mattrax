@@ -16,11 +16,7 @@ export default defineConfig({
 	// @ts-expect-error: SS's types are wrong. This is piped into Solid's Vite plugin so all options are not required.
 	solid: {
 		// We don't wanna apply Solid's JSX transform to the React emails.
-		exclude: [
-			"src/emails/*",
-			"src/components/OTPInput/react.tsx",
-			"../../packages/email/**",
-		],
+		exclude: ["src/components/OTPInput/react.tsx", "../../packages/email/**"],
 	},
 	vite: ({ router }) => ({
 		envDir: monorepoRoot,
@@ -58,6 +54,9 @@ export default defineConfig({
 		},
 		esbuild: {
 			options: { target: "es2020" },
+		},
+		analyze: {
+			filename: "stats-nitro.html",
 		},
 	},
 });
