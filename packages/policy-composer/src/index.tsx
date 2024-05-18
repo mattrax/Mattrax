@@ -362,6 +362,7 @@ function Apple(props: {
 
 							if (aIsApple && !bIsApple) return -1;
 							if (!aIsApple && bIsApple) return 1;
+							// biome-ignore lint/style/noUselessElse:
 							else {
 								return a.localeCompare(b);
 							}
@@ -444,6 +445,7 @@ function Apple(props: {
 																>
 																	{key in value.data && (
 																		<button
+																			type="button"
 																			onClick={() =>
 																				props.controller.setSelected(
 																					"apple",

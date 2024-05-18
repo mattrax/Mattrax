@@ -1,5 +1,5 @@
 import { A } from "@solidjs/router";
-import { As, Tabs } from "@kobalte/core";
+import { Tabs } from "@kobalte/core";
 import { For, Show } from "solid-js";
 
 import { useNavItemsContext } from "./Context";
@@ -20,21 +20,20 @@ export function NavItems() {
 					<Tabs.List class="flex flex-row px-2 border-b border-gray-200 w-full">
 						<For each={items()}>
 							{(item) => (
-								<Tabs.Trigger asChild value={`${prefix()}/${item.href}`}>
-									<As
-										component={A}
-										end={item.href === ""}
-										href={
-											item.href === "" ? prefix() : `${prefix()}/${item.href}`
-										}
-										activeClass="text-black selected"
-										inactiveClass="text-gray-500"
-										class="py-2 flex text-center align-middle relative group focus:outline-none"
-									>
-										<div class="text-sm rounded px-3 py-1.5 hover:bg-black/5 hover:text-black group-focus-visible:bg-black/5 group-focus-visible:text-black group-focus:outline-none transition-colors duration-75">
-											{item.title}
-										</div>
-									</As>
+								<Tabs.Trigger
+									value={`${prefix()}/${item.href}`}
+									as={A}
+									end={item.href === ""}
+									href={
+										item.href === "" ? prefix() : `${prefix()}/${item.href}`
+									}
+									activeClass="text-black selected"
+									inactiveClass="text-gray-500"
+									class="py-2 flex text-center align-middle relative group focus:outline-none"
+								>
+									<div class="text-sm rounded px-3 py-1.5 hover:bg-black/5 hover:text-black group-focus-visible:bg-black/5 group-focus-visible:text-black group-focus:outline-none transition-colors duration-75">
+										{item.title}
+									</div>
 								</Tabs.Trigger>
 							)}
 						</For>

@@ -7,7 +7,7 @@ use std::{
 
 use better_acme::{Acme, FsStore};
 use hmac::{Hmac, Mac};
-use rcgen::{Certificate, CertificateParams, KeyPair};
+use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
 use rustls::{
     pki_types::CertificateDer, server::WebPkiClientVerifier, RootCertStore, ServerConfig,
 };
@@ -67,8 +67,6 @@ impl Command {
         let port = {
             let config = config_manager.get();
 
-            
-
             self.port.unwrap_or({
                 #[cfg(debug_assertions)]
                 if config.domain == "localhost" {
@@ -84,20 +82,32 @@ impl Command {
         let (acme_tx, acme_rx) = mpsc::channel(25);
         let state = {
             let config = config_manager.get();
-            let identity_key = KeyPair::from_der(&config.certificates.identity_key).unwrap();
+            let identity_key = KeyPair::from_der_and_sign_algo(
+                &config.certificates.identity_key.clone().try_into().unwrap(),
+                &PKCS_ECDSA_P256_SHA256,
+            )
+            .unwrap();
             let shared_secret = Hmac::new_from_slice(config.internal_secret.as_bytes()).unwrap();
+
+            let identity_cert_rcgen = CertificateParams::from_ca_cert_der(
+                &config
+                    .certificates
+                    .identity_cert
+                    .clone()
+                    .try_into()
+                    .unwrap(),
+            )
+            .unwrap()
+            // TODO: https://github.com/rustls/rcgen/issues/274
+            .self_signed(&identity_key)
+            .unwrap();
 
             Arc::new(api::Context {
                 config: config_manager.clone(),
                 is_dev: cfg!(debug_assertions),
                 server_port: port,
                 db,
-                identity_cert_rcgen: Certificate::generate_self_signed(
-                    CertificateParams::from_ca_cert_der(&config.certificates.identity_cert)
-                        .unwrap(),
-                    &identity_key,
-                )
-                .unwrap(),
+                identity_cert_rcgen,
                 identity_cert_x509: {
                     // TODO: We *have* to leak memory right because of how `x509_parser` is built. Should be fixed by https://github.com/rusticata/x509-parser/issues/76
                     let public_key = Vec::leak(config.certificates.identity_cert.clone());

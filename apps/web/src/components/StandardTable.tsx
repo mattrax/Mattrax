@@ -204,14 +204,15 @@ import {
 import { useSearchParams } from "@solidjs/router";
 import { z } from "zod";
 import { createMemo } from "solid-js";
-import { As } from "@kobalte/core";
 
 export function ColumnsDropdown<TData>(
-	props: ParentProps & { table: TTable<TData> },
+	props: ParentProps & {
+		table: TTable<TData>;
+	},
 ) {
 	return (
 		<DropdownMenu placement="bottom-end">
-			<DropdownMenuTrigger asChild>{props.children}</DropdownMenuTrigger>
+			{props.children}
 			<DropdownMenuContent>
 				<For
 					each={props.table
@@ -265,10 +266,13 @@ export function createActionsColumn<TData extends RowData>(props: {
 		id: "actions",
 		header: (ctx) => (
 			<DropdownMenu>
-				<DropdownMenuTrigger asChild>
-					<As component={Button} variant="ghost" size="iconSmall" class="block">
-						<IconPhDotsThreeBold class="w-6 h-6" />
-					</As>
+				<DropdownMenuTrigger
+					as={Button}
+					variant="ghost"
+					size="iconSmall"
+					class="block"
+				>
+					<IconPhDotsThreeBold class="w-6 h-6" />
 				</DropdownMenuTrigger>
 				<DropdownMenuContent>
 					{props.headerDropdownContent(ctx)}
@@ -277,10 +281,13 @@ export function createActionsColumn<TData extends RowData>(props: {
 		),
 		cell: (ctx) => (
 			<DropdownMenu>
-				<DropdownMenuTrigger asChild>
-					<As component={Button} variant="ghost" size="iconSmall" class="block">
-						<IconPhDotsThreeBold class="w-6 h-6" />
-					</As>
+				<DropdownMenuTrigger
+					as={Button}
+					variant="ghost"
+					size="iconSmall"
+					class="block"
+				>
+					<IconPhDotsThreeBold class="w-6 h-6" />
 				</DropdownMenuTrigger>
 				<DropdownMenuContent>
 					{props.cellDropdownContent(ctx)}

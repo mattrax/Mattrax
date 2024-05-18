@@ -129,7 +129,7 @@ export function VariantTableSheet<T extends VariantTableVariants>(
 						setOpen(o);
 					}}
 				>
-					<SheetTrigger asChild>{props.children}</SheetTrigger>
+					{props.children}
 					<SheetContent
 						transparent
 						size="lg"

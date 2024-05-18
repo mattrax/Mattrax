@@ -11,9 +11,9 @@ mysql_async = { version = "0.34.1", default-features = false, features = [
     "tracing",
     "chrono",
 ] }
-mysql_common = { version = "=0.31.0", features = [
+mysql_common = { version = "0.32", features = [
     "chrono",
 ] } # This is a dependency of `mysql_async`
-chrono = { version = "0.4.35", features = ["serde"] }
+chrono = { version = "0.4.38", features = ["serde"] }
 serde_json = { workspace = true }
 refinery = { version = "0.8.14", features = ["mysql_async"] }

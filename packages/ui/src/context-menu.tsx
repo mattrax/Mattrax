@@ -1,7 +1,20 @@
-import type { Component, ComponentProps } from "solid-js";
+import type { Component, ComponentProps, ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { ContextMenu as ContextMenuPrimitive } from "@kobalte/core";
+import {
+	ContextMenu as ContextMenuPrimitive,
+	type PolymorphicProps,
+} from "@kobalte/core";
+import type {
+	ContextMenuCheckboxItemProps,
+	ContextMenuContentProps,
+	ContextMenuGroupLabelProps,
+	ContextMenuRadioItemProps,
+	ContextMenuSubContentProps,
+	ContextMenuSubTriggerProps,
+} from "@kobalte/core/context-menu";
+import type { ContextMenuItemProps } from "@kobalte/core/context-menu";
+import type { SeparatorRootProps } from "@kobalte/core/separator";
 
 import { cn } from "./lib";
 
@@ -15,10 +28,10 @@ const ContextMenuTrigger = ContextMenuPrimitive.Trigger;
 
 const ContextMenuPortal = ContextMenuPrimitive.Portal;
 
-const ContextMenuContent: Component<
-	ContextMenuPrimitive.ContextMenuContentProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const ContextMenuContent = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, ContextMenuContentProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<ContextMenuPrimitive.Portal>
 			<ContextMenuPrimitive.Content
@@ -32,10 +45,10 @@ const ContextMenuContent: Component<
 	);
 };
 
-const ContextMenuItem: Component<ContextMenuPrimitive.ContextMenuItemProps> = (
-	props,
+const ContextMenuItem = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, ContextMenuItemProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class"]);
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<ContextMenuPrimitive.Item
 			class={cn(
@@ -47,7 +60,9 @@ const ContextMenuItem: Component<ContextMenuPrimitive.ContextMenuItemProps> = (
 	);
 };
 
-const ContextMenuShortcut: Component<ComponentProps<"span">> = (props) => {
+const ContextMenuShortcut = <T extends ValidComponent = "span">(
+	props: ComponentProps<T>,
+) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<span
@@ -57,10 +72,10 @@ const ContextMenuShortcut: Component<ComponentProps<"span">> = (props) => {
 	);
 };
 
-const ContextMenuSeparator: Component<
-	ContextMenuPrimitive.ContextMenuSeparatorProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const ContextMenuSeparator = <T extends ValidComponent = "hr">(
+	props: PolymorphicProps<T, SeparatorRootProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<ContextMenuPrimitive.Separator
 			class={cn("-mx-1 my-1 h-px bg-muted", props.class)}
@@ -71,10 +86,10 @@ const ContextMenuSeparator: Component<
 
 const ContextMenuSub = ContextMenuPrimitive.Sub;
 
-const ContextMenuSubTrigger: Component<
-	ContextMenuPrimitive.ContextMenuSubTriggerProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class", "children"]);
+const ContextMenuSubTrigger = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, ContextMenuSubTriggerProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<ContextMenuPrimitive.SubTrigger
 			class={cn(
@@ -100,10 +115,10 @@ const ContextMenuSubTrigger: Component<
 	);
 };
 
-const ContextMenuSubContent: Component<
-	ContextMenuPrimitive.ContextMenuSubContentProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const ContextMenuSubContent = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, ContextMenuSubContentProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<ContextMenuPrimitive.SubContent
 			class={cn(
@@ -115,10 +130,10 @@ const ContextMenuSubContent: Component<
 	);
 };
 
-const ContextMenuCheckboxItem: Component<
-	ContextMenuPrimitive.ContextMenuCheckboxItemProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class", "children"]);
+const ContextMenuCheckboxItem = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, ContextMenuCheckboxItemProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<ContextMenuPrimitive.CheckboxItem
 			class={cn(
@@ -150,10 +165,10 @@ const ContextMenuCheckboxItem: Component<
 
 const ContextMenuGroup = ContextMenuPrimitive.Group;
 
-const ContextMenuGroupLabel: Component<
-	ContextMenuPrimitive.ContextMenuGroupLabelProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const ContextMenuGroupLabel = <T extends ValidComponent = "span">(
+	props: PolymorphicProps<T, ContextMenuGroupLabelProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<ContextMenuPrimitive.GroupLabel
 			class={cn("px-2 py-1.5 text-sm font-semibold", props.class)}
@@ -164,10 +179,10 @@ const ContextMenuGroupLabel: Component<
 
 const ContextMenuRadioGroup = ContextMenuPrimitive.RadioGroup;
 
-const ContextMenuRadioItem: Component<
-	ContextMenuPrimitive.ContextMenuRadioItemProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class", "children"]);
+const ContextMenuRadioItem = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, ContextMenuRadioItemProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<ContextMenuPrimitive.RadioItem
 			class={cn(

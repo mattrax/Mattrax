@@ -1,11 +1,17 @@
-import { Checkbox as CheckboxPrimitive } from "@kobalte/core";
-import type { Component } from "solid-js";
+import {
+	Checkbox as CheckboxPrimitive,
+	type PolymorphicProps,
+} from "@kobalte/core";
+import type { ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
+import type { CheckboxRootProps } from "@kobalte/core/checkbox";
 
 import { cn } from "./lib";
 
-const Checkbox: Component<CheckboxPrimitive.CheckboxRootProps> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const Checkbox = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, CheckboxRootProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<CheckboxPrimitive.Root class={cn("items-top flex", props.class)} {...rest}>
 			<CheckboxPrimitive.Input class="peer" />

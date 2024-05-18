@@ -1,4 +1,3 @@
-import { As } from "@kobalte/core";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Suspense, startTransition } from "solid-js";
@@ -11,8 +10,15 @@ import {
 	createSearchParamPagination,
 	selectCheckboxColumn,
 	createSearchParamFilter,
+	ColumnsDropdown,
 } from "~c/StandardTable";
-import { Button, Popover, PopoverContent, PopoverTrigger } from "@mattrax/ui";
+import {
+	Button,
+	DropdownMenuTrigger,
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@mattrax/ui";
 import { trpc } from "~/lib";
 
 export const route = {
@@ -68,12 +74,16 @@ export default function Page() {
 		<PageLayout heading={<PageLayoutHeading>Policies</PageLayoutHeading>}>
 			<div class="flex flex-row gap-4">
 				<TableSearchParamsInput query={policies} class="flex-1" />
-				{/* <ColumnsDropdown table={table}>
-					<As component={Button} variant="outline" class="ml-auto select-none">
+				<ColumnsDropdown table={table}>
+					<DropdownMenuTrigger
+						as={Button}
+						variant="outline"
+						class="ml-auto select-none"
+					>
 						Columns
 						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
-					</As>
-				</ColumnsDropdown> */}
+					</DropdownMenuTrigger>
+				</ColumnsDropdown>
 
 				<CreatePolicyButton />
 			</div>
@@ -127,9 +137,7 @@ function CreatePolicyButton() {
 
 	return (
 		<Popover>
-			<PopoverTrigger asChild>
-				<As component={Button}>Add New</As>
-			</PopoverTrigger>
+			<PopoverTrigger as={Button}>Add New</PopoverTrigger>
 			<PopoverContent class="p-4">
 				<Form
 					form={form}

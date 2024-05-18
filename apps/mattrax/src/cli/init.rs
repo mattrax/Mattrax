@@ -6,7 +6,8 @@ use std::{
 };
 
 use rcgen::{
-    BasicConstraints, Certificate, CertificateParams, DnType, IsCa, KeyPair, KeyUsagePurpose,
+    BasicConstraints, CertificateParams, DnType, IsCa, KeyPair, KeyUsagePurpose,
+    PKCS_ECDSA_P256_SHA256,
 };
 use tracing::{error, info, warn};
 
@@ -74,8 +75,8 @@ impl Command {
             params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained); // TODO: critical: true
             params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign]; // TODO: critical: true
 
-            let key_pair = KeyPair::generate().unwrap();
-            let cert = Certificate::generate_self_signed(params, &key_pair).unwrap();
+            let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+            let cert = params.self_signed(&key_pair).unwrap();
 
             let mut secret = [0u8; 32];
             getrandom::getrandom(&mut secret).unwrap();
@@ -184,7 +185,6 @@ WantedBy=multi-user.target"#,
 
             #[cfg(unix)]
             {
-                
                 use std::os::unix::fs::PermissionsExt;
 
                 fs::set_permissions(

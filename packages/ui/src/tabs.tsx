@@ -1,14 +1,22 @@
-import type { Component } from "solid-js";
+import type { Component, ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { Tabs as TabsPrimitive } from "@kobalte/core";
+import { type PolymorphicProps, Tabs as TabsPrimitive } from "@kobalte/core";
+import type {
+	TabsContentProps,
+	TabsIndicatorProps,
+	TabsListProps,
+	TabsTriggerProps,
+} from "@kobalte/core/tabs";
 
 import { cn } from "./lib";
 
 const Tabs = TabsPrimitive.Root;
 
-const TabsList: Component<TabsPrimitive.TabsListProps> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const TabsList = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, TabsListProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<TabsPrimitive.List
 			class={cn(
@@ -20,8 +28,10 @@ const TabsList: Component<TabsPrimitive.TabsListProps> = (props) => {
 	);
 };
 
-const TabsTrigger: Component<TabsPrimitive.TabsTriggerProps> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const TabsTrigger = <T extends ValidComponent = "button">(
+	props: PolymorphicProps<T, TabsTriggerProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<TabsPrimitive.Trigger
 			class={cn(
@@ -33,8 +43,10 @@ const TabsTrigger: Component<TabsPrimitive.TabsTriggerProps> = (props) => {
 	);
 };
 
-const TabsContent: Component<TabsPrimitive.TabsContentProps> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const TabsContent = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, TabsContentProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<TabsPrimitive.Content
 			class={cn(
@@ -46,8 +58,10 @@ const TabsContent: Component<TabsPrimitive.TabsContentProps> = (props) => {
 	);
 };
 
-const TabsIndicator: Component<TabsPrimitive.TabsIndicatorProps> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const TabsIndicator = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, TabsIndicatorProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<TabsPrimitive.Indicator
 			class={cn(

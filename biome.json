@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/1.5.3/schema.json",
+	"$schema": "https://biomejs.dev/schemas/1.7.3/schema.json",
 	"files": {
 		"include": [
 			"apps/*/src/**",
@@ -28,6 +28,9 @@
 			},
 			"style": {
 				"noNonNullAssertion": "off"
+			},
+			"correctness": {
+				"useJsxKeyInIterable": "off"
 			}
 		}
 	},

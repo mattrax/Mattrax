@@ -21,7 +21,7 @@ use ms_mde::{
     REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION, REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE,
 };
 use rcgen::{
-    Certificate, CertificateSigningRequestParams, CustomExtension, DistinguishedName, DnType,
+    CertificateSigningRequestParams, CustomExtension, DistinguishedName, DnType,
     ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose, SerialNumber,
 };
 use serde::Deserialize;
@@ -365,7 +365,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             }) else {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             };
-            let mut csr = CertificateSigningRequestParams::from_der(&csr).unwrap(); // TODO: Error handling
+            let mut csr = CertificateSigningRequestParams::from_der(&csr.try_into().unwrap()).unwrap(); // TODO: Error handling
             let device_id = cuid2::create_id();
 
             // Version:               csr.Version,
@@ -387,7 +387,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 CustomExtension::from_oid_content(MICROSOFT_DEVICE_ID_EXTENSION, device_id.as_bytes().to_vec()),
             ];
 
-            let certificate = Certificate::from_request(csr, &state.identity_cert_rcgen, &state.identity_key).unwrap();  // TODO: Error handling
+            let certificate = csr.signed_by(&state.identity_cert_rcgen, &state.identity_key).unwrap();  // TODO: Error handling
 
             // var wapProvisioningDocCharacteristics = []wap.Characteristic{
             //     certStoreCharacteristic,

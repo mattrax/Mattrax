@@ -1,6 +1,13 @@
 import { type VariantProps, cva } from "class-variance-authority";
-import type { Component, ComponentProps } from "solid-js";
-import { Dialog as SheetPrimitive } from "@kobalte/core";
+import type { Component, ComponentProps, ValidComponent } from "solid-js";
+import { type PolymorphicProps, Dialog as SheetPrimitive } from "@kobalte/core";
+import type {
+	DialogDescriptionProps,
+	DialogOverlayProps,
+	DialogPortalProps,
+	DialogTitleProps,
+	DialogContentProps as KDialogContentProps,
+} from "@kobalte/core/dialog";
 import { mergeProps, splitProps } from "solid-js";
 
 import { cn } from "./lib";
@@ -24,7 +31,7 @@ const portalVariants = cva("fixed inset-0 z-50 flex", {
 });
 
 interface SheetPortalProps
-	extends SheetPrimitive.DialogPortalProps,
+	extends DialogPortalProps,
 		VariantProps<typeof portalVariants> {}
 
 const SheetPortal: Component<SheetPortalProps> = (props) => {
@@ -38,10 +45,10 @@ const SheetPortal: Component<SheetPortalProps> = (props) => {
 	);
 };
 
-const SheetOverlay: Component<
-	SheetPrimitive.DialogOverlayProps & { transparent?: boolean }
-> = (props) => {
-	const [, rest] = splitProps(props, ["class", "transparent"]);
+const SheetOverlay = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, DialogOverlayProps> & { transparent?: boolean },
+) => {
+	const [, rest] = splitProps(props as any, ["class", "transparent"]);
 	return (
 		<SheetPrimitive.Overlay
 			class={cn(
@@ -149,46 +156,47 @@ const sheetVariants = cva(
 	},
 );
 
-export interface DialogContentProps
-	extends SheetPrimitive.DialogContentProps,
-		VariantProps<typeof sheetVariants> {}
+export type DialogContentProps<T extends ValidComponent = "div"> =
+	PolymorphicProps<T, KDialogContentProps> &
+		VariantProps<typeof sheetVariants> & { transparent?: boolean };
 
-const SheetContent: Component<DialogContentProps & { transparent?: boolean }> =
-	(props) => {
-		props = mergeProps({ transparent: true }, props);
+const SheetContent = <T extends ValidComponent = "div">(
+	props: DialogContentProps<T>,
+) => {
+	props = mergeProps({ transparent: true }, props);
 
-		const [, rest] = splitProps(props, [
-			"position",
-			"size",
-			"class",
-			"children",
-			"transparent",
-			"padding",
-		]);
+	const [, rest] = splitProps(props as any, [
+		"position",
+		"size",
+		"class",
+		"children",
+		"transparent",
+		"padding",
+	]);
 
-		return (
-			<SheetPortal position={props.position}>
-				<SheetOverlay transparent={props.transparent ?? true} />
-				<SheetPrimitive.Content
-					class={cn(
-						sheetVariants({
-							position: props.position,
-							size: props.size,
-							padding: props.padding,
-						}),
-						props.class,
-					)}
-					{...rest}
-				>
-					{props.children}
-					<SheetPrimitive.CloseButton class="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none">
-						<IconTablerX class="h-4 w-4" />
-						<span class="sr-only">Close</span>
-					</SheetPrimitive.CloseButton>
-				</SheetPrimitive.Content>
-			</SheetPortal>
-		);
-	};
+	return (
+		<SheetPortal position={props.position}>
+			<SheetOverlay transparent={props.transparent ?? true} />
+			<SheetPrimitive.Content
+				class={cn(
+					sheetVariants({
+						position: props.position,
+						size: props.size,
+						padding: props.padding,
+					}),
+					props.class,
+				)}
+				{...rest}
+			>
+				{props.children}
+				<SheetPrimitive.CloseButton class="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none">
+					<IconTablerX class="h-4 w-4" />
+					<span class="sr-only">Close</span>
+				</SheetPrimitive.CloseButton>
+			</SheetPrimitive.Content>
+		</SheetPortal>
+	);
+};
 
 const SheetHeader: Component<ComponentProps<"div">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
@@ -216,8 +224,10 @@ const SheetFooter: Component<ComponentProps<"div">> = (props) => {
 	);
 };
 
-const SheetTitle: Component<SheetPrimitive.DialogTitleProps> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const SheetTitle = <T extends ValidComponent = "h2">(
+	props: PolymorphicProps<T, DialogTitleProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<SheetPrimitive.Title
 			class={cn("text-foreground text-lg font-semibold", props.class)}
@@ -226,10 +236,10 @@ const SheetTitle: Component<SheetPrimitive.DialogTitleProps> = (props) => {
 	);
 };
 
-const SheetDescription: Component<SheetPrimitive.DialogDescriptionProps> = (
-	props,
+const SheetDescription = <T extends ValidComponent = "p">(
+	props: PolymorphicProps<T, DialogDescriptionProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class"]);
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<SheetPrimitive.Description
 			class={cn("text-muted-foreground text-sm", props.class)}

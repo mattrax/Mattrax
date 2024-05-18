@@ -6,10 +6,10 @@
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",
 	"dependencies": {
-		"@planetscale/database": "^1.16.0",
+		"@planetscale/database": "^1.18.0",
 		"mysql2": "^3.9.7"
 	},
 	"devDependencies": {
-		"@types/node": "^20.12.7"
+		"@types/node": "^20.12.12"
 	}
 }

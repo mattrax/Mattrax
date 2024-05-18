@@ -1,4 +1,4 @@
-import { type AwsClient } from "aws4fetch";
+import type { AwsClient } from "aws4fetch";
 import { render } from "@react-email/render";
 import { z } from "zod";
 

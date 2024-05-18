@@ -1,7 +1,6 @@
 import { type ParentProps, Show, createSignal, For, Suspense } from "solid-js";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { A, type RouteDefinition } from "@solidjs/router";
-import { As } from "@kobalte/core";
 import pluralize from "pluralize";
 import clsx from "clsx";
 import { z } from "zod";
@@ -14,6 +13,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 	Label,
+	SheetTrigger,
 	buttonVariants,
 } from "@mattrax/ui";
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
@@ -112,9 +112,9 @@ function Devices() {
 				<Label>Devices</Label>
 
 				<SendInstructionsDialog id={user().id} email={user().email}>
-					<As component={Button} size="sm">
+					<DialogTrigger as={Button} size="sm">
 						Send Instructions
-					</As>
+					</DialogTrigger>
 				</SendInstructionsDialog>
 			</div>
 			<div class="flex flex-col space-y-2">
@@ -192,9 +192,9 @@ function Assignments() {
 						})
 					}
 				>
-					<As component={Button} class="ml-auto" size="sm">
+					<SheetTrigger as={Button} class="ml-auto" size="sm">
 						Add Assignments
-					</As>
+					</SheetTrigger>
 				</VariantTableSheet>
 			</div>
 
@@ -252,7 +252,7 @@ function SendInstructionsDialog(
 				setOpen(o);
 			}}
 		>
-			<DialogTrigger asChild>{props.children}</DialogTrigger>
+			{props.children}
 			<DialogContent class="max-w-md">
 				<DialogHeader>
 					<DialogTitle>Send Instructions</DialogTitle>

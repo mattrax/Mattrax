@@ -21,7 +21,6 @@ import {
 import { PolicyContext, usePolicy } from "../Context";
 import { createSignal, Suspense, For } from "solid-js";
 import { trpc } from "~/lib";
-import { As } from "@kobalte/core";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { createTimeAgo } from "@solid-primitives/date";
 import type { RouterOutput } from "~/api";
@@ -164,16 +163,14 @@ function DeployButton() {
 
 	return (
 		<DialogRoot>
-			<DialogTrigger asChild>
-				<As
-					component={Button}
-					disabled={policy().diff.length === 0}
-					onMouseEnter={() => {
-						trpcCtx.policy.overview.ensureData({ id: policy().id });
-					}}
-				>
-					Deploy
-				</As>
+			<DialogTrigger
+				as={Button}
+				disabled={policy().diff.length === 0}
+				onMouseEnter={() => {
+					trpcCtx.policy.overview.ensureData({ id: policy().id });
+				}}
+			>
+				Deploy
 			</DialogTrigger>
 			<DialogContent>
 				<DeployDialog />

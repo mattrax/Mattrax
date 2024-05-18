@@ -9,9 +9,9 @@ import {
 	DialogRoot,
 	DialogTitle,
 	DropdownMenuItem,
+	SheetTrigger,
 } from "@mattrax/ui";
 import { Match, Suspense, Switch, createSignal } from "solid-js";
-import { As, Dialog as DialogPrimitive } from "@kobalte/core";
 import pluralize from "pluralize";
 
 import { trpc } from "~/lib";
@@ -33,6 +33,7 @@ import { toTitleCase } from "~/lib/utils";
 import { createAssignmentsVariants } from "./utils";
 import { cacheMetadata } from "../../metadataCache";
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
+import { Dialog } from "@kobalte/core";
 
 export const route = {
 	load: ({ params }) =>
@@ -141,9 +142,9 @@ export default function Page() {
 							addAssignments.mutateAsync({ id: groupId(), assignments })
 						}
 					>
-						<As component={Button} class="ml-auto">
+						<SheetTrigger as={Button} class="ml-auto">
 							Add Assignments
-						</As>
+						</SheetTrigger>
 					</VariantTableSheet>
 				</>
 			}
@@ -167,11 +168,9 @@ export default function Page() {
 								</DialogDescription>
 							</DialogHeader>
 							<DialogFooter>
-								<DialogPrimitive.CloseButton asChild>
-									<As component={Button} variant="secondary">
-										Cancel
-									</As>
-								</DialogPrimitive.CloseButton>
+								<Dialog.CloseButton as={Button} variant="secondary">
+									Cancel
+								</Dialog.CloseButton>
 								<div class="flex-1" />
 								<AsyncButton
 									onClick={() =>
@@ -215,11 +214,9 @@ export default function Page() {
 										</DialogDescription>
 									</DialogHeader>
 									<DialogFooter>
-										<DialogPrimitive.CloseButton asChild>
-											<As component={Button} variant="secondary">
-												Cancel
-											</As>
-										</DialogPrimitive.CloseButton>
+										<Dialog.CloseButton as={Button} variant="secondary">
+											Cancel
+										</Dialog.CloseButton>
 										<div class="flex-1" />
 										<AsyncButton
 											onClick={() =>

@@ -1,5 +1,4 @@
 import { A, useIsRouting, useMatch, useNavigate } from "@solidjs/router";
-import { As } from "@kobalte/core";
 import clsx from "clsx";
 import {
 	Avatar,
@@ -71,13 +70,11 @@ export function TopBar() {
 					</div>
 				)}
 				<ContextMenu>
-					<ContextMenuTrigger asChild>
-						<As component={A} href={org()?.path ?? "/"} class="flex">
-							<img src={Logo} class="h-5" alt="Mattrax icon" />
-							<span class="ml-2 items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
-								Alpha
-							</span>
-						</As>
+					<ContextMenuTrigger as={A} href={org()?.path ?? "/"} class="flex">
+						<img src={Logo} class="h-5" alt="Mattrax icon" />
+						<span class="ml-2 items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
+							Alpha
+						</span>
 					</ContextMenuTrigger>
 					<ContextMenuContent>
 						<ContextMenuGroup>
@@ -100,14 +97,14 @@ export function TopBar() {
 
 				<div class="flex space-x-2 justify-center items-center">
 					<FeedbackPopover>
-						<As
-							component={Button}
+						<PopoverTrigger
+							as={Button}
 							variant="outline"
 							size="sm"
 							class="hidden md:block"
 						>
 							Feedback
-						</As>
+						</PopoverTrigger>
 					</FeedbackPopover>
 
 					<a
@@ -128,31 +125,25 @@ export function TopBar() {
 					>
 						<AuthContext>
 							<DropdownMenu>
-								<DropdownMenuTrigger asChild>
-									<As component={Avatar}>
-										{/* TODO: Properly hook this up + Gravatar support */}
-										{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
-										<AvatarFallback>
-											{getInitials(useAuth()().name)}
-										</AvatarFallback>
-									</As>
+								<DropdownMenuTrigger as={Avatar}>
+									{/* TODO: Properly hook this up + Gravatar support */}
+									{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
+									<AvatarFallback>
+										{getInitials(useAuth()().name)}
+									</AvatarFallback>
 								</DropdownMenuTrigger>
 								<DropdownMenuContent>
 									<DropdownMenuLabel>{useAuth()().email}</DropdownMenuLabel>
 									<DropdownMenuSeparator />
-									<DropdownMenuItem asChild>
-										<As component={A} href="account">
-											Account
-										</As>
+									<DropdownMenuItem as={A} href="account">
+										Account
 									</DropdownMenuItem>
 									{user.data?.superadmin && (
-										<DropdownMenuItem asChild>
-											<As component={A} href="settings">
-												Settings{" "}
-												<span class="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
-													Superadmin
-												</span>
-											</As>
+										<DropdownMenuItem as={A} href="settings">
+											Settings{" "}
+											<span class="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
+												Superadmin
+											</span>
 										</DropdownMenuItem>
 									)}
 									<DropdownMenuItem onClick={() => logout.mutate()}>
@@ -176,7 +167,7 @@ function FeedbackPopover(props: ParentProps) {
 
 	return (
 		<Popover open={open()} onOpenChange={setOpen}>
-			<PopoverTrigger asChild>{props.children}</PopoverTrigger>
+			{props.children}
 			<PopoverContent class="flex flex-col gap-2 md:w-[350px] p-4">
 				<p class="text-sm text-gray-700">
 					We welcome all feedback or bug reports:

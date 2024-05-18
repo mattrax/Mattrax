@@ -1,28 +1,40 @@
-import { splitProps, type Component } from "solid-js";
+import { type ValidComponent, splitProps, type Component } from "solid-js";
+import {
+	type FormControlLabelProps,
+	NumberField as NumberInputPrimitive,
+	type PolymorphicProps,
+	type FormControlDescriptionProps,
+	type FormControlErrorMessageProps,
+} from "@kobalte/core";
+import type {
+	NumberFieldDecrementTriggerProps,
+	NumberFieldIncrementTriggerProps,
+	NumberFieldInputProps,
+} from "@kobalte/core/number-field";
 
-import { NumberField as NumberInputPrimitive } from "@kobalte/core";
 import { cn } from "./lib";
 
 const NumberInput = NumberInputPrimitive.Root;
 
-const NumberInputLabel: Component<NumberInputPrimitive.NumberFieldLabelProps> =
-	(props) => {
-		const [, rest] = splitProps(props, ["class"]);
-		return (
-			<NumberInputPrimitive.Label
-				class={cn(
-					"text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
-					props.class,
-				)}
-				{...rest}
-			/>
-		);
-	};
+const NumberInputLabel = <T extends ValidComponent = "label">(
+	props: PolymorphicProps<T, FormControlLabelProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
+	return (
+		<NumberInputPrimitive.Label
+			class={cn(
+				"text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
+				props.class,
+			)}
+			{...rest}
+		/>
+	);
+};
 
-const NumberInputControl: Component<
-	NumberInputPrimitive.NumberFieldInputProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const NumberInputControl = <T extends ValidComponent = "input">(
+	props: PolymorphicProps<T, NumberFieldInputProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<NumberInputPrimitive.Input
 			class={cn(
@@ -34,10 +46,10 @@ const NumberInputControl: Component<
 	);
 };
 
-const NumberInputIncrementTrigger: Component<
-	NumberInputPrimitive.NumberFieldIncrementTriggerProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class", "children"]);
+const NumberInputIncrementTrigger = <T extends ValidComponent = "button">(
+	props: PolymorphicProps<T, NumberFieldIncrementTriggerProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<NumberInputPrimitive.IncrementTrigger
 			class={cn(
@@ -64,10 +76,10 @@ const NumberInputIncrementTrigger: Component<
 	);
 };
 
-const NumberInputDecrementTrigger: Component<
-	NumberInputPrimitive.NumberFieldDecrementTriggerProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class", "children"]);
+const NumberInputDecrementTrigger = <T extends ValidComponent = "button">(
+	props: PolymorphicProps<T, NumberFieldDecrementTriggerProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<NumberInputPrimitive.DecrementTrigger
 			class={cn(
@@ -94,10 +106,10 @@ const NumberInputDecrementTrigger: Component<
 	);
 };
 
-const NumberInputDescription: Component<
-	NumberInputPrimitive.NumberFieldDescriptionProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const NumberInputDescription = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, FormControlDescriptionProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<NumberInputPrimitive.Description
 			class={cn("text-sm text-muted-foreground", props.class)}
@@ -106,10 +118,10 @@ const NumberInputDescription: Component<
 	);
 };
 
-const NumberInputErrorMessage: Component<
-	NumberInputPrimitive.NumberFieldErrorMessageProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const NumberInputErrorMessage = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, FormControlErrorMessageProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<NumberInputPrimitive.ErrorMessage
 			class={cn("text-sm text-error-foreground", props.class)}

@@ -1,6 +1,18 @@
-import { Dialog as DialogPrimitive } from "@kobalte/core";
-import type { Component, ComponentProps, JSX, ParentProps } from "solid-js";
+import {
+	Dialog as DialogPrimitive,
+	type PolymorphicProps,
+} from "@kobalte/core";
+import type { Component, ComponentProps, ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
+import type {
+	DialogContentProps,
+	DialogDescriptionProps,
+	DialogOverlayProps,
+	DialogPortalProps,
+	DialogRootProps,
+	DialogTitleProps,
+	DialogTriggerProps,
+} from "@kobalte/core/dialog";
 
 import { cn } from "./lib";
 import {
@@ -9,23 +21,8 @@ import {
 	createController,
 } from "./controller";
 
-// An easy wrapper on the dialog primitives
 const Dialog: Component<
-	ParentProps<{
-		controller?: Controller;
-		trigger?: JSX.Element;
-	}>
-> = (props) => (
-	<DialogRoot controller={props.controller}>
-		{props.trigger && <DialogTrigger asChild>{props.trigger}</DialogTrigger>}
-		<DialogContent>
-			<DialogHeader>{props.children}</DialogHeader>
-		</DialogContent>
-	</DialogRoot>
-);
-
-const DialogRoot: Component<
-	Omit<DialogPrimitive.DialogRootProps, "open"> &
+	Omit<DialogRootProps, "open"> &
 		(
 			| { open: boolean; setOpen: (open: boolean) => void }
 			| { controller?: Controller }
@@ -50,10 +47,10 @@ const DialogRoot: Component<
 	);
 };
 
-const DialogTrigger: Component<DialogPrimitive.DialogTriggerProps> = (
-	props,
+const DialogTrigger = <T extends ValidComponent = "button">(
+	props: PolymorphicProps<T, DialogTriggerProps>,
 ) => {
-	const [, rest] = splitProps(props, ["children"]);
+	const [, rest] = splitProps(props as any, ["children"]);
 	return (
 		<DialogPrimitive.Trigger {...rest}>
 			{props.children}
@@ -61,7 +58,7 @@ const DialogTrigger: Component<DialogPrimitive.DialogTriggerProps> = (
 	);
 };
 
-const DialogPortal: Component<DialogPrimitive.DialogPortalProps> = (props) => {
+const DialogPortal: Component<DialogPortalProps> = (props) => {
 	const [, rest] = splitProps(props, ["children"]);
 	return (
 		<DialogPrimitive.Portal {...rest}>
@@ -72,10 +69,10 @@ const DialogPortal: Component<DialogPrimitive.DialogPortalProps> = (props) => {
 	);
 };
 
-const DialogOverlay: Component<DialogPrimitive.DialogOverlayProps> = (
-	props,
+const DialogOverlay = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, DialogOverlayProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class"]);
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DialogPrimitive.Overlay
 			class={cn(
@@ -87,10 +84,10 @@ const DialogOverlay: Component<DialogPrimitive.DialogOverlayProps> = (
 	);
 };
 
-const DialogContent: Component<DialogPrimitive.DialogContentProps> = (
-	props,
+const DialogContent = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, DialogContentProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class", "children"]);
+	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<DialogPortal>
 			<DialogOverlay />
@@ -137,8 +134,10 @@ const DialogFooter: Component<ComponentProps<"div">> = (props) => {
 	);
 };
 
-const DialogTitle: Component<DialogPrimitive.DialogTitleProps> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const DialogTitle = <T extends ValidComponent = "h2">(
+	props: PolymorphicProps<T, DialogTitleProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DialogPrimitive.Title
 			class={cn(
@@ -150,10 +149,10 @@ const DialogTitle: Component<DialogPrimitive.DialogTitleProps> = (props) => {
 	);
 };
 
-const DialogDescription: Component<DialogPrimitive.DialogDescriptionProps> = (
-	props,
+const DialogDescription = <T extends ValidComponent = "p">(
+	props: PolymorphicProps<T, DialogDescriptionProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class"]);
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DialogPrimitive.Description
 			class={cn("text-muted-foreground text-sm", props.class)}
@@ -164,7 +163,7 @@ const DialogDescription: Component<DialogPrimitive.DialogDescriptionProps> = (
 
 export {
 	Dialog,
-	DialogRoot,
+	Dialog as DialogRoot,
 	DialogTrigger,
 	DialogContent,
 	DialogHeader,

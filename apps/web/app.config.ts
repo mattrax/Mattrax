@@ -36,9 +36,11 @@ export default defineConfig({
 				root: ".",
 			}),
 			mattraxUI,
-			router === "client"
-				? visualizer({ brotliSize: true, gzipSize: true })
-				: undefined,
+			visualizer({
+				brotliSize: true,
+				gzipSize: true,
+				filename: `stats${router === "client" ? "" : `-${router}`}.html`,
+			}),
 		],
 	}),
 	server: {

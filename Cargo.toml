@@ -25,15 +25,16 @@ specta = { version = "=2.0.0-rc.11", features = [
 [patch.crates-io]
 # TODO: This is likely a security risk, will fix it properly once the MVP is out.
 # TODO: This patch is from the unreleased `0.13.0` but I patched it to lie and pretend to be `0.21.1`
-rcgen = { git = "https://github.com/oscartbeaumont/rcgen", rev = "718f072790b36667eb84b1604f11dd279a448923" }
+rcgen = { git = "https://github.com/oscartbeaumont/rcgen", rev = "a3cd77f13f51b441b5d172aeac2f528c4a79c3bc" }
 # TODO: Waiting for https://github.com/FlorianUekermann/rustls-acme/pull/49 or my own PR cause that one is stale.
-rustls-acme = { git = "https://github.com/oscartbeaumont/rustls-acme", rev = "f97fef46ed4ba6480f97719dc3a06181bc8ebea3" }
+rustls-acme = { git = "https://github.com/oscartbeaumont/rustls-acme", rev = "051ebd0433ad66855b728f7b848369a58ee4ebbf" }
+
 # Some minor improvements
 easy-xml = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }
 easy-xml-derive = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }
 
-# Support for latest mysql-async
-refinery-core = { git = "https://github.com/oscartbeaumont/refinery", rev = "03744dc3257ae734a9d2f305e59b95485da53468" }
+# Support for latest mysql-async - https://github.com/rust-db/refinery/pull/327
+refinery-core = { git = "https://github.com/rust-db/refinery", rev = "ff1c5c07c00f196e8ec4f10827ab882db2fd9d14" }
 
 # https://github.com/zkat/chownr-rs/pull/1
 chownr = { git = "https://github.com/oscartbeaumont/chownr-rs", rev = "05101de6d2eb27a18374688f9339772aff827f85" }

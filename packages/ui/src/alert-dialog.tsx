@@ -1,6 +1,15 @@
-import { AlertDialog as AlertDialogPrimitive } from "@kobalte/core";
-import type { Component } from "solid-js";
+import {
+	AlertDialog as AlertDialogPrimitive,
+	type PolymorphicProps,
+} from "@kobalte/core";
+import type { ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
+import type {
+	AlertDialogContentProps,
+	AlertDialogDescriptionProps,
+	AlertDialogOverlayProps,
+	AlertDialogTitleProps,
+} from "@kobalte/core/alert-dialog";
 
 import { cn } from "./lib";
 
@@ -8,10 +17,10 @@ const AlertDialog = AlertDialogPrimitive.Root;
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
 const AlertDialogPortal = AlertDialogPrimitive.Portal;
 
-const AlertDialogOverlay: Component<
-	AlertDialogPrimitive.AlertDialogOverlayProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const AlertDialogOverlay = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, AlertDialogOverlayProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<AlertDialogPrimitive.Overlay
 			class={cn(
@@ -23,10 +32,10 @@ const AlertDialogOverlay: Component<
 	);
 };
 
-const AlertDialogContent: Component<
-	AlertDialogPrimitive.AlertDialogContentProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class", "children"]);
+const AlertDialogContent = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, AlertDialogContentProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<AlertDialogPortal>
 			<AlertDialogOverlay />
@@ -47,21 +56,22 @@ const AlertDialogContent: Component<
 	);
 };
 
-const AlertDialogTitle: Component<AlertDialogPrimitive.AlertDialogTitleProps> =
-	(props) => {
-		const [, rest] = splitProps(props, ["class"]);
-		return (
-			<AlertDialogPrimitive.Title
-				class={cn("text-lg font-semibold", props.class)}
-				{...rest}
-			/>
-		);
-	};
+const AlertDialogTitle = <T extends ValidComponent = "h1">(
+	props: PolymorphicProps<T, AlertDialogTitleProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
+	return (
+		<AlertDialogPrimitive.Title
+			class={cn("text-lg font-semibold", props.class)}
+			{...rest}
+		/>
+	);
+};
 
-const AlertDialogDescription: Component<
-	AlertDialogPrimitive.AlertDialogDescriptionProps
-> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+const AlertDialogDescription = <T extends ValidComponent = "p">(
+	props: PolymorphicProps<T, AlertDialogDescriptionProps>,
+) => {
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<AlertDialogPrimitive.Description
 			class={cn("text-muted-foreground text-sm", props.class)}

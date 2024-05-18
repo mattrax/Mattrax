@@ -7,7 +7,7 @@ publish = false
 [dependencies]
 easy-xml = "0.1.4"
 easy-xml-derive = "0.1.4"
-xml = "0.8.10"
+xml = "0.8.20"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"
