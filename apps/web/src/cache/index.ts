@@ -1,43 +1,16 @@
 import { createAsync } from "@solidjs/router";
 import type { CreateQueryResult } from "@tanstack/solid-query";
-import Dexie from "dexie";
 import { type Accessor, createEffect, untrack } from "solid-js";
+import { MattraxCache, TableData, TableNames } from "./dexie";
+export type { TableData, TableNames, MattraxCache } from "./dexie";
 
-type TableNames = "orgs" | "tenants";
-
-class MattraxCache
-	extends Dexie
-	implements Record<TableNames, Dexie.Table<any, string>>
-{
-	orgs!: Dexie.Table<{ id: string; slug: string; name: string }, string>;
-	tenants!: Dexie.Table<
-		{ id: string; slug: string; name: string; orgId: string },
-		string
-	>;
-
-	VERSION = 1;
-
-	constructor() {
-		super("mattrax-cache");
-		this.version(this.VERSION).stores({
-			orgs: "id",
-			tenants: "id, orgId",
-		});
-	}
-}
-
-export type { MattraxCache };
-
-export type TableData<TTable extends Dexie.Table> = TTable extends Dexie.Table<
-	infer T
->
-	? T
-	: never;
-
-export const mattraxCache = new MattraxCache();
+export const getMattraxCache = () =>
+	import("./dexie").then((m) => m.mattraxCache);
 
 export async function resetMattraxCache() {
+	const mattraxCache = await getMattraxCache();
 	await mattraxCache.delete();
+
 	await mattraxCache.open();
 }
 
@@ -46,9 +19,13 @@ export function createQueryCacher<TData, TTable extends TableNames>(
 	table: TTable,
 	transform: (data: TData) => TableData<MattraxCache[TTable]>,
 ) {
+	const mattraxCache = createAsync(() => getMattraxCache());
+
 	createEffect(() => {
 		if (!query.data) return;
-		mattraxCache[table].bulkPut(query.data.map(transform) as any);
+		const cache = mattraxCache();
+		if (!cache) return;
+		cache[table].bulkPut(query.data.map(transform) as any);
 	});
 }
 

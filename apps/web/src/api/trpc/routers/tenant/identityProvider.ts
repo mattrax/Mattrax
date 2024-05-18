@@ -3,7 +3,6 @@ import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { msGraphClient } from "~/api/microsoft";
 import { getEmailDomain } from "~/api/utils";
 import { domains, db, identityProviders, users } from "~/db";
 import { createTRPCRouter, tenantProcedure } from "../../helpers";
@@ -45,6 +44,8 @@ export const identityProviderRouter = createTRPCRouter({
 
 		// We ignore any errors cleaning up the subscriptions cause it's a non vital error.
 		try {
+			const { msGraphClient } = await import("~/api/microsoft");
+
 			const subscriptions: { value: Array<MSGraph.Subscription> } =
 				await msGraphClient(provider.remoteId).api("/subscriptions").get();
 
@@ -84,7 +85,7 @@ export const identityProviderRouter = createTRPCRouter({
 		let identityProvider!: IdentityProvider;
 
 		if (provider.provider === "entraId")
-			identityProvider = createEntraIDUserProvider(provider.remoteId);
+			identityProvider = await createEntraIDUserProvider(provider.remoteId);
 
 		const [remoteDomains, connectedDomains] = await Promise.all([
 			identityProvider.getDomains(),
@@ -108,7 +109,7 @@ export const identityProviderRouter = createTRPCRouter({
 			let identityProvider!: IdentityProvider;
 
 			if (provider.provider === "entraId")
-				identityProvider = createEntraIDUserProvider(provider.remoteId);
+				identityProvider = await createEntraIDUserProvider(provider.remoteId);
 
 			const remoteDomains = await identityProvider.getDomains();
 			if (!remoteDomains.includes(input.domain))
@@ -224,9 +225,10 @@ async function ensureIdentityProvider(tenantPk: number) {
 	return provider;
 }
 
-export function createEntraIDUserProvider(
+export async function createEntraIDUserProvider(
 	resourceId: string,
-): IdentityProvider {
+): Promise<IdentityProvider> {
+	const { msGraphClient } = await import("~/api/microsoft");
 	const client = msGraphClient(resourceId);
 
 	return {
@@ -282,6 +284,7 @@ export async function syncEntraUsersWithDomains(
 	entraTenantId: string,
 	domains: string[],
 ) {
+	const { msGraphClient } = await import("~/api/microsoft");
 	const graphClient = msGraphClient(entraTenantId);
 
 	let response: {

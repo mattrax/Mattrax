@@ -1,4 +1,4 @@
-import * as jose from "jose";
+import type * as jose from "jose";
 import { env } from "~/env";
 
 export async function signJWT<T extends jose.JWTPayload>(
@@ -9,6 +9,8 @@ export async function signJWT<T extends jose.JWTPayload>(
 		audience?: string;
 	},
 ) {
+	const jose = await import("jose");
+
 	const builder = new jose.SignJWT(payload)
 		.setAudience(opts?.audience ?? "mattrax.app")
 		.setNotBefore(new Date());
@@ -22,6 +24,7 @@ export async function signJWT<T extends jose.JWTPayload>(
 }
 
 export async function verifyJWT<T extends jose.JWTPayload>(jwt: string) {
+	const jose = await import("jose");
 	const result = await jose.jwtVerify<T>(jwt, createSecretKey());
 	return result.payload;
 }
@@ -34,6 +37,7 @@ export async function encryptJWT<T extends jose.JWTPayload>(
 		audience?: string;
 	},
 ) {
+	const jose = await import("jose");
 	const builder = new jose.EncryptJWT(payload)
 		.setAudience(opts?.audience ?? "mattrax.app")
 		.setNotBefore(new Date());
@@ -56,6 +60,7 @@ export async function decryptJWT(
 		audience?: string;
 	},
 ) {
+	const jose = await import("jose");
 	return await jose.jwtDecrypt(jwt, createSecretKey(), {
 		keyManagementAlgorithms: ["PBES2-HS256+A128KW"],
 	});
