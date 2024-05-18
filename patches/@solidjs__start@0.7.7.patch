@@ -1,5 +1,5 @@
 diff --git a/config/index.js b/config/index.js
-index 3003a2ed3ee0920f64e124e95cbfac106b30bb7e..06dd9f3e777c18971f8426af9ab32ad40bb389aa 100644
+index 3003a2ed3ee0920f64e124e95cbfac106b30bb7e..963463a7632ab2860bb8881ac3d186daf68c5dd6 100644
 --- a/config/index.js
 +++ b/config/index.js
 @@ -90,7 +90,7 @@ export function defineConfig(baseConfig = {}) {
@@ -7,7 +7,7 @@ index 3003a2ed3ee0920f64e124e95cbfac106b30bb7e..06dd9f3e777c18971f8426af9ab32ad4
          handler: `${start.appRoot}/entry-server${entryExtension}`,
          middleware: start.middleware,
 -        routes: solidStartServerFsRouter({ dir: routeDir, extensions }),
-+        routes: [], // solidStartServerFsRouter({ dir: routeDir, extensions }),
++        // routes:  solidStartServerFsRouter({ dir: routeDir, extensions }),
          extensions,
          target: "server",
          plugins: async () => {
