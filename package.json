@@ -31,14 +31,12 @@
 		"drizzle-kit": "^0.21.2",
 		"pg": "^8.11.5",
 		"typescript": "^5.4.5",
-		"vinxi": "=0.3.11"
+		"vinxi": "^0.3.11"
 	},
 	"devDependencies": {
 		"husky": "^9.0.11"
 	},
 	"resolutions": {
-		"@solidjs/start": "=0.7.7",
-		"vinxi": "=0.3.11",
 		"drizzle-orm": "^0.30.8"
 	},
 	"pnpm": {
@@ -49,8 +47,7 @@
 			"@react-email/tailwind@0.0.16": "patches/@react-email__tailwind@0.0.16.patch",
 			"nitropack@2.9.6": "patches/nitropack@2.9.6.patch",
 			"@solid-mediakit/trpc@3.0.2": "patches/@solid-mediakit__trpc@3.0.2.patch",
-			"@solidjs/start@0.7.7": "patches/@solidjs__start@0.7.7.patch",
-			"vinxi@0.3.11": "patches/vinxi@0.3.11.patch"
+			"@solidjs/start@1.0.0-rc.1": "patches/@solidjs__start@1.0.0-rc.1.patch"
 		}
 	}
 }

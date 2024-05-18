@@ -3,6 +3,7 @@ import { createColumnHelper } from "@tanstack/solid-table";
 import { Suspense, startTransition } from "solid-js";
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
+import IconCarbonCaretDown from "~icons/carbon/caret-down";
 import type { RouterOutput } from "~/api/trpc";
 import {
 	StandardTable,
