@@ -80,7 +80,7 @@ function Email({ domainZone }: { domainZone: cloudflare.Zone }) {
 			new cloudflare.Record(
 				`MatraxDNSMXRecordMessagingEngine${n}`,
 				{
-					name: "mattrax.app",
+					name: domainZone.zone,
 					value: `in${n}-smtp.messagingengine.com`,
 					type: "MX",
 					zoneId: domainZone.id,
@@ -107,8 +107,10 @@ function SESIdentity({ domainZone }: { domainZone: cloudflare.Zone }) {
 		tokens.map(
 			(token) =>
 				new cloudflare.Record(`MattraxCloudflareDKIMRecord${token}`, {
-					name: token,
-					value: token,
+					name: domainZone.zone.apply(
+						(domain) => `${token}._domainkey.${domain}`,
+					),
+					value: `${token}.dkim.amazonses.com`,
 					type: "CNAME",
 					zoneId: domainZone.id,
 					comment: "SES DKIM Record",
