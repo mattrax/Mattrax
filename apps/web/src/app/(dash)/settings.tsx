@@ -11,12 +11,6 @@ const navigation = [
 	{ name: "Superadmins", href: "superadmins" },
 ];
 
-export const route = {
-	info: {
-		BREADCRUMB: { Component: () => <>Settings</> },
-	},
-};
-
 export default function Layout(props: ParentProps) {
 	return (
 		<PageLayout

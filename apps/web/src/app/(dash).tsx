@@ -1,12 +1,10 @@
 import { startTransition, type ParentProps } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { RouteSectionProps, useNavigate } from "@solidjs/router";
 import { isServer } from "solid-js/web";
 import { parse } from "cookie-es";
 
-import { NavItemsProvider } from "./(dash)/TopBar/NavItems";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { trpc } from "~/lib";
-import { TopBar } from "./(dash)/TopBar";
 
 export const route = {
 	load: () => {
@@ -14,7 +12,7 @@ export const route = {
 	},
 };
 
-export default function Layout(props: ParentProps) {
+export default function Layout(props: RouteSectionProps<never, "topbar">) {
 	const navigate = useNavigate();
 
 	if (!isServer) {
@@ -35,10 +33,8 @@ export default function Layout(props: ParentProps) {
 
 	return (
 		<MErrorBoundary>
-			<NavItemsProvider>
-				<TopBar />
-				{props.children}
-			</NavItemsProvider>
+			{props.slots.topbar}
+			{props.children}
 		</MErrorBoundary>
 	);
 }
