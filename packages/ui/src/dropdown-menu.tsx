@@ -3,9 +3,10 @@ import {
 	type PolymorphicProps,
 } from "@kobalte/core";
 import type { Component, ComponentProps, ValidComponent } from "solid-js";
-import { splitProps } from "solid-js";
+import { createMemo, splitProps } from "solid-js";
 import type {
 	DropdownMenuContentProps,
+	DropdownMenuRootProps,
 	DropdownMenuSubTriggerProps,
 } from "@kobalte/core/dropdown-menu";
 import type { SeparatorRootProps } from "@kobalte/core/separator";
@@ -25,32 +26,44 @@ import {
 } from "./controller";
 
 const DropdownMenu = <T extends ValidComponent = "div">(
-	props: Omit<PolymorphicProps<T, DropdownMenuContentProps>, "open"> &
+	props: Omit<
+		PolymorphicProps<T, DropdownMenuRootProps>,
+		"open" | "setOpen" | "controller"
+	> &
 		(
-			| {
-					open: boolean;
-					setOpen: (open: boolean) => void;
-			  }
-			| {
-					controller?: Controller;
-			  }
+			| { open: boolean; setOpen: (open: boolean) => void }
+			| { controller?: Controller }
 		),
 ) => {
-	const controller =
-		"controller" in props && props.controller
-			? props.controller
-			: createController();
+	const _controller = createController();
+	const controller = createMemo(() => {
+		if ("controller" in props && props.controller)
+			return props.controller as Controller;
+
+		if ("open" in props && "setOpen" in props)
+			return {
+				get open() {
+					return props.open;
+				},
+				get setOpen() {
+					return props.setOpen;
+				},
+			} as Controller;
+
+		return _controller;
+	});
+
+	const [, rest] = splitProps(props as any, ["open", "setOpen", "controller"]);
 
 	return (
-		<ControllerProvider value={controller}>
+		<ControllerProvider value={controller()}>
 			<DropdownMenuPrimitive.Root
 				gutter={4}
-				open={("open" in props ? props.open : false) || controller.open()}
+				open={props.open || controller().open()}
 				onOpenChange={(isOpen) => {
-					if ("setOpen" in props) props.setOpen(isOpen);
-					controller.setOpen(isOpen);
+					controller().setOpen(isOpen);
 				}}
-				{...props}
+				{...rest}
 			/>
 		</ControllerProvider>
 	);
@@ -208,12 +221,15 @@ const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 const DropdownMenuRadioItem = <T extends ValidComponent = "div">(
 	props: PolymorphicProps<T, ContextMenuRadioItemProps>,
 ) => {
-	const [, rest] = splitProps(props as any, ["class", "children"]);
+	const [local, rest] = splitProps(
+		props as PolymorphicProps<"div", ContextMenuRadioItemProps>,
+		["class", "children"],
+	);
 	return (
 		<DropdownMenuPrimitive.RadioItem
 			class={cn(
 				"focus:bg-accent focus:text-accent-foreground relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-				props.class,
+				local.class,
 			)}
 			{...rest}
 		>
@@ -222,7 +238,7 @@ const DropdownMenuRadioItem = <T extends ValidComponent = "div">(
 					<IconTablerCircle class="h-2 w-2 fill-current" />
 				</DropdownMenuPrimitive.ItemIndicator>
 			</span>
-			{props.children}
+			{local.children}
 		</DropdownMenuPrimitive.RadioItem>
 	);
 };
