@@ -4,8 +4,6 @@ import {
 	useIsRouting,
 	useMatch,
 	useNavigate,
-	useParams,
-	useResolvedPath,
 } from "@solidjs/router";
 import clsx from "clsx";
 import {
@@ -37,11 +35,7 @@ import {
 	createSignal,
 	useTransition,
 	type ParentProps,
-	Show,
-	createEffect,
 } from "solid-js";
-import { Tabs } from "@kobalte/core";
-import { FileRoutes } from "@solidjs/start/router";
 
 import IconMdiSlashForward from "~icons/mdi/slash-forward";
 import { getInitials, trpc } from "~/lib";
@@ -53,14 +47,7 @@ export default function (
 	props: RouteSectionProps<never, "navItems" | "breadcrumbs">,
 ) {
 	const breadcrumbs = children(() => props.slots.breadcrumbs);
-	const navItems = children(() => props.slots.navItems) as unknown as () =>
-		| [
-				{
-					items: { title: string; href: string }[];
-					base(): string;
-				},
-		  ]
-		| undefined;
+	const navItems = children(() => props.slots.navItems);
 
 	return (
 		<>
@@ -121,54 +108,7 @@ export default function (
 					<ProfileDropdown />
 				</div>
 			</div>
-			<Show when={navItems()?.[0]}>
-				{(items) => {
-					const prefix = () => items().base();
-
-					const match = useMatch(() => `${prefix()}/:value/*rest`);
-
-					const value = () => match()?.params.value ?? "";
-
-					const params = useParams();
-
-					createEffect(() => {
-						console.log(params.tenantSlug, prefix());
-					});
-
-					return (
-						<Tabs.Root
-							as="nav"
-							value={`${prefix()}/${value()}`}
-							class="bg-white text-white sticky top-0 z-[100] bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
-						>
-							<Tabs.List class="flex flex-row px-2 border-b border-gray-200 w-full">
-								<For each={items().items}>
-									{(item) => (
-										<Tabs.Trigger
-											value={`${prefix()}/${item.href}`}
-											as={A}
-											end={item.href === ""}
-											href={
-												item.href === "" ? prefix() : `${prefix()}/${item.href}`
-											}
-											activeClass="text-black selected"
-											inactiveClass="text-gray-500"
-											class="py-2 flex text-center align-middle relative group focus:outline-none"
-										>
-											<div class="text-sm rounded px-3 py-1.5 hover:bg-black/5 hover:text-black group-focus-visible:bg-black/5 group-focus-visible:text-black group-focus:outline-none transition-colors duration-75">
-												{item.title}
-											</div>
-										</Tabs.Trigger>
-									)}
-								</For>
-							</Tabs.List>
-							<Tabs.Indicator class="absolute transition-all duration-200 bottom-0 flex flex-row px-2 h-[2px]">
-								<div class="bg-brand flex-1 rounded-full" />
-							</Tabs.Indicator>
-						</Tabs.Root>
-					);
-				}}
-			</Show>
+			{(console.log(navItems()), navItems())}
 		</>
 	);
 }
