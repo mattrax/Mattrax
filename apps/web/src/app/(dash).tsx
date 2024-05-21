@@ -1,5 +1,6 @@
-import { startTransition, type ParentProps } from "solid-js";
-import { RouteSectionProps, useNavigate } from "@solidjs/router";
+import { startTransition } from "solid-js";
+import { RouteSectionProps, useNavigate, useMatches } from "@solidjs/router";
+import { FileRoutes } from "@solidjs/start/router";
 import { isServer } from "solid-js/web";
 import { parse } from "cookie-es";
 
@@ -14,6 +15,11 @@ export const route = {
 
 export default function Layout(props: RouteSectionProps<never, "topbar">) {
 	const navigate = useNavigate();
+
+	const matches = useMatches();
+
+	// console.log("FileRoutes", FileRoutes());
+	// console.log("matches", matches());
 
 	if (!isServer) {
 		// isLoggedIn cookie trick for quick login navigation

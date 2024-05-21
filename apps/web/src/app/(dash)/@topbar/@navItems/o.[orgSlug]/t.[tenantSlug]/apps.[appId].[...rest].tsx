@@ -1,10 +1,5 @@
-// import { useResolvedPath } from "@solidjs/router";
+// import { NavItems } from "../../NavItems";
 
 // export default function () {
-//   const base = useResolvedPath(() => "");
-
-//   return {
-//     base: () => base()!,
-//     items: [{ title: "Application", href: "" }],
-//   };
+//   return <NavItems items={[{ title: "Application", href: "" }]} />;
 // }

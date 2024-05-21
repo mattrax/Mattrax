@@ -3,6 +3,7 @@ import { getMetadata } from "~[tenantSlug]/metadataCache";
 import { useZodParams } from "~/lib/useZodParams";
 import { Badge } from "@mattrax/ui";
 import { trpc } from "~/lib";
+import { Breadcrumb } from "../../Breadcrumb";
 
 export default function () {
 	const params = useZodParams({ policyId: z.string() });
@@ -11,14 +12,12 @@ export default function () {
 		id: params.policyId,
 	}));
 
-	return {
-		breadcrumb: (
-			<>
-				<span>
-					{getMetadata("policy", params.policyId)?.name ?? query.data?.name}
-				</span>
-				<Badge variant="outline">Policy</Badge>
-			</>
-		),
-	};
+	return (
+		<Breadcrumb>
+			<span>
+				{getMetadata("policy", params.policyId)?.name ?? query.data?.name}
+			</span>
+			<Badge variant="outline">Policy</Badge>
+		</Breadcrumb>
+	);
 }

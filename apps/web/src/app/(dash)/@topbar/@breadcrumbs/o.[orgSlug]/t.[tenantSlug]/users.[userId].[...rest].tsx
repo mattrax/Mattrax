@@ -3,6 +3,7 @@ import { getMetadata } from "~[tenantSlug]/metadataCache";
 import { useZodParams } from "~/lib/useZodParams";
 import { Badge } from "@mattrax/ui";
 import { trpc } from "~/lib";
+import { Breadcrumb } from "../../Breadcrumb";
 
 export default function () {
 	const params = useZodParams({ userId: z.string() });
@@ -11,14 +12,12 @@ export default function () {
 		id: params.userId,
 	}));
 
-	return {
-		breadcrumb: (
-			<>
-				<span>
-					{getMetadata("user", params.userId)?.name ?? query.data?.name}
-				</span>
-				<Badge variant="outline">User</Badge>
-			</>
-		),
-	};
+	return (
+		<Breadcrumb>
+			<span>
+				{getMetadata("user", params.userId)?.name ?? query.data?.name}
+			</span>
+			<Badge variant="outline">User</Badge>
+		</Breadcrumb>
+	);
 }

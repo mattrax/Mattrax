@@ -1,4 +1,4 @@
-import type { RouteDefinition } from "@solidjs/router";
+import { type RouteDefinition } from "@solidjs/router";
 import { For, Suspense } from "solid-js";
 import { z } from "zod";
 

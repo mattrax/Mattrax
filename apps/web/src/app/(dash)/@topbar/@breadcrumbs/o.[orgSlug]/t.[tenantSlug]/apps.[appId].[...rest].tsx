@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getMetadata } from "~[tenantSlug]/metadataCache";
 import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
+import { Breadcrumb } from "../../Breadcrumb";
 
 export default function () {
 	const params = useZodParams({ appId: z.string() });
@@ -12,14 +13,12 @@ export default function () {
 		id: params.appId,
 	}));
 
-	return {
-		breadcrumb: (
-			<>
-				<span>
-					{getMetadata("application", params.appId)?.name ?? query.data?.name}
-				</span>
-				<Badge variant="outline">App</Badge>
-			</>
-		),
-	};
+	return (
+		<Breadcrumb>
+			<span>
+				{getMetadata("application", params.appId)?.name ?? query.data?.name}
+			</span>
+			<Badge variant="outline">App</Badge>
+		</Breadcrumb>
+	);
 }

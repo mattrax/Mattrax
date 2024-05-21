@@ -4,6 +4,8 @@ import {
 	useIsRouting,
 	useMatch,
 	useNavigate,
+	useParams,
+	useResolvedPath,
 } from "@solidjs/router";
 import clsx from "clsx";
 import {
@@ -47,8 +49,10 @@ import LogoImg from "~/assets/MATTRAX.png";
 import { AuthContext, useAuth } from "~c/AuthContext";
 import classes from "./@topbar/NavIndicator.module.css";
 
-export default function (props: RouteSectionProps<never, "navItems">) {
-	const c = children(() => props.children);
+export default function (
+	props: RouteSectionProps<never, "navItems" | "breadcrumbs">,
+) {
+	const breadcrumbs = children(() => props.slots.breadcrumbs);
 	const navItems = children(() => props.slots.navItems) as unknown as () =>
 		| [
 				{
@@ -71,7 +75,7 @@ export default function (props: RouteSectionProps<never, "navItems">) {
 
 				<div class="flex flex-row items-center text-sm font-medium space-x-2 text-gray-800">
 					<SuspenseList revealOrder="forwards" tail="collapsed">
-						<For each={c.toArray()}>
+						<For each={breadcrumbs.toArray()}>
 							{(element: any) => (
 								<div class="flex flex-row items-center gap-2">
 									<Suspense
@@ -121,10 +125,20 @@ export default function (props: RouteSectionProps<never, "navItems">) {
 				{(items) => {
 					const prefix = () => items().base();
 
+					const match = useMatch(() => `${prefix()}/:value/*rest`);
+
+					const value = () => match()?.params.value ?? "";
+
+					const params = useParams();
+
+					createEffect(() => {
+						console.log(params.tenantSlug, prefix());
+					});
+
 					return (
 						<Tabs.Root
 							as="nav"
-							// value={`${prefix()}/${value()}`}
+							value={`${prefix()}/${value()}`}
 							class="bg-white text-white sticky top-0 z-[100] bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
 						>
 							<Tabs.List class="flex flex-row px-2 border-b border-gray-200 w-full">
