@@ -18,6 +18,7 @@ declare global {
   const IconPhCheckCircleDuotone: typeof import('~icons/ph/check-circle-duotone.jsx')['default']
   const IconPhDevices: typeof import('~icons/ph/devices.jsx')['default']
   const IconPhDotsThreeBold: typeof import('~icons/ph/dots-three-bold.jsx')['default']
+  const IconPhLaptop: typeof import('~icons/ph/laptop.jsx')['default']
   const IconPhMagnifyingGlassLight: typeof import('~icons/ph/magnifying-glass-light.jsx')['default']
   const IconPhPlusCircle: typeof import('~icons/ph/plus-circle.jsx')['default']
   const IconPhPuzzlePiece: typeof import('~icons/ph/puzzle-piece.jsx')['default']
