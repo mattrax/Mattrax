@@ -9,13 +9,19 @@ import type { SwitchRootProps } from "@kobalte/core/switch";
 
 import { cn } from "./lib";
 
-const Switch = <T extends ValidComponent = "p">(
-	props: PolymorphicProps<T, SwitchRootProps> & {
-		label?: string;
-		errorMessage?: string;
-	},
-) => {
-	const [, rest] = splitProps(props, ["label", "errorMessage"]);
+type Props<T extends ValidComponent = "div"> = PolymorphicProps<
+	T,
+	SwitchRootProps
+> & {
+	label?: string;
+	errorMessage?: string;
+};
+
+const Switch = <T extends ValidComponent = "div">(props: Props<T>) => {
+	const [local, rest] = splitProps(props as Props<"div">, [
+		"label",
+		"errorMessage",
+	]);
 	return (
 		<SwitchPrimitive.Root {...rest}>
 			<SwitchPrimitive.Input />
@@ -28,14 +34,14 @@ const Switch = <T extends ValidComponent = "p">(
 					/>
 				</SwitchPrimitive.Control>
 				<div class="grid gap-1.5 leading-none">
-					<Show when={props.label}>
+					<Show when={local.label}>
 						<SwitchPrimitive.Label class="text-sm font-medium leading-none group-data-[disabled]:cursor-not-allowed group-data-[disabled]:opacity-70">
-							{props.label}
+							{local.label}
 						</SwitchPrimitive.Label>
 					</Show>
-					<Show when={props.errorMessage}>
+					<Show when={local.errorMessage}>
 						<SwitchPrimitive.ErrorMessage class="text-destructive text-sm">
-							{props.errorMessage}
+							{local.errorMessage}
 						</SwitchPrimitive.ErrorMessage>
 					</Show>
 				</div>
