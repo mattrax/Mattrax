@@ -78,9 +78,8 @@ pub struct DiscoverResponse {
 
 impl DiscoverResponse {
     pub fn to_string(&self) -> Result<String, easy_xml::se::Error> {
-        easy_xml::se::to_string(self).map(|v| {
-            v.replace(r#"<?xml version="1.0" encoding="UTF-8"?>"#, "")
-        })
+        easy_xml::se::to_string(self)
+            .map(|v| v.replace(r#"<?xml version="1.0" encoding="UTF-8"?>"#, ""))
     }
 }
 

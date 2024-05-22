@@ -1,4 +1,4 @@
-use reqwest::{Url};
+use reqwest::Url;
 
 #[derive(clap::Args)]
 #[command(about = "Open Mattrax dashboard for the current tenant")]

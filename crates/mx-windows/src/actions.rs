@@ -1,4 +1,4 @@
-use ms_mdm::{SyncBodyChild};
+use ms_mdm::SyncBodyChild;
 
 pub(crate) async fn handler() -> Vec<SyncBodyChild> {
     // let actions = state.db.queued_device_actions(device.pk).await.unwrap(); // TODO: Error handling

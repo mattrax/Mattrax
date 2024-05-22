@@ -1,7 +1,4 @@
-use ms_mdm::{
-    util::strip_whitespace_from_xml, SyncML,
-};
-
+use ms_mdm::{util::strip_whitespace_from_xml, SyncML};
 
 // TODO: Fix basic tests
 // #[test]

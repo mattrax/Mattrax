@@ -1,7 +1,7 @@
 use std::process;
 
 use mx_db::Db;
-use tokio::task::{JoinSet};
+use tokio::task::JoinSet;
 use tracing::error;
 
 use crate::config::{ConfigManager, Node};

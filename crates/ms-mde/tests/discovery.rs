@@ -1,6 +1,5 @@
 use ms_mde::{util::strip_whitespace_from_xml, DiscoverRequest};
 
-
 #[test]
 fn test_discovery_request() {
     let payload = r#"<s:Envelope xmlns:a=\"http://www.w3.org/2005/08/addressing\"
