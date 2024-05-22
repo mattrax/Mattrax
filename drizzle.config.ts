@@ -18,9 +18,9 @@ if (!process.env.DATABASE_URL?.startsWith("mysql://"))
 export default defineConfig({
 	out: "./migrations",
 	schema: "./apps/web/src/db/schema.ts",
-	driver: "mysql2",
+	dialect: "mysql",
 	dbCredentials: {
-		uri: process.env.DATABASE_URL!,
+		url: process.env.DATABASE_URL!,
 	},
 	verbose: true,
 	strict: true,

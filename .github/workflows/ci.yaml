@@ -58,7 +58,7 @@ jobs:
       - name: Detect
         run: |
           if [ $(git status --porcelain | wc -l) -neq "0" ]; then
-            echo "  🔴 Detected missing migrations!"
+            echo "  🔴 Detected missing migrations or invalid `db.rs`. Run `pnpm db:gen` and commit the changes!"
             exit 1
           fi
   

@@ -379,5 +379,5 @@ exportQueries(
 					.where(eq(devices.pk, args.device_id)),
 		}),
 	],
-	path.join(__dirname, "../../../../crates/db/src/db.rs"),
+	path.join(__dirname, "../../../../crates/mx-db/src/db.rs"),
 );
