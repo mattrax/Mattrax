@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@mattrax/ui";
+import { Card, CardContent, CardHeader, CardTitle, Label } from "@mattrax/ui";
 import { Switch, Match, Suspense, type JSX, Show } from "solid-js";
 import { A } from "@solidjs/router";
 
@@ -12,13 +12,15 @@ export function StatItem(
 	} & ({ value?: number } | { body: JSX.Element }),
 ) {
 	return (
-		<Card class="relative hover:shadow-md transition-shadow">
-			<CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-				<CardTitle class="text-sm font-medium">
-					<span class="hover:underline">{props.title}</span>
-				</CardTitle>
+		<Card class="relative hover:shadow-md transition-shadow group">
+			<CardHeader class="pb-2">
+				<div class="flex flex-row items-center justify-between">
+					<Label>
+						<span class="group-hover:underline">{props.title}</span>
+					</Label>
 
-				{props.icon}
+					{props.icon}
+				</div>
 			</CardHeader>
 			<CardContent>
 				<div class="text-2xl font-bold">
