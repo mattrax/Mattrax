@@ -11,6 +11,7 @@ declare global {
   const IconLogosLinuxTux: typeof import('~icons/logos/linux-tux.jsx')['default']
   const IconLogosMacos: typeof import('~icons/logos/macos.jsx')['default']
   const IconLogosMicrosoftWindowsIcon: typeof import('~icons/logos/microsoft-windows-icon.jsx')['default']
+  const IconMdiSlashForward: typeof import('~icons/mdi/slash-forward.jsx')['default']
   const IconPhAppWindow: typeof import('~icons/ph/app-window.jsx')['default']
   const IconPhArrowsVerticalBold: typeof import('~icons/ph/arrows-vertical-bold.jsx')['default']
   const IconPhCheck: typeof import('~icons/ph/check.jsx')['default']
