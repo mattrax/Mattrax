@@ -37,5 +37,6 @@ export const env = createEnv({
 	client: {},
 	// We need to manually list the env's for the frontend bundle
 	runtimeEnv: process.env,
+	skipValidation: process.env.SKIP_ENV_VALIDATION === "true",
 	emptyStringAsUndefined: true,
 });
