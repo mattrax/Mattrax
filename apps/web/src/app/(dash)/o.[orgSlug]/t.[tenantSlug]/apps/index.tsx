@@ -1,15 +1,5 @@
-import { RadioGroup } from "@kobalte/core";
 import { createColumnHelper } from "@tanstack/solid-table";
-import {
-	type ParentProps,
-	Suspense,
-	createSignal,
-	type Accessor,
-	For,
-	createEffect,
-	startTransition,
-} from "solid-js";
-import { debounce } from "@solid-primitives/scheduled";
+import { Suspense, type Accessor } from "solid-js";
 
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import {
@@ -67,7 +57,11 @@ export default function Page() {
 				<>
 					<PageLayoutHeading>Applications</PageLayoutHeading>
 					<CreateApplicationSheet>
-						<Button class="ml-auto">Create Application</Button>
+						{(props) => (
+							<Button class="ml-auto" {...props}>
+								Create Application
+							</Button>
+						)}
 					</CreateApplicationSheet>
 				</>
 			}
@@ -92,30 +86,17 @@ export default function Page() {
 	);
 }
 
-import { A, useNavigate, type RouteDefinition } from "@solidjs/router";
-import { createQuery, queryOptions } from "@tanstack/solid-query";
-import {
-	Button,
-	DropdownMenuTrigger,
-	Input,
-	Sheet,
-	SheetContent,
-	SheetHeader,
-	SheetTitle,
-	SheetTrigger,
-	Tabs,
-	TabsList,
-	TabsTrigger,
-} from "@mattrax/ui";
-import { Form, createZodForm } from "@mattrax/ui/forms";
+import { A, type RouteDefinition } from "@solidjs/router";
+import { queryOptions } from "@tanstack/solid-query";
+import { Button, DropdownMenuTrigger } from "@mattrax/ui";
 
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { z } from "zod";
-import clsx from "clsx";
 import { useTenantSlug } from "../../t.[tenantSlug]";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 import { cacheMetadata } from "../metadataCache";
+import { CreateApplicationSheet } from "./CreateApplicationSheet";
 
 const IOS_APP_SCHEMA = z.object({
 	results: z.array(
@@ -128,7 +109,7 @@ const IOS_APP_SCHEMA = z.object({
 	),
 });
 
-const APPLICATION_TARGETS = {
+export const APPLICATION_TARGETS = {
 	iOS: {
 		display: "iOS/iPad OS",
 		queryOptions: (search) => ({
@@ -150,152 +131,3 @@ const APPLICATION_TARGETS = {
 	string,
 	{ display: string; queryOptions: (search: Accessor<string>) => any }
 >;
-
-function CreateApplicationSheet(props: ParentProps) {
-	const tenantSlug = useTenantSlug();
-	const navigate = useNavigate();
-
-	const [open, setOpen] = createSignal(false);
-
-	const createApplication = trpc.app.create.createMutation();
-	const form = createZodForm({
-		schema: z.object({
-			targetType: z.custom<keyof typeof APPLICATION_TARGETS>(),
-			targetId: z.string(),
-		}),
-		defaultValues: {
-			targetType: "iOS",
-			targetId: "",
-		},
-		onSubmit: async ({ value }) => {
-			const app = await createApplication.mutateAsync({
-				...value,
-				name: query.data?.results.find((r) => r.bundleId === value.targetId)
-					?.trackName!,
-				tenantSlug: tenantSlug(),
-			});
-			await startTransition(() => navigate(app.id));
-		},
-	});
-
-	const [search, setSearch] = createSignal("");
-
-	const query = createQuery(() => ({
-		...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
-			search,
-		),
-		enabled: open(),
-	}));
-
-	createEffect(() => {
-		const results = query.data?.results;
-		if (!results) {
-			form.setFieldValue("targetId", undefined!);
-			return;
-		}
-
-		const first = results[0]?.bundleId;
-		if (!form.getFieldValue("targetId")) form.setFieldValue("targetId", first!);
-		if (
-			results.find(
-				(result) => result.bundleId === form.getFieldValue("targetId"),
-			)
-		)
-			return;
-
-		form.setFieldValue("targetId", first!);
-	});
-
-	return (
-		<Sheet open={open()} onOpenChange={setOpen}>
-			<SheetTrigger>{props.children}</SheetTrigger>
-			<SheetContent padding="none">
-				<Form
-					form={form}
-					fieldsetClass="p-6 overflow-hidden space-y-4 h-full flex flex-col"
-				>
-					<SheetHeader>
-						<SheetTitle>Create Application</SheetTitle>
-					</SheetHeader>
-					<div class="flex flex-col space-y-1.5">
-						<form.Field name="targetType">
-							{(field) => (
-								<Tabs
-									value={field().state.value}
-									onChange={(v) => field().handleChange(v as any)}
-								>
-									<TabsList>
-										<For
-											each={
-												["iOS"] satisfies Array<
-													keyof typeof APPLICATION_TARGETS
-												>
-											}
-										>
-											{(target) => (
-												<TabsTrigger value={target}>
-													{APPLICATION_TARGETS[target].display}
-												</TabsTrigger>
-											)}
-										</For>
-										{/*
-								<TabsTrigger value="macOS">macOS</TabsTrigger>
-								<TabsTrigger value="windows">Windows</TabsTrigger> */}
-									</TabsList>
-								</Tabs>
-							)}
-						</form.Field>
-						<Input
-							placeholder="Search Targets..."
-							value={search()}
-							onKeyPress={(e) => e.key === "Enter" && e.preventDefault()}
-							onInput={debounce((e) => setSearch(e.target.value), 200)}
-						/>
-					</div>
-					<form.Field name="targetId">
-						{(field) => (
-							<RadioGroup.Root
-								class="flex-1 overflow-y-auto !mt-1.5"
-								value={field().state.value}
-								onChange={(v) => field().handleChange(v)}
-							>
-								<div class="p-1">
-									<Suspense>
-										<For each={query.data?.results}>
-											{(app) => (
-												<RadioGroup.Item value={app.bundleId}>
-													<RadioGroup.ItemInput class="peer" />
-													<RadioGroup.ItemControl
-														class={clsx(
-															"flex flex-row p-2 gap-2 items-center rounded-md",
-															"border-2 border-transparent ui-checked:border-brand peer-focus-visible:outline outline-brand",
-														)}
-													>
-														<img
-															src={app.artworkUrl512}
-															alt=""
-															class="rounded h-12"
-														/>
-														<div class="flex flex-col text-sm flex-1">
-															<span class="font-semibold">{app.trackName}</span>
-															<span class="text-gray-700">
-																{app.sellerName}
-															</span>
-														</div>
-													</RadioGroup.ItemControl>
-												</RadioGroup.Item>
-											)}
-										</For>
-									</Suspense>
-								</div>
-							</RadioGroup.Root>
-						)}
-					</form.Field>
-					<Button type="submit" class="grow-0">
-						Create
-					</Button>
-				</Form>
-			</SheetContent>
-		</Sheet>
-	);
-}

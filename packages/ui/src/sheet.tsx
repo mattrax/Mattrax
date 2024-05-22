@@ -6,6 +6,7 @@ import type {
 	DialogOverlayProps,
 	DialogPortalProps,
 	DialogTitleProps,
+	DialogTriggerProps as KDialogTriggerProps,
 	DialogContentProps as KDialogContentProps,
 } from "@kobalte/core/dialog";
 import { mergeProps, splitProps } from "solid-js";
@@ -14,7 +15,11 @@ import { cn } from "./lib";
 
 const Sheet = SheetPrimitive.Root;
 
-const SheetTrigger = SheetPrimitive.Trigger;
+function SheetTrigger<T extends ValidComponent = "button">(
+	props: PolymorphicProps<T, KDialogTriggerProps>,
+) {
+	return <SheetPrimitive.Trigger {...props} />;
+}
 
 const SheetClose = SheetPrimitive.CloseButton;
 
