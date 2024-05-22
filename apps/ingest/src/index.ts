@@ -1,6 +1,6 @@
-import { parseString } from "xml2js";
 import fs from "node:fs";
 import path from "node:path";
+import { parseString } from "xml2js";
 
 // TODO: Properly account for wildcard's in the URI -> Idk how Serde will support that
 

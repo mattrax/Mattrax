@@ -1,16 +1,16 @@
 import { seroval } from "@mattrax/trpc-server-function";
 import { flushResponse } from "@mattrax/trpc-server-function/server";
-import { TRPCError, initTRPC } from "@trpc/server";
 import { cache } from "@solidjs/router";
+import { TRPCError, initTRPC } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import type { User } from "lucia";
 import type { H3Event } from "vinxi/server";
 import { ZodError, z } from "zod";
 
 import { db, organisationMembers, organisations, tenants } from "~/db";
+import { withAccount } from "../account";
 import { checkAuth } from "../auth";
 import { withTenant } from "../tenant";
-import { withAccount } from "../account";
 
 export const createTRPCContext = (event: H3Event) => {
 	return {

@@ -1,6 +1,5 @@
 // @jsxImportSource react
 
-import React from "react";
 import {
 	Body,
 	Button,
@@ -14,6 +13,7 @@ import {
 	Text,
 } from "@react-email/components";
 import { Tailwind } from "@react-email/tailwind";
+import React from "react";
 
 interface Props {
 	invitedByEmail: string;

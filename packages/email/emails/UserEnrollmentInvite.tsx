@@ -1,6 +1,5 @@
 // @jsxImportSource react
 
-import React from "react";
 import {
 	Body,
 	Container,
@@ -11,6 +10,7 @@ import {
 	Text,
 } from "@react-email/components";
 import { Tailwind } from "@react-email/tailwind";
+import React from "react";
 
 interface Props {
 	tenantName: string;

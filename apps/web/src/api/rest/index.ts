@@ -5,9 +5,9 @@ import type { H3Event } from "h3";
 import { Hono } from "hono";
 
 import { enrollmentRouter } from "./enrollment";
+import { msRouter } from "./ms";
 import { waitlistRouter } from "./waitlist";
 import { webhookRouter } from "./webhook";
-import { msRouter } from "./ms";
 
 export type HonoEnv = {
 	Bindings: {

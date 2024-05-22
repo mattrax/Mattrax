@@ -1,17 +1,17 @@
-import { Suspense, createMemo, createSignal } from "solid-js";
-import { A, type RouteDefinition } from "@solidjs/router";
 import { Button, Input, Label } from "@mattrax/ui";
+import { A, type RouteDefinition } from "@solidjs/router";
+import { Suspense, createMemo, createSignal } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { toast } from "solid-sonner";
 
-import IconMaterialSymbolsEditOutline from "~icons/material-symbols/edit-outline.jsx";
-import IconIcRoundCheck from "~icons/ic/round-check.jsx";
-import { createVariantTableColumns } from "~c/VariantTableSheet";
-import { StandardTable, createStandardTable } from "~c/StandardTable";
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { trpc } from "~/lib";
-import { StatItem } from "~/components/StatItem";
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
+import { StatItem } from "~/components/StatItem";
+import { trpc } from "~/lib";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
+import { StandardTable, createStandardTable } from "~c/StandardTable";
+import { createVariantTableColumns } from "~c/VariantTableSheet";
+import IconIcRoundCheck from "~icons/ic/round-check.jsx";
+import IconMaterialSymbolsEditOutline from "~icons/material-symbols/edit-outline.jsx";
 
 export const route = {
 	load: ({ params }) => {
@@ -26,9 +26,9 @@ export const route = {
 
 import IconPhDevices from "~icons/ph/devices";
 import IconPhUser from "~icons/ph/user";
+import { cacheMetadata, getMetadata } from "../../metadataCache";
 import { useGroupId } from "../[groupId]";
 import { createAssignmentsVariants, createMembersVariants } from "./utils";
-import { cacheMetadata, getMetadata } from "../../metadataCache";
 
 export default function Page() {
 	const groupId = useGroupId();

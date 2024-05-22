@@ -1,6 +1,4 @@
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@mattrax/ui";
-import { Match, Show, Suspense, Switch } from "solid-js/web";
-import { eq } from "drizzle-orm";
 import {
 	type RouteDefinition,
 	action,
@@ -9,13 +7,15 @@ import {
 	useAction,
 	useSubmission,
 } from "@solidjs/router";
+import { eq } from "drizzle-orm";
+import { Match, Show, Suspense, Switch } from "solid-js/web";
 import { z } from "zod";
 
 import { checkAuth } from "~/api/auth";
-import { AuthContext, useAuth } from "~c/AuthContext";
+import { createAPIKey } from "~/api/trpc/routers/apiKey";
 import { cliAuthCodes, db } from "~/db";
 import { useZodParams } from "~/lib/useZodParams";
-import { createAPIKey } from "~/api/trpc/routers/apiKey";
+import { AuthContext, useAuth } from "~c/AuthContext";
 
 const getCode = cache(async (code: string) => {
 	"use server";

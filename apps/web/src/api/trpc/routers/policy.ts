@@ -1,11 +1,16 @@
-import { and, desc, eq, or, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
-import { TRPCError } from "@trpc/server";
 import { cache } from "@solidjs/router";
+import { TRPCError } from "@trpc/server";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { createAuditLog } from "~/api/auditLog";
+import { omit } from "~/api/utils";
+import { createTransaction } from "~/api/utils/transaction";
 import {
 	PolicyAssignableVariants,
+	accounts,
+	db,
 	devices,
 	groups,
 	policies,
@@ -13,14 +18,9 @@ import {
 	policyAssignments,
 	policyDeploy,
 	users,
-	accounts,
-	db,
 } from "~/db";
-import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import { omit } from "~/api/utils";
-import { createAuditLog } from "~/api/auditLog";
 import type { PolicyData } from "~/lib/policy";
-import { createTransaction } from "~/api/utils/transaction";
+import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 
 const getPolicy = cache(async (id: string) => {
 	return await db.query.policies.findFirst({

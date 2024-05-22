@@ -2,14 +2,14 @@ import {
 	AlertDialog as AlertDialogPrimitive,
 	type PolymorphicProps,
 } from "@kobalte/core";
-import type { ValidComponent } from "solid-js";
-import { splitProps } from "solid-js";
 import type {
 	AlertDialogContentProps,
 	AlertDialogDescriptionProps,
 	AlertDialogOverlayProps,
 	AlertDialogTitleProps,
 } from "@kobalte/core/alert-dialog";
+import type { ValidComponent } from "solid-js";
+import { splitProps } from "solid-js";
 
 import { cn } from "./lib";
 

@@ -1,8 +1,8 @@
 import { flushResponse } from "@mattrax/trpc-server-function/server";
-import { appendResponseHeader, setCookie } from "vinxi/server";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { generateId } from "lucia";
+import { appendResponseHeader, setCookie } from "vinxi/server";
 import { z } from "zod";
 
 import { lucia } from "~/api/auth";

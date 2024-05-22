@@ -1,3 +1,4 @@
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	Button,
 	Card,
@@ -21,7 +22,6 @@ import {
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import { trpc } from "~/lib";
 

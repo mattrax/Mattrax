@@ -1,11 +1,11 @@
-import { visualizer } from "rollup-plugin-visualizer";
-import { defineConfig } from "@solidjs/start/config";
-import tsconfigPaths from "vite-tsconfig-paths";
-import devtools from "solid-devtools/vite";
-import mattraxUI from "@mattrax/ui/vite";
-import { cloudflare } from "unenv";
-import path from "node:path";
 import fs from "node:fs";
+import path from "node:path";
+import mattraxUI from "@mattrax/ui/vite";
+import { defineConfig } from "@solidjs/start/config";
+import { visualizer } from "rollup-plugin-visualizer";
+import devtools from "solid-devtools/vite";
+import { cloudflare } from "unenv";
+import tsconfigPaths from "vite-tsconfig-paths";
 
 import { monorepoRoot } from "./loadEnv";
 import "./src/env";

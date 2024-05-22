@@ -1,14 +1,14 @@
-import { createContentEditableController } from "@mattrax/ui/lib";
 import {
 	PolicyComposer,
 	createPolicyComposerController,
 } from "@mattrax/policy-composer";
+import { createContentEditableController } from "@mattrax/ui/lib";
 
+import { createAsync } from "@solidjs/router";
+import { Show, createSignal } from "solid-js";
+import { useFeatures } from "~/lib/featureFlags";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { PolicyContext, usePolicy } from "./Context";
-import { createSignal, Show } from "solid-js";
-import { useFeatures } from "~/lib/featureFlags";
-import { createAsync } from "@solidjs/router";
 
 export default function Page() {
 	const policy = () => usePolicy()();

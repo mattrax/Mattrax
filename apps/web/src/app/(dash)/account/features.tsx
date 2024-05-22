@@ -1,7 +1,7 @@
-import { ErrorBoundary, For, Show, Suspense, createSignal } from "solid-js";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Checkbox, Input } from "@mattrax/ui";
 import { Navigate } from "@solidjs/router";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
+import { ErrorBoundary, For, Show, Suspense, createSignal } from "solid-js";
 
 import { getObjectKeys } from "~/api/utils";
 import { trpc } from "~/lib";

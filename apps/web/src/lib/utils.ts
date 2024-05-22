@@ -1,9 +1,9 @@
+import { useNavigate } from "@solidjs/router";
+import type { CreateQueryResult } from "@tanstack/solid-query";
 import type { ClassValue } from "clsx";
 import { clsx } from "clsx";
-import type { CreateQueryResult } from "@tanstack/solid-query";
 import { createEffect, createMemo } from "solid-js";
 import { toast } from "solid-sonner";
-import { useNavigate } from "@solidjs/router";
 import { trpc } from "./trpc";
 
 export function cn(...inputs: ClassValue[]) {

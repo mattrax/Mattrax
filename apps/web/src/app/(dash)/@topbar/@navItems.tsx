@@ -1,6 +1,6 @@
-import { For, type ParentProps, Show, children } from "solid-js";
-import { A, useMatch } from "@solidjs/router";
 import { Tabs } from "@kobalte/core";
+import { A, useMatch } from "@solidjs/router";
+import { For, type ParentProps, Show, children } from "solid-js";
 
 export default function (props: ParentProps) {
 	const items = children(() => props.children) as unknown as () =>

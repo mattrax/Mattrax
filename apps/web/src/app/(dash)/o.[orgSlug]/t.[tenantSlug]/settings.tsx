@@ -1,10 +1,10 @@
-import { For, type JSX, type ParentProps, Suspense } from "solid-js";
 import { A } from "@solidjs/router";
+import { For, type JSX, type ParentProps, Suspense } from "solid-js";
 
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { AuthContext } from "~c/AuthContext";
-import { TenantContext } from "./Context";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import IcRoundArrowForward from "~icons/ic/round-arrow-forward";
+import { TenantContext } from "./Context";
 
 const navigation = [
 	{ name: "General", href: "" },

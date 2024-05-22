@@ -1,8 +1,8 @@
-import { type ParentProps, Show } from "solid-js";
 import { createContextProvider } from "@solid-primitives/context";
+import { type ParentProps, Show } from "solid-js";
 
-import { trpc } from "~/lib";
 import type { RouterOutput } from "~/api";
+import { trpc } from "~/lib";
 
 const [AuthContextProvider, useAuth] = createContextProvider(
 	(props: {

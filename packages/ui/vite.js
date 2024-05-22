@@ -1,5 +1,5 @@
-import IconsResolver from "unplugin-icons/resolver";
 import AutoImport from "unplugin-auto-import/vite";
+import IconsResolver from "unplugin-icons/resolver";
 import Icons from "unplugin-icons/vite";
 // import { PluginOption } from "vite";
 

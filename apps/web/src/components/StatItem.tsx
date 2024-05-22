@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle, Label } from "@mattrax/ui";
-import { Switch, Match, Suspense, type JSX, Show } from "solid-js";
 import { A } from "@solidjs/router";
+import { type JSX, Match, Show, Suspense, Switch } from "solid-js";
 
 import { createCounter } from "./Counter";
 

@@ -1,16 +1,16 @@
-import { type ValidComponent, splitProps, type Component } from "solid-js";
 import {
+	type FormControlDescriptionProps,
+	type FormControlErrorMessageProps,
 	type FormControlLabelProps,
 	NumberField as NumberInputPrimitive,
 	type PolymorphicProps,
-	type FormControlDescriptionProps,
-	type FormControlErrorMessageProps,
 } from "@kobalte/core";
 import type {
 	NumberFieldDecrementTriggerProps,
 	NumberFieldIncrementTriggerProps,
 	NumberFieldInputProps,
 } from "@kobalte/core/number-field";
+import { type Component, type ValidComponent, splitProps } from "solid-js";
 
 import { cn } from "./lib";
 

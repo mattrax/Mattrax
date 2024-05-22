@@ -4,8 +4,8 @@ import { z } from "zod";
 
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
-import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { createNotFoundRedirect } from "~/lib/utils";
+import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 
 export function usePolicyId() {
 	const params = useZodParams({ policyId: z.string() });

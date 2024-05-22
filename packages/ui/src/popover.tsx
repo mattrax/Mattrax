@@ -7,12 +7,12 @@ import {
 } from "@kobalte/core";
 import type { PopoverContentProps } from "@kobalte/core/popover";
 
-import { cn } from "./lib";
 import {
 	type Controller,
 	ControllerProvider,
 	createController,
 } from "./controller";
+import { cn } from "./lib";
 
 const Popover: Component<
 	Omit<PopoverPrimitive.PopoverRootProps, "open"> &

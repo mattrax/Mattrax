@@ -1,15 +1,15 @@
-import { startTransition } from "solid-js";
 import {
 	type RouteSectionProps,
-	useNavigate,
 	useMatches,
+	useNavigate,
 } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
-import { isServer } from "solid-js/web";
 import { parse } from "cookie-es";
+import { startTransition } from "solid-js";
+import { isServer } from "solid-js/web";
 
-import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { trpc } from "~/lib";
+import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 
 export const route = {
 	load: () => {

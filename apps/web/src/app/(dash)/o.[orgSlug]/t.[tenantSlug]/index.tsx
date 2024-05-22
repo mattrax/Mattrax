@@ -10,27 +10,27 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@mattrax/ui";
-import { makeTimer } from "@solid-primitives/timer";
-import { getInitials, trpc } from "~/lib";
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import type { StatsTarget } from "~/api/trpc/routers/tenant";
-import { useZodParams } from "~/lib/useZodParams";
-import { type ParentProps, Suspense, For } from "solid-js";
-import { useTenantSlug } from "../t.[tenantSlug]";
-import { formatAuditLogEvent } from "~/lib/formatAuditLog";
 import { createTimeAgo } from "@solid-primitives/date";
+import { makeTimer } from "@solid-primitives/timer";
+import clsx from "clsx";
+import { For, type ParentProps, Suspense } from "solid-js";
+import type { StatsTarget } from "~/api/trpc/routers/tenant";
+import { StatItem } from "~/components/StatItem";
+import { getInitials, trpc } from "~/lib";
+import { formatAuditLogEvent } from "~/lib/formatAuditLog";
+import { useZodParams } from "~/lib/useZodParams";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
+import { useTenantSlug } from "../t.[tenantSlug]";
 import {
-	BruhIconPhCheckBold,
-	BruhIconPhXBold,
 	BruhIconPhAppWindow,
+	BruhIconPhCheckBold,
 	BruhIconPhDevices,
 	BruhIconPhScroll,
 	BruhIconPhSelection,
 	BruhIconPhUser,
+	BruhIconPhXBold,
 	BruhIconSvgSpinners90Ring,
 } from "./bruh";
-import { StatItem } from "~/components/StatItem";
-import clsx from "clsx";
 
 export const route = {
 	load: ({ params }) => {

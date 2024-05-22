@@ -2,18 +2,18 @@ import { Hono } from "hono";
 import { getCookie } from "vinxi/server";
 import { z } from "zod";
 
+import { zValidator } from "@hono/zod-validator";
+import { eq, sql } from "drizzle-orm";
 import { accounts, db, identityProviders } from "~/db";
 import { env } from "~/env";
+import type { HonoEnv } from ".";
+import { withAccount } from "../account";
+import { createAuditLog } from "../auditLog";
 import { lucia } from "../auth";
 import { msGraphClient } from "../microsoft";
-import type { HonoEnv } from ".";
-import { decryptJWT } from "../utils/jwt";
-import { createAuditLog } from "../auditLog";
-import { eq, sql } from "drizzle-orm";
 import { withTenant } from "../tenant";
-import { withAccount } from "../account";
+import { decryptJWT } from "../utils/jwt";
 import { useTransaction } from "../utils/transaction";
-import { zValidator } from "@hono/zod-validator";
 
 const tokenEndpointResponse = z.object({
 	access_token: z.string(),

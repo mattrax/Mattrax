@@ -1,14 +1,16 @@
-import { appendResponseHeader, deleteCookie, setCookie } from "vinxi/server";
 import { flushResponse, waitUntil } from "@mattrax/trpc-server-function/server";
-import { alphabet, generateRandomString } from "oslo/crypto";
 import { createId } from "@paralleldrive/cuid2";
 import { TRPCError } from "@trpc/server";
 import { eq, sql } from "drizzle-orm";
 import { generateId } from "lucia";
+import { alphabet, generateRandomString } from "oslo/crypto";
+import { appendResponseHeader, deleteCookie, setCookie } from "vinxi/server";
 import { z } from "zod";
 
+import { revalidate } from "@solidjs/router";
 import { checkAuth, lucia } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
+import { getObjectKeys, randomSlug } from "~/api/utils";
 import {
 	accountLoginCodes,
 	accounts,
@@ -16,6 +18,7 @@ import {
 	organisationMembers,
 	organisations,
 } from "~/db";
+import { type Features, features } from "~/lib/featureFlags";
 import {
 	authedProcedure,
 	createTRPCRouter,
@@ -24,9 +27,6 @@ import {
 	publicProcedure,
 	superAdminProcedure,
 } from "../helpers";
-import { getObjectKeys, randomSlug } from "~/api/utils";
-import { type Features, features } from "~/lib/featureFlags";
-import { revalidate } from "@solidjs/router";
 
 type UserResult = {
 	id: number;

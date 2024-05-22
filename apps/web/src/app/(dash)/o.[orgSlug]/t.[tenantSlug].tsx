@@ -1,10 +1,10 @@
-import { type ParentProps, Show, Suspense, createMemo } from "solid-js";
 import { type RouteDefinition, createAsync } from "@solidjs/router";
+import { type ParentProps, Show, Suspense, createMemo } from "solid-js";
 import { z } from "zod";
 
+import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { trpc } from "~/lib";
 import { cachedOrgs } from "../utils";
 import { cachedTenantsForOrg } from "./utils";
 

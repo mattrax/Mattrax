@@ -11,10 +11,14 @@ import {
 	DropdownMenuItem,
 	SheetTrigger,
 } from "@mattrax/ui";
-import { Match, Suspense, Switch, createSignal } from "solid-js";
 import pluralize from "pluralize";
+import { Match, Suspense, Switch, createSignal } from "solid-js";
 
+import { Dialog } from "@kobalte/core";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
+import type { RouteDefinition } from "@solidjs/router";
 import { trpc } from "~/lib";
+import { toTitleCase } from "~/lib/utils";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	StandardTable,
@@ -22,18 +26,14 @@ import {
 	createSearchParamFilter,
 	createStandardTable,
 } from "~c/StandardTable";
+import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 import {
 	VariantTableSheet,
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
-import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
-import { useGroupId } from "../[groupId]";
-import type { RouteDefinition } from "@solidjs/router";
-import { toTitleCase } from "~/lib/utils";
-import { createAssignmentsVariants } from "./utils";
 import { cacheMetadata } from "../../metadataCache";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
-import { Dialog } from "@kobalte/core";
+import { useGroupId } from "../[groupId]";
+import { createAssignmentsVariants } from "./utils";
 
 export const route = {
 	load: ({ params }) =>

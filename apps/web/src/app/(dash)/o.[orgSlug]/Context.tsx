@@ -3,8 +3,8 @@ import { type ParentProps, Show, createMemo } from "solid-js";
 import { z } from "zod";
 
 import type { RouterOutput } from "~/api";
-import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
+import { useZodParams } from "~/lib/useZodParams";
 
 const [OrgContextProvider, useOrg] = createContextProvider(
 	(props: {

@@ -3,11 +3,11 @@ import type { RouteDefinition } from "@solidjs/router";
 import type { ParentProps } from "solid-js";
 import { z } from "zod";
 
-import { useZodParams } from "~/lib/useZodParams";
-import { trpc } from "~/lib";
 import type { RouterOutput } from "~/api";
-import { MErrorBoundary } from "~c/MattraxErrorBoundary";
+import { trpc } from "~/lib";
+import { useZodParams } from "~/lib/useZodParams";
 import { createNotFoundRedirect } from "~/lib/utils";
+import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 
 export const route = {
 	load: ({ params }) =>

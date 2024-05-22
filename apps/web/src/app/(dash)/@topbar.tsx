@@ -1,12 +1,4 @@
 import {
-	A,
-	type RouteSectionProps,
-	useIsRouting,
-	useMatch,
-	useNavigate,
-} from "@solidjs/router";
-import clsx from "clsx";
-import {
 	Avatar,
 	AvatarFallback,
 	Button,
@@ -28,17 +20,25 @@ import {
 	Textarea,
 } from "@mattrax/ui";
 import {
+	A,
+	type RouteSectionProps,
+	useIsRouting,
+	useMatch,
+	useNavigate,
+} from "@solidjs/router";
+import clsx from "clsx";
+import {
+	type ParentProps,
 	Suspense,
 	children,
 	createSignal,
 	useTransition,
-	type ParentProps,
 } from "solid-js";
 
-import classes from "./@topbar/NavIndicator.module.css";
-import { AuthContext, useAuth } from "~c/AuthContext";
 import LogoImg from "~/assets/MATTRAX.png";
 import { getInitials, trpc } from "~/lib";
+import { AuthContext, useAuth } from "~c/AuthContext";
+import classes from "./@topbar/NavIndicator.module.css";
 
 export default function (
 	props: RouteSectionProps<never, "navItems" | "breadcrumbs">,

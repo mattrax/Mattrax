@@ -1,10 +1,10 @@
-import { For, createEffect, type ParentProps } from "solid-js";
 import { A, useMatches } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
+import { For, type ParentProps, createEffect } from "solid-js";
 import type { JSX } from "solid-js";
 
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { trpc } from "~/lib";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 
 const navigation = [
 	{ name: "General", href: "general" },

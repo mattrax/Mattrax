@@ -1,5 +1,7 @@
 import {
+	type CellContext,
 	type ColumnDef,
+	type HeaderContext,
 	type PartialKeys,
 	type RowData,
 	type Table as TTable,
@@ -7,15 +9,13 @@ import {
 	createSolidTable,
 	flexRender,
 	getCoreRowModel,
-	getPaginationRowModel,
 	getFilteredRowModel,
-	type HeaderContext,
-	type CellContext,
+	getPaginationRowModel,
 } from "@tanstack/solid-table";
 import clsx from "clsx";
 import {
-	type JSX,
 	For,
+	type JSX,
 	type ParentProps,
 	createEffect,
 	mergeProps,
@@ -202,8 +202,8 @@ import {
 	DropdownMenuTrigger,
 } from "@mattrax/ui";
 import { useSearchParams } from "@solidjs/router";
-import { z } from "zod";
 import { createMemo } from "solid-js";
+import { z } from "zod";
 
 export function ColumnsDropdown<TData>(
 	props: ParentProps & {

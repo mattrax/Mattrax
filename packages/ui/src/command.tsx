@@ -2,22 +2,22 @@ import type { ComponentProps, ValidComponent, VoidProps } from "solid-js";
 import { splitProps } from "solid-js";
 
 import {
-	type PolymorphicProps,
 	Combobox as ComboboxPrimitive,
+	type PolymorphicProps,
 } from "@kobalte/core";
 import type {
 	ComboboxInputProps,
 	ComboboxListboxProps,
 	ComboboxRootProps,
 } from "@kobalte/core/combobox";
+import type { DialogRootProps } from "@kobalte/core/dialog";
 import type {
 	ListboxItemProps,
 	ListboxSectionProps,
 } from "@kobalte/core/listbox";
-import type { DialogRootProps } from "@kobalte/core/dialog";
 
-import { cn } from "./lib";
 import { Dialog, DialogContent } from "./dialog";
+import { cn } from "./lib";
 
 type CommandProps<Option, OptGroup> = Omit<
 	ComboboxPrimitive.ComboboxRootProps<Option, OptGroup>,

@@ -1,3 +1,6 @@
+import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import {
 	Match,
 	Switch,
@@ -5,16 +8,13 @@ import {
 	onMount,
 	startTransition,
 } from "solid-js";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
-import { useNavigate, useSearchParams } from "@solidjs/router";
 import { z } from "zod";
 
-import { trpc } from "~/lib";
-import { OTPInput, preloadOTPInput } from "~/components/OTPInput";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { useQueryClient } from "@tanstack/solid-query";
 import { resetMattraxCache } from "~/cache";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
+import { OTPInput, preloadOTPInput } from "~/components/OTPInput";
+import { trpc } from "~/lib";
 
 // TODO: Use Mattrax colors on this page
 

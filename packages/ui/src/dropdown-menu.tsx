@@ -2,14 +2,6 @@ import {
 	DropdownMenu as DropdownMenuPrimitive,
 	type PolymorphicProps,
 } from "@kobalte/core";
-import type { Component, ComponentProps, ValidComponent } from "solid-js";
-import { createMemo, splitProps } from "solid-js";
-import type {
-	DropdownMenuContentProps,
-	DropdownMenuRootProps,
-	DropdownMenuSubTriggerProps,
-} from "@kobalte/core/dropdown-menu";
-import type { SeparatorRootProps } from "@kobalte/core/separator";
 import type {
 	ContextMenuCheckboxItemProps,
 	ContextMenuGroupLabelProps,
@@ -17,13 +9,21 @@ import type {
 	ContextMenuRadioItemProps,
 	ContextMenuSubContentProps,
 } from "@kobalte/core/context-menu";
+import type {
+	DropdownMenuContentProps,
+	DropdownMenuRootProps,
+	DropdownMenuSubTriggerProps,
+} from "@kobalte/core/dropdown-menu";
+import type { SeparatorRootProps } from "@kobalte/core/separator";
+import type { Component, ComponentProps, ValidComponent } from "solid-js";
+import { createMemo, splitProps } from "solid-js";
 
-import { cn } from "./lib";
 import {
 	type Controller,
 	ControllerProvider,
 	createController,
 } from "./controller";
+import { cn } from "./lib";
 
 const DropdownMenu = <T extends ValidComponent = "div">(
 	props: Omit<

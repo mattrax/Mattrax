@@ -5,12 +5,12 @@ import {
 import type { Component } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { cn } from "./lib";
 import type { ListboxItemProps } from "@kobalte/core/listbox";
 import type {
 	SelectContentProps,
 	SelectTriggerProps,
 } from "@kobalte/core/select";
+import { cn } from "./lib";
 
 const Select = SelectPrimitive.Root;
 

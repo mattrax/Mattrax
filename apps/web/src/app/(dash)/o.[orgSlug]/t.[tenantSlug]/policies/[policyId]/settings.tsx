@@ -1,15 +1,15 @@
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { Suspense, startTransition } from "solid-js";
-import { useNavigate } from "@solidjs/router";
-import { Button, Label } from "@mattrax/ui";
-import { z } from "zod";
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
+import { Button, Label } from "@mattrax/ui";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { useNavigate } from "@solidjs/router";
+import { Suspense, startTransition } from "solid-js";
+import { z } from "zod";
 
 import { trpc } from "~/lib";
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { ConfirmDialog } from "~c/ConfirmDialog";
-import { PolicyContext, usePolicy } from "./Context";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
+import { PolicyContext, usePolicy } from "./Context";
 
 export default function Page() {
 	return (

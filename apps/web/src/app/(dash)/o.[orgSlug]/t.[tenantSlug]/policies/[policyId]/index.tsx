@@ -1,5 +1,3 @@
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { For, Suspense } from "solid-js";
 import {
 	Avatar,
 	AvatarFallback,
@@ -13,7 +11,16 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@mattrax/ui";
+import { createTimeAgo } from "@solid-primitives/date";
+import { A } from "@solidjs/router";
+import { For, Suspense } from "solid-js";
+import { z } from "zod";
 import { StatItem } from "~/components/StatItem";
+import { getInitials, trpc } from "~/lib";
+import { formatPolicy } from "~/lib/formatPolicy";
+import { useZodParams } from "~/lib/useZodParams";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
+import { PolicyContext, usePolicy } from "./Context";
 import {
 	BruhIconLogosAndroidIcon,
 	BruhIconLogosIos,
@@ -24,13 +31,6 @@ import {
 	BruhIconPhPuzzlePiece,
 	BruhIconPhUser,
 } from "./bruh";
-import { A } from "@solidjs/router";
-import { formatPolicy } from "~/lib/formatPolicy";
-import { getInitials, trpc } from "~/lib";
-import { createTimeAgo } from "@solid-primitives/date";
-import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
-import { PolicyContext, usePolicy } from "./Context";
 
 export default function Page() {
 	const params = useZodParams({ policyId: z.string() });

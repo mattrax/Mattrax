@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 
-import { sessions } from "~/db";
-import { authedProcedure, createTRPCRouter } from "../helpers";
 import { z } from "zod";
 import { lucia } from "~/api/auth";
+import { sessions } from "~/db";
+import { authedProcedure, createTRPCRouter } from "../helpers";
 
 export const apiKeyRouter = createTRPCRouter({
 	// TODO: move this to `sessions.list` and don't filter (then render them differently in the UI)

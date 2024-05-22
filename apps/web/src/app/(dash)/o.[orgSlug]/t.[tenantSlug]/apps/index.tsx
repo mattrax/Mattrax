@@ -1,7 +1,6 @@
 import { createColumnHelper } from "@tanstack/solid-table";
-import { Suspense, type Accessor } from "solid-js";
+import { type Accessor, Suspense } from "solid-js";
 
-import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import {
 	ColumnsDropdown,
 	StandardTable,
@@ -9,6 +8,7 @@ import {
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 
 export const route = {
 	load: ({ params }) => {
@@ -86,15 +86,15 @@ export default function Page() {
 	);
 }
 
+import { Button, DropdownMenuTrigger } from "@mattrax/ui";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { queryOptions } from "@tanstack/solid-query";
-import { Button, DropdownMenuTrigger } from "@mattrax/ui";
 
+import { z } from "zod";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { z } from "zod";
-import { useTenantSlug } from "../../t.[tenantSlug]";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
+import { useTenantSlug } from "../../t.[tenantSlug]";
 import { cacheMetadata } from "../metadataCache";
 import { CreateApplicationSheet } from "./CreateApplicationSheet";
 

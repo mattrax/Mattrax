@@ -11,13 +11,13 @@ import type {
 	ListboxItemProps,
 } from "@kobalte/core/listbox";
 
-import { cn } from "./lib";
 import type {
 	ComboboxContentProps,
 	ComboboxControlProps,
 	ComboboxInputProps,
 	ComboboxTriggerProps,
 } from "@kobalte/core/combobox";
+import { cn } from "./lib";
 
 const ComboboxRoot = ComboboxPrimitive.Root;
 

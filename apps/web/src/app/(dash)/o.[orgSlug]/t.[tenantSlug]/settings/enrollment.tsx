@@ -1,17 +1,17 @@
 import {
 	Card,
-	CardTitle,
 	CardContent,
+	CardTitle,
 	Collapsible,
-	CollapsibleTrigger,
 	CollapsibleContent,
+	CollapsibleTrigger,
 } from "@mattrax/ui";
+import type { JSX, ParentProps } from "solid-js";
+import { match } from "ts-pattern";
 import {
 	BruhIconPhCheckCircleDuotone,
 	BruhIconPhWarningCircleDuotone,
 } from "./bruh";
-import type { JSX, ParentProps } from "solid-js";
-import { match } from "ts-pattern";
 
 export default function Page() {
 	return (

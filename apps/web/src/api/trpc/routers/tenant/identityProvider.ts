@@ -3,13 +3,13 @@ import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { getEmailDomain } from "~/api/utils";
-import { domains, db, identityProviders, users } from "~/db";
-import { createTRPCRouter, tenantProcedure } from "../../helpers";
-import { encryptJWT } from "~/api/utils/jwt";
 import { createAuditLog } from "~/api/auditLog";
-import { createTransaction } from "~/api/utils/transaction";
 import type { OAUTH_STATE } from "~/api/rest/ms";
+import { getEmailDomain } from "~/api/utils";
+import { encryptJWT } from "~/api/utils/jwt";
+import { createTransaction } from "~/api/utils/transaction";
+import { db, domains, identityProviders, users } from "~/db";
+import { createTRPCRouter, tenantProcedure } from "../../helpers";
 
 export const identityProviderRouter = createTRPCRouter({
 	get: tenantProcedure.query(async ({ ctx }) => {

@@ -1,4 +1,4 @@
-import type { RouteDefinition } from "@solidjs/router";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	AsyncButton,
 	Badge,
@@ -12,11 +12,13 @@ import {
 	DropdownMenuItem,
 	SheetTrigger,
 } from "@mattrax/ui";
+import type { RouteDefinition } from "@solidjs/router";
 import pluralize from "pluralize";
 import { Match, Suspense, Switch, createSignal } from "solid-js";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
+import { Dialog } from "@kobalte/core";
 import { trpc } from "~/lib";
+import { toTitleCase } from "~/lib/utils";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	StandardTable,
@@ -24,16 +26,14 @@ import {
 	createSearchParamFilter,
 	createStandardTable,
 } from "~c/StandardTable";
+import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 import {
 	VariantTableSheet,
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
-import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
-import { useGroupId } from "../[groupId]";
-import { toTitleCase } from "~/lib/utils";
-import { createMembersVariants } from "./utils";
 import { cacheMetadata } from "../../metadataCache";
-import { Dialog } from "@kobalte/core";
+import { useGroupId } from "../[groupId]";
+import { createMembersVariants } from "./utils";
 
 export const route = {
 	load: ({ params }) =>

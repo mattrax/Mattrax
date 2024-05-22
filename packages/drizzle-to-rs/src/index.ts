@@ -1,11 +1,11 @@
 //! Export Drizzle queries to Rust
 //! This entire thing is cobbled together using some of the worse code I've ever written.
 
-import fs from "node:fs";
 import { execSync } from "node:child_process";
-import type { TypedQueryBuilder } from "drizzle-orm/query-builders/query-builder";
+import fs from "node:fs";
 import type { SQLWrapper } from "drizzle-orm";
 import type { Query as DrizzleQuery } from "drizzle-orm";
+import type { TypedQueryBuilder } from "drizzle-orm/query-builders/query-builder";
 
 // TODO: Allow array of arguments (insert many)
 

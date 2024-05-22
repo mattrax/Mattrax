@@ -2,10 +2,10 @@ import type { RouteDefinition } from "@solidjs/router";
 import type { ParentProps } from "solid-js";
 import { z } from "zod";
 
-import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { useZodParams } from "~/lib/useZodParams";
 import { trpc } from "~/lib";
+import { useZodParams } from "~/lib/useZodParams";
 import { createNotFoundRedirect } from "~/lib/utils";
+import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 
 export function useGroupId() {
 	const params = useZodParams({ groupId: z.string() });

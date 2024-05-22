@@ -1,5 +1,5 @@
-import type { AwsClient } from "aws4fetch";
 import { render } from "@react-email/render";
+import type { AwsClient } from "aws4fetch";
 import { z } from "zod";
 
 import LoginCodeEmail from "../emails/LoginCode";

@@ -3,10 +3,10 @@ import { Hono } from "hono";
 import * as jose from "jose";
 import { renderToString } from "solid-js/web";
 
-import { domains, db, identityProviders } from "~/db";
+import { db, domains, identityProviders } from "~/db";
 import { env } from "~/env";
-import { getEmailDomain } from "../utils";
 import { upsertEntraIdUser } from "../trpc/routers/tenant/identityProvider";
+import { getEmailDomain } from "../utils";
 import { decryptJWT, encryptJWT, signJWT } from "../utils/jwt";
 
 export type EnrollmentProfileDescription = {

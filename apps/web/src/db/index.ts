@@ -1,5 +1,5 @@
-import { drizzle } from "drizzle-orm/planetscale-serverless";
 import { Client, type Config } from "@planetscale/database";
+import { drizzle } from "drizzle-orm/planetscale-serverless";
 import { env } from "../env";
 
 export * from "./schema";

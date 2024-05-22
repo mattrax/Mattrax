@@ -1,10 +1,10 @@
 import { Show, onMount } from "solid-js";
 import { z } from "zod";
 
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Card, CardDescription, CardHeader, buttonVariants } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 export default function Page() {
 	const params = useZodParams({ code: z.string() });

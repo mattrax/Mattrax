@@ -1,12 +1,14 @@
 import {
+	Badge,
 	Card,
+	CardDescription,
 	CardTitle,
 	Checkbox,
 	Input,
 	NumberInput,
+	NumberInputControl,
 	NumberInputDecrementTrigger,
 	NumberInputIncrementTrigger,
-	NumberInputControl,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -17,15 +19,13 @@ import {
 	TabsIndicator,
 	TabsList,
 	TabsTrigger,
-	CardDescription,
-	Badge,
 } from "@mattrax/ui";
-import { Match, createMemo, Switch, Show, createUniqueId } from "solid-js";
+import { Match, Show, Switch, createMemo, createUniqueId } from "solid-js";
 import { For } from "solid-js";
 import { createStore } from "solid-js/store";
 
-import type { WindowsCSP } from "@mattrax/configuration-schemas/windows";
 import type { AppleProfilePayload } from "@mattrax/configuration-schemas/apple";
+import type { WindowsCSP } from "@mattrax/configuration-schemas/windows";
 
 export function createPolicyComposerController() {
 	const [selected, setSelected] = createStore<{

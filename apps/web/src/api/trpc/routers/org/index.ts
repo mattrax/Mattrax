@@ -1,6 +1,7 @@
 import { count, eq } from "drizzle-orm";
 import { z } from "zod";
 
+import { randomSlug } from "~/api/utils";
 import {
 	accounts,
 	organisationInvites,
@@ -9,7 +10,6 @@ import {
 	tenants,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, orgProcedure } from "../../helpers";
-import { randomSlug } from "~/api/utils";
 
 import { adminsRouter } from "./admins";
 // import { billingRouter } from "./billing";

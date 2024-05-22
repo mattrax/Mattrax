@@ -1,24 +1,24 @@
+import { createTimeAgo } from "@solid-primitives/date";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { createTimeAgo } from "@solid-primitives/date";
-import type { RouterOutput } from "~/api/trpc";
 import { Suspense } from "solid-js";
+import type { RouterOutput } from "~/api/trpc";
 
-import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
+import { Button, DropdownMenuTrigger } from "@mattrax/ui";
+import { z } from "zod";
+import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { trpc } from "~/lib";
+import { useZodParams } from "~/lib/useZodParams";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	ColumnsDropdown,
 	StandardTable,
-	createStandardTable,
-	createSearchParamPagination,
-	selectCheckboxColumn,
 	createSearchParamFilter,
+	createSearchParamPagination,
+	createStandardTable,
+	selectCheckboxColumn,
 } from "~c/StandardTable";
-import { Button, DropdownMenuTrigger } from "@mattrax/ui";
-import { trpc } from "~/lib";
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
-import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { cacheMetadata } from "../metadataCache";
 
 export const route = {

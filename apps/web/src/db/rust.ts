@@ -13,11 +13,11 @@ import {
 	deviceActions,
 	devices,
 	groupMembers,
+	kv,
 	policies,
 	policyAssignments,
 	policyDeploy,
 	policyDeployStatus,
-	kv,
 } from ".";
 
 dotenv.config({

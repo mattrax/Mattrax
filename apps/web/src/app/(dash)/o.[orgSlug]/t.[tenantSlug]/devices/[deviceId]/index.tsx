@@ -1,6 +1,7 @@
-import { A } from "@solidjs/router";
 import { createTimeAgo } from "@solid-primitives/date";
+import { A } from "@solidjs/router";
 
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	Button,
 	DropdownMenu,
@@ -9,12 +10,11 @@ import {
 	DropdownMenuTrigger,
 	Textarea,
 } from "@mattrax/ui";
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { useDevice } from "./Context";
-import { trpc } from "~/lib";
 import { toast } from "solid-sonner";
 import { Item } from "~/components/Item";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
+import { trpc } from "~/lib";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
+import { useDevice } from "./Context";
 
 // TODO: Rename device
 // TODO: Rotate filevault keys

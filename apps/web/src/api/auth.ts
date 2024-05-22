@@ -1,7 +1,7 @@
-import { appendResponseHeader, getCookie, setCookie } from "vinxi/server";
 import { DrizzleMySQLAdapter } from "@lucia-auth/adapter-drizzle";
 import { cache } from "@solidjs/router";
 import { Lucia } from "lucia";
+import { appendResponseHeader, getCookie, setCookie } from "vinxi/server";
 
 import { accounts, db, sessions } from "~/db";
 import { env } from "~/env";

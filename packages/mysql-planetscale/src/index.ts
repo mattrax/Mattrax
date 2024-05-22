@@ -1,10 +1,10 @@
 import type { Config } from "@planetscale/database";
 import {
-	createPool,
-	type ResultSetHeader,
-	type PoolConnection,
 	type FieldPacket,
+	type PoolConnection,
 	type QueryResult,
+	type ResultSetHeader,
+	createPool,
 } from "mysql2/promise";
 
 export function createFetchHandler(uri: string): NonNullable<Config["fetch"]> {

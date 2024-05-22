@@ -1,10 +1,10 @@
-import { getInitials, trpc } from "~/lib";
-import { useTenantSlug } from "../../t.[tenantSlug]";
 import { Avatar, AvatarFallback } from "@mattrax/ui";
-import { A } from "@solidjs/router";
-import { Suspense, For } from "solid-js";
-import { formatAuditLogEvent } from "~/lib/formatAuditLog";
 import { createTimeAgo } from "@solid-primitives/date";
+import { A } from "@solidjs/router";
+import { For, Suspense } from "solid-js";
+import { getInitials, trpc } from "~/lib";
+import { formatAuditLogEvent } from "~/lib/formatAuditLog";
+import { useTenantSlug } from "../../t.[tenantSlug]";
 
 export default function Page() {
 	const tenantSlug = useTenantSlug();

@@ -2,6 +2,7 @@ import { count, desc, eq, sql } from "drizzle-orm";
 import { union } from "drizzle-orm/mysql-core";
 import { z } from "zod";
 
+import { randomSlug } from "~/api/utils";
 import {
 	accounts,
 	applications,
@@ -23,7 +24,6 @@ import {
 import { createTRPCRouter, orgProcedure, tenantProcedure } from "../../helpers";
 import { identityProviderRouter } from "./identityProvider";
 import { variantTableRouter } from "./members";
-import { randomSlug } from "~/api/utils";
 
 export type StatsTarget =
 	| "devices"

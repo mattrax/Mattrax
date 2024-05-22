@@ -1,6 +1,6 @@
-import { createTRPCRouter, tenantProcedure } from "../../helpers";
-import { applications, devices, groups, policies, users } from "~/db";
 import { eq } from "drizzle-orm";
+import { applications, devices, groups, policies, users } from "~/db";
+import { createTRPCRouter, tenantProcedure } from "../../helpers";
 
 export const variantTableRouter = createTRPCRouter({
 	users: tenantProcedure

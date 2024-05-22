@@ -2,8 +2,7 @@ import type { RouteDefinition } from "@solidjs/router";
 import { For, Suspense } from "solid-js";
 import { z } from "zod";
 
-import { ConfirmDialog } from "~c/ConfirmDialog";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	Badge,
 	Button,
@@ -13,11 +12,12 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@mattrax/ui";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { trpc } from "~/lib";
 import { AuthContext, useAuth } from "~c/AuthContext";
-import { OrgContext, useOrg } from "../Context";
+import { ConfirmDialog } from "~c/ConfirmDialog";
 import { useOrgSlug } from "../../o.[orgSlug]";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
+import { OrgContext, useOrg } from "../Context";
 
 export const route = {
 	load: ({ params }) => {

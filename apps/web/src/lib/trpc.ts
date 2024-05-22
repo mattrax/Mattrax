@@ -6,7 +6,7 @@ import {
 } from "@mattrax/trpc-server-function";
 import { createTRPCSolidStart } from "@solid-mediakit/trpc";
 import { useQueryClient } from "@tanstack/solid-query";
-import { router, createContext, type AppRouter } from "~/api/trpc";
+import { type AppRouter, createContext, router } from "~/api/trpc";
 
 function serverFunction(opts: TrpcServerFunctionOpts) {
 	"use server";

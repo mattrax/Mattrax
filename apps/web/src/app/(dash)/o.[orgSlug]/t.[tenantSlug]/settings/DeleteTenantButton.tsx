@@ -1,9 +1,9 @@
 import { useNavigate } from "@solidjs/router";
 import { startTransition } from "solid-js";
 
-import { ConfirmDialog } from "~c/ConfirmDialog";
 import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
+import { ConfirmDialog } from "~c/ConfirmDialog";
 import { useTenant } from "../Context";
 
 export function DeleteTenantButton() {

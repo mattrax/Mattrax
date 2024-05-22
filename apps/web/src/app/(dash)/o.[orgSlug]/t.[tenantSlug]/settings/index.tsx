@@ -1,6 +1,4 @@
-import type { RouteDefinition } from "@solidjs/router";
-import { Form, createZodForm } from "@mattrax/ui/forms";
-import { InputField } from "@mattrax/ui/forms";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	Button,
 	Card,
@@ -10,12 +8,14 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@mattrax/ui";
+import { Form, createZodForm } from "@mattrax/ui/forms";
+import { InputField } from "@mattrax/ui/forms";
+import type { RouteDefinition } from "@solidjs/router";
 import { z } from "zod";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import { trpc } from "~/lib";
-import { DeleteTenantButton } from "./DeleteTenantButton";
 import { useTenant } from "../Context";
+import { DeleteTenantButton } from "./DeleteTenantButton";
 
 export const route = {
 	load: ({ params }) => {

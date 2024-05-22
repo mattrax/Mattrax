@@ -7,16 +7,16 @@ import {
 	mysqlTable,
 	primaryKey,
 	serial,
-	timestamp,
 	smallint,
+	timestamp,
 	unique,
-	varchar,
 	varbinary,
+	varchar,
 } from "drizzle-orm/mysql-core";
+import type { Features } from "~/lib/featureFlags";
+import type { PolicyData } from "~/lib/policy";
 import { auditLogDefinition } from "../api/auditLogDefinition";
 import { getObjectKeys } from "../api/utils";
-import type { PolicyData } from "~/lib/policy";
-import type { Features } from "~/lib/featureFlags";
 
 // TS table name - plural, camelCase
 // SQL table name - singular, snake_case

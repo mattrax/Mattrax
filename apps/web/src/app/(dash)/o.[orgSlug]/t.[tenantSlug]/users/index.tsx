@@ -1,6 +1,3 @@
-import { A, type RouteDefinition } from "@solidjs/router";
-import { createColumnHelper } from "@tanstack/solid-table";
-import { Show, Suspense } from "solid-js";
 import {
 	Badge,
 	Button,
@@ -9,24 +6,27 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@mattrax/ui";
+import { A, type RouteDefinition } from "@solidjs/router";
+import { createColumnHelper } from "@tanstack/solid-table";
+import { Show, Suspense } from "solid-js";
 
-import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
-import IconCarbonCaretSort from "~icons/carbon/caret-sort.jsx";
-import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import type { RouterOutput } from "~/api/trpc";
-import {
-	ColumnsDropdown,
-	StandardTable,
-	createStandardTable,
-	createSearchParamPagination,
-	selectCheckboxColumn,
-	createSearchParamFilter,
-} from "~c/StandardTable";
+import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
+import {
+	ColumnsDropdown,
+	StandardTable,
+	createSearchParamFilter,
+	createSearchParamPagination,
+	createStandardTable,
+	selectCheckboxColumn,
+} from "~c/StandardTable";
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
+import IconCarbonCaretSort from "~icons/carbon/caret-sort.jsx";
+import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import { useTenantSlug } from "../../t.[tenantSlug]";
-import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 import { cacheMetadata } from "../metadataCache";
 
 export const route = {

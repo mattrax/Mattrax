@@ -1,36 +1,36 @@
-import type { CreateQueryResult } from "@tanstack/solid-query";
 import {
-	type ParentProps,
-	Suspense,
-	createSignal,
-	Index,
-	Show,
-} from "solid-js";
-import { createColumnHelper } from "@tanstack/solid-table";
-import {
+	AsyncButton,
 	Badge,
 	Button,
-	Tabs,
-	TabsList,
-	TabsTrigger,
 	Sheet,
 	SheetContent,
 	SheetDescription,
 	SheetHeader,
 	SheetTitle,
 	SheetTrigger,
+	Tabs,
 	TabsIndicator,
-	AsyncButton,
+	TabsList,
+	TabsTrigger,
 } from "@mattrax/ui";
+import type { CreateQueryResult } from "@tanstack/solid-query";
+import { createColumnHelper } from "@tanstack/solid-table";
+import {
+	Index,
+	type ParentProps,
+	Show,
+	Suspense,
+	createSignal,
+} from "solid-js";
 
+import { A } from "@solidjs/router";
+import { toTitleCase } from "~/lib/utils";
+import { ConfirmDialog } from "~c/ConfirmDialog";
 import {
 	StandardTable,
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
-import { ConfirmDialog } from "~c/ConfirmDialog";
-import { toTitleCase } from "~/lib/utils";
-import { A } from "@solidjs/router";
 
 const columnHelper = createColumnHelper<{
 	pk: number;

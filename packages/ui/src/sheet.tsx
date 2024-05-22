@@ -1,14 +1,14 @@
-import { type VariantProps, cva } from "class-variance-authority";
-import type { Component, ComponentProps, ValidComponent } from "solid-js";
 import { type PolymorphicProps, Dialog as SheetPrimitive } from "@kobalte/core";
 import type {
 	DialogDescriptionProps,
 	DialogOverlayProps,
 	DialogPortalProps,
 	DialogTitleProps,
-	DialogTriggerProps as KDialogTriggerProps,
 	DialogContentProps as KDialogContentProps,
+	DialogTriggerProps as KDialogTriggerProps,
 } from "@kobalte/core/dialog";
+import { type VariantProps, cva } from "class-variance-authority";
+import type { Component, ComponentProps, ValidComponent } from "solid-js";
 import { mergeProps, splitProps } from "solid-js";
 
 import { cn } from "./lib";

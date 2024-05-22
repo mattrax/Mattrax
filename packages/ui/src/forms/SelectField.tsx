@@ -9,7 +9,7 @@ import {
 } from "solid-js";
 
 import { clsx } from "clsx";
-import { Select, Label } from "..";
+import { Label, Select } from "..";
 
 type DistributiveOmit<T, K extends keyof any> = T extends any
 	? Omit<T, K>

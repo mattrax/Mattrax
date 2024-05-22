@@ -1,9 +1,9 @@
-import { z } from "zod";
-import type { APIEvent } from "@solidjs/start/server";
-import { db, policies, policyDeploy } from "~/db";
-import { and, eq, desc } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
+import type { APIEvent } from "@solidjs/start/server";
+import { and, desc, eq } from "drizzle-orm";
+import { z } from "zod";
 import { generatePolicyDiff } from "~/api/trpc/routers/policy";
+import { db, policies, policyDeploy } from "~/db";
 
 export async function GET({ params }: APIEvent) {
 	throw new Error("THE CLI IS NOT SUPPORTED YET");

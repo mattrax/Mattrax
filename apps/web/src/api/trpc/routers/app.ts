@@ -1,10 +1,10 @@
-import { z } from "zod";
-import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import { applications } from "~/db";
-import { eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { createAuditLog } from "~/api/auditLog";
 import { useTransaction } from "~/api/utils/transaction";
+import { applications } from "~/db";
+import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 
 export const applicationRouter = createTRPCRouter({
 	list: tenantProcedure

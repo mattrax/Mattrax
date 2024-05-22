@@ -1,5 +1,5 @@
-import type { JSX } from "solid-js";
 import { Label } from "@mattrax/ui";
+import type { JSX } from "solid-js";
 
 export function Item(props: {
 	label: string;

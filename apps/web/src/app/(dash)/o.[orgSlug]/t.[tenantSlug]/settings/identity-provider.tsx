@@ -1,15 +1,4 @@
-import {
-	For,
-	Match,
-	Show,
-	Suspense,
-	Switch,
-	createMemo,
-	createSignal,
-} from "solid-js";
-import type { RouteDefinition } from "@solidjs/router";
-import { toast } from "solid-sonner";
-import clsx from "clsx";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	Badge,
 	Button,
@@ -21,16 +10,27 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@mattrax/ui";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
+import type { RouteDefinition } from "@solidjs/router";
+import clsx from "clsx";
+import {
+	For,
+	Match,
+	Show,
+	Suspense,
+	Switch,
+	createMemo,
+	createSignal,
+} from "solid-js";
+import { toast } from "solid-sonner";
 
-import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
-import IconIcOutlineClose from "~icons/ic/outline-close.jsx";
-import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
-import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
 import ENTRA_ID_ICON from "~/assets/EntraIDLogo.svg";
-import { useTenantSlug } from "../../t.[tenantSlug]";
-import { trpc } from "~/lib";
 import { env } from "~/env";
+import { trpc } from "~/lib";
+import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
+import IconIcOutlineClose from "~icons/ic/outline-close.jsx";
+import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
+import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
+import { useTenantSlug } from "../../t.[tenantSlug]";
 
 export const route = {
 	load: ({ params }) => {

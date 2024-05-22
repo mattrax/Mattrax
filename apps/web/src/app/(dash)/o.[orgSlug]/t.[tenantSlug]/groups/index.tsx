@@ -3,8 +3,8 @@ import { createColumnHelper } from "@tanstack/solid-table";
 import { type ParentProps, Suspense, startTransition } from "solid-js";
 import { z } from "zod";
 
-import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { trpc } from "~/lib";
+import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 
 export const route = {
 	load: ({ params }) => {
@@ -34,16 +34,16 @@ const columns = [
 	}),
 ];
 
+import { Button, DropdownMenuTrigger } from "@mattrax/ui";
 import type { RouterOutput } from "~/api/trpc";
 import {
 	ColumnsDropdown,
 	StandardTable,
-	createStandardTable,
-	createSearchParamPagination,
-	selectCheckboxColumn,
 	createSearchParamFilter,
+	createSearchParamPagination,
+	createStandardTable,
+	selectCheckboxColumn,
 } from "~c/StandardTable";
-import { Button, DropdownMenuTrigger } from "@mattrax/ui";
 
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
@@ -105,9 +105,9 @@ import {
 	DialogTrigger,
 } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { useZodParams } from "~/lib/useZodParams";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { useZodParams } from "~/lib/useZodParams";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { cacheMetadata } from "../metadataCache";
 
 function CreateGroupDialog(props: ParentProps) {

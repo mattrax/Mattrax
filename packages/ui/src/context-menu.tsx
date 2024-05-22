@@ -16,8 +16,8 @@ import type {
 import type { ContextMenuItemProps } from "@kobalte/core/context-menu";
 import type { SeparatorRootProps } from "@kobalte/core/separator";
 
-import { cn } from "./lib";
 import { ParentProps } from "solid-js/types/server/rendering.js";
+import { cn } from "./lib";
 
 const ContextMenu: Component<ContextMenuPrimitive.ContextMenuRootProps> = (
 	props,

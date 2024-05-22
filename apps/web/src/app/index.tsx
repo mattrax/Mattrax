@@ -3,8 +3,8 @@ import { Match, Switch } from "solid-js";
 
 import { useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
-import { cachedOrgs } from "./(dash)/utils";
 import { cachedTenantsForOrg } from "./(dash)/o.[orgSlug]/utils";
+import { cachedOrgs } from "./(dash)/utils";
 
 export const route = {
 	load: () => trpc.useContext().auth.me.ensureData(),

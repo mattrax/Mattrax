@@ -1,6 +1,7 @@
 // @refresh reload
 import { type EventBus, createEventBus } from "@solid-primitives/event-bus";
 import { Router, useLocation, useNavigate } from "@solidjs/router";
+import { FileRoutes } from "@solidjs/start/router";
 import {
 	QueryCache,
 	QueryClient,
@@ -10,7 +11,6 @@ import {
 } from "@tanstack/solid-query";
 import { Suspense, lazy, onCleanup, startTransition } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
-import { FileRoutes } from "@solidjs/start/router";
 
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { isTRPCClientError, trpc } from "./lib";

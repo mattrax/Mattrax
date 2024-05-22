@@ -1,10 +1,10 @@
+import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import type Stripe from "stripe";
 import { useStripe } from "~/api/stripe";
 import { organisations } from "~/db";
 import { env } from "~/env";
 import { createTRPCRouter, orgProcedure } from "../../helpers";
-import { TRPCError } from "@trpc/server";
 
 export const billingRouter = createTRPCRouter({
 	portalUrl: orgProcedure.mutation(async ({ ctx }) => {

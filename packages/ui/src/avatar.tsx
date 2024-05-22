@@ -1,11 +1,11 @@
-import type { Component, ValidComponent } from "solid-js";
-import { splitProps } from "solid-js";
 import { Image as ImagePrimitive, type PolymorphicProps } from "@kobalte/core";
 import type {
 	ImageFallbackProps,
 	ImageImgProps,
 	ImageRootProps,
 } from "@kobalte/core/image";
+import type { Component, ValidComponent } from "solid-js";
+import { splitProps } from "solid-js";
 
 import { cn } from "./lib";
 

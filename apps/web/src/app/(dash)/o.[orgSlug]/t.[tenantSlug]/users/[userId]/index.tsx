@@ -1,9 +1,4 @@
-import { type ParentProps, Show, createSignal, For, Suspense } from "solid-js";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { A, type RouteDefinition } from "@solidjs/router";
-import pluralize from "pluralize";
-import clsx from "clsx";
-import { z } from "zod";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	Button,
 	DialogContent,
@@ -16,21 +11,26 @@ import {
 	SheetTrigger,
 	buttonVariants,
 } from "@mattrax/ui";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { A, type RouteDefinition } from "@solidjs/router";
+import clsx from "clsx";
+import pluralize from "pluralize";
+import { For, type ParentProps, Show, Suspense, createSignal } from "solid-js";
+import { z } from "zod";
 
-import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
-import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
+import { StandardTable, createStandardTable } from "~/components/StandardTable";
+import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
 import {
 	VariantTableSheet,
 	type VariantTableVariants,
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
-import { StandardTable, createStandardTable } from "~/components/StandardTable";
+import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
+import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
-import { BruhIconPhLaptop } from "./bruh";
 import { UserContext, useUser } from "./Context";
-import { trpc } from "~/lib";
+import { BruhIconPhLaptop } from "./bruh";
 
 export const route = {
 	load: ({ params }) => {

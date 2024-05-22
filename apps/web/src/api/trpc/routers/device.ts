@@ -1,19 +1,19 @@
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import {
-	devices,
-	users,
-	deviceActions,
-	possibleDeviceActions,
-	policyAssignments,
-	applicationAssignments,
-	policies,
-	applications,
-} from "~/db";
-import { omit } from "~/api/utils";
 import { TRPCError } from "@trpc/server";
+import { omit } from "~/api/utils";
+import {
+	applicationAssignments,
+	applications,
+	deviceActions,
+	devices,
+	policies,
+	policyAssignments,
+	possibleDeviceActions,
+	users,
+} from "~/db";
+import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 
 const deviceProcedure = authedProcedure
 	.input(z.object({ id: z.string() }))

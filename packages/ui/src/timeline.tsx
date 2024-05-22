@@ -1,10 +1,10 @@
 import type { ComponentProps, ParentComponent } from "solid-js";
 import {
-	mergeProps,
-	Show,
-	splitProps,
 	type Component,
 	type JSXElement,
+	Show,
+	mergeProps,
+	splitProps,
 } from "solid-js";
 
 import { cn } from "./lib";

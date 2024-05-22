@@ -1,7 +1,7 @@
 import { auditLog } from "~/db";
+import { useAccountSafe } from "./account";
 import type { auditLogDefinition } from "./auditLogDefinition";
 import { useTenant } from "./tenant";
-import { useAccountSafe } from "./account";
 import { useTransaction } from "./utils/transaction";
 
 export function createAuditLog<K extends keyof typeof auditLogDefinition>(

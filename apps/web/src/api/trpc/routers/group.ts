@@ -1,10 +1,11 @@
-import { and, count, eq, or, sql, inArray } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { TRPCError } from "@trpc/server";
+import { and, count, eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { cache } from "@solidjs/router";
 import { createAuditLog } from "~/api/auditLog";
+import { createTransaction } from "~/api/utils/transaction";
 import {
 	GroupMemberVariants,
 	PolicyAssignableVariants,
@@ -19,8 +20,7 @@ import {
 	policyAssignments,
 	users,
 } from "~/db";
-import { cache } from "@solidjs/router";
-import { createTransaction } from "~/api/utils/transaction";
+import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 
 const getGroup = cache(
 	(id: string) =>

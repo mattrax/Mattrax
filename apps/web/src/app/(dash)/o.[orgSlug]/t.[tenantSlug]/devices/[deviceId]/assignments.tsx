@@ -1,9 +1,9 @@
-import { Suspense } from "solid-js";
 import { Button, SheetTrigger } from "@mattrax/ui";
 import pluralize from "pluralize";
+import { Suspense } from "solid-js";
 
+import type { RouteDefinition } from "@solidjs/router";
 import { trpc } from "~/lib";
-import { useDevice } from "./Context";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
 import {
@@ -11,7 +11,7 @@ import {
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
 import { useTenantSlug } from "../../../t.[tenantSlug]";
-import type { RouteDefinition } from "@solidjs/router";
+import { useDevice } from "./Context";
 
 export const route = {
 	load: ({ params }) => {

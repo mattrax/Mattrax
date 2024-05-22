@@ -2,13 +2,13 @@
 /* @jsx React.createElement */
 // TODO: If you move this file ensure you update `app.config.ts` to exclude it from Solid's JSX transform.
 
+import { cn } from "@mattrax/ui/lib";
+import { createAsync } from "@solidjs/router";
+import { type SlotProps, OTPInput as _OTPInput } from "input-otp";
 import React, { useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { OTPInput as _OTPInput, type SlotProps } from "input-otp";
 import { onCleanup, onMount } from "solid-js";
-import { cn } from "@mattrax/ui/lib";
 import type { Props } from ".";
-import { createAsync } from "@solidjs/router";
 
 export default function OTPInput(props: Props) {
 	const { promise, resolve } = Promise.withResolvers();

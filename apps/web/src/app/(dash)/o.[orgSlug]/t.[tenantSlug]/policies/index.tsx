@@ -1,18 +1,8 @@
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Suspense, startTransition } from "solid-js";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
-import IconCarbonCaretDown from "~icons/carbon/caret-down";
-import type { RouterOutput } from "~/api/trpc";
-import {
-	StandardTable,
-	createStandardTable,
-	createSearchParamPagination,
-	selectCheckboxColumn,
-	createSearchParamFilter,
-	ColumnsDropdown,
-} from "~c/StandardTable";
 import {
 	Button,
 	DropdownMenuTrigger,
@@ -20,7 +10,17 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from "@mattrax/ui";
+import type { RouterOutput } from "~/api/trpc";
 import { trpc } from "~/lib";
+import {
+	ColumnsDropdown,
+	StandardTable,
+	createSearchParamFilter,
+	createSearchParamPagination,
+	createStandardTable,
+	selectCheckboxColumn,
+} from "~c/StandardTable";
+import IconCarbonCaretDown from "~icons/carbon/caret-down";
 
 export const route = {
 	load: ({ params }) => {
@@ -99,10 +99,10 @@ import { useNavigate } from "@solidjs/router";
 import { z } from "zod";
 
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { useZodParams } from "~/lib/useZodParams";
-import { useTenantSlug } from "../../t.[tenantSlug]";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { useZodParams } from "~/lib/useZodParams";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
+import { useTenantSlug } from "../../t.[tenantSlug]";
 import { cacheMetadata } from "../metadataCache";
 
 function CreatePolicyButton() {

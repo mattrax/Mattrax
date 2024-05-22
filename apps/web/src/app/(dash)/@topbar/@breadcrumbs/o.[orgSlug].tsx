@@ -3,12 +3,12 @@ import { A, type RouteSectionProps } from "@solidjs/router";
 import { z } from "zod";
 
 import { createQueryCacher, useCachedQueryData } from "~/cache";
-import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
-import { MultiSwitcher } from "./MultiSwitcher";
-import { useZodParams } from "~/lib/useZodParams";
-import { cachedOrgs } from "../../utils";
 import { trpc } from "~/lib";
+import { useZodParams } from "~/lib/useZodParams";
+import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
+import { cachedOrgs } from "../../utils";
 import { Breadcrumb } from "./Breadcrumb";
+import { MultiSwitcher } from "./MultiSwitcher";
 
 export default function (props: RouteSectionProps) {
 	const params = useZodParams({ orgSlug: z.string() });

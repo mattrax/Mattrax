@@ -2,8 +2,6 @@ import {
 	Dialog as DialogPrimitive,
 	type PolymorphicProps,
 } from "@kobalte/core";
-import type { Component, ComponentProps, ValidComponent } from "solid-js";
-import { splitProps } from "solid-js";
 import type {
 	DialogContentProps,
 	DialogDescriptionProps,
@@ -13,13 +11,15 @@ import type {
 	DialogTitleProps,
 	DialogTriggerProps,
 } from "@kobalte/core/dialog";
+import type { Component, ComponentProps, ValidComponent } from "solid-js";
+import { splitProps } from "solid-js";
 
-import { cn } from "./lib";
 import {
 	type Controller,
 	ControllerProvider,
 	createController,
 } from "./controller";
+import { cn } from "./lib";
 
 const Dialog: Component<
 	Omit<DialogRootProps, "open"> &
