@@ -20,12 +20,13 @@ export const adminsRouter = createTRPCRouter({
 	list: orgProcedure.query(async ({ ctx }) => {
 		const [ownerId, rows] = await Promise.allSettled([
 			ctx.db
-				.select({ ownerId: organisations.id })
+				.select({ ownerPk: organisations.ownerPk })
 				.from(organisations)
 				.where(eq(organisations.pk, ctx.org.pk))
-				.then((v) => v?.[0]?.ownerId),
+				.then((v) => v?.[0]?.ownerPk),
 			ctx.db
 				.select({
+					pk: accounts.pk,
 					id: accounts.id,
 					name: accounts.name,
 					email: accounts.email,
@@ -41,10 +42,9 @@ export const adminsRouter = createTRPCRouter({
 		// This is required. If the owner is not found, we gracefully continue.
 		if (rows.status === "rejected") throw rows.reason;
 
-		return rows.value.map((row) => ({
+		return rows.value.map(({ pk, ...row }) => ({
 			...row,
-			isOwner:
-				ownerId.status === "fulfilled" ? row.id === ownerId.value : false,
+			isOwner: ownerId.status === "fulfilled" ? pk === ownerId.value : false,
 		}));
 	}),
 
@@ -151,7 +151,7 @@ export const adminsRouter = createTRPCRouter({
 					message: "tenant",
 				});
 
-			return { id: org.id, name: org.name };
+			return { slug: org.slug, name: org.name };
 		}),
 
 	remove: orgProcedure

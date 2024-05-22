@@ -27,7 +27,7 @@ export default function Page() {
 							You are now an administrator of <b>{tenant().name}</b>.
 						</CardDescription>
 					</CardHeader>
-					<a class={buttonVariants()} href={`/${tenant().id}`}>
+					<a class={buttonVariants()} href={`/o/${tenant().slug}`}>
 						Go to tenant
 					</a>
 				</Card>
