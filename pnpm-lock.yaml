@@ -347,8 +347,8 @@ importers:
         specifier: ^8.17.3
         version: 8.17.3(solid-js@1.8.17)
       '@tanstack/zod-form-adapter':
-        specifier: ^0.19.5
-        version: 0.19.5(zod@3.23.8)
+        specifier: ^0.20.0
+        version: 0.20.0(zod@3.23.8)
       '@trpc/client':
         specifier: ^10.45.2
         version: 10.45.2(@trpc/server@10.45.2)
@@ -646,8 +646,8 @@ importers:
         specifier: ^0.20.0
         version: 0.20.0(patch_hash=g5fa7czh7nqsubxtbxkq5t2wla)(solid-js@1.8.17)
       '@tanstack/zod-form-adapter':
-        specifier: ^0.19.5
-        version: 0.19.5(zod@3.23.8)
+        specifier: ^0.20.0
+        version: 0.20.0(zod@3.23.8)
       class-variance-authority:
         specifier: ^0.7.0
         version: 0.7.0
@@ -3486,9 +3486,6 @@ packages:
     peerDependencies:
       tailwindcss: '>=3.0.0 || insiders'
 
-  '@tanstack/form-core@0.19.5':
-    resolution: {integrity: sha512-2ocFAnWTY3sxXemJvKArllnPNMmo9LkviSX88iUXcaClKutvJLfAc+a/lM00zhDKY9G3abXuZCp1OvGmeagszA==}
-
   '@tanstack/form-core@0.20.0':
     resolution: {integrity: sha512-7iOFXTSTEkTKRk7pu1v7Xa+szGE/v10jExK+Cym3dAHkK6znRTYkDt8cNaEG8TgHgLi9TRhy0jJV3yjnkqa42A==}
 
@@ -3550,8 +3547,8 @@ packages:
   '@tanstack/virtual-core@3.5.0':
     resolution: {integrity: sha512-KnPRCkQTyqhanNC0K63GBG3wA8I+D1fQuVnAvcBF8f13akOKeQp1gSbu6f77zCxhEk727iV5oQnbHLYzHrECLg==}
 
-  '@tanstack/zod-form-adapter@0.19.5':
-    resolution: {integrity: sha512-yDucWQgAvDSqy5HuYnHgnW1SWN5MBTl8p+qPw0VK/da8r04LTINGhbwjiZEo3GF4LO9vo9i/ISsO+3mD+Psr5g==}
+  '@tanstack/zod-form-adapter@0.20.0':
+    resolution: {integrity: sha512-epBqaO0uLEe/gXHn0IUMtjqPYO/IlVMNtTKDdd86UBeaIJAomUUoa70JZaV1X3Rg9+Yr/bSSiOr/Ri481xGtCA==}
     peerDependencies:
       zod: ^3.x
 
@@ -11018,10 +11015,6 @@ snapshots:
       postcss-selector-parser: 6.0.10
       tailwindcss: 3.4.3
 
-  '@tanstack/form-core@0.19.5':
-    dependencies:
-      '@tanstack/store': 0.3.1
-
   '@tanstack/form-core@0.20.0':
     dependencies:
       '@tanstack/store': 0.3.1
@@ -11079,9 +11072,9 @@ snapshots:
 
   '@tanstack/virtual-core@3.5.0': {}
 
-  '@tanstack/zod-form-adapter@0.19.5(zod@3.23.8)':
+  '@tanstack/zod-form-adapter@0.20.0(zod@3.23.8)':
     dependencies:
-      '@tanstack/form-core': 0.19.5
+      '@tanstack/form-core': 0.20.0
       zod: 3.23.8
 
   '@trpc/client@10.45.2(@trpc/server@10.45.2)':
