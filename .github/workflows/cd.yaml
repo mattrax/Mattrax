@@ -1,4 +1,4 @@
-name: SST Deploy
+name: CD
 on:
   push:
     branches: [main]
@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   sst:
+    name: SST
     runs-on: ubuntu-latest
     # This is required to workaround the lack of wildcard for OIDC scope
     # https://github.com/Azure/azure-workload-identity/issues/373
