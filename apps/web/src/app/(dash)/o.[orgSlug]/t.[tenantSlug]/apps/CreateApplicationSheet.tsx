@@ -8,9 +8,9 @@ import {
 	SheetTitle,
 	SheetTrigger,
 	Tabs,
+	TabsIndicator,
 	TabsList,
 	TabsTrigger,
-	TabsIndicator,
 } from "@mattrax/ui";
 import { Form, createZodForm } from "@mattrax/ui/forms";
 import { debounce } from "@solid-primitives/scheduled";
