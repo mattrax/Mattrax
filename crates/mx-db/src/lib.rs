@@ -5,6 +5,7 @@
 //!
 
 mod _migrations;
+#[allow(warnings, unused, clippy)]
 mod db;
 
 pub use _migrations::migrations;

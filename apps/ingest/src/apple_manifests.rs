@@ -162,7 +162,7 @@ pub fn generate_bindings() {
     payloads.0.remove("Configuration");
 
     let mut types = String::new();
-    let mut type_map = Default::default();
+    let type_map = &mut Default::default();
 
     fs::write(
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -173,15 +173,14 @@ pub fn generate_bindings() {
 
     specta::ts::export_named_datatype(
         &specta::ts::ExportConfig::default(),
-        &AppleProfilePayloadCollection::definition_named_data_type(&mut type_map),
-        &mut type_map,
+        &AppleProfilePayloadCollection::definition_named_data_type(type_map),
+        type_map,
     )
     .unwrap();
 
     type_map.iter().for_each(|(_, ty)| {
         types.push_str(
-            &specta::ts::export_named_datatype(&Default::default(), ty, &mut type_map.clone())
-                .unwrap(),
+            &specta::ts::export_named_datatype(&Default::default(), ty, type_map).unwrap(),
         );
         types.push('\n');
     });

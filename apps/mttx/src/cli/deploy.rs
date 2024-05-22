@@ -103,6 +103,6 @@ impl Command {
         //     _ => unreachable!(),
         // }
 
-        Ok(())
+        // Ok(())
     }
 }

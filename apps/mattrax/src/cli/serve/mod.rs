@@ -90,12 +90,7 @@ impl Command {
             let shared_secret = Hmac::new_from_slice(config.internal_secret.as_bytes()).unwrap();
 
             let identity_cert_rcgen = CertificateParams::from_ca_cert_der(
-                &config
-                    .certificates
-                    .identity_cert
-                    .clone()
-                    .try_into()
-                    .unwrap(),
+                &config.certificates.identity_cert.clone().into(),
             )
             .unwrap()
             // TODO: https://github.com/rustls/rcgen/issues/274
@@ -141,7 +136,7 @@ impl Command {
                     MattraxAcmeStore::new(state.db.clone()),
                 )
                 .unwrap(),
-                config.acme_server.into_better_acme_server(),
+                config.acme_server.to_better_acme_server(),
                 state.is_dev, // TODO: We should probs document this cause it's not an obvious default
                 // TODO: Remove these argument
                 &[config.domain.clone(), config.enrollment_domain.clone()],

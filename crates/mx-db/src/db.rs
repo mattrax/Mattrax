@@ -80,7 +80,6 @@ impl Db {
     pub async fn get_config(&self) -> Result<Vec<GetConfigResult>, mysql_async::Error> {
         let mut result = r#"select `value` from `kv` where `kv`.`key` = ?"#
             .with(mysql_async::Params::Positional(vec!["config"
-                .clone()
                 .into()]))
             .run(&self.pool)
             .await?;
@@ -96,7 +95,7 @@ impl Db {
 impl Db {
     pub async fn set_config(&self, config: String) -> Result<(), mysql_async::Error> {
         let mut result = r#"insert into `kv` (`key`, `value`, `last_modified`) values (?, ?, default) on duplicate key update `value` = ?"#
-			  .with(mysql_async::Params::Positional(vec!["config".clone().into(),config.clone().into(),config.clone().into()]))
+			  .with(mysql_async::Params::Positional(vec!["config".into(),config.clone().into(),config.clone().into()]))
 					.run(&self.pool).await?;
         Ok(())
     }
@@ -167,7 +166,7 @@ impl Db {
         owner_pk: u64,
     ) -> Result<(), mysql_async::Error> {
         let mut result = r#"insert into `devices` (`pk`, `id`, `name`, `description`, `enrollment_type`, `os`, `serial_number`, `manufacturer`, `model`, `os_version`, `imei`, `free_storage`, `total_storage`, `owner`, `azure_ad_did`, `enrolled_at`, `last_synced`, `tenant`) values (default, ?, ?, default, ?, ?, ?, default, default, default, default, default, default, ?, default, default, default, ?) on duplicate key update `name` = ?, `owner` = ?, `tenant` = ?"#
-			  .with(mysql_async::Params::Positional(vec![id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.clone().into(),tenant_pk.clone().into(),name.clone().into(),owner_pk.clone().into(),tenant_pk.clone().into()]))
+			  .with(mysql_async::Params::Positional(vec![id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.into(),tenant_pk.into(),name.clone().into(),owner_pk.into(),tenant_pk.into()]))
 					.run(&self.pool).await?;
         Ok(())
     }
@@ -199,7 +198,7 @@ impl Db {
         device_pk: u64,
     ) -> Result<Vec<GetPolicyDataForCheckinResult>, mysql_async::Error> {
         let mut result = r#"select `scope_li`, `l`.`pk`, `l`.`data`, `j`.`pk`, `j`.`data`, `j`.`result` from (select `policy_deploy`.`pk`, `policy_deploy`.`policy`, `policy_deploy`.`data`, `scope_li` from `policy_deploy` inner join (select max(`policy_deploy`.`pk`) as `deployPk`, `policy_deploy`.`policy`, max(`scope`) as `scope_li` from (select `pk`, min(`scope`) as `scope` from ((select `policies`.`pk`, 'direct' as `scope` from `policies` inner join `policy_assignables` on `policies`.`pk` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ?)) union all (select `policies`.`pk`, 'group' as `scope` from `policies` inner join `policy_assignables` on (`policies`.`pk` = `policy_assignables`.`policy` and `policy_assignables`.`variant` = ?) inner join `group_assignables` on `group_assignables`.`group` = `policy_assignables`.`pk` where (`group_assignables`.`variant` = ? and `group_assignables`.`pk` = ?))) `scoped` group by `scoped`.`pk`) `sorted` inner join `policy_deploy` on `sorted`.`pk` = `policy_deploy`.`policy` group by `policy_deploy`.`policy`) `li` on `deployPk` = `policy_deploy`.`pk`) `l` left join (select `policy_deploy`.`pk`, `policy_deploy`.`policy`, `policy_deploy`.`data`, `policy_deploy_status`.`result`, `ji_scope` from `policy_deploy` inner join (select max(`policy_deploy`.`pk`) as `deployPk`, `policy_deploy`.`policy`, max(`scope`) as `ji_scope` from (select `pk`, min(`scope`) as `scope` from ((select `policies`.`pk`, 'direct' as `scope` from `policies` inner join `policy_assignables` on `policies`.`pk` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ?)) union all (select `policies`.`pk`, 'group' as `scope` from `policies` inner join `policy_assignables` on (`policies`.`pk` = `policy_assignables`.`policy` and `policy_assignables`.`variant` = ?) inner join `group_assignables` on `group_assignables`.`group` = `policy_assignables`.`pk` where (`group_assignables`.`variant` = ? and `group_assignables`.`pk` = ?))) `scoped` group by `scoped`.`pk`) `sorted` inner join `policy_deploy` on `sorted`.`pk` = `policy_deploy`.`policy` inner join `policy_deploy_status` on (`policy_deploy`.`pk` = `policy_deploy_status`.`deploy` and `policy_deploy_status`.`device` = ?) group by `policy_deploy`.`policy`) `ji` on `deployPk` = `policy_deploy`.`pk` inner join `policy_deploy_status` on (`policy_deploy`.`pk` = `policy_deploy_status`.`deploy` and `policy_deploy_status`.`device` = ?)) `j` on `j`.`policy` = `l`.`policy`"#
-			  .with(mysql_async::Params::Positional(vec!["device".clone().into(),device_pk.clone().into(),"group".clone().into(),"device".clone().into(),device_pk.clone().into(),"device".clone().into(),device_pk.clone().into(),"group".clone().into(),"device".clone().into(),device_pk.clone().into(),device_pk.clone().into(),device_pk.clone().into()]))
+			  .with(mysql_async::Params::Positional(vec!["device".into(),device_pk.into(),"group".into(),"device".into(),device_pk.into(),"device".into(),device_pk.into(),"group".into(),"device".into(),device_pk.into(),device_pk.into(),device_pk.into()]))
 					.run(&self.pool).await?;
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
@@ -232,7 +231,7 @@ impl Db {
         device_id: u64,
     ) -> Result<Vec<QueuedDeviceActionsResult>, mysql_async::Error> {
         let mut result = r#"select `action`, `device`, `created_by`, `created_at`, `deployed_at` from `device_actions` where (`device_actions`.`device` = ? and `device_actions`.`deployed_at` is null)"#
-			  .with(mysql_async::Params::Positional(vec![device_id.clone().into()]))
+			  .with(mysql_async::Params::Positional(vec![device_id.into()]))
 					.run(&self.pool).await?;
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
@@ -252,8 +251,8 @@ impl Db {
         let last_synced = chrono::Utc::now().naive_utc();
         let mut result = r#"update `devices` set `last_synced` = ? where `devices`.`pk` = ?"#
             .with(mysql_async::Params::Positional(vec![
-                last_synced.clone().into(),
-                device_id.clone().into(),
+                last_synced.into(),
+                device_id.into(),
             ]))
             .run(&self.pool)
             .await?;

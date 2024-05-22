@@ -67,19 +67,19 @@ impl UpdateManager {
 
                 // TODO: Trigger self-update (blocking startup) if not on desired version
 
-                break;
+                todo!();
             }
         });
 
         Self { handle }
     }
 
-    fn do_update(&self) {
-        // TODO: Download binary
+    // fn do_update(&self) {
+    // TODO: Download binary
 
-        // TODO: Startup new instance and check config
+    // TODO: Startup new instance and check config
 
-        // TODO: Gracefully drain traffic
-        // TODO: Switch over tcp listener
-    }
+    // TODO: Gracefully drain traffic
+    // TODO: Switch over tcp listener
+    // }
 }

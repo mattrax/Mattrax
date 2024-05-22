@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ops::Add, sync::Arc};
+use std::{collections::BTreeMap, ops::Add, str::FromStr, sync::Arc};
 
 use axum::{
     extract::State,
@@ -365,7 +365,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             }) else {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             };
-            let mut csr = CertificateSigningRequestParams::from_der(&csr.try_into().unwrap()).unwrap(); // TODO: Error handling
+            let mut csr = CertificateSigningRequestParams::from_der(&csr.into()).unwrap(); // TODO: Error handling
             let device_id = cuid2::create_id();
 
             // Version:               csr.Version,

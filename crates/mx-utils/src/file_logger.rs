@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use tracing_appender::{
     non_blocking::{NonBlocking, WorkerGuard},
@@ -6,7 +6,7 @@ use tracing_appender::{
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
-pub fn setup(data_dir: &PathBuf, crate_name: &'static str) -> WorkerGuard {
+pub fn setup(data_dir: &Path, crate_name: &'static str) -> WorkerGuard {
     // Set a default if the user hasn't set an override
     if std::env::var("RUST_LOG") == Err(std::env::VarError::NotPresent) {
         let level = if cfg!(debug_assertions) {

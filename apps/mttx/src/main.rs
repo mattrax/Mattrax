@@ -12,16 +12,13 @@ async fn main() {
     tracing_subscriber::fmt()
         .without_time()
         .with_target(false)
-        .with_env_filter(
-            EnvFilter::try_from({
-                if cfg!(debug_assertions) {
-                    "mttx=debug"
-                } else {
-                    "mttx=info"
-                }
-            })
-            .expect("failed to parse log level"),
-        )
+        .with_env_filter(EnvFilter::from({
+            if cfg!(debug_assertions) {
+                "mttx=debug"
+            } else {
+                "mttx=info"
+            }
+        }))
         .init();
 
     std::panic::set_hook(Box::new(move |panic| tracing::error!("{panic}")));

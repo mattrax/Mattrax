@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 use crate::{SyncBody, SyncHdr};
@@ -17,11 +19,15 @@ pub struct SyncML {
 }
 
 impl SyncML {
-    pub fn from_str(input: &str) -> Result<Self, easy_xml::de::Error> {
-        easy_xml::de::from_str(input)
-    }
-
     pub fn to_string(&self) -> Result<String, easy_xml::se::Error> {
         easy_xml::se::to_string(self)
+    }
+}
+
+impl FromStr for SyncML {
+    type Err = easy_xml::de::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        easy_xml::de::from_str(s)
     }
 }

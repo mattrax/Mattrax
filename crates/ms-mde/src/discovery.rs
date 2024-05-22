@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 use crate::{header::ResponseHeader, RequestHeader};
@@ -23,8 +25,10 @@ pub struct DiscoverRequest {
     pub body: DiscoverRequestBody,
 }
 
-impl DiscoverRequest {
-    pub fn from_str(input: &str) -> Result<Self, easy_xml::de::Error> {
+impl FromStr for DiscoverRequest {
+    type Err = easy_xml::de::Error;
+
+    fn from_str(input: &str) -> Result<Self, easy_xml::de::Error> {
         easy_xml::de::from_str(input)
     }
 }

@@ -104,7 +104,10 @@ impl<S: Store> Acme<S> {
                                 // debug!("Starting new ACME order for: {domains:?}");  // TODO: tracing
                                 let _ = acme.order(domains).await;
                             }
-                            None => {} // error!("Acme channel closed!"),  // TODO: tracing
+                            None => {
+                                todo!("handle acme channel closed")
+                                // error!("Acme channel closed!"),  // TODO: tracing
+                            }
                         },
                     }
                 }
@@ -229,9 +232,7 @@ struct Resolver {
 impl ResolvesServerCert for Resolver {
     fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
         // This should be unreachable when the acceptor is used.
-        let Some(server_name) = client_hello.server_name() else {
-            return None;
-        };
+        let server_name = client_hello.server_name()?;
 
         let mut temp = self.temp.lock().unwrap_or_else(PoisonError::into_inner);
         match temp.get(server_name) {

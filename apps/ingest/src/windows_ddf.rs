@@ -93,9 +93,7 @@ enum IntAllowedValues {
 
 impl IntAllowedValues {
     fn parse(node: &Node) -> Option<Self> {
-        let Some(allowed_values) = &node.properties.allowed_values else {
-            return None;
-        };
+        let allowed_values = node.properties.allowed_values.as_ref()?;
 
         Some(match allowed_values.value_type {
             ms_ddf::ValueType::Range => {
@@ -103,9 +101,7 @@ impl IntAllowedValues {
                     return None;
                 };
 
-                let Some((min, max)) = value.value[1..value.value.len() - 2].split_once('-') else {
-                    return None;
-                };
+                let (min, max) = value.value[1..value.value.len() - 2].split_once('-')?;
 
                 Self::Range {
                     min: min.parse().ok()?,
@@ -145,14 +141,14 @@ struct EnumContent {
 
 type WindowsDFFPolicyGroup = BTreeMap<PathBuf, WindowsDDFPolicy>;
 
-fn handle_node(node: &Node, path: &PathBuf, scope: Scope) -> WindowsDFFPolicyGroup {
+fn handle_node(node: &Node, path: &Path, scope: Scope) -> WindowsDFFPolicyGroup {
     let mut collection = WindowsDFFPolicyGroup::default();
 
     let mut path = node
         .path
         .as_ref()
         .map(|new_path| path.join(new_path))
-        .unwrap_or_else(|| path.clone());
+        .unwrap_or_else(|| path.to_owned());
 
     let mut nodes = WindowsDFFPolicyGroup::new();
 
@@ -252,19 +248,18 @@ pub fn generate_bindings() {
     .unwrap();
 
     let mut types = String::new();
-    let mut type_map = Default::default();
+    let type_map = &mut Default::default();
 
     specta::ts::export_named_datatype(
         &ExportConfig::default(),
-        &WindowsCSPCollection::definition_named_data_type(&mut type_map),
-        &mut type_map,
+        &WindowsCSPCollection::definition_named_data_type(type_map),
+        type_map,
     )
     .unwrap();
 
     type_map.iter().for_each(|(_, ty)| {
         types.push_str(
-            &specta::ts::export_named_datatype(&Default::default(), ty, &mut type_map.clone())
-                .unwrap(),
+            &specta::ts::export_named_datatype(&Default::default(), ty, type_map).unwrap(),
         );
         types.push('\n');
     });

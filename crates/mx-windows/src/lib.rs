@@ -2,6 +2,8 @@
 
 // TODO: Tracing instrumentation
 
+use std::str::FromStr;
+
 use futures::join;
 use ms_mdm::{CmdId, CmdRef, Final, MsgRef, Status, SyncBody, SyncHdr, SyncML};
 use mx_db::Db;

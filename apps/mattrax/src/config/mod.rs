@@ -1,4 +1,12 @@
+mod local;
+mod manager;
+mod node;
+
 use serde::{Deserialize, Serialize};
+
+pub use local::*;
+pub use manager::*;
+pub use node::*;
 
 /// Configuration for a Mattrax installation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,7 +68,7 @@ impl AcmeServer {
         matches!(self, Self::Production)
     }
 
-    pub fn into_better_acme_server(&self) -> better_acme::Server {
+    pub fn to_better_acme_server(&self) -> better_acme::Server {
         match self {
             Self::Production => better_acme::Server::LetsEncrypt,
             Self::Staging => better_acme::Server::LetsEncryptStaging,
