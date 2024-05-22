@@ -1,12 +1,11 @@
-import { startTransition, type ParentProps } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { startTransition } from "solid-js";
+import { RouteSectionProps, useNavigate, useMatches } from "@solidjs/router";
+import { FileRoutes } from "@solidjs/start/router";
 import { isServer } from "solid-js/web";
 import { parse } from "cookie-es";
 
-import { NavItemsProvider } from "./(dash)/TopBar/NavItems";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { trpc } from "~/lib";
-import { TopBar } from "./(dash)/TopBar";
 
 export const route = {
 	load: () => {
@@ -14,8 +13,13 @@ export const route = {
 	},
 };
 
-export default function Layout(props: ParentProps) {
+export default function Layout(props: RouteSectionProps<never, "topbar">) {
 	const navigate = useNavigate();
+
+	const matches = useMatches();
+
+	// console.log("FileRoutes", FileRoutes());
+	// console.log("matches", matches());
 
 	if (!isServer) {
 		// isLoggedIn cookie trick for quick login navigation
@@ -35,10 +39,8 @@ export default function Layout(props: ParentProps) {
 
 	return (
 		<MErrorBoundary>
-			<NavItemsProvider>
-				<TopBar />
-				{props.children}
-			</NavItemsProvider>
+			{props.slots.topbar}
+			{props.children}
 		</MErrorBoundary>
 	);
 }

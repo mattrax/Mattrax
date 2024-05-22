@@ -50,12 +50,7 @@ const Dialog: Component<
 const DialogTrigger = <T extends ValidComponent = "button">(
 	props: PolymorphicProps<T, DialogTriggerProps>,
 ) => {
-	const [, rest] = splitProps(props as any, ["children"]);
-	return (
-		<DialogPrimitive.Trigger {...rest}>
-			{props.children}
-		</DialogPrimitive.Trigger>
-	);
+	return <DialogPrimitive.Trigger {...props} />;
 };
 
 const DialogPortal: Component<DialogPortalProps> = (props) => {

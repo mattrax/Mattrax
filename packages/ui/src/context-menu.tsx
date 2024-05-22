@@ -17,6 +17,7 @@ import type { ContextMenuItemProps } from "@kobalte/core/context-menu";
 import type { SeparatorRootProps } from "@kobalte/core/separator";
 
 import { cn } from "./lib";
+import { ParentProps } from "solid-js/types/server/rendering.js";
 
 const ContextMenu: Component<ContextMenuPrimitive.ContextMenuRootProps> = (
 	props,
@@ -182,12 +183,16 @@ const ContextMenuRadioGroup = ContextMenuPrimitive.RadioGroup;
 const ContextMenuRadioItem = <T extends ValidComponent = "div">(
 	props: PolymorphicProps<T, ContextMenuRadioItemProps>,
 ) => {
-	const [, rest] = splitProps(props as any, ["class", "children"]);
+	const [local, rest] = splitProps(
+		props as PolymorphicProps<"div", ContextMenuRadioItemProps>,
+		["class", "children"],
+	);
+
 	return (
 		<ContextMenuPrimitive.RadioItem
 			class={cn(
 				"relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-				props.class,
+				local.class,
 			)}
 			{...rest}
 		>
@@ -207,7 +212,7 @@ const ContextMenuRadioItem = <T extends ValidComponent = "div">(
 					</svg>
 				</ContextMenuPrimitive.ItemIndicator>
 			</span>
-			{props.children}
+			{local.children}
 		</ContextMenuPrimitive.RadioItem>
 	);
 };

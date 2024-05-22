@@ -228,8 +228,8 @@ import { trpc } from "~/lib";
 import { useNavigate } from "@solidjs/router";
 import clsx from "clsx";
 import { createQueryCacher, useCachedQueryData } from "~/cache";
-import { cachedOrgs } from "./utils";
-import { cachedTenantsForOrg } from "./o.[orgSlug]/utils";
+import { cachedOrgs } from "~dash/utils";
+import { cachedTenantsForOrg } from "~[orgSlug]/utils";
 
 export function CreateTenantDialog(props: {
 	open: boolean;

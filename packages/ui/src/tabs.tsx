@@ -31,12 +31,15 @@ const TabsList = <T extends ValidComponent = "div">(
 const TabsTrigger = <T extends ValidComponent = "button">(
 	props: PolymorphicProps<T, TabsTriggerProps>,
 ) => {
-	const [, rest] = splitProps(props as any, ["class"]);
+	const [local, rest] = splitProps(
+		props as PolymorphicProps<"button", TabsTriggerProps>,
+		["class"],
+	);
 	return (
 		<TabsPrimitive.Trigger
 			class={cn(
 				"z-[2] data-[selected]:text-foreground inline-flex items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 outline-none",
-				props.class,
+				local.class,
 			)}
 			{...rest}
 		/>
@@ -46,12 +49,15 @@ const TabsTrigger = <T extends ValidComponent = "button">(
 const TabsContent = <T extends ValidComponent = "div">(
 	props: PolymorphicProps<T, TabsContentProps>,
 ) => {
-	const [, rest] = splitProps(props as any, ["class"]);
+	const [local, rest] = splitProps(
+		props as PolymorphicProps<"div", TabsContentProps>,
+		["class"],
+	);
 	return (
 		<TabsPrimitive.Content
 			class={cn(
 				"ring-offset-background focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
-				props.class,
+				local.class,
 			)}
 			{...rest}
 		/>
