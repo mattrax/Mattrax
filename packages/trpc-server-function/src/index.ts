@@ -171,9 +171,10 @@ export const createServerFunctionLink = <TRouter extends AnyRouter>(
 					.then((response) => {
 						if (queryClient)
 							for (const promise of (response as any)?.dependant || []) {
-								promise.then(([key, result]: [any, any]) =>
-									queryClient.setQueryData(key, result),
-								);
+								promise.then(([key, result]: [any, any]) => {
+									key[0] = key[0].split(".");
+									queryClient.setQueryData(key, result);
+								});
 							}
 
 						if ("error" in response) {
