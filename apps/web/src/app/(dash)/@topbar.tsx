@@ -28,25 +28,21 @@ import {
 	Textarea,
 } from "@mattrax/ui";
 import {
-	For,
 	Suspense,
-	SuspenseList,
 	children,
 	createSignal,
 	useTransition,
 	type ParentProps,
 } from "solid-js";
 
-import IconMdiSlashForward from "~icons/mdi/slash-forward";
-import { getInitials, trpc } from "~/lib";
-import LogoImg from "~/assets/MATTRAX.png";
-import { AuthContext, useAuth } from "~c/AuthContext";
 import classes from "./@topbar/NavIndicator.module.css";
+import { AuthContext, useAuth } from "~c/AuthContext";
+import LogoImg from "~/assets/MATTRAX.png";
+import { getInitials, trpc } from "~/lib";
 
 export default function (
 	props: RouteSectionProps<never, "navItems" | "breadcrumbs">,
 ) {
-	const breadcrumbs = children(() => props.slots.breadcrumbs);
 	const navItems = children(() => props.slots.navItems);
 
 	return (
@@ -60,27 +56,7 @@ export default function (
 				<NavigationAnnouncer />
 				<Logo />
 
-				<div class="flex flex-row items-center text-sm font-medium space-x-2 text-gray-800">
-					<SuspenseList revealOrder="forwards" tail="collapsed">
-						<For each={breadcrumbs.toArray()}>
-							{(element: any) => (
-								<div class="flex flex-row items-center gap-2">
-									<Suspense
-										fallback={
-											<>
-												<IconMdiSlashForward class="text-lg text-gray-300" />
-												<div class="w-24 h-4 rounded-full bg-neutral-200 animate-pulse" />
-											</>
-										}
-									>
-										<IconMdiSlashForward class="text-lg text-gray-300" />
-										{element?.breadcrumb}
-									</Suspense>
-								</div>
-							)}
-						</For>
-					</SuspenseList>
-				</div>
+				{props.slots.breadcrumbs}
 
 				<div class="flex-1" />
 
@@ -108,7 +84,7 @@ export default function (
 					<ProfileDropdown />
 				</div>
 			</div>
-			{(console.log(navItems()), navItems())}
+			{navItems()}
 		</>
 	);
 }

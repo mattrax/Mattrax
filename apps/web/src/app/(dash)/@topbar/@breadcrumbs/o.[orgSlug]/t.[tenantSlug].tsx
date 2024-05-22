@@ -1,5 +1,10 @@
 import { Button } from "@mattrax/ui";
-import { A, RouteSectionProps } from "@solidjs/router";
+import {
+	A,
+	RouteSectionProps,
+	useMatch,
+	useResolvedPath,
+} from "@solidjs/router";
 import { Show } from "solid-js";
 import { z } from "zod";
 
@@ -38,9 +43,12 @@ export default function (props: RouteSectionProps) {
 						const tenant = () =>
 							tenants()?.find((t) => t.slug === params.tenantSlug);
 
+						const base = useResolvedPath(() => "");
+						const match = useMatch(() => `${base()}/:segment/:subSegment/*`);
+
 						return (
 							<div class="flex flex-row items-center py-1 gap-2">
-								<A href="">{tenant()?.name}</A>
+								<A href={match()?.params.segment ?? ""}>{tenant()?.name}</A>
 								<MultiSwitcher>
 									<Button variant="ghost" size="iconSmall">
 										<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
