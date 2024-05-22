@@ -61,9 +61,9 @@ jobs:
             echo "  🔴 Detected missing migrations or invalid `db.rs`. Run `pnpm db:gen` and commit the changes!"
             exit 1
           fi
-  
-  format-biome:
-    name: Format (Biome)
+
+  format-lint-biome:
+    name: Format & Lint (Biome)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -80,7 +80,7 @@ jobs:
         run: pnpm exec biome ci .
 
   format-rust:
-    name: Format (Rust)
+    name: Format (Cargo)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -90,5 +90,20 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --check
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Clippy
+        uses: actions-rs-plus/clippy-check@v2
+        with:
+          args: --workspace --all-features --locked
 
   # TODO: Rust tests + Clippy (maybe in separate jobs)
