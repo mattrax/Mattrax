@@ -42,8 +42,8 @@ export type VisualEditorController = ReturnType<
 
 export function PolicyComposer(props: {
 	controller: VisualEditorController;
-	windowsCSPs: Record<string, WindowsCSP>;
-	applePayloads: Record<string, AppleProfilePayload>;
+	windowsCSPs?: Record<string, WindowsCSP>;
+	applePayloads?: Record<string, AppleProfilePayload>;
 }) {
 	return (
 		<Tabs class="w-full flex flex-row items-start divide-x divide-gray-200">
@@ -71,7 +71,7 @@ export function PolicyComposer(props: {
 }
 
 function Windows(props: {
-	csps: Record<string, WindowsCSP>;
+	csps?: Record<string, WindowsCSP>;
 	controller: VisualEditorController;
 }) {
 	return (
@@ -83,7 +83,7 @@ function Windows(props: {
 				<div class="flex-1 overflow-hidden flex">
 					<ul class="overflow-y-auto flex-1 divide-y divide-gray-200 border-t border-gray-200">
 						<For
-							each={Object.entries(props.csps).sort(([, a], [, b]) =>
+							each={Object.entries(props.csps || {}).sort(([, a], [, b]) =>
 								a.name.localeCompare(b.name),
 							)}
 						>
@@ -142,7 +142,7 @@ function Windows(props: {
 					{([cspPath, csp]) => (
 						<For each={Object.entries(csp).filter(([_, v]) => v?.enabled)}>
 							{([key, value]) => {
-								const itemConfig = () => props.csps[cspPath]?.policies[key];
+								const itemConfig = () => props.csps![cspPath]?.policies[key];
 
 								const when = () => {
 									const c = itemConfig();
@@ -345,7 +345,7 @@ function Windows(props: {
 import { Accordion } from "@kobalte/core";
 
 function Apple(props: {
-	payloads: Record<string, AppleProfilePayload>;
+	payloads?: Record<string, AppleProfilePayload>;
 	controller: VisualEditorController;
 }) {
 	return (
@@ -356,7 +356,7 @@ function Apple(props: {
 				</div>
 				<ul class="rounded-lg overflow-y-auto flex-1">
 					<For
-						each={Object.entries(props.payloads).sort(([a], [b]) => {
+						each={Object.entries(props.payloads || {}).sort(([a], [b]) => {
 							const aIsApple = a.startsWith("com.apple");
 							const bIsApple = b.startsWith("com.apple");
 
@@ -406,7 +406,7 @@ function Apple(props: {
 					)}
 				>
 					{([payloadKey, value]) => {
-						const itemConfig = () => props.payloads[payloadKey];
+						const itemConfig = () => props.payloads![payloadKey];
 
 						const when = () => {
 							const c = itemConfig();

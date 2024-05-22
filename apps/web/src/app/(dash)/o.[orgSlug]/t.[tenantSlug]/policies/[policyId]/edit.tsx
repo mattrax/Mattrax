@@ -29,13 +29,11 @@ export default function Page() {
 
 	return (
 		<PolicyContext>
-			<Show when={windowsPolicies() && applePayloads()}>
-				<PolicyComposer
-					windowsCSPs={windowsPolicies() as any}
-					applePayloads={applePayloads() as any}
-					controller={controller}
-				/>
-			</Show>
+			<PolicyComposer
+				windowsCSPs={windowsPolicies()}
+				applePayloads={applePayloads()}
+				controller={controller}
+			/>
 		</PolicyContext>
 	);
 }
