@@ -289,9 +289,9 @@ function buildResultType(
 					.map(([k, _ty]) => {
 						index.i += 1;
 
-						return `let ${camelToSnakeCase(
-							k,
-						)} = row.take(${i}).map(FromValue::from_value);`; // We don't support further nesting, rn.
+						return `let ${camelToSnakeCase(k)} = row.take(${
+							index.i
+						}).map(FromValue::from_value);`; // We don't support further nesting, rn.
 					})
 					.join("\n")}
 
