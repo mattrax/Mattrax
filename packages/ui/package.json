@@ -18,8 +18,8 @@
 	"dependencies": {
 		"@kobalte/core": "^0.13.1",
 		"@solidjs/router": "^0.13.3",
-		"@tanstack/form-core": "^0.19.5",
-		"@tanstack/solid-form": "^0.19.5",
+		"@tanstack/form-core": "^0.20.0",
+		"@tanstack/solid-form": "^0.20.0",
 		"@tanstack/zod-form-adapter": "^0.19.5",
 		"class-variance-authority": "^0.7.0",
 		"clsx": "^2.1.0",

@@ -1,6 +1,10 @@
+import { Button, DropdownMenuTrigger } from "@mattrax/ui";
+import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { type Accessor, Suspense } from "solid-js";
 
+import { Suspense } from "solid-js";
+import { trpc } from "~/lib";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	ColumnsDropdown,
 	StandardTable,
@@ -8,7 +12,11 @@ import {
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
+import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
+import { useTenantSlug } from "../../t.[tenantSlug]";
+import { cacheMetadata } from "../metadataCache";
+import { CreateApplicationSheet } from "./CreateApplicationSheet";
 
 export const route = {
 	load: ({ params }) => {
@@ -85,49 +93,3 @@ export default function Page() {
 		</PageLayout>
 	);
 }
-
-import { Button, DropdownMenuTrigger } from "@mattrax/ui";
-import { A, type RouteDefinition } from "@solidjs/router";
-import { queryOptions } from "@tanstack/solid-query";
-
-import { z } from "zod";
-import { trpc } from "~/lib";
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
-import { useTenantSlug } from "../../t.[tenantSlug]";
-import { cacheMetadata } from "../metadataCache";
-import { CreateApplicationSheet } from "./CreateApplicationSheet";
-
-const IOS_APP_SCHEMA = z.object({
-	results: z.array(
-		z.object({
-			artworkUrl512: z.string(),
-			trackName: z.string(),
-			sellerName: z.string(),
-			bundleId: z.string(),
-		}),
-	),
-});
-
-export const APPLICATION_TARGETS = {
-	iOS: {
-		display: "iOS/iPad OS",
-		queryOptions: (search) => ({
-			queryKey: ["appStoreSearch", search()],
-			queryFn: async () => {
-				// TODO: Pagination support
-				const res = await fetch(
-					`https://itunes.apple.com/search?${new URLSearchParams({
-						...(search() && { term: search() }),
-						entity: "software",
-					})}`,
-				);
-
-				return IOS_APP_SCHEMA.parse(await res.json());
-			},
-		}),
-	},
-} satisfies Record<
-	string,
-	{ display: string; queryOptions: (search: Accessor<string>) => any }
->;

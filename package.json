@@ -16,7 +16,7 @@
 		"db:rs": "bun run ./apps/web/src/db/rust.ts",
 		"typecheck": "tsc -b",
 		"lint": "biome lint .",
-		"fix": "biome lint --config-path biome.fix.json --apply . || biome format --write .",
+		"fix": "biome lint --config-path biome.json --apply . && biome format --write . && biome check . --apply",
 		"format": "biome format --write .",
 		"prepare": "husky"
 	},
@@ -42,12 +42,12 @@
 	"pnpm": {
 		"patchedDependencies": {
 			"@solidjs/router@0.13.3": "patches/@solidjs__router@0.13.3.patch",
-			"@tanstack/solid-form@0.19.5": "patches/@tanstack__solid-form@0.19.5.patch",
 			"drizzle-orm@0.30.10": "patches/drizzle-orm@0.30.10.patch",
 			"@react-email/tailwind@0.0.16": "patches/@react-email__tailwind@0.0.16.patch",
 			"nitropack@2.9.6": "patches/nitropack@2.9.6.patch",
 			"@solid-mediakit/trpc@3.0.2": "patches/@solid-mediakit__trpc@3.0.2.patch",
-			"@solidjs/start@1.0.0-rc.1": "patches/@solidjs__start@1.0.0-rc.1.patch"
+			"@solidjs/start@1.0.0-rc.1": "patches/@solidjs__start@1.0.0-rc.1.patch",
+			"@tanstack/solid-form@0.20.0": "patches/@tanstack__solid-form@0.20.0.patch"
 		}
 	}
 }

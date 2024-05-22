@@ -43,7 +43,7 @@
 		"@solidjs/router": "=0.13.3",
 		"@solidjs/start": "1.0.0-rc.1",
 		"@t3-oss/env-core": "^0.10.1",
-		"@tanstack/solid-form": "^0.19.5",
+		"@tanstack/solid-form": "^0.20.0",
 		"@tanstack/solid-query": "^5.36.1",
 		"@tanstack/solid-query-devtools": "^5.36.1",
 		"@tanstack/solid-query-persist-client": "^5.36.1",

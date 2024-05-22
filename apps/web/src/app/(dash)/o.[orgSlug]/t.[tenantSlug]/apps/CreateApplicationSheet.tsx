@@ -1,8 +1,4 @@
-import { PolymorphicCallbackProps, RadioGroup } from "@kobalte/core";
-import {
-	DialogTriggerOptions,
-	DialogTriggerRenderProps,
-} from "@kobalte/core/dialog";
+import { RadioGroup } from "@kobalte/core";
 import {
 	Button,
 	Input,
@@ -14,6 +10,7 @@ import {
 	Tabs,
 	TabsList,
 	TabsTrigger,
+	TabsIndicator,
 } from "@mattrax/ui";
 import { Form, createZodForm } from "@mattrax/ui/forms";
 import { debounce } from "@solid-primitives/scheduled";
@@ -21,6 +18,7 @@ import { useNavigate } from "@solidjs/router";
 import { createQuery } from "@tanstack/solid-query";
 import clsx from "clsx";
 import {
+	type Accessor,
 	For,
 	type JSX,
 	Suspense,
@@ -30,8 +28,41 @@ import {
 } from "solid-js";
 import { z } from "zod";
 import { trpc } from "~/lib";
-import { APPLICATION_TARGETS } from ".";
 import { useTenantSlug } from "../../t.[tenantSlug]";
+
+const IOS_APP_SCHEMA = z.object({
+	results: z.array(
+		z.object({
+			artworkUrl512: z.string(),
+			trackName: z.string(),
+			sellerName: z.string(),
+			bundleId: z.string(),
+		}),
+	),
+});
+
+const APPLICATION_TARGETS = {
+	iOS: {
+		display: "iOS/iPad OS",
+		queryOptions: (search) => ({
+			queryKey: ["appStoreSearch", search()],
+			queryFn: async () => {
+				// TODO: Pagination support
+				const res = await fetch(
+					`https://itunes.apple.com/search?${new URLSearchParams({
+						...(search() && { term: search() }),
+						entity: "software",
+					})}`,
+				);
+
+				return IOS_APP_SCHEMA.parse(await res.json());
+			},
+		}),
+	},
+} satisfies Record<
+	string,
+	{ display: string; queryOptions: (search: Accessor<string>) => any }
+>;
 
 export function CreateApplicationSheet(props: {
 	children?: (props: any) => JSX.Element;
@@ -64,12 +95,15 @@ export function CreateApplicationSheet(props: {
 
 	const [search, setSearch] = createSignal("");
 
-	const query = createQuery(() => ({
-		...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
-			search,
-		),
-		enabled: open(),
-	}));
+	const query = createQuery(() => {
+		// debugger;
+		return {
+			...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
+				search,
+			),
+			enabled: open(),
+		};
+	});
 
 	createEffect(() => {
 		const results = query.data?.results;
@@ -98,13 +132,14 @@ export function CreateApplicationSheet(props: {
 			<SheetContent padding="none">
 				<Form
 					form={form}
+					class="h-full"
 					fieldsetClass="p-6 overflow-hidden space-y-4 h-full flex flex-col"
 				>
 					<SheetHeader>
 						<SheetTitle>Create Application</SheetTitle>
 					</SheetHeader>
 					<div class="flex flex-col space-y-1.5">
-						<form.Field name="targetType">
+						<form.Field name="targetType" preserveValue>
 							{(field) => (
 								<Tabs
 									value={field().state.value}
@@ -127,6 +162,7 @@ export function CreateApplicationSheet(props: {
 										{/*
                                 <TabsTrigger value="macOS">macOS</TabsTrigger>
                                 <TabsTrigger value="windows">Windows</TabsTrigger> */}
+										<TabsIndicator />
 									</TabsList>
 								</Tabs>
 							)}
@@ -138,7 +174,7 @@ export function CreateApplicationSheet(props: {
 							onInput={debounce((e) => setSearch(e.target.value), 200)}
 						/>
 					</div>
-					<form.Field name="targetId">
+					<form.Field name="targetId" preserveValue>
 						{(field) => (
 							<RadioGroup.Root
 								class="flex-1 overflow-y-auto !mt-1.5"
