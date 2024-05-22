@@ -31,6 +31,8 @@ export default function Page() {
 	return (
 		<div class="p-2">
 			<PageLayoutHeading>Updates</PageLayoutHeading>
+
+			<p class="text-muted-foreground opacity-70">Coming soon</p>
 			{/* <div class="flex flex-col space-y-2">
 				<Suspense fallback={<p>Loading...</p>}>
 					<For each={stats.data ?? []}>
