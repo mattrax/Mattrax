@@ -13,6 +13,59 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: pnpm i
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: mysql:latest
+        env:
+          MYSQL_ROOT_PASSWORD: mysql
+        ports:
+          - 3306:3306
+    env:
+      DATABASE_URL: mysql://root:mysql@localhost:3306/mattrax
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: latest
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: Install dependencies
+        run: pnpm i
+
+      - name: Generate migrations
+        run: pnpm db:gen
+
+      - name: Detect
+        run: |
+          if [ $(git status --porcelain | wc -l) -neq "0" ]; then
+            echo "  🔴 Detected missing migrations!"
+            exit 1
+          fi
+  
+  format-biome:
+    name: Format (Biome)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
         uses: actions/checkout@v3
 
       - uses: pnpm/action-setup@v2
@@ -22,7 +75,19 @@ jobs:
       - name: Install dependencies
         run: pnpm i
 
-      - name: Typecheck
-        run: pnpm typecheck
+      - name: Check formatting
+        run: pnpm exec biome ci .
+
+  format-rust:
+    name: Format (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Check formatting
+        run: cargo fmt --check
 
   # TODO: Rust tests + Clippy (maybe in separate jobs)
