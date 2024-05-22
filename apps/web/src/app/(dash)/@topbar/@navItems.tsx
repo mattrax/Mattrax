@@ -1,4 +1,4 @@
-import { For, ParentProps, Show, children } from "solid-js";
+import { For, type ParentProps, Show, children } from "solid-js";
 import { A, useMatch } from "@solidjs/router";
 import { Tabs } from "@kobalte/core";
 

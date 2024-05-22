@@ -9,12 +9,12 @@ export async function POST() {
 
 	// TODO: Authenticated user
 
-	const id = createId();
+	// const id = createId();
 
-	await db.insert(cliAuthCodes).values({ code: id });
+	// await db.insert(cliAuthCodes).values({ code: id });
 
-	return Response.json({
-		url: `${env.PROD_ORIGIN}/cli/${id}`,
-		jwt: await signJWT({ code: id }),
-	});
+	// return Response.json({
+	// 	url: `${env.PROD_ORIGIN}/cli/${id}`,
+	// 	jwt: await signJWT({ code: id }),
+	// });
 }

@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
 	} else if (args.type === "userEnrollmentInvite") {
 		component = UserEnrollmentInvite(args);
 	} else {
-		throw new Error(`Unknown email type`);
+		throw new Error("Unknown email type");
 	}
 
 	const emailHtml = render(component);

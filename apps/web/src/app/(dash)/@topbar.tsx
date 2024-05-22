@@ -1,6 +1,6 @@
 import {
 	A,
-	RouteSectionProps,
+	type RouteSectionProps,
 	useIsRouting,
 	useMatch,
 	useNavigate,

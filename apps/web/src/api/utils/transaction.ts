@@ -1,11 +1,11 @@
-import { MySqlTransaction } from "drizzle-orm/mysql-core";
-import {
+import type { MySqlTransaction } from "drizzle-orm/mysql-core";
+import type {
 	PlanetScalePreparedQueryHKT,
 	PlanetscaleQueryResultHKT,
 } from "drizzle-orm/planetscale-serverless";
 import { Context } from "./context";
 import { db } from "../../db";
-import { ExtractTablesWithRelations } from "drizzle-orm";
+import type { ExtractTablesWithRelations } from "drizzle-orm";
 
 export type Transaction = MySqlTransaction<
 	PlanetscaleQueryResultHKT,

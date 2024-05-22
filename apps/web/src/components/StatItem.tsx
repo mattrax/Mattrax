@@ -37,7 +37,10 @@ export function StatItem(
 								return (
 									<dd class="mt-1 text-3xl font-semibold tracking-tight relative">
 										<Suspense fallback={fallback}>
-											<Show when={props.value != undefined} fallback={fallback}>
+											<Show
+												when={props.value !== undefined}
+												fallback={fallback}
+											>
 												{(_) => {
 													const counter = createCounter(() => ({
 														value: props.value!,

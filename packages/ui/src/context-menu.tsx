@@ -109,6 +109,7 @@ const ContextMenuSubTrigger = <T extends ValidComponent = "div">(
 				stroke-linecap="round"
 				stroke-linejoin="round"
 				class="ml-auto size-4"
+				aria-hidden="true"
 			>
 				<path d="M9 6l6 6l-6 6" />
 			</svg>
@@ -154,6 +155,7 @@ const ContextMenuCheckboxItem = <T extends ValidComponent = "div">(
 						stroke-linecap="round"
 						stroke-linejoin="round"
 						class="size-4"
+						aria-hidden="true"
 					>
 						<path d="M5 12l5 5l10 -10" />
 					</svg>
@@ -207,6 +209,7 @@ const ContextMenuRadioItem = <T extends ValidComponent = "div">(
 						stroke-linecap="round"
 						stroke-linejoin="round"
 						class="size-2 fill-current"
+						aria-hidden="true"
 					>
 						<path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
 					</svg>

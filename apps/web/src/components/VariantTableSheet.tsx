@@ -45,7 +45,7 @@ export const createVariantTableColumns = (variants?: VariantTableVariants) => [
 		header: "Name",
 		cell: (props) => (
 			<Show
-				when={(variants ?? {})[props.row.original.variant]?.href}
+				when={variants?.[props.row.original.variant]?.href}
 				fallback={props.getValue()}
 				keyed
 			>

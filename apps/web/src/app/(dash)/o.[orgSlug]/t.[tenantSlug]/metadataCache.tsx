@@ -18,9 +18,9 @@ export function cacheMetadata<TVariant extends keyof typeof metadata>(
 	createEffect(() => {
 		const map = metadata[variant];
 
-		data().forEach((item) => {
+		for (const item of data()) {
 			map.set(item.id, { name: item.name });
-		});
+		}
 	});
 }
 

@@ -98,14 +98,16 @@ export function createFetchHandler(uri: string): NonNullable<Config["fetch"]> {
 						} else if (v instanceof Uint8Array) {
 							buf = v;
 						} else if (v instanceof Date) {
-							let vv = `${v.getFullYear()}-${("0" + (v.getMonth() + 1)).slice(
+							let vv = `${v.getFullYear()}-${`0${v.getMonth() + 1}`.slice(
 								-2,
-							)}-${("0" + v.getDate()).slice(-2)}`;
+							)}-${`0${v.getDate()}`.slice(-2)}`;
 
 							if (field.type !== "DATETIME") {
-								vv = `${vv} ${("0" + v.getHours()).slice(-2)}:${(
-									"0" + v.getMinutes()
-								).slice(-2)}:${("0" + v.getSeconds()).slice(-2)}`;
+								vv = `${vv} ${`0${v.getHours()}`.slice(
+									-2,
+								)}:${`0${v.getMinutes()}`.slice(
+									-2,
+								)}:${`0${v.getSeconds()}`.slice(-2)}`;
 							}
 
 							buf = enc.encode(vv);

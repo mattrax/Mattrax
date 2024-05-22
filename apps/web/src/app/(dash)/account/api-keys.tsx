@@ -116,8 +116,8 @@ function CreateAPIKeyCard() {
 					setDialogState((s) => {
 						if (createAPIKey.data)
 							return { open, apiKey: createAPIKey.data } satisfies DialogState;
-						else if ("apiKey" in s) return { ...s, open } satisfies DialogState;
-						else return { open: false } satisfies DialogState;
+						if ("apiKey" in s) return { ...s, open } satisfies DialogState;
+						return { open: false } satisfies DialogState;
 					})
 				}
 			>

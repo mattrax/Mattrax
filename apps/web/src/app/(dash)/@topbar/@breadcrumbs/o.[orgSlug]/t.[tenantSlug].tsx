@@ -1,7 +1,7 @@
 import { Button } from "@mattrax/ui";
 import {
 	A,
-	RouteSectionProps,
+	type RouteSectionProps,
 	useMatch,
 	useResolvedPath,
 } from "@solidjs/router";

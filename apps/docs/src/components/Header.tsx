@@ -79,7 +79,7 @@ export const Header = forwardRef<
 			</div>
 			<div className="flex items-center gap-5">
 				<nav className="hidden md:block">
-					<ul role="list" className="flex items-center gap-8">
+					<ul className="flex items-center gap-8">
 						<TopLevelNavItem href="https://mattrax.app">
 							Website
 						</TopLevelNavItem>

@@ -234,7 +234,7 @@ export const groupRouter = createTRPCRouter({
 						Object.assign(row, { variant: "application" as const }),
 					),
 				),
-			,
+			undefined,
 		]);
 
 		return [...p, ...a];
@@ -251,13 +251,13 @@ export const groupRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx: { group, db }, input }) => {
-			const pols: Array<number> = [],
-				apps: Array<number> = [];
+			const pols: Array<number> = [];
+			const apps: Array<number> = [];
 
-			input.assignments.forEach((a) => {
+			for (const a of input.assignments) {
 				if (a.variant === "policy") pols.push(a.pk);
 				else apps.push(a.pk);
-			});
+			}
 
 			await db.transaction((db) => {
 				const ops: Promise<any>[] = [];
@@ -313,13 +313,13 @@ export const groupRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx: { group, db }, input }) => {
-			const pols: Array<number> = [],
-				apps: Array<number> = [];
+			const pols: Array<number> = [];
+			const apps: Array<number> = [];
 
-			input.assignments.forEach((a) => {
+			for (const a of input.assignments) {
 				if (a.variant === "policy") pols.push(a.pk);
 				else apps.push(a.pk);
-			});
+			}
 
 			await db.transaction((db) => {
 				const ops: Promise<any>[] = [];

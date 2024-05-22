@@ -9,7 +9,7 @@ import { createTRPCRouter, tenantProcedure } from "../../helpers";
 import { encryptJWT } from "~/api/utils/jwt";
 import { createAuditLog } from "~/api/auditLog";
 import { createTransaction } from "~/api/utils/transaction";
-import { OAUTH_STATE } from "~/api/rest/ms";
+import type { OAUTH_STATE } from "~/api/rest/ms";
 
 export const identityProviderRouter = createTRPCRouter({
 	get: tenantProcedure.query(async ({ ctx }) => {

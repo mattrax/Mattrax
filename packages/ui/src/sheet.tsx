@@ -166,9 +166,9 @@ export type DialogContentProps<T extends ValidComponent = "div"> =
 		VariantProps<typeof sheetVariants> & { transparent?: boolean };
 
 const SheetContent = <T extends ValidComponent = "div">(
-	props: DialogContentProps<T>,
+	_props: DialogContentProps<T>,
 ) => {
-	props = mergeProps({ transparent: true }, props);
+	const props = mergeProps({ transparent: true }, _props);
 
 	const [, rest] = splitProps(props as any, [
 		"position",

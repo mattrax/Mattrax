@@ -2,7 +2,6 @@
 /* @jsx React.createElement */
 // TODO: If you move this file ensure you update `app.config.ts` to exclude it from Solid's JSX transform.
 
-// biome-ignore lint: don't remove React
 import React, { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { OTPInput as _OTPInput, type SlotProps } from "input-otp";
@@ -30,7 +29,10 @@ export default function OTPInput(props: Props) {
 function Root({
 	props: { onInput, onKeyDown, ...props },
 	resolve,
-}: { props: Props; resolve: () => void }) {
+}: {
+	props: Props;
+	resolve: () => void;
+}) {
 	useEffect(resolve);
 
 	return (
@@ -41,12 +43,14 @@ function Root({
 				<>
 					<div className="flex">
 						{slots.slice(0, 4).map((slot, idx) => (
+							// biome-ignore lint/suspicious/noArrayIndexKey: static number of slots
 							<Slot key={idx} {...slot} />
 						))}
 					</div>
 					<FakeDash />
 					<div className="flex">
 						{slots.slice(4).map((slot, idx) => (
+							// biome-ignore lint/suspicious/noArrayIndexKey: static number of slots
 							<Slot key={idx} {...slot} />
 						))}
 					</div>

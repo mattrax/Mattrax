@@ -68,6 +68,7 @@ const NumberInputIncrementTrigger = <T extends ValidComponent = "button">(
 					stroke-linecap="round"
 					stroke-linejoin="round"
 					class="size-4"
+					aria-hidden="true"
 				>
 					<path d="M6 15l6 -6l6 6" />
 				</svg>
@@ -98,6 +99,7 @@ const NumberInputDecrementTrigger = <T extends ValidComponent = "button">(
 					stroke-linecap="round"
 					stroke-linejoin="round"
 					class="size-4"
+					aria-hidden="true"
 				>
 					<path d="M6 9l6 6l6 -6" />
 				</svg>

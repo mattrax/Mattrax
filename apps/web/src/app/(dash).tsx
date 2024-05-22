@@ -1,5 +1,9 @@
 import { startTransition } from "solid-js";
-import { RouteSectionProps, useNavigate, useMatches } from "@solidjs/router";
+import {
+	type RouteSectionProps,
+	useNavigate,
+	useMatches,
+} from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { isServer } from "solid-js/web";
 import { parse } from "cookie-es";

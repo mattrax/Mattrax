@@ -177,13 +177,13 @@ export const userRouter = createTRPCRouter({
 			}),
 		)
 		.mutation(async ({ ctx: { user, db }, input }) => {
-			const pols: Array<number> = [],
-				apps: Array<number> = [];
+			const pols: Array<number> = [];
+			const apps: Array<number> = [];
 
-			input.assignments.forEach((a) => {
+			for (const a of input.assignments) {
 				if (a.variant === "policy") pols.push(a.pk);
 				else apps.push(a.pk);
-			});
+			}
 
 			await db.transaction((db) =>
 				Promise.all([

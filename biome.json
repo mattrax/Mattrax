@@ -13,7 +13,10 @@
 			"auto-imports.d.ts",
 			"node_modules",
 			"dist",
-			"apps/android"
+			"apps/android",
+			"apps/docs",
+			".sst",
+			"configuration-schemas/**/*.json"
 		]
 	},
 	"organizeImports": {

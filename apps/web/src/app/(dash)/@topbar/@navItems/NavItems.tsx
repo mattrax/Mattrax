@@ -1,5 +1,5 @@
 import { useResolvedPath } from "@solidjs/router";
-import { JSX } from "solid-js";
+import type { JSX } from "solid-js";
 
 export function NavItems(props: {
 	items: Array<{ title: string; href: string }>;

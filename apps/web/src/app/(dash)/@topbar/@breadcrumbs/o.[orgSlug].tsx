@@ -1,5 +1,5 @@
 import { Button } from "@mattrax/ui";
-import { A, RouteSectionProps } from "@solidjs/router";
+import { A, type RouteSectionProps } from "@solidjs/router";
 import { z } from "zod";
 
 import { createQueryCacher, useCachedQueryData } from "~/cache";

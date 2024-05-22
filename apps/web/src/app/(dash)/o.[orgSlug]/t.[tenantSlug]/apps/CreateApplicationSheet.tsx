@@ -5,7 +5,7 @@ import {
 	For,
 	createEffect,
 	startTransition,
-	JSX,
+	type JSX,
 } from "solid-js";
 import { debounce } from "@solid-primitives/scheduled";
 import { useNavigate } from "@solidjs/router";

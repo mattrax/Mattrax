@@ -1,6 +1,5 @@
 // @jsxImportSource react
 
-// biome-ignore lint: don't remove React
 import React from "react";
 import {
 	Body,

@@ -287,9 +287,11 @@ function buildResultType(
 			impl = (index) => `{
 				${[...fields.entries()]
 					.map(([k, _ty]) => {
+						index.i += 1;
+
 						return `let ${camelToSnakeCase(
 							k,
-						)} = row.take(${(index.i += 1)}).map(FromValue::from_value);`; // We don't support further nesting, rn.
+						)} = row.take(${i}).map(FromValue::from_value);`; // We don't support further nesting, rn.
 					})
 					.join("\n")}
 
@@ -304,9 +306,10 @@ function buildResultType(
 			impl = (index) => `${structName} {
 				${[...fields.entries()]
 					.map(([k, ty]) => {
+						index.i += 1;
 						const impl =
 							resultTypes.get(ty)?.impl(index) ??
-							`FromValue::from_value(row.take(${(index.i += 1)}).unwrap())`;
+							`FromValue::from_value(row.take(${index.i}).unwrap())`;
 						return `${camelToSnakeCase(k)}: ${impl}`;
 					})
 					.join(",\n")}

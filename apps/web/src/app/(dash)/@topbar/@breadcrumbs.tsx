@@ -1,4 +1,10 @@
-import { For, ParentProps, Suspense, SuspenseList, children } from "solid-js";
+import {
+	For,
+	type ParentProps,
+	Suspense,
+	SuspenseList,
+	children,
+} from "solid-js";
 
 import IconMdiSlashForward from "~icons/mdi/slash-forward";
 

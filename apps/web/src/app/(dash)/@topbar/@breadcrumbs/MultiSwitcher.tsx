@@ -96,7 +96,10 @@ export function MultiSwitcher(props: ParentProps) {
 						<ul class="p-1 pt-2 flex flex-col">
 							<For each={orgs()}>
 								{(org) => (
-									<li onClick={() => setOpen(false)}>
+									<li
+										onClick={() => setOpen(false)}
+										onKeyDown={() => setOpen(false)}
+									>
 										<a
 											class={clsx(
 												"block px-2 py-1.5 text-sm rounded flex flex-row justify-between items-center focus:outline-none",
@@ -132,6 +135,7 @@ export function MultiSwitcher(props: ParentProps) {
 									)}
 									onMouseEnter={() => setSelectedOrg("create")}
 									onClick={() => setModal("org")}
+									type="button"
 								>
 									<IconPhPlusCircle />
 									Create Organisation
@@ -170,7 +174,10 @@ export function MultiSwitcher(props: ParentProps) {
 											<ul class="p-1 pt-2 flex flex-col">
 												<For each={tenants()}>
 													{(tenant) => (
-														<li onClick={() => setOpen(false)}>
+														<li
+															onClick={() => setOpen(false)}
+															onKeyDown={() => setOpen(false)}
+														>
 															<a
 																class={clsx(
 																	"block px-2 py-1.5 text-sm rounded flex flex-row justify-between items-center focus:outline-none",
@@ -181,6 +188,7 @@ export function MultiSwitcher(props: ParentProps) {
 																onMouseOver={() =>
 																	setSelectedTenant(tenant.slug)
 																}
+																onFocus={() => setSelectedTenant(tenant.slug)}
 															>
 																{tenant.name}
 																{tenant.slug === params.tenantSlug && (
@@ -198,6 +206,7 @@ export function MultiSwitcher(props: ParentProps) {
 														)}
 														onMouseEnter={() => setSelectedTenant(null)}
 														onClick={() => setModal("tenant")}
+														type="button"
 													>
 														<IconPhPlusCircle />
 														Create Tenant

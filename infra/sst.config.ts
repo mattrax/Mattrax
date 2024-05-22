@@ -15,7 +15,10 @@ const AWS_AZ = "us-east-1a";
 function cache<T>(cb: () => T) {
 	let v: T;
 
-	return () => (v ??= cb());
+	return () => {
+		v ??= cb();
+		return v;
+	};
 }
 
 const INTERNAL_SECRET = cache(() => new sst.Secret("InternalSecret").value);
@@ -63,7 +66,8 @@ function Email({ domainZone }: { domainZone: cloudflare.Zone }) {
 		"MattraxDNSDMARCRecord",
 		{
 			name: "_dmarc",
-			value: `v=DMARC1; p=reject; rua=mailto:re+awpujuxug4y@dmarc.postmarkapp.com; adkim=r; aspf=r;`,
+			value:
+				"v=DMARC1; p=reject; rua=mailto:re+awpujuxug4y@dmarc.postmarkapp.com; adkim=r; aspf=r;",
 			type: "TXT",
 			zoneId: domainZone.id,
 			comment: "DMARC Config",
@@ -125,7 +129,7 @@ function SESIdentity({ domainZone }: { domainZone: cloudflare.Zone }) {
 
 	new cloudflare.Record("MattraxMailFromMXRecord", {
 		name: sesMailFrom.mailFromDomain,
-		value: `feedback-smtp.us-east-1.amazonses.com`,
+		value: "feedback-smtp.us-east-1.amazonses.com",
 		priority: 10,
 		type: "MX",
 		zoneId: domainZone.id,
