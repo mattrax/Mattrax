@@ -1,4 +1,4 @@
-import { Suspense, type JSX, type ParentProps } from "solid-js";
+import { type JSX, type ParentProps, Suspense } from "solid-js";
 
 // we use a dedicated object since otherwise all the fragments would merge
 export function Breadcrumb(props: ParentProps) {

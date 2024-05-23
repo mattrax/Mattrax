@@ -1,4 +1,4 @@
-import { Show, For, type ParentProps, SuspenseList, children } from "solid-js";
+import { For, type ParentProps, Show, SuspenseList, children } from "solid-js";
 
 export default function (props: ParentProps) {
 	return (
