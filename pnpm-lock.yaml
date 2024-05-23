@@ -21,7 +21,7 @@ patchedDependencies:
     hash: qxijamwf4tdfe57gtzxuoxu6bm
     path: patches/@solidjs__start@1.0.0-rc.1.patch
   '@tanstack/solid-form@0.20.0':
-    hash: g5fa7czh7nqsubxtbxkq5t2wla
+    hash: u7mggdzwgkctmq3zwzwnyiwq4y
     path: patches/@tanstack__solid-form@0.20.0.patch
   drizzle-orm@0.30.10:
     hash: kbhw3lxqs5ui6og332q7mjjsdu
@@ -209,7 +209,7 @@ importers:
         version: 1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
       '@tanstack/solid-form':
         specifier: ^0.20.0
-        version: 0.20.0(patch_hash=g5fa7czh7nqsubxtbxkq5t2wla)(solid-js@1.8.17)
+        version: 0.20.0(patch_hash=u7mggdzwgkctmq3zwzwnyiwq4y)(solid-js@1.8.17)
       h3:
         specifier: ^1.11.1
         version: 1.11.1
@@ -333,7 +333,7 @@ importers:
         version: 0.10.1(typescript@5.4.5)(zod@3.23.8)
       '@tanstack/solid-form':
         specifier: ^0.20.0
-        version: 0.20.0(patch_hash=g5fa7czh7nqsubxtbxkq5t2wla)(solid-js@1.8.17)
+        version: 0.20.0(patch_hash=u7mggdzwgkctmq3zwzwnyiwq4y)(solid-js@1.8.17)
       '@tanstack/solid-query':
         specifier: ^5.36.1
         version: 5.36.1(solid-js@1.8.17)
@@ -644,7 +644,7 @@ importers:
         version: 0.20.0
       '@tanstack/solid-form':
         specifier: ^0.20.0
-        version: 0.20.0(patch_hash=g5fa7czh7nqsubxtbxkq5t2wla)(solid-js@1.8.17)
+        version: 0.20.0(patch_hash=u7mggdzwgkctmq3zwzwnyiwq4y)(solid-js@1.8.17)
       '@tanstack/zod-form-adapter':
         specifier: ^0.20.0
         version: 0.20.0(zod@3.23.8)
@@ -11033,7 +11033,7 @@ snapshots:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
 
-  '@tanstack/solid-form@0.20.0(patch_hash=g5fa7czh7nqsubxtbxkq5t2wla)(solid-js@1.8.17)':
+  '@tanstack/solid-form@0.20.0(patch_hash=u7mggdzwgkctmq3zwzwnyiwq4y)(solid-js@1.8.17)':
     dependencies:
       '@tanstack/form-core': 0.20.0
       '@tanstack/solid-store': 0.3.1(solid-js@1.8.17)
