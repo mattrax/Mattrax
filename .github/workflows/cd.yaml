@@ -11,7 +11,33 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  CLOUDFLARE_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
+
 jobs:
+  docs:
+    name: Landing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+      
+      - name: Build
+        working-directory: ./app/landing
+        env:
+          NITRO_PRESET: cloudflare_pages
+        run: pnpm build
+
+      - name: Deploy
+        working-directory: ./app/landing
+        env:
+          NITRO_PRESET: cloudflare_pages
+        run: pnpm dlx wrangler pages deploy dist/
+
   sst:
     name: SST
     runs-on: ubuntu-latest
