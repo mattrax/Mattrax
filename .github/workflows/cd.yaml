@@ -15,6 +15,7 @@ env:
   CLOUDFLARE_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
 
 jobs:
+  # TODO: Probs rely on SST deploy finishing
   docs:
     name: Landing
     runs-on: ubuntu-latest
@@ -33,6 +34,7 @@ jobs:
       - name: Build
         env:
           NITRO_PRESET: cloudflare_pages
+          VITE_MATTRAX_CLOUD_ORIGIN: https://cloud.mattrax.app
         run: pnpm landing build
 
       - name: Deploy
