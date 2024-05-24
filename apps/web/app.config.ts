@@ -59,6 +59,9 @@ export default defineConfig({
 		analyze: {
 			filename: "stats-nitro.html",
 		},
+		cloudflare: {
+			pages: { routes: { exclude: ["/"] } },
+		},
 	},
 });
 
