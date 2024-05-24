@@ -60,7 +60,12 @@ export default defineConfig({
 			filename: "stats-nitro.html",
 		},
 		cloudflare: {
-			pages: { routes: { exclude: ["/"] } },
+			pages: {
+				routes: {
+					// All non-api and non-asset routes are redirected to / to be served by CDN
+					exclude: ["/"],
+				},
+			},
 		},
 	},
 });
