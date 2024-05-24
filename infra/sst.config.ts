@@ -161,6 +161,8 @@ function Web({
 
 	const pagesProject = WebPagesProject({ awsUser, entraID });
 
+	// Without this, requests to /o/* will invoke the worker.
+	// We instead rewrite these requests to / so they load index.html from the CDN.
 	new cloudflare.Ruleset("MattraxWebSPAIndexRewriteRuleset", {
 		kind: "zone",
 		name: "default",
