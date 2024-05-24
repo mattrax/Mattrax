@@ -4,42 +4,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
-concurrency:
-  group: "merge-${{ github.ref }}"
 
 permissions:
   id-token: write
   contents: read
 
-env:
-  CLOUDFLARE_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
-
 jobs:
-  # TODO: Probs rely on SST deploy finishing
-  docs:
-    name: Landing
-    runs-on: ubuntu-latest
-    environment: production # TODO: Is this good being a duplicate?
-    steps:
-      - name: Git clone the repository
-        uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
-      - name: Install
-        run: pnpm i
-      
-      - name: Build
-        env:
-          NITRO_PRESET: cloudflare_pages
-          VITE_MATTRAX_CLOUD_ORIGIN: https://cloud.mattrax.app
-        run: pnpm landing build
-
-      - name: Deploy
-        run: pnpm landing exec wrangler pages deploy dist/
-
   sst:
     name: SST
     runs-on: ubuntu-latest
@@ -48,6 +18,8 @@ jobs:
     #
     # I swear to god Microsoft have never tried anything they have built.
     environment: production
+    concurrency:
+      group: production
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -80,3 +52,35 @@ jobs:
           CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
           OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
           OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+
+  # TODO: Probs rely on SST deploy finishing
+  # TODO: We need to run this on PR's too!!!!
+  # TODO: Filter running to changes in `./apps/docs`
+
+  docs:
+    name: Landing
+    runs-on: ubuntu-latest
+    environment: production # TODO: Is this good being a duplicate?
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install
+        run: pnpm i
+      
+      - name: Build
+        env:
+          NITRO_PRESET: cloudflare_pages
+          VITE_MATTRAX_CLOUD_ORIGIN: https://cloud.mattrax.app
+        run: pnpm landing build
+
+      - name: Deploy
+        # TODO: Mark as preview or production deploy???
+        env:
+          CLOUDFLARE_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
+        run: pnpm landing exec wrangler pages deploy dist/
