@@ -19,9 +19,9 @@ import {
 	createZodForm,
 } from "@mattrax/ui/forms";
 import type { JSX } from "solid-js";
+import { Hydration } from "solid-js/web";
 import { z } from "zod";
 import DashboardImg from "../assets/dashboard.png";
-import { Hydration } from "solid-js/web";
 
 // TODO: Setup unplugin icons
 function PhLaptop(props: JSX.IntrinsicElements["svg"]) {
