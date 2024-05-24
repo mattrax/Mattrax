@@ -10,13 +10,21 @@ const waitlistEndpoint = new URL(
 ).toString();
 
 export default defineConfig({
-	ssr: true,
+	ssr: false,
 	server: {
 		prerender: {
 			crawlLinks: true,
 		},
 		routeRules: {
 			"/api/waitlist": { proxy: waitlistEndpoint },
+		},
+		cloudflare: {
+			pages: {
+				routes: {
+					// All non-api and non-asset routes are redirected to / to be served by CDN
+					exclude: ["/*"],
+				},
+			},
 		},
 	},
 	vite: {
