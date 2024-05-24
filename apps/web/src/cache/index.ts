@@ -39,7 +39,7 @@ export function useCachedQueryData<TData>(
 		if (untrack(() => query.isLoading)) {
 			const c = cachedQuery();
 			// We subscribe to `query.data` once the cached data is available
-			if (c) query.data;
+			if (c) query.isLoading;
 
 			return c;
 		}

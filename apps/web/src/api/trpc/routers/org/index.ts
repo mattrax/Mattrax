@@ -18,8 +18,8 @@ export const orgRouter = createTRPCRouter({
 	admins: adminsRouter,
 	// billing: billingRouter,
 
-	list: authedProcedure.query(async ({ ctx }) =>
-		ctx.db
+	list: authedProcedure.query(async ({ ctx }) => {
+		return await ctx.db
 			.select({
 				id: organisations.id,
 				name: organisations.name,
@@ -33,8 +33,8 @@ export const orgRouter = createTRPCRouter({
 				eq(organisations.pk, organisationMembers.orgPk),
 			)
 			.innerJoin(accounts, eq(organisations.ownerPk, accounts.pk))
-			.orderBy(organisations.id),
-	),
+			.orderBy(organisations.id);
+	}),
 
 	tenants: orgProcedure.query(async ({ ctx }) => {
 		return ctx.db
