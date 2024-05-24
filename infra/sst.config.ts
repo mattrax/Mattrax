@@ -4,6 +4,7 @@ import pulumi from "@pulumi/pulumi";
 
 const CLOUDFLARE_ACCOUNT = "f02b3ef168fe64129e9941b4fb2e4dc1";
 const CLOUDFLARE_ZONE = "mattrax.app";
+const PROD_HOST = "cloud.mattrax.app";
 
 const GITHUB_ORG = "mattrax";
 const GITHUB_REPO = "Mattrax";
@@ -52,7 +53,7 @@ export default $config({
 
 		const { sesIdentity } = Email({ domainZone });
 
-		Web({ sesIdentity, entraID });
+		Web({ sesIdentity, entraID, domainZone });
 
 		MDMServer({ domainZone });
 	},
@@ -150,13 +151,31 @@ function SESIdentity({ domainZone }: { domainZone: cloudflare.Zone }) {
 function Web({
 	sesIdentity,
 	entraID,
+	domainZone,
 }: {
 	sesIdentity: aws.ses.DomainIdentity;
 	entraID: ReturnType<typeof EntraID>;
+	domainZone: cloudflare.Zone;
 }) {
 	const awsUser = WebAWSUser({ sesIdentity });
 
 	const pagesProject = WebPagesProject({ awsUser, entraID });
+
+	new cloudflare.Ruleset("MattraxWebSPAIndexRewriteRuleset", {
+		kind: "zone",
+		name: "default",
+		phase: "http_request_transform",
+		zoneId: domainZone.id,
+		rules: [
+			{
+				enabled: true,
+				action: "rewrite",
+				expression: `(http.host eq "${PROD_HOST}" and starts_with(http.request.uri.path, "/o"))`,
+				description: "index.html rewrite",
+				actionParameters: { uri: { path: { value: "/" } } },
+			},
+		],
+	});
 
 	return { awsUser, pagesProject };
 }
@@ -198,8 +217,6 @@ function WebPagesProject({
 	awsUser: ReturnType<typeof WebAWSUser>;
 	entraID: ReturnType<typeof EntraID>;
 }) {
-	const PROD_HOST = "cloud.mattrax.app";
-
 	const deploymentConfig = {
 		compatibilityDate: "2024-04-03",
 		compatibilityFlags: ["nodejs_compat", "nodejs_als"],
