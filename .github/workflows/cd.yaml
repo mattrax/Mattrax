@@ -18,6 +18,7 @@ jobs:
   docs:
     name: Landing
     runs-on: ubuntu-latest
+    environment: production # TODO: Is this good being a duplicate?
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -27,16 +28,12 @@ jobs:
           version: latest
       
       - name: Build
-        working-directory: ./app/landing
         env:
           NITRO_PRESET: cloudflare_pages
-        run: pnpm build
+        run: pnpm landing build
 
       - name: Deploy
-        working-directory: ./app/landing
-        env:
-          NITRO_PRESET: cloudflare_pages
-        run: pnpm dlx wrangler pages deploy dist/
+        run: pnpm landing exec wrangler pages deploy dist/
 
   sst:
     name: SST
