@@ -1,5 +1,6 @@
 // @refresh reload
 import { StartServer, createHandler } from "@solidjs/start/server";
+import { NoHydration } from "solid-js/web";
 
 export default createHandler(
 	() => (
@@ -16,7 +17,9 @@ export default createHandler(
 						{assets}
 					</head>
 					<body>
-						<div id="app">{children}</div>
+						<div id="app">
+							<NoHydration>{children}</NoHydration>
+						</div>
 						{scripts}
 					</body>
 				</html>

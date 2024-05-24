@@ -21,6 +21,7 @@ import {
 import type { JSX } from "solid-js";
 import { z } from "zod";
 import DashboardImg from "../assets/dashboard.png";
+import { Hydration } from "solid-js/web";
 
 // TODO: Setup unplugin icons
 function PhLaptop(props: JSX.IntrinsicElements["svg"]) {
@@ -115,7 +116,9 @@ export default function Page() {
 						</p>
 
 						<div class="pt-4 flex justify-center">
-							<Waitlist />
+							<Hydration>
+								<Waitlist />
+							</Hydration>
 						</div>
 
 						<ul class="flex flex-col space-y-4 pt-4">

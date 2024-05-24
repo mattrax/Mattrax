@@ -10,7 +10,7 @@ const waitlistEndpoint = new URL(
 ).toString();
 
 export default defineConfig({
-	ssr: false,
+	ssr: true,
 	server: {
 		prerender: {
 			crawlLinks: true,
