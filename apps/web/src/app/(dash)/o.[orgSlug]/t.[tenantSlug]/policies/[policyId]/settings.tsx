@@ -72,9 +72,8 @@ export default function Page() {
 												confirm({
 													title: "Delete policy?",
 													action: `Delete '${policy().name}'`,
-													description: (
-														<>Are you sure you want to delete this policy?</>
-													),
+													description: () =>
+														"Are you sure you want to delete this policy?",
 													inputText: policy().name,
 													async onConfirm() {
 														await deletePolicy.mutateAsync({ id: policy().id });

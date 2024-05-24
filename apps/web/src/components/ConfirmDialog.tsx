@@ -1,5 +1,6 @@
 import { Dialog as KDialog } from "@kobalte/core";
 import type { JSX } from "solid-js";
+import { Accessor } from "solid-js";
 import { createStore } from "solid-js/store";
 import { z } from "zod";
 
@@ -17,7 +18,7 @@ import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 export type ConfirmDialogState = {
 	title: string;
 	action: string;
-	description?: JSX.Element;
+	description?: () => JSX.Element;
 	inputText?: string;
 	onConfirm?: () => Promise<void>;
 	open: boolean;
@@ -80,7 +81,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 				<DialogHeader>
 					<DialogTitle>{state.title}</DialogTitle>
 					{state.description && (
-						<DialogDescription>{state.description}</DialogDescription>
+						<DialogDescription>{state.description()}</DialogDescription>
 					)}
 				</DialogHeader>
 

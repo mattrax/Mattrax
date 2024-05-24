@@ -21,7 +21,7 @@ export function DeleteTenantButton() {
 						confirm({
 							title: "Delete tenant?",
 							action: `Delete '${tenant().name}'`,
-							description: (
+							description: () => (
 								<>
 									Are you sure you want to delete your tenant along with all{" "}
 									<b>users</b>, <b>devices</b>, <b>policies</b>,{" "}

@@ -84,7 +84,7 @@ export default function Page() {
 																	onClick={() => {
 																		confirm({
 																			title: "Remove Invite",
-																			description: (
+																			description: () => (
 																				<>
 																					Are you sure you want to remove the
 																					invite for <b>{invite.email}</b>?
@@ -129,7 +129,7 @@ export default function Page() {
 																		onClick={() => {
 																			confirm({
 																				title: "Remove Administrator",
-																				description: (
+																				description: () => (
 																					<>
 																						Are you sure you want to remove{" "}
 																						<b>{admin.email}</b> from this
