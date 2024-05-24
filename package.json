@@ -1,7 +1,10 @@
 {
 	"name": "@mattrax/monorepo",
 	"private": true,
-	"workspaces": ["apps/*", "packages/*"],
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/web dev",
 		"landing": "pnpm --filter @mattrax/landing --",
@@ -34,7 +37,8 @@
 		"vinxi": "^0.3.11"
 	},
 	"devDependencies": {
-		"husky": "^9.0.11"
+		"husky": "^9.0.11",
+		"wrangler": "^3.57.1"
 	},
 	"resolutions": {
 		"drizzle-orm": "^0.30.8"
