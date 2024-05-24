@@ -81,6 +81,7 @@ jobs:
       - name: Deploy
         # TODO: Mark as preview or production deploy???
         env:
-          CLOUDFLARE_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_DEFAULT_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
+          CLOUDFLARE_EMAIL: brendonovich@outlook.com
+          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
         run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-landing
