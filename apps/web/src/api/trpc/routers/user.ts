@@ -186,36 +186,36 @@ export const userRouter = createTRPCRouter({
 			}
 
 			await db.transaction((db) =>
-				Promise.all([
-					db
-						.insert(policyAssignments)
-						.values(
-							pols.map((pk) => ({
-								pk: user.pk,
-								policyPk: pk,
-								variant: sql`'user'`,
-							})),
-						)
-						.onDuplicateKeyUpdate({
-							set: {
-								pk: sql`${policyAssignments.pk}`,
-							},
-						}),
-					db
-						.insert(applicationAssignments)
-						.values(
-							apps.map((pk) => ({
-								pk: user.pk,
-								applicationPk: pk,
-								variant: sql`'user'`,
-							})),
-						)
-						.onDuplicateKeyUpdate({
-							set: {
-								pk: sql`${applicationAssignments.pk}`,
-							},
-						}),
-				]),
+				Promise.all(
+					[
+						pols.length > 0 &&
+							db
+								.insert(policyAssignments)
+								.values(
+									pols.map((pk) => ({
+										pk: user.pk,
+										policyPk: pk,
+										variant: sql`'user'`,
+									})),
+								)
+								.onDuplicateKeyUpdate({
+									set: { pk: sql`${policyAssignments.pk}` },
+								}),
+						apps.length > 0 &&
+							db
+								.insert(applicationAssignments)
+								.values(
+									apps.map((pk) => ({
+										pk: user.pk,
+										applicationPk: pk,
+										variant: sql`'user'`,
+									})),
+								)
+								.onDuplicateKeyUpdate({
+									set: { pk: sql`${applicationAssignments.pk}` },
+								}),
+					].filter(Boolean),
+				),
 			);
 		}),
 });
