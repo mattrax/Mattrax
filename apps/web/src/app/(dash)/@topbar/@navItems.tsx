@@ -1,6 +1,13 @@
-import { Tabs } from "@kobalte/core";
+import { Tabs } from "@kobalte/core/tabs";
 import { A, useMatch } from "@solidjs/router";
-import { For, type ParentProps, Show, children } from "solid-js";
+import {
+	For,
+	type ParentProps,
+	Show,
+	children,
+	createSignal,
+	onMount,
+} from "solid-js";
 
 export default function (props: ParentProps) {
 	const items = children(() => props.children) as unknown as () =>
@@ -16,8 +23,13 @@ export default function (props: ParentProps) {
 
 				const value = () => match()?.params.value ?? "";
 
+				const [mounted, setMounted] = createSignal(false);
+
+				// Wait for the first render + a microtask to finish before animating the indicator
+				onMount(() => setTimeout(() => setMounted(true), 5));
+
 				return (
-					<Tabs.Root
+					<Tabs
 						as="nav"
 						value={`${prefix()}/${value()}`}
 						class="bg-white text-white sticky top-0 z-40 bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
@@ -43,10 +55,13 @@ export default function (props: ParentProps) {
 								)}
 							</For>
 						</Tabs.List>
-						<Tabs.Indicator class="absolute transition-all duration-200 bottom-0 flex flex-row px-2 h-[2px]">
+						<Tabs.Indicator
+							class="absolute bottom-0 flex flex-row px-2 h-[2px]"
+							classList={{ "duration-200 transition-all": mounted() }}
+						>
 							<div class="bg-brand flex-1 rounded-full" />
 						</Tabs.Indicator>
-					</Tabs.Root>
+					</Tabs>
 				);
 			}}
 		</Show>
