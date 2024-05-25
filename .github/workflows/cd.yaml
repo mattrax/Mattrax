@@ -4,10 +4,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
-
 permissions:
   id-token: write
   contents: read
+
+env:
+  CLOUDFLARE_DEFAULT_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
+  CLOUDFLARE_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
+  CLOUDFLARE_EMAIL: brendonovich@outlook.com
+  CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
 
 jobs:
   sst:
@@ -47,9 +52,6 @@ jobs:
           ARM_CLIENT_ID: 8aaf4dbe-001d-4003-9572-8dd6ab658c53
           ARM_TENANT_ID: 3509b545-2799-4c5c-a0d2-f822ddbd416c
           AZURE_SUBSCRIPTION_ID: 3509b545-2799-4c5c-a0d2-f822ddbd416c
-          CLOUDFLARE_DEFAULT_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
-          CLOUDFLARE_EMAIL: brendonovich@outlook.com
-          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
           OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
           OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
 
@@ -57,10 +59,10 @@ jobs:
   # TODO: We need to run this on PR's too!!!!
   # TODO: Filter running to changes in `./apps/docs`
 
-  docs:
+  landing:
     name: Landing
     runs-on: ubuntu-latest
-    environment: production # TODO: Is this good being a duplicate?
+    environment: production
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -79,10 +81,27 @@ jobs:
         run: pnpm landing build
 
       - name: Deploy
-        # TODO: Mark as preview or production deploy???
-        env:
-          CLOUDFLARE_DEFAULT_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
-          CLOUDFLARE_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
-          CLOUDFLARE_EMAIL: brendonovich@outlook.com
-          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
         run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-landing
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install
+        run: pnpm i
+      
+      - name: Build
+        env:
+          NITRO_PRESET: cloudflare_pages
+        run: pnpm landing build
+
+      - name: Deploy
+        run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-docs
