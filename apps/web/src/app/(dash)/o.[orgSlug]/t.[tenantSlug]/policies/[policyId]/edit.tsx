@@ -17,9 +17,9 @@ export default function Page() {
 	const controller = createPolicyComposerController();
 
 	const windowsPolicies = createAsync(() =>
-		import("@mattrax/configuration-schemas/windows/ddf.json?raw").then(
-			({ default: str }) => JSON.parse(str),
-		),
+		import("@mattrax/configuration-schemas/windows/ddf.json?raw")
+			.then(({ default: str }) => JSON.parse(str))
+			.then((d) => new Promise((res) => setTimeout(() => res(d), 1000))),
 	);
 	const applePayloads = createAsync(() =>
 		import("@mattrax/configuration-schemas/apple/payloads.json?raw").then(

@@ -171,7 +171,6 @@ export function VariantTableSheet<T extends VariantTableVariants>(
 											</TabsTrigger>
 										)}
 									</Index>
-									<TabsIndicator />
 								</TabsList>
 							</Tabs>
 							<Suspense fallback={<Button disabled>Loading...</Button>}>

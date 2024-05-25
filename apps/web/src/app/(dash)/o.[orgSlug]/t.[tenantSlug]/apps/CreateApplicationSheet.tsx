@@ -186,7 +186,6 @@ export function CreateApplicationSheet(props: {
 												</TabsTrigger>
 											)}
 										</For>
-										<TabsIndicator />
 									</TabsList>
 								</Tabs>
 							)}

@@ -22,6 +22,7 @@ import {
 import {
 	Match,
 	Show,
+	Suspense,
 	Switch,
 	createEffect,
 	createMemo,
@@ -60,7 +61,6 @@ export function PolicyComposer(props: {
 				<TabsList>
 					<TabsTrigger value="windows">Windows</TabsTrigger>
 					<TabsTrigger value="apple">Apple</TabsTrigger>
-					<TabsIndicator />
 				</TabsList>
 			</nav>
 			<TabsContent
@@ -83,99 +83,122 @@ function Windows(props: {
 	csps?: Record<string, WindowsCSP>;
 	controller: VisualEditorController;
 }) {
-	const csps = createMemo(() =>
-		Object.entries(props.csps || {}).sort(([, a], [, b]) =>
-			a.name.localeCompare(b.name),
-		),
-	);
-
-	let payloadsScrollRef: HTMLDivElement;
-	const payloadsVirtualizer = createVirtualizer({
-		get count() {
-			return csps().length;
-		},
-		getScrollElement: () => payloadsScrollRef,
-		estimateSize: (i) => {
-			return 70 + Object.keys(csps()[i]![1]!.policies).length * 60;
-		},
-		overscan: 10,
-	});
-
 	return (
 		<>
 			<div class="flex-1 max-w-xl flex sticky top-12 flex-col max-h-[calc(100vh-3rem)] overflow-hidden">
 				<div class="m-2">
 					<Input class="z-20" placeholder="Search Configurations" disabled />
 				</div>
-				<div
-					class="overflow-y-auto flex-1 relative border-t border-gray-200"
-					ref={payloadsScrollRef!}
+				<Suspense
+					fallback={<div class="h-[9999px] border-t border-gray-200" />}
 				>
-					<ul
-						class="divide-y divide-gray-200 w-full relative"
-						style={{ height: `${payloadsVirtualizer.getTotalSize()}px` }}
-					>
-						<For
-							each={payloadsVirtualizer
-								.getVirtualItems()
-								.map((item) => [item, csps()[item.index]!] as const)}
-						>
-							{([item, [cspKey, value]]) => (
-								<li
-									class="absolute top-0 left-0 w-full overflow-hidden"
-									style={{
-										height: `${item.size}px`,
-										transform: `translateY(${item.start}px)`,
-										contain: "paint",
-									}}
+					{
+						(() => {
+							let payloadsScrollRef: HTMLDivElement;
+
+							const csps = createMemo(() =>
+								Object.entries(props.csps || {}).sort(([, a], [, b]) =>
+									a.name.localeCompare(b.name),
+								),
+							);
+
+							const payloadsVirtualizer = createVirtualizer({
+								get count() {
+									return csps().length;
+								},
+								getScrollElement: () => payloadsScrollRef,
+								estimateSize: (i) => {
+									return 70 + Object.keys(csps()[i]![1]!.policies).length * 60;
+								},
+								overscan: 10,
+							});
+
+							return (
+								<div
+									class="overflow-y-auto flex-1 relative border-t border-gray-200"
+									ref={payloadsScrollRef!}
 								>
-									<div class="px-4 py-3 bg-white w-full truncate shadow">
-										<span class="font-medium truncate">
-											{value.name || cspKey}
-										</span>
-										<p class="text-sm text-neutral-500 overflow-y-auto scrollbar-none truncate">
-											{cspKey}
-										</p>
-									</div>
-									<ul>
-										<For each={Object.entries(value.policies)}>
-											{([key, value]) => (
-												<li class="flex flex-row py-2 px-4 items-center gap-4">
-													<Checkbox
-														checked={
-															props.controller.selected.windows[cspKey]?.[key]
-																?.enabled ?? false
-														}
-														onChange={(checked) => {
-															props.controller.setSelected("windows", cspKey, {
-																[key]: { enabled: checked, data: null },
-															});
-														}}
-													/>
-													<div>
+									<ul
+										class="divide-y divide-gray-200 w-full relative"
+										style={{
+											height: `${payloadsVirtualizer.getTotalSize()}px`,
+										}}
+									>
+										<For
+											each={payloadsVirtualizer
+												.getVirtualItems()
+												.map((item) => [item, csps()[item.index]!] as const)}
+										>
+											{([item, [cspKey, value]]) => (
+												<li
+													class="absolute top-0 left-0 w-full overflow-hidden"
+													style={{
+														height: `${item.size}px`,
+														transform: `translateY(${item.start}px)`,
+														contain: "paint",
+													}}
+												>
+													<div class="px-4 py-3 bg-white w-full truncate shadow">
 														<span class="font-medium truncate">
-															{value.name || key}
+															{value.name || cspKey}
 														</span>
 														<p class="text-sm text-neutral-500 overflow-y-auto scrollbar-none truncate">
-															{key}
+															{cspKey}
 														</p>
 													</div>
-													{value.scope && (
-														<div class="flex-1 text-right">
-															<Badge>
-																{value.scope === "user" ? "User" : "Device"}
-															</Badge>
-														</div>
-													)}
+													<ul>
+														<For each={Object.entries(value.policies)}>
+															{([key, value]) => (
+																<li class="flex flex-row py-2 px-4 items-center gap-4">
+																	<Checkbox
+																		checked={
+																			props.controller.selected.windows[
+																				cspKey
+																			]?.[key]?.enabled ?? false
+																		}
+																		onChange={(checked) => {
+																			props.controller.setSelected(
+																				"windows",
+																				cspKey,
+																				{
+																					[key]: {
+																						enabled: checked,
+																						data: null,
+																					},
+																				},
+																			);
+																		}}
+																	/>
+																	<div>
+																		<span class="font-medium truncate">
+																			{value.name || key}
+																		</span>
+																		<p class="text-sm text-neutral-500 overflow-y-auto scrollbar-none truncate">
+																			{key}
+																		</p>
+																	</div>
+																	{value.scope && (
+																		<div class="flex-1 text-right">
+																			<Badge>
+																				{value.scope === "user"
+																					? "User"
+																					: "Device"}
+																			</Badge>
+																		</div>
+																	)}
+																</li>
+															)}
+														</For>
+													</ul>
 												</li>
 											)}
 										</For>
 									</ul>
-								</li>
-							)}
-						</For>
-					</ul>
-				</div>
+								</div>
+							);
+						}) as any
+					}
+				</Suspense>
 			</div>
 			<ul class="flex-1 flex flex-col divide-y divide-y-200">
 				<For each={Object.entries(props.controller.selected.windows)}>
