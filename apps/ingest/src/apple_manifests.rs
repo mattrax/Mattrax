@@ -29,7 +29,10 @@ pub enum PropertyType {
     Integer,
     Real,
     Float,
-    String,
+    #[serde(rename_all = "camelCase")]
+    String {
+        range_list: Vec<(String, String)>,
+    },
     Url,
     Alias,
     UnionPolicy,
@@ -69,7 +72,16 @@ impl PropertyType {
             Preference::Integer(_) => PropertyType::Integer,
             Preference::Real(_) => PropertyType::Real,
             Preference::Float(_) => PropertyType::Float,
-            Preference::String(_) => PropertyType::String,
+            Preference::String {
+                pfm_range_list,
+                pfm_range_list_titles,
+                ..
+            } => PropertyType::String {
+                range_list: pfm_range_list
+                    .into_iter()
+                    .zip(pfm_range_list_titles)
+                    .collect(),
+            },
             Preference::Url(_) => PropertyType::Url,
             Preference::Alias(_) => PropertyType::Alias,
             Preference::UnionPolicy(_) => PropertyType::UnionPolicy,

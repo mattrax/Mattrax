@@ -1,32 +1,29 @@
-import {
-	type Accessor,
-	type ParentProps,
-	Show,
-	createContext,
-	useContext,
-} from "solid-js";
+import { type ParentProps, Show, createContext, useContext } from "solid-js";
 import { createStore } from "solid-js/store";
 
-export function createPolicyComposerController() {
-	const [selected, setSelected] = createStore<{
+export type PolicyPlatform = "windows" | "apple";
+
+export function createPolicyComposerController(platform: PolicyPlatform) {
+	const [state, setState] = createStore<{
+		platform: PolicyPlatform;
 		windows: Record<string, Record<string, { enabled: boolean; data: any }>>;
 		apple: Record<
 			string,
 			{ enabled: boolean; data: Record<string, any>; open?: boolean }
 		>;
-	}>({ windows: {}, apple: {} });
+	}>({ platform, windows: {}, apple: {} });
 
-	return { selected, setSelected };
+	return { state, setState };
 }
 
-export type VisualEditorController = ReturnType<
+export type PolicyComposerController = ReturnType<
 	typeof createPolicyComposerController
 >;
 
-const ControllerContext = createContext<VisualEditorController>(null!);
+const ControllerContext = createContext<PolicyComposerController>(null!);
 
 export function ControllerProvider(
-	props: ParentProps<{ controller: VisualEditorController }>,
+	props: ParentProps<{ controller: PolicyComposerController }>,
 ) {
 	return (
 		<Show when={props.controller} keyed>
@@ -44,7 +41,7 @@ export function useController() {
 
 	if (!ctx) {
 		throw new Error(
-			"useComposerContext must be used within a PolicyComposerProvider",
+			"useController must be used within a PolicyComposerProvider",
 		);
 	}
 

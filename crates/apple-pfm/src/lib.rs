@@ -86,7 +86,14 @@ pub enum Preference {
     Integer(PreferenceBase),
     Real(PreferenceBase),
     Float(PreferenceBase),
-    String(PreferenceBase),
+    String {
+        #[serde(flatten)]
+        base: PreferenceBase,
+        #[serde(default)]
+        pfm_range_list: Vec<String>,
+        #[serde(default)]
+        pfm_range_list_titles: Vec<String>,
+    },
     Url(PreferenceBase),
     Alias(PreferenceBase),
     UnionPolicy(PreferenceBase),
@@ -105,7 +112,7 @@ impl std::ops::Deref for Preference {
             Preference::Integer(p) => p,
             Preference::Real(p) => p,
             Preference::Float(p) => p,
-            Preference::String(p) => p,
+            Preference::String { base, .. } => base,
             Preference::Url(p) => p,
             Preference::Alias(p) => p,
             Preference::UnionPolicy(p) => p,
@@ -124,7 +131,7 @@ impl Preference {
             Preference::Integer(_) => "integer",
             Preference::Real(_) => "real",
             Preference::Float(_) => "float",
-            Preference::String(_) => "string",
+            Preference::String { .. } => "string",
             Preference::Url(_) => "url",
             Preference::Alias(_) => "alias",
             Preference::UnionPolicy(_) => "union policy",

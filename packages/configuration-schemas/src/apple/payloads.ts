@@ -19,7 +19,7 @@ export type PropertyType =
 	| "integer"
 	| "real"
 	| "float"
-	| "string"
+	| { string: { rangeList: [string, string][] } }
 	| "url"
 	| "alias"
 	| "unionPolicy"

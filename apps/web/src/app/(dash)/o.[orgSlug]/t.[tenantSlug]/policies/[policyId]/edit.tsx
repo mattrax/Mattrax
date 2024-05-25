@@ -1,21 +1,17 @@
 import {
 	PolicyComposer,
+	type PolicyPlatform,
 	createPolicyComposerController,
 } from "@mattrax/policy-composer";
 import { createContentEditableController } from "@mattrax/ui/lib";
 
-import { createAsync } from "@solidjs/router";
-import { Show, createSignal } from "solid-js";
+import { createAsync, useSearchParams } from "@solidjs/router";
+import { Show, createEffect, createSignal } from "solid-js";
 import { useFeatures } from "~/lib/featureFlags";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { PolicyContext, usePolicy } from "./Context";
 
 export default function Page() {
-	const policy = () => usePolicy()();
-	const [policyName, setPolicyName] = createSignal("./policy.yaml");
-	const policyNameController = createContentEditableController(setPolicyName);
-	const controller = createPolicyComposerController();
-
 	const windowsPolicies = createAsync(() =>
 		import("@mattrax/configuration-schemas/windows/ddf.json?raw").then(
 			({ default: str }) => JSON.parse(str),
@@ -26,6 +22,21 @@ export default function Page() {
 			({ default: str }) => JSON.parse(str),
 		),
 	);
+
+	const policy = () => usePolicy()();
+	const [policyName, setPolicyName] = createSignal("./policy.yaml");
+	const policyNameController = createContentEditableController(setPolicyName);
+
+	const [searchParams, setSearchParams] = useSearchParams<{
+		platform: PolicyPlatform;
+	}>();
+	const controller = createPolicyComposerController(
+		searchParams.platform ?? "windows",
+	);
+
+	createEffect(() => {
+		setSearchParams({ platform: controller.state.platform });
+	});
 
 	return (
 		<PolicyContext>

@@ -92,20 +92,16 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 																<li class="flex flex-row py-2 px-4 items-center gap-4">
 																	<Checkbox
 																		checked={
-																			controller.selected.windows[cspKey]?.[key]
+																			controller.state.windows[cspKey]?.[key]
 																				?.enabled ?? false
 																		}
 																		onChange={(checked) => {
-																			controller.setSelected(
-																				"windows",
-																				cspKey,
-																				{
-																					[key]: {
-																						enabled: checked,
-																						data: null,
-																					},
+																			controller.setState("windows", cspKey, {
+																				[key]: {
+																					enabled: checked,
+																					data: null,
 																				},
-																			);
+																			});
 																		}}
 																	/>
 																	<div>
@@ -140,7 +136,7 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 				</Suspense>
 			</div>
 			<ul class="flex-1 flex flex-col divide-y divide-y-200">
-				<For each={Object.entries(controller.selected.windows)}>
+				<For each={Object.entries(controller.state.windows)}>
 					{([cspPath, csp]) => (
 						<For each={Object.entries(csp).filter(([_, v]) => v?.enabled)}>
 							{([key, value]) => {
