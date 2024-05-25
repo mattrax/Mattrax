@@ -1,11 +1,24 @@
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { useApp } from "../[appId]";
+import { trpc } from "~/lib";
+import { useZodParams } from "~/lib/useZodParams";
+import { z } from "zod";
+import { Suspense } from "solid-js";
 
 export default function Page() {
-	const app = useApp();
+	const params = useZodParams({ appId: z.string() });
+
+	const query = trpc.app.get.createQuery(() => ({
+		id: params.appId,
+	}));
 
 	return (
-		<PageLayout heading={<PageLayoutHeading>Overview</PageLayoutHeading>}>
+		<PageLayout
+			heading={
+				<PageLayoutHeading>
+					<Suspense>{query.data?.name}</Suspense>
+				</PageLayoutHeading>
+			}
+		>
 			<h1 class="text-muted-foreground opacity-70">Coming soon...</h1>
 		</PageLayout>
 	);

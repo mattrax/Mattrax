@@ -1,9 +1,7 @@
-import { createContextProvider } from "@solid-primitives/context";
 import type { RouteDefinition } from "@solidjs/router";
 import type { ParentProps } from "solid-js";
 import { z } from "zod";
 
-import type { RouterOutput } from "~/api";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 import { createNotFoundRedirect } from "~/lib/utils";
@@ -16,26 +14,11 @@ export const route = {
 		}),
 } satisfies RouteDefinition;
 
-function useAppId() {
-	const params = useZodParams({ appId: z.string() });
-	return () => params.appId;
-}
-
-export const [AppContextProvider, useApp] = createContextProvider(
-	(props: {
-		app: NonNullable<RouterOutput["app"]["get"]>;
-		query: ReturnType<typeof trpc.app.get.createQuery>;
-	}) => {
-		return Object.assign(() => props.app, { query: props.query });
-	},
-	null!,
-);
-
 export default function Layout(props: ParentProps) {
-	const appId = useAppId();
+	const params = useZodParams({ appId: z.string() });
 
 	createNotFoundRedirect({
-		query: trpc.app.get.createQuery(() => ({ id: appId() })),
+		query: trpc.app.get.createQuery(() => ({ id: params.appId })),
 		toast: "Application not found",
 		to: "../../apps",
 	});
