@@ -22,7 +22,9 @@ const SelectTrigger: Component<PolymorphicProps<"button", SelectTriggerProps>> =
 		return (
 			<SelectPrimitive.Trigger
 				class={cn(
-					"border-input ring-offset-background placeholder:text-muted-foreground focus:ring-ring flex h-10 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+					"border-input ring-offset-background placeholder:text-muted-foreground focus:ring-ring flex h-10 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm",
+					"focus:outline-none focus:ring-2 focus:ring-offset-2 transition-shadow duration-75",
+					"disabled:cursor-not-allowed disabled:opacity-50",
 					props.class,
 				)}
 				{...rest}
@@ -43,14 +45,14 @@ const SelectContent: Component<PolymorphicProps<"div", SelectContentProps>> = (
 		<SelectPrimitive.Portal>
 			<SelectPrimitive.Content
 				class={cn(
-					"bg-popover text-popover-foreground relative z-50 min-w-[8rem] overflow-hidden rounded-md border shadow-md",
+					"bg-popover text-popover-foreground relative z-50 min-w-[8rem] overflow-hidden rounded-md border shadow-md focus:outline-none",
 					"ui-expanded:animate-in ui-expanded:fade-in-0 ui-expanded:slide-in-from-top-2",
 					"ui-closed:animate-out ui-closed:fade-out-0 ui-closed:slide-out-to-top-2",
 					props.class,
 				)}
 				{...rest}
 			>
-				<SelectPrimitive.Listbox class="m-0 p-1" />
+				<SelectPrimitive.Listbox class="m-0 p-1 focus:outline-none" />
 			</SelectPrimitive.Content>
 		</SelectPrimitive.Portal>
 	);
