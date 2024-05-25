@@ -62,7 +62,7 @@ const APPLICATION_TARGETS = {
 					name: result.trackName,
 					author: result.sellerName,
 					image: result.artworkUrl512,
-				})) satisfies App[];
+				})) as App[];
 			},
 		}),
 	},
@@ -80,8 +80,7 @@ const APPLICATION_TARGETS = {
 					id: result.PackageIdentifier,
 					name: result.PackageName,
 					author: result.Publisher,
-					image: undefined,
-				})) satisfies App[];
+				})) as App[];
 			},
 		}),
 	},

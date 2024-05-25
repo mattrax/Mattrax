@@ -7,6 +7,11 @@ import { useZodParams } from "~/lib/useZodParams";
 import { createNotFoundRedirect } from "~/lib/utils";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 
+export function usePolicyId() {
+	const params = useZodParams({ policyId: z.string() });
+	return () => params.policyId;
+}
+
 export const route = {
 	load: ({ params }) =>
 		trpc.useContext().policy.get.ensureData({
