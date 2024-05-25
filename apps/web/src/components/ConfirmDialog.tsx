@@ -1,6 +1,5 @@
 import { Dialog as KDialog } from "@kobalte/core";
 import type { JSX } from "solid-js";
-import { Accessor } from "solid-js";
 import { createStore } from "solid-js/store";
 import { z } from "zod";
 

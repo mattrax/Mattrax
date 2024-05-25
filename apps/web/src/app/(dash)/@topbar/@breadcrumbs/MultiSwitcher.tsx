@@ -1,3 +1,4 @@
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@mattrax/ui";
 import {
 	For,
@@ -8,12 +9,11 @@ import {
 	createSignal,
 	startTransition,
 } from "solid-js";
-
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { z } from "zod";
+
 import { useZodParams } from "~/lib/useZodParams";
 
-export function MultiSwitcher(props: ParentProps) {
+export function MultiSwitcher() {
 	const [modal, setModal] = createSignal<"org" | "tenant">();
 
 	const params = useZodParams({

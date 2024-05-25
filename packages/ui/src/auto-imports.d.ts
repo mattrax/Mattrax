@@ -34,6 +34,7 @@ declare global {
   const IconTablerChevronDown: typeof import('~icons/tabler/chevron-down.jsx')['default']
   const IconTablerChevronLeft: typeof import('~icons/tabler/chevron-left.jsx')['default']
   const IconTablerChevronRight: typeof import('~icons/tabler/chevron-right.jsx')['default']
+  const IconTablerChevronUp: typeof import('~icons/tabler/chevron-up.jsx')['default']
   const IconTablerCircle: typeof import('~icons/tabler/circle.jsx')['default']
   const IconTablerDots: typeof import('~icons/tabler/dots.jsx')['default']
   const IconTablerSelector: typeof import('~icons/tabler/selector.jsx')['default']
