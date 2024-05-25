@@ -43,7 +43,9 @@ const SelectContent: Component<PolymorphicProps<"div", SelectContentProps>> = (
 		<SelectPrimitive.Portal>
 			<SelectPrimitive.Content
 				class={cn(
-					"bg-popover text-popover-foreground animate-in fade-in-80 relative z-50 min-w-[8rem] overflow-hidden rounded-md border shadow-md",
+					"bg-popover text-popover-foreground relative z-50 min-w-[8rem] overflow-hidden rounded-md border shadow-md",
+					"ui-expanded:animate-in ui-expanded:fade-in-0 ui-expanded:slide-in-from-top-2",
+					"ui-closed:animate-out ui-closed:fade-out-0 ui-closed:slide-out-to-top-2",
 					props.class,
 				)}
 				{...rest}

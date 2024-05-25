@@ -38,7 +38,7 @@ export function Apple(props: {
 		<>
 			<div class="flex-1 max-w-xl flex sticky top-12 flex-col max-h-[calc(100vh-3rem)] overflow-hidden">
 				<div class="m-2">
-					<Input class="z-20" placeholder="Search Payloads" />
+					<Input class="z-20" placeholder="Search Payloads" disabled />
 				</div>
 				<ul class="rounded-lg overflow-y-auto flex-1">
 					<For

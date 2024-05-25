@@ -3,6 +3,7 @@ import {
 	type PolymorphicProps,
 } from "@kobalte/core";
 import type { CheckboxRootProps } from "@kobalte/core/checkbox";
+import clsx from "clsx";
 import type { ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
@@ -16,7 +17,11 @@ const Checkbox = <T extends ValidComponent = "div">(
 		<CheckboxPrimitive.Root class={cn("items-top flex", props.class)} {...rest}>
 			<CheckboxPrimitive.Input class="peer" style={{ position: "relative" }} />
 			<CheckboxPrimitive.Control
-				class="border-primary ring-offset-background data-[checked]:bg-primary data-[checked]:text-primary-foreground h-4 w-4 shrink-0 rounded-sm border peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[checked]:border-none"
+				class={clsx(
+					"border-primary ring-offset-background data-[checked]:bg-primary data-[checked]:text-primary-foreground h-4 w-4 shrink-0 rounded-sm border",
+					"peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-ring transition-all duration-75",
+					"disabled:cursor-not-allowed disabled:opacity-50 data-[checked]:border-none",
+				)}
 				onClick={(e) => {
 					e.stopPropagation();
 				}}
