@@ -1,6 +1,5 @@
 import {
 	Badge,
-	Card,
 	CardDescription,
 	CardTitle,
 	Checkbox,
@@ -20,9 +19,16 @@ import {
 	TabsList,
 	TabsTrigger,
 } from "@mattrax/ui";
-import { Match, Show, Switch, createMemo, createUniqueId } from "solid-js";
+import {
+	Match,
+	Show,
+	Switch,
+	createEffect,
+	createMemo,
+	createUniqueId,
+} from "solid-js";
 import { For } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createStore, produce } from "solid-js/store";
 
 import type { AppleProfilePayload } from "@mattrax/configuration-schemas/apple";
 import type { WindowsCSP } from "@mattrax/configuration-schemas/windows";
@@ -30,7 +36,10 @@ import type { WindowsCSP } from "@mattrax/configuration-schemas/windows";
 export function createPolicyComposerController() {
 	const [selected, setSelected] = createStore<{
 		windows: Record<string, Record<string, { enabled: boolean; data: any }>>;
-		apple: Record<string, { enabled: boolean; data: Record<string, any> }>;
+		apple: Record<
+			string,
+			{ enabled: boolean; data: Record<string, any>; open?: boolean }
+		>;
 	}>({ windows: {}, apple: {} });
 
 	return { selected, setSelected };
@@ -74,22 +83,53 @@ function Windows(props: {
 	csps?: Record<string, WindowsCSP>;
 	controller: VisualEditorController;
 }) {
+	const csps = createMemo(() =>
+		Object.entries(props.csps || {}).sort(([, a], [, b]) =>
+			a.name.localeCompare(b.name),
+		),
+	);
+
+	let payloadsScrollRef: HTMLDivElement;
+	const payloadsVirtualizer = createVirtualizer({
+		get count() {
+			return csps().length;
+		},
+		getScrollElement: () => payloadsScrollRef,
+		estimateSize: (i) => {
+			return 70 + Object.keys(csps()[i]![1]!.policies).length * 60;
+		},
+		overscan: 10,
+	});
+
 	return (
 		<>
 			<div class="flex-1 max-w-xl flex sticky top-12 flex-col max-h-[calc(100vh-3rem)] overflow-hidden">
 				<div class="m-2">
-					<Input class="z-20" placeholder="Search Configurations" />
+					<Input class="z-20" placeholder="Search Configurations" disabled />
 				</div>
-				<div class="flex-1 overflow-hidden flex">
-					<ul class="overflow-y-auto flex-1 divide-y divide-gray-200 border-t border-gray-200">
+				<div
+					class="overflow-y-auto flex-1 relative border-t border-gray-200"
+					ref={payloadsScrollRef!}
+				>
+					<ul
+						class="divide-y divide-gray-200 w-full relative"
+						style={{ height: `${payloadsVirtualizer.getTotalSize()}px` }}
+					>
 						<For
-							each={Object.entries(props.csps || {}).sort(([, a], [, b]) =>
-								a.name.localeCompare(b.name),
-							)}
+							each={payloadsVirtualizer
+								.getVirtualItems()
+								.map((item) => [item, csps()[item.index]!] as const)}
 						>
-							{([cspKey, value]) => (
-								<li class="items-center gap-4" style="contain:paint">
-									<div class="px-4 py-3 sticky top-0 bg-white w-full truncate shadow -mt-px">
+							{([item, [cspKey, value]]) => (
+								<li
+									class="absolute top-0 left-0 w-full overflow-hidden"
+									style={{
+										height: `${item.size}px`,
+										transform: `translateY(${item.start}px)`,
+										contain: "paint",
+									}}
+								>
+									<div class="px-4 py-3 bg-white w-full truncate shadow">
 										<span class="font-medium truncate">
 											{value.name || cspKey}
 										</span>
@@ -342,7 +382,8 @@ function Windows(props: {
 	);
 }
 
-import { Accordion } from "@kobalte/core";
+import { Accordion } from "@kobalte/core/accordion";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 
 function Apple(props: {
 	payloads?: Record<string, AppleProfilePayload>;
@@ -375,6 +416,7 @@ function Apple(props: {
 										if (value)
 											props.controller.setSelected("apple", key as any, {
 												enabled: value,
+												open: true,
 												data: {},
 											});
 									}}
@@ -395,10 +437,26 @@ function Apple(props: {
 					</For>
 				</ul>
 			</div>
-			<Accordion.Root
+			<Accordion
 				as="ul"
 				class="flex-1 flex flex-col divide-y divide-y-200"
 				multiple
+				value={Object.entries(props.controller.selected.apple)
+					.filter(([, payload]) => payload?.open)
+					.map(([name]) => name)}
+				onChange={(selectedValues) => {
+					props.controller.setSelected(
+						"apple",
+						produce((values) => {
+							for (const key of Object.keys(values)) {
+								const v = values?.[key];
+								if (!v) continue;
+
+								v.open = selectedValues.includes(key);
+							}
+						}),
+					);
+				}}
 			>
 				<For
 					each={Object.entries(props.controller.selected.apple).filter(
@@ -522,7 +580,7 @@ function Apple(props: {
 						);
 					}}
 				</For>
-			</Accordion.Root>
+			</Accordion>
 		</>
 	);
 }

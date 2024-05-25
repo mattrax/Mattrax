@@ -1,3 +1,4 @@
+import { flushResponse } from "@mattrax/trpc-server-function/server";
 import { createId } from "@paralleldrive/cuid2";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -10,7 +11,6 @@ import {
 	publicProcedure,
 	tenantProcedure,
 } from "../helpers";
-import { flushResponse } from "@mattrax/trpc-server-function/server";
 
 export const applicationRouter = createTRPCRouter({
 	list: tenantProcedure

@@ -609,6 +609,9 @@ importers:
       '@mattrax/ui':
         specifier: workspace:*
         version: link:../ui
+      '@tanstack/solid-virtual':
+        specifier: ^3.5.0
+        version: 3.5.0(solid-js@1.8.17)
       solid-js:
         specifier: ^1.8.17
         version: 1.8.17
@@ -3536,6 +3539,11 @@ packages:
     engines: {node: '>=12'}
     peerDependencies:
       solid-js: '>=1.3'
+
+  '@tanstack/solid-virtual@3.5.0':
+    resolution: {integrity: sha512-iqiaHaEN23VIRQbCs+vtZ4gBt66M0QxPQ1q7lQXfAL+rkvZCbvdf9jzQ8PX+bvvd0NQQvqxtHuDMc9cUNfPmXg==}
+    peerDependencies:
+      solid-js: ^1.3.0
 
   '@tanstack/store@0.3.1':
     resolution: {integrity: sha512-A49KN8SpLMWaNmZGPa9K982RQ81W+m7W6iStcQVeKeVS70JZRqkF0fDwKByREPq6qz9/kS0aQFOPQ0W6wIeU5g==}
@@ -11064,6 +11072,11 @@ snapshots:
   '@tanstack/solid-table@8.17.3(solid-js@1.8.17)':
     dependencies:
       '@tanstack/table-core': 8.17.3
+      solid-js: 1.8.17
+
+  '@tanstack/solid-virtual@3.5.0(solid-js@1.8.17)':
+    dependencies:
+      '@tanstack/virtual-core': 3.5.0
       solid-js: 1.8.17
 
   '@tanstack/store@0.3.1': {}

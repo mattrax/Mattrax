@@ -21,16 +21,16 @@ import {
 	type Accessor,
 	For,
 	type JSX,
+	Show,
 	Suspense,
 	createEffect,
 	createSignal,
 	startTransition,
-	Show,
 } from "solid-js";
 import { z } from "zod";
+import { getObjectKeys } from "~/api/utils";
 import { trpc } from "~/lib";
 import { useTenantSlug } from "../../t.[tenantSlug]";
-import { getObjectKeys } from "~/api/utils";
 
 const IOS_APP_SCHEMA = z.object({
 	results: z.array(

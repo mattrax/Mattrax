@@ -1,8 +1,8 @@
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
+import { Suspense } from "solid-js";
+import { z } from "zod";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
-import { Suspense } from "solid-js";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 
 export default function Page() {
 	const params = useZodParams({ appId: z.string() });
