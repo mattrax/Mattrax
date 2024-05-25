@@ -84,13 +84,20 @@ pub struct Property {
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
     r#type: PropertyType,
+    #[serde(skip_serializing_if = "is_false")]
+    supervised: bool,
 }
 
 impl Property {
     fn parse(preference: apple_pfm::Preference) -> Property {
         Property {
-            title: preference.pfm_title.clone(),
+            title: preference
+                .pfm_title
+                .as_ref()
+                .or(preference.pfm_name.as_ref())
+                .cloned(),
             description: preference.pfm_description.clone(),
+            supervised: preference.pfm_supervised.unwrap_or_default(),
             r#type: PropertyType::from_preference(preference),
         }
     }

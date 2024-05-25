@@ -62,6 +62,7 @@ pub struct PreferenceBase {
     pub pfm_description_reference: Option<String>,
     pub pfm_title: Option<String>,
     pub pfm_name: Option<String>,
+    pub pfm_supervised: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

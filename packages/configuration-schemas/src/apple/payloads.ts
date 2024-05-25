@@ -8,6 +8,7 @@ export type Property = {
 	title?: string | null;
 	description?: string | null;
 	type: PropertyType;
+	supervised: boolean;
 };
 export type PropertyType =
 	| { array: PropertyType[] }

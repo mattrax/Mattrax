@@ -122,35 +122,36 @@ export function Apple(props: {
 									<Accordion.Item
 										value={payloadKey}
 										as="li"
-										class="border-b border-neutral-200"
+										class="border-b border-gray-200"
 									>
 										<Accordion.Header class="shadow sticky top-12 bg-white z-10">
 											<Accordion.Trigger
 												as="div"
-												class="p-4 flex flex-row justify-between items-center group"
+												class="p-4 flex flex-row justify-between items-center group gap-4"
 											>
-												<div>
+												<div class="flex-1">
 													<CardTitle class="mb-1">{itemConfig.title}</CardTitle>
 													<CardDescription>
 														{itemConfig.description}
 													</CardDescription>
 												</div>
-												<IconTablerChevronUp class="ui-group-closed:rotate-180" />
+												{itemConfig.supervised && <Badge>Supervised</Badge>}
+												<IconTablerChevronUp class="ml-auto ui-group-closed:rotate-180" />
 											</Accordion.Trigger>
 										</Accordion.Header>
 										<Accordion.Content
 											as="ul"
-											class="space-y-2 p-4 transition-all animate-accordion-up data-[expanded]:animate-accordion-down overflow-hidden"
+											class="space-y-3 p-4 transition-all animate-accordion-up data-[expanded]:animate-accordion-down overflow-hidden"
 											onFocusIn={(e: FocusEvent) => e.stopPropagation()}
 										>
 											<For each={Object.entries(itemConfig.properties)}>
 												{([key, property]) => {
 													const id = createUniqueId();
 
-													const [, setValue] = createStore(value);
+													const [, setValue] = createStore(value.data[key]);
 
 													return (
-														<li class="gap space-y-1">
+														<li>
 															<div class="flex flex-row items-center gap-1.5 relative">
 																{value.data[key] && (
 																	<button
@@ -216,12 +217,9 @@ export function Apple(props: {
 																		id={id}
 																		value={value.data[key] ?? ""}
 																		type="text"
+																		class="my-0.5"
 																		onChange={(e) =>
-																			setValue(
-																				"data",
-																				key,
-																				e.currentTarget.value,
-																			)
+																			setValue(e.currentTarget.value)
 																		}
 																	/>
 																</Match>
@@ -230,12 +228,9 @@ export function Apple(props: {
 																>
 																	<NumberInput
 																		value={value.data[key] ?? 0}
-																		onChange={(value) =>
-																			setValue(
-																				"data",
-																				key,
-																				Number.parseInt(value),
-																			)
+																		class="my-0.5"
+																		onRawValueChange={(value) =>
+																			setValue(value)
 																		}
 																	>
 																		<div class="relative">
@@ -246,6 +241,7 @@ export function Apple(props: {
 																	</NumberInput>
 																</Match>
 															</Switch>
+															{property.supervised && <Badge>Supervised</Badge>}
 														</li>
 													);
 												}}

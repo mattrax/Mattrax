@@ -179,9 +179,11 @@
         "type": "string"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PFC_SegmentedControl_Plugins": {
+        "title": "PFC_SegmentedControl_Plugins",
         "type": "string"
       },
       "PackageURL": {
@@ -205,6 +207,7 @@
         "type": "string"
       },
       "Region": {
+        "title": "Region",
         "description": "Munki has a feature which enables Mac administrators to use middleware to change munki's HTTP request. S3-Auth uses this feature to create the HTTP headers necessary to authenticate to S3.\n\nRegion for S3 bucket.",
         "type": "string"
       },
@@ -239,6 +242,7 @@
         "type": "string"
       },
       "SoftwareRepoURL": {
+        "title": "SoftwareRepoURL",
         "description": "Base URL for Munki repository.",
         "type": "string"
       },
@@ -294,14 +298,17 @@
     "description": "MunkiReport settings",
     "properties": {
       "BaseUrl": {
+        "title": "BaseUrl",
         "description": "BaseUrl tells MunkiReport where to find the MunkiReport server. It contains the full url to the server - and subdirectory - ending in a slash - /. Note: BaseUrl is set automatically when installing MunkiReport via the command line or a package.",
         "type": "string"
       },
       "Passphrase": {
+        "title": "Passphrase",
         "description": "If you have the MunkiReport server configured to use passphrases, you need to set these on the client to allow it to report in.",
         "type": "string"
       },
       "ReportItems": {
+        "title": "ReportItems",
         "description": "ReportItems contains a dictionary that tells MunkiReport where to look for the report files. The key is the name of the module, the value contains a path to the appropriate file. Note: ReportItems are set automatically when installing MunkiReport via the command line or a package.",
         "type": {
           "dictionary": {
@@ -319,10 +326,12 @@
         }
       },
       "UseMunkiAdditionalHttpHeaders": {
+        "title": "UseMunkiAdditionalHttpHeaders",
         "description": "If the munki repository and MunkiReport are served from the same server, it may be necessary to use the headers set in munki.",
         "type": "boolean"
       },
       "scriptTimeOut": {
+        "title": "scriptTimeOut",
         "description": "By default, MunkiReport kills a script if it takes longer than 10 seconds to run. You can override this behavior by adding the scriptTimeOut preference key. The entry should consist of an integer containing the number of seconds that a script can run.",
         "type": "string"
       }
@@ -333,6 +342,7 @@
     "description": "Use this section to define settings for 1Password password manager version 8",
     "properties": {
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "privacy.checkHibp": {
@@ -517,6 +527,7 @@
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PasteboardClearTimeout": {
@@ -697,6 +708,7 @@
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "RecordTimeoutAsDeferral": {
@@ -934,6 +946,7 @@
         "type": "integer"
       },
       "Interface": {
+        "title": "Interface",
         "type": "string"
       },
       "KeepAwake": {
@@ -1016,6 +1029,7 @@
         "type": "integer"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "ParentDownloadTimeout": {
@@ -1180,6 +1194,7 @@
         "type": "integer"
       },
       "Verbose": {
+        "title": "Verbose",
         "type": "boolean"
       }
     }
@@ -1444,6 +1459,7 @@
     "description": "Enterprise Connect settings",
     "properties": {
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "adRealm": {
@@ -1783,6 +1799,7 @@
         "type": "string"
       },
       "ForceEnableInSetupAssistant": {
+        "title": "ForceEnableInSetupAssistant",
         "description": "If 'true', and this payload is installed after enrolling with MDM in Setup Assistant, it requests Setup Assistant to enable FileVault at setup time. In this case, the system also ignores all other keys in this payload, except for 'ShowRecoveryKey'.\nTo use this, enable the Await Device Configured DEP configuration option, send this profile with this key set, before sending the DeviceConfiguredCommand.",
         "type": "boolean"
       },
@@ -2067,6 +2084,7 @@
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PrintHeadersAndFooters": {
@@ -2270,6 +2288,7 @@
         "type": "boolean"
       },
       "UserHasDeclinedEnable": {
+        "title": "UserHasDeclinedEnable",
         "description": "",
         "type": "boolean"
       }
@@ -2341,16 +2360,19 @@
     "description": "Spotlight Search settings",
     "properties": {
       "orderedItems": {
+        "title": "orderedItems",
         "description": "Add each Spotlight search item in the order you want them to be displayed in Spotlight. As these items are all contained in a single array, to manage any single item each individual Spotlight search category needs to be added below.  You may need to logout after installing the profile to verify the results.",
         "type": {
           "array": [
             {
               "dictionary": {
                 "enabled": {
+                  "title": "enabled",
                   "description": "Set this preference to 'false' to disable the applicable Spotlight search option.",
                   "type": "boolean"
                 },
                 "name": {
+                  "title": "name",
                   "description": "Spotlight Search Item Category",
                   "type": "string"
                 }
@@ -2740,6 +2762,7 @@
               }
             },
             "FileProviderPresence": {
+              "title": "FileProviderPresence",
               "type": {
                 "array": [
                   {
@@ -2780,6 +2803,7 @@
               }
             },
             "ListenEvent": {
+              "title": "ListenEvent",
               "type": {
                 "array": [
                   {
@@ -2820,6 +2844,7 @@
               }
             },
             "MediaLibrary": {
+              "title": "MediaLibrary",
               "type": {
                 "array": [
                   {
@@ -3025,6 +3050,7 @@
               }
             },
             "ScreenCapture": {
+              "title": "ScreenCapture",
               "type": {
                 "array": [
                   {
@@ -3065,6 +3091,7 @@
               }
             },
             "SpeechRecognition": {
+              "title": "SpeechRecognition",
               "type": {
                 "array": [
                   {
@@ -3187,48 +3214,59 @@
               }
             },
             "SystemPolicyAppData": {
+              "title": "SystemPolicyAppData",
               "description": "Allows the application to access data of other apps.",
               "type": {
                 "array": [
                   {
                     "dictionary": {
                       "AEReceiverCodeRequirement": {
+                        "title": "AEReceiverCodeRequirement",
                         "description": "The code requirement for the receiving binary. This code requirement is required for AppleEvents service; not valid for other services.",
                         "type": "string"
                       },
                       "AEReceiverIdentifier": {
+                        "title": "AEReceiverIdentifier",
                         "description": "The identifier of the process receiving an AppleEvent sent by the Identifier process. This identifier is required for AppleEvents service; not valid for other services.",
                         "type": "string"
                       },
                       "AEReceiverIdentifierType": {
+                        "title": "AEReceiverIdentifierType",
                         "description": "The type of AEReceiverIdentifier value, either 'bundleID' or 'path'. This setting is required for AppleEvents service; not valid for other services.",
                         "type": "string"
                       },
                       "Allowed": {
+                        "title": "Allowed",
                         "description": "If 'true', access is granted; otherwise, the process doesn't have access. The user isn't prompted and can't change this value.",
                         "type": "boolean"
                       },
                       "Authorization": {
+                        "title": "Authorization",
                         "description": "The 'Authorization' key is an optional replacement for the 'Allowed' key. Every payload must specify either 'Authorization' or 'Allowed', but not both.\n'Allow': Equivalent to a 'true' value for the 'Allowed' key.\n'Deny': Equivalent to a 'false' value for the 'Allowed' key.\n'AllowStandardUserToSetSystemService:' allows a standard (non-admin) user to configure the permissions for the specified app in the Privacy preferences for services that otherwise require admin authorization. 'AllowStandardUserToSetSystemService' is only valid for the 'ListenEvent' and 'ScreenCapture' services.\nAvailable in macOS 11 and later.",
                         "type": "string"
                       },
                       "CodeRequirement": {
+                        "title": "CodeRequirement",
                         "description": "Obtained via the command ''codesign -display -r -''.",
                         "type": "string"
                       },
                       "Comment": {
+                        "title": "Comment",
                         "description": "Not used.",
                         "type": "string"
                       },
                       "Identifier": {
+                        "title": "Identifier",
                         "description": "The bundle ID or installation path of the binary.",
                         "type": "string"
                       },
                       "IdentifierType": {
+                        "title": "IdentifierType",
                         "description": "The type of identifier value. Application bundles must be identified by bundle ID. Nonbundled binaries must be identified by installation path. Helper tools embedded within an application bundle automatically inherit the permissions of their enclosing app bundle.",
                         "type": "string"
                       },
                       "StaticCode": {
+                        "title": "StaticCode",
                         "description": "If 'true', statically validate the code requirement. Used only if the process invalidates its dynamic code signature.",
                         "type": "boolean"
                       }
@@ -3238,6 +3276,7 @@
               }
             },
             "SystemPolicyDesktopFolder": {
+              "title": "SystemPolicyDesktopFolder",
               "type": {
                 "array": [
                   {
@@ -3278,6 +3317,7 @@
               }
             },
             "SystemPolicyDocumentsFolder": {
+              "title": "SystemPolicyDocumentsFolder",
               "type": {
                 "array": [
                   {
@@ -3318,6 +3358,7 @@
               }
             },
             "SystemPolicyDownloadsFolder": {
+              "title": "SystemPolicyDownloadsFolder",
               "type": {
                 "array": [
                   {
@@ -3358,6 +3399,7 @@
               }
             },
             "SystemPolicyNetworkVolumes": {
+              "title": "SystemPolicyNetworkVolumes",
               "type": {
                 "array": [
                   {
@@ -3398,6 +3440,7 @@
               }
             },
             "SystemPolicyRemovableVolumes": {
+              "title": "SystemPolicyRemovableVolumes",
               "type": {
                 "array": [
                   {
@@ -3488,42 +3531,52 @@
     "description": "TextEdit settings",
     "properties": {
       "AddExtensionToNewPlainTextFiles": {
+        "title": "AddExtensionToNewPlainTextFiles",
         "description": "Set this preference to 'false' to forcibly disable adding the \".txt\" extension to plain text files.",
         "type": "boolean"
       },
       "CheckGrammarWithSpelling": {
+        "title": "CheckGrammarWithSpelling",
         "description": "Set this preference to 'false' to forcibly disable grammar checking with spelling.",
         "type": "boolean"
       },
       "CheckSpellingWhileTyping": {
+        "title": "CheckSpellingWhileTyping",
         "description": "Set this preference to 'false' to forcibly disable spell checking while typing.",
         "type": "boolean"
       },
       "CorrectSpellingAutomatically": {
+        "title": "CorrectSpellingAutomatically",
         "description": "Set this preference to 'false' to forcibly disable automatic spelling correction.",
         "type": "boolean"
       },
       "DataDetectors": {
+        "title": "DataDetectors",
         "description": "Set this preference to 'true' to forcibly enable data detectors. Data detectors can automatically detect date, time, and contact information, which can then be used to update a contact, create a new Calendar event, and more.",
         "type": "boolean"
       },
       "HTMLEncoding": {
+        "title": "HTMLEncoding",
         "description": "",
         "type": "integer"
       },
       "HeightInChars": {
+        "title": "HeightInChars",
         "description": "By default, the Window Size height is 30 lines. Enable this setting to change this default window height.",
         "type": "integer"
       },
       "IgnoreHTML": {
+        "title": "IgnoreHTML",
         "description": "Set this preference to 'true' to display .html files as HTML code instead of formatted text when opening a file.",
         "type": "boolean"
       },
       "IgnoreRichText": {
+        "title": "IgnoreRichText",
         "description": "Set this preference to 'true' to display .rtf files as RTF code instead of formatted text when opening a file.",
         "type": "boolean"
       },
       "NSDocumentSuppressTempVersionStoreWarning": {
+        "title": "NSDocumentSuppressTempVersionStoreWarning",
         "description": "Set this preference to 'false' to suppress TextEdit messages when closing documents saved on storage volumes that don't support Apple's permanent version storage. This will not inform users about being unable to access these older versions via Time Machine.",
         "type": "boolean"
       },
@@ -3548,20 +3601,25 @@
         "type": "integer"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PFC_SegmentedControl_DocSettings": {
+        "title": "PFC_SegmentedControl_DocSettings",
         "type": "string"
       },
       "PlainTextEncoding": {
+        "title": "PlainTextEncoding",
         "description": "Set this preference to choose a specific encoding method for opening plain text files, rather than \"Automatic\".",
         "type": "integer"
       },
       "PlainTextEncodingForWrite": {
+        "title": "PlainTextEncodingForWrite",
         "description": "Set this preference to choose a specific encoding method for saving plain text files, rather than \"Automatic\".",
         "type": "integer"
       },
       "PreserveDocumentWhitespace": {
+        "title": "PreserveDocumentWhitespace",
         "description": "Set this preference to 'false' to not include code that preserves the white space in your document's formatted text.",
         "type": "boolean"
       },
@@ -3571,50 +3629,62 @@
         "type": "integer"
       },
       "ShowPageBreaks": {
+        "title": "ShowPageBreaks",
         "description": "Set this preference to 'true' to forcibly make text wrap to document margins, rather than window boundaries.",
         "type": "boolean"
       },
       "ShowRuler": {
+        "title": "ShowRuler",
         "description": "Set this preference to 'false' to not show the ruler in rich text documents by default.",
         "type": "boolean"
       },
       "SmartCopyPaste": {
+        "title": "SmartCopyPaste",
         "description": "Set this preference to 'false' to forcibly disable \"smart\" copy/paste.",
         "type": "boolean"
       },
       "SmartLinks": {
+        "title": "SmartLinks",
         "description": "Set this preference to 'false' to forcibly disable \"smart\" links.",
         "type": "boolean"
       },
       "SmartQuotes": {
+        "title": "SmartQuotes",
         "description": "Set this preference to 'false' to forcibly disable \"smart\" quotes.",
         "type": "boolean"
       },
       "SmartSubstitutionsEnabledInRichTextOnly": {
+        "title": "SmartSubstitutionsEnabledInRichTextOnly",
         "description": "Set this preference to 'true' to enable \"smart\" substitutions for quotes and dashes in rich text documents.  Takes effect for newly opened documents and after \"Make Plain Text\".",
         "type": "boolean"
       },
       "TextReplacement": {
+        "title": "TextReplacement",
         "description": "Set this preference to 'false' to forcibly disable text replacement.",
         "type": "boolean"
       },
       "UseEmbeddedCSS": {
+        "title": "UseEmbeddedCSS",
         "description": "Enable this setting for HTML Embedded CSS styling.\n\nex. UseEmbeddedCSS = true == \"Embedded CSS\"\nex. UseEmbeddedCSS = true & UseInlineCSS = false == \"Embedded CSS\"\nex. UseEmbeddedCSS = false & UseInlineCSS = false == \"No CSS\"",
         "type": "boolean"
       },
       "UseInlineCSS": {
+        "title": "UseInlineCSS",
         "description": "Enable this setting for HTML Inline CSS styling.\n\nex. UseInlineCSS = true == \"Inline CSS\"\nex. UseInlineCSS = true & UseEmbeddedCSS = false == \"Inline CSS\"\nex. UseInlineCSS = false & UseEmbeddedCSS = false == \"No CSS\"",
         "type": "boolean"
       },
       "UseTransitionalDocType": {
+        "title": "UseTransitionalDocType",
         "description": "Set this preference to 'false' to use the \"Strict\" HTML or XHTML document type, rather than \"Transitional\".\n\nex. UseTransiontalDocType = false & UseXHTMLDocType = false == \"HTML Strict\"\nex. UseTransiontalDocType = false & UseXHTMLDocType = true == \"XHTML Strict\"\nex. UseTransiontalDocType = true & UseXHTMLDocType = false == \"HTML Transitional\"\nex. UseTransiontalDocType = true & UseXHTMLDocType = true == \"XHTML Transitional\"",
         "type": "boolean"
       },
       "UseXHTMLDocType": {
+        "title": "UseXHTMLDocType",
         "description": "Set this preference to 'false' to use the HTML, rather than the XHTML document type.\n\nex. UseTransiontalDocType = false & UseXHTMLDocType = false == \"HTML Strict\"\nex. UseTransiontalDocType = false & UseXHTMLDocType = true == \"XHTML Strict\"\nex. UseTransiontalDocType = true & UseXHTMLDocType = false == \"HTML Transitional\"\nex. UseTransiontalDocType = true & UseXHTMLDocType = true == \"XHTML Transitional\"",
         "type": "boolean"
       },
       "WidthInChars": {
+        "title": "WidthInChars",
         "description": "By default, the Window Size width is 90 lines. Enable this setting to change this default window width.",
         "type": "integer"
       },
@@ -3640,6 +3710,7 @@
     "description": "Time Machine settings",
     "properties": {
       "DoNotOfferNewDisksForBackup": {
+        "title": "DoNotOfferNewDisksForBackup",
         "description": "",
         "type": "boolean"
       }
@@ -3664,7 +3735,8 @@
               }
             }
           ]
-        }
+        },
+        "supervised": true
       },
       "Passwords": {
         "title": "Passwords",
@@ -3708,7 +3780,8 @@
               }
             }
           ]
-        }
+        },
+        "supervised": true
       }
     }
   },
@@ -3892,12 +3965,14 @@
     "description": "tvOS Restrictions preferences",
     "properties": {
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "allowAirPlayIncomingRequests": {
         "title": "Allow incoming AirPlay requests",
         "description": "",
-        "type": "boolean"
+        "type": "boolean",
+        "supervised": true
       },
       "allowAutomaticScreenSaver": {
         "title": "Allow Automatic Screen Saver",
@@ -3921,12 +3996,14 @@
       "allowDeviceNameModification": {
         "title": "Allow modifying device name",
         "description": "If set to false, prevents device name from being changed.",
-        "type": "boolean"
+        "type": "boolean",
+        "supervised": true
       },
       "allowExplicitContent": {
         "title": "Allow playback of explicit music, podcasts, and iTunes U",
         "description": "When false, explicit music or video content purchased from the iTunes Store is hidden. Explicit content is marked as such by content providers, such as record labels, when sold through the iTunes Store. This key is deprecated on unsupervised devices.",
-        "type": "boolean"
+        "type": "boolean",
+        "supervised": true
       },
       "allowInAppPurchases": {
         "title": "Allow in app purchases",
@@ -3940,12 +4017,14 @@
           "array": [
             "string"
           ]
-        }
+        },
+        "supervised": true
       },
       "allowPasswordProximityRequests": {
         "title": "Allow proximity based password sharing requests",
         "description": "If set to false, a user's device will not request passwords from nearby devices.",
-        "type": "boolean"
+        "type": "boolean",
+        "supervised": true
       },
       "allowRemoteAppPairing": {
         "title": "Allow pairing with Remote app",
@@ -3959,7 +4038,8 @@
           "array": [
             "string"
           ]
-        }
+        },
+        "supervised": true
       },
       "blockedAppBundleIDs": {
         "title": "Blocked Apps",
@@ -3968,12 +4048,14 @@
           "array": [
             "string"
           ]
-        }
+        },
+        "supervised": true
       },
       "enforcedSoftwareUpdateDelay": {
         "title": "Deferred Software Updates Delay",
         "description": "Number of days the software updates will be hidden from the user.",
-        "type": "integer"
+        "type": "integer",
+        "supervised": true
       },
       "forceAirPlayIncomingRequestsPairingPassword": {
         "title": "Require passcode on first AirPlay pairing",
@@ -3983,17 +4065,20 @@
       "forceAssistantProfanityFilter": {
         "title": "Enable Siri profanity filter",
         "description": "When true, forces the use of the profanity filter assistant.",
-        "type": "boolean"
+        "type": "boolean",
+        "supervised": true
       },
       "forceAutomaticDateAndTime": {
         "title": "Force automatic date and time",
         "description": "",
-        "type": "boolean"
+        "type": "boolean",
+        "supervised": true
       },
       "forceDelayedSoftwareUpdates": {
         "title": "Defer Software Updates",
         "description": "If set to true, delays user visibility of Software Updates.",
-        "type": "boolean"
+        "type": "boolean",
+        "supervised": true
       },
       "ratingApps": {
         "title": "Allowed content ratings - Apps",
@@ -4022,7 +4107,8 @@
           "array": [
             "string"
           ]
-        }
+        },
+        "supervised": true
       }
     }
   },
@@ -4197,10 +4283,12 @@
             {
               "dictionary": {
                 "ApplicationIdentifier": {
+                  "title": "ApplicationIdentifier",
                   "description": "The app identifier to associate the domains with.",
                   "type": "string"
                 },
                 "AssociatedDomains": {
+                  "title": "AssociatedDomains",
                   "description": "The domains to be associated with the app. Each string is in the form of ''service:domain''. Domains should be fully qualified hostnames, like 'www.example.com'.\nSee Supporting Associated Domains for more information.",
                   "type": {
                     "array": [
@@ -4209,6 +4297,7 @@
                   }
                 },
                 "EnableDirectDownloads": {
+                  "title": "EnableDirectDownloads",
                   "description": "If 'true', data for this domain should be downloaded directly instead of through a CDN. The entitlement value for this domain must be set to 'service:domain?mode=managed' or this value will be ignored. Available in macOS 11 and later.",
                   "type": "boolean"
                 }
@@ -4432,36 +4521,44 @@
     "description": "Cellular Private Network Settings and Device Configuration",
     "properties": {
       "CellularDataPreferred": {
+        "title": "CellularDataPreferred",
         "description": "Set to true if this private network should be preferred over wifi",
         "type": "boolean"
       },
       "DataSetName": {
+        "title": "DataSetName",
         "description": "Name for private network configuration dataset",
         "type": "string"
       },
       "EnableNRStandalone": {
+        "title": "EnableNRStandalone",
         "description": "Set to true if this private network is NR Standalone",
         "type": "boolean"
       },
       "Geofences": {
+        "title": "Geofences",
         "description": "List of up to 1000 geofences for private networks. Geofencing is only used on iPhones.",
         "type": {
           "array": [
             {
               "dictionary": {
                 "GeofenceId": {
+                  "title": "GeofenceId",
                   "description": "ID of geofence, must be unique amongst list",
                   "type": "string"
                 },
                 "Latitude": {
+                  "title": "Latitude",
                   "description": "Signed decimal value of latitude from -90 to 90",
                   "type": "real"
                 },
                 "Longitude": {
+                  "title": "Longitude",
                   "description": "Signed decimal value of longitude from -180 to 180",
                   "type": "real"
                 },
                 "Radius": {
+                  "title": "Radius",
                   "description": "Specifies the radius of the geofence in meters. Should be set slightly greater than the private cellular network coverage area. Supported values 100 to 6500",
                   "type": "real"
                 }
@@ -4471,6 +4568,7 @@
         }
       },
       "VersionNumber": {
+        "title": "VersionNumber",
         "description": "The version number of this dataset. Used to track updates",
         "type": "string"
       }
@@ -4713,6 +4811,7 @@
             {
               "dictionary": {
                 "Action": {
+                  "title": "Action",
                   "description": "The action to take if this dictionary matches the current network. Options:\nConnect: Apply DNS Settings when the dictionary matches.\nDisconnect: Do not apply DNS Settings when the dictionary matches.\nEvaluateConnection: Apply DNS Settings with per-domain exceptions when the dictionary matches.",
                   "type": "string"
                 },
@@ -4729,6 +4828,7 @@
                             "type": "string"
                           },
                           "Domains": {
+                            "title": "Domains",
                             "description": "The domains for which this evaluation applies.",
                             "type": {
                               "array": [
@@ -4791,7 +4891,8 @@
       "ProhibitDisablement": {
         "title": "Prohibit Disablement",
         "description": "If true, prohibits users from disabling DNS settings. This key is only available on supervised devices.",
-        "type": "boolean"
+        "type": "boolean",
+        "supervised": true
       }
     }
   },
@@ -5120,7 +5221,8 @@
           "array": [
             "string"
           ]
-        }
+        },
+        "supervised": true
       },
       "EmailDomains": {
         "title": "Unmarked Email Domains",
@@ -5138,7 +5240,8 @@
           "array": [
             "string"
           ]
-        }
+        },
+        "supervised": true
       },
       "WebDomains": {
         "title": "Managed Safari Web Domains",
@@ -5773,10 +5876,12 @@
               "type": "integer"
             },
             "domainRealmMapping": {
+              "title": "domainRealmMapping",
               "description": "A custom domain-realm mapping for Kerberos. This is used when the DNS name of hosts do not match the realm name. Most administrators will not need to customize this.",
               "type": {
                 "dictionary": {
                   "Realm": {
+                    "title": "Realm",
                     "description": "The key should be the name of the realm, and the value is an array of DNS suffixes that map to the realm.",
                     "type": {
                       "array": [
@@ -5915,6 +6020,7 @@
         "type": "string"
       },
       "Hosts": {
+        "title": "Hosts",
         "description": "An array of host names or domain names that can be authenticated through the app extension. Required for Credential payloads. Ignored for Redirect payloads.",
         "type": {
           "array": [
@@ -5923,14 +6029,17 @@
         }
       },
       "PlatformSSO": {
+        "title": "PlatformSSO",
         "description": "This is the dictionary used to configure PlatformSSO.",
         "type": {
           "dictionary": {
             "AccountDisplayName": {
+              "title": "AccountDisplayName",
               "description": "The display name for the account in notifications and authentication requests.",
               "type": "string"
             },
             "AdditionalGroups": {
+              "title": "AdditionalGroups",
               "description": "The list of groups that are created and do not have administrator access.",
               "type": {
                 "array": [
@@ -5939,6 +6048,7 @@
               }
             },
             "AdministratorGroups": {
+              "title": "AdministratorGroups",
               "description": "The list of groups that are used for administrator access. Membership will be requested during authentication.",
               "type": {
                 "array": [
@@ -5947,18 +6057,22 @@
               }
             },
             "AuthenticationMethod": {
+              "title": "AuthenticationMethod",
               "description": "The Platform SSO authentication method to be used with the extension. Requires that the SSO Extension also support the method.",
               "type": "string"
             },
             "AuthorizationGroups": {
+              "title": "AuthorizationGroups",
               "description": "The pairing of Authorization Rights to group names. The Authorization Right will be updated to use the group when used.",
               "type": {
                 "dictionary": {
                   "Authorization Right": {
+                    "title": "Authorization Right",
                     "description": "The Authorization Right to update.",
                     "type": "string"
                   },
                   "Group": {
+                    "title": "Group",
                     "description": "The group to use for the Authorization Right.",
                     "type": "string"
                   }
@@ -5966,30 +6080,37 @@
               }
             },
             "EnableAuthorization": {
+              "title": "EnableAuthorization",
               "description": "Enables using identity provider accounts at authorization prompts. Requires 'UseSharedDeviceKeys' is true. The account will be assigned groups using the 'AdministratorGroups', 'AdditionalGroups', or 'AuthorizationGroups'.",
               "type": "boolean"
             },
             "EnableCreateUserAtLogin": {
+              "title": "EnableCreateUserAtLogin",
               "description": "Enables creating new users at the login window with either Passwords or SmartCards. Requires 'UseSharedDeviceKeys' is true.",
               "type": "boolean"
             },
             "LoginFrequency": {
+              "title": "LoginFrequency",
               "description": "The frequency where a full login is required instead of a refresh. Default is 18 hours. Must be > 1 hour.",
               "type": "integer"
             },
             "NewUserAuthorizationMode": {
+              "title": "NewUserAuthorizationMode",
               "description": "This setting affects the permissions for accounts created at login by Platform SSO. It is only used when the account is created. Use of the following:\n* Standard\n    The account will be a standard user.\n* Admin\n    The account will be added to the local administrators group.\n* Groups\n    The account will be assigned groups using the 'AdministratorGroups', 'AdditionalGroups', or 'AuthorizationGroups'.",
               "type": "string"
             },
             "TokenToUserMapping": {
+              "title": "TokenToUserMapping",
               "description": "The attribute mapping used when creating new users or for authorization.",
               "type": {
                 "dictionary": {
                   "AccountName": {
+                    "title": "AccountName",
                     "description": "The claim name to use for the user's account name.",
                     "type": "string"
                   },
                   "FullName": {
+                    "title": "FullName",
                     "description": "The claim name to use for the user's full name.",
                     "type": "string"
                   }
@@ -5997,10 +6118,12 @@
               }
             },
             "UseSharedDeviceKeys": {
+              "title": "UseSharedDeviceKeys",
               "description": "If set to true, Platform SSO will use the same signing and encryption keys for all users.",
               "type": "boolean"
             },
             "UserAuthorizationMode": {
+              "title": "UserAuthorizationMode",
               "description": "This setting affects the permissions after authentication by Platform SSO. It is applied each time user authenticates. Use of the following:\n* Standard\n    The account will be a standard user. It will be removed from the 'admin' group.\n* Admin\n    The account will be added to the local administrators group.\n* Groups\n    The account will be assigned groups using the 'AdministratorGroups', 'AdditionalGroups', or 'AuthorizationGroups'.",
               "type": "string"
             }
@@ -6008,6 +6131,7 @@
         }
       },
       "Realm": {
+        "title": "Realm",
         "description": "The realm name for Credential payloads. This value should be properly capitalized. This key is ignored for Redirect payloads.",
         "type": "string"
       },
@@ -6026,6 +6150,7 @@
         "type": "string"
       },
       "Type": {
+        "title": "Type",
         "description": "The type of SSO.",
         "type": "string"
       },
@@ -7231,10 +7356,12 @@
         "type": "boolean"
       },
       "AutologinPassword": {
+        "title": "AutologinPassword",
         "description": "Optional user password when setting up auto login.  If this key does not exist, and a user name was specified, auto login will be set up the next time the specified user logs in to the client.",
         "type": "string"
       },
       "AutologinUsername": {
+        "title": "AutologinUsername",
         "description": "Sets up auto login with the specified short user name.",
         "type": "string"
       },
@@ -7332,6 +7459,7 @@
         "type": "string"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PowerOffDisabledWhileLoggedIn": {
@@ -7546,6 +7674,7 @@
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PreventAppSheet": {
@@ -7770,10 +7899,12 @@
                   "type": "string"
                 },
                 "Location": {
+                  "title": "Location",
                   "description": "The printer's location.",
                   "type": "string"
                 },
                 "Model": {
+                  "title": "Model",
                   "description": "The printer's model.",
                   "type": "string"
                 },
@@ -7912,18 +8043,22 @@
         "type": "boolean"
       },
       "customRegex": {
+        "title": "customRegex",
         "description": "Specifies a regular expression, and its description, used to enforce password compliance. Use the simpler passcode restrictions whenever possible, and rely on regular expression matching only when necessary. Mistakes in regular expressions can lead to frustrating user experiences, such as unsatisfiable passcode policies, or policy descriptions that don't match the enforced policy.\nAvailable in macOS 14 and later.",
         "type": {
           "dictionary": {
             "passwordContentDescription": {
+              "title": "passwordContentDescription",
               "description": "Contains a dictionary of keys for supported OS language IDs (for example, “en-US”), and whose values represent a localized description of the policy enforced by the regular expression. Use the special 'default' key can for languages that aren't contained in the dictionary.",
               "type": {
                 "dictionary": {
                   "{{key}}": {
+                    "title": "{{key}}",
                     "description": "",
                     "type": "string"
                   },
                   "{{value}}": {
+                    "title": "{{value}}",
                     "description": "",
                     "type": "string"
                   }
@@ -7931,6 +8066,7 @@
               }
             },
             "passwordContentRegex": {
+              "title": "passwordContentRegex",
               "description": "A regular expression string that they system matches against the password to determine whether it complies with a policy. The regular expression uses the ICU syntax (<https://unicode-org.github.io/icu/userguide/strings/regexp.html>). The string must not exceed 2048 characters in length.",
               "type": "string"
             }
@@ -8353,6 +8489,7 @@
         }
       },
       "RelayUUID": {
+        "title": "RelayUUID",
         "description": "A globally-unique identifier for this relay configuration. This UUID is used to route managed apps through the servers contained in Relays.",
         "type": "string"
       },
@@ -8369,10 +8506,12 @@
                   "type": {
                     "dictionary": {
                       "{{key}}": {
+                        "title": "{{key}}",
                         "description": "",
                         "type": "string"
                       },
                       "{{value}}": {
+                        "title": "{{value}}",
                         "description": "",
                         "type": "string"
                       }
@@ -8895,6 +9034,7 @@
     "description": "Certificate Preference settings",
     "properties": {
       "Name": {
+        "title": "Name",
         "type": "string"
       },
       "PayloadCertificateUUID": {
@@ -8915,10 +9055,12 @@
             {
               "dictionary": {
                 "Algorithm": {
+                  "title": "Algorithm",
                   "description": "Hash algorithm",
                   "type": "string"
                 },
                 "Hash": {
+                  "title": "Hash",
                   "description": "Hash of the certificate's subjectPublicKeyInfo",
                   "type": "data"
                 }
@@ -9527,6 +9669,7 @@
     "description": "System Logging settings",
     "properties": {
       "System": {
+        "title": "System",
         "type": {
           "dictionary": {
             "Enable-Private-Data": {
@@ -9680,6 +9823,7 @@
         }
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       }
     }
@@ -9689,6 +9833,7 @@
     "description": "Allowed media management and menu bar extras settings",
     "properties": {
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "logout-eject": {
@@ -10293,6 +10438,7 @@
     "description": "\"New to Mac\" notification settings",
     "properties": {
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "seed-viewed-+trJt2VsTvK1yfPGwOySDw": {
@@ -10934,10 +11080,12 @@
         "type": "string"
       },
       "Organization": {
+        "title": "Organization",
         "description": "An Organization string that will be passed to the 3rd party plugin.",
         "type": "string"
       },
       "Password": {
+        "title": "Password",
         "type": "string"
       },
       "PayloadCertificateUUID": {
@@ -11107,6 +11255,7 @@
               "type": "boolean"
             },
             "TLSCertificateIsRequired": {
+              "title": "TLSCertificateIsRequired",
               "description": "If 'true', allows for two-factor authentication for EAP-TTLS, PEAP, or EAP-FAST. If 'false', allows for zero-factor authentication for EAP-TLS.\nIf you don't specify a value, the default is 'true' for EAP-TLS, and 'false' for other EAP types.",
               "type": "boolean"
             },
@@ -11407,10 +11556,12 @@
         "type": "boolean"
       },
       "AlwaysUseSystemAppearanceForTitleBar": {
+        "title": "AlwaysUseSystemAppearanceForTitleBar",
         "description": "BBEdit will use a light or dark (system-defined) appearance for the window title bar, appropriate to the color scheme. If you would prefer that BBEdit always use the system standard - light - appearance, set this preference to 'true'.",
         "type": "boolean"
       },
       "AskForUnguessableFileEncoding": {
+        "title": "AskForUnguessableFileEncoding",
         "description": "Ordinarily, BBEdit will only ask you to choose a file's encoding when it can't otherwise figure out what the encoding is, and your \"if the file's encoding can't be guessed\" preference is a UTF-8 or UTF-16 variant. This should be fine for general use, but if for some reason you always want BBEdit to ask you when it can't guess a file's encoding, even if your preference would do the job, you can set this to 'true'.",
         "type": "boolean"
       },
@@ -11420,6 +11571,7 @@
         "type": "boolean"
       },
       "AutoRevealSelectedDocumentInProjectList": {
+        "title": "AutoRevealSelectedDocumentInProjectList",
         "description": "BBEdit will not automatically reveal documents in the project list when you select them;  View => Reveal in Project List works for this purpose. If you want automatic revealing, set to this to 'true'",
         "type": "boolean"
       },
@@ -11479,6 +11631,7 @@
         "type": "boolean"
       },
       "CloseOFBNWindowAfterOpeningSelection": {
+        "title": "CloseOFBNWindowAfterOpeningSelection",
         "description": "By default, the \"Open File by Name\" window stays open when you click the \"Open\" button. However, if you would prefer for it to act more like a modal dialog, set this to 'true'.",
         "type": "boolean"
       },
@@ -11488,6 +11641,7 @@
         "type": "boolean"
       },
       "CounterpartSiblingSearchNames": {
+        "title": "CounterpartSiblingSearchNames",
         "description": "When the active document is either a source or a header file, the \"Open Counterpart\" command will now search the siblings of this file's parent for eligible counterparts. By default, BBEdit will only search in such folders if their names match one of the following patterns (including wildcards): `inc*`, `source`, `src`, or `*priv*`. If you wish to add additional qualifying names, you may do so by setting \"CounterpartSiblingSearchNames\" to contain a comma-delimited list of folder name patterns.\n\nAny whitespace surrounding the provided names will be stripped.",
         "type": "string"
       },
@@ -11677,6 +11831,7 @@
         "type": "integer"
       },
       "OpenPDFsAsText": {
+        "title": "OpenPDFsAsText",
         "description": "By default, PDFs are considered text files and so may be opened and searched along with all other text files. To have PDFs treated as a special file type - (they will be ignored for any operation that requires a text file - set this to 'false'.",
         "type": "boolean"
       },
@@ -11686,9 +11841,11 @@
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PFC_SegmentedControl_ExpertPrefs": {
+        "title": "PFC_SegmentedControl_ExpertPrefs",
         "type": "string"
       },
       "PrecomposeUnicodeWhenPasting": {
@@ -11697,10 +11854,12 @@
         "type": "boolean"
       },
       "ProjectsListCanAcquireKeyboardFocus": {
+        "title": "ProjectsListCanAcquireKeyboardFocus",
         "description": "In project windows, the file list does not accept keyboard focus by default, unless the editing view is hidden. You can modify this so that the file list gets the focus whenever you click on it, set this to 'true'.",
         "type": "boolean"
       },
       "ProjectsOpenItemsOnSingleClick": {
+        "title": "ProjectsOpenItemsOnSingleClick",
         "description": "Project windows will ordinarily open an item in the file list for editing when you click on it and the editing view is visible. To require a double-click, set this to 'false'.",
         "type": "boolean"
       },
@@ -11710,6 +11869,7 @@
         "type": "boolean"
       },
       "QuickTimeImages": {
+        "title": "QuickTimeImages",
         "description": "BBEdit ordinarily recognizes image files as images, and will open them into image windows (or ignore them when filtering for text files). To have images possibly treated as text files, which can be potentially dangerous, set this to 'false'.",
         "type": "boolean"
       },
@@ -11769,6 +11929,7 @@
         "type": "integer"
       },
       "SaveDocumentStateForTempFiles": {
+        "title": "SaveDocumentStateForTempFiles",
         "description": "By default, BBEdit will not store document state for documents located in any of the canonical locations for temporary files. This also includes the \"svn-commit.tmp\" files used for Subversion commits. If you wish, you can change this by setting this to 'true'.",
         "type": "boolean"
       },
@@ -11793,6 +11954,7 @@
         "type": "boolean"
       },
       "ShowSVNSwitchedItems": {
+        "title": "ShowSVNSwitchedItems",
         "description": "\"Show Working Copy Status\" for svn does not include switched items. If this affects you and you would prefer to see switched items, you may make them visibile by setting this to 'true'.",
         "type": "boolean"
       },
@@ -11832,6 +11994,7 @@
         "type": "boolean"
       },
       "UseResourceForkForDocumentState": {
+        "title": "UseResourceForkForDocumentState",
         "description": "Beginning with version 8.0, BBEdit stores document state (window position and various settings) in a central repository in your BBEdit preferences folder. If you wish, you can ask BBEdit to store document state in the resource fork of the document's file by setting this to 'true'.",
         "type": "boolean"
       },
@@ -11856,10 +12019,12 @@
         "type": "boolean"
       },
       "WarnMalformedUTF8": {
+        "title": "WarnMalformedUTF8",
         "description": "To control whether BBEdit warns you when opening a malformed UTF-8 file, set this to 'true'.",
         "type": "boolean"
       },
       "WriteExtendedAttributes": {
+        "title": "WriteExtendedAttributes",
         "description": "By default, BBEdit will avoid writing extended attributes - HFS Type/Creator - to volumes which don't natively support them - i.e. to avoid creating the ._FILE - when it is safe to do so. We'll be able to re-open the document correctly later. If desired, you can fine-tune this behavior.",
         "type": "string"
       },
@@ -12756,10 +12921,12 @@
               "type": "string"
             },
             "{{value}}": {
+              "title": "{{value}}",
               "description": "",
               "type": {
                 "dictionary": {
                   "allowed_types": {
+                    "title": "allowed_types",
                     "description": "This setting whitelists the allowed types of extension/apps that can be installed in Brave Browser.",
                     "type": {
                       "array": [
@@ -12768,10 +12935,12 @@
                     }
                   },
                   "blocked_install_message": {
+                    "title": "blocked_install_message",
                     "description": "This maps to a string specifying the error message to display to users if they're blocked from installing an extension.",
                     "type": "string"
                   },
                   "blocked_permissions": {
+                    "title": "blocked_permissions",
                     "description": "Maps to a list of strings indicating the blocked API permissions for the extension.",
                     "type": {
                       "array": [
@@ -12780,6 +12949,7 @@
                     }
                   },
                   "install_sources": {
+                    "title": "install_sources",
                     "description": "Each item in this list is an extension-style match pattern.",
                     "type": {
                       "array": [
@@ -12788,14 +12958,17 @@
                     }
                   },
                   "installation_mode": {
+                    "title": "installation_mode",
                     "description": "Maps to a string indicating the installation mode for the extension.",
                     "type": "string"
                   },
                   "minimum_version_required": {
+                    "title": "minimum_version_required",
                     "description": "Maps to a version string.",
                     "type": "string"
                   },
                   "runtime_allowed_hosts": {
+                    "title": "runtime_allowed_hosts",
                     "description": "Maps to a list of strings representing hosts that an extension can interact with regardless of whether they are listed in \"runtime_blocked_hosts\".",
                     "type": {
                       "array": [
@@ -12804,6 +12977,7 @@
                     }
                   },
                   "runtime_blocked_hosts": {
+                    "title": "runtime_blocked_hosts",
                     "description": "Maps to a list of strings representing hosts whose webpages the extension will be blocked from modifying.",
                     "type": {
                       "array": [
@@ -12812,6 +12986,7 @@
                     }
                   },
                   "update_url": {
+                    "title": "update_url",
                     "description": "Maps to a string indicating where Brave Browser can download a force_installed or normal_installed extension.",
                     "type": "string"
                   }
@@ -13055,10 +13230,12 @@
             {
               "dictionary": {
                 "name": {
+                  "title": "name",
                   "description": "Name of the bookmark.",
                   "type": "string"
                 },
                 "url": {
+                  "title": "url",
                   "description": "URL for the bookmark.",
                   "type": "string"
                 }
@@ -13194,6 +13371,7 @@
         }
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PasswordLeakDetectionEnabled": {
@@ -13463,12 +13641,15 @@
             {
               "dictionary": {
                 "default": {
+                  "title": "default",
                   "type": "boolean"
                 },
                 "protocol": {
+                  "title": "protocol",
                   "type": "string"
                 },
                 "url": {
+                  "title": "url",
                   "type": "string"
                 }
               }
@@ -14024,9 +14205,11 @@
                       {
                         "dictionary": {
                           "product_id": {
+                            "title": "product_id",
                             "type": "integer"
                           },
                           "vendor_id": {
+                            "title": "vendor_id",
                             "type": "integer"
                           }
                         }
@@ -14072,70 +14255,87 @@
     "description": "Citrix Receiver",
     "properties": {
       "AutoUpdateRollOutBucketIndex": {
+        "title": "AutoUpdateRollOutBucketIndex",
         "description": "Used to configure the Updates rollout period.",
         "type": "integer"
       },
       "AutoUpdateState": {
+        "title": "AutoUpdateState",
         "description": "Used to configure Citrix Receiver Updates state.",
         "type": "string"
       },
       "BITApplicationWasLaunched": {
+        "title": "BITApplicationWasLaunched",
         "description": "",
         "type": "boolean"
       },
       "CEIPEnabled": {
+        "title": "CEIPEnabled",
         "description": "",
         "type": "boolean"
       },
       "DisplaySplashScreen": {
+        "title": "DisplaySplashScreen",
         "description": "",
         "type": "boolean"
       },
       "HDXOverUDPAllowed": {
+        "title": "HDXOverUDPAllowed",
         "description": "Disables Enlightened Data Transport (EDT).",
         "type": "boolean"
       },
       "HockeySDKAutomaticallySendCrashReports": {
+        "title": "HockeySDKAutomaticallySendCrashReports",
         "description": "",
         "type": "boolean"
       },
       "HockeySDKCrashReportActivated": {
+        "title": "HockeySDKCrashReportActivated",
         "description": "",
         "type": "boolean"
       },
       "LegacyPublishedContentEnabled": {
+        "title": "LegacyPublishedContentEnabled",
         "description": "Allows the use of non-HTTP(S) URLs",
         "type": "boolean"
       },
       "MenuBarAutoShowDelay": {
+        "title": "MenuBarAutoShowDelay",
         "description": "",
         "type": "real"
       },
       "MenuBarAutoShowDelayEnabled": {
+        "title": "MenuBarAutoShowDelayEnabled",
         "description": "",
         "type": "boolean"
       },
       "NetDisruptBrightness": {
+        "title": "NetDisruptBrightness",
         "description": "Configures the greyscale brightness used for an inactive session. 100 = transparent, 0 = black",
         "type": "integer"
       },
       "PreferFFMPEGDecoder": {
+        "title": "PreferFFMPEGDecoder",
         "description": "",
         "type": "boolean"
       },
       "PreferH264HardwareDecoder": {
+        "title": "PreferH264HardwareDecoder",
         "description": "",
         "type": "boolean"
       },
       "PreferMetalRendering": {
+        "title": "PreferMetalRendering",
         "description": "",
         "type": "boolean"
       },
       "SSLCertificateRevocationCheckPolicy": {
+        "title": "SSLCertificateRevocationCheckPolicy",
         "description": "This setting governs how a given trusted root certificate authority is treated during an attempt to open a remote session through SSL. When you enable this setting, the client checks whether or not the server's certificate is revoked.",
         "type": "string"
       },
       "SecurityAllowedTLSVersions": {
+        "title": "SecurityAllowedTLSVersions",
         "description": "This setting specifies the TLS protocol versions that should be accepted during protocol negotiation. This information is represented as an array and any combination of the possible values is supported. When this setting is not configured, the values TLS10, TLS11 and TLS12 are used as the default values. ",
         "type": {
           "array": [
@@ -14144,14 +14344,17 @@
         }
       },
       "SecurityComplianceMode": {
+        "title": "SecurityComplianceMode",
         "description": "Sets the security compliance mode for the policy. If you don't configure SecurityComplianceMode, FIPS is used as the default value.",
         "type": "string"
       },
       "TraceOn": {
+        "title": "TraceOn",
         "description": "",
         "type": "boolean"
       },
       "UDPStackParameters": {
+        "title": "UDPStackParameters",
         "description": "",
         "type": "boolean"
       }
@@ -14219,6 +14422,7 @@
     "description": "ANTS Framework settings",
     "properties": {
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "ad": {
@@ -14349,6 +14553,7 @@
     "description": "Nudge settings",
     "properties": {
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "json-url": {
@@ -14450,9 +14655,11 @@
                       {
                         "dictionary": {
                           "_language": {
+                            "title": "_language",
                             "type": "string"
                           },
                           "aboutUpdateURL": {
+                            "title": "aboutUpdateURL",
                             "type": "string"
                           }
                         }
@@ -14796,34 +15003,42 @@
     "description": "Sal settings",
     "properties": {
       "BasicAuth": {
+        "title": "BasicAuth",
         "description": "Whether to use basic authentication on your server.",
         "type": "boolean"
       },
       "CACert": {
+        "title": "CACert",
         "description": "Path to your sal certificate. Curl on 10.13 requires this for self-signed certificates or uploading the report data will fail.",
         "type": "string"
       },
       "GetGrains": {
+        "title": "GetGrains",
         "description": "Collect Salt grains and upload them to Sal.",
         "type": "boolean"
       },
       "GetOhai": {
+        "title": "GetOhai",
         "description": "Collect Ohai attributes and upload them to Sal.",
         "type": "boolean"
       },
       "SSLClientCertificate": {
+        "title": "SSLClientCertificate",
         "description": "Absolute path to the SSL client certificate to use with mutual TLS when connecting to the sal server in PEM format.",
         "type": "string"
       },
       "SSLClientKey": {
+        "title": "SSLClientKey",
         "description": "Full path to your sal SSL client key file for mutual TLS",
         "type": "string"
       },
       "ServerURL": {
+        "title": "ServerURL",
         "description": "URL of your Sal server.",
         "type": "string"
       },
       "SkipFacts": {
+        "title": "SkipFacts",
         "description": "It is possible to not upload all the data produced by Facter. You may have facts that are duplicates of other information Sal collects, or you don't wish to upload them for security reasons.",
         "type": {
           "array": [
@@ -14832,10 +15047,12 @@
         }
       },
       "SyncScripts": {
+        "title": "SyncScripts",
         "description": "Download the scripts needed to run for your plugins from the server.",
         "type": "boolean"
       },
       "key": {
+        "title": "key",
         "description": "The machine group's key.",
         "type": "string"
       }
@@ -15695,10 +15912,12 @@
               "type": "string"
             },
             "{{value}}": {
+              "title": "{{value}}",
               "description": "",
               "type": {
                 "dictionary": {
                   "allowed_types": {
+                    "title": "allowed_types",
                     "description": "This setting whitelists the allowed types of extension/apps that can be installed in Google Chrome.",
                     "type": {
                       "array": [
@@ -15707,10 +15926,12 @@
                     }
                   },
                   "blocked_install_message": {
+                    "title": "blocked_install_message",
                     "description": "This maps to a string specifying the error message to display to users if they're blocked from installing an extension.",
                     "type": "string"
                   },
                   "blocked_permissions": {
+                    "title": "blocked_permissions",
                     "description": "Maps to a list of strings indicating the blocked API permissions for the extension.",
                     "type": {
                       "array": [
@@ -15719,6 +15940,7 @@
                     }
                   },
                   "install_sources": {
+                    "title": "install_sources",
                     "description": "Each item in this list is an extension-style match pattern.",
                     "type": {
                       "array": [
@@ -15727,14 +15949,17 @@
                     }
                   },
                   "installation_mode": {
+                    "title": "installation_mode",
                     "description": "Maps to a string indicating the installation mode for the extension.",
                     "type": "string"
                   },
                   "minimum_version_required": {
+                    "title": "minimum_version_required",
                     "description": "Maps to a version string.",
                     "type": "string"
                   },
                   "runtime_allowed_hosts": {
+                    "title": "runtime_allowed_hosts",
                     "description": "Maps to a list of strings representing hosts that an extension can interact with regardless of whether they are listed in \"runtime_blocked_hosts\".",
                     "type": {
                       "array": [
@@ -15743,6 +15968,7 @@
                     }
                   },
                   "runtime_blocked_hosts": {
+                    "title": "runtime_blocked_hosts",
                     "description": "Maps to a list of strings representing hosts whose webpages the extension will be blocked from modifying.",
                     "type": {
                       "array": [
@@ -15751,6 +15977,7 @@
                     }
                   },
                   "update_url": {
+                    "title": "update_url",
                     "description": "Maps to a string indicating where Chrome can download a force_installed or normal_installed extension.",
                     "type": "string"
                   }
@@ -15989,10 +16216,12 @@
             {
               "dictionary": {
                 "name": {
+                  "title": "name",
                   "description": "Name of the bookmark.",
                   "type": "string"
                 },
                 "url": {
+                  "title": "url",
                   "description": "URL for the bookmark.",
                   "type": "string"
                 }
@@ -16128,6 +16357,7 @@
         }
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PasswordLeakDetectionEnabled": {
@@ -16397,12 +16627,15 @@
             {
               "dictionary": {
                 "default": {
+                  "title": "default",
                   "type": "boolean"
                 },
                 "protocol": {
+                  "title": "protocol",
                   "type": "string"
                 },
                 "url": {
+                  "title": "url",
                   "type": "string"
                 }
               }
@@ -16928,9 +17161,11 @@
                       {
                         "dictionary": {
                           "product_id": {
+                            "title": "product_id",
                             "type": "integer"
                           },
                           "vendor_id": {
+                            "title": "vendor_id",
                             "type": "integer"
                           }
                         }
@@ -16976,6 +17211,7 @@
     "description": "Google Software Update Settings",
     "properties": {
       "updatePolicies": {
+        "title": "updatePolicies",
         "type": {
           "dictionary": {
             "com.google.Chrome": {
@@ -17188,6 +17424,7 @@
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PromptToBackupDevices": {
@@ -17387,6 +17624,7 @@
         "type": "string"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "ServerAuthRootsData": {
@@ -17450,6 +17688,7 @@
         "type": "boolean"
       },
       "ServerURL": {
+        "title": "ServerURL",
         "type": "string"
       },
       "SkipUsers": {
@@ -17481,6 +17720,7 @@
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "UpdateCatalogsOnSave": {
@@ -17774,19 +18014,24 @@
     "description": "Jamf Connect Login settings",
     "properties": {
       "BackgroundImage": {
+        "title": "BackgroundImage",
         "type": "string"
       },
       "CreateAdminUser": {
+        "title": "CreateAdminUser",
         "type": "boolean"
       },
       "DemobilizeUsers": {
+        "title": "DemobilizeUsers",
         "type": "boolean"
       },
       "DenyLocal": {
+        "title": "DenyLocal",
         "description": "Determines if users can bypass network authentication and use the Local Auth button at the loginwindow.",
         "type": "boolean"
       },
       "DenyLocalExcluded": {
+        "title": "DenyLocalExcluded",
         "type": {
           "array": [
             "string"
@@ -17814,39 +18059,50 @@
         "type": "string"
       },
       "EnableFDE": {
+        "title": "EnableFDE",
         "type": "boolean"
       },
       "EnableFDERecoveryKey": {
+        "title": "EnableFDERecoveryKey",
         "type": "boolean"
       },
       "EnableFDERecoveryKeyPath": {
+        "title": "EnableFDERecoveryKeyPath",
         "type": "string"
       },
       "HelpURL": {
+        "title": "HelpURL",
         "type": "string"
       },
       "HelpURLLogo": {
+        "title": "HelpURLLogo",
         "type": "string"
       },
       "LicenseFile": {
+        "title": "LicenseFile",
         "type": "data"
       },
       "LocalHelpFile": {
+        "title": "LocalHelpFile",
         "description": "A path to a local file that users can access by clicking the \"Help\" button in the Jamf Connect Login window.",
         "type": "string"
       },
       "LoginLogo": {
+        "title": "LoginLogo",
         "type": "string"
       },
       "MessageOTPEntry": {
+        "title": "MessageOTPEntry",
         "description": "Text displayed when a user must enter a one time password (OTP).",
         "type": "string"
       },
       "Migrate": {
+        "title": "Migrate",
         "description": "Allows local accounts to be migrated to network accounts. This is typically used when the user account was already created on the system, but you want the accounts to have the same username and password as the user's Okta identity.",
         "type": "boolean"
       },
       "MigrateUsersHide": {
+        "title": "MigrateUsersHide",
         "type": {
           "array": [
             "string"
@@ -17854,6 +18110,7 @@
         }
       },
       "OIDCAdmin": {
+        "title": "OIDCAdmin",
         "description": "Determines which roles become an admin at the loginwindow. Users assigned a specified role become an admin at the loginwindow.",
         "type": {
           "array": [
@@ -17862,47 +18119,60 @@
         }
       },
       "OIDCAdminAttribute": {
+        "title": "OIDCAdminAttribute",
         "type": "string"
       },
       "OIDCClientID": {
+        "title": "OIDCClientID",
         "type": "string"
       },
       "OIDCClientSecret": {
+        "title": "OIDCClientSecret",
         "description": "The client secret used by Jamf Connect Login and your IdP.",
         "type": "string"
       },
       "OIDCDiscoveryURL": {
+        "title": "OIDCDiscoveryURL",
         "type": "string"
       },
       "OIDCIgnoreCookies": {
+        "title": "OIDCIgnoreCookies",
         "type": "boolean"
       },
       "OIDCNewPassword": {
+        "title": "OIDCNewPassword",
         "description": "If set to true, the user must create a new password on the computer\nIf set to false, the user must validate with their existing IdP password, which will also become the local password.",
         "type": "boolean"
       },
       "OIDCProvider": {
+        "title": "OIDCProvider",
         "description": "Specifies the IdP provider integrated with Jamf Connect Login.",
         "type": "string"
       },
       "OIDCROPGID": {
+        "title": "OIDCROPGID",
         "description": "The Client ID of the added app in you IdP used for authenticating the user's password via a resource owner password grant (ROPG) workflow. This value should match the OIDCClientID key.",
         "type": "string"
       },
       "OIDCRedirectURI": {
+        "title": "OIDCRedirectURI",
         "type": "string"
       },
       "OIDCTenant": {
+        "title": "OIDCTenant",
         "type": "string"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "RightsTmpCache": {
+        "title": "RightsTmpCache",
         "description": "When using the AuthUI rule, determines if the token cache is set to /tmp/cachedata.",
         "type": "boolean"
       },
       "ScriptArgs": {
+        "title": "ScriptArgs",
         "description": "The arguments used with a specified script run by the RunScript mechanism",
         "type": {
           "array": [
@@ -17911,6 +18181,7 @@
         }
       },
       "ScriptPath": {
+        "title": "ScriptPath",
         "type": "string"
       }
     }
@@ -17925,6 +18196,7 @@
         "type": {
           "dictionary": {
             "Groups": {
+              "title": "Groups",
               "description": "Specifies which active directory group members should have their home profile mounted.",
               "type": {
                 "array": [
@@ -17938,6 +18210,7 @@
               "type": "boolean"
             },
             "Options": {
+              "title": "Options",
               "description": "Array of optional mount options. See the Options table in the documentation linked below for more information.",
               "type": {
                 "array": [
@@ -17949,23 +18222,28 @@
         }
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "Shares": {
+        "title": "Shares",
         "description": "Array of dictionaries of each share and their settings.",
         "type": {
           "array": [
             {
               "dictionary": {
                 "AutoMount": {
+                  "title": "AutoMount",
                   "description": "If enabled, the share is automatically mounted.",
                   "type": "boolean"
                 },
                 "ConnectedOnly": {
+                  "title": "ConnectedOnly",
                   "description": "If enabled, the share is only mounted when the computer is connected to the active directory domain.",
                   "type": "boolean"
                 },
                 "Groups": {
+                  "title": "Groups",
                   "description": "An array of AD groups allowed to mount the share.",
                   "type": {
                     "array": [
@@ -17974,14 +18252,17 @@
                   }
                 },
                 "LocalMount": {
+                  "title": "LocalMount",
                   "description": "Optional local mount point.",
                   "type": "string"
                 },
                 "Name": {
+                  "title": "Name",
                   "description": "Name as it will appear in the Jamf Connect menu item.",
                   "type": "string"
                 },
                 "Options": {
+                  "title": "Options",
                   "description": "Array of optional mount options. See the Options table in the documentation linked below for more information.",
                   "type": {
                     "array": [
@@ -17990,6 +18271,7 @@
                   }
                 },
                 "URL": {
+                  "title": "URL",
                   "description": "The actual URL of the mount point in the form of \"smb://dc1.example.com/Homes\".\n\nFor the URLs, you can use variable substitution to allow for custom mounts without having to create even more XML. Jamf Connect understands <<domain>>, <<fullname>>, <<serial>>, <<shortname>>, <<upn>> and <<email>>",
                   "type": "string"
                 }
@@ -18010,22 +18292,28 @@
     "description": "Jamf Connect Sync Settings",
     "properties": {
       "ADExpirationShow": {
+        "title": "ADExpirationShow",
         "type": "boolean"
       },
       "ActionsUpdateTime": {
+        "title": "ActionsUpdateTime",
         "type": "integer"
       },
       "AuthServer": {
+        "title": "AuthServer",
         "description": "Specifies your Okta authentication domain.",
         "type": "string"
       },
       "AutoAuth": {
+        "title": "AutoAuth",
         "type": "boolean"
       },
       "CenterSignIn": {
+        "title": "CenterSignIn",
         "type": "boolean"
       },
       "ChangePasswordOrder": {
+        "title": "ChangePasswordOrder",
         "description": "Determines the order and setting for the password change menu. If unspecified, Okta is used by default for password changes. If Kerberos is enabled, Jamf Connect Sync will use Kerberos to authenticate to your Active Directory domain, and then authenticate to Okta.",
         "type": {
           "array": [
@@ -18045,79 +18333,103 @@
         }
       },
       "ChangePasswordTimer": {
+        "title": "ChangePasswordTimer",
         "description": "Specifies an interval, in minutes, until the user is prompted to sign in again after a password change.",
         "type": "integer"
       },
       "CheckSafariExtension": {
+        "title": "CheckSafariExtension",
         "type": "boolean"
       },
       "DontShowWelcome": {
+        "title": "DontShowWelcome",
         "type": "boolean"
       },
       "ExpirationWarningDays": {
+        "title": "ExpirationWarningDays",
         "type": "integer"
       },
       "ExportableKey": {
+        "title": "ExportableKey",
         "type": "boolean"
       },
       "GetCertificateAutomatically": {
+        "title": "GetCertificateAutomatically",
         "type": "boolean"
       },
       "GetHelpOptions": {
+        "title": "GetHelpOptions",
         "description": "Specifies the URL or path for GetHelpType. <<serial>>, <<fullname>>, <<shortname>> and <<domain>> are supported as substitutions.",
         "type": "string"
       },
       "GetHelpType": {
+        "title": "GetHelpType",
         "description": "Determines which GetHelp type is used.",
         "type": "string"
       },
       "HideAbout": {
+        "title": "HideAbout",
         "type": "boolean"
       },
       "HideActions": {
+        "title": "HideActions",
         "type": "boolean"
       },
       "HideChangePassword": {
+        "title": "HideChangePassword",
         "type": "boolean"
       },
       "HideGetHelp": {
+        "title": "HideGetHelp",
         "type": "boolean"
       },
       "HideGetSoftware": {
+        "title": "HideGetSoftware",
         "type": "boolean"
       },
       "HideLockScreen": {
+        "title": "HideLockScreen",
         "description": "Hides the Lock Screen menu item.",
         "type": "boolean"
       },
       "HidePreferences": {
+        "title": "HidePreferences",
         "type": "boolean"
       },
       "HideQuit": {
+        "title": "HideQuit",
         "type": "boolean"
       },
       "HideSignIn": {
+        "title": "HideSignIn",
         "type": "boolean"
       },
       "IgnoreDomainReachability": {
+        "title": "IgnoreDomainReachability",
         "type": "boolean"
       },
       "KerberosRealm": {
+        "title": "KerberosRealm",
         "type": "string"
       },
       "KerberosRenew": {
+        "title": "KerberosRenew",
         "type": "boolean"
       },
       "KerberosShortName": {
+        "title": "KerberosShortName",
         "type": "string"
       },
       "KerberosShortNameAsk": {
+        "title": "KerberosShortNameAsk",
         "type": "boolean"
       },
       "KerberosShortNameAskMessage": {
+        "title": "KerberosShortNameAskMessage",
         "type": "string"
       },
       "KeychainItems": {
+        "title": "KeychainItems",
         "description": "Determines which keychain items Jamf Connect Sync should synchronize with the local password.",
         "type": {
           "dictionary": {
@@ -18133,9 +18445,11 @@
         }
       },
       "KeychainItemsDebug": {
+        "title": "KeychainItemsDebug",
         "type": "boolean"
       },
       "KeychainItemsInternet": {
+        "title": "KeychainItemsInternet",
         "description": "Determines which internet accounts Jamf Connect Sync should synchronize with the local password.",
         "type": {
           "dictionary": {
@@ -18151,6 +18465,7 @@
         }
       },
       "LDAPServers": {
+        "title": "LDAPServers",
         "description": "Specifies domain controllers to use for Active Directory lookups.",
         "type": {
           "array": [
@@ -18159,138 +18474,178 @@
         }
       },
       "LabelPassword": {
+        "title": "LabelPassword",
         "type": "string"
       },
       "LabelUsername": {
+        "title": "LabelUsername",
         "type": "string"
       },
       "LicenseFile": {
+        "title": "LicenseFile",
         "description": "The contents of a .jamfconnectlicense file encoded in Base64 data format.",
         "type": "data"
       },
       "LocalPasswordSync": {
+        "title": "LocalPasswordSync",
         "type": "boolean"
       },
       "LocalPasswordSyncMessage": {
+        "title": "LocalPasswordSyncMessage",
         "type": "string"
       },
       "LocalPasswordSyncOnMatchOnly": {
+        "title": "LocalPasswordSyncOnMatchOnly",
         "type": "boolean"
       },
       "MenuAbout": {
+        "title": "MenuAbout",
         "type": "string"
       },
       "MenuActions": {
+        "title": "MenuActions",
         "type": "string"
       },
       "MenuChangePassword": {
+        "title": "MenuChangePassword",
         "type": "string"
       },
       "MenuGetHelp": {
+        "title": "MenuGetHelp",
         "type": "string"
       },
       "MenuGetSoftware": {
+        "title": "MenuGetSoftware",
         "type": "string"
       },
       "MenuIcon": {
+        "title": "MenuIcon",
         "description": "Path to the menu bar icon image.",
         "type": "string"
       },
       "MenuLockScreen": {
+        "title": "MenuLockScreen",
         "type": "string"
       },
       "MenuPreferences": {
+        "title": "MenuPreferences",
         "type": "string"
       },
       "MenuSignIn": {
+        "title": "MenuSignIn",
         "type": "string"
       },
       "MessagePasswordChangePolicy": {
+        "title": "MessagePasswordChangePolicy",
         "type": "string"
       },
       "MessagePluginDisabled": {
+        "title": "MessagePluginDisabled",
         "description": "Text displayed to users when the Safari plugin is not enabled.",
         "type": "string"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PFC_SegmentedControl_Menu": {
+        "title": "PFC_SegmentedControl_Menu",
         "type": "string"
       },
       "PasswordChangeCommand": {
+        "title": "PasswordChangeCommand",
         "description": "Specifies a script or other binary to be run after the user changes a password.",
         "type": "string"
       },
       "PasswordCheckUpdateTime": {
+        "title": "PasswordCheckUpdateTime",
         "description": "Specifies the interval, in minutes, that Jamf Connect Sync checks the local password for synchronization. If unspecified, Jamf Connect Sync will check every 15 minutes by default.",
         "type": "integer"
       },
       "PasswordExpirationMenu": {
+        "title": "PasswordExpirationMenu",
         "description": "Determines if the countdown before password expiration is displayed in the menu bar.",
         "type": "boolean"
       },
       "PasswordExpirationMenuDays": {
+        "title": "PasswordExpirationMenuDays",
         "description": "An integer, in days remaining, before the password expiration countdown is displayed in the menu bar.",
         "type": "integer"
       },
       "PasswordPolicy": {
+        "title": "PasswordPolicy",
         "type": {
           "dictionary": {
             "minLength": {
+              "title": "minLength",
               "type": "string"
             },
             "minLowerCase": {
+              "title": "minLowerCase",
               "type": "string"
             },
             "minMatches": {
+              "title": "minMatches",
               "type": "string"
             },
             "minNumber": {
+              "title": "minNumber",
               "type": "string"
             },
             "minSymbol": {
+              "title": "minSymbol",
               "type": "string"
             },
             "minUpperCase": {
+              "title": "minUpperCase",
               "type": "string"
             }
           }
         }
       },
       "PeriodicUpdateTime": {
+        "title": "PeriodicUpdateTime",
         "description": "Specifies the interval, in minutes, between background updates.",
         "type": "integer"
       },
       "SelfServicePath": {
+        "title": "SelfServicePath",
         "type": "string"
       },
       "SignInCommand": {
+        "title": "SignInCommand",
         "description": "Specifies a script or other binary to be run after a successful sign in.",
         "type": "string"
       },
       "SignInLogo": {
+        "title": "SignInLogo",
         "description": "Specifies the path to image file used as a logo.",
         "type": "string"
       },
       "Template": {
+        "title": "Template",
         "type": "string"
       },
       "TicketsOnSignIn": {
+        "title": "TicketsOnSignIn",
         "description": "Determines if Jamf Connect Sync retrieves Kerberos Tickets on sign in.",
         "type": "boolean"
       },
       "TitleSignIn": {
+        "title": "TitleSignIn",
         "type": "string"
       },
       "UseKeychain": {
+        "title": "UseKeychain",
         "type": "boolean"
       },
       "UseKeychainPrompt": {
+        "title": "UseKeychainPrompt",
         "description": "Displays the Sign In window on launch.",
         "type": "boolean"
       },
       "UseKeychainPromptExlusions": {
+        "title": "UseKeychainPromptExlusions",
         "type": {
           "array": [
             "string"
@@ -18298,10 +18653,12 @@
         }
       },
       "WarnOnPasswordExpiration": {
+        "title": "WarnOnPasswordExpiration",
         "description": "Determines whether Jamf Connect Sync should warn the user on sign in if the password is about to expire.",
         "type": "boolean"
       },
       "WifiNetworks": {
+        "title": "WifiNetworks",
         "type": {
           "array": [
             "string"
@@ -18309,6 +18666,7 @@
         }
       },
       "X509CA": {
+        "title": "X509CA",
         "type": "string"
       }
     }
@@ -18318,71 +18676,93 @@
     "description": "Jamf Connect Verify settings",
     "properties": {
       "DontShowWelcome": {
+        "title": "DontShowWelcome",
         "type": "boolean"
       },
       "FailToolPath": {
+        "title": "FailToolPath",
         "type": "string"
       },
       "ForceSignInWindow": {
+        "title": "ForceSignInWindow",
         "type": "boolean"
       },
       "GetHelpOptions": {
+        "title": "GetHelpOptions",
         "description": "Specifies the URL or path for GetHelpType. <<serial>>, <<fullname>>, <<shortname>> and <<domain>> are supported as substitutions.",
         "type": "string"
       },
       "GetHelpType": {
+        "title": "GetHelpType",
         "type": "string"
       },
       "HideAbout": {
+        "title": "HideAbout",
         "type": "boolean"
       },
       "HideChangePassword": {
+        "title": "HideChangePassword",
         "type": "boolean"
       },
       "HideGetHelp": {
+        "title": "HideGetHelp",
         "type": "boolean"
       },
       "HideGetSoftware": {
+        "title": "HideGetSoftware",
         "type": "boolean"
       },
       "HideHomeDirectory": {
+        "title": "HideHomeDirectory",
         "type": "boolean"
       },
       "HideLastUser": {
+        "title": "HideLastUser",
         "type": "boolean"
       },
       "HidePrefs": {
+        "title": "HidePrefs",
         "type": "boolean"
       },
       "HideQuit": {
+        "title": "HideQuit",
         "type": "boolean"
       },
       "HideResetPassword": {
+        "title": "HideResetPassword",
         "type": "boolean"
       },
       "HideShares": {
+        "title": "HideShares",
         "type": "boolean"
       },
       "HideSignIn": {
+        "title": "HideSignIn",
         "type": "boolean"
       },
       "HideTickets": {
+        "title": "HideTickets",
         "type": "boolean"
       },
       "KerberosGetTicketsAutomatically": {
+        "title": "KerberosGetTicketsAutomatically",
         "type": "boolean"
       },
       "KerberosRealm": {
+        "title": "KerberosRealm",
         "type": "string"
       },
       "KerberosShowCountdown": {
+        "title": "KerberosShowCountdown",
         "type": "boolean"
       },
       "KerberosShowCountdownLimit": {
+        "title": "KerberosShowCountdownLimit",
         "description": "An integer, in days remaining, before the password expiration countdown is displayed in the menu bar.",
         "type": "integer"
       },
       "KeychainItems": {
+        "title": "KeychainItems",
         "type": {
           "array": [
             "string"
@@ -18390,12 +18770,15 @@
         }
       },
       "KeychainItemsCreateSerial": {
+        "title": "KeychainItemsCreateSerial",
         "type": "string"
       },
       "KeychainItemsDebug": {
+        "title": "KeychainItemsDebug",
         "type": "boolean"
       },
       "KeychainItemsInternet": {
+        "title": "KeychainItemsInternet",
         "type": {
           "array": [
             "string"
@@ -18403,27 +18786,35 @@
         }
       },
       "LocalPasswordIgnore": {
+        "title": "LocalPasswordIgnore",
         "type": "boolean"
       },
       "LoginLogo": {
+        "title": "LoginLogo",
         "type": "string"
       },
       "MenuAbout": {
+        "title": "MenuAbout",
         "type": "string"
       },
       "MenuActions": {
+        "title": "MenuActions",
         "type": "string"
       },
       "MenuChangePassword": {
+        "title": "MenuChangePassword",
         "type": "string"
       },
       "MenuGetHelp": {
+        "title": "MenuGetHelp",
         "type": "string"
       },
       "MenuGetSoftware": {
+        "title": "MenuGetSoftware",
         "type": "string"
       },
       "MenuHomeDirectory": {
+        "title": "MenuHomeDirectory",
         "type": "string"
       },
       "MenuIcon": {
@@ -18432,18 +18823,23 @@
         "type": "boolean"
       },
       "MenuIconActive": {
+        "title": "MenuIconActive",
         "type": "string"
       },
       "MenuIconDark": {
+        "title": "MenuIconDark",
         "type": "string"
       },
       "MenuKerberosTickets": {
+        "title": "MenuKerberosTickets",
         "type": "string"
       },
       "MenuResetPassword": {
+        "title": "MenuResetPassword",
         "type": "string"
       },
       "MenuShares": {
+        "title": "MenuShares",
         "type": "string"
       },
       "MenuText": {
@@ -18452,67 +18848,87 @@
         "type": "boolean"
       },
       "MessageBrowserPasswordChange": {
+        "title": "MessageBrowserPasswordChange",
         "type": "string"
       },
       "MessageLocalSync": {
+        "title": "MessageLocalSync",
         "type": "string"
       },
       "MessageNetworkPasswordWrong": {
+        "title": "MessageNetworkPasswordWrong",
         "type": "string"
       },
       "NetworkCheckAutomatically": {
+        "title": "NetworkCheckAutomatically",
         "description": "Determines if the network password is verified automatically",
         "type": "boolean"
       },
       "OIDCChangePasswordURL": {
+        "title": "OIDCChangePasswordURL",
         "type": "string"
       },
       "OIDCClientSecret": {
+        "title": "OIDCClientSecret",
         "type": "string"
       },
       "OIDCLoginURL": {
+        "title": "OIDCLoginURL",
         "type": "string"
       },
       "OIDCProvider": {
+        "title": "OIDCProvider",
         "description": "Specifies the IdP provider integrated with Jamf Connect Verify.",
         "type": "string"
       },
       "OIDCROPGID": {
+        "title": "OIDCROPGID",
         "description": "The Client ID of the added app in your IdP used for authenticating the user's password via a resource owner password grant (ROPG) workflow.",
         "type": "string"
       },
       "OIDCRedirectURI": {
+        "title": "OIDCRedirectURI",
         "type": "string"
       },
       "OIDCResetPasswordURL": {
+        "title": "OIDCResetPasswordURL",
         "type": "string"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PFC_SegmentedControl_1": {
+        "title": "PFC_SegmentedControl_1",
         "type": "string"
       },
       "SelfServicePath": {
+        "title": "SelfServicePath",
         "type": "string"
       },
       "TimerKerberosCheck": {
+        "title": "TimerKerberosCheck",
         "type": "integer"
       },
       "TimerLocalCheck": {
+        "title": "TimerLocalCheck",
         "type": "integer"
       },
       "TimerNetworkCheck": {
+        "title": "TimerNetworkCheck",
         "type": "integer"
       },
       "Version": {
+        "title": "Version",
         "description": "The numeric version of the preference file. Currently, only \"1\" is supported.",
         "type": "integer"
       },
       "WindowAbout": {
+        "title": "WindowAbout",
         "type": "string"
       },
       "WindowSignIn": {
+        "title": "WindowSignIn",
         "type": "string"
       }
     }
@@ -19230,10 +19646,12 @@
               "type": "string"
             },
             "{{value}}": {
+              "title": "{{value}}",
               "description": "",
               "type": {
                 "dictionary": {
                   "allowed_types": {
+                    "title": "allowed_types",
                     "description": "This setting sets the allowed types of extension/apps that can be installed in Google Chrome.",
                     "type": {
                       "array": [
@@ -19242,10 +19660,12 @@
                     }
                   },
                   "blocked_install_message": {
+                    "title": "blocked_install_message",
                     "description": "This maps to a string specifying the error message to display to users if they're blocked from installing an extension.",
                     "type": "string"
                   },
                   "blocked_permissions": {
+                    "title": "blocked_permissions",
                     "description": "Maps to a list of strings indicating the blocked API permissions for the extension.",
                     "type": {
                       "array": [
@@ -19254,6 +19674,7 @@
                     }
                   },
                   "install_sources": {
+                    "title": "install_sources",
                     "description": "Each item in this list is an extension-style match pattern.",
                     "type": {
                       "array": [
@@ -19262,14 +19683,17 @@
                     }
                   },
                   "installation_mode": {
+                    "title": "installation_mode",
                     "description": "Maps to a string indicating the installation mode for the extension.",
                     "type": "string"
                   },
                   "minimum_version_required": {
+                    "title": "minimum_version_required",
                     "description": "Maps to a version string.",
                     "type": "string"
                   },
                   "runtime_allowed_hosts": {
+                    "title": "runtime_allowed_hosts",
                     "description": "Maps to a list of strings representing hosts that an extension can interact with regardless of whether they are listed in \"runtime_blocked_hosts\".",
                     "type": {
                       "array": [
@@ -19278,6 +19702,7 @@
                     }
                   },
                   "runtime_blocked_hosts": {
+                    "title": "runtime_blocked_hosts",
                     "description": "Maps to a list of strings representing hosts whose webpages the extension will be blocked from modifying.",
                     "type": {
                       "array": [
@@ -19286,6 +19711,7 @@
                     }
                   },
                   "update_url": {
+                    "title": "update_url",
                     "description": "Maps to a string indicating where Chrome can download a force_installed or normal_installed extension.",
                     "type": "string"
                   }
@@ -19336,6 +19762,7 @@
         "type": "integer"
       },
       "FullscreenAllowed": {
+        "title": "FullscreenAllowed",
         "description": "Allow full screen mode",
         "type": "boolean"
       },
@@ -19462,6 +19889,7 @@
         "type": "integer"
       },
       "InsecureContentAllowedForUrls": {
+        "title": "InsecureContentAllowedForUrls",
         "description": "List of URLs to allow insecure content",
         "type": {
           "array": [
@@ -19470,6 +19898,7 @@
         }
       },
       "InsecureContentBlockedForUrls": {
+        "title": "InsecureContentBlockedForUrls",
         "description": "List of URLs to block insecure content",
         "type": {
           "array": [
@@ -19522,10 +19951,12 @@
             {
               "dictionary": {
                 "name": {
+                  "title": "name",
                   "description": "Name of the favorite.",
                   "type": "string"
                 },
                 "url": {
+                  "title": "url",
                   "description": "URL for the favorite.",
                   "type": "string"
                 }
@@ -19550,9 +19981,11 @@
             {
               "dictionary": {
                 "encoding": {
+                  "title": "encoding",
                   "type": "string"
                 },
                 "image_search_url": {
+                  "title": "image_search_url",
                   "type": "string"
                 },
                 "is_default": {
@@ -19560,15 +19993,19 @@
                   "type": "boolean"
                 },
                 "keyword": {
+                  "title": "keyword",
                   "type": "string"
                 },
                 "name": {
+                  "title": "name",
                   "type": "string"
                 },
                 "search_url": {
+                  "title": "search_url",
                   "type": "string"
                 },
                 "suggest_url": {
+                  "title": "suggest_url",
                   "type": "string"
                 }
               }
@@ -19641,9 +20078,11 @@
                   "type": {
                     "dictionary": {
                       "hash": {
+                        "title": "hash",
                         "type": "string"
                       },
                       "url": {
+                        "title": "url",
                         "type": "string"
                       }
                     }
@@ -19654,9 +20093,11 @@
                   "type": {
                     "dictionary": {
                       "hash": {
+                        "title": "hash",
                         "type": "string"
                       },
                       "url": {
+                        "title": "url",
                         "type": "string"
                       }
                     }
@@ -19754,6 +20195,7 @@
         }
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PasswordManagerEnabled": {
@@ -19942,12 +20384,15 @@
             {
               "dictionary": {
                 "default": {
+                  "title": "default",
                   "type": "boolean"
                 },
                 "protocol": {
+                  "title": "protocol",
                   "type": "string"
                 },
                 "url": {
+                  "title": "url",
                   "type": "string"
                 }
               }
@@ -20277,6 +20722,7 @@
         }
       },
       "WebComponentsV0Enabled": {
+        "title": "WebComponentsV0Enabled",
         "description": "Re-enable Web Components v0 API until M84.",
         "type": "boolean"
       },
@@ -20286,6 +20732,7 @@
         "type": "boolean"
       },
       "WebRtcLocalIpsAllowedUrls": {
+        "title": "WebRtcLocalIpsAllowedUrls",
         "description": "Manage exposure of local IP addressess by WebRTC",
         "type": {
           "array": [
@@ -20294,6 +20741,7 @@
         }
       },
       "WebRtcLocalhostIpHandling": {
+        "title": "WebRtcLocalhostIpHandling",
         "description": "Manage exposure of local IP addressess by WebRTC",
         "type": "string"
       },
@@ -20419,6 +20867,7 @@
     "description": "Microsoft Office 365 Service settings",
     "properties": {
       "SendAllTelemetryEnabled": {
+        "title": "SendAllTelemetryEnabled",
         "description": "Set to false to send minimal heartbeat data, no application usage, and no environment details.",
         "type": "boolean"
       }
@@ -20492,6 +20941,7 @@
         }
       },
       "DefaultToBusinessFRE": {
+        "title": "DefaultToBusinessFRE",
         "description": "Default to OneDrive Business",
         "type": "boolean"
       },
@@ -20516,6 +20966,7 @@
         "type": "integer"
       },
       "EnableAddAccounts": {
+        "title": "EnableAddAccounts",
         "description": "Allow users to add accounts to OneDrive",
         "type": "boolean"
       },
@@ -20544,10 +20995,12 @@
         "type": "boolean"
       },
       "HydrationDisallowedApps": {
+        "title": "HydrationDisallowedApps",
         "description": "String in JSON format. AppID can be either the BSD process name or the bundle display name. \nMaxBuildVersion denotes the maximum build version of the application that will be blocked. \nMaxBundleVersion denotes the maximum bundle version of the application that will be blocked.",
         "type": "string"
       },
       "IsHydrationToastAllowed": {
+        "title": "IsHydrationToastAllowed",
         "description": "When set to false, toasts will not appear when applications trigger the download of file contents.",
         "type": "boolean"
       },
@@ -20850,6 +21303,7 @@
     "description": "Skype for Business settings",
     "properties": {
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "autoAcceptTimeout": {
@@ -21316,6 +21770,7 @@
         "type": "string"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "SendAllTelemetryEnabled": {
@@ -21659,14 +22114,17 @@
     "description": "Microsoft Error Reporting settings",
     "properties": {
       "IsAttachedEnabled": {
+        "title": "IsAttachedEnabled",
         "description": "Disable attaching the file that caused the crash in the crash report. If you are working in a sensitive business it is recommended to set this to false.",
         "type": "boolean"
       },
       "IsStoreLastCrashEnabled": {
+        "title": "IsStoreLastCrashEnabled",
         "description": "Will store the last crash report in the following path: ~/Library/Group Containers/UBF8T346G9.ms/MerpTempItems",
         "type": "boolean"
       },
       "SendCrashReportsEvenWithTelemetryDisabled": {
+        "title": "SendCrashReportsEvenWithTelemetryDisabled",
         "description": "Disable upload of telemetry data in Crash Reports.",
         "type": "boolean"
       }
@@ -21787,6 +22245,7 @@
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "SendAllTelemetryEnabled": {
@@ -22286,6 +22745,7 @@
     "description": "AirServer settings",
     "properties": {
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "SUAllowsAutomaticUpdates": {
@@ -22314,38 +22774,47 @@
         "type": "integer"
       },
       "SUSendProfileInfo": {
+        "title": "SUSendProfileInfo",
         "description": "When running software update checks, submit anonymous computer profile data to AirServer.",
         "type": "boolean"
       },
       "UseLionStyleFullscreen": {
+        "title": "UseLionStyleFullscreen",
         "description": "Enable this setting if you want to use the native macOS fullscreen mode - slower.",
         "type": "boolean"
       },
       "UserDeviceName": {
+        "title": "UserDeviceName",
         "description": "Use this field to override the name of the computer that appears on the AirPlay network.",
         "type": "string"
       },
       "UserLosslessAudioReceiverName": {
+        "title": "UserLosslessAudioReceiverName",
         "description": "Only enable this preference when you wish to set a custom name for the device running AirServer in the AirPlay device list.",
         "type": "string"
       },
       "autoLaunch": {
+        "title": "autoLaunch",
         "description": "Have AirServer launch on system startup.",
         "type": "boolean"
       },
       "com.airserverapp.PasswordType": {
+        "title": "com.airserverapp.PasswordType",
         "description": "Choose authentication method when connecting to AirServer. While a Fixed Password is an available setting, it's not possible to define this password via profile.",
         "type": "string"
       },
       "com.airserverapp.SoftwareDecoderOnly": {
+        "title": "com.airserverapp.SoftwareDecoderOnly",
         "description": "Enable this setting if your AirPlay device regularly freezes or if you notice green artifacts when using AirPlay mirroring. This is common on older Macs that do not properly support hardware-accelerated video encoding.",
         "type": "boolean"
       },
       "com.airserverapp.alwaysOnTop": {
+        "title": "com.airserverapp.alwaysOnTop",
         "description": "Enable this setting if you want AirServer windows to be on top of all other windows.",
         "type": "boolean"
       },
       "com.airserverapp.audioBufferSize2": {
+        "title": "com.airserverapp.audioBufferSize2",
         "description": "Use this setting to tweak multi-room audio sync when streaming music from iTunes.",
         "type": "real"
       },
@@ -22355,18 +22824,22 @@
         "type": "boolean"
       },
       "com.airserverapp.linkMasterVolume": {
+        "title": "com.airserverapp.linkMasterVolume",
         "description": "If enabled, changing the volume on your iOS device will change the volume of your preferred output sound device; otherwise AirServer will lower the streaming music volume.",
         "type": "boolean"
       },
       "com.airserverapp.mirroringOptimizedFor2": {
+        "title": "com.airserverapp.mirroringOptimizedFor2",
         "description": "Here you can set the mirroring resolution AirServer provides to your iOS device. 'Retina' is recommended for all users, but if you are having connection problems, try the 1080p option. Do not enable this preference if you wish use the default 'Retina - High Quality' resolution setting.",
         "type": "string"
       },
       "com.airserverapp.slowNetwork": {
+        "title": "com.airserverapp.slowNetwork",
         "description": "Enabling this setting will lower the mirroring quality by half but uses four times less bandwidth.",
         "type": "boolean"
       },
       "showInDock": {
+        "title": "showInDock",
         "description": "Use this setting to toggle between running AirServer in the Dock and in the menu bar.",
         "type": "boolean"
       }
@@ -22418,6 +22891,7 @@
         "type": "float"
       },
       "TextFieldFloat06": {
+        "title": "TextFieldFloat06",
         "description": "TextFieldFloat with no title.",
         "type": "float"
       },
@@ -22482,6 +22956,7 @@
         "type": "integer"
       },
       "TextFieldInteger06": {
+        "title": "TextFieldInteger06",
         "description": "TextFieldInteger with no title.",
         "type": "integer"
       },
@@ -22763,6 +23238,7 @@
             {
               "dictionary": {
                 "ArrayPopUp": {
+                  "title": "ArrayPopUp",
                   "type": {
                     "array": [
                       "string"
@@ -22770,6 +23246,7 @@
                   }
                 },
                 "ArrayString": {
+                  "title": "ArrayString",
                   "type": {
                     "array": [
                       "string"
@@ -22817,6 +23294,7 @@
         "type": "string"
       },
       "TextField06": {
+        "title": "TextField06",
         "description": "TextField with no title.",
         "type": "string"
       },
@@ -23237,10 +23715,12 @@
     "description": "Skype settings",
     "properties": {
       "SKAllowStealthUpgrade": {
+        "title": "SKAllowStealthUpgrade",
         "description": "Supress installation prompt for Privilege Helper Tool.",
         "type": "boolean"
       },
       "SKSilentUpgradeNoticeShown": {
+        "title": "SKSilentUpgradeNoticeShown",
         "description": "Surpress Upgrade Notification.",
         "type": "boolean"
       }
@@ -23251,6 +23731,7 @@
     "description": "DetectX Swift settings",
     "properties": {
       "BrandedText": {
+        "title": "BrandedText",
         "description": "Display organizational branding. Maximum of 25 characters in length - including spaces and punctuation. Requires DetectX Swift to be registered.",
         "type": "string"
       },
@@ -23264,22 +23745,27 @@
         }
       },
       "ObserverButton": {
+        "title": "ObserverButton",
         "description": "Custom button text for the Folder Observer alert. Requires DetectX Swift to be registered.",
         "type": "string"
       },
       "ObserverIcon": {
+        "title": "ObserverIcon",
         "description": "Path to custom image for the Folder Observer alert. By default, shows the DetectX Swift icon. Requires DetectX Swift to be registered.",
         "type": "string"
       },
       "ObserverMessage": {
+        "title": "ObserverMessage",
         "description": "Custom message for the Folder Observer alert. Requires DetectX Swift to be registered.",
         "type": "string"
       },
       "ObserverTitle": {
+        "title": "ObserverTitle",
         "description": "Custom title for the Folder Observer alert. Requires DetectX Swift to be registered.",
         "type": "string"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "SUAllowsAutomaticUpdates": {
@@ -23308,14 +23794,17 @@
         "type": "integer"
       },
       "VisualUpdates": {
+        "title": "VisualUpdates",
         "description": "In the DetectX Swift GUI, display a visual button to indicate software updates are available.",
         "type": "integer"
       },
       "folderObserver": {
+        "title": "folderObserver",
         "description": "Folder Observer notifies users when changes are made to the LaunchDaemons and LaunchAgents folders.",
         "type": "integer"
       },
       "ignoreKeywords": {
+        "title": "ignoreKeywords",
         "description": "Registered users can specify key words to be ignored by the Folder Observer action when changes are made to the LaunchDaemons and LaunchAgents folders. This allows you to stop the alert from being thrown when items whose file name contains the key word is added or removed from one of the Launch folders.",
         "type": "boolean"
       },
@@ -23327,6 +23816,7 @@
             {
               "dictionary": {
                 "path": {
+                  "title": "path",
                   "description": "Paths of files to whitelist:\nex. /Library/Scripts/script.sh\nex. ~/Library/Preferences/preference.plist",
                   "type": "string"
                 }
@@ -23357,6 +23847,7 @@
         "type": "string"
       },
       "Defaults": {
+        "title": "Defaults",
         "description": "List of default values.",
         "type": {
           "dictionary": {
@@ -23394,6 +23885,7 @@
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "ReleaseChannel": {
@@ -23418,6 +23910,7 @@
     "description": "NoMAD settings",
     "properties": {
       "ADDomain": {
+        "title": "ADDomain",
         "description": "Defines the AD domain you're working with.",
         "type": "string"
       },
@@ -23742,15 +24235,19 @@
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PFC_SegmentedControl_General": {
+        "title": "PFC_SegmentedControl_General",
         "type": "string"
       },
       "PFC_SegmentedControl_Menu": {
+        "title": "PFC_SegmentedControl_Menu",
         "type": "string"
       },
       "PFC_SegmentedControl_Password": {
+        "title": "PFC_SegmentedControl_Password",
         "type": "string"
       },
       "PasswordExpireAlertTime": {
@@ -24724,6 +25221,7 @@
         "type": "string"
       },
       "Method": {
+        "title": "Method",
         "type": "string"
       },
       "PasswordGrouping": {
@@ -25134,22 +25632,27 @@
     "description": "NoMAD Pro settings",
     "properties": {
       "ADExpirationShow": {
+        "title": "ADExpirationShow",
         "description": "Shows a menu item beneath the current user's name showing the user's password expiration as determined by AD.",
         "type": "boolean"
       },
       "ActionsUpdateTime": {
+        "title": "ActionsUpdateTime",
         "description": "Number of minutes between updating the Actions Menu.",
         "type": "integer"
       },
       "AuthServer": {
+        "title": "AuthServer",
         "description": "URL for the Okta server, note no preceding https: is required.",
         "type": "string"
       },
       "AutoAuth": {
+        "title": "AutoAuth",
         "description": "Determines if web extensions automatically authenticate via the NoMAD Pro UI.",
         "type": "boolean"
       },
       "ChangePasswordOrder": {
+        "title": "ChangePasswordOrder",
         "description": "Determines the order and setting for the password change menu. NOT IMPLEMENTED YET, THERE IS NO DOCUMENTATION ON THIS KEY.",
         "type": {
           "array": [
@@ -25158,90 +25661,112 @@
         }
       },
       "ChangePasswordTimer": {
+        "title": "ChangePasswordTimer",
         "description": "Time in minutes until the user is prompted to sign in again after a Password Change.",
         "type": "integer"
       },
       "CheckSafariExtension": {
+        "title": "CheckSafariExtension",
         "description": "Determines if the user is warned that the NoMAD Pro extension has not been enabled in Safari.",
         "type": "boolean"
       },
       "DontShowWelcome": {
+        "title": "DontShowWelcome",
         "description": "Disables the showing of the welcome splash screen on launch.",
         "type": "boolean"
       },
       "ExpirationWarningDays": {
+        "title": "ExpirationWarningDays",
         "description": "Number of days remaining before sending notifications via the Notification Center.",
         "type": "integer"
       },
       "ExportableKey": {
+        "title": "ExportableKey",
         "description": "Allows the private key of the user certificate to be exported.",
         "type": "boolean"
       },
       "GetHelpOptions": {
+        "title": "GetHelpOptions",
         "description": "URL or Path for GetHelpType (<<serial>>, <<fullname>>, <<shortname>> and <<domain>> are currently supported as substitutions)",
         "type": "string"
       },
       "GetHelpType": {
+        "title": "GetHelpType",
         "description": "Determines type of GetHelp function",
         "type": "string"
       },
       "HideAbout": {
+        "title": "HideAbout",
         "description": "Hides the About menu item.",
         "type": "boolean"
       },
       "HideActions": {
+        "title": "HideActions",
         "description": "Hides the Actions menu item.",
         "type": "boolean"
       },
       "HideChangePassword": {
+        "title": "HideChangePassword",
         "description": "Hides the Change Password menu item.",
         "type": "boolean"
       },
       "HideGetHelp": {
+        "title": "HideGetHelp",
         "description": "Hides the Get Help menu item.",
         "type": "boolean"
       },
       "HideGetSoftware": {
+        "title": "HideGetSoftware",
         "description": "Hides the Get Software menu item.",
         "type": "boolean"
       },
       "HideLockScreen": {
+        "title": "HideLockScreen",
         "description": "Hides the Lock Screen menu item.",
         "type": "boolean"
       },
       "HidePreferences": {
+        "title": "HidePreferences",
         "description": "Hides the Preferences menu item.",
         "type": "boolean"
       },
       "HideQuit": {
+        "title": "HideQuit",
         "description": "Hides the Quit menu item.",
         "type": "boolean"
       },
       "HideSignIn": {
+        "title": "HideSignIn",
         "description": "Hides the Sign In menu item.",
         "type": "boolean"
       },
       "IgnoreDomainReachability": {
+        "title": "IgnoreDomainReachability",
         "description": "Determines if SRV record lookups are used to determine if the AD domain is reachable.",
         "type": "boolean"
       },
       "KerberosRealm": {
+        "title": "KerberosRealm",
         "description": "Kerberos realm to use to get Kerberos tickets as a side effect of authentication.",
         "type": "string"
       },
       "KerberosRenew": {
+        "title": "KerberosRenew",
         "description": "Determines if the Kerberos tickets should be renewed or not.",
         "type": "boolean"
       },
       "KerberosShortName": {
+        "title": "KerberosShortName",
         "description": "The shortname to use for Kerberos tickets. If unset the sign in name is used.",
         "type": "string"
       },
       "KerberosShortNameAsk": {
+        "title": "KerberosShortNameAsk",
         "description": "Determines if the user is asked to enter their Kerberos short name on first sign in.",
         "type": "boolean"
       },
       "KerberosShortNameAskMessage": {
+        "title": "KerberosShortNameAskMessage",
         "description": "The message text when asking the user for their Kerberos short name.",
         "type": "string"
       },
@@ -25264,10 +25789,12 @@
         }
       },
       "KeychainItemsDebug": {
+        "title": "KeychainItemsDebug",
         "description": "Updates keychain items on every sign in. Used for debugging.",
         "type": "boolean"
       },
       "LDAPServers": {
+        "title": "LDAPServers",
         "description": "Specific Domain Controllers to use for AD lookups.",
         "type": {
           "array": [
@@ -25276,122 +25803,153 @@
         }
       },
       "LabelPassword": {
+        "title": "LabelPassword",
         "description": "The text label for the password field in the Sign In window.",
         "type": "string"
       },
       "LabelUsername": {
+        "title": "LabelUsername",
         "description": "The text label for the username field in the Sign In window.",
         "type": "string"
       },
       "LicenseFile": {
+        "title": "LicenseFile",
         "description": "The contents of a .nomadlicense file encoded as Base64 data.",
         "type": "data"
       },
       "LocalPasswordSync": {
+        "title": "LocalPasswordSync",
         "description": "Determines if the Okta password is synchronized with the local account.",
         "type": "boolean"
       },
       "LocalPasswordSyncMessage": {
+        "title": "LocalPasswordSyncMessage",
         "description": "The alert dialog text that the user is presented with when asked to enter in his or her local password.",
         "type": "string"
       },
       "LocalPasswordSyncOnMatchOnly": {
+        "title": "LocalPasswordSyncOnMatchOnly",
         "description": "Only sync the password if the Okta account name is the same as the local account name.",
         "type": "boolean"
       },
       "MenuAbout": {
+        "title": "MenuAbout",
         "description": "Menu item text for the About item.",
         "type": "string"
       },
       "MenuActions": {
+        "title": "MenuActions",
         "description": "Menu item text for the Actions item.",
         "type": "string"
       },
       "MenuChangePassword": {
+        "title": "MenuChangePassword",
         "description": "Menu item text for the Change Password item.",
         "type": "string"
       },
       "MenuGetHelp": {
+        "title": "MenuGetHelp",
         "description": "Menu item text for the Get Help item.",
         "type": "string"
       },
       "MenuGetSoftware": {
+        "title": "MenuGetSoftware",
         "description": "Menu item text for the Get Software item.",
         "type": "string"
       },
       "MenuIcon": {
+        "title": "MenuIcon",
         "description": "Path to a 16x16 pixel image to use as the icon in the menu bar.",
         "type": "string"
       },
       "MenuLockScreen": {
+        "title": "MenuLockScreen",
         "description": "Menu item text for the Lock Screen item.",
         "type": "string"
       },
       "MenuPreferences": {
+        "title": "MenuPreferences",
         "description": "Menu item text for the Preferences item.",
         "type": "string"
       },
       "MenuSignIn": {
+        "title": "MenuSignIn",
         "description": "Menu item text for the Sign In item.",
         "type": "string"
       },
       "MessagePasswordChangePolicy": {
+        "title": "MessagePasswordChangePolicy",
         "description": "Message text when changing password via Kerberos for the AD complexity policy.",
         "type": "string"
       },
       "MessagePluginDisabled": {
+        "title": "MessagePluginDisabled",
         "description": "Text to show when alerting the user that the Safari plugin has not been enabled.",
         "type": "string"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PFC_SegmentedControl_General": {
+        "title": "PFC_SegmentedControl_General",
         "type": "string"
       },
       "PFC_SegmentedControl_Menu": {
+        "title": "PFC_SegmentedControl_Menu",
         "type": "string"
       },
       "PFC_SegmentedControl_Password": {
+        "title": "PFC_SegmentedControl_Password",
         "type": "string"
       },
       "PasswordChangeCommand": {
+        "title": "PasswordChangeCommand",
         "description": "Script or other binary to run when a password is successfully changed.",
         "type": "string"
       },
       "PasswordExpirationMenu": {
+        "title": "PasswordExpirationMenu",
         "description": "Determines if the countdown before password expiration is shown in the menu.",
         "type": "boolean"
       },
       "PasswordExpirationMenuDays": {
+        "title": "PasswordExpirationMenuDays",
         "description": "Number of days remaining before the password expiration countdown is shown in the menu bar.",
         "type": "integer"
       },
       "PasswordPolicy": {
+        "title": "PasswordPolicy",
         "description": "Complexity policy for changing the password via Kerberos.",
         "type": {
           "dictionary": {
             "minLength": {
+              "title": "minLength",
               "description": "",
               "type": "string"
             },
             "minLowerCase": {
+              "title": "minLowerCase",
               "description": "",
               "type": "string"
             },
             "minMatches": {
+              "title": "minMatches",
               "description": "",
               "type": "string"
             },
             "minNumber": {
+              "title": "minNumber",
               "description": "",
               "type": "string"
             },
             "minSymbol": {
+              "title": "minSymbol",
               "description": "",
               "type": "string"
             },
             "minUpperCase": {
+              "title": "minUpperCase",
               "description": "",
               "type": "string"
             }
@@ -25399,42 +25957,52 @@
         }
       },
       "PeriodicUpdateTime": {
+        "title": "PeriodicUpdateTime",
         "description": "Time in minutes between periodic background updates.",
         "type": "integer"
       },
       "SelfServicePath": {
+        "title": "SelfServicePath",
         "description": "File path for a Self Service application not found automatically.",
         "type": "string"
       },
       "SignInCommand": {
+        "title": "SignInCommand",
         "description": "Path to a script or other binary to be run after a successful sign in.",
         "type": "string"
       },
       "SignInLogo": {
+        "title": "SignInLogo",
         "description": "Path to a logo file. The space is 342x90 pixels.",
         "type": "string"
       },
       "Template": {
+        "title": "Template",
         "description": "Certificate template to request when using the Windows CA.",
         "type": "string"
       },
       "TicketsOnSignIn": {
+        "title": "TicketsOnSignIn",
         "description": "Causes NoMAD Pro to get Kerberos Tickets.",
         "type": "boolean"
       },
       "TitleSignIn": {
+        "title": "TitleSignIn",
         "description": "Title of the Sign In window.",
         "type": "string"
       },
       "UseKeychain": {
+        "title": "UseKeychain",
         "description": "Determines if the Okta password is stored in the user's keychain.",
         "type": "boolean"
       },
       "UseKeychainPrompt": {
+        "title": "UseKeychainPrompt",
         "description": "Shows the Sign In window on launch unless the user has a password in the keychain.",
         "type": "boolean"
       },
       "UseKeychainPromptExlusions": {
+        "title": "UseKeychainPromptExlusions",
         "description": "List of users that can ignore the keychain prompt.",
         "type": {
           "array": [
@@ -25443,10 +26011,12 @@
         }
       },
       "WarnOnPasswordExpiration": {
+        "title": "WarnOnPasswordExpiration",
         "description": "Determines whether NoMAD Pro should warn the user on sign in if the password is about to expire.",
         "type": "boolean"
       },
       "WifiNetworks": {
+        "title": "WifiNetworks",
         "description": "A list of wireless networks that the certificate created by NoMAD Pro should be associated with.",
         "type": {
           "array": [
@@ -25455,6 +26025,7 @@
         }
       },
       "X509CA": {
+        "title": "X509CA",
         "description": "FQDN of the Windows web CA for NoMAD Pro to use for certificates.",
         "type": "string"
       }
@@ -25671,6 +26242,7 @@
         "type": "boolean"
       },
       "LDAPServers": {
+        "title": "LDAPServers",
         "description": "List of LDAP servers that you would like to use for AD authentication instead of using SRV record lookup.",
         "type": {
           "array": [
@@ -25718,6 +26290,7 @@
         "type": "string"
       },
       "Migrate": {
+        "title": "Migrate",
         "description": "If yes, migrate users",
         "type": "boolean"
       },
@@ -25730,6 +26303,7 @@
         }
       },
       "NTtoADDomainMappings": {
+        "title": "NTtoADDomainMappings",
         "description": "Maps NT to AD Domains. e.g. NOMAD: nomad.menu, would allow a user to sign in as \"NOMAD\\user\" and that would be converted to \"user@nomad.menu\" before authenticating to AD.",
         "type": {
           "dictionary": {
@@ -25761,6 +26335,7 @@
         "type": "string"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PasswordOverwriteOptional": {
@@ -25864,10 +26439,12 @@
         "type": "string"
       },
       "UserInputUI": {
+        "title": "UserInputUI",
         "description": "UI elements shown during the UserInput mechanism.",
         "type": {
           "dictionary": {
             "Button": {
+              "title": "Button",
               "type": {
                 "dictionary": {
                   "enabled": {
@@ -25943,21 +26520,27 @@
     "description": "NoMAD Login+ settings",
     "properties": {
       "AuthServer": {
+        "title": "AuthServer",
         "type": "string"
       },
       "BackgroundImage": {
+        "title": "BackgroundImage",
         "type": "string"
       },
       "CreateAdminUser": {
+        "title": "CreateAdminUser",
         "type": "boolean"
       },
       "DemobilizeUsers": {
+        "title": "DemobilizeUsers",
         "type": "boolean"
       },
       "DenyLocal": {
+        "title": "DenyLocal",
         "type": "boolean"
       },
       "DenyLocalExcluded": {
+        "title": "DenyLocalExcluded",
         "type": {
           "array": [
             "string"
@@ -25965,30 +26548,39 @@
         }
       },
       "EnableFDE": {
+        "title": "EnableFDE",
         "type": "boolean"
       },
       "EnableFDERecoveryKey": {
+        "title": "EnableFDERecoveryKey",
         "type": "boolean"
       },
       "EnableFDERecoveryKeyPath": {
+        "title": "EnableFDERecoveryKeyPath",
         "type": "string"
       },
       "HelpURL": {
+        "title": "HelpURL",
         "type": "string"
       },
       "LAPSUser": {
+        "title": "LAPSUser",
         "type": "string"
       },
       "LocalFallback": {
+        "title": "LocalFallback",
         "type": "boolean"
       },
       "LoginLogo": {
+        "title": "LoginLogo",
         "type": "string"
       },
       "Migrate": {
+        "title": "Migrate",
         "type": "boolean"
       },
       "MigrateUsersHide": {
+        "title": "MigrateUsersHide",
         "type": {
           "array": [
             "string"
@@ -25996,24 +26588,31 @@
         }
       },
       "OIDCAccessClientID": {
+        "title": "OIDCAccessClientID",
         "type": "string"
       },
       "OIDCAdminClientID": {
+        "title": "OIDCAdminClientID",
         "type": "string"
       },
       "OIDCAuthServer": {
+        "title": "OIDCAuthServer",
         "type": "string"
       },
       "OIDCRedirectURI": {
+        "title": "OIDCRedirectURI",
         "type": "string"
       },
       "OIDCSecondaryLoginClientID": {
+        "title": "OIDCSecondaryLoginClientID",
         "type": "string"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "ScriptArgs": {
+        "title": "ScriptArgs",
         "type": {
           "array": [
             "string"
@@ -26021,6 +26620,7 @@
         }
       },
       "ScriptPath": {
+        "title": "ScriptPath",
         "type": "string"
       }
     }
@@ -26030,10 +26630,12 @@
     "description": "NoMAD Shares settings",
     "properties": {
       "HomeMount": {
+        "title": "HomeMount",
         "description": "This is a dictionary of attributes for scenarios where the user's home profile should be mounted.",
         "type": {
           "dictionary": {
             "Groups": {
+              "title": "Groups",
               "description": "Only mount the home for members of these AD groups. Enter 'All' to allow all users and groups to mount their home.",
               "type": {
                 "array": [
@@ -26047,6 +26649,7 @@
               "type": "boolean"
             },
             "Options": {
+              "title": "Options",
               "description": "Array of optional mount options. Refer to documentation for more information.",
               "type": {
                 "array": [
@@ -26067,23 +26670,28 @@
         }
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "Shares": {
+        "title": "Shares",
         "description": "Array of dictionaries of each share and their settings.",
         "type": {
           "array": [
             {
               "dictionary": {
                 "AutoMount": {
+                  "title": "AutoMount",
                   "description": "If enabled, will auto mount share.",
                   "type": "boolean"
                 },
                 "ConnectedOnly": {
+                  "title": "ConnectedOnly",
                   "description": "If enabled, will only mount on domain.",
                   "type": "boolean"
                 },
                 "Groups": {
+                  "title": "Groups",
                   "description": "An array of AD groups allowed to mount the share.",
                   "type": {
                     "array": [
@@ -26092,14 +26700,17 @@
                   }
                 },
                 "LocalMount": {
+                  "title": "LocalMount",
                   "description": "Optional local mount point.",
                   "type": "string"
                 },
                 "Name": {
+                  "title": "Name",
                   "description": "Name as it will appear in the NoMAD menu item.",
                   "type": "string"
                 },
                 "Options": {
+                  "title": "Options",
                   "description": "Array of optional mount options. Refer to documentation for more information.",
                   "type": {
                     "array": [
@@ -26108,6 +26719,7 @@
                   }
                 },
                 "URL": {
+                  "title": "URL",
                   "description": "The actual URL of the mount point in the form of \"smb://dc1.nomad.test/Homes\".\n\nFor the URLs, you can use variable substitution to allow for custom mounts without having to create even more XML. NoMAD understands <<domain>>, <<fullname>>, <<serial>>, <<shortname>>, <<upn>> and <<email>>",
                   "type": "string"
                 }
@@ -26560,6 +27172,7 @@
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PasswordExpiryLimit": {
@@ -26728,6 +27341,7 @@
         "type": "string"
       },
       "Authentication": {
+        "title": "Authentication",
         "description": "Configure sites that support integrated authentication.",
         "type": {
           "dictionary": {
@@ -26737,9 +27351,11 @@
               "type": {
                 "dictionary": {
                   "NTLM": {
+                    "title": "NTLM",
                     "type": "boolean"
                   },
                   "SPNEGO": {
+                    "title": "SPNEGO",
                     "type": "boolean"
                   }
                 }
@@ -26751,9 +27367,11 @@
               "type": {
                 "dictionary": {
                   "NTLM": {
+                    "title": "NTLM",
                     "type": "boolean"
                   },
                   "SPNEGO": {
+                    "title": "SPNEGO",
                     "type": "boolean"
                   }
                 }
@@ -26850,28 +27468,34 @@
         "type": "boolean"
       },
       "Bookmarks": {
+        "title": "Bookmarks",
         "description": "Add bookmarks in either the bookmarks toolbar or menu.",
         "type": {
           "array": [
             {
               "dictionary": {
                 "Favicon": {
+                  "title": "Favicon",
                   "description": "URL to icon file to display on bookmark (e.g. https://www.example.org/favicon.ico)",
                   "type": "string"
                 },
                 "Folder": {
+                  "title": "Folder",
                   "description": "Folder to place bookmark in. If a folder is specified, it is automatically created and bookmarks with the same folder name are grouped together. You cannot nest folders.",
                   "type": "string"
                 },
                 "Placement": {
+                  "title": "Placement",
                   "description": "Place bookmark in either the Bookmark menu or Bookmark Toolbar.",
                   "type": "string"
                 },
                 "Title": {
+                  "title": "Title",
                   "description": "Bookmark Title",
                   "type": "string"
                 },
                 "URL": {
+                  "title": "URL",
                   "description": "Full URL to be bookmarked (e.g. https://www.example.org/)",
                   "type": "string"
                 }
@@ -26886,10 +27510,12 @@
         "type": "boolean"
       },
       "Certificates": {
+        "title": "Certificates",
         "description": "Trust certificates that have been added to the operating system certificate store by a user or administrator in the macOS Keychain.",
         "type": {
           "dictionary": {
             "ImportEnterpriseRoots": {
+              "title": "ImportEnterpriseRoots",
               "description": "If this preference is enabled, Firefox will read certificates from the macOS keychain. If this preference is disabled or not configured, Firefox will not read certificates from the macOS keychain.",
               "type": "boolean"
             },
@@ -26906,10 +27532,12 @@
         }
       },
       "Cookies": {
+        "title": "Cookies",
         "description": "Configure cookie preferences.",
         "type": {
           "dictionary": {
             "AcceptThirdParty": {
+              "title": "AcceptThirdParty",
               "description": "This sets the default value for \"Accept third-party cookies\".",
               "type": "string"
             },
@@ -26932,6 +27560,7 @@
               }
             },
             "Behavior": {
+              "title": "Behavior",
               "description": "This has been added replacing the existing options Default, AcceptThirdParty, and RejectTracker.",
               "type": "string"
             },
@@ -26949,18 +27578,22 @@
               }
             },
             "Default": {
+              "title": "Default",
               "description": "This sets the default value for \"Accept cookies from websites\".",
               "type": "boolean"
             },
             "ExpireAtSessionEnd": {
+              "title": "ExpireAtSessionEnd",
               "description": "This determines when cookies expire.",
               "type": "boolean"
             },
             "Locked": {
+              "title": "Locked",
               "description": "If this is true, cookies preferences cannot be changed.",
               "type": "boolean"
             },
             "RejectTracker": {
+              "title": "RejectTracker",
               "description": "Only reject trackers.",
               "type": "boolean"
             }
@@ -26973,6 +27606,7 @@
         "type": {
           "dictionary": {
             "Enabled": {
+              "title": "Enabled",
               "description": "Enable DNS over HTTPS.",
               "type": "boolean"
             },
@@ -26986,6 +27620,7 @@
               }
             },
             "Locked": {
+              "title": "Locked",
               "description": "If this is true, DNS over HTTPS preferences cannot be changed.",
               "type": "boolean"
             },
@@ -27088,10 +27723,12 @@
         "type": {
           "dictionary": {
             "InvalidCertificate": {
+              "title": "InvalidCertificate",
               "description": "Prevents adding an exception when an invalid certificate is shown. If this preference is enabled, the \"Add Exception\" button is not available when a certificate is invalid. This prevents the user from overriding the certificate error. If this preference is disabled or not configured, certificate errors can be overridden.",
               "type": "boolean"
             },
             "SafeBrowsing": {
+              "title": "SafeBrowsing",
               "description": "Prevents selecting \"ignore the risk\" and visiting a harmful site anyway. If this preference is enabled, a user cannot bypass the warning and visit a harmful site. If this preference is disabled or not configured, a user can choose to visit a harmful site.",
               "type": "boolean"
             }
@@ -27119,36 +27756,47 @@
         "type": {
           "dictionary": {
             "TLS_DHE_RSA_WITH_AES_128_CBC_SHA": {
+              "title": "TLS_DHE_RSA_WITH_AES_128_CBC_SHA",
               "type": "boolean"
             },
             "TLS_DHE_RSA_WITH_AES_256_CBC_SHA": {
+              "title": "TLS_DHE_RSA_WITH_AES_256_CBC_SHA",
               "type": "boolean"
             },
             "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256": {
+              "title": "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
               "type": "boolean"
             },
             "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA": {
+              "title": "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA",
               "type": "boolean"
             },
             "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256": {
+              "title": "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
               "type": "boolean"
             },
             "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA": {
+              "title": "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA",
               "type": "boolean"
             },
             "TLS_RSA_WITH_3DES_EDE_CBC_SHA": {
+              "title": "TLS_RSA_WITH_3DES_EDE_CBC_SHA",
               "type": "boolean"
             },
             "TLS_RSA_WITH_AES_128_CBC_SHA": {
+              "title": "TLS_RSA_WITH_AES_128_CBC_SHA",
               "type": "boolean"
             },
             "TLS_RSA_WITH_AES_128_GCM_SHA256": {
+              "title": "TLS_RSA_WITH_AES_128_GCM_SHA256",
               "type": "boolean"
             },
             "TLS_RSA_WITH_AES_256_CBC_SHA": {
+              "title": "TLS_RSA_WITH_AES_256_CBC_SHA",
               "type": "boolean"
             },
             "TLS_RSA_WITH_AES_256_GCM_SHA384": {
+              "title": "TLS_RSA_WITH_AES_256_GCM_SHA384",
               "type": "boolean"
             }
           }
@@ -27180,18 +27828,22 @@
         "type": {
           "dictionary": {
             "Cryptomining": {
+              "title": "Cryptomining",
               "description": "If Cryptomining is set to true, cryptomining scripts on websites are blocked.",
               "type": "boolean"
             },
             "Fingerprinting": {
+              "title": "Fingerprinting",
               "description": "If Fingerprinting is set to true, fingerprinting scripts on websites are blocked.",
               "type": "boolean"
             },
             "Locked": {
+              "title": "Locked",
               "description": "If this is true, Tracking Protection preferences cannot be changed.",
               "type": "boolean"
             },
             "Value": {
+              "title": "Value",
               "description": "If Value is set to false, tracking protection is disabled and locked in both the regular browser and private browsing. If Value is set to true, tracking protection is enabled by default in both the regular browser and private browsing.",
               "type": "boolean"
             }
@@ -27204,10 +27856,12 @@
         "type": {
           "dictionary": {
             "Enabled": {
+              "title": "Enabled",
               "description": "If Enabled is set to false, encrypted media extensions (like Widevine) are not downloaded by Firefox unless the user consents to installing them.",
               "type": "boolean"
             },
             "Locked": {
+              "title": "Locked",
               "description": "If Locked is set to true and Enabled is set to false, Firefox will not download encrypted media extensions (like Widevine) or ask the user to install them.",
               "type": "boolean"
             }
@@ -27220,6 +27874,7 @@
         "type": "boolean"
       },
       "ExtensionSettings": {
+        "title": "ExtensionSettings",
         "description": "Manage all aspects of extensions. A default configuration can be set for the special ID \"*\", which will apply to all extensions that don't have a custom configuration set in this policy.",
         "type": {
           "dictionary": {
@@ -27228,6 +27883,7 @@
               "type": "string"
             },
             "{{value}}": {
+              "title": "{{value}}",
               "type": {
                 "dictionary": {
                   "allowed_types": {
@@ -27288,6 +27944,7 @@
         "type": "boolean"
       },
       "Extensions": {
+        "title": "Extensions",
         "description": "Control the installation, uninstallation and locking of extensions. Locked extensions cannot be disabled or uninstalled. For Install, you specify a list of URLs or paths. For Uninstall and Locked, you specify extension IDs.",
         "type": {
           "dictionary": {
@@ -27385,10 +28042,12 @@
               }
             },
             "Default": {
+              "title": "Default",
               "description": "If this is true, Flash preferences cannot be changed. If this is false, Flash is never activated on websites even if they are in the specified in the Allow list.",
               "type": "boolean"
             },
             "Locked": {
+              "title": "Locked",
               "description": "If this is true, Flash preferences cannot be changed.",
               "type": "boolean"
             }
@@ -27396,9 +28055,11 @@
         }
       },
       "General_SegmentedControl": {
+        "title": "General_SegmentedControl",
         "type": "string"
       },
       "Handlers": {
+        "title": "Handlers",
         "description": "Configure default application handlers. This policy is based on the internal format of handlers.json. You can configure handlers based on a mime type (mimeTypes), a file's extension (extensions), or a protocol (schemes).",
         "type": {
           "dictionary": {
@@ -27457,6 +28118,7 @@
                     "type": "string"
                   },
                   "{{value}}": {
+                    "title": "{{value}}",
                     "type": {
                       "dictionary": {
                         "action": {
@@ -27528,6 +28190,7 @@
         "type": "boolean"
       },
       "Homepage": {
+        "title": "Homepage",
         "description": "Configure the default homepage and how Firefox starts.",
         "type": {
           "dictionary": {
@@ -27541,6 +28204,7 @@
               }
             },
             "Locked": {
+              "title": "Locked",
               "description": "If true, prevents the user from changing homepage preferences.",
               "type": "boolean"
             },
@@ -27550,6 +28214,7 @@
               "type": "string"
             },
             "URL": {
+              "title": "URL",
               "description": "Optional. Set the default home page.",
               "type": "string"
             }
@@ -27571,6 +28236,7 @@
               }
             },
             "Default": {
+              "title": "Default",
               "description": "If this is set to false, add-ons cannot be installed by the user.",
               "type": "boolean"
             }
@@ -27641,10 +28307,12 @@
         "type": {
           "dictionary": {
             "EnablePermissions": {
+              "title": "EnablePermissions",
               "description": "If EnablePermissions is set to true, the built-in PDF viewer will honor document permissions like preventing the copying of text.",
               "type": "boolean"
             },
             "Enabled": {
+              "title": "Enabled",
               "description": "If Enabled is set to false, the built-in PDF viewer is disabled.",
               "type": "boolean"
             }
@@ -27652,6 +28320,7 @@
         }
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PasswordManagerEnabled": {
@@ -27660,6 +28329,7 @@
         "type": "boolean"
       },
       "Permissions": {
+        "title": "Permissions",
         "description": "Set permissions associated with camera, microphone, location, notifications, and autoplay.",
         "type": {
           "dictionary": {
@@ -27669,6 +28339,7 @@
               "type": {
                 "dictionary": {
                   "Allow": {
+                    "title": "Allow",
                     "description": "If this preference is enabled, autoplay can always be enabled for the domains indicated. If this preference is disabled or not configured, the default autoplay preference is followed.",
                     "type": {
                       "array": [
@@ -27677,6 +28348,7 @@
                     }
                   },
                   "Block": {
+                    "title": "Block",
                     "description": "If this preference is enabled, autoplay are always blocked for the domains indicated. If this preference is disabled or not configured, autoplay is not blocked by default.",
                     "type": {
                       "array": [
@@ -27703,6 +28375,7 @@
               "type": {
                 "dictionary": {
                   "Allow": {
+                    "title": "Allow",
                     "description": "If this preference is enabled, access to the camera is always allowed for the domains indicated. If this preference is disabled or not configured, the default camera preference is followed.",
                     "type": {
                       "array": [
@@ -27711,6 +28384,7 @@
                     }
                   },
                   "Block": {
+                    "title": "Block",
                     "description": "If this preference is enabled, access to the camera is blocked for the domains indicated. If this preference is disabled or not configured, access to the camera is not blocked by default.",
                     "type": {
                       "array": [
@@ -27724,6 +28398,7 @@
                     "type": "boolean"
                   },
                   "Locked": {
+                    "title": "Locked",
                     "description": "If this preference is enabled, camera preferences cannot be changed by the user. If this preference is disabled or not configured, the user can change their camera preferences.",
                     "type": "boolean"
                   }
@@ -27736,6 +28411,7 @@
               "type": {
                 "dictionary": {
                   "Allow": {
+                    "title": "Allow",
                     "description": "If this preference is enabled, access to location is always allowed for the domains indicated. If this preference is disabled or not configured, the default location preference is followed.",
                     "type": {
                       "array": [
@@ -27744,6 +28420,7 @@
                     }
                   },
                   "Block": {
+                    "title": "Block",
                     "description": "If this preference is enabled, access to location is blocked for the domains indicated. If this preference is disabled or not configured, access to location is not blocked by default.",
                     "type": {
                       "array": [
@@ -27757,6 +28434,7 @@
                     "type": "boolean"
                   },
                   "Locked": {
+                    "title": "Locked",
                     "description": "If this preference is enabled, location preferences cannot be changed by the user. If this preference is disabled or not configured, the user can change their location preferences.",
                     "type": "boolean"
                   }
@@ -27769,6 +28447,7 @@
               "type": {
                 "dictionary": {
                   "Allow": {
+                    "title": "Allow",
                     "description": "If this preference is enabled, access to the microphone is always allowed for the domains indicated. If this preference is disabled or not configured, the default microphone preference is followed.",
                     "type": {
                       "array": [
@@ -27777,6 +28456,7 @@
                     }
                   },
                   "Block": {
+                    "title": "Block",
                     "description": "If this preference is enabled, access to the microphone is blocked for the domains indicated. If this preference is disabled or not configured, access to the microphone is not blocked by default.",
                     "type": {
                       "array": [
@@ -27790,6 +28470,7 @@
                     "type": "boolean"
                   },
                   "Locked": {
+                    "title": "Locked",
                     "description": "If this preference is enabled, microphone preferences cannot be changed by the user. If this preference is disabled or not configured, the user can change their microphone preferences.",
                     "type": "boolean"
                   }
@@ -27802,6 +28483,7 @@
               "type": {
                 "dictionary": {
                   "Allow": {
+                    "title": "Allow",
                     "description": "If this preference is enabled, notifications can always be sent for the domains indicated. If this preference is disabled or not configured, the default nofication preference is followed.",
                     "type": {
                       "array": [
@@ -27810,6 +28492,7 @@
                     }
                   },
                   "Block": {
+                    "title": "Block",
                     "description": "If this preference is enabled, notifications are always blocked for the domains indicated. If this preference is disabled or not configured, notifications are not blocked by default.",
                     "type": {
                       "array": [
@@ -27823,6 +28506,7 @@
                     "type": "boolean"
                   },
                   "Locked": {
+                    "title": "Locked",
                     "description": "If this preference is enabled, notification preferences cannot be changed by the user. If this preference is disabled or not configured, the user can change their notification preferences.",
                     "type": "boolean"
                   }
@@ -27835,6 +28519,7 @@
               "type": {
                 "dictionary": {
                   "Allow": {
+                    "title": "Allow",
                     "description": "If this preference is enabled, access to virtual reality is always allowed for the domains indicated. If this preference is disabled or not configured, the default virtual reality preference is followed.",
                     "type": {
                       "array": [
@@ -27843,6 +28528,7 @@
                     }
                   },
                   "Block": {
+                    "title": "Block",
                     "description": "If this preference is enabled, access to virtual reality is blocked for the domains indicated. If this preference is disabled or not configured, access to the virtual reality is not blocked by default.",
                     "type": {
                       "array": [
@@ -27856,6 +28542,7 @@
                     "type": "boolean"
                   },
                   "Locked": {
+                    "title": "Locked",
                     "description": "If this preference is enabled, virtual reality preferences cannot be changed by the user. If this preference is disabled or not configured, the user can change their virtual reality preferences.",
                     "type": "boolean"
                   }
@@ -27871,9 +28558,11 @@
         "type": {
           "dictionary": {
             "Enabled": {
+              "title": "Enabled",
               "type": "boolean"
             },
             "Locked": {
+              "title": "Locked",
               "type": "boolean"
             }
           }
@@ -27894,10 +28583,12 @@
               }
             },
             "Default": {
+              "title": "Default",
               "description": "If this is false, pop-up windows are allowed by default.",
               "type": "boolean"
             },
             "Locked": {
+              "title": "Locked",
               "description": "If this is true, pop-up blocking preferences cannot be changed.",
               "type": "boolean"
             }
@@ -28138,6 +28829,7 @@
               "type": "boolean"
             },
             "security.tls.enable_0rtt_data": {
+              "title": "security.tls.enable_0rtt_data",
               "description": "If false, TLS early data is turned off.",
               "type": "boolean"
             },
@@ -28147,6 +28839,7 @@
               "type": "boolean"
             },
             "security.tls.version.enable-deprecated": {
+              "title": "security.tls.version.enable-deprecated",
               "description": "If true, browser will accept TLS 1.0. and TLS 1.1.",
               "type": "boolean"
             },
@@ -28164,6 +28857,7 @@
         "type": "boolean"
       },
       "Privacy_SegmentedControl": {
+        "title": "Privacy_SegmentedControl",
         "type": "string"
       },
       "PromptForDownloadLocation": {
@@ -28172,6 +28866,7 @@
         "type": "boolean"
       },
       "Proxy": {
+        "title": "Proxy",
         "description": "Configure proxy settings. These settings correspond to the connection settings in Firefox preferences. To specify ports, append them to the hostnames with a colon (:).",
         "type": {
           "dictionary": {
@@ -28181,6 +28876,7 @@
               "type": "string"
             },
             "AutoLogin": {
+              "title": "AutoLogin",
               "description": "If this preference is enabled, do not prompt for authentication if password is saved.",
               "type": "boolean"
             },
@@ -28195,10 +28891,12 @@
               "type": "string"
             },
             "Locked": {
+              "title": "Locked",
               "description": "If this preference is enabled, Proxy preferences cannot be changed.",
               "type": "boolean"
             },
             "Mode": {
+              "title": "Mode",
               "description": "If this preference is enabled, you will be setting the proxy mode.",
               "type": "string"
             },
@@ -28223,10 +28921,12 @@
               "type": "string"
             },
             "UseHTTPProxyForAllProtocols": {
+              "title": "UseHTTPProxyForAllProtocols",
               "description": "If this preference is enabled, use the HTTP proxy server for all protocols.",
               "type": "boolean"
             },
             "UseProxyForDNS": {
+              "title": "UseProxyForDNS",
               "description": "If this preference is enabled, you will use Proxy DNS when using SOCKS v5.",
               "type": "boolean"
             }
@@ -28256,12 +28956,15 @@
         "type": {
           "dictionary": {
             "Cache": {
+              "title": "Cache",
               "type": "boolean"
             },
             "Cookies": {
+              "title": "Cookies",
               "type": "boolean"
             },
             "Downloads": {
+              "title": "Downloads",
               "type": "boolean"
             },
             "FormData": {
@@ -28269,9 +28972,11 @@
               "type": "boolean"
             },
             "History": {
+              "title": "History",
               "type": "boolean"
             },
             "Locked": {
+              "title": "Locked",
               "type": "boolean"
             },
             "OfflineApps": {
@@ -28279,6 +28984,7 @@
               "type": "boolean"
             },
             "Sessions": {
+              "title": "Sessions",
               "type": "boolean"
             },
             "SiteSettings": {
@@ -28306,37 +29012,46 @@
                   {
                     "dictionary": {
                       "Alias": {
+                        "title": "Alias",
                         "description": "keyword to use for the engine",
                         "type": "string"
                       },
                       "Description": {
+                        "title": "Description",
                         "description": "Description of the search engine.",
                         "type": "string"
                       },
                       "Encoding": {
+                        "title": "Encoding",
                         "description": "The query charset for the engine.",
                         "type": "string"
                       },
                       "IconURL": {
+                        "title": "IconURL",
                         "description": "URL for the icon to use",
                         "type": "string"
                       },
                       "Method": {
+                        "title": "Method",
                         "type": "string"
                       },
                       "Name": {
+                        "title": "Name",
                         "description": "Name of the search engine",
                         "type": "string"
                       },
                       "PostData": {
+                        "title": "PostData",
                         "description": "POST data as name value pairs separated by '&'",
                         "type": "string"
                       },
                       "SuggestURLTemplate": {
+                        "title": "SuggestURLTemplate",
                         "description": "Search suggestions URL with {searchTerms} to substitute for the search term.",
                         "type": "string"
                       },
                       "URLTemplate": {
+                        "title": "URLTemplate",
                         "type": "string"
                       }
                     }
@@ -28345,14 +29060,17 @@
               }
             },
             "Default": {
+              "title": "Default",
               "description": "Set the default search engine. This policy is only available on the ESR.",
               "type": "string"
             },
             "PreventInstalls": {
+              "title": "PreventInstalls",
               "description": "Prevent installing search engines from webpages. This policy is only available on the ESR.",
               "type": "boolean"
             },
             "Remove": {
+              "title": "Remove",
               "description": "Hide built-in search engines. This policy is only available on the ESR.",
               "type": {
                 "array": [
@@ -28369,6 +29087,7 @@
         "type": "boolean"
       },
       "SecurityDevices": {
+        "title": "SecurityDevices",
         "description": "Install PKCS #11 modules.",
         "type": {
           "dictionary": {
@@ -28386,6 +29105,7 @@
         }
       },
       "Security_SegmentedControl": {
+        "title": "Security_SegmentedControl",
         "type": "string"
       },
       "ShowHomeButton": {
@@ -28447,6 +29167,7 @@
         }
       },
       "WebsiteFilter": {
+        "title": "WebsiteFilter",
         "description": "Block websites from being visited. The parameters take an array of Match Patterns, as documented in https://developer.mozilla.org/en-US/Add-ons/WebExtensions/Match_patterns. http/https addresses are supported as well as local file:// URLs. The arrays are limited to 1000 entries each.",
         "type": {
           "dictionary": {
@@ -28478,41 +29199,51 @@
     "description": "Platypus settings",
     "properties": {
       "DefaultAuthor": {
+        "title": "DefaultAuthor",
         "description": "The default name to have listed as the application author.",
         "type": "string"
       },
       "DefaultBundleIdentifierPrefix": {
+        "title": "DefaultBundleIdentifierPrefix",
         "description": "Enter the desired default bundle identifier prefix for apps built with Platypus. This string must end with a period.",
         "type": "string"
       },
       "DefaultEditor": {
+        "title": "DefaultEditor",
         "description": "The default text editor to use with Platypus. If you want to use built-in Platypus editor, don't enable this preference.",
         "type": "string"
       },
       "OpenApplicationWhenCreated": {
+        "title": "OpenApplicationWhenCreated",
         "description": "After building an appliction with Platypus, launch the application.",
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "RevealApplicationWhenCreated": {
+        "title": "RevealApplicationWhenCreated",
         "description": "After building an application with Platypus, reveal the application in the Finder.",
         "type": "boolean"
       },
       "SUAutomaticallyUpdate": {
+        "title": "SUAutomaticallyUpdate",
         "description": "Automatically download available updates for Platypus. When combined with SUEnableAutomaticChecks, Platypus will automatically check and download these updates. Updates are subsequently installed when the user quits the app.",
         "type": "boolean"
       },
       "SUEnableAutomaticChecks": {
+        "title": "SUEnableAutomaticChecks",
         "description": "Automatically check for Platypus software updates.",
         "type": "boolean"
       },
       "SUFeedURL": {
+        "title": "SUFeedURL",
         "description": "Sparkle update framework key. While automatic update checks can be disabled via the SUEnableAutomaticChecks key, this does not prevent users from manually running a software update check via the GUI. Setting this key to a non-existant local address will prevent users from manually triggering and/or installing updates themselves.",
         "type": "string"
       },
       "SUSendProfileInfo": {
+        "title": "SUSendProfileInfo",
         "description": "When running software update checks, submit anonymous computer profile data to Platypus.",
         "type": "boolean"
       }
@@ -29218,6 +29949,7 @@
         "type": "boolean"
       },
       "PFC_SegmentedControl_0": {
+        "title": "PFC_SegmentedControl_0",
         "type": "string"
       },
       "PlaySoundForIMMessage": {
