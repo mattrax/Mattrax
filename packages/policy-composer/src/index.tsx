@@ -15,7 +15,6 @@ import {
 	SelectValue,
 	Tabs,
 	TabsContent,
-	TabsIndicator,
 	TabsList,
 	TabsTrigger,
 } from "@mattrax/ui";
@@ -24,7 +23,6 @@ import {
 	Show,
 	Suspense,
 	Switch,
-	createEffect,
 	createMemo,
 	createUniqueId,
 } from "solid-js";
