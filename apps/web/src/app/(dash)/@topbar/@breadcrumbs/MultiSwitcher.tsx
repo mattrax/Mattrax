@@ -82,7 +82,9 @@ export function MultiSwitcher(props: ParentProps) {
 					setOpen(o);
 				}}
 			>
-				<PopoverTrigger>{props.children}</PopoverTrigger>
+				<PopoverTrigger as={Button} variant="ghost" size="iconSmall">
+					<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+				</PopoverTrigger>
 				<PopoverContent class="flex flex-row divide-x divide-gray-300 text-sm max-h-80 overflow-hidden">
 					<div class="w-[12rem] flex flex-col overflow-y-auto">
 						{/* <div class="p-1 border-b">

@@ -148,7 +148,11 @@ function Logo() {
 
 	return (
 		<ContextMenu>
-			<ContextMenuTrigger as={A} href={org()?.path ?? "/"} class="flex">
+			<ContextMenuTrigger
+				as={A}
+				href={org()?.path ?? "/"}
+				class="flex flex-row items-center"
+			>
 				<img src={LogoImg} class="h-5" alt="Mattrax icon" />
 				<span class="ml-2 items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
 					Alpha
@@ -157,16 +161,22 @@ function Logo() {
 			<ContextMenuContent>
 				<ContextMenuGroup>
 					<ContextMenuGroupLabel>Links</ContextMenuGroupLabel>
-					<ContextMenuItem>
-						<a
-							href="https://github.com/mattrax/mattrax"
-							target="_blank"
-							rel="noreferrer"
-						>
-							GitHub
-						</a>
+					<ContextMenuItem
+						as="a"
+						href="https://github.com/mattrax/mattrax"
+						target="_blank"
+						rel="noreferrer"
+					>
+						GitHub
 					</ContextMenuItem>
-					<ContextMenuItem>Twitter</ContextMenuItem>
+					<ContextMenuItem
+						as="a"
+						href="https://x.com/mattraxapp"
+						target="_blank"
+						rel="noreferrer"
+					>
+						X (Twitter)
+					</ContextMenuItem>
 				</ContextMenuGroup>
 			</ContextMenuContent>
 		</ContextMenu>

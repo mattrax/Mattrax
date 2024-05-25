@@ -14,6 +14,7 @@ declare global {
   const IconMdiSlashForward: typeof import('~icons/mdi/slash-forward.jsx')['default']
   const IconPhAppWindow: typeof import('~icons/ph/app-window.jsx')['default']
   const IconPhArrowsVerticalBold: typeof import('~icons/ph/arrows-vertical-bold.jsx')['default']
+  const IconPhCaretUpDown: typeof import('~icons/ph/caret-up-down.jsx')['default']
   const IconPhCheck: typeof import('~icons/ph/check.jsx')['default']
   const IconPhCheckBold: typeof import('~icons/ph/check-bold.jsx')['default']
   const IconPhCheckCircleDuotone: typeof import('~icons/ph/check-circle-duotone.jsx')['default']
