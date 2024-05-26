@@ -5,21 +5,17 @@ import {
 	useResolvedPath,
 } from "@solidjs/router";
 import { Show } from "solid-js";
-import { z } from "zod";
 
 import { createQueryCacher, useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
-import { useZodParams } from "~/lib/useZodParams";
 import { cachedTenantsForOrg } from "~[orgSlug]/utils";
 import { cachedOrgs } from "~dash/utils";
 import { Breadcrumb } from "../Breadcrumb";
 import { MultiSwitcher } from "../MultiSwitcher";
+import { useTenantParams } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/ctx";
 
 export default function (props: RouteSectionProps) {
-	const params = useZodParams({
-		orgSlug: z.string(),
-		tenantSlug: z.string(),
-	});
+	const params = useTenantParams();
 
 	const query = trpc.org.list.createQuery();
 	const orgs = useCachedQueryData(query, () => cachedOrgs());

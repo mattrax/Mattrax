@@ -1,7 +1,6 @@
 import { A } from "@solidjs/router";
 import { For, type JSX, type ParentProps, Suspense } from "solid-js";
 
-import { AuthContext } from "~c/AuthContext";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import IcRoundArrowForward from "~icons/ic/round-arrow-forward";
 import { useTenant } from "./ctx";

@@ -1,5 +1,4 @@
 import { A, type RouteDefinition } from "@solidjs/router";
-import { z } from "zod";
 
 import {
 	Avatar,
@@ -18,7 +17,6 @@ import type { StatsTarget } from "~/api/trpc/routers/tenant";
 import { StatItem } from "~/components/StatItem";
 import { getInitials, trpc } from "~/lib";
 import { formatAuditLogEvent } from "~/lib/formatAuditLog";
-import { useZodParams } from "~/lib/useZodParams";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	BruhIconPhAppWindow,

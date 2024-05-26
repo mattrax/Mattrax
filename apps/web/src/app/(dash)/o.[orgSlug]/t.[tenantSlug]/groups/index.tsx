@@ -48,9 +48,11 @@ import {
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
 export default function Page() {
-	const params = useZodParams({ tenantSlug: z.string() });
+	const tenantSlug = useTenantSlug();
 
-	const groups = trpc.group.list.createQuery(() => params);
+	const groups = trpc.group.list.createQuery(() => ({
+		tenantSlug: tenantSlug(),
+	}));
 	cacheMetadata("group", () => groups.data ?? []);
 
 	const table = createStandardTable({
@@ -106,12 +108,12 @@ import {
 } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
-import { useZodParams } from "~/lib/useZodParams";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { cacheMetadata } from "../metadataCache";
+import { useTenantSlug } from "../ctx";
 
 function CreateGroupDialog(props: ParentProps) {
-	const params = useZodParams({ tenantSlug: z.string() });
+	const tenantSlug = useTenantSlug();
 	const navigate = useNavigate();
 
 	const mutation = trpc.group.create.createMutation(() => ({
@@ -125,7 +127,7 @@ function CreateGroupDialog(props: ParentProps) {
 		onSubmit: ({ value }) =>
 			mutation.mutateAsync({
 				name: value.name,
-				...params,
+				tenantSlug: tenantSlug(),
 			}),
 	});
 

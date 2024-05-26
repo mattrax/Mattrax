@@ -1,22 +1,19 @@
 import { Badge } from "@mattrax/ui";
-import { z } from "zod";
 import { trpc } from "~/lib";
-import { useZodParams } from "~/lib/useZodParams";
 import { getMetadata } from "~[tenantSlug]/metadataCache";
 import { Breadcrumb } from "../../Breadcrumb";
+import { useUserId } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/users/ctx";
 
 export default function () {
-	const params = useZodParams({ userId: z.string() });
+	const userId = useUserId();
 
 	const query = trpc.user.get.createQuery(() => ({
-		userId: params.userId,
+		userId: userId(),
 	}));
 
 	return (
 		<Breadcrumb>
-			<span>
-				{getMetadata("user", params.userId)?.name ?? query.data?.name}
-			</span>
+			<span>{getMetadata("user", userId())?.name ?? query.data?.name}</span>
 			<Badge variant="outline">User</Badge>
 		</Breadcrumb>
 	);

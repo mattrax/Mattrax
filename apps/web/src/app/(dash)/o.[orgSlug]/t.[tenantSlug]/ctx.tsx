@@ -1,7 +1,6 @@
 import { useNavigate } from "@solidjs/router";
 import { createEffect } from "solid-js";
 import { z } from "zod";
-import type { RouterOutput } from "~/api";
 
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";

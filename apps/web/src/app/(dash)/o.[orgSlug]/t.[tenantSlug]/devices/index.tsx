@@ -5,10 +5,8 @@ import { Suspense } from "solid-js";
 import type { RouterOutput } from "~/api/trpc";
 
 import { Button, DropdownMenuTrigger } from "@mattrax/ui";
-import { z } from "zod";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 import { trpc } from "~/lib";
-import { useZodParams } from "~/lib/useZodParams";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	ColumnsDropdown,
@@ -20,6 +18,7 @@ import {
 } from "~c/StandardTable";
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { cacheMetadata } from "../metadataCache";
+import { useTenantSlug } from "../ctx";
 
 export const route = {
 	load: ({ params }) => {
@@ -71,9 +70,10 @@ const columns = [
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
 export default function Page() {
-	// const location = useLocation();
-	const params = useZodParams({ tenantSlug: z.string() });
-	const devices = trpc.device.list.createQuery(() => params);
+	const tenantSlug = useTenantSlug();
+	const devices = trpc.device.list.createQuery(() => ({
+		tenantSlug: tenantSlug(),
+	}));
 	cacheMetadata("device", () => devices.data ?? []);
 
 	const table = createStandardTable({

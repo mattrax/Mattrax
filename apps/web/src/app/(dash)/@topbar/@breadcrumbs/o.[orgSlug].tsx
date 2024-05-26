@@ -1,17 +1,14 @@
-import { Button } from "@mattrax/ui";
 import { A, type RouteSectionProps } from "@solidjs/router";
-import { z } from "zod";
 
 import { createQueryCacher, useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
-import { useZodParams } from "~/lib/useZodParams";
-import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
 import { cachedOrgs } from "../../utils";
 import { Breadcrumb } from "./Breadcrumb";
 import { MultiSwitcher } from "./MultiSwitcher";
+import { useOrgSlug } from "../../o.[orgSlug]";
 
 export default function (props: RouteSectionProps) {
-	const params = useZodParams({ orgSlug: z.string() });
+	const orgSlug = useOrgSlug();
 
 	const query = trpc.org.list.createQuery();
 	createQueryCacher(query, "orgs", (org) => ({
@@ -21,7 +18,7 @@ export default function (props: RouteSectionProps) {
 	}));
 	const orgs = useCachedQueryData(query, () => cachedOrgs());
 
-	const org = () => orgs()?.find((o) => o.slug === params.orgSlug);
+	const org = () => orgs()?.find((o) => o.slug === orgSlug());
 
 	return (
 		<>
