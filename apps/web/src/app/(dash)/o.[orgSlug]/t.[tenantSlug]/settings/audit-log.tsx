@@ -19,13 +19,15 @@ export default function Page() {
 				See all activity in the current tenant
 			</p>
 			<div class="flex flex-col gap-4 pl-4">
-				<Suspense>
-					<div>
-						{auditLog.data?.length === 0 && (
+				<Suspense
+					fallback={<p class="text-muted-foreground opacity-70">Loading...</p>}
+				>
+					<For
+						each={auditLog.data}
+						fallback={
 							<p class="text-muted-foreground opacity-70">No activity!</p>
-						)}
-					</div>
-					<For each={auditLog.data}>
+						}
+					>
 						{(entry) => {
 							const formatted = formatAuditLogEvent(
 								entry.action,
