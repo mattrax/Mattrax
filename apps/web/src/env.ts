@@ -18,6 +18,7 @@ export const env = createEnv({
 		INTERNAL_SECRET: z.string(),
 		DATABASE_URL: z.string(),
 		PROD_ORIGIN: z.string(),
+		MDM_URL: z.string(),
 		FROM_ADDRESS: z.string(),
 		// Emails and other AWS services
 		// Get these values from the output of the Cloudformation template

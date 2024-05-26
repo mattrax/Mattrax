@@ -18,3 +18,16 @@ export const msGraphClient = (tenantId: string) =>
 	cache(`tenantGraphClient|${tenantId}`, () =>
 		initGraphClient(tenantId, env.ENTRA_CLIENT_ID, env.ENTRA_CLIENT_SECRET),
 	);
+
+export const msClientFromRefreshToken = (
+	tenantId: string,
+	refreshToken: string,
+) =>
+	cache(`userGraphClient|${tenantId}`, () =>
+		initGraphClient(
+			tenantId,
+			env.ENTRA_CLIENT_ID,
+			env.ENTRA_CLIENT_SECRET,
+			refreshToken,
+		),
+	);

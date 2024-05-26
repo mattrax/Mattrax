@@ -8,15 +8,14 @@ export const initGraphClient = (
 	tenantId: string,
 	clientId: string,
 	clientSecret: string,
+	refreshToken?: string,
 ) => {
 	return Client.initWithMiddleware({
-		authProvider: new AuthProvider(tenantId, clientId, clientSecret),
+		authProvider: new AuthProvider(
+			tenantId,
+			clientId,
+			clientSecret,
+			refreshToken,
+		),
 	});
 };
-
-// export function isGraphError(err: any): err is GraphError {
-//   return err instanceof GraphError;
-// }
-// export function isNotFoundGraphError(err: any): err is GraphError {
-//   return isGraphError(err) && err.code === "Request_ResourceNotFound";
-// }

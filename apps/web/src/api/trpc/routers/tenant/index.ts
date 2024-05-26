@@ -1,4 +1,4 @@
-import { count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import { union } from "drizzle-orm/mysql-core";
 import { z } from "zod";
 
@@ -24,6 +24,8 @@ import {
 import { createTRPCRouter, orgProcedure, tenantProcedure } from "../../helpers";
 import { identityProviderRouter } from "./identityProvider";
 import { variantTableRouter } from "./members";
+import { msClientFromRefreshToken, msGraphClient } from "~/api/microsoft";
+import { env } from "~/env";
 
 export type StatsTarget =
 	| "devices"
@@ -51,6 +53,12 @@ export const restrictedUsernames = new Set([
 	"profile",
 	"account",
 ]);
+
+const microsoftSkusThatSupportMobility = [
+	"DEVELOPERPACK_E5",
+	"Microsoft_Entra_ID_Governance",
+	"AAD_PREMIUM_P2",
+];
 
 export const tenantRouter = createTRPCRouter({
 	list: orgProcedure.query(async ({ ctx }) =>
@@ -182,6 +190,63 @@ export const tenantRouter = createTRPCRouter({
 		};
 	}),
 
+	enrollmentInfo: tenantProcedure.query(async ({ ctx }) => {
+		// TODO: We only grab only the first provider. Right now we only support a single identity provider so this is fine but it won't stay fine.
+		const [provider] = await ctx.db
+			.select({
+				remoteId: identityProviders.remoteId,
+				linkerRefreshToken: identityProviders.linkerRefreshToken,
+			})
+			.from(identityProviders)
+			.where(
+				and(
+					eq(identityProviders.provider, "entraId"),
+					eq(identityProviders.tenantPk, ctx.tenant.pk),
+				),
+			);
+
+		if (!provider) return null;
+
+		const [activeSkus, mobilityConfig] = await Promise.all([
+			msGraphClient(provider.remoteId)
+				.api("/directory/subscriptions")
+				.get()
+				.then(
+					(data) =>
+						data.value
+							.filter((sub: any) => sub.status === "Enabled")
+							.map((sub: any) => sub.skuPartNumber) as string[],
+				),
+			provider.linkerRefreshToken
+				? msClientFromRefreshToken(
+						provider.remoteId,
+						provider.linkerRefreshToken,
+					)
+						.api("/policies/mobileDeviceManagementPolicies")
+						.version("beta")
+						.get()
+						.then((data) => data.value.filter((p: any) => p.isValid))
+				: Promise.resolve(null),
+		]);
+
+		const cfg = mobilityConfig.find(
+			(r: any) =>
+				r.discoveryUrl === `${env.MDM_URL}/EnrollmentServer/Discovery.svc`,
+		);
+
+		const result = !cfg
+			? "MISSING_PROVIDER"
+			: cfg.appliesTo === "none"
+				? microsoftSkusThatSupportMobility.some((r) => activeSkus.includes(r))
+					? "INVALID_SCOPE"
+					: "INVALID_SUBSCRIPTION"
+				: "VALID";
+
+		return {
+			winMobilityConfig: result,
+		} as const;
+	}),
+
 	delete: tenantProcedure.mutation(async ({ ctx }) => {
 		const [[a], [b]] = await Promise.all([
 			ctx.db
@@ -262,6 +327,7 @@ export const tenantRouter = createTRPCRouter({
 			await db.delete(tenants).where(eq(tenants.pk, ctx.tenant.pk));
 		});
 	}),
+
 	identityProvider: identityProviderRouter,
 	variantTable: variantTableRouter,
 });

@@ -24,7 +24,6 @@ import {
 import { toast } from "solid-sonner";
 
 import ENTRA_ID_ICON from "~/assets/EntraIDLogo.svg";
-import { env } from "~/env";
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
 import IconIcOutlineClose from "~icons/ic/outline-close.jsx";
@@ -35,6 +34,9 @@ import { useTenantSlug } from "../../t.[tenantSlug]";
 export const route = {
 	load: ({ params }) => {
 		trpc.useContext().tenant.identityProvider.get.ensureData({
+			tenantSlug: params.tenantSlug!,
+		});
+		trpc.useContext().tenant.identityProvider.domains.ensureData({
 			tenantSlug: params.tenantSlug!,
 		});
 	},
@@ -321,7 +323,9 @@ function Domains() {
 																		.enterpriseEnrollmentAvailable;
 
 																return (
-																	<>
+																	<Show
+																		when={provider.data?.provider !== "entraId"}
+																	>
 																		<div
 																			class={clsx(
 																				"w-5 h-5 rounded-full flex items-center justify-center text-white",
@@ -338,10 +342,10 @@ function Domains() {
 																		</div>
 																		<span class="text-sm text-gray-600">
 																			{enterpriseEnrollment() ? (
-																				"Windows Automatic Enrollment configured"
+																				"Windows Enrollment Discovery configured"
 																			) : (
 																				<>
-																					Windows Automatic Enrollment not
+																					Windows Enrollment Discovery not
 																					configured
 																					<DialogRoot>
 																						<DialogTrigger
@@ -355,12 +359,12 @@ function Domains() {
 																						<DialogContent class="max-w-auto">
 																							<DialogHeader>
 																								<DialogTitle>
-																									Windows Automatic Enrollment
+																									Windows Enrollment Discovery
 																								</DialogTitle>
 																								<DialogDescription>
 																									To configure{" "}
 																									<code>{domain}</code> for
-																									Windows Automatic Enrollment,
+																									Windows Enrollment Discovery,
 																									add the following CNAME record
 																									to it
 																								</DialogDescription>
@@ -373,7 +377,7 @@ function Domains() {
 																				</>
 																			)}
 																		</span>
-																	</>
+																	</Show>
 																);
 															}}
 														</Match>

@@ -1,3 +1,6 @@
+// An authentication provider for Microsoft Graph.
+// We use a custom implementation because the Azure package doesn't support Cloudflare Workers.
+
 import type { AuthenticationProvider } from "@microsoft/microsoft-graph-client";
 import { z } from "zod";
 
@@ -13,11 +16,18 @@ export class AuthProvider implements AuthenticationProvider {
 	tenant: string;
 	clientId: string;
 	clientSecret: string;
+	refreshToken: string | undefined;
 
-	constructor(tenant: string, clientId: string, clientSecret: string) {
+	constructor(
+		tenant: string,
+		clientId: string,
+		clientSecret: string,
+		refreshToken?: string,
+	) {
 		this.tenant = tenant;
 		this.clientId = clientId;
 		this.clientSecret = clientSecret;
+		this.refreshToken = refreshToken;
 	}
 
 	// TODO: Properly implement refresh when the token expires
@@ -26,8 +36,13 @@ export class AuthProvider implements AuthenticationProvider {
 			client_id: this.clientId,
 			client_secret: this.clientSecret,
 			scope: "https://graph.microsoft.com/.default",
-			grant_type: "client_credentials",
+			grant_type:
+				this.refreshToken !== undefined
+					? "refresh_token"
+					: "client_credentials",
 		});
+		if (this.refreshToken !== undefined)
+			params.append("refresh_token", this.refreshToken);
 
 		const resp = await fetch(
 			`https://login.microsoftonline.com/${encodeURIComponent(
