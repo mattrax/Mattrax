@@ -53,7 +53,7 @@ export default function Page() {
 						<BruhIconPhCheckCircleDuotone class="text-green-500 text-2xl" />
 					</Details>
 
-					<DescriptionTerm>Authentication provider</DescriptionTerm>
+					<DescriptionTerm>Identity provider</DescriptionTerm>
 					<Details>
 						<Show
 							when={provider.data === null}
@@ -69,7 +69,7 @@ export default function Page() {
 								>
 									Setup
 								</A>
-								an authentication provider
+								an identity provider
 							</p>
 						</Show>
 					</Details>
@@ -81,7 +81,7 @@ export default function Page() {
 						<Switch fallback={<Badge variant="success">DEVICE</Badge>}>
 							<Match when={provider.data === null}>
 								<Badge variant="destructive">UNSUPPORTED</Badge>
-								<p>You must have an authentication provider</p>
+								<p>You must have an identity provider</p>
 							</Match>
 
 							<Match when={provider.data?.provider !== "entraId"}>
