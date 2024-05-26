@@ -24,8 +24,6 @@ export default function Page() {
 	);
 
 	const policy = () => usePolicy()();
-	const [policyName, setPolicyName] = createSignal("./policy.yaml");
-	const policyNameController = createContentEditableController(setPolicyName);
 
 	const [searchParams, setSearchParams] = useSearchParams<{
 		platform: PolicyPlatform;
