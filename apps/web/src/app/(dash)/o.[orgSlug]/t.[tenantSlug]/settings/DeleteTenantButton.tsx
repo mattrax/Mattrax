@@ -1,12 +1,12 @@
 import { useNavigate } from "@solidjs/router";
 import { startTransition } from "solid-js";
 
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Button } from "@mattrax/ui";
+import { useOrgSlug } from "~/app/(dash)/o.[orgSlug]";
 import { trpc } from "~/lib";
 import { ConfirmDialog } from "~c/ConfirmDialog";
 import { useTenant } from "../Context";
-import { useOrgSlug } from "~/app/(dash)/o.[orgSlug]";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 export function DeleteTenantButton() {
 	const orgSlug = useOrgSlug();

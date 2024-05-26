@@ -2,6 +2,7 @@ import { and, count, desc, eq, sql } from "drizzle-orm";
 import { union } from "drizzle-orm/mysql-core";
 import { z } from "zod";
 
+import { msClientFromRefreshToken, msGraphClient } from "~/api/microsoft";
 import { randomSlug } from "~/api/utils";
 import {
 	accounts,
@@ -21,11 +22,10 @@ import {
 	tenants,
 	users,
 } from "~/db";
+import { env } from "~/env";
 import { createTRPCRouter, orgProcedure, tenantProcedure } from "../../helpers";
 import { identityProviderRouter } from "./identityProvider";
 import { variantTableRouter } from "./members";
-import { msClientFromRefreshToken, msGraphClient } from "~/api/microsoft";
-import { env } from "~/env";
 
 export type StatsTarget =
 	| "devices"

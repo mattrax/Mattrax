@@ -4,15 +4,15 @@ import {
 	DescriptionList,
 	DescriptionTerm,
 } from "@mattrax/ui";
-import { Match, Show, Suspense, Switch, type ParentProps } from "solid-js";
+import { A, type RouteDefinition } from "@solidjs/router";
+import clsx from "clsx";
+import { Match, type ParentProps, Show, Suspense, Switch } from "solid-js";
+import { trpc } from "~/lib";
+import { useTenantSlug } from "../../t.[tenantSlug]";
 import {
 	BruhIconPhCheckCircleDuotone,
 	BruhIconPhWarningCircleDuotone,
 } from "./bruh";
-import { trpc } from "~/lib";
-import { useTenantSlug } from "../../t.[tenantSlug]";
-import { A, type RouteDefinition } from "@solidjs/router";
-import clsx from "clsx";
 
 export const route = {
 	load: ({ params }) => {

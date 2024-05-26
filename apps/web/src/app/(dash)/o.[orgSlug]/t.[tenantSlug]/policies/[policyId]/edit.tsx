@@ -50,7 +50,14 @@ export default function Page() {
 				await updatePolicy.mutateAsync({
 					id: policyId(),
 					data: {
-						windows: {},
+						windows: Object.entries(controller.state.windows).reduce(
+							(acc, [csp, { data, enabled }]) => {
+								if (enabled) acc[csp] = data;
+								console.log(acc);
+								return acc;
+							},
+							{} as any,
+						),
 						macos: Object.entries(controller.state.apple).reduce(
 							(acc, [csp, { data, enabled }]) => {
 								if (enabled) acc[csp] = data;
