@@ -248,11 +248,15 @@ export function CreateTenantDialog(props: {
 	orgSlug: string;
 }) {
 	const navigate = useNavigate();
-	const orgs = trpc.org.list.createQuery(void 0, () => ({ enabled: false }));
+	const tenants = trpc.tenant.list.createQuery(
+		() => ({
+			orgSlug: props.orgSlug,
+		}),
+		() => ({ enabled: false }),
+	);
 
 	const mutation = trpc.tenant.create.createMutation(() => ({
 		onSuccess: async (slug, { orgSlug }) => {
-			// TODO: Get the data back in the response instead of a separate request
 			// Session also holds tenants
 			// await props.refetchSession();
 			await startTransition(async () => {
@@ -260,7 +264,7 @@ export function CreateTenantDialog(props: {
 				props.setOpen(false);
 			});
 		},
-		...withDependantQueries(orgs),
+		...withDependantQueries(tenants),
 	}));
 
 	const form = createZodForm({
