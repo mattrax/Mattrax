@@ -30,13 +30,13 @@ export default function Layout(props: RouteSectionProps<never, "topbar">) {
 				route.component.preload();
 				if (route.children) {
 					for (const childRoute of route.children) {
-						setTimeout(() => preloadRoute(childRoute), 100);
+						preloadRoute(childRoute);
 					}
 				}
 			}
 
 			for (const route of routes) {
-				setTimeout(() => preloadRoute(route), 100);
+				preloadRoute(route);
 			}
 		}
 	});
