@@ -5,12 +5,28 @@ import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { ConfirmDialog } from "~c/ConfirmDialog";
 import { useTenant } from "../Context";
+import { useOrgSlug } from "~/app/(dash)/o.[orgSlug]";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 export function DeleteTenantButton() {
-	const deleteTenant = trpc.tenant.delete.createMutation();
+	const orgSlug = useOrgSlug();
+	const tenants = trpc.tenant.list.createQuery(
+		() => ({
+			orgSlug: orgSlug(),
+		}),
+		() => ({
+			enabled: false,
+		}),
+	);
+
+	const deleteTenant = trpc.tenant.delete.createMutation(() => ({
+		onSuccess() {},
+		...withDependantQueries(tenants, {
+			blockOn: true,
+		}),
+	}));
 	const navigate = useNavigate();
 	const tenant = useTenant();
-	const trpcCtx = trpc.useContext();
 
 	return (
 		<ConfirmDialog>
@@ -34,12 +50,7 @@ export function DeleteTenantButton() {
 									tenantSlug: tenant().slug,
 								});
 
-								await trpcCtx.auth.me.refetch();
-
-								// lets the rq cache update -_-
-								await new Promise((res) => setTimeout(res, 0));
-
-								await startTransition(() => navigate("/"));
+								await startTransition(() => navigate(`/o/${orgSlug()}`));
 							},
 						})
 					}

@@ -17,12 +17,6 @@ import { trpc } from "~/lib";
 import { useTenant } from "../Context";
 import { DeleteTenantButton } from "./DeleteTenantButton";
 
-export const route = {
-	load: ({ params }) => {
-		// TODO
-	},
-} satisfies RouteDefinition;
-
 export default function Page() {
 	return (
 		<div class="flex flex-col gap-4">
