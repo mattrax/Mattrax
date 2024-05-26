@@ -23,19 +23,21 @@ export default function Layout(props: RouteSectionProps<never, "topbar">) {
 	const matches = useMatches();
 
 	onMount(async () => {
-		const routes = FileRoutes();
+		if (!import.meta.env.DEV) {
+			const routes = FileRoutes();
 
-		function preloadRoute(route: any) {
-			route.component.preload();
-			if (route.children) {
-				for (const childRoute of route.children) {
-					setTimeout(() => preloadRoute(childRoute), 100);
+			function preloadRoute(route: any) {
+				route.component.preload();
+				if (route.children) {
+					for (const childRoute of route.children) {
+						setTimeout(() => preloadRoute(childRoute), 100);
+					}
 				}
 			}
-		}
 
-		for (const route of routes) {
-			setTimeout(() => preloadRoute(route), 100);
+			for (const route of routes) {
+				setTimeout(() => preloadRoute(route), 100);
+			}
 		}
 	});
 
