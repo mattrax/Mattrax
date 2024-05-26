@@ -1,20 +1,30 @@
 import { useBeforeLeave } from "@solidjs/router";
 import { type FormOptions, createForm } from "@tanstack/solid-form";
 import { zodValidator } from "@tanstack/zod-form-adapter";
-import { type ComponentProps, createMemo, splitProps } from "solid-js";
+import {
+	type ComponentProps,
+	createMemo,
+	splitProps,
+	createEffect,
+} from "solid-js";
 import type { z } from "zod";
 
-export function createZodForm<S extends z.ZodSchema>(
+export function createZodForm<S extends z.ZodSchema<any, z.ZodObjectDef, any>>(
 	opts: Omit<
 		FormOptions<z.infer<S>, typeof zodValidator>,
-		"validatorAdapter"
+		"validatorAdapter" | "defaultValues"
 	> & {
 		schema: S;
+		defaultValues?: z.infer<S> | (() => z.infer<S>);
 	},
 ) {
 	const form = createForm(
 		createMemo(() => ({
 			...opts,
+			defaultValues:
+				typeof opts.defaultValues === "function"
+					? (undefined as any as S)
+					: opts.defaultValues,
 			validatorAdapter: zodValidator,
 			validators: {
 				onSubmit: opts.schema,
@@ -22,10 +32,21 @@ export function createZodForm<S extends z.ZodSchema>(
 		})),
 	);
 
+	createEffect(() => {
+		if (typeof opts.defaultValues !== "function") return;
+		// @ts-expect-error: checked on last line
+		const defaultValues = opts.defaultValues();
+
+		for (const key in defaultValues) {
+			if (form.getFieldInfo(key as any).instance?.state.meta.isDirty !== true)
+				form.setFieldValue(key as any, defaultValues[key]);
+		}
+	});
+
 	return form;
 }
 
-export type FormProps<S extends z.ZodSchema> = Omit<
+export type FormProps<S extends z.ZodSchema<any, z.ZodObjectDef, any>> = Omit<
 	ComponentProps<"form">,
 	"onSubmit"
 > & {
@@ -35,7 +56,9 @@ export type FormProps<S extends z.ZodSchema> = Omit<
 	guardBeforeLeave?: boolean;
 };
 
-export function Form<S extends z.ZodSchema>(props: FormProps<S>) {
+export function Form<S extends z.ZodSchema<any, z.ZodObjectDef, any>>(
+	props: FormProps<S> & { disabled?: boolean },
+) {
 	const [_, formProps] = splitProps(props, [
 		"form",
 		"guardBeforeLeave",
@@ -72,7 +95,10 @@ export function Form<S extends z.ZodSchema>(props: FormProps<S>) {
 		>
 			<props.form.Subscribe>
 				{(state) => (
-					<fieldset disabled={state().isSubmitting} class={props.fieldsetClass}>
+					<fieldset
+						disabled={state().isSubmitting || props?.disabled}
+						class={props.fieldsetClass}
+					>
 						{props.children}
 					</fieldset>
 				)}

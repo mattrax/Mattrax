@@ -62,7 +62,7 @@ export const userRouter = createTRPCRouter({
 		}),
 
 	get: authedProcedure
-		.input(z.object({ id: z.string() }))
+		.input(z.object({ userId: z.string() }))
 		.query(async ({ ctx, input }) => {
 			const [user] = await ctx.db
 				.select({
@@ -77,7 +77,7 @@ export const userRouter = createTRPCRouter({
 					tenantPk: users.tenantPk,
 				})
 				.from(users)
-				.where(eq(users.id, input.id))
+				.where(eq(users.id, input.userId))
 				.innerJoin(
 					identityProviders,
 					eq(users.providerPk, identityProviders.pk),

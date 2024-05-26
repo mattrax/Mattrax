@@ -30,7 +30,7 @@ import {
 import { z } from "zod";
 import { getObjectKeys } from "~/api/utils";
 import { trpc } from "~/lib";
-import { useTenantSlug } from "../../t.[tenantSlug]";
+import { useTenantSlug } from "../ctx";
 
 const IOS_APP_SCHEMA = z.object({
 	results: z.array(

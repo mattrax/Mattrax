@@ -9,7 +9,7 @@ export default function () {
 	const params = useZodParams({ userId: z.string() });
 
 	const query = trpc.user.get.createQuery(() => ({
-		id: params.userId,
+		userId: params.userId,
 	}));
 
 	return (

@@ -1,17 +1,11 @@
 import { type RouteDefinition, createAsync } from "@solidjs/router";
 import { type ParentProps, Show, Suspense, createMemo } from "solid-js";
-import { z } from "zod";
 
 import { trpc } from "~/lib";
-import { useZodParams } from "~/lib/useZodParams";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { cachedOrgs } from "../utils";
 import { cachedTenantsForOrg } from "./utils";
-
-export function useTenantSlug() {
-	const params = useZodParams({ tenantSlug: z.string() });
-	return () => params.tenantSlug;
-}
+import { useTenantParams } from "./t.[tenantSlug]/ctx";
 
 export const route = {
 	load: ({ params }) => {
@@ -20,7 +14,7 @@ export const route = {
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ orgSlug: z.string(), tenantSlug: z.string() });
+	const params = useTenantParams();
 
 	const orgs = createAsync(() => cachedOrgs());
 

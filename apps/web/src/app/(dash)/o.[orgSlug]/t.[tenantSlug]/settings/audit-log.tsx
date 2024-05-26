@@ -4,7 +4,7 @@ import { A } from "@solidjs/router";
 import { For, Suspense } from "solid-js";
 import { getInitials, trpc } from "~/lib";
 import { formatAuditLogEvent } from "~/lib/formatAuditLog";
-import { useTenantSlug } from "../../t.[tenantSlug]";
+import { useTenantSlug } from "../ctx";
 
 export default function Page() {
 	const tenantSlug = useTenantSlug();

@@ -1,32 +1,19 @@
 import type { RouteDefinition } from "@solidjs/router";
 import type { ParentProps } from "solid-js";
-import { z } from "zod";
 
 import { trpc } from "~/lib";
-import { useZodParams } from "~/lib/useZodParams";
-import { createNotFoundRedirect } from "~/lib/utils";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-
-export function useGroupId() {
-	const params = useZodParams({ groupId: z.string() });
-	return () => params.groupId;
-}
+import { useGroup } from "./ctx";
 
 export const route = {
 	load: ({ params }) =>
 		trpc.useContext().group.get.ensureData({
-			id: params.groupId!,
+			groupId: params.groupId!,
 		}),
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ groupId: z.string() });
-
-	createNotFoundRedirect({
-		query: trpc.group.get.createQuery(() => ({ id: params.groupId })),
-		toast: "Group not found",
-		to: "../../groups",
-	});
+	const _ = useGroup();
 
 	return <MErrorBoundary>{props.children}</MErrorBoundary>;
 }

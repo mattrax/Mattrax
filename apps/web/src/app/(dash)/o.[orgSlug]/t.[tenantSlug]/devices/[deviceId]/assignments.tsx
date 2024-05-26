@@ -10,8 +10,8 @@ import {
 	VariantTableSheet,
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
-import { useTenantSlug } from "../../../t.[tenantSlug]";
-import { useDevice } from "./Context";
+import { useDeviceId } from "../ctx";
+import { useTenantSlug } from "../../ctx";
 
 export const route = {
 	load: ({ params }) => {
@@ -21,10 +21,10 @@ export const route = {
 
 export default function Page() {
 	const tenantSlug = useTenantSlug();
-	const device = useDevice();
+	const deviceId = useDeviceId();
 
 	const assignments = trpc.device.assignments.createQuery(() => ({
-		id: device().id,
+		id: deviceId(),
 	}));
 
 	const table = createStandardTable({
@@ -73,7 +73,7 @@ export default function Page() {
 						variants={variants}
 						onSubmit={(assignments) =>
 							addAssignments.mutateAsync({
-								id: device().id,
+								id: deviceId(),
 								assignments,
 							})
 						}

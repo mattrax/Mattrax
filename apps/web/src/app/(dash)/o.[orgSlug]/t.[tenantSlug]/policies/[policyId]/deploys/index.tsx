@@ -21,8 +21,7 @@ import {
 import { createTimeAgo } from "@solid-primitives/date";
 import { A } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import clsx from "clsx";
-import { For, Suspense, createSignal } from "solid-js";
+import { For, Show, Suspense, createSignal } from "solid-js";
 import { match } from "ts-pattern";
 import type { RouterOutput } from "~/api";
 import {
@@ -33,8 +32,8 @@ import {
 import { trpc } from "~/lib";
 import { formatPolicy } from "~/lib/formatPolicy";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { usePolicyId } from "../../[policyId]";
-import { PolicyContext, usePolicy } from "../Context";
+import { usePolicyId } from "../../ctx";
+import { usePolicy } from "../../ctx";
 
 const column =
 	createColumnHelper<RouterOutput["policy"]["deploys"]["list"][number]>();
@@ -98,49 +97,50 @@ function createDeployTable() {
 }
 
 export default function Page() {
+	const policy = usePolicy();
 	const { table } = createDeployTable();
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Deploys</PageLayoutHeading>}>
 			<Suspense>
-				<PolicyContext>
-					{usePolicy()().diff.length > 0 && <DirtyPolicyPanel />}
-				</PolicyContext>
+				<Show when={policy?.data}>
+					{(policy) => (
+						<Show when={policy().diff.length !== 0}>
+							<Card>
+								<CardHeader>
+									<div class="flex items-center justify-between">
+										<div>
+											<CardTitle>Deploy changes</CardTitle>
+											<CardDescription>
+												The following changes have been made to your policy but
+												have not been deployed!
+											</CardDescription>
+										</div>
 
-				<StandardTable table={table} />
+										<DeployButton policy={policy()} />
+									</div>
+								</CardHeader>
+								<CardContent>
+									<RenderPolicyDiff policy={policy()} />
+								</CardContent>
+							</Card>
+						</Show>
+					)}
+				</Show>
 			</Suspense>
+
+			<StandardTable table={table} />
 		</PageLayout>
 	);
 }
 
-function DirtyPolicyPanel() {
+type Policy = NonNullable<RouterOutput["policy"]["get"]>;
+
+function RenderPolicyDiff(props: {
+	policy: Policy;
+}) {
 	return (
-		<Card>
-			<CardHeader>
-				<div class="flex items-center justify-between">
-					<div>
-						<CardTitle>Deploy changes</CardTitle>
-						<CardDescription>
-							The following changes have been made to your policy but have not
-							been deployed!
-						</CardDescription>
-					</div>
-
-					<DeployButton />
-				</div>
-			</CardHeader>
-			<CardContent>
-				<RenderPolicyDiff />
-			</CardContent>
-		</Card>
-	);
-}
-
-function RenderPolicyDiff() {
-	const policy = usePolicy();
-
-	return (
-		<For each={policy().diff}>
+		<For each={props.policy.diff}>
 			{(change) => (
 				<li>
 					<span
@@ -158,35 +158,37 @@ function RenderPolicyDiff() {
 	);
 }
 
-function DeployButton() {
-	const policy = usePolicy();
+function DeployButton(props: {
+	policy: Policy;
+}) {
+	const policyId = usePolicyId();
 	const trpcCtx = trpc.useContext();
 
 	return (
 		<DialogRoot>
 			<DialogTrigger
 				as={Button}
-				disabled={policy().diff.length === 0}
-				onMouseEnter={() => {
-					trpcCtx.policy.overview.ensureData({ id: policy().id });
-				}}
+				onMouseEnter={() =>
+					trpcCtx.policy.overview.ensureData({ id: policyId() })
+				}
 			>
 				Deploy
 			</DialogTrigger>
 			<DialogContent>
-				<DeployDialog />
+				<DeployDialog policy={props.policy} />
 			</DialogContent>
 		</DialogRoot>
 	);
 }
 
-function DeployDialog() {
+function DeployDialog(props: {
+	policy: Policy;
+}) {
 	const [page, setPage] = createSignal(0);
 	const controller = useController();
 	const policyId = usePolicyId();
 	const [comment, setComment] = createSignal("");
 
-	const policy = usePolicy();
 	const deploys = trpc.policy.deploys.list.createQuery(() => ({
 		policyId: policyId(),
 	}));
@@ -195,7 +197,7 @@ function DeployDialog() {
 
 	const deploy = trpc.policy.deploy.createMutation(() => ({
 		onSuccess: () => controller.setOpen(false),
-		...withDependantQueries([policy.query, deploys]),
+		...withDependantQueries([usePolicy(), deploys]),
 	}));
 
 	const scopedEntities = () =>
@@ -214,7 +216,7 @@ function DeployDialog() {
 			{page() === 0 && (
 				<>
 					<ul class="list-disc pl-4 text-md leading-none tracking-tight text-semibold flex flex-col space-y-2 py-2">
-						<RenderPolicyDiff />
+						<RenderPolicyDiff policy={props.policy} />
 					</ul>
 					<Button type="button" onClick={() => setPage(1)}>
 						Confirm Changes

@@ -102,8 +102,8 @@ import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 import { useZodParams } from "~/lib/useZodParams";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { useTenantSlug } from "../../t.[tenantSlug]";
 import { cacheMetadata } from "../metadataCache";
+import { useTenantSlug } from "../ctx";
 
 function CreatePolicyButton() {
 	const tenantSlug = useTenantSlug();

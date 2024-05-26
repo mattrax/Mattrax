@@ -9,7 +9,7 @@ export default function () {
 	const params = useZodParams({ groupId: z.string() });
 
 	const query = trpc.group.get.createQuery(() => ({
-		id: params.groupId,
+		groupId: params.groupId,
 	}));
 
 	return (

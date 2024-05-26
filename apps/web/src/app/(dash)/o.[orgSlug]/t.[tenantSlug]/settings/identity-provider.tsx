@@ -29,7 +29,7 @@ import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
 import IconIcOutlineClose from "~icons/ic/outline-close.jsx";
 import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
-import { useTenantSlug } from "../../t.[tenantSlug]";
+import { useTenantSlug } from "../ctx";
 
 export const route = {
 	load: ({ params }) => {

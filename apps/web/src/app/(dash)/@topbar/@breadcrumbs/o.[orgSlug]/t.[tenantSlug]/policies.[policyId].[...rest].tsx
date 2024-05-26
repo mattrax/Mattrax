@@ -9,7 +9,7 @@ export default function () {
 	const params = useZodParams({ policyId: z.string() });
 
 	const query = trpc.policy.get.createQuery(() => ({
-		id: params.policyId,
+		policyId: params.policyId,
 	}));
 
 	return (

@@ -28,9 +28,9 @@ import {
 } from "~c/VariantTableSheet";
 import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
-import { useTenantSlug } from "../../../t.[tenantSlug]";
-import { UserContext, useUser } from "./Context";
+import { useUser, useUserId } from "../ctx";
 import { BruhIconPhLaptop } from "./bruh";
+import { useTenantSlug } from "../../ctx";
 
 export const route = {
 	load: ({ params }) => {
@@ -40,29 +40,43 @@ export const route = {
 } satisfies RouteDefinition;
 
 export default function Page() {
-	const user = () => useUser()();
+	const user = useUser();
 
 	return (
-		<UserContext>
-			<div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col">
-				<div class="flex flex-row justify-between">
-					<div>
-						<h1 class="text-3xl font-bold">{user().name}</h1>
-						<span class="block mt-1 text-gray-700 text-sm">{user().email}</span>
-					</div>
-					<IdPLink />
+		<div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col">
+			<div class="flex flex-row justify-between">
+				<div>
+					<h1 class="text-3xl font-bold">
+						<Suspense
+							fallback={
+								<div class="w-42 h-8 rounded-full bg-neutral-200 animate-pulse" />
+							}
+						>
+							{user.data?.name}
+						</Suspense>
+					</h1>
+					<span class="block mt-1 text-gray-700 text-sm">
+						<Suspense
+							fallback={
+								<div class="w-52 h-4 rounded-full bg-neutral-200 animate-pulse" />
+							}
+						>
+							{user.data?.email}
+						</Suspense>
+					</span>
 				</div>
-				<hr class="w-full h-px my-4 border-gray-200" />
-				<div class="flex flex-row gap-8">
-					<div class="flex-1 space-y-4">
-						<Devices />
-					</div>
-					<div class="flex-1 space-y-4">
-						<Assignments />
-					</div>
+				<IdPLink />
+			</div>
+			<hr class="w-full h-px my-4 border-gray-200" />
+			<div class="flex flex-row gap-8">
+				<div class="flex-1 space-y-4">
+					<Devices />{" "}
+				</div>
+				<div class="flex-1 space-y-4">
+					<Assignments />
 				</div>
 			</div>
-		</UserContext>
+		</div>
 	);
 }
 
@@ -70,40 +84,48 @@ function IdPLink() {
 	const user = useUser();
 
 	return (
-		<Show
-			when={user().providerResourceId}
-			fallback={
-				<span class="flex flex-row items-center text-sm gap-1 font-medium">
-					<IconMaterialSymbolsWarningRounded class="w-5 h-5 text-yellow-600" />
-					User not found in {AUTH_PROVIDER_DISPLAY[user().provider.variant]}
-				</span>
-			}
-		>
-			{(resourceId) => (
-				<a
-					class={clsx(buttonVariants({ variant: "link" }), "!p-0")}
-					target="_blank"
-					href={
-						userAuthProviderUrl(
-							user().provider.variant,
-							user().provider.remoteId,
-							resourceId(),
-						)!
-					}
-					rel="noreferrer"
-				>
-					{AUTH_PROVIDER_DISPLAY[user().provider.variant]}
-					<IconPrimeExternalLink class="inline ml-1" />
-				</a>
-			)}
-		</Show>
+		<Suspense>
+			<Show when={user.data}>
+				{(user) => (
+					<Show
+						when={user().providerResourceId}
+						fallback={
+							<span class="flex flex-row items-center text-sm gap-1 font-medium">
+								<IconMaterialSymbolsWarningRounded class="w-5 h-5 text-yellow-600" />
+								User not found in{" "}
+								{AUTH_PROVIDER_DISPLAY[user().provider.variant]}
+							</span>
+						}
+					>
+						{(resourceId) => (
+							<a
+								class={clsx(buttonVariants({ variant: "link" }), "!p-0")}
+								target="_blank"
+								href={
+									userAuthProviderUrl(
+										user().provider.variant,
+										user().provider.remoteId,
+										resourceId(),
+									)!
+								}
+								rel="noreferrer"
+							>
+								{AUTH_PROVIDER_DISPLAY[user().provider.variant]}
+								<IconPrimeExternalLink class="inline ml-1" />
+							</a>
+						)}
+					</Show>
+				)}
+			</Show>
+		</Suspense>
 	);
 }
 
 function Devices() {
+	const userId = useUserId();
 	const user = useUser();
 	const devices = trpc.user.devices.createQuery(() => ({
-		id: user().id,
+		id: userId(),
 	}));
 
 	return (
@@ -111,8 +133,8 @@ function Devices() {
 			<div class="flex flex-row justify-between items-center">
 				<Label>Devices</Label>
 
-				<SendInstructionsDialog id={user().id} email={user().email}>
-					<DialogTrigger as={Button} size="sm">
+				<SendInstructionsDialog>
+					<DialogTrigger as={Button} size="sm" disabled={user.isPending}>
 						Send Instructions
 					</DialogTrigger>
 				</SendInstructionsDialog>
@@ -148,10 +170,11 @@ function Devices() {
 }
 
 function Assignments() {
+	const userId = useUserId();
 	const user = useUser();
 
 	const assignments = trpc.user.assignments.createQuery(() => ({
-		id: user().id,
+		id: userId(),
 	}));
 
 	const variants = createAssignmentsVariants("../../");
@@ -187,12 +210,17 @@ function Assignments() {
 					variants={variants}
 					onSubmit={(assignments) =>
 						addAssignments.mutateAsync({
-							id: user().id,
+							id: userId(),
 							assignments,
 						})
 					}
 				>
-					<SheetTrigger as={Button} class="ml-auto" size="sm">
+					<SheetTrigger
+						as={Button}
+						class="ml-auto"
+						size="sm"
+						disabled={user.isPending}
+					>
 						Add Assignments
 					</SheetTrigger>
 				</VariantTableSheet>
@@ -226,9 +254,10 @@ function createAssignmentsVariants(pathToTenant: string) {
 	} satisfies VariantTableVariants;
 }
 
-function SendInstructionsDialog(
-	props: ParentProps<{ id: string; email: string }>,
-) {
+function SendInstructionsDialog(props: ParentProps) {
+	const userId = useUserId();
+	const user = useUser();
+
 	const [open, setOpen] = createSignal(false);
 
 	const mutation = trpc.user.invite.createMutation();
@@ -237,7 +266,7 @@ function SendInstructionsDialog(
 		schema: z.object({ message: z.string().email().optional() }),
 		onSubmit: async ({ value }) => {
 			await mutation.mutateAsync({
-				id: props.id,
+				id: userId(),
 				message: value.message,
 			});
 			setOpen(false);
@@ -257,8 +286,11 @@ function SendInstructionsDialog(
 				<DialogHeader>
 					<DialogTitle>Send Instructions</DialogTitle>
 					<DialogDescription>
-						We will send an email to <b>{props.email}</b> with instructions on
-						how to enroll their device in this tenant.
+						We will send an email to{" "}
+						<b>
+							<Suspense fallback="...">{user.data?.email}</Suspense>
+						</b>{" "}
+						with instructions on how to enroll their device in this tenant.
 					</DialogDescription>
 				</DialogHeader>
 				<Form form={form} fieldsetClass="space-y-2">

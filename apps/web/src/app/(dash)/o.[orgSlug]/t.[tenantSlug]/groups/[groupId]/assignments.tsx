@@ -32,7 +32,7 @@ import {
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
 import { cacheMetadata } from "../../metadataCache";
-import { useGroupId } from "../[groupId]";
+import { useGroupId } from "../ctx";
 import { createAssignmentsVariants } from "./utils";
 
 export const route = {

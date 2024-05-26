@@ -87,9 +87,9 @@ export const groupRouter = createTRPCRouter({
 		}),
 
 	get: authedProcedure
-		.input(z.object({ id: z.string() }))
+		.input(z.object({ groupId: z.string() }))
 		.query(async ({ ctx, input }) => {
-			const group = await getGroup(input.id);
+			const group = await getGroup(input.groupId);
 			if (!group) return null;
 
 			await ctx.ensureTenantMember(group.tenantPk);

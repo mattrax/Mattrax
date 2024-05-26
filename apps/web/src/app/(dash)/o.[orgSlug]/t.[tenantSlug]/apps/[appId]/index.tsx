@@ -1,21 +1,23 @@
 import { Suspense } from "solid-js";
-import { z } from "zod";
-import { trpc } from "~/lib";
-import { useZodParams } from "~/lib/useZodParams";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
+import { useApp } from "../ctx";
 
 export default function Page() {
-	const params = useZodParams({ appId: z.string() });
-
-	const query = trpc.app.get.createQuery(() => ({
-		id: params.appId,
-	}));
+	const app = useApp();
 
 	return (
 		<PageLayout
 			heading={
 				<PageLayoutHeading>
-					<Suspense>{query.data?.name}</Suspense>
+					<Suspense
+						fallback={
+							<div class="flex items-center">
+								<div class="w-32 h-6 bg-neutral-200 animate-pulse rounded-full" />
+							</div>
+						}
+					>
+						{app.data?.name}
+					</Suspense>
 				</PageLayoutHeading>
 			}
 		>

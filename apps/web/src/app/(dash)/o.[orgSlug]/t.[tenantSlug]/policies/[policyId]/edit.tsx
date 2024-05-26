@@ -3,13 +3,11 @@ import {
 	type PolicyPlatform,
 	createPolicyComposerController,
 } from "@mattrax/policy-composer";
-import { createContentEditableController } from "@mattrax/ui/lib";
 
 import { createAsync, useSearchParams } from "@solidjs/router";
 import { createEffect, createSignal } from "solid-js";
 import { trpc } from "~/lib";
-import { usePolicyId } from "../[policyId]";
-import { usePolicy } from "./Context";
+import { usePolicyId } from "../ctx";
 
 const windowsPoliciesPromise = import(
 	"@mattrax/configuration-schemas/windows/ddf.json?raw"
@@ -25,8 +23,6 @@ export default function Page() {
 
 	const policyId = usePolicyId();
 
-	const policy = usePolicy();
-
 	const updatePolicy = trpc.policy.update.createMutation();
 
 	const [searchParams, setSearchParams] = useSearchParams<{
@@ -41,7 +37,6 @@ export default function Page() {
 	});
 
 	return (
-		// <PolicyContext>
 		<PolicyComposer
 			windowsCSPs={windowsPolicies()}
 			applePayloads={applePayloads()}
@@ -72,6 +67,5 @@ export default function Page() {
 				});
 			}}
 		/>
-		// </PolicyContext>
 	);
 }

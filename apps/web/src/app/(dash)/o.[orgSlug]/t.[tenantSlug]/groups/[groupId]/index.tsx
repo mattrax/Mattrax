@@ -27,12 +27,10 @@ export const route = {
 import IconPhDevices from "~icons/ph/devices";
 import IconPhUser from "~icons/ph/user";
 import { cacheMetadata, getMetadata } from "../../metadataCache";
-import { useGroupId } from "../[groupId]";
+import { useGroup, useGroupId } from "../ctx";
 import { createAssignmentsVariants, createMembersVariants } from "./utils";
 
 export default function Page() {
-	const groupId = useGroupId();
-
 	return (
 		<PageLayout
 			heading={
@@ -47,7 +45,7 @@ export default function Page() {
 							</span>
 						}
 					>
-						<NameEditor groupId={groupId()} />
+						<NameEditor />
 					</Suspense>
 					{/* TODO: This show show policies */}
 				</>
@@ -65,8 +63,9 @@ export default function Page() {
 	);
 }
 
-function NameEditor(props: { groupId: string }) {
-	const group = trpc.group.get.createQuery(() => ({ id: props.groupId }));
+function NameEditor() {
+	const groupId = useGroupId();
+	const group = useGroup();
 	cacheMetadata("group", () => (group.data ? [group.data] : []));
 
 	const updateGroup = trpc.group.update.createMutation(() => ({
@@ -79,7 +78,7 @@ function NameEditor(props: { groupId: string }) {
 			return;
 		}
 
-		toast.promise(updateGroup.mutateAsync({ id: props.groupId, name }), {
+		toast.promise(updateGroup.mutateAsync({ id: groupId(), name }), {
 			loading: "Updating group name...",
 			success: "Group name updated",
 			error: "Failed to update group name",
@@ -90,7 +89,7 @@ function NameEditor(props: { groupId: string }) {
 	let nameEl: HTMLHeadingElement;
 
 	const getName = () =>
-		getMetadata("group", props.groupId)?.name ?? group.data?.name;
+		getMetadata("group", groupId())?.name ?? group.data?.name;
 
 	const [cachedName, setCachedName] = createSignal(getName());
 

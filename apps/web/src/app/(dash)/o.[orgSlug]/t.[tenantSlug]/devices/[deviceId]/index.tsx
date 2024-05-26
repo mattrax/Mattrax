@@ -4,45 +4,35 @@ import { A } from "@solidjs/router";
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	Button,
+	DescriptionDetails,
+	DescriptionList,
+	DescriptionTerm,
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
+	Label,
 	Textarea,
 } from "@mattrax/ui";
 import { toast } from "solid-sonner";
-import { Item } from "~/components/Item";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { useDevice } from "./Context";
+import { useDevice, useDeviceId } from "../ctx";
+import { type JSX, Suspense } from "solid-js";
 
 // TODO: Rename device
 // TODO: Rotate filevault keys
 // TODO: Disable activation lock
 
 export default function Page() {
+	const deviceId = useDeviceId();
 	const device = useDevice();
 
 	const triggerAction = trpc.device.action.createMutation(() => ({
 		onSuccess: (_, data) =>
 			toast.success(`Triggered ${data.action} successfully`),
-		...withDependantQueries(device.query),
+		...withDependantQueries(device),
 	}));
-
-	const [lastSeen] = createTimeAgo(device().lastSynced);
-	const [enrolledAt] = createTimeAgo(device().enrolledAt);
-	const storage = () => {
-		const d = device();
-		let result = "";
-		if (d.freeStorageSpaceInBytes)
-			result += `${d.freeStorageSpaceInBytes / 1e9} GB used`;
-
-		if (d.totalStorageSpaceInBytes) {
-			if (d.freeStorageSpaceInBytes) result += " / ";
-			result += `${d.totalStorageSpaceInBytes / 1e9} GB available`;
-		}
-		return result;
-	};
 
 	return (
 		<PageLayout
@@ -59,7 +49,7 @@ export default function Page() {
 								onClick={() =>
 									triggerAction.mutate({
 										action: "sync",
-										deviceId: device().id,
+										deviceId: deviceId(),
 									})
 								}
 							>
@@ -70,7 +60,7 @@ export default function Page() {
 								onClick={() =>
 									triggerAction.mutate({
 										action: "restart",
-										deviceId: device().id,
+										deviceId: deviceId(),
 									})
 								}
 							>
@@ -81,7 +71,7 @@ export default function Page() {
 								onClick={() =>
 									triggerAction.mutate({
 										action: "shutdown",
-										deviceId: device().id,
+										deviceId: deviceId(),
 									})
 								}
 								class="text-red-500"
@@ -93,7 +83,7 @@ export default function Page() {
 								onClick={() =>
 									triggerAction.mutate({
 										action: "lost",
-										deviceId: device().id,
+										deviceId: deviceId(),
 									})
 								}
 								class="text-red-500"
@@ -108,7 +98,7 @@ export default function Page() {
 								onClick={() =>
 									triggerAction.mutate({
 										action: "wipe",
-										deviceId: device().id,
+										deviceId: deviceId(),
 									})
 								}
 								class="text-red-500"
@@ -127,83 +117,195 @@ export default function Page() {
 				</div>
 			}
 		>
-			<h2 class="text-bold text-xl">General:</h2>
-			{/* // TODO: Enrollment type (supervised, DEP, Windows Azure, etc) */}
-			{/* // TODO: User approved enrollment */}
-			<Item
-				label="Owner"
-				data={
-					<A href={`../../users/${device().ownerId}`} class="hover:underline">
-						{device().ownerName}
-					</A>
-				}
-			/>
-			{/* // TODO: External link to Entra ID portal??? */}
-			{device().azureADDeviceId && (
-				<Item label="Entra Device ID" data={device().azureADDeviceId} />
-			)}
-			{/* // TODO: Tooltip on dates with actual value */}
-			<Item label="Last Seen" data={lastSeen()} />
-			<Item label="Enrolled At" data={enrolledAt()} />
-			{/* // TODO: Allow saving changes to notes */}
-			<Item
-				label="Notes"
-				data={<Textarea disabled>{device().description}</Textarea>}
-			/>
+			<DescriptionList>
+				<h2 class="text-bold text-xl">General:</h2>
 
-			<h2 class="text-bold text-xl">Hardware:</h2>
-			<Item label="Serial Number" data={device().serialNumber} />
-			<Item label="Device Manufacturer" data={device().manufacturer} />
-			<Item label="Device Model" data={device().model} />
-			<Item
-				label="Processor"
-				data={<p class="text-muted-foreground opacity-70">Coming soon</p>}
-			/>
-			<Item
-				label="RAM"
-				data={<p class="text-muted-foreground opacity-70">Coming soon</p>}
-			/>
-			{/* // TODO: Render storage as a progress bar */}
-			<Item label="Storage" data={storage()} />
-			<Item
-				label="Battery Condition"
-				data={<p class="text-muted-foreground opacity-70">Coming soon</p>}
-			/>
+				{/* // TODO: Enrollment type (supervised, DEP, Windows Azure, etc) */}
+				{/* // TODO: User approved enrollment */}
 
-			<h2 class="text-bold text-xl">Software:</h2>
-			<Item label="Operating System" data={device().os} />
-			<Item
-				label="OS version"
-				data={<p class="text-muted-foreground opacity-70">Coming soon</p>}
-			/>
-			<Item
-				label="OS uptime"
-				data={<p class="text-muted-foreground opacity-70">Coming soon</p>}
-			/>
-			<Item
-				label="Disk encryption"
-				data={<p class="text-muted-foreground opacity-70">Coming soon</p>}
-			/>
+				<DescriptionTerm>Owner</DescriptionTerm>
+				<Details>
+					{() => {
+						return (
+							<A
+								href={`../../users/${device.data?.ownerId}`}
+								class="hover:underline"
+							>
+								{device.data?.ownerName}
+							</A>
+						);
+					}}
+				</Details>
 
-			<h2 class="text-bold text-xl">Network:</h2>
-			<Item
-				label="Private IP"
-				data={<p class="text-muted-foreground opacity-70">Coming soon</p>}
-			/>
-			{/* // TODO: Show approximate location of public IP */}
-			<Item
-				label="Public IP"
-				data={<p class="text-muted-foreground opacity-70">Coming soon</p>}
-			/>
-			<Item
-				label="MAC addresses"
-				data={<p class="text-muted-foreground opacity-70">Coming soon</p>}
-			/>
+				{/* // TODO: External link to Entra ID portal??? */}
+				<DescriptionTerm>Entra Device ID</DescriptionTerm>
+				<Details>
+					{() => device.data?.azureADDeviceId || "Not enrolled with Azure"}
+				</Details>
 
-			{/* Supervised
-			Encrypted
-			Jailbroken
-			Bootstrap token escrowed */}
+				{/* // TODO: Tooltip on dates with actual value */}
+				<DescriptionTerm>Last Seen</DescriptionTerm>
+				<Details>
+					{() => {
+						if (!device.data?.lastSynced) return "Never";
+						const [lastSeen] = createTimeAgo(device.data?.lastSynced);
+						return lastSeen();
+					}}
+				</Details>
+
+				<DescriptionTerm>Enrolled At</DescriptionTerm>
+				<Details>
+					{() => {
+						if (!device.data?.enrolledAt) return "Never";
+						const [enrolledAt] = createTimeAgo(device.data?.enrolledAt);
+						return enrolledAt();
+					}}
+				</Details>
+
+				<DescriptionTerm>Notes</DescriptionTerm>
+				<Details>
+					{() => (
+						<Textarea disabled={device.isPending && true}>
+							{device.data?.description}
+						</Textarea>
+					)}
+				</Details>
+
+				<h2 class="text-bold text-xl">Hardware:</h2>
+
+				<DescriptionTerm>Serial Number</DescriptionTerm>
+				<Details>{() => device.data?.serialNumber}</Details>
+
+				<DescriptionTerm>Device Manufacturer</DescriptionTerm>
+				<Details>{() => device.data?.manufacturer}</Details>
+
+				<DescriptionTerm>Device Model</DescriptionTerm>
+				<Details>{() => device.data?.model}</Details>
+
+				<DescriptionTerm>Processor</DescriptionTerm>
+				<Details>
+					{() => <p class="text-muted-foreground opacity-70">Coming soon</p>}
+				</Details>
+				<DescriptionTerm>RAM</DescriptionTerm>
+				<Details>
+					{() => <p class="text-muted-foreground opacity-70">Coming soon</p>}
+				</Details>
+				{/* // TODO: Render storage as a progress bar */}
+				<DescriptionTerm>Storage</DescriptionTerm>
+				<Details>
+					{() => {
+						if (!device.data) return "...";
+						const d = device.data;
+						let result = "";
+						if (d.freeStorageSpaceInBytes)
+							result += `${d.freeStorageSpaceInBytes / 1e9} GB used`;
+
+						if (d.totalStorageSpaceInBytes) {
+							if (d.freeStorageSpaceInBytes) result += " / ";
+							result += `${d.totalStorageSpaceInBytes / 1e9} GB available`;
+						}
+						return result;
+					}}
+				</Details>
+				<DescriptionTerm>Battery Condition</DescriptionTerm>
+				<Details>
+					{() => <p class="text-muted-foreground opacity-70">Coming soon</p>}
+				</Details>
+
+				<h2 class="text-bold text-xl">Software:</h2>
+				<DescriptionTerm>Operating System</DescriptionTerm>
+				<Details>{() => device.data?.os}</Details>
+				<DescriptionTerm>Operating System Version</DescriptionTerm>
+				<Details>
+					{() => <p class="text-muted-foreground opacity-70">Coming soon</p>}
+				</Details>
+				<DescriptionTerm>Uptime</DescriptionTerm>
+				<Details>
+					{() => <p class="text-muted-foreground opacity-70">Coming soon</p>}
+				</Details>
+				<DescriptionTerm>Disk Encryption</DescriptionTerm>
+				<Details>
+					{() => <p class="text-muted-foreground opacity-70">Coming soon</p>}
+				</Details>
+
+				<h2 class="text-bold text-xl">Network:</h2>
+				<DescriptionTerm>Private IP</DescriptionTerm>
+				<Details>
+					{() => <p class="text-muted-foreground opacity-70">Coming soon</p>}
+				</Details>
+				<h2 class="text-bold text-xl">Network:</h2>
+				{/* // TODO: Show approximate location of public IP */}
+				<DescriptionTerm>Public IP</DescriptionTerm>
+				<Details>
+					{() => <p class="text-muted-foreground opacity-70">Coming soon</p>}
+				</Details>
+				<DescriptionTerm>MAC addresses</DescriptionTerm>
+				<Details>
+					{() => <p class="text-muted-foreground opacity-70">Coming soon</p>}
+				</Details>
+
+				{/* Supervised
+				Encrypted
+				Jailbroken
+				Bootstrap token escrowed */}
+			</DescriptionList>
 		</PageLayout>
 	);
 }
+
+const Details = (props: { children: () => JSX.Element }) => {
+	return (
+		<DescriptionDetails class="flex items-center space-x-2">
+			<Suspense
+				fallback={
+					<div class="flex items-center">
+						<div class="w-44 h-6 bg-neutral-200 animate-pulse rounded-full" />
+					</div>
+				}
+			>
+				{props.children()}
+			</Suspense>
+		</DescriptionDetails>
+	);
+};
+
+// function Item(props: {
+// 	label: string;
+// 	data: () => JSX.Element;
+// }) {
+// 	// TODO: Make this not look like ass
+// 	return (
+// 		<div class="flex flex-col space-y-1.5">
+// 			<Label>{props.label}:</Label>
+// 			<Suspense
+// 										fallback={
+// 											<div class="w-24 h-4 rounded-full bg-neutral-200 animate-pulse" />
+// 										}
+// 									>
+// 			<Show when>
+// 				{(_) => {
+// 					const data = props.data();
+
+// 					return (
+
+// 							{/* Avoid nested p tags */}typeof data === "string" ? (
+// 								<p class="py-1 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+
+// 										{data}
+
+// 								</p>
+// 							) : (
+// 								<div class="py-1 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
+
+// 										{data}
+
+// 								</div>
+// 							)
+
+// 					);
+// 				}}
+// 			</Show>
+// 			</Suspense>
+// 		</div>
+// 	);
+// }

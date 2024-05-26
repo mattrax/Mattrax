@@ -38,10 +38,10 @@ export const applicationRouter = createTRPCRouter({
 		}),
 
 	get: authedProcedure
-		.input(z.object({ id: z.string() }))
+		.input(z.object({ appId: z.string() }))
 		.query(async ({ input, ctx }) => {
 			const app = await ctx.db.query.applications.findFirst({
-				where: eq(applications.id, input.id),
+				where: eq(applications.id, input.appId),
 			});
 			if (!app) return null;
 

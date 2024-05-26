@@ -6,7 +6,7 @@ import { Button } from "@mattrax/ui";
 import { useOrgSlug } from "~/app/(dash)/o.[orgSlug]";
 import { trpc } from "~/lib";
 import { ConfirmDialog } from "~c/ConfirmDialog";
-import { useTenant } from "../Context";
+import { useTenant } from "../ctx";
 
 export function DeleteTenantButton() {
 	const orgSlug = useOrgSlug();
@@ -33,10 +33,11 @@ export function DeleteTenantButton() {
 			{(confirm) => (
 				<Button
 					variant="destructive"
+					disabled={tenant.query.isPending}
 					onClick={() =>
 						confirm({
 							title: "Delete tenant?",
-							action: `Delete '${tenant().name}'`,
+							action: `Delete '${tenant()!.name}'`,
 							description: () => (
 								<>
 									Are you sure you want to delete your tenant along with all{" "}
@@ -44,10 +45,10 @@ export function DeleteTenantButton() {
 									<b>applications</b> and <b>groups</b>?
 								</>
 							),
-							inputText: tenant().name,
+							inputText: tenant()!.name,
 							async onConfirm() {
 								await deleteTenant.mutateAsync({
-									tenantSlug: tenant().slug,
+									tenantSlug: tenant()!.slug,
 								});
 
 								await startTransition(() => navigate(`/o/${orgSlug()}`));
