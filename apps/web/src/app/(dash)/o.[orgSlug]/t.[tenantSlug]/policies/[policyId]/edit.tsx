@@ -25,7 +25,7 @@ export default function Page() {
 
 	const policyId = usePolicyId();
 
-	const policy = () => usePolicy()();
+	const policy = usePolicy();
 
 	const updatePolicy = trpc.policy.update.createMutation();
 
