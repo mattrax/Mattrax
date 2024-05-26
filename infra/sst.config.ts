@@ -230,6 +230,7 @@ function WebPagesProject({
 			AUTH_SECRET: new random.RandomBytes("MattraxWebAuthSecret", {
 				length: 64,
 			}).base64,
+			MDM_URL,
 			INTERNAL_SECRET: INTERNAL_SECRET(),
 			DATABASE_URL: INTERNAL_SECRET().apply(
 				(internal) => `https://:${internal}@${MDM_URL}`,
