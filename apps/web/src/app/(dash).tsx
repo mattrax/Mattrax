@@ -5,7 +5,7 @@ import {
 } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { parse } from "cookie-es";
-import { startTransition } from "solid-js";
+import { onMount, startTransition } from "solid-js";
 import { isServer } from "solid-js/web";
 
 import { trpc } from "~/lib";
@@ -22,8 +22,22 @@ export default function Layout(props: RouteSectionProps<never, "topbar">) {
 
 	const matches = useMatches();
 
-	// console.log("FileRoutes", FileRoutes());
-	// console.log("matches", matches());
+	onMount(async () => {
+		const routes = FileRoutes();
+
+		function preloadRoute(route: any) {
+			route.component.preload();
+			if (route.children) {
+				for (const childRoute of route.children) {
+					setTimeout(() => preloadRoute(childRoute), 100);
+				}
+			}
+		}
+
+		for (const route of routes) {
+			setTimeout(() => preloadRoute(route), 100);
+		}
+	});
 
 	if (!isServer) {
 		// isLoggedIn cookie trick for quick login navigation
@@ -36,8 +50,6 @@ export default function Layout(props: RouteSectionProps<never, "topbar">) {
 					})}`,
 				),
 			);
-
-			// return null;
 		}
 	}
 
