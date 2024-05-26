@@ -25,8 +25,8 @@ export const env = createEnv({
 		AWS_ACCESS_KEY_ID: optional_in_dev(z.string()),
 		AWS_SECRET_ACCESS_KEY: optional_in_dev(z.string()),
 		// Stipe billing
-		STRIPE_PUBLISHABLE_KEY: z.string(),
-		STRIPE_SECRET_KEY: z.string(),
+		STRIPE_PUBLISHABLE_KEY: optional_in_dev(z.string()),
+		STRIPE_SECRET_KEY: optional_in_dev(z.string()),
 		// Used for syncing users from Entra to Mattrax
 		ENTRA_CLIENT_ID: z.string(),
 		ENTRA_CLIENT_SECRET: z.string(),
