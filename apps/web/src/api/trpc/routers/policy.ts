@@ -207,7 +207,7 @@ export const policyRouter = createTRPCRouter({
 			z.object({
 				name: z.string().optional(),
 				// TODO: Validate the input type
-				data: z.any().optional(),
+				data: z.custom<PolicyData>().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {

@@ -6,24 +6,28 @@ import {
 import { createContentEditableController } from "@mattrax/ui/lib";
 
 import { createAsync, useSearchParams } from "@solidjs/router";
-import { Show, createEffect, createSignal } from "solid-js";
-import { useFeatures } from "~/lib/featureFlags";
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { PolicyContext, usePolicy } from "./Context";
+import { createEffect, createSignal } from "solid-js";
+import { trpc } from "~/lib";
+import { usePolicyId } from "../[policyId]";
+import { usePolicy } from "./Context";
+
+const windowsPoliciesPromise = import(
+	"@mattrax/configuration-schemas/windows/ddf.json?raw"
+).then(({ default: str }) => JSON.parse(str));
+
+const applePayloadsPromise = import(
+	"@mattrax/configuration-schemas/apple/payloads.json?raw"
+).then(({ default: str }) => JSON.parse(str));
 
 export default function Page() {
-	const windowsPolicies = createAsync(() =>
-		import("@mattrax/configuration-schemas/windows/ddf.json?raw").then(
-			({ default: str }) => JSON.parse(str),
-		),
-	);
-	const applePayloads = createAsync(() =>
-		import("@mattrax/configuration-schemas/apple/payloads.json?raw").then(
-			({ default: str }) => JSON.parse(str),
-		),
-	);
+	const windowsPolicies = createAsync(() => windowsPoliciesPromise);
+	const applePayloads = createAsync(() => applePayloadsPromise);
+
+	const policyId = usePolicyId();
 
 	const policy = () => usePolicy()();
+
+	const updatePolicy = trpc.policy.update.createMutation();
 
 	const [searchParams, setSearchParams] = useSearchParams<{
 		platform: PolicyPlatform;
@@ -37,12 +41,30 @@ export default function Page() {
 	});
 
 	return (
-		<PolicyContext>
-			<PolicyComposer
-				windowsCSPs={windowsPolicies()}
-				applePayloads={applePayloads()}
-				controller={controller}
-			/>
-		</PolicyContext>
+		// <PolicyContext>
+		<PolicyComposer
+			windowsCSPs={windowsPolicies()}
+			applePayloads={applePayloads()}
+			controller={controller}
+			onSave={async () => {
+				await updatePolicy.mutateAsync({
+					id: policyId(),
+					data: {
+						windows: {},
+						macos: Object.entries(controller.state.apple).reduce(
+							(acc, [csp, { data, enabled }]) => {
+								if (enabled) acc[csp] = data;
+								return acc;
+							},
+							{} as Record<string, Array<Record<string, any>>>,
+						),
+						linux: null,
+						android: null,
+						scripts: [],
+					},
+				});
+			}}
+		/>
+		// </PolicyContext>
 	);
 }

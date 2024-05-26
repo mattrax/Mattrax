@@ -20,7 +20,7 @@ const TabsList = <T extends ValidComponent = "div">(
 	return (
 		<TabsPrimitive.List
 			class={cn(
-				"peer relative bg-muted text-muted-foreground inline-flex h-10 items-center justify-center rounded-md p-1",
+				"relative bg-muted text-muted-foreground inline-flex h-10 items-center justify-center rounded-md p-1",
 				props.class,
 			)}
 			{...rest}
@@ -41,7 +41,7 @@ const TabsTrigger = <T extends ValidComponent = "button">(
 	return (
 		<TabsPrimitive.Trigger
 			class={cn(
-				"z-[2] data-[selected]:text-foreground inline-flex items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 outline-none",
+				"peer z-[2] data-[selected]:text-foreground inline-flex items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 outline-none",
 				local.class,
 			)}
 			{...rest}
@@ -82,7 +82,7 @@ const TabsIndicator = <T extends ValidComponent = "div">(
 			classList={{ "duration-250ms transition-all": mounted() }}
 			class={cn(
 				"z-[1] absolute rounded-sm shadow-sm inset-y-1 left-0",
-				"bg-background ring-offset-2 ring-offset-background peer-has-[:focus-visible]:ring-ring peer-has-[:focus-visible]:ring-2",
+				"bg-background ring-offset-2 ring-offset-background peer-focus-visible:ring-ring peer-focus-visible:ring-2",
 				props.class,
 			)}
 			{...rest}

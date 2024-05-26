@@ -3,6 +3,7 @@ export type AppleProfilePayload = {
 	description: string;
 	properties: { [key in string]: Property };
 	supervised: boolean;
+	unique: boolean;
 };
 export type Property = {
 	title?: string | null;

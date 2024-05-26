@@ -1,6 +1,7 @@
 import type { WindowsCSP } from "@mattrax/configuration-schemas/windows";
 import {
 	Badge,
+	CardDescription,
 	CardTitle,
 	Checkbox,
 	Input,
@@ -15,7 +16,15 @@ import {
 	SelectValue,
 } from "@mattrax/ui";
 import { createVirtualizer } from "@tanstack/solid-virtual";
-import { For, Match, Show, Suspense, Switch, createMemo } from "solid-js";
+import {
+	For,
+	Match,
+	Show,
+	Suspense,
+	Switch,
+	createMemo,
+	createUniqueId,
+} from "solid-js";
 import { createStore } from "solid-js/store";
 
 import { useController } from "./Context";
@@ -88,41 +97,49 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 													</div>
 													<ul>
 														<For each={Object.entries(value.policies)}>
-															{([key, value]) => (
-																<li class="flex flex-row py-2 px-4 items-center gap-4">
-																	<Checkbox
-																		checked={
-																			controller.state.windows[cspKey]?.[key]
-																				?.enabled ?? false
-																		}
-																		onChange={(checked) => {
-																			controller.setState("windows", cspKey, {
-																				[key]: {
-																					enabled: checked,
-																					data: null,
-																				},
-																			});
-																		}}
-																	/>
-																	<div>
-																		<span class="font-medium truncate">
-																			{value.name || key}
-																		</span>
-																		<p class="text-sm text-neutral-500 overflow-y-auto scrollbar-none truncate">
-																			{key}
-																		</p>
-																	</div>
-																	{value.scope && (
-																		<div class="flex-1 text-right">
-																			<Badge>
-																				{value.scope === "user"
-																					? "User"
-																					: "Device"}
-																			</Badge>
+															{([key, value]) => {
+																const id = createUniqueId();
+
+																return (
+																	<li class="flex flex-row py-2 px-4 items-center gap-4">
+																		<Checkbox
+																			id={id}
+																			checked={
+																				controller.state.windows[cspKey]?.[key]
+																					?.enabled ?? false
+																			}
+																			onChange={(checked) => {
+																				controller.setState("windows", cspKey, {
+																					[key]: {
+																						enabled: checked,
+																						data: null,
+																					},
+																				});
+																			}}
+																		/>
+																		<div>
+																			<label
+																				class="font-medium truncate"
+																				for={`${id}-input`}
+																			>
+																				{value.name || key}
+																			</label>
+																			<p class="text-sm text-neutral-500 overflow-y-auto scrollbar-none truncate">
+																				{key}
+																			</p>
 																		</div>
-																	)}
-																</li>
-															)}
+																		{value.scope && (
+																			<div class="flex-1 text-right">
+																				<Badge>
+																					{value.scope === "user"
+																						? "User"
+																						: "Device"}
+																				</Badge>
+																			</div>
+																		)}
+																	</li>
+																);
+															}}
 														</For>
 													</ul>
 												</li>
@@ -153,8 +170,13 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 											const [, setValue] = createStore(value);
 
 											return (
-												<li class="block p-4 space-y-3">
+												<li class="block p-4">
 													<CardTitle>{itemConfig.name}</CardTitle>
+													{itemConfig.description && (
+														<CardDescription class="mt-1">
+															{itemConfig.description}
+														</CardDescription>
+													)}
 													<Switch
 														fallback={`unimplemented format (${itemConfig.format})`}
 													>
@@ -166,6 +188,7 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 																<Switch
 																	fallback={
 																		<NumberInput
+																			class="mt-2"
 																			defaultValue={itemConfig.defaultValue}
 																			value={
 																				value.data ?? itemConfig.defaultValue
@@ -215,6 +238,7 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 
 																			return (
 																				<Select<Option>
+																					class="mt-2"
 																					options={options()}
 																					multiple={false}
 																					defaultValue={options().find(
@@ -263,6 +287,7 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 																		{(allowedValues) => {
 																			return (
 																				<NumberInput
+																					class="mt-2"
 																					minValue={allowedValues().min}
 																					maxValue={allowedValues().max}
 																					defaultValue={itemConfig.defaultValue}
@@ -292,6 +317,7 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 															}
 														>
 															<Input
+																class="mt-2"
 																value={value.data}
 																onChange={(e) =>
 																	setValue({ data: e.currentTarget.value })
@@ -302,6 +328,7 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 															when={itemConfig.format === "bool" && itemConfig}
 														>
 															<Checkbox
+																class="mt-2"
 																checked={value.data}
 																onChange={(checked) =>
 																	setValue({ data: checked })

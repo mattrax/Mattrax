@@ -50,7 +50,9 @@
         "description": "The autologout delay, in seconds. A value of 0 means autologout is off. In some cases, this delay may be restricted to values between 5 minutes and 24 hours.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "ManagedInstalls": {
     "title": "Munki",
@@ -420,7 +422,9 @@
         "description": "Number of days Notification Center notifications should be used before switching to launching Managed Software Center.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "MunkiReport": {
     "title": "MunkiReport",
@@ -484,7 +488,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.1password.1password": {
     "title": "1Password 8",
@@ -575,7 +581,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.ThomsonResearchSoft.EndNote": {
     "title": "EndNote",
@@ -648,7 +656,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.agilebits.onepassword7": {
     "title": "1Password 7",
@@ -757,7 +767,9 @@
         "description": "Enforces whether the clear clipboard preference is enabled or disabled (Preferences > Security > Clear clipboard contents).",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.alectrona.patch": {
     "title": "Alectrona Patch Command Line Tool",
@@ -772,7 +784,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.alectrona.patch-agent": {
     "title": "Alectrona Patch Agent",
@@ -852,7 +866,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.alectrona.patch-notifier": {
     "title": "Alectrona Patch Notifier",
@@ -1003,7 +1019,9 @@
         "description": "By default, the Update button is the primary button of the Update Dialog; meaning it responds to the Return key. Set this key to false if you wish to disable this behavior.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.ADCertificate.managed": {
     "title": "AD Certificate",
@@ -1102,7 +1120,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.AIM.account": {
     "title": "Messages: AIM",
@@ -1168,7 +1188,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.AdLib": {
     "title": "Ad Tracking",
@@ -1184,7 +1206,9 @@
         "description": "Enabling this opts out of receiving ads targeted to interests in Apple Apps and macOS devices. May still receive the same number of ads, but the ads may be less relevant.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.AssetCache.managed": {
     "title": "Content Caching",
@@ -1616,7 +1640,9 @@
         "title": "Verbose",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.Compressor": {
     "title": "Compressor",
@@ -1649,7 +1675,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.Dictionary": {
     "title": "Parental Controls: Dictionary",
@@ -1660,7 +1688,9 @@
         "description": "Enable parental controls dictionary restrictions.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.DirectoryService.managed": {
     "title": "Active Directory",
@@ -1937,7 +1967,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.DiscRecording": {
     "title": "Disc Recording",
@@ -1965,7 +1997,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.Enterprise-Connect": {
     "title": "Enterprise Connect",
@@ -2273,7 +2307,9 @@
         "description": "Enables Active Directory to local account password sync. This only works if the user is logged into their Mac with a local account.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.FinalCut": {
     "title": "Final Cut Pro",
@@ -2323,7 +2359,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.MCX": {
     "title": "Wi-Fi Managed Settings",
@@ -2344,7 +2382,9 @@
         "description": "If true, requires administrator authorization to turn Wi-Fi on or off.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.MCX.FileVault2": {
     "title": "FileVault 2",
@@ -2440,7 +2480,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.MCX.TimeMachine": {
     "title": "Time Machine",
@@ -2493,7 +2535,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.NSExtension": {
     "title": "Extensions",
@@ -2587,7 +2631,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.NetworkBrowser": {
     "title": "AirDrop (macOS)",
@@ -2598,7 +2644,9 @@
         "description": "",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.Safari": {
     "title": "Safari",
@@ -2862,7 +2910,9 @@
         "description": "Highlight links and form controls as you press the Tab key.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.Safari.SandboxBroker": {
     "title": "Safari Developer",
@@ -2873,7 +2923,9 @@
         "description": "If enabled, displays the 'Develop' menu bar item (Preferences > Advanced > Show Develop).",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.SetupAssistant.managed": {
     "title": "Setup Assistant",
@@ -3065,7 +3117,8 @@
         "type": "boolean"
       }
     },
-    "supervised": true
+    "supervised": true,
+    "unique": false
   },
   "com.apple.ShareKitHelper": {
     "title": "ShareKit",
@@ -3201,7 +3254,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.Siri": {
     "title": "Siri",
@@ -3217,7 +3272,9 @@
         "description": "",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.SoftwareUpdate": {
     "title": "Software Update",
@@ -3282,7 +3339,9 @@
         "description": "This key has the same function as the key restrict-store-require-admin-to-install in the com.apple.appstore payload.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.Spotlight": {
     "title": "Spotlight",
@@ -3399,7 +3458,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.SubmitDiagInfo": {
     "title": "Submit Diagnostic Information",
@@ -3410,7 +3471,9 @@
         "description": "Configures the automatic submission of diagnostic information to Apple.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.SystemConfiguration": {
     "title": "Proxies",
@@ -3580,7 +3643,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.TCC.configuration-profile-policy": {
     "title": "Privacy Preferences Policy Control",
@@ -5177,7 +5242,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.TextEdit": {
     "title": "TextEdit",
@@ -5384,7 +5451,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.TimeMachine": {
     "title": "Time Machine",
@@ -5395,7 +5464,9 @@
         "description": "",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.airplay": {
     "title": "AirPlay",
@@ -5484,7 +5555,9 @@
         },
         "supervised": true
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.airplay.security": {
     "title": "AirPlay Security",
@@ -5543,7 +5616,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.airprint": {
     "title": "AirPrint",
@@ -5589,7 +5664,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.app.lock": {
     "title": "Single App Mode",
@@ -5709,7 +5786,8 @@
         }
       }
     },
-    "supervised": true
+    "supervised": true,
+    "unique": true
   },
   "com.apple.applicationaccess": {
     "title": "Restrictions (tvOS)",
@@ -5922,7 +6000,9 @@
         },
         "supervised": true
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.applicationaccess.new": {
     "title": "Parental Controls: Application Access",
@@ -6031,7 +6111,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.appstore": {
     "title": "App Store",
@@ -6062,7 +6144,9 @@
         "description": "Restrict app installations to software updates only",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.asam": {
     "title": "Autonomous Single App Mode",
@@ -6098,7 +6182,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.assistant.support": {
     "title": "Assistant (Siri)",
@@ -6113,7 +6199,9 @@
         "title": "Improve Siri & Dictation",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.associated-domains": {
     "title": "Associated Domains",
@@ -6158,7 +6246,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.caldav.account": {
     "title": "Calendar",
@@ -6219,7 +6309,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.carddav.account": {
     "title": "Contacts",
@@ -6305,7 +6397,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.cellular": {
     "title": "Cellular",
@@ -6446,7 +6540,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.cellularprivatenetwork.managed": {
     "title": "Cellular Private Network",
@@ -6516,7 +6612,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.conferenceroomdisplay": {
     "title": "Conference Room Display",
@@ -6532,7 +6630,8 @@
         }
       }
     },
-    "supervised": true
+    "supervised": true,
+    "unique": true
   },
   "com.apple.configurationprofile.identification": {
     "title": "Identification",
@@ -6609,7 +6708,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.controlcenter": {
     "title": "Control Center",
@@ -6620,7 +6721,9 @@
         "description": "Airplay Receiver allows you to send content from another Apple device to be displayed on the screen as it's being played from your other device.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.coreservices.uiagent": {
     "title": "CoreServices UIAgent",
@@ -6631,7 +6734,9 @@
         "description": "Hides the one-time alert shown when opening a 32-bit application.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.dashboard": {
     "title": "Parental Controls: Dashboard",
@@ -6677,7 +6782,9 @@
         "description": "Set to true to enable the widget white list items.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.declarations": {
     "title": "Declarations",
@@ -6692,7 +6799,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.desktop": {
     "title": "Desktop Picture",
@@ -6712,7 +6821,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.desktopservices": {
     "title": "Desktop Services",
@@ -6723,7 +6834,9 @@
         "description": "Prevent .DS_Store file creation when interacting with a remote file server using the Finder.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.dnsProxy.managed": {
     "title": "DNS Proxy",
@@ -6761,7 +6874,9 @@
         "description": "A plist formatted dictionary of custom options.",
         "type": "plist"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.dnsSettings.managed": {
     "title": "DNS Settings",
@@ -6977,7 +7092,9 @@
         "type": "boolean",
         "supervised": true
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.dock": {
     "title": "Dock",
@@ -7391,7 +7508,9 @@
         "description": "Modifier keys required to activate the top right hot corner",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.domains": {
     "title": "Domains",
@@ -7451,7 +7570,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.eas.account": {
     "title": "Exchange (iOS)",
@@ -7712,7 +7833,9 @@
         "description": "If true, this account is excluded from address Recents syncing.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.education": {
     "title": "Education",
@@ -8041,7 +8164,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.ews.account": {
     "title": "Exchange (macOS)",
@@ -8153,7 +8278,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.extensiblesso": {
     "title": "Single Sign-On Extensions",
@@ -8729,7 +8856,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.familycontrols.contentfilter": {
     "title": "Parental Controls: Web Content Filter",
@@ -8806,7 +8935,9 @@
         "description": "Set to true to use the filterWhiteList and filterBlackList lists.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.familycontrols.timelimits.v2": {
     "title": "Parental Controls: Time Limits",
@@ -8929,7 +9060,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.fileproviderd": {
     "title": "File Provider",
@@ -8940,7 +9073,9 @@
         "description": "If true, enables file providers access to the path of the requesting process.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.finder": {
     "title": "Finder",
@@ -9010,7 +9145,9 @@
         "description": "Warning message requiring user approval before emptying the Trash",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.firstactiveethernet.managed": {
     "title": "802.1X Ethernet: First Active",
@@ -9204,7 +9341,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.firstethernet.managed": {
     "title": "802.1X Ethernet: First",
@@ -9398,7 +9537,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.font": {
     "title": "Font",
@@ -9418,7 +9559,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.freeform": {
     "title": "Freeform",
@@ -9429,7 +9572,9 @@
         "description": "Enabling this preference and using the default value will suppress a prompt offering to sign in to iCloud.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.gamed": {
     "title": "Parental Controls: Game Center",
@@ -9455,7 +9600,9 @@
         "description": "Set to false to disable multiplayer gaming.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.garageband10": {
     "title": "GarageBand",
@@ -9476,7 +9623,9 @@
         "description": "If enabled, suppresses the welcome screen.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.globalethernet.managed": {
     "title": "802.1X Ethernet: Global",
@@ -9670,7 +9819,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.google-oauth": {
     "title": "Google Account",
@@ -9728,7 +9879,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.iBooksX": {
     "title": "Books/iBooks",
@@ -9749,7 +9902,9 @@
         "description": "This payload also requires an iTunes payload with the \"disableMusicStore\" key set.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.iMovieApp": {
     "title": "iMovie",
@@ -9804,7 +9959,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.iTunes": {
     "title": "iTunes",
@@ -9884,7 +10041,9 @@
         "title": "Restrict TV Shows",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.iWork.Keynote": {
     "title": "Keynote",
@@ -9898,7 +10057,9 @@
         "title": "Suppress iWork Update Messages",
         "type": "date"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.iWork.Numbers": {
     "title": "Numbers",
@@ -9912,7 +10073,9 @@
         "title": "Suppress iWork Update Messages",
         "type": "date"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.iWork.Pages": {
     "title": "Pages",
@@ -9926,7 +10089,9 @@
         "title": "Suppress iWork Update Messages",
         "type": "date"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.icloud.managed": {
     "title": "iCloud Find My",
@@ -9937,7 +10102,9 @@
         "description": "",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.ironwood.support": {
     "title": "Parental Controls: Dictation and Profanity",
@@ -9958,7 +10125,9 @@
         "description": "Set to false to suppress profanity.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.jabber.account": {
     "title": "Messages: Jabber",
@@ -10028,7 +10197,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.ldap.account": {
     "title": "LDAP",
@@ -10127,7 +10298,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.logic10": {
     "title": "Logic Pro X",
@@ -10188,7 +10361,9 @@
         "description": "Configures whether Show Advanced Tools is enabled.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.loginitems.managed": {
     "title": "Login Items",
@@ -10234,7 +10409,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.loginwindow": {
     "title": "Login Window",
@@ -10468,7 +10645,9 @@
         "description": "",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.lom": {
     "title": "Lights Out Management (LOM)",
@@ -10518,7 +10697,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.mDNSResponder": {
     "title": "Bonjour",
@@ -10529,7 +10710,9 @@
         "description": "",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.mail.managed": {
     "title": "Mail",
@@ -10833,7 +11016,9 @@
         "description": "Include this account in recent address syncing",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.mcxloginscripts": {
     "title": "Login Window: Scripts",
@@ -10901,7 +11086,9 @@
         "description": "Run any LogoutHook script in addition to the Logout script",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.mcxprinting": {
     "title": "Printing",
@@ -11043,7 +11230,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.mdm": {
     "title": "MDM",
@@ -11186,7 +11375,9 @@
         "description": "When enabled, the device will you development APNS servers instead of production ones. Must not be enabled when using Apple Push Notification Service certificate issued by the Apple Push Certificate Portal.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.mobiledevice.passwordpolicy": {
     "title": "Passcode",
@@ -11295,7 +11486,9 @@
         "description": "Requires that the passcode contain at least one letter and one number.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.motionapp": {
     "title": "Motion",
@@ -11328,7 +11521,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.networkusagerules": {
     "title": "Network Usage Rules",
@@ -11397,7 +11592,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.notificationsettings": {
     "title": "Notifications",
@@ -11460,7 +11657,8 @@
         }
       }
     },
-    "supervised": true
+    "supervised": true,
+    "unique": true
   },
   "com.apple.osxserver.account": {
     "title": "macOS Server Accounts",
@@ -11528,7 +11726,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.preference.security": {
     "title": "System Preferences: Security",
@@ -11544,7 +11744,9 @@
         "description": "",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.preferences.sharing.SharingPrefsExtension": {
     "title": "Media Sharing",
@@ -11565,7 +11767,9 @@
         "description": "When Media Sharing is enabled, the computer starts a network listening service that shares the contents of the user’s music collection with other users in the same subnet.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.print.add": {
     "title": "Printing: Toolbar of Add Printer Window",
@@ -11635,7 +11839,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.profileRemovalPassword": {
     "title": "Profile Removal",
@@ -11651,7 +11857,8 @@
         }
       }
     },
-    "supervised": true
+    "supervised": true,
+    "unique": true
   },
   "com.apple.proxy.http.global": {
     "title": "Global HTTP Proxy",
@@ -11718,7 +11925,8 @@
         }
       }
     },
-    "supervised": true
+    "supervised": true,
+    "unique": true
   },
   "com.apple.python": {
     "title": "Python",
@@ -11729,7 +11937,9 @@
         "description": "Controls whether warnings are shown to the user when an app or process calls the macOS-bundled Python2 interpreter. This interpreter has been deprecated and will be removed in a future version of macOS.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.relay.managed": {
     "title": "Relay",
@@ -11844,7 +12054,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.screencapture": {
     "title": "Screencapture",
@@ -11864,7 +12076,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.screensaver": {
     "title": "Screensaver",
@@ -11908,7 +12122,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.screensaver.user": {
     "title": "Screensaver User",
@@ -11937,7 +12153,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.secondactiveethernet.managed": {
     "title": "802.1X Ethernet: Second Active",
@@ -12131,7 +12349,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.secondethernet.managed": {
     "title": "802.1X Ethernet: Second",
@@ -12325,7 +12545,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.security": {
     "title": "Security",
@@ -12336,7 +12558,9 @@
         "description": "",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.security.FDERecoveryKeyEscrow": {
     "title": "FileVault Recovery Key Escrow",
@@ -12369,7 +12593,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.security.FDERecoveryRedirect": {
     "title": "FileVault Recovery Key Redirection Payload",
@@ -12393,7 +12619,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.security.acme": {
     "title": "ACME Certificate",
@@ -12534,7 +12762,9 @@
         "description": "This value is a bit field.\n* Bit '0x01' indicates digital signature.\n* Bit '0x10' indicates key agreement.\nThe device requests this key for the certificate that the ACME server issues. The ACME server may override or ignore this field in the certificate it issues.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.security.certificatepreference": {
     "title": "Certificate Preference",
@@ -12556,7 +12786,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.security.certificatetransparency": {
     "title": "Certificate Transparency",
@@ -12601,7 +12833,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.security.firewall": {
     "title": "Firewall",
@@ -12690,7 +12924,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.security.pem": {
     "title": "Certificate PEM",
@@ -12710,7 +12946,9 @@
         "description": "X.509 certificate (.pem, .cer, .crt, etc) for inclusion on device.",
         "type": "data"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.security.pkcs1": {
     "title": "Certificate PKCS1",
@@ -12730,7 +12968,9 @@
         "description": "X.509 certificate (.cer, .crt, etc) for inclusion on device.",
         "type": "data"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.security.pkcs12": {
     "title": "Certificate PKCS12",
@@ -12769,7 +13009,9 @@
         "description": "X.509 certificate (.p12) for inclusion on device.",
         "type": "data"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.security.root": {
     "title": "Certificate Root",
@@ -12789,7 +13031,9 @@
         "description": "X.509 Root certificate (.cer, .crt, etc) for inclusion on device.",
         "type": "data"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.security.scep": {
     "title": "SCEP",
@@ -12944,7 +13188,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.security.smartcard": {
     "title": "SmartCard",
@@ -12985,7 +13231,9 @@
         "description": "If enabled, enables the screen saver when the SmartCard is removed.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.servicemanagement": {
     "title": "Service Management - Managed Login Items",
@@ -13039,7 +13287,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.shareddeviceconfiguration": {
     "title": "Lock Screen Message",
@@ -13073,7 +13323,8 @@
         }
       }
     },
-    "supervised": true
+    "supervised": true,
+    "unique": true
   },
   "com.apple.sharingd": {
     "title": "AirDrop Discoverability (macOS)",
@@ -13101,7 +13352,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.sso": {
     "title": "Single Sign-On",
@@ -13177,7 +13430,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.subscribedcalendar.account": {
     "title": "Subscribed Calendars",
@@ -13224,7 +13479,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.syspolicy.kernel-extension-policy": {
     "title": "Kernel Extension Policy",
@@ -13283,7 +13540,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.system-extension-policy": {
     "title": "System Extension Policy",
@@ -13404,7 +13663,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.system.logging": {
     "title": "System Logging",
@@ -13422,7 +13683,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.systemmigration": {
     "title": "System Migration",
@@ -13489,7 +13752,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.systempolicy.control": {
     "title": "System Policy: Control",
@@ -13505,7 +13770,9 @@
         "description": "If the key is present and has a value of YES, Gatekeeper is enabled. If the key is present and has a value of NO, Gatekeeper is disabled.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.systempolicy.managed": {
     "title": "System Policy: Managed",
@@ -13516,7 +13783,9 @@
         "description": "If YES, the Finder's contextual menu item will be disabled.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.systempreferences": {
     "title": "System Preferences",
@@ -14448,7 +14717,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.systemuiserver": {
     "title": "Allowed Media and Menu Bar Extras",
@@ -15621,7 +15892,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.thirdactiveethernet.managed": {
     "title": "802.1X Ethernet: Third Active",
@@ -15815,7 +16088,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.thirdethernet.managed": {
     "title": "802.1X Ethernet: Third",
@@ -16009,7 +16284,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.timed": {
     "title": "macOS Time Synchronization",
@@ -16020,7 +16297,9 @@
         "description": "If enabled, ensures the uniformity of time stamps for information systems with multiple system clocks and systems connected over a network.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.touristd": {
     "title": "New to Mac / Tours",
@@ -16364,7 +16643,9 @@
         "description": "https://help.apple.com/macOS/mojave/macbook-pro",
         "type": "date"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.tvremote": {
     "title": "TV Remote",
@@ -16422,7 +16703,8 @@
         }
       }
     },
-    "supervised": true
+    "supervised": true,
+    "unique": true
   },
   "com.apple.universalaccess": {
     "title": "Accessibility",
@@ -16543,7 +16825,9 @@
         "description": "Turns on \"Invert colors\" in Display options",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.webClip.managed": {
     "title": "Web Clips",
@@ -16601,7 +16885,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.webcontent-filter": {
     "title": "Web Content Filter",
@@ -16882,7 +17168,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.wifi.managed": {
     "title": "Wi-Fi",
@@ -17386,7 +17674,9 @@
         "description": "If set, force a non-default authentication method. (if YES, uses certificate from PayloadCertificateUUID).",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.apple.xsan": {
     "title": "Xsan",
@@ -17437,7 +17727,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.apple.xsan.preferences": {
     "title": "Xsan Preferences",
@@ -17495,7 +17787,9 @@
         "title": "Use Distributed LAN Client (DLC)",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.barebones.bbedit": {
     "title": "BBEdit",
@@ -18074,7 +18368,9 @@
         "description": "BBEdit attempts to move windows as little as possible when you zoom them. To override this and let BBEdit place the window in the upper left-hand corner of the screen, set this to 'false'.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.brave.Browser": {
     "title": "Brave Browser",
@@ -21104,7 +21400,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.citrix.receiver.nomas": {
     "title": "Citrix Receiver",
@@ -21243,7 +21541,9 @@
         "description": "",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.crowdstrike.falcon": {
     "title": "CrowdStrike Falcon",
@@ -21276,7 +21576,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.fxfactory.FxFactory": {
     "title": "FxFactory",
@@ -21312,7 +21614,9 @@
         "description": "Setting this to true, FxFactory will send a notification when it finds outdated software on your system that may interfere with the operation of its products",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.github.ants-framework": {
     "title": "ANTS Framework",
@@ -21523,7 +21827,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.github.macadmins.Nudge": {
     "title": "Nudge",
@@ -22028,7 +22334,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.github.mpanighetti.install-or-defer": {
     "title": "Install or Defer",
@@ -22125,7 +22433,9 @@
         "description": "The hour that a workday starts in your organization.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.github.salopensource.sal": {
     "title": "Sal",
@@ -22209,7 +22519,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.google.Chrome": {
     "title": "Google Chrome",
@@ -25160,7 +25472,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.google.Keystone": {
     "title": "Google Software Updates",
@@ -25308,7 +25622,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.google.drivefs.settings": {
     "title": "Google Drive for desktop",
@@ -25438,7 +25754,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.google.santa": {
     "title": "Santa",
@@ -25799,7 +26117,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.grahamgilbert.crypt": {
     "title": "Crypt",
@@ -25868,7 +26188,9 @@
         "description": "If the recovery key plist is still present on the disk, validates the recovery key. If the key fails validation, the plist is removed so it can be regenerated on next login.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.hjuutilainen.MunkiAdmin": {
     "title": "MunkiAdmin",
@@ -26169,7 +26491,9 @@
         "description": "Determines what MunkiAdmin's startup behavior is. Leave unspecified or set to integer 1 for the default behavior, which is \"Prompt to Select a Repository.\"",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.hjuutilainen.bigsurblocker": {
     "title": "Big Sur Blocker",
@@ -26206,7 +26530,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.jamf.connect.login": {
     "title": "Jamf Connect Login (OIDC)",
@@ -26508,7 +26834,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.jamf.connect.shares": {
     "title": "Jamf Connect Shares",
@@ -26645,7 +26973,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.jamf.connect.sync": {
     "title": "Jamf Connect Sync",
@@ -27205,7 +27535,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.jamf.connect.verify": {
     "title": "Jamf Connect Verify",
@@ -27603,7 +27935,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.jamf.trust": {
     "title": "Jamf Trust",
@@ -27638,7 +27972,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.jelockwood.pinpoint": {
     "title": "Pinpoint",
@@ -27673,7 +28009,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.keepersecurity.passwordmanager": {
     "title": "Keeper Security Password Manager",
@@ -27724,7 +28062,9 @@
         "description": "Routes the user to their default web browser for SSO authentication instead of using a popup window.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.macpaw.site.theunarchiver": {
     "title": "The Unarchiver (Standalone)",
@@ -27740,7 +28080,9 @@
         "description": "Enable this option to automatically accept the Privacy Policy and Terms of Service for users.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.mcneel.rhinoceros": {
     "title": "Rhinoceros",
@@ -27784,7 +28126,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.Edge": {
     "title": "Microsoft Edge",
@@ -30179,7 +30523,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.Excel": {
     "title": "Microsoft Excel",
@@ -30240,7 +30586,9 @@
         "description": "Controls the original \"What's New\" dialog and Office 365 activation prompt on first launch. Replaced by 'OfficeAutoSignIn' in the main Office profile starting in version 16.17 and should not be used for Office 2019.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.Office365ServiceV2": {
     "title": "Microsoft Office 365 Service",
@@ -30251,7 +30599,9 @@
         "description": "Set to false to send minimal heartbeat data, no application usage, and no environment details.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.OneDrive": {
     "title": "Microsoft OneDrive",
@@ -30484,7 +30834,9 @@
         "description": "Upload throughput in KB/sec that the sync client can use.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.OneDriveUpdater": {
     "title": "Microsoft OneDrive Updater",
@@ -30499,7 +30851,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.Outlook": {
     "title": "Microsoft Outlook",
@@ -30676,7 +31030,9 @@
         "description": "Disable the \"Introducing groups in Outlook\" dialog.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.Powerpoint": {
     "title": "Microsoft PowerPoint",
@@ -30732,7 +31088,9 @@
         "description": "Controls the original \"What's New\" dialog and Office 365 activation prompt on first launch. Replaced by 'OfficeAutoSignIn' in the main Office profile starting in version 16.17 and should not be used for Office 2019.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.SkypeForBusiness": {
     "title": "Skype for Business",
@@ -30842,7 +31200,9 @@
         "description": "Warns the user when dialing an emergency number from an unknown location.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.Word": {
     "title": "Microsoft Word",
@@ -30903,7 +31263,9 @@
         "description": "Controls the original \"What's New\" dialog and Office 365 activation prompt on first launch. Replaced by 'OfficeAutoSignIn' in the main Office profile starting in version 16.17 and should not be used for Office 2019.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.autoupdate.fba": {
     "title": "Microsoft AutoUpdate FBA",
@@ -30914,7 +31276,9 @@
         "description": "Controls wether diagnostic data transmission is on or off.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.autoupdate2": {
     "title": "Microsoft AutoUpdate",
@@ -31922,7 +32286,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.errorreporting": {
     "title": "Microsoft Error Reporting",
@@ -31943,7 +32309,9 @@
         "description": "Disable upload of telemetry data in Crash Reports.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.office": {
     "title": "Microsoft Office",
@@ -32155,7 +32523,9 @@
         "description": "Increase logging levels for authentication requests. Enable Minimum Severity (msoridDefaultMinimumSeverity) option if this key is enabled.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.onenote.mac": {
     "title": "Microsoft OneNote",
@@ -32206,7 +32576,9 @@
         "description": "Controls the original \"What's New\" dialog and Office 365 activation prompt on first launch. Replaced by 'OfficeAutoSignIn' in the main Office profile starting in version 16.17 and should not be used for Office 2019.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.rdc.macos": {
     "title": "Microsoft Remote Desktop",
@@ -32245,7 +32617,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.microsoft.wdav": {
     "title": "Microsoft Defender for Endpoint",
@@ -32933,7 +33307,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.papercut.printdeploy.client": {
     "title": "PaperCut Print Deploy",
@@ -32972,7 +33348,9 @@
         "title": "Strict SSL",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.pratikkumar.airserver-mac": {
     "title": "AirServer",
@@ -33101,7 +33479,9 @@
         "description": "Use this setting to toggle between running AirServer in the Dock and in the menu bar.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.profilecreator.developer.PopUpButton": {
     "title": "Developer: PopUpButton",
@@ -33125,7 +33505,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.profilecreator.developer.TextFieldFloat": {
     "title": "Developer: TextField Float",
@@ -33190,7 +33572,9 @@
         "description": "TextFieldFloat with a min value of: 1 and max value of: 99",
         "type": "float"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.profilecreator.developer.TextFieldInteger": {
     "title": "Developer: TextField Integer",
@@ -33255,7 +33639,9 @@
         "description": "TextFieldInteger with a min value of: 1 and max value of: 99",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.profilecreator.developer.deprecated": {
     "title": "Developer: Deprecated",
@@ -33279,7 +33665,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.profilecreator.developer.exclude": {
     "title": "Developer: Exclude",
@@ -33330,7 +33718,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.profilecreator.developer.note": {
     "title": "Developer: Note",
@@ -33345,7 +33735,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.profilecreator.developer.require": {
     "title": "Developer: Require",
@@ -33450,7 +33842,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.profilecreator.developer.slider": {
     "title": "Developer: Slider",
@@ -33501,7 +33895,9 @@
         "description": "Slider with a range list of twenty items: [1.0...1.19] with too long titles.",
         "type": "float"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.profilecreator.developer.substitution_variables": {
     "title": "Developer: Substitution Variables",
@@ -33516,7 +33912,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.profilecreator.developer.tableview": {
     "title": "Developer: TableView",
@@ -33636,7 +34034,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.profilecreator.developer.textfield": {
     "title": "Developer: TextField",
@@ -33740,7 +34140,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.secondsonconsulting.baseline": {
     "title": "Baseline by Second Son Consulting",
@@ -34087,7 +34489,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.secondsonconsulting.renew": {
     "title": "Renew - Second Son Consulting",
@@ -34310,7 +34714,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.skype.skype": {
     "title": "Skype",
@@ -34326,7 +34732,9 @@
         "description": "Surpress Upgrade Notification.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.sqwarq.DetectX-Swift": {
     "title": "DetectX Swift",
@@ -34463,7 +34871,9 @@
           ]
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.tinyspeck.slackmacgap": {
     "title": "Slack",
@@ -34587,7 +34997,9 @@
         "description": "When true, disables Slack's built-in automatic update mechanism. Useful if you update Slack using a tool like Munki.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.trusourcelabs.NoMAD": {
     "title": "NoMAD",
@@ -35342,7 +35754,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.twingate.macos": {
     "title": "Twingate",
@@ -35372,7 +35786,9 @@
         "description": "Starts the Twingate Client upon user login",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.twocanoes.xcreds": {
     "title": "XCreds",
@@ -35995,7 +36411,9 @@
         "description": "When cloud password is changed and the local keychain password and local user account needs to be changed, a verification dialog can be shown to verify the password. Default value: true",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "com.unity3d.UnityEditor5.x": {
     "title": "Unity Editor",
@@ -36011,7 +36429,9 @@
         "description": "Check to open the previously opened project at launch",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "com.vpntracker.365mac": {
     "title": "VPN Tracker",
@@ -36089,7 +36509,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "corp.sap.privileges": {
     "title": "SAP Privileges",
@@ -36224,7 +36646,9 @@
         "description": "Requires authentication before using Privileges.app. If set to true, the logged-in user is prompted to authenticate via Touch ID or by entering their account password.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "cx.c3.theunarchiver": {
     "title": "The Unarchiver (MAS)",
@@ -36235,7 +36659,9 @@
         "description": "Suppress \"Welcome to The Unarchiver!\" slide.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "de.fau.rrze.NetworkShareMounter": {
     "title": "Network Share Mounter",
@@ -36340,7 +36766,9 @@
         "description": "Configure a help URL to help users interact with the application.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "edu.ncsu.confboard": {
     "title": "ConfBoard",
@@ -36384,7 +36812,9 @@
         "description": "Base URL is a JSON file or feed not text list of URIs.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "edu.psu.macoslaps": {
     "title": "macOS LAPS",
@@ -36509,7 +36939,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "fr.handbrake.HandBrake": {
     "title": "Handbrake",
@@ -36544,7 +36976,9 @@
         "description": "Controls the automatic update check interval. The default is 1 day (86400 seconds). Setting to 0 disables updates.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "io.tailscale.ipn.macos": {
     "title": "Tailscale (MAS)",
@@ -36895,7 +37329,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "io.tailscale.ipn.macsys": {
     "title": "Tailscale (Standalone)",
@@ -37296,7 +37732,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": false
   },
   "loginwindow": {
     "title": "Login Window: Login Items",
@@ -37334,7 +37772,9 @@
         "description": "Prevent users from disabling login items launching using the Shift key.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "menu.nomad.NoMADPro": {
     "title": "NoMAD Pro",
@@ -37906,7 +38346,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "menu.nomad.login.ad": {
     "title": "NoMAD Login",
@@ -38595,7 +39037,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "menu.nomad.login.okta": {
     "title": "NoMAD Login+",
@@ -38769,7 +39213,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "menu.nomad.shares": {
     "title": "NoMAD Shares",
@@ -38919,7 +39365,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "net.glencode.Particulars": {
     "title": "Particulars",
@@ -39108,7 +39556,9 @@
         "description": "Sets the theme of desktop system information. Each theme has a corresponding number.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "net.glencode.Particulars.Widget": {
     "title": "Particulars Today Extension (Widget)",
@@ -39159,7 +39609,9 @@
         "description": "Use this preference to have Particulars display subnet masks in the short CIDR (Classless Inter-domain Routing) notation. For example, 255.255.254.0 will show as /23.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "nl.root3.support": {
     "title": "SupportApp by Root3",
@@ -39999,7 +40451,9 @@
         "description": "Days of uptime after which a notification badge is shown, disabled by default",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "org.mozilla.firefox": {
     "title": "Firefox",
@@ -42918,7 +43372,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "org.sveinbjorn.Platypus": {
     "title": "Platypus",
@@ -42993,7 +43449,9 @@
         "description": "When running software update checks, submit anonymous computer profile data to Platypus.",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "org.videolan.VLC": {
     "title": "VLC",
@@ -43028,7 +43486,9 @@
         "description": "Controls the automatic update check interval. The default is 1 day (86400 seconds). Setting to 0 disables updates.",
         "type": "integer"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "uk.co.dataJAR.jamJAR": {
     "title": "jamJAR",
@@ -43152,7 +43612,9 @@
           }
         }
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   },
   "us.zoom.config": {
     "title": "Zoom",
@@ -44134,6 +44596,8 @@
         "description": "Disable sending video from the Zoom Client",
         "type": "boolean"
       }
-    }
+    },
+    "supervised": false,
+    "unique": true
   }
 }

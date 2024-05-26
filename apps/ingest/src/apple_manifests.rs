@@ -10,8 +10,8 @@ struct AppleProfilePayload {
     title: String,
     description: String,
     properties: BTreeMap<String, Property>,
-    #[serde(skip_serializing_if = "is_false")]
     supervised: bool,
+    unique: bool,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -171,8 +171,9 @@ pub fn generate_bindings() {
         let profile = AppleProfilePayload {
             title: manifest.pfm_title,
             description: manifest.pfm_description,
-            properties,
+            unique: manifest.pfm_unique.unwrap_or_default(),
             supervised: manifest.pfm_supervised.unwrap_or_default(),
+            properties,
         };
 
         payloads.0.insert(manifest.pfm_domain, profile);

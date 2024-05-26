@@ -9,7 +9,7 @@ export function createPolicyComposerController(platform: PolicyPlatform) {
 		windows: Record<string, Record<string, { enabled: boolean; data: any }>>;
 		apple: Record<
 			string,
-			{ enabled: boolean; data: Record<string, any>; open?: boolean }
+			{ enabled: boolean; data: Array<Record<string, any>>; open: boolean }
 		>;
 	}>({ platform, windows: {}, apple: {} });
 
