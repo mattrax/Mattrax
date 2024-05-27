@@ -10,7 +10,7 @@ import {
 } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { trpc } from "~/lib";
-import { useOrgSlug } from "../../o.[orgSlug]";
+import { useOrgSlug } from "../ctx";
 
 export function CreateTenantDialog(
 	props: {

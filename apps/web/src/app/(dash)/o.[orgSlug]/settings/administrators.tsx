@@ -14,10 +14,9 @@ import {
 } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { trpc } from "~/lib";
-import { AuthContext, useAuth } from "~c/AuthContext";
 import { ConfirmDialog } from "~c/ConfirmDialog";
-import { useOrgSlug } from "../../o.[orgSlug]";
-import { OrgContext, useOrg } from "../Context";
+import { useOrg, useOrgSlug } from "../ctx";
+import { useAuth } from "../../utils";
 
 export const route = {
 	load: ({ params }) => {
@@ -54,110 +53,105 @@ export default function Page() {
 			<div class="flex flex-col gap-4">
 				<InviteAdminCard />
 				<Suspense>
-					<AuthContext>
-						<OrgContext>
-							<ConfirmDialog>
-								{(confirm) => {
-									const auth = useAuth();
-									const org = useOrg();
+					<ConfirmDialog>
+						{(confirm) => {
+							const account = useAuth();
+							const org = useOrg();
 
-									return (
-										<ul class="rounded border border-gray-200 divide-y divide-gray-200">
-											<For each={invites.data}>
-												{(invite) => (
-													<li class="p-4 flex flex-row justify-between">
-														<div class="flex-1 flex flex-row space-x-4 items-center">
-															<div class="flex flex-col text-sm">
-																<span class="font-semibold text-yellow-700">
-																	Pending Invitation
-																</span>
-																<span class="text-gray-500">
-																	{invite.email}
-																</span>
-															</div>
-														</div>
+							return (
+								<ul class="rounded border border-gray-200 divide-y divide-gray-200">
+									<For each={invites.data}>
+										{(invite) => (
+											<li class="p-4 flex flex-row justify-between">
+												<div class="flex-1 flex flex-row space-x-4 items-center">
+													<div class="flex flex-col text-sm">
+														<span class="font-semibold text-yellow-700">
+															Pending Invitation
+														</span>
+														<span class="text-gray-500">{invite.email}</span>
+													</div>
+												</div>
+												<div>
+													{account.data?.id === org()?.ownerId && (
+														<Button
+															variant="destructive"
+															size="sm"
+															onClick={() => {
+																confirm({
+																	title: "Remove Invite",
+																	description: () => (
+																		<>
+																			Are you sure you want to remove the invite
+																			for <b>{invite.email}</b>?
+																		</>
+																	),
+																	action: "Remove",
+																	onConfirm: async () =>
+																		await removeInvite.mutateAsync({
+																			orgSlug: orgSlug(),
+																			email: invite.email,
+																		}),
+																});
+															}}
+														>
+															Remove
+														</Button>
+													)}
+												</div>
+											</li>
+										)}
+									</For>
+									<For each={administrators.data}>
+										{(admin) => (
+											<li class="p-4 flex flex-row justify-between">
+												<div class="flex-1 flex flex-row space-x-4 items-center">
+													<div class="flex flex-col text-sm">
+														<span class="font-semibold">{admin.name}</span>
+														<span class="text-gray-500">{admin.email}</span>
+													</div>
+													{admin.isOwner && (
 														<div>
-															{auth().id === org().ownerId && (
-																<Button
-																	variant="destructive"
-																	size="sm"
-																	onClick={() => {
-																		confirm({
-																			title: "Remove Invite",
-																			description: () => (
-																				<>
-																					Are you sure you want to remove the
-																					invite for <b>{invite.email}</b>?
-																				</>
-																			),
-																			action: "Remove",
-																			onConfirm: async () =>
-																				await removeInvite.mutateAsync({
-																					orgSlug: orgSlug(),
-																					email: invite.email,
-																				}),
-																		});
-																	}}
-																>
-																	Remove
-																</Button>
-															)}
+															<Badge>Owner</Badge>
 														</div>
-													</li>
-												)}
-											</For>
-											<For each={administrators.data}>
-												{(admin) => (
-													<li class="p-4 flex flex-row justify-between">
-														<div class="flex-1 flex flex-row space-x-4 items-center">
-															<div class="flex flex-col text-sm">
-																<span class="font-semibold">{admin.name}</span>
-																<span class="text-gray-500">{admin.email}</span>
-															</div>
-															{admin.isOwner && (
-																<div>
-																	<Badge>Owner</Badge>
-																</div>
-															)}
-														</div>
-														<div>
-															{auth().id === org().ownerId &&
-																!admin.isOwner && (
-																	<Button
-																		variant="destructive"
-																		size="sm"
-																		onClick={() => {
-																			confirm({
-																				title: "Remove Administrator",
-																				description: () => (
-																					<>
-																						Are you sure you want to remove{" "}
-																						<b>{admin.email}</b> from this
-																						tenant's administrators?
-																					</>
-																				),
-																				action: "Remove",
-																				onConfirm: async () =>
-																					await removeAdmin.mutateAsync({
-																						orgSlug: org().slug,
-																						adminId: admin.id,
-																					}),
-																			});
-																		}}
-																	>
-																		Remove
-																	</Button>
-																)}
-														</div>
-													</li>
-												)}
-											</For>
-										</ul>
-									);
-								}}
-							</ConfirmDialog>
-						</OrgContext>
-					</AuthContext>
+													)}
+												</div>
+												<div>
+													{account.data?.id === org()?.ownerId &&
+														!admin.isOwner && (
+															<Button
+																variant="destructive"
+																size="sm"
+																disabled={org.query.isPending}
+																onClick={() => {
+																	confirm({
+																		title: "Remove Administrator",
+																		description: () => (
+																			<>
+																				Are you sure you want to remove{" "}
+																				<b>{admin.email}</b> from this tenant's
+																				administrators?
+																			</>
+																		),
+																		action: "Remove",
+																		onConfirm: async () =>
+																			await removeAdmin.mutateAsync({
+																				orgSlug: org()!.slug,
+																				adminId: admin.id,
+																			}),
+																	});
+																}}
+															>
+																Remove
+															</Button>
+														)}
+												</div>
+											</li>
+										)}
+									</For>
+								</ul>
+							);
+						}}
+					</ConfirmDialog>
 				</Suspense>
 			</div>
 		</div>

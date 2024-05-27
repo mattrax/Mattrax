@@ -20,9 +20,9 @@ import { z } from "zod";
 import { type MattraxCache, type TableData, useCachedQueryData } from "~/cache";
 import { PageLayout } from "~/components/PageLayout";
 import { trpc } from "~/lib";
-import { useOrgSlug } from "../o.[orgSlug]";
 import { cachedOrgs } from "../utils";
 import { cachedTenantsForOrg } from "./utils";
+import { useOrgSlug } from "./ctx";
 
 export const route = {
 	load: ({ params }) =>

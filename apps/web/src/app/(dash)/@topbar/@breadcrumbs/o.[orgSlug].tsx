@@ -5,7 +5,7 @@ import { trpc } from "~/lib";
 import { cachedOrgs } from "../../utils";
 import { Breadcrumb } from "./Breadcrumb";
 import { MultiSwitcher } from "./MultiSwitcher";
-import { useOrgSlug } from "../../o.[orgSlug]";
+import { useOrgSlug } from "../../o.[orgSlug]/ctx";
 
 export default function (props: RouteSectionProps) {
 	const orgSlug = useOrgSlug();

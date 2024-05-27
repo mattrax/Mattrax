@@ -37,8 +37,8 @@ import {
 
 import LogoImg from "~/assets/MATTRAX.png";
 import { getInitials, trpc } from "~/lib";
-import { AuthContext, useAuth } from "~c/AuthContext";
 import classes from "./@topbar/NavIndicator.module.css";
+import { useAuth } from "./utils";
 
 export default function (
 	props: RouteSectionProps<never, "navItems" | "breadcrumbs">,
@@ -192,7 +192,7 @@ function ProfileDropdown() {
 		onSuccess: () => start(() => navigate("/login")),
 	}));
 	// const { items } = useNavItemsContext();
-	const user = trpc.auth.me.createQuery();
+	const account = useAuth();
 
 	return (
 		<Suspense
@@ -202,33 +202,33 @@ function ProfileDropdown() {
 				</Avatar>
 			}
 		>
-			<AuthContext>
-				<DropdownMenu>
-					<DropdownMenuTrigger as={Avatar}>
-						{/* TODO: Properly hook this up + Gravatar support */}
-						{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
-						<AvatarFallback>{getInitials(useAuth()().name)}</AvatarFallback>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent>
-						<DropdownMenuLabel>{useAuth()().email}</DropdownMenuLabel>
-						<DropdownMenuSeparator />
-						<DropdownMenuItem as={A} href="account">
-							Account
+			<DropdownMenu>
+				<DropdownMenuTrigger as={Avatar}>
+					{/* TODO: Properly hook this up + Gravatar support */}
+					{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
+					<AvatarFallback>
+						{getInitials(account.data?.name || "")}
+					</AvatarFallback>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent>
+					<DropdownMenuLabel>{account.data?.email}</DropdownMenuLabel>
+					<DropdownMenuSeparator />
+					<DropdownMenuItem as={A} href="account">
+						Account
+					</DropdownMenuItem>
+					{account.data?.superadmin && (
+						<DropdownMenuItem as={A} href="settings">
+							Settings{" "}
+							<span class="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
+								Superadmin
+							</span>
 						</DropdownMenuItem>
-						{user.data?.superadmin && (
-							<DropdownMenuItem as={A} href="settings">
-								Settings{" "}
-								<span class="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
-									Superadmin
-								</span>
-							</DropdownMenuItem>
-						)}
-						<DropdownMenuItem onClick={() => logout.mutate()}>
-							Logout
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
-			</AuthContext>
+					)}
+					<DropdownMenuItem onClick={() => logout.mutate()}>
+						Logout
+					</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
 		</Suspense>
 	);
 }
