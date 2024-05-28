@@ -21,20 +21,26 @@ module.exports = {
 					DEFAULT: "#262626",
 					secondary: "#171717",
 				},
+				corvu: {
+					bg: "#f3f1fe",
+					100: "#e6e2fd",
+					200: "#d4cbfb",
+					300: "#bcacf6",
+					400: "#a888f1",
+					text: "#180f24",
+				},
 			},
-			// START: input-otp
+			animation: {
+				"caret-blink": "caret-blink 1.25s ease-out infinite",
+			},
 			keyframes: {
 				"caret-blink": {
 					"0%,70%,100%": { opacity: "1" },
 					"20%,50%": { opacity: "0" },
 				},
 			},
-			animation: {
-				"caret-blink": "caret-blink 1.2s ease-out infinite",
-			},
-			// END: input-otp
 		},
 	},
-	plugins: [require("@kobalte/tailwindcss")],
+	plugins: [require("@kobalte/tailwindcss"), require("@corvu/tailwind")],
 	presets: [require("./ui.preset.js")],
 };
