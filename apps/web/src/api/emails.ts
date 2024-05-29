@@ -1,15 +1,17 @@
 import type { RequestSchema } from "@mattrax/email";
 import { AwsClient } from "aws4fetch";
-import { env } from "~/env";
+import { env, withEnv } from "~/env";
 
-const aws =
-	env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
-		? new AwsClient({
-				region: "us-east-1",
-				accessKeyId: env.AWS_ACCESS_KEY_ID,
-				secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-			})
-		: undefined;
+const aws = withEnv(() => ({
+	client:
+		env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
+			? new AwsClient({
+					region: "us-east-1",
+					accessKeyId: env.AWS_ACCESS_KEY_ID,
+					secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+				})
+			: undefined,
+}));
 
 export async function sendEmail(args: RequestSchema) {
 	if (env.FROM_ADDRESS === "console") {
@@ -17,7 +19,7 @@ export async function sendEmail(args: RequestSchema) {
 		return;
 	}
 
-	if (!aws) {
+	if (!aws.client) {
 		const msg = "AWS client not setup but 'FROM_ADDRESS' provided!";
 		console.error(msg);
 		throw new Error(msg);
@@ -26,7 +28,7 @@ export async function sendEmail(args: RequestSchema) {
 	// We lazy load to keep React + React email outta the main bundle
 	await (await import("@mattrax/email").then((mod) => mod._sender))(
 		args,
-		aws,
+		aws.client,
 		env.FROM_ADDRESS,
 	);
 }
