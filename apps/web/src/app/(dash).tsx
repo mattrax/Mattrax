@@ -1,12 +1,10 @@
-import {
-	type RouteSectionProps,
-	useMatches,
-	useNavigate,
-} from "@solidjs/router";
+import { type RouteSectionProps, useNavigate } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { parse } from "cookie-es";
-import { onMount, startTransition } from "solid-js";
+import { Suspense, lazy, onMount, startTransition } from "solid-js";
 import { isServer } from "solid-js/web";
+
+const CommandPalette = lazy(() => import("~/components/CommandPalette"));
 
 import { trpc } from "~/lib";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
@@ -19,8 +17,6 @@ export const route = {
 
 export default function Layout(props: RouteSectionProps<never, "topbar">) {
 	const navigate = useNavigate();
-
-	const matches = useMatches();
 
 	onMount(async () => {
 		if (!import.meta.env.DEV) {
@@ -59,6 +55,9 @@ export default function Layout(props: RouteSectionProps<never, "topbar">) {
 		<MErrorBoundary>
 			{props.slots.topbar}
 			{props.children}
+			<Suspense>
+				<CommandPalette />
+			</Suspense>
 		</MErrorBoundary>
 	);
 }
