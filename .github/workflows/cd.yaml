@@ -15,6 +15,8 @@ env:
   CLOUDFLARE_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
   CLOUDFLARE_EMAIL: oscar@mattrax.app
   CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
+  # Used when building landing
+  VITE_MATTRAX_CLOUD_ORIGIN: https://cloud.mattrax.app
 
 jobs:
   sst:
@@ -58,14 +60,17 @@ jobs:
           OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
           OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
 
-  landing:
-    name: Landing
+  build:
+    strategy:
+      matrix:
+        projects:
+          - landing
+          - docs
+          - web
+    name: Build ${{ matrix.projects }}
     runs-on: ubuntu-latest
     environment:
-      name: landing
-      url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
-    needs: [sst]
-    if: ${{ !failure() && !cancelled() }}
+      name: ${{ matrix.projects.name }}
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -78,90 +83,53 @@ jobs:
         run: pnpm i
       
       - name: Build
-        env:
-          NITRO_PRESET: cloudflare_pages
-          VITE_MATTRAX_CLOUD_ORIGIN: https://cloud.mattrax.app
-        run: pnpm landing build
+        run: pnpm run ${{ matrix.projects }} cbuild
 
-      - name: Deploy
-        run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-landing | tee -a BUILD_OUTPUT
-      
-      - name: Export URL
-        id: result
-        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
+      - name: Upload result
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.projects }}-dist
+          path: apps/${{ matrix.projects }}/dist
 
-  docs:
-    name: Docs
+  deploy:
+    strategy:
+      matrix:
+        projects:
+          - { name: landing, project: mattrax-landing }
+          - { name: docs, project: mattrax-docs }
+          - { name: web, project: mattrax }
+    name: Deploy ${{ matrix.projects.name }}
     runs-on: ubuntu-latest
-    environment:
-      name: docs
-      url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
-    needs: [sst]
+    needs:
+      - sst
+      # This will wait for *all* projects to build, not just the one we care about.
+      # GitHub don't provide a better solution :(
+      - build
+    # Run regardless of if previous steps were skipped
     if: ${{ !failure() && !cancelled() }}
+    environment:
+      name: ${{ matrix.projects.name }}
+      url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
     steps:
+      # We pull this so Wrangler can link the deploy to the commit/branch
       - name: Git clone the repository
         uses: actions/checkout@v4
-
+      
       - uses: pnpm/action-setup@v4
         with:
           version: latest
 
-      - name: Install
-        run: pnpm i
-      
-      - name: Build
-        env:
-          NITRO_PRESET: cloudflare_pages
-          VITE_MATTRAX_CLOUD_ORIGIN: https://cloud.mattrax.app
-        run: pnpm landing build
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.projects.name }}-dist
+          path: dist
 
       - name: Deploy
-        run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-docs | tee -a BUILD_OUTPUT
-      
-      - name: Export URL
-        id: result
-        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
+        run: |
+          set -o pipefail
+          pnpm dlx wrangler pages deploy dist/ --project-name ${{ matrix.projects.project }} 2>&1 | tee -a BUILD_OUTPUT
 
-  web:
-    name: Web
-    runs-on: ubuntu-latest
-    environment:
-      name: web
-      url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
-    needs: [sst]
-    if: ${{ !failure() && !cancelled() }}
-    steps:
-      - name: Git clone the repository
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: "arn:aws:iam::101829795063:role/mattrax-gh-actions"
-          aws-region: us-east-1
-          role-session-name: mattrax-sst-workflow
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
-      - name: Install SST
-        run: curl -fsSL https://ion.sst.dev/install | bash
-
-      - name: Install
-        run: pnpm i
-
-      - name: Pull secrets
-        run: pnpm infra secret list --stage brendonovich > .env
-      
-      - name: Build
-        env:
-          NITRO_PRESET: cloudflare_pages
-        run: pnpm web build
-
-      - name: Deploy
-        run: pnpm web exec wrangler pages deploy dist/ --project-name mattrax | tee -a BUILD_OUTPUT
-      
-      - name: Export URL
+      - name: Export `DEPLOYMENT_URL`
         id: result
         run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT

@@ -67,7 +67,6 @@ export default defineConfig({
 					"X-Frame-Options": "DENY",
 					"X-Content-Type-Options": "nosniff",
 					"Referrer-Policy": "strict-origin-when-cross-origin",
-					"Permissions-Policy": "()",
 					"Strict-Transport-Security":
 						"max-age=31536000; includeSubDomains; preload",
 					// TODO: Setup a proper content security policy
@@ -94,27 +93,4 @@ export default defineConfig({
 			},
 		},
 	},
-});
-
-process.on("exit", () => {
-	const workerCode = path.join("dist", "_worker.js", "chunks", "runtime.mjs");
-
-	if (!fs.existsSync(workerCode)) {
-		console.warn("Skipping Cloudflare env patching...");
-		return;
-	}
-
-	// Cloudflare doesn't allow access to env outside the handler.
-	// So we ship the env with the worker code.
-	fs.writeFileSync(
-		path.join(workerCode, "../env.mjs"),
-		`const process={env:${JSON.stringify(
-			process.env,
-		)}};globalThis.process=process;`,
-	);
-
-	fs.writeFileSync(
-		workerCode,
-		`import "./env.mjs";\n${fs.readFileSync(workerCode)}`,
-	);
 });

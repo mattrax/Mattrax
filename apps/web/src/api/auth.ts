@@ -4,29 +4,31 @@ import { Lucia } from "lucia";
 import { appendResponseHeader, getCookie, setCookie } from "vinxi/server";
 
 import { accounts, db, sessions } from "~/db";
-import { env } from "~/env";
+import { withEnv } from "~/env";
 import type { Features } from "~/lib/featureFlags";
 
-const adapter = new DrizzleMySQLAdapter(db, sessions, accounts);
+export const lucia = withEnv(() => {
+	const adapter = new DrizzleMySQLAdapter(db, sessions, accounts);
 
-export const lucia = new Lucia(adapter, {
-	sessionCookie: {
-		attributes: {
-			// set to `true` when using HTTPS
-			secure: env.NODE_ENV === "production",
+	return new Lucia(adapter, {
+		sessionCookie: {
+			attributes: {
+				// set to `true` when using HTTPS
+				secure: import.meta.env.PROD,
+			},
 		},
-	},
-	getUserAttributes: (data) => ({
-		pk: data.pk,
-		id: data.id,
-		email: data.email,
-		name: data.name,
-		features: data.features,
-	}),
-	getSessionAttributes: (data) => ({
-		userAgent: data.userAgent,
-		location: data.location,
-	}),
+		getUserAttributes: (data) => ({
+			pk: data.pk,
+			id: data.id,
+			email: data.email,
+			name: data.name,
+			features: data.features,
+		}),
+		getSessionAttributes: (data) => ({
+			userAgent: data.userAgent,
+			location: data.location,
+		}),
+	});
 });
 
 declare module "lucia" {

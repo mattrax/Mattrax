@@ -10,7 +10,6 @@
 		"email:build": "email build --dir ./src/emails",
 		"email:dev": "email dev --port 3002 --dir ./src/emails",
 		"email:export": "email export --dir ./src/emails",
-		"vbuild": "NITRO_PRESET=vercel_edge vinxi build",
 		"cbuild": "NITRO_PRESET=cloudflare_pages vinxi build"
 	},
 	"dependencies": {
