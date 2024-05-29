@@ -67,7 +67,7 @@ jobs:
           - landing
           - docs
           - web
-    name: Build ${{ inputs.project }}
+    name: Build ${{ matrix.projects }}
     runs-on: ubuntu-latest
     environment:
       name: ${{ matrix.projects }}
@@ -100,7 +100,7 @@ jobs:
           - landing
           - docs
           - web
-    name: Deploy ${{ inputs.project}}
+    name: Deploy ${{ matrix.projects }}
     runs-on: ubuntu-latest
     needs:
       - sst
@@ -108,7 +108,7 @@ jobs:
       # GitHub don't provide a better solution :(
       - build
     environment:
-      name: ${{ inputs.project }}
+      name: ${{ matrix.projects }}
       url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
     steps:
       # We pull this so Cloudflare can link the commit up
