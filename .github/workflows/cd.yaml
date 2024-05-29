@@ -60,41 +60,6 @@ jobs:
           OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
           OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
 
-  plan:
-    name: Plan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Git clone the repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
-      - run: pnpm i -g nx
-
-      - uses: actions/github-script@v6
-        id: planner
-        with:
-          script: |
-            const projects = ['landing', 'docs', 'web'];
-
-            const ret = {};
-
-            for (const proj of projects) {
-            	const code = await exec.exec('pnpx', ['nx-ignore', `@mattrax/${proj}`]).catch(() => 1);
-
-              ret[proj] = code === 1;
-            }
-
-            console.log(ret);
-
-            return ret
-        env:
-          GITHUB_BASE_REF: ${{ github.base_ref }}
-
   build:
     strategy:
       matrix:
@@ -106,28 +71,44 @@ jobs:
       name: ${{ matrix.projects }}
     name: Build ${{ matrix.projects }}
     runs-on: ubuntu-latest
-    needs: [plan]
+    outputs:
+      projects: ${{ steps.result.outputs.PROJECT }}
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
-        if: needs.plan.outputs.planner[matrix.projects]
+        with:
+          fetch-depth: 2
 
       - uses: pnpm/action-setup@v4
-        if: needs.plan.outputs.planner[matrix.projects]
         with:
           version: latest
 
       - name: Install
-        if: needs.plan.outputs.planner[matrix.projects]
         run: pnpm i
+      
+      - name: Plan
+        id: plan
+        # env:
+        #   GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: |
+          pnpx nx-ignore @mattrax/${{ matrix.projects }}
+          if some_command; then
+            echo "SHOULD_RUN=$?" >> GITHUB_OUTPUT
+          fi
+      
+      - name: Plan Result
+        if: steps.plan.outputs.SHOULD_RUN == 1
+        id: result
+        run: |
+          echo "PROJECT="{ \"name\": \"testing\", project: \"testing\" }" >> GITHUB_OUTPUT
 
       - name: Build
-        if: needs.plan.outputs.planner[matrix.projects]
+        if: steps.plan.outputs.SHOULD_RUN == 1
         run: pnpm nx cbuild @mattrax/${{ matrix.projects }}
 
       - name: Upload result
         uses: actions/upload-artifact@v4
-        if: needs.plan.outputs.planner[matrix.projects]
+        if: steps.plan.outputs.SHOULD_RUN == 1
         with:
           name: ${{ matrix.projects }}-dist
           path: apps/${{ matrix.projects }}/dist
@@ -135,10 +116,10 @@ jobs:
   deploy:
     strategy:
       matrix:
-        projects:
-          - { name: landing, project: mattrax-landing }
-          - { name: docs, project: mattrax-docs }
-          - { name: web, project: mattrax }
+        projects: ${{fromJson(needs.build.outputs.projects)}}
+          # - { name: landing, project: mattrax-landing }
+          # - { name: docs, project: mattrax-docs }
+          # - { name: web, project: mattrax }
     name: Deploy ${{ matrix.projects.name }}
     runs-on: ubuntu-latest
     needs:
@@ -154,23 +135,19 @@ jobs:
     steps:
       # We pull this so Wrangler can link the deploy to the commit/branch
       - name: Git clone the repository
-        if: needs.plan.outputs.planner[matrix.projects.name]
         uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        if: needs.plan.outputs.planner[matrix.projects.name]
         with:
           version: latest
 
       - name: Download build artifact
         uses: actions/download-artifact@v4
-        if: needs.plan.outputs.planner[matrix.projects.name]
         with:
           name: ${{ matrix.projects.name }}-dist
           path: dist
 
       - name: Deploy
-        if: needs.plan.outputs.planner[matrix.projects.name]
         run: |
           set -o pipefail
           pnpm dlx wrangler pages deploy dist/ --project-name ${{ matrix.projects.project }} 2>&1 | tee -a BUILD_OUTPUT
@@ -178,4 +155,3 @@ jobs:
       - name: Export `DEPLOYMENT_URL`
         id: result
         run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
-        if: needs.plan.outputs.planner[matrix.projects.name]
