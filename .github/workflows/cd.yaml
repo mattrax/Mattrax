@@ -105,6 +105,8 @@ jobs:
       # This will wait for *all* projects to build, not just the one we care about.
       # GitHub don't provide a better solution :(
       - build
+    # Run regardless of if previous steps were skipped
+    if: ${{ !failure() && !cancelled() }}
     environment:
       name: ${{ matrix.projects.name }}
       url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
