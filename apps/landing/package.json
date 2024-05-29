@@ -5,6 +5,7 @@
 	"scripts": {
 		"dev": "vinxi dev --host 0.0.0.0 --port 3001",
 		"build": "vinxi build",
+		"cbuild": "NITRO_PRESET=cloudflare_pages vinxi build",
 		"start": "vinxi start"
 	},
 	"devDependencies": {

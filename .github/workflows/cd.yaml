@@ -83,9 +83,7 @@ jobs:
         run: pnpm i
       
       - name: Build
-        env:
-          NITRO_PRESET: cloudflare_pages
-        run: pnpm run ${{ matrix.projects }} build
+        run: pnpm run ${{ matrix.projects }} cbuild
 
       - name: Upload result
         uses: actions/upload-artifact@v4
@@ -114,9 +112,17 @@ jobs:
       # We pull this so Cloudflare can link the commit up
       - name: Git clone the repository
         uses: actions/checkout@v4
+      
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.projects }}-dist
+          path: dist
 
-      # TODO: Get built artifacts
+      - name: Deploy
+        run: pnpm run ${{ matrix.projects }} exec wrangler pages deploy dist/ --project-name mattrax-docs | tee -a BUILD_OUTPUT
 
       - name: Export `DEPLOYMENT_URL`
         id: result
+        # run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
         run: echo "DEPLOYMENT_URL=https://example.com" >> $GITHUB_OUTPUT

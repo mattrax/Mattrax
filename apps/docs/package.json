@@ -5,6 +5,7 @@
 	"scripts": {
 		"dev": "next dev -p 3003",
 		"build": "next build",
+		"cbuild": "npx @cloudflare/next-on-pages@1 && cp -R ./.vercel/output/static ./dist",
 		"start": "next start"
 	},
 	"browserslist": "defaults, not ie <= 11",
