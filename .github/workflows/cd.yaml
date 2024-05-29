@@ -89,6 +89,8 @@ jobs:
               ret[proj] = code === 1;
             }
 
+            console.log(ret);
+
             return ret
         env:
           GITHUB_BASE_REF: ${{ github.base_ref }}
