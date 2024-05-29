@@ -41,14 +41,14 @@ export function Apple(props: {
 				as="ul"
 				class="flex-1 flex flex-col"
 				multiple
-				value={Object.entries(controller.state.apple)
+				value={Object.entries(controller.state.apple ?? {})
 					.filter(([, payload]) => payload?.open)
 					.map(([name]) => name)}
 				onChange={(selectedValues) => {
 					controller.setState(
 						"apple",
 						produce((values) => {
-							for (const key of Object.keys(values)) {
+							for (const key of Object.keys(values ?? {})) {
 								const v = values?.[key];
 								if (!v) continue;
 
@@ -59,7 +59,7 @@ export function Apple(props: {
 				}}
 			>
 				<For
-					each={Object.entries(controller.state.apple).filter(
+					each={Object.entries(controller.state.apple ?? {}).filter(
 						([_, v]) => v?.enabled,
 					)}
 				>

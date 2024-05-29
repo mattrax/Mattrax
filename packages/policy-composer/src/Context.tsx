@@ -1,24 +1,24 @@
 import { type ParentProps, Show, createContext, useContext } from "solid-js";
-import { createStore } from "solid-js/store";
+import type { SetStoreFunction } from "solid-js/store";
 
 export type PolicyPlatform = "windows" | "apple";
 
-export function createPolicyComposerController(platform: PolicyPlatform) {
-	const [state, setState] = createStore<{
-		platform: PolicyPlatform;
-		windows: Record<string, Record<string, { enabled: boolean; data: any }>>;
-		apple: Record<
-			string,
-			{ enabled: boolean; data: Array<Record<string, any>>; open: boolean }
-		>;
-	}>({ platform, windows: {}, apple: {} });
+export type PolicyComposerState = {
+	platform: PolicyPlatform;
+	windows?: Record<
+		string,
+		{ enabled: boolean; data: Record<string, any>; open: boolean }
+	>;
+	apple?: Record<
+		string,
+		{ enabled: boolean; data: Array<Record<string, any>>; open: boolean }
+	>;
+};
 
-	return { state, setState };
-}
-
-export type PolicyComposerController = ReturnType<
-	typeof createPolicyComposerController
->;
+export type PolicyComposerController = {
+	state: PolicyComposerState;
+	setState: SetStoreFunction<PolicyComposerState>;
+};
 
 const ControllerContext = createContext<PolicyComposerController>(null!);
 

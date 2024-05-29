@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -20,8 +20,8 @@ pub struct PolicyData {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub windows: HashMap<String, OMANode>,
     /// inner part of the `.mobileconfig`
-    #[serde(default, skip_serializing_if = "is_null")]
-    pub macos: serde_json::Value,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub macos: HashMap<String, Vec<serde_json::Value>>,
     /// Android configuration
     #[serde(default, skip_serializing_if = "is_unit")]
     pub android: (),

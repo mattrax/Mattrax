@@ -2,7 +2,6 @@ import type { AppleProfilePayload } from "@mattrax/configuration-schemas/apple";
 import type { WindowsCSP } from "@mattrax/configuration-schemas/windows";
 import {
 	AsyncButton,
-	Button,
 	Tabs,
 	TabsContent,
 	TabsList,

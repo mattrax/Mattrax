@@ -52,7 +52,7 @@ export type PolicyData = {
 	/**
 	 * inner part of the `.mobileconfig`
 	 */
-	macos: JsonValue;
+	macos: { [key in string]: JsonValue[] };
 	/**
 	 * Android configuration
 	 */
