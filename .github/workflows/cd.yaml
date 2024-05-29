@@ -122,11 +122,6 @@ jobs:
         id: result
         run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
 
-      - name: echo A
-        env:
-          TEST: ${{steps.result.outputs.DEPLOYMENT_URL}}
-        run: echo "AA $TEST BB"
-
   web:
     name: Web
     runs-on: ubuntu-latest
