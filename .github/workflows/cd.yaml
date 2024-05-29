@@ -60,6 +60,35 @@ jobs:
           OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
           OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
 
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/github-script@v6
+        id: planner
+        with:
+          script: |
+            const exec = require('@actions/exec');
+
+            const projects = ['landing', 'docs', 'web'];
+
+            const ret = {};
+
+            for (const proj of projects) {
+            	const code = await exec.exec('pnpx', ['nx-ignore', `@mattrax/${proj}`]);
+
+              ret[proj] = code === 1;
+            }
+
+            return ret
+
   build:
     strategy:
       matrix:
@@ -69,6 +98,7 @@ jobs:
           - web
     name: Build ${{ matrix.projects }}
     runs-on: ubuntu-latest
+    needs: [planner]
     environment:
       name: ${{ matrix.projects.name }}
     steps:
@@ -79,11 +109,13 @@ jobs:
         with:
           version: latest
 
+      - run: pnpx nx-latest @mattrax/${{ matrix.projects }}
+
       - name: Install
         run: pnpm i
-      
+
       - name: Build
-        run: pnpm run ${{ matrix.projects }} cbuild
+        run: pnpm nx cbuild @mattrax/${{ matrix.projects }}
 
       - name: Upload result
         uses: actions/upload-artifact@v4
@@ -114,7 +146,7 @@ jobs:
       # We pull this so Wrangler can link the deploy to the commit/branch
       - name: Git clone the repository
         uses: actions/checkout@v4
-      
+
       - uses: pnpm/action-setup@v4
         with:
           version: latest

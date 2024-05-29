@@ -1,0 +1,10 @@
+{
+	"$schema": "./node_modules/nx/schemas/nx-schema.json",
+	"targetDefaults": {
+		"cbuild": {
+			"cache": true,
+			"outputs": ["{workspaceRoot}/dist/**"]
+		}
+	},
+	"defaultBase": "main"
+}

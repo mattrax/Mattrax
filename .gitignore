@@ -58,3 +58,5 @@ Thumbs.db
 # Temp
 result.mobileconfig
 /apps/ingest/src/windows.rs
+
+.nx/cache
