@@ -1,5 +1,3 @@
-import { type ComponentProps, createSignal } from "solid-js";
-import { createEventListener } from "@solid-primitives/event-listener";
 import {
 	CommandDialog,
 	CommandEmpty,
@@ -9,9 +7,11 @@ import {
 	CommandList,
 	useCommandCtx,
 } from "@mattrax/ui";
+import { createEventListener } from "@solid-primitives/event-listener";
 import { A, useNavigate } from "@solidjs/router";
-import { useZodParams } from "~/lib/useZodParams";
+import { type ComponentProps, createSignal } from "solid-js";
 import { z } from "zod";
+import { useZodParams } from "~/lib/useZodParams";
 
 export default function CommandPalette() {
 	const [open, setOpen] = createSignal(false);
@@ -38,7 +38,7 @@ export default function CommandPalette() {
 			<CommandInput
 				placeholder="Type a command or search..."
 				autocomplete="off"
-				spellcheck="false"
+				spellcheck={false}
 			/>
 			<CommandList>
 				<CommandEmpty>No results found.</CommandEmpty>

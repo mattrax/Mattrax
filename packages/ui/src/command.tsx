@@ -6,8 +6,8 @@ import type {
 } from "solid-js";
 import { createContext, createSignal, splitProps, useContext } from "solid-js";
 
-import * as CommandPrimitive from "cmdk-solid";
 import type { DialogRootProps } from "@kobalte/core/dialog";
+import * as CommandPrimitive from "cmdk-solid";
 
 import { Dialog, DialogContent } from "./dialog";
 import { cn } from "./lib";
@@ -41,8 +41,8 @@ const CommandDialog: Component<ParentProps<DialogRootProps>> = (props) => {
 	return (
 		<CommandContext.Provider
 			value={{
-				open: () => props.open,
-				setOpen: props.onOpenChange,
+				open: () => props.open ?? false,
+				setOpen: props.onOpenChange ?? (() => {}),
 			}}
 		>
 			<Dialog {...others}>
@@ -75,6 +75,7 @@ const CommandInput: Component<VoidProps<CommandPrimitive.CommandInputProps>> = (
 				stroke-linecap="round"
 				stroke-linejoin="round"
 				class="mr-2 size-4 shrink-0 opacity-50"
+				aria-hidden="true"
 			>
 				<path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" />
 				<path d="M21 21l-6 -6" />
