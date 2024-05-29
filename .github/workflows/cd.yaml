@@ -101,7 +101,8 @@ jobs:
         if: steps.plan.outputs.SHOULD_RUN == 1
         id: result
         run: |
-          echo "PROJECT="{ \"name\": \"testing\", project: \"testing\" }" >> GITHUB_OUTPUT
+          echo "echo PROJECT=json::{"name": "testing", "project": "testing"} >> GITHUB_OUTPUT
+          # "{ \"name\": \"testing\", project: \"testing\" }" >> GITHUB_OUTPUT
 
       - name: Build
         if: steps.plan.outputs.SHOULD_RUN == 1
