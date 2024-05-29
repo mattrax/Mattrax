@@ -95,26 +95,3 @@ export default defineConfig({
 		},
 	},
 });
-
-process.on("exit", () => {
-	const workerCode = path.join("dist", "_worker.js", "chunks", "runtime.mjs");
-
-	if (!fs.existsSync(workerCode)) {
-		console.warn("Skipping Cloudflare env patching...");
-		return;
-	}
-
-	// Cloudflare doesn't allow access to env outside the handler.
-	// So we ship the env with the worker code.
-	fs.writeFileSync(
-		path.join(workerCode, "../env.mjs"),
-		`const process={env:${JSON.stringify(
-			process.env,
-		)}};globalThis.process=process;`,
-	);
-
-	fs.writeFileSync(
-		workerCode,
-		`import "./env.mjs";\n${fs.readFileSync(workerCode)}`,
-	);
-});
