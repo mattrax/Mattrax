@@ -113,6 +113,10 @@ jobs:
       - name: Git clone the repository
         uses: actions/checkout@v4
       
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
@@ -120,7 +124,9 @@ jobs:
           path: dist
 
       - name: Deploy
-        run: pnpm exec wrangler pages deploy dist/ --project-name ${{ matrix.projects.project }} | tee -a BUILD_OUTPUT
+        run: |
+          set -o pipefail
+          pnpm dlx wrangler pages deploy dist/ --project-name ${{ matrix.projects.project }} 2>&1 | tee -a BUILD_OUTPUT
 
       - name: Export `DEPLOYMENT_URL`
         id: result
