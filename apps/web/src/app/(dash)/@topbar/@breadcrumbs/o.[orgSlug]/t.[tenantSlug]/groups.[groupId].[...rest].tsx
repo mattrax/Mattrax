@@ -1,8 +1,8 @@
 import { Badge } from "@mattrax/ui";
+import { useGroupId } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/groups/ctx";
 import { trpc } from "~/lib";
 import { getMetadata } from "~[tenantSlug]/metadataCache";
 import { Breadcrumb } from "../../Breadcrumb";
-import { useGroupId } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/groups/ctx";
 
 export default function () {
 	const groupId = useGroupId();

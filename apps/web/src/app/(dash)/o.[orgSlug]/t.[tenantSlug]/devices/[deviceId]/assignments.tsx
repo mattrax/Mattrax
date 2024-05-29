@@ -10,8 +10,8 @@ import {
 	VariantTableSheet,
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
-import { useDeviceId } from "../ctx";
 import { useTenantSlug } from "../../ctx";
+import { useDeviceId } from "../ctx";
 
 export const route = {
 	load: ({ params }) => {

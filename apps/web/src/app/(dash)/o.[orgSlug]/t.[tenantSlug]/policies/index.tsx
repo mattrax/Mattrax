@@ -103,8 +103,8 @@ import { z } from "zod";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { cacheMetadata } from "../metadataCache";
 import { useTenantSlug } from "../ctx";
+import { cacheMetadata } from "../metadataCache";
 
 function CreatePolicyButton() {
 	const tenantSlug = useTenantSlug();

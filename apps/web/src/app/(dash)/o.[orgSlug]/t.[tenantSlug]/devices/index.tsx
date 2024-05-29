@@ -17,8 +17,8 @@ import {
 	selectCheckboxColumn,
 } from "~c/StandardTable";
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
-import { cacheMetadata } from "../metadataCache";
 import { useTenantSlug } from "../ctx";
+import { cacheMetadata } from "../metadataCache";
 
 export const route = {
 	load: ({ params }) => {

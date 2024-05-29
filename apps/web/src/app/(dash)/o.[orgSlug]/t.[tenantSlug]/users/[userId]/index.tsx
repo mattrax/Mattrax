@@ -28,9 +28,9 @@ import {
 } from "~c/VariantTableSheet";
 import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
+import { useTenantSlug } from "../../ctx";
 import { useUser, useUserId } from "../ctx";
 import { BruhIconPhLaptop } from "./bruh";
-import { useTenantSlug } from "../../ctx";
 
 export const route = {
 	load: ({ params }) => {

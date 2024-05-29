@@ -1,9 +1,9 @@
 import { Badge } from "@mattrax/ui";
 
+import { useDeviceId } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/devices/ctx";
 import { trpc } from "~/lib";
 import { getMetadata } from "~[tenantSlug]/metadataCache";
 import { Breadcrumb } from "../../Breadcrumb";
-import { useDeviceId } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/devices/ctx";
 
 export default function () {
 	const deviceId = useDeviceId();

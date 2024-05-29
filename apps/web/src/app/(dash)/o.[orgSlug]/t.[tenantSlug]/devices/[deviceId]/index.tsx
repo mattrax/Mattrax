@@ -14,11 +14,11 @@ import {
 	Label,
 	Textarea,
 } from "@mattrax/ui";
+import { type JSX, Suspense } from "solid-js";
 import { toast } from "solid-sonner";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useDevice, useDeviceId } from "../ctx";
-import { type JSX, Suspense } from "solid-js";
 
 // TODO: Rename device
 // TODO: Rotate filevault keys

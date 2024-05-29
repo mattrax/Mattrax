@@ -5,8 +5,8 @@ import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
 import { ConfirmDialog } from "~c/ConfirmDialog";
-import { useTenant } from "../ctx";
 import { useOrgSlug } from "../../ctx";
+import { useTenant } from "../ctx";
 
 export function DeleteTenantButton() {
 	const orgSlug = useOrgSlug();

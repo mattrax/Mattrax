@@ -8,8 +8,8 @@ import { z } from "zod";
 import { trpc } from "~/lib";
 import { ConfirmDialog } from "~c/ConfirmDialog";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { usePolicy, usePolicyId } from "../ctx";
 import { useTenantSlug } from "../../ctx";
+import { usePolicy, usePolicyId } from "../ctx";
 
 export default function Page() {
 	const tenantSlug = useTenantSlug();

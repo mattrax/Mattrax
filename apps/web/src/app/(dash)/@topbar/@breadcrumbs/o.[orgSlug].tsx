@@ -2,10 +2,10 @@ import { A, type RouteSectionProps } from "@solidjs/router";
 
 import { createQueryCacher, useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
+import { useOrgSlug } from "../../o.[orgSlug]/ctx";
 import { cachedOrgs } from "../../utils";
 import { Breadcrumb } from "./Breadcrumb";
 import { MultiSwitcher } from "./MultiSwitcher";
-import { useOrgSlug } from "../../o.[orgSlug]/ctx";
 
 export default function (props: RouteSectionProps) {
 	const orgSlug = useOrgSlug();

@@ -3,9 +3,9 @@ import { type FormOptions, createForm } from "@tanstack/solid-form";
 import { zodValidator } from "@tanstack/zod-form-adapter";
 import {
 	type ComponentProps,
+	createEffect,
 	createMemo,
 	splitProps,
-	createEffect,
 } from "solid-js";
 import type { z } from "zod";
 

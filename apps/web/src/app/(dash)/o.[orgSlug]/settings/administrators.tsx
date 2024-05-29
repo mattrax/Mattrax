@@ -15,8 +15,8 @@ import {
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { trpc } from "~/lib";
 import { ConfirmDialog } from "~c/ConfirmDialog";
-import { useOrg, useOrgSlug } from "../ctx";
 import { useAuth } from "../../utils";
+import { useOrg, useOrgSlug } from "../ctx";
 
 export const route = {
 	load: ({ params }) => {

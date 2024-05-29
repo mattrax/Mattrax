@@ -1,8 +1,8 @@
-import { trpc } from "~/lib";
-import { z } from "zod";
-import { useZodParams } from "~/lib/useZodParams";
-import { createEffect, createMemo } from "solid-js";
 import { useNavigate } from "@solidjs/router";
+import { createEffect, createMemo } from "solid-js";
+import { z } from "zod";
+import { trpc } from "~/lib";
+import { useZodParams } from "~/lib/useZodParams";
 
 export function useOrgSlug() {
 	const params = useZodParams({ orgSlug: z.string() });

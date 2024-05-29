@@ -1,8 +1,8 @@
 import { Badge } from "@mattrax/ui";
+import { useUserId } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/users/ctx";
 import { trpc } from "~/lib";
 import { getMetadata } from "~[tenantSlug]/metadataCache";
 import { Breadcrumb } from "../../Breadcrumb";
-import { useUserId } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/users/ctx";
 
 export default function () {
 	const userId = useUserId();

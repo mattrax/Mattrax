@@ -31,8 +31,8 @@ import {
 	type VariantTableVariants,
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
-import { usePolicyId } from "../ctx";
 import { useTenantSlug } from "../../ctx";
+import { usePolicyId } from "../ctx";
 
 export const route = {
 	load: ({ params }) =>

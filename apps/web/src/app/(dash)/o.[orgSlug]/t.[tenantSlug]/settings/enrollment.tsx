@@ -7,11 +7,11 @@ import {
 import { A, type RouteDefinition } from "@solidjs/router";
 import { Match, type ParentProps, Show, Suspense, Switch } from "solid-js";
 import { trpc } from "~/lib";
+import { useTenantSlug } from "../ctx";
 import {
 	BruhIconPhCheckCircleDuotone,
 	BruhIconPhWarningCircleDuotone,
 } from "./bruh";
-import { useTenantSlug } from "../ctx";
 
 export const route = {
 	load: ({ params }) => {
