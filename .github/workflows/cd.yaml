@@ -149,7 +149,7 @@ jobs:
       - name: Build
         env:
           NITRO_PRESET: cloudflare_pages
-        run: pnpm landing build
+        run: pnpm web build
 
       - name: Deploy
         run: pnpm web exec wrangler pages deploy dist/ --project-name mattrax
