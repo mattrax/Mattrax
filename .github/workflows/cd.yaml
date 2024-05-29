@@ -58,14 +58,11 @@ jobs:
           OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
           OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
 
-  # TODO: Probs rely on SST deploy finishing
-  # TODO: We need to run this on PR's too!!!!
-  # TODO: Filter running to changes in `./apps/docs`
-
   landing:
     name: Landing
     runs-on: ubuntu-latest
     environment: production
+    needs: [sst]
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -90,6 +87,7 @@ jobs:
     name: Docs
     runs-on: ubuntu-latest
     environment: production
+    needs: [sst]
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -104,6 +102,7 @@ jobs:
       - name: Build
         env:
           NITRO_PRESET: cloudflare_pages
+          VITE_MATTRAX_CLOUD_ORIGIN: https://cloud.mattrax.app
         run: pnpm landing build
 
       - name: Deploy
@@ -113,6 +112,7 @@ jobs:
     name: Web
     runs-on: ubuntu-latest
     environment: production
+    needs: [sst]
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -128,7 +128,7 @@ jobs:
         run: pnpm i
 
       - name: Pull secrets
-        run: sst secret list > .env
+        run: pnpm infra secret list > .env
       
       - name: Build
         env:
