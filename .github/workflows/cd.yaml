@@ -95,10 +95,10 @@ jobs:
     strategy:
       matrix:
         projects:
-          - landing
-          - docs
-          - web
-    name: Deploy ${{ matrix.projects }}
+          - { name: landing, project: mattrax-landing }
+          - { name: docs, project: mattrax-docs }
+          - { name: web, project: mattrax }
+    name: Deploy ${{ matrix.projects.name }}
     runs-on: ubuntu-latest
     needs:
       - sst
@@ -106,23 +106,22 @@ jobs:
       # GitHub don't provide a better solution :(
       - build
     environment:
-      name: ${{ matrix.projects }}
+      name: ${{ matrix.projects.name }}
       url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
     steps:
-      # We pull this so Cloudflare can link the commit up
+      # We pull this so Wrangler can link the deploy to the commit/branch
       - name: Git clone the repository
         uses: actions/checkout@v4
       
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.projects }}-dist
+          name: ${{ matrix.projects.name }}-dist
           path: dist
 
       - name: Deploy
-        run: pnpm run ${{ matrix.projects }} exec wrangler pages deploy dist/ --project-name mattrax-docs | tee -a BUILD_OUTPUT
+        run: pnpm exec wrangler pages deploy dist/ --project-name ${{ matrix.projects.project }} | tee -a BUILD_OUTPUT
 
       - name: Export `DEPLOYMENT_URL`
         id: result
-        # run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
-        run: echo "DEPLOYMENT_URL=https://example.com" >> $GITHUB_OUTPUT
+        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
