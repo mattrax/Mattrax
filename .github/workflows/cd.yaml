@@ -87,7 +87,7 @@ jobs:
         run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-landing | tee -a BUILD_OUTPUT
       
       - name: Export URL
-        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1 )" >> $DEPLOYMENT_URL
+        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1 )" >> $GITHUB_ENV
 
   docs:
     name: Docs
@@ -118,7 +118,7 @@ jobs:
         run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-docs | tee -a BUILD_OUTPUT
       
       - name: Export URL
-        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1 )" >> $DEPLOYMENT_URL
+        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1 )" >> $GITHUB_ENV
 
   web:
     name: Web
@@ -161,4 +161,4 @@ jobs:
         run: pnpm web exec wrangler pages deploy dist/ --project-name mattrax | tee -a BUILD_OUTPUT
       
       - name: Export URL
-        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1 )" >> $DEPLOYMENT_URL
+        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1 )" >> $GITHUB_ENV
