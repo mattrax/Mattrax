@@ -20,6 +20,7 @@
 	"references": [
 		{ "path": "../../packages/ui" },
 		{ "path": "../../packages/email" },
-		{ "path": "../../packages/trpc-server-function" }
+		{ "path": "../../packages/trpc-server-function" },
+		{ "path": "../../packages/policy-composer" }
 	]
 }

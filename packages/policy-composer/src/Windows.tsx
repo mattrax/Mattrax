@@ -57,7 +57,7 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 					controller.setState(
 						"windows",
 						produce((values) => {
-							for (const key of Object.keys(state)) {
+							for (const key of Object.keys(controller.state.windows ?? {})) {
 								const v = values?.[key];
 								if (!v) continue;
 
