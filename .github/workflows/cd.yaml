@@ -2,6 +2,8 @@ name: CD
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +27,7 @@ jobs:
     environment: production
     concurrency:
       group: production
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -97,6 +100,35 @@ jobs:
 
       - name: Install
         run: pnpm i
+      
+      - name: Build
+        env:
+          NITRO_PRESET: cloudflare_pages
+        run: pnpm landing build
+
+      - name: Deploy
+        run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-docs
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install SST
+        run: curl -fsSL https://ion.sst.dev/install | bash
+
+      - name: Install
+        run: pnpm i
+
+      - name: Pull secrets
+        run: sst secret list > .env
       
       - name: Build
         env:
