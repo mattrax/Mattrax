@@ -63,6 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     needs: [sst]
+    if: ${{ !failure() && !cancelled() }}
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -88,6 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     needs: [sst]
+    if: ${{ !failure() && !cancelled() }}
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -113,6 +115,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     needs: [sst]
+    if: ${{ !failure() && !cancelled() }}
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
