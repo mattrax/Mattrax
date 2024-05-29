@@ -90,7 +90,7 @@ jobs:
     name: Docs
     runs-on: ubuntu-latest
     environment:
-      name: landing
+      name: docs
       url: https://docs.mattrax.app
     needs: [sst]
     if: ${{ !failure() && !cancelled() }}
