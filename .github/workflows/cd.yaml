@@ -152,4 +152,4 @@ jobs:
         run: pnpm landing build
 
       - name: Deploy
-        run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-docs
+        run: pnpm web exec wrangler pages deploy dist/ --project-name mattrax
