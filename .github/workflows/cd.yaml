@@ -107,25 +107,27 @@ jobs:
     name: Build ${{ matrix.projects }}
     runs-on: ubuntu-latest
     needs: [plan]
-    if: needs.plan.outputs.planner[matrix.projects]
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
+        if: needs.plan.outputs.planner[matrix.projects]
 
       - uses: pnpm/action-setup@v4
+        if: needs.plan.outputs.planner[matrix.projects]
         with:
           version: latest
 
-      - run: pnpx nx-latest @mattrax/${{ matrix.projects }}
-
       - name: Install
+        if: needs.plan.outputs.planner[matrix.projects]
         run: pnpm i
 
       - name: Build
+        if: needs.plan.outputs.planner[matrix.projects]
         run: pnpm nx cbuild @mattrax/${{ matrix.projects }}
 
       - name: Upload result
         uses: actions/upload-artifact@v4
+        if: needs.plan.outputs.planner[matrix.projects]
         with:
           name: ${{ matrix.projects }}-dist
           path: apps/${{ matrix.projects }}/dist
@@ -152,19 +154,23 @@ jobs:
     steps:
       # We pull this so Wrangler can link the deploy to the commit/branch
       - name: Git clone the repository
+        if: needs.plan.outputs.planner[matrix.projects.name]
         uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
+        if: needs.plan.outputs.planner[matrix.projects.name]
         with:
           version: latest
 
       - name: Download build artifact
         uses: actions/download-artifact@v4
+        if: needs.plan.outputs.planner[matrix.projects.name]
         with:
           name: ${{ matrix.projects.name }}-dist
           path: dist
 
       - name: Deploy
+        if: needs.plan.outputs.planner[matrix.projects.name]
         run: |
           set -o pipefail
           pnpm dlx wrangler pages deploy dist/ --project-name ${{ matrix.projects.project }} 2>&1 | tee -a BUILD_OUTPUT
@@ -172,3 +178,4 @@ jobs:
       - name: Export `DEPLOYMENT_URL`
         id: result
         run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
+        if: needs.plan.outputs.planner[matrix.projects.name]
