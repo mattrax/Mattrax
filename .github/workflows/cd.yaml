@@ -69,6 +69,8 @@ jobs:
           - web
     name: Build ${{ matrix.projects }}
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ matrix.projects.name }}
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
