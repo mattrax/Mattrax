@@ -8,6 +8,7 @@
 		"configure": "pnpm --filter @mattrax/configure --",
 		"ingest": "pnpm --filter @mattrax/ingest --",
 		"doc": "pnpm --filter @mattrax/docs --",
+		"docs": "pnpm --filter @mattrax/docs --",
 		"web": "pnpm --filter @mattrax/web --",
 		"infra": "pnpm --filter @mattrax/infra exec sst",
 		"db:push": "drizzle-kit push && bun run ./apps/web/src/db/rust.ts",
