@@ -13,7 +13,7 @@ permissions:
 env:
   CLOUDFLARE_DEFAULT_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
   CLOUDFLARE_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
-  CLOUDFLARE_EMAIL: brendonovich@outlook.com
+  CLOUDFLARE_EMAIL: oscar@mattrax.app
   CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
 
 jobs:
@@ -61,7 +61,9 @@ jobs:
   landing:
     name: Landing
     runs-on: ubuntu-latest
-    environment: production
+    environment:
+      name: landing
+      url: https://mattrax.app
     needs: [sst]
     if: ${{ !failure() && !cancelled() }}
     steps:
@@ -87,7 +89,9 @@ jobs:
   docs:
     name: Docs
     runs-on: ubuntu-latest
-    environment: production
+    environment:
+      name: landing
+      url: https://docs.mattrax.app
     needs: [sst]
     if: ${{ !failure() && !cancelled() }}
     steps:
@@ -113,7 +117,9 @@ jobs:
   web:
     name: Web
     runs-on: ubuntu-latest
-    environment: production
+    environment:
+      name: web
+      url: https://cloud.mattrax.app
     needs: [sst]
     if: ${{ !failure() && !cancelled() }}
     steps:
@@ -138,7 +144,7 @@ jobs:
         run: pnpm i
 
       - name: Pull secrets
-        run: pnpm infra secret list > .env
+        run: pnpm infra secret list --stage brendonovich > .env
       
       - name: Build
         env:
