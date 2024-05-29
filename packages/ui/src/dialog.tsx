@@ -12,7 +12,7 @@ import type {
 	DialogTriggerProps,
 } from "@kobalte/core/dialog";
 import type { Component, ComponentProps, ValidComponent } from "solid-js";
-import { splitProps } from "solid-js";
+import { Show, splitProps } from "solid-js";
 
 import {
 	type Controller,
@@ -80,9 +80,13 @@ const DialogOverlay = <T extends ValidComponent = "div">(
 };
 
 const DialogContent = <T extends ValidComponent = "div">(
-	props: PolymorphicProps<T, DialogContentProps>,
+	props: PolymorphicProps<T, DialogContentProps> & { closeButton?: boolean },
 ) => {
-	const [, rest] = splitProps(props as any, ["class", "children"]);
+	const [, rest] = splitProps(props as any, [
+		"class",
+		"children",
+		"closeButton",
+	]);
 	return (
 		<DialogPortal>
 			<DialogOverlay />
@@ -94,10 +98,12 @@ const DialogContent = <T extends ValidComponent = "div">(
 				{...rest}
 			>
 				{props.children}
-				<DialogPrimitive.CloseButton class="ring-offset-background focus:ring-ring data-[expanded]:bg-accent data-[expanded]:text-muted-foreground absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none">
-					<IconTablerX class="h-4 w-4" />
-					<span class="sr-only">Close</span>
-				</DialogPrimitive.CloseButton>
+				<Show when={props.closeButton !== false}>
+					<DialogPrimitive.CloseButton class="ring-offset-background focus:ring-ring data-[expanded]:bg-accent data-[expanded]:text-muted-foreground absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none">
+						<IconTablerX class="h-4 w-4" />
+						<span class="sr-only">Close</span>
+					</DialogPrimitive.CloseButton>
+				</Show>
 			</DialogPrimitive.Content>
 		</DialogPortal>
 	);

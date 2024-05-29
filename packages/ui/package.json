@@ -24,6 +24,7 @@
 		"@tanstack/zod-form-adapter": "^0.20.0",
 		"class-variance-authority": "^0.7.0",
 		"clsx": "^2.1.0",
+		"cmdk-solid": "^1.0.1",
 		"solid-js": "^1.8.16",
 		"zod": "^3.22.5"
 	},

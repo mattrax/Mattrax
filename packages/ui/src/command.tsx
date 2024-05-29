@@ -1,138 +1,167 @@
-import type { ComponentProps, ValidComponent, VoidProps } from "solid-js";
-import { splitProps } from "solid-js";
+import type {
+	Component,
+	ComponentProps,
+	ParentProps,
+	VoidProps,
+} from "solid-js";
+import { createContext, createSignal, splitProps, useContext } from "solid-js";
 
-import {
-	Combobox as ComboboxPrimitive,
-	type PolymorphicProps,
-} from "@kobalte/core";
-import type {
-	ComboboxInputProps,
-	ComboboxListboxProps,
-	ComboboxRootProps,
-} from "@kobalte/core/combobox";
+import * as CommandPrimitive from "cmdk-solid";
 import type { DialogRootProps } from "@kobalte/core/dialog";
-import type {
-	ListboxItemProps,
-	ListboxSectionProps,
-} from "@kobalte/core/listbox";
 
 import { Dialog, DialogContent } from "./dialog";
 import { cn } from "./lib";
 
-type CommandProps<Option, OptGroup> = Omit<
-	ComboboxPrimitive.ComboboxRootProps<Option, OptGroup>,
-	| "open"
-	| "defaultOpen"
-	| "multiple"
-	// | "value"
-	| "defaultValue"
-	| "removeOnBackspace"
-	| "readOnly"
-	| "allowsEmptyCollection"
->;
+const CommandContext = createContext<{
+	open: () => boolean;
+	setOpen: (open: boolean) => void;
+}>();
 
-const Command = <Option, OptGroup = never, T extends ValidComponent = "div">(
-	props: PolymorphicProps<T, ComboboxRootProps<Option, OptGroup>>,
+const useCommandCtx = () => useContext(CommandContext)!;
+
+const Command: Component<ParentProps<CommandPrimitive.CommandRootProps>> = (
+	props,
 ) => {
-	const [local, rest] = splitProps(props as any, ["class"]);
+	const [local, others] = splitProps(props, ["class"]);
 
 	return (
-		<ComboboxPrimitive.Root<Option, OptGroup>
-			// force render list
-			open
-			// @ts-ignore -- prevent select
-			value=""
-			allowsEmptyCollection
+		<CommandPrimitive.CommandRoot
 			class={cn(
-				"flex flex-col overflow-hidden rounded-md bg-popover text-popover-foreground",
+				"flex size-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground",
 				local.class,
 			)}
-			{...rest}
+			{...others}
 		/>
 	);
 };
 
-const CommandInput = <T extends ValidComponent = "input">(
-	props: PolymorphicProps<T, ComboboxInputProps>,
-) => {
-	const [local, rest] = splitProps(props as any, ["class"]);
+const CommandDialog: Component<ParentProps<DialogRootProps>> = (props) => {
+	const [local, others] = splitProps(props, ["children"]);
 
 	return (
-		<ComboboxPrimitive.Control
-			class="flex items-center border-b px-3"
-			cmdk-input-wrapper=""
+		<CommandContext.Provider
+			value={{
+				open: () => props.open,
+				setOpen: props.onOpenChange,
+			}}
 		>
-			<IconPhMagnifyingGlassLight class="mr-2 size-4 shrink-0 opacity-50" />
-			<ComboboxPrimitive.Input
-				cmdk-input=""
+			<Dialog {...others}>
+				<DialogContent
+					class="overflow-hidden !p-0 w-full max-w-xl"
+					closeButton={false}
+				>
+					<Command class="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:size-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:size-5">
+						{local.children}
+					</Command>
+				</DialogContent>
+			</Dialog>
+		</CommandContext.Provider>
+	);
+};
+
+const CommandInput: Component<VoidProps<CommandPrimitive.CommandInputProps>> = (
+	props,
+) => {
+	const [local, others] = splitProps(props, ["class"]);
+
+	return (
+		<div class="flex items-center border-b px-3" cmdk-input-wrapper="">
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				class="mr-2 size-4 shrink-0 opacity-50"
+			>
+				<path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" />
+				<path d="M21 21l-6 -6" />
+			</svg>
+			<CommandPrimitive.CommandInput
 				class={cn(
 					"flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
 					local.class,
 				)}
-				{...rest}
+				{...others}
 			/>
-		</ComboboxPrimitive.Control>
+		</div>
 	);
 };
 
-const CommandList = <Option, OptGroup, T extends ValidComponent = "ul">(
-	props: VoidProps<PolymorphicProps<T, ComboboxListboxProps<Option, OptGroup>>>,
+const CommandList: Component<ParentProps<CommandPrimitive.CommandListProps>> = (
+	props,
 ) => {
-	const [local, rest] = splitProps(props as any, ["class"]);
+	const [local, others] = splitProps(props, ["class"]);
 
 	return (
-		<ComboboxPrimitive.Listbox
-			cmdk-list=""
-			class={cn(
-				"max-h-[300px] overflow-y-auto overflow-x-hidden p-1",
-				local.class,
-			)}
-			{...rest}
+		<CommandPrimitive.CommandList
+			class={cn("max-h-[300px] overflow-y-auto overflow-x-hidden", local.class)}
+			{...others}
 		/>
 	);
 };
 
-const CommandItem = <T extends ValidComponent = "li">(
-	props: PolymorphicProps<T, ListboxItemProps>,
-) => {
-	const [local, rest] = splitProps(props as any, ["class", "item"]);
+const CommandEmpty: Component<ParentProps<CommandPrimitive.CommandEmptyProps>> =
+	(props) => {
+		const [local, others] = splitProps(props, ["class"]);
+
+		return (
+			<CommandPrimitive.CommandEmpty
+				class={cn("py-6 text-center text-sm", local.class)}
+				{...others}
+			/>
+		);
+	};
+
+const CommandGroup: Component<ParentProps<CommandPrimitive.CommandGroupProps>> =
+	(props) => {
+		const [local, others] = splitProps(props, ["class"]);
+
+		return (
+			<CommandPrimitive.CommandGroup
+				class={cn(
+					"overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground",
+					local.class,
+				)}
+				{...others}
+			/>
+		);
+	};
+
+const CommandSeparator: Component<
+	VoidProps<CommandPrimitive.CommandSeparatorProps>
+> = (props) => {
+	const [local, others] = splitProps(props, ["class"]);
 
 	return (
-		<ComboboxPrimitive.Item
-			item={local.item}
+		<CommandPrimitive.CommandSeparator
+			class={cn("h-px bg-border", local.class)}
+			{...others}
+		/>
+	);
+};
+
+const CommandItem: Component<ParentProps<CommandPrimitive.CommandItemProps>> = (
+	props,
+) => {
+	const [local, others] = splitProps(props, ["class"]);
+
+	return (
+		<CommandPrimitive.CommandItem
 			cmdk-item=""
 			class={cn(
-				"relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50",
+				"relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none aria-selected:bg-accent aria-selected:text-accent-foreground data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50",
 				local.class,
 			)}
-			{...rest}
+			{...others}
 		/>
 	);
 };
 
-const CommandItemLabel = ComboboxPrimitive.ItemLabel;
-
-const CommandHeading = <T extends ValidComponent = "li">(
-	props: PolymorphicProps<T, ListboxSectionProps>,
-) => {
-	const [local, rest] = splitProps(props as any, ["class"]);
-
-	return (
-		<ComboboxPrimitive.Section
-			cmdk-heading=""
-			class={cn(
-				"px-2 py-1.5 text-xs font-medium text-muted-foreground [&:not(&:first-of-type)]:mt-2",
-				local.class,
-			)}
-			{...rest}
-		/>
-	);
-};
-
-const CommandItemShortcut = <T extends ValidComponent = "span">(
-	props: ComponentProps<T>,
-) => {
-	const [local, rest] = splitProps(props as any, ["class"]);
+const CommandShortcut: Component<ComponentProps<"span">> = (props) => {
+	const [local, others] = splitProps(props, ["class"]);
 
 	return (
 		<span
@@ -140,42 +169,20 @@ const CommandItemShortcut = <T extends ValidComponent = "span">(
 				"ml-auto text-xs tracking-widest text-muted-foreground",
 				local.class,
 			)}
-			{...rest}
+			{...others}
 		/>
-	);
-};
-
-const CommandDialog = <
-	Option,
-	OptGroup = never,
-	T extends ValidComponent = "div",
->(
-	props: DialogRootProps &
-		PolymorphicProps<T, ComboboxRootProps<Option, OptGroup>>,
-) => {
-	const [local, rest] = splitProps(props, ["children"]);
-
-	return (
-		<Dialog {...rest}>
-			<DialogContent class="overflow-hidden p-0">
-				<Command
-					class="[&_[cmdk-heading]]:px-2 [&_[cmdk-heading]]:font-medium [&_[cmdk-heading]]:text-muted-foreground [&_[cmdk-input-wrapper]_svg]:size-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:size-5 [&_[cmdk-list]:not([hidden])_~[cmdk-list]]:pt-0 [&_[cmdk-list]]:px-2"
-					{...rest}
-				>
-					{local.children}
-				</Command>
-			</DialogContent>
-		</Dialog>
 	);
 };
 
 export {
 	Command,
+	CommandDialog,
 	CommandInput,
 	CommandList,
+	CommandEmpty,
+	CommandGroup,
 	CommandItem,
-	CommandItemLabel,
-	CommandItemShortcut,
-	CommandHeading,
-	CommandDialog,
+	CommandShortcut,
+	CommandSeparator,
+	useCommandCtx,
 };

@@ -17,19 +17,19 @@ pub struct Policy {
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct PolicyData {
     /// SyncML nodes
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    // #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub windows: HashMap<String, OMANode>,
     /// inner part of the `.mobileconfig`
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    // #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub macos: HashMap<String, Vec<serde_json::Value>>,
     /// Android configuration
-    #[serde(default, skip_serializing_if = "is_unit")]
+    // #[serde(default, skip_serializing_if = "is_unit")]
     pub android: (),
     /// Linux configuration
-    #[serde(default, skip_serializing_if = "is_unit")]
+    // #[serde(default, skip_serializing_if = "is_unit")]
     pub linux: (),
     /// Scripts
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    // #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scripts: Vec<Script>,
 }
 
