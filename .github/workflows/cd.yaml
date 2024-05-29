@@ -102,9 +102,10 @@ jobs:
           - web
     name: Build ${{ matrix.projects }}
     runs-on: ubuntu-latest
+    if: ${{ !steps.planner.outputs.planner[matrix.projects] }}
     needs: [plan]
     environment:
-      name: ${{ matrix.projects.name }}
+      name: ${{ matrix.projects }}
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
