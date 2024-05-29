@@ -84,7 +84,7 @@ jobs:
             const ret = {};
 
             for (const proj of projects) {
-            	const code = await exec.exec('pnpx', ['nx-ignore', `@mattrax/${proj}`]);
+            	const code = await exec.exec('pnpx', ['nx-ignore', `@mattrax/${proj}`]).catch(() => 1);
 
               ret[proj] = code === 1;
             }
