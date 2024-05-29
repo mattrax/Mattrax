@@ -88,7 +88,7 @@ jobs:
       
       - name: Export URL
         id: result
-        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_ENV
+        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
 
   docs:
     name: Docs
@@ -120,7 +120,7 @@ jobs:
       
       - name: Export URL
         id: result
-        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_ENV
+        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
 
       - name: echo A
         env:
@@ -169,4 +169,4 @@ jobs:
       
       - name: Export URL
         id: result
-        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_ENV
+        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
