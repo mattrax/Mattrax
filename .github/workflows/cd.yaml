@@ -82,12 +82,14 @@ jobs:
             const ret = {};
 
             for (const proj of projects) {
-            	const code = await exec.exec('pnpx', ['nx-ignore', `@mattrax/${proj}`]);
+            	const code = await exec.exec('pnpx', ['nx-ignore', `@mattrax/${proj}`, '--base', $GITHUB_BASE_REF']);
 
               ret[proj] = code === 1;
             }
 
             return ret
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
 
   build:
     strategy:
