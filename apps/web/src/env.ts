@@ -7,6 +7,8 @@ function optional_in_dev<T extends z.ZodTypeAny>(
 	return process.env.NODE_ENV === "development" ? schema.optional() : schema;
 }
 
+console.log("ENV", process.env);
+
 export const env = createEnv({
 	server: {
 		// Used to secure the session for the dashboard
