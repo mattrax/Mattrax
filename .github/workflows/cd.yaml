@@ -71,6 +71,8 @@ jobs:
         with:
           version: latest
 
+      - run: pnpm i -g nx
+
       - uses: actions/github-script@v6
         id: planner
         with:
