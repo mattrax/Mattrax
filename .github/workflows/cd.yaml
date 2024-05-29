@@ -82,7 +82,7 @@ jobs:
             const ret = {};
 
             for (const proj of projects) {
-            	const code = await exec.exec('pnpx', ['nx-ignore', `@mattrax/${proj}`, '--base', $GITHUB_BASE_REF']);
+            	const code = await exec.exec('pnpx', ['nx-ignore', `@mattrax/${proj}`, '--base', process.env.GITHUB_BASE_REF]);
 
               ret[proj] = code === 1;
             }
