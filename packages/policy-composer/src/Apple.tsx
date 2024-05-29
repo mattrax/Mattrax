@@ -365,6 +365,7 @@ function Payloads(props: { payloads?: Record<string, AppleProfilePayload> }) {
 							<li class="flex flex-row items-center gap-4 px-4 py-1">
 								<Checkbox
 									id={id}
+									disabled={!!controller.state.apple}
 									onChange={(value) => {
 										if (value)
 											controller.setState("apple", key, (k) => ({

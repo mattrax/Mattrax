@@ -396,6 +396,7 @@ function CSPS(props: { csps?: Record<string, WindowsCSP> }) {
 						return (
 							<li class="flex flex-row items-center gap-4 px-4 py-1">
 								<Checkbox
+									disabled={!!controller.state.windows}
 									id={id}
 									onChange={(value) => {
 										if (value)
