@@ -19,6 +19,10 @@ jobs:
         with:
           version: latest
 
+      - uses: actions/setup-node@v4
+        with:
+          cache: "pnpm"
+
       - name: Install dependencies
         run: pnpm i
 
@@ -46,6 +50,10 @@ jobs:
         with:
           version: latest
 
+      - uses: actions/setup-node@v4
+        with:
+          cache: "pnpm"
+
       - name: Install Bun
         uses: oven-sh/setup-bun@v1
 
@@ -72,6 +80,10 @@ jobs:
       - uses: pnpm/action-setup@v2
         with:
           version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm i
