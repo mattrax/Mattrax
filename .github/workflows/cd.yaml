@@ -107,7 +107,7 @@ jobs:
     name: Build ${{ matrix.projects }}
     runs-on: ubuntu-latest
     needs: [plan]
-    # if: ${{ needs.plan.outputs.planner[matrix.projects] }}
+    if: needs.plan.outputs.planner[matrix.projects]
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
