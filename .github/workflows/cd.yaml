@@ -95,7 +95,7 @@ jobs:
           # if $?; then
           #   echo "SHOULD_RUN=$?" >> GITHUB_OUTPUT
           # fi
-          echo "SHOULD_RUN=$?" >> GITHUB_OUTPUT
+          echo "SHOULD_RUN=1" >> GITHUB_OUTPUT
       
       - name: Plan Result
         if: steps.plan.outputs.SHOULD_RUN == 1
@@ -113,6 +113,11 @@ jobs:
         with:
           name: ${{ matrix.projects }}-dist
           path: apps/${{ matrix.projects }}/dist
+
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ${{fromJson(needs.build.outputs.projects)}}
 
   deploy:
     strategy:
