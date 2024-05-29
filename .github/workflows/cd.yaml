@@ -66,6 +66,8 @@ jobs:
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - uses: pnpm/action-setup@v4
         with:
@@ -82,7 +84,7 @@ jobs:
             const ret = {};
 
             for (const proj of projects) {
-            	const code = await exec.exec('pnpx', ['nx-ignore', `@mattrax/${proj}`, '--base', process.env.GITHUB_BASE_REF]);
+            	const code = await exec.exec('pnpx', ['nx-ignore', `@mattrax/${proj}`]);
 
               ret[proj] = code === 1;
             }
