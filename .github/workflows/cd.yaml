@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: landing
-      url: https://mattrax.app
+      url: ${{ steps.landing.outputs.DEPLOYMENT_URL }}
     needs: [sst]
     if: ${{ !failure() && !cancelled() }}
     steps:
@@ -84,14 +84,17 @@ jobs:
         run: pnpm landing build
 
       - name: Deploy
-        run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-landing
+        run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-landing | tee -a BUILD_OUTPUT
+      
+      - name: Export URL
+        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1 )" >> $DEPLOYMENT_URL
 
   docs:
     name: Docs
     runs-on: ubuntu-latest
     environment:
       name: docs
-      url: https://docs.mattrax.app
+      url: ${{ steps.docs.outputs.DEPLOYMENT_URL }}
     needs: [sst]
     if: ${{ !failure() && !cancelled() }}
     steps:
@@ -112,14 +115,17 @@ jobs:
         run: pnpm landing build
 
       - name: Deploy
-        run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-docs
+        run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-docs | tee -a BUILD_OUTPUT
+      
+      - name: Export URL
+        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1 )" >> $DEPLOYMENT_URL
 
   web:
     name: Web
     runs-on: ubuntu-latest
     environment:
       name: web
-      url: https://cloud.mattrax.app
+      url: ${{ steps.web.outputs.DEPLOYMENT_URL }}
     needs: [sst]
     if: ${{ !failure() && !cancelled() }}
     steps:
@@ -152,4 +158,7 @@ jobs:
         run: pnpm web build
 
       - name: Deploy
-        run: pnpm web exec wrangler pages deploy dist/ --project-name mattrax
+        run: pnpm web exec wrangler pages deploy dist/ --project-name mattrax | tee -a BUILD_OUTPUT
+      
+      - name: Export URL
+        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1 )" >> $DEPLOYMENT_URL
