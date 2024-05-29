@@ -59,6 +59,32 @@ export default defineConfig({
 		analyze: {
 			filename: "stats-nitro.html",
 		},
+		routeRules: {
+			"/**": {
+				headers: {
+					"Cache-Control": "public,max-age=0,must-revalidate",
+					"Cloudflare-CDN-Cache-Control": "public,max-age=31536000,immutable",
+					"X-Frame-Options": "DENY",
+					"X-Content-Type-Options": "nosniff",
+					"Referrer-Policy": "strict-origin-when-cross-origin",
+					"Permissions-Policy": "()",
+					"Strict-Transport-Security":
+						"max-age=31536000; includeSubDomains; preload",
+					// TODO: Setup a proper content security policy
+					// "Content-Security-Policy": "script-src 'self';",
+				},
+			},
+			"/favicon.ico": {
+				headers: {
+					"Cache-Control": "public,immutable,max-age=31536000",
+				},
+			},
+			"/assets/**": {
+				headers: {
+					"Cache-Control": "public,immutable,max-age=31536000",
+				},
+			},
+		},
 		cloudflare: {
 			pages: {
 				routes: {
