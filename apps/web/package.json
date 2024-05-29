@@ -30,6 +30,7 @@
 		"@paralleldrive/cuid2": "^2.2.2",
 		"@planetscale/database": "^1.18.0",
 		"@solid-mediakit/trpc": "^3.0.2",
+		"@solid-primitives/autofocus": "^0.0.111",
 		"@solid-primitives/context": "^0.2.3",
 		"@solid-primitives/date": "^2.0.21",
 		"@solid-primitives/event-bus": "^1.0.11",

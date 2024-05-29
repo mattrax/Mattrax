@@ -235,7 +235,7 @@ function WebPagesProject({
 			DATABASE_URL: INTERNAL_SECRET().apply(
 				(internal) => `https://:${internal}@${MDM_URL}`,
 			),
-			FROM_ADDRESS: process.env.FROM_ADDRESS ?? "noreply@mattrax.app",
+			FROM_ADDRESS: process.env.FROM_ADDRESS ?? "hello@mattrax.app",
 			PNPM_VERSION: "9.0.0",
 			STRIPE_PUBLISHABLE_KEY:
 				process.env.STRIPE_PUBLISHABLE_KEY ??
