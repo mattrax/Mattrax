@@ -88,13 +88,14 @@ jobs:
       
       - name: Plan
         id: plan
-        # env:
-        #   GITHUB_BASE_REF: ${{ github.base_ref }}
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
         run: |
-          pnpx nx-ignore @mattrax/${{ matrix.projects }}
-          if some_command; then
-            echo "SHOULD_RUN=$?" >> GITHUB_OUTPUT
-          fi
+          # pnpx nx-ignore @mattrax/${{ matrix.projects }}
+          # if $?; then
+          #   echo "SHOULD_RUN=$?" >> GITHUB_OUTPUT
+          # fi
+          echo "SHOULD_RUN=$?" >> GITHUB_OUTPUT
       
       - name: Plan Result
         if: steps.plan.outputs.SHOULD_RUN == 1
