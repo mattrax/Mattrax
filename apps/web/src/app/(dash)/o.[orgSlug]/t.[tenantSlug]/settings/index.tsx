@@ -14,14 +14,8 @@ import type { RouteDefinition } from "@solidjs/router";
 import { z } from "zod";
 
 import { trpc } from "~/lib";
-import { useTenant } from "../Context";
+import { useTenant, useTenantSlug } from "../ctx";
 import { DeleteTenantButton } from "./DeleteTenantButton";
-
-export const route = {
-	load: ({ params }) => {
-		// TODO
-	},
-} satisfies RouteDefinition;
 
 export default function Page() {
 	return (
@@ -33,6 +27,7 @@ export default function Page() {
 }
 
 function SettingsCard() {
+	const tenantSlug = useTenantSlug();
 	const tenant = useTenant();
 
 	// TODO: rollback form on failure
@@ -42,14 +37,14 @@ function SettingsCard() {
 
 	const form = createZodForm({
 		schema: z.object({ name: z.string(), slug: z.string() }),
-		defaultValues: {
-			name: tenant().name,
-			slug: tenant().slug,
-		},
+		defaultValues: () => ({
+			name: tenant()?.name || "",
+			slug: tenant()?.slug || "",
+		}),
 		onSubmit: ({ value }) =>
 			updateTenant.mutateAsync({
 				name: value.name,
-				tenantSlug: tenant().slug,
+				tenantSlug: tenantSlug(),
 			}),
 	});
 
@@ -59,7 +54,7 @@ function SettingsCard() {
 				<CardTitle>Tenant Settings</CardTitle>
 				<CardDescription>Basic tenant configuration.</CardDescription>
 			</CardHeader>
-			<Form form={form}>
+			<Form form={form} disabled={tenant.query.isPending}>
 				<CardContent class="justify-between gap-x-2 gap-y-3 grid grid-cols-1 md:grid-cols-2">
 					<InputField class="col-span-1" form={form} name="name" label="Name" />
 					<InputField class="col-span-1" form={form} name="slug" label="Slug" />

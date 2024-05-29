@@ -55,9 +55,11 @@ const columns = [
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
 export default function Page() {
-	const params = useZodParams({ tenantSlug: z.string() });
+	const tenantSlug = useTenantSlug();
 
-	const policies = trpc.policy.list.createQuery(() => params);
+	const policies = trpc.policy.list.createQuery(() => ({
+		tenantSlug: tenantSlug(),
+	}));
 	cacheMetadata("policy", () => policies.data ?? []);
 
 	const table = createStandardTable({
@@ -100,10 +102,9 @@ import { z } from "zod";
 
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
-import { useZodParams } from "~/lib/useZodParams";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { useTenantSlug } from "../../t.[tenantSlug]";
 import { cacheMetadata } from "../metadataCache";
+import { useTenantSlug } from "../ctx";
 
 function CreatePolicyButton() {
 	const tenantSlug = useTenantSlug();

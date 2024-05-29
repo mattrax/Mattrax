@@ -1,4 +1,3 @@
-import { Button } from "@mattrax/ui";
 import {
 	A,
 	type RouteSectionProps,
@@ -6,22 +5,17 @@ import {
 	useResolvedPath,
 } from "@solidjs/router";
 import { Show } from "solid-js";
-import { z } from "zod";
 
 import { createQueryCacher, useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
-import { useZodParams } from "~/lib/useZodParams";
 import { cachedTenantsForOrg } from "~[orgSlug]/utils";
 import { cachedOrgs } from "~dash/utils";
-import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
 import { Breadcrumb } from "../Breadcrumb";
 import { MultiSwitcher } from "../MultiSwitcher";
+import { useTenantParams } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/ctx";
 
 export default function (props: RouteSectionProps) {
-	const params = useZodParams({
-		orgSlug: z.string(),
-		tenantSlug: z.string(),
-	});
+	const params = useTenantParams();
 
 	const query = trpc.org.list.createQuery();
 	const orgs = useCachedQueryData(query, () => cachedOrgs());
@@ -49,11 +43,7 @@ export default function (props: RouteSectionProps) {
 						return (
 							<div class="flex flex-row items-center py-1 gap-2">
 								<A href={match()?.params.segment ?? ""}>{tenant()?.name}</A>
-								<MultiSwitcher>
-									<Button variant="ghost" size="iconSmall">
-										<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
-									</Button>
-								</MultiSwitcher>
+								<MultiSwitcher />
 							</div>
 						);
 					}}

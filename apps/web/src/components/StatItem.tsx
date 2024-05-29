@@ -61,7 +61,7 @@ export function StatItem(
 					</Switch>
 				</div>
 			</CardContent>
-			<A class="absolute inset-0" href={props.href} />
+			<A class="absolute inset-0 rounded-lg" href={props.href} />
 		</Card>
 	);
 }

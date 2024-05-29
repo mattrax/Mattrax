@@ -13,9 +13,9 @@ import { z } from "zod";
 
 import { checkAuth } from "~/api/auth";
 import { createAPIKey } from "~/api/trpc/routers/apiKey";
+import { useAuth } from "~/app/(dash)/utils";
 import { cliAuthCodes, db } from "~/db";
 import { useZodParams } from "~/lib/useZodParams";
-import { AuthContext, useAuth } from "~c/AuthContext";
 
 const getCode = cache(async (code: string) => {
 	"use server";
@@ -56,6 +56,7 @@ export default function Page() {
 	const params = useZodParams({
 		code: z.string(),
 	});
+	const auth = useAuth();
 
 	const code = createAsync(() => getCode(params.code));
 
@@ -63,44 +64,38 @@ export default function Page() {
 	const authorizeSubmission = useSubmission(authorizeCodeAction);
 
 	return (
-		<AuthContext>
-			<div class="flex flex-col justify-center items-center flex-1 w-full">
-				<Card>
-					<CardHeader>
-						<CardTitle class="text-center">
-							Sign in to the Mattrax CLI
-						</CardTitle>
-					</CardHeader>
-					<CardContent class="flex flex-col items-center">
-						<Suspense fallback="Loading...">
-							<Show when={code()} fallback="Code not found">
-								{(code) => (
-									<Switch>
-										<Match when={!authorizeSubmission.result}>
-											<Button
-												disabled={authorizeSubmission.pending}
-												onClick={() => authorizeCode(code().code)}
-											>
-												Continue as
-												<span class="ml-1 font-semibold">
-													{useAuth()().email}
-												</span>
-											</Button>
-											{/* <span>Or <Button variant="link">sign in as a different user</Button></span> */}
-										</Match>
-										<Match when={authorizeSubmission.error}>
-											Error authorizing code
-										</Match>
-										<Match when={authorizeSubmission.result}>
-											Code authorized, return to the CLI!
-										</Match>
-									</Switch>
-								)}
-							</Show>
-						</Suspense>
-					</CardContent>
-				</Card>
-			</div>
-		</AuthContext>
+		<div class="flex flex-col justify-center items-center flex-1 w-full">
+			<Card>
+				<CardHeader>
+					<CardTitle class="text-center">Sign in to the Mattrax CLI</CardTitle>
+				</CardHeader>
+				<CardContent class="flex flex-col items-center">
+					<Suspense fallback="Loading...">
+						<Show when={code()} fallback="Code not found">
+							{(code) => (
+								<Switch>
+									<Match when={!authorizeSubmission.result}>
+										<Button
+											disabled={authorizeSubmission.pending}
+											onClick={() => authorizeCode(code().code)}
+										>
+											Continue as
+											<span class="ml-1 font-semibold">{auth.data?.email}</span>
+										</Button>
+										{/* <span>Or <Button variant="link">sign in as a different user</Button></span> */}
+									</Match>
+									<Match when={authorizeSubmission.error}>
+										Error authorizing code
+									</Match>
+									<Match when={authorizeSubmission.result}>
+										Code authorized, return to the CLI!
+									</Match>
+								</Switch>
+							)}
+						</Show>
+					</Suspense>
+				</CardContent>
+			</Card>
+		</div>
 	);
 }

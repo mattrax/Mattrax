@@ -3,11 +3,13 @@ export type AppleProfilePayload = {
 	description: string;
 	properties: { [key in string]: Property };
 	supervised: boolean;
+	unique: boolean;
 };
 export type Property = {
 	title?: string | null;
 	description?: string | null;
 	type: PropertyType;
+	supervised: boolean;
 };
 export type PropertyType =
 	| { array: PropertyType[] }
@@ -18,7 +20,7 @@ export type PropertyType =
 	| "integer"
 	| "real"
 	| "float"
-	| "string"
+	| { string: { rangeList: [string, string][] } }
 	| "url"
 	| "alias"
 	| "unionPolicy"

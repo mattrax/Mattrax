@@ -17,9 +17,7 @@ export default function Page() {
 				Control billing settings for this tenant.
 			</p>
 			<div class="flex flex-col gap-4">
-				<p class="mt-2 mb-3 text-gray-700 text-xl">
-					While Mattrax is beta, it's free!
-				</p>
+				<p>While Mattrax is beta, it's free!</p>
 
 				{/* <p>Devices: 0</p> */}
 				{/* TODO: How much is owed and when it's due */}

@@ -52,7 +52,7 @@ export const policyRouter = createTRPCRouter({
 	),
 
 	get: authedProcedure
-		.input(z.object({ id: z.string() }))
+		.input(z.object({ policyId: z.string() }))
 		.query(async ({ ctx, input }) => {
 			const [policy] = await db
 				.select({
@@ -63,7 +63,7 @@ export const policyRouter = createTRPCRouter({
 					tenantPk: policies.tenantPk,
 				})
 				.from(policies)
-				.where(eq(policies.id, input.id));
+				.where(eq(policies.id, input.policyId));
 			if (!policy) return null; // TODO: Error and have frontend catch and handle it
 
 			await ctx.ensureTenantMember(policy.tenantPk);
@@ -74,6 +74,8 @@ export const policyRouter = createTRPCRouter({
 				.where(and(eq(policyDeploy.policyPk, policy.pk)))
 				.orderBy(desc(policyDeploy.doneAt))
 				.limit(1);
+
+			await new Promise((resolve) => setTimeout(resolve, 1000));
 
 			return {
 				// The differences between the policies state and the last deployed version
@@ -207,7 +209,7 @@ export const policyRouter = createTRPCRouter({
 			z.object({
 				name: z.string().optional(),
 				// TODO: Validate the input type
-				data: z.any().optional(),
+				data: z.custom<PolicyData>().optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {

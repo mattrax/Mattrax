@@ -1,10 +1,16 @@
+import { flushResponse } from "@mattrax/trpc-server-function/server";
 import { createId } from "@paralleldrive/cuid2";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { createAuditLog } from "~/api/auditLog";
 import { useTransaction } from "~/api/utils/transaction";
 import { applications } from "~/db";
-import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import {
+	authedProcedure,
+	createTRPCRouter,
+	publicProcedure,
+	tenantProcedure,
+} from "../helpers";
 
 export const applicationRouter = createTRPCRouter({
 	list: tenantProcedure
@@ -32,10 +38,10 @@ export const applicationRouter = createTRPCRouter({
 		}),
 
 	get: authedProcedure
-		.input(z.object({ id: z.string() }))
+		.input(z.object({ appId: z.string() }))
 		.query(async ({ input, ctx }) => {
 			const app = await ctx.db.query.applications.findFirst({
-				where: eq(applications.id, input.id),
+				where: eq(applications.id, input.appId),
 			});
 			if (!app) return null;
 
@@ -48,7 +54,7 @@ export const applicationRouter = createTRPCRouter({
 		.input(
 			z.object({
 				name: z.string(),
-				targetType: z.enum(["iOS"]),
+				targetType: z.enum(["iOS", "Windows"]),
 				targetId: z.string(),
 			}),
 		)
@@ -66,4 +72,58 @@ export const applicationRouter = createTRPCRouter({
 
 			return { id };
 		}),
+
+	searchWindowsStore: publicProcedure
+		.input(z.object({ query: z.string() }))
+		.query(async ({ input, ctx }) => {
+			flushResponse();
+
+			const res = await fetch(
+				"https://storeedgefd.dsx.mp.microsoft.com/v9.0/manifestSearch",
+				{
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						MaximumResults: 50,
+						Filters: [
+							{
+								PackageMatchField: "Market",
+								RequestMatch: { KeyWord: "US", MatchType: "CaseInsensitive" },
+							},
+						],
+						Query: { KeyWord: input.query, MatchType: "Substring" },
+					}),
+				},
+			);
+			if (!res.ok) throw new Error("Failed to search Windows Store");
+
+			// TODO: Pagination support
+
+			// TODO: Cache these results. Intune's seem to which Cache-Control but idk how much of that we can do with our batching.
+
+			const data = await res.json();
+			console.log(JSON.stringify(data.Data)); // TODO
+			return microsoftManifestSearchSchema.parse(data);
+		}),
+});
+
+const microsoftManifestSearchSchema = z.object({
+	$type: z.string(),
+	Data: z.array(
+		z.object({
+			$type: z.string(),
+			PackageIdentifier: z.string(),
+			PackageName: z.string(),
+			Publisher: z.string(),
+			Versions: z.array(
+				z.object({
+					$type: z.string(),
+					PackageVersion: z.string(),
+					PackageFamilyNames: z.array(z.string()).optional(),
+				}),
+			),
+		}),
+	),
 });

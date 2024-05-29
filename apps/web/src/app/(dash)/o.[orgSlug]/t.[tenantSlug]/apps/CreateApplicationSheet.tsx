@@ -21,14 +21,16 @@ import {
 	type Accessor,
 	For,
 	type JSX,
+	Show,
 	Suspense,
 	createEffect,
 	createSignal,
 	startTransition,
 } from "solid-js";
 import { z } from "zod";
+import { getObjectKeys } from "~/api/utils";
 import { trpc } from "~/lib";
-import { useTenantSlug } from "../../t.[tenantSlug]";
+import { useTenantSlug } from "../ctx";
 
 const IOS_APP_SCHEMA = z.object({
 	results: z.array(
@@ -45,7 +47,7 @@ const APPLICATION_TARGETS = {
 	iOS: {
 		display: "iOS/iPad OS",
 		queryOptions: (search) => ({
-			queryKey: ["appStoreSearch", search()],
+			queryKey: ["macOSStoreSearch", search()],
 			queryFn: async () => {
 				// TODO: Pagination support
 				const res = await fetch(
@@ -54,15 +56,51 @@ const APPLICATION_TARGETS = {
 						entity: "software",
 					})}`,
 				);
+				const data = IOS_APP_SCHEMA.parse(await res.json());
+				return data.results.map((result) => ({
+					id: result.bundleId,
+					name: result.trackName,
+					author: result.sellerName,
+					image: result.artworkUrl512,
+				})) as App[];
+			},
+		}),
+	},
+	Windows: {
+		display: "Windows Store",
+		queryOptions: (search, ctx) => ({
+			queryKey: ["windowsStoreSearch", search()],
+			queryFn: async () => {
+				// TODO: Pagination support
+				const result = await ctx.app.searchWindowsStore.fetch({
+					query: search(),
+				});
 
-				return IOS_APP_SCHEMA.parse(await res.json());
+				return result.Data.map((result) => ({
+					id: result.PackageIdentifier,
+					name: result.PackageName,
+					author: result.Publisher,
+				})) as App[];
 			},
 		}),
 	},
 } satisfies Record<
 	string,
-	{ display: string; queryOptions: (search: Accessor<string>) => any }
+	{
+		display: string;
+		queryOptions: (
+			search: Accessor<string>,
+			ctx: ReturnType<typeof trpc.useContext>,
+		) => any;
+	}
 >;
+
+type App = {
+	id: string;
+	name: string;
+	author: string;
+	image?: string;
+};
 
 export function CreateApplicationSheet(props: {
 	children?: (props: any) => JSX.Element;
@@ -85,8 +123,7 @@ export function CreateApplicationSheet(props: {
 		onSubmit: async ({ value }) => {
 			const app = await createApplication.mutateAsync({
 				...value,
-				name: query.data?.results.find((r) => r.bundleId === value.targetId)
-					?.trackName!,
+				name: query.data?.find((r) => r.id === value.targetId)?.name!,
 				tenantSlug: tenantSlug(),
 			});
 			await startTransition(() => navigate(app.id));
@@ -95,30 +132,26 @@ export function CreateApplicationSheet(props: {
 
 	const [search, setSearch] = createSignal("");
 
-	const query = createQuery(() => {
-		// debugger;
-		return {
-			...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
-				search,
-			),
-			enabled: open(),
-		};
-	});
+	const ctx = trpc.useContext();
+	const query = createQuery(() => ({
+		...APPLICATION_TARGETS[form.getFieldValue("targetType")].queryOptions(
+			search,
+			ctx,
+		),
+		enabled: open(),
+		initialData: [],
+	}));
 
 	createEffect(() => {
-		const results = query.data?.results;
+		const results = query.data;
 		if (!results) {
 			form.setFieldValue("targetId", undefined!);
 			return;
 		}
 
-		const first = results[0]?.bundleId;
+		const first = results[0]?.id;
 		if (!form.getFieldValue("targetId")) form.setFieldValue("targetId", first!);
-		if (
-			results.find(
-				(result) => result.bundleId === form.getFieldValue("targetId"),
-			)
-		)
+		if (results.find((result) => result.id === form.getFieldValue("targetId")))
 			return;
 
 		form.setFieldValue("targetId", first!);
@@ -146,23 +179,13 @@ export function CreateApplicationSheet(props: {
 									onChange={(v) => field().handleChange(v as any)}
 								>
 									<TabsList>
-										<For
-											each={
-												["iOS"] satisfies Array<
-													keyof typeof APPLICATION_TARGETS
-												>
-											}
-										>
+										<For each={getObjectKeys(APPLICATION_TARGETS)}>
 											{(target) => (
 												<TabsTrigger value={target}>
 													{APPLICATION_TARGETS[target].display}
 												</TabsTrigger>
 											)}
 										</For>
-										{/*
-                                <TabsTrigger value="macOS">macOS</TabsTrigger>
-                                <TabsTrigger value="windows">Windows</TabsTrigger> */}
-										<TabsIndicator />
 									</TabsList>
 								</Tabs>
 							)}
@@ -182,10 +205,21 @@ export function CreateApplicationSheet(props: {
 								onChange={(v) => field().handleChange(v)}
 							>
 								<div class="p-1">
-									<Suspense>
-										<For each={query.data?.results}>
+									<Suspense
+										fallback={
+											<p class="text-muted-foreground opacity-70">Loading...</p>
+										}
+									>
+										<For
+											each={query.data}
+											fallback={
+												<p class="text-muted-foreground opacity-70">
+													No applications found...
+												</p>
+											}
+										>
 											{(app) => (
-												<RadioGroup.Item value={app.bundleId}>
+												<RadioGroup.Item value={app.id}>
 													<RadioGroup.ItemInput class="peer" />
 													<RadioGroup.ItemControl
 														class={clsx(
@@ -193,16 +227,16 @@ export function CreateApplicationSheet(props: {
 															"border-2 border-transparent ui-checked:border-brand peer-focus-visible:outline outline-brand",
 														)}
 													>
-														<img
-															src={app.artworkUrl512}
-															alt=""
-															class="rounded h-12"
-														/>
+														<Show when={app.image}>
+															<img
+																src={app.image}
+																alt=""
+																class="rounded h-12"
+															/>
+														</Show>
 														<div class="flex flex-col text-sm flex-1">
-															<span class="font-semibold">{app.trackName}</span>
-															<span class="text-gray-700">
-																{app.sellerName}
-															</span>
+															<span class="font-semibold">{app.name}</span>
+															<span class="text-gray-700">{app.author}</span>
 														</div>
 													</RadioGroup.ItemControl>
 												</RadioGroup.Item>

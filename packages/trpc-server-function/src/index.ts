@@ -168,14 +168,19 @@ export const createServerFunctionLink = <TRouter extends AnyRouter>(
 
 				promise
 					.then((p) => p)
-					.then((response) => {
-						if (queryClient)
-							for (const promise of (response as any)?.dependant || []) {
-								promise.then(([key, result]: [any, any]) => {
-									key[0] = key[0].split(".");
-									queryClient.setQueryData(key, result);
-								});
-							}
+					.then(async (response) => {
+						if (queryClient) {
+							const dependantQueries = Promise.all(
+								((response as any)?.dependant || []).map((p: any) =>
+									p.then(([key, result]: [any, any]) => {
+										key[0] = key[0].split(".");
+										queryClient.setQueryData(key, result);
+									}),
+								),
+							).then(() => (op.context as any)?.onSuccess?.());
+
+							if (op.context?.blockOn === true) await dependantQueries;
+						}
 
 						if ("error" in response) {
 							observer.error(TRPCClientError.from(response));

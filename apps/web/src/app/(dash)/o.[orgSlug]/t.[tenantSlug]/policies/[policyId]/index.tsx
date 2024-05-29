@@ -13,14 +13,12 @@ import {
 } from "@mattrax/ui";
 import { createTimeAgo } from "@solid-primitives/date";
 import { A } from "@solidjs/router";
-import { For, Suspense } from "solid-js";
-import { z } from "zod";
+import { For, Show, Suspense } from "solid-js";
 import { StatItem } from "~/components/StatItem";
 import { getInitials, trpc } from "~/lib";
 import { formatPolicy } from "~/lib/formatPolicy";
-import { useZodParams } from "~/lib/useZodParams";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { PolicyContext, usePolicy } from "./Context";
+import { usePolicy, usePolicyId } from "../ctx";
 import {
 	BruhIconLogosAndroidIcon,
 	BruhIconLogosIos,
@@ -33,14 +31,11 @@ import {
 } from "./bruh";
 
 export default function Page() {
-	const params = useZodParams({ policyId: z.string() });
-
-	const query = trpc.policy.get.createQuery(() => ({
-		id: params.policyId,
-	}));
+	const policyId = usePolicyId();
+	const policy = usePolicy();
 
 	const overview = trpc.policy.overview.createQuery(() => ({
-		id: params.policyId,
+		id: policyId(),
 	}));
 
 	return (
@@ -50,25 +45,27 @@ export default function Page() {
 					<PageLayoutHeading>Overview</PageLayoutHeading>
 
 					<Suspense>
-						<PolicyContext>
-							<div class="ml-4">
-								{usePolicy()().diff.length > 0 && (
-									<Tooltip placement="bottom-start">
-										<TooltipTrigger>
-											<A href="versions">
-												<Badge>Awaiting deploy</Badge>
-											</A>
-										</TooltipTrigger>
-										<TooltipContent>
-											This policy has unsaved changes that have not been
-											deployed!
-										</TooltipContent>
-									</Tooltip>
-								)}
+						<Show when={policy.data}>
+							{(policy) => (
+								<div class="ml-4">
+									{policy().diff.length > 0 && (
+										<Tooltip placement="bottom-start">
+											<TooltipTrigger>
+												<A href="versions">
+													<Badge>Awaiting deploy</Badge>
+												</A>
+											</TooltipTrigger>
+											<TooltipContent>
+												This policy has unsaved changes that have not been
+												deployed!
+											</TooltipContent>
+										</Tooltip>
+									)}
 
-								{/* TODO: Badge if deployment is in progress */}
-							</div>
-						</PolicyContext>
+									{/* TODO: Badge if deployment is in progress */}
+								</div>
+							)}
+						</Show>
 					</Suspense>
 				</div>
 			}
@@ -110,6 +107,8 @@ export default function Page() {
 }
 
 function PolicyContent() {
+	const policy = usePolicy();
+
 	return (
 		<Card>
 			<CardHeader>
@@ -120,20 +119,22 @@ function PolicyContent() {
 			</CardHeader>
 			<CardContent class="space-y-3 space-y-reverse">
 				<Suspense>
-					<PolicyContext>
-						<ul class="list-disc px-4">
-							<For
-								each={formatPolicy(usePolicy()().data)}
-								fallback={
-									<h2 class="text-muted-foreground opacity-70">
-										Policy is empty!
-									</h2>
-								}
-							>
-								{(txt) => <li>{txt}</li>}
-							</For>
-						</ul>
-					</PolicyContext>
+					<Show when={policy.data}>
+						{(policy) => (
+							<ul class="list-disc px-4">
+								<For
+									each={formatPolicy(policy().data)}
+									fallback={
+										<h2 class="text-muted-foreground opacity-70">
+											Policy is empty!
+										</h2>
+									}
+								>
+									{(txt) => <li>{txt}</li>}
+								</For>
+							</ul>
+						)}
+					</Show>
 				</Suspense>
 			</CardContent>
 		</Card>
@@ -141,10 +142,10 @@ function PolicyContent() {
 }
 
 function VersionHistory() {
-	const params = useZodParams({ policyId: z.string() });
+	const policyId = usePolicyId();
 
 	const versions = trpc.policy.deploys.list.createQuery(() => ({
-		policyId: params.policyId,
+		policyId: policyId(),
 		limit: 5,
 	}));
 

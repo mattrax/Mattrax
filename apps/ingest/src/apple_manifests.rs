@@ -10,8 +10,8 @@ struct AppleProfilePayload {
     title: String,
     description: String,
     properties: BTreeMap<String, Property>,
-    #[serde(skip_serializing_if = "is_false")]
     supervised: bool,
+    unique: bool,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -29,7 +29,10 @@ pub enum PropertyType {
     Integer,
     Real,
     Float,
-    String,
+    #[serde(rename_all = "camelCase")]
+    String {
+        range_list: Vec<(String, String)>,
+    },
     Url,
     Alias,
     UnionPolicy,
@@ -69,7 +72,16 @@ impl PropertyType {
             Preference::Integer(_) => PropertyType::Integer,
             Preference::Real(_) => PropertyType::Real,
             Preference::Float(_) => PropertyType::Float,
-            Preference::String(_) => PropertyType::String,
+            Preference::String {
+                pfm_range_list,
+                pfm_range_list_titles,
+                ..
+            } => PropertyType::String {
+                range_list: pfm_range_list
+                    .into_iter()
+                    .zip(pfm_range_list_titles)
+                    .collect(),
+            },
             Preference::Url(_) => PropertyType::Url,
             Preference::Alias(_) => PropertyType::Alias,
             Preference::UnionPolicy(_) => PropertyType::UnionPolicy,
@@ -84,13 +96,20 @@ pub struct Property {
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
     r#type: PropertyType,
+    #[serde(skip_serializing_if = "is_false")]
+    supervised: bool,
 }
 
 impl Property {
     fn parse(preference: apple_pfm::Preference) -> Property {
         Property {
-            title: preference.pfm_title.clone(),
+            title: preference
+                .pfm_title
+                .as_ref()
+                .or(preference.pfm_name.as_ref())
+                .cloned(),
             description: preference.pfm_description.clone(),
+            supervised: preference.pfm_supervised.unwrap_or_default(),
             r#type: PropertyType::from_preference(preference),
         }
     }
@@ -152,8 +171,9 @@ pub fn generate_bindings() {
         let profile = AppleProfilePayload {
             title: manifest.pfm_title,
             description: manifest.pfm_description,
-            properties,
+            unique: manifest.pfm_unique.unwrap_or_default(),
             supervised: manifest.pfm_supervised.unwrap_or_default(),
+            properties,
         };
 
         payloads.0.insert(manifest.pfm_domain, profile);

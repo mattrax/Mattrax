@@ -1,5 +1,4 @@
 import { A, type RouteDefinition } from "@solidjs/router";
-import { z } from "zod";
 
 import {
 	Avatar,
@@ -18,9 +17,7 @@ import type { StatsTarget } from "~/api/trpc/routers/tenant";
 import { StatItem } from "~/components/StatItem";
 import { getInitials, trpc } from "~/lib";
 import { formatAuditLogEvent } from "~/lib/formatAuditLog";
-import { useZodParams } from "~/lib/useZodParams";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { useTenantSlug } from "../t.[tenantSlug]";
 import {
 	BruhIconPhAppWindow,
 	BruhIconPhCheckBold,
@@ -31,6 +28,7 @@ import {
 	BruhIconPhXBold,
 	BruhIconSvgSpinners90Ring,
 } from "./bruh";
+import { useTenantSlug } from "./ctx";
 
 export const route = {
 	load: ({ params }) => {
@@ -48,8 +46,10 @@ export const route = {
 } satisfies RouteDefinition;
 
 export default function Page() {
-	const params = useZodParams({ tenantSlug: z.string() });
-	const stats = trpc.tenant.stats.createQuery(() => params);
+	const tenantSlug = useTenantSlug();
+	const stats = trpc.tenant.stats.createQuery(() => ({
+		tenantSlug: tenantSlug(),
+	}));
 
 	const getValue = (v: StatsTarget) =>
 		stats.data?.find((i) => i.variant === v)?.count;

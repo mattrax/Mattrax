@@ -15,7 +15,7 @@ export default defineConfig({
 	routeDir: "app",
 	solid: {
 		// We don't wanna apply Solid's JSX transform to the React emails.
-		exclude: ["src/components/OTPInput/react.tsx", "../../packages/email/**"],
+		exclude: ["../../packages/email/**"],
 	},
 	vite: ({ router }) => ({
 		envDir: monorepoRoot,

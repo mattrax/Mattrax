@@ -1,6 +1,6 @@
 import type { VariantTableVariants } from "~/components/VariantTableSheet";
 import { trpc } from "~/lib";
-import { useTenantSlug } from "../../../t.[tenantSlug]";
+import { useTenantSlug } from "../../ctx";
 
 export function createMembersVariants(pathToTenant: string) {
 	const tenantSlug = useTenantSlug();

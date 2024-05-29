@@ -14,9 +14,9 @@ import {
 } from "~c/StandardTable";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
-import { useTenantSlug } from "../../t.[tenantSlug]";
 import { cacheMetadata } from "../metadataCache";
 import { CreateApplicationSheet } from "./CreateApplicationSheet";
+import { useTenantSlug } from "../ctx";
 
 export const route = {
 	load: ({ params }) => {

@@ -1,6 +1,6 @@
-import { A, useMatches } from "@solidjs/router";
+import { A } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
-import { For, type ParentProps, createEffect } from "solid-js";
+import { For, type ParentProps } from "solid-js";
 import type { JSX } from "solid-js";
 
 import { trpc } from "~/lib";

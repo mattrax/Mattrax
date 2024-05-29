@@ -3,6 +3,7 @@ import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import {
 	Match,
+	Show,
 	Switch,
 	createSignal,
 	onMount,
@@ -13,8 +14,9 @@ import { z } from "zod";
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { useQueryClient } from "@tanstack/solid-query";
 import { resetMattraxCache } from "~/cache";
-import { OTPInput, preloadOTPInput } from "~/components/OTPInput";
+import OtpField from "@corvu/otp-field";
 import { trpc } from "~/lib";
+import clsx from "clsx";
 
 // TODO: Use Mattrax colors on this page
 
@@ -24,9 +26,6 @@ export default function Page() {
 	>({ variant: "sendCode" });
 
 	const [searchParams] = useSearchParams<{ continueTo?: string }>();
-
-	// We load this in the background on the email input page.
-	onMount(() => preloadOTPInput());
 
 	return (
 		<div class="h-full flex flex-row justify-center p-4">
@@ -138,17 +137,39 @@ export default function Page() {
 										</p>
 
 										<div class="flex justify-center">
-											<OTPInput
-												name="code"
-												disabled={form.state.isSubmitting}
-												onInput={(value) => {
-													form.setFieldValue("code", value);
-													if (value.length === 8) form.handleSubmit();
-												}}
-												onKeyDown={(e) => {
-													if (e.key === "Enter") form.handleSubmit();
-												}}
-											/>
+											<div class="flex size-full items-center justify-center">
+												<OtpField maxLength={8} class="flex">
+													<OtpField.Input
+														aria-label="Verification Code"
+														class="opacity-0"
+														name="code"
+														disabled={form.state.isSubmitting}
+														onInput={(e) => {
+															form.setFieldValue("code", e.target.value);
+															if (e.target.value.length === 8)
+																form.handleSubmit();
+														}}
+														onKeyDown={(e) => {
+															if (e.key === "Enter") form.handleSubmit();
+														}}
+													/>
+													<div class="flex items-center space-x-2">
+														<OTPSlot index={0} />
+														<OTPSlot index={1} />
+														<OTPSlot index={2} />
+														<OTPSlot index={3} />
+													</div>
+													<div class="flex size-10 items-center justify-center font-bold">
+														-
+													</div>
+													<div class="flex items-center space-x-2">
+														<OTPSlot index={4} />
+														<OTPSlot index={5} />
+														<OTPSlot index={6} />
+														<OTPSlot index={7} />
+													</div>
+												</OtpField>
+											</div>
 										</div>
 
 										<Button type="submit" class="w-full">
@@ -164,3 +185,28 @@ export default function Page() {
 		</div>
 	);
 }
+
+const OTPSlot = (props: { index: number }) => {
+	const context = OtpField.useContext();
+	const char = () => context.value()[props.index];
+	const showFakeCaret = () =>
+		context.value().length === props.index && context.isInserting();
+
+	return (
+		<div
+			class={clsx(
+				"flex size-10 items-center justify-center rounded-md bg-gray-100 font-mono text-sm font-bold transition-all",
+				{
+					"ring-corvu-text ring-2": context.activeSlots().includes(props.index),
+				},
+			)}
+		>
+			{char()}
+			<Show when={showFakeCaret()}>
+				<div class="pointer-events-none flex items-center justify-center">
+					<div class="h-4 w-px animate-caret-blink bg-corvu-text duration-1000" />
+				</div>
+			</Show>
+		</div>
+	);
+};

@@ -17,7 +17,7 @@ import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 export type ConfirmDialogState = {
 	title: string;
 	action: string;
-	description?: JSX.Element;
+	description?: () => JSX.Element;
 	inputText?: string;
 	onConfirm?: () => Promise<void>;
 	open: boolean;
@@ -80,7 +80,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 				<DialogHeader>
 					<DialogTitle>{state.title}</DialogTitle>
 					{state.description && (
-						<DialogDescription>{state.description}</DialogDescription>
+						<DialogDescription>{state.description()}</DialogDescription>
 					)}
 				</DialogHeader>
 

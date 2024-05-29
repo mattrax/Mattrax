@@ -37,8 +37,8 @@ import {
 
 import LogoImg from "~/assets/MATTRAX.png";
 import { getInitials, trpc } from "~/lib";
-import { AuthContext, useAuth } from "~c/AuthContext";
 import classes from "./@topbar/NavIndicator.module.css";
+import { useAuth } from "./utils";
 
 export default function (
 	props: RouteSectionProps<never, "navItems" | "breadcrumbs">,
@@ -148,7 +148,11 @@ function Logo() {
 
 	return (
 		<ContextMenu>
-			<ContextMenuTrigger as={A} href={org()?.path ?? "/"} class="flex">
+			<ContextMenuTrigger
+				as={A}
+				href={org()?.path ?? "/"}
+				class="flex flex-row items-center"
+			>
 				<img src={LogoImg} class="h-5" alt="Mattrax icon" />
 				<span class="ml-2 items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
 					Alpha
@@ -157,16 +161,22 @@ function Logo() {
 			<ContextMenuContent>
 				<ContextMenuGroup>
 					<ContextMenuGroupLabel>Links</ContextMenuGroupLabel>
-					<ContextMenuItem>
-						<a
-							href="https://github.com/mattrax/mattrax"
-							target="_blank"
-							rel="noreferrer"
-						>
-							GitHub
-						</a>
+					<ContextMenuItem
+						as="a"
+						href="https://github.com/mattrax/mattrax"
+						target="_blank"
+						rel="noreferrer"
+					>
+						GitHub
 					</ContextMenuItem>
-					<ContextMenuItem>Twitter</ContextMenuItem>
+					<ContextMenuItem
+						as="a"
+						href="https://x.com/mattraxapp"
+						target="_blank"
+						rel="noreferrer"
+					>
+						X (Twitter)
+					</ContextMenuItem>
 				</ContextMenuGroup>
 			</ContextMenuContent>
 		</ContextMenu>
@@ -182,7 +192,7 @@ function ProfileDropdown() {
 		onSuccess: () => start(() => navigate("/login")),
 	}));
 	// const { items } = useNavItemsContext();
-	const user = trpc.auth.me.createQuery();
+	const account = useAuth();
 
 	return (
 		<Suspense
@@ -192,33 +202,33 @@ function ProfileDropdown() {
 				</Avatar>
 			}
 		>
-			<AuthContext>
-				<DropdownMenu>
-					<DropdownMenuTrigger as={Avatar}>
-						{/* TODO: Properly hook this up + Gravatar support */}
-						{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
-						<AvatarFallback>{getInitials(useAuth()().name)}</AvatarFallback>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent>
-						<DropdownMenuLabel>{useAuth()().email}</DropdownMenuLabel>
-						<DropdownMenuSeparator />
-						<DropdownMenuItem as={A} href="account">
-							Account
+			<DropdownMenu>
+				<DropdownMenuTrigger as={Avatar}>
+					{/* TODO: Properly hook this up + Gravatar support */}
+					{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
+					<AvatarFallback>
+						{getInitials(account.data?.name || "")}
+					</AvatarFallback>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent>
+					<DropdownMenuLabel>{account.data?.email}</DropdownMenuLabel>
+					<DropdownMenuSeparator />
+					<DropdownMenuItem as={A} href="account">
+						Account
+					</DropdownMenuItem>
+					{account.data?.superadmin && (
+						<DropdownMenuItem as={A} href="settings">
+							Settings{" "}
+							<span class="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
+								Superadmin
+							</span>
 						</DropdownMenuItem>
-						{user.data?.superadmin && (
-							<DropdownMenuItem as={A} href="settings">
-								Settings{" "}
-								<span class="ml-2 inline-flex items-center rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-700/10">
-									Superadmin
-								</span>
-							</DropdownMenuItem>
-						)}
-						<DropdownMenuItem onClick={() => logout.mutate()}>
-							Logout
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
-			</AuthContext>
+					)}
+					<DropdownMenuItem onClick={() => logout.mutate()}>
+						Logout
+					</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
 		</Suspense>
 	);
 }

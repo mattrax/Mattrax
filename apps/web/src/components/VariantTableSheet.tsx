@@ -7,7 +7,6 @@ import {
 	SheetDescription,
 	SheetHeader,
 	SheetTitle,
-	SheetTrigger,
 	Tabs,
 	TabsIndicator,
 	TabsList,
@@ -120,7 +119,7 @@ export function VariantTableSheet<T extends VariantTableVariants>(
 							table.getIsSomeRowsSelected() &&
 							!(await confirm({
 								title: "Are You Sure?",
-								description: "You still have members selected",
+								description: () => "You still have members selected",
 								action: "Continue",
 							}))
 						)
@@ -172,7 +171,6 @@ export function VariantTableSheet<T extends VariantTableVariants>(
 											</TabsTrigger>
 										)}
 									</Index>
-									<TabsIndicator />
 								</TabsList>
 							</Tabs>
 							<Suspense fallback={<Button disabled>Loading...</Button>}>

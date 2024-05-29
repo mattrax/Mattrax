@@ -207,7 +207,7 @@ fn handle_mgmt_tree(tree: MgmtTree) -> Vec<(PathBuf, WindowsCSP)> {
 
             for node in node.children {
                 csp.policies
-                    .extend(handle_node(&node, &PathBuf::new(), scope))
+                    .extend(handle_node(&node, &PathBuf::from("/"), scope))
             }
 
             (PathBuf::from(path).join(node.node_name), csp)

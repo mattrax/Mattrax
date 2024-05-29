@@ -16,6 +16,7 @@
 		"./css": "./src/index.css"
 	},
 	"dependencies": {
+		"@corvu/tailwind": "^0.1.5",
 		"@kobalte/core": "^0.13.1",
 		"@solidjs/router": "^0.13.3",
 		"@tanstack/form-core": "^0.20.0",

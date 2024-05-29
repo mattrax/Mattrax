@@ -18,14 +18,15 @@ export const env = createEnv({
 		INTERNAL_SECRET: z.string(),
 		DATABASE_URL: z.string(),
 		PROD_ORIGIN: z.string(),
+		MDM_URL: z.string(),
 		FROM_ADDRESS: z.string(),
 		// Emails and other AWS services
 		// Get these values from the output of the Cloudformation template
 		AWS_ACCESS_KEY_ID: optional_in_dev(z.string()),
 		AWS_SECRET_ACCESS_KEY: optional_in_dev(z.string()),
 		// Stipe billing
-		STRIPE_PUBLISHABLE_KEY: z.string(),
-		STRIPE_SECRET_KEY: z.string(),
+		STRIPE_PUBLISHABLE_KEY: optional_in_dev(z.string()),
+		STRIPE_SECRET_KEY: optional_in_dev(z.string()),
 		// Used for syncing users from Entra to Mattrax
 		ENTRA_CLIENT_ID: z.string(),
 		ENTRA_CLIENT_SECRET: z.string(),

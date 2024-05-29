@@ -1,10 +1,9 @@
 import { A } from "@solidjs/router";
 import { For, type JSX, type ParentProps, Suspense } from "solid-js";
 
-import { AuthContext } from "~c/AuthContext";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import IcRoundArrowForward from "~icons/ic/round-arrow-forward";
-import { TenantContext } from "./Context";
+import { useTenant } from "./ctx";
 
 const navigation = [
 	{ name: "General", href: "" },
@@ -20,6 +19,8 @@ const orgSection = [
 ];
 
 export default function Layout(props: ParentProps) {
+	const _ = useTenant();
+
 	return (
 		<PageLayout
 			size="lg"
@@ -49,13 +50,7 @@ export default function Layout(props: ParentProps) {
 						</For>
 					</ul>
 				</nav>
-				<main class="flex-1 overflow-y-auto px-4">
-					<Suspense>
-						<AuthContext>
-							<TenantContext>{props.children}</TenantContext>
-						</AuthContext>
-					</Suspense>
-				</main>
+				<main class="flex-1 overflow-y-auto px-4">{props.children}</main>
 			</div>
 		</PageLayout>
 	);

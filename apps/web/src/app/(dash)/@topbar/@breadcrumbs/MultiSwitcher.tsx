@@ -1,3 +1,4 @@
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@mattrax/ui";
 import {
 	For,
@@ -8,12 +9,11 @@ import {
 	createSignal,
 	startTransition,
 } from "solid-js";
-
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { z } from "zod";
+
 import { useZodParams } from "~/lib/useZodParams";
 
-export function MultiSwitcher(props: ParentProps) {
+export function MultiSwitcher() {
 	const [modal, setModal] = createSignal<"org" | "tenant">();
 
 	const params = useZodParams({
@@ -82,7 +82,9 @@ export function MultiSwitcher(props: ParentProps) {
 					setOpen(o);
 				}}
 			>
-				<PopoverTrigger>{props.children}</PopoverTrigger>
+				<PopoverTrigger as={Button} variant="ghost" size="iconSmall">
+					<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
+				</PopoverTrigger>
 				<PopoverContent class="flex flex-row divide-x divide-gray-300 text-sm max-h-80 overflow-hidden">
 					<div class="w-[12rem] flex flex-col overflow-y-auto">
 						{/* <div class="p-1 border-b">
@@ -246,11 +248,15 @@ export function CreateTenantDialog(props: {
 	orgSlug: string;
 }) {
 	const navigate = useNavigate();
-	const orgs = trpc.org.list.createQuery(void 0, () => ({ enabled: false }));
+	const tenants = trpc.tenant.list.createQuery(
+		() => ({
+			orgSlug: props.orgSlug,
+		}),
+		() => ({ enabled: false }),
+	);
 
 	const mutation = trpc.tenant.create.createMutation(() => ({
 		onSuccess: async (slug, { orgSlug }) => {
-			// TODO: Get the data back in the response instead of a separate request
 			// Session also holds tenants
 			// await props.refetchSession();
 			await startTransition(async () => {
@@ -258,7 +264,7 @@ export function CreateTenantDialog(props: {
 				props.setOpen(false);
 			});
 		},
-		...withDependantQueries(orgs),
+		...withDependantQueries(tenants),
 	}));
 
 	const form = createZodForm({

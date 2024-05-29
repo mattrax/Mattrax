@@ -26,8 +26,8 @@ import {
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import IconCarbonCaretSort from "~icons/carbon/caret-sort.jsx";
 import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
-import { useTenantSlug } from "../../t.[tenantSlug]";
 import { cacheMetadata } from "../metadataCache";
+import { useTenantSlug } from "../ctx";
 
 export const route = {
 	load: ({ params }) => {
