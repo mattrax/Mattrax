@@ -2,14 +2,19 @@ name: CD
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
-
-concurrency:
-  group: "merge-${{ github.ref }}"
 
 permissions:
   id-token: write
   contents: read
+
+env:
+  CLOUDFLARE_DEFAULT_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
+  CLOUDFLARE_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
+  CLOUDFLARE_EMAIL: oscar@mattrax.app
+  CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
 
 jobs:
   sst:
@@ -20,12 +25,15 @@ jobs:
     #
     # I swear to god Microsoft have never tried anything they have built.
     environment: production
+    concurrency:
+      group: production
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: "arn:aws:iam::101829795063:role/mattrax-gh-actions"
           aws-region: us-east-1
@@ -38,7 +46,8 @@ jobs:
       - name: Install SST
         run: curl -fsSL https://ion.sst.dev/install | bash
 
-      - run: pnpm i
+      - name: Install
+        run: pnpm i
 
       - run: cd infra && sst deploy --stage brendonovich
         env:
@@ -46,8 +55,101 @@ jobs:
           ARM_CLIENT_ID: 8aaf4dbe-001d-4003-9572-8dd6ab658c53
           ARM_TENANT_ID: 3509b545-2799-4c5c-a0d2-f822ddbd416c
           AZURE_SUBSCRIPTION_ID: 3509b545-2799-4c5c-a0d2-f822ddbd416c
-          CLOUDFLARE_DEFAULT_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
-          CLOUDFLARE_EMAIL: brendonovich@outlook.com
-          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
           OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
           OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+
+  landing:
+    name: Landing
+    runs-on: ubuntu-latest
+    environment:
+      name: landing
+      url: https://mattrax.app
+    needs: [sst]
+    if: ${{ !failure() && !cancelled() }}
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install
+        run: pnpm i
+      
+      - name: Build
+        env:
+          NITRO_PRESET: cloudflare_pages
+          VITE_MATTRAX_CLOUD_ORIGIN: https://cloud.mattrax.app
+        run: pnpm landing build
+
+      - name: Deploy
+        run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-landing
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    environment:
+      name: docs
+      url: https://docs.mattrax.app
+    needs: [sst]
+    if: ${{ !failure() && !cancelled() }}
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install
+        run: pnpm i
+      
+      - name: Build
+        env:
+          NITRO_PRESET: cloudflare_pages
+          VITE_MATTRAX_CLOUD_ORIGIN: https://cloud.mattrax.app
+        run: pnpm landing build
+
+      - name: Deploy
+        run: pnpm landing exec wrangler pages deploy dist/ --project-name mattrax-docs
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    environment:
+      name: web
+      url: https://cloud.mattrax.app
+    needs: [sst]
+    if: ${{ !failure() && !cancelled() }}
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: "arn:aws:iam::101829795063:role/mattrax-gh-actions"
+          aws-region: us-east-1
+          role-session-name: mattrax-sst-workflow
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install SST
+        run: curl -fsSL https://ion.sst.dev/install | bash
+
+      - name: Install
+        run: pnpm i
+
+      - name: Pull secrets
+        run: pnpm infra secret list --stage brendonovich > .env
+      
+      - name: Build
+        env:
+          NITRO_PRESET: cloudflare_pages
+        run: pnpm web build
+
+      - name: Deploy
+        run: pnpm web exec wrangler pages deploy dist/ --project-name mattrax
