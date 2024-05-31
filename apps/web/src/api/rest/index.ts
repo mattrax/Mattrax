@@ -8,6 +8,7 @@ import { enrollmentRouter } from "./enrollment";
 import { msRouter } from "./ms";
 import { waitlistRouter } from "./waitlist";
 import { webhookRouter } from "./webhook";
+import { cloudRouter } from "./cloud";
 
 export type HonoEnv = {
 	Bindings: {
@@ -18,11 +19,11 @@ export type HonoEnv = {
 
 export const app = new Hono<HonoEnv>()
 	.basePath("/api")
-	.get("/", (c) => c.json({ message: "Mattrax Forge!" }))
 	.route("/enrollment", enrollmentRouter)
 	.route("/waitlist", waitlistRouter)
 	.route("/webhook", webhookRouter)
 	.route("/ms", msRouter)
+	.route("/cloud", cloudRouter)
 	.all("*", (c) => {
 		c.status(404);
 		if (c.req.raw.headers.get("Accept")?.includes("application/json")) {
