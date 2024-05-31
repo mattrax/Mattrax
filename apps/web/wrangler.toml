@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 [[durable_objects.bindings]]
 name = "ORG_REALTIME_DO"
 class_name = "OrgRealtime"
-# script_name = "./src/api/rest/cloud/OrgRealtime.ts"
+script_name = "./src/api/rest/cloud/OrgRealtime.ts"
 
 # TODO: https://github.com/mattrax/Mattrax/actions/runs/9312961397/job/25634645798
 # [[migrations]]
