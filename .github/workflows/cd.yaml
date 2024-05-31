@@ -118,6 +118,9 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: latest
+      
+      - name: Install wrangler
+        run: pnpm i -g wrangler
 
       - name: Download build artifact
         uses: actions/download-artifact@v4

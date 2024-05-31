@@ -10,8 +10,7 @@
 		"email:build": "email build --dir ./src/emails",
 		"email:dev": "email dev --port 3002 --dir ./src/emails",
 		"email:export": "email export --dir ./src/emails",
-		"cbuild": "NITRO_PRESET=cloudflare_pages vinxi build",
-		"wrangler": "wrangler"
+		"cbuild": "NITRO_PRESET=cloudflare_pages vinxi build"
 	},
 	"dependencies": {
 		"@corvu/otp-field": "^0.1.0",
@@ -103,7 +102,6 @@
 		"vite": "^5.2.11",
 		"vite-plugin-html": "^3.2.2",
 		"vite-plugin-solid": "^2.10.2",
-		"vite-tsconfig-paths": "^4.3.2",
-		"wrangler": "^3.57.2"
+		"vite-tsconfig-paths": "^4.3.2"
 	}
 }
