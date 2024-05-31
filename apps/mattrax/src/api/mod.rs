@@ -5,11 +5,9 @@ use axum::{
     http::HeaderValue,
     middleware::{self, Next},
     response::Response,
-    routing::{any, get},
     Router,
 };
 use hmac::Hmac;
-use hyper::HeaderMap;
 use mx_db::Db;
 use rcgen::{Certificate, KeyPair};
 use rustls::pki_types::CertificateDer;

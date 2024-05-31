@@ -64,7 +64,7 @@ export default defineConfig({
 					"Referrer-Policy": "strict-origin-when-cross-origin",
 					// TODO: Setup a proper content security policy
 					// "Content-Security-Policy": "script-src 'self';",
-					...(nitroPreset === "cloudflare-pages" && {
+					...(nitroPreset === "cloudflare_pages" && {
 						"Cloudflare-CDN-Cache-Control": "public,max-age=31536000,immutable",
 						"Strict-Transport-Security":
 							"max-age=31536000; includeSubDomains; preload",

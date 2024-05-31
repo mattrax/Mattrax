@@ -169,19 +169,19 @@ export default function Page() {
 												autofocus
 											/>
 											<div class="flex items-center space-x-2">
-												<OTPSlot index={0} />
-												<OTPSlot index={1} />
-												<OTPSlot index={2} />
-												<OTPSlot index={3} />
+												<OTPSlot index={0} disabled={form.state.isSubmitting} />
+												<OTPSlot index={1} disabled={form.state.isSubmitting} />
+												<OTPSlot index={2} disabled={form.state.isSubmitting} />
+												<OTPSlot index={3} disabled={form.state.isSubmitting} />
 											</div>
 											<div class="flex size-10 items-center justify-center font-bold">
 												-
 											</div>
 											<div class="flex items-center space-x-2">
-												<OTPSlot index={4} />
-												<OTPSlot index={5} />
-												<OTPSlot index={6} />
-												<OTPSlot index={7} />
+												<OTPSlot index={4} disabled={form.state.isSubmitting} />
+												<OTPSlot index={5} disabled={form.state.isSubmitting} />
+												<OTPSlot index={6} disabled={form.state.isSubmitting} />
+												<OTPSlot index={7} disabled={form.state.isSubmitting} />
 											</div>
 										</OtpField>
 									</Form>
@@ -195,7 +195,7 @@ export default function Page() {
 	);
 }
 
-const OTPSlot = (props: { index: number }) => {
+const OTPSlot = (props: { index: number; disabled?: boolean }) => {
 	const context = OtpField.useContext();
 	const char = () => context.value()[props.index];
 	const showFakeCaret = () =>
@@ -210,7 +210,13 @@ const OTPSlot = (props: { index: number }) => {
 				},
 			)}
 		>
-			{char()}
+			<span
+				classList={{
+					"opacity-30": props.disabled,
+				}}
+			>
+				{char()}
+			</span>
 			<Show when={showFakeCaret()}>
 				<div class="pointer-events-none flex items-center justify-center">
 					<div class="h-4 w-px animate-caret-blink bg-corvu-text duration-1000" />
