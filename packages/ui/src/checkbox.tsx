@@ -20,7 +20,7 @@ const Checkbox = <T extends ValidComponent = "div">(
 				class={clsx(
 					"border-primary ring-offset-background data-[checked]:bg-primary data-[checked]:text-primary-foreground h-4 w-4 shrink-0 rounded-sm border",
 					"peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-ring transition-all duration-75",
-					"disabled:cursor-not-allowed disabled:opacity-50 data-[checked]:border-none",
+					"ui-disabled:cursor-not-allowed ui-disabled:opacity-50 ui-checked:border-none",
 				)}
 				onClick={(e) => {
 					e.stopPropagation();

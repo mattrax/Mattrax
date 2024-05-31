@@ -128,7 +128,9 @@ export function Apple(props: {
 																			<Show when={property.type === "boolean"}>
 																				<Checkbox
 																					id={id}
-																					checked={data[key] ?? false}
+																					checked={
+																						(data[key] as boolean) ?? false
+																					}
 																					onChange={(checked) =>
 																						setData(key, checked)
 																					}
@@ -245,7 +247,9 @@ export function Apple(props: {
 																						>
 																							<Input
 																								id={id}
-																								value={data[key] ?? ""}
+																								value={
+																									(data[key] as string) ?? ""
+																								}
 																								type="text"
 																								class="my-1"
 																								onChange={(e) =>
@@ -266,7 +270,7 @@ export function Apple(props: {
 																				}
 																			>
 																				<NumberInput
-																					value={data[key] ?? 0}
+																					value={(data[key] as number) ?? 0}
 																					class="my-1"
 																					onRawValueChange={(value) =>
 																						setData(key, value)
@@ -365,7 +369,7 @@ function Payloads(props: { payloads?: Record<string, AppleProfilePayload> }) {
 							<li class="flex flex-row items-center gap-4 px-4 py-1">
 								<Checkbox
 									id={id}
-									disabled={!!controller.state.apple}
+									disabled={!controller.state.apple}
 									onChange={(value) => {
 										if (value)
 											controller.setState("apple", key, (k) => ({

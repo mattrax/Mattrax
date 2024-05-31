@@ -1,3 +1,4 @@
+import type { PolicyData } from "@mattrax/policy";
 import { createId } from "@paralleldrive/cuid2";
 import {
 	bigint,
@@ -14,7 +15,6 @@ import {
 	varchar,
 } from "drizzle-orm/mysql-core";
 import type { Features } from "~/lib/featureFlags";
-import type { PolicyData } from "~/lib/policy";
 import { auditLogDefinition } from "../api/auditLogDefinition";
 import { getObjectKeys } from "../api/utils";
 

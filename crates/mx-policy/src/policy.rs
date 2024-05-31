@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -13,15 +13,31 @@ pub struct Policy {
     pub data: PolicyData,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(untagged)]
+pub enum AppleConfigValue {
+    Integer(i32),
+    String(String),
+    Boolean(bool),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(untagged)]
+pub enum WindowsConfigValue {
+    Integer(i32),
+    String(String),
+    Boolean(bool),
+}
+
 /// TODO
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct PolicyData {
     /// SyncML nodes
     // #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub windows: HashMap<String, OMANode>,
+    pub windows: HashMap<String, HashMap<String, WindowsConfigValue>>,
     /// inner part of the `.mobileconfig`
     // #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub macos: HashMap<String, Vec<serde_json::Value>>,
+    pub macos: HashMap<String, Vec<HashMap<String, AppleConfigValue>>>,
     /// Android configuration
     // #[serde(default, skip_serializing_if = "is_unit")]
     pub android: (),
@@ -31,14 +47,6 @@ pub struct PolicyData {
     /// Scripts
     // #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scripts: Vec<Script>,
-}
-
-fn is_null(value: &serde_json::Value) -> bool {
-    value.is_null()
-}
-
-fn is_unit(_: &()) -> bool {
-    true
 }
 
 /// TODO

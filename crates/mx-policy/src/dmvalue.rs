@@ -7,6 +7,7 @@ use specta::Type;
 ///
 /// This is an approximation so all variants may not be valid on all platforms.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
+#[serde(untagged)]
 pub enum DmValue {
     String(String),
     Xml(String),

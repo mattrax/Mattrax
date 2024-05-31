@@ -1,4 +1,4 @@
-import type { PolicyData } from "./policy";
+import type { PolicyData } from "@mattrax/policy";
 
 // TODO: Maybe render as categories instead instead of just each element?
 

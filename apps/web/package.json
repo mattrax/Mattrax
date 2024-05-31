@@ -23,6 +23,7 @@
 		"@mattrax/email": "workspace:*",
 		"@mattrax/ms-graph": "workspace:*",
 		"@mattrax/mysql-planetscale": "workspace:*",
+		"@mattrax/policy": "workspace:*",
 		"@mattrax/policy-composer": "workspace:*",
 		"@mattrax/trpc-server-function": "workspace:^",
 		"@mattrax/ui": "workspace:*",

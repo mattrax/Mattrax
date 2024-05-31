@@ -1,3 +1,4 @@
+import type { PolicyData } from "@mattrax/policy";
 import { type ParentProps, Show, createContext, useContext } from "solid-js";
 import type { SetStoreFunction } from "solid-js/store";
 
@@ -7,11 +8,15 @@ export type PolicyComposerState = {
 	platform: PolicyPlatform;
 	windows?: Record<
 		string,
-		{ enabled: boolean; data: Record<string, any>; open: boolean }
+		{ enabled: boolean; data: PolicyData["windows"][string]; open: boolean }
 	>;
 	apple?: Record<
 		string,
-		{ enabled: boolean; data: Array<Record<string, any>>; open: boolean }
+		{
+			enabled: boolean;
+			data: PolicyData["macos"][string];
+			open: boolean;
+		}
 	>;
 };
 

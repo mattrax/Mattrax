@@ -135,7 +135,9 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 																	<Show when={policy.format === "bool"}>
 																		<Checkbox
 																			id={id}
-																			checked={value.data[key] ?? false}
+																			checked={
+																				(value.data[key] as boolean) ?? false
+																			}
 																			onChange={(checked) =>
 																				setData(key, checked)
 																			}
@@ -185,7 +187,7 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 																						class="mt-2"
 																						defaultValue={policy.defaultValue}
 																						value={
-																							value.data[key] ??
+																							(value.data[key] as number) ??
 																							policy.defaultValue
 																						}
 																						onChange={(value) =>
@@ -294,7 +296,7 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 																									policy.defaultValue
 																								}
 																								value={
-																									value.data[key] ??
+																									(value.data[key] as number) ??
 																									policy.defaultValue
 																								}
 																								onChange={(value) =>
@@ -318,7 +320,7 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 																	>
 																		<Input
 																			class="mt-2"
-																			value={value.data[key]}
+																			value={value.data[key] as string}
 																			onChange={(e) =>
 																				setData(key, e.currentTarget.value)
 																			}
@@ -396,7 +398,7 @@ function CSPS(props: { csps?: Record<string, WindowsCSP> }) {
 						return (
 							<li class="flex flex-row items-center gap-4 px-4 py-1">
 								<Checkbox
-									disabled={!!controller.state.windows}
+									disabled={!controller.state.windows}
 									id={id}
 									onChange={(value) => {
 										if (value)

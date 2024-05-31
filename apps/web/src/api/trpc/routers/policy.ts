@@ -1,3 +1,4 @@
+import type { PolicyData } from "@mattrax/policy";
 import { createId } from "@paralleldrive/cuid2";
 import { cache } from "@solidjs/router";
 import { TRPCError } from "@trpc/server";
@@ -19,7 +20,6 @@ import {
 	policyDeploy,
 	users,
 } from "~/db";
-import type { PolicyData } from "~/lib/policy";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 
 const getPolicy = cache(async (id: string) => {

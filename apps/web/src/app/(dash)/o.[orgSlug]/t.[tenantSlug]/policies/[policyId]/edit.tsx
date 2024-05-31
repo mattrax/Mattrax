@@ -1,16 +1,17 @@
+import type { PolicyData } from "@mattrax/policy";
 import {
 	PolicyComposer,
 	type PolicyComposerState,
 	type PolicyPlatform,
 } from "@mattrax/policy-composer";
-
 import {
 	type RouteDefinition,
 	createAsync,
 	useSearchParams,
 } from "@solidjs/router";
-import { createEffect, createSignal } from "solid-js";
+import { createEffect } from "solid-js";
 import { createStore } from "solid-js/store";
+
 import { trpc } from "~/lib";
 import { usePolicyId } from "../ctx";
 
@@ -59,7 +60,7 @@ export default function Page() {
 			policy.data
 		) {
 			setState({
-				windows: Object.entries(policy.data.data.windows ?? {}).reduce(
+				windows: Object.entries(policy.data.data.windows).reduce(
 					(acc, [csp, data]) => {
 						acc[csp] = { data, enabled: true, open: true };
 						return acc;
@@ -97,14 +98,14 @@ export default function Page() {
 								if (enabled) acc[csp] = data;
 								return acc;
 							},
-							{} as any,
+							{} as PolicyData["windows"],
 						),
 						macos: Object.entries(controller.state.apple ?? {}).reduce(
 							(acc, [csp, { data, enabled }]) => {
 								if (enabled) acc[csp] = data;
 								return acc;
 							},
-							{} as Record<string, Array<Record<string, any>>>,
+							{} as PolicyData["macos"],
 						),
 						linux: null,
 						android: null,

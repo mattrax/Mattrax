@@ -13,6 +13,7 @@
 	"dependencies": {
 		"@kobalte/core": "^0.13.1",
 		"@mattrax/configuration-schemas": "workspace:*",
+		"@mattrax/policy": "workspace:*",
 		"@mattrax/ui": "workspace:*",
 		"@tanstack/solid-virtual": "^3.5.0",
 		"solid-js": "^1.8.17"
