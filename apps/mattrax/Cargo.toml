@@ -25,6 +25,7 @@ tracing-subscriber = "0.3.18"
 tokio = { version = "1.37.0", features = ["macros", "rt-multi-thread"] }
 clap = { version = "4.5.4", features = ["derive"] }
 axum = { version = "0.7.5", features = ["http2", "macros", "ws"] }
+axum-extra = { version = "0.9.3", features = ["cookie"] }
 rustls = "0.23.6"
 futures-rustls = "0.26.0"
 tower = "0.4.13"
@@ -63,3 +64,4 @@ include_dir = "0.7.3"
 temp-dir = "0.1.13"
 reqwest = { version = "0.12.4", features = ["stream"] }
 http = "1.1.0"
+chrono = { version = "0.4.38", features = ["serde"] }

@@ -19,6 +19,18 @@ pub struct GetCertificateResult {
 }
 
 #[derive(Debug)]
+pub struct GetSessionAndUserResult {
+    pub account_pk: u64,
+    pub account_id: String,
+    pub session_id: String,
+    pub expires_at: NaiveDateTime,
+}
+#[derive(Debug)]
+pub struct IsOrgMemberResult {
+    pub id: String,
+}
+
+#[derive(Debug)]
 pub struct GetDeviceResult {
     pub pk: u64,
     pub tenant_pk: u64,
@@ -153,6 +165,44 @@ impl Db {
 			  .with(mysql_async::Params::Positional(vec![key.clone().into(),certificate.clone().into(),certificate.clone().into()]))
 					.run(&self.pool).await?;
         Ok(())
+    }
+}
+impl Db {
+    pub async fn get_session_and_user(
+        &self,
+        session_id: String,
+    ) -> Result<Vec<GetSessionAndUserResult>, mysql_async::Error> {
+        let mut result = r#"select `accounts`.`pk`, `accounts`.`id`, `session`.`id`, `session`.`expires_at` from `session` inner join `accounts` on `session`.`account` = `accounts`.`id` where `session`.`id` = ?"#
+			  .with(mysql_async::Params::Positional(vec![session_id.clone().into()]))
+					.run(&self.pool).await?;
+        let mut ret = vec![];
+        while let Some(mut row) = result.next().await.unwrap() {
+            ret.push(GetSessionAndUserResult {
+                account_pk: FromValue::from_value(row.take(0).unwrap()),
+                account_id: FromValue::from_value(row.take(1).unwrap()),
+                session_id: FromValue::from_value(row.take(2).unwrap()),
+                expires_at: FromValue::from_value(row.take(3).unwrap()),
+            });
+        }
+        Ok(ret)
+    }
+}
+impl Db {
+    pub async fn is_org_member(
+        &self,
+        org_slug: String,
+        account_pk: u64,
+    ) -> Result<Vec<IsOrgMemberResult>, mysql_async::Error> {
+        let mut result = r#"select `organisations`.`id` from `organisations` inner join `organisation_members` on (`organisations`.`pk` = `organisation_members`.`org` and `organisation_members`.`account` = ?) where `organisations`.`slug` = ?"#
+			  .with(mysql_async::Params::Positional(vec![account_pk.clone().into(),org_slug.clone().into()]))
+					.run(&self.pool).await?;
+        let mut ret = vec![];
+        while let Some(mut row) = result.next().await.unwrap() {
+            ret.push(IsOrgMemberResult {
+                id: FromValue::from_value(row.take(0).unwrap()),
+            });
+        }
+        Ok(ret)
     }
 }
 impl Db {

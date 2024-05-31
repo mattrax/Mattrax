@@ -5,6 +5,10 @@
 >
 > Feel free to reach out in [the Discord](https://discord.gg/WPBHmDSfAn) if your having problems!
 
+> [!WARNING]  
+> This guide should not be used for a production deployment. It is setup strictly for development purposes.
+
+
 To contribute you will require:
  - A MySQL database
  - Azure app registration - used for the Entra ID identity provider

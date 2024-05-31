@@ -9,15 +9,19 @@ import dotenv from "dotenv";
 import { and, eq, isNull, max, min, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/mysql-core";
 import {
+	accounts,
 	db,
 	deviceActions,
 	devices,
 	groupMembers,
 	kv,
+	organisationMembers,
+	organisations,
 	policies,
 	policyAssignments,
 	policyDeploy,
 	policyDeployStatus,
+	sessions,
 } from ".";
 
 dotenv.config({
@@ -169,6 +173,44 @@ exportQueries(
 							lastModified: sql`NOW()`,
 						},
 					}),
+		}),
+		defineOperation({
+			name: "get_session_and_user",
+			args: {
+				session_id: "String",
+			},
+			query: (args) =>
+				db
+					.select({
+						account_pk: accounts.pk,
+						account_id: accounts.id,
+						session_id: sessions.id,
+						expires_at: sessions.expiresAt,
+					})
+					.from(sessions)
+					.innerJoin(accounts, eq(sessions.userId, accounts.id))
+					.where(eq(sessions.id, args.session_id)),
+		}),
+		defineOperation({
+			name: "is_org_member",
+			args: {
+				org_slug: "String",
+				account_pk: "u64",
+			},
+			query: (args) =>
+				db
+					.select({
+						id: organisations.id,
+					})
+					.from(organisations)
+					.where(eq(organisations.slug, args.org_slug))
+					.innerJoin(
+						organisationMembers,
+						and(
+							eq(organisations.pk, organisationMembers.orgPk),
+							eq(organisationMembers.accountPk, args.account_pk),
+						),
+					),
 		}),
 		defineOperation({
 			name: "create_device",

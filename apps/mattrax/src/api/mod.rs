@@ -21,6 +21,7 @@ use crate::config::ConfigManager;
 
 mod internal;
 mod mdm;
+mod realtime;
 
 #[derive(Clone, Debug)]
 pub struct ConnectInfoTy {
@@ -98,6 +99,7 @@ pub fn mount(state: Arc<Context>) -> Router {
     // TODO: Limit body size
     let router = Router::new()
         .nest("/internal", internal::mount(state.clone()))
+        .nest("/realtime", realtime::mount(state.clone()))
         .nest(
             "/psdb.v1alpha1.Database",
             internal::sql::mount(state.clone()),

@@ -31,7 +31,7 @@ async fn internal_auth(
             "Basic {}",
             STANDARD.encode(format!(":{}", &state.config.get().internal_secret))
         ))
-        && authorization != Some(&format!("Bearer {:?}", state.config.get().internal_secret))
+        && authorization != Some(&format!("Bearer {}", state.config.get().internal_secret))
     {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }
@@ -64,6 +64,12 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 },
             ),
         )
+        .layer(middleware::from_fn_with_state(state.clone(), internal_auth))
+        .with_state(state)
+}
+
+pub fn with_internal_auth<T>(state: Arc<Context>, router: Router<Arc<Context>>) -> Router<T> {
+    router
         .layer(middleware::from_fn_with_state(state.clone(), internal_auth))
         .with_state(state)
 }

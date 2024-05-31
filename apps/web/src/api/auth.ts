@@ -12,6 +12,8 @@ export const lucia = withEnv(() => {
 
 	return new Lucia(adapter, {
 		sessionCookie: {
+			// WARN: Ensure you update the Rust code if you change this
+			name: "auth_session",
 			attributes: {
 				// set to `true` when using HTTPS
 				secure: import.meta.env.PROD,

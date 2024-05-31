@@ -8,6 +8,7 @@ import { enrollmentRouter } from "./enrollment";
 import { msRouter } from "./ms";
 import { waitlistRouter } from "./waitlist";
 import { webhookRouter } from "./webhook";
+import { env } from "~/env";
 
 export type HonoEnv = {
 	Bindings: {
@@ -23,6 +24,10 @@ export const app = new Hono<HonoEnv>()
 	.route("/waitlist", waitlistRouter)
 	.route("/webhook", webhookRouter)
 	.route("/ms", msRouter)
+	.get("/where_da_rust", async (c) => {
+		c.header("Cache-Control", "public,max-age=600,must-revalidate");
+		return c.text(env.MDM_URL);
+	})
 	.all("*", (c) => {
 		c.status(404);
 		if (c.req.raw.headers.get("Accept")?.includes("application/json")) {
