@@ -247,6 +247,7 @@ function WebPagesProject({
 			WAITLIST_DISCORD_WEBHOOK_URL: new sst.Secret("WaitlistDiscordWebhookURL")
 				.value,
 			PROD_ORIGIN: `https://${PROD_HOST}`,
+			COOKIE_DOMAIN: `https://${CLOUDFLARE_ZONE}`,
 		},
 		failOpen: true,
 		placement: { mode: "smart" },

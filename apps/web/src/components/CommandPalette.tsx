@@ -5,6 +5,7 @@ import {
 	CommandInput,
 	CommandItem,
 	CommandList,
+	CommandSeparator,
 	useCommandCtx,
 } from "@mattrax/ui";
 import { createEventListener } from "@solid-primitives/event-listener";
@@ -103,14 +104,36 @@ export default function CommandPalette() {
 						<span>Account Settings</span>
 					</CommandItemA>
 				</CommandGroup>
-				{/* <CommandSeparator /> */}
-				{/* <CommandGroup heading="Settings"></CommandGroup> */}
-
-				{/* // TODO: Command + click item that is a valid `A` to open in new tab */}
+				<CommandSeparator />
+				<CommandGroup heading="Organisation">
+					<CommandItem onSelect={() => alert(1)}>
+						<span>Create Tenant</span>
+					</CommandItem>
+					<CommandItem onSelect={() => alert(1)}>
+						<span>Invite User</span>
+					</CommandItem>
+				</CommandGroup>
+				<CommandSeparator />
+				<CommandGroup heading="Tenant">
+					<CommandItem onSelect={() => alert(1)}>
+						<span>Create Policy</span>
+					</CommandItem>
+					<CommandItem onSelect={() => alert(1)}>
+						<span>Create Application</span>
+					</CommandItem>
+					<CommandItem onSelect={() => alert(1)}>
+						<span>Create Group</span>
+					</CommandItem>
+				</CommandGroup>
+				<CommandSeparator />
+				<CommandGroup heading="Account">
+					<CommandItem onSelect={() => alert(1)}>
+						<span>Log out of todo@example.com</span>
+					</CommandItem>
+					{/* // TODO: Dark mode/light mode */}
+				</CommandGroup>
 
 				{/* // TODO: Global search for any resource */}
-				{/* // TODO: Switch tenant or org */}
-				{/* // TODO: Dark mode/light mode */}
 
 				{/* TODO: Changing pages inside the nested navigation like for devices */}
 			</CommandList>
@@ -127,6 +150,7 @@ function CommandItemA(
 	const navigate = useNavigate();
 	const cmd = useCommandCtx();
 
+	// TODO: Command + click item that is a valid `A` to open in new tab
 	return (
 		<CommandItem
 			aria-disabled={props.disabled}

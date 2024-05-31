@@ -138,6 +138,7 @@ export const adminsRouter = createTRPCRouter({
 
 			setCookie("isLoggedIn", "true", {
 				httpOnly: false,
+				domain: env.COOKIE_DOMAIN,
 			});
 
 			flushResponse();

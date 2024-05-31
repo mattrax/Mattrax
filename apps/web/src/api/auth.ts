@@ -4,7 +4,7 @@ import { Lucia } from "lucia";
 import { appendResponseHeader, getCookie, setCookie } from "vinxi/server";
 
 import { accounts, db, sessions } from "~/db";
-import { withEnv } from "~/env";
+import { env, withEnv } from "~/env";
 import type { Features } from "~/lib/featureFlags";
 
 export const lucia = withEnv(() => {
@@ -17,6 +17,7 @@ export const lucia = withEnv(() => {
 			attributes: {
 				// set to `true` when using HTTPS
 				secure: import.meta.env.PROD,
+				domain: env.COOKIE_DOMAIN,
 			},
 		},
 		getUserAttributes: (data) => ({
@@ -73,6 +74,7 @@ export const checkAuth = cache(async () => {
 		if (getCookie("isLoggedIn") === undefined) {
 			setCookie("isLoggedIn", "true", {
 				httpOnly: false,
+				domain: env.COOKIE_DOMAIN,
 			});
 		}
 	} else {

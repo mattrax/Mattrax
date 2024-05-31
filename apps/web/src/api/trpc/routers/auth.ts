@@ -27,6 +27,7 @@ import {
 	publicProcedure,
 	superAdminProcedure,
 } from "../helpers";
+import { env } from "~/env";
 
 type UserResult = {
 	id: number;
@@ -140,6 +141,7 @@ export const authRouter = createTRPCRouter({
 
 			setCookie("isLoggedIn", "true", {
 				httpOnly: false,
+				domain: env.COOKIE_DOMAIN,
 			});
 
 			flushResponse();

@@ -35,6 +35,10 @@ export const env = withEnv((env) =>
 			NODE_ENV: z.enum(["development", "production"]).default("development"),
 			FEEDBACK_DISCORD_WEBHOOK_URL: z.string().optional(),
 			WAITLIST_DISCORD_WEBHOOK_URL: z.string().optional(),
+
+			// Environment variables for Mattrax Cloud
+			// Do not use these unless you know what your doing
+			COOKIE_DOMAIN: z.string().optional(),
 		},
 		clientPrefix: "VITE_",
 		client: {},
