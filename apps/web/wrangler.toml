@@ -8,6 +8,7 @@ name = "ORG_REALTIME_DO"
 class_name = "OrgRealtime"
 script_name = "./src/api/rest/cloud/OrgRealtime.ts"
 
-[[migrations]]
-tag = "v1"
-new_classes = ["OrgRealtime"]
+# TODO: https://github.com/mattrax/Mattrax/actions/runs/9312961397/job/25634645798
+# [[migrations]]
+# tag = "v1"
+# new_classes = ["OrgRealtime"]
