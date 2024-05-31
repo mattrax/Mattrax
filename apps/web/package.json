@@ -10,7 +10,8 @@
 		"email:build": "email build --dir ./src/emails",
 		"email:dev": "email dev --port 3002 --dir ./src/emails",
 		"email:export": "email export --dir ./src/emails",
-		"cbuild": "NITRO_PRESET=cloudflare_pages vinxi build"
+		"cbuild": "NITRO_PRESET=cloudflare_pages vinxi build",
+		"wrangler": "wrangler"
 	},
 	"dependencies": {
 		"@corvu/otp-field": "^0.1.0",
