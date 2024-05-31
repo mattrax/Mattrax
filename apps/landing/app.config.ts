@@ -21,6 +21,7 @@ export default defineConfig({
 		cloudflare: {
 			pages: {
 				routes: {
+					include: ["/api"],
 					// All non-api and non-asset routes are redirected to / to be served by CDN
 					exclude: ["/*"],
 				},

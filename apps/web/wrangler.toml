@@ -1,0 +1,6 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "mattrax"
+account_id = "f02b3ef168fe64129e9941b4fb2e4dc1"
+pages_build_output_dir = "dist"
+compatibility_date = "2024-05-12"
+compatibility_flags = ["nodejs_compat"]
