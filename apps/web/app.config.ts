@@ -82,14 +82,11 @@ export default defineConfig({
 				},
 			},
 		},
-		...(nitroPreset === "cloudflare-pages" && {
+		...(nitroPreset === "cloudflare_pages" && {
 			// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
 			// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
 			// exportConditions: ["worker"],
-			unenv:
-				process.env.NITRO_PRESET === "cloudflare-pages"
-					? cloudflare
-					: undefined,
+			unenv: cloudflare,
 			rollupConfig: {
 				external: ["cloudflare:sockets"],
 			},
