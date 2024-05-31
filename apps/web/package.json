@@ -102,6 +102,7 @@
 		"vite": "^5.2.11",
 		"vite-plugin-html": "^3.2.2",
 		"vite-plugin-solid": "^2.10.2",
-		"vite-tsconfig-paths": "^4.3.2"
+		"vite-tsconfig-paths": "^4.3.2",
+		"wrangler": "^3.57.2"
 	}
 }

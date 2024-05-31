@@ -39,7 +39,7 @@ importers:
         version: 1.7.3
       '@solidjs/start':
         specifier: 1.0.0-rc.1
-        version: 1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
+        version: 1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
       dotenv:
         specifier: ^16.4.5
         version: 16.4.5
@@ -54,14 +54,11 @@ importers:
         version: 5.4.5
       vinxi:
         specifier: ^0.3.11
-        version: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
+        version: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
     devDependencies:
       husky:
         specifier: ^9.0.11
         version: 9.0.11
-      wrangler:
-        specifier: ^3.57.1
-        version: 3.57.1(@cloudflare/workers-types@4.20240512.0)
 
   apps/docs:
     dependencies:
@@ -76,13 +73,13 @@ importers:
         version: 0.2.0(tailwindcss@3.4.3)
       '@mdx-js/loader':
         specifier: ^3.0.1
-        version: 3.0.1(webpack@5.91.0(esbuild@0.19.12))
+        version: 3.0.1(webpack@5.91.0(esbuild@0.17.19))
       '@mdx-js/react':
         specifier: ^3.0.1
         version: 3.0.1(@types/react@18.3.2)(react@18.3.1)
       '@next/mdx':
         specifier: ^14.2.3
-        version: 14.2.3(@mdx-js/loader@3.0.1(webpack@5.91.0(esbuild@0.19.12)))(@mdx-js/react@3.0.1(@types/react@18.3.2)(react@18.3.1))
+        version: 14.2.3(@mdx-js/loader@3.0.1(webpack@5.91.0(esbuild@0.17.19)))(@mdx-js/react@3.0.1(@types/react@18.3.2)(react@18.3.1))
       '@sindresorhus/slugify':
         specifier: ^2.2.1
         version: 2.2.1
@@ -189,6 +186,9 @@ importers:
       sharp:
         specifier: 0.33.4
         version: 0.33.4
+      wrangler:
+        specifier: ^3.57.2
+        version: 3.57.2
 
   apps/landing:
     dependencies:
@@ -209,7 +209,7 @@ importers:
         version: 0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17)
       '@solidjs/start':
         specifier: 1.0.0-rc.1
-        version: 1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
+        version: 1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
       '@tanstack/solid-form':
         specifier: ^0.20.0
         version: 0.20.0(patch_hash=u7mggdzwgkctmq3zwzwnyiwq4y)(solid-js@1.8.17)
@@ -221,7 +221,7 @@ importers:
         version: 1.8.17
       vinxi:
         specifier: '=0.3.11'
-        version: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
+        version: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
       vite:
         specifier: ^5.2.11
         version: 5.2.11(@types/node@20.12.12)(terser@5.31.0)
@@ -244,6 +244,9 @@ importers:
       tailwindcss:
         specifier: ^3.4.3
         version: 3.4.3
+      wrangler:
+        specifier: ^3.57.2
+        version: 3.57.2
 
   apps/web:
     dependencies:
@@ -297,7 +300,7 @@ importers:
         version: 1.18.0
       '@solid-mediakit/trpc':
         specifier: ^3.0.2
-        version: 3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17))(@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0)))(@tanstack/solid-query@5.36.1(solid-js@1.8.17))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
+        version: 3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17))(@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0)))(@tanstack/solid-query@5.36.1(solid-js@1.8.17))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
       '@solid-primitives/autofocus':
         specifier: ^0.0.111
         version: 0.0.111(solid-js@1.8.17)
@@ -336,7 +339,7 @@ importers:
         version: 0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17)
       '@solidjs/start':
         specifier: 1.0.0-rc.1
-        version: 1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
+        version: 1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
       '@t3-oss/env-core':
         specifier: ^0.10.1
         version: 0.10.1(typescript@5.4.5)(zod@3.23.8)
@@ -444,7 +447,7 @@ importers:
         version: 5.1.1
       vinxi:
         specifier: '=0.3.11'
-        version: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
+        version: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
       xml2js:
         specifier: ^0.6.2
         version: 0.6.2
@@ -512,6 +515,9 @@ importers:
       vite-tsconfig-paths:
         specifier: ^4.3.2
         version: 4.3.2(typescript@5.4.5)(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
+      wrangler:
+        specifier: ^3.57.2
+        version: 3.57.2
 
   infra:
     dependencies:
@@ -626,7 +632,7 @@ importers:
     dependencies:
       '@solid-mediakit/trpc':
         specifier: ^3.0.2
-        version: 3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17))(@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0)))(@tanstack/solid-query@5.36.1(solid-js@1.8.17))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
+        version: 3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17))(@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0)))(@tanstack/solid-query@5.36.1(solid-js@1.8.17))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
       '@solidjs/router':
         specifier: ^0.13.3
         version: 0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17)
@@ -943,32 +949,32 @@ packages:
     resolution: {integrity: sha512-EeEjMobfuJrwoctj7FA1y1KEbM0+Q1xSjobIEyie9k4haVEBB7vkDvsasw1pM3rO39mL2akxIAzLMUAtrMHZhA==}
     engines: {node: '>=16.13'}
 
-  '@cloudflare/workerd-darwin-64@1.20240512.0':
-    resolution: {integrity: sha512-VMp+CsSHFALQiBzPdQ5dDI4T1qwLu0mQ0aeKVNDosXjueN0f3zj/lf+mFil5/9jBbG3t4mG0y+6MMnalP9Lobw==}
+  '@cloudflare/workerd-darwin-64@1.20240524.0':
+    resolution: {integrity: sha512-ATaXjefbTsrv4mpn4Fdua114RRDXcX5Ky+Mv+f4JTUllgalmqC4CYMN4jxRz9IpJU/fNMN8IEfvUyuJBAcl9Iw==}
     engines: {node: '>=16'}
     cpu: [x64]
     os: [darwin]
 
-  '@cloudflare/workerd-darwin-arm64@1.20240512.0':
-    resolution: {integrity: sha512-lZktXGmzMrB5rJqY9+PmnNfv1HKlj/YLZwMjPfF0WVKHUFdvQbAHsi7NlKv6mW9uIvlZnS+K4sIkWc0MDXcRnA==}
+  '@cloudflare/workerd-darwin-arm64@1.20240524.0':
+    resolution: {integrity: sha512-wnbsZI4CS0QPCd+wnBHQ40C28A/2Qo4ESi1YhE2735G3UNcc876MWksZhsubd+XH0XPIra6eNFqyw6wRMpQOXA==}
     engines: {node: '>=16'}
     cpu: [arm64]
     os: [darwin]
 
-  '@cloudflare/workerd-linux-64@1.20240512.0':
-    resolution: {integrity: sha512-wrHvqCZZqXz6Y3MUTn/9pQNsvaoNjbJpuA6vcXsXu8iCzJi911iVW2WUEBX+MpUWD+mBIP0oXni5tTlhkokOPw==}
+  '@cloudflare/workerd-linux-64@1.20240524.0':
+    resolution: {integrity: sha512-E8mj+HPBryKwaJAiNsYzXtVjKCL0KvUBZbtxJxlWM4mLSQhT+uwGT3nydb/hFY59rZnQgZslw0oqEWht5TEYiQ==}
     engines: {node: '>=16'}
     cpu: [x64]
     os: [linux]
 
-  '@cloudflare/workerd-linux-arm64@1.20240512.0':
-    resolution: {integrity: sha512-YPezHMySL9J9tFdzxz390eBswQ//QJNYcZolz9Dgvb3FEfdpK345cE/bsWbMOqw5ws2f82l388epoenghtYvAg==}
+  '@cloudflare/workerd-linux-arm64@1.20240524.0':
+    resolution: {integrity: sha512-/Fr1W671t2triNCDCBWdStxngnbUfZunZ/2e4kaMLzJDJLYDtYdmvOUCBDzUD4ssqmIMbn9RCQQ0U+CLEoqBqw==}
     engines: {node: '>=16'}
     cpu: [arm64]
     os: [linux]
 
-  '@cloudflare/workerd-windows-64@1.20240512.0':
-    resolution: {integrity: sha512-SxKapDrIYSscMR7lGIp/av0l6vokjH4xQ9ACxHgXh+OdOus9azppSmjaPyw4/ePvg7yqpkaNjf9o258IxWtvKQ==}
+  '@cloudflare/workerd-windows-64@1.20240524.0':
+    resolution: {integrity: sha512-G+ThDEx57g9mAEKqhWnHaaJgpeGYtyhkmwM/BDpLqPks/rAY5YEfZbY4YL1pNk1kkcZDXGrwIsY8xe9Apf5JdA==}
     engines: {node: '>=16'}
     cpu: [x64]
     os: [win32]
@@ -6580,8 +6586,8 @@ packages:
     resolution: {integrity: sha512-r9deDe9p5FJUPZAk3A59wGH7Ii9YrjjWw0jmw/liSbHl2CHiyXj6FcDXDu2K3TjVAXqiJdaw3xxwlZZr9E6nHg==}
     hasBin: true
 
-  miniflare@3.20240512.0:
-    resolution: {integrity: sha512-X0PlKR0AROKpxFoJNmRtCMIuJxj+ngEcyTOlEokj2rAQ0TBwUhB4/1uiPvdI6ofW5NugPOD1uomAv+gLjwsLDQ==}
+  miniflare@3.20240524.0:
+    resolution: {integrity: sha512-RQAfpz7spI6gWlczeUYvJBgGyt0gNR2pYoCydgukCYZ+0bGfJl0yAiNFW62uH7uMZli/4juWPpQOBI5m7URoyA==}
     engines: {node: '>=16.13'}
     hasBin: true
 
@@ -8615,17 +8621,17 @@ packages:
   wordwrap@1.0.0:
     resolution: {integrity: sha512-gvVzJFlPycKc5dZN4yPkP8w7Dc37BtP1yczEneOb4uq34pXZcvrtRTmWV8W+Ume+XCxKgbjM+nevkyFPMybd4Q==}
 
-  workerd@1.20240512.0:
-    resolution: {integrity: sha512-VUBmR1PscAPHEE0OF/G2K7/H1gnr9aDWWZzdkIgWfNKkv8dKFCT75H+GJtUHjfwqz3rYCzaNZmatSXOpLGpF8A==}
+  workerd@1.20240524.0:
+    resolution: {integrity: sha512-LWLe5D8PVHBcqturmBbwgI71r7YPpIMYZoVEH6S4G35EqIJ55cb0n3FipoSyraoIfpcCxCFxX1K6WsRHbP3pFA==}
     engines: {node: '>=16'}
     hasBin: true
 
-  wrangler@3.57.1:
-    resolution: {integrity: sha512-M8YnWUwdrb8AFiRePtVnzlDn02OX4osWvdl8oVh6eyZqqkqXYg7lwlYBr14Qj92pMN4JvMBmDZoukkYHvwpJRg==}
+  wrangler@3.57.2:
+    resolution: {integrity: sha512-QegYf0FW+4prlFKE9iHr1EGrCo8ejcGL9gaqEXrzQ0vbTdazykYbY0I5UpHFLNq2dIF9I/ifEoLRKr636tyHEw==}
     engines: {node: '>=16.17.0'}
     hasBin: true
     peerDependencies:
-      '@cloudflare/workers-types': ^4.20240512.0
+      '@cloudflare/workers-types': ^4.20240524.0
     peerDependenciesMeta:
       '@cloudflare/workers-types':
         optional: true
@@ -9046,19 +9052,19 @@ snapshots:
     dependencies:
       mime: 3.0.0
 
-  '@cloudflare/workerd-darwin-64@1.20240512.0':
+  '@cloudflare/workerd-darwin-64@1.20240524.0':
     optional: true
 
-  '@cloudflare/workerd-darwin-arm64@1.20240512.0':
+  '@cloudflare/workerd-darwin-arm64@1.20240524.0':
     optional: true
 
-  '@cloudflare/workerd-linux-64@1.20240512.0':
+  '@cloudflare/workerd-linux-64@1.20240524.0':
     optional: true
 
-  '@cloudflare/workerd-linux-arm64@1.20240512.0':
+  '@cloudflare/workerd-linux-arm64@1.20240524.0':
     optional: true
 
-  '@cloudflare/workerd-windows-64@1.20240512.0':
+  '@cloudflare/workerd-windows-64@1.20240524.0':
     optional: true
 
   '@cloudflare/workers-types@4.20240512.0':
@@ -9787,11 +9793,11 @@ snapshots:
       - encoding
       - supports-color
 
-  '@mdx-js/loader@3.0.1(webpack@5.91.0(esbuild@0.19.12))':
+  '@mdx-js/loader@3.0.1(webpack@5.91.0(esbuild@0.17.19))':
     dependencies:
       '@mdx-js/mdx': 3.0.1
       source-map: 0.7.4
-      webpack: 5.91.0(esbuild@0.19.12)
+      webpack: 5.91.0(esbuild@0.17.19)
     transitivePeerDependencies:
       - supports-color
 
@@ -9864,11 +9870,11 @@ snapshots:
     dependencies:
       glob: 10.3.10
 
-  '@next/mdx@14.2.3(@mdx-js/loader@3.0.1(webpack@5.91.0(esbuild@0.19.12)))(@mdx-js/react@3.0.1(@types/react@18.3.2)(react@18.3.1))':
+  '@next/mdx@14.2.3(@mdx-js/loader@3.0.1(webpack@5.91.0(esbuild@0.17.19)))(@mdx-js/react@3.0.1(@types/react@18.3.2)(react@18.3.1))':
     dependencies:
       source-map: 0.7.4
     optionalDependencies:
-      '@mdx-js/loader': 3.0.1(webpack@5.91.0(esbuild@0.19.12))
+      '@mdx-js/loader': 3.0.1(webpack@5.91.0(esbuild@0.17.19))
       '@mdx-js/react': 3.0.1(@types/react@18.3.2)(react@18.3.1)
 
   '@next/swc-darwin-arm64@14.1.0':
@@ -11212,15 +11218,15 @@ snapshots:
       '@solid-primitives/utils': 6.2.3(solid-js@1.8.17)
       solid-js: 1.8.17
 
-  ? '@solid-mediakit/trpc@3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17))(@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0)))(@tanstack/solid-query@5.36.1(solid-js@1.8.17))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))'
-  : dependencies:
+  '@solid-mediakit/trpc@3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17))(@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0)))(@tanstack/solid-query@5.36.1(solid-js@1.8.17))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))':
+    dependencies:
       '@solidjs/router': 0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17)
-      '@solidjs/start': 1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
+      '@solidjs/start': 1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
       '@tanstack/solid-query': 5.36.1(solid-js@1.8.17)
       '@trpc/client': 10.45.2(@trpc/server@10.45.2)
       '@trpc/server': 10.45.2
       solid-js: 1.8.17
-      vinxi: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
+      vinxi: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
 
   '@solid-primitives/autofocus@0.0.111(solid-js@1.8.17)':
     dependencies:
@@ -11374,11 +11380,11 @@ snapshots:
     dependencies:
       solid-js: 1.8.17
 
-  '@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))':
+  '@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))':
     dependencies:
-      '@vinxi/plugin-directives': 0.3.1(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
-      '@vinxi/server-components': 0.3.3(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
-      '@vinxi/server-functions': 0.3.2(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
+      '@vinxi/plugin-directives': 0.3.1(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
+      '@vinxi/server-components': 0.3.3(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
+      '@vinxi/server-functions': 0.3.2(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
       defu: 6.1.4
       error-stack-parser: 2.1.4
       glob: 10.3.15
@@ -11805,7 +11811,7 @@ snapshots:
     transitivePeerDependencies:
       - uWebSockets.js
 
-  '@vinxi/plugin-directives@0.3.1(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))':
+  '@vinxi/plugin-directives@0.3.1(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))':
     dependencies:
       '@babel/parser': 7.24.5
       acorn: 8.11.3
@@ -11816,29 +11822,29 @@ snapshots:
       magicast: 0.2.11
       recast: 0.23.7
       tslib: 2.6.2
-      vinxi: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
+      vinxi: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
 
-  '@vinxi/server-components@0.3.3(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))':
+  '@vinxi/server-components@0.3.3(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))':
     dependencies:
-      '@vinxi/plugin-directives': 0.3.1(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
+      '@vinxi/plugin-directives': 0.3.1(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
       acorn: 8.11.3
       acorn-loose: 8.4.0
       acorn-typescript: 1.4.13(acorn@8.11.3)
       astring: 1.8.6
       magicast: 0.2.11
       recast: 0.23.7
-      vinxi: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
+      vinxi: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
 
-  '@vinxi/server-functions@0.3.2(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))':
+  '@vinxi/server-functions@0.3.2(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))':
     dependencies:
-      '@vinxi/plugin-directives': 0.3.1(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
+      '@vinxi/plugin-directives': 0.3.1(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
       acorn: 8.11.3
       acorn-loose: 8.4.0
       acorn-typescript: 1.4.13(acorn@8.11.3)
       astring: 1.8.6
       magicast: 0.2.11
       recast: 0.23.7
-      vinxi: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
+      vinxi: 0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2)
 
   '@webassemblyjs/ast@1.12.1':
     dependencies:
@@ -12668,7 +12674,7 @@ snapshots:
       '@deno/shim-deno': 0.19.1
       undici-types: 5.28.4
 
-  db0@0.1.4(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1)):
+  db0@0.1.4(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1)):
     optionalDependencies:
       drizzle-orm: 0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1)
 
@@ -15022,7 +15028,7 @@ snapshots:
 
   mini-svg-data-uri@1.4.4: {}
 
-  miniflare@3.20240512.0:
+  miniflare@3.20240524.0:
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       acorn: 8.11.3
@@ -15032,7 +15038,7 @@ snapshots:
       glob-to-regexp: 0.4.1
       stoppable: 1.1.0
       undici: 5.28.4
-      workerd: 1.20240512.0
+      workerd: 1.20240524.0
       ws: 8.11.0
       youch: 3.3.3
       zod: 3.23.8
@@ -15216,7 +15222,7 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
-  nitropack@2.9.6(patch_hash=dd35q4d7n36bweed4bfxsiy4nq)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(xml2js@0.6.2):
+  nitropack@2.9.6(patch_hash=dd35q4d7n36bweed4bfxsiy4nq)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(xml2js@0.6.2):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.3.2
       '@netlify/functions': 2.7.0(@opentelemetry/api@1.8.0)
@@ -15239,7 +15245,7 @@ snapshots:
       cookie-es: 1.1.0
       croner: 8.0.2
       crossws: 0.2.4
-      db0: 0.1.4(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))
+      db0: 0.1.4(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))
       defu: 6.1.4
       destr: 2.0.3
       dot-prop: 8.0.2
@@ -16808,7 +16814,7 @@ snapshots:
     dependencies:
       '@alloc/quick-lru': 5.2.0
       arg: 5.0.2
-      chokidar: 3.5.3
+      chokidar: 3.6.0
       didyoumean: 1.2.2
       dlv: 1.1.3
       fast-glob: 3.3.2
@@ -16892,16 +16898,16 @@ snapshots:
       '@swc/core': 1.3.101(@swc/helpers@0.5.11)
       esbuild: 0.19.11
 
-  terser-webpack-plugin@5.3.10(esbuild@0.19.12)(webpack@5.91.0(esbuild@0.19.12)):
+  terser-webpack-plugin@5.3.10(esbuild@0.17.19)(webpack@5.91.0(esbuild@0.17.19)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.25
       jest-worker: 27.5.1
       schema-utils: 3.3.0
       serialize-javascript: 6.0.2
       terser: 5.31.0
-      webpack: 5.91.0(esbuild@0.19.12)
+      webpack: 5.91.0(esbuild@0.17.19)
     optionalDependencies:
-      esbuild: 0.19.12
+      esbuild: 0.17.19
 
   terser@5.31.0:
     dependencies:
@@ -17281,7 +17287,7 @@ snapshots:
       unist-util-stringify-position: 4.0.0
       vfile-message: 4.0.2
 
-  vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2):
+  vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2):
     dependencies:
       '@babel/core': 7.24.5
       '@babel/plugin-syntax-jsx': 7.24.1(@babel/core@7.24.5)
@@ -17303,7 +17309,7 @@ snapshots:
       hookable: 5.5.3
       http-proxy: 1.18.1
       micromatch: 4.0.5
-      nitropack: 2.9.6(patch_hash=dd35q4d7n36bweed4bfxsiy4nq)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(xml2js@0.6.2)
+      nitropack: 2.9.6(patch_hash=dd35q4d7n36bweed4bfxsiy4nq)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(xml2js@0.6.2)
       node-fetch-native: 1.6.4
       path-to-regexp: 6.2.2
       pathe: 1.1.2
@@ -17469,7 +17475,7 @@ snapshots:
       - esbuild
       - uglify-js
 
-  webpack@5.91.0(esbuild@0.19.12):
+  webpack@5.91.0(esbuild@0.17.19):
     dependencies:
       '@types/eslint-scope': 3.7.7
       '@types/estree': 1.0.5
@@ -17492,7 +17498,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 3.3.0
       tapable: 2.2.1
-      terser-webpack-plugin: 5.3.10(esbuild@0.19.12)(webpack@5.91.0(esbuild@0.19.12))
+      terser-webpack-plugin: 5.3.10(esbuild@0.17.19)(webpack@5.91.0(esbuild@0.17.19))
       watchpack: 2.4.1
       webpack-sources: 3.2.3
     transitivePeerDependencies:
@@ -17563,15 +17569,15 @@ snapshots:
 
   wordwrap@1.0.0: {}
 
-  workerd@1.20240512.0:
+  workerd@1.20240524.0:
     optionalDependencies:
-      '@cloudflare/workerd-darwin-64': 1.20240512.0
-      '@cloudflare/workerd-darwin-arm64': 1.20240512.0
-      '@cloudflare/workerd-linux-64': 1.20240512.0
-      '@cloudflare/workerd-linux-arm64': 1.20240512.0
-      '@cloudflare/workerd-windows-64': 1.20240512.0
+      '@cloudflare/workerd-darwin-64': 1.20240524.0
+      '@cloudflare/workerd-darwin-arm64': 1.20240524.0
+      '@cloudflare/workerd-linux-64': 1.20240524.0
+      '@cloudflare/workerd-linux-arm64': 1.20240524.0
+      '@cloudflare/workerd-windows-64': 1.20240524.0
 
-  wrangler@3.57.1(@cloudflare/workers-types@4.20240512.0):
+  wrangler@3.57.2:
     dependencies:
       '@cloudflare/kv-asset-handler': 0.3.2
       '@esbuild-plugins/node-globals-polyfill': 0.2.3(esbuild@0.17.19)
@@ -17579,7 +17585,7 @@ snapshots:
       blake3-wasm: 2.1.5
       chokidar: 3.6.0
       esbuild: 0.17.19
-      miniflare: 3.20240512.0
+      miniflare: 3.20240524.0
       nanoid: 3.3.7
       path-to-regexp: 6.2.2
       resolve: 1.22.8
@@ -17588,7 +17594,6 @@ snapshots:
       source-map: 0.6.1
       xxhash-wasm: 1.0.2
     optionalDependencies:
-      '@cloudflare/workers-types': 4.20240512.0
       fsevents: 2.3.3
     transitivePeerDependencies:
       - bufferutil
