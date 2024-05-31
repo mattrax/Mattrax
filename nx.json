@@ -3,7 +3,7 @@
 	"targetDefaults": {
 		"build": {
 			"dependsOn": ["^build"],
-			"outputs": ["{projectRoot}/dist"],
+			"outputs": ["{projectRoot}/dist", "{projectRoot}/.output"],
 			"inputs": ["default", "^default", { "env": "NITRO_PRESET" }],
 			"cache": true
 		}

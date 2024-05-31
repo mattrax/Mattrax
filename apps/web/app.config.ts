@@ -10,6 +10,8 @@ import tsconfigPaths from "vite-tsconfig-paths";
 import { monorepoRoot } from "./loadEnv";
 import "./src/env";
 
+const nitroPreset = process.env.NITRO_PRESET ?? "node-server";
+
 export default defineConfig({
 	ssr: false,
 	routeDir: "app",
@@ -43,15 +45,9 @@ export default defineConfig({
 		],
 	}),
 	server: {
-		unenv: cloudflare,
-		// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
-		// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
-		// exportConditions: ["worker"],
+		preset: nitroPreset,
 		experimental: {
 			asyncContext: true,
-		},
-		rollupConfig: {
-			external: ["cloudflare:sockets"],
 		},
 		esbuild: {
 			options: { target: "es2020" },
@@ -63,14 +59,16 @@ export default defineConfig({
 			"/**": {
 				headers: {
 					"Cache-Control": "public,max-age=0,must-revalidate",
-					"Cloudflare-CDN-Cache-Control": "public,max-age=31536000,immutable",
 					"X-Frame-Options": "DENY",
 					"X-Content-Type-Options": "nosniff",
 					"Referrer-Policy": "strict-origin-when-cross-origin",
-					"Strict-Transport-Security":
-						"max-age=31536000; includeSubDomains; preload",
 					// TODO: Setup a proper content security policy
 					// "Content-Security-Policy": "script-src 'self';",
+					...(nitroPreset === "cloudflare-pages" && {
+						"Cloudflare-CDN-Cache-Control": "public,max-age=31536000,immutable",
+						"Strict-Transport-Security":
+							"max-age=31536000; includeSubDomains; preload",
+					}),
 				},
 			},
 			"/favicon.ico": {
@@ -84,13 +82,25 @@ export default defineConfig({
 				},
 			},
 		},
-		cloudflare: {
-			pages: {
-				routes: {
-					// All non-api and non-asset routes are redirected to / to be served by CDN
-					exclude: ["/"],
+		...(nitroPreset === "cloudflare-pages" && {
+			// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
+			// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
+			// exportConditions: ["worker"],
+			unenv:
+				process.env.NITRO_PRESET === "cloudflare-pages"
+					? cloudflare
+					: undefined,
+			rollupConfig: {
+				external: ["cloudflare:sockets"],
+			},
+			cloudflare: {
+				pages: {
+					routes: {
+						// All non-api and non-asset routes are redirected to / to be served by CDN
+						exclude: ["/"],
+					},
 				},
 			},
-		},
+		}),
 	},
 });

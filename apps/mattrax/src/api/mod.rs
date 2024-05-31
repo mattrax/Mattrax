@@ -5,10 +5,11 @@ use axum::{
     http::HeaderValue,
     middleware::{self, Next},
     response::Response,
-    routing::get,
+    routing::{any, get},
     Router,
 };
 use hmac::Hmac;
+use hyper::HeaderMap;
 use mx_db::Db;
 use rcgen::{Certificate, KeyPair};
 use rustls::pki_types::CertificateDer;
@@ -95,15 +96,48 @@ async fn headers(State(state): State<Arc<Context>>, request: Request, next: Next
 
 pub fn mount(state: Arc<Context>) -> Router {
     // TODO: Limit body size
-    Router::new()
-        .route("/", get(|| async move { "Mattrax MDM!".to_string() }))
+    let router = Router::new()
         .nest("/internal", internal::mount(state.clone()))
         .nest(
             "/psdb.v1alpha1.Database",
             internal::sql::mount(state.clone()),
         )
         .nest("/EnrollmentServer", mdm::enrollment::mount(state.clone()))
-        .nest("/ManagementServer", mdm::manage::mount(state.clone()))
+        .nest("/ManagementServer", mdm::manage::mount(state.clone()));
+
+    #[cfg(feature = "serve-web")]
+    let router = router.fallback(|r: axum::extract::Request| async move {
+        let mut req = reqwest::Request::new(
+            r.method().clone(),
+            reqwest::Url::parse("http://localhost:12345")
+                .expect("failed to parse localhost url")
+                .join(r.uri().path())
+                .expect("failed to join path to localhost url"),
+        );
+
+        *req.headers_mut() = r.headers().clone();
+        *req.body_mut() = Some(
+            axum::body::to_bytes(r.into_body(), usize::MAX)
+                .await
+                .expect("failed to read body")
+                .into(),
+        );
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .execute(req)
+            .await
+            .expect("failed to make request to node");
+
+        (
+            resp.status(),
+            resp.headers().clone(),
+            resp.extensions().clone(),
+            axum::body::Body::from_stream(resp.bytes_stream()),
+        )
+    });
+
+    router
         .layer(middleware::from_fn_with_state(state.clone(), headers))
         .with_state(state)
 }

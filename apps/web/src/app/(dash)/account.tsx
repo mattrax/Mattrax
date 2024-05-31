@@ -1,7 +1,5 @@
 import { A } from "@solidjs/router";
-import { FileRoutes } from "@solidjs/start/router";
-import { For, type ParentProps } from "solid-js";
-import type { JSX } from "solid-js";
+import { For, type JSX, type ParentProps } from "solid-js";
 
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
@@ -11,7 +9,6 @@ const navigation = [
 	{ name: "API Keys", href: "api-keys" },
 ];
 
-console.log(FileRoutes());
 export default function Layout(props: ParentProps) {
 	const user = trpc.auth.me.createQuery();
 

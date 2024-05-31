@@ -9,6 +9,10 @@ default-run = "mattrax"
 [package.metadata.dist]
 dist = true
 
+[features]
+default = []
+serve-web = []
+
 [dependencies]
 mx-utils = { path = "../../crates/mx-utils" }
 better-acme = { path = "../../crates/better-acme" }
@@ -55,3 +59,7 @@ arc-swap = "1.7.1"
 rand = "0.8.5"
 nix = { version = "0.28.0", features = ["user"] }
 chownr = "3.0.0"
+include_dir = "0.7.3"
+temp-dir = "0.1.13"
+reqwest = { version = "0.12.4", features = ["stream"] }
+http = "1.1.0"

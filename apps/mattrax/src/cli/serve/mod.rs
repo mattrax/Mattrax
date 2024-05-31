@@ -26,6 +26,9 @@ pub mod helpers;
 mod server;
 mod updater;
 
+#[cfg(feature = "serve-web")]
+mod web;
+
 #[derive(clap::Args)]
 #[command(about = "Serve Mattrax.")]
 pub struct Command {
@@ -60,6 +63,9 @@ impl Command {
             );
             process::exit(1);
         };
+
+        #[cfg(feature = "serve-web")]
+        web::spawn_process(&config.internal_secret);
 
         let config_manager = ConfigManager::new(db.clone(), local_config, config).unwrap();
         let _updater = UpdateManager::new(db.clone(), config_manager.clone());
