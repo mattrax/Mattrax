@@ -131,7 +131,7 @@ jobs:
       - name: Deploy
         run: |
           set -o pipefail
-          pnpm run ${{ matrix.projects.name }} exec wrangler pages deploy dist/ --project-name ${{ matrix.projects.project }} 2>&1 | tee -a BUILD_OUTPUT
+          pnpm run ${{ matrix.projects.name }} exec wrangler pages deploy dist/ --commit-dirty=true --project-name ${{ matrix.projects.project }} 2>&1 | tee -a BUILD_OUTPUT
 
       - name: Export `DEPLOYMENT_URL`
         id: result
