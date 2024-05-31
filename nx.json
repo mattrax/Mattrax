@@ -1,0 +1,12 @@
+{
+	"$schema": "./node_modules/nx/schemas/nx-schema.json",
+	"targetDefaults": {
+		"build": {
+			"dependsOn": ["^build"],
+			"outputs": ["{projectRoot}/dist"],
+			"inputs": ["default", "^default", { "env": "NITRO_PRESET" }],
+			"cache": true
+		}
+	},
+	"defaultBase": "main"
+}
