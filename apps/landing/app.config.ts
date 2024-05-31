@@ -18,14 +18,6 @@ export default defineConfig({
 		routeRules: {
 			"/api/waitlist": { proxy: waitlistEndpoint },
 		},
-		cloudflare: {
-			pages: {
-				routes: {
-					// All non-api and non-asset routes are redirected to / to be served by CDN
-					exclude: ["/*"],
-				},
-			},
-		},
 	},
 	vite: {
 		envDir: monorepoRoot,
