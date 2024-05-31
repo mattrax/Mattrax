@@ -235,7 +235,7 @@ function WebPagesProject({
 			DATABASE_URL: INTERNAL_SECRET().apply(
 				(internal) => `https://:${internal}@${MDM_URL}`,
 			),
-			FROM_ADDRESS: process.env.FROM_ADDRESS ?? "hello@mattrax.app",
+			FROM_ADDRESS: process.env.FROM_ADDRESS ?? "Mattrax <hello@mattrax.app>",
 			PNPM_VERSION: "9.0.0",
 			STRIPE_PUBLISHABLE_KEY:
 				process.env.STRIPE_PUBLISHABLE_KEY ??
@@ -247,7 +247,7 @@ function WebPagesProject({
 			WAITLIST_DISCORD_WEBHOOK_URL: new sst.Secret("WaitlistDiscordWebhookURL")
 				.value,
 			PROD_ORIGIN: `https://${PROD_HOST}`,
-			COOKIE_DOMAIN: `https://${CLOUDFLARE_ZONE}`,
+			COOKIE_DOMAIN: CLOUDFLARE_ZONE,
 		},
 		failOpen: true,
 		placement: { mode: "smart" },
