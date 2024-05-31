@@ -126,7 +126,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ${{ matrix.projects.name }}-dist
-          path: dist
+          path: apps/${{ matrix.projects.name }}/dist
 
       - name: Deploy
         run: |
