@@ -19,7 +19,6 @@ import {
 	createZodForm,
 } from "@mattrax/ui/forms";
 import type { JSX } from "solid-js";
-import { Hydration } from "solid-js/web";
 import { z } from "zod";
 import DashboardImg from "../assets/dashboard.png";
 
@@ -116,9 +115,7 @@ export default function Page() {
 						</p>
 
 						<div class="pt-4 flex justify-center">
-							<Hydration>
-								<Waitlist />
-							</Hydration>
+							<Waitlist />
 						</div>
 
 						<ul class="flex flex-col space-y-4 pt-4">
