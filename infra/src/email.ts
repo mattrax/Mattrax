@@ -1,5 +1,3 @@
-/// <reference path="../.sst/platform/config.d.ts" />
-
 import { domainZone } from "./cloudflare";
 
 // DMARC config

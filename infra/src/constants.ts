@@ -11,15 +11,4 @@ export const GITHUB_REPO_BRANCH = "main";
 export const AWS_REGION = "us-east-1";
 export const AWS_AZ = "us-east-1a";
 
-function cache<T>(cb: () => T) {
-	let v: T;
-
-	return () => {
-		v ??= cb();
-		return v;
-	};
-}
-export const INTERNAL_SECRET = cache(
-	() => new sst.Secret("InternalSecret").value,
-);
 export const MDM_URL = process.env.MDM_URL ?? "https://mdm.mattrax.app";

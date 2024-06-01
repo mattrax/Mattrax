@@ -18,31 +18,17 @@ export default $config({
 	},
 	async run() {
 		$linkable(aws.iam.AccessKey, function () {
-			return {
-				properties: {
-					id: this.id,
-					secret: this.secret,
-				},
-			};
+			return { properties: { id: this.id, secret: this.secret } };
 		});
 
 		$linkable(azuread.Application, function () {
-			return {
-				properties: {
-					cilentId: this.clientId,
-				},
-			};
+			return { properties: { cilentId: this.clientId } };
 		});
 
 		$linkable(azuread.ApplicationPassword, function () {
-			return {
-				properties: {
-					value: this.value,
-				},
-			};
+			return { properties: { value: this.value } };
 		});
 
-		const { Infra } = await import("./src");
-		return Infra();
+		await import("./src");
 	},
 });
