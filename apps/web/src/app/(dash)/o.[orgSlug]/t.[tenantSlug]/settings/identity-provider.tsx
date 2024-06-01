@@ -186,7 +186,7 @@ function IdentityProviderCard() {
 								},
 							)
 						}
-						disabled={provider.isPending}
+						disabled={provider?.data === null || provider.isPending}
 					>
 						Sync
 					</Button>
@@ -198,7 +198,11 @@ function IdentityProviderCard() {
 								tenantSlug: tenantSlug(),
 							})
 						}
-						disabled={provider.isPending || removeProvider.isPending}
+						disabled={
+							provider?.data === null ||
+							provider.isPending ||
+							removeProvider.isPending
+						}
 					>
 						Remove
 					</Button>
@@ -258,7 +262,10 @@ function Domains() {
 					class="ml-auto"
 					onClick={() => refreshDomains.mutate({ tenantSlug: tenantSlug() })}
 					disabled={
-						provider.isPending || domains.isPending || refreshDomains.isPending
+						provider?.data === null ||
+						provider.isPending ||
+						domains.isPending ||
+						refreshDomains.isPending
 					}
 				>
 					Refresh
