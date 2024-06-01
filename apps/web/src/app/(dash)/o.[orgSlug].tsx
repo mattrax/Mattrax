@@ -11,10 +11,10 @@ import {
 } from "solid-js";
 
 import { createQuery, useQueryClient } from "@tanstack/solid-query";
+import { useCommandGroup } from "~/components/CommandPalette";
 import { trpc } from "~/lib";
 import { useOrgSlug } from "./o.[orgSlug]/ctx";
 import { cachedOrgs } from "./utils";
-import { useCommandGroup } from "~/components/CommandPalette";
 
 export const route = {
 	load: ({ params }) => {

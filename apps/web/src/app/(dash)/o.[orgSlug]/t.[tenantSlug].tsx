@@ -1,12 +1,12 @@
 import { type RouteDefinition, createAsync } from "@solidjs/router";
 import { type ParentProps, Show, Suspense, createMemo } from "solid-js";
 
+import { useCommandGroup } from "~/components/CommandPalette";
 import { trpc } from "~/lib";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { cachedOrgs } from "../utils";
 import { useTenantParams } from "./t.[tenantSlug]/ctx";
 import { cachedTenantsForOrg } from "./utils";
-import { useCommandGroup } from "~/components/CommandPalette";
 
 export const route = {
 	load: ({ params }) => {
