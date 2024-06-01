@@ -25,6 +25,7 @@ export const env = withEnv((env) => {
 			MDM_URL: z.string(),
 			FROM_ADDRESS: z.string(),
 			NODE_ENV: z.enum(["development", "production"]).default("development"),
+			STRIPE_PUBLISHABLE_KEY: optionalInDev(z.string()),
 			// Environment variables for Mattrax Cloud
 			// Do not use these unless you know what your doing
 			COOKIE_DOMAIN: z.string().optional(),
@@ -38,7 +39,6 @@ export const env = withEnv((env) => {
 				ENTRA_CLIENT_ID: z.string(),
 				ENTRA_CLIENT_SECRET: z.string(),
 				// Stipe billing
-				STRIPE_PUBLISHABLE_KEY: optionalInDev(z.string()),
 				STRIPE_SECRET_KEY: optionalInDev(z.string()),
 			}),
 		},
