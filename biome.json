@@ -16,7 +16,8 @@
 			"apps/android",
 			"apps/docs",
 			".sst",
-			"configuration-schemas/**/*.json"
+			"configuration-schemas/**/*.json",
+			"sst-env.d.ts"
 		]
 	},
 	"organizeImports": {
