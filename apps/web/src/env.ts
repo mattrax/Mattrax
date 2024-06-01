@@ -11,8 +11,6 @@ function optional_in_dev<T extends z.ZodTypeAny>(
 export const env = withEnv((env) =>
 	createEnv({
 		server: {
-			// Used to secure the session for the dashboard
-			AUTH_SECRET: z.string(),
 			// Used to secure the JWT's used for MDM authentication
 			// This is shared with Rust so both sides can sign/verify JWT's
 			//

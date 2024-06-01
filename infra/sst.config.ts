@@ -1,6 +1,7 @@
 /// <reference path="./.sst/platform/config.d.ts" />
 
-const AWS_REGION = "us-east-1";
+import { AWS_REGION } from "./src/constants";
+
 export default $config({
 	app(input) {
 		return {
@@ -27,6 +28,10 @@ export default $config({
 
 		$linkable(azuread.ApplicationPassword, function () {
 			return { properties: { value: this.value } };
+		});
+
+		$linkable(random.RandomBytes, function () {
+			return { properties: { base64: this.base64 } };
 		});
 
 		await import("./src");

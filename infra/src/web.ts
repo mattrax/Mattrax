@@ -50,15 +50,12 @@ const deploymentConfig = {
 	environmentVariables: {
 		AWS_ACCESS_KEY_ID: iamAccessKey.id,
 		AWS_SECRET_ACCESS_KEY: iamAccessKey.secret,
+		DATABASE_URL: $interpolate`https://:${secrets.InternalSecret.value}@${MDM_URL}`,
 		ENTRA_CLIENT_ID: entraID.app.clientId,
 		ENTRA_CLIENT_SECRET: entraID.appPassword.value,
-		AUTH_SECRET: new random.RandomBytes("MattraxWebAuthSecret", {
-			length: 64,
-		}).base64,
 		MDM_URL,
 		INTERNAL_SECRET: secrets.InternalSecret.value,
 		COOKIE_DOMAIN: CLOUDFLARE_ZONE,
-		DATABASE_URL: $interpolate`https://:${secrets.InternalSecret.value}@${MDM_URL}`,
 		FROM_ADDRESS: process.env.FROM_ADDRESS ?? "Mattrax <hello@mattrax.app>",
 		PNPM_VERSION: "9.0.0",
 		STRIPE_PUBLISHABLE_KEY:
