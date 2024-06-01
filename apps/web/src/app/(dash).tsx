@@ -1,8 +1,9 @@
 import { type RouteSectionProps, useNavigate } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { parse } from "cookie-es";
-import { Suspense, lazy, onMount, startTransition } from "solid-js";
+import { Show, lazy, onMount, startTransition } from "solid-js";
 import { isServer } from "solid-js/web";
+import { useCommandGroup } from "~/components/CommandPalette";
 
 const CommandPalette = lazy(() => import("~/components/CommandPalette"));
 
@@ -54,10 +55,26 @@ export default function Layout(props: RouteSectionProps<never, "topbar">) {
 	return (
 		<MErrorBoundary>
 			{props.slots.topbar}
-			{props.children}
-			<Suspense>
-				<CommandPalette />
-			</Suspense>
+			<CommandPalette>
+				{props.children}
+				<Show when>
+					{(_) => {
+						useCommandGroup("Account", [
+							{
+								title: `Log out of ${"todo@example.com"}`,
+								onClick: () => alert(1), // TODO
+							},
+							{
+								title: "Settings",
+								href: "./account/general",
+							},
+							// TODO: Dark mode/light mode
+						]);
+
+						return null;
+					}}
+				</Show>
+			</CommandPalette>
 		</MErrorBoundary>
 	);
 }

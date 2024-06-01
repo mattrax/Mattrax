@@ -14,6 +14,7 @@ import { createQuery, useQueryClient } from "@tanstack/solid-query";
 import { trpc } from "~/lib";
 import { useOrgSlug } from "./o.[orgSlug]/ctx";
 import { cachedOrgs } from "./utils";
+import { useCommandGroup } from "~/components/CommandPalette";
 
 export const route = {
 	load: ({ params }) => {
@@ -24,6 +25,21 @@ export const route = {
 
 export default function Layout(props: ParentProps) {
 	createMemo(createAsync(() => cachedOrgs()));
+
+	useCommandGroup("Organisation", [
+		{
+			title: "Create Tenant",
+			onClick: () => alert(1), // TODO
+		},
+		{
+			title: "Invite User",
+			onClick: () => alert(1), // TODO
+		},
+		{
+			title: "Settings",
+			href: "./settings",
+		},
+	]);
 
 	return (
 		<>

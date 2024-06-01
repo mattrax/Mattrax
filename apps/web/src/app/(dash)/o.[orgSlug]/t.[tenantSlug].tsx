@@ -6,6 +6,7 @@ import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { cachedOrgs } from "../utils";
 import { useTenantParams } from "./t.[tenantSlug]/ctx";
 import { cachedTenantsForOrg } from "./utils";
+import { useCommandGroup } from "~/components/CommandPalette";
 
 export const route = {
 	load: ({ params }) => {
@@ -25,6 +26,65 @@ export default function Layout(props: ParentProps) {
 			return await cachedTenantsForOrg(org.id);
 		}),
 	);
+
+	useCommandGroup("Tenant", [
+		{
+			title: "Overview",
+			href: "./",
+		},
+		{
+			title: "Users",
+			href: "./users",
+		},
+		{
+			title: "Devices",
+			href: "./devices",
+		},
+		{
+			title: "Policies",
+			href: "./policies",
+		},
+		{
+			title: "Applications",
+			href: "./apps",
+		},
+		{
+			title: "Groups",
+			href: "./groups",
+		},
+		{
+			title: "Settings",
+			href: "./settings",
+		},
+		{
+			title: "Create Tenant",
+			onClick: () => alert(1), // TODO
+		},
+		{
+			title: "Invite Account",
+			onClick: () => alert(1), // TODO
+		},
+		// {
+		// 	title: "Create Policy",
+		// 	onClick: () => alert(1), // TODO
+		// },
+		// {
+		// 	title: "Create Application",
+		// 	onClick: () => alert(1), // TODO
+		// },
+		// {
+		// 	title: "Create Group",
+		// 	onClick: () => alert(1), // TODO
+		// },
+		// TODO: Search/open group/policy/application from popup
+	]);
+
+	useCommandGroup("Tenant", [
+		{
+			title: "Another",
+			href: "./",
+		},
+	]);
 
 	return (
 		<>
