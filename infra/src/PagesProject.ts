@@ -16,6 +16,14 @@ export interface PagesProjectArgs extends cloudflare.PagesProjectArgs {
 	}>;
 }
 
+/**
+ * Wrapper around cloudflare.PagesProject that allows linking
+ * Linkables to have automatic environment secret injection.
+ *
+ * This does not inject environment variable extraction code like
+ * sst.cloudflare.Worker, so you need to add it yourself,
+ * as is done in /apps/web/src/cfPagesMiddleware.ts
+ */
 export class PagesProject extends Component {
 	inner: pulumi.Output<cloudflare.PagesProject>;
 
