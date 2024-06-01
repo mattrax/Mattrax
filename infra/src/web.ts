@@ -48,8 +48,6 @@ const deploymentConfig = {
 		...Object.values(secrets),
 	],
 	environmentVariables: {
-		AWS_ACCESS_KEY_ID: iamAccessKey.id,
-		AWS_SECRET_ACCESS_KEY: iamAccessKey.secret,
 		DATABASE_URL: $interpolate`https://:${secrets.InternalSecret.value}@${MDM_URL}`,
 		ENTRA_CLIENT_ID: entraID.app.clientId,
 		ENTRA_CLIENT_SECRET: entraID.appPassword.value,

@@ -1,17 +1,31 @@
 import type { RequestSchema } from "@mattrax/email";
 import { AwsClient } from "aws4fetch";
+import { Resource } from "sst";
 import { env, withEnv } from "~/env";
 
-const aws = withEnv(() => ({
-	client:
-		env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY
-			? new AwsClient({
-					region: "us-east-1",
-					accessKeyId: env.AWS_ACCESS_KEY_ID,
-					secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-				})
-			: undefined,
-}));
+const aws = withEnv(() => {
+	if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY) {
+		return {
+			client: new AwsClient({
+				region: "us-east-1",
+				accessKeyId: env.AWS_ACCESS_KEY_ID,
+				secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+			}),
+		};
+	}
+
+	if (Resource.MattraxWebIAMUserAccessKey) {
+		return {
+			client: new AwsClient({
+				region: "us-east-1",
+				accessKeyId: Resource.MattraxWebIAMUserAccessKey.id,
+				secretAccessKey: Resource.MattraxWebIAMUserAccessKey.secret,
+			}),
+		};
+	}
+
+	return { client: undefined };
+});
 
 export async function sendEmail(args: RequestSchema) {
 	if (env.FROM_ADDRESS === "console") {
