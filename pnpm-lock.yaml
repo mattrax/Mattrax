@@ -27,7 +27,7 @@ patchedDependencies:
     hash: kbhw3lxqs5ui6og332q7mjjsdu
     path: patches/drizzle-orm@0.30.10.patch
   nitropack@2.9.6:
-    hash: dd35q4d7n36bweed4bfxsiy4nq
+    hash: p7ld6mmkgyxaavdzhe4ztnoviq
     path: patches/nitropack@2.9.6.patch
 
 importers:
@@ -16564,7 +16564,7 @@ snapshots:
       - '@babel/core'
       - babel-plugin-macros
 
-  nitropack@2.9.6(patch_hash=dd35q4d7n36bweed4bfxsiy4nq)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(xml2js@0.6.2):
+  nitropack@2.9.6(patch_hash=p7ld6mmkgyxaavdzhe4ztnoviq)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(xml2js@0.6.2):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.3.2
       '@netlify/functions': 2.7.0(@opentelemetry/api@1.8.0)
@@ -18776,7 +18776,7 @@ snapshots:
       hookable: 5.5.3
       http-proxy: 1.18.1
       micromatch: 4.0.5
-      nitropack: 2.9.6(patch_hash=dd35q4d7n36bweed4bfxsiy4nq)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(xml2js@0.6.2)
+      nitropack: 2.9.6(patch_hash=p7ld6mmkgyxaavdzhe4ztnoviq)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(xml2js@0.6.2)
       node-fetch-native: 1.6.4
       path-to-regexp: 6.2.2
       pathe: 1.1.2

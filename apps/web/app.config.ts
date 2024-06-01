@@ -58,6 +58,8 @@ export default defineConfig({
 		},
 		routeRules: {
 			"/**": {
+				// @ts-expect-error: This is in our patch
+				priority: 5,
 				headers: {
 					"Cache-Control": "public,max-age=0,must-revalidate",
 					"X-Frame-Options": "DENY",
