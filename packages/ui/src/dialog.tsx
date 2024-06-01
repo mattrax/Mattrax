@@ -80,7 +80,10 @@ const DialogOverlay = <T extends ValidComponent = "div">(
 };
 
 const DialogContent = <T extends ValidComponent = "div">(
-	props: PolymorphicProps<T, DialogContentProps> & { closeButton?: boolean },
+	props: PolymorphicProps<T, DialogContentProps> & {
+		closeButton?: boolean;
+		positionClass?: string;
+	},
 ) => {
 	const [, rest] = splitProps(props as any, [
 		"class",
@@ -92,8 +95,10 @@ const DialogContent = <T extends ValidComponent = "div">(
 			<DialogOverlay />
 			<DialogPrimitive.Content
 				class={cn(
-					"bg-background data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95 data-[closed]:slide-out-to-left-1/2 data-[closed]:slide-out-to-top-[48%] data-[expanded]:slide-in-from-left-1/2 data-[expanded]:slide-in-from-top-[48%] fixed left-[50%] top-[50%] z-50 grid translate-x-[-50%] translate-y-[-50%] gap-4 border p-6 shadow-lg duration-200 sm:rounded-lg",
+					"bg-background data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95 data-[closed]:slide-out-to-left-1/2 data-[closed]:slide-out-to-top-[48%] data-[expanded]:slide-in-from-left-1/2 data-[expanded]:slide-in-from-top-[48%] fixed z-50 grid gap-4 border p-6 shadow-lg duration-200 sm:rounded-lg",
 					props.class,
+					props.positionClass ??
+						"left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%]",
 				)}
 				{...rest}
 			>
