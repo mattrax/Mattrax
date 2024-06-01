@@ -1,25 +1,16 @@
 import type { RequestSchema } from "@mattrax/email";
 import { AwsClient } from "aws4fetch";
-import { Resource } from "sst";
 import { env, withEnv } from "~/env";
 
 const aws = withEnv(() => {
 	let client: AwsClient | undefined;
 
-	try {
+	if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY)
 		client = new AwsClient({
 			region: "us-east-1",
-			accessKeyId: Resource.MattraxWebIAMUserAccessKey.id,
-			secretAccessKey: Resource.MattraxWebIAMUserAccessKey.secret,
+			accessKeyId: env.AWS_ACCESS_KEY_ID,
+			secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
 		});
-	} catch {
-		if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY)
-			client = new AwsClient({
-				region: "us-east-1",
-				accessKeyId: env.AWS_ACCESS_KEY_ID,
-				secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-			});
-	}
 
 	return { client };
 });

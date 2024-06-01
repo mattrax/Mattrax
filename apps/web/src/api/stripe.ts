@@ -1,15 +1,7 @@
-import { Resource } from "sst";
 import { env } from "~/env";
 
 export async function useStripe() {
-	let secret: string | undefined;
-
-	try {
-		secret = Resource.StripeSecretKey.value;
-	} catch {
-		secret = env.STRIPE_SECRET_KEY;
-	}
-
+	const secret = env.STRIPE_SECRET_KEY;
 	if (!secret) throw new Error("Missing 'STRIPE_SECRET_KEY'");
 
 	return import("stripe").then((mod) => {

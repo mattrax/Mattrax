@@ -13,6 +13,18 @@ export const env = withEnv((env) => {
 	// we're in an sst cloud environment
 	const isSSTEnvironment = "SST_RESOURCE_App" in env;
 
+	const runtimeEnv = {
+		...env,
+		...(isSSTEnvironment && {
+			INTERNAL_SECRET: Resource.InternalSecret.value,
+			AWS_ACCESS_KEY_ID: Resource.MattraxWebIAMUserAccessKey.id,
+			AWS_SECRET_ACCESS_KEY: Resource.MattraxWebIAMUserAccessKey.secret,
+			ENTRA_CLIENT_ID: Resource.MattraxEntraIDApplication.cilentId,
+			ENTRA_CLIENT_SECRET: Resource.MattraxEntraIDApplicationPassword.value,
+			STRIPE_SECRET_KEY: Resource.StripeSecretKey.value,
+		}),
+	};
+
 	return createEnv({
 		server: {
 			// Used to secure the JWT's used for MDM authentication
@@ -25,35 +37,23 @@ export const env = withEnv((env) => {
 			MDM_URL: z.string(),
 			FROM_ADDRESS: z.string(),
 			NODE_ENV: z.enum(["development", "production"]).default("development"),
+			// Emails and other AWS services
+			AWS_ACCESS_KEY_ID: optionalInDev(z.string()),
+			AWS_SECRET_ACCESS_KEY: optionalInDev(z.string()),
+			// Used for syncing users from Entra to Mattrax
+			ENTRA_CLIENT_ID: z.string(),
+			ENTRA_CLIENT_SECRET: z.string(),
+			// Stipe billing
 			STRIPE_PUBLISHABLE_KEY: optionalInDev(z.string()),
+			STRIPE_SECRET_KEY: optionalInDev(z.string()),
+
 			// Environment variables for Mattrax Cloud
 			// Do not use these unless you know what your doing
 			COOKIE_DOMAIN: z.string().optional(),
-			// Env vars for self hosting that would otherwise come from SST
-			...(!isSSTEnvironment && {
-				// Emails and other AWS services
-				// Get these values from the output of the Cloudformation template
-				AWS_ACCESS_KEY_ID: optionalInDev(z.string()),
-				AWS_SECRET_ACCESS_KEY: optionalInDev(z.string()),
-				// Used for syncing users from Entra to Mattrax
-				ENTRA_CLIENT_ID: z.string(),
-				ENTRA_CLIENT_SECRET: z.string(),
-				// Stipe billing
-				STRIPE_SECRET_KEY: optionalInDev(z.string()),
-			}),
 		},
 		clientPrefix: "VITE_",
 		client: {},
-		runtimeEnv: {
-			...env,
-			get INTERNAL_SECRET() {
-				try {
-					return Resource.InternalSecret.value;
-				} catch {
-					return env.INTERNAL_SECRET;
-				}
-			},
-		},
+		runtimeEnv,
 		skipValidation: env.SKIP_ENV_VALIDATION === "true",
 		emptyStringAsUndefined: true,
 	});
