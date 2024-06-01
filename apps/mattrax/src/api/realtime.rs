@@ -73,7 +73,10 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                     let auth = authenticate(&state, cookies).await?;
                     let mut rx = rx.resubscribe();
 
-                    Ok::<Response, Response>(ws.on_upgrade(|mut socket| async move {
+                    Ok::<Response, Response>(ws.on_failed_upgrade(|error| {
+                            warn!("Error upgrading websocket: {error:?}");
+                        })
+                        .on_upgrade(|mut socket| async move {
                         let auth = auth;
                         let mut active_org_slug = None;
 

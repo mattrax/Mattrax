@@ -138,7 +138,10 @@ pub fn mount(state: Arc<Context>) -> Router {
     });
 
     #[cfg(not(feature = "serve-web"))]
-    let router = router.route("/", get(|| async move { "Mattrax MDM!".to_string() }));
+    let router = router.route(
+        "/",
+        axum::routing::get(|| async move { "Mattrax MDM!".to_string() }),
+    );
 
     router
         .layer(middleware::from_fn_with_state(state.clone(), headers))

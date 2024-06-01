@@ -31,7 +31,7 @@ futures-rustls = "0.26.0"
 tower = "0.4.13"
 hyper = { version = "1.3.1", features = ["http1", "http2", "server"] }
 tokio-util = { version = "0.7.11", features = ["compat"] }
-hyper-util = { version = "0.1.3", features = [
+hyper-util = { version = "0.1.5", features = [
   "http1",
   "http2",
   "server-auto",

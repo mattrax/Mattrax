@@ -2,7 +2,13 @@
 
 import { createReconnectingWS } from "@solid-primitives/websocket";
 import { type RouteDefinition, createAsync } from "@solidjs/router";
-import { type ParentProps, Suspense, createEffect, createMemo } from "solid-js";
+import {
+	type ParentProps,
+	Suspense,
+	createEffect,
+	createMemo,
+	createReaction,
+} from "solid-js";
 
 import { createQuery, useQueryClient } from "@tanstack/solid-query";
 import { trpc } from "~/lib";
@@ -61,12 +67,16 @@ function useInvalidationSystem() {
 				?.replace("http://", "ws://")}/realtime`,
 		);
 
-		createEffect(() =>
+		ws.addEventListener("open", () =>
+			ws.send(JSON.stringify({ type: "setOrg", orgSlug: orgSlug() })),
+		);
+		createReaction(() =>
 			ws.send(JSON.stringify({ type: "setOrg", orgSlug: orgSlug() })),
 		);
 
 		ws.addEventListener("message", (e) => {
-			const event = JSON.parse(e.data);
+			const event = parseJsonSafe(e.data);
+			if (!event) return;
 
 			if (event.type === "invalidation") {
 				queryClient.invalidateQueries({
@@ -98,4 +108,13 @@ function useInvalidationSystem() {
 			}
 		});
 	});
+}
+
+function parseJsonSafe(json: string) {
+	try {
+		return JSON.parse(json);
+	} catch (e) {
+		console.warn("Error parsing invalidation message:", e);
+		return null;
+	}
 }

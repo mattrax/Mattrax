@@ -82,7 +82,7 @@ pub async fn server(router: Router, acme: Arc<Acme<FsStore<MattraxAcmeStore>>>, 
                 .http1()
                 .header_read_timeout(Duration::from_secs(5))
                 .timer(TokioTimer::new())
-                .serve_connection(
+                .serve_connection_with_upgrades(
                     TokioIo::new(stream.compat()),
                     hyper::service::service_fn(move |request: Request<Incoming>| {
                         tower_service.clone().oneshot(request)
