@@ -26,7 +26,7 @@ pub mod helpers;
 mod server;
 mod updater;
 
-#[cfg(and(not(debug_assertions), feature = "serve-web"))]
+#[cfg(all(not(debug_assertions), feature = "serve-web"))]
 mod web;
 
 #[derive(clap::Args)]
@@ -64,7 +64,7 @@ impl Command {
             process::exit(1);
         };
 
-        #[cfg(and(not(debug_assertions), feature = "serve-web"))]
+        #[cfg(all(not(debug_assertions), feature = "serve-web"))]
         web::spawn_process(&config.internal_secret);
 
         let config_manager = ConfigManager::new(db.clone(), local_config, config).unwrap();
