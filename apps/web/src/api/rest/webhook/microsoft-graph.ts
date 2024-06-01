@@ -8,7 +8,7 @@ import { msGraphClient } from "~/api/microsoft";
 import { upsertEntraIdUser } from "~/api/trpc/routers/tenant/identityProvider";
 import { getEmailDomain } from "~/api/utils";
 import { db, domains, identityProviders, users } from "~/db";
-import { getInternalSecret } from "~/env";
+import { env } from "~/env";
 
 const CHANGE_TYPE = z.enum(["created", "updated", "deleted"]);
 
@@ -90,7 +90,7 @@ export const microsoftGraphRouter = new Hono()
 async function handleChangeNotification(
 	notification: z.infer<typeof CHANGE_NOTIFICATION>,
 ) {
-	if (notification.clientState !== getInternalSecret()) {
+	if (notification.clientState !== env.INTERNAL_SECRET) {
 		console.error("Client state mismatch. Not processing!");
 		return;
 	}

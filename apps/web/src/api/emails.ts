@@ -4,27 +4,24 @@ import { Resource } from "sst";
 import { env, withEnv } from "~/env";
 
 const aws = withEnv(() => {
-	if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY) {
-		return {
-			client: new AwsClient({
+	let client: AwsClient | undefined;
+
+	try {
+		client = new AwsClient({
+			region: "us-east-1",
+			accessKeyId: Resource.MattraxWebIAMUserAccessKey.id,
+			secretAccessKey: Resource.MattraxWebIAMUserAccessKey.secret,
+		});
+	} catch {
+		if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY)
+			client = new AwsClient({
 				region: "us-east-1",
 				accessKeyId: env.AWS_ACCESS_KEY_ID,
 				secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-			}),
-		};
+			});
 	}
 
-	if (Resource.MattraxWebIAMUserAccessKey) {
-		return {
-			client: new AwsClient({
-				region: "us-east-1",
-				accessKeyId: Resource.MattraxWebIAMUserAccessKey.id,
-				secretAccessKey: Resource.MattraxWebIAMUserAccessKey.secret,
-			}),
-		};
-	}
-
-	return { client: undefined };
+	return { client };
 });
 
 export async function sendEmail(args: RequestSchema) {

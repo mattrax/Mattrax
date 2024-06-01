@@ -4,7 +4,7 @@ import * as jose from "jose";
 import { renderToString } from "solid-js/web";
 
 import { db, domains, identityProviders } from "~/db";
-import { env, getInternalSecret } from "~/env";
+import { env } from "~/env";
 import { upsertEntraIdUser } from "../trpc/routers/tenant/identityProvider";
 import { getEmailDomain } from "../utils";
 import { decryptJWT, encryptJWT, signJWT } from "../utils/jwt";
@@ -48,7 +48,7 @@ export const enrollmentRouter = new Hono()
 			try {
 				await jose.jwtVerify(
 					accesstoken,
-					new TextEncoder().encode(getInternalSecret()),
+					new TextEncoder().encode(env.INTERNAL_SECRET),
 					{
 						audience: "mdm.mattrax.app",
 						algorithms: ["ES256"],

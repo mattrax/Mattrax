@@ -14,17 +14,14 @@ function cache<T>(key: string, fn: () => T): T {
 }
 
 function getEntraTokens(): [string, string] {
-	if (
-		Resource.MattraxEntraIDApplication &&
-		Resource.MattraxEntraIDApplicationPassword
-	) {
+	try {
 		return [
 			Resource.MattraxEntraIDApplication.cilentId,
 			Resource.MattraxEntraIDApplicationPassword.value,
 		];
+	} catch {
+		return [env.ENTRA_CLIENT_ID, env.ENTRA_CLIENT_SECRET];
 	}
-
-	return [env.ENTRA_CLIENT_ID, env.ENTRA_CLIENT_SECRET];
 }
 
 // The MS Graph client for Entra ID sync within the user's tenant
