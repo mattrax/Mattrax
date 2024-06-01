@@ -105,7 +105,7 @@ pub fn mount(state: Arc<Context>) -> Router {
         .nest("/EnrollmentServer", mdm::enrollment::mount(state.clone()))
         .nest("/ManagementServer", mdm::manage::mount(state.clone()));
 
-    #[cfg(feature = "serve-web")]
+    #[cfg(and(not(debug_assertions), feature = "serve-web"))]
     let router = router.fallback(|r: axum::extract::Request| async move {
         let mut req = reqwest::Request::new(
             r.method().clone(),
