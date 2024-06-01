@@ -76,8 +76,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                     Ok::<Response, Response>(ws.on_failed_upgrade(|error| {
                             warn!("Error upgrading websocket: {error:?}");
                         })
-                        .on_upgrade(|mut socket| async move {
-                        let auth = auth;
+                        .on_upgrade(move |mut socket| async move {
                         let mut active_org_slug = None;
 
                         let mut timer = tokio::time::interval(Duration::from_secs(5 * 30));
