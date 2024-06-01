@@ -5,4 +5,5 @@ export const secrets = {
 	StripeSecretKey: new sst.Secret("StripeSecretKey"),
 	FeedbackDiscordWebhookURL: new sst.Secret("FeedbackDiscordWebhookURL"),
 	WaitlistDiscordWebhookURL: new sst.Secret("WaitlistDiscordWebhookURL"),
+	DatabaseURL: new sst.Secret("DatabaseURL"),
 };
