@@ -65,7 +65,12 @@ const isOrganisationMember = cache(async (orgPk: number, accountPk: number) => {
 export const getTenantList = cache(
 	(accountPk: number) =>
 		db
-			.select({ pk: tenants.pk, name: tenants.name })
+			.select({
+				pk: tenants.pk,
+				name: tenants.name,
+				slug: tenants.slug,
+				orgSlug: organisations.slug,
+			})
 			.from(tenants)
 			.innerJoin(organisations, eq(tenants.orgPk, organisations.pk))
 			.innerJoin(

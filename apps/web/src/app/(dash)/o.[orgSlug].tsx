@@ -84,19 +84,20 @@ function useInvalidationSystem() {
 						const input = query.queryKey?.[1];
 						// If it is a valid input to `tenantProcedure` or `orgProcedure`
 						if (input && typeof input === "object" && !Array.isArray(input)) {
-							// And it matches the orgSlug
-							if ("orgSlug" in input && input.orgSlug === event.orgSlug) {
-								console.log(query.queryKey[0]);
-								return true;
-							}
-							// or optionally matches the tenantSlug
-							if (
-								"tenantSlug" in event &&
-								"tenantSlug" in input &&
-								input.tenantSlug === event.tenantSlug
-							) {
-								console.log(query.queryKey[0]);
-								return true;
+							// if the event has a tenant
+							if ("tenantSlug" in event) {
+								// We invalidate anything in the tenant
+								if (
+									"tenantSlug" in input &&
+									input.tenantSlug === event.tenantSlug
+								) {
+									return true;
+								}
+							} else {
+								// We invalidate anything in the org
+								if ("orgSlug" in input && input.orgSlug === event.orgSlug) {
+									return true;
+								}
 							}
 						}
 

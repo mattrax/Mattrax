@@ -21,6 +21,7 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { invalidate } from "~/api/utils/realtime";
 
 const getPolicy = cache(async (id: string) => {
 	return await db.query.policies.findFirst({
@@ -30,14 +31,18 @@ const getPolicy = cache(async (id: string) => {
 
 const policyProcedure = authedProcedure
 	.input(z.object({ id: z.string() }))
-	.use(async ({ next, input, ctx }) => {
+	.use(async ({ next, input, ctx, type }) => {
 		const policy = await getPolicy(input.id);
 		if (!policy)
 			throw new TRPCError({ code: "NOT_FOUND", message: "Policy not found" });
 
 		const tenant = await ctx.ensureTenantMember(policy.tenantPk);
 
-		return await next({ ctx: { policy, tenant } });
+		return await next({ ctx: { policy, tenant } }).then((result) => {
+			// TODO: Right now we invalidate everything but we will need to be more specific in the future
+			if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
+			return result;
+		});
 	});
 
 export const policyRouter = createTRPCRouter({

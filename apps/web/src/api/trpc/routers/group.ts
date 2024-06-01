@@ -21,6 +21,7 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { invalidate } from "~/api/utils/realtime";
 
 const getGroup = cache(
 	(id: string) =>
@@ -32,13 +33,17 @@ const getGroup = cache(
 
 const groupProcedure = authedProcedure
 	.input(z.object({ id: z.string() }))
-	.use(async ({ next, input, ctx }) => {
+	.use(async ({ next, input, ctx, type }) => {
 		const group = await getGroup(input.id);
 		if (!group) throw new TRPCError({ code: "NOT_FOUND", message: "group" });
 
 		const tenant = await ctx.ensureTenantMember(group.tenantPk);
 
-		return await next({ ctx: { group, tenant } });
+		return await next({ ctx: { group, tenant } }).then((result) => {
+			// TODO: Right now we invalidate everything but we will need to be more specific in the future
+			if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
+			return result;
+		});
 	});
 
 export const groupRouter = createTRPCRouter({
