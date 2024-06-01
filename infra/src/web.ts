@@ -213,9 +213,8 @@ class PagesProject extends Component {
 						configs.production.environmentVariables ??= {};
 
 						for (const item of linkData.preview) {
-							configs.production.environmentVariables[
-								`SST_RESOURCE_${item.name}`
-							] = JSON.stringify(item.properties);
+							configs.production.environmentVariables[item.name] =
+								JSON.stringify(item.properties);
 						}
 
 						configs.production.environmentVariables.SST_RESOURCE_App =

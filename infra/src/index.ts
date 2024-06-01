@@ -1,7 +1,7 @@
 /// <reference path="../.sst/platform/config.d.ts" />
 
-import { Web } from "./web";
 import { MDMServer } from "./mdm";
+import { Web } from "./web";
 
 export function Infra() {
 	Web();

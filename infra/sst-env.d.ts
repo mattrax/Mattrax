@@ -38,4 +38,3 @@ declare module "sst" {
 		};
 	}
 }
-export {};
