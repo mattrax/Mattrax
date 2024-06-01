@@ -48,17 +48,13 @@ const deploymentConfig = {
 		...Object.values(secrets),
 	],
 	environmentVariables: {
-		ENTRA_CLIENT_ID: entraID.app.clientId,
-		ENTRA_CLIENT_SECRET: entraID.appPassword.value,
 		MDM_URL,
-		INTERNAL_SECRET: secrets.InternalSecret.value,
 		COOKIE_DOMAIN: CLOUDFLARE_ZONE,
 		FROM_ADDRESS: process.env.FROM_ADDRESS ?? "Mattrax <hello@mattrax.app>",
 		PNPM_VERSION: "9.0.0",
 		STRIPE_PUBLISHABLE_KEY:
 			process.env.STRIPE_PUBLISHABLE_KEY ??
 			"pk_test_51HWF7EHahv0c3616yp7ja6iTu2EDPzfnvd3cahDGHhPZQMAq8vqXa5QkJquWleLzkRK6KGppESxF8yZwWtBhCJzm00WAqF2c3k",
-		STRIPE_SECRET_KEY: secrets.StripeSecretKey.value,
 		PROD_ORIGIN: `https://${PROD_HOST}`,
 	},
 	secrets: {

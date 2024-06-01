@@ -1,5 +1,5 @@
 import { waitUntil } from "@mattrax/trpc-server-function/server";
-import { env } from "~/env";
+import { env, getInternalSecret } from "~/env";
 
 export const invalidate = (orgSlug: string, tenantSlug?: string) =>
 	waitUntil(async () => {
@@ -7,7 +7,7 @@ export const invalidate = (orgSlug: string, tenantSlug?: string) =>
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				authorization: `Bearer ${env.INTERNAL_SECRET}`,
+				authorization: `Bearer ${getInternalSecret()}`,
 			},
 			body: JSON.stringify({
 				orgSlug,

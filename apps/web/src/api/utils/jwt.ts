@@ -1,5 +1,5 @@
 import type * as jose from "jose";
-import { env } from "~/env";
+import { env, getInternalSecret } from "~/env";
 
 export async function signJWT<T extends jose.JWTPayload>(
 	payload: T,
@@ -67,5 +67,5 @@ export async function decryptJWT(
 }
 
 function createSecretKey() {
-	return new TextEncoder().encode(env.INTERNAL_SECRET);
+	return new TextEncoder().encode(getInternalSecret());
 }

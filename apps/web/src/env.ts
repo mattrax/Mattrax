@@ -1,6 +1,7 @@
 import { createEnv } from "@t3-oss/env-core";
 import { getRequestEvent } from "solid-js/web";
 import { z } from "zod";
+import { Resource } from "sst";
 
 function optional_in_dev<T extends z.ZodTypeAny>(
 	schema: T,
@@ -43,6 +44,12 @@ export const env = withEnv((env) =>
 		emptyStringAsUndefined: true,
 	}),
 );
+
+export function getInternalSecret() {
+	if (Resource.InternalSecret) return Resource.InternalSecret.value;
+
+	return env.INTERNAL_SECRET;
+}
 
 /// Cloudflare only exposes environment variables within the context of a request so this functions help with that.
 ///

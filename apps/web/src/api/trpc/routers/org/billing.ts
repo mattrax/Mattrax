@@ -20,9 +20,11 @@ export const billingRouter = createTRPCRouter({
 			throw new TRPCError({ code: "NOT_FOUND", message: "organisation" }); // TODO: Proper error code which the frontend knows how to handle
 
 		let customerId: string;
+		const stripe = await useStripe();
+
 		if (!org.stripeCustomerId) {
 			try {
-				const customer = await (await useStripe()).customers.create({
+				const customer = await stripe.customers.create({
 					name: org.name,
 					email: org.billingEmail || undefined,
 				});
@@ -54,7 +56,7 @@ export const billingRouter = createTRPCRouter({
 			{
 				method: "POST",
 				headers: {
-					Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+					Authorization: `Bearer ${stripe.secret}`,
 					"Content-Type": "application/x-www-form-urlencoded",
 				},
 				body: body.toString(),

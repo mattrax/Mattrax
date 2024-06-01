@@ -5,7 +5,7 @@ import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { eq, sql } from "drizzle-orm";
 import { accounts, db, identityProviders } from "~/db";
-import { env } from "~/env";
+import { env, getInternalSecret } from "~/env";
 import type { HonoEnv } from ".";
 import { withAccount } from "../account";
 import { createAuditLog } from "../auditLog";
@@ -223,7 +223,7 @@ export const msRouter = new Hono<HonoEnv>()
 						expirationDateTime: new Date(
 							new Date().getTime() + 1000 * 60 * 60 * 24 * 25, // 25 days
 						).toISOString(),
-						clientState: env.INTERNAL_SECRET,
+						clientState: getInternalSecret(),
 					});
 			} else {
 				console.log("Skipping subscription creation as we are on localhost");

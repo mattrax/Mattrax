@@ -1,4 +1,5 @@
 import { initGraphClient } from "@mattrax/ms-graph";
+import { Resource } from "sst";
 import { env } from "~/env";
 
 // A really simple in-memory cache.
@@ -12,11 +13,25 @@ function cache<T>(key: string, fn: () => T): T {
 	return result;
 }
 
+function getEntraTokens(): [string, string] {
+	if (
+		Resource.MattraxEntraIDApplication &&
+		Resource.MattraxEntraIDApplicationPassword
+	) {
+		return [
+			Resource.MattraxEntraIDApplication.cilentId,
+			Resource.MattraxEntraIDApplicationPassword.value,
+		];
+	}
+
+	return [env.ENTRA_CLIENT_ID, env.ENTRA_CLIENT_SECRET];
+}
+
 // The MS Graph client for Entra ID sync within the user's tenant
 // This uses the "Forge" application.
 export const msGraphClient = (tenantId: string) =>
 	cache(`tenantGraphClient|${tenantId}`, () =>
-		initGraphClient(tenantId, env.ENTRA_CLIENT_ID, env.ENTRA_CLIENT_SECRET),
+		initGraphClient(tenantId, ...getEntraTokens()),
 	);
 
 export const msClientFromRefreshToken = (
@@ -24,10 +39,5 @@ export const msClientFromRefreshToken = (
 	refreshToken: string,
 ) =>
 	cache(`userGraphClient|${tenantId}`, () =>
-		initGraphClient(
-			tenantId,
-			env.ENTRA_CLIENT_ID,
-			env.ENTRA_CLIENT_SECRET,
-			refreshToken,
-		),
+		initGraphClient(tenantId, ...getEntraTokens(), refreshToken),
 	);
