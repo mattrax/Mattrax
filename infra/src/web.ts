@@ -48,7 +48,6 @@ const deploymentConfig = {
 		...Object.values(secrets),
 	],
 	environmentVariables: {
-		DATABASE_URL: $interpolate`https://:${secrets.InternalSecret.value}@${MDM_URL}`,
 		ENTRA_CLIENT_ID: entraID.app.clientId,
 		ENTRA_CLIENT_SECRET: entraID.appPassword.value,
 		MDM_URL,
@@ -61,6 +60,9 @@ const deploymentConfig = {
 			"pk_test_51HWF7EHahv0c3616yp7ja6iTu2EDPzfnvd3cahDGHhPZQMAq8vqXa5QkJquWleLzkRK6KGppESxF8yZwWtBhCJzm00WAqF2c3k",
 		STRIPE_SECRET_KEY: secrets.StripeSecretKey.value,
 		PROD_ORIGIN: `https://${PROD_HOST}`,
+	},
+	secrets: {
+		DATABASE_URL: $interpolate`https://:${secrets.InternalSecret.value}@${MDM_URL}`,
 	},
 	failOpen: true,
 	placement: { mode: "smart" },
