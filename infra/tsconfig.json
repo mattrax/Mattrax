@@ -1,5 +1,5 @@
 {
-	"include": [".sst/types.generated.ts"],
+	"include": ["sst-env.d.ts"],
 	"compilerOptions": {
 		"skipLibCheck": true
 	}

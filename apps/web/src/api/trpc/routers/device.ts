@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { TRPCError } from "@trpc/server";
 import { omit } from "~/api/utils";
+import { invalidate } from "~/api/utils/realtime";
 import {
 	applicationAssignments,
 	applications,
@@ -14,7 +15,6 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import { invalidate } from "~/api/utils/realtime";
 
 const deviceProcedure = authedProcedure
 	.input(z.object({ id: z.string() }))

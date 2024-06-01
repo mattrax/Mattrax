@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { createAuditLog } from "~/api/auditLog";
 import { omit } from "~/api/utils";
+import { invalidate } from "~/api/utils/realtime";
 import { createTransaction } from "~/api/utils/transaction";
 import {
 	PolicyAssignableVariants,
@@ -21,7 +22,6 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import { invalidate } from "~/api/utils/realtime";
 
 const getPolicy = cache(async (id: string) => {
 	return await db.query.policies.findFirst({

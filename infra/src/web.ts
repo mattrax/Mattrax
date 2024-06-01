@@ -1,3 +1,7 @@
+import {
+	PagesProject,
+	type PagesProjectDeploymentConfigsProduction,
+} from "./PagesProject";
 import { domainZone } from "./cloudflare";
 import {
 	CLOUDFLARE_ACCOUNT,
@@ -10,10 +14,6 @@ import {
 } from "./constants";
 import { sesIdentity } from "./email";
 import * as entraID from "./entraID";
-import {
-	type PagesProjectDeploymentConfigsProduction,
-	PagesProject,
-} from "./PagesProject";
 import { secrets } from "./secrets";
 
 const user = new aws.iam.User("MattraxWebIAMUser", {
