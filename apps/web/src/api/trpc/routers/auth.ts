@@ -18,6 +18,7 @@ import {
 	organisationMembers,
 	organisations,
 } from "~/db";
+import { env } from "~/env";
 import { type Features, features } from "~/lib/featureFlags";
 import {
 	authedProcedure,
@@ -27,7 +28,6 @@ import {
 	publicProcedure,
 	superAdminProcedure,
 } from "../helpers";
-import { env } from "~/env";
 
 type UserResult = {
 	id: number;

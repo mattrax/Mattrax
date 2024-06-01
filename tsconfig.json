@@ -10,7 +10,8 @@
 		{ "path": "./packages/mysql-planetscale" },
 		{ "path": "./packages/policy-composer" },
 		{ "path": "./packages/trpc-server-function" },
-		{ "path": "./packages/ui" }
+		{ "path": "./packages/ui" },
+		{ "path": "./infra" }
 	],
 	"compilerOptions": {
 		"incremental": true,

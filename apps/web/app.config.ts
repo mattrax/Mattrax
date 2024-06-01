@@ -11,6 +11,7 @@ import { monorepoRoot } from "./loadEnv";
 import "./src/env";
 
 const nitroPreset = process.env.NITRO_PRESET ?? "node-server";
+const isCFPages = nitroPreset === "cloudflare_pages";
 
 export default defineConfig({
 	ssr: false,
@@ -64,7 +65,7 @@ export default defineConfig({
 					"Referrer-Policy": "strict-origin-when-cross-origin",
 					// TODO: Setup a proper content security policy
 					// "Content-Security-Policy": "script-src 'self';",
-					...(nitroPreset === "cloudflare_pages" && {
+					...(isCFPages && {
 						"Cloudflare-CDN-Cache-Control": "public,max-age=31536000,immutable",
 						"Strict-Transport-Security":
 							"max-age=31536000; includeSubDomains; preload",
@@ -82,7 +83,7 @@ export default defineConfig({
 				},
 			},
 		},
-		...(nitroPreset === "cloudflare_pages" && {
+		...(isCFPages && {
 			// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
 			// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
 			// exportConditions: ["worker"],
@@ -100,4 +101,7 @@ export default defineConfig({
 			},
 		}),
 	},
+	...(isCFPages && {
+		middleware: "src/cfPagesMiddleware.ts",
+	}),
 });

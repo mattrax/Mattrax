@@ -1,13 +1,13 @@
 /* @refresh skip */
 
-import { type RouteDefinition, createAsync } from "@solidjs/router";
-import { type ParentProps, createMemo, Suspense, createEffect } from "solid-js";
 import { createReconnectingWS } from "@solid-primitives/websocket";
+import { type RouteDefinition, createAsync } from "@solidjs/router";
+import { type ParentProps, Suspense, createEffect, createMemo } from "solid-js";
 
-import { trpc } from "~/lib";
-import { cachedOrgs } from "./utils";
-import { useOrgSlug } from "./o.[orgSlug]/ctx";
 import { createQuery, useQueryClient } from "@tanstack/solid-query";
+import { trpc } from "~/lib";
+import { useOrgSlug } from "./o.[orgSlug]/ctx";
+import { cachedOrgs } from "./utils";
 
 export const route = {
 	load: ({ params }) => {

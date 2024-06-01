@@ -1,0 +1,6 @@
+{
+	"include": [".sst/types.generated.ts"],
+	"compilerOptions": {
+		"skipLibCheck": true
+	}
+}

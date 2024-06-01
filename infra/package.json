@@ -7,6 +7,7 @@
 	},
 	"dependencies": {
 		"@pulumi/cloudflare": "^5.28.0",
-		"@pulumi/pulumi": "^3.116.1"
+		"@pulumi/pulumi": "^3.116.1",
+		"sst": "3"
 	}
 }
