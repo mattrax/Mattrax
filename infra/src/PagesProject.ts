@@ -58,14 +58,15 @@ export class PagesProject extends Component {
 
 					if (linkData.preview.length > 0) {
 						configs.preview ??= {};
-						configs.preview.environmentVariables ??= {};
+						configs.preview.secrets ??= {};
 
 						for (const item of linkData.preview) {
-							configs.preview.environmentVariables[item.name] = JSON.stringify(
+							configs.preview.secrets[item.name] = JSON.stringify(
 								item.properties,
 							);
 						}
 
+						configs.preview.environmentVariables ??= {};
 						configs.preview.environmentVariables.SST_RESOURCE_App =
 							$jsonStringify({
 								app: $app.name,
@@ -77,13 +78,15 @@ export class PagesProject extends Component {
 
 					if (linkData.production.length > 0) {
 						configs.production ??= {};
-						configs.production.environmentVariables ??= {};
+						configs.production.secrets ??= {};
 
 						for (const item of linkData.preview) {
-							configs.production.environmentVariables[item.name] =
-								JSON.stringify(item.properties);
+							configs.production.secrets[item.name] = JSON.stringify(
+								item.properties,
+							);
 						}
 
+						configs.production.environmentVariables ??= {};
 						configs.production.environmentVariables.SST_RESOURCE_App =
 							$jsonStringify({
 								app: $app.name,

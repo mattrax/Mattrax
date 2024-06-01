@@ -34,17 +34,22 @@ new aws.iam.UserPolicy("MattraxWebIAMUserPolicy", {
 	),
 });
 
-const accessKey = new aws.iam.AccessKey("MattraxWebIAMUserAccessKey", {
+const iamAccessKey = new aws.iam.AccessKey("MattraxWebIAMUserAccessKey", {
 	user: user.name,
 });
 
 const deploymentConfig = {
 	compatibilityDate: "2024-04-03",
 	compatibilityFlags: ["nodejs_compat", "nodejs_als"],
-	link: [accessKey, entraID.app, entraID.appPassword],
+	link: [
+		iamAccessKey,
+		entraID.app,
+		entraID.appPassword,
+		...Object.values(secrets),
+	],
 	environmentVariables: {
-		AWS_ACCESS_KEY_ID: accessKey.id,
-		AWS_SECRET_ACCESS_KEY: accessKey.secret,
+		AWS_ACCESS_KEY_ID: iamAccessKey.id,
+		AWS_SECRET_ACCESS_KEY: iamAccessKey.secret,
 		ENTRA_CLIENT_ID: entraID.app.clientId,
 		ENTRA_CLIENT_SECRET: entraID.appPassword.value,
 		AUTH_SECRET: new random.RandomBytes("MattraxWebAuthSecret", {
@@ -60,8 +65,6 @@ const deploymentConfig = {
 			process.env.STRIPE_PUBLISHABLE_KEY ??
 			"pk_test_51HWF7EHahv0c3616yp7ja6iTu2EDPzfnvd3cahDGHhPZQMAq8vqXa5QkJquWleLzkRK6KGppESxF8yZwWtBhCJzm00WAqF2c3k",
 		STRIPE_SECRET_KEY: secrets.StripeSecretKey.value,
-		FEEDBACK_DISCORD_WEBHOOK_URL: secrets.FeedbackDiscordWebhookURL.value,
-		WAITLIST_DISCORD_WEBHOOK_URL: secrets.WaitlistDiscordWebhookURL.value,
 		PROD_ORIGIN: `https://${PROD_HOST}`,
 	},
 	failOpen: true,

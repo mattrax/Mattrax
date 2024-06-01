@@ -33,8 +33,6 @@ export const env = withEnv((env) =>
 			ENTRA_CLIENT_ID: z.string(),
 			ENTRA_CLIENT_SECRET: z.string(),
 			NODE_ENV: z.enum(["development", "production"]).default("development"),
-			FEEDBACK_DISCORD_WEBHOOK_URL: z.string().optional(),
-			WAITLIST_DISCORD_WEBHOOK_URL: z.string().optional(),
 
 			// Environment variables for Mattrax Cloud
 			// Do not use these unless you know what your doing

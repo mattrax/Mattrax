@@ -1,3 +1,4 @@
+import { Resource } from "sst";
 import { Hono } from "hono";
 import { z } from "zod";
 import {
@@ -33,7 +34,7 @@ export const waitlistRouter = new Hono<HonoEnv>().post("/", async (c) => {
 				`**deployment**: ${result.data.deployment}`,
 				`\`${result.data.email}\``,
 			].join("\n"),
-			env.WAITLIST_DISCORD_WEBHOOK_URL,
+			Resource.WaitlistDiscordWebhookURL.value,
 		);
 	} catch (err) {
 		console.error("Failed to send discord message", err);
