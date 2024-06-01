@@ -23,10 +23,6 @@ declare module "sst" {
 			type: "azuread.index/applicationPassword.ApplicationPassword";
 			value: string;
 		};
-		MattraxWebAuthSecret: {
-			base64: string;
-			type: "random.index/randomBytes.RandomBytes";
-		};
 		MattraxWebIAMUserAccessKey: {
 			id: string;
 			secret: string;
@@ -42,4 +38,3 @@ declare module "sst" {
 		};
 	}
 }
-export {};
