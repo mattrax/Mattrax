@@ -7,7 +7,7 @@ import {
 } from "@mattrax/ui";
 import { createEventListener } from "@solid-primitives/event-listener";
 import { ReactiveMap } from "@solid-primitives/map";
-import { useNavigate } from "@solidjs/router";
+import { useHref, useNavigate, useResolvedPath } from "@solidjs/router";
 import { useId } from "hono/jsx";
 import {
 	For,
@@ -19,29 +19,30 @@ import {
 	createSignal,
 	onCleanup,
 	useContext,
+	createEffect,
 } from "solid-js";
 
-type Action = Omit<BaseAction, "onClick"> &
-	({ href: string } | { onClick: () => void });
-
-type BaseAction = {
+type Action = {
 	title: string;
 	disabled?: boolean;
-	onClick: () => void;
-};
+} & (
+	| { href: string | (() => string) }
+	| { onClick: () => void; onMetaClick?: () => void; onHover?: () => void }
+);
 
 const Context = createContext<
 	ReactiveMap<
 		string,
 		{
 			category: string;
-			actions: BaseAction[];
+			actions: Action[];
 		}
 	>
 >(undefined!);
 
 export default function CommandPaletteProvider(props: ParentProps) {
 	const [open, setOpen] = createSignal(false);
+	const navigate = useNavigate();
 
 	createEventListener(document, "keydown", (e) => {
 		if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
@@ -92,20 +93,33 @@ export default function CommandPaletteProvider(props: ParentProps) {
 										{(category) => (
 											<CommandGroup heading={category.category}>
 												<For each={category.actions}>
-													{(action) => (
-														<CommandItem
-															aria-disabled={action.disabled}
-															disabled={action.disabled}
-															onSelect={() => {
-																if (action.disabled) return;
-																action.onClick();
-																setOpen(false);
-															}}
-															value={`${category.category}|${action.title}`}
-														>
-															<span>{action.title}</span>
-														</CommandItem>
-													)}
+													{(action) => {
+														const href = () =>
+															"href" in action
+																? typeof action.href === "function"
+																	? action.href()
+																	: action.href
+																: undefined;
+
+														return (
+															<CommandItem
+																as={href() ? "a" : "div"}
+																href={href()}
+																value={`${category.category}|${action.title}`}
+																aria-disabled={action.disabled}
+																disabled={action.disabled}
+																// @ts-expect-error: We patch this into `solid-cmdk`
+																onSelect={(_, e) => {
+																	if (action.disabled || e.metaKey) return;
+																	if ("onClick" in action) action.onClick();
+																	if ("href" in action) navigate(href()!);
+																	setOpen(false);
+																}}
+															>
+																<span>{action.title}</span>
+															</CommandItem>
+														);
+													}}
 												</For>
 											</CommandGroup>
 										)}
@@ -124,23 +138,26 @@ export default function CommandPaletteProvider(props: ParentProps) {
 
 export function useCommandGroup(category: string, actions: Action[]) {
 	const id = useId();
-	const navigate = useNavigate();
 	const ctx = useContext(Context);
 	if (!ctx) throw new Error("`CommandPaletteProvider` not found in the tree.");
-	ctx.set(id, {
-		category,
-		actions: actions.map((action) => {
-			if ("href" in action) {
-				// TODO: Command + click item that is a valid `A` to open in new tab
-				// TODO: Prefetch route data on house hover or focus active
-				return {
-					...action,
-					onClick: () => navigate(action.href),
-				};
-			}
 
-			return action;
-		}),
+	// My thinking is this effect will contain the `useResolvedPath` and `useHref` so we don't have a memory leak but idk if that's true.
+	createEffect(() => {
+		ctx.set(id, {
+			category,
+			actions: actions.map((action) => {
+				// const href: string | (() => string) | undefined = undefined;
+				if ("href" in action) {
+					const to = useResolvedPath(() =>
+						typeof action.href === "function" ? action.href() : action.href,
+					);
+					const resolvedHref = useHref(to);
+					action.href = () => resolvedHref()!;
+				}
+
+				return action;
+			}),
+		});
+		onCleanup(() => ctx.delete(id));
 	});
-	onCleanup(() => ctx.delete(id));
 }

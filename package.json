@@ -1,7 +1,10 @@
 {
 	"name": "@mattrax/monorepo",
 	"private": true,
-	"workspaces": ["apps/*", "packages/*"],
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/web dev",
 		"landing": "pnpm --filter @mattrax/landing --",
@@ -50,7 +53,8 @@
 			"nitropack@2.9.6": "patches/nitropack@2.9.6.patch",
 			"@solid-mediakit/trpc@3.0.2": "patches/@solid-mediakit__trpc@3.0.2.patch",
 			"@solidjs/start@1.0.0-rc.1": "patches/@solidjs__start@1.0.0-rc.1.patch",
-			"@tanstack/solid-form@0.20.0": "patches/@tanstack__solid-form@0.20.0.patch"
+			"@tanstack/solid-form@0.20.0": "patches/@tanstack__solid-form@0.20.0.patch",
+			"cmdk-solid@1.0.1": "patches/cmdk-solid@1.0.1.patch"
 		}
 	}
 }

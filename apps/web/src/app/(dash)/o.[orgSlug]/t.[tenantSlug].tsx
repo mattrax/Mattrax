@@ -30,31 +30,31 @@ export default function Layout(props: ParentProps) {
 	useCommandGroup("Tenant", [
 		{
 			title: "Overview",
-			href: "./",
+			href: "",
 		},
 		{
 			title: "Users",
-			href: "./users",
+			href: "users",
 		},
 		{
 			title: "Devices",
-			href: "./devices",
+			href: "devices",
 		},
 		{
 			title: "Policies",
-			href: "./policies",
+			href: "policies",
 		},
 		{
 			title: "Applications",
-			href: "./apps",
+			href: "apps",
 		},
 		{
 			title: "Groups",
-			href: "./groups",
+			href: "groups",
 		},
 		{
 			title: "Settings",
-			href: "./settings",
+			href: "settings",
 		},
 		{
 			title: "Create Tenant",
@@ -64,26 +64,19 @@ export default function Layout(props: ParentProps) {
 			title: "Invite Account",
 			onClick: () => alert(1), // TODO
 		},
-		// {
-		// 	title: "Create Policy",
-		// 	onClick: () => alert(1), // TODO
-		// },
-		// {
-		// 	title: "Create Application",
-		// 	onClick: () => alert(1), // TODO
-		// },
-		// {
-		// 	title: "Create Group",
-		// 	onClick: () => alert(1), // TODO
-		// },
-		// TODO: Search/open group/policy/application from popup
-	]);
-
-	useCommandGroup("Tenant", [
 		{
-			title: "Another",
-			href: "./",
+			title: "Create Policy",
+			onClick: () => alert(1), // TODO
 		},
+		{
+			title: "Create Application",
+			onClick: () => alert(1), // TODO
+		},
+		{
+			title: "Create Group",
+			onClick: () => alert(1), // TODO
+		},
+		// TODO: Search/open group/policy/application from popup
 	]);
 
 	return (

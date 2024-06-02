@@ -61,12 +61,16 @@ export default function Layout(props: RouteSectionProps<never, "topbar">) {
 					{(_) => {
 						useCommandGroup("Account", [
 							{
+								title: "Organisations",
+								href: "/",
+							},
+							{
 								title: `Log out of ${"todo@example.com"}`,
 								onClick: () => alert(1), // TODO
 							},
 							{
 								title: "Settings",
-								href: "./account/general",
+								href: "/account/general",
 							},
 							// TODO: Dark mode/light mode
 						]);

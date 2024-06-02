@@ -37,7 +37,7 @@ export default function Layout(props: ParentProps) {
 		},
 		{
 			title: "Settings",
-			href: "./settings",
+			href: "settings",
 		},
 	]);
 
