@@ -24,6 +24,7 @@ export function InputField<
 		name: TName;
 		label?: string;
 		labelClasses?: string;
+		onInput?: (e: Event) => void;
 	},
 ) {
 	const [_, inputProps] = splitProps(props, [
@@ -53,7 +54,10 @@ export function InputField<
 						{...inputProps}
 						id={id}
 						value={field().state.value as any}
-						onInput={(e) => field().handleChange(e.currentTarget.value as any)}
+						onInput={(e) => {
+							if ("onInput" in props) props.onInput?.(e);
+							field().handleChange(e.currentTarget.value as any);
+						}}
 						onBlur={() => field().handleBlur()}
 					/>
 				</div>

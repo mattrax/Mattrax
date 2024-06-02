@@ -170,12 +170,6 @@ export const authRouter = createTRPCRouter({
 					.set({ name: input.name })
 					.where(eq(accounts.pk, account.pk));
 			}
-
-			return {
-				id: account.pk,
-				name: input.name || account.name,
-				email: account.email,
-			} satisfies UserResult;
 		}),
 
 	logout: publicProcedure.mutation(async () => {
