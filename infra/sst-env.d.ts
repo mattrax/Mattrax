@@ -7,20 +7,20 @@ declare module "sst" {
       type: "sst.sst.Secret"
       value: string
     }
+    EntraIDApplication: {
+      cilentId: string
+      type: "azuread.index/application.Application"
+    }
+    EntraIDApplicationPassword: {
+      type: "azuread.index/applicationPassword.ApplicationPassword"
+      value: string
+    }
     FeedbackDiscordWebhookURL: {
       type: "sst.sst.Secret"
       value: string
     }
     InternalSecret: {
       type: "sst.sst.Secret"
-      value: string
-    }
-    MattraxEntraIDApplication: {
-      cilentId: string
-      type: "azuread.index/application.Application"
-    }
-    MattraxEntraIDApplicationPassword: {
-      type: "azuread.index/applicationPassword.ApplicationPassword"
       value: string
     }
     MattraxWebIAMUserAccessKey: {

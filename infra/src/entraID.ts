@@ -1,8 +1,10 @@
+/// <reference path="../.sst/platform/config.d.ts" />
+
 // Application used for syncing user information from EntraID
 // WARNING: You must manually setup Publisher verification after deploying this
 
 export const app = new azuread.Application(
-	"MattraxEntraIDApplication",
+	"EntraIDApplication",
 	{
 		displayName: "Mattrax",
 		featureTags: [
@@ -59,9 +61,10 @@ export const app = new azuread.Application(
 );
 
 export const appPassword = new azuread.ApplicationPassword(
-	"MattraxEntraIDApplicationPassword",
+	"EntraIDApplicationPassword",
 	{
 		applicationId: app.id,
-		displayName: "SST Client Secret",
+		displayName: "SST Password",
 	},
+	{ protect: true },
 );

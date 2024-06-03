@@ -18,21 +18,21 @@ export default $config({
 		};
 	},
 	async run() {
-		$linkable(aws.iam.AccessKey, function () {
-			return { properties: { id: this.id, secret: this.secret } };
-		});
+		$linkable(aws.iam.AccessKey, (r) => ({
+			properties: { id: r.id, secret: r.secret },
+		}));
 
-		$linkable(azuread.Application, function () {
-			return { properties: { cilentId: this.clientId } };
-		});
+		$linkable(azuread.Application, (r) => ({
+			properties: { cilentId: r.clientId },
+		}));
 
-		$linkable(azuread.ApplicationPassword, function () {
-			return { properties: { value: this.value } };
-		});
+		$linkable(azuread.ApplicationPassword, (r) => ({
+			properties: { value: r.value },
+		}));
 
-		$linkable(random.RandomBytes, function () {
-			return { properties: { base64: this.base64 } };
-		});
+		$linkable(random.RandomBytes, (r) => ({
+			properties: { base64: r.base64 },
+		}));
 
 		await import("./src");
 	},

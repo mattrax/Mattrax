@@ -19,8 +19,8 @@ export const env = withEnv((env) => {
 			INTERNAL_SECRET: Resource.InternalSecret.value,
 			AWS_ACCESS_KEY_ID: Resource.MattraxWebIAMUserAccessKey.id,
 			AWS_SECRET_ACCESS_KEY: Resource.MattraxWebIAMUserAccessKey.secret,
-			ENTRA_CLIENT_ID: Resource.MattraxEntraIDApplication.cilentId,
-			ENTRA_CLIENT_SECRET: Resource.MattraxEntraIDApplicationPassword.value,
+			ENTRA_CLIENT_ID: Resource.EntraIDApplication.cilentId,
+			ENTRA_CLIENT_SECRET: Resource.EntraIDApplicationPassword.value,
 			STRIPE_SECRET_KEY: Resource.StripeSecretKey.value,
 		}),
 	};
