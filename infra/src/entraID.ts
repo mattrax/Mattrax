@@ -3,8 +3,6 @@
 // Application used for syncing user information from EntraID
 // WARNING: You must manually setup Publisher verification after deploying this
 
-const client = azuread.getClientConfig();
-
 export const app = new azuread.Application(
 	"EntraIDApplication",
 	{
