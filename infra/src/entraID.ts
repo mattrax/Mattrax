@@ -71,7 +71,7 @@ new azuread.ApplicationFederatedIdentityCredential(
 		displayName: "gh-actions-oidc",
 		audiences: ["api://AzureADTokenExchange"],
 		issuer: "https://token.actions.githubusercontent.com",
-		subject: "repo:mattrax/mattrax:environment:production",
+		subject: "repo:mattrax/Mattrax:environment:production",
 	},
 );
 
