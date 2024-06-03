@@ -7,6 +7,10 @@ export const app = new azuread.Application(
 	"EntraIDApplication",
 	{
 		displayName: "Mattrax",
+		marketingUrl: "https://mattrax.app",
+		supportUrl: "mailto:hello@mattrax.app",
+		// TODO: termsOfServiceUrl
+		// TODO: privacyStatementUrl
 		featureTags: [
 			{
 				customSingleSignOn: false,
