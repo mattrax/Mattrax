@@ -64,6 +64,17 @@ export const app = new azuread.Application(
 	{ protect: true },
 );
 
+new azuread.ApplicationFederatedIdentityCredential(
+	"EntraIDGHActionsOIDCCredential",
+	{
+		applicationId: app.id,
+		displayName: "gh-actions-oidc",
+		audiences: ["api://AzureADTokenExchange"],
+		issuer: "https://token.actions.githubusercontent.com",
+		subject: "repo:mattrax/mattrax:environment:production",
+	},
+);
+
 export const appPassword = new azuread.ApplicationPassword(
 	"EntraIDApplicationPassword",
 	{
