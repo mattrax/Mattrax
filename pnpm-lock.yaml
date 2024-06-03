@@ -15,7 +15,7 @@ patchedDependencies:
     hash: ryciblegz3ippw6jppam5tmf3q
     path: patches/@solid-mediakit__trpc@3.0.2.patch
   '@solidjs/router@0.13.3':
-    hash: ln3qdz46qt334qfxeqhwe545aa
+    hash: zvbzyeqkevh5uh2poupaukupca
     path: patches/@solidjs__router@0.13.3.patch
   '@solidjs/start@1.0.0-rc.1':
     hash: qxijamwf4tdfe57gtzxuoxu6bm
@@ -212,7 +212,7 @@ importers:
         version: link:../../packages/ui
       '@solidjs/router':
         specifier: ^0.13.3
-        version: 0.13.3(patch_hash=ln3qdz46qt334qfxeqhwe545aa)(solid-js@1.8.17)
+        version: 0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17)
       '@solidjs/start':
         specifier: 1.0.0-rc.1
         version: 1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
@@ -306,7 +306,7 @@ importers:
         version: 1.18.0
       '@solid-mediakit/trpc':
         specifier: ^3.0.2
-        version: 3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.3(patch_hash=ln3qdz46qt334qfxeqhwe545aa)(solid-js@1.8.17))(@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0)))(@tanstack/solid-query@5.36.1(solid-js@1.8.17))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
+        version: 3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17))(@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0)))(@tanstack/solid-query@5.36.1(solid-js@1.8.17))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
       '@solid-primitives/autofocus':
         specifier: ^0.0.111
         version: 0.0.111(solid-js@1.8.17)
@@ -345,7 +345,7 @@ importers:
         version: 1.2.2(solid-js@1.8.17)
       '@solidjs/router':
         specifier: '=0.13.3'
-        version: 0.13.3(patch_hash=ln3qdz46qt334qfxeqhwe545aa)(solid-js@1.8.17)
+        version: 0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17)
       '@solidjs/start':
         specifier: 1.0.0-rc.1
         version: 1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
@@ -649,10 +649,10 @@ importers:
     dependencies:
       '@solid-mediakit/trpc':
         specifier: ^3.0.2
-        version: 3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.3(patch_hash=ln3qdz46qt334qfxeqhwe545aa)(solid-js@1.8.17))(@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0)))(@tanstack/solid-query@5.36.1(solid-js@1.8.17))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
+        version: 3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17))(@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0)))(@tanstack/solid-query@5.36.1(solid-js@1.8.17))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))
       '@solidjs/router':
         specifier: ^0.13.3
-        version: 0.13.3(patch_hash=ln3qdz46qt334qfxeqhwe545aa)(solid-js@1.8.17)
+        version: 0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17)
       '@tanstack/query-core':
         specifier: ^5.36.1
         version: 5.36.1
@@ -673,7 +673,7 @@ importers:
         version: 0.13.1(solid-js@1.8.17)
       '@solidjs/router':
         specifier: ^0.13.3
-        version: 0.13.3(patch_hash=ln3qdz46qt334qfxeqhwe545aa)(solid-js@1.8.17)
+        version: 0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17)
       '@tanstack/form-core':
         specifier: ^0.20.0
         version: 0.20.0
@@ -12475,9 +12475,9 @@ snapshots:
       '@solid-primitives/utils': 6.2.3(solid-js@1.8.17)
       solid-js: 1.8.17
 
-  ? '@solid-mediakit/trpc@3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.3(patch_hash=ln3qdz46qt334qfxeqhwe545aa)(solid-js@1.8.17))(@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0)))(@tanstack/solid-query@5.36.1(solid-js@1.8.17))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))'
+  ? '@solid-mediakit/trpc@3.0.2(patch_hash=ryciblegz3ippw6jppam5tmf3q)(@solidjs/router@0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17))(@solidjs/start@1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0)))(@tanstack/solid-query@5.36.1(solid-js@1.8.17))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(pg@8.11.5))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))'
   : dependencies:
-      '@solidjs/router': 0.13.3(patch_hash=ln3qdz46qt334qfxeqhwe545aa)(solid-js@1.8.17)
+      '@solidjs/router': 0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17)
       '@solidjs/start': 1.0.0-rc.1(patch_hash=qxijamwf4tdfe57gtzxuoxu6bm)(rollup@4.17.2)(solid-js@1.8.17)(vinxi@0.3.11(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/node@20.12.12)(drizzle-orm@0.30.10(patch_hash=kbhw3lxqs5ui6og332q7mjjsdu)(@cloudflare/workers-types@4.20240512.0)(@opentelemetry/api@1.8.0)(@planetscale/database@1.18.0)(@types/react@18.3.2)(mysql2@3.9.7)(pg@8.11.5)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.0)(xml2js@0.6.2))(vite@5.2.11(@types/node@20.12.12)(terser@5.31.0))
       '@tanstack/solid-query': 5.36.1(solid-js@1.8.17)
       '@trpc/client': 10.45.2(@trpc/server@10.45.2)
@@ -12637,7 +12637,7 @@ snapshots:
     dependencies:
       solid-js: 1.8.17
 
-  '@solidjs/router@0.13.3(patch_hash=ln3qdz46qt334qfxeqhwe545aa)(solid-js@1.8.17)':
+  '@solidjs/router@0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.17)':
     dependencies:
       solid-js: 1.8.17
 
@@ -14523,8 +14523,8 @@ snapshots:
       '@typescript-eslint/parser': 7.2.0(eslint@9.2.0)(typescript@5.4.5)
       eslint: 9.2.0
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.2.0))(eslint@9.2.0)
-      eslint-plugin-import: 2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.2.0))(eslint@9.2.0))(eslint@9.2.0)
+      eslint-import-resolver-typescript: 3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1)(eslint@9.2.0)
+      eslint-plugin-import: 2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-typescript@3.6.1)(eslint@9.2.0)
       eslint-plugin-jsx-a11y: 6.8.0(eslint@9.2.0)
       eslint-plugin-react: 7.34.1(eslint@9.2.0)
       eslint-plugin-react-hooks: 4.6.2(eslint@9.2.0)
@@ -14551,13 +14551,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.2.0))(eslint@9.2.0):
+  eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1)(eslint@9.2.0):
     dependencies:
       debug: 4.3.4
       enhanced-resolve: 5.16.1
       eslint: 9.2.0
-      eslint-module-utils: 2.8.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.2.0))(eslint@9.2.0))(eslint@9.2.0)
-      eslint-plugin-import: 2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.2.0))(eslint@9.2.0))(eslint@9.2.0)
+      eslint-module-utils: 2.8.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1)(eslint@9.2.0))(eslint@9.2.0)
+      eslint-plugin-import: 2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-typescript@3.6.1)(eslint@9.2.0)
       fast-glob: 3.3.2
       get-tsconfig: 4.7.5
       is-core-module: 2.13.1
@@ -14568,18 +14568,18 @@ snapshots:
       - eslint-import-resolver-webpack
       - supports-color
 
-  eslint-module-utils@2.8.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.2.0))(eslint@9.2.0))(eslint@9.2.0):
+  eslint-module-utils@2.8.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1)(eslint@9.2.0))(eslint@9.2.0):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
       '@typescript-eslint/parser': 7.2.0(eslint@9.2.0)(typescript@5.4.5)
       eslint: 9.2.0
       eslint-import-resolver-node: 0.3.9
-      eslint-import-resolver-typescript: 3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.2.0))(eslint@9.2.0)
+      eslint-import-resolver-typescript: 3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1)(eslint@9.2.0)
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.2.0))(eslint@9.2.0))(eslint@9.2.0):
+  eslint-plugin-import@2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-typescript@3.6.1)(eslint@9.2.0):
     dependencies:
       array-includes: 3.1.8
       array.prototype.findlastindex: 1.2.5
@@ -14589,7 +14589,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 9.2.0
       eslint-import-resolver-node: 0.3.9
-      eslint-module-utils: 2.8.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.2.0))(eslint@9.2.0))(eslint@9.2.0)
+      eslint-module-utils: 2.8.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.2.0)(typescript@5.4.5))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1)(eslint@9.2.0))(eslint@9.2.0)
       hasown: 2.0.2
       is-core-module: 2.13.1
       is-glob: 4.0.3
