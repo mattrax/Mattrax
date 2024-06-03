@@ -66,6 +66,7 @@ export const getTenantList = cache(
 	(accountPk: number) =>
 		db
 			.select({
+				id: tenants.id,
 				pk: tenants.pk,
 				name: tenants.name,
 				slug: tenants.slug,

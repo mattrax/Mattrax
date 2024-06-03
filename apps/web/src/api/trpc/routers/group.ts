@@ -22,6 +22,7 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { withTenant } from "~/api/tenant";
 
 const getGroup = cache(
 	(id: string) =>
@@ -39,11 +40,13 @@ const groupProcedure = authedProcedure
 
 		const tenant = await ctx.ensureTenantMember(group.tenantPk);
 
-		return await next({ ctx: { group, tenant } }).then((result) => {
-			// TODO: Right now we invalidate everything but we will need to be more specific in the future
-			if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
-			return result;
-		});
+		return withTenant(tenant, () =>
+			next({ ctx: { group, tenant } }).then((result) => {
+				// TODO: Right now we invalidate everything but we will need to be more specific in the future
+				if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
+				return result;
+			}),
+		);
 	});
 
 export const groupRouter = createTRPCRouter({

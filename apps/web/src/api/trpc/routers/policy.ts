@@ -22,6 +22,7 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { withTenant } from "~/api/tenant";
 
 const getPolicy = cache(async (id: string) => {
 	return await db.query.policies.findFirst({
@@ -38,11 +39,13 @@ const policyProcedure = authedProcedure
 
 		const tenant = await ctx.ensureTenantMember(policy.tenantPk);
 
-		return await next({ ctx: { policy, tenant } }).then((result) => {
-			// TODO: Right now we invalidate everything but we will need to be more specific in the future
-			if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
-			return result;
-		});
+		return withTenant(tenant, () =>
+			next({ ctx: { policy, tenant } }).then((result) => {
+				// TODO: Right now we invalidate everything but we will need to be more specific in the future
+				if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
+				return result;
+			}),
+		);
 	});
 
 export const policyRouter = createTRPCRouter({

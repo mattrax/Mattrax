@@ -13,6 +13,7 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { withTenant } from "~/api/tenant";
 
 const userProcedure = authedProcedure
 	.input(z.object({ id: z.string() }))
@@ -25,7 +26,7 @@ const userProcedure = authedProcedure
 
 		const tenant = await ctx.ensureTenantMember(user.tenantPk);
 
-		return await next({ ctx: { user, tenant } });
+		return withTenant(tenant, () => next({ ctx: { user, tenant } }));
 	});
 
 export const userRouter = createTRPCRouter({
