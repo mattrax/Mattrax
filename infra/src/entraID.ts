@@ -62,7 +62,6 @@ export const app = new azuread.Application(
 				`${origin}/api/enrollment/callback`,
 			]),
 		},
-		owners: [client.then((client) => client.objectId)],
 	},
 	{ protect: true },
 );
@@ -92,7 +91,6 @@ new azuread.ServicePrincipal(
 	{
 		clientId: app.clientId,
 		featureTags: [{ enterprise: true }],
-		owners: [client.then((client) => client.objectId)],
 	},
 	{ protect: true },
 );
