@@ -62,6 +62,7 @@ export const app = new azuread.Application(
 				`${origin}/api/enrollment/callback`,
 			]),
 		},
+		owners: [client.then((client) => client.objectId)],
 	},
 	{ protect: true },
 );
