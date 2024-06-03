@@ -1,11 +1,11 @@
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Button } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
-import { z } from "zod";
-import { trpc } from "~/lib";
-import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { debounce } from "@solid-primitives/scheduled";
 import { toast } from "solid-sonner";
+import { z } from "zod";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
+import { trpc } from "~/lib";
 
 export default function Page() {
 	const me = trpc.auth.me.createQuery();

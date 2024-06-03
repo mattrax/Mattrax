@@ -1,7 +1,9 @@
 import type {
 	Component,
 	ComponentProps,
+	ParentComponent,
 	ParentProps,
+	ValidComponent,
 	VoidProps,
 } from "solid-js";
 import { createContext, createSignal, splitProps, useContext } from "solid-js";
@@ -148,18 +150,21 @@ const CommandSeparator: Component<
 	);
 };
 
-const CommandItem: Component<ParentProps<CommandPrimitive.CommandItemProps>> = (
-	props,
+const CommandItem = <T extends ValidComponent = "div">(
+	props: CommandPrimitive.CommandItemProps<T>,
 ) => {
-	const [local, others] = splitProps(props, ["class"]);
+	const [local, others] = splitProps(props as any, ["class"]);
 
 	return (
 		<CommandPrimitive.CommandItem
-			cmdk-item=""
-			class={cn(
-				"relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none aria-selected:bg-accent aria-selected:text-accent-foreground data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50",
-				local.class,
-			)}
+			{...({
+				"cmdk-item": "",
+				class: cn(
+					"relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none aria-selected:bg-accent aria-selected:text-accent-foreground data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50",
+					local.class,
+				) as any,
+				// types are broke
+			} as any)}
 			{...others}
 		/>
 	);
