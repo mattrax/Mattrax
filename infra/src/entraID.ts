@@ -3,6 +3,8 @@
 // Application used for syncing user information from EntraID
 // WARNING: You must manually setup Publisher verification after deploying this
 
+const client = azuread.getClientConfig();
+
 export const app = new azuread.Application(
 	"EntraIDApplication",
 	{
@@ -64,6 +66,15 @@ export const app = new azuread.Application(
 	{ protect: true },
 );
 
+export const appPassword = new azuread.ApplicationPassword(
+	"EntraIDApplicationPassword",
+	{
+		applicationId: app.id,
+		displayName: "SST Password",
+	},
+	{ protect: true },
+);
+
 new azuread.ApplicationFederatedIdentityCredential(
 	"EntraIDGHActionsOIDCCredential",
 	{
@@ -75,11 +86,12 @@ new azuread.ApplicationFederatedIdentityCredential(
 	},
 );
 
-export const appPassword = new azuread.ApplicationPassword(
-	"EntraIDApplicationPassword",
+new azuread.ServicePrincipal(
+	"EntraIDServicePrincipal",
 	{
-		applicationId: app.id,
-		displayName: "SST Password",
+		clientId: app.clientId,
+		featureTags: [{ enterprise: true }],
+		owners: [client.then((client) => client.objectId)],
 	},
 	{ protect: true },
 );
