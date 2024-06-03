@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { cache } from "@solidjs/router";
 import { createAuditLog } from "~/api/auditLog";
+import { withTenant } from "~/api/tenant";
 import { invalidate } from "~/api/utils/realtime";
 import { createTransaction } from "~/api/utils/transaction";
 import {
@@ -22,7 +23,6 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import { withTenant } from "~/api/tenant";
 
 const getGroup = cache(
 	(id: string) =>

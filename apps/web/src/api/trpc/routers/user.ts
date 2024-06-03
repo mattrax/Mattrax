@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { sendEmail } from "~/api/emails";
+import { withTenant } from "~/api/tenant";
 import { omit } from "~/api/utils";
 import {
 	applicationAssignments,
@@ -13,7 +14,6 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import { withTenant } from "~/api/tenant";
 
 const userProcedure = authedProcedure
 	.input(z.object({ id: z.string() }))

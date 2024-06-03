@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { TRPCError } from "@trpc/server";
+import { withTenant } from "~/api/tenant";
 import { omit } from "~/api/utils";
 import { invalidate } from "~/api/utils/realtime";
 import {
@@ -15,7 +16,6 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import { withTenant } from "~/api/tenant";
 
 const deviceProcedure = authedProcedure
 	.input(z.object({ id: z.string() }))

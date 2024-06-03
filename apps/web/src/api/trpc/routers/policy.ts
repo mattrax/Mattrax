@@ -6,6 +6,7 @@ import { and, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { createAuditLog } from "~/api/auditLog";
+import { withTenant } from "~/api/tenant";
 import { omit } from "~/api/utils";
 import { invalidate } from "~/api/utils/realtime";
 import { createTransaction } from "~/api/utils/transaction";
@@ -22,7 +23,6 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import { withTenant } from "~/api/tenant";
 
 const getPolicy = cache(async (id: string) => {
 	return await db.query.policies.findFirst({
