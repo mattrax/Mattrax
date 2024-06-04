@@ -60,7 +60,7 @@ export default function Page() {
 			policy.data
 		) {
 			setState({
-				windows: Object.entries(policy.data.data.windows).reduce(
+				windows: Object.entries(policy.data.data.windows ?? {}).reduce(
 					(acc, [csp, data]) => {
 						acc[csp] = { data, enabled: true, open: true };
 						return acc;
@@ -69,7 +69,7 @@ export default function Page() {
 				),
 				apple: Object.entries(policy.data.data.macos ?? {}).reduce(
 					(acc, [csp, data]) => {
-						acc[csp] = { data: data as any, enabled: true, open: true };
+						acc[csp] = { data, enabled: true, open: true };
 						return acc;
 					},
 					{} as NonNullable<PolicyComposerState["apple"]>,
