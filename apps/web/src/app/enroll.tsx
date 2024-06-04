@@ -28,7 +28,12 @@ export function GET() {
 		renderToString(() => (
 			<Document
 				title="Enroll in Mattrax"
-				head={<link rel="stylesheet" href={css} />}
+				head={
+					<link
+						rel="stylesheet"
+						href={css.replace("/_build/assets/", "/assets/")}
+					/>
+				}
 			>
 				<App />
 			</Document>
