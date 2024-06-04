@@ -49,7 +49,7 @@ jobs:
       - run: cd infra && sst deploy --stage brendonovich
         env:
           ARM_USE_OIDC: true
-          ARM_CLIENT_ID: d0a9c65e-f80e-4e7c-8357-09bceba6ab4d
+          ARM_CLIENT_ID: 9f19332e-149c-4e05-8be3-ccf6776a45f0
           ARM_TENANT_ID: 22d6679c-fc23-425a-b69b-e5e604dd80db
           AZURE_SUBSCRIPTION_ID: 22d6679c-fc23-425a-b69b-e5e604dd80db
           OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
