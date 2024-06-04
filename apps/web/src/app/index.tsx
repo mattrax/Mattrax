@@ -1,5 +1,6 @@
 import { Navigate } from "@solidjs/router";
 import { Match, Switch } from "solid-js";
+import { isServer } from "solid-js/web";
 
 import { useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
@@ -11,6 +12,9 @@ export const route = {
 };
 
 export default function Page() {
+	// When we prerender short circuit to avoid any browser API's
+	if (isServer) return null;
+
 	const query = trpc.org.list.createQuery();
 	const orgs = useCachedQueryData(query, () => cachedOrgs());
 

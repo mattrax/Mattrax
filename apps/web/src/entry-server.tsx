@@ -2,7 +2,7 @@
 import { StartServer, createHandler } from "@solidjs/start/server";
 
 export default createHandler(
-	() => (
+	(event) => (
 		<StartServer
 			document={({ assets, children, scripts }) => (
 				<html lang="en" class="h-full">
@@ -19,9 +19,11 @@ export default createHandler(
 						<div id="app" class="flex min-h-full flex-col">
 							{children}
 
-							<noscript>
-								<NoScriptFallback />
-							</noscript>
+							{new URL(event.request.url).pathname !== "/enroll" ? (
+								<noscript>
+									<NoScriptFallback />
+								</noscript>
+							) : null}
 						</div>
 						{scripts}
 					</body>
