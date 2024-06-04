@@ -14,7 +14,8 @@ const nitroPreset = process.env.NITRO_PRESET ?? "node-server";
 const isCFPages = nitroPreset === "cloudflare_pages";
 
 export default defineConfig({
-	ssr: false,
+	// We enable SSR for pre-rendering but we don't actually use it for the main app.
+	ssr: true,
 	routeDir: "app",
 	solid: {
 		// We don't wanna apply Solid's JSX transform to the React emails.
@@ -57,6 +58,12 @@ export default defineConfig({
 			filename: "stats-nitro.html",
 		},
 		routeRules: {
+			"/": {
+				prerender: true,
+			},
+			"/enroll": {
+				prerender: true,
+			},
 			"/**": {
 				// @ts-expect-error: This is in our patch
 				priority: 5,

@@ -1,33 +1,38 @@
 // @refresh reload
 import { StartServer, createHandler } from "@solidjs/start/server";
 
-export default createHandler(() => (
-	<StartServer
-		document={({ assets, children, scripts }) => (
-			<html lang="en" class="h-full">
-				<head>
-					<meta charset="UTF-8" />
-					{/* <link rel="icon" type="image/svg+xml" href="/vite.svg" /> */}
-					<meta
-						name="viewport"
-						content="width=device-width, initial-scale=1.0"
-					/>
-					{assets}
-				</head>
-				<body class="h-full">
-					<div id="app" class="flex min-h-full flex-col">
-						{children}
+export default createHandler(
+	() => (
+		<StartServer
+			document={({ assets, children, scripts }) => (
+				<html lang="en" class="h-full">
+					<head>
+						<meta charset="UTF-8" />
+						{/* <link rel="icon" type="image/svg+xml" href="/vite.svg" /> */}
+						<meta
+							name="viewport"
+							content="width=device-width, initial-scale=1.0"
+						/>
+						{assets}
+					</head>
+					<body class="h-full">
+						<div id="app" class="flex min-h-full flex-col">
+							{children}
 
-						<noscript>
-							<NoScriptFallback />
-						</noscript>
-					</div>
-					{scripts}
-				</body>
-			</html>
-		)}
-	/>
-));
+							<noscript>
+								<NoScriptFallback />
+							</noscript>
+						</div>
+						{scripts}
+					</body>
+				</html>
+			)}
+		/>
+	),
+	{
+		mode: "async", // TODO: sync mode is broken in Solid Start
+	},
+);
 
 function NoScriptFallback() {
 	return (

@@ -1,6 +1,5 @@
 // @refresh reload
 import { StartServer, createHandler } from "@solidjs/start/server";
-import { NoHydration } from "solid-js/web";
 
 export default createHandler(
 	() => (
