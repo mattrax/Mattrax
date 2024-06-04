@@ -1,5 +1,6 @@
 // @refresh reload
 import { StartServer, createHandler } from "@solidjs/start/server";
+import { isServer } from "solid-js/web";
 
 export default createHandler(
 	(event) => (
@@ -20,9 +21,13 @@ export default createHandler(
 							{new URL(event.request.url).pathname === "/enroll" ? (
 								children
 							) : (
-								<noscript>
-									<NoScriptFallback />
-								</noscript>
+								<>
+									{isServer ? null : children}
+
+									<noscript>
+										<NoScriptFallback />
+									</noscript>
+								</>
 							)}
 						</div>
 						{scripts}
