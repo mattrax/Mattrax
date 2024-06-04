@@ -12,7 +12,7 @@ export const app = new azuread.Application("EntraIDApplication", {
 	featureTags: [
 		{
 			customSingleSignOn: false,
-			enterprise: false,
+			enterprise: true,
 			gallery: false,
 			hide: false,
 		},
@@ -68,6 +68,11 @@ export const appPassword = new azuread.ApplicationPassword(
 	},
 );
 
+new azuread.ServicePrincipal("EntraIDServicePrincipal", {
+	clientId: app.clientId,
+	featureTags: [{ enterprise: true }],
+});
+
 new azuread.ApplicationFederatedIdentityCredential(
 	"EntraIDGHActionsOIDCCredential",
 	{
@@ -78,8 +83,3 @@ new azuread.ApplicationFederatedIdentityCredential(
 		subject: "repo:mattrax/Mattrax:environment:production",
 	},
 );
-
-new azuread.ServicePrincipal("EntraIDServicePrincipal", {
-	clientId: app.clientId,
-	featureTags: [{ enterprise: true }],
-});
