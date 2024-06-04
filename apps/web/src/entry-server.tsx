@@ -17,12 +17,14 @@ export default createHandler(
 					</head>
 					<body class="h-full">
 						<div id="app" class="flex min-h-full flex-col">
-							{children}
-
 							{new URL(event.request.url).pathname !== "/enroll" ? (
-								<noscript>
-									<NoScriptFallback />
-								</noscript>
+								<>
+									{children}
+
+									<noscript>
+										<NoScriptFallback />
+									</noscript>
+								</>
 							) : null}
 						</div>
 						{scripts}
