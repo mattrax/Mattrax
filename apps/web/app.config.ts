@@ -55,9 +55,6 @@ export default defineConfig({
 			filename: "stats-nitro.html",
 		},
 		routeRules: {
-			"/enroll": {
-				prerender: true,
-			},
 			"/**": {
 				// @ts-expect-error: This is in our patch
 				priority: 5,

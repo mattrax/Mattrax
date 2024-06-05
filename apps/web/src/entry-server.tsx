@@ -1,6 +1,8 @@
 // @refresh reload
 import { StartServer, createHandler } from "@solidjs/start/server";
 import type { JSX, ParentProps } from "solid-js";
+import { renderToString } from "solid-js/web";
+import css from "@mattrax/ui/css?url";
 
 export function Document(
 	props: ParentProps<{ title?: string; head?: JSX.Element }>,
@@ -58,5 +60,29 @@ function NoScriptFallback() {
 				</p>
 			</div>
 		</div>
+	);
+}
+
+export function renderWithApp(fn: () => JSX.Element, status = 200) {
+	return new Response(
+		renderToString(() => (
+			<Document
+				title="Enroll in Mattrax"
+				head={
+					<link
+						rel="stylesheet"
+						href={css.replace("/_build/assets/", "/assets/")}
+					/>
+				}
+			>
+				{fn()}
+			</Document>
+		)),
+		{
+			status,
+			headers: {
+				"content-type": "text/html",
+			},
+		},
 	);
 }

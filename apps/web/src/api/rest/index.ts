@@ -5,7 +5,6 @@ import type { H3Event } from "h3";
 import { Hono } from "hono";
 
 import { env } from "~/env";
-import { enrollmentRouter } from "./enrollment";
 import { msRouter } from "./ms";
 import { waitlistRouter } from "./waitlist";
 import { webhookRouter } from "./webhook";
@@ -20,7 +19,6 @@ export type HonoEnv = {
 export const app = new Hono<HonoEnv>()
 	.basePath("/api")
 	.get("/", (c) => c.json({ message: "Mattrax Forge!" }))
-	.route("/enrollment", enrollmentRouter)
 	.route("/waitlist", waitlistRouter)
 	.route("/webhook", webhookRouter)
 	.route("/ms", msRouter)

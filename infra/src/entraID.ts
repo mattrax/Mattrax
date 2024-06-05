@@ -55,7 +55,7 @@ export const app = new azuread.Application("EntraIDApplication", {
 			"http://localhost:3000",
 		].flatMap((origin) => [
 			`${origin}/api/ms/link`,
-			`${origin}/api/enrollment/callback`,
+			`${origin}/enroll/callback`,
 		]),
 	},
 });

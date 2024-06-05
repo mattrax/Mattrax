@@ -35,6 +35,7 @@ export const env = withEnv((env) => {
 			DATABASE_URL: z.string(),
 			PROD_ORIGIN: z.string(),
 			MDM_URL: z.string(),
+			ENTERPRISE_ENROLLMENT_URL: z.string(),
 			FROM_ADDRESS: z.string(),
 			NODE_ENV: z.enum(["development", "production"]).default("development"),
 			// Emails and other AWS services
