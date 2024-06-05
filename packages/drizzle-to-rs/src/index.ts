@@ -184,10 +184,15 @@ export function exportQueries(queries: Query[], path: string) {
 
 	// 'FromValue::from_value' but 'track_caller'
 	#[track_caller]
-	fn from_value<T: FromValue>(v: mysql_async::Value) -> T {
+	fn from_value<T: FromValue>(row: &mut mysql_async::Row, index: usize) -> T {
+		let v = row.take(index).unwrap();
 		match T::from_value_opt(v) {
 			Ok(this) => this,
-			Err(e) => panic!("Could not retrieve {:?}': {e}", std::any::type_name::<T>(),),
+			Err(e) => {
+				let column_name = row.columns_ref().get(index).map(|c| c.name_str()).unwrap_or("unknown".into());
+				let type_name = std::any::type_name::<T>();
+				panic!("Could not retrieve {type_name:?} from column {column_name:?}: {e}")
+			},
 		}
 	}
 
@@ -298,9 +303,9 @@ function buildResultType(
 					.map(([k, _ty]) => {
 						index.i += 1;
 
-						return `let ${camelToSnakeCase(k)} = row.take(${
+						return `let ${camelToSnakeCase(k)} = from_value(&mut row, ${
 							index.i
-						}).map(from_value);`; // We don't support further nesting, rn.
+						});`; // We don't support further nesting, rn.
 					})
 					.join("\n")}
 
@@ -317,10 +322,10 @@ function buildResultType(
 					.map(([k, ty]) => {
 						const impl =
 							resultTypes.get(ty)?.impl(index) ??
-							`from_value(row.take(${
+							`from_value(&mut row, ${
 								// biome-ignore lint/suspicious/noAssignInExpressions:
 								(index.i += 1)
-							}).unwrap())`;
+							})`;
 						return `${camelToSnakeCase(k)}: ${impl}`;
 					})
 					.join(",\n")}
