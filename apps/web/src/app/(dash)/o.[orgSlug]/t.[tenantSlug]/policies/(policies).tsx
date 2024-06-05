@@ -279,23 +279,21 @@ function CreatePolicyDialog(props: ParentProps) {
 	return (
 		<Popover>
 			{props.children}
-
 			<PopoverContent class="p-4">
 				<Form
 					form={form}
 					class="w-full"
-					fieldsetClass="flex flex-col items-center gap-4 w-full"
+					fieldsetClass="space-y-2 flex flex-col"
 				>
 					<InputField
-						placeholder="Policy Name"
-						class="w-full"
-						fieldClass="flex-1 w-full"
+						fieldProps={{ preserveValue: true }}
+						type="text"
 						form={form}
 						name="name"
+						placeholder="Policy Name"
+						autocomplete="off"
 					/>
-					<Button type="submit" class="w-full">
-						Create
-					</Button>
+					<Button type="submit">Create Policy</Button>
 				</Form>
 			</PopoverContent>
 		</Popover>

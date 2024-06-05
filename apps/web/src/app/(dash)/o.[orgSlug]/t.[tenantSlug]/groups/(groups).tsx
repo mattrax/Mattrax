@@ -4,6 +4,9 @@ import {
 	DialogDescription,
 	DialogFooter,
 	DropdownMenuTrigger,
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
 } from "@mattrax/ui";
 import { A, type RouteDefinition, useNavigate } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
@@ -24,7 +27,6 @@ import {
 	FloatingSelectionBar,
 	StandardTable,
 	createSearchParamFilter,
-	// createSearchParamPagination,
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
@@ -101,9 +103,9 @@ export default function Page() {
 				<>
 					<PageLayoutHeading>Groups</PageLayoutHeading>
 					<CreateGroupDialog>
-						<DialogTrigger as={Button} class="ml-auto">
+						<PopoverTrigger as={Button} class="ml-auto">
 							Create Group
-						</DialogTrigger>
+						</PopoverTrigger>
 					</CreateGroupDialog>
 				</>
 			}
@@ -232,10 +234,10 @@ import {
 	DialogHeader,
 	DialogRoot,
 	DialogTitle,
-	DialogTrigger,
 } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import pluralize from "pluralize";
+
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useTenantSlug } from "../ctx";
@@ -261,24 +263,25 @@ function CreateGroupDialog(props: ParentProps) {
 	});
 
 	return (
-		<DialogRoot>
+		<Popover>
 			{props.children}
-			<DialogContent>
-				<DialogHeader>
-					<DialogTitle>Create Group</DialogTitle>
-				</DialogHeader>
-				<Form form={form} fieldsetClass="space-y-4 flex flex-col">
+			<PopoverContent class="p-4">
+				<Form
+					form={form}
+					class="w-full"
+					fieldsetClass="space-y-2 flex flex-col"
+				>
 					<InputField
-						form={form}
-						label="Group Name"
+						fieldProps={{ preserveValue: true }}
 						type="text"
+						form={form}
 						name="name"
 						placeholder="New Group"
 						autocomplete="off"
 					/>
 					<Button type="submit">Create Group</Button>
 				</Form>
-			</DialogContent>
-		</DialogRoot>
+			</PopoverContent>
+		</Popover>
 	);
 }
