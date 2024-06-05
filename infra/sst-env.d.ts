@@ -7,12 +7,12 @@ declare module "sst" {
       type: "sst.sst.Secret"
       value: string
     }
-    EntraIDApplication: {
-      cilentId: string
-      type: "azuread.index/application.Application"
+    EntraClientID: {
+      type: "sst.sst.Secret"
+      value: string
     }
-    EntraIDApplicationPassword: {
-      type: "azuread.index/applicationPassword.ApplicationPassword"
+    EntraClientSecret: {
+      type: "sst.sst.Secret"
       value: string
     }
     FeedbackDiscordWebhookURL: {

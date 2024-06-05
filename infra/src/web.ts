@@ -14,7 +14,6 @@ import {
 	PROD_HOST,
 } from "./constants";
 import { sesIdentity } from "./email";
-import * as entraID from "./entraID";
 import { secrets } from "./secrets";
 
 const user = new aws.iam.User("MattraxWebIAMUser", {
@@ -42,12 +41,7 @@ const iamAccessKey = new aws.iam.AccessKey("MattraxWebIAMUserAccessKey", {
 const deploymentConfig = {
 	compatibilityDate: "2024-04-03",
 	compatibilityFlags: ["nodejs_compat", "nodejs_als"],
-	link: [
-		iamAccessKey,
-		entraID.app,
-		entraID.appPassword,
-		...Object.values(secrets),
-	],
+	link: [iamAccessKey, ...Object.values(secrets)],
 	environmentVariables: {
 		MDM_URL,
 		ENTERPRISE_ENROLLMENT_URL,
