@@ -100,7 +100,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
 
                                     match msg {
                                         Msg::SetOrg { org_slug } => {
-                                            match state.db.is_org_member(org_slug.clone(), auth.account_pk).await {
+                                            match state.db.is_org_member(org_slug.clone(), auth.account.pk).await {
                                                 Ok(result) if result.len() != 0 => {
                                                     active_org_slug = Some(org_slug);
                                                 },
@@ -140,7 +140,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                                 }
                                 _ = timer.tick() => {
                                     if let Some(org_slug) = active_org_slug {
-                                        match state.db.is_org_member(org_slug.clone(), auth.account_pk).await {
+                                        match state.db.is_org_member(org_slug.clone(), auth.account.pk).await {
                                             Ok(result) if result.len() != 0 => {
                                                 active_org_slug = Some(org_slug);
                                             },
@@ -202,7 +202,7 @@ pub async fn authenticate(
                 .expect("invalid response")
         })?;
 
-    if result.expires_at < Utc::now().naive_utc() {
+    if result.session.expires_at < Utc::now().naive_utc() {
         return Err(Response::builder()
             .status(StatusCode::UNAUTHORIZED)
             .body("Unauthorized".into())

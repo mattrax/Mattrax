@@ -28,11 +28,19 @@ pub struct GetCertificateResult {
 }
 
 #[derive(Debug)]
-pub struct GetSessionAndUserResult {
-    pub account_pk: u64,
-    pub account_id: String,
-    pub session_id: String,
+pub struct GetSessionAndUserAccountResult {
+    pub pk: u64,
+    pub id: String,
+}
+#[derive(Debug)]
+pub struct GetSessionAndUserSessionResult {
+    pub id: String,
     pub expires_at: NaiveDateTime,
+}
+#[derive(Debug)]
+pub struct GetSessionAndUserResult {
+    pub account: GetSessionAndUserAccountResult,
+    pub session: GetSessionAndUserSessionResult,
 }
 #[derive(Debug)]
 pub struct IsOrgMemberResult {
@@ -187,10 +195,14 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetSessionAndUserResult {
-                account_pk: from_value(row.take(0).unwrap()),
-                account_id: from_value(row.take(1).unwrap()),
-                session_id: from_value(row.take(2).unwrap()),
-                expires_at: from_value(row.take(3).unwrap()),
+                account: GetSessionAndUserAccountResult {
+                    pk: from_value(row.take(0).unwrap()),
+                    id: from_value(row.take(1).unwrap()),
+                },
+                session: GetSessionAndUserSessionResult {
+                    id: from_value(row.take(2).unwrap()),
+                    expires_at: from_value(row.take(3).unwrap()),
+                },
             });
         }
         Ok(ret)
@@ -265,13 +277,13 @@ impl Db {
             ret.push(GetPolicyDataForCheckinResult {
                 scope: from_value(row.take(0).unwrap()),
                 latest_deploy: GetPolicyDataForCheckinLatestDeployResult {
-                    pk: from_value(row.take(2).unwrap()),
-                    data: from_value(row.take(3).unwrap()),
+                    pk: from_value(row.take(1).unwrap()),
+                    data: from_value(row.take(2).unwrap()),
                 },
                 last_deploy: {
-                    let pk = row.take(5).map(from_value);
-                    let data = row.take(6).map(from_value);
-                    let result = row.take(7).map(from_value);
+                    let pk = row.take(3).map(from_value);
+                    let data = row.take(4).map(from_value);
+                    let result = row.take(5).map(from_value);
 
                     match (pk, data, result) {
                         (Some(pk), Some(data), Some(result)) => {

@@ -315,10 +315,12 @@ function buildResultType(
 			impl = (index) => `${structName} {
 				${[...fields.entries()]
 					.map(([k, ty]) => {
-						index.i += 1;
 						const impl =
 							resultTypes.get(ty)?.impl(index) ??
-							`from_value(row.take(${index.i}).unwrap())`;
+							`from_value(row.take(${
+								// biome-ignore lint/suspicious/noAssignInExpressions:
+								(index.i += 1)
+							}).unwrap())`;
 						return `${camelToSnakeCase(k)}: ${impl}`;
 					})
 					.join(",\n")}

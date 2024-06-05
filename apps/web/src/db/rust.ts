@@ -188,10 +188,14 @@ exportQueries(
 			query: (args) =>
 				db
 					.select({
-						account_pk: accounts.pk,
-						account_id: accounts.id,
-						session_id: sessions.id,
-						expires_at: sessions.expiresAt,
+						account: {
+							pk: accounts.pk,
+							id: accounts.id,
+						},
+						session: {
+							id: sessions.id,
+							expires_at: sessions.expiresAt,
+						},
 					})
 					.from(sessions)
 					.innerJoin(accounts, eq(sessions.userId, accounts.id))
