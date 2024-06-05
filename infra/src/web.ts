@@ -6,11 +6,11 @@ import { domainZone } from "./cloudflare";
 import {
 	CLOUDFLARE_ACCOUNT,
 	CLOUDFLARE_ZONE,
+	ENTERPRISE_ENROLLMENT_URL,
 	GITHUB_ORG,
 	GITHUB_REPO,
 	GITHUB_REPO_BRANCH,
 	MDM_URL,
-	ENTERPRISE_ENROLLMENT_URL,
 	PROD_HOST,
 } from "./constants";
 import { sesIdentity } from "./email";

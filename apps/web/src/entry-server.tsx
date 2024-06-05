@@ -1,8 +1,8 @@
+import css from "@mattrax/ui/css?url";
 // @refresh reload
 import { StartServer, createHandler } from "@solidjs/start/server";
 import type { JSX, ParentProps } from "solid-js";
 import { renderToString } from "solid-js/web";
-import css from "@mattrax/ui/css?url";
 
 export function Document(
 	props: ParentProps<{ title?: string; head?: JSX.Element }>,

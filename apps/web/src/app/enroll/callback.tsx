@@ -1,11 +1,11 @@
+import { CardDescription } from "@mattrax/ui/card";
 import type { APIEvent } from "@solidjs/start/server";
 import type { ParentProps } from "solid-js";
-import { Layout, MINUTE, renderMDMCallback, type State } from "./util";
-import { CardDescription } from "@mattrax/ui/card";
-import { renderWithApp } from "~/entry-server";
-import { decryptJWT, signJWT } from "~/api/utils/jwt";
-import { env } from "~/env";
 import { upsertEntraIdUser } from "~/api/trpc/routers/tenant/identityProvider";
+import { decryptJWT, signJWT } from "~/api/utils/jwt";
+import { renderWithApp } from "~/entry-server";
+import { env } from "~/env";
+import { Layout, MINUTE, type State, renderMDMCallback } from "./util";
 
 function ErrorPage(props: ParentProps<{ class?: string }>) {
 	return (

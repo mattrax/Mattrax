@@ -1,17 +1,17 @@
-import type { APIEvent } from "@solidjs/start/server";
-import { renderWithApp } from "../../entry-server";
+import { Button } from "@mattrax/ui/button";
 import { CardDescription } from "@mattrax/ui/card";
 import { Input } from "@mattrax/ui/input";
-import { Button } from "@mattrax/ui/button";
+import type { APIEvent } from "@solidjs/start/server";
+import clsx from "clsx";
+import { and, eq } from "drizzle-orm";
 import * as jose from "jose";
 import type { ParentProps } from "solid-js";
 import { getEmailDomain } from "~/api/utils";
-import clsx from "clsx";
-import { db, domains, identityProviders } from "~/db";
-import { eq, and } from "drizzle-orm";
-import { env } from "~/env";
 import { encryptJWT } from "~/api/utils/jwt";
-import { Layout, type State, renderMDMCallback, MINUTE } from "./util";
+import { db, domains, identityProviders } from "~/db";
+import { env } from "~/env";
+import { renderWithApp } from "../../entry-server";
+import { Layout, MINUTE, type State, renderMDMCallback } from "./util";
 
 export type EnrollmentProfileDescription = {
 	data: string;
