@@ -337,7 +337,27 @@ export async function upsertEntraIdUser(
 			},
 		});
 
+	let pk = Number.parseInt(result.insertId);
+
+	// We did not upsert so we need to get the user id
+	if (result.insertId) {
+		const [user] = await db
+			.select({
+				pk: users.pk,
+			})
+			.from(users)
+			.where(
+				and(
+					eq(users.tenantPk, tenantPk),
+					eq(users.providerPk, identityProviderPk),
+				),
+			);
+		if (!user) return undefined;
+
+		pk = user?.pk;
+	}
+
 	return {
-		pk: Number.parseInt(result.insertId),
+		pk,
 	};
 }

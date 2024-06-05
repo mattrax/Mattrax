@@ -58,6 +58,11 @@ export async function GET({ request }: APIEvent) {
 
 	const { userPrincipalName } = user;
 	const dbUser = await upsertEntraIdUser(user, tid, providerId);
+	if (!dbUser)
+		return renderWithApp(() => (
+			<ErrorPage>Failed to find or create your user within Mattrax.</ErrorPage>
+		));
+
 	// TODO: Upsert if the user doesn't exist already
 	const jwt = await signJWT<EnrollmentTokenState>(
 		{
