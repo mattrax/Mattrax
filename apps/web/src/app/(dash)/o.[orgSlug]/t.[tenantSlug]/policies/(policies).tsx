@@ -200,34 +200,32 @@ export default function Page() {
 					</DialogContent>
 				</DialogRoot>
 				<FloatingSelectionBar table={table}>
-					{(rows) => {
-						return (
-							<Button
-								variant="destructive"
-								size="sm"
-								onClick={() => {
-									if (rows().length === 1)
-										setDialog({
-											open: true,
-											data: {
-												type: "deleteSingle",
-												data: rows()[0]!.original as any,
-											},
-										});
-									else
-										setDialog({
-											open: true,
-											data: {
-												type: "deleteMany",
-												data: rows().map(({ original }) => original as any),
-											},
-										});
-								}}
-							>
-								Delete
-							</Button>
-						);
-					}}
+					{(rows) => (
+						<Button
+							variant="destructive"
+							size="sm"
+							onClick={() => {
+								if (rows().length === 1)
+									setDialog({
+										open: true,
+										data: {
+											type: "deleteSingle",
+											data: rows()[0]!.original as any,
+										},
+									});
+								else
+									setDialog({
+										open: true,
+										data: {
+											type: "deleteMany",
+											data: rows().map(({ original }) => original as any),
+										},
+									});
+							}}
+						>
+							Delete
+						</Button>
+					)}
 				</FloatingSelectionBar>
 			</Suspense>
 		</PageLayout>

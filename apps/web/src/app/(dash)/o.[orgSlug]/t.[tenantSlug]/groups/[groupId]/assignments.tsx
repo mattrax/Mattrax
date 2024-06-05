@@ -71,7 +71,7 @@ export default function Page() {
 		get data() {
 			return assignments.data ?? [];
 		},
-		columns: createVariantTableColumns(variants),
+		columns: createVariantTableColumns(),
 	});
 
 	createSearchParamFilter(table, "name", "search");

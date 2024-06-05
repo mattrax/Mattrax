@@ -61,7 +61,7 @@ export default function Page() {
 		get data() {
 			return assignees.data ?? [];
 		},
-		columns: createVariantTableColumns(variants),
+		columns: createVariantTableColumns(),
 	});
 
 	// createSearchParamPagination(table, "page");

@@ -152,7 +152,7 @@ function Members() {
 		get data() {
 			return members.data ?? [];
 		},
-		columns: createVariantTableColumns(variants).slice(1),
+		columns: createVariantTableColumns().slice(1),
 	});
 
 	return (
@@ -217,7 +217,7 @@ function Assignments() {
 		get data() {
 			return assignments.data ?? [];
 		},
-		columns: createVariantTableColumns(variants).slice(1),
+		columns: createVariantTableColumns().slice(1),
 	});
 
 	return (

@@ -188,7 +188,7 @@ function Assignments() {
 				...assignments.data.apps.map((d) => ({ ...d, variant: "application" })),
 			];
 		},
-		columns: createVariantTableColumns(variants),
+		columns: createVariantTableColumns(),
 	});
 
 	const addAssignments = trpc.user.addAssignments.createMutation(() => ({

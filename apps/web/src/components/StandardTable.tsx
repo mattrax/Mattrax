@@ -71,6 +71,7 @@ import {
 
 export function StandardTable<TData>(props: {
 	table: TTable<TData>;
+	rowProps?: (row: Row<TData>) => ComponentProps<typeof TableRow>;
 	class?: string;
 }) {
 	const numCols = () =>
@@ -105,7 +106,10 @@ export function StandardTable<TData>(props: {
 						{props.table.getRowModel().rows.length ? (
 							<For each={props.table.getRowModel().rows}>
 								{(row) => (
-									<TableRow data-state={row.getIsSelected() && "selected"}>
+									<TableRow
+										{...props.rowProps?.(row)}
+										data-state={row.getIsSelected() && "selected"}
+									>
 										<For each={row.getVisibleCells()}>
 											{(cell) => (
 												<TableCell>
@@ -218,7 +222,7 @@ import {
 	DropdownMenuContent,
 } from "@mattrax/ui";
 import { useSearchParams } from "@solidjs/router";
-import type { Accessor } from "solid-js";
+import type { Accessor, ComponentProps } from "solid-js";
 
 export function ColumnsDropdown<TData>(
 	props: ParentProps & {

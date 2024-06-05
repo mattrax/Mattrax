@@ -8,25 +8,16 @@ import {
 	SheetHeader,
 	SheetTitle,
 	Tabs,
-	TabsIndicator,
 	TabsList,
 	TabsTrigger,
 } from "@mattrax/ui";
 import type { CreateQueryResult } from "@tanstack/solid-query";
 import { createColumnHelper } from "@tanstack/solid-table";
-import {
-	Index,
-	type ParentProps,
-	Show,
-	Suspense,
-	createSignal,
-} from "solid-js";
+import { Index, type ParentProps, Suspense, createSignal } from "solid-js";
 
-import { A } from "@solidjs/router";
 import { toTitleCase } from "~/lib/utils";
 import { ConfirmDialog } from "~c/ConfirmDialog";
 import {
-	FloatingSelectionBar,
 	StandardTable,
 	createStandardTable,
 	selectCheckboxColumn,
@@ -39,25 +30,12 @@ const columnHelper = createColumnHelper<{
 	variant: string;
 }>();
 
-export const createVariantTableColumns = (variants?: VariantTableVariants) => [
+export const createVariantTableColumns = () => [
 	selectCheckboxColumn,
 	columnHelper.accessor("name", {
 		header: "Name",
 		cell: (props) => (
-			<Show
-				when={variants?.[props.row.original.variant]?.href}
-				fallback={props.getValue()}
-				keyed
-			>
-				{(href) => (
-					<A
-						class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-						href={href(props.row.original)}
-					>
-						{props.getValue()}
-					</A>
-				)}
-			</Show>
+			<span class="font-medium p-1 -m-1 w-full">{props.getValue()}</span>
 		),
 	}),
 	columnHelper.accessor("variant", {
@@ -103,7 +81,7 @@ export function VariantTableSheet<T extends VariantTableVariants>(
 		get data() {
 			return possibleMembers();
 		},
-		columns: createVariantTableColumns(props.variants),
+		columns: createVariantTableColumns(),
 	});
 
 	return (
@@ -194,7 +172,14 @@ export function VariantTableSheet<T extends VariantTableVariants>(
 							</Suspense>
 						</div>
 						<Suspense>
-							<StandardTable table={table} />
+							<StandardTable
+								table={table}
+								rowProps={(row) => ({
+									onClick: () => {
+										row.toggleSelected();
+									},
+								})}
+							/>
 						</Suspense>
 					</SheetContent>
 				</Sheet>

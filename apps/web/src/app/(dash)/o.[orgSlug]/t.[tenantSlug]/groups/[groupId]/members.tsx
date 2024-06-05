@@ -67,7 +67,7 @@ export default function Page() {
 		get data() {
 			return members.data ?? [];
 		},
-		columns: createVariantTableColumns(variants),
+		columns: createVariantTableColumns(),
 	});
 
 	createSearchParamFilter(table, "name", "search");

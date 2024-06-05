@@ -10,9 +10,9 @@ import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	ColumnsDropdown,
+	FloatingSelectionBar,
 	StandardTable,
 	createSearchParamFilter,
-	// createSearchParamPagination,
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
@@ -121,6 +121,7 @@ export default function Page() {
 			</div>
 			<Suspense>
 				<StandardTable table={table} />
+				<FloatingSelectionBar table={table} />
 			</Suspense>
 		</PageLayout>
 	);
