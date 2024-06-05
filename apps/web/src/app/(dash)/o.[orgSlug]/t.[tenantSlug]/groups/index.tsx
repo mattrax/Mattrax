@@ -1,9 +1,33 @@
+import {
+	AsyncButton,
+	Button,
+	DialogDescription,
+	DialogFooter,
+	DropdownMenuTrigger,
+} from "@mattrax/ui";
 import { A, type RouteDefinition, useNavigate } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { type ParentProps, Suspense, startTransition } from "solid-js";
+import {
+	Match,
+	type ParentProps,
+	Suspense,
+	Switch,
+	createSignal,
+	startTransition,
+} from "solid-js";
 import { z } from "zod";
 
+import type { RouterOutput } from "~/api/trpc";
 import { trpc } from "~/lib";
+import {
+	ColumnsDropdown,
+	FloatingSelectionBar,
+	StandardTable,
+	createSearchParamFilter,
+	// createSearchParamPagination,
+	createStandardTable,
+	selectCheckboxColumn,
+} from "~c/StandardTable";
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 
 export const route = {
@@ -34,17 +58,6 @@ const columns = [
 	}),
 ];
 
-import { Button, DropdownMenuTrigger } from "@mattrax/ui";
-import type { RouterOutput } from "~/api/trpc";
-import {
-	ColumnsDropdown,
-	StandardTable,
-	createSearchParamFilter,
-	// createSearchParamPagination,
-	createStandardTable,
-	selectCheckboxColumn,
-} from "~c/StandardTable";
-
 // TODO: Disable search, filters and sort until all backend metadata has loaded in. Show tooltip so it's clear what's going on.
 
 export default function Page() {
@@ -62,8 +75,25 @@ export default function Page() {
 		columns,
 	});
 
-	// createSearchParamPagination(table, "page");
 	createSearchParamFilter(table, "name", "search");
+
+	const [dialog, setDialog] = createSignal<{
+		open: boolean;
+		data:
+			| {
+					type: "deleteSingle";
+					data: NonNullable<typeof groups.data>[number];
+			  }
+			| { type: "deleteMany"; data: NonNullable<typeof groups.data> };
+	}>({ open: false, data: { type: "deleteMany", data: [] } });
+
+	const deleteGroups = trpc.group.delete.createMutation(() => ({
+		onSuccess: () =>
+			groups.refetch().then(() => {
+				table.resetRowSelection(true);
+				setDialog({ ...dialog(), open: false });
+			}),
+	}));
 
 	return (
 		<PageLayout
@@ -72,7 +102,7 @@ export default function Page() {
 					<PageLayoutHeading>Groups</PageLayoutHeading>
 					<CreateGroupDialog>
 						<DialogTrigger as={Button} class="ml-auto">
-							Create New Group
+							Create Group
 						</DialogTrigger>
 					</CreateGroupDialog>
 				</>
@@ -93,11 +123,110 @@ export default function Page() {
 			</div>
 			<Suspense>
 				<StandardTable table={table} />
+				<DialogRoot
+					open={dialog().open}
+					onOpenChange={(o) => {
+						if (!o) setDialog({ ...dialog(), open: false });
+					}}
+				>
+					<DialogContent>
+						<DialogHeader>
+							<DialogTitle>
+								Delete{" "}
+								{pluralize("Group", table.getSelectedRowModel().rows.length)}
+							</DialogTitle>
+							<DialogDescription>
+								Are you sure you want to delete{" "}
+								<Switch>
+									<Match when={dialog().data?.type === "deleteMany"}>
+										{table.getSelectedRowModel().rows.length}{" "}
+										{pluralize(
+											"group",
+											table.getSelectedRowModel().rows.length,
+										)}
+									</Match>
+									<Match
+										when={(() => {
+											const d = dialog();
+											if (d.data?.type === "deleteSingle") return d.data.data;
+										})()}
+									>
+										{(data) => (
+											<div class="inline text-nowrap">
+												<span class="text-black font-medium">
+													{data().name}
+												</span>
+											</div>
+										)}
+									</Match>
+								</Switch>
+								?
+							</DialogDescription>
+						</DialogHeader>
+						<DialogFooter>
+							<Dialog.CloseButton as={Button} variant="secondary">
+								Cancel
+							</Dialog.CloseButton>
+							<div class="flex-1" />
+							<AsyncButton
+								onClick={() => {
+									const { data } = dialog();
+
+									if (data.type === "deleteMany") {
+										return deleteGroups.mutateAsync({
+											tenantSlug: tenantSlug(),
+											ids: data.data.map(({ id }) => id),
+										});
+									}
+
+									return deleteGroups.mutateAsync({
+										tenantSlug: tenantSlug(),
+										ids: [data.data.id],
+									});
+								}}
+								variant="destructive"
+							>
+								Confirm
+							</AsyncButton>
+						</DialogFooter>
+					</DialogContent>
+				</DialogRoot>
+				<FloatingSelectionBar table={table}>
+					{(rows) => {
+						return (
+							<Button
+								variant="destructive"
+								size="sm"
+								onClick={() => {
+									if (rows().length === 1)
+										setDialog({
+											open: true,
+											data: {
+												type: "deleteSingle",
+												data: rows()[0]!.original as any,
+											},
+										});
+									else
+										setDialog({
+											open: true,
+											data: {
+												type: "deleteMany",
+												data: rows().map(({ original }) => original as any),
+											},
+										});
+								}}
+							>
+								Delete
+							</Button>
+						);
+					}}
+				</FloatingSelectionBar>
 			</Suspense>
 		</PageLayout>
 	);
 }
 
+import { Dialog } from "@kobalte/core/dialog";
 import {
 	DialogContent,
 	DialogHeader,
@@ -106,6 +235,7 @@ import {
 	DialogTrigger,
 } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import pluralize from "pluralize";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useTenantSlug } from "../ctx";

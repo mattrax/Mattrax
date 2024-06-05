@@ -105,6 +105,39 @@ export const groupRouter = createTRPCRouter({
 			return group;
 		}),
 
+	delete: tenantProcedure
+		.input(z.object({ ids: z.array(z.string()) }))
+		.mutation(async ({ ctx, input }) => {
+			const g = await ctx.db
+				.select({ id: groups.id, pk: groups.pk })
+				.from(groups)
+				.where(
+					and(
+						eq(groups.tenantPk, ctx.tenant.pk),
+						inArray(groups.id, input.ids),
+					),
+				);
+
+			const pks = g.map((g) => g.pk);
+
+			await createTransaction((db) => {
+				return Promise.all([
+					db
+						.delete(groupAssignables)
+						.where(inArray(groupAssignables.groupPk, pks)),
+					db
+						.delete(policyAssignments)
+						.where(
+							and(
+								eq(policyAssignments.variant, "group"),
+								inArray(policyAssignments.pk, pks),
+							),
+						),
+					db.delete(groups).where(inArray(groups.pk, pks)),
+				]);
+			});
+		}),
+
 	update: groupProcedure
 		.input(z.object({ name: z.string().optional() }))
 		.mutation(async ({ ctx, input }) => {
@@ -150,7 +183,6 @@ export const groupRouter = createTRPCRouter({
 			)
 			.groupBy(groupAssignables.variant, groupAssignables.pk);
 	}),
-
 	addMembers: groupProcedure
 		.input(
 			z.object({

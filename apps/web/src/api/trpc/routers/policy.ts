@@ -2,7 +2,7 @@ import type { PolicyData } from "@mattrax/policy";
 import { createId } from "@paralleldrive/cuid2";
 import { cache } from "@solidjs/router";
 import { TRPCError } from "@trpc/server";
-import { and, count, desc, eq, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { union } from "drizzle-orm/mysql-core";
@@ -304,12 +304,31 @@ export const policyRouter = createTRPCRouter({
 				.where(eq(policies.pk, ctx.policy.pk));
 		}),
 
-	delete: policyProcedure.mutation(async ({ ctx }) => {
-		await createTransaction(async (db) => {
-			await db.delete(policies).where(eq(policies.pk, ctx.policy.pk));
-			await createAuditLog("deletePolicy", { name: ctx.policy.name });
-		});
-	}),
+	delete: tenantProcedure
+		.input(z.object({ ids: z.array(z.string()) }))
+		.mutation(async ({ ctx, input }) => {
+			const p = await ctx.db
+				.select({ id: policies.id, pk: policies.pk, name: policies.name })
+				.from(policies)
+				.where(
+					and(
+						eq(policies.tenantPk, ctx.tenant.pk),
+						inArray(policies.id, input.ids),
+					),
+				);
+
+			const pks = p.map((p) => p.pk);
+
+			await createTransaction((db) => {
+				return Promise.all([
+					db
+						.delete(policyAssignments)
+						.where(inArray(policyAssignments.policyPk, pks)),
+					db.delete(policies).where(inArray(policies.pk, pks)),
+					...p.map((p) => createAuditLog("deletePolicy", { name: p.name })),
+				]);
+			});
+		}),
 
 	deploy: policyProcedure
 		.input(z.object({ comment: z.string() }))

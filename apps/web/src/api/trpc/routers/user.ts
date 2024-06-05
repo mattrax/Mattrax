@@ -119,14 +119,7 @@ export const userRouter = createTRPCRouter({
 								inArray(policyAssignments.pk, pks),
 							),
 						),
-					db
-						.delete(users)
-						.where(
-							and(
-								eq(users.tenantPk, ctx.tenant.pk),
-								inArray(users.id, input.ids),
-							),
-						),
+					db.delete(users).where(inArray(users.pk, pks)),
 				]);
 			});
 		}),
