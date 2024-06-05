@@ -8,6 +8,7 @@ import {
 	applicationAssignments,
 	applications,
 	devices,
+	groupAssignables,
 	identityProviders,
 	policies,
 	policyAssignments,
@@ -91,11 +92,43 @@ export const userRouter = createTRPCRouter({
 	delete: tenantProcedure
 		.input(z.object({ ids: z.array(z.string()) }))
 		.mutation(async ({ ctx, input }) => {
-			return await ctx.db
-				.delete(users)
+			const u = await ctx.db
+				.select({ id: users.id, pk: users.pk })
+				.from(users)
 				.where(
 					and(eq(users.tenantPk, ctx.tenant.pk), inArray(users.id, input.ids)),
 				);
+
+			const pks = u.map(({ pk }) => pk);
+
+			await ctx.db.transaction((db) => {
+				return Promise.all([
+					db
+						.delete(groupAssignables)
+						.where(
+							and(
+								eq(groupAssignables.variant, "user"),
+								inArray(groupAssignables.pk, pks),
+							),
+						),
+					db
+						.delete(policyAssignments)
+						.where(
+							and(
+								eq(policyAssignments.variant, "user"),
+								inArray(policyAssignments.pk, pks),
+							),
+						),
+					db
+						.delete(users)
+						.where(
+							and(
+								eq(users.tenantPk, ctx.tenant.pk),
+								inArray(users.id, input.ids),
+							),
+						),
+				]);
+			});
 		}),
 	devices: authedProcedure
 		.input(z.object({ id: z.string() }))
