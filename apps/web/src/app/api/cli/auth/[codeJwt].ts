@@ -5,7 +5,7 @@ import { signJWT, verifyJWT } from "~/api/utils/jwt";
 import { accounts, cliAuthCodes, db, sessions } from "~/db";
 
 export async function POST({ params }: APIEvent) {
-	const { code } = await verifyJWT<{ code: string }>(params.codeJwt!);
+	const { code } = (await verifyJWT<{ code: string }>(params.codeJwt!))!;
 
 	const [result] = await db
 		.select({

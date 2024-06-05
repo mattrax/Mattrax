@@ -237,13 +237,13 @@ export default function Page() {
 import { useNavigate } from "@solidjs/router";
 import { z } from "zod";
 
+import { Dialog } from "@kobalte/core/dialog";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import pluralize from "pluralize";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { useTenantSlug } from "../ctx";
 import { cacheMetadata } from "../metadataCache";
-import { Dialog } from "@kobalte/core/dialog";
 
 function CreatePolicyDialog(props: ParentProps) {
 	const tenantSlug = useTenantSlug();

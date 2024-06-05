@@ -75,7 +75,10 @@ export default function Page() {
 									"Are you sure you want to delete this policy?",
 								inputText: policy.data!.name,
 								async onConfirm() {
-									await deletePolicy.mutateAsync({ id: policyId() });
+									await deletePolicy.mutateAsync({
+										tenantSlug: tenantSlug(),
+										ids: [policyId()],
+									});
 
 									await startTransition(() => navigate("../.."));
 								},

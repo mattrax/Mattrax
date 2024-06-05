@@ -211,6 +211,7 @@ export function StandardTablePagination<TData>(props: {
 	);
 }
 
+import { createEscapeKeyDown } from "@kobalte/core";
 import {
 	DropdownMenu,
 	DropdownMenuCheckboxItem,
@@ -218,7 +219,6 @@ import {
 } from "@mattrax/ui";
 import { useSearchParams } from "@solidjs/router";
 import type { Accessor } from "solid-js";
-import { createEscapeKeyDown } from "@kobalte/core";
 
 export function ColumnsDropdown<TData>(
 	props: ParentProps & {
