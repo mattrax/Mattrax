@@ -340,7 +340,7 @@ export async function upsertEntraIdUser(
 	let pk = Number.parseInt(result.insertId);
 
 	// We did not upsert so we need to get the user id
-	if (result.insertId) {
+	if (pk === 0) {
 		const [user] = await db
 			.select({
 				pk: users.pk,
@@ -350,6 +350,7 @@ export async function upsertEntraIdUser(
 				and(
 					eq(users.tenantPk, tenantPk),
 					eq(users.providerPk, identityProviderPk),
+					eq(users.resourceId, u.id!),
 				),
 			);
 		if (!user) return undefined;
