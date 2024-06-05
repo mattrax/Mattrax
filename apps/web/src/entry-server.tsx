@@ -24,25 +24,22 @@ export function Document(
 	);
 }
 
-export default createHandler(
-	() => (
-		<StartServer
-			document={({ assets, children, scripts }) => (
-				<Document head={assets}>
-					<div id="app" class="flex min-h-full flex-col">
-						{children}
+export default createHandler(() => (
+	<StartServer
+		document={({ assets, children, scripts }) => (
+			<Document head={assets}>
+				<div id="app" class="flex min-h-full flex-col">
+					{children}
 
-						<noscript class="h-screen w-full flex">
-							<NoScriptFallback />
-						</noscript>
-					</div>
-					{scripts}
-				</Document>
-			)}
-		/>
-	),
-	{ mode: "sync" },
-);
+					<noscript class="h-screen w-full flex">
+						<NoScriptFallback />
+					</noscript>
+				</div>
+				{scripts}
+			</Document>
+		)}
+	/>
+));
 
 function NoScriptFallback() {
 	return (

@@ -1,6 +1,5 @@
 import { Navigate } from "@solidjs/router";
 import { Match, Switch } from "solid-js";
-import { isServer } from "solid-js/web";
 
 import { useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
