@@ -40,3 +40,12 @@ export function toTitleCase(str: string) {
 		return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
 	});
 }
+
+export function parseJson(json: string | undefined) {
+	if (!json) return undefined;
+	try {
+		return JSON.parse(json);
+	} catch (e) {
+		return undefined;
+	}
+}

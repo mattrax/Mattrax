@@ -18,6 +18,7 @@ import { useQueryClient } from "@tanstack/solid-query";
 import clsx from "clsx";
 import { resetMattraxCache } from "~/cache";
 import { trpc } from "~/lib";
+import { parseJson } from "~/lib/utils";
 
 // Don't bundle split this Solid directive
 autofocus;
@@ -64,9 +65,15 @@ export default function Page() {
 								},
 							}));
 
+							const [lastSubmittedEmail, setLastSubmittedEmail] = createSignal<
+								string | undefined
+							>();
 							const form = createZodForm({
 								schema: z.object({ email: z.string() }),
-								onSubmit: ({ value }) => login.mutateAsync(value),
+								onSubmit: ({ value }) => {
+									setLastSubmittedEmail(value.email);
+									login.mutateAsync(value);
+								},
 							});
 
 							return (
@@ -80,6 +87,39 @@ export default function Page() {
 										class="pt-4 w-full max-w-80"
 										fieldsetClass="space-y-2"
 									>
+										<Show
+											when={
+												parseJson(login.error?.shape?.message)?.code ===
+												"USER_IS_IN_MANAGED_TENANT"
+											}
+										>
+											<p class="text-red-500 text-sm text-center">
+												Your domain is under management by{" "}
+												<b>
+													{parseJson(login.error?.shape?.message)?.tenantName}
+												</b>
+												. You might want the{" "}
+												<A href="/enroll" target="_self" class="underline">
+													enroll page
+												</A>{" "}
+												if not{" "}
+												<button
+													type="button"
+													disabled={!lastSubmittedEmail()}
+													onClick={() =>
+														login.mutateAsync({
+															email: lastSubmittedEmail()!,
+															addIfManaged: true,
+														})
+													}
+													class="underline"
+												>
+													continue
+												</button>
+												.
+											</p>
+										</Show>
+
 										<InputField
 											form={form}
 											type="email"

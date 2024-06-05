@@ -15,8 +15,10 @@ import {
 	accountLoginCodes,
 	accounts,
 	db,
+	domains,
 	organisationMembers,
 	organisations,
+	tenants,
 } from "~/db";
 import { env } from "~/env";
 import { type Features, features } from "~/lib/featureFlags";
@@ -37,35 +39,59 @@ type UserResult = {
 
 export const authRouter = createTRPCRouter({
 	sendLoginCode: publicProcedure
-		.input(z.object({ email: z.string().email() }))
+		.input(
+			z.object({
+				email: z.string().email(),
+				addIfManaged: z.boolean().optional(),
+			}),
+		)
 		.mutation(async ({ input, ctx }) => {
 			flushResponse();
 
-			const name = input.email.split("@")[0] ?? "";
-			const code = generateRandomString(8, alphabet("0-9"));
+			const parts = input.email.split("@");
+			// This should be impossible due to input validation on the frontend but we guard just in case
+			if (parts.length !== 2) throw new Error("Invalid email provided!");
 
-			const id = generateId(16);
-			const result = await db
-				.insert(accounts)
-				.values({ name, email: input.email, id })
-				.onDuplicateKeyUpdate({
-					set: { email: input.email },
-				});
+			const account = await db.query.accounts.findFirst({
+				where: eq(accounts.email, input.email),
+			});
 
-			let accountPk = Number.parseInt(result.insertId);
-			let accountId = id;
+			let accountPk = account?.pk;
+			if (!account) {
+				const [tenantWhichManagesThisDomain] = await db
+					.select({ tenantName: tenants.name })
+					.from(domains)
+					.where(eq(domains.domain, parts[1]!))
+					.innerJoin(tenants, eq(domains.tenantPk, tenants.pk));
 
-			if (accountPk === 0) {
-				const account = await db.query.accounts.findFirst({
-					where: eq(accounts.email, input.email),
-				});
-				if (!account)
-					throw new Error("Error getting account we just inserted!");
-				accountPk = account.pk;
-				accountId = account.id;
+				if (tenantWhichManagesThisDomain && !input.addIfManaged)
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: JSON.stringify({
+							code: "USER_IS_IN_MANAGED_TENANT",
+							tenantName: tenantWhichManagesThisDomain.tenantName,
+						}),
+					});
+
+				const result = await db
+					.insert(accounts)
+					.values({
+						id: generateId(16),
+						name: parts[0] ?? "",
+						email: input.email,
+					})
+					.onDuplicateKeyUpdate({
+						set: { email: input.email },
+					});
+
+				accountPk = Number.parseInt(result.insertId);
 			}
 
-			await db.insert(accountLoginCodes).values({ accountPk, code });
+			const code = generateRandomString(8, alphabet("0-9"));
+
+			await db
+				.insert(accountLoginCodes)
+				.values({ accountPk: accountPk!, code });
 
 			waitUntil(
 				sendEmail({
@@ -75,8 +101,6 @@ export const authRouter = createTRPCRouter({
 					code,
 				}),
 			);
-
-			return { accountId };
 		}),
 
 	verifyLoginCode: publicProcedure

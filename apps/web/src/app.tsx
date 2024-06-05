@@ -17,6 +17,7 @@ import { isTRPCClientError, trpc } from "./lib";
 
 import "@mattrax/ui/css";
 import "./assets/sonner.css";
+import { parseJson } from "./lib/utils";
 
 // TODO: Maybe PR this back to Solid DND???
 declare module "solid-js" {
@@ -76,13 +77,15 @@ export default function App() {
 							errorBus.listen(([scopeMsg, error]) => {
 								let errorMsg = (
 									<>
-										{scopeMsg},
+										{scopeMsg}
 										<br />
 										Please reload to try again!
 									</>
 								);
 
 								if (isTRPCClientError(error)) {
+									if (parseJson(error?.shape?.message)?.code) return;
+
 									if (error.data?.code === "UNAUTHORIZED") {
 										startTransition(() => {
 											let query = "";
