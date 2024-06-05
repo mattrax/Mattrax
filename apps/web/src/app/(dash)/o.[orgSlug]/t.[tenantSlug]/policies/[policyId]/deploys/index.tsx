@@ -195,9 +195,10 @@ function DeployDialog(props: {
 
 	const overview = trpc.policy.overview.createQuery(() => ({ id: policyId() }));
 
+	const policy = usePolicy();
 	const deploy = trpc.policy.deploy.createMutation(() => ({
 		onSuccess: () => controller.setOpen(false),
-		...withDependantQueries([usePolicy(), deploys]),
+		...withDependantQueries([policy, deploys]),
 	}));
 
 	const scopedEntities = () =>
@@ -238,7 +239,7 @@ function DeployDialog(props: {
 								comment: comment(),
 							})
 						}
-						disabled={comment() === ""}
+						disabled={comment() === "" || deploy.isPending}
 					>
 						Deploy to {scopedEntities()} entities
 					</Button>

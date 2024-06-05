@@ -29,6 +29,7 @@ declare module "solid-js" {
 
 function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 	const onErrorFactory = (scopeMsg: string) => (error: unknown) => {
+		console.error(scopeMsg, error);
 		errorBus.emit([scopeMsg, error]);
 	};
 
