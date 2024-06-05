@@ -117,6 +117,7 @@ export const policyRouter = createTRPCRouter({
 				policyAssignments,
 				and(
 					eq(policyAssignments.variant, PolicyAssignableVariants.group),
+					eq(policyAssignments.policyPk, ctx.policy.pk),
 					eq(groupAssignables.groupPk, policyAssignments.pk),
 				),
 			)
