@@ -67,9 +67,13 @@ function IdentityProviderCard() {
 		...withDependantQueries(provider),
 	}));
 
+	const domains = trpc.tenant.identityProvider.domains.createQuery(() => ({
+		tenantSlug: tenantSlug(),
+	}));
+
 	const removeProvider = trpc.tenant.identityProvider.remove.createMutation(
 		() => ({
-			...withDependantQueries(provider),
+			...withDependantQueries([provider, domains]),
 		}),
 	);
 
@@ -261,12 +265,7 @@ function Domains() {
 				<Button
 					class="ml-auto"
 					onClick={() => refreshDomains.mutate({ tenantSlug: tenantSlug() })}
-					disabled={
-						provider?.data === null ||
-						provider.isPending ||
-						domains.isPending ||
-						refreshDomains.isPending
-					}
+					disabled={domains.isPending || refreshDomains.isPending}
 				>
 					Refresh
 				</Button>
