@@ -111,7 +111,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                             enrollment_version: "5.0".into(), // TODO: From request
                             enrollment_policy_service_url: format!("https://{enrollment_domain}/EnrollmentServer/Policy.svc"),
                             enrollment_service_url: format!("https://{enrollment_domain}/EnrollmentServer/Enrollment.svc"),
-                            authentication_service_url: Some(format!("{web_origin}/api/enrollment/login")),
+                            authentication_service_url: Some(format!("{web_origin}/enroll/")),
                         }
                     }
                 },

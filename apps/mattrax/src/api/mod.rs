@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{env, net::SocketAddr, sync::Arc};
 
 use axum::{
     extract::{connect_info::Connected, Request, State},
@@ -105,43 +105,50 @@ pub fn mount(state: Arc<Context>) -> Router {
         .nest("/EnrollmentServer", mdm::enrollment::mount(state.clone()))
         .nest("/ManagementServer", mdm::manage::mount(state.clone()));
 
-    #[cfg(all(not(debug_assertions), feature = "serve-web"))]
-    let router = router.fallback(|r: axum::extract::Request| async move {
-        let mut req = reqwest::Request::new(
-            r.method().clone(),
-            reqwest::Url::parse("http://localhost:12345")
-                .expect("failed to parse localhost url")
+    let url = cfg!(all(not(debug_assertions), feature = "serve-web"))
+        .then(|| "http://localhost:12345".to_string())
+        .or(env::var("WEB_URL").ok());
+
+    let router = if let Some(url) = url {
+        let url = reqwest::Url::parse(&url).expect("failed to parse `WEB_URL` url");
+
+        router.fallback(move |r: axum::extract::Request| {
+            let mut url = url
                 .join(r.uri().path())
-                .expect("failed to join path to localhost url"),
-        );
+                .expect("failed to join path to localhost url");
+            url.set_query(r.uri().query());
 
-        *req.headers_mut() = r.headers().clone();
-        *req.body_mut() = Some(
-            axum::body::to_bytes(r.into_body(), usize::MAX)
-                .await
-                .expect("failed to read body")
-                .into(),
-        );
+            async move {
+                let mut req = reqwest::Request::new(r.method().clone(), url);
 
-        let client = reqwest::Client::new();
-        let resp = client
-            .execute(req)
-            .await
-            .expect("failed to make request to node");
+                *req.headers_mut() = r.headers().clone();
+                *req.body_mut() = Some(
+                    axum::body::to_bytes(r.into_body(), usize::MAX)
+                        .await
+                        .expect("failed to read body")
+                        .into(),
+                );
 
-        (
-            resp.status(),
-            resp.headers().clone(),
-            resp.extensions().clone(),
-            axum::body::Body::from_stream(resp.bytes_stream()),
+                let client = reqwest::Client::new();
+                let resp = client
+                    .execute(req)
+                    .await
+                    .expect("failed to make request to node");
+
+                (
+                    resp.status(),
+                    resp.headers().clone(),
+                    resp.extensions().clone(),
+                    axum::body::Body::from_stream(resp.bytes_stream()),
+                )
+            }
+        })
+    } else {
+        router.route(
+            "/",
+            axum::routing::get(|| async move { "Mattrax MDM!".to_string() }),
         )
-    });
-
-    #[cfg(not(feature = "serve-web"))]
-    let router = router.route(
-        "/",
-        axum::routing::get(|| async move { "Mattrax MDM!".to_string() }),
-    );
+    };
 
     router
         .layer(middleware::from_fn_with_state(state.clone(), headers))
