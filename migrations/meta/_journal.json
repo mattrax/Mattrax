@@ -22,6 +22,20 @@
 			"when": 1714621481150,
 			"tag": "0002_outgoing_dagger",
 			"breakpoints": true
+		},
+		{
+			"idx": 3,
+			"version": "5",
+			"when": 1717597354775,
+			"tag": "0003_spotty_changeling",
+			"breakpoints": true
+		},
+		{
+			"idx": 4,
+			"version": "5",
+			"when": 1717598060538,
+			"tag": "0004_peaceful_magik",
+			"breakpoints": true
 		}
 	]
 }

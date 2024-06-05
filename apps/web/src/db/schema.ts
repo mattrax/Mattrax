@@ -299,9 +299,8 @@ export const policyDeployStatus = mysqlTable(
 		devicePk: serialRelation("device")
 			.references(() => devices.pk)
 			.notNull(),
-		status: mysqlEnum("variant", ["success", "failed"]).notNull(),
-		// The result of applying the policy, including errors and conflicts, etc.
-		result: json("result").notNull().$type<never>(), // TODO: Proper type using Specta
+		status: mysqlEnum("variant", ["pending", "success", "failed"]).notNull(),
+		conflicts: json("conflicts").$type<never>(), // TODO: Proper type using Specta
 		doneAt: timestamp("done_at").notNull().defaultNow(),
 	},
 	(table) => ({
@@ -365,6 +364,7 @@ export const devices = mysqlTable("devices", {
 	azureADDeviceId: varchar("azure_ad_did", { length: 256 }).unique(),
 
 	enrolledAt: timestamp("enrolled_at").notNull().defaultNow(),
+	// enrolledBy:  // TODO: No foreign key
 	lastSynced: timestamp("last_synced").notNull().defaultNow(),
 
 	tenantPk: serialRelation("tenant")

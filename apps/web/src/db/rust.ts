@@ -332,7 +332,7 @@ exportQueries(
 						deployPk: policyDeploy.pk,
 						policyPk: policyDeploy.policyPk,
 						data: policyDeploy.data,
-						result: policyDeployStatus.result,
+						conflicts: policyDeployStatus.conflicts,
 						scope: lastDeploy_inner.scope,
 					})
 					.from(policyDeploy)
@@ -352,6 +352,7 @@ exportQueries(
 				return db
 					.select({
 						scope: latestDeploy.scope,
+						policyPk: latestDeploy.policyPk,
 						latestDeploy: {
 							pk: latestDeploy.deployPk,
 							data: latestDeploy.data,
@@ -359,7 +360,7 @@ exportQueries(
 						lastDeploy: leftJoinHint({
 							pk: lastDeploy.deployPk,
 							data: lastDeploy.data,
-							result: lastDeploy.result,
+							conflicts: lastDeploy.conflicts,
 						}),
 					})
 					.from(latestDeploy)
@@ -415,7 +416,6 @@ exportQueries(
 						),
 					),
 		}),
-		// TODO: Queued applications
 		defineOperation({
 			name: "update_device_lastseen",
 			args: {
@@ -429,6 +429,24 @@ exportQueries(
 						lastSynced: args.last_synced,
 					})
 					.where(eq(devices.pk, args.device_id)),
+		}),
+		defineOperation({
+			name: "create_policy_deploy_status",
+			args: {
+				device_pk: "u64",
+				deploy_pk: "u64",
+				status: "String", // TODO: Enum
+				conflicts: "Option<String>",
+				doneAt: "Now",
+			},
+			query: (args) =>
+				db.insert(policyDeployStatus).values({
+					devicePk: args.device_pk,
+					deployPk: args.deploy_pk,
+					status: args.status as any,
+					conflicts: args.conflicts as any,
+					doneAt: args.doneAt,
+				}),
 		}),
 	],
 	path.join(__dirname, "../../../../crates/mx-db/src/db.rs"),

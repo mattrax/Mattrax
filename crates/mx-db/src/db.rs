@@ -5,10 +5,19 @@ use mysql_async::{prelude::*, BinaryProtocol, Deserialized, QueryResult, Seriali
 
 // 'FromValue::from_value' but 'track_caller'
 #[track_caller]
-fn from_value<T: FromValue>(v: mysql_async::Value) -> T {
+fn from_value<T: FromValue>(row: &mut mysql_async::Row, index: usize) -> T {
+    let v = row.take(index).unwrap();
     match T::from_value_opt(v) {
         Ok(this) => this,
-        Err(e) => panic!("Could not retrieve {:?}': {e}", std::any::type_name::<T>(),),
+        Err(e) => {
+            let column_name = row
+                .columns_ref()
+                .get(index)
+                .map(|c| c.name_str())
+                .unwrap_or("unknown".into());
+            let type_name = std::any::type_name::<T>();
+            panic!("Could not retrieve {type_name:?} from column {column_name:?}: {e}")
+        }
     }
 }
 
@@ -61,11 +70,12 @@ pub struct GetPolicyDataForCheckinLatestDeployResult {
 pub struct GetPolicyDataForCheckinLastDeployResult {
     pub pk: u64,
     pub data: Deserialized<serde_json::Value>,
-    pub result: Deserialized<serde_json::Value>,
+    pub conflicts: Option<Deserialized<serde_json::Value>>,
 }
 #[derive(Debug)]
 pub struct GetPolicyDataForCheckinResult {
     pub scope: String,
+    pub policy_pk: u64,
     pub latest_deploy: GetPolicyDataForCheckinLatestDeployResult,
     pub last_deploy: Option<GetPolicyDataForCheckinLastDeployResult>,
 }
@@ -116,7 +126,7 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetConfigResult {
-                value: from_value(row.take(0).unwrap()),
+                value: from_value(&mut row, 0),
             });
         }
         Ok(ret)
@@ -139,7 +149,7 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetNodeResult {
-                value: from_value(row.take(0).unwrap()),
+                value: from_value(&mut row, 0),
             });
         }
         Ok(ret)
@@ -165,7 +175,7 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetCertificateResult {
-                value: from_value(row.take(0).unwrap()),
+                value: from_value(&mut row, 0),
             });
         }
         Ok(ret)
@@ -196,12 +206,12 @@ impl Db {
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetSessionAndUserResult {
                 account: GetSessionAndUserAccountResult {
-                    pk: from_value(row.take(0).unwrap()),
-                    id: from_value(row.take(1).unwrap()),
+                    pk: from_value(&mut row, 0),
+                    id: from_value(&mut row, 1),
                 },
                 session: GetSessionAndUserSessionResult {
-                    id: from_value(row.take(2).unwrap()),
-                    expires_at: from_value(row.take(3).unwrap()),
+                    id: from_value(&mut row, 2),
+                    expires_at: from_value(&mut row, 3),
                 },
             });
         }
@@ -220,7 +230,7 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(IsOrgMemberResult {
-                id: from_value(row.take(0).unwrap()),
+                id: from_value(&mut row, 0),
             });
         }
         Ok(ret)
@@ -257,8 +267,8 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetDeviceResult {
-                pk: from_value(row.take(0).unwrap()),
-                tenant_pk: from_value(row.take(1).unwrap()),
+                pk: from_value(&mut row, 0),
+                tenant_pk: from_value(&mut row, 1),
             });
         }
         Ok(ret)
@@ -269,25 +279,30 @@ impl Db {
         &self,
         device_pk: u64,
     ) -> Result<Vec<GetPolicyDataForCheckinResult>, mysql_async::Error> {
-        let mut result = r#"select `scope_li`, `l`.`pk`, `l`.`data`, `j`.`pk`, `j`.`data`, `j`.`result` from (select `policy_deploy`.`pk`, `policy_deploy`.`policy`, `policy_deploy`.`data`, `scope_li` from `policy_deploy` inner join (select max(`policy_deploy`.`pk`) as `deployPk`, `policy_deploy`.`policy`, max(`scope`) as `scope_li` from (select `pk`, min(`scope`) as `scope` from ((select `policies`.`pk`, 'direct' as `scope` from `policies` inner join `policy_assignables` on `policies`.`pk` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ?)) union all (select `policies`.`pk`, 'group' as `scope` from `policies` inner join `policy_assignables` on (`policies`.`pk` = `policy_assignables`.`policy` and `policy_assignables`.`variant` = ?) inner join `group_assignables` on `group_assignables`.`group` = `policy_assignables`.`pk` where (`group_assignables`.`variant` = ? and `group_assignables`.`pk` = ?))) `scoped` group by `scoped`.`pk`) `sorted` inner join `policy_deploy` on `sorted`.`pk` = `policy_deploy`.`policy` group by `policy_deploy`.`policy`) `li` on `deployPk` = `policy_deploy`.`pk`) `l` left join (select `policy_deploy`.`pk`, `policy_deploy`.`policy`, `policy_deploy`.`data`, `policy_deploy_status`.`result`, `ji_scope` from `policy_deploy` inner join (select max(`policy_deploy`.`pk`) as `deployPk`, `policy_deploy`.`policy`, max(`scope`) as `ji_scope` from (select `pk`, min(`scope`) as `scope` from ((select `policies`.`pk`, 'direct' as `scope` from `policies` inner join `policy_assignables` on `policies`.`pk` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ?)) union all (select `policies`.`pk`, 'group' as `scope` from `policies` inner join `policy_assignables` on (`policies`.`pk` = `policy_assignables`.`policy` and `policy_assignables`.`variant` = ?) inner join `group_assignables` on `group_assignables`.`group` = `policy_assignables`.`pk` where (`group_assignables`.`variant` = ? and `group_assignables`.`pk` = ?))) `scoped` group by `scoped`.`pk`) `sorted` inner join `policy_deploy` on `sorted`.`pk` = `policy_deploy`.`policy` inner join `policy_deploy_status` on (`policy_deploy`.`pk` = `policy_deploy_status`.`deploy` and `policy_deploy_status`.`device` = ?) group by `policy_deploy`.`policy`) `ji` on `deployPk` = `policy_deploy`.`pk` inner join `policy_deploy_status` on (`policy_deploy`.`pk` = `policy_deploy_status`.`deploy` and `policy_deploy_status`.`device` = ?)) `j` on `j`.`policy` = `l`.`policy`"#
+        let mut result = r#"select `scope_li`, `l`.`policy`, `l`.`pk`, `l`.`data`, `j`.`pk`, `j`.`data`, `j`.`conflicts` from (select `policy_deploy`.`pk`, `policy_deploy`.`policy`, `policy_deploy`.`data`, `scope_li` from `policy_deploy` inner join (select max(`policy_deploy`.`pk`) as `deployPk`, `policy_deploy`.`policy`, max(`scope`) as `scope_li` from (select `pk`, min(`scope`) as `scope` from ((select `policies`.`pk`, 'direct' as `scope` from `policies` inner join `policy_assignables` on `policies`.`pk` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ?)) union all (select `policies`.`pk`, 'group' as `scope` from `policies` inner join `policy_assignables` on (`policies`.`pk` = `policy_assignables`.`policy` and `policy_assignables`.`variant` = ?) inner join `group_assignables` on `group_assignables`.`group` = `policy_assignables`.`pk` where (`group_assignables`.`variant` = ? and `group_assignables`.`pk` = ?))) `scoped` group by `scoped`.`pk`) `sorted` inner join `policy_deploy` on `sorted`.`pk` = `policy_deploy`.`policy` group by `policy_deploy`.`policy`) `li` on `deployPk` = `policy_deploy`.`pk`) `l` left join (select `policy_deploy`.`pk`, `policy_deploy`.`policy`, `policy_deploy`.`data`, `policy_deploy_status`.`conflicts`, `ji_scope` from `policy_deploy` inner join (select max(`policy_deploy`.`pk`) as `deployPk`, `policy_deploy`.`policy`, max(`scope`) as `ji_scope` from (select `pk`, min(`scope`) as `scope` from ((select `policies`.`pk`, 'direct' as `scope` from `policies` inner join `policy_assignables` on `policies`.`pk` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ?)) union all (select `policies`.`pk`, 'group' as `scope` from `policies` inner join `policy_assignables` on (`policies`.`pk` = `policy_assignables`.`policy` and `policy_assignables`.`variant` = ?) inner join `group_assignables` on `group_assignables`.`group` = `policy_assignables`.`pk` where (`group_assignables`.`variant` = ? and `group_assignables`.`pk` = ?))) `scoped` group by `scoped`.`pk`) `sorted` inner join `policy_deploy` on `sorted`.`pk` = `policy_deploy`.`policy` inner join `policy_deploy_status` on (`policy_deploy`.`pk` = `policy_deploy_status`.`deploy` and `policy_deploy_status`.`device` = ?) group by `policy_deploy`.`policy`) `ji` on `deployPk` = `policy_deploy`.`pk` inner join `policy_deploy_status` on (`policy_deploy`.`pk` = `policy_deploy_status`.`deploy` and `policy_deploy_status`.`device` = ?)) `j` on `j`.`policy` = `l`.`policy`"#
 			  .with(mysql_async::Params::Positional(vec!["device".clone().into(),device_pk.clone().into(),"group".clone().into(),"device".clone().into(),device_pk.clone().into(),"device".clone().into(),device_pk.clone().into(),"group".clone().into(),"device".clone().into(),device_pk.clone().into(),device_pk.clone().into(),device_pk.clone().into()]))
 					.run(&self.pool).await?;
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetPolicyDataForCheckinResult {
-                scope: from_value(row.take(0).unwrap()),
+                scope: from_value(&mut row, 0),
+                policy_pk: from_value(&mut row, 1),
                 latest_deploy: GetPolicyDataForCheckinLatestDeployResult {
-                    pk: from_value(row.take(1).unwrap()),
-                    data: from_value(row.take(2).unwrap()),
+                    pk: from_value(&mut row, 2),
+                    data: from_value(&mut row, 3),
                 },
                 last_deploy: {
-                    let pk = row.take(3).map(from_value);
-                    let data = row.take(4).map(from_value);
-                    let result = row.take(5).map(from_value);
+                    let pk = from_value(&mut row, 4);
+                    let data = from_value(&mut row, 5);
+                    let conflicts = from_value(&mut row, 6);
 
-                    match (pk, data, result) {
-                        (Some(pk), Some(data), Some(result)) => {
-                            Some(GetPolicyDataForCheckinLastDeployResult { pk, data, result })
+                    match (pk, data, conflicts) {
+                        (Some(pk), Some(data), Some(conflicts)) => {
+                            Some(GetPolicyDataForCheckinLastDeployResult {
+                                pk,
+                                data,
+                                conflicts,
+                            })
                         }
                         _ => None,
                     }
@@ -308,11 +323,11 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(QueuedDeviceActionsResult {
-                action: from_value(row.take(0).unwrap()),
-                device_pk: from_value(row.take(1).unwrap()),
-                created_by: from_value(row.take(2).unwrap()),
-                created_at: from_value(row.take(3).unwrap()),
-                deployed_at: from_value(row.take(4).unwrap()),
+                action: from_value(&mut row, 0),
+                device_pk: from_value(&mut row, 1),
+                created_by: from_value(&mut row, 2),
+                created_at: from_value(&mut row, 3),
+                deployed_at: from_value(&mut row, 4),
             });
         }
         Ok(ret)
@@ -328,6 +343,21 @@ impl Db {
             ]))
             .run(&self.pool)
             .await?;
+        Ok(())
+    }
+}
+impl Db {
+    pub async fn create_policy_deploy_status(
+        &self,
+        device_pk: u64,
+        deploy_pk: u64,
+        status: String,
+        conflicts: Option<String>,
+    ) -> Result<(), mysql_async::Error> {
+        let done_at = chrono::Utc::now().naive_utc();
+        let mut result = r#"insert into `policy_deploy_status` (`deploy`, `device`, `variant`, `conflicts`, `done_at`) values (?, ?, ?, ?, ?)"#
+			  .with(mysql_async::Params::Positional(vec![deploy_pk.clone().into(),device_pk.clone().into(),status.clone().into(),conflicts.clone().into(),done_at.clone().into()]))
+					.run(&self.pool).await?;
         Ok(())
     }
 }

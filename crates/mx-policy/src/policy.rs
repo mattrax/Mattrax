@@ -29,6 +29,16 @@ pub enum WindowsConfigValue {
     Boolean(bool),
 }
 
+impl Into<DmValue> for WindowsConfigValue {
+    fn into(self) -> DmValue {
+        match self {
+            WindowsConfigValue::Integer(v) => DmValue::Integer(v.try_into().unwrap()),
+            WindowsConfigValue::String(v) => DmValue::String(v),
+            WindowsConfigValue::Boolean(v) => DmValue::Boolean(v),
+        }
+    }
+}
+
 /// TODO
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub struct PolicyData {

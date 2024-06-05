@@ -27,7 +27,8 @@ type RustType =
 	| "Now"
 	| "Vec<u8>"
 	| "u64"
-	| "Serialized<serde_json::Value>"; // TODO: Rest of types
+	| "Serialized<serde_json::Value>"
+	| `Option<String>`; // TODO: Rest of types
 type RustArgs = Record<string, RustType>;
 
 type MapArgsToTs<T> = {

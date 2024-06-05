@@ -2346,16 +2346,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mx-conflict"
-version = "0.0.1"
-dependencies = [
- "mx-policy",
- "pretty_assertions",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "mx-db"
 version = "0.0.1"
 dependencies = [
@@ -2408,7 +2398,6 @@ dependencies = [
  "futures",
  "ms-mde",
  "ms-mdm",
- "mx-conflict",
  "mx-db",
  "mx-policy",
  "rustls 0.23.6",

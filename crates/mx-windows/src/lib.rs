@@ -72,11 +72,14 @@ pub async fn handler(
     let cmd = &cmd;
     let device = &device;
     let (mut a, mut b, (), ()) = join!(
-        async move {
-            if cmd.hdr.msg_id == "1" {
-                policies::handler(db, device, cmd).await
-            } else {
-                vec![]
+        {
+            let todo_do_this_better = next_cmd_id();
+            async move {
+                if cmd.hdr.msg_id == "1" {
+                    policies::handler(db, device, cmd, todo_do_this_better).await
+                } else {
+                    vec![]
+                }
             }
         },
         actions::handler(),

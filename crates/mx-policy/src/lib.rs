@@ -7,5 +7,5 @@ mod script;
 
 pub use dmvalue::DmValue;
 pub use platform::Platform;
-pub use policy::Policy;
+pub use policy::{Policy, PolicyData};
 pub use script::{Script, Shell, Trigger};
