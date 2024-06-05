@@ -26,7 +26,7 @@ import { match } from "ts-pattern";
 import type { RouterOutput } from "~/api";
 import {
 	StandardTable,
-	createSearchParamPagination,
+	// createSearchParamPagination,
 	createStandardTable,
 } from "~/components/StandardTable";
 import { trpc } from "~/lib";
@@ -88,10 +88,9 @@ function createDeployTable() {
 			return deploys.data || [];
 		},
 		columns,
-		pagination: true,
 	});
 
-	createSearchParamPagination(table, "page");
+	// createSearchParamPagination(table, "page");
 
 	return { table, deploys };
 }
@@ -136,9 +135,7 @@ export default function Page() {
 
 type Policy = NonNullable<RouterOutput["policy"]["get"]>;
 
-function RenderPolicyDiff(props: {
-	policy: Policy;
-}) {
+function RenderPolicyDiff(props: { policy: Policy }) {
 	return (
 		<For each={props.policy.diff}>
 			{(change) => (
@@ -158,9 +155,7 @@ function RenderPolicyDiff(props: {
 	);
 }
 
-function DeployButton(props: {
-	policy: Policy;
-}) {
+function DeployButton(props: { policy: Policy }) {
 	const policyId = usePolicyId();
 	const trpcCtx = trpc.useContext();
 
@@ -181,9 +176,7 @@ function DeployButton(props: {
 	);
 }
 
-function DeployDialog(props: {
-	policy: Policy;
-}) {
+function DeployDialog(props: { policy: Policy }) {
 	const [page, setPage] = createSignal(0);
 	const controller = useController();
 	const policyId = usePolicyId();

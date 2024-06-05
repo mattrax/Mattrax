@@ -5,6 +5,7 @@ import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { union } from "drizzle-orm/mysql-core";
 import { createAuditLog } from "~/api/auditLog";
 import { withTenant } from "~/api/tenant";
 import { omit } from "~/api/utils";
@@ -25,7 +26,6 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import { union } from "drizzle-orm/mysql-core";
 
 const getPolicy = cache(async (id: string) => {
 	return await db.query.policies.findFirst({

@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { sendEmail } from "~/api/emails";
 import { withTenant } from "~/api/tenant";
@@ -88,7 +88,15 @@ export const userRouter = createTRPCRouter({
 			await ctx.ensureTenantMember(user.tenantPk);
 			return omit(user, ["tenantPk"]);
 		}),
-
+	delete: tenantProcedure
+		.input(z.object({ ids: z.array(z.string()) }))
+		.mutation(async ({ ctx, input }) => {
+			return await ctx.db
+				.delete(users)
+				.where(
+					and(eq(users.tenantPk, ctx.tenant.pk), inArray(users.id, input.ids)),
+				);
+		}),
 	devices: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
@@ -165,7 +173,6 @@ export const userRouter = createTRPCRouter({
 
 		return { policies: p, apps: a };
 	}),
-
 	addAssignments: userProcedure
 		.input(
 			z.object({

@@ -189,7 +189,6 @@ function Assignments() {
 			];
 		},
 		columns: createVariantTableColumns(variants),
-		pagination: true,
 	});
 
 	const addAssignments = trpc.user.addAssignments.createMutation(() => ({

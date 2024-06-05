@@ -3,6 +3,7 @@ import {
 	type ColumnDef,
 	type HeaderContext,
 	type PartialKeys,
+	type Row,
 	type RowData,
 	type Table as TTable,
 	type TableOptions,
@@ -17,6 +18,8 @@ import {
 	For,
 	type JSX,
 	type ParentProps,
+	Show,
+	children,
 	createEffect,
 	mergeProps,
 	on,
@@ -46,33 +49,33 @@ export function createStandardTable<TData extends RowData>(
 	);
 }
 
-export function createSearchParamPagination<TData extends RowData>(
-	table: TTable<TData>,
-	key: string,
-) {
-	const [searchParams, setSearchParams] = useSearchParams();
+// export function createSearchParamPagination<TData extends RowData>(
+// 	table: TTable<TData>,
+// 	key: string,
+// ) {
+// 	const [searchParams, setSearchParams] = useSearchParams();
 
-	const pageParam = createMemo(() => {
-		const parsed = z.coerce.number().safeParse(searchParams[key]);
+// 	const pageParam = createMemo(() => {
+// 		const parsed = z.coerce.number().safeParse(searchParams[key]);
 
-		if (parsed.success) return parsed.data;
-		return 0;
-	});
+// 		if (parsed.success) return parsed.data;
+// 		return 0;
+// 	});
 
-	createEffect(
-		on(
-			() => table.getState().pagination.pageIndex,
-			(index) =>
-				setSearchParams({ [key]: index || undefined }, { replace: false }),
-		),
-	);
+// 	createEffect(
+// 		on(
+// 			() => table.getState().pagination.pageIndex,
+// 			(index) =>
+// 				setSearchParams({ [key]: index || undefined }, { replace: false }),
+// 		),
+// 	);
 
-	createEffect(
-		on(pageParam, (page) => {
-			table.setPageIndex(page);
-		}),
-	);
-}
+// 	createEffect(
+// 		on(pageParam, (page) => {
+// 			table.setPageIndex(page);
+// 		}),
+// 	);
+// }
 
 export function createSearchParamFilter<TData extends RowData>(
 	table: TTable<TData>,
@@ -164,6 +167,46 @@ export function StandardTable<TData>(props: {
 	);
 }
 
+export function FloatingSelectionBar<TData>(props: {
+	table: TTable<TData>;
+	children?: (data: Accessor<Row<TData>[]>) => JSX.Element;
+}) {
+	const selectedRows = () => props.table.getSelectedRowModel().rows;
+
+	return (
+		<Show when={selectedRows().length > 0}>
+			{(_) => {
+				const c = children(() => props.children?.(selectedRows));
+
+				return (
+					<div class="animate-in fade-in slide-in-from-bottom-2 zoom-in-[0.98] bottom-6 inset-x-0 fixed flex flex-row justify-center pointer-events-none">
+						<div class="p-2 rounded-lg bg-white border border-gray-100 text-sm flex flex-row items-stretch gap-2 pointer-events-auto shadow">
+							<div class="flex flex-row items-center gap-1.5 ml-2">
+								<span class="font-medium">
+									{selectedRows().length} Selected
+								</span>
+								<Button
+									variant="ghost"
+									size="iconSmall"
+									onClick={() => props.table.resetRowSelection(true)}
+								>
+									<IconPhXBold class="w-4 h-4" />
+								</Button>
+							</div>
+							{c() && (
+								<>
+									<div class="my-1 w-px bg-gray-300" />
+									{c()}
+								</>
+							)}
+						</div>
+					</div>
+				);
+			}}
+		</Show>
+	);
+}
+
 export function StandardTablePagination<TData>(props: {
 	table: TTable<TData>;
 }) {
@@ -203,6 +246,7 @@ import {
 } from "@mattrax/ui";
 import { useSearchParams } from "@solidjs/router";
 import { createMemo } from "solid-js";
+import type { Accessor } from "solid-js";
 import { z } from "zod";
 
 export function ColumnsDropdown<TData>(

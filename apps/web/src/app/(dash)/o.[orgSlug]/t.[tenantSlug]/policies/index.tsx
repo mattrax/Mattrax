@@ -16,7 +16,7 @@ import {
 	ColumnsDropdown,
 	StandardTable,
 	createSearchParamFilter,
-	createSearchParamPagination,
+	// createSearchParamPagination,
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
@@ -67,10 +67,9 @@ export default function Page() {
 			return policies.data || [];
 		},
 		columns,
-		pagination: true,
 	});
 
-	createSearchParamPagination(table, "page");
+	// createSearchParamPagination(table, "page");
 	createSearchParamFilter(table, "name", "search");
 
 	return (

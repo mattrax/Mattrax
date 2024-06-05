@@ -23,7 +23,7 @@ import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	StandardTable,
 	createActionsColumn,
-	createSearchParamPagination,
+	// createSearchParamPagination,
 	createStandardTable,
 } from "~c/StandardTable";
 import {
@@ -99,10 +99,9 @@ export default function Page() {
 				),
 			}),
 		],
-		pagination: true,
 	});
 
-	createSearchParamPagination(table, "page");
+	// createSearchParamPagination(table, "page");
 
 	const addAssignees = trpc.policy.addAssignees.createMutation(() => ({
 		...withDependantQueries(assignees),

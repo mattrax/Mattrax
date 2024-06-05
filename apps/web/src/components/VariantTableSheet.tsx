@@ -26,6 +26,7 @@ import { A } from "@solidjs/router";
 import { toTitleCase } from "~/lib/utils";
 import { ConfirmDialog } from "~c/ConfirmDialog";
 import {
+	FloatingSelectionBar,
 	StandardTable,
 	createStandardTable,
 	selectCheckboxColumn,
@@ -103,7 +104,6 @@ export function VariantTableSheet<T extends VariantTableVariants>(
 			return possibleMembers();
 		},
 		columns: createVariantTableColumns(props.variants),
-		// pagination: true, // TODO: Pagination
 	});
 
 	return (

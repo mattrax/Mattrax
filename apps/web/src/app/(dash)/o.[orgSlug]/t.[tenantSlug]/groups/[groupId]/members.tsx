@@ -1,3 +1,4 @@
+import { Dialog } from "@kobalte/core";
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	AsyncButton,
@@ -9,20 +10,18 @@ import {
 	DialogHeader,
 	DialogRoot,
 	DialogTitle,
-	DropdownMenuItem,
 	SheetTrigger,
 } from "@mattrax/ui";
 import type { RouteDefinition } from "@solidjs/router";
 import pluralize from "pluralize";
 import { Match, Suspense, Switch, createSignal } from "solid-js";
 
-import { Dialog } from "@kobalte/core";
 import { trpc } from "~/lib";
 import { toTitleCase } from "~/lib/utils";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
+	FloatingSelectionBar,
 	StandardTable,
-	createActionsColumn,
 	createSearchParamFilter,
 	createStandardTable,
 } from "~c/StandardTable";
@@ -68,44 +67,7 @@ export default function Page() {
 		get data() {
 			return members.data ?? [];
 		},
-		columns: [
-			...createVariantTableColumns(variants),
-			createActionsColumn({
-				headerDropdownContent: ({ table }) => (
-					<DropdownMenuItem
-						disabled={table.getSelectedRowModel().rows.length === 0}
-						class="text-red-600 data-[disabled]:text-black"
-						onSelect={() =>
-							setDialog({
-								open: true,
-								data: {
-									type: "removeMany",
-									data: table
-										.getSelectedRowModel()
-										.rows.map(({ original }) => original as any),
-								},
-							})
-						}
-					>
-						Remove from Group ({table.getSelectedRowModel().rows.length})
-					</DropdownMenuItem>
-				),
-				cellDropdownContent: ({ row }) => (
-					<DropdownMenuItem
-						class="text-red-600"
-						onSelect={() =>
-							setDialog({
-								open: true,
-								data: { type: "removeSingle", data: row.original as any },
-							})
-						}
-					>
-						Remove from Group
-					</DropdownMenuItem>
-				),
-			}),
-		],
-		// pagination: true, // TODO: Pagination
+		columns: createVariantTableColumns(variants),
 	});
 
 	createSearchParamFilter(table, "name", "search");
@@ -240,6 +202,34 @@ export default function Page() {
 			</div>
 			<Suspense>
 				<StandardTable table={table} />
+				<FloatingSelectionBar table={table}>
+					{(rows) => (
+						<Button
+							variant="destructive"
+							size="sm"
+							onClick={() => {
+								if (rows().length === 1)
+									setDialog({
+										open: true,
+										data: {
+											type: "removeSingle",
+											data: rows()[0]!.original as any,
+										},
+									});
+								else
+									setDialog({
+										open: true,
+										data: {
+											type: "removeMany",
+											data: rows().map(({ original }) => original as any),
+										},
+									});
+							}}
+						>
+							Remove from Group
+						</Button>
+					)}
+				</FloatingSelectionBar>
 			</Suspense>
 		</PageLayout>
 	);

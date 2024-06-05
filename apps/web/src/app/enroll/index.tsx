@@ -5,19 +5,19 @@ import type { APIEvent } from "@solidjs/start/server";
 import clsx from "clsx";
 import { and, eq } from "drizzle-orm";
 import type { ParentProps } from "solid-js";
+import { getCookie } from "vinxi/http";
 import { getEmailDomain } from "~/api/utils";
 import { encryptJWT, verifyJWT } from "~/api/utils/jwt";
 import { db, domains, identityProviders } from "~/db";
 import { env } from "~/env";
 import { renderWithApp } from "../../entry-server";
 import {
+	type EnrollmentTokenState,
 	Layout,
 	MINUTE,
 	type State,
 	renderMDMCallback,
-	type EnrollmentTokenState,
 } from "./util";
-import { getCookie } from "vinxi/http";
 
 export type EnrollmentProfileDescription = {
 	data: string;

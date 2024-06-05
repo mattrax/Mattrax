@@ -108,7 +108,6 @@ export default function Page() {
 				),
 			}),
 		],
-		pagination: true,
 	});
 
 	createSearchParamFilter(table, "name", "search");

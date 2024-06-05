@@ -37,7 +37,6 @@ export default function Page() {
 			];
 		},
 		columns: createVariantTableColumns(),
-		pagination: true,
 	});
 
 	const addAssignments = trpc.device.addAssignments.createMutation(() => ({

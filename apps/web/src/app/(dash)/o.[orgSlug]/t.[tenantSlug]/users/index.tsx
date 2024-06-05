@@ -1,6 +1,14 @@
+import { Dialog } from "@kobalte/core/dialog";
 import {
+	AsyncButton,
 	Badge,
 	Button,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogRoot,
+	DialogTitle,
 	DropdownMenuTrigger,
 	Tooltip,
 	TooltipContent,
@@ -8,8 +16,9 @@ import {
 } from "@mattrax/ui";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { Show, Suspense } from "solid-js";
+import { Match, Show, Suspense, Switch, createSignal } from "solid-js";
 
+import pluralize from "pluralize";
 import type { RouterOutput } from "~/api/trpc";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 import { trpc } from "~/lib";
@@ -17,9 +26,9 @@ import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	ColumnsDropdown,
+	FloatingSelectionBar,
 	StandardTable,
 	createSearchParamFilter,
-	createSearchParamPagination,
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
@@ -72,7 +81,7 @@ const columns = [
 			const providerDisplayName = () => AUTH_PROVIDER_DISPLAY[props.getValue()];
 			return (
 				<span class="flex flex-row gap-1 items-center">
-					<Badge variant="secondary">{providerDisplayName()}</Badge>
+					<Badge variant="outline">{providerDisplayName()}</Badge>
 					<Show when={props.row.original.resourceId === null}>
 						<Tooltip>
 							<TooltipTrigger>
@@ -104,11 +113,27 @@ export default function Page() {
 			return users.data || [];
 		},
 		columns,
-		pagination: true,
 	});
 
-	createSearchParamPagination(table, "page");
 	createSearchParamFilter(table, "name", "search");
+
+	const [dialog, setDialog] = createSignal<{
+		open: boolean;
+		data:
+			| {
+					type: "deleteSingle";
+					data: NonNullable<typeof users.data>[number];
+			  }
+			| { type: "deleteMany"; data: NonNullable<typeof users.data> };
+	}>({ open: false, data: { type: "deleteMany", data: [] } });
+
+	const deleteUsers = trpc.user.delete.createMutation(() => ({
+		onSuccess: () =>
+			users.refetch().then(() => {
+				table.resetRowSelection(true);
+				setDialog({ ...dialog(), open: false });
+			}),
+	}));
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Users</PageLayoutHeading>}>
@@ -127,6 +152,101 @@ export default function Page() {
 			</div>
 			<Suspense>
 				<StandardTable table={table} />
+				<DialogRoot
+					open={dialog().open}
+					onOpenChange={(o) => {
+						if (!o) setDialog({ ...dialog(), open: false });
+					}}
+				>
+					<DialogContent>
+						<DialogHeader>
+							<DialogTitle>
+								Delete{" "}
+								{pluralize("User", table.getSelectedRowModel().rows.length)}
+							</DialogTitle>
+							<DialogDescription>
+								Are you sure you want to delete{" "}
+								<Switch>
+									<Match when={dialog().data?.type === "deleteMany"}>
+										{table.getSelectedRowModel().rows.length}{" "}
+										{pluralize("user", table.getSelectedRowModel().rows.length)}
+									</Match>
+									<Match
+										when={(() => {
+											const d = dialog();
+											if (d.data?.type === "deleteSingle") return d.data.data;
+										})()}
+									>
+										{(data) => (
+											<div class="inline text-nowrap">
+												<span class="text-black font-medium">
+													{data().name}
+												</span>
+											</div>
+										)}
+									</Match>
+								</Switch>
+								?
+							</DialogDescription>
+						</DialogHeader>
+						<DialogFooter>
+							<Dialog.CloseButton as={Button} variant="secondary">
+								Cancel
+							</Dialog.CloseButton>
+							<div class="flex-1" />
+							<AsyncButton
+								onClick={() => {
+									const { data } = dialog();
+
+									if (data.type === "deleteMany") {
+										return deleteUsers.mutateAsync({
+											tenantSlug: tenantSlug(),
+											ids: data.data.map(({ id }) => id),
+										});
+									}
+
+									return deleteUsers.mutateAsync({
+										tenantSlug: tenantSlug(),
+										ids: [data.data.id],
+									});
+								}}
+								variant="destructive"
+							>
+								Confirm
+							</AsyncButton>
+						</DialogFooter>
+					</DialogContent>
+				</DialogRoot>
+				<FloatingSelectionBar table={table}>
+					{(rows) => {
+						return (
+							<Button
+								variant="destructive"
+								size="sm"
+								onClick={() => {
+									if (rows().length === 1)
+										setDialog({
+											open: true,
+											data: {
+												type: "deleteSingle",
+												data: rows()[0]!.original as any,
+											},
+										});
+									else
+										setDialog({
+											open: true,
+											data: {
+												type: "deleteMany",
+												data: rows().map(({ original }) => original as any),
+											},
+										});
+								}}
+							>
+								Delete
+							</Button>
+						);
+					}}
+				</FloatingSelectionBar>
 			</Suspense>
 		</PageLayout>
 	);

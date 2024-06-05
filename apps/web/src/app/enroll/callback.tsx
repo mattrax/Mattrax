@@ -1,18 +1,18 @@
 import { CardDescription } from "@mattrax/ui/card";
 import type { APIEvent } from "@solidjs/start/server";
 import type { ParentProps } from "solid-js";
+import { setCookie } from "vinxi/http";
 import { upsertEntraIdUser } from "~/api/trpc/routers/tenant/identityProvider";
 import { decryptJWT, signJWT } from "~/api/utils/jwt";
 import { renderWithApp } from "~/entry-server";
 import { env } from "~/env";
 import {
+	type EnrollmentTokenState,
 	Layout,
 	MINUTE,
 	type State,
 	renderMDMCallback,
-	type EnrollmentTokenState,
 } from "./util";
-import { setCookie } from "vinxi/http";
 
 function ErrorPage(props: ParentProps<{ class?: string }>) {
 	return (

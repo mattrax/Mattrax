@@ -153,7 +153,6 @@ function Members() {
 			return members.data ?? [];
 		},
 		columns: createVariantTableColumns(variants).slice(1),
-		// pagination: true, // TODO: Pagination
 	});
 
 	return (
@@ -219,7 +218,6 @@ function Assignments() {
 			return assignments.data ?? [];
 		},
 		columns: createVariantTableColumns(variants).slice(1),
-		// pagination: true, // TODO: Pagination
 	});
 
 	return (
