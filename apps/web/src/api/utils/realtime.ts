@@ -14,7 +14,7 @@ export const invalidate = (orgSlug: string, tenantSlug?: string) =>
 				tenantSlug,
 			}),
 		});
-		if (!resp.ok)
+		if (!resp.ok && import.meta.env.MODE !== "development")
 			throw new Error(
 				`Failed to send cache invalidation request: ${
 					resp.status
