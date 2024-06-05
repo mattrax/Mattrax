@@ -10,6 +10,7 @@ use axum::{
 use hmac::Hmac;
 use mx_db::Db;
 use rcgen::{Certificate, KeyPair};
+use reqwest::redirect::Policy;
 use rustls::pki_types::CertificateDer;
 use sha2::Sha256;
 use tokio::sync::mpsc;
@@ -112,6 +113,11 @@ pub fn mount(state: Arc<Context>) -> Router {
     let router = if let Some(url) = url {
         let url = reqwest::Url::parse(&url).expect("failed to parse `WEB_URL` url");
 
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .build()
+            .unwrap();
+
         router.fallback(move |r: axum::extract::Request| {
             let mut url = url
                 .join(r.uri().path())
@@ -129,7 +135,6 @@ pub fn mount(state: Arc<Context>) -> Router {
                         .into(),
                 );
 
-                let client = reqwest::Client::new();
                 let resp = client
                     .execute(req)
                     .await
