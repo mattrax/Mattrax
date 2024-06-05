@@ -44,7 +44,7 @@
 		"@solid-primitives/timer": "^1.3.9",
 		"@solid-primitives/websocket": "^1.2.2",
 		"@solidjs/router": "=0.13.3",
-		"@solidjs/start": "1.0.0-rc.1",
+		"@solidjs/start": "1.0.1",
 		"@t3-oss/env-core": "^0.10.1",
 		"@tanstack/solid-form": "^0.20.0",
 		"@tanstack/solid-query": "^5.36.1",

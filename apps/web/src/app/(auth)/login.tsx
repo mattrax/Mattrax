@@ -1,6 +1,6 @@
 import { Button, CardDescription } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { useNavigate, useSearchParams } from "@solidjs/router";
+import { A, useNavigate, useSearchParams } from "@solidjs/router";
 import {
 	Match,
 	Show,
@@ -94,7 +94,10 @@ export default function Page() {
 											</span>
 										</Button>
 										<p class="text-center text-sm text-gray-500">
-											We'll send a code to your email
+											If your not an administrator,{" "}
+											<A href="/enroll" target="_self" class="underline">
+												enroll your device
+											</A>
 										</p>
 									</Form>
 								</>

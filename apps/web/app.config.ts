@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import mattraxUI from "@mattrax/ui/vite";
 import { defineConfig } from "@solidjs/start/config";
 import { visualizer } from "rollup-plugin-visualizer";

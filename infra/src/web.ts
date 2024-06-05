@@ -10,6 +10,7 @@ import {
 	GITHUB_REPO,
 	GITHUB_REPO_BRANCH,
 	MDM_URL,
+	ENTERPRISE_ENROLLMENT_URL,
 	PROD_HOST,
 } from "./constants";
 import { sesIdentity } from "./email";
@@ -43,6 +44,7 @@ const deploymentConfig = {
 	link: [iamAccessKey, ...Object.values(secrets)],
 	environmentVariables: {
 		MDM_URL,
+		ENTERPRISE_ENROLLMENT_URL,
 		COOKIE_DOMAIN: CLOUDFLARE_ZONE,
 		FROM_ADDRESS: process.env.FROM_ADDRESS ?? "Mattrax <hello@mattrax.app>",
 		PNPM_VERSION: "9.0.0",

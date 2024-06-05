@@ -12,3 +12,6 @@ export const AWS_REGION = "us-east-1";
 export const AWS_AZ = "us-east-1a";
 
 export const MDM_URL = process.env.MDM_URL ?? "https://mdm.mattrax.app";
+export const ENTERPRISE_ENROLLMENT_URL =
+	process.env.ENTERPRISE_ENROLLMENT_URL ??
+	"https://enterpriseenrollment.mattrax.app";
