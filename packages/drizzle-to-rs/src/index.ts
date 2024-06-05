@@ -299,6 +299,13 @@ function buildResultType(
 		if (isALeftJoin) {
 			const keys = [...fields.keys()].map((k) => camelToSnakeCase(k));
 
+			const non_optional_keys = [...fields.entries()]
+				.filter(([_, ty]) => {
+					console.log(ty);
+					return !ty.startsWith("Option<");
+				})
+				.map(([k, _]) => camelToSnakeCase(k));
+
 			impl = (index) => `{
 				${[...fields.entries()]
 					.map(([k, _ty]) => {
@@ -310,8 +317,8 @@ function buildResultType(
 					})
 					.join("\n")}
 
-				match (${keys.join(", ")}) {
-					(${keys.map((k) => `Some(${k})`).join(", ")}) => {
+				match (${non_optional_keys.join(", ")}) {
+					(${non_optional_keys.map((k) => `Some(${k})`).join(", ")}) => {
 						Some(${structName} { ${keys.join(", ")} })
 					}
 					_ => None,

@@ -296,14 +296,12 @@ impl Db {
                     let data = from_value(&mut row, 5);
                     let conflicts = from_value(&mut row, 6);
 
-                    match (pk, data, conflicts) {
-                        (Some(pk), Some(data), Some(conflicts)) => {
-                            Some(GetPolicyDataForCheckinLastDeployResult {
-                                pk,
-                                data,
-                                conflicts,
-                            })
-                        }
+                    match (pk, data) {
+                        (Some(pk), Some(data)) => Some(GetPolicyDataForCheckinLastDeployResult {
+                            pk,
+                            data,
+                            conflicts,
+                        }),
                         _ => None,
                     }
                 },
