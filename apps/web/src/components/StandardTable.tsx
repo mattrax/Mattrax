@@ -1,7 +1,5 @@
 import {
-	type CellContext,
 	type ColumnDef,
-	type HeaderContext,
 	type PartialKeys,
 	type Row,
 	type RowData,
@@ -22,7 +20,6 @@ import {
 	children,
 	createEffect,
 	mergeProps,
-	on,
 } from "solid-js";
 
 export function createStandardTable<TData extends RowData>(
@@ -48,34 +45,6 @@ export function createStandardTable<TData extends RowData>(
 		),
 	);
 }
-
-// export function createSearchParamPagination<TData extends RowData>(
-// 	table: TTable<TData>,
-// 	key: string,
-// ) {
-// 	const [searchParams, setSearchParams] = useSearchParams();
-
-// 	const pageParam = createMemo(() => {
-// 		const parsed = z.coerce.number().safeParse(searchParams[key]);
-
-// 		if (parsed.success) return parsed.data;
-// 		return 0;
-// 	});
-
-// 	createEffect(
-// 		on(
-// 			() => table.getState().pagination.pageIndex,
-// 			(index) =>
-// 				setSearchParams({ [key]: index || undefined }, { replace: false }),
-// 		),
-// 	);
-
-// 	createEffect(
-// 		on(pageParam, (page) => {
-// 			table.setPageIndex(page);
-// 		}),
-// 	);
-// }
 
 export function createSearchParamFilter<TData extends RowData>(
 	table: TTable<TData>,
@@ -178,6 +147,10 @@ export function FloatingSelectionBar<TData>(props: {
 			{(_) => {
 				const c = children(() => props.children?.(selectedRows));
 
+				createEscapeKeyDown({
+					onEscapeKeyDown: () => props.table.resetRowSelection(true),
+				});
+
 				return (
 					<div class="animate-in fade-in slide-in-from-bottom-2 zoom-in-[0.98] bottom-6 inset-x-0 fixed flex flex-row justify-center pointer-events-none">
 						<div class="p-2 rounded-lg bg-white border border-gray-100 text-sm flex flex-row items-stretch gap-2 pointer-events-auto shadow">
@@ -242,12 +215,10 @@ import {
 	DropdownMenu,
 	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
-	DropdownMenuTrigger,
 } from "@mattrax/ui";
 import { useSearchParams } from "@solidjs/router";
-import { createMemo } from "solid-js";
 import type { Accessor } from "solid-js";
-import { z } from "zod";
+import { createEscapeKeyDown } from "@kobalte/core";
 
 export function ColumnsDropdown<TData>(
 	props: ParentProps & {
@@ -301,43 +272,3 @@ export const selectCheckboxColumn = {
 	enableSorting: false,
 	enableHiding: false,
 } satisfies ColumnDef<any>;
-
-export function createActionsColumn<TData extends RowData>(props: {
-	headerDropdownContent: (ctx: HeaderContext<TData, unknown>) => JSX.Element;
-	cellDropdownContent: (ctx: CellContext<TData, unknown>) => JSX.Element;
-}) {
-	return {
-		id: "actions",
-		header: (ctx) => (
-			<DropdownMenu>
-				<DropdownMenuTrigger
-					as={Button}
-					variant="ghost"
-					size="iconSmall"
-					class="block"
-				>
-					<IconPhDotsThreeBold class="w-6 h-6" />
-				</DropdownMenuTrigger>
-				<DropdownMenuContent>
-					{props.headerDropdownContent(ctx)}
-				</DropdownMenuContent>
-			</DropdownMenu>
-		),
-		cell: (ctx) => (
-			<DropdownMenu>
-				<DropdownMenuTrigger
-					as={Button}
-					variant="ghost"
-					size="iconSmall"
-					class="block"
-				>
-					<IconPhDotsThreeBold class="w-6 h-6" />
-				</DropdownMenuTrigger>
-				<DropdownMenuContent>
-					{props.cellDropdownContent(ctx)}
-				</DropdownMenuContent>
-			</DropdownMenu>
-		),
-		size: 1,
-	} satisfies ColumnDef<any>;
-}

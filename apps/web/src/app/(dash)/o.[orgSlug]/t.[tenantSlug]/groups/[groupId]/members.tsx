@@ -115,86 +115,62 @@ export default function Page() {
 				}}
 			>
 				<DialogContent>
-					<Switch>
-						<Match when={dialog().data?.type === "removeMany"}>
-							<DialogHeader>
-								<DialogTitle>Remove From Group</DialogTitle>
-								<DialogDescription>
-									Are you sure you want to remove{" "}
+					<DialogHeader>
+						<DialogTitle>Remove From Group</DialogTitle>
+						<DialogDescription>
+							Are you sure you want to remove{" "}
+							<Switch>
+								<Match when={dialog().data?.type === "removeMany"}>
 									{table.getSelectedRowModel().rows.length}{" "}
-									{pluralize("member", table.getSelectedRowModel().rows.length)}{" "}
-									from this group?
-								</DialogDescription>
-							</DialogHeader>
-							<DialogFooter>
-								<Dialog.CloseButton as={Button} variant="secondary">
-									Cancel
-								</Dialog.CloseButton>
-								<div class="flex-1" />
-								<AsyncButton
-									onClick={() =>
-										removeMembers.mutateAsync({
-											id: groupId(),
-											members: table
-												.getSelectedRowModel()
-												.rows.map(({ original }) => ({
-													pk: original.pk,
-													variant: original.variant as any,
-												})),
-										})
-									}
-									variant="destructive"
+									{pluralize("member", table.getSelectedRowModel().rows.length)}
+								</Match>
+								<Match
+									when={(() => {
+										const d = dialog();
+										if (d.data?.type === "removeSingle") return d.data.data;
+									})()}
 								>
-									Confirm
-								</AsyncButton>
-							</DialogFooter>
-						</Match>
-						<Match
-							when={(() => {
-								const d = dialog();
-								if (d.data?.type === "removeSingle") return d.data.data;
-							})()}
+									{(data) => (
+										<div class="inline text-nowrap">
+											<span class="text-black font-medium">{data().name}</span>
+											<Badge class="mx-1.5">
+												{toTitleCase(data().variant)}
+											</Badge>
+										</div>
+									)}
+								</Match>
+							</Switch>{" "}
+							from this group?
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<Dialog.CloseButton as={Button} variant="secondary">
+							Cancel
+						</Dialog.CloseButton>
+						<div class="flex-1" />
+						<AsyncButton
+							variant="destructive"
+							onClick={() => {
+								const { data } = dialog();
+
+								if (data.type === "removeSingle")
+									return removeMembers.mutateAsync({
+										id: groupId(),
+										members: [{ pk: data.data.pk, variant: data.data.variant }],
+									});
+
+								return removeMembers.mutateAsync({
+									id: groupId(),
+									members: data.data.map(({ pk, variant }) => ({
+										pk,
+										variant,
+									})),
+								});
+							}}
 						>
-							{(data) => (
-								<>
-									<DialogHeader>
-										<DialogTitle>Remove From Group</DialogTitle>
-										<DialogDescription>
-											Are you sure you want to remove{" "}
-											<div class="inline text-nowrap">
-												<span class="text-black font-medium">
-													{data().name}
-												</span>
-												<Badge class="mx-1.5">
-													{toTitleCase(data().variant)}
-												</Badge>
-											</div>
-											from this group?
-										</DialogDescription>
-									</DialogHeader>
-									<DialogFooter>
-										<Dialog.CloseButton as={Button} variant="secondary">
-											Cancel
-										</Dialog.CloseButton>
-										<div class="flex-1" />
-										<AsyncButton
-											onClick={() =>
-												removeMembers.mutateAsync({
-													id: groupId(),
-													members: [
-														{ pk: data().pk, variant: data().variant as any },
-													],
-												})
-											}
-											variant="destructive"
-										>
-											Confirm
-										</AsyncButton>
-									</DialogFooter>
-								</>
-							)}
-						</Match>
-					</Switch>
+							Confirm
+						</AsyncButton>
+					</DialogFooter>
 				</DialogContent>
 			</DialogRoot>
 			<div class="flex flex-row items-center gap-4">

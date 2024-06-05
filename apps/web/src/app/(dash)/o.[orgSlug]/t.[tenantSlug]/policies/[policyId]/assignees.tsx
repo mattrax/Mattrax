@@ -22,7 +22,6 @@ import { toTitleCase } from "~/lib/utils";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	StandardTable,
-	createActionsColumn,
 	// createSearchParamPagination,
 	createStandardTable,
 } from "~c/StandardTable";
@@ -62,43 +61,7 @@ export default function Page() {
 		get data() {
 			return assignees.data ?? [];
 		},
-		columns: [
-			...createVariantTableColumns(variants),
-			createActionsColumn({
-				headerDropdownContent: ({ table }) => (
-					<DropdownMenuItem
-						disabled={table.getSelectedRowModel().rows.length === 0}
-						class="text-red-600 data-[disabled]:text-black"
-						onSelect={() =>
-							setDialog({
-								open: true,
-								data: {
-									type: "removeMany",
-									data: table
-										.getSelectedRowModel()
-										.rows.map(({ original }) => original as any),
-								},
-							})
-						}
-					>
-						Unassign from Policy ({table.getSelectedRowModel().rows.length})
-					</DropdownMenuItem>
-				),
-				cellDropdownContent: ({ row }) => (
-					<DropdownMenuItem
-						class="text-red-600"
-						onSelect={() =>
-							setDialog({
-								open: true,
-								data: { type: "removeSingle", data: row.original as any },
-							})
-						}
-					>
-						Unassign from Policy
-					</DropdownMenuItem>
-				),
-			}),
-		],
+		columns: createVariantTableColumns(variants),
 	});
 
 	// createSearchParamPagination(table, "page");
@@ -149,89 +112,67 @@ export default function Page() {
 				}}
 			>
 				<DialogContent>
-					<Switch>
-						<Match when={dialog().data?.type === "removeMany"}>
-							<DialogHeader>
-								<DialogTitle>Unassign From Policy</DialogTitle>
-								<DialogDescription>
-									Are you sure you want to unassign{" "}
+					<DialogHeader>
+						<DialogTitle>Unassign From Policy</DialogTitle>
+						<DialogDescription>
+							Are you sure you want to unassign{" "}
+							<Switch>
+								<Match when={dialog().data?.type === "removeMany"}>
 									{table.getSelectedRowModel().rows.length}{" "}
 									{pluralize(
 										"assignee",
 										table.getSelectedRowModel().rows.length,
-									)}{" "}
-									from this policy?
-								</DialogDescription>
-							</DialogHeader>
-							<DialogFooter>
-								<Dialog.CloseButton as={Button} variant="secondary">
-									Cancel
-								</Dialog.CloseButton>
-								<div class="flex-1" />
-								<AsyncButton
-									onClick={() =>
-										removeAssignees.mutateAsync({
-											id: policyId(),
-											assignees: table
-												.getSelectedRowModel()
-												.rows.map(({ original }) => ({
-													pk: original.pk,
-													variant: original.variant as any,
-												})),
-										})
-									}
-									variant="destructive"
+									)}
+								</Match>
+								<Match
+									when={(() => {
+										const d = dialog();
+										if (d.data?.type === "removeSingle") return d.data.data;
+									})()}
 								>
-									Confirm
-								</AsyncButton>
-							</DialogFooter>
-						</Match>
-						<Match
-							when={(() => {
-								const d = dialog();
-								if (d.data?.type === "removeSingle") return d.data.data;
-							})()}
+									{(data) => (
+										<div class="inline text-nowrap">
+											<span class="text-black font-medium">{data().name}</span>
+											<Badge class="mx-1.5">
+												{toTitleCase(data().variant)}
+											</Badge>
+										</div>
+									)}
+								</Match>
+							</Switch>{" "}
+							from this policy?
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<Dialog.CloseButton as={Button} variant="secondary">
+							Cancel
+						</Dialog.CloseButton>
+						<div class="flex-1" />
+						<AsyncButton
+							variant="destructive"
+							onClick={() => {
+								const { data } = dialog();
+
+								if (data.type === "removeSingle")
+									return removeAssignees.mutateAsync({
+										id: policyId(),
+										assignees: [
+											{ pk: data.data.pk, variant: data.data.variant },
+										],
+									});
+
+								return removeAssignees.mutateAsync({
+									id: policyId(),
+									assignees: data.data.map(({ pk, variant }) => ({
+										pk,
+										variant,
+									})),
+								});
+							}}
 						>
-							{(data) => (
-								<>
-									<DialogHeader>
-										<DialogTitle>Unassign From Policy</DialogTitle>
-										<DialogDescription>
-											Are you sure you want to unassign{" "}
-											<div class="inline text-nowrap">
-												<span class="text-black font-medium">
-													{data().name}
-												</span>
-												<Badge class="mx-1.5">
-													{toTitleCase(data().variant)}
-												</Badge>
-											</div>
-											from this policy?
-										</DialogDescription>
-									</DialogHeader>
-									<DialogFooter>
-										<Dialog.CloseButton as={Button} variant="secondary">
-											Cancel
-										</Dialog.CloseButton>
-										<div class="flex-1" />
-										<AsyncButton
-											onClick={() =>
-												removeAssignees.mutateAsync({
-													id: policyId(),
-													assignees: [
-														{ pk: data().pk, variant: data().variant as any },
-													],
-												})
-											}
-											variant="destructive"
-										>
-											Confirm
-										</AsyncButton>
-									</DialogFooter>
-								</>
-							)}
-						</Match>
-					</Switch>
+							Confirm
+						</AsyncButton>
+					</DialogFooter>
 				</DialogContent>
 			</DialogRoot>
 			<Suspense>

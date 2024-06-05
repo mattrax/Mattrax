@@ -21,8 +21,8 @@ import { trpc } from "~/lib";
 import { toTitleCase } from "~/lib/utils";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
+	FloatingSelectionBar,
 	StandardTable,
-	createActionsColumn,
 	createSearchParamFilter,
 	createStandardTable,
 } from "~c/StandardTable";
@@ -71,43 +71,7 @@ export default function Page() {
 		get data() {
 			return assignments.data ?? [];
 		},
-		columns: [
-			...createVariantTableColumns(variants),
-			createActionsColumn({
-				headerDropdownContent: ({ table }) => (
-					<DropdownMenuItem
-						disabled={table.getSelectedRowModel().rows.length === 0}
-						class="text-red-600 data-[disabled]:text-black"
-						onSelect={() =>
-							setDialog({
-								open: true,
-								data: {
-									type: "removeMany",
-									data: table
-										.getSelectedRowModel()
-										.rows.map(({ original }) => original as any),
-								},
-							})
-						}
-					>
-						Unassign from Group ({table.getSelectedRowModel().rows.length})
-					</DropdownMenuItem>
-				),
-				cellDropdownContent: ({ row }) => (
-					<DropdownMenuItem
-						class="text-red-600"
-						onSelect={() =>
-							setDialog({
-								open: true,
-								data: { type: "removeSingle", data: row.original as any },
-							})
-						}
-					>
-						Unassign from Group
-					</DropdownMenuItem>
-				),
-			}),
-		],
+		columns: createVariantTableColumns(variants),
 	});
 
 	createSearchParamFilter(table, "name", "search");
@@ -155,86 +119,67 @@ export default function Page() {
 				}}
 			>
 				<DialogContent>
-					<Switch>
-						<Match when={dialog().data?.type === "removeMany"}>
-							<DialogHeader>
-								<DialogTitle>Remove From Group</DialogTitle>
-								<DialogDescription>
-									Are you sure you want to remove{" "}
+					<DialogHeader>
+						<DialogTitle>Remove From Group</DialogTitle>
+						<DialogDescription>
+							Are you sure you want to remove{" "}
+							<Switch>
+								<Match when={dialog().data?.type === "removeMany"}>
 									{table.getSelectedRowModel().rows.length}{" "}
-									{pluralize("member", table.getSelectedRowModel().rows.length)}{" "}
-									from this group?
-								</DialogDescription>
-							</DialogHeader>
-							<DialogFooter>
-								<Dialog.CloseButton as={Button} variant="secondary">
-									Cancel
-								</Dialog.CloseButton>
-								<div class="flex-1" />
-								<AsyncButton
-									onClick={() =>
-										removeAssignments.mutateAsync({
-											id: groupId(),
-											assignments: table
-												.getSelectedRowModel()
-												.rows.map(({ original }) => ({
-													pk: original.pk,
-													variant: original.variant as any,
-												})),
-										})
-									}
-									variant="destructive"
+									{pluralize(
+										"member",
+										table.getSelectedRowModel().rows.length,
+									)}{" "}
+								</Match>
+								<Match
+									when={(() => {
+										const d = dialog();
+										if (d.data?.type === "removeSingle") return d.data.data;
+									})()}
 								>
-									Confirm
-								</AsyncButton>
-							</DialogFooter>
-						</Match>
-						<Match
-							when={(() => {
-								const d = dialog();
-								if (d.data?.type === "removeSingle") return d.data.data;
-							})()}
+									{(data) => (
+										<div class="inline text-nowrap">
+											<span class="text-black font-medium">{data().name}</span>
+											<Badge class="mx-1.5">
+												{toTitleCase(data().variant)}
+											</Badge>
+										</div>
+									)}
+								</Match>
+							</Switch>
+							from this group?
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<Dialog.CloseButton as={Button} variant="secondary">
+							Cancel
+						</Dialog.CloseButton>
+						<div class="flex-1" />
+						<AsyncButton
+							variant="destructive"
+							onClick={() => {
+								const { data } = dialog();
+
+								if (data.type === "removeSingle")
+									return removeAssignments.mutateAsync({
+										id: groupId(),
+										assignments: [
+											{ pk: data.data.pk, variant: data.data.variant },
+										],
+									});
+
+								return removeAssignments.mutateAsync({
+									id: groupId(),
+									assignments: data.data.map(({ pk, variant }) => ({
+										pk,
+										variant,
+									})),
+								});
+							}}
 						>
-							{(data) => (
-								<>
-									<DialogHeader>
-										<DialogTitle>Remove From Group</DialogTitle>
-										<DialogDescription>
-											Are you sure you want to remove{" "}
-											<div class="inline text-nowrap">
-												<span class="text-black font-medium">
-													{data().name}
-												</span>
-												<Badge class="mx-1.5">
-													{toTitleCase(data().variant)}
-												</Badge>
-											</div>
-											from this group?
-										</DialogDescription>
-									</DialogHeader>
-									<DialogFooter>
-										<Dialog.CloseButton as={Button} variant="secondary">
-											Cancel
-										</Dialog.CloseButton>
-										<div class="flex-1" />
-										<AsyncButton
-											onClick={() =>
-												removeAssignments.mutateAsync({
-													id: groupId(),
-													assignments: [
-														{ pk: data().pk, variant: data().variant as any },
-													],
-												})
-											}
-											variant="destructive"
-										>
-											Confirm
-										</AsyncButton>
-									</DialogFooter>
-								</>
-							)}
-						</Match>
-					</Switch>
+							Confirm
+						</AsyncButton>
+					</DialogFooter>
 				</DialogContent>
 			</DialogRoot>
 			<div class="flex flex-row items-center gap-4">
@@ -242,6 +187,34 @@ export default function Page() {
 			</div>
 			<Suspense>
 				<StandardTable table={table} />
+				<FloatingSelectionBar table={table}>
+					{(rows) => (
+						<Button
+							variant="destructive"
+							size="sm"
+							onClick={() => {
+								if (rows().length === 1)
+									setDialog({
+										open: true,
+										data: {
+											type: "removeSingle",
+											data: rows()[0]!.original as any,
+										},
+									});
+								else
+									setDialog({
+										open: true,
+										data: {
+											type: "removeMany",
+											data: rows().map(({ original }) => original as any),
+										},
+									});
+							}}
+						>
+							Unassign from Group
+						</Button>
+					)}
+				</FloatingSelectionBar>
 			</Suspense>
 		</PageLayout>
 	);
