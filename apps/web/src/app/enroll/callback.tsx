@@ -5,7 +5,14 @@ import { upsertEntraIdUser } from "~/api/trpc/routers/tenant/identityProvider";
 import { decryptJWT, signJWT } from "~/api/utils/jwt";
 import { renderWithApp } from "~/entry-server";
 import { env } from "~/env";
-import { Layout, MINUTE, type State, renderMDMCallback } from "./util";
+import {
+	Layout,
+	MINUTE,
+	type State,
+	renderMDMCallback,
+	type EnrollmentTokenState,
+} from "./util";
+import { setCookie } from "vinxi/http";
 
 function ErrorPage(props: ParentProps<{ class?: string }>) {
 	return (
@@ -52,42 +59,26 @@ export async function GET({ request }: APIEvent) {
 	const { userPrincipalName } = user;
 	const dbUser = await upsertEntraIdUser(user, tid, providerId);
 	// TODO: Upsert if the user doesn't exist already
-	const jwt = await signJWT(
-		{ tid, uid: dbUser.pk, upn: userPrincipalName },
+	const jwt = await signJWT<EnrollmentTokenState>(
 		{
-			expirationTime: new Date(Date.now() + 10 * MINUTE),
+			tid,
+			uid: dbUser.pk,
+			upn: userPrincipalName,
+		},
+		{
+			expirationTime: new Date(Date.now() + 15 * MINUTE),
 			audience: "mdm.mattrax.app",
 		},
 	);
 	if (appru) return renderMDMCallback(appru, jwt);
 
-	const p = new URLSearchParams();
-	p.set("mode", "mdm");
-	p.set("servername", env.ENTERPRISE_ENROLLMENT_URL);
-	p.set("username", userPrincipalName);
-	p.set("accesstoken", jwt);
+	setCookie("enroll_session", jwt, {
+		httpOnly: true,
+		// set to `true` when using HTTPS
+		secure: import.meta.env.PROD,
+	});
 
-	// TODO: We should set a cookie and redirect somewhere else (maybe `/enroll`?)
-	// TODO: This will remove the access token from the URL and allow a browser refresh to not break everything.
-
-	return renderWithApp(() => (
-		<Layout>
-			{/* // TODO: Detect OS and render only the specific stuff for the OS (unless they are an admin then selector) */}
-			{/* // TODO: Make this bit look good */}
-
-			<a href={`ms-device-enrollment:?${p.toString()}`} class="underline">
-				Enroll Windows
-			</a>
-
-			{/* // TODO: Apple flow */}
-
-			{/* // TODO: Android flow */}
-
-			<a href="/enroll" target="_self" class="underline">
-				Go back
-			</a>
-		</Layout>
-	));
+	return Response.redirect(new URL("/enroll", url));
 }
 
 async function getToken(tenantId: string, code: string) {

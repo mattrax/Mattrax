@@ -23,10 +23,21 @@ export async function signJWT<T extends jose.JWTPayload>(
 		.sign(createSecretKey());
 }
 
-export async function verifyJWT<T extends jose.JWTPayload>(jwt: string) {
+export async function verifyJWT<T extends jose.JWTPayload>(
+	jwt: string,
+	audience?: string,
+) {
 	const jose = await import("jose");
-	const result = await jose.jwtVerify<T>(jwt, createSecretKey());
-	return result.payload;
+	try {
+		const result = await jose.jwtVerify<T>(jwt, createSecretKey(), {
+			audience,
+			// algorithms: ["ES256"], // TODO
+		});
+		return result.payload;
+	} catch (err) {
+		console.error("invalid JWT", err);
+		return null;
+	}
 }
 
 export async function encryptJWT<T extends jose.JWTPayload>(
@@ -47,6 +58,7 @@ export async function encryptJWT<T extends jose.JWTPayload>(
 
 	return await builder
 		.setProtectedHeader({
+			// TODO: Sort these out with Rust
 			alg: "PBES2-HS256+A128KW",
 			enc: "A128CBC-HS256",
 		})

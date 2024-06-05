@@ -3,6 +3,12 @@ import { renderToString } from "solid-js/web";
 
 export const MINUTE = 60 * 1000;
 
+export type EnrollmentTokenState = {
+	tid: number;
+	uid: number;
+	upn: string;
+};
+
 export type State = {
 	// MDM webview special callback URL
 	appru: string | null;

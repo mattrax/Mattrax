@@ -4,14 +4,20 @@ import { Input } from "@mattrax/ui/input";
 import type { APIEvent } from "@solidjs/start/server";
 import clsx from "clsx";
 import { and, eq } from "drizzle-orm";
-import * as jose from "jose";
 import type { ParentProps } from "solid-js";
 import { getEmailDomain } from "~/api/utils";
-import { encryptJWT } from "~/api/utils/jwt";
+import { encryptJWT, verifyJWT } from "~/api/utils/jwt";
 import { db, domains, identityProviders } from "~/db";
 import { env } from "~/env";
 import { renderWithApp } from "../../entry-server";
-import { Layout, MINUTE, type State, renderMDMCallback } from "./util";
+import {
+	Layout,
+	MINUTE,
+	type State,
+	renderMDMCallback,
+	type EnrollmentTokenState,
+} from "./util";
+import { getCookie } from "vinxi/http";
 
 export type EnrollmentProfileDescription = {
 	data: string;
@@ -57,12 +63,51 @@ function FormPage(props: ParentProps<{ class?: string }>) {
 }
 
 // This endpoint is fired for:
-//   - The browser opening the UI
-//	 - The browser submitting the form
-//   - The Windows MDM client
+//   - The browser opening the enrollment UI
+//	 - The browser submitting the form on the enrollment UI
+//   - After the form submit, being sent to oauth provider and then being redirected back here by `/enroll/callback`
+//   - The Windows MDM client webview
 //
-export async function GET({ request }: APIEvent) {
+export async function GET({ request, nativeEvent }: APIEvent) {
 	const url = new URL(request.url);
+
+	// These are set by `/enroll/callback`
+	const enroll_session = getCookie(nativeEvent, "enroll_session");
+
+	if (enroll_session) {
+		const payload = await verifyJWT<EnrollmentTokenState>(
+			enroll_session,
+			"mdm.mattrax.app",
+		);
+		if (payload !== null) {
+			const p = new URLSearchParams();
+			p.set("mode", "mdm");
+			p.set("servername", env.ENTERPRISE_ENROLLMENT_URL);
+			p.set("username", payload.upn);
+			p.set("accesstoken", enroll_session);
+
+			return renderWithApp(() => (
+				<Layout>
+					<p>
+						Enroll a device as <b>{payload.upn}</b>
+					</p>
+					{/* // TODO: Detect OS and render only the specific stuff for the OS (unless they are an admin then selector) */}
+					{/* // TODO: Make this bit look good */}
+
+					{/* // TODO: Handle `onClick` of this for non-Windows platforms */}
+					<a href={`ms-device-enrollment:?${p.toString()}`} class="underline">
+						Enroll Windows
+					</a>
+
+					{/* // TODO: Apple flow */}
+
+					{/* // TODO: Android flow */}
+
+					{/* // TODO: Dropdown for selecting a user when the user is an administrator */}
+				</Layout>
+			));
+		}
+	}
 
 	// `appru` and `login_hint` are parameters set by Windows MDM client
 	const appru = url.searchParams.get("appru");
@@ -88,19 +133,10 @@ export async function GET({ request }: APIEvent) {
 	if (appru && accesstoken) {
 		// It seems like Microsoft's MDM client is caching the `accesstoken` prop (as least that's the only explanation for what i'm seeing)
 		// This will trigger a new login flow if the token is expired (hence was probs cached).
-		try {
-			await jose.jwtVerify(
-				accesstoken,
-				new TextEncoder().encode(env.INTERNAL_SECRET),
-				{
-					audience: "mdm.mattrax.app",
-					algorithms: ["ES256"],
-				},
-			);
+
+		// If validation fails we fall though and ask the user to reauthenticate
+		if ((await verifyJWT(accesstoken, "mdm.mattrax.app")) !== null)
 			return renderMDMCallback(appru, accesstoken);
-		} catch (err) {
-			// If validation fails we fall though and ask the user to reauthenticate
-		}
 	}
 
 	// We split the user and domain portion of the email
