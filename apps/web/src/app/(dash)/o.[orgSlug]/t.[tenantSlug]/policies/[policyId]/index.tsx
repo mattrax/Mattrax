@@ -51,7 +51,7 @@ export default function Page() {
 									{policy().diff.length > 0 && (
 										<Tooltip placement="bottom-start">
 											<TooltipTrigger>
-												<A href="versions">
+												<A href="deploys">
 													<Badge>Awaiting deploy</Badge>
 												</A>
 											</TooltipTrigger>
