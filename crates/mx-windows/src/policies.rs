@@ -141,11 +141,15 @@ pub(crate) async fn handler(
 
     println!("{children:?}");
 
-    vec![SyncBodyChild::Atomic(Atomic {
-        cmd_id: final_cmd_id,
-        meta: None,
-        children,
-    })]
+    let mut result = vec![];
+    if !children.is_empty() {
+        result.push(SyncBodyChild::Atomic(Atomic {
+            cmd_id: final_cmd_id,
+            meta: None,
+            children,
+        }))
+    }
+    result
 }
 
 fn resolve(scoped_policies: Vec<GetPolicyDataForCheckinResult>) -> ResolveResult {
