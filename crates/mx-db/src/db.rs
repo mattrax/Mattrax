@@ -3,6 +3,15 @@
 use chrono::NaiveDateTime;
 use mysql_async::{prelude::*, BinaryProtocol, Deserialized, QueryResult, Serialized};
 
+// 'FromValue::from_value' but 'track_caller'
+#[track_caller]
+fn from_value<T: FromValue>(v: mysql_async::Value) -> T {
+    match T::from_value_opt(v) {
+        Ok(this) => this,
+        Err(e) => panic!("Could not retrieve {:?}': {e}", std::any::type_name::<T>(),),
+    }
+}
+
 #[derive(Debug)]
 pub struct GetConfigResult {
     pub value: Vec<u8>,
@@ -99,7 +108,7 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetConfigResult {
-                value: FromValue::from_value(row.take(0).unwrap()),
+                value: from_value(row.take(0).unwrap()),
             });
         }
         Ok(ret)
@@ -122,7 +131,7 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetNodeResult {
-                value: FromValue::from_value(row.take(0).unwrap()),
+                value: from_value(row.take(0).unwrap()),
             });
         }
         Ok(ret)
@@ -148,7 +157,7 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetCertificateResult {
-                value: FromValue::from_value(row.take(0).unwrap()),
+                value: from_value(row.take(0).unwrap()),
             });
         }
         Ok(ret)
@@ -178,10 +187,10 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetSessionAndUserResult {
-                account_pk: FromValue::from_value(row.take(0).unwrap()),
-                account_id: FromValue::from_value(row.take(1).unwrap()),
-                session_id: FromValue::from_value(row.take(2).unwrap()),
-                expires_at: FromValue::from_value(row.take(3).unwrap()),
+                account_pk: from_value(row.take(0).unwrap()),
+                account_id: from_value(row.take(1).unwrap()),
+                session_id: from_value(row.take(2).unwrap()),
+                expires_at: from_value(row.take(3).unwrap()),
             });
         }
         Ok(ret)
@@ -199,7 +208,7 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(IsOrgMemberResult {
-                id: FromValue::from_value(row.take(0).unwrap()),
+                id: from_value(row.take(0).unwrap()),
             });
         }
         Ok(ret)
@@ -236,8 +245,8 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetDeviceResult {
-                pk: FromValue::from_value(row.take(0).unwrap()),
-                tenant_pk: FromValue::from_value(row.take(1).unwrap()),
+                pk: from_value(row.take(0).unwrap()),
+                tenant_pk: from_value(row.take(1).unwrap()),
             });
         }
         Ok(ret)
@@ -254,15 +263,15 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetPolicyDataForCheckinResult {
-                scope: FromValue::from_value(row.take(0).unwrap()),
+                scope: from_value(row.take(0).unwrap()),
                 latest_deploy: GetPolicyDataForCheckinLatestDeployResult {
-                    pk: FromValue::from_value(row.take(2).unwrap()),
-                    data: FromValue::from_value(row.take(3).unwrap()),
+                    pk: from_value(row.take(2).unwrap()),
+                    data: from_value(row.take(3).unwrap()),
                 },
                 last_deploy: {
-                    let pk = row.take(5).map(FromValue::from_value);
-                    let data = row.take(6).map(FromValue::from_value);
-                    let result = row.take(7).map(FromValue::from_value);
+                    let pk = row.take(5).map(from_value);
+                    let data = row.take(6).map(from_value);
+                    let result = row.take(7).map(from_value);
 
                     match (pk, data, result) {
                         (Some(pk), Some(data), Some(result)) => {
@@ -287,11 +296,11 @@ impl Db {
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(QueuedDeviceActionsResult {
-                action: FromValue::from_value(row.take(0).unwrap()),
-                device_pk: FromValue::from_value(row.take(1).unwrap()),
-                created_by: FromValue::from_value(row.take(2).unwrap()),
-                created_at: FromValue::from_value(row.take(3).unwrap()),
-                deployed_at: FromValue::from_value(row.take(4).unwrap()),
+                action: from_value(row.take(0).unwrap()),
+                device_pk: from_value(row.take(1).unwrap()),
+                created_by: from_value(row.take(2).unwrap()),
+                created_at: from_value(row.take(3).unwrap()),
+                deployed_at: from_value(row.take(4).unwrap()),
             });
         }
         Ok(ret)
