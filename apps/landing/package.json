@@ -21,7 +21,7 @@
 		"@kobalte/core": "^0.13.1",
 		"@mattrax/ui": "workspace:*",
 		"@solidjs/router": "^0.13.3",
-		"@solidjs/start": "1.0.0-rc.1",
+		"@solidjs/start": "1.0.1",
 		"@tanstack/solid-form": "^0.20.0",
 		"h3": "^1.11.1",
 		"solid-js": "^1.8.17",

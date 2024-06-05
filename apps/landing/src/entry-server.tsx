@@ -23,5 +23,5 @@ export default createHandler(
 			)}
 		/>
 	),
-	() => ({ mode: "async" }),
+	() => ({ mode: "sync" }),
 );
