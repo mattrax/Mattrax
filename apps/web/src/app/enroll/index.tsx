@@ -124,8 +124,8 @@ export async function GET({ request }: APIEvent) {
 	if (domainRecord === undefined)
 		return renderWithApp(() => (
 			<FormPage class="text-red-500">
-				The email <b>{email}</b> is not connected with Mattrax please check you
-				entered your company email correctly.
+				The email <b>{email}</b> is not connected with Mattrax. Please check
+				that you entered your company email correctly.
 			</FormPage>
 		));
 
