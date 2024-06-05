@@ -16,7 +16,7 @@ import {
 	db,
 	devices,
 	groupMemberVariants,
-	groupMembers,
+	groupAssignables,
 	groups,
 	policies,
 	policyAssignments,
@@ -69,11 +69,11 @@ export const groupRouter = createTRPCRouter({
 				.select({
 					id: groups.id,
 					name: groups.name,
-					memberCount: count(groupMembers.groupPk),
+					memberCount: count(groupAssignables.groupPk),
 				})
 				.from(groups)
 				.where(eq(groups.tenantPk, ctx.tenant.pk))
-				.leftJoin(groupMembers, eq(groups.pk, groupMembers.groupPk))
+				.leftJoin(groupAssignables, eq(groups.pk, groupAssignables.groupPk))
 				.groupBy(groups.pk);
 		}),
 
@@ -117,38 +117,38 @@ export const groupRouter = createTRPCRouter({
 	members: groupProcedure.query(async ({ ctx }) => {
 		return await ctx.db
 			.select({
-				pk: groupMembers.pk,
-				variant: groupMembers.variant,
+				pk: groupAssignables.pk,
+				variant: groupAssignables.variant,
 				id: sql<string>`
 					GROUP_CONCAT(CASE
-						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.id}
-						WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.id}
+						WHEN ${groupAssignables.variant} = ${GroupMemberVariants.device} THEN ${devices.id}
+						WHEN ${groupAssignables.variant} = ${GroupMemberVariants.user} THEN ${users.id}
 					END)
           `.as("id"),
 				name: sql<string>`
 					GROUP_CONCAT(CASE
-						WHEN ${groupMembers.variant} = ${GroupMemberVariants.device} THEN ${devices.name}
-						WHEN ${groupMembers.variant} = ${GroupMemberVariants.user} THEN ${users.name}
+						WHEN ${groupAssignables.variant} = ${GroupMemberVariants.device} THEN ${devices.name}
+						WHEN ${groupAssignables.variant} = ${GroupMemberVariants.user} THEN ${users.name}
 					END)
           `.as("name"),
 			})
-			.from(groupMembers)
-			.where(eq(groupMembers.groupPk, ctx.group.pk))
+			.from(groupAssignables)
+			.where(eq(groupAssignables.groupPk, ctx.group.pk))
 			.leftJoin(
 				devices,
 				and(
-					eq(devices.pk, groupMembers.pk),
-					eq(groupMembers.variant, GroupMemberVariants.device),
+					eq(devices.pk, groupAssignables.pk),
+					eq(groupAssignables.variant, GroupMemberVariants.device),
 				),
 			)
 			.leftJoin(
 				users,
 				and(
-					eq(users.pk, groupMembers.pk),
-					eq(groupMembers.variant, GroupMemberVariants.user),
+					eq(users.pk, groupAssignables.pk),
+					eq(groupAssignables.variant, GroupMemberVariants.user),
 				),
 			)
-			.groupBy(groupMembers.variant, groupMembers.pk);
+			.groupBy(groupAssignables.variant, groupAssignables.pk);
 	}),
 
 	addMembers: groupProcedure
@@ -164,7 +164,7 @@ export const groupRouter = createTRPCRouter({
 		)
 		.mutation(async ({ ctx, input }) => {
 			await ctx.db
-				.insert(groupMembers)
+				.insert(groupAssignables)
 				.values(
 					input.members.map((member) => ({
 						groupPk: ctx.group.pk,
@@ -173,7 +173,7 @@ export const groupRouter = createTRPCRouter({
 					})),
 				)
 				.onDuplicateKeyUpdate({
-					set: { pk: sql`${groupMembers.pk}` },
+					set: { pk: sql`${groupAssignables.pk}` },
 				});
 		}),
 	removeMembers: groupProcedure
@@ -189,14 +189,14 @@ export const groupRouter = createTRPCRouter({
 		)
 		.mutation(async ({ ctx, input }) => {
 			await ctx.db
-				.delete(groupMembers)
+				.delete(groupAssignables)
 				.where(
 					or(
 						...input.members.map((member) =>
 							and(
-								eq(groupMembers.groupPk, ctx.group.pk),
-								eq(groupMembers.pk, member.pk),
-								eq(groupMembers.variant, member.variant),
+								eq(groupAssignables.groupPk, ctx.group.pk),
+								eq(groupAssignables.pk, member.pk),
+								eq(groupAssignables.variant, member.variant),
 							),
 						),
 					),

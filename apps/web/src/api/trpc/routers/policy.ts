@@ -2,7 +2,7 @@ import type { PolicyData } from "@mattrax/policy";
 import { createId } from "@paralleldrive/cuid2";
 import { cache } from "@solidjs/router";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { createAuditLog } from "~/api/auditLog";
@@ -11,10 +11,12 @@ import { omit } from "~/api/utils";
 import { invalidate } from "~/api/utils/realtime";
 import { createTransaction } from "~/api/utils/transaction";
 import {
+	GroupMemberVariants,
 	PolicyAssignableVariants,
 	accounts,
 	db,
 	devices,
+	groupAssignables,
 	groups,
 	policies,
 	policyAssignableVariants,
@@ -23,6 +25,7 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { union } from "drizzle-orm/mysql-core";
 
 const getPolicy = cache(async (id: string) => {
 	return await db.query.policies.findFirst({
@@ -92,14 +95,84 @@ export const policyRouter = createTRPCRouter({
 			};
 		}),
 
-	overview: policyProcedure.query(async () => {
-		// TODO: Calculate these
-		const devices = 5;
-		const users = 0;
+	overview: policyProcedure.query(async ({ ctx }) => {
+		const devicesDirectlyAssigned = db
+			.select({
+				pk: policyAssignments.pk,
+			})
+			.from(policyAssignments)
+			.where(
+				and(
+					eq(policyAssignments.variant, PolicyAssignableVariants.device),
+					eq(policyAssignments.policyPk, ctx.policy.pk),
+				),
+			);
+
+		const devicesAssignedThroughGroup = db
+			.select({
+				pk: groupAssignables.pk,
+			})
+			.from(groupAssignables)
+			.innerJoin(
+				policyAssignments,
+				and(
+					eq(policyAssignments.variant, PolicyAssignableVariants.group),
+					eq(groupAssignables.groupPk, policyAssignments.pk),
+				),
+			)
+			.where(eq(groupAssignables.variant, GroupMemberVariants.device));
+
+		const allScopedDevices = union(
+			devicesDirectlyAssigned,
+			devicesAssignedThroughGroup,
+		).as("e");
+
+		const [deviceResult] = await db
+			.select({
+				count: count(allScopedDevices.pk),
+			})
+			.from(allScopedDevices);
+
+		const usersDirectlyAssigned = db
+			.select({
+				pk: policyAssignments.pk,
+			})
+			.from(policyAssignments)
+			.where(
+				and(
+					eq(policyAssignments.variant, PolicyAssignableVariants.user),
+					eq(policyAssignments.policyPk, ctx.policy.pk),
+				),
+			);
+
+		const usersAssignedThroughGroup = db
+			.select({
+				pk: groupAssignables.pk,
+			})
+			.from(groupAssignables)
+			.innerJoin(
+				policyAssignments,
+				and(
+					eq(policyAssignments.variant, PolicyAssignableVariants.group),
+					eq(groupAssignables.groupPk, policyAssignments.pk),
+				),
+			)
+			.where(eq(groupAssignables.variant, GroupMemberVariants.user));
+
+		const allScopedUsers = union(
+			usersDirectlyAssigned,
+			usersAssignedThroughGroup,
+		).as("e");
+
+		const [userResult] = await db
+			.select({
+				count: count(allScopedUsers.pk),
+			})
+			.from(allScopedUsers);
 
 		return {
-			devices,
-			users,
+			devices: deviceResult?.count ?? 0,
+			users: userResult?.count ?? 0,
 		};
 	}),
 

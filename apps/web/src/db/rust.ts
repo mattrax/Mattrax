@@ -13,7 +13,7 @@ import {
 	db,
 	deviceActions,
 	devices,
-	groupMembers,
+	groupAssignables,
 	kv,
 	organisationMembers,
 	organisations,
@@ -55,9 +55,15 @@ export function scopedPoliciesForDeviceSubquery(device_pk: number) {
 				eq(policyAssignments.variant, "group"),
 			),
 		)
-		.innerJoin(groupMembers, eq(groupMembers.groupPk, policyAssignments.pk))
+		.innerJoin(
+			groupAssignables,
+			eq(groupAssignables.groupPk, policyAssignments.pk),
+		)
 		.where(
-			and(eq(groupMembers.variant, "device"), eq(groupMembers.pk, device_pk)),
+			and(
+				eq(groupAssignables.variant, "device"),
+				eq(groupAssignables.pk, device_pk),
+			),
 		);
 
 	const allEntries = unionAll(

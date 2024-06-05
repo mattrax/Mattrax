@@ -410,7 +410,7 @@ export const groupMemberVariants = [
 ] as const;
 export type GroupMemberVariant = (typeof groupMemberVariants)[number];
 
-export const groupMembers = mysqlTable(
+export const groupAssignables = mysqlTable(
 	"group_assignables",
 	{
 		groupPk: serialRelation("group")

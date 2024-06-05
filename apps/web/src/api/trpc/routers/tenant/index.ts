@@ -11,7 +11,7 @@ import {
 	deviceActions,
 	devices,
 	domains,
-	groupMembers,
+	groupAssignables,
 	groups,
 	identityProviders,
 	organisations,
@@ -281,12 +281,12 @@ export const tenantRouter = createTRPCRouter({
 
 			const group_assignable = db
 				.select({ id: groups.id })
-				.from(groupMembers)
-				.innerJoin(groups, eq(groups.pk, groupMembers.groupPk))
+				.from(groupAssignables)
+				.innerJoin(groups, eq(groups.pk, groupAssignables.groupPk))
 				.where(eq(groups.tenantPk, ctx.tenant.pk));
 			const group_assignable_query = db.$with("inner").as(group_assignable);
 			await db.execute(
-				sql`with ${group_assignable_query} as ${group_assignable} delete from ${groupMembers} using ${groupMembers} join ${group_assignable_query} on ${groupMembers.groupPk} = ${group_assignable_query.id};`,
+				sql`with ${group_assignable_query} as ${group_assignable} delete from ${groupAssignables} using ${groupAssignables} join ${group_assignable_query} on ${groupAssignables.groupPk} = ${group_assignable_query.id};`,
 			);
 
 			await db.delete(groups).where(eq(groups.tenantPk, ctx.tenant.pk));
