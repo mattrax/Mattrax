@@ -8,6 +8,7 @@ import {
 	type RouteDefinition,
 	createAsync,
 	useSearchParams,
+	useBeforeLeave,
 } from "@solidjs/router";
 import { createEffect } from "solid-js";
 import { createStore } from "solid-js/store";
@@ -55,7 +56,7 @@ export default function Page() {
 
 	createEffect((prevStatus) => {
 		if (
-			prevStatus === "pending" &&
+			prevStatus !== "success" &&
 			policy.status === "success" &&
 			policy.data
 		) {
@@ -74,6 +75,19 @@ export default function Page() {
 					},
 					{} as NonNullable<PolicyComposerState["apple"]>,
 				),
+			});
+			useBeforeLeave((e) => {
+				// Search param changes count as leaving so we ignore them here
+				const toUrl = new URL(`${location.origin}${e.to}`);
+				if (e.from.pathname === toUrl.pathname) return;
+
+				if (!e.defaultPrevented) {
+					e.preventDefault();
+
+					if (window.confirm("Discard unsaved changes - are you sure?")) {
+						e.retry(true);
+					}
+				}
 			});
 		}
 
