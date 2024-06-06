@@ -85,7 +85,6 @@ pub struct QueuedDeviceActionsResult {
     pub device_pk: u64,
     pub created_by: u64,
     pub created_at: NaiveDateTime,
-    pub deployed_at: Option<NaiveDateTime>,
 }
 
 #[derive(Clone)]
@@ -315,7 +314,7 @@ impl Db {
         &self,
         device_id: u64,
     ) -> Result<Vec<QueuedDeviceActionsResult>, mysql_async::Error> {
-        let mut result = r#"select `action`, `device`, `created_by`, `created_at`, `deployed_at` from `device_actions` where (`device_actions`.`device` = ? and `device_actions`.`deployed_at` is null)"#
+        let mut result = r#"select `action`, `device`, `created_by`, `created_at` from `device_actions` where (`device_actions`.`device` = ? and  is null)"#
 			  .with(mysql_async::Params::Positional(vec![device_id.clone().into()]))
 					.run(&self.pool).await?;
         let mut ret = vec![];
@@ -325,7 +324,6 @@ impl Db {
                 device_pk: from_value(&mut row, 1),
                 created_by: from_value(&mut row, 2),
                 created_at: from_value(&mut row, 3),
-                deployed_at: from_value(&mut row, 4),
             });
         }
         Ok(ret)

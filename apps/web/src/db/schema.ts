@@ -380,6 +380,7 @@ export const possibleDeviceActions = [
 	"retire",
 ] as const;
 
+// Device actions are ephemeral. They will be deleted after they are completed.
 export const deviceActions = mysqlTable(
 	"device_actions",
 	{
@@ -391,8 +392,6 @@ export const deviceActions = mysqlTable(
 			.notNull()
 			.references(() => accounts.pk),
 		createdAt: timestamp("created_at").notNull().defaultNow(),
-		// TODO: Possibly move into the audit log instead of keeping this???
-		deployedAt: timestamp("deployed_at"),
 	},
 	(table) => ({
 		pk: primaryKey({ columns: [table.action, table.devicePk] }),
