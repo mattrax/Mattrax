@@ -244,7 +244,7 @@ export function Apple(props: {
 																											>
 																												{
 																													props.item.rawValue
-																														.title
+																														?.title
 																												}
 																											</SelectItem>
 																										)}
@@ -393,6 +393,7 @@ function Payloads(props: { payloads?: Record<string, AppleProfilePayload> }) {
 								<Checkbox
 									id={id}
 									disabled={!controller.state.apple}
+									checked={controller.state.apple?.[key]?.enabled}
 									onChange={(value) => {
 										if (value)
 											controller.setState("apple", key, (k) => ({

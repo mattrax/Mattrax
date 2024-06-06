@@ -244,7 +244,7 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 																									<SelectItem item={props.item}>
 																										{
 																											props.item.rawValue
-																												.description
+																												?.description
 																										}
 																									</SelectItem>
 																								)}
