@@ -23,9 +23,11 @@ export function createBulkDeleteDialog<TData>(props: {
 
 	return Object.assign(props, {
 		get state() {
-			return state();
+			return state;
 		},
-		show: (rows: Array<Row<TData>>) => setState({ open: true, rows }),
+		show: (rows: Array<Row<TData>>) => {
+			setState({ open: true, rows });
+		},
 		setState,
 	});
 }
@@ -42,13 +44,13 @@ export function BulkDeleteDialog<TData>(props: {
 	}) => JSX.Element;
 }) {
 	const renderingProps = {
-		count: () => props.dialog.state.rows.length,
-		rows: () => props.dialog.state.rows,
+		count: () => props.dialog.state().rows.length,
+		rows: () => props.dialog.state().rows,
 	};
 
 	return (
 		<DialogRoot
-			open={props.dialog.state.open}
+			open={props.dialog.state().open}
 			onOpenChange={(o) => {
 				if (!o) props.dialog.setState((s) => ({ ...s, open: false }));
 			}}
@@ -70,7 +72,7 @@ export function BulkDeleteDialog<TData>(props: {
 					<AsyncButton
 						onClick={async () => {
 							await props.dialog.onDelete(
-								props.dialog.state.rows.map((r) => r.original),
+								props.dialog.state().rows.map((r) => r.original),
 							);
 
 							props.dialog.table.resetRowSelection(true);
