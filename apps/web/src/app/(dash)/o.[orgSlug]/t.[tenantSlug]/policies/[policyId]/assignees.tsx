@@ -1,3 +1,4 @@
+import { Dialog } from "@kobalte/core";
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	AsyncButton,
@@ -9,20 +10,23 @@ import {
 	DialogHeader,
 	DialogRoot,
 	DialogTitle,
-	DropdownMenuItem,
 	SheetTrigger,
 } from "@mattrax/ui";
+import type { RouteDefinition } from "@solidjs/router";
+import type { Table } from "@tanstack/solid-table";
 import pluralize from "pluralize";
 import { Match, Suspense, Switch, createSignal } from "solid-js";
 
-import { Dialog } from "@kobalte/core";
-import type { RouteDefinition } from "@solidjs/router";
+import {
+	BulkDeleteDialog,
+	createBulkDeleteDialog,
+} from "~/components/BulkDeleteDialog";
 import { trpc } from "~/lib";
 import { toTitleCase } from "~/lib/utils";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
+	FloatingSelectionBar,
 	StandardTable,
-	// createSearchParamPagination,
 	createStandardTable,
 } from "~c/StandardTable";
 import {
@@ -38,25 +42,21 @@ export const route = {
 		trpc.useContext().policy.assignees.ensureData({ id: params.policyId! }),
 } satisfies RouteDefinition;
 
-export default function Page() {
+function createAssigneesQuery() {
 	const policyId = usePolicyId();
 
 	const assignees = trpc.policy.assignees.createQuery(() => ({
 		id: policyId(),
 	}));
 
-	const [dialog, setDialog] = createSignal<{
-		open: boolean;
-		data:
-			| {
-					type: "removeSingle";
-					data: NonNullable<typeof assignees.data>[number];
-			  }
-			| { type: "removeMany"; data: NonNullable<typeof assignees.data> };
-	}>({ open: false, data: { type: "removeMany", data: [] } });
+	return assignees;
+}
+export default function Page() {
+	const policyId = usePolicyId();
+
+	const assignees = createAssigneesQuery();
 
 	const variants = createVariants();
-
 	const table = createStandardTable({
 		get data() {
 			return assignees.data ?? [];
@@ -64,20 +64,26 @@ export default function Page() {
 		columns: createVariantTableColumns(),
 	});
 
-	// createSearchParamPagination(table, "page");
-
 	const addAssignees = trpc.policy.addAssignees.createMutation(() => ({
 		...withDependantQueries(assignees),
 	}));
 
 	const removeAssignees = trpc.policy.removeAssignees.createMutation(() => ({
 		// TODO: `withDependantQueries`
-		onSuccess: () =>
-			assignees.refetch().then(() => {
-				table.resetRowSelection(true);
-				setDialog({ ...dialog(), open: false });
-			}),
+		onSuccess: () => assignees.refetch(),
 	}));
+
+	const dialog = createBulkDeleteDialog({
+		table,
+		onDelete: (data) =>
+			removeAssignees.mutateAsync({
+				id: policyId(),
+				assignees: data.map(({ pk, variant }) => ({
+					pk,
+					variant: variant as any,
+				})),
+			}),
+	});
 
 	return (
 		<PageLayout
@@ -105,78 +111,46 @@ export default function Page() {
 				</>
 			}
 		>
-			<DialogRoot
-				open={dialog().open}
-				onOpenChange={(o) => {
-					if (!o) setDialog({ ...dialog(), open: false });
-				}}
-			>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Unassign From Policy</DialogTitle>
-						<DialogDescription>
+			<Suspense>
+				<StandardTable table={table} />
+				<FloatingSelectionBar table={table}>
+					{(rows) => (
+						<Button
+							variant="destructive"
+							size="sm"
+							onClick={() => dialog.show(rows())}
+						>
+							Delete
+						</Button>
+					)}
+				</FloatingSelectionBar>
+				<BulkDeleteDialog
+					dialog={dialog}
+					title={({ count }) => <>Delete {pluralize("Group", count())}</>}
+					description={({ count, rows }) => (
+						<>
 							Are you sure you want to unassign{" "}
 							<Switch>
-								<Match when={dialog().data?.type === "removeMany"}>
-									{table.getSelectedRowModel().rows.length}{" "}
-									{pluralize(
-										"assignee",
-										table.getSelectedRowModel().rows.length,
-									)}
+								<Match when={count() > 1}>
+									{count()} {pluralize("assignee", count())}
 								</Match>
-								<Match
-									when={(() => {
-										const d = dialog();
-										if (d.data?.type === "removeSingle") return d.data.data;
-									})()}
-								>
+								<Match when={rows()[0]}>
 									{(data) => (
 										<div class="inline text-nowrap">
-											<span class="text-black font-medium">{data().name}</span>
+											<span class="text-black font-medium">
+												{data().original.name}
+											</span>
 											<Badge class="mx-1.5">
-												{toTitleCase(data().variant)}
+												{toTitleCase(data().original.variant)}
 											</Badge>
 										</div>
 									)}
 								</Match>
-							</Switch>{" "}
+							</Switch>
 							from this policy?
-						</DialogDescription>
-					</DialogHeader>
-					<DialogFooter>
-						<Dialog.CloseButton as={Button} variant="secondary">
-							Cancel
-						</Dialog.CloseButton>
-						<div class="flex-1" />
-						<AsyncButton
-							variant="destructive"
-							onClick={() => {
-								const { data } = dialog();
-
-								if (data.type === "removeSingle")
-									return removeAssignees.mutateAsync({
-										id: policyId(),
-										assignees: [
-											{ pk: data.data.pk, variant: data.data.variant },
-										],
-									});
-
-								return removeAssignees.mutateAsync({
-									id: policyId(),
-									assignees: data.data.map(({ pk, variant }) => ({
-										pk,
-										variant,
-									})),
-								});
-							}}
-						>
-							Confirm
-						</AsyncButton>
-					</DialogFooter>
-				</DialogContent>
-			</DialogRoot>
-			<Suspense>
-				<StandardTable table={table} />
+						</>
+					)}
+				/>
 			</Suspense>
 		</PageLayout>
 	);

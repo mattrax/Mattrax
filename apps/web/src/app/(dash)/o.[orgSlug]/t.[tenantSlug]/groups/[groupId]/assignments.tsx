@@ -1,24 +1,12 @@
-import {
-	AsyncButton,
-	Badge,
-	Button,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogRoot,
-	DialogTitle,
-	DropdownMenuItem,
-	SheetTrigger,
-} from "@mattrax/ui";
-import pluralize from "pluralize";
-import { Match, Suspense, Switch, createSignal } from "solid-js";
-
-import { Dialog } from "@kobalte/core";
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
+import { Badge, Button, SheetTrigger } from "@mattrax/ui";
 import type { RouteDefinition } from "@solidjs/router";
+import pluralize from "pluralize";
+import { Match, Suspense, Switch } from "solid-js";
+
 import { trpc } from "~/lib";
 import { toTitleCase } from "~/lib/utils";
+import { BulkDeleteDialog, createBulkDeleteDialog } from "~c/BulkDeleteDialog";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
 	FloatingSelectionBar,
@@ -40,7 +28,7 @@ export const route = {
 		trpc.useContext().group.assignments.ensureData({ id: params.groupId! }),
 } satisfies RouteDefinition;
 
-export default function Page() {
+function createAssignmentsQuery() {
 	const groupId = useGroupId();
 
 	const assignments = trpc.group.assignments.createQuery(() => ({
@@ -55,15 +43,13 @@ export default function Page() {
 	cacheAssignmentsWithVariant("policy");
 	cacheAssignmentsWithVariant("application");
 
-	const [dialog, setDialog] = createSignal<{
-		open: boolean;
-		data:
-			| {
-					type: "removeSingle";
-					data: NonNullable<typeof assignments.data>[number];
-			  }
-			| { type: "removeMany"; data: NonNullable<typeof assignments.data> };
-	}>({ open: false, data: { type: "removeMany", data: [] } });
+	return assignments;
+}
+
+export default function Page() {
+	const groupId = useGroupId();
+
+	const assignments = createAssignmentsQuery();
 
 	const variants = createAssignmentsVariants("../../../");
 
@@ -82,12 +68,20 @@ export default function Page() {
 
 	const removeAssignments = trpc.group.removeAssignments.createMutation(() => ({
 		// TODO: `withDependantQueries`???
-		onSuccess: () =>
-			assignments.refetch().then(() => {
-				table.resetRowSelection(true);
-				setDialog({ ...dialog(), open: false });
-			}),
+		onSuccess: () => assignments.refetch(),
 	}));
+
+	const dialog = createBulkDeleteDialog({
+		table,
+		onDelete: (data) =>
+			removeAssignments.mutateAsync({
+				id: groupId(),
+				assignments: data.map(({ pk, variant }) => ({
+					pk,
+					variant: variant as any,
+				})),
+			}),
+	});
 
 	return (
 		<PageLayout
@@ -112,76 +106,6 @@ export default function Page() {
 				</>
 			}
 		>
-			<DialogRoot
-				open={dialog().open}
-				onOpenChange={(o) => {
-					if (!o) setDialog({ ...dialog(), open: false });
-				}}
-			>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Remove From Group</DialogTitle>
-						<DialogDescription>
-							Are you sure you want to remove{" "}
-							<Switch>
-								<Match when={dialog().data?.type === "removeMany"}>
-									{table.getSelectedRowModel().rows.length}{" "}
-									{pluralize(
-										"member",
-										table.getSelectedRowModel().rows.length,
-									)}{" "}
-								</Match>
-								<Match
-									when={(() => {
-										const d = dialog();
-										if (d.data?.type === "removeSingle") return d.data.data;
-									})()}
-								>
-									{(data) => (
-										<div class="inline text-nowrap">
-											<span class="text-black font-medium">{data().name}</span>
-											<Badge class="mx-1.5">
-												{toTitleCase(data().variant)}
-											</Badge>
-										</div>
-									)}
-								</Match>
-							</Switch>
-							from this group?
-						</DialogDescription>
-					</DialogHeader>
-					<DialogFooter>
-						<Dialog.CloseButton as={Button} variant="secondary">
-							Cancel
-						</Dialog.CloseButton>
-						<div class="flex-1" />
-						<AsyncButton
-							variant="destructive"
-							onClick={() => {
-								const { data } = dialog();
-
-								if (data.type === "removeSingle")
-									return removeAssignments.mutateAsync({
-										id: groupId(),
-										assignments: [
-											{ pk: data.data.pk, variant: data.data.variant },
-										],
-									});
-
-								return removeAssignments.mutateAsync({
-									id: groupId(),
-									assignments: data.data.map(({ pk, variant }) => ({
-										pk,
-										variant,
-									})),
-								});
-							}}
-						>
-							Confirm
-						</AsyncButton>
-					</DialogFooter>
-				</DialogContent>
-			</DialogRoot>
 			<div class="flex flex-row items-center gap-4">
 				<TableSearchParamsInput query={assignments} class="flex-1" />
 			</div>
@@ -192,29 +116,39 @@ export default function Page() {
 						<Button
 							variant="destructive"
 							size="sm"
-							onClick={() => {
-								if (rows().length === 1)
-									setDialog({
-										open: true,
-										data: {
-											type: "removeSingle",
-											data: rows()[0]!.original as any,
-										},
-									});
-								else
-									setDialog({
-										open: true,
-										data: {
-											type: "removeMany",
-											data: rows().map(({ original }) => original as any),
-										},
-									});
-							}}
+							onClick={() => dialog.show(rows())}
 						>
-							Unassign from Group
+							Delete
 						</Button>
 					)}
 				</FloatingSelectionBar>
+				<BulkDeleteDialog
+					dialog={dialog}
+					title={() => "Remove From Group"}
+					description={({ count, rows }) => (
+						<>
+							Are you sure you want to remove{" "}
+							<Switch>
+								<Match when={count() > 1}>
+									{count()} {pluralize("member", count())}{" "}
+								</Match>
+								<Match when={rows()[0]}>
+									{(data) => (
+										<div class="inline text-nowrap">
+											<span class="text-black font-medium">
+												{data().original.name}
+											</span>
+											<Badge class="mx-1.5">
+												{toTitleCase(data().original.variant)}
+											</Badge>
+										</div>
+									)}
+								</Match>
+							</Switch>
+							from this group?
+						</>
+					)}
+				/>
 			</Suspense>
 		</PageLayout>
 	);

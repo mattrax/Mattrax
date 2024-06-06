@@ -1,26 +1,20 @@
-import { Dialog } from "@kobalte/core/dialog";
 import {
-	AsyncButton,
 	Badge,
 	Button,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogRoot,
-	DialogTitle,
-	DropdownMenuTrigger,
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
 } from "@mattrax/ui";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { Match, Show, Suspense, Switch, createSignal } from "solid-js";
-
 import pluralize from "pluralize";
+import { Match, Show, Suspense, Switch } from "solid-js";
+
 import type { RouterOutput } from "~/api/trpc";
-import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import {
+	BulkDeleteDialog,
+	createBulkDeleteDialog,
+} from "~/components/BulkDeleteDialog";
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
@@ -31,7 +25,7 @@ import {
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~c/StandardTable";
-import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
+import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
 import IconCarbonCaretSort from "~icons/carbon/caret-sort.jsx";
 import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import { useTenantSlug } from "../ctx";
@@ -113,26 +107,20 @@ export default function Page() {
 		},
 		columns,
 	});
-
 	createSearchParamFilter(table, "name", "search");
 
-	const [dialog, setDialog] = createSignal<{
-		open: boolean;
-		data:
-			| {
-					type: "deleteSingle";
-					data: NonNullable<typeof users.data>[number];
-			  }
-			| { type: "deleteMany"; data: NonNullable<typeof users.data> };
-	}>({ open: false, data: { type: "deleteMany", data: [] } });
-
 	const deleteUsers = trpc.user.delete.createMutation(() => ({
-		onSuccess: () =>
-			users.refetch().then(() => {
-				table.resetRowSelection(true);
-				setDialog({ ...dialog(), open: false });
-			}),
+		onSuccess: () => users.refetch(),
 	}));
+
+	const dialog = createBulkDeleteDialog({
+		table,
+		onDelete: (data) =>
+			deleteUsers.mutateAsync({
+				tenantSlug: tenantSlug(),
+				ids: data.map((d) => d.id),
+			}),
+	});
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Users</PageLayoutHeading>}>
@@ -141,100 +129,40 @@ export default function Page() {
 			</div>
 			<Suspense>
 				<StandardTable table={table} />
-				<DialogRoot
-					open={dialog().open}
-					onOpenChange={(o) => {
-						if (!o) setDialog({ ...dialog(), open: false });
-					}}
-				>
-					<DialogContent>
-						<DialogHeader>
-							<DialogTitle>
-								Delete{" "}
-								{pluralize("User", table.getSelectedRowModel().rows.length)}
-							</DialogTitle>
-							<DialogDescription>
-								Are you sure you want to delete{" "}
-								<Switch>
-									<Match when={dialog().data?.type === "deleteMany"}>
-										{table.getSelectedRowModel().rows.length}{" "}
-										{pluralize("user", table.getSelectedRowModel().rows.length)}
-									</Match>
-									<Match
-										when={(() => {
-											const d = dialog();
-											if (d.data?.type === "deleteSingle") return d.data.data;
-										})()}
-									>
-										{(data) => (
-											<div class="inline text-nowrap">
-												<span class="text-black font-medium">
-													{data().name}
-												</span>
-											</div>
-										)}
-									</Match>
-								</Switch>
-								?
-							</DialogDescription>
-						</DialogHeader>
-						<DialogFooter>
-							<Dialog.CloseButton as={Button} variant="secondary">
-								Cancel
-							</Dialog.CloseButton>
-							<div class="flex-1" />
-							<AsyncButton
-								onClick={() => {
-									const { data } = dialog();
-
-									if (data.type === "deleteMany") {
-										return deleteUsers.mutateAsync({
-											tenantSlug: tenantSlug(),
-											ids: data.data.map(({ id }) => id),
-										});
-									}
-
-									return deleteUsers.mutateAsync({
-										tenantSlug: tenantSlug(),
-										ids: [data.data.id],
-									});
-								}}
-								variant="destructive"
-							>
-								Confirm
-							</AsyncButton>
-						</DialogFooter>
-					</DialogContent>
-				</DialogRoot>
+				<BulkDeleteDialog
+					dialog={dialog}
+					title={({ count }) => <>Delete {pluralize("User", count())}</>}
+					description={({ count, rows }) => (
+						<>
+							Are you sure you want to delete{" "}
+							<Switch>
+								<Match when={count() > 1}>
+									{count()} {pluralize("user", count())}
+								</Match>
+								<Match when={rows()[0]}>
+									{(data) => (
+										<div class="inline text-nowrap">
+											<span class="text-black font-medium">
+												{data().original.name}
+											</span>
+										</div>
+									)}
+								</Match>
+							</Switch>
+							?
+						</>
+					)}
+				/>
 				<FloatingSelectionBar table={table}>
-					{(rows) => {
-						return (
-							<Button
-								variant="destructive"
-								size="sm"
-								onClick={() => {
-									if (rows().length === 1)
-										setDialog({
-											open: true,
-											data: {
-												type: "deleteSingle",
-												data: rows()[0]!.original as any,
-											},
-										});
-									else
-										setDialog({
-											open: true,
-											data: {
-												type: "deleteMany",
-												data: rows().map(({ original }) => original as any),
-											},
-										});
-								}}
-							>
-								Delete
-							</Button>
-						);
-					}}
+					{(rows) => (
+						<Button
+							variant="destructive"
+							size="sm"
+							onClick={() => dialog.show(rows())}
+						>
+							Delete
+						</Button>
+					)}
 				</FloatingSelectionBar>
 			</Suspense>
 		</PageLayout>

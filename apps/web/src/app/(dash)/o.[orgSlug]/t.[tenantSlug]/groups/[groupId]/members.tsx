@@ -1,21 +1,11 @@
-import { Dialog } from "@kobalte/core";
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
-import {
-	AsyncButton,
-	Badge,
-	Button,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogRoot,
-	DialogTitle,
-	SheetTrigger,
-} from "@mattrax/ui";
+import { Badge, Button, SheetTrigger } from "@mattrax/ui";
 import type { RouteDefinition } from "@solidjs/router";
 import pluralize from "pluralize";
-import { Match, Suspense, Switch, createSignal } from "solid-js";
+import { Match, Suspense, Switch } from "solid-js";
 
+import { BulkDeleteDialog } from "~/components/BulkDeleteDialog";
+import { createBulkDeleteDialog } from "~/components/BulkDeleteDialog";
 import { trpc } from "~/lib";
 import { toTitleCase } from "~/lib/utils";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
@@ -41,25 +31,24 @@ export const route = {
 		}),
 } satisfies RouteDefinition;
 
-export default function Page() {
+function createMembersQuery() {
 	const groupId = useGroupId();
 
 	const members = trpc.group.members.createQuery(() => ({ id: groupId() }));
+
 	const cacheMembersWithVariant = (v: "user" | "device") =>
 		cacheMetadata(v, () => members.data?.filter((a) => a.variant === v) ?? []);
 
 	cacheMembersWithVariant("user");
 	cacheMembersWithVariant("device");
 
-	const [dialog, setDialog] = createSignal<{
-		open: boolean;
-		data:
-			| {
-					type: "removeSingle";
-					data: NonNullable<typeof members.data>[number];
-			  }
-			| { type: "removeMany"; data: NonNullable<typeof members.data> };
-	}>({ open: false, data: { type: "removeMany", data: [] } });
+	return members;
+}
+
+export default function Page() {
+	const groupId = useGroupId();
+
+	const members = createMembersQuery();
 
 	const variants = createMembersVariants("../../../");
 
@@ -78,12 +67,20 @@ export default function Page() {
 
 	const removeMembers = trpc.group.removeMembers.createMutation(() => ({
 		// TODO: `withDependantQueries`
-		onSuccess: () =>
-			members.refetch().then(() => {
-				table.resetRowSelection(true);
-				setDialog({ ...dialog(), open: false });
-			}),
+		onSuccess: () => members.refetch(),
 	}));
+
+	const dialog = createBulkDeleteDialog({
+		table,
+		onDelete: (data) =>
+			removeMembers.mutateAsync({
+				id: groupId(),
+				members: data.map(({ pk, variant }) => ({
+					pk,
+					variant: variant as any,
+				})),
+			}),
+	});
 
 	return (
 		<PageLayout
@@ -108,71 +105,6 @@ export default function Page() {
 				</>
 			}
 		>
-			<DialogRoot
-				open={dialog().open}
-				onOpenChange={(o) => {
-					if (!o) setDialog({ ...dialog(), open: false });
-				}}
-			>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Remove From Group</DialogTitle>
-						<DialogDescription>
-							Are you sure you want to remove{" "}
-							<Switch>
-								<Match when={dialog().data?.type === "removeMany"}>
-									{table.getSelectedRowModel().rows.length}{" "}
-									{pluralize("member", table.getSelectedRowModel().rows.length)}
-								</Match>
-								<Match
-									when={(() => {
-										const d = dialog();
-										if (d.data?.type === "removeSingle") return d.data.data;
-									})()}
-								>
-									{(data) => (
-										<div class="inline text-nowrap">
-											<span class="text-black font-medium">{data().name}</span>
-											<Badge class="mx-1.5">
-												{toTitleCase(data().variant)}
-											</Badge>
-										</div>
-									)}
-								</Match>
-							</Switch>{" "}
-							from this group?
-						</DialogDescription>
-					</DialogHeader>
-					<DialogFooter>
-						<Dialog.CloseButton as={Button} variant="secondary">
-							Cancel
-						</Dialog.CloseButton>
-						<div class="flex-1" />
-						<AsyncButton
-							variant="destructive"
-							onClick={() => {
-								const { data } = dialog();
-
-								if (data.type === "removeSingle")
-									return removeMembers.mutateAsync({
-										id: groupId(),
-										members: [{ pk: data.data.pk, variant: data.data.variant }],
-									});
-
-								return removeMembers.mutateAsync({
-									id: groupId(),
-									members: data.data.map(({ pk, variant }) => ({
-										pk,
-										variant,
-									})),
-								});
-							}}
-						>
-							Confirm
-						</AsyncButton>
-					</DialogFooter>
-				</DialogContent>
-			</DialogRoot>
 			<div class="flex flex-row items-center gap-4">
 				<TableSearchParamsInput query={members} class="flex-1" />
 			</div>
@@ -183,29 +115,39 @@ export default function Page() {
 						<Button
 							variant="destructive"
 							size="sm"
-							onClick={() => {
-								if (rows().length === 1)
-									setDialog({
-										open: true,
-										data: {
-											type: "removeSingle",
-											data: rows()[0]!.original as any,
-										},
-									});
-								else
-									setDialog({
-										open: true,
-										data: {
-											type: "removeMany",
-											data: rows().map(({ original }) => original as any),
-										},
-									});
-							}}
+							onClick={() => dialog.show(rows())}
 						>
 							Remove from Group
 						</Button>
 					)}
 				</FloatingSelectionBar>
+				<BulkDeleteDialog
+					dialog={dialog}
+					title={() => "Remove From Group"}
+					description={({ count, rows }) => (
+						<>
+							Are you sure you want to remove{" "}
+							<Switch>
+								<Match when={count() > 1}>
+									{count()} {pluralize("member", count())}
+								</Match>
+								<Match when={rows()[0]}>
+									{(data) => (
+										<div class="inline text-nowrap">
+											<span class="text-black font-medium">
+												{data().original.name}
+											</span>
+											<Badge class="mx-1.5">
+												{toTitleCase(data().original.variant)}
+											</Badge>
+										</div>
+									)}
+								</Match>
+							</Switch>{" "}
+							from this group?
+						</>
+					)}
+				/>
 			</Suspense>
 		</PageLayout>
 	);

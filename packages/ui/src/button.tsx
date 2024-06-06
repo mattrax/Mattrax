@@ -63,7 +63,7 @@ export const AsyncButton: Component<
 	Omit<ButtonProps, "onClick"> & {
 		onClick?: (
 			...args: Parameters<JSX.EventHandler<HTMLButtonElement, MouseEvent>>
-		) => undefined | Promise<any>;
+		) => any;
 	}
 > = (props) => {
 	const [inProgress, setInProgress] = createSignal(false);

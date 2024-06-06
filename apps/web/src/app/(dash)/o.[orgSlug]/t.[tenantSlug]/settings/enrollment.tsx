@@ -90,7 +90,7 @@ export default function Page() {
 								>
 									USER
 								</Badge>
-								<p>EntraID is required for accessing all device features</p>
+								<p>Entra ID is required for accessing all device features</p>
 							</Match>
 
 							<Match
@@ -106,7 +106,7 @@ export default function Page() {
 									USER
 								</Badge>
 								<p>
-									EntraID must be configured for mobility to access all device
+									Entra ID must be configured for mobility to access all device
 									features
 								</p>
 							</Match>
@@ -177,7 +177,7 @@ export default function Page() {
 						</Show>
 					</Details>
 
-					<DescriptionTerm>EntraID Mobility Configuration</DescriptionTerm>
+					<DescriptionTerm>Entra ID Mobility Configuration</DescriptionTerm>
 					<Details>
 						<Show
 							when={provider.data?.provider === "entraId"}
@@ -201,7 +201,7 @@ export default function Page() {
 									>
 										NOT SUPPORTED
 									</Badge>
-									<p>Mattrax is not configured for mobility in EntraID</p>
+									<p>Mattrax is not configured for mobility in Entra ID</p>
 								</Match>
 								<Match
 									when={
@@ -216,7 +216,7 @@ export default function Page() {
 									</Badge>
 									<p>
 										{/* TODO: Reference to the Mattrax docs for this */}
-										The scope defined in EntraID doesn't match any devices
+										The scope defined in Entra ID doesn't match any devices
 									</p>
 								</Match>
 								<Match
@@ -233,7 +233,7 @@ export default function Page() {
 									</Badge>
 									<p>
 										{/* TODO: Reference to the Mattrax docs for this */}
-										We detected your EntraID subscription doesn't support
+										We detected your Entra ID subscription doesn't support
 										Mobility
 									</p>
 								</Match>

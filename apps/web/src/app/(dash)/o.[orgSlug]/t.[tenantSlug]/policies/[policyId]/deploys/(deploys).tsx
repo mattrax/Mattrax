@@ -23,12 +23,9 @@ import { A } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { For, Show, Suspense, createSignal } from "solid-js";
 import { match } from "ts-pattern";
+
 import type { RouterOutput } from "~/api";
-import {
-	StandardTable,
-	// createSearchParamPagination,
-	createStandardTable,
-} from "~/components/StandardTable";
+import { StandardTable, createStandardTable } from "~/components/StandardTable";
 import { trpc } from "~/lib";
 import { formatPolicy } from "~/lib/formatPolicy";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
@@ -90,8 +87,6 @@ function createDeployTable() {
 		columns,
 	});
 
-	// createSearchParamPagination(table, "page");
-
 	return { table, deploys };
 }
 
@@ -127,7 +122,6 @@ export default function Page() {
 					)}
 				</Show>
 			</Suspense>
-
 			<StandardTable table={table} />
 		</PageLayout>
 	);
