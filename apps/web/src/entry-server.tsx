@@ -12,10 +12,9 @@ export function Document(
 			<head>
 				<meta charset="UTF-8" />
 				<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-				<title>{props.title || "Mattrax"}</title>
-
-				{/* TODO: SEO + OpenGraph tags */}
-				{/* <link rel="icon" type="image/svg+xml" href="/vite.svg" /> */}
+				<link rel="icon" href="/favicon.ico" />
+				<title>{props.title || "Mattrax Cloud"}</title>
+				<meta name="robots" content="noindex" />
 
 				{props.head ?? null}
 			</head>
