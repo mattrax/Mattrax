@@ -7,8 +7,8 @@ import {
 import {
 	type RouteDefinition,
 	createAsync,
-	useSearchParams,
 	useBeforeLeave,
+	useSearchParams,
 } from "@solidjs/router";
 import { createEffect } from "solid-js";
 import { createStore } from "solid-js/store";
