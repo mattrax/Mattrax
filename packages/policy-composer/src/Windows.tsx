@@ -19,7 +19,6 @@ import {
 	Match,
 	Show,
 	Switch,
-	createEffect,
 	createMemo,
 	createSignal,
 	createUniqueId,
@@ -220,25 +219,20 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 																							})),
 																						);
 
-																						const selectValue = createMemo(() =>
-																							options().find(
-																								(o) =>
-																									o.value === value.data[key],
-																							),
+																						const selectValue = createMemo(
+																							() =>
+																								options().find(
+																									(o) =>
+																										o.value === value.data[key],
+																								) ?? null,
 																						);
 
 																						type Option = ReturnType<
 																							typeof options
 																						>[number];
 
-																						createEffect(() =>
-																							console.log({
-																								selectValue: selectValue(),
-																							}),
-																						);
-
 																						return (
-																							<Select<Option>
+																							<Select<Option | null>
 																								class="mt-2"
 																								options={options()}
 																								multiple={false}

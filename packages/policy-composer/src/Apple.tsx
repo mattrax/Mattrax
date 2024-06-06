@@ -204,17 +204,40 @@ export function Apple(props: {
 																										}),
 																									),
 																								);
+
+																								const selectValue = createMemo(
+																									() =>
+																										options().find(
+																											(o) =>
+																												o.value === data[key],
+																										) ?? null,
+																								);
+
 																								type Option = ReturnType<
 																									typeof options
 																								>[number];
+
 																								return (
-																									<Select<Option>
+																									<Select<Option | null>
 																										class="my-1"
 																										multiple={false}
 																										options={options()}
 																										optionValue="value"
 																										optionTextValue="title"
 																										placeholder="No Value"
+																										value={selectValue()}
+																										onChange={(option) => {
+																											if (option)
+																												setData(
+																													key,
+																													option.value,
+																												);
+																											else
+																												setData(
+																													key,
+																													undefined!,
+																												);
+																										}}
 																										itemComponent={(props) => (
 																											<SelectItem
 																												item={props.item}
