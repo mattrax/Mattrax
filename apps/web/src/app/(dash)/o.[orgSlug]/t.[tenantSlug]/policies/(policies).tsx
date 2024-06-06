@@ -27,7 +27,6 @@ import type { ParentProps } from "solid-js";
 import type { RouterOutput } from "~/api/trpc";
 import { trpc } from "~/lib";
 import {
-	ColumnsDropdown,
 	FloatingSelectionBar,
 	StandardTable,
 	createSearchParamFilter,
@@ -118,16 +117,6 @@ export default function Page() {
 		>
 			<div class="flex flex-row gap-4">
 				<TableSearchParamsInput query={policies} class="flex-1" />
-				<ColumnsDropdown table={table}>
-					<DropdownMenuTrigger
-						as={Button}
-						variant="outline"
-						class="ml-auto select-none"
-					>
-						Columns
-						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
-					</DropdownMenuTrigger>
-				</ColumnsDropdown>
 			</div>
 			<Suspense>
 				<StandardTable table={table} />

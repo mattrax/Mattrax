@@ -25,7 +25,6 @@ import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
-	ColumnsDropdown,
 	FloatingSelectionBar,
 	StandardTable,
 	createSearchParamFilter,
@@ -139,16 +138,6 @@ export default function Page() {
 		<PageLayout heading={<PageLayoutHeading>Users</PageLayoutHeading>}>
 			<div class="flex flex-row items-center gap-4">
 				<TableSearchParamsInput query={users} class="flex-1" />
-				<ColumnsDropdown table={table}>
-					<DropdownMenuTrigger
-						as={Button}
-						variant="outline"
-						class="ml-auto select-none"
-					>
-						Columns
-						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
-					</DropdownMenuTrigger>
-				</ColumnsDropdown>
 			</div>
 			<Suspense>
 				<StandardTable table={table} />

@@ -6,7 +6,6 @@ import { Suspense } from "solid-js";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
-	ColumnsDropdown,
 	FloatingSelectionBar,
 	StandardTable,
 	createSearchParamFilter,
@@ -77,16 +76,6 @@ export default function Page() {
 		>
 			<div class="flex flex-row items-center gap-4">
 				<TableSearchParamsInput query={apps} />
-				<ColumnsDropdown table={table}>
-					<DropdownMenuTrigger
-						as={Button}
-						variant="outline"
-						class="ml-auto select-none"
-					>
-						Columns
-						<IconCarbonCaretDown class="ml-2 h-4 w-4" />
-					</DropdownMenuTrigger>
-				</ColumnsDropdown>
 			</div>
 			<Suspense>
 				<StandardTable table={table} />

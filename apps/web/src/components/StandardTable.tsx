@@ -244,7 +244,7 @@ export function ColumnsDropdown<TData>(
 							checked={column.getIsVisible()}
 							onChange={(value) => column.toggleVisibility(!!value)}
 						>
-							{column.id.split(/(?=[A-Z])/).join(" ")}
+							{(column.columnDef.header as string).split(/(?=[A-Z])/).join(" ")}
 						</DropdownMenuCheckboxItem>
 					)}
 				</For>

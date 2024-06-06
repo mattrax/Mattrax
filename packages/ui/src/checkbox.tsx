@@ -18,17 +18,19 @@ const Checkbox = <T extends ValidComponent = "div">(
 			<CheckboxPrimitive.Input class="peer" style={{ position: "relative" }} />
 			<CheckboxPrimitive.Control
 				class={clsx(
-					"border-primary ring-offset-background data-[checked]:bg-primary data-[checked]:text-primary-foreground h-4 w-4 shrink-0 rounded-sm border",
+					"border border-primary h-4 w-4 shrink-0 rounded-sm ring-offset-background ",
 					"peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-ring transition-all duration-75",
-					"ui-disabled:cursor-not-allowed ui-disabled:opacity-50 ui-checked:border-none",
+					"ui-checked:bg-primary ui-checked:text-primary-foreground ui-disabled:cursor-not-allowed ui-disabled:opacity-50",
 				)}
 				onClick={(e) => {
+					// debugger;
 					e.stopPropagation();
 				}}
 			>
-				<CheckboxPrimitive.Indicator>
-					<IconTablerCheck class="h-4 w-4" />
-				</CheckboxPrimitive.Indicator>
+				<CheckboxPrimitive.Indicator
+					as={IconTablerCheck}
+					class="h-4 w-4 -m-px"
+				/>
 			</CheckboxPrimitive.Control>
 		</CheckboxPrimitive.Root>
 	);
