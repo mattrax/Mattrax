@@ -1,6 +1,7 @@
 import { Navigate, useLocation, useSearchParams } from "@solidjs/router";
-import { Match, Switch } from "solid-js";
+import { Match, Switch, createEffect } from "solid-js";
 
+import { parse } from "cookie-es";
 import { useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
 import { cachedTenantsForOrg } from "./(dash)/o.[orgSlug]/utils";
@@ -13,6 +14,7 @@ export const route = {
 export default function Page() {
 	const location = useLocation<{ action?: string }>();
 	const [search] = useSearchParams<{ action?: string }>();
+	const action = location.state?.action || search?.action;
 
 	const query = trpc.org.list.createQuery();
 	const orgs = useCachedQueryData(query, () => cachedOrgs());
@@ -24,19 +26,11 @@ export default function Page() {
 		return o[0] ?? null;
 	};
 
-	const action = location.state?.action || search?.action;
-
-	let tenantSuffix = "";
-	let tenantState = undefined;
-	if (action === "enrollDevice") {
-		tenantSuffix = "/devices";
-		tenantState = {
-			enrollDialog: true,
-		};
-	}
-
 	return (
 		<Switch>
+			<Match when={parse(document.cookie).isLoggedIn !== "true"}>
+				<Navigate href="/login" />
+			</Match>
 			<Match when={defaultOrg() === null}>
 				{
 					(() => {
@@ -55,7 +49,7 @@ export default function Page() {
 						orgSlug: org().slug,
 					}));
 					const tenants = useCachedQueryData(query, () =>
-						cachedTenantsForOrg(org().slug),
+						cachedTenantsForOrg(org().id),
 					);
 
 					const defaultTenant = () => {
@@ -64,6 +58,15 @@ export default function Page() {
 
 						return t[0] ?? null;
 					};
+
+					let tenantSuffix = "";
+					let tenantState = undefined;
+					if (action === "enrollDevice") {
+						tenantSuffix = "/devices";
+						tenantState = {
+							enrollDialog: true,
+						};
+					}
 
 					return (
 						<Switch>

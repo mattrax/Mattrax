@@ -1,6 +1,13 @@
+import { Navigate } from "@solidjs/router";
+import { parse } from "cookie-es";
 import type { ParentProps } from "solid-js";
 
 export default function Layout(props: ParentProps) {
+	const cookies = parse(document.cookie);
+	if (cookies.isLoggedIn === "true") {
+		return <Navigate href="/" />;
+	}
+
 	return (
 		<div class="flex-grow flex justify-center items-center">
 			<div class="w-full flex flex-col items-center justify-center">

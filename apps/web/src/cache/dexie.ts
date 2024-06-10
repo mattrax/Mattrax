@@ -18,7 +18,7 @@ class MattraxCache
 		super("mattrax-cache");
 		this.version(this.VERSION).stores({
 			orgs: "id",
-			tenants: "id, orgId",
+			tenants: "id, orgId, slug",
 		});
 	}
 }
