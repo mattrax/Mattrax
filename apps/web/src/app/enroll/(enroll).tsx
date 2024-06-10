@@ -66,21 +66,6 @@ function FormPage(props: ParentProps<{ continue: boolean; class?: string }>) {
 	);
 }
 
-function AccountButtons() {
-	return (
-		<div class="flex space-x-4 pt-4">
-			<a href="/?action=enrollDevice" class={buttonVariants({})}>
-				<span class="text-sm font-semibold leading-6">
-					Enroll via dashboard
-				</span>
-			</a>
-			<a href="?continue=true" class={buttonVariants({})}>
-				<span class="text-sm font-semibold leading-6">Continue</span>
-			</a>
-		</div>
-	);
-}
-
 // This endpoint is fired for:
 //   - The browser opening the enrollment UI
 //	 - The browser submitting the form on the enrollment UI
@@ -107,7 +92,17 @@ export async function GET({ request, nativeEvent }: APIEvent) {
 					We have detected you are authenticated as an administrator. <br />
 					Administrators are only able to enroll devices via the dashboard.
 				</CardDescription>
-				<AccountButtons />
+
+				<div class="flex space-x-4 pt-4">
+					<a href="/?action=enrollDevice" class={buttonVariants({})}>
+						<span class="text-sm font-semibold leading-6">
+							Enroll via dashboard
+						</span>
+					</a>
+					<a href="?continue=true" class={buttonVariants({})}>
+						<span class="text-sm font-semibold leading-6">Continue</span>
+					</a>
+				</div>
 			</Layout>
 		));
 	}
@@ -212,7 +207,17 @@ export async function GET({ request, nativeEvent }: APIEvent) {
 						<br />
 						Administrators are only able to enroll devices via the dashboard.
 					</CardDescription>
-					<AccountButtons />
+
+					<div class="flex space-x-4 pt-4">
+						<a href="/?action=enrollDevice" class={buttonVariants({})}>
+							<span class="text-sm font-semibold leading-6">
+								Enroll via dashboard
+							</span>
+						</a>
+						<a href="?" class={buttonVariants({})}>
+							<span class="text-sm font-semibold leading-6">Try again</span>
+						</a>
+					</div>
 				</Layout>
 			));
 		}

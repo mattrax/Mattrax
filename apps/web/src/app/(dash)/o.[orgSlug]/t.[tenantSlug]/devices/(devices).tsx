@@ -111,12 +111,12 @@ export default function Page() {
 	// createSearchParamPagination(table, "page");
 	createSearchParamFilter(table, "name", "search");
 
-	onMount(() => {
-		// This will unset `enrollDialog` from the state so it doesn't show again
+	// This will unset `enrollDialog` from the state so it doesn't show again
+	onMount(() =>
 		navigate(".", {
 			replace: true,
-		});
-	});
+		}),
+	);
 
 	return (
 		<PageLayout
@@ -169,7 +169,7 @@ function EnrollDeviceModal() {
 		}),
 	);
 
-	const [user, setUser] = createSignal<string>("system");
+	const [user, setUser] = createSignal<string | null>(null);
 	const [platform, setPlatform] = createSignal<(typeof platforms)[number]>(
 		platforms[0],
 	);
@@ -208,32 +208,25 @@ function EnrollDeviceModal() {
 				virtualized
 				value={user()}
 				onChange={setUser}
-				disallowEmptySelection={true}
-				options={["system", ...(users.data?.map((user) => user.id) || [])]}
+				disallowEmptySelection={false}
+				options={users.data?.map((user) => user.id) || []}
 				disabled={!users.data || users.data.length === 0}
-				placeholder="Select a user to enroll as..."
+				placeholder="System"
 				class="flex-1 pb-2"
 			>
 				<SelectTrigger aria-label="User to enroll as" class="w-full">
 					<SelectValue<string>>
 						{(state) =>
-							state.selectedOption() === "system"
-								? "System"
-								: users.data!.find(
-										(user) => user.id === state.selectedOption(),
-									)!.name
+							users.data!.find((user) => user.id === state.selectedOption())!
+								.name
 						}
 					</SelectValue>
 				</SelectTrigger>
 				<SelectContentVirtualized
-					length={() => (users.data?.length || 0) + 1}
-					getItemIndex={(id) =>
-						id === "system"
-							? 0
-							: users.data!.findIndex((user) => user.id === id) + 1
-					}
+					length={() => users.data?.length || 0}
+					getItemIndex={(id) => users.data!.findIndex((user) => user.id === id)}
 				>
-					{(_, i) => (i === 0 ? "System" : users.data![i - 1]!.name)}
+					{(_, i) => users.data![i]!.name}
 				</SelectContentVirtualized>
 			</Select>
 			<div class="flex w-full">

@@ -88,23 +88,17 @@ export default function App() {
 
 									if (error.data?.code === "UNAUTHORIZED") {
 										startTransition(() =>
-											navigate(
-												`/login${
-													location.query?.action
-														? `?action=${location.query.action}`
-														: ""
-												}`,
-												{
-													state: {
-														continueTo:
-															location.pathname !== "/" &&
-															location.pathname !== "/login"
-																? location.pathname
-																: undefined,
-													},
-													replace: true,
+											navigate("/login", {
+												state: {
+													action: location.query?.action,
+													continueTo:
+														location.pathname !== "/" &&
+														location.pathname !== "/login"
+															? location.pathname
+															: undefined,
 												},
-											),
+												replace: true,
+											}),
 										);
 										return;
 										// biome-ignore lint/style/noUselessElse:
