@@ -207,7 +207,7 @@ export const users = mysqlTable(
 		pk: serial("pk").primaryKey(),
 		id: cuid("id").notNull().unique(),
 		name: varchar("name", { length: 256 }).notNull(),
-		email: varchar("email", { length: 256 }).notNull(),
+		upn: varchar("upn", { length: 256 }).notNull(),
 		tenantPk: serialRelation("tenant")
 			.references(() => tenants.pk)
 			.notNull(),
@@ -218,7 +218,7 @@ export const users = mysqlTable(
 		resourceId: varchar("resource_id", { length: 256 }),
 	},
 	(t) => ({
-		emailUnq: unique().on(t.email, t.tenantPk),
+		emailUnq: unique().on(t.upn, t.tenantPk),
 		resourceIdUnq: unique().on(t.resourceId, t.providerPk),
 	}),
 );
@@ -310,26 +310,6 @@ export const policyDeployStatus = mysqlTable(
 	}),
 );
 
-// A cache for storing the state of Windows management commands.
-export const windowsEphemeralState = mysqlTable(
-	"windows_ephemeral_state",
-	{
-		// TODO: Datatypes
-		sessionId: varchar("session_id", { length: 256 }).notNull(),
-		msgId: varchar("msg_id", { length: 256 }).notNull(),
-		cmdId: varchar("cmd_id", { length: 256 }).notNull(),
-		deployPk: serialRelation("deploy")
-			.references(() => policyDeploy.pk)
-			.notNull(),
-		key: varchar("key", { length: 256 }).notNull(),
-	},
-	(table) => ({
-		pk: primaryKey({
-			columns: [table.sessionId, table.msgId, table.cmdId],
-		}),
-	}),
-);
-
 export const possibleOSes = [
 	"Windows",
 	"iOS",
@@ -364,7 +344,8 @@ export const devices = mysqlTable("devices", {
 	azureADDeviceId: varchar("azure_ad_did", { length: 256 }).unique(),
 
 	enrolledAt: timestamp("enrolled_at").notNull().defaultNow(),
-	// enrolledBy:  // TODO: No foreign key
+	// This will be set if enrolled by a Mattrax account. If null it was enrolled by a user themselves.
+	enrolledBy: serialRelation("enrolled_by"),
 	lastSynced: timestamp("last_synced").notNull().defaultNow(),
 
 	tenantPk: serialRelation("tenant")

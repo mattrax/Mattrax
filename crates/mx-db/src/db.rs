@@ -244,10 +244,11 @@ impl Db {
         os: String,
         serial_number: String,
         tenant_pk: u64,
-        owner_pk: u64,
+        owner_pk: Option<u64>,
+        enrolled_by_pk: Option<u64>,
     ) -> Result<(), mysql_async::Error> {
-        let mut result = r#"insert into `devices` (`pk`, `id`, `name`, `description`, `enrollment_type`, `os`, `serial_number`, `manufacturer`, `model`, `os_version`, `imei`, `free_storage`, `total_storage`, `owner`, `azure_ad_did`, `enrolled_at`, `last_synced`, `tenant`) values (default, ?, ?, default, ?, ?, ?, default, default, default, default, default, default, ?, default, default, default, ?) on duplicate key update `name` = ?, `owner` = ?, `tenant` = ?"#
-			  .with(mysql_async::Params::Positional(vec![id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.clone().into(),tenant_pk.clone().into(),name.clone().into(),owner_pk.clone().into(),tenant_pk.clone().into()]))
+        let mut result = r#"insert into `devices` (`pk`, `id`, `name`, `description`, `enrollment_type`, `os`, `serial_number`, `manufacturer`, `model`, `os_version`, `imei`, `free_storage`, `total_storage`, `owner`, `azure_ad_did`, `enrolled_at`, `enrolled_by`, `last_synced`, `tenant`) values (default, ?, ?, default, ?, ?, ?, default, default, default, default, default, default, ?, default, default, ?, default, ?) on duplicate key update `name` = ?, `owner` = ?, `tenant` = ?"#
+			  .with(mysql_async::Params::Positional(vec![id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.clone().into(),enrolled_by_pk.clone().into(),tenant_pk.clone().into(),name.clone().into(),owner_pk.clone().into(),tenant_pk.clone().into()]))
 					.run(&self.pool).await?;
         Ok(())
     }
@@ -314,7 +315,7 @@ impl Db {
         &self,
         device_id: u64,
     ) -> Result<Vec<QueuedDeviceActionsResult>, mysql_async::Error> {
-        let mut result = r#"select `action`, `device`, `created_by`, `created_at` from `device_actions` where (`device_actions`.`device` = ? and  is null)"#
+        let mut result = r#"select `action`, `device`, `created_by`, `created_at` from `device_actions` where `device_actions`.`device` = ?"#
 			  .with(mysql_async::Params::Positional(vec![device_id.clone().into()]))
 					.run(&self.pool).await?;
         let mut ret = vec![];

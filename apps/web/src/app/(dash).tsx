@@ -43,11 +43,11 @@ export default function Layout(props: RouteSectionProps<never, "topbar">) {
 		const cookies = parse(document.cookie);
 		if (cookies.isLoggedIn !== "true") {
 			startTransition(() =>
-				navigate(
-					`/login?${new URLSearchParams({
+				navigate("/login", {
+					state: {
 						continueTo: location.pathname,
-					})}`,
-				),
+					},
+				}),
 			);
 		}
 	}

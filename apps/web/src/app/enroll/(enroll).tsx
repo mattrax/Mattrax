@@ -1,4 +1,4 @@
-import { Button } from "@mattrax/ui/button";
+import { Button, buttonVariants } from "@mattrax/ui/button";
 import { CardDescription } from "@mattrax/ui/card";
 import { Input } from "@mattrax/ui/input";
 import type { APIEvent } from "@solidjs/start/server";
@@ -8,7 +8,7 @@ import type { ParentProps } from "solid-js";
 import { getCookie } from "vinxi/http";
 import { getEmailDomain } from "~/api/utils";
 import { encryptJWT, verifyJWT } from "~/api/utils/jwt";
-import { db, domains, identityProviders } from "~/db";
+import { accounts, db, domains, identityProviders } from "~/db";
 import { env } from "~/env";
 import { renderWithApp } from "../../entry-server";
 import {
@@ -34,8 +34,9 @@ for (let i = 0; i < forms.length; i++) {
 	})
 }`;
 
-function FormPage(props: ParentProps<{ class?: string }>) {
-	return (
+const FormPageFactory =
+	(factoryProps: { continue: boolean; appru: string | null }) =>
+	(props: ParentProps<{ class?: string }>) => (
 		<Layout>
 			<CardDescription>
 				Please enter your company email to get started
@@ -45,7 +46,19 @@ function FormPage(props: ParentProps<{ class?: string }>) {
 				{props.children}
 			</CardDescription>
 
-			<form class="pt-4 w-full max-w-80 space-y-2">
+			<form class="pt-2 w-full max-w-80">
+				{factoryProps.continue ? (
+					<input type="hidden" name="continue" value="true" class="hidden" />
+				) : null}
+				{factoryProps.appru ? (
+					<input
+						type="hidden"
+						name="appru"
+						value={factoryProps.appru}
+						class="hidden"
+					/>
+				) : null}
+
 				<Input
 					type="email"
 					name="email"
@@ -53,14 +66,13 @@ function FormPage(props: ParentProps<{ class?: string }>) {
 					autocomplete="email"
 				/>
 
-				<Button type="submit" class="w-full">
+				<Button type="submit" class="w-full mt-2">
 					<span class="text-sm font-semibold leading-6">Enroll</span>
 				</Button>
 				<script>{formSubmitScript}</script>
 			</form>
 		</Layout>
 	);
-}
 
 // This endpoint is fired for:
 //   - The browser opening the enrollment UI
@@ -71,8 +83,54 @@ function FormPage(props: ParentProps<{ class?: string }>) {
 export async function GET({ request, nativeEvent }: APIEvent) {
 	const url = new URL(request.url);
 
-	// These are set by `/enroll/callback`
+	// If `continue` is set ignore the fact that a dashboard session exists.
+	const continueAuth = url.searchParams.get("continue") === "true";
+
+	// This is set by `/enroll/callback`
 	const enroll_session = getCookie(nativeEvent, "enroll_session");
+
+	// This is set by an administrator logging in at `/login`
+	const dashboard_session = getCookie(nativeEvent, "auth_session");
+
+	// `appru` and `login_hint` are parameters set by Windows MDM client
+	const appru = url.searchParams.get("appru");
+	// The access token from the `ms-device-enrollment:?` link.
+	// This won't be set if the enrollment is started on the device but will be set if the user started in their browser through `/enroll`.
+	const accesstoken = url.searchParams.get("accesstoken");
+
+	// `email` is set when coming from the form when submitted `/enroll`, `login_hint` is set by the MDM browser.
+	const email =
+		url.searchParams.get("email") ?? url.searchParams.get("login_hint");
+
+	const FormPage = FormPageFactory({
+		continue: continueAuth,
+		appru,
+	});
+
+	if (dashboard_session && !continueAuth && email === null && appru === null) {
+		// We don't validate the session and that's fine because nothing sensitive is being done here.
+
+		return renderWithApp(() => (
+			<Layout>
+				<CardDescription class="text-center">
+					We have detected you are authenticated as an administrator. <br />
+					Administrators are only able to enroll devices via the dashboard.
+				</CardDescription>
+
+				<div class="flex space-x-4 pt-4">
+					<a href="/?action=enrollDevice" class={buttonVariants({})}>
+						<span class="text-sm font-semibold leading-6">
+							Enroll via dashboard
+						</span>
+					</a>
+
+					<a href="?continue=true" class={buttonVariants({})}>
+						<span class="text-sm font-semibold leading-6">Continue</span>
+					</a>
+				</div>
+			</Layout>
+		));
+	}
 
 	if (enroll_session) {
 		const payload = await verifyJWT<EnrollmentTokenState>(
@@ -109,16 +167,6 @@ export async function GET({ request, nativeEvent }: APIEvent) {
 		}
 	}
 
-	// `appru` and `login_hint` are parameters set by Windows MDM client
-	const appru = url.searchParams.get("appru");
-	// The access token from the `ms-device-enrollment:?` link.
-	// This won't be set if the enrollment is started on the device but will be set if the user started in their browser through `/enroll`.
-	const accesstoken = url.searchParams.get("accesstoken");
-
-	// `email` is set when coming from the form when submitted `/enroll`, `login_hint` is set by the MDM browser.
-	const email =
-		url.searchParams.get("email") ?? url.searchParams.get("login_hint");
-
 	// The user just navigated to this page so give them the form to enter their email.
 	if (!email)
 		return renderWithApp(() => (
@@ -142,34 +190,72 @@ export async function GET({ request, nativeEvent }: APIEvent) {
 	// We split the user and domain portion of the email
 	const domain = getEmailDomain(email);
 
-	const [domainRecord] = await db
-		.select({
-			identityProvider: {
-				remoteId: identityProviders.remoteId,
-				tenantPk: identityProviders.tenantPk,
-				pk: identityProviders.pk,
-			},
-		})
-		.from(domains)
-		.where(and(eq(domains.domain, domain)))
-		.innerJoin(
-			identityProviders,
-			eq(domains.identityProviderPk, identityProviders.pk),
-		);
+	const [[domainRecord], [account]] = await Promise.all([
+		db
+			.select({
+				identityProvider: {
+					remoteId: identityProviders.remoteId,
+					tenantPk: identityProviders.tenantPk,
+					pk: identityProviders.pk,
+				},
+			})
+			.from(domains)
+			.where(and(eq(domains.domain, domain)))
+			.innerJoin(
+				identityProviders,
+				eq(domains.identityProviderPk, identityProviders.pk),
+			),
+		db
+			.select({
+				pk: accounts.pk,
+			})
+			.from(accounts)
+			.where(and(eq(accounts.email, email))),
+	]);
 
-	if (domainRecord === undefined)
+	if (domainRecord === undefined) {
+		if (account !== undefined) {
+			return renderWithApp(() => (
+				<Layout>
+					<CardDescription class="text-center">
+						The email <b>{email}</b> is associated with a Mattrax account.
+						<br />
+						Administrators are only able to enroll devices via the dashboard.
+					</CardDescription>
+
+					<div class="flex space-x-4 pt-4">
+						{appru === null ? (
+							<a href="/?action=enrollDevice" class={buttonVariants({})}>
+								<span class="text-sm font-semibold leading-6">
+									Enroll via dashboard
+								</span>
+							</a>
+						) : null}
+
+						<a
+							href={continueAuth ? "?continue=true" : "?"}
+							class={buttonVariants({})}
+						>
+							<span class="text-sm font-semibold leading-6">Try again</span>
+						</a>
+					</div>
+				</Layout>
+			));
+		}
+
 		return renderWithApp(() => (
 			<FormPage class="text-red-500">
 				The email <b>{email}</b> is not connected with Mattrax. Please check
 				that you entered your company email correctly.
 			</FormPage>
 		));
+	}
 
 	// Right now we only support AzureAD so we send off the user to do OAuth
 	const params = new URLSearchParams({
 		client_id: env.ENTRA_CLIENT_ID,
 		scope: "https://graph.microsoft.com/.default",
-		redirect_uri: `${env.PROD_ORIGIN}/enroll/callback`,
+		redirect_uri: `${env.VITE_PROD_ORIGIN}/enroll/callback`,
 		response_type: "code",
 		response_mode: "query",
 		login_hint: email,

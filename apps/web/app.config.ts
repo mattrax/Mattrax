@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import mattraxUI from "@mattrax/ui/vite";
 import { defineConfig } from "@solidjs/start/config";
 import { visualizer } from "rollup-plugin-visualizer";
@@ -29,6 +30,17 @@ export default defineConfig({
 			// Safari mobile has problems with newer syntax
 			target: "es2020",
 		},
+		resolve: {
+			alias: {
+				// We replace the `sst` import on client so the `env.ts` file can be used
+				sst:
+					router === "client"
+						? fileURLToPath(new URL("./src/sst-shim.js", import.meta.url))
+						: fileURLToPath(
+								new URL("./node_modules/sst/dist/index.js", import.meta.url),
+							),
+			},
+		},
 		plugins: [
 			devtools(),
 			tsconfigPaths({
@@ -45,6 +57,8 @@ export default defineConfig({
 	}),
 	server: {
 		preset: nitroPreset,
+		// Cloudflare will take care of this
+		compressPublicAssets: false,
 		experimental: {
 			asyncContext: true,
 		},

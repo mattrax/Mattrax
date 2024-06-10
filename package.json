@@ -12,7 +12,7 @@
 		"web": "pnpm --filter @mattrax/web --",
 		"infra": "pnpm --filter @mattrax/infra exec sst",
 		"db:push": "DRIZZLE=1 drizzle-kit push && DRIZZLE=1 bun run ./apps/web/src/db/rust.ts",
-		"db:gen": "DRIZZLE=1 drizzle-kit generate && DRIZZLE=1 bun run ./apps/web/src/db/rust.ts",
+		"db:gen": "DRIZZLE=1 drizzle-kit generate && DRIZZLE=1 bun run ./apps/web/src/db/rust.ts && pnpm format",
 		"db:studio": "DRIZZLE=1 drizzle-kit studio",
 		"db:rs": "DRIZZLE=1 bun run ./apps/web/src/db/rust.ts",
 		"typecheck": "tsc -b",

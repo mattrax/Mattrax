@@ -28,7 +28,8 @@ type RustType =
 	| "Vec<u8>"
 	| "u64"
 	| "Serialized<serde_json::Value>"
-	| `Option<String>`; // TODO: Rest of types
+	| "Option<String>"
+	| "Option<u64>"; // TODO: Rest of types
 type RustArgs = Record<string, RustType>;
 
 type MapArgsToTs<T> = {
@@ -300,10 +301,7 @@ function buildResultType(
 			const keys = [...fields.keys()].map((k) => camelToSnakeCase(k));
 
 			const non_optional_keys = [...fields.entries()]
-				.filter(([_, ty]) => {
-					console.log(ty);
-					return !ty.startsWith("Option<");
-				})
+				.filter(([_, ty]) => !ty.startsWith("Option<"))
 				.map(([k, _]) => camelToSnakeCase(k));
 
 			impl = (index) => `{
