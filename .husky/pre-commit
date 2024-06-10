@@ -1,5 +1,5 @@
 #!/bin/bash
 # I personally hate pre-commit hooks but we *NEED* consistency formatting to deal with merge conflicts.
 
-# We don't use `pnpm format` because it's slower
-pnpm fix
+# We don't use `pnpm fix` because it's slower
+./node_modules/.bin/biome lint --config-path biome.json --apply . && ./node_modules/.bin/biome format --write . && ./node_modules/.bin/biome check . --apply
