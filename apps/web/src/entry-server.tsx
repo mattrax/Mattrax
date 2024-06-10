@@ -13,7 +13,7 @@ export function Document(
 				<meta charset="UTF-8" />
 				<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 				<link rel="icon" href="/favicon.ico" />
-				<title>{props.title || "Mattrax Cloud"}</title>
+				<title>{props.title || "Mattrax"}</title>
 				<meta name="robots" content="noindex" />
 
 				{props.head ?? null}

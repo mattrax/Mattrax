@@ -1,6 +1,6 @@
-import { Resource } from "@mattrax/web/sst";
 import { createEnv } from "@t3-oss/env-core";
 import { getRequestEvent } from "solid-js/web";
+import { Resource } from "sst";
 import { z } from "zod";
 
 function optionalInDev<T extends z.ZodTypeAny>(

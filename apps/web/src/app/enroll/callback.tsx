@@ -7,10 +7,9 @@ import { decryptJWT, signJWT } from "~/api/utils/jwt";
 import { renderWithApp } from "~/entry-server";
 import { env } from "~/env";
 import {
-	type EnrollmentTokenState,
 	Layout,
-	MINUTE,
 	type State,
+	createEnrollmentSession,
 	renderMDMCallback,
 } from "./util";
 
@@ -64,16 +63,13 @@ export async function GET({ request }: APIEvent) {
 		));
 
 	// TODO: Upsert if the user doesn't exist already
-	const jwt = await signJWT<EnrollmentTokenState>(
+	const jwt = await createEnrollmentSession(
 		{
 			tid,
 			uid: dbUser.pk,
 			upn: userPrincipalName,
 		},
-		{
-			expirationTime: new Date(Date.now() + 15 * MINUTE),
-			audience: "mdm.mattrax.app",
-		},
+		15,
 	);
 	if (appru) return renderMDMCallback(appru, jwt);
 

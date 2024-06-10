@@ -134,16 +134,17 @@ function SelectContentVirtualized<TKey>(props: {
 	);
 }
 
-const SelectItem: Component<PolymorphicProps<"li", ListboxItemProps>> = (
-	props,
-) => {
+const SelectItem: Component<
+	PolymorphicProps<"li", ListboxItemProps> & { disabled?: boolean }
+> = (props) => {
 	const [, rest] = splitProps(props, ["class", "children"]);
 	return (
 		<SelectPrimitive.Item
 			class={cn(
-				"focus:bg-accent focus:text-accent-foreground relative mt-0 flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+				"focus:bg-accent focus:text-accent-foreground relative mt-0 flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none aria-disabled:pointer-events-none aria-disabled:opacity-50",
 				props.class,
 			)}
+			aria-disabled={props.disabled || false}
 			{...rest}
 		>
 			<span class="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">

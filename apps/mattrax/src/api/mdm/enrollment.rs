@@ -252,7 +252,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             //     return
             // }
 
-            let (upn, owner_pk, tenant_pk) = match cmd.header.security {
+            let (upn, owner_pk, tenant_pk, enrolled_by) = match cmd.header.security {
                 Some(RequestHeaderSecurity { binary_security_token: Some(token), .. }) => {
                     let bst_raw = match token.decode() {
                         Ok(raw) => raw,
@@ -286,11 +286,12 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                             }
 
-                            let upn = claims.get("upn").unwrap().as_str().unwrap().to_string(); // TODO: Error handling
-                            let owner_pk = claims.get("uid").unwrap().as_i64().unwrap().try_into().unwrap(); // TODO: Error handling
                             let tenant = claims.get("tid").unwrap().as_i64().unwrap().try_into().unwrap(); // TODO: Error handling
+                            let enrolled_by = claims.get("aid").map(|v| v.as_i64().unwrap().try_into().unwrap()); // TODO: Error handling                            
+                            let upn = claims.get("upn").map(|v| v.as_str().unwrap().to_string()); // TODO: Error handling
+                            let owner_pk = claims.get("uid").map(|v| v.as_i64().unwrap().try_into().unwrap()); // TODO: Error handling
 
-                            (upn, owner_pk, tenant)
+                            (upn, owner_pk, tenant, enrolled_by)
                         },
                         ty => {
                             // fault.Fault(err, "the users authenticity could not be verified", soap.FaultCodeAuthentication)
@@ -356,7 +357,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
 
             let (cert_store, common_name, enrollment_type) = match additional_context.get("EnrollmentType") {
                 Some("Device") => ("System", device_id.to_string(), ENROLLMENT_TYPE_DEVICE),
-                _ => ("User", upn.to_string(), ENROLLMENT_TYPE_USER),
+                _ => ("User", upn.unwrap_or_else(|| "system".to_string()).clone(), ENROLLMENT_TYPE_USER),
             };
 
             let Ok(csr) = cmd.body.request_security_token.binary_security_token.decode().map_err(|_err| {
@@ -472,7 +473,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
 
             // TODO: `HWDevID`, `DeviceID`, `OSVersion`
 
-            state.db.create_device(device_id.clone(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), enrollment_type.into(), OS_WINDOWS.into(), hw_dev_id.into(), tenant_pk, owner_pk).await.unwrap();
+            state.db.create_device(device_id.clone(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), enrollment_type.into(), OS_WINDOWS.into(), hw_dev_id.into(), tenant_pk, owner_pk, enrolled_by).await.unwrap();
 
             // TODO: Get the device's DB id and put into this
             // TODO: Lookup and set tenant name

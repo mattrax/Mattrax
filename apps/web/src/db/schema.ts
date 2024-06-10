@@ -207,7 +207,7 @@ export const users = mysqlTable(
 		pk: serial("pk").primaryKey(),
 		id: cuid("id").notNull().unique(),
 		name: varchar("name", { length: 256 }).notNull(),
-		email: varchar("email", { length: 256 }).notNull(),
+		upn: varchar("upn", { length: 256 }).notNull(),
 		tenantPk: serialRelation("tenant")
 			.references(() => tenants.pk)
 			.notNull(),
@@ -218,7 +218,7 @@ export const users = mysqlTable(
 		resourceId: varchar("resource_id", { length: 256 }),
 	},
 	(t) => ({
-		emailUnq: unique().on(t.email, t.tenantPk),
+		emailUnq: unique().on(t.upn, t.tenantPk),
 		resourceIdUnq: unique().on(t.resourceId, t.providerPk),
 	}),
 );
@@ -344,7 +344,8 @@ export const devices = mysqlTable("devices", {
 	azureADDeviceId: varchar("azure_ad_did", { length: 256 }).unique(),
 
 	enrolledAt: timestamp("enrolled_at").notNull().defaultNow(),
-	enrolledBy: serialRelation("enrolled_by").notNull(),
+	// This will be set if enrolled by a Mattrax account. If null it was enrolled by a user themselves.
+	enrolledBy: serialRelation("enrolled_by"),
 	lastSynced: timestamp("last_synced").notNull().defaultNow(),
 
 	tenantPk: serialRelation("tenant")

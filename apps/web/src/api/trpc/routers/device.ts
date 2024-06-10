@@ -5,9 +5,11 @@ import { TRPCError } from "@trpc/server";
 import { withTenant } from "~/api/tenant";
 import { omit } from "~/api/utils";
 import { invalidate } from "~/api/utils/realtime";
+import { createEnrollmentSession } from "~/app/enroll/util";
 import {
 	applicationAssignments,
 	applications,
+	db,
 	deviceActions,
 	devices,
 	policies,
@@ -15,6 +17,7 @@ import {
 	possibleDeviceActions,
 	users,
 } from "~/db";
+import { env } from "~/env";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
 
 const deviceProcedure = authedProcedure
@@ -211,5 +214,49 @@ export const deviceRouter = createTRPCRouter({
 				);
 
 			await db.transaction((db) => Promise.all(ops));
+		}),
+
+	generateEnrollmentSession: tenantProcedure
+		.input(z.object({ userId: z.string().nullable() }))
+		.mutation(async ({ ctx, input }) => {
+			const p = new URLSearchParams();
+			p.set("mode", "mdm");
+			p.set("servername", env.ENTERPRISE_ENROLLMENT_URL);
+
+			let data: { uid: number; upn: string } | undefined = undefined;
+			if (input.userId) {
+				const [user] = await db
+					.select({
+						pk: users.pk,
+						upn: users.upn,
+					})
+					.from(users)
+					.where(eq(users.id, input.userId));
+				if (!user) throw new TRPCError({ code: "NOT_FOUND", message: "user" }); // TODO: Handle this on the frontend
+
+				p.set("username", user.upn);
+				data = {
+					uid: user.pk,
+					upn: user.upn,
+				};
+			}
+
+			const jwt = await createEnrollmentSession(
+				data
+					? {
+							tid: ctx.tenant.pk,
+							...data,
+						}
+					: {
+							tid: ctx.tenant.pk,
+							aid: ctx.account.pk,
+						},
+				// 7 days
+				7 * 24 * 60,
+			);
+
+			p.set("accesstoken", jwt);
+
+			return `ms-device-enrollment:?${p.toString()}`;
 		}),
 });

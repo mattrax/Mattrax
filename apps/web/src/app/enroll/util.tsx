@@ -1,13 +1,30 @@
 import type { ParentProps } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { signJWT } from "~/api/utils/jwt";
 
 export const MINUTE = 60 * 1000;
 
+type AllOrNone<T> = T | { [K in keyof T]?: never };
+
 export type EnrollmentTokenState = {
 	tid: number;
+	aid?: number;
+} & AllOrNone<{
 	uid: number;
 	upn: string;
-};
+}>;
+
+// TODO: Enrollment sessions could be reused.
+// TODO: It would be nice if we could keep them in the DB and allow the admin to view and remove them.
+export function createEnrollmentSession(
+	state: EnrollmentTokenState,
+	minutesFromNowForExpiry: number,
+) {
+	return signJWT<EnrollmentTokenState>(state, {
+		expirationTime: new Date(Date.now() + minutesFromNowForExpiry * MINUTE),
+		audience: "mdm.mattrax.app",
+	});
+}
 
 export type State = {
 	// MDM webview special callback URL

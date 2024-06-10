@@ -6,7 +6,7 @@ import {
 	useNavigate,
 } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { Suspense, createSignal, onMount } from "solid-js";
+import { Show, Suspense, createSignal, onMount } from "solid-js";
 import type { RouterOutput } from "~/api/trpc";
 
 import {
@@ -18,13 +18,22 @@ import {
 	DialogTitle,
 	DialogTrigger,
 	DropdownMenuTrigger,
+	Input,
+	Label,
 	Select,
 	SelectContent,
 	SelectContentVirtualized,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
+	buttonVariants,
 } from "@mattrax/ui";
+import clsx from "clsx";
+import { Dynamic } from "solid-js/web";
+import { toast } from "solid-sonner";
 import { match } from "ts-pattern";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
 import { env } from "~/env";
@@ -41,6 +50,7 @@ import {
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { useTenantSlug } from "../ctx";
 import { cacheMetadata } from "../metadataCache";
+import { BruhIconPhArrowSquareOut, BruhIconPhCopyDuotone } from "./bruh";
 
 export const route = {
 	load: ({ params }) => {
@@ -168,11 +178,14 @@ function EnrollDeviceModal() {
 			placeholderData: [],
 		}),
 	);
+	const generateEnrollmentSession =
+		trpc.device.generateEnrollmentSession.createMutation();
 
 	const [user, setUser] = createSignal<string | null>(null);
 	const [platform, setPlatform] = createSignal<(typeof platforms)[number]>(
 		platforms[0],
 	);
+	const isRunningOnWindows = navigator.userAgent.includes("Win");
 
 	return (
 		<DialogHeader>
@@ -210,7 +223,11 @@ function EnrollDeviceModal() {
 				onChange={setUser}
 				disallowEmptySelection={false}
 				options={users.data?.map((user) => user.id) || []}
-				disabled={!users.data || users.data.length === 0}
+				disabled={
+					generateEnrollmentSession.isPending ||
+					!users.data ||
+					users.data.length === 0
+				}
 				placeholder="System"
 				class="flex-1 pb-2"
 			>
@@ -237,8 +254,14 @@ function EnrollDeviceModal() {
 					options={platforms}
 					disallowEmptySelection={true}
 					placeholder="Select a platform..."
+					disabled={generateEnrollmentSession.isPending}
 					itemComponent={(props) => (
-						<SelectItem item={props.item}>{props.item.rawValue}</SelectItem>
+						<SelectItem
+							item={props.item}
+							disabled={props.item.rawValue !== "Windows"}
+						>
+							{props.item.rawValue}
+						</SelectItem>
 					)}
 					class="flex-1"
 				>
@@ -249,10 +272,68 @@ function EnrollDeviceModal() {
 					</SelectTrigger>
 					<SelectContent />
 				</Select>
-				<Button class="w-full max-w-40 ml-4" onClick={() => alert("TODO")}>
+				<Button
+					class="w-full max-w-40 ml-4"
+					disabled={generateEnrollmentSession.isPending}
+					onClick={() => {
+						if (platform() !== "Windows") throw new Error("Not implemented");
+
+						generateEnrollmentSession.mutate({
+							tenantSlug: tenantSlug(),
+							userId: user(),
+						});
+					}}
+				>
 					Enroll
 				</Button>
 			</div>
+
+			<Show when={generateEnrollmentSession.data}>
+				{(url) => (
+					<>
+						<div class="flex flex-col space-y-1.5 pt-2">
+							<Label>
+								To start enrollment open the following link on a Windows device:
+							</Label>
+							<div class="flex space-x-2">
+								<Input readOnly value={url()} />
+								<Button
+									onClick={() => {
+										navigator.clipboard.writeText(url());
+										toast.success("Copied to clipboard", {
+											id: "clipboard",
+										});
+									}}
+								>
+									<BruhIconPhCopyDuotone />
+								</Button>
+								<Tooltip openDelay={0}>
+									<TooltipTrigger>
+										<Dynamic
+											component={isRunningOnWindows ? "a" : "span"}
+											href={url()}
+											class={clsx(
+												buttonVariants({}),
+												!isRunningOnWindows && "cursor-not-allowed opacity-75",
+											)}
+										>
+											<BruhIconPhArrowSquareOut />
+										</Dynamic>
+									</TooltipTrigger>
+									{!isRunningOnWindows && (
+										<TooltipContent>
+											You must be on a Windows device.
+										</TooltipContent>
+									)}
+								</Tooltip>
+							</div>
+							<p class="text-muted-foreground text-sm">
+								This link is valid for 7 days
+							</p>
+						</div>
+					</>
+				)}
+			</Show>
 		</DialogHeader>
 	);
 }

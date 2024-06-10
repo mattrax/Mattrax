@@ -231,8 +231,8 @@ exportQueries(
 				os: "String", // TODO: Enum
 				serial_number: "String",
 				tenant_pk: "u64",
-				owner_pk: "u64",
-				enrolled_by_pk: "u64",
+				owner_pk: "Option<u64>",
+				enrolled_by_pk: "Option<u64>",
 			},
 			query: (args) =>
 				db

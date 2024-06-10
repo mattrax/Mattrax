@@ -48,7 +48,7 @@ export const userRouter = createTRPCRouter({
 				.select({
 					id: users.id,
 					name: users.name,
-					email: users.email,
+					email: users.upn,
 					resourceId: users.resourceId,
 					provider: {
 						variant: identityProviders.provider,
@@ -70,7 +70,7 @@ export const userRouter = createTRPCRouter({
 				.select({
 					id: users.id,
 					name: users.name,
-					email: users.email,
+					email: users.upn,
 					providerResourceId: users.resourceId,
 					provider: {
 						variant: identityProviders.provider,
