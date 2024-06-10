@@ -1,3 +1,4 @@
+import { Resource } from "@mattrax/web/sst";
 import { createEnv } from "@t3-oss/env-core";
 import { getRequestEvent } from "solid-js/web";
 import { z } from "zod";
@@ -18,7 +19,6 @@ export const env = withEnv((env) => {
 	};
 
 	if (typeof document === "undefined" && isSSTEnvironment) {
-		const { Resource } = require("sst");
 		runtimeEnv = {
 			...runtimeEnv,
 			INTERNAL_SECRET: Resource.InternalSecret.value,

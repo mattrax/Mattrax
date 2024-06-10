@@ -12,6 +12,14 @@
 		"email:export": "email export --dir ./src/emails",
 		"cbuild": "NITRO_PRESET=cloudflare_pages vinxi build"
 	},
+	"exports": {
+		"./sst": {
+			"import": {
+				"browser": "./src/sst-shim.js",
+				"default": "./node_modules/sst/dist/index.js"
+			}
+		}
+	},
 	"dependencies": {
 		"@corvu/otp-field": "^0.1.0",
 		"@hono/zod-validator": "^0.2.1",

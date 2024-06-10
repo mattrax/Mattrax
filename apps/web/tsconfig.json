@@ -12,7 +12,8 @@
 			"~dash/*": ["./src/app/(dash)/*"],
 			"~[orgSlug]/*": ["./src/app/(dash)/o.[orgSlug]/*"],
 			"~[tenantSlug]": ["./src/app/(dash)/o.[orgSlug]/t.[tenantSlug].tsx"],
-			"~[tenantSlug]/*": ["./src/app/(dash)/o.[orgSlug]/t.[tenantSlug]/*"]
+			"~[tenantSlug]/*": ["./src/app/(dash)/o.[orgSlug]/t.[tenantSlug]/*"],
+			"@mattrax/web/sst": ["./node_modules/sst/dist/index.d.ts"]
 		}
 	},
 	"include": ["src/"],
