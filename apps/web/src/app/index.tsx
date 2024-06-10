@@ -1,4 +1,4 @@
-import { Navigate } from "@solidjs/router";
+import { Navigate, useSearchParams } from "@solidjs/router";
 import { Match, Switch } from "solid-js";
 
 import { useCachedQueryData } from "~/cache";
@@ -11,6 +11,8 @@ export const route = {
 };
 
 export default function Page() {
+	const [search] = useSearchParams<{ action?: string }>();
+
 	const query = trpc.org.list.createQuery();
 	const orgs = useCachedQueryData(query, () => cachedOrgs());
 
@@ -20,6 +22,15 @@ export default function Page() {
 
 		return o[0] ?? null;
 	};
+
+	let tenantSuffix = "";
+	let tenantState = undefined;
+	if (search.action === "enrollDevice") {
+		tenantSuffix = "/devices";
+		tenantState = {
+			enrollDialog: true,
+		};
+	}
 
 	return (
 		<Switch>
@@ -41,7 +52,7 @@ export default function Page() {
 						orgSlug: org().slug,
 					}));
 					const tenants = useCachedQueryData(query, () =>
-						cachedTenantsForOrg(org().id),
+						cachedTenantsForOrg(org().slug),
 					);
 
 					const defaultTenant = () => {
@@ -58,7 +69,10 @@ export default function Page() {
 							</Match>
 							<Match when={defaultTenant()}>
 								{(tenant) => (
-									<Navigate href={`/o/${org().slug}/t/${tenant().slug}`} />
+									<Navigate
+										href={`/o/${org().slug}/t/${tenant().slug}${tenantSuffix}`}
+										state={tenantState}
+									/>
 								)}
 							</Match>
 						</Switch>

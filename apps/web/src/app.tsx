@@ -87,18 +87,25 @@ export default function App() {
 									if (parseJson(error?.shape?.message)?.code) return;
 
 									if (error.data?.code === "UNAUTHORIZED") {
-										startTransition(() => {
-											let query = "";
-											if (
-												location.pathname !== "/" &&
-												location.pathname !== "/login"
-											)
-												query = `?${new URLSearchParams({
-													continueTo: location.pathname,
-												})}`;
-
-											navigate(`/login${query}`);
-										});
+										startTransition(() =>
+											navigate(
+												`/login${
+													location.query?.action
+														? `?action=${location.query.action}`
+														: ""
+												}`,
+												{
+													state: {
+														continueTo:
+															location.pathname !== "/" &&
+															location.pathname !== "/login"
+																? location.pathname
+																: undefined,
+													},
+													replace: true,
+												},
+											),
+										);
 										return;
 										// biome-ignore lint/style/noUselessElse:
 									} else if (error.data?.code === "FORBIDDEN") {

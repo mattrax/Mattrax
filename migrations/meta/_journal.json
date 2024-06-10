@@ -43,6 +43,13 @@
 			"when": 1717642399926,
 			"tag": "0005_mysterious_santa_claus",
 			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "5",
+			"when": 1717643076370,
+			"tag": "0006_young_rick_jones",
+			"breakpoints": true
 		}
 	]
 }

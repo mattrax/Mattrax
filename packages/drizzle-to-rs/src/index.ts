@@ -300,10 +300,7 @@ function buildResultType(
 			const keys = [...fields.keys()].map((k) => camelToSnakeCase(k));
 
 			const non_optional_keys = [...fields.entries()]
-				.filter(([_, ty]) => {
-					console.log(ty);
-					return !ty.startsWith("Option<");
-				})
+				.filter(([_, ty]) => !ty.startsWith("Option<"))
 				.map(([k, _]) => camelToSnakeCase(k));
 
 			impl = (index) => `{

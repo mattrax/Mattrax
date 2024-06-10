@@ -45,6 +45,8 @@ export default defineConfig({
 	}),
 	server: {
 		preset: nitroPreset,
+		// Cloudflare will take care of this
+		compressPublicAssets: false,
 		experimental: {
 			asyncContext: true,
 		},

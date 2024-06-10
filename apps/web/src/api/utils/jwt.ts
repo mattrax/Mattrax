@@ -35,7 +35,8 @@ export async function verifyJWT<T extends jose.JWTPayload>(
 		});
 		return result.payload;
 	} catch (err) {
-		console.error("invalid JWT", err);
+		if (!(err instanceof jose.errors.JWTExpired))
+			console.error("invalid JWT", err);
 		return null;
 	}
 }

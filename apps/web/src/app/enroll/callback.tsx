@@ -95,7 +95,7 @@ async function getToken(tenantId: string, code: string) {
 				client_id: env.ENTRA_CLIENT_ID,
 				client_secret: env.ENTRA_CLIENT_SECRET,
 				scope: "https://graph.microsoft.com/.default",
-				redirect_uri: `${env.PROD_ORIGIN}/enroll/callback`,
+				redirect_uri: `${env.VITE_PROD_ORIGIN}/enroll/callback`,
 				grant_type: "authorization_code",
 				code,
 			}),

@@ -82,7 +82,7 @@ export const adminsRouter = createTRPCRouter({
 				type: "tenantAdminInvite",
 				invitedByEmail: ctx.account.email,
 				tenantName: org.name,
-				inviteLink: `${env.PROD_ORIGIN}/invite/organisation/${code}`,
+				inviteLink: `${env.VITE_PROD_ORIGIN}/invite/organisation/${code}`,
 			});
 		}),
 

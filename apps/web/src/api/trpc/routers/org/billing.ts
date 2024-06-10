@@ -48,7 +48,7 @@ export const billingRouter = createTRPCRouter({
 
 		const body = new URLSearchParams({
 			customer: customerId,
-			return_url: `${env.PROD_ORIGIN}/o/${ctx.org.slug}/settings`,
+			return_url: `${env.VITE_PROD_ORIGIN}/o/${ctx.org.slug}/settings`,
 		});
 
 		const resp = await fetch(

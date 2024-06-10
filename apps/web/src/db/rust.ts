@@ -6,7 +6,7 @@ import {
 	leftJoinHint,
 } from "@mattrax/drizzle-to-rs";
 import dotenv from "dotenv";
-import { and, eq, isNull, max, min, sql } from "drizzle-orm";
+import { and, eq, max, min, sql } from "drizzle-orm";
 import { unionAll } from "drizzle-orm/mysql-core";
 import {
 	accounts,
@@ -232,6 +232,7 @@ exportQueries(
 				serial_number: "String",
 				tenant_pk: "u64",
 				owner_pk: "u64",
+				enrolled_by_pk: "u64",
 			},
 			query: (args) =>
 				db
@@ -244,6 +245,7 @@ exportQueries(
 						serialNumber: args.serial_number,
 						tenantPk: args.tenant_pk,
 						owner: args.owner_pk,
+						enrolledBy: args.enrolled_by_pk,
 					})
 					.onDuplicateKeyUpdate({
 						// TODO: When we do this update what if policies from the old-tenant refer to it. We kinda break shit.
@@ -409,12 +411,7 @@ exportQueries(
 				db
 					.select()
 					.from(deviceActions)
-					.where(
-						and(
-							eq(deviceActions.devicePk, args.device_id),
-							isNull(deviceActions.deployedAt),
-						),
-					),
+					.where(eq(deviceActions.devicePk, args.device_id)),
 		}),
 		defineOperation({
 			name: "update_device_lastseen",

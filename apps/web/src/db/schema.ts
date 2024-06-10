@@ -310,26 +310,6 @@ export const policyDeployStatus = mysqlTable(
 	}),
 );
 
-// A cache for storing the state of Windows management commands.
-export const windowsEphemeralState = mysqlTable(
-	"windows_ephemeral_state",
-	{
-		// TODO: Datatypes
-		sessionId: varchar("session_id", { length: 256 }).notNull(),
-		msgId: varchar("msg_id", { length: 256 }).notNull(),
-		cmdId: varchar("cmd_id", { length: 256 }).notNull(),
-		deployPk: serialRelation("deploy")
-			.references(() => policyDeploy.pk)
-			.notNull(),
-		key: varchar("key", { length: 256 }).notNull(),
-	},
-	(table) => ({
-		pk: primaryKey({
-			columns: [table.sessionId, table.msgId, table.cmdId],
-		}),
-	}),
-);
-
 export const possibleOSes = [
 	"Windows",
 	"iOS",
@@ -364,7 +344,7 @@ export const devices = mysqlTable("devices", {
 	azureADDeviceId: varchar("azure_ad_did", { length: 256 }).unique(),
 
 	enrolledAt: timestamp("enrolled_at").notNull().defaultNow(),
-	// enrolledBy:  // TODO: No foreign key
+	enrolledBy: serialRelation("enrolled_by").notNull(),
 	lastSynced: timestamp("last_synced").notNull().defaultNow(),
 
 	tenantPk: serialRelation("tenant")

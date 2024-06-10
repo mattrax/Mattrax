@@ -1,6 +1,5 @@
 import { createEnv } from "@t3-oss/env-core";
 import { getRequestEvent } from "solid-js/web";
-import { Resource } from "sst";
 import { z } from "zod";
 
 function optionalInDev<T extends z.ZodTypeAny>(
@@ -13,17 +12,23 @@ export const env = withEnv((env) => {
 	// we're in an sst cloud environment
 	const isSSTEnvironment = "SST_RESOURCE_App" in env;
 
-	const runtimeEnv = {
+	let runtimeEnv: Record<string, any> = {
+		VITE_PROD_ORIGIN: import.meta.env.VITE_PROD_ORIGIN,
 		...env,
-		...(isSSTEnvironment && {
+	};
+
+	if (typeof document === "undefined" && isSSTEnvironment) {
+		const { Resource } = require("sst");
+		runtimeEnv = {
+			...runtimeEnv,
 			INTERNAL_SECRET: Resource.InternalSecret.value,
 			AWS_ACCESS_KEY_ID: Resource.MattraxWebIAMUserAccessKey.id,
 			AWS_SECRET_ACCESS_KEY: Resource.MattraxWebIAMUserAccessKey.secret,
 			ENTRA_CLIENT_ID: Resource.EntraClientID.value,
 			ENTRA_CLIENT_SECRET: Resource.EntraClientSecret.value,
 			STRIPE_SECRET_KEY: Resource.StripeSecretKey.value,
-		}),
-	};
+		};
+	}
 
 	return createEnv({
 		server: {
@@ -33,7 +38,6 @@ export const env = withEnv((env) => {
 			// This token is also used to authenticate `apps/web` with the Rust code when making HTTP requests
 			INTERNAL_SECRET: z.string(),
 			DATABASE_URL: z.string(),
-			PROD_ORIGIN: z.string(),
 			MDM_URL: z.string(),
 			ENTERPRISE_ENROLLMENT_URL: z.string(),
 			FROM_ADDRESS: z.string(),
@@ -53,7 +57,9 @@ export const env = withEnv((env) => {
 			COOKIE_DOMAIN: z.string().optional(),
 		},
 		clientPrefix: "VITE_",
-		client: {},
+		client: {
+			VITE_PROD_ORIGIN: z.string(),
+		},
 		runtimeEnv,
 		skipValidation: env.SKIP_ENV_VALIDATION === "true",
 		emptyStringAsUndefined: true,
@@ -67,10 +73,7 @@ export function withEnv<T extends object>(
 	fn: (e: { [key: string]: any | undefined }) => T,
 ): T {
 	// If we are on the client we use the values in the bundle
-	if ("window" in globalThis)
-		return fn({
-			// We need to manually list all the env variables we want to use in the client
-		});
+	if ("window" in globalThis) return fn({});
 
 	const cache = new Map();
 
