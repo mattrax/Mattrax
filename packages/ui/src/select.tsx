@@ -10,8 +10,8 @@ import type {
 	SelectContentProps,
 	SelectTriggerProps,
 } from "@kobalte/core/select";
+import { createVirtualizer } from "@tanstack/solid-virtual";
 import { cn } from "./lib";
-import { createVirtualizer, type Virtualizer } from "@tanstack/solid-virtual";
 
 const Select = SelectPrimitive.Root;
 

@@ -1,5 +1,5 @@
 import { createTimeAgo } from "@solid-primitives/date";
-import { A, useLocation, type RouteDefinition } from "@solidjs/router";
+import { A, type RouteDefinition, useLocation } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Suspense, createEffect, createSignal } from "solid-js";
 import type { RouterOutput } from "~/api/trpc";
@@ -20,7 +20,9 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@mattrax/ui";
+import { match } from "ts-pattern";
 import { TableSearchParamsInput } from "~/components/TableSearchParamsInput";
+import { env } from "~/env";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
@@ -34,8 +36,6 @@ import {
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { useTenantSlug } from "../ctx";
 import { cacheMetadata } from "../metadataCache";
-import { env } from "~/env";
-import { match } from "ts-pattern";
 
 export const route = {
 	load: ({ params }) => {
