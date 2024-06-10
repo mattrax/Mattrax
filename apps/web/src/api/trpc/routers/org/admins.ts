@@ -92,11 +92,10 @@ export const adminsRouter = createTRPCRouter({
 			const invite = await ctx.db.query.organisationInvites.findFirst({
 				where: eq(organisationInvites.code, input.code),
 			});
-			if (!invite)
-				throw new TRPCError({
-					code: "FORBIDDEN",
-					message: "Invalid invite code",
-				});
+			if (!invite) {
+				flushResponse();
+				return null;
+			}
 
 			const name = invite.email.split("@")[0] ?? "";
 
@@ -114,10 +113,17 @@ export const adminsRouter = createTRPCRouter({
 					.select({ pk: accounts.pk, id: accounts.id })
 					.from(accounts);
 
-				await db.insert(organisationMembers).values({
-					orgPk: invite.orgPk,
-					accountPk: account!.pk,
-				});
+				await db
+					.insert(organisationMembers)
+					.values({
+						orgPk: invite.orgPk,
+						accountPk: account!.pk,
+					})
+					.onDuplicateKeyUpdate({
+						set: {
+							accountPk: sql`${organisationMembers.accountPk}`,
+						},
+					});
 
 				await db
 					.delete(organisationInvites)

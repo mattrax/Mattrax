@@ -158,7 +158,7 @@ export const userRouter = createTRPCRouter({
 			// TODO: "On behalf of {tenant_name}" in the content + render `input.message` inside the email.
 			await sendEmail({
 				type: "userEnrollmentInvite",
-				to: user.email,
+				to: user.upn,
 				subject: "Enroll your device to Mattrax",
 				tenantName: tenant.name,
 			});

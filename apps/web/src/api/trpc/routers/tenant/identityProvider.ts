@@ -324,7 +324,7 @@ export async function upsertEntraIdUser(
 		.insert(users)
 		.values({
 			name: u.displayName!,
-			email: u.userPrincipalName!,
+			upn: u.userPrincipalName!,
 			tenantPk: tenantPk,
 			providerPk: identityProviderPk,
 			resourceId: u.id!,

@@ -141,7 +141,7 @@ export async function GET({ request, nativeEvent }: APIEvent) {
 			const p = new URLSearchParams();
 			p.set("mode", "mdm");
 			p.set("servername", env.ENTERPRISE_ENROLLMENT_URL);
-			p.set("username", payload.upn);
+			if (payload.upn) p.set("username", payload.upn);
 			p.set("accesstoken", enroll_session);
 
 			return renderWithApp(() => (
