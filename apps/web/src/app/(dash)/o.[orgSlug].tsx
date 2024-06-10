@@ -81,6 +81,11 @@ function useInvalidationSystem() {
 			`${rustUrl.data
 				?.replace("https://", "wss://")
 				?.replace("http://", "ws://")}/realtime`,
+			undefined,
+			{
+				// Back off in dev so the console doesn't get spammed
+				delay: import.meta.env.DEV ? 9999999 : undefined,
+			},
 		);
 
 		ws.addEventListener("open", () =>
