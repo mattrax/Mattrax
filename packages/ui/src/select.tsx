@@ -2,7 +2,7 @@ import {
 	type PolymorphicProps,
 	Select as SelectPrimitive,
 } from "@kobalte/core";
-import type { Component, JSX } from "solid-js";
+import type { Component, ComponentProps, JSX } from "solid-js";
 import { For, Show, Suspense, splitProps } from "solid-js";
 
 import type { ListboxItemProps } from "@kobalte/core/listbox";
@@ -13,7 +13,12 @@ import type {
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import clsx from "clsx";
 
-const Select = SelectPrimitive.Root;
+const Select = (props: ComponentProps<typeof SelectPrimitive.Root>) => (
+	<SelectPrimitive.Root
+		{...props}
+		disallowEmptySelection={props.disallowEmptySelection ?? true}
+	/>
+);
 
 const SelectValue = SelectPrimitive.Value;
 

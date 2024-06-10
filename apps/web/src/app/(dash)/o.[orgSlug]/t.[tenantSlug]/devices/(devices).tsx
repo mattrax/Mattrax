@@ -252,7 +252,6 @@ function EnrollDeviceModal() {
 					onChange={setPlatform}
 					// @ts-expect-error
 					options={platforms}
-					disallowEmptySelection={true}
 					placeholder="Select a platform..."
 					disabled={generateEnrollmentSession.isPending}
 					itemComponent={(props) => (
