@@ -34,8 +34,9 @@ for (let i = 0; i < forms.length; i++) {
 	})
 }`;
 
-function FormPage(props: ParentProps<{ continue: boolean; class?: string }>) {
-	return (
+const FormPageFactory =
+	(factoryProps: { continue: boolean; appru: string | null }) =>
+	(props: ParentProps<{ class?: string }>) => (
 		<Layout>
 			<CardDescription>
 				Please enter your company email to get started
@@ -46,8 +47,16 @@ function FormPage(props: ParentProps<{ continue: boolean; class?: string }>) {
 			</CardDescription>
 
 			<form class="pt-2 w-full max-w-80">
-				{props.continue ? (
+				{factoryProps.continue ? (
 					<input type="hidden" name="continue" value="true" class="hidden" />
+				) : null}
+				{factoryProps.appru ? (
+					<input
+						type="hidden"
+						name="appru"
+						value={factoryProps.appru}
+						class="hidden"
+					/>
 				) : null}
 
 				<Input
@@ -64,7 +73,6 @@ function FormPage(props: ParentProps<{ continue: boolean; class?: string }>) {
 			</form>
 		</Layout>
 	);
-}
 
 // This endpoint is fired for:
 //   - The browser opening the enrollment UI
@@ -75,6 +83,7 @@ function FormPage(props: ParentProps<{ continue: boolean; class?: string }>) {
 export async function GET({ request, nativeEvent }: APIEvent) {
 	const url = new URL(request.url);
 
+	// If `continue` is set ignore the fact that a dashboard session exists.
 	const continueAuth = url.searchParams.get("continue") === "true";
 
 	// This is set by `/enroll/callback`
@@ -83,7 +92,22 @@ export async function GET({ request, nativeEvent }: APIEvent) {
 	// This is set by an administrator logging in at `/login`
 	const dashboard_session = getCookie(nativeEvent, "auth_session");
 
-	if (dashboard_session && !continueAuth) {
+	// `appru` and `login_hint` are parameters set by Windows MDM client
+	const appru = url.searchParams.get("appru");
+	// The access token from the `ms-device-enrollment:?` link.
+	// This won't be set if the enrollment is started on the device but will be set if the user started in their browser through `/enroll`.
+	const accesstoken = url.searchParams.get("accesstoken");
+
+	// `email` is set when coming from the form when submitted `/enroll`, `login_hint` is set by the MDM browser.
+	const email =
+		url.searchParams.get("email") ?? url.searchParams.get("login_hint");
+
+	const FormPage = FormPageFactory({
+		continue: continueAuth,
+		appru,
+	});
+
+	if (dashboard_session && !continueAuth && email === null && appru === null) {
 		// We don't validate the session and that's fine because nothing sensitive is being done here.
 
 		return renderWithApp(() => (
@@ -99,6 +123,7 @@ export async function GET({ request, nativeEvent }: APIEvent) {
 							Enroll via dashboard
 						</span>
 					</a>
+
 					<a href="?continue=true" class={buttonVariants({})}>
 						<span class="text-sm font-semibold leading-6">Continue</span>
 					</a>
@@ -142,20 +167,10 @@ export async function GET({ request, nativeEvent }: APIEvent) {
 		}
 	}
 
-	// `appru` and `login_hint` are parameters set by Windows MDM client
-	const appru = url.searchParams.get("appru");
-	// The access token from the `ms-device-enrollment:?` link.
-	// This won't be set if the enrollment is started on the device but will be set if the user started in their browser through `/enroll`.
-	const accesstoken = url.searchParams.get("accesstoken");
-
-	// `email` is set when coming from the form when submitted `/enroll`, `login_hint` is set by the MDM browser.
-	const email =
-		url.searchParams.get("email") ?? url.searchParams.get("login_hint");
-
 	// The user just navigated to this page so give them the form to enter their email.
 	if (!email)
 		return renderWithApp(() => (
-			<FormPage continue={continueAuth}>
+			<FormPage>
 				This will guide your through setting up your device so that your IT
 				administrator can keep it secure and provide you with access to
 				organisation resources.
@@ -209,12 +224,18 @@ export async function GET({ request, nativeEvent }: APIEvent) {
 					</CardDescription>
 
 					<div class="flex space-x-4 pt-4">
-						<a href="/?action=enrollDevice" class={buttonVariants({})}>
-							<span class="text-sm font-semibold leading-6">
-								Enroll via dashboard
-							</span>
-						</a>
-						<a href="?" class={buttonVariants({})}>
+						{appru === null ? (
+							<a href="/?action=enrollDevice" class={buttonVariants({})}>
+								<span class="text-sm font-semibold leading-6">
+									Enroll via dashboard
+								</span>
+							</a>
+						) : null}
+
+						<a
+							href={continueAuth ? "?continue=true" : "?"}
+							class={buttonVariants({})}
+						>
 							<span class="text-sm font-semibold leading-6">Try again</span>
 						</a>
 					</div>
@@ -223,7 +244,7 @@ export async function GET({ request, nativeEvent }: APIEvent) {
 		}
 
 		return renderWithApp(() => (
-			<FormPage continue={continueAuth} class="text-red-500">
+			<FormPage class="text-red-500">
 				The email <b>{email}</b> is not connected with Mattrax. Please check
 				that you entered your company email correctly.
 			</FormPage>
