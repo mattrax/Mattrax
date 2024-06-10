@@ -1,11 +1,14 @@
-import { Navigate } from "@solidjs/router";
+import { Navigate, useParams } from "@solidjs/router";
 import { parse } from "cookie-es";
 import type { ParentProps } from "solid-js";
 
 export default function Layout(props: ParentProps) {
-	const cookies = parse(document.cookie);
-	if (cookies.isLoggedIn === "true") {
-		return <Navigate href="/" />;
+	const params = useParams();
+
+	// We do this redirect in the layout so the empty layout doesn't render while navigating
+	if (params?.code === undefined) {
+		const cookies = parse(document.cookie);
+		if (cookies.isLoggedIn === "true") return <Navigate href="/" />;
 	}
 
 	return (
