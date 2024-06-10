@@ -1,8 +1,8 @@
 import type { Component, ComponentProps } from "solid-js";
 import { splitProps } from "solid-js";
 
+import clsx from "clsx";
 import { type ButtonProps, buttonVariants } from "./button";
-import { cn } from "./lib";
 
 const Pagination: Component<ComponentProps<"nav">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
@@ -10,7 +10,7 @@ const Pagination: Component<ComponentProps<"nav">> = (props) => {
 		<nav
 			role="navigation"
 			aria-label="pagination"
-			class={cn("mx-auto flex w-full justify-center", props.class)}
+			class={clsx("mx-auto flex w-full justify-center", props.class)}
 			{...rest}
 		/>
 	);
@@ -19,13 +19,16 @@ const Pagination: Component<ComponentProps<"nav">> = (props) => {
 const PaginationContent: Component<ComponentProps<"ul">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
-		<ul class={cn("flex flex-row items-center gap-1", props.class)} {...rest} />
+		<ul
+			class={clsx("flex flex-row items-center gap-1", props.class)}
+			{...rest}
+		/>
 	);
 };
 
 const PaginationItem: Component<ComponentProps<"li">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
-	return <li class={cn("", props.class)} {...rest} />;
+	return <li class={clsx("", props.class)} {...rest} />;
 };
 
 type PaginationLinkProps = {
@@ -40,7 +43,7 @@ const PaginationLink = (props: PaginationLinkProps) => {
 		<PaginationItem>
 			<a
 				aria-current={props.isActive ? "page" : undefined}
-				class={cn(
+				class={clsx(
 					buttonVariants({
 						variant: props.isActive ? "outline" : "ghost",
 						size: props.size ?? "icon",
@@ -59,7 +62,7 @@ const PaginationPrevious: typeof PaginationLink = (props) => {
 		<PaginationLink
 			aria-label="Go to previous page"
 			size="default"
-			class={cn("gap-1 pl-2.5", props.class)}
+			class={clsx("gap-1 pl-2.5", props.class)}
 			{...rest}
 		>
 			<IconTablerChevronLeft class="h-4 w-4" />
@@ -74,7 +77,7 @@ const PaginationNext: typeof PaginationLink = (props) => {
 		<PaginationLink
 			aria-label="Go to next page"
 			size="default"
-			class={cn("gap-1 pr-2.5", props.class)}
+			class={clsx("gap-1 pr-2.5", props.class)}
 			{...rest}
 		>
 			<span>Next</span>
@@ -88,7 +91,7 @@ const PaginationEllipsis: Component<ComponentProps<"span">> = (props) => {
 	return (
 		<span
 			aria-hidden
-			class={cn("flex h-9 w-9 items-center justify-center", props.class)}
+			class={clsx("flex h-9 w-9 items-center justify-center", props.class)}
 			{...rest}
 		>
 			<IconTablerDots class="h-4 w-4" />

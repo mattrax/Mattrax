@@ -7,12 +7,12 @@ import {
 } from "@kobalte/core";
 import type { PopoverContentProps } from "@kobalte/core/popover";
 
+import clsx from "clsx";
 import {
 	type Controller,
 	ControllerProvider,
 	createController,
 } from "./controller";
-import { cn } from "./lib";
 
 const Popover: Component<
 	Omit<PopoverPrimitive.PopoverRootProps, "open"> &
@@ -50,7 +50,7 @@ const PopoverContent = <T extends ValidComponent = "div">(
 	return (
 		<PopoverPrimitive.Portal>
 			<PopoverPrimitive.Content
-				class={cn(
+				class={clsx(
 					"z-50 origin-[var(--kb-popover-content-transform-origin)] rounded-md border overflow-hidden bg-popover text-popover-foreground shadow-md outline-none data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95",
 					props.class,
 				)}

@@ -7,14 +7,15 @@ import clsx from "clsx";
 import type { ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { cn } from "./lib";
-
 const Checkbox = <T extends ValidComponent = "div">(
 	props: PolymorphicProps<T, CheckboxRootProps>,
 ) => {
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
-		<CheckboxPrimitive.Root class={cn("items-top flex", props.class)} {...rest}>
+		<CheckboxPrimitive.Root
+			class={clsx("items-top flex", props.class)}
+			{...rest}
+		>
 			<CheckboxPrimitive.Input class="peer" style={{ position: "relative" }} />
 			<CheckboxPrimitive.Control
 				class={clsx(

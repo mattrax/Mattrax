@@ -7,7 +7,7 @@ import {
 } from "@kobalte/core";
 import type { SeparatorRootProps } from "@kobalte/core/separator";
 
-import { cn } from "./lib";
+import clsx from "clsx";
 
 const Separator = <T extends ValidComponent = "hr">(
 	props: PolymorphicProps<T, SeparatorRootProps>,
@@ -16,7 +16,7 @@ const Separator = <T extends ValidComponent = "hr">(
 	return (
 		<SeparatorPrimitive.Root
 			orientation={props.orientation ?? "horizontal"}
-			class={cn(
+			class={clsx(
 				"bg-border shrink-0",
 				props.orientation === "vertical" ? "h-full w-[1px]" : "h-[1px] w-full",
 				props.class,

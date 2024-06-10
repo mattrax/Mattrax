@@ -4,8 +4,8 @@ import { splitProps } from "solid-js";
 import type { VariantProps } from "class-variance-authority";
 import { cva } from "class-variance-authority";
 
+import clsx from "clsx";
 import { createSignal } from "solid-js";
-import { cn } from "./lib";
 
 const buttonVariants = cva(
 	[
@@ -50,7 +50,7 @@ const Button: Component<ButtonProps> = (props) => {
 	return (
 		<button
 			type={props.type || "button"}
-			class={cn(
+			class={clsx(
 				buttonVariants({ variant: props.variant, size: props.size }),
 				props.class,
 			)}

@@ -14,12 +14,12 @@ import type {
 import type { Component, ComponentProps, ValidComponent } from "solid-js";
 import { Show, splitProps } from "solid-js";
 
+import clsx from "clsx";
 import {
 	type Controller,
 	ControllerProvider,
 	createController,
 } from "./controller";
-import { cn } from "./lib";
 
 const Dialog: Component<
 	Omit<DialogRootProps, "open"> &
@@ -70,7 +70,7 @@ const DialogOverlay = <T extends ValidComponent = "div">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DialogPrimitive.Overlay
-			class={cn(
+			class={clsx(
 				"bg-background/60 data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 fixed inset-0 z-50 backdrop-blur-[2px]",
 				props.class,
 			)}
@@ -94,7 +94,7 @@ const DialogContent = <T extends ValidComponent = "div">(
 		<DialogPortal>
 			<DialogOverlay />
 			<DialogPrimitive.Content
-				class={cn(
+				class={clsx(
 					"bg-background data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95 data-[closed]:slide-out-to-left-1/2 data-[closed]:slide-out-to-top-[48%] data-[expanded]:slide-in-from-left-1/2 data-[expanded]:slide-in-from-top-[48%] fixed z-50 grid gap-4 border p-6 shadow-lg duration-200 sm:rounded-lg",
 					props.class,
 					props.positionClass ??
@@ -118,7 +118,7 @@ const DialogHeader: Component<ComponentProps<"div">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<div
-			class={cn(
+			class={clsx(
 				"flex flex-col space-y-1.5 text-center sm:text-left",
 				props.class,
 			)}
@@ -131,7 +131,7 @@ const DialogFooter: Component<ComponentProps<"div">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<div
-			class={cn(
+			class={clsx(
 				"flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
 				props.class,
 			)}
@@ -146,7 +146,7 @@ const DialogTitle = <T extends ValidComponent = "h2">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DialogPrimitive.Title
-			class={cn(
+			class={clsx(
 				"text-lg font-semibold leading-none tracking-tight",
 				props.class,
 			)}
@@ -161,7 +161,7 @@ const DialogDescription = <T extends ValidComponent = "p">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DialogPrimitive.Description
-			class={cn("text-muted-foreground text-sm", props.class)}
+			class={clsx("text-muted-foreground text-sm", props.class)}
 			{...rest}
 		/>
 	);

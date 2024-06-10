@@ -17,7 +17,7 @@ import type {
 	ComboboxInputProps,
 	ComboboxTriggerProps,
 } from "@kobalte/core/combobox";
-import { cn } from "./lib";
+import clsx from "clsx";
 
 const ComboboxRoot = ComboboxPrimitive.Root;
 
@@ -32,7 +32,7 @@ const ComboboxItem = <T extends ValidComponent = "li">(
 	);
 	return (
 		<ComboboxPrimitive.Item
-			class={cn(
+			class={clsx(
 				"relative flex cursor-default select-none items-center justify-between rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:opacity-50",
 				local.class,
 			)}
@@ -60,7 +60,7 @@ const ComboboxSection = <T extends ValidComponent = "li">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<ComboboxPrimitive.Section
-			class={cn(
+			class={clsx(
 				"overflow-hidden p-1 px-2 py-1.5 text-xs font-medium text-muted-foreground ",
 				props.class,
 			)}
@@ -76,7 +76,7 @@ function ComboboxControl<Option>(
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<ComboboxPrimitive.Control
-			class={cn("flex items-center rounded-md border px-3", props.class)}
+			class={clsx("flex items-center rounded-md border px-3", props.class)}
 			{...rest}
 		/>
 	);
@@ -88,7 +88,7 @@ const ComboboxInput = <T extends ValidComponent = "input">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<ComboboxPrimitive.Input
-			class={cn(
+			class={clsx(
 				"flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
 				props.class,
 			)}
@@ -105,7 +105,7 @@ const ComboboxTrigger = <T extends ValidComponent = "button">(
 	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<ComboboxPrimitive.Trigger
-			class={cn("size-4 opacity-50", props.class)}
+			class={clsx("size-4 opacity-50", props.class)}
 			{...rest}
 		>
 			<ComboboxPrimitive.Icon>
@@ -122,7 +122,7 @@ const ComboboxContent = <T extends ValidComponent = "div">(
 	return (
 		<ComboboxPrimitive.Portal>
 			<ComboboxPrimitive.Content
-				class={cn(
+				class={clsx(
 					"relative z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-80",
 					props.class,
 				)}

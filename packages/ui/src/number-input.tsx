@@ -12,7 +12,7 @@ import type {
 } from "@kobalte/core/number-field";
 import { type Component, type ValidComponent, splitProps } from "solid-js";
 
-import { cn } from "./lib";
+import clsx from "clsx";
 
 const NumberInput = NumberInputPrimitive.Root;
 
@@ -22,7 +22,7 @@ const NumberInputLabel = <T extends ValidComponent = "label">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<NumberInputPrimitive.Label
-			class={cn(
+			class={clsx(
 				"text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
 				props.class,
 			)}
@@ -37,7 +37,7 @@ const NumberInputControl = <T extends ValidComponent = "input">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<NumberInputPrimitive.Input
-			class={cn(
+			class={clsx(
 				"flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground",
 				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-shadow duration-75",
 				"disabled:cursor-not-allowed disabled:opacity-50 data-[invalid]:border-error-foreground data-[invalid]:text-error-foreground",
@@ -54,7 +54,7 @@ const NumberInputIncrementTrigger = <T extends ValidComponent = "button">(
 	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<NumberInputPrimitive.IncrementTrigger
-			class={cn(
+			class={clsx(
 				"absolute right-1 top-1 inline-flex size-4 items-center justify-center",
 				props.class,
 			)}
@@ -85,7 +85,7 @@ const NumberInputDecrementTrigger = <T extends ValidComponent = "button">(
 	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<NumberInputPrimitive.DecrementTrigger
-			class={cn(
+			class={clsx(
 				"absolute bottom-1 right-1 inline-flex size-4 items-center justify-center",
 				props.class,
 			)}
@@ -116,7 +116,7 @@ const NumberInputDescription = <T extends ValidComponent = "div">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<NumberInputPrimitive.Description
-			class={cn("text-sm text-muted-foreground", props.class)}
+			class={clsx("text-sm text-muted-foreground", props.class)}
 			{...rest}
 		/>
 	);
@@ -128,7 +128,7 @@ const NumberInputErrorMessage = <T extends ValidComponent = "div">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<NumberInputPrimitive.ErrorMessage
-			class={cn("text-sm text-error-foreground", props.class)}
+			class={clsx("text-sm text-error-foreground", props.class)}
 			{...rest}
 		/>
 	);

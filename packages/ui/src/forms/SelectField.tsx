@@ -8,7 +8,7 @@ import {
 	splitProps,
 } from "solid-js";
 
-import { clsx } from "clsx";
+import clsx from "clsx";
 import { Label, Select } from "..";
 
 type DistributiveOmit<T, K extends keyof any> = T extends any

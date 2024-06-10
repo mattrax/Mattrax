@@ -11,7 +11,7 @@ import type {
 	SelectTriggerProps,
 } from "@kobalte/core/select";
 import { createVirtualizer } from "@tanstack/solid-virtual";
-import { cn } from "./lib";
+import clsx from "clsx";
 
 const Select = SelectPrimitive.Root;
 
@@ -24,7 +24,7 @@ const SelectTrigger: Component<PolymorphicProps<"button", SelectTriggerProps>> =
 		const [, rest] = splitProps(props, ["class", "children"]);
 		return (
 			<SelectPrimitive.Trigger
-				class={cn(
+				class={clsx(
 					"border-input ring-offset-background placeholder:text-muted-foreground focus:ring-ring flex h-10 w-full items-center justify-between rounded-md border bg-transparent px-3 py-2 text-sm",
 					"focus:outline-none focus:ring-2 focus:ring-offset-2 transition-shadow duration-75",
 					"disabled:cursor-not-allowed disabled:opacity-50",
@@ -48,7 +48,7 @@ const SelectContent: Component<PolymorphicProps<"div", SelectContentProps>> = (
 	return (
 		<SelectPrimitive.Portal>
 			<SelectPrimitive.Content
-				class={cn(
+				class={clsx(
 					"bg-popover text-popover-foreground relative z-50 min-w-[8rem] overflow-hidden rounded-md border shadow-md focus:outline-none",
 					"ui-expanded:animate-in ui-expanded:fade-in-0 ui-expanded:slide-in-from-top-2",
 					"ui-closed:animate-out ui-closed:fade-out-0 ui-closed:slide-out-to-top-2",
@@ -140,7 +140,7 @@ const SelectItem: Component<
 	const [, rest] = splitProps(props, ["class", "children"]);
 	return (
 		<SelectPrimitive.Item
-			class={cn(
+			class={clsx(
 				"focus:bg-accent focus:text-accent-foreground relative mt-0 flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none aria-disabled:pointer-events-none aria-disabled:opacity-50",
 				props.class,
 			)}

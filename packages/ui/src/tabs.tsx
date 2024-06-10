@@ -9,7 +9,7 @@ import type {
 	TabsTriggerProps,
 } from "@kobalte/core/tabs";
 
-import { cn } from "./lib";
+import clsx from "clsx";
 
 const Tabs = TabsPrimitive.Root;
 
@@ -19,7 +19,7 @@ const TabsList = <T extends ValidComponent = "div">(
 	const [local, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<TabsPrimitive.List
-			class={cn(
+			class={clsx(
 				"relative bg-muted text-muted-foreground inline-flex h-10 items-center justify-center rounded-md p-1",
 				props.class,
 			)}
@@ -40,7 +40,7 @@ const TabsTrigger = <T extends ValidComponent = "button">(
 	);
 	return (
 		<TabsPrimitive.Trigger
-			class={cn(
+			class={clsx(
 				"peer z-[2] data-[selected]:text-foreground inline-flex items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 outline-none",
 				local.class,
 			)}
@@ -58,7 +58,7 @@ const TabsContent = <T extends ValidComponent = "div">(
 	);
 	return (
 		<TabsPrimitive.Content
-			class={cn(
+			class={clsx(
 				"ring-offset-background focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
 				local.class,
 			)}
@@ -80,7 +80,7 @@ const TabsIndicator = <T extends ValidComponent = "div">(
 	return (
 		<TabsPrimitive.Indicator
 			classList={{ "duration-250ms transition-all": mounted() }}
-			class={cn(
+			class={clsx(
 				"z-[1] absolute rounded-sm shadow-sm inset-y-1 left-0",
 				"bg-background ring-offset-2 ring-offset-background peer-focus-visible:ring-ring peer-focus-visible:ring-2",
 				props.class,

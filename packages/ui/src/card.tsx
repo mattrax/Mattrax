@@ -1,13 +1,13 @@
 import type { Component, ComponentProps } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { cn } from "./lib";
+import clsx from "clsx";
 
 const Card: Component<ComponentProps<"div">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<div
-			class={cn(
+			class={clsx(
 				"bg-card text-card-foreground rounded-lg border shadow-sm",
 				props.class,
 			)}
@@ -19,7 +19,7 @@ const Card: Component<ComponentProps<"div">> = (props) => {
 const CardHeader: Component<ComponentProps<"div">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
-		<div class={cn("flex flex-col space-y-1.5 p-6", props.class)} {...rest} />
+		<div class={clsx("flex flex-col space-y-1.5 p-6", props.class)} {...rest} />
 	);
 };
 
@@ -27,7 +27,7 @@ const CardTitle: Component<ComponentProps<"h3">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<h3
-			class={cn(
+			class={clsx(
 				"text-lg font-semibold leading-none tracking-tight",
 				props.class,
 			)}
@@ -39,19 +39,19 @@ const CardTitle: Component<ComponentProps<"h3">> = (props) => {
 const CardDescription: Component<ComponentProps<"p">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
-		<p class={cn("text-muted-foreground text-sm", props.class)} {...rest} />
+		<p class={clsx("text-muted-foreground text-sm", props.class)} {...rest} />
 	);
 };
 
 const CardContent: Component<ComponentProps<"div">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
-	return <div class={cn("p-6 pt-0", props.class)} {...rest} />;
+	return <div class={clsx("p-6 pt-0", props.class)} {...rest} />;
 };
 
 const CardFooter: Component<ComponentProps<"div">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
-		<div class={cn("flex items-center p-6 pt-0", props.class)} {...rest} />
+		<div class={clsx("flex items-center p-6 pt-0", props.class)} {...rest} />
 	);
 };
 

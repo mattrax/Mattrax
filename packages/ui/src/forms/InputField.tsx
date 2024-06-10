@@ -13,7 +13,7 @@ import {
 	splitProps,
 } from "solid-js";
 
-import { clsx } from "clsx";
+import clsx from "clsx";
 import { Input, Label } from "..";
 
 export function InputField<

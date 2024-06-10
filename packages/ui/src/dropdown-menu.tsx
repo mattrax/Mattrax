@@ -18,12 +18,12 @@ import type { SeparatorRootProps } from "@kobalte/core/separator";
 import type { Component, ComponentProps, ValidComponent } from "solid-js";
 import { createMemo, splitProps } from "solid-js";
 
+import clsx from "clsx";
 import {
 	type Controller,
 	ControllerProvider,
 	createController,
 } from "./controller";
-import { cn } from "./lib";
 
 const DropdownMenu = <T extends ValidComponent = "div">(
 	props: Omit<
@@ -80,7 +80,7 @@ const DropdownMenuContent = <T extends ValidComponent = "div">(
 	return (
 		<DropdownMenuPrimitive.Portal>
 			<DropdownMenuPrimitive.Content
-				class={cn(
+				class={clsx(
 					"bg-popover text-popover-foreground animate-content-hide data-[expanded]:animate-content-show z-50 min-w-[8rem] origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border p-1 shadow-md",
 					props.class,
 				)}
@@ -96,7 +96,7 @@ const DropdownMenuItem = <T extends ValidComponent = "div">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DropdownMenuPrimitive.Item
-			class={cn(
+			class={clsx(
 				"focus:bg-accent relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
 				props.class,
 			)}
@@ -111,7 +111,7 @@ const DropdownMenuShortcut = <T extends ValidComponent = "span">(
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<span
-			class={cn("ml-auto text-xs tracking-widest opacity-60", props.class)}
+			class={clsx("ml-auto text-xs tracking-widest opacity-60", props.class)}
 			{...rest}
 		/>
 	);
@@ -123,7 +123,7 @@ const DropdownMenuLabel: Component<
 	const [, rest] = splitProps(props, ["class", "inset"]);
 	return (
 		<div
-			class={cn(
+			class={clsx(
 				"px-2 py-1.5 text-sm font-semibold",
 				props.inset && "pl-8",
 				props.class,
@@ -139,7 +139,7 @@ const DropdownMenuSeparator = <T extends ValidComponent = "hr">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DropdownMenuPrimitive.Separator
-			class={cn("bg-muted -mx-1 my-1 h-px", props.class)}
+			class={clsx("bg-muted -mx-1 my-1 h-px", props.class)}
 			{...rest}
 		/>
 	);
@@ -153,7 +153,7 @@ const DropdownMenuSubTrigger = <T extends ValidComponent = "div">(
 	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<DropdownMenuPrimitive.SubTrigger
-			class={cn(
+			class={clsx(
 				"focus:bg-accent data-[state=open]:bg-accent flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none",
 				props.class,
 			)}
@@ -171,7 +171,7 @@ const DropdownMenuSubContent = <T extends ValidComponent = "div">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DropdownMenuPrimitive.SubContent
-			class={cn(
+			class={clsx(
 				"bg-popover text-popover-foreground animate-in z-50 min-w-[8rem] origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border p-1 shadow-md",
 				props.class,
 			)}
@@ -186,7 +186,7 @@ const DropdownMenuCheckboxItem = <T extends ValidComponent = "div">(
 	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<DropdownMenuPrimitive.CheckboxItem
-			class={cn(
+			class={clsx(
 				"focus:bg-accent focus:text-accent-foreground relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
 				props.class,
 			)}
@@ -210,7 +210,7 @@ const DropdownMenuGroupLabel = <T extends ValidComponent = "span">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DropdownMenuPrimitive.GroupLabel
-			class={cn("px-2 py-1.5 text-sm font-semibold", props.class)}
+			class={clsx("px-2 py-1.5 text-sm font-semibold", props.class)}
 			{...rest}
 		/>
 	);
@@ -227,7 +227,7 @@ const DropdownMenuRadioItem = <T extends ValidComponent = "div">(
 	);
 	return (
 		<DropdownMenuPrimitive.RadioItem
-			class={cn(
+			class={clsx(
 				"focus:bg-accent focus:text-accent-foreground relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
 				local.class,
 			)}

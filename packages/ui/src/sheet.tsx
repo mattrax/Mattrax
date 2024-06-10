@@ -11,7 +11,7 @@ import { type VariantProps, cva } from "class-variance-authority";
 import type { Component, ComponentProps, ValidComponent } from "solid-js";
 import { mergeProps, splitProps } from "solid-js";
 
-import { cn } from "./lib";
+import clsx from "clsx";
 
 const Sheet = SheetPrimitive.Root;
 
@@ -56,7 +56,7 @@ const SheetOverlay = <T extends ValidComponent = "div">(
 	const [, rest] = splitProps(props as any, ["class", "transparent"]);
 	return (
 		<SheetPrimitive.Overlay
-			class={cn(
+			class={clsx(
 				"ui-closed:animate-out ui-closed:fade-out ui-expanded:animate-in ui-expanded:fade-in fixed inset-0 z-50 transition-all duration-100",
 				!props.transparent && "bg-background/80 backdrop-blur-sm",
 				props.class,
@@ -183,7 +183,7 @@ const SheetContent = <T extends ValidComponent = "div">(
 		<SheetPortal position={props.position}>
 			<SheetOverlay transparent={props.transparent ?? true} />
 			<SheetPrimitive.Content
-				class={cn(
+				class={clsx(
 					sheetVariants({
 						position: props.position,
 						size: props.size,
@@ -207,7 +207,7 @@ const SheetHeader: Component<ComponentProps<"div">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<div
-			class={cn(
+			class={clsx(
 				"flex flex-col space-y-2 text-center sm:text-left",
 				props.class,
 			)}
@@ -220,7 +220,7 @@ const SheetFooter: Component<ComponentProps<"div">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<div
-			class={cn(
+			class={clsx(
 				"flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
 				props.class,
 			)}
@@ -235,7 +235,7 @@ const SheetTitle = <T extends ValidComponent = "h2">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<SheetPrimitive.Title
-			class={cn("text-foreground text-lg font-semibold", props.class)}
+			class={clsx("text-foreground text-lg font-semibold", props.class)}
 			{...rest}
 		/>
 	);
@@ -247,7 +247,7 @@ const SheetDescription = <T extends ValidComponent = "p">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<SheetPrimitive.Description
-			class={cn("text-muted-foreground text-sm", props.class)}
+			class={clsx("text-muted-foreground text-sm", props.class)}
 			{...rest}
 		/>
 	);

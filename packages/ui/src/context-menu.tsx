@@ -16,8 +16,8 @@ import type {
 import type { ContextMenuItemProps } from "@kobalte/core/context-menu";
 import type { SeparatorRootProps } from "@kobalte/core/separator";
 
+import clsx from "clsx";
 import { ParentProps } from "solid-js/types/server/rendering.js";
-import { cn } from "./lib";
 
 const ContextMenu: Component<ContextMenuPrimitive.ContextMenuRootProps> = (
 	props,
@@ -36,7 +36,7 @@ const ContextMenuContent = <T extends ValidComponent = "div">(
 	return (
 		<ContextMenuPrimitive.Portal>
 			<ContextMenuPrimitive.Content
-				class={cn(
+				class={clsx(
 					"z-50 min-w-32 origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in",
 					props.class,
 				)}
@@ -52,7 +52,7 @@ const ContextMenuItem = <T extends ValidComponent = "div">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<ContextMenuPrimitive.Item
-			class={cn(
+			class={clsx(
 				"relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
 				props.class,
 			)}
@@ -67,7 +67,7 @@ const ContextMenuShortcut = <T extends ValidComponent = "span">(
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<span
-			class={cn("ml-auto text-xs tracking-widest opacity-60", props.class)}
+			class={clsx("ml-auto text-xs tracking-widest opacity-60", props.class)}
 			{...rest}
 		/>
 	);
@@ -79,7 +79,7 @@ const ContextMenuSeparator = <T extends ValidComponent = "hr">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<ContextMenuPrimitive.Separator
-			class={cn("-mx-1 my-1 h-px bg-muted", props.class)}
+			class={clsx("-mx-1 my-1 h-px bg-muted", props.class)}
 			{...rest}
 		/>
 	);
@@ -93,7 +93,7 @@ const ContextMenuSubTrigger = <T extends ValidComponent = "div">(
 	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<ContextMenuPrimitive.SubTrigger
-			class={cn(
+			class={clsx(
 				"flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent data-[state=open]:bg-accent",
 				props.class,
 			)}
@@ -123,7 +123,7 @@ const ContextMenuSubContent = <T extends ValidComponent = "div">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<ContextMenuPrimitive.SubContent
-			class={cn(
+			class={clsx(
 				"z-50 min-w-32 origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in",
 				props.class,
 			)}
@@ -138,7 +138,7 @@ const ContextMenuCheckboxItem = <T extends ValidComponent = "div">(
 	const [, rest] = splitProps(props as any, ["class", "children"]);
 	return (
 		<ContextMenuPrimitive.CheckboxItem
-			class={cn(
+			class={clsx(
 				"relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
 				props.class,
 			)}
@@ -174,7 +174,7 @@ const ContextMenuGroupLabel = <T extends ValidComponent = "span">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<ContextMenuPrimitive.GroupLabel
-			class={cn("px-2 py-1.5 text-sm font-semibold", props.class)}
+			class={clsx("px-2 py-1.5 text-sm font-semibold", props.class)}
 			{...rest}
 		/>
 	);
@@ -192,7 +192,7 @@ const ContextMenuRadioItem = <T extends ValidComponent = "div">(
 
 	return (
 		<ContextMenuPrimitive.RadioItem
-			class={cn(
+			class={clsx(
 				"relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
 				local.class,
 			)}

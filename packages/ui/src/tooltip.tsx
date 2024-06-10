@@ -6,7 +6,7 @@ import {
 } from "@kobalte/core";
 import type { TooltipContentProps } from "@kobalte/core/tooltip";
 
-import { cn } from "./lib";
+import clsx from "clsx";
 
 const Tooltip: Component<TooltipPrimitive.TooltipRootProps> = (props) => {
 	return <TooltipPrimitive.Root gutter={4} {...props} />;
@@ -21,7 +21,7 @@ const TooltipContent = <T extends ValidComponent = "div">(
 	return (
 		<TooltipPrimitive.Portal>
 			<TooltipPrimitive.Content
-				class={cn(
+				class={clsx(
 					"bg-popover text-popover-foreground animate-in fade-in-0 zoom-in-95 z-50 origin-[var(--kb-popover-content-transform-origin)] overflow-hidden rounded-md border px-3 py-1.5 text-sm shadow-md",
 					props.class,
 				)}

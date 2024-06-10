@@ -7,7 +7,7 @@ import {
 	splitProps,
 } from "solid-js";
 
-import { cn } from "./lib";
+import clsx from "clsx";
 
 export type TimelinePropsItem = Omit<
 	TimelineItemProps,
@@ -86,7 +86,7 @@ const TimelineItem: Component<TimelineItemProps> = (props) => {
 	]);
 	return (
 		<li
-			class={cn(
+			class={clsx(
 				"relative border-l pb-8 pl-8",
 				props.isLast && "border-l-transparent pb-0",
 				props.isActive && !props.isLast && "border-l-primary",
@@ -122,7 +122,7 @@ export type TimelineItemBulletProps = {
 const TimelineItemBullet: Component<TimelineItemBulletProps> = (props) => {
 	return (
 		<div
-			class={cn(
+			class={clsx(
 				"absolute top-0 flex items-center justify-center rounded-full border bg-background",
 				props.isActive && "border-primary",
 			)}
@@ -150,7 +150,7 @@ const TimelineItemTitle: ParentComponent = (props) => {
 const TimelineItemDescription: Component<ComponentProps<"p">> = (props) => {
 	const [, rest] = splitProps(props, ["class", "children"]);
 	return (
-		<p class={cn("text-sm text-muted-foreground", props.class)} {...rest}>
+		<p class={clsx("text-sm text-muted-foreground", props.class)} {...rest}>
 			{props.children}
 		</p>
 	);

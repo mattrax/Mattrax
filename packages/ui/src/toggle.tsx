@@ -9,7 +9,7 @@ import type { ToggleButtonRootProps } from "@kobalte/core/toggle-button";
 import { cva } from "class-variance-authority";
 import type { VariantProps } from "class-variance-authority";
 
-import { cn } from "./lib";
+import clsx from "clsx";
 
 const toggleVariants = cva(
 	"inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
@@ -42,7 +42,7 @@ const Toggle = <T extends ValidComponent = "button">(props: ToggleProps<T>) => {
 	const [, rest] = splitProps(props as any, ["class", "variant", "size"]);
 	return (
 		<ToggleButtonPrimitive.Root
-			class={cn(
+			class={clsx(
 				toggleVariants({ variant: props.variant, size: props.size }),
 				props.class,
 			)}

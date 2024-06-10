@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { CardDescription, buttonVariants } from "@mattrax/ui";
-import { clsx } from "clsx";
+import clsx from "clsx";
 import { trpc } from "~/lib";
 import { useZodParams } from "~/lib/useZodParams";
 
