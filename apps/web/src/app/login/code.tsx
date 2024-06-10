@@ -14,7 +14,11 @@ import { trpc } from "~/lib";
 autofocus;
 
 export default function Page() {
-	const location = useLocation<{ email?: string; continueTo?: string }>();
+	const location = useLocation<{
+		email?: string;
+		action?: string;
+		continueTo?: string;
+	}>();
 	const navigate = useNavigate();
 
 	if (!location.state?.email) {
@@ -38,12 +42,12 @@ export default function Page() {
 				URL.canParse(`${window.location.origin}${location.state.continueTo}`)
 			)
 				to = location.state.continueTo;
-			else
-				to = `/${
-					location.query?.action ? `?action=${location.query.action}` : ""
-				}`;
+			else to = "/";
 
 			return navigate(to, {
+				state: {
+					action: location.state?.action,
+				},
 				// Ensures the history stack is `/login` then `/users-page`
 				replace: true,
 			});

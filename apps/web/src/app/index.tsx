@@ -1,4 +1,4 @@
-import { Navigate, useSearchParams } from "@solidjs/router";
+import { Navigate, useLocation } from "@solidjs/router";
 import { Match, Switch } from "solid-js";
 
 import { useCachedQueryData } from "~/cache";
@@ -11,7 +11,7 @@ export const route = {
 };
 
 export default function Page() {
-	const [search] = useSearchParams<{ action?: string }>();
+	const location = useLocation<{ action?: string }>();
 
 	const query = trpc.org.list.createQuery();
 	const orgs = useCachedQueryData(query, () => cachedOrgs());
@@ -25,7 +25,7 @@ export default function Page() {
 
 	let tenantSuffix = "";
 	let tenantState = undefined;
-	if (search.action === "enrollDevice") {
+	if (location.state?.action === "enrollDevice") {
 		tenantSuffix = "/devices";
 		tenantState = {
 			enrollDialog: true,

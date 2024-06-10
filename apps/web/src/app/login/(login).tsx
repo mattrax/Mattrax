@@ -1,7 +1,13 @@
 import { Button, CardDescription } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { A, useLocation, useNavigate } from "@solidjs/router";
-import { Show, createMemo, createSignal, startTransition } from "solid-js";
+import { A, useLocation, useNavigate, useSearchParams } from "@solidjs/router";
+import {
+	Show,
+	createMemo,
+	createSignal,
+	onMount,
+	startTransition,
+} from "solid-js";
 import { z } from "zod";
 
 import { useQueryClient } from "@tanstack/solid-query";
@@ -12,6 +18,12 @@ import { parseJson } from "~/lib/utils";
 export default function Page() {
 	const navigate = useNavigate();
 	const location = useLocation<{ continueTo?: string }>();
+	const [_, setSearchParams] = useSearchParams();
+
+	// Cache the value on render and unset it.
+	// We use query params only because the previous route could be `/enroll` which doesn't have `location.state`.
+	const [action] = createSignal(location.query?.action);
+	onMount(() => setSearchParams({ action: undefined }));
 
 	// TODO: preload `/login/code`
 
@@ -23,16 +35,11 @@ export default function Page() {
 			// revalidate(); // TODO: Wipe entire Solid cache (I can't see a method for it)
 
 			await startTransition(() =>
-				navigate(
-					`/login/code${
-						location.query?.action ? `?action=${location.query.action}` : ""
-					}`,
-					{
-						// Pop the reauthenticate process from the history stack
-						// replace: location.state?.continueTo !== undefined, // TODO: Finish this
-						state: { email, ...location.state },
-					},
-				),
+				navigate("/login/code", {
+					// Pop the reauthenticate process from the history stack
+					// replace: location.state?.continueTo !== undefined, // TODO: Finish this
+					state: { email, action: action(), ...location.state },
+				}),
 			);
 		},
 	}));

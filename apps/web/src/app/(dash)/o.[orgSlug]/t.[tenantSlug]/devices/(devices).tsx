@@ -1,7 +1,12 @@
 import { createTimeAgo } from "@solid-primitives/date";
-import { A, type RouteDefinition, useLocation } from "@solidjs/router";
+import {
+	A,
+	type RouteDefinition,
+	useLocation,
+	useNavigate,
+} from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { Suspense, createEffect, createSignal } from "solid-js";
+import { Suspense, createSignal, onMount } from "solid-js";
 import type { RouterOutput } from "~/api/trpc";
 
 import {
@@ -89,9 +94,7 @@ const columns = [
 export default function Page() {
 	const location = useLocation<{ enrollDialog?: boolean }>();
 	const tenantSlug = useTenantSlug();
-	createEffect(() => {
-		console.log("tenantSlug", tenantSlug(), location.state?.enrollDialog);
-	}); // TODO
+	const navigate = useNavigate();
 
 	const devices = trpc.device.list.createQuery(() => ({
 		tenantSlug: tenantSlug(),
@@ -108,13 +111,19 @@ export default function Page() {
 	// createSearchParamPagination(table, "page");
 	createSearchParamFilter(table, "name", "search");
 
+	onMount(() => {
+		// This will unset `enrollDialog` from the state so it doesn't show again
+		navigate(".", {
+			replace: true,
+		});
+	});
+
 	return (
 		<PageLayout
 			heading={
 				<div class="flex justify-between w-full">
 					<PageLayoutHeading>Devices</PageLayoutHeading>
-					{/* defaultOpen={location.state?.enrollDialog} */}
-					<Dialog name="todo">
+					<Dialog defaultOpen={location.state?.enrollDialog}>
 						<DialogTrigger as={Button}>Enroll</DialogTrigger>
 						<DialogContent>
 							<EnrollDeviceModal />

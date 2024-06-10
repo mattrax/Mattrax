@@ -2,9 +2,9 @@ import clsx from "clsx";
 import {
 	type ComponentProps,
 	type JSX,
-	splitProps,
 	Show,
 	children,
+	splitProps,
 } from "solid-js";
 
 export function PageLayout(

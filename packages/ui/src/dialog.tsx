@@ -31,7 +31,7 @@ const Dialog: Component<
 	const controller =
 		"controller" in props && props.controller !== undefined
 			? props.controller
-			: createController();
+			: createController(props.defaultOpen);
 
 	return (
 		<ControllerProvider value={controller}>
