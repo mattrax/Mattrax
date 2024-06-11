@@ -79,6 +79,8 @@ jobs:
 
       - name: Build
         run: pnpm run ${{ matrix.projects }} cbuild
+        env:
+          VITE_PROD_ORIGIN: https://cloud.mattrax.app
 
       - name: Upload result
         uses: actions/upload-artifact@v4
