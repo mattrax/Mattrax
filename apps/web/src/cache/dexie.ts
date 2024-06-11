@@ -12,7 +12,7 @@ class MattraxCache
 		string
 	>;
 
-	VERSION = 1;
+	VERSION = 2;
 
 	constructor() {
 		super("mattrax-cache");
