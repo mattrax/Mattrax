@@ -49,10 +49,11 @@ export const deviceRouter = createTRPCRouter({
 				os: devices.os,
 				serialNumber: devices.serialNumber,
 				lastSynced: devices.lastSynced,
-				owner: devices.owner, // TODO: Fetch `owner` name
+				owner: users.name,
 				enrolledAt: devices.enrolledAt,
 			})
 			.from(devices)
+			.leftJoin(users, eq(users.pk, devices.owner))
 			.where(and(eq(devices.tenantPk, ctx.tenant.pk)));
 	}),
 
