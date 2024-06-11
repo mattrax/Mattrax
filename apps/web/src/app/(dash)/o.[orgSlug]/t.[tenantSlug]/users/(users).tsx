@@ -124,7 +124,7 @@ export default function Page() {
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Users</PageLayoutHeading>}>
-			<div class="flex flex-row items-center gap-4">
+			<div class="flex flex-row gap-4">
 				<TableSearchParamsInput query={users} class="flex-1" />
 			</div>
 			<Suspense>

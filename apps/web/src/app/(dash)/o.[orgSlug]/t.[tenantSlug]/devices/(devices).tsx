@@ -11,6 +11,11 @@ import type { RouterOutput } from "~/api/trpc";
 
 import {
 	Button,
+	ComboboxContentVirtualized,
+	ComboboxControl,
+	ComboboxInput,
+	ComboboxRoot,
+	ComboboxTrigger,
 	Dialog,
 	DialogContent,
 	DialogDescription,
@@ -79,7 +84,14 @@ const columns = [
 	column.accessor("serialNumber", { header: "Serial Number" }),
 	column.accessor("owner", {
 		header: "Owner",
-		// TODO: Render as link with the user's name
+		cell: (props) => (
+			<A
+				class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
+				href={`../users/${props.getValue()!.id}`}
+			>
+				{props.getValue()!.name}
+			</A>
+		),
 	}),
 	column.accessor("lastSynced", {
 		header: "Last Synced",
@@ -187,6 +199,9 @@ function EnrollDeviceModal() {
 	);
 	const isRunningOnWindows = navigator.userAgent.includes("Win");
 
+	// TODO: This would be nicer as `Combobox.useContext` but it no exist.
+	const [count, setCount] = createSignal<number | null>(null);
+
 	return (
 		<DialogHeader>
 			<DialogTitle>Enroll a device</DialogTitle>
@@ -217,7 +232,7 @@ function EnrollDeviceModal() {
 				Enroll the current device on behalf of another user.
 			</DialogDescription>
 
-			<Select
+			<ComboboxRoot
 				virtualized
 				value={user()}
 				onChange={setUser}
@@ -228,24 +243,56 @@ function EnrollDeviceModal() {
 					!users.data ||
 					users.data.length === 0
 				}
+				defaultFilter={(option, inputValue) => {
+					const item = users.data!.find((u) => u.id === option)!;
+
+					console.log(
+						option,
+						inputValue,
+						item.name,
+						item.name.toLowerCase().includes(inputValue.toLowerCase()) || false,
+						users.data?.filter((u) =>
+							u.name.toLowerCase().includes(inputValue.toLowerCase()),
+						)?.length || 0,
+					);
+
+					setCount(
+						users.data?.filter((u) =>
+							u.name.toLowerCase().includes(inputValue.toLowerCase()),
+						)?.length || 0,
+					);
+
+					return (
+						item.name.toLowerCase().includes(inputValue.toLowerCase()) || false
+					);
+				}}
 				placeholder="System"
 				class="flex-1 pb-2"
 			>
-				<SelectTrigger aria-label="User to enroll as" class="w-full">
-					<SelectValue<string>>
-						{(state) =>
-							users.data!.find((user) => user.id === state.selectedOption())!
-								.name
-						}
-					</SelectValue>
-				</SelectTrigger>
-				<SelectContentVirtualized
-					length={() => users.data?.length || 0}
+				<ComboboxControl aria-label="User to enroll as">
+					<ComboboxInput
+						value={users.data?.find((u) => u.id === user())?.name || ""}
+						onFocusOut={(e) => {
+							setCount(null);
+							e.currentTarget.value =
+								users.data?.find((u) => u.id === user())?.name || "";
+						}}
+					/>
+					<ComboboxTrigger />
+				</ComboboxControl>
+
+				<ComboboxContentVirtualized
+					length={() => count() || users.data?.length || 0}
 					getItemIndex={(id) => users.data!.findIndex((user) => user.id === id)}
 				>
-					{(_, i) => users.data![i]!.name}
-				</SelectContentVirtualized>
-			</Select>
+					{(_, i) => (
+						<>
+							{users.data![i]!.name}
+							{users.data![i]!.id}
+						</>
+					)}
+				</ComboboxContentVirtualized>
+			</ComboboxRoot>
 			<div class="flex w-full">
 				<Select
 					value={platform()}

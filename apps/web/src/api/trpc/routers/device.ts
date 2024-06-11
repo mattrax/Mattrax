@@ -49,7 +49,10 @@ export const deviceRouter = createTRPCRouter({
 				os: devices.os,
 				serialNumber: devices.serialNumber,
 				lastSynced: devices.lastSynced,
-				owner: users.name,
+				owner: {
+					id: users.id,
+					name: users.name,
+				},
 				enrolledAt: devices.enrolledAt,
 			})
 			.from(devices)

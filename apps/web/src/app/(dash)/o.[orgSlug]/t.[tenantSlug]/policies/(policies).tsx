@@ -102,17 +102,6 @@ export default function Page() {
 			</div>
 			<Suspense>
 				<StandardTable table={table} />
-				<FloatingSelectionBar table={table}>
-					{(rows) => (
-						<Button
-							variant="destructive"
-							size="sm"
-							onClick={() => dialog.show(rows())}
-						>
-							Delete
-						</Button>
-					)}
-				</FloatingSelectionBar>
 				<BulkDeleteDialog
 					dialog={dialog}
 					title={({ count }) => <>Delete {pluralize("Policy", count())}</>}
@@ -137,6 +126,17 @@ export default function Page() {
 						</>
 					)}
 				/>
+				<FloatingSelectionBar table={table}>
+					{(rows) => (
+						<Button
+							variant="destructive"
+							size="sm"
+							onClick={() => dialog.show(rows())}
+						>
+							Delete
+						</Button>
+					)}
+				</FloatingSelectionBar>
 			</Suspense>
 		</PageLayout>
 	);

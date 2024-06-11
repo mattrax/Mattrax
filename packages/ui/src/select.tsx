@@ -22,8 +22,6 @@ const Select = (props: ComponentProps<typeof SelectPrimitive.Root>) => (
 
 const SelectValue = SelectPrimitive.Value;
 
-const SelectListbox = SelectPrimitive.Listbox;
-
 const SelectTrigger: Component<PolymorphicProps<"button", SelectTriggerProps>> =
 	(props) => {
 		const [, rest] = splitProps(props, ["class", "children"]);
@@ -90,7 +88,7 @@ function SelectContentVirtualized<TKey>(props: {
 						});
 
 						return (
-							<SelectListbox
+							<SelectPrimitive.Listbox
 								ref={listboxRef}
 								scrollToItem={(key) =>
 									virtualizer.scrollToIndex(props.getItemIndex(key as any))
@@ -130,7 +128,7 @@ function SelectContentVirtualized<TKey>(props: {
 										</For>
 									</div>
 								)}
-							</SelectListbox>
+							</SelectPrimitive.Listbox>
 						);
 					}}
 				</Show>
@@ -165,7 +163,6 @@ const SelectItem: Component<
 export {
 	Select,
 	SelectValue,
-	SelectListbox,
 	SelectTrigger,
 	SelectContent,
 	SelectContentVirtualized,
