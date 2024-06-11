@@ -37,9 +37,9 @@ export default function Page() {
 	>();
 	const form = createZodForm({
 		schema: z.object({ email: z.string() }),
-		onSubmit: ({ value }) => {
+		onSubmit: async ({ value }) => {
 			setLastSubmittedEmail(value.email);
-			login.mutateAsync(value);
+			await login.mutateAsync(value);
 		},
 	});
 
