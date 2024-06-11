@@ -14,6 +14,7 @@ import {
 	ComboboxContentVirtualized,
 	ComboboxControl,
 	ComboboxInput,
+	ComboboxManaged,
 	ComboboxRoot,
 	ComboboxTrigger,
 	Dialog,
@@ -232,67 +233,32 @@ function EnrollDeviceModal() {
 				Enroll the current device on behalf of another user.
 			</DialogDescription>
 
-			<ComboboxRoot
-				virtualized
-				value={user()}
-				onChange={setUser}
-				disallowEmptySelection={false}
-				options={users.data?.map((user) => user.id) || []}
+			<ComboboxManaged
+				count={users.data?.length || 0}
+				getItemFromIndex={(i) => users.data![i]!}
+				renderValueForInput={(user) => user.name}
+				setActiveItem={(i) => setUser(i?.id ?? null)}
+				applySearch={(user, query) =>
+					user.name.toLowerCase().includes(query.toLowerCase())
+				}
 				disabled={
 					generateEnrollmentSession.isPending ||
 					!users.data ||
 					users.data.length === 0
 				}
-				defaultFilter={(option, inputValue) => {
-					const item = users.data!.find((u) => u.id === option)!;
-
-					console.log(
-						option,
-						inputValue,
-						item.name,
-						item.name.toLowerCase().includes(inputValue.toLowerCase()) || false,
-						users.data?.filter((u) =>
-							u.name.toLowerCase().includes(inputValue.toLowerCase()),
-						)?.length || 0,
-					);
-
-					setCount(
-						users.data?.filter((u) =>
-							u.name.toLowerCase().includes(inputValue.toLowerCase()),
-						)?.length || 0,
-					);
-
-					return (
-						item.name.toLowerCase().includes(inputValue.toLowerCase()) || false
-					);
-				}}
+				disallowEmptySelection={false}
 				placeholder="System"
+				aria-label="User to enroll as"
 				class="flex-1 pb-2"
 			>
-				<ComboboxControl aria-label="User to enroll as">
-					<ComboboxInput
-						value={users.data?.find((u) => u.id === user())?.name || ""}
-						onFocusOut={(e) => {
-							setCount(null);
-							e.currentTarget.value =
-								users.data?.find((u) => u.id === user())?.name || "";
-						}}
-					/>
-					<ComboboxTrigger />
-				</ComboboxControl>
+				{(user) => (
+					<>
+						{user.name}
+						{user.id}
+					</>
+				)}
+			</ComboboxManaged>
 
-				<ComboboxContentVirtualized
-					length={() => count() || users.data?.length || 0}
-					getItemIndex={(id) => users.data!.findIndex((user) => user.id === id)}
-				>
-					{(_, i) => (
-						<>
-							{users.data![i]!.name}
-							{users.data![i]!.id}
-						</>
-					)}
-				</ComboboxContentVirtualized>
-			</ComboboxRoot>
 			<div class="flex w-full">
 				<Select
 					value={platform()}

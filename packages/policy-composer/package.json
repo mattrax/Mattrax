@@ -11,7 +11,7 @@
 		}
 	},
 	"dependencies": {
-		"@kobalte/core": "^0.13.1",
+		"@kobalte/core": "^0.13.3",
 		"@mattrax/configuration-schemas": "workspace:*",
 		"@mattrax/policy": "workspace:*",
 		"@mattrax/ui": "workspace:*",

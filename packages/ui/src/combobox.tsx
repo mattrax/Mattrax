@@ -1,5 +1,14 @@
-import type { JSX, ValidComponent } from "solid-js";
-import { For, Show, Suspense, splitProps } from "solid-js";
+import type { ComponentProps, JSX, ValidComponent } from "solid-js";
+import {
+	ErrorBoundary,
+	For,
+	Show,
+	Suspense,
+	createEffect,
+	createMemo,
+	createSignal,
+	splitProps,
+} from "solid-js";
 
 import {
 	Combobox as ComboboxPrimitive,
@@ -145,80 +154,275 @@ const ComboboxContent = <T extends ValidComponent = "div">(
 	);
 };
 
-function ComboboxContentVirtualized<TKey>(props: {
-	// TODO: Can we derive this from the select's options somehow?
-	length: () => number;
-	getItemIndex: (key: TKey) => number;
-	children: (key: TKey, index: number) => JSX.Element;
+// function ComboboxContentVirtualized<TKey>(props: {
+// 	// TODO: Can we derive this from the select's options somehow?
+// 	length: () => number;
+// 	getItemIndex: (key: TKey) => number;
+// 	children: (key: TKey, index: number) => JSX.Element;
+// }) {
+// 	return (
+// 		<Suspense fallback={<ComboboxContent />}>
+// 			<ComboboxContent>
+// 				<Show when>
+// 					{(_) => {
+// 						let listboxRef!: HTMLUListElement;
+// 						const virtualizer = createVirtualizer({
+// 							count: props.length(),
+// 							getScrollElement: () => listboxRef,
+// 							getItemKey: (index) => index,
+// 							estimateSize: () => 32,
+// 							overscan: 5,
+// 						});
+
+// 						return (
+// 							<ComboboxPrimitive.Listbox
+// 								ref={listboxRef}
+// 								scrollToItem={(key) =>
+// 									virtualizer.scrollToIndex(props.getItemIndex(key as any))
+// 								}
+// 								style={{ height: "200px", width: "100%", overflow: "auto" }}
+// 								class="m-0 p-1 focus:outline-none"
+// 							>
+// 								{(items) => (
+// 									<div
+// 										style={{
+// 											height: `${virtualizer.getTotalSize()}px`,
+// 											width: "100%",
+// 											position: "relative",
+// 										}}
+// 									>
+// 										<For each={virtualizer.getVirtualItems()}>
+// 											{(virtualRow) => {
+// 												const item = items().at(virtualRow.index);
+
+// 												if (item) {
+// 													return (
+// 														<ComboboxItem
+// 															item={item}
+// 															style={{
+// 																position: "absolute",
+// 																top: 0,
+// 																left: 0,
+// 																width: "100%",
+// 																height: `${virtualRow.size}px`,
+// 																transform: `translateY(${virtualRow.start}px)`,
+// 															}}
+// 														>
+// 															{props.children(item.rawValue, item.index)}
+// 														</ComboboxItem>
+// 													);
+// 												}
+// 											}}
+// 										</For>
+// 									</div>
+// 								)}
+// 							</ComboboxPrimitive.Listbox>
+// 						);
+// 					}}
+// 				</Show>
+// 			</ComboboxContent>
+// 		</Suspense>
+// 	);
+// }
+
+function ComboboxManaged<T>(props: {
+	setActiveItem: (item: T | null) => void;
+	count: number;
+	getItemFromIndex: (index: number) => T;
+	renderValueForInput: (item: T) => string;
+	children: (item: T, index: number) => JSX.Element;
+	applySearch?: (item: T, search: string) => boolean;
+	defaultValue?: number | null;
+	disabled?: boolean;
+	disallowEmptySelection?: boolean;
+	placeholder?: string;
+	"aria-label"?: string;
+	class?: string;
+	// TODO: Search
 }) {
+	const [search, setSearch] = createSignal<string | null>(null);
+	const [active, setActive] = createSignal<number | null>(
+		props.defaultValue ?? null,
+	);
+
+	const inputValue = () => {
+		const i = active();
+		return i !== null
+			? props.renderValueForInput(props.getItemFromIndex(i))
+			: "";
+	};
+
+	const options = createMemo(() => {
+		const query = search();
+		const options = [...Array(props.count).keys()];
+
+		return query
+			? options.filter((i) =>
+					props.applySearch
+						? props.applySearch(props.getItemFromIndex(i), query)
+						: true,
+				)
+			: options;
+	});
+
+	// My own custom virtualizer cause I can't get Tanstack Virtual to work
+	const entrySize = 32;
+	const containerSize = () => options().length * entrySize;
+
 	return (
-		<Suspense fallback={<ComboboxContent />}>
-			<ComboboxContent>
-				<Show when>
-					{(_) => {
-						let listboxRef!: HTMLUListElement;
-						const virtualizer = createVirtualizer({
-							count: props.length(),
-							getScrollElement: () => listboxRef,
-							getItemKey: (index) => index,
-							estimateSize: () => 32,
-							overscan: 5,
-						});
+		<ComboboxRoot
+			virtualized
+			value={active()}
+			// We don't apply filtering to these options cause something was bugged with Kobalte when doing that.
+			options={[...Array(props.count).keys()]}
+			onChange={(index: number | null) => {
+				const actualIndex = index ? options()[index]! : null;
+				console.log("CHANGE", index, actualIndex, [...options()]); // TODO
 
-						return (
-							<ComboboxPrimitive.Listbox
-								ref={listboxRef}
-								scrollToItem={(key) =>
-									virtualizer.scrollToIndex(props.getItemIndex(key as any))
-								}
-								style={{ height: "200px", width: "100%", overflow: "auto" }}
-								class="m-0 p-1 focus:outline-none"
-							>
-								{(items) => (
-									<div
-										style={{
-											height: `${virtualizer.getTotalSize()}px`,
-											width: "100%",
-											position: "relative",
-										}}
-									>
-										<For each={virtualizer.getVirtualItems()}>
-											{(virtualRow) => {
-												const item = items().at(virtualRow.index);
-
-												console.log("ROW", virtualRow.index, virtualRow.key); // TODO
-
-												if (item) {
-													return (
-														<ComboboxItem
-															item={item}
-															style={{
-																position: "absolute",
-																top: 0,
-																left: 0,
-																width: "100%",
-																height: `${virtualRow.size}px`,
-																transform: `translateY(${virtualRow.start}px)`,
-															}}
-														>
-															{props.children(item.rawValue, item.index)}
-														</ComboboxItem>
-													);
-												}
-											}}
-										</For>
-									</div>
-								)}
-							</ComboboxPrimitive.Listbox>
-						);
+				setSearch(null);
+				setActive(actualIndex); // TODO: Account for virtualised
+				props.setActiveItem(
+					actualIndex ? props.getItemFromIndex(actualIndex) : null,
+				);
+			}}
+			disallowEmptySelection={props.disallowEmptySelection}
+			disabled={props.disabled}
+			placeholder={props.placeholder}
+			class={props.class}
+			open={search() !== null ? true : undefined}
+			defaultFilter={() => true}
+		>
+			<ComboboxControl aria-label={props?.["aria-label"]}>
+				<ComboboxInput
+					value={inputValue()}
+					onInput={(e) => {
+						// console.log("INPUT", e.currentTarget.value); // TODO
+						setSearch((e.target as HTMLInputElement).value);
 					}}
-				</Show>
-			</ComboboxContent>
-		</Suspense>
+					onFocusOut={(e) => {
+						setSearch(null);
+						e.currentTarget.value = inputValue();
+					}}
+					readOnly={props.applySearch === undefined}
+				/>
+				<ComboboxTrigger />
+			</ComboboxControl>
+
+			<Suspense fallback={<ComboboxContent />}>
+				<ComboboxContent>
+					<ComboboxPrimitive.Listbox
+						scrollToItem={(index) => {
+							// TODO: Scroll to item
+						}}
+						style={{
+							height: "200px",
+							width: "100%",
+							overflow: "auto",
+						}}
+						class="m-0 p-1 focus:outline-none"
+					>
+						{(items) => (
+							<div
+								style={{
+									height: `${containerSize()}px`,
+									width: "100%",
+									position: "relative",
+								}}
+							>
+								<For each={options()}>
+									{(indexInVirtualiser, i) => {
+										return (
+											<ComboboxItem
+												item={items().at(indexInVirtualiser)!}
+												// item={{
+												// 	type: "item",
+												// 	key: indexInVirtualiser.toString(),
+												// 	index: indexInVirtualiser,
+												// 	rawValue: indexInVirtualiser,
+												// 	textValue: "",
+												// 	disabled: false,
+												// 	level: 0,
+												// }}
+												style={{
+													position: "absolute",
+													top: 0,
+													left: 0,
+													width: "100%",
+													height: `${entrySize}px`,
+													transform: `translateY(${i() * entrySize}px)`,
+												}}
+												onSelect={() => {
+													console.log("SELECT CHECKBOX");
+												}}
+												onClick={() => {
+													console.log("CLICK CHECKBOX");
+													// setSearch(null);
+													// setActive(indexInVirtualiser);
+													// props.setActiveItem(
+													// 	props.getItemFromIndex(indexInVirtualiser),
+													// );
+												}}
+											>
+												{props.children(
+													props.getItemFromIndex(indexInVirtualiser),
+													indexInVirtualiser,
+												)}
+											</ComboboxItem>
+										);
+									}}
+								</For>
+								{/* <For each={options()}>
+									{(indexInVirtualiser, i) => {
+										return (
+											<ComboboxItemWithoutKobalte
+												// item={{
+												// 	type: "item",
+												// 	key: indexInVirtualiser.toString(),
+												// 	index: indexInVirtualiser,
+												// 	rawValue: indexInVirtualiser,
+												// 	textValue: "",
+												// 	disabled: false,
+												// 	level: 0,
+												// }}
+												style={{
+													position: "absolute",
+													top: 0,
+													left: 0,
+													width: "100%",
+													height: `${entrySize}px`,
+													transform: `translateY(${i() * entrySize}px)`,
+												}}
+												onSelect={() => {
+													console.log("SELECT CHECKBOX");
+												}}
+												onClick={() => {
+													console.log("CLICK CHECKBOX");
+													setSearch(null);
+													setActive(indexInVirtualiser);
+													props.setActiveItem(
+														props.getItemFromIndex(indexInVirtualiser),
+													);
+												}}
+											>
+												{props.children(
+													props.getItemFromIndex(indexInVirtualiser),
+													indexInVirtualiser,
+												)}
+											</ComboboxItemWithoutKobalte>
+										);
+									}}
+								</For> */}
+							</div>
+						)}
+					</ComboboxPrimitive.Listbox>
+				</ComboboxContent>
+			</Suspense>
+		</ComboboxRoot>
 	);
 }
 
 export {
+	ComboboxManaged,
 	ComboboxRoot,
 	ComboboxItem,
 	ComboboxItemLabel,
@@ -229,5 +433,4 @@ export {
 	ComboboxInput,
 	ComboboxHiddenSelect,
 	ComboboxContent,
-	ComboboxContentVirtualized,
 };
