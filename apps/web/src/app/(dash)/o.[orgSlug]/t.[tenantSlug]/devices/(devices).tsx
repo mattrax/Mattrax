@@ -6,14 +6,30 @@ import {
 	useNavigate,
 } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { Show, Suspense, createSignal, onMount } from "solid-js";
+import { createVirtualizer } from "@tanstack/solid-virtual";
+import {
+	type Accessor,
+	For,
+	Show,
+	Suspense,
+	createMemo,
+	createSignal,
+	onCleanup,
+	onMount,
+} from "solid-js";
+
 import type { RouterOutput } from "~/api/trpc";
 
+import type { Collection, CollectionNode } from "@kobalte/core";
+import { Combobox } from "@kobalte/core/combobox";
 import {
 	Button,
-	ComboboxContentVirtualized,
+	ComboboxContent,
+	// ComboboxContentVirtualized,
 	ComboboxControl,
 	ComboboxInput,
+	ComboboxItem,
+	ComboboxListbox,
 	ComboboxManaged,
 	ComboboxRoot,
 	ComboboxTrigger,
@@ -184,12 +200,8 @@ function EnrollDeviceModal() {
 		tenantSlug: tenantSlug(),
 	}));
 	const users = trpc.user.list.createQuery(
-		() => ({
-			tenantSlug: tenantSlug(),
-		}),
-		() => ({
-			placeholderData: [],
-		}),
+		() => ({ tenantSlug: tenantSlug() }),
+		() => ({ placeholderData: [] }),
 	);
 	const generateEnrollmentSession =
 		trpc.device.generateEnrollmentSession.createMutation();
@@ -200,8 +212,7 @@ function EnrollDeviceModal() {
 	);
 	const isRunningOnWindows = navigator.userAgent.includes("Win");
 
-	// TODO: This would be nicer as `Combobox.useContext` but it no exist.
-	const [count, setCount] = createSignal<number | null>(null);
+	const options = () => users.data ?? [];
 
 	return (
 		<DialogHeader>
@@ -233,31 +244,26 @@ function EnrollDeviceModal() {
 				Enroll the current device on behalf of another user.
 			</DialogDescription>
 
-			<ComboboxManaged
-				count={users.data?.length || 0}
-				getItemFromIndex={(i) => users.data![i]!}
-				renderValueForInput={(user) => user.name}
-				setActiveItem={(i) => setUser(i?.id ?? null)}
-				applySearch={(user, query) =>
-					user.name.toLowerCase().includes(query.toLowerCase())
-				}
-				disabled={
-					generateEnrollmentSession.isPending ||
-					!users.data ||
-					users.data.length === 0
-				}
+			<ComboboxRoot
+				multiple={false}
+				options={options()}
+				defaultFilter="contains"
+				virtualized
+				optionLabel="name"
+				optionValue="id"
+				optionTextValue="name"
+				optionDisabled={() => false}
 				disallowEmptySelection={false}
 				placeholder="System"
-				aria-label="User to enroll as"
-				class="flex-1 pb-2"
 			>
-				{(user) => (
-					<>
-						{user.name}
-						{user.id}
-					</>
-				)}
-			</ComboboxManaged>
+				<ComboboxControl aria-label="User to enroll as">
+					<ComboboxInput />
+					<ComboboxTrigger />
+				</ComboboxControl>
+				<Combobox.Portal>
+					<Content options={options()} />
+				</Combobox.Portal>
+			</ComboboxRoot>
 
 			<div class="flex w-full">
 				<Select
@@ -347,5 +353,87 @@ function EnrollDeviceModal() {
 				)}
 			</Show>
 		</DialogHeader>
+	);
+}
+
+function Content(props: {
+	options: { id: string; name: string; email: string }[];
+}) {
+	const [_virtualizerItems, setVirtualizerItems] =
+		createSignal<Accessor<Collection<CollectionNode<any>>>>();
+
+	const virtualizerItems = () => _virtualizerItems()?.();
+
+	let scrollRef: HTMLDivElement;
+	const virtualizer = createVirtualizer({
+		get count() {
+			return virtualizerItems()?.getSize() ?? 0;
+		},
+		getScrollElement: () => scrollRef,
+		getItemKey: (index) => virtualizerItems()?.at(index)!.rawValue.id,
+		estimateSize: () => 30,
+	});
+
+	return (
+		<ComboboxContent portal={false}>
+			<div
+				style={{ height: "200px", width: "100%", overflow: "auto" }}
+				class="m-0 p-1"
+				ref={scrollRef!}
+			>
+				<ComboboxListbox<any>
+					style={{
+						height: `${virtualizer.getTotalSize()}px`,
+						width: "100%",
+						position: "relative",
+					}}
+					scrollToItem={(key) =>
+						virtualizer.scrollToIndex(
+							props.options.findIndex((option) => option.id === key),
+						)
+					}
+				>
+					{(items) => {
+						setVirtualizerItems(() => items);
+
+						return (
+							<For each={virtualizer.getVirtualItems()}>
+								{(virtualRow) => {
+									const item = createMemo(() =>
+										virtualizerItems()?.getItem(virtualRow.key as any),
+									);
+
+									return (
+										<Show when={item()}>
+											{(item) => (
+												<ComboboxItem
+													item={item()}
+													data-index={virtualRow.index}
+													ref={(el) =>
+														queueMicrotask(() => virtualizer.measureElement(el))
+													}
+													style={{
+														position: "absolute",
+														top: 0,
+														left: 0,
+														width: "100%",
+														transform: `translateY(${virtualRow.start}px)`,
+													}}
+												>
+													{item().rawValue.name}
+													<span class="text-gray-600 ml-2">
+														{item().rawValue.email}
+													</span>
+												</ComboboxItem>
+											)}
+										</Show>
+									);
+								}}
+							</For>
+						);
+					}}
+				</ComboboxListbox>
+			</div>
+		</ComboboxContent>
 	);
 }

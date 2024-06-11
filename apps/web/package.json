@@ -52,6 +52,7 @@
 		"@tanstack/solid-query-devtools": "^5.36.1",
 		"@tanstack/solid-query-persist-client": "^5.36.1",
 		"@tanstack/solid-table": "^8.17.3",
+		"@tanstack/solid-virtual": "^3.5.0",
 		"@tanstack/zod-form-adapter": "^0.20.0",
 		"@trpc/client": "^10.45.2",
 		"@trpc/server": "^10.45.2",
