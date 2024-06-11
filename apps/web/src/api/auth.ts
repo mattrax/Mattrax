@@ -1,7 +1,13 @@
 import { DrizzleMySQLAdapter } from "@lucia-auth/adapter-drizzle";
 import { cache } from "@solidjs/router";
 import { Lucia } from "lucia";
-import { appendResponseHeader, getCookie, setCookie } from "vinxi/server";
+import { getRequestEvent } from "solid-js/web";
+import {
+	appendResponseHeader,
+	deleteCookie,
+	getCookie,
+	setCookie,
+} from "vinxi/server";
 
 import { accounts, db, sessions } from "~/db";
 import { env, withEnv } from "~/env";
@@ -58,9 +64,18 @@ interface DatabaseSessionAttributes {
 
 export const checkAuth = cache(async () => {
 	"use server";
+
 	const sessionId = getCookie(lucia.sessionCookieName) ?? null;
 
-	if (sessionId === null) return;
+	if (sessionId === null) {
+		if (getCookie("isLoggedIn") !== undefined)
+			deleteCookie(getRequestEvent()!.nativeEvent, "isLoggedIn", {
+				httpOnly: false,
+				domain: env.COOKIE_DOMAIN,
+			});
+
+		return;
+	}
 
 	const { session, user: account } = await lucia.validateSession(sessionId);
 
@@ -82,6 +97,10 @@ export const checkAuth = cache(async () => {
 			"Set-Cookie",
 			lucia.createBlankSessionCookie().serialize(),
 		);
+		deleteCookie(getRequestEvent()!.nativeEvent, "isLoggedIn", {
+			httpOnly: false,
+			domain: env.COOKIE_DOMAIN,
+		});
 	}
 
 	if (session && account) return { session, account };
