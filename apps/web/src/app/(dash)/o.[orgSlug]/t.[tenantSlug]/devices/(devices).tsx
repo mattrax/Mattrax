@@ -143,15 +143,17 @@ export default function Page() {
 	return (
 		<PageLayout
 			heading={
-				<div class="flex justify-between w-full">
+				<>
 					<PageLayoutHeading>Devices</PageLayoutHeading>
 					<Dialog defaultOpen={location.state?.enrollDialog}>
-						<DialogTrigger as={Button}>Enroll</DialogTrigger>
+						<DialogTrigger as={Button} class="ml-auto">
+							Enroll
+						</DialogTrigger>
 						<DialogContent>
 							<EnrollDeviceModal />
 						</DialogContent>
 					</Dialog>
-				</div>
+				</>
 			}
 		>
 			<div class="flex flex-row items-center gap-4">

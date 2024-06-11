@@ -27,7 +27,7 @@ export default createHandler(() => (
 	<StartServer
 		document={({ assets, children, scripts }) => (
 			<Document head={assets}>
-				<div id="app" class="flex min-h-full flex-col">
+				<div id="app" class="flex min-h-full w-screen flex-col">
 					{children}
 
 					<noscript class="h-screen w-full flex">
