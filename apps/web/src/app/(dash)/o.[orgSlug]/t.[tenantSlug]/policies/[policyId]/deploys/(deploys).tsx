@@ -24,6 +24,8 @@ import { createColumnHelper } from "@tanstack/solid-table";
 import { For, Show, Suspense, createSignal } from "solid-js";
 import { match } from "ts-pattern";
 
+import clsx from "clsx";
+import createPresence from "solid-presence";
 import type { RouterOutput } from "~/api";
 import { StandardTable, createStandardTable } from "~/components/StandardTable";
 import { trpc } from "~/lib";
@@ -54,7 +56,7 @@ const columns = [
 		},
 	}),
 	column.accessor("comment", {
-		header: "Deploy comment",
+		header: "Comment",
 	}),
 	column.display({
 		id: "deployedAt",
@@ -94,32 +96,41 @@ export default function Page() {
 	const policy = usePolicy();
 	const { table } = createDeployTable();
 
+	const [dialogRef, setDialogRef] = createSignal<HTMLElement | null>(null);
+	const showDialog = () =>
+		policy?.data ? policy.data.diff.length !== 0 : false;
+	const { present } = createPresence({
+		show: showDialog,
+		element: dialogRef,
+	});
+
 	return (
 		<PageLayout heading={<PageLayoutHeading>Deploys</PageLayoutHeading>}>
 			<Suspense>
-				<Show when={policy?.data}>
-					{(policy) => (
-						<Show when={policy().diff.length !== 0}>
-							<Card>
-								<CardHeader>
-									<div class="flex items-center justify-between">
-										<div>
-											<CardTitle>Deploy changes</CardTitle>
-											<CardDescription>
-												The following changes have been made to your policy but
-												have not been deployed!
-											</CardDescription>
-										</div>
+				<Show when={present()}>
+					<Card
+						ref={setDialogRef}
+						class={clsx(
+							showDialog() ? "animate-height-in" : "animate-height-out",
+						)}
+					>
+						<CardHeader>
+							<div class="flex items-center justify-between">
+								<div>
+									<CardTitle>Deploy changes</CardTitle>
+									<CardDescription>
+										The following changes have been made to your policy but have
+										not been deployed!
+									</CardDescription>
+								</div>
 
-										<DeployButton policy={policy()} />
-									</div>
-								</CardHeader>
-								<CardContent>
-									<RenderPolicyDiff policy={policy()} />
-								</CardContent>
-							</Card>
-						</Show>
-					)}
+								<DeployButton policy={policy.data!} />
+							</div>
+						</CardHeader>
+						<CardContent>
+							<RenderPolicyDiff policy={policy.data!} />
+						</CardContent>
+					</Card>
 				</Show>
 			</Suspense>
 			<StandardTable table={table} />

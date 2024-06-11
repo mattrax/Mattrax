@@ -48,7 +48,7 @@ const Dialog: Component<
 };
 
 const DialogTrigger = <T extends ValidComponent = "button">(
-	props: PolymorphicProps<T, DialogTriggerProps>,
+	props: PolymorphicProps<T, DialogTriggerProps<T>>,
 ) => {
 	return <DialogPrimitive.Trigger {...props} />;
 };
