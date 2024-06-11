@@ -30,7 +30,6 @@ import {
 	ComboboxInput,
 	ComboboxItem,
 	ComboboxListbox,
-	ComboboxManaged,
 	ComboboxRoot,
 	ComboboxTrigger,
 	Dialog,
