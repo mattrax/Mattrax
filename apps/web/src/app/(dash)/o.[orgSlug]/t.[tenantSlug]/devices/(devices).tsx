@@ -6,14 +6,30 @@ import {
 	useNavigate,
 } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { Show, Suspense, createSignal, onMount } from "solid-js";
+import { createVirtualizer } from "@tanstack/solid-virtual";
+import {
+	type Accessor,
+	For,
+	Show,
+	Suspense,
+	createMemo,
+	createSignal,
+	onCleanup,
+	onMount,
+} from "solid-js";
+
 import type { RouterOutput } from "~/api/trpc";
 
+import type { Collection, CollectionNode } from "@kobalte/core";
+import { Combobox } from "@kobalte/core/combobox";
 import {
 	Button,
-	ComboboxContentVirtualized,
+	ComboboxContent,
+	// ComboboxContentVirtualized,
 	ComboboxControl,
 	ComboboxInput,
+	ComboboxItem,
+	ComboboxListbox,
 	ComboboxRoot,
 	ComboboxTrigger,
 	Dialog,
@@ -185,12 +201,8 @@ function EnrollDeviceModal() {
 		tenantSlug: tenantSlug(),
 	}));
 	const users = trpc.user.list.createQuery(
-		() => ({
-			tenantSlug: tenantSlug(),
-		}),
-		() => ({
-			placeholderData: [],
-		}),
+		() => ({ tenantSlug: tenantSlug() }),
+		() => ({ placeholderData: [] }),
 	);
 	const generateEnrollmentSession =
 		trpc.device.generateEnrollmentSession.createMutation();
@@ -201,8 +213,7 @@ function EnrollDeviceModal() {
 	);
 	const isRunningOnWindows = navigator.userAgent.includes("Win");
 
-	// TODO: This would be nicer as `Combobox.useContext` but it no exist.
-	const [count, setCount] = createSignal<number | null>(null);
+	const options = () => users.data ?? [];
 
 	return (
 		<DialogHeader>
@@ -235,66 +246,26 @@ function EnrollDeviceModal() {
 			</DialogDescription>
 
 			<ComboboxRoot
+				multiple={false}
+				options={options()}
+				defaultFilter="contains"
 				virtualized
-				value={user()}
-				onChange={setUser}
+				optionLabel="name"
+				optionValue="id"
+				optionTextValue="name"
+				optionDisabled={() => false}
 				disallowEmptySelection={false}
-				options={users.data?.map((user) => user.id) || []}
-				disabled={
-					generateEnrollmentSession.isPending ||
-					!users.data ||
-					users.data.length === 0
-				}
-				defaultFilter={(option, inputValue) => {
-					const item = users.data!.find((u) => u.id === option)!;
-
-					console.log(
-						option,
-						inputValue,
-						item.name,
-						item.name.toLowerCase().includes(inputValue.toLowerCase()) || false,
-						users.data?.filter((u) =>
-							u.name.toLowerCase().includes(inputValue.toLowerCase()),
-						)?.length || 0,
-					);
-
-					setCount(
-						users.data?.filter((u) =>
-							u.name.toLowerCase().includes(inputValue.toLowerCase()),
-						)?.length || 0,
-					);
-
-					return (
-						item.name.toLowerCase().includes(inputValue.toLowerCase()) || false
-					);
-				}}
 				placeholder="System"
-				class="flex-1 pb-2"
 			>
 				<ComboboxControl aria-label="User to enroll as">
-					<ComboboxInput<"input">
-						value={users.data?.find((u) => u.id === user())?.name || ""}
-						onFocusOut={(e) => {
-							setCount(null);
-							e.currentTarget.value =
-								users.data?.find((u) => u.id === user())?.name || "";
-						}}
-					/>
+					<ComboboxInput />
 					<ComboboxTrigger />
 				</ComboboxControl>
-
-				<ComboboxContentVirtualized
-					length={() => count() || users.data?.length || 0}
-					getItemIndex={(id) => users.data!.findIndex((user) => user.id === id)}
-				>
-					{(_, i) => (
-						<>
-							{users.data![i]!.name}
-							{users.data![i]!.id}
-						</>
-					)}
-				</ComboboxContentVirtualized>
+				<Combobox.Portal>
+					<Content options={options()} />
+				</Combobox.Portal>
 			</ComboboxRoot>
+
 			<div class="flex w-full">
 				<Select
 					value={platform()}
@@ -383,5 +354,87 @@ function EnrollDeviceModal() {
 				)}
 			</Show>
 		</DialogHeader>
+	);
+}
+
+function Content(props: {
+	options: { id: string; name: string; email: string }[];
+}) {
+	const [_virtualizerItems, setVirtualizerItems] =
+		createSignal<Accessor<Collection<CollectionNode<any>>>>();
+
+	const virtualizerItems = () => _virtualizerItems()?.();
+
+	let scrollRef: HTMLDivElement;
+	const virtualizer = createVirtualizer({
+		get count() {
+			return virtualizerItems()?.getSize() ?? 0;
+		},
+		getScrollElement: () => scrollRef,
+		getItemKey: (index) => virtualizerItems()?.at(index)!.rawValue.id,
+		estimateSize: () => 30,
+	});
+
+	return (
+		<ComboboxContent portal={false}>
+			<div
+				style={{ height: "200px", width: "100%", overflow: "auto" }}
+				class="m-0 p-1"
+				ref={scrollRef!}
+			>
+				<ComboboxListbox<any>
+					style={{
+						height: `${virtualizer.getTotalSize()}px`,
+						width: "100%",
+						position: "relative",
+					}}
+					scrollToItem={(key) =>
+						virtualizer.scrollToIndex(
+							props.options.findIndex((option) => option.id === key),
+						)
+					}
+				>
+					{(items) => {
+						setVirtualizerItems(() => items);
+
+						return (
+							<For each={virtualizer.getVirtualItems()}>
+								{(virtualRow) => {
+									const item = createMemo(() =>
+										virtualizerItems()?.getItem(virtualRow.key as any),
+									);
+
+									return (
+										<Show when={item()}>
+											{(item) => (
+												<ComboboxItem
+													item={item()}
+													data-index={virtualRow.index}
+													ref={(el) =>
+														queueMicrotask(() => virtualizer.measureElement(el))
+													}
+													style={{
+														position: "absolute",
+														top: 0,
+														left: 0,
+														width: "100%",
+														transform: `translateY(${virtualRow.start}px)`,
+													}}
+												>
+													{item().rawValue.name}
+													<span class="text-gray-600 ml-2">
+														{item().rawValue.email}
+													</span>
+												</ComboboxItem>
+											)}
+										</Show>
+									);
+								}}
+							</For>
+						);
+					}}
+				</ComboboxListbox>
+			</div>
+		</ComboboxContent>
 	);
 }

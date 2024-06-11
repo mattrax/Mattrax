@@ -1,24 +1,22 @@
-import type { JSX, ValidComponent } from "solid-js";
-import { For, Show, Suspense, splitProps } from "solid-js";
-
 import {
 	Combobox as ComboboxPrimitive,
 	type PolymorphicProps,
 } from "@kobalte/core";
+import type {
+	ComboboxContentProps,
+	ComboboxControlProps,
+	ComboboxInputProps,
+	ComboboxListboxProps,
+	ComboboxTriggerProps,
+} from "@kobalte/core/combobox";
 import type { ListboxSectionProps } from "@kobalte/core/listbox";
 import type {
 	ListboxItemIndicatorProps,
 	ListboxItemProps,
 } from "@kobalte/core/listbox";
-
-import type {
-	ComboboxContentProps,
-	ComboboxControlProps,
-	ComboboxInputProps,
-	ComboboxTriggerProps,
-} from "@kobalte/core/combobox";
-import { createVirtualizer } from "@tanstack/solid-virtual";
 import clsx from "clsx";
+import type { JSX, ValidComponent } from "solid-js";
+import { For, createMemo, createSignal, splitProps } from "solid-js";
 
 const ComboboxRoot = ComboboxPrimitive.Root;
 
@@ -127,96 +125,50 @@ const ComboboxTrigger = <T extends ValidComponent = "button">(
 };
 
 const ComboboxContent = <T extends ValidComponent = "div">(
-	props: PolymorphicProps<T, ComboboxContentProps>,
+	props: PolymorphicProps<T, ComboboxContentProps> & { portal?: boolean },
 ) => {
 	const [local, rest] = splitProps(props as any, ["class", "children"]);
+
+	const content = (
+		<ComboboxPrimitive.Content
+			class={clsx(
+				"relative z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-80",
+				"ui-expanded:animate-in ui-expanded:fade-in-0 ui-expanded:slide-in-from-top-2",
+				"ui-closed:animate-out ui-closed:fade-out-0 ui-closed:slide-out-to-top-2",
+				props.class,
+			)}
+			{...rest}
+		>
+			{local.children ?? <ComboboxListbox />}
+		</ComboboxPrimitive.Content>
+	);
+
 	return (
-		<ComboboxPrimitive.Portal>
-			<ComboboxPrimitive.Content
-				class={clsx(
-					"relative z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md animate-in fade-in-80",
-					props.class,
-				)}
-				{...rest}
-			>
-				{local.children ?? <ComboboxPrimitive.Listbox class="m-0 p-1" />}
-			</ComboboxPrimitive.Content>
-		</ComboboxPrimitive.Portal>
+		<>
+			{props.portal ? (
+				<ComboboxPrimitive.Portal>{content}</ComboboxPrimitive.Portal>
+			) : (
+				content
+			)}
+		</>
 	);
 };
 
-function ComboboxContentVirtualized<TKey>(props: {
-	// TODO: Can we derive this from the select's options somehow?
-	length: () => number;
-	getItemIndex: (key: TKey) => number;
-	children: (key: TKey, index: number) => JSX.Element;
-}) {
+const ComboboxListbox = <
+	Option,
+	OptGroup = never,
+	T extends ValidComponent = "div",
+>(
+	props: PolymorphicProps<T, ComboboxListboxProps<Option, OptGroup>>,
+) => {
+	const [local, rest] = splitProps(props as any, ["class"]);
 	return (
-		<Suspense fallback={<ComboboxContent />}>
-			<ComboboxContent>
-				<Show when>
-					{(_) => {
-						let listboxRef!: HTMLUListElement;
-						const virtualizer = createVirtualizer({
-							count: props.length(),
-							getScrollElement: () => listboxRef,
-							getItemKey: (index) => index,
-							estimateSize: () => 32,
-							overscan: 5,
-						});
-
-						return (
-							<ComboboxPrimitive.Listbox
-								ref={listboxRef}
-								scrollToItem={(key) =>
-									virtualizer.scrollToIndex(props.getItemIndex(key as any))
-								}
-								style={{ height: "200px", width: "100%", overflow: "auto" }}
-								class="m-0 p-1 focus:outline-none"
-							>
-								{(items) => (
-									<div
-										style={{
-											height: `${virtualizer.getTotalSize()}px`,
-											width: "100%",
-											position: "relative",
-										}}
-									>
-										<For each={virtualizer.getVirtualItems()}>
-											{(virtualRow) => {
-												const item = items().at(virtualRow.index);
-
-												console.log("ROW", virtualRow.index, virtualRow.key); // TODO
-
-												if (item) {
-													return (
-														<ComboboxItem
-															item={item}
-															style={{
-																position: "absolute",
-																top: 0,
-																left: 0,
-																width: "100%",
-																height: `${virtualRow.size}px`,
-																transform: `translateY(${virtualRow.start}px)`,
-															}}
-														>
-															{props.children(item.rawValue, item.index)}
-														</ComboboxItem>
-													);
-												}
-											}}
-										</For>
-									</div>
-								)}
-							</ComboboxPrimitive.Listbox>
-						);
-					}}
-				</Show>
-			</ComboboxContent>
-		</Suspense>
+		<ComboboxPrimitive.Listbox
+			class={clsx("m-0 p-1 block", local.class)}
+			{...rest}
+		/>
 	);
-}
+};
 
 export {
 	ComboboxRoot,
@@ -229,5 +181,5 @@ export {
 	ComboboxInput,
 	ComboboxHiddenSelect,
 	ComboboxContent,
-	ComboboxContentVirtualized,
+	ComboboxListbox,
 };
