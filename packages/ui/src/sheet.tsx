@@ -16,7 +16,7 @@ import clsx from "clsx";
 const Sheet = SheetPrimitive.Root;
 
 function SheetTrigger<T extends ValidComponent = "button">(
-	props: PolymorphicProps<T, KDialogTriggerProps>,
+	props: PolymorphicProps<T, KDialogTriggerProps<T>>,
 ) {
 	return <SheetPrimitive.Trigger {...props} />;
 }

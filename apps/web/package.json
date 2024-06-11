@@ -13,10 +13,9 @@
 		"cbuild": "NITRO_PRESET=cloudflare_pages vinxi build"
 	},
 	"dependencies": {
-		"@mattrax/web": "file:./",
 		"@corvu/otp-field": "^0.1.0",
 		"@hono/zod-validator": "^0.2.1",
-		"@kobalte/core": "^0.13.1",
+		"@kobalte/core": "^0.13.3",
 		"@kobalte/tailwindcss": "^0.9.0",
 		"@lucia-auth/adapter-drizzle": "^1.0.7",
 		"@mattrax/configuration-schemas": "workspace:*",
@@ -76,6 +75,7 @@
 		"react": "^18.3.1",
 		"react-dom": "^18.3.1",
 		"solid-js": "^1.8.17",
+		"solid-presence": "^0.1.6",
 		"solid-sonner": "^0.2.7",
 		"sst": "^3.0.32",
 		"stripe": "^15.7.0",

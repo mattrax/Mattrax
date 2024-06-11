@@ -272,7 +272,7 @@ function EnrollDeviceModal() {
 				class="flex-1 pb-2"
 			>
 				<ComboboxControl aria-label="User to enroll as">
-					<ComboboxInput
+					<ComboboxInput<"input">
 						value={users.data?.find((u) => u.id === user())?.name || ""}
 						onFocusOut={(e) => {
 							setCount(null);
