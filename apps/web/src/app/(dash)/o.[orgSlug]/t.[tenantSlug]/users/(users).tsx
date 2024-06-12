@@ -7,20 +7,13 @@ import {
 } from "@mattrax/ui";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import pluralize from "pluralize";
-import { Match, Show, Suspense, Switch } from "solid-js";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
+import { Show, Suspense } from "solid-js";
 
 import type { RouterOutput } from "~/api/trpc";
-import {
-	BulkDeleteDialog,
-	createBulkDeleteDialog,
-} from "~/components/BulkDeleteDialog";
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
-	FloatingSelectionBar,
 	StandardTable,
 	createSearchParamFilter,
 	createStandardTable,
@@ -110,18 +103,18 @@ export default function Page() {
 	});
 	createSearchParamFilter(table, "name", "search");
 
-	const deleteUsers = trpc.user.delete.createMutation(() => ({
-		...withDependantQueries(users),
-	}));
+	// const deleteUsers = trpc.user.delete.createMutation(() => ({
+	// 	...withDependantQueries(users),
+	// }));
 
-	const dialog = createBulkDeleteDialog({
-		table,
-		onDelete: (data) =>
-			deleteUsers.mutateAsync({
-				tenantSlug: tenantSlug(),
-				ids: data.map((d) => d.id),
-			}),
-	});
+	// const dialog = createBulkDeleteDialog({
+	// 	table,
+	// 	onDelete: (data) =>
+	// 		deleteUsers.mutateAsync({
+	// 			tenantSlug: tenantSlug(),
+	// 			ids: data.map((d) => d.id),
+	// 		}),
+	// });
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Users</PageLayoutHeading>}>
@@ -130,7 +123,7 @@ export default function Page() {
 			</div>
 			<Suspense>
 				<StandardTable table={table} />
-				<BulkDeleteDialog
+				{/* <BulkDeleteDialog
 					dialog={dialog}
 					title={({ count }) => <>Delete {pluralize("User", count())}</>}
 					description={({ count, rows }) => (
@@ -164,7 +157,7 @@ export default function Page() {
 							Delete
 						</Button>
 					)}
-				</FloatingSelectionBar>
+				</FloatingSelectionBar> */}
 			</Suspense>
 		</PageLayout>
 	);

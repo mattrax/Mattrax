@@ -1,9 +1,14 @@
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Button, DropdownMenuTrigger } from "@mattrax/ui";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
+import pluralize from "pluralize";
 import { Match, Suspense, Switch } from "solid-js";
+import {
+	BulkDeleteDialog,
+	createBulkDeleteDialog,
+} from "~/components/BulkDeleteDialog";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
@@ -18,11 +23,6 @@ import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { useTenantSlug } from "../ctx";
 import { cacheMetadata } from "../metadataCache";
 import { CreateApplicationSheet } from "./CreateApplicationSheet";
-import {
-	BulkDeleteDialog,
-	createBulkDeleteDialog,
-} from "~/components/BulkDeleteDialog";
-import pluralize from "pluralize";
 
 export const route = {
 	load: ({ params }) => {

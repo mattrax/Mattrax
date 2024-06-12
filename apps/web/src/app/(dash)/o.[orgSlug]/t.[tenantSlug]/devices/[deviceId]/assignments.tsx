@@ -1,7 +1,7 @@
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Button, SheetTrigger } from "@mattrax/ui";
 import pluralize from "pluralize";
 import { Suspense } from "solid-js";
-import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import type { RouteDefinition } from "@solidjs/router";
 import { trpc } from "~/lib";

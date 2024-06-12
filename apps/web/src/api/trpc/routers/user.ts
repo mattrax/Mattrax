@@ -15,7 +15,6 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-import { createAuditLog } from "~/api/auditLog";
 
 const userProcedure = authedProcedure
 	.input(z.object({ id: z.string() }))
@@ -91,43 +90,43 @@ export const userRouter = createTRPCRouter({
 			return omit(user, ["tenantPk"]);
 		}),
 
-	delete: tenantProcedure
-		.input(z.object({ ids: z.array(z.string()) }))
-		.mutation(async ({ ctx, input }) => {
-			const u = await ctx.db
-				.select({ id: users.id, name: users.name, pk: users.pk })
-				.from(users)
-				.where(
-					and(eq(users.tenantPk, ctx.tenant.pk), inArray(users.id, input.ids)),
-				);
+	// delete: tenantProcedure
+	// 	.input(z.object({ ids: z.array(z.string()) }))
+	// 	.mutation(async ({ ctx, input }) => {
+	// 		const u = await ctx.db
+	// 			.select({ id: users.id, name: users.name, pk: users.pk })
+	// 			.from(users)
+	// 			.where(
+	// 				and(eq(users.tenantPk, ctx.tenant.pk), inArray(users.id, input.ids)),
+	// 			);
 
-			const pks = u.map(({ pk }) => pk);
+	// 		const pks = u.map(({ pk }) => pk);
 
-			await ctx.db.transaction((db) => {
-				return Promise.all([
-					db
-						.delete(groupAssignables)
-						.where(
-							and(
-								eq(groupAssignables.variant, "user"),
-								inArray(groupAssignables.pk, pks),
-							),
-						),
-					db
-						.delete(policyAssignments)
-						.where(
-							and(
-								eq(policyAssignments.variant, "user"),
-								inArray(policyAssignments.pk, pks),
-							),
-						),
-					db
-						.delete(users)
-						.where(inArray(users.pk, pks)),
-					// ...u.map((u) => createAuditLog("removeUser", { name: u.name })),
-				]);
-			});
-		}),
+	// 		await ctx.db.transaction((db) => {
+	// 			return Promise.all([
+	// 				db
+	// 					.delete(groupAssignables)
+	// 					.where(
+	// 						and(
+	// 							eq(groupAssignables.variant, "user"),
+	// 							inArray(groupAssignables.pk, pks),
+	// 						),
+	// 					),
+	// 				db
+	// 					.delete(policyAssignments)
+	// 					.where(
+	// 						and(
+	// 							eq(policyAssignments.variant, "user"),
+	// 							inArray(policyAssignments.pk, pks),
+	// 						),
+	// 					),
+	// 				db
+	// 					.delete(users)
+	// 					.where(inArray(users.pk, pks)),
+	// 				// ...u.map((u) => createAuditLog("removeUser", { name: u.name })),
+	// 			]);
+	// 		});
+	// 	}),
 
 	devices: authedProcedure
 		.input(z.object({ id: z.string() }))
