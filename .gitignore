@@ -54,9 +54,7 @@ Thumbs.db
 /_
 /policy.yaml
 /out
+/TODO
 
-# Temp
-result.mobileconfig
-/apps/ingest/src/windows.rs
-
+# Nx
 .nx/cache

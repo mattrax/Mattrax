@@ -1,8 +1,0 @@
-[package]
-name = "specta-zod"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-specta = { workspace = true }
-thiserror = "1.0.60"
