@@ -50,7 +50,7 @@ const CommandDialog: Component<ParentProps<DialogRootProps>> = (props) => {
 			<Dialog {...others}>
 				<DialogContent
 					class="overflow-hidden !p-0 w-full max-w-xl"
-					positionClass="left-1/2 top-1/3 -translate-x-1/2 -translate-y-1/2"
+					positionClass="left-1/2 top-1/4 -translate-x-1/2"
 					closeButton={false}
 				>
 					<Command
