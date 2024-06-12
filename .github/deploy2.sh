@@ -4,7 +4,6 @@
 
 set -e
 
-
 SERVER="44.223.248.193" 
 TARGET_DIR=$(cargo metadata | jq -r .target_directory)
 
