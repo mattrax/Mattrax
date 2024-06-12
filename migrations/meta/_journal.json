@@ -1,62 +1,69 @@
 {
-	"version": "5",
-	"dialect": "mysql",
-	"entries": [
-		{
-			"idx": 0,
-			"version": "5",
-			"when": 1713931019335,
-			"tag": "0000_dry_stephen_strange",
-			"breakpoints": true
-		},
-		{
-			"idx": 1,
-			"version": "5",
-			"when": 1714273519161,
-			"tag": "0001_chemical_mojo",
-			"breakpoints": true
-		},
-		{
-			"idx": 2,
-			"version": "5",
-			"when": 1714621481150,
-			"tag": "0002_outgoing_dagger",
-			"breakpoints": true
-		},
-		{
-			"idx": 3,
-			"version": "5",
-			"when": 1717597354775,
-			"tag": "0003_spotty_changeling",
-			"breakpoints": true
-		},
-		{
-			"idx": 4,
-			"version": "5",
-			"when": 1717598060538,
-			"tag": "0004_peaceful_magik",
-			"breakpoints": true
-		},
-		{
-			"idx": 5,
-			"version": "5",
-			"when": 1717642399926,
-			"tag": "0005_mysterious_santa_claus",
-			"breakpoints": true
-		},
-		{
-			"idx": 6,
-			"version": "5",
-			"when": 1717643076370,
-			"tag": "0006_young_rick_jones",
-			"breakpoints": true
-		},
-		{
-			"idx": 7,
-			"version": "5",
-			"when": 1718031784348,
-			"tag": "0007_right_slayback",
-			"breakpoints": true
-		}
-	]
+  "version": "5",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1713931019335,
+      "tag": "0000_dry_stephen_strange",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1714273519161,
+      "tag": "0001_chemical_mojo",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1714621481150,
+      "tag": "0002_outgoing_dagger",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1717597354775,
+      "tag": "0003_spotty_changeling",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1717598060538,
+      "tag": "0004_peaceful_magik",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1717642399926,
+      "tag": "0005_mysterious_santa_claus",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1717643076370,
+      "tag": "0006_young_rick_jones",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1718031784348,
+      "tag": "0007_right_slayback",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1718175093819,
+      "tag": "0008_living_grandmaster",
+      "breakpoints": true
+    }
+  ]
 }
