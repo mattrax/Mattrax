@@ -226,6 +226,7 @@ exportQueries(
 			name: "create_device",
 			args: {
 				id: "String",
+				mdm_id: "String",
 				name: "String",
 				enrollmentType: "String", // TODO: Enum
 				os: "String", // TODO: Enum
@@ -239,6 +240,7 @@ exportQueries(
 					.insert(devices)
 					.values({
 						id: args.id,
+						mdm_id: args.mdm_id,
 						name: args.name,
 						enrollmentType: args.enrollmentType as any,
 						os: args.os as any,
@@ -248,18 +250,22 @@ exportQueries(
 						enrolledBy: args.enrolled_by_pk,
 					})
 					.onDuplicateKeyUpdate({
-						// TODO: When we do this update what if policies from the old-tenant refer to it. We kinda break shit.
 						set: {
+							mdm_id: args.mdm_id,
 							name: args.name,
+							enrollmentType: args.enrollmentType as any,
+							os: args.os as any,
+							serialNumber: args.serial_number,
 							tenantPk: args.tenant_pk,
 							owner: args.owner_pk,
+							enrolledBy: args.enrolled_by_pk,
 						},
 					}),
 		}),
 		defineOperation({
 			name: "get_device",
 			args: {
-				device_id: "String",
+				mdm_device_id: "String",
 			},
 			query: (args) =>
 				db
@@ -268,7 +274,21 @@ exportQueries(
 						tenantPk: devices.tenantPk,
 					})
 					.from(devices)
-					.where(eq(devices.id, args.device_id)),
+					.where(eq(devices.mdm_id, args.mdm_device_id)),
+		}),
+		defineOperation({
+			name: "get_device_by_serial",
+			args: {
+				serial_number: "String",
+			},
+			query: (args) =>
+				db
+					.select({
+						id: devices.id,
+						tenantPk: devices.tenantPk,
+					})
+					.from(devices)
+					.where(eq(devices.serialNumber, args.serial_number)),
 		}),
 		defineOperation({
 			name: "get_policy_data_for_checkin",

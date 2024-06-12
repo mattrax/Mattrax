@@ -27,7 +27,7 @@ use rcgen::{
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
 use time::OffsetDateTime;
-use tracing::error;
+use tracing::{debug, error};
 
 use crate::api::Context;
 
@@ -355,6 +355,12 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
 
+            let Some(hw_dev_id) = additional_context.get("HWDevID") else {
+                 // TODO: Actual fault
+                 error!("todo: proper soap fault. the device is did not provide a 'HWDevID'");
+                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            };
+
             let (cert_store, common_name, enrollment_type) = match additional_context.get("EnrollmentType") {
                 Some("Device") => ("System", device_id.to_string(), ENROLLMENT_TYPE_DEVICE),
                 _ => ("User", upn.unwrap_or_else(|| "system".to_string()).clone(), ENROLLMENT_TYPE_USER),
@@ -366,8 +372,23 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             }) else {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             };
+
+            let mdm_device_id = cuid2::create_id();
+            let device_id = match state.db.get_device_by_serial(hw_dev_id.to_string()).await.unwrap().into_iter().next() {
+                Some(device) => {
+                    // TODO: Could this functionality be used to forcefully unenroll a device if you know it's serial number?
+                    if device.tenant_pk != tenant_pk {
+                        debug!("Detect device enrolling from tenant {} to {}!", device.tenant_pk, tenant_pk);
+
+                        // TODO: Wipe out all relations - https://github.com/mattrax/Mattrax/issues/362
+                    }
+
+                    device.id
+                }
+                None => cuid2::create_id(),
+            };
+
             let mut csr = CertificateSigningRequestParams::from_der(&csr.into()).unwrap(); // TODO: Error handling
-            let device_id = cuid2::create_id();
 
             // Version:               csr.Version,
             // Signature:             csr.Signature,
@@ -385,7 +406,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             // BasicConstraintsValid: true, // TODO
             csr.params.is_ca = IsCa::ExplicitNoCa;
             csr.params.custom_extensions = vec![
-                CustomExtension::from_oid_content(MICROSOFT_DEVICE_ID_EXTENSION, device_id.as_bytes().to_vec()),
+                CustomExtension::from_oid_content(MICROSOFT_DEVICE_ID_EXTENSION, mdm_device_id.as_bytes().to_vec()),
             ];
 
             let certificate = csr.signed_by(&state.identity_cert_rcgen, &state.identity_key).unwrap();  // TODO: Error handling
@@ -467,13 +488,9 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             // TODO: Remove the device from the DB if it doesn't do an initial checkin within a certain time period
             // TODO: Get all this information from parsing the request.
 
-            let Some(hw_dev_id) = additional_context.get("HWDevID") else {
-                todo!("cringe device. No HwDevId-ass");
-            };
-
             // TODO: `HWDevID`, `DeviceID`, `OSVersion`
 
-            state.db.create_device(device_id.clone(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), enrollment_type.into(), OS_WINDOWS.into(), hw_dev_id.into(), tenant_pk, owner_pk, enrolled_by).await.unwrap();
+            state.db.create_device(device_id, mdm_device_id.clone(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), enrollment_type.into(), OS_WINDOWS.into(), hw_dev_id.into(), tenant_pk, owner_pk, enrolled_by).await.unwrap();
 
             // TODO: Get the device's DB id and put into this
             // TODO: Lookup and set tenant name
@@ -527,7 +544,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 <characteristic type="DMClient">
                     <characteristic type="Provider">
                         <characteristic type="Mattrax">
-                            <parm name="EntDMID" value="{device_id}" datatype="string" />
+                            <parm name="EntDMID" value="{mdm_device_id}" datatype="string" />
                             <parm name="SyncApplicationVersion" value="5.0" datatype="string" />
                             <characteristic type="Poll">
                                 <parm name="NumberOfFirstRetries" value="8" datatype="integer" />

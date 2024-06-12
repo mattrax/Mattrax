@@ -64,6 +64,13 @@
 			"when": 1718175093819,
 			"tag": "0008_living_grandmaster",
 			"breakpoints": true
+		},
+		{
+			"idx": 9,
+			"version": "5",
+			"when": 1718177010992,
+			"tag": "0009_exotic_venus",
+			"breakpoints": true
 		}
 	]
 }

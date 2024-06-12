@@ -22,14 +22,14 @@ pub async fn handler(
     body: String,
     client_cert: Option<CertificateDer<'_>>,
 ) -> String {
-    let Some((upn, device_id)) = authenticate::handler(root_cert, client_cert) else {
+    let Some((upn, mdm_device_id)) = authenticate::handler(root_cert, client_cert) else {
         // return StatusCode::UNAUTHORIZED.into_response();
         panic!("Unauthorized"); // TODO: Error handling
     };
 
     info!(
         "MDM Checkin from device '{}' as '{}'",
-        device_id,
+        mdm_device_id,
         upn.as_deref().unwrap_or("system")
     );
 
@@ -41,7 +41,13 @@ pub async fn handler(
         }
     };
 
-    let Some(device) = db.get_device(device_id).await.unwrap().into_iter().next() else {
+    let Some(device) = db
+        .get_device(mdm_device_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .next()
+    else {
         // return StatusCode::NOT_FOUND.into_response(); // TODO: Proper SyncML error
         panic!("Device not found"); // TODO: Error handling
     };

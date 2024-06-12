@@ -322,6 +322,11 @@ export const possibleOSes = [
 export const devices = mysqlTable("devices", {
 	pk: serial("pk").primaryKey(),
 	id: cuid("id").notNull().unique(),
+	// A unique identifier for the device used at the MDM layer.
+	// This will always change between re-enrollments
+
+	//  which is desired for the frontend cache key to stay consistent.
+	mdm_id: cuid("mdm_id").notNull().unique(),
 	name: varchar("name", { length: 256 }).notNull(),
 	description: varchar("description", { length: 256 }),
 

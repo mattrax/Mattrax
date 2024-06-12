@@ -62,6 +62,11 @@ pub struct GetDeviceResult {
     pub tenant_pk: u64,
 }
 #[derive(Debug)]
+pub struct GetDeviceBySerialResult {
+    pub id: String,
+    pub tenant_pk: u64,
+}
+#[derive(Debug)]
 pub struct GetPolicyDataForCheckinLatestDeployResult {
     pub pk: u64,
     pub data: Deserialized<serde_json::Value>,
@@ -239,6 +244,7 @@ impl Db {
     pub async fn create_device(
         &self,
         id: String,
+        mdm_id: String,
         name: String,
         enrollment_type: String,
         os: String,
@@ -247,8 +253,8 @@ impl Db {
         owner_pk: Option<u64>,
         enrolled_by_pk: Option<u64>,
     ) -> Result<(), mysql_async::Error> {
-        let mut result = r#"insert into `devices` (`pk`, `id`, `name`, `description`, `enrollment_type`, `os`, `serial_number`, `manufacturer`, `model`, `os_version`, `imei`, `free_storage`, `total_storage`, `owner`, `azure_ad_did`, `enrolled_at`, `enrolled_by`, `last_synced`, `tenant`) values (default, ?, ?, default, ?, ?, ?, default, default, default, default, default, default, ?, default, default, ?, default, ?) on duplicate key update `name` = ?, `owner` = ?, `tenant` = ?"#
-			  .with(mysql_async::Params::Positional(vec![id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.clone().into(),enrolled_by_pk.clone().into(),tenant_pk.clone().into(),name.clone().into(),owner_pk.clone().into(),tenant_pk.clone().into()]))
+        let mut result = r#"insert into `devices` (`pk`, `id`, `mdm_id`, `name`, `description`, `enrollment_type`, `os`, `serial_number`, `manufacturer`, `model`, `os_version`, `imei`, `free_storage`, `total_storage`, `owner`, `azure_ad_did`, `enrolled_at`, `enrolled_by`, `last_synced`, `tenant`) values (default, ?, ?, ?, default, ?, ?, ?, default, default, default, default, default, default, ?, default, default, ?, default, ?) on duplicate key update `mdm_id` = ?, `name` = ?, `enrollment_type` = ?, `os` = ?, `serial_number` = ?, `owner` = ?, `enrolled_by` = ?, `tenant` = ?"#
+			  .with(mysql_async::Params::Positional(vec![id.clone().into(),mdm_id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.clone().into(),enrolled_by_pk.clone().into(),tenant_pk.clone().into(),mdm_id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.clone().into(),enrolled_by_pk.clone().into(),tenant_pk.clone().into()]))
 					.run(&self.pool).await?;
         Ok(())
     }
@@ -256,10 +262,10 @@ impl Db {
 impl Db {
     pub async fn get_device(
         &self,
-        device_id: String,
+        mdm_device_id: String,
     ) -> Result<Vec<GetDeviceResult>, mysql_async::Error> {
-        let mut result = r#"select `pk`, `tenant` from `devices` where `devices`.`id` = ?"#
-            .with(mysql_async::Params::Positional(vec![device_id
+        let mut result = r#"select `pk`, `tenant` from `devices` where `devices`.`mdm_id` = ?"#
+            .with(mysql_async::Params::Positional(vec![mdm_device_id
                 .clone()
                 .into()]))
             .run(&self.pool)
@@ -268,6 +274,28 @@ impl Db {
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetDeviceResult {
                 pk: from_value(&mut row, 0),
+                tenant_pk: from_value(&mut row, 1),
+            });
+        }
+        Ok(ret)
+    }
+}
+impl Db {
+    pub async fn get_device_by_serial(
+        &self,
+        serial_number: String,
+    ) -> Result<Vec<GetDeviceBySerialResult>, mysql_async::Error> {
+        let mut result =
+            r#"select `id`, `tenant` from `devices` where `devices`.`serial_number` = ?"#
+                .with(mysql_async::Params::Positional(vec![serial_number
+                    .clone()
+                    .into()]))
+                .run(&self.pool)
+                .await?;
+        let mut ret = vec![];
+        while let Some(mut row) = result.next().await.unwrap() {
+            ret.push(GetDeviceBySerialResult {
+                id: from_value(&mut row, 0),
                 tenant_pk: from_value(&mut row, 1),
             });
         }
