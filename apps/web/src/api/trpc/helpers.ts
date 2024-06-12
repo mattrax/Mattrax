@@ -206,3 +206,23 @@ export const tenantProcedure = authedProcedure
 			}),
 		);
 	});
+
+export const restricted = new Set([
+	// Misleading names
+	"admin",
+	"administrator",
+	"help",
+	"mod",
+	"moderator",
+	"staff",
+	"mattrax",
+	"root",
+	"contact",
+	"support",
+	"home",
+	"employee",
+	// Reserved Mattrax routes
+	"enroll",
+	"profile",
+	"account",
+]);

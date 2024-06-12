@@ -23,7 +23,12 @@ import {
 	users,
 } from "~/db";
 import { env } from "~/env";
-import { createTRPCRouter, orgProcedure, tenantProcedure } from "../../helpers";
+import {
+	createTRPCRouter,
+	orgProcedure,
+	restricted,
+	tenantProcedure,
+} from "../../helpers";
 import { identityProviderRouter } from "./identityProvider";
 import { variantTableRouter } from "./members";
 
@@ -33,26 +38,6 @@ export type StatsTarget =
 	| "policies"
 	| "applications"
 	| "groups";
-
-export const restrictedUsernames = new Set([
-	// Misleading names
-	"admin",
-	"administrator",
-	"help",
-	"mod",
-	"moderator",
-	"staff",
-	"mattrax",
-	"root",
-	"contact",
-	"support",
-	"home",
-	"employee",
-	// Reserved Mattrax routes
-	"enroll",
-	"profile",
-	"account",
-]);
 
 const microsoftSkusThatSupportMobility = [
 	"DEVELOPERPACK_E5",
@@ -105,8 +90,11 @@ export const tenantRouter = createTRPCRouter({
 		.mutation(async ({ ctx, input }) => {
 			if (input.name === undefined) return;
 
-			if (restrictedUsernames.has(input.name.toLowerCase())) {
+			if (input.name && restricted.has(input.name.toLowerCase())) {
 				throw new Error("Name is restricted"); // TODO: Properly handle this on the frontend
+			}
+			if (input.slug && restricted.has(input.slug.toLowerCase())) {
+				throw new Error("Slug is restricted"); // TODO: Properly handle this on the frontend
 			}
 
 			await ctx.db

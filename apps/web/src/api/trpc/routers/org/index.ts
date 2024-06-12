@@ -9,7 +9,12 @@ import {
 	organisations,
 	tenants,
 } from "~/db";
-import { authedProcedure, createTRPCRouter, orgProcedure } from "../../helpers";
+import {
+	authedProcedure,
+	createTRPCRouter,
+	orgProcedure,
+	restricted,
+} from "../../helpers";
 
 import { adminsRouter } from "./admins";
 // import { billingRouter } from "./billing";
@@ -82,6 +87,32 @@ export const orgRouter = createTRPCRouter({
 				.where(eq(organisations.pk, ctx.org.pk));
 		});
 	}),
+
+	edit: orgProcedure
+		.input(
+			z.object({
+				name: z.string().min(1).max(100).optional(),
+				slug: z.string().min(1).max(100).optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			if (input.name === undefined) return;
+
+			if (input.name && restricted.has(input.name.toLowerCase())) {
+				throw new Error("Name is restricted"); // TODO: Properly handle this on the frontend
+			}
+			if (input.slug && restricted.has(input.slug.toLowerCase())) {
+				throw new Error("Slug is restricted"); // TODO: Properly handle this on the frontend
+			}
+
+			await ctx.db
+				.update(organisations)
+				.set({
+					...(input.name !== undefined && { name: input.name }),
+					...(input.slug !== undefined && { slug: input.slug }),
+				})
+				.where(eq(organisations.pk, ctx.org.pk));
+		}),
 
 	create: authedProcedure
 		.input(z.object({ name: z.string().min(1) }))
