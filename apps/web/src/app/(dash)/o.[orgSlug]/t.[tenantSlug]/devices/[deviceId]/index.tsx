@@ -11,10 +11,9 @@ import {
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
-	Label,
 	Textarea,
 } from "@mattrax/ui";
-import { type JSX, Suspense } from "solid-js";
+import { type JSX, Suspense, Show } from "solid-js";
 import { toast } from "solid-sonner";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
@@ -55,6 +54,7 @@ export default function Page() {
 							>
 								Sync
 							</DropdownMenuItem>
+							{/* TODO: Handle MDM permissions here */}
 							<DropdownMenuItem
 								disabled={triggerAction.isPending}
 								onClick={() =>
@@ -137,11 +137,15 @@ export default function Page() {
 					}}
 				</Details>
 
-				{/* // TODO: External link to Entra ID portal??? */}
-				<DescriptionTerm>Entra Device ID</DescriptionTerm>
-				<Details>
-					{() => device.data?.azureADDeviceId || "Not enrolled with Azure"}
-				</Details>
+				<Show when={device.data?.azureADDeviceId}>
+					{(azureAdId) => (
+						<>
+							<DescriptionTerm>Entra Device ID</DescriptionTerm>
+							{/* // TODO: External link to Entra ID portal??? */}
+							<Details>{azureAdId}</Details>
+						</>
+					)}
+				</Show>
 
 				{/* // TODO: Tooltip on dates with actual value */}
 				<DescriptionTerm>Last Seen</DescriptionTerm>
@@ -213,6 +217,7 @@ export default function Page() {
 				</Details>
 
 				<h2 class="text-bold text-xl">Software:</h2>
+				{/* // TODO: Show a logo */}
 				<DescriptionTerm>Operating System</DescriptionTerm>
 				<Details>{() => device.data?.os}</Details>
 				<DescriptionTerm>Operating System Version</DescriptionTerm>
