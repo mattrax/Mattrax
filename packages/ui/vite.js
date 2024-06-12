@@ -4,6 +4,7 @@ import IconsResolver from "unplugin-icons/resolver";
 import Icons from "unplugin-icons/vite";
 // import { PluginOption } from "vite";
 
+// Workaround for https://github.com/solidjs/solid-start/issues/1374
 const VinxiAutoImport = (options) => {
 	const autoimport = AutoImport(options);
 

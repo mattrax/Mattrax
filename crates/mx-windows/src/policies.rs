@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use ms_mdm::{
     Add, Atomic, CmdId, Delete, Format, Item, Meta, Replace, SyncBodyChild, SyncML, Target,
 };
-use mx_db::{Db, GetDeviceResult};
+use mx_db::{CreatePolicyDeployStatus, Db, GetDeviceResult};
 use mx_db::{GetPendingDeployStatusesResult, GetPolicyDataForCheckinResult};
 use mx_policy::{DmValue, PolicyData};
 
@@ -27,31 +27,6 @@ pub(crate) async fn handler(
 
     println!("RESULT: {:#?}", result); // TODO
 
-    // TODO: Merge this into the loop below so we can abort sending to the device when the payload gets too big. (cause as long as we don't report a status for it we are good)
-    // TODO: Insert many here - https://github.com/mattrax/Mattrax/issues/363
-    let mut deployed_deploys = result.result.keys().copied().collect::<HashSet<_>>();
-    {
-        for (_, deploy_pks) in result.conflicts.iter() {
-            for deploy_pk in deploy_pks {
-                deployed_deploys.remove(&deploy_pk);
-
-                db.create_policy_deploy_status(
-                    device.pk,
-                    *deploy_pk,
-                    Some(serde_json::to_string(&result.conflicts).unwrap()),
-                )
-                .await
-                .unwrap();
-            }
-        }
-
-        for deploy_pk in deployed_deploys {
-            db.create_policy_deploy_status(device.pk, deploy_pk, None)
-                .await
-                .unwrap();
-        }
-    }
-
     // TODO: Do this helper better
     let mut cmd_id = 0;
     let mut next_cmd_id = move || {
@@ -60,11 +35,16 @@ pub(crate) async fn handler(
     };
 
     let mut body = vec![];
+    let mut policy_deploy_statuses = HashMap::with_capacity(result.result.len());
     for (deploy_pk, nodes) in result.result {
         let mut children = vec![];
 
         for (uri, node) in nodes {
-            // TODO: When `children` gets big enough we should be able to stop sending and stop reporting status.
+            // When `children` gets big enough we stop sending so the payload doesn't get too big.
+            // This also causes the "pending" status to never be reported for all remaining nodes and hence they will be sent on the next request.
+            if children.len() == 5 {
+                continue;
+            }
 
             match node {
                 ManagementNode::Add { deploy_pk, value } => {
@@ -150,17 +130,47 @@ pub(crate) async fn handler(
             }
         }
 
-        println!("{deploy_pk} {children:?}");
+        println!("{deploy_pk:?} {children:?}");
 
         if !children.is_empty() {
             // TODO: We are deploying everything in one atomic that's problematic can we split this down into one for each policy?
             body.push(SyncBodyChild::Atomic(Atomic {
-                cmd_id: CmdId::new(format!("deploy|{deploy_pk}")).expect("trust me bro"),
+                cmd_id: CmdId::new(format!("deploy|{}", deploy_pk.into_inner()))
+                    .expect("trust me bro"),
                 meta: None,
                 children,
             }))
         }
+
+        if let DeployPk::Current(deploy_pk) = deploy_pk {
+            policy_deploy_statuses.insert(
+                deploy_pk,
+                CreatePolicyDeployStatus {
+                    device_pk: device.pk,
+                    deploy_pk,
+                    conflicts: None,
+                },
+            );
+        }
     }
+
+    // We intentionally do this last so that we can override all previous `policy_deploy_statuses` with the conflict information.
+    for (_, deploy_pks) in result.conflicts.iter() {
+        for deploy_pk in deploy_pks.iter().copied() {
+            policy_deploy_statuses.insert(
+                deploy_pk,
+                CreatePolicyDeployStatus {
+                    device_pk: device.pk,
+                    deploy_pk,
+                    conflicts: Some(serde_json::to_string(&result.conflicts).unwrap()),
+                },
+            );
+        }
+    }
+
+    db.create_policy_deploy_status(policy_deploy_statuses.into_values().collect())
+        .await
+        .unwrap();
 
     body
 }
@@ -176,7 +186,7 @@ fn resolve(
     // TODO: Make it a tree which would probs be more storage efficient???
     let mut conflicts: HashMap<String, Vec<u64>> = HashMap::new();
     // The final result of the resolution transposed into a per-deploy map from `desired`
-    let mut result: HashMap<u64, HashMap<String, ManagementNode>> = HashMap::new();
+    let mut result: HashMap<DeployPk, HashMap<String, ManagementNode>> = HashMap::new();
 
     // TODO: For anything in `pending_deploy_statuses` we don't really know if the payload was commit to the device or not so we need to take that into account.
 
@@ -207,7 +217,7 @@ fn resolve(
     // This will cause them to be removed unless they appear in the latest deploy.
     //
     // This mechanism also important as it's used to determine whether a `Replace` is required or not (based on the existence of the node in `desired`).
-    for (_, _, last, conflicts) in policy_content.iter() {
+    for (policy, _, last, conflicts) in policy_content.iter() {
         for (key, children) in last.as_ref().map(|v| &v.windows).into_iter().flatten() {
             for (child_key, value) in children {
                 let value: DmValue = value.clone().into();
@@ -216,7 +226,11 @@ fn resolve(
                 desired.insert(
                     format!("{}{}", key, child_key),
                     ManagementNode::Delete {
-                        deploy_pk: todo!(),
+                        deploy_pk: policy
+                            .last_deploy
+                            .as_ref()
+                            .expect("trust in the process")
+                            .pk,
                         value,
                     },
                 );
@@ -232,7 +246,10 @@ fn resolve(
 
     for (policy, latest, _, _) in policy_content {
         // We ensure all the deploys get a corresponding entry in the result.
-        result.insert(policy.latest_deploy.pk, Default::default());
+        result.insert(
+            DeployPk::Current(policy.latest_deploy.pk),
+            Default::default(),
+        );
 
         for (key, children) in latest.windows {
             for (child_key, desired_value) in children {
@@ -287,13 +304,13 @@ fn resolve(
     // We map `desired` which is a "global" map of all nodes to a per-deploy map.
     // This is so each deploy can be sent to the device individually and we can track it's status individually.
     for (uri, node) in desired {
-        let deploy_pk = node.deploy_pk();
-        let entry = result.entry(deploy_pk).or_default();
-
         // We filter out all nodes that haven't changed value since the last checkin
         if matches!(node, ManagementNode::Replace { changed: false, .. }) {
             continue;
         }
+
+        let deploy_pk = node.deploy_pk();
+        let entry = result.entry(deploy_pk).or_default();
 
         entry.insert(uri, node);
     }
@@ -304,11 +321,15 @@ fn resolve(
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ManagementNode {
     Add {
+        // The id of the deploy that caused this node.
+        // This will always correspond with `DeployPk::Current`
         deploy_pk: u64,
         /// The value of the management node.
         value: DmValue,
     },
     Replace {
+        // The id of the deploy that caused this node.
+        // This will always correspond with `DeployPk::Current`
         deploy_pk: u64,
         /// The value of the management node.
         value: DmValue,
@@ -318,6 +339,8 @@ enum ManagementNode {
         changed: bool,
     },
     Delete {
+        // The id of the deploy that caused this node.
+        // As a policy can't define an explicit `Delete` this will always correspond with `DeployPk::Previous`
         deploy_pk: u64,
         // The last known value of this management node.
         // This is used to derive the `changed` property in `Replace`.
@@ -325,12 +348,29 @@ enum ManagementNode {
     },
 }
 
-impl ManagementNode {
-    pub fn deploy_pk(&self) -> u64 {
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+enum DeployPk {
+    // Represents the identifier of the last deploy.
+    Previous(u64),
+    /// Represents the identifier of a currently active deploy.
+    /// This requires a policy deploy status entry.
+    Current(u64),
+}
+
+impl DeployPk {
+    pub fn into_inner(&self) -> u64 {
         match self {
-            ManagementNode::Add { deploy_pk, .. }
-            | ManagementNode::Replace { deploy_pk, .. }
-            | ManagementNode::Delete { deploy_pk, .. } => *deploy_pk,
+            DeployPk::Previous(v) | DeployPk::Current(v) => *v,
+        }
+    }
+}
+
+impl ManagementNode {
+    pub fn deploy_pk(&self) -> DeployPk {
+        match self {
+            ManagementNode::Add { deploy_pk, .. } => DeployPk::Current(*deploy_pk),
+            ManagementNode::Replace { deploy_pk, .. } => DeployPk::Current(*deploy_pk),
+            ManagementNode::Delete { deploy_pk, .. } => DeployPk::Previous(*deploy_pk),
         }
     }
 }
@@ -338,8 +378,7 @@ impl ManagementNode {
 #[derive(Debug)]
 struct ResolveResult {
     // All the OMA DM nodes which need to be applied to the current device to get it to the desired state.
-    // This maps each deploy id to the map of OMA DM nodes that need to be applied.
-    result: HashMap<u64, HashMap<String, ManagementNode>>,
+    result: HashMap<DeployPk, HashMap<String, ManagementNode>>,
     // A record of all the OMA DM nodes which are in conflict.
     // We need this for future checkins to know the state of the device and also for the UI.
     conflicts: HashMap<String, Vec<u64>>,

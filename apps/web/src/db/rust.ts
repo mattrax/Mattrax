@@ -468,6 +468,7 @@ exportQueries(
 		}),
 		defineOperation({
 			name: "create_policy_deploy_status",
+			insertMany: true,
 			args: {
 				device_pk: "u64",
 				deploy_pk: "u64",
@@ -482,15 +483,6 @@ exportQueries(
 					conflicts: args.conflicts as any,
 					doneAt: args.doneAt,
 				}),
-			// TODO: Maybe don't even do this and instead handle it in Rust for integrity
-			// .onDuplicateKeyUpdate({
-			// 	set: {
-			// 		status: "pending",
-			// 		// TODO: Is this okay or not???
-			// 		// conflicts: args.conflicts as any,
-			// 		doneAt: args.doneAt,
-			// 	},
-			// }),
 		}),
 	],
 	path.join(__dirname, "../../../../crates/mx-db/src/db.rs"),

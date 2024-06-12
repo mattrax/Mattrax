@@ -97,6 +97,12 @@ pub struct GetPendingDeployStatusesResult {
     pub deploy_pk: u64,
     pub conflicts: Option<Deserialized<serde_json::Value>>,
 }
+#[derive(Debug)]
+pub struct CreatePolicyDeployStatus {
+    pub device_pk: u64,
+    pub deploy_pk: u64,
+    pub conflicts: Option<String>,
+}
 
 #[derive(Clone)]
 pub struct Db {
@@ -144,9 +150,7 @@ impl Db {
 }
 impl Db {
     pub async fn set_config(&self, config: String) -> Result<(), mysql_async::Error> {
-        let mut result = r#"insert into `kv` (`key`, `value`, `last_modified`) values (?, ?, default) on duplicate key update `value` = ?"#
-			  .with(mysql_async::Params::Positional(vec!["config".clone().into(),config.clone().into(),config.clone().into()]))
-					.run(&self.pool).await?;
+        let mut result = r#"insert into `kv` (`key`, `value`, `last_modified`) values (?, ?, default) on duplicate key update `value` = ?"#.with(mysql_async::Params::Positional(vec!["config".clone().into(),config.clone().into(),config.clone().into()])).run(&self.pool).await?;
         Ok(())
     }
 }
@@ -167,9 +171,7 @@ impl Db {
 }
 impl Db {
     pub async fn update_node(&self, id: String, config: String) -> Result<(), mysql_async::Error> {
-        let mut result = r#"insert into `kv` (`key`, `value`, `last_modified`) values (CONCAT('server:', ?), ?, default) on duplicate key update `value` = ?"#
-			  .with(mysql_async::Params::Positional(vec![id.clone().into(),config.clone().into(),config.clone().into()]))
-					.run(&self.pool).await?;
+        let mut result = r#"insert into `kv` (`key`, `value`, `last_modified`) values (CONCAT('server:', ?), ?, default) on duplicate key update `value` = ?"#.with(mysql_async::Params::Positional(vec![id.clone().into(),config.clone().into(),config.clone().into()])).run(&self.pool).await?;
         Ok(())
     }
 }
@@ -198,9 +200,7 @@ impl Db {
         certificate: Vec<u8>,
     ) -> Result<(), mysql_async::Error> {
         let last_modified = chrono::Utc::now().naive_utc();
-        let mut result = r#"insert into `kv` (`key`, `value`, `last_modified`) values (CONCAT('cert:', ?), ?, default) on duplicate key update `value` = ?, `last_modified` = NOW()"#
-			  .with(mysql_async::Params::Positional(vec![key.clone().into(),certificate.clone().into(),certificate.clone().into()]))
-					.run(&self.pool).await?;
+        let mut result = r#"insert into `kv` (`key`, `value`, `last_modified`) values (CONCAT('cert:', ?), ?, default) on duplicate key update `value` = ?, `last_modified` = NOW()"#.with(mysql_async::Params::Positional(vec![key.clone().into(),certificate.clone().into(),certificate.clone().into()])).run(&self.pool).await?;
         Ok(())
     }
 }
@@ -209,9 +209,7 @@ impl Db {
         &self,
         session_id: String,
     ) -> Result<Vec<GetSessionAndUserResult>, mysql_async::Error> {
-        let mut result = r#"select `accounts`.`pk`, `accounts`.`id`, `session`.`id`, `session`.`expires_at` from `session` inner join `accounts` on `session`.`account` = `accounts`.`id` where `session`.`id` = ?"#
-			  .with(mysql_async::Params::Positional(vec![session_id.clone().into()]))
-					.run(&self.pool).await?;
+        let mut result = r#"select `accounts`.`pk`, `accounts`.`id`, `session`.`id`, `session`.`expires_at` from `session` inner join `accounts` on `session`.`account` = `accounts`.`id` where `session`.`id` = ?"#.with(mysql_async::Params::Positional(vec![session_id.clone().into()])).run(&self.pool).await?;
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetSessionAndUserResult {
@@ -234,9 +232,7 @@ impl Db {
         org_slug: String,
         account_pk: u64,
     ) -> Result<Vec<IsOrgMemberResult>, mysql_async::Error> {
-        let mut result = r#"select `organisations`.`id` from `organisations` inner join `organisation_members` on (`organisations`.`pk` = `organisation_members`.`org` and `organisation_members`.`account` = ?) where `organisations`.`slug` = ?"#
-			  .with(mysql_async::Params::Positional(vec![account_pk.clone().into(),org_slug.clone().into()]))
-					.run(&self.pool).await?;
+        let mut result = r#"select `organisations`.`id` from `organisations` inner join `organisation_members` on (`organisations`.`pk` = `organisation_members`.`org` and `organisation_members`.`account` = ?) where `organisations`.`slug` = ?"#.with(mysql_async::Params::Positional(vec![account_pk.clone().into(),org_slug.clone().into()])).run(&self.pool).await?;
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(IsOrgMemberResult {
@@ -259,9 +255,7 @@ impl Db {
         owner_pk: Option<u64>,
         enrolled_by_pk: Option<u64>,
     ) -> Result<(), mysql_async::Error> {
-        let mut result = r#"insert into `devices` (`pk`, `id`, `mdm_id`, `name`, `description`, `enrollment_type`, `os`, `serial_number`, `manufacturer`, `model`, `os_version`, `imei`, `free_storage`, `total_storage`, `owner`, `azure_ad_did`, `enrolled_at`, `enrolled_by`, `last_synced`, `tenant`) values (default, ?, ?, ?, default, ?, ?, ?, default, default, default, default, default, default, ?, default, default, ?, default, ?) on duplicate key update `mdm_id` = ?, `name` = ?, `enrollment_type` = ?, `os` = ?, `serial_number` = ?, `owner` = ?, `enrolled_by` = ?, `tenant` = ?"#
-			  .with(mysql_async::Params::Positional(vec![id.clone().into(),mdm_id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.clone().into(),enrolled_by_pk.clone().into(),tenant_pk.clone().into(),mdm_id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.clone().into(),enrolled_by_pk.clone().into(),tenant_pk.clone().into()]))
-					.run(&self.pool).await?;
+        let mut result = r#"insert into `devices` (`pk`, `id`, `mdm_id`, `name`, `description`, `enrollment_type`, `os`, `serial_number`, `manufacturer`, `model`, `os_version`, `imei`, `free_storage`, `total_storage`, `owner`, `azure_ad_did`, `enrolled_at`, `enrolled_by`, `last_synced`, `tenant`) values (default, ?, ?, ?, default, ?, ?, ?, default, default, default, default, default, default, ?, default, default, ?, default, ?) on duplicate key update `mdm_id` = ?, `name` = ?, `enrollment_type` = ?, `os` = ?, `serial_number` = ?, `owner` = ?, `enrolled_by` = ?, `tenant` = ?"#.with(mysql_async::Params::Positional(vec![id.clone().into(),mdm_id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.clone().into(),enrolled_by_pk.clone().into(),tenant_pk.clone().into(),mdm_id.clone().into(),name.clone().into(),enrollment_type.clone().into(),os.clone().into(),serial_number.clone().into(),owner_pk.clone().into(),enrolled_by_pk.clone().into(),tenant_pk.clone().into()])).run(&self.pool).await?;
         Ok(())
     }
 }
@@ -313,9 +307,7 @@ impl Db {
         &self,
         device_pk: u64,
     ) -> Result<Vec<GetPolicyDataForCheckinResult>, mysql_async::Error> {
-        let mut result = r#"select `scope_li`, `l`.`policy`, `l`.`pk`, `l`.`data`, `j`.`pk`, `j`.`data`, `j`.`conflicts` from (select `policy_deploy`.`pk`, `policy_deploy`.`policy`, `policy_deploy`.`data`, `scope_li` from `policy_deploy` inner join (select max(`policy_deploy`.`pk`) as `deployPk`, `policy_deploy`.`policy`, max(`scope`) as `scope_li` from (select `pk`, min(`scope`) as `scope` from ((select `policies`.`pk`, 'direct' as `scope` from `policies` inner join `policy_assignables` on `policies`.`pk` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ?)) union all (select `policies`.`pk`, 'group' as `scope` from `policies` inner join `policy_assignables` on (`policies`.`pk` = `policy_assignables`.`policy` and `policy_assignables`.`variant` = ?) inner join `group_assignables` on `group_assignables`.`group` = `policy_assignables`.`pk` where (`group_assignables`.`variant` = ? and `group_assignables`.`pk` = ?))) `scoped` group by `scoped`.`pk`) `sorted` inner join `policy_deploy` on `sorted`.`pk` = `policy_deploy`.`policy` group by `policy_deploy`.`policy`) `li` on `deployPk` = `policy_deploy`.`pk`) `l` left join (select `policy_deploy`.`pk`, `policy_deploy`.`policy`, `policy_deploy`.`data`, `policy_deploy_status`.`conflicts`, `ji_scope` from `policy_deploy` inner join (select max(`policy_deploy`.`pk`) as `deployPk`, `policy_deploy`.`policy`, max(`scope`) as `ji_scope` from (select `pk`, min(`scope`) as `scope` from ((select `policies`.`pk`, 'direct' as `scope` from `policies` inner join `policy_assignables` on `policies`.`pk` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ?)) union all (select `policies`.`pk`, 'group' as `scope` from `policies` inner join `policy_assignables` on (`policies`.`pk` = `policy_assignables`.`policy` and `policy_assignables`.`variant` = ?) inner join `group_assignables` on `group_assignables`.`group` = `policy_assignables`.`pk` where (`group_assignables`.`variant` = ? and `group_assignables`.`pk` = ?))) `scoped` group by `scoped`.`pk`) `sorted` inner join `policy_deploy` on `sorted`.`pk` = `policy_deploy`.`policy` inner join `policy_deploy_status` on (`policy_deploy`.`pk` = `policy_deploy_status`.`deploy` and `policy_deploy_status`.`device` = ?) group by `policy_deploy`.`policy`) `ji` on `deployPk` = `policy_deploy`.`pk` inner join `policy_deploy_status` on (`policy_deploy`.`pk` = `policy_deploy_status`.`deploy` and `policy_deploy_status`.`device` = ?)) `j` on `j`.`policy` = `l`.`policy`"#
-			  .with(mysql_async::Params::Positional(vec!["device".clone().into(),device_pk.clone().into(),"group".clone().into(),"device".clone().into(),device_pk.clone().into(),"device".clone().into(),device_pk.clone().into(),"group".clone().into(),"device".clone().into(),device_pk.clone().into(),device_pk.clone().into(),device_pk.clone().into()]))
-					.run(&self.pool).await?;
+        let mut result = r#"select `scope_li`, `l`.`policy`, `l`.`pk`, `l`.`data`, `j`.`pk`, `j`.`data`, `j`.`conflicts` from (select `policy_deploy`.`pk`, `policy_deploy`.`policy`, `policy_deploy`.`data`, `scope_li` from `policy_deploy` inner join (select max(`policy_deploy`.`pk`) as `deployPk`, `policy_deploy`.`policy`, max(`scope`) as `scope_li` from (select `pk`, min(`scope`) as `scope` from ((select `policies`.`pk`, 'direct' as `scope` from `policies` inner join `policy_assignables` on `policies`.`pk` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ?)) union all (select `policies`.`pk`, 'group' as `scope` from `policies` inner join `policy_assignables` on (`policies`.`pk` = `policy_assignables`.`policy` and `policy_assignables`.`variant` = ?) inner join `group_assignables` on `group_assignables`.`group` = `policy_assignables`.`pk` where (`group_assignables`.`variant` = ? and `group_assignables`.`pk` = ?))) `scoped` group by `scoped`.`pk`) `sorted` inner join `policy_deploy` on `sorted`.`pk` = `policy_deploy`.`policy` group by `policy_deploy`.`policy`) `li` on `deployPk` = `policy_deploy`.`pk`) `l` left join (select `policy_deploy`.`pk`, `policy_deploy`.`policy`, `policy_deploy`.`data`, `policy_deploy_status`.`conflicts`, `ji_scope` from `policy_deploy` inner join (select max(`policy_deploy`.`pk`) as `deployPk`, `policy_deploy`.`policy`, max(`scope`) as `ji_scope` from (select `pk`, min(`scope`) as `scope` from ((select `policies`.`pk`, 'direct' as `scope` from `policies` inner join `policy_assignables` on `policies`.`pk` = `policy_assignables`.`policy` where (`policy_assignables`.`variant` = ? and `policy_assignables`.`pk` = ?)) union all (select `policies`.`pk`, 'group' as `scope` from `policies` inner join `policy_assignables` on (`policies`.`pk` = `policy_assignables`.`policy` and `policy_assignables`.`variant` = ?) inner join `group_assignables` on `group_assignables`.`group` = `policy_assignables`.`pk` where (`group_assignables`.`variant` = ? and `group_assignables`.`pk` = ?))) `scoped` group by `scoped`.`pk`) `sorted` inner join `policy_deploy` on `sorted`.`pk` = `policy_deploy`.`policy` inner join `policy_deploy_status` on (`policy_deploy`.`pk` = `policy_deploy_status`.`deploy` and `policy_deploy_status`.`device` = ?) group by `policy_deploy`.`policy`) `ji` on `deployPk` = `policy_deploy`.`pk` inner join `policy_deploy_status` on (`policy_deploy`.`pk` = `policy_deploy_status`.`deploy` and `policy_deploy_status`.`device` = ?)) `j` on `j`.`policy` = `l`.`policy`"#.with(mysql_async::Params::Positional(vec!["device".clone().into(),device_pk.clone().into(),"group".clone().into(),"device".clone().into(),device_pk.clone().into(),"device".clone().into(),device_pk.clone().into(),"group".clone().into(),"device".clone().into(),device_pk.clone().into(),device_pk.clone().into(),device_pk.clone().into()])).run(&self.pool).await?;
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetPolicyDataForCheckinResult {
@@ -349,9 +341,7 @@ impl Db {
         &self,
         device_id: u64,
     ) -> Result<Vec<QueuedDeviceActionsResult>, mysql_async::Error> {
-        let mut result = r#"select `action`, `device`, `created_by`, `created_at` from `device_actions` where `device_actions`.`device` = ?"#
-			  .with(mysql_async::Params::Positional(vec![device_id.clone().into()]))
-					.run(&self.pool).await?;
+        let mut result = r#"select `action`, `device`, `created_by`, `created_at` from `device_actions` where `device_actions`.`device` = ?"#.with(mysql_async::Params::Positional(vec![device_id.clone().into()])).run(&self.pool).await?;
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(QueuedDeviceActionsResult {
@@ -382,9 +372,7 @@ impl Db {
         &self,
         device_pk: u64,
     ) -> Result<Vec<GetPendingDeployStatusesResult>, mysql_async::Error> {
-        let mut result = r#"select `deploy`, `conflicts` from `policy_deploy_status` where (`policy_deploy_status`.`variant` = ? and `policy_deploy_status`.`device` = ?)"#
-			  .with(mysql_async::Params::Positional(vec!["pending".clone().into(),device_pk.clone().into()]))
-					.run(&self.pool).await?;
+        let mut result = r#"select `deploy`, `conflicts` from `policy_deploy_status` where (`policy_deploy_status`.`variant` = ? and `policy_deploy_status`.`device` = ?)"#.with(mysql_async::Params::Positional(vec!["pending".clone().into(),device_pk.clone().into()])).run(&self.pool).await?;
         let mut ret = vec![];
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetPendingDeployStatusesResult {
@@ -398,14 +386,10 @@ impl Db {
 impl Db {
     pub async fn create_policy_deploy_status(
         &self,
-        device_pk: u64,
-        deploy_pk: u64,
-        conflicts: Option<String>,
+        values: Vec<CreatePolicyDeployStatus>,
     ) -> Result<(), mysql_async::Error> {
         let done_at = chrono::Utc::now().naive_utc();
-        let mut result = r#"insert into `policy_deploy_status` (`deploy`, `device`, `variant`, `conflicts`, `done_at`) values (?, ?, ?, ?, ?) on duplicate key update `variant` = ?, `done_at` = ?"#
-			  .with(mysql_async::Params::Positional(vec![deploy_pk.clone().into(),device_pk.clone().into(),"pending".clone().into(),conflicts.clone().into(),done_at.clone().into(),"pending".clone().into(),done_at.clone().into()]))
-					.run(&self.pool).await?;
+        let mut result = format!(r#"insert into `policy_deploy_status` (`deploy`, `device`, `variant`, `conflicts`, `done_at`) values {}"#, (0..values.len()).map(|_| "(?, ?, ?, ?, ?)").collect::<Vec<_>>().join(",")).with(mysql_async::Params::Positional(values.into_iter().map(|v| vec![v.deploy_pk.clone().into(),v.device_pk.clone().into(),"pending".clone().into(),v.conflicts.clone().into(),done_at.clone().into()]).flatten().collect())).run(&self.pool).await?;
         Ok(())
     }
 }

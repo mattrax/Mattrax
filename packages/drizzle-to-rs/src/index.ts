@@ -42,6 +42,7 @@ type MapArgsToTs<T> = {
 
 type QueryDefinition<T> = {
 	name: string;
+	insertMany?: boolean;
 	args?: T;
 	query: (args: MapArgsToTs<T>) =>
 		| TypedQueryBuilder<any, any>
@@ -108,15 +109,41 @@ export function defineOperation<const T extends RustArgs = never>(
 	const sql: { sql: string; params: string[] } = op.toSQL();
 	const isQuery = "_" in op;
 
-	let fn_args = "";
 	let defined = "";
+
+	const rustTypes = new Map();
+	let rawSql = `r#"${sql.sql}"#`;
+	let resultType = "()";
+	let functionArgs = "";
+	let impl = "Ok(())";
+	const mapped_impl = (base: string) =>
+		`vec![${sql.params
+			// TODO: If the user puts a static value, this will snake case it.
+			// We should detect a special suffix which the `Proxy` will return.
+			.map((p) => {
+				// @ts-expect-error
+				if (p instanceof Placeholder) {
+					return `${base}${camelToSnakeCase(p.name)}`;
+				}
+				if (typeof p === "string" && p.startsWith("####rs#")) {
+					return `${camelToSnakeCase(p.replaceAll("####rs#", ""))}`;
+				}
+
+				const columnName = isJsonPlaceholder(p);
+				if (columnName) {
+					return `${base}${camelToSnakeCase(columnName)}`;
+				}
+
+				return `${typeof p === "number" ? p : `"${p}"`}`;
+			})
+			// TODO: Only call `.clone()` when the value is used multiple times
+			.map((p) => `${p}.clone().into()`)
+			.join(",")}]`;
+	let map_impl = `mysql_async::Params::Positional(${mapped_impl("")})`;
+
 	if (query.args && Object.keys(query.args).length > 0) {
-		fn_args = `, ${Object.entries(query.args || {})
-			.filter(([k, v]) => v !== "Now")
-			.map(([k, v]) => `${camelToSnakeCase(k)}: ${v}`)
-			.join(",")}`;
 		defined = Object.entries(query.args || {})
-			.filter(([k, v]) => v === "Now")
+			.filter(([_, v]) => v === "Now")
 			.map(
 				([k, v]) =>
 					`let ${camelToSnakeCase(k)} = chrono::Utc::now().naive_utc();`,
@@ -124,9 +151,44 @@ export function defineOperation<const T extends RustArgs = never>(
 			.join("\n");
 	}
 
-	const rustTypes = new Map();
-	let resultType = "()";
-	let impl = "Ok(())";
+	if (query.insertMany) {
+		if (!sql.sql.toLowerCase().includes(") values ("))
+			throw new Error(
+				`Are you sure ${query.name} is an insert? It must be for 'insertMany' to work.`,
+			);
+
+		const tyName = snakeToCamel(query.name);
+
+		const valuesIndex = sql.sql.indexOf(") values (");
+		const startIndex = valuesIndex + 9;
+		const endIndex = sql.sql.indexOf(")", valuesIndex + 1) + 1;
+		const valueBase = sql.sql.substring(startIndex, endIndex);
+
+		const newQuery = `${sql.sql.substring(0, startIndex)}{}${sql.sql.substring(
+			endIndex,
+		)}`;
+
+		rustTypes.set(tyName, {
+			declaration: `#[derive(Debug)]
+			pub struct ${tyName} {
+				${Object.entries(query.args || {})
+					.filter(([_, v]) => v !== "Now")
+					.map(([k, v]) => `pub ${camelToSnakeCase(k)}: ${v}`)
+					.join(",")}
+				}`,
+		});
+
+		functionArgs = `, values: Vec<${tyName}>`;
+		rawSql = `format!(r#"${newQuery}"#, (0..values.len()).map(|_| "${valueBase}").collect::<Vec<_>>().join(","))`; // TODO
+		map_impl = `mysql_async::Params::Positional(values.into_iter().map(|v| ${mapped_impl(
+			"v.",
+		)}).flatten().collect())`;
+	} else if (query.args && Object.keys(query.args).length > 0) {
+		functionArgs = `, ${Object.entries(query.args || {})
+			.filter(([k, v]) => v !== "Now")
+			.map(([k, v]) => `${camelToSnakeCase(k)}: ${v}`)
+			.join(",")}`;
+	}
 
 	if (isQuery) {
 		const tyName = buildResultType(rustTypes, op._.selectedFields, query.name);
@@ -143,35 +205,12 @@ export function defineOperation<const T extends RustArgs = never>(
 			.map((t) => t.declaration)
 			.join("\n"),
 		renderedFn: `impl Db {
-				pub async fn ${query.name}(&self${fn_args}) -> Result<${resultType}, mysql_async::Error> {
-		      ${defined}
-			  let mut result = r#"${sql.sql}"#
-			  .with(mysql_async::Params::Positional(vec![${sql.params
-					// TODO: If the user puts a static value, this will snake case it.
-					// We should detect a special suffix which the `Proxy` will return.
-					.map((p) => {
-						// @ts-expect-error
-						if (p instanceof Placeholder) {
-							return `${camelToSnakeCase(p.name)}`;
-						}
-						if (typeof p === "string" && p.startsWith("####rs#")) {
-							return `${camelToSnakeCase(p.replaceAll("####rs#", ""))}`;
-						}
-
-						const columnName = isJsonPlaceholder(p);
-						if (columnName) {
-							return `${camelToSnakeCase(columnName)}`;
-						}
-
-						return `${typeof p === "number" ? p : `"${p}"`}`;
-					})
-					// TODO: Only call `.clone()` when the value is used multiple times
-					.map((p) => `${p}.clone().into()`)
-					.join(",")}]))
-					.run(&self.pool).await?;
-					${impl}
-				}
-			}`,
+pub async fn ${query.name}(&self${functionArgs}) -> Result<${resultType}, mysql_async::Error> {
+	${defined}
+	let mut result = ${rawSql}.with(${map_impl}).run(&self.pool).await?;
+	${impl}
+	}
+}`,
 	};
 }
 
