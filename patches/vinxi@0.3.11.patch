@@ -1,97 +1,17 @@
-diff --git a/lib/build.js b/lib/build.js
-index e3562980166b9a148b3e1093fd780eb1cb8c5252..a735938a2a5950caa6b36cd674ccb6366db08c4e 100644
---- a/lib/build.js
-+++ b/lib/build.js
-@@ -93,7 +93,6 @@ export async function createBuild(app, buildConfig) {
+diff --git a/lib/plugins/fs-watcher.js b/lib/plugins/fs-watcher.js
+index 2d4bc9dde00a51c552fc6cf3c8a3f6a18fada000..4cb95ca5f387f784048c667f4d5db75be54d7b3d 100644
+--- a/lib/plugins/fs-watcher.js
++++ b/lib/plugins/fs-watcher.js
+@@ -54,9 +54,9 @@ export const fileSystemWatcher = () => {
+ 						});
+ 					}
+ 					// debug.hmr("Reload generated pages.");
+-					server.ws.send({
+-						type: "full-reload",
+-					});
++					// server.ws.send({
++					// 	type: "full-reload",
++					// });
+ 				});
+ 			}
  		},
- 		// minify: process.env.MINIFY !== "false" ?? true,
- 		plugins: [
--			"#vinxi/prod-app",
- 			fileURLToPath(new URL("./app-fetch.js", import.meta.url)),
- 			fileURLToPath(new URL("./app-manifest.js", import.meta.url)),
- 			"#vinxi/chunks",
-@@ -173,72 +172,6 @@ export async function createBuild(app, buildConfig) {
- 		appConfigFiles: [],
- 		imports: false,
- 		virtual: {
--			"#vinxi/prod-app": () => {
--				const config = {
--					...app.config,
--					routers: app.config.routers.map((router) => {
--						if (router.type === "spa" && !router.handler.endsWith(".html")) {
--							return {
--								...router,
--								handler: "index.html",
--							};
--						}
--
--						return router;
--					}),
--				};
--				return `
--        const appConfig = ${JSON.stringify(config, (k, v) => {
--					if (["routes", "internals", "plugins"].includes(k)) {
--						return undefined;
--					}
--
--					return v;
--				})}
--				const buildManifest = ${JSON.stringify(
--					Object.fromEntries(
--						// @ts-ignore
--						app.config.routers
--							.map((router) => {
--								if (router.type !== "static") {
--									const bundlerManifest = JSON.parse(
--										readFileSync(viteManifestPath(router), "utf-8"),
--									);
--									return [router.name, bundlerManifest];
--								}
--							})
--							.filter(Boolean),
--					),
--				)}
--
--				const routeManifest = ${JSON.stringify(
--					Object.fromEntries(
--						// @ts-ignore
--						app.config.routers
--							.map((router) => {
--								if (router.type !== "static" && router.internals.routes) {
--									return [router.name, router.internals.routes?.getRoutes?.()];
--								}
--							})
--							.filter(Boolean),
--					),
--				)}
--
--        function createProdApp(appConfig) {
--          return {
--            config: { ...appConfig, buildManifest, routeManifest },
--            getRouter(name) {
--              return appConfig.routers.find(router => router.name === name)
--            }
--          }
--        }
--
--        export default function plugin(app) {
--          const prodApp = createProdApp(appConfig)
--          globalThis.app = prodApp
--        }
--      `;
--			},
- 			...app.config.routers
- 				.filter((router) => router.type === "spa")
- 				.reduce((virtuals, router) => {
-diff --git a/lib/manifest/prod-server-manifest.js b/lib/manifest/prod-server-manifest.js
-index d2b9d8b7960f85202424c6b8e73e7c02a24b2835..ee778a25fd0a2b5f6f74cd67fd506a017753304e 100644
---- a/lib/manifest/prod-server-manifest.js
-+++ b/lib/manifest/prod-server-manifest.js
-@@ -40,6 +40,7 @@ export function createProdManifest(app) {
- 			get(target, routerName) {
- 				invariant(typeof routerName === "string", "Bundler name expected");
- 				const router = app.getRouter(routerName);
-+				console.log(app.config.buildManifest, routerName); // TODO
- 				const bundlerManifest = app.config.buildManifest[routerName];
- 
- 				invariant(

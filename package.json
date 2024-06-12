@@ -31,8 +31,7 @@
 		"dotenv": "^16.4.5",
 		"drizzle-kit": "^0.21.2",
 		"pg": "^8.11.5",
-		"typescript": "^5.4.5",
-		"vinxi": "^0.3.11"
+		"typescript": "^5.4.5"
 	},
 	"devDependencies": {
 		"husky": "^9.0.11",
@@ -51,7 +50,8 @@
 			"@solid-mediakit/trpc@3.0.2": "patches/@solid-mediakit__trpc@3.0.2.patch",
 			"@tanstack/solid-form@0.20.0": "patches/@tanstack__solid-form@0.20.0.patch",
 			"cmdk-solid@1.0.1": "patches/cmdk-solid@1.0.1.patch",
-			"@solidjs/start@1.0.1": "patches/@solidjs__start@1.0.1.patch"
+			"@solidjs/start@1.0.1": "patches/@solidjs__start@1.0.1.patch",
+			"vinxi@0.3.11": "patches/vinxi@0.3.11.patch"
 		}
 	}
 }
