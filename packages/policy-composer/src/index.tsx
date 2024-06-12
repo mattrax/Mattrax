@@ -22,7 +22,6 @@ export function PolicyComposer(props: {
 	controller: PolicyComposerController;
 	windowsCSPs?: Record<string, WindowsCSP>;
 	applePayloads?: Record<string, AppleProfilePayload>;
-	onSave?: () => Promise<any>;
 }) {
 	return (
 		<ControllerProvider controller={props.controller}>
@@ -33,13 +32,6 @@ export function PolicyComposer(props: {
 					props.controller.setState("platform", value as PolicyPlatform)
 				}
 			>
-				<div class="flex flex-col p-3 sticky top-12 max-h-[calc(100vh-3rem)] gap-2">
-					<TabsList>
-						<TabsTrigger value="windows">Windows</TabsTrigger>
-						<TabsTrigger value="apple">Apple</TabsTrigger>
-					</TabsList>
-					<AsyncButton onClick={() => props.onSave?.()}>Save</AsyncButton>
-				</div>
 				<TabsContent
 					value="windows"
 					class="flex-1 flex flex-row divide-x divide-gray-200"

@@ -181,7 +181,7 @@ function DeployButton(props: { policy: Policy }) {
 	);
 }
 
-function DeployDialog(props: { policy: Policy }) {
+export function DeployDialog(props: { policy: Policy }) {
 	const [page, setPage] = createSignal(0);
 	const controller = useController();
 	const policyId = usePolicyId();

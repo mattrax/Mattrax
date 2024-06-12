@@ -28,6 +28,7 @@ import {
 import { createStore, produce } from "solid-js/store";
 
 import { useController } from "./Context";
+import { Menubar } from "./Menubar";
 
 export function Apple(props: {
 	payloads?: Record<string, AppleProfilePayload>;
@@ -375,7 +376,9 @@ function Payloads(props: { payloads?: Record<string, AppleProfilePayload> }) {
 
 	return (
 		<div class="flex-1 max-w-xl flex sticky top-12 flex-col max-h-[calc(100vh-3rem)] overflow-hidden">
-			<div class="m-2">
+			<Menubar />
+
+			<div class="mx-2 mt-1 mb-2">
 				<Input
 					class="z-20"
 					placeholder="Search Payloads"

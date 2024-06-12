@@ -23,6 +23,8 @@ export type PolicyComposerState = {
 export type PolicyComposerController = {
 	state: PolicyComposerState;
 	setState: SetStoreFunction<PolicyComposerState>;
+	onSave?: () => Promise<any>;
+	onDeploy?: () => Promise<any>;
 };
 
 const ControllerContext = createContext<PolicyComposerController>(null!);

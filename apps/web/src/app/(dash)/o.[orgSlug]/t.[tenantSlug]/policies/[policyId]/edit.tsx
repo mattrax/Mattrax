@@ -10,11 +10,14 @@ import {
 	useBeforeLeave,
 	useSearchParams,
 } from "@solidjs/router";
-import { createEffect } from "solid-js";
+import { Show, createEffect, createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 
 import { trpc } from "~/lib";
 import { usePolicyId } from "../ctx";
+import { toast } from "solid-sonner";
+import { DialogContent, DialogRoot } from "@mattrax/ui";
+import { DeployDialog } from "./deploys/(deploys)";
 
 const windowsPoliciesPromise = import(
 	"@mattrax/configuration-schemas/windows/ddf.json?raw"
@@ -52,7 +55,47 @@ export default function Page() {
 		platform: searchParams.platform ?? "windows",
 	});
 
-	const controller = { state, setState };
+	const [openDeployDialog, setOpenDeployDialog] = createSignal(false);
+
+	const onSave = () =>
+		updatePolicy.mutateAsync({
+			id: policyId(),
+			data: {
+				windows: Object.entries(controller.state.windows ?? {}).reduce(
+					(acc, [csp, { data, enabled }]) => {
+						if (enabled) acc[csp] = data;
+						return acc;
+					},
+					{} as PolicyData["windows"],
+				),
+				macos: Object.entries(controller.state.apple ?? {}).reduce(
+					(acc, [csp, { data, enabled }]) => {
+						if (enabled) acc[csp] = data;
+						return acc;
+					},
+					{} as PolicyData["macos"],
+				),
+				linux: null,
+				android: null,
+				scripts: [],
+			},
+		});
+
+	const controller = {
+		state,
+		setState,
+		onSave: async () => {
+			await onSave();
+			toast.success("Policy saved", {
+				id: "policy-save",
+				action: {
+					label: "Deploy",
+					onClick: () => setOpenDeployDialog(true),
+				},
+				duration: 3000,
+			});
+		},
+	};
 
 	createEffect((prevStatus) => {
 		if (
@@ -99,34 +142,19 @@ export default function Page() {
 	});
 
 	return (
-		<PolicyComposer
-			windowsCSPs={windowsPolicies()}
-			applePayloads={applePayloads()}
-			controller={controller}
-			onSave={async () => {
-				await updatePolicy.mutateAsync({
-					id: policyId(),
-					data: {
-						windows: Object.entries(controller.state.windows ?? {}).reduce(
-							(acc, [csp, { data, enabled }]) => {
-								if (enabled) acc[csp] = data;
-								return acc;
-							},
-							{} as PolicyData["windows"],
-						),
-						macos: Object.entries(controller.state.apple ?? {}).reduce(
-							(acc, [csp, { data, enabled }]) => {
-								if (enabled) acc[csp] = data;
-								return acc;
-							},
-							{} as PolicyData["macos"],
-						),
-						linux: null,
-						android: null,
-						scripts: [],
-					},
-				});
-			}}
-		/>
+		<>
+			<PolicyComposer
+				windowsCSPs={windowsPolicies()}
+				applePayloads={applePayloads()}
+				controller={controller}
+			/>
+			<DialogRoot open={openDeployDialog()} onOpenChange={setOpenDeployDialog}>
+				<DialogContent>
+					<Show when={policy.data}>
+						{(policy) => <DeployDialog policy={policy()} />}
+					</Show>
+				</DialogContent>
+			</DialogRoot>
+		</>
 	);
 }
