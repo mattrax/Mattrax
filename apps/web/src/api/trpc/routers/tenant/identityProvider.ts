@@ -1,6 +1,6 @@
 import type * as MSGraph from "@microsoft/microsoft-graph-types";
 import { TRPCError } from "@trpc/server";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { createAuditLog } from "~/api/auditLog";
@@ -41,6 +41,25 @@ export const identityProviderRouter = createTRPCRouter({
 			.from(identityProviders)
 			.where(eq(identityProviders.tenantPk, ctx.tenant.pk));
 		if (!provider) throw new Error("No identity provider found");
+
+		const [result] = await ctx.db
+			.select({
+				count: count(domains.domain),
+			})
+			.from(domains)
+			.where(
+				and(
+					eq(domains.tenantPk, ctx.tenant.pk),
+					eq(domains.identityProviderPk, provider.pk),
+				),
+			);
+		if (!result || result.count !== 0) {
+			throw new TRPCError({
+				code: "PRECONDITION_FAILED",
+				message:
+					"All domains must be unlinked before removing the identity provider",
+			});
+		}
 
 		// We ignore any errors cleaning up the subscriptions cause it's a non vital error.
 		try {
@@ -89,9 +108,17 @@ export const identityProviderRouter = createTRPCRouter({
 
 		const [remoteDomains, connectedDomains] = await Promise.all([
 			identityProvider.getDomains(),
-			ctx.db.query.domains.findMany({
-				where: eq(domains.identityProviderPk, provider.pk),
-			}),
+			ctx.db
+				.select({
+					domain: domains.domain,
+					createdAt: domains.createdAt,
+					enterpriseEnrollmentAvailable: domains.enterpriseEnrollmentAvailable,
+					identityProviderPk: domains.identityProviderPk,
+					// TODO: https://github.com/drizzle-team/drizzle-orm/pull/1674
+					userCount: sql<number>`(SELECT count(*) FROM ${users} WHERE ${users.providerPk} = ${domains.identityProviderPk} AND ${users.upn} LIKE CONCAT('%@', ${domains.domain}))`,
+				})
+				.from(domains)
+				.where(eq(domains.identityProviderPk, provider.pk)),
 		]);
 
 		return { remoteDomains, connectedDomains };
@@ -169,18 +196,26 @@ export const identityProviderRouter = createTRPCRouter({
 			const provider = await ensureIdentityProvider(ctx.tenant.pk);
 
 			await createTransaction(async (db) => {
-				await db
-					.delete(domains)
-					.where(
-						and(
-							eq(domains.identityProviderPk, provider.pk),
-							eq(domains.domain, input.domain),
+				Promise.all([
+					db
+						.delete(users)
+						.where(
+							and(
+								eq(domains.identityProviderPk, provider.pk),
+								eq(domains.domain, input.domain),
+							),
 						),
-					);
-				await createAuditLog("disconnectDomain", { domain: input.domain });
+					db
+						.delete(domains)
+						.where(
+							and(
+								eq(domains.identityProviderPk, provider.pk),
+								eq(domains.domain, input.domain),
+							),
+						),
+					createAuditLog("disconnectDomain", { domain: input.domain }),
+				]);
 			});
-
-			return true;
 		}),
 
 	sync: tenantProcedure.mutation(async ({ ctx }) => {

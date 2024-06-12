@@ -10,6 +10,9 @@ import {
 	DialogRoot,
 	DialogTitle,
 	DialogTrigger,
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
 } from "@mattrax/ui";
 import type { RouteDefinition } from "@solidjs/router";
 import clsx from "clsx";
@@ -25,6 +28,7 @@ import {
 import { toast } from "solid-sonner";
 
 import ENTRA_ID_ICON from "~/assets/EntraIDLogo.svg";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
 import IconIcOutlineClose from "~icons/ic/outline-close.jsx";
@@ -195,22 +199,36 @@ function IdentityProviderCard() {
 					>
 						Sync
 					</Button>
-					<Button
-						class="ml-auto"
-						variant="destructive"
-						onClick={() =>
-							removeProvider.mutate({
-								tenantSlug: tenantSlug(),
-							})
-						}
-						disabled={
-							provider?.data === null ||
-							provider.isPending ||
-							removeProvider.isPending
-						}
-					>
-						Remove
-					</Button>
+					<div>
+						<Tooltip openDelay={10}>
+							<TooltipTrigger as="div" class="ml-auto">
+								<Button
+									variant="destructive"
+									disabled={
+										provider?.data === null ||
+										provider.isPending ||
+										removeProvider.isPending ||
+										domains.isPending ||
+										domains.data?.connectedDomains.length !== 0
+									}
+									onClick={() =>
+										removeProvider.mutateAsync({
+											tenantSlug: tenantSlug(),
+										})
+									}
+								>
+									Remove
+								</Button>
+							</TooltipTrigger>
+							{provider.data &&
+							domains.data &&
+							domains.data.connectedDomains.length !== 0 ? (
+								<TooltipContent>
+									You must unlink all domains first!
+								</TooltipContent>
+							) : null}
+						</Tooltip>
+					</div>
 				</div>
 			</div>
 		</Card>
@@ -422,16 +440,42 @@ function Domains() {
 													);
 
 												return (
-													<AsyncButton
-														onClick={() =>
-															removeDomain.mutateAsync({
-																tenantSlug: tenantSlug(),
-																domain,
-															})
-														}
-													>
-														Disconnect
-													</AsyncButton>
+													<ConfirmDialog>
+														{(confirm) => (
+															<AsyncButton
+																onClick={() => {
+																	confirm({
+																		title: "Unlink domain?",
+																		action: state()?.data?.userCount
+																			? `Delete ${
+																					state()?.data?.userCount
+																				} users`
+																			: `Unlink '${domain}'`,
+																		description: () => (
+																			<>
+																				Are you sure you want to unlink the
+																				domain <b>{domain}</b>? <br />
+																				This will also delete all{" "}
+																				<b>
+																					{state()?.data?.userCount ||
+																						"unknown"}
+																				</b>{" "}
+																				users along with any assignments.
+																			</>
+																		),
+																		inputText: domain || "",
+																		onConfirm: () =>
+																			removeDomain.mutateAsync({
+																				tenantSlug: tenantSlug(),
+																				domain,
+																			}),
+																	});
+																}}
+															>
+																Disconnect
+															</AsyncButton>
+														)}
+													</ConfirmDialog>
 												);
 											}}
 										</Match>
