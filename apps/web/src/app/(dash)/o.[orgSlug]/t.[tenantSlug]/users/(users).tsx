@@ -10,6 +10,7 @@ import { createColumnHelper } from "@tanstack/solid-table";
 import { Show, Suspense } from "solid-js";
 
 import type { RouterOutput } from "~/api/trpc";
+import { createBulkDeleteDialog } from "~/components/BulkDeleteDialog";
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
@@ -25,7 +26,6 @@ import IconCarbonCaretSort from "~icons/carbon/caret-sort.jsx";
 import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import { useTenantSlug } from "../ctx";
 import { cacheMetadata } from "../metadataCache";
-import { createBulkDeleteDialog } from "~/components/BulkDeleteDialog";
 
 export const route = {
 	load: ({ params }) => {
