@@ -13,7 +13,7 @@ const navigation = [
 ];
 
 const orgSection = [
-	{ name: "General", href: "../../../settings/general" },
+	{ name: "General", href: "../../../settings" },
 	{ name: "Administrators", href: "../../../settings/administrators" },
 	{ name: "Billing", href: "../../../settings/billing" },
 ];

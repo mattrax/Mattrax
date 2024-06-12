@@ -1,12 +1,14 @@
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { z } from "zod";
-import { useOrg, useOrgSlug } from "../ctx";
-import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@mattrax/ui";
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
-import { trpc } from "~/lib";
+import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@mattrax/ui";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { useNavigate } from "@solidjs/router";
+import { z } from "zod";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
+import { trpc } from "~/lib";
+import { useOrg, useOrgSlug } from "../ctx";
 
 export default function Page() {
+	const navigate = useNavigate();
 	const orgSlug = useOrgSlug();
 	const org = useOrg();
 
@@ -15,7 +17,13 @@ export default function Page() {
 	}));
 
 	const editOrg = trpc.org.edit.createMutation(() => ({
-		...withDependantQueries(org.query),
+		onSuccess: (_, input) => {
+			if (input.slug && input.slug !== input.orgSlug)
+				navigate(`/o/${input.slug}/settings`);
+		},
+		...withDependantQueries(org.query, {
+			blockOn: true,
+		}),
 	}));
 
 	const form = createZodForm({
@@ -60,7 +68,34 @@ export default function Page() {
 					/>
 
 					<div class="flex space-x-4">
-						<Button type="submit">Update</Button>
+						<ConfirmDialog>
+							{(confirm) => (
+								<Button
+									disabled={org.query.isPending}
+									onClick={() => {
+										if (form.getFieldValue("slug") !== org()?.slug) {
+											confirm({
+												title: "Change slug?",
+												action: `I'm sure`,
+												description: () => (
+													<>
+														You are about to change your organisation's slug.
+														<br />
+														This will <b>break all existing URLs</b> to your
+														organisation.
+													</>
+												),
+												onConfirm: () => form.handleSubmit(),
+											});
+										} else {
+											form.handleSubmit();
+										}
+									}}
+								>
+									Update
+								</Button>
+							)}
+						</ConfirmDialog>
 
 						<ConfirmDialog>
 							{(confirm) => (
@@ -74,8 +109,7 @@ export default function Page() {
 												!tenants.data ||
 												tenants.data.length > 0
 											}
-											onClick={() => {
-												console.log(1);
+											onClick={() =>
 												confirm({
 													title: "Delete organisation?",
 													action: `Delete '${org()?.name}'`,
@@ -93,10 +127,10 @@ export default function Page() {
 															}`,
 														);
 													},
-												});
-											}}
+												})
+											}
 										>
-											Delete Account
+											Delete Organisation
 										</Button>
 									</TooltipTrigger>
 									{tenants.data && tenants.data.length > 0 ? (

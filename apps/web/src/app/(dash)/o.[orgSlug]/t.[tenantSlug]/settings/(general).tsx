@@ -10,10 +10,12 @@ import {
 } from "@mattrax/ui";
 import { Form, createZodForm } from "@mattrax/ui/forms";
 import { InputField } from "@mattrax/ui/forms";
-import type { RouteDefinition } from "@solidjs/router";
+import { type RouteDefinition, useNavigate } from "@solidjs/router";
 import { z } from "zod";
 
+import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { trpc } from "~/lib";
+import { useOrgSlug } from "../../ctx";
 import { useTenant, useTenantSlug } from "../ctx";
 import { DeleteTenantButton } from "./DeleteTenantButton";
 
@@ -27,12 +29,20 @@ export default function Page() {
 }
 
 function SettingsCard() {
+	const navigate = useNavigate();
+	const orgSlug = useOrgSlug();
 	const tenantSlug = useTenantSlug();
 	const tenant = useTenant();
 
 	// TODO: rollback form on failure
 	const updateTenant = trpc.tenant.edit.createMutation(() => ({
-		...withDependantQueries(tenant.query),
+		onSuccess: (_, input) => {
+			if (input.slug && input.slug !== input.tenantSlug)
+				navigate(`/o/${orgSlug()}/t/${input.slug}/settings`);
+		},
+		...withDependantQueries(tenant.query, {
+			blockOn: true,
+		}),
 	}));
 
 	const form = createZodForm({
@@ -44,6 +54,7 @@ function SettingsCard() {
 		onSubmit: ({ value }) =>
 			updateTenant.mutateAsync({
 				name: value.name,
+				slug: value.slug,
 				tenantSlug: tenantSlug(),
 			}),
 	});
@@ -60,7 +71,34 @@ function SettingsCard() {
 					<InputField class="col-span-1" form={form} name="slug" label="Slug" />
 				</CardContent>
 				<CardFooter>
-					<Button type="submit">Save</Button>
+					<ConfirmDialog>
+						{(confirm) => (
+							<Button
+								disabled={tenant.query.isPending}
+								onClick={() => {
+									if (form.getFieldValue("slug") !== tenant()?.slug) {
+										confirm({
+											title: "Change slug?",
+											action: `I'm sure`,
+											description: () => (
+												<>
+													You are about to change your tenants's slug.
+													<br />
+													This will <b>break all existing URLs</b> to your
+													tenant.
+												</>
+											),
+											onConfirm: () => form.handleSubmit(),
+										});
+									} else {
+										form.handleSubmit();
+									}
+								}}
+							>
+								Update
+							</Button>
+						)}
+					</ConfirmDialog>
 				</CardFooter>
 			</Form>
 		</Card>
