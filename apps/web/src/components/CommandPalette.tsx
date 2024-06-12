@@ -40,7 +40,7 @@ const Context = createContext<
 	>
 >(undefined!);
 
-export default function CommandPaletteProvider(props: ParentProps) {
+export function CommandPalette(props: ParentProps) {
 	const [open, setOpen] = createSignal(false);
 	const navigate = useNavigate();
 

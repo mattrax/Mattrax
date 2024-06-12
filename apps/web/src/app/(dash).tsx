@@ -3,9 +3,7 @@ import { FileRoutes } from "@solidjs/start/router";
 import { parse } from "cookie-es";
 import { Show, lazy, onMount, startTransition } from "solid-js";
 import { isServer } from "solid-js/web";
-import { useCommandGroup } from "~/components/CommandPalette";
-
-const CommandPalette = lazy(() => import("~/components/CommandPalette"));
+import { CommandPalette, useCommandGroup } from "~/components/CommandPalette";
 
 import { trpc } from "~/lib";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
@@ -54,8 +52,8 @@ export default function Layout(props: RouteSectionProps<never, "topbar">) {
 
 	return (
 		<MErrorBoundary>
-			{props.slots.topbar}
 			<CommandPalette>
+				{props.slots.topbar}
 				{props.children}
 				<Show when>
 					{(_) => {

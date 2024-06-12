@@ -36,6 +36,7 @@ import {
 } from "solid-js";
 
 import LogoImg from "~/assets/MATTRAX.png";
+import { useCommandGroup } from "~/components/CommandPalette";
 import { getInitials, trpc } from "~/lib";
 import classes from "./@topbar/NavIndicator.module.css";
 import { useAuth } from "./utils";
@@ -93,6 +94,13 @@ function FeedbackPopover(props: ParentProps) {
 	const sendFeedback = trpc.meta.sendFeedback.createMutation();
 	const [open, setOpen] = createSignal(false);
 	const [content, setContent] = createSignal("");
+
+	useCommandGroup("Account", [
+		{
+			title: "Submit Feedback",
+			onClick: () => setOpen(true),
+		},
+	]);
 
 	return (
 		<Popover open={open()} onOpenChange={setOpen}>
