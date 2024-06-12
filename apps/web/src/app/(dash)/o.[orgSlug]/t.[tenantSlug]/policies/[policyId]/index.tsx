@@ -19,16 +19,6 @@ import { getInitials, trpc } from "~/lib";
 import { formatPolicy } from "~/lib/formatPolicy";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { usePolicy, usePolicyId } from "../ctx";
-import {
-	BruhIconLogosAndroidIcon,
-	BruhIconLogosIos,
-	BruhIconLogosLinuxTux,
-	BruhIconLogosMacos,
-	BruhIconLogosMicrosoftWindowsIcon,
-	BruhIconPhDevices,
-	BruhIconPhPuzzlePiece,
-	BruhIconPhUser,
-} from "./bruh";
 
 export default function Page() {
 	const policyId = usePolicyId();
@@ -74,26 +64,26 @@ export default function Page() {
 				<StatItem
 					title="Devices"
 					href="assignees"
-					icon={<BruhIconPhDevices />}
+					icon={<IconPhDevices />}
 					value={overview?.data?.devices || 0}
 				/>
 				<StatItem
 					title="Users"
 					href="assignees"
-					icon={<BruhIconPhUser />}
+					icon={<IconPhUser />}
 					value={overview?.data?.users || 0}
 				/>
 				<StatItem
 					title="Supported"
 					href="edit"
-					icon={<BruhIconPhPuzzlePiece />}
+					icon={<IconPhPuzzlePiece />}
 					body={
 						<div class="flex space-x-4">
-							<BruhIconLogosMicrosoftWindowsIcon />
-							<BruhIconLogosMacos />
-							<BruhIconLogosIos />
-							<BruhIconLogosAndroidIcon />
-							<BruhIconLogosLinuxTux />
+							<IconLogosMicrosoftWindowsIcon />
+							<IconLogosMacos />
+							<IconLogosIos />
+							<IconLogosAndroidIcon />
+							<IconLogosLinuxTux />
 						</div>
 					}
 				/>

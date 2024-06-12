@@ -71,7 +71,6 @@ import {
 import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { useTenantSlug } from "../ctx";
 import { cacheMetadata } from "../metadataCache";
-import { BruhIconPhArrowSquareOut, BruhIconPhCopyDuotone } from "./bruh";
 
 export const route = {
 	load: ({ params }) => {
@@ -324,7 +323,7 @@ function EnrollDeviceModal() {
 										});
 									}}
 								>
-									<BruhIconPhCopyDuotone />
+									<IconPhCopyDuotone />
 								</Button>
 								<Tooltip openDelay={0}>
 									<TooltipTrigger>
@@ -336,7 +335,7 @@ function EnrollDeviceModal() {
 												!isRunningOnWindows && "cursor-not-allowed opacity-75",
 											)}
 										>
-											<BruhIconPhArrowSquareOut />
+											<IconPhArrowSquareOut />
 										</Dynamic>
 									</TooltipTrigger>
 									{!isRunningOnWindows && (

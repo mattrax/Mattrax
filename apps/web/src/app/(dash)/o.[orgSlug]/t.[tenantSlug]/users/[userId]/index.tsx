@@ -30,7 +30,6 @@ import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-r
 import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import { useTenantSlug } from "../../ctx";
 import { useUser, useUserId } from "../ctx";
-import { BruhIconPhLaptop } from "./bruh";
 
 export const route = {
 	load: ({ params }) => {
@@ -153,7 +152,7 @@ function Devices() {
 							<A href={`../../devices/${device.id}`}>
 								<div class="flex items-center space-x-2 border rounded-md p-2">
 									<span class="text-4xl">
-										<BruhIconPhLaptop />
+										<IconPhLaptop />
 									</span>
 									<div>
 										<p class="text-xl">{device.name}</p>

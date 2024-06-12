@@ -18,16 +18,6 @@ import { StatItem } from "~/components/StatItem";
 import { getInitials, trpc } from "~/lib";
 import { formatAuditLogEvent } from "~/lib/formatAuditLog";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import {
-	BruhIconPhAppWindow,
-	BruhIconPhCheckBold,
-	BruhIconPhDevices,
-	BruhIconPhScroll,
-	BruhIconPhSelection,
-	BruhIconPhUser,
-	BruhIconPhXBold,
-	BruhIconSvgSpinners90Ring,
-} from "./bruh";
 import { useTenantSlug } from "./ctx";
 
 export const route = {
@@ -60,31 +50,31 @@ export default function Page() {
 				<StatItem
 					title="Users"
 					href="users"
-					icon={<BruhIconPhUser />}
+					icon={<IconPhUser />}
 					value={getValue("users")}
 				/>
 				<StatItem
 					title="Devices"
 					href="devices"
-					icon={<BruhIconPhDevices />}
+					icon={<IconPhDevices />}
 					value={getValue("devices")}
 				/>
 				<StatItem
 					title="Policies"
 					href="policies"
-					icon={<BruhIconPhScroll />}
+					icon={<IconPhScroll />}
 					value={getValue("policies")}
 				/>
 				<StatItem
 					title="Applications"
 					href="apps"
-					icon={<BruhIconPhAppWindow />}
+					icon={<IconPhAppWindow />}
 					value={getValue("applications")}
 				/>
 				<StatItem
 					title="Groups"
 					href="groups"
-					icon={<BruhIconPhSelection />}
+					icon={<IconPhSelection />}
 					value={getValue("groups")}
 				/>
 			</div>
@@ -229,12 +219,12 @@ function GettingStartedRow(
 			<Suspense
 				fallback={
 					<span>
-						<BruhIconSvgSpinners90Ring />
+						<IconSvgSpinners90Ring />
 					</span>
 				}
 			>
 				<span class={props.enabled ? "text-green-500" : ""}>
-					{props.enabled ? <BruhIconPhCheckBold /> : <BruhIconPhXBold />}
+					{props.enabled ? <IconPhCheckBold /> : <IconPhXBold />}
 				</span>
 			</Suspense>
 			<div class="ml-4 space-y-1">

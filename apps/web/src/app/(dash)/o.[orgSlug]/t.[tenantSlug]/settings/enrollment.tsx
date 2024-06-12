@@ -8,10 +8,6 @@ import { A, type RouteDefinition } from "@solidjs/router";
 import { Match, type ParentProps, Show, Suspense, Switch } from "solid-js";
 import { trpc } from "~/lib";
 import { useTenantSlug } from "../ctx";
-import {
-	BruhIconPhCheckCircleDuotone,
-	BruhIconPhWarningCircleDuotone,
-} from "./bruh";
 
 export const route = {
 	load: ({ params }) => {
@@ -49,7 +45,7 @@ export default function Page() {
 				<DescriptionList>
 					<DescriptionTerm>Enabled</DescriptionTerm>
 					<Details>
-						<BruhIconPhCheckCircleDuotone class="text-green-500 text-2xl" />
+						<IconPhCheckCircleDuotone class="text-green-500 text-2xl" />
 					</Details>
 
 					<DescriptionTerm>Identity provider</DescriptionTerm>
@@ -57,10 +53,10 @@ export default function Page() {
 						<Show
 							when={provider.data === null}
 							fallback={
-								<BruhIconPhCheckCircleDuotone class="text-green-500 text-2xl" />
+								<IconPhCheckCircleDuotone class="text-green-500 text-2xl" />
 							}
 						>
-							<BruhIconPhWarningCircleDuotone class="text-red-500 text-2xl" />
+							<IconPhWarningCircleDuotone class="text-red-500 text-2xl" />
 							<p>
 								<A
 									href="../identity-provider"
@@ -245,26 +241,26 @@ export default function Page() {
 
 					<DescriptionTerm>Enabled</DescriptionTerm>
 					<Details>
-						<BruhIconPhWarningCircleDuotone class="text-2xl" />
+						<IconPhWarningCircleDuotone class="text-2xl" />
 						<p>Apple management is not supported yet!</p>
 					</Details>
 					<DescriptionTerm>Device Enrollment Program</DescriptionTerm>
 					<Details>
-						<BruhIconPhWarningCircleDuotone class="text-2xl" />
+						<IconPhWarningCircleDuotone class="text-2xl" />
 					</Details>
 					<DescriptionTerm>Apple Business Manager</DescriptionTerm>
 					<Details>
-						<BruhIconPhWarningCircleDuotone class="text-2xl" />
+						<IconPhWarningCircleDuotone class="text-2xl" />
 					</Details>
 					<DescriptionTerm>Volume Purchase Program</DescriptionTerm>
 					<Details>
-						<BruhIconPhWarningCircleDuotone class="text-2xl" />
+						<IconPhWarningCircleDuotone class="text-2xl" />
 					</Details>
 
 					<h2 class="text-black py-2 text-xl font-medium">Android</h2>
 					<DescriptionTerm>Enabled</DescriptionTerm>
 					<Details>
-						<BruhIconPhWarningCircleDuotone class="text-2xl" />
+						<IconPhWarningCircleDuotone class="text-2xl" />
 						<p>Android management is not supported yet!</p>
 					</Details>
 				</DescriptionList>
