@@ -165,10 +165,7 @@ fn resolve(scoped_policies: Vec<GetPolicyDataForCheckinResult>) -> ResolveResult
     let policy_content = scoped_policies
         .into_iter()
         .filter_map(|policy| {
-            // No changes for this policy as the latest deploy is the same as the last deploy.
-            if Some(policy.latest_deploy.pk) == policy.last_deploy.as_ref().map(|v| v.pk) {
-                return None;
-            }
+            // Note: If we skip stuff that doesn't change here we will have issues because another policy could change resulting in the conflict resolution state changing.
 
             let latest =
                 serde_json::from_value::<PolicyData>(policy.latest_deploy.data.0.clone()).unwrap();
