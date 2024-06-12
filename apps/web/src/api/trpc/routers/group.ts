@@ -11,7 +11,7 @@ import { createTransaction } from "~/api/utils/transaction";
 import {
 	GroupMemberVariants,
 	PolicyAssignableVariants,
-	applicationAssignments,
+	applicationAssignables,
 	applications,
 	db,
 	devices,
@@ -258,16 +258,16 @@ export const groupRouter = createTRPCRouter({
 					id: applications.id,
 					name: applications.name,
 				})
-				.from(applicationAssignments)
+				.from(applicationAssignables)
 				.where(
 					and(
-						eq(applicationAssignments.variant, "group"),
-						eq(applicationAssignments.pk, group.pk),
+						eq(applicationAssignables.variant, "group"),
+						eq(applicationAssignables.pk, group.pk),
 					),
 				)
 				.innerJoin(
 					applications,
-					eq(applicationAssignments.applicationPk, applications.pk),
+					eq(applicationAssignables.applicationPk, applications.pk),
 				)
 				.then((rows) =>
 					rows.map((row) =>
@@ -323,7 +323,7 @@ export const groupRouter = createTRPCRouter({
 				if (apps.length > 0)
 					ops.push(
 						db
-							.insert(applicationAssignments)
+							.insert(applicationAssignables)
 							.values(
 								apps.map((pk) => ({
 									pk: group.pk,
@@ -333,7 +333,7 @@ export const groupRouter = createTRPCRouter({
 							)
 							.onDuplicateKeyUpdate({
 								set: {
-									pk: sql`${applicationAssignments.pk}`,
+									pk: sql`${applicationAssignables.pk}`,
 								},
 							}),
 					);
@@ -380,12 +380,12 @@ export const groupRouter = createTRPCRouter({
 				if (apps.length > 0)
 					ops.push(
 						db
-							.delete(applicationAssignments)
+							.delete(applicationAssignables)
 							.where(
 								and(
-									eq(applicationAssignments.pk, group.pk),
-									eq(applicationAssignments.variant, "group"),
-									inArray(applicationAssignments.applicationPk, apps),
+									eq(applicationAssignables.pk, group.pk),
+									eq(applicationAssignables.variant, "group"),
+									inArray(applicationAssignables.applicationPk, apps),
 								),
 							),
 					);

@@ -1,8 +1,9 @@
 import { Button, DropdownMenuTrigger } from "@mattrax/ui";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
-import { Suspense } from "solid-js";
+import { Match, Suspense, Switch } from "solid-js";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
@@ -17,6 +18,11 @@ import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { useTenantSlug } from "../ctx";
 import { cacheMetadata } from "../metadataCache";
 import { CreateApplicationSheet } from "./CreateApplicationSheet";
+import {
+	BulkDeleteDialog,
+	createBulkDeleteDialog,
+} from "~/components/BulkDeleteDialog";
+import pluralize from "pluralize";
 
 export const route = {
 	load: ({ params }) => {
@@ -59,6 +65,19 @@ export default function Page() {
 
 	createSearchParamFilter(table, "name", "search");
 
+	const deleteGroups = trpc.app.delete.createMutation(() => ({
+		...withDependantQueries(apps),
+	}));
+
+	const dialog = createBulkDeleteDialog({
+		table,
+		onDelete: (data) =>
+			deleteGroups.mutateAsync({
+				tenantSlug: tenantSlug(),
+				ids: data.map(({ id }) => id),
+			}),
+	});
+
 	return (
 		<PageLayout
 			heading={
@@ -79,7 +98,41 @@ export default function Page() {
 			</div>
 			<Suspense>
 				<StandardTable table={table} />
-				<FloatingSelectionBar table={table} />
+				<BulkDeleteDialog
+					dialog={dialog}
+					title={({ count }) => <>Delete {pluralize("Device", count())}</>}
+					description={({ count, rows }) => (
+						<>
+							Are you sure you want to delete{" "}
+							<Switch>
+								<Match when={count() > 1}>
+									{count()} {pluralize("device", count())}
+								</Match>
+								<Match when={rows()[0]}>
+									{(data) => (
+										<div class="inline text-nowrap">
+											<span class="text-black font-medium">
+												{data().original.name}
+											</span>
+										</div>
+									)}
+								</Match>
+							</Switch>
+							?
+						</>
+					)}
+				/>
+				<FloatingSelectionBar table={table}>
+					{(rows) => (
+						<Button
+							variant="destructive"
+							size="sm"
+							onClick={() => dialog.show(rows())}
+						>
+							Delete
+						</Button>
+					)}
+				</FloatingSelectionBar>
 			</Suspense>
 		</PageLayout>
 	);

@@ -72,7 +72,7 @@ export default function Page() {
 	createSearchParamFilter(table, "name", "search");
 
 	const deletePolicies = trpc.policy.delete.createMutation(() => ({
-		onSuccess: () => policies.refetch(),
+		...withDependantQueries(policies),
 	}));
 
 	const dialog = createBulkDeleteDialog({

@@ -424,21 +424,21 @@ export const applications = mysqlTable("apps", {
 		.notNull(),
 });
 
-export const ApplicationAssignableVariants = {
+export const ApplicationAssignablesVariants = {
 	user: "user",
 	device: "device",
 	group: "group",
 } as const;
 
-export const applicationAssignableVariants = [
-	ApplicationAssignableVariants.user,
-	ApplicationAssignableVariants.device,
-	ApplicationAssignableVariants.group,
+export const applicationAssignablesVariants = [
+	ApplicationAssignablesVariants.user,
+	ApplicationAssignablesVariants.device,
+	ApplicationAssignablesVariants.group,
 ] as const;
 export type ApplicationAssignableVariant =
-	(typeof applicationAssignableVariants)[number];
+	(typeof applicationAssignablesVariants)[number];
 
-export const applicationAssignments = mysqlTable(
+export const applicationAssignables = mysqlTable(
 	"application_assignments",
 	{
 		applicationPk: serialRelation("appPk")
@@ -446,7 +446,7 @@ export const applicationAssignments = mysqlTable(
 			.notNull(),
 		// The primary key of the user or device or group
 		pk: serialRelation("pk").notNull(),
-		variant: mysqlEnum("variant", applicationAssignableVariants).notNull(),
+		variant: mysqlEnum("variant", applicationAssignablesVariants).notNull(),
 	},
 	(table) => ({
 		pk: primaryKey({

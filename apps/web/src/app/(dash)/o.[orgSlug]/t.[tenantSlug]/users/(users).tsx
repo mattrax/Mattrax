@@ -9,6 +9,7 @@ import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import pluralize from "pluralize";
 import { Match, Show, Suspense, Switch } from "solid-js";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import type { RouterOutput } from "~/api/trpc";
 import {
@@ -110,7 +111,7 @@ export default function Page() {
 	createSearchParamFilter(table, "name", "search");
 
 	const deleteUsers = trpc.user.delete.createMutation(() => ({
-		onSuccess: () => users.refetch(),
+		...withDependantQueries(users),
 	}));
 
 	const dialog = createBulkDeleteDialog({

@@ -1,6 +1,7 @@
 import { Button, SheetTrigger } from "@mattrax/ui";
 import pluralize from "pluralize";
 import { Suspense } from "solid-js";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 
 import type { RouteDefinition } from "@solidjs/router";
 import { trpc } from "~/lib";
@@ -40,7 +41,7 @@ export default function Page() {
 	});
 
 	const addAssignments = trpc.device.addAssignments.createMutation(() => ({
-		onSuccess: () => assignments.refetch(),
+		...withDependantQueries(assignments),
 	}));
 
 	const variants = {

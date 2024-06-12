@@ -7,7 +7,7 @@ import { omit } from "~/api/utils";
 import { invalidate } from "~/api/utils/realtime";
 import { createEnrollmentSession } from "~/app/enroll/util";
 import {
-	applicationAssignments,
+	applicationAssignables,
 	applications,
 	db,
 	deviceActions,
@@ -142,16 +142,16 @@ export const deviceRouter = createTRPCRouter({
 					id: applications.id,
 					name: applications.name,
 				})
-				.from(applicationAssignments)
+				.from(applicationAssignables)
 				.where(
 					and(
-						eq(applicationAssignments.variant, "device"),
-						eq(applicationAssignments.pk, device.pk),
+						eq(applicationAssignables.variant, "device"),
+						eq(applicationAssignables.pk, device.pk),
 					),
 				)
 				.innerJoin(
 					applications,
-					eq(applicationAssignments.applicationPk, applications.pk),
+					eq(applicationAssignables.applicationPk, applications.pk),
 				),
 		]);
 
@@ -202,7 +202,7 @@ export const deviceRouter = createTRPCRouter({
 			if (apps.length > 0)
 				ops.push(
 					db
-						.insert(applicationAssignments)
+						.insert(applicationAssignables)
 						.values(
 							apps.map((pk) => ({
 								pk: device.pk,
@@ -212,7 +212,7 @@ export const deviceRouter = createTRPCRouter({
 						)
 						.onDuplicateKeyUpdate({
 							set: {
-								pk: sql`${applicationAssignments.pk}`,
+								pk: sql`${applicationAssignables.pk}`,
 							},
 						}),
 				);

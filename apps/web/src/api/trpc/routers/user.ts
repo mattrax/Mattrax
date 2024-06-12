@@ -5,7 +5,7 @@ import { sendEmail } from "~/api/emails";
 import { withTenant } from "~/api/tenant";
 import { omit } from "~/api/utils";
 import {
-	applicationAssignments,
+	applicationAssignables,
 	applications,
 	devices,
 	groupAssignables,
@@ -15,6 +15,7 @@ import {
 	users,
 } from "~/db";
 import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
+import { createAuditLog } from "~/api/auditLog";
 
 const userProcedure = authedProcedure
 	.input(z.object({ id: z.string() }))
@@ -89,11 +90,12 @@ export const userRouter = createTRPCRouter({
 			await ctx.ensureTenantMember(user.tenantPk);
 			return omit(user, ["tenantPk"]);
 		}),
+
 	delete: tenantProcedure
 		.input(z.object({ ids: z.array(z.string()) }))
 		.mutation(async ({ ctx, input }) => {
 			const u = await ctx.db
-				.select({ id: users.id, pk: users.pk })
+				.select({ id: users.id, name: users.name, pk: users.pk })
 				.from(users)
 				.where(
 					and(eq(users.tenantPk, ctx.tenant.pk), inArray(users.id, input.ids)),
@@ -119,10 +121,14 @@ export const userRouter = createTRPCRouter({
 								inArray(policyAssignments.pk, pks),
 							),
 						),
-					db.delete(users).where(inArray(users.pk, pks)),
+					db
+						.delete(users)
+						.where(inArray(users.pk, pks)),
+					// ...u.map((u) => createAuditLog("removeUser", { name: u.name })),
 				]);
 			});
 		}),
+
 	devices: authedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ ctx, input }) => {
@@ -184,16 +190,16 @@ export const userRouter = createTRPCRouter({
 					id: applications.id,
 					name: applications.name,
 				})
-				.from(applicationAssignments)
+				.from(applicationAssignables)
 				.where(
 					and(
-						eq(applicationAssignments.variant, "user"),
-						eq(applicationAssignments.pk, user.pk),
+						eq(applicationAssignables.variant, "user"),
+						eq(applicationAssignables.pk, user.pk),
 					),
 				)
 				.innerJoin(
 					applications,
-					eq(applicationAssignments.applicationPk, applications.pk),
+					eq(applicationAssignables.applicationPk, applications.pk),
 				),
 		]);
 
@@ -237,7 +243,7 @@ export const userRouter = createTRPCRouter({
 								}),
 						apps.length > 0 &&
 							db
-								.insert(applicationAssignments)
+								.insert(applicationAssignables)
 								.values(
 									apps.map((pk) => ({
 										pk: user.pk,
@@ -246,7 +252,7 @@ export const userRouter = createTRPCRouter({
 									})),
 								)
 								.onDuplicateKeyUpdate({
-									set: { pk: sql`${applicationAssignments.pk}` },
+									set: { pk: sql`${applicationAssignables.pk}` },
 								}),
 					].filter(Boolean),
 				),

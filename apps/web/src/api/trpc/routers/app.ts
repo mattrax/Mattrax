@@ -1,10 +1,10 @@
 import { flushResponse } from "@mattrax/trpc-server-function/server";
 import { createId } from "@paralleldrive/cuid2";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { createAuditLog } from "~/api/auditLog";
-import { useTransaction } from "~/api/utils/transaction";
-import { applications } from "~/db";
+import { createTransaction, useTransaction } from "~/api/utils/transaction";
+import { applicationAssignables, applications } from "~/db";
 import {
 	authedProcedure,
 	createTRPCRouter,
@@ -71,6 +71,36 @@ export const applicationRouter = createTRPCRouter({
 			});
 
 			return { id };
+		}),
+
+	delete: tenantProcedure
+		.input(z.object({ ids: z.array(z.string()) }))
+		.mutation(async ({ ctx, input }) => {
+			const g = await ctx.db
+				.select({
+					id: applications.id,
+					name: applications.name,
+					pk: applications.pk,
+				})
+				.from(applications)
+				.where(
+					and(
+						eq(applications.tenantPk, ctx.tenant.pk),
+						inArray(applications.id, input.ids),
+					),
+				);
+
+			const pks = g.map((g) => g.pk);
+
+			await createTransaction((db) => {
+				return Promise.all([
+					db
+						.delete(applicationAssignables)
+						.where(inArray(applicationAssignables.applicationPk, pks)),
+					db.delete(applications).where(inArray(applications.pk, pks)),
+					...g.map((g) => createAuditLog("removeApp", { name: g.name })),
+				]);
+			});
 		}),
 
 	searchWindowsStore: publicProcedure
