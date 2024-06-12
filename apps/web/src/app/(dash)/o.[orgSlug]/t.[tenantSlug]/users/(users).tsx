@@ -14,6 +14,7 @@ import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY } from "~/lib/values";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
+	FloatingSelectionBar,
 	StandardTable,
 	createSearchParamFilter,
 	createStandardTable,
@@ -24,6 +25,7 @@ import IconCarbonCaretSort from "~icons/carbon/caret-sort.jsx";
 import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import { useTenantSlug } from "../ctx";
 import { cacheMetadata } from "../metadataCache";
+import { createBulkDeleteDialog } from "~/components/BulkDeleteDialog";
 
 export const route = {
 	load: ({ params }) => {
@@ -107,14 +109,14 @@ export default function Page() {
 	// 	...withDependantQueries(users),
 	// }));
 
-	// const dialog = createBulkDeleteDialog({
-	// 	table,
-	// 	onDelete: (data) =>
-	// 		deleteUsers.mutateAsync({
-	// 			tenantSlug: tenantSlug(),
-	// 			ids: data.map((d) => d.id),
-	// 		}),
-	// });
+	const dialog = createBulkDeleteDialog({
+		table,
+		onDelete: (data) => {},
+		// deleteUsers.mutateAsync({
+		// 	tenantSlug: tenantSlug(),
+		// 	ids: data.map((d) => d.id),
+		// }),
+	});
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Users</PageLayoutHeading>}>
@@ -146,18 +148,20 @@ export default function Page() {
 							?
 						</>
 					)}
-				/>
+				/> */}
 				<FloatingSelectionBar table={table}>
 					{(rows) => (
-						<Button
+						<>
+							{/* <Button
 							variant="destructive"
 							size="sm"
 							onClick={() => dialog.show(rows())}
 						>
 							Delete
-						</Button>
+						</Button> */}
+						</>
 					)}
-				</FloatingSelectionBar> */}
+				</FloatingSelectionBar>
 			</Suspense>
 		</PageLayout>
 	);
