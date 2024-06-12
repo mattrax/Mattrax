@@ -54,7 +54,13 @@ export default function Page() {
 					<p class="text-red-500 text-sm text-center">
 						Your domain is under management by <b>{jsonError()?.tenantName}</b>.
 						You might want the{" "}
-						<A href="/enroll" target="_self" class="underline">
+						<A
+							href={`/enroll${
+								lastSubmittedEmail() ? `?email=${lastSubmittedEmail()}` : ""
+							}`}
+							target="_self"
+							class="underline"
+						>
 							enroll page
 						</A>{" "}
 						if not{" "}
