@@ -163,7 +163,7 @@ export default function Page() {
 					<PageLayoutHeading>Devices</PageLayoutHeading>
 					<Dialog defaultOpen={location.state?.enrollDialog}>
 						<DialogTrigger as={Button} class="ml-auto">
-							Enroll
+							Enroll Device
 						</DialogTrigger>
 						<DialogContent>
 							<EnrollDeviceModal />
