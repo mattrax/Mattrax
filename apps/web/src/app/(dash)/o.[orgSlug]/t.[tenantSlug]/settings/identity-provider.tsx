@@ -1,5 +1,6 @@
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
+	AsyncButton,
 	Badge,
 	Button,
 	Card,
@@ -414,22 +415,23 @@ function Domains() {
 												const removeDomain =
 													trpc.tenant.identityProvider.removeDomain.createMutation(
 														() => ({
-															...withDependantQueries(domains),
+															...withDependantQueries(domains, {
+																blockOn: true,
+															}),
 														}),
 													);
 
 												return (
-													<Button
+													<AsyncButton
 														onClick={() =>
-															removeDomain.mutate({
+															removeDomain.mutateAsync({
 																tenantSlug: tenantSlug(),
 																domain,
 															})
 														}
-														disabled={removeDomain.isPending}
 													>
 														Disconnect
-													</Button>
+													</AsyncButton>
 												);
 											}}
 										</Match>
@@ -437,21 +439,24 @@ function Domains() {
 											{(_) => {
 												const enableDomain =
 													trpc.tenant.identityProvider.connectDomain.createMutation(
-														() => ({ ...withDependantQueries(domains) }),
+														() => ({
+															...withDependantQueries(domains, {
+																blockOn: true,
+															}),
+														}),
 													);
 
 												return (
-													<Button
-														disabled={enableDomain.isPending}
+													<AsyncButton
 														onClick={() =>
-															enableDomain.mutate({
+															enableDomain.mutateAsync({
 																tenantSlug: tenantSlug(),
 																domain,
 															})
 														}
 													>
 														Connect
-													</Button>
+													</AsyncButton>
 												);
 											}}
 										</Match>
