@@ -16,7 +16,7 @@ if (!process.env.DATABASE_URL?.startsWith("mysql://"))
 	);
 
 export default defineConfig({
-	out: "./migrations",
+	out: "./crates/mx-db/migrations",
 	schema: "./apps/web/src/db/schema.ts",
 	dialect: "mysql",
 	dbCredentials: {
@@ -28,7 +28,7 @@ export default defineConfig({
 
 // Drizzle and refinery use different migration formats
 process.on("exit", () => {
-	const migrations = path.join("migrations");
+	const migrations = path.join("crates", "mx-db", "migrations");
 	const refineryMigrations = path.join(migrations, "refinery");
 	if (fs.existsSync(refineryMigrations)) {
 		fs.rmdirSync(refineryMigrations, { recursive: true });
