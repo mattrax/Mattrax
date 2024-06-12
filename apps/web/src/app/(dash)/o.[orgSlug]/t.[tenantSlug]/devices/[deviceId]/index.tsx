@@ -13,7 +13,7 @@ import {
 	DropdownMenuTrigger,
 	Textarea,
 } from "@mattrax/ui";
-import { type JSX, Suspense, Show } from "solid-js";
+import { type JSX, Show, Suspense } from "solid-js";
 import { toast } from "solid-sonner";
 import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";

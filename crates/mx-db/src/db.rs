@@ -92,6 +92,12 @@ pub struct QueuedDeviceActionsResult {
     pub created_at: NaiveDateTime,
 }
 
+#[derive(Debug)]
+pub struct GetPendingDeployStatusesResult {
+    pub deploy_pk: u64,
+    pub conflicts: Option<Deserialized<serde_json::Value>>,
+}
+
 #[derive(Clone)]
 pub struct Db {
     pool: mysql_async::Pool,
@@ -372,16 +378,33 @@ impl Db {
     }
 }
 impl Db {
+    pub async fn get_pending_deploy_statuses(
+        &self,
+        device_pk: u64,
+    ) -> Result<Vec<GetPendingDeployStatusesResult>, mysql_async::Error> {
+        let mut result = r#"select `deploy`, `conflicts` from `policy_deploy_status` where (`policy_deploy_status`.`variant` = ? and `policy_deploy_status`.`device` = ?)"#
+			  .with(mysql_async::Params::Positional(vec!["pending".clone().into(),device_pk.clone().into()]))
+					.run(&self.pool).await?;
+        let mut ret = vec![];
+        while let Some(mut row) = result.next().await.unwrap() {
+            ret.push(GetPendingDeployStatusesResult {
+                deploy_pk: from_value(&mut row, 0),
+                conflicts: from_value(&mut row, 1),
+            });
+        }
+        Ok(ret)
+    }
+}
+impl Db {
     pub async fn create_policy_deploy_status(
         &self,
         device_pk: u64,
         deploy_pk: u64,
-        status: String,
         conflicts: Option<String>,
     ) -> Result<(), mysql_async::Error> {
         let done_at = chrono::Utc::now().naive_utc();
-        let mut result = r#"insert into `policy_deploy_status` (`deploy`, `device`, `variant`, `conflicts`, `done_at`) values (?, ?, ?, ?, ?)"#
-			  .with(mysql_async::Params::Positional(vec![deploy_pk.clone().into(),device_pk.clone().into(),status.clone().into(),conflicts.clone().into(),done_at.clone().into()]))
+        let mut result = r#"insert into `policy_deploy_status` (`deploy`, `device`, `variant`, `conflicts`, `done_at`) values (?, ?, ?, ?, ?) on duplicate key update `variant` = ?, `done_at` = ?"#
+			  .with(mysql_async::Params::Positional(vec![deploy_pk.clone().into(),device_pk.clone().into(),"pending".clone().into(),conflicts.clone().into(),done_at.clone().into(),"pending".clone().into(),done_at.clone().into()]))
 					.run(&self.pool).await?;
         Ok(())
     }

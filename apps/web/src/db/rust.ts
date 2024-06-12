@@ -448,11 +448,29 @@ exportQueries(
 					.where(eq(devices.pk, args.device_id)),
 		}),
 		defineOperation({
+			name: "get_pending_deploy_statuses",
+			args: {
+				device_pk: "u64",
+			},
+			query: (args) =>
+				db
+					.select({
+						deploy_pk: policyDeployStatus.deployPk,
+						conflicts: policyDeployStatus.conflicts,
+					})
+					.from(policyDeployStatus)
+					.where(
+						and(
+							eq(policyDeployStatus.status, "pending"),
+							eq(policyDeployStatus.devicePk, args.device_pk),
+						),
+					),
+		}),
+		defineOperation({
 			name: "create_policy_deploy_status",
 			args: {
 				device_pk: "u64",
 				deploy_pk: "u64",
-				status: "String", // TODO: Enum
 				conflicts: "Option<String>",
 				doneAt: "Now",
 			},
@@ -460,10 +478,19 @@ exportQueries(
 				db.insert(policyDeployStatus).values({
 					devicePk: args.device_pk,
 					deployPk: args.deploy_pk,
-					status: args.status as any,
+					status: "pending",
 					conflicts: args.conflicts as any,
 					doneAt: args.doneAt,
 				}),
+			// TODO: Maybe don't even do this and instead handle it in Rust for integrity
+			// .onDuplicateKeyUpdate({
+			// 	set: {
+			// 		status: "pending",
+			// 		// TODO: Is this okay or not???
+			// 		// conflicts: args.conflicts as any,
+			// 		doneAt: args.doneAt,
+			// 	},
+			// }),
 		}),
 	],
 	path.join(__dirname, "../../../../crates/mx-db/src/db.rs"),
