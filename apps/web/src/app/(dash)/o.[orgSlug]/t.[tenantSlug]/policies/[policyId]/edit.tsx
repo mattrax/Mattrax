@@ -13,10 +13,11 @@ import {
 import { Show, createEffect, createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 
+import { DialogContent, DialogRoot } from "@mattrax/ui";
+import { toast } from "solid-sonner";
+import { useCommandGroup } from "~/components/CommandPalette";
 import { trpc } from "~/lib";
 import { usePolicyId } from "../ctx";
-import { toast } from "solid-sonner";
-import { DialogContent, DialogRoot } from "@mattrax/ui";
 import { DeployDialog } from "./deploys/(deploys)";
 
 const windowsPoliciesPromise = import(
@@ -86,6 +87,7 @@ export default function Page() {
 		setState,
 		onSave: async () => {
 			await onSave();
+
 			toast.success("Policy saved", {
 				id: "policy-save",
 				action: {
@@ -96,6 +98,39 @@ export default function Page() {
 			});
 		},
 	};
+
+	useCommandGroup("Policy Editor", [
+		{
+			title: "Save",
+			onClick: () => controller.onSave(),
+		},
+		// {
+		// 	title: "Deploy",
+		// 	onClick: () => {
+		// 		// TODO: Warning if unsaved changes
+		// 		setOpenDeployDialog(true);
+		// 	},
+		// },
+		{
+			title: "Windows",
+			onClick: () =>
+				setState({
+					platform: "windows",
+				}),
+		},
+		{
+			title: "Apple",
+			onClick: () =>
+				setState({
+					platform: "apple",
+				}),
+		},
+		{
+			title: "Android",
+			onClick: () => alert("TODO"),
+			disabled: true,
+		},
+	]);
 
 	createEffect((prevStatus) => {
 		if (
