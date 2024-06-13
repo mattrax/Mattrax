@@ -344,7 +344,10 @@ export const policyRouter = createTRPCRouter({
 				generatePolicyDiff(lastVersion?.data ?? ({} as any), ctx.policy.data)
 					.length === 0
 			)
-				throw new Error("policy has not changed");
+				throw new TRPCError({
+					code: "PRECONDITION_FAILED",
+					message: "No changes to deploy",
+				});
 
 			await db.insert(policyDeploy).values({
 				policyPk: ctx.policy.pk,

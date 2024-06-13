@@ -30,6 +30,7 @@
 		"clsx": "^2.1.0",
 		"cmdk-solid": "^1.0.1",
 		"solid-js": "^1.8.16",
+		"solid-presence": "^0.1.6",
 		"zod": "^3.22.5"
 	},
 	"devDependencies": {
