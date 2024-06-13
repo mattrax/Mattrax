@@ -104,7 +104,7 @@ const DialogContent = <T extends ValidComponent = "div">(
 			>
 				<DialogPrimitive.Content
 					class={clsx(
-						"grid mx-auto max-w-lg gap-4 border bg-background p-6 shadow-lg duration-200 data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95 sm:rounded-lg",
+						"relative grid mx-auto max-w-lg gap-4 border bg-background p-6 shadow-lg duration-200 data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95 sm:rounded-lg",
 						props.class,
 					)}
 					{...rest}
