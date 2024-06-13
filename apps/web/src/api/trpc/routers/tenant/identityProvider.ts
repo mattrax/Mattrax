@@ -197,14 +197,7 @@ export const identityProviderRouter = createTRPCRouter({
 
 			await createTransaction(async (db) => {
 				Promise.all([
-					db
-						.delete(users)
-						.where(
-							and(
-								eq(domains.identityProviderPk, provider.pk),
-								eq(domains.domain, input.domain),
-							),
-						),
+					db.delete(users).where(eq(users.providerPk, provider.pk)),
 					db
 						.delete(domains)
 						.where(

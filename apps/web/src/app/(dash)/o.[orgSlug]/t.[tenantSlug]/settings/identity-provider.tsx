@@ -95,42 +95,49 @@ function IdentityProviderCard() {
 		createSignal(false);
 	const linkEntra = trpc.tenant.identityProvider.linkEntraState.createMutation(
 		() => ({
-			onSuccess: (state) => {
-				// This `setTimeout` causes Safari's popup blocker to not active.
-				setTimeout(() => {
-					const popupWindow = window.open(
-						`${location.origin}/api/ms/popup?state=${state}`,
-						"entraOAuth",
-						"toolbar=no, menubar=no, width=600, height=700, top=100, left=100",
-					);
-					if (!popupWindow) {
-						alert(
-							"Failed to open admin consent dialog!\nPlease disable your pop-up blocker.",
+			onSuccess: async (state) =>
+				new Promise((resolve) => {
+					// This `setTimeout` causes Safari's popup blocker to not active.
+					setTimeout(() => {
+						const popupWindow = window.open(
+							`${location.origin}/api/ms/popup?state=${state}`,
+							"entraOAuth",
+							"toolbar=no, menubar=no, width=600, height=700, top=100, left=100",
 						);
-						return;
-					}
-					setAdminConsentPopupActive(true);
-
-					// Detect the popup being closed manually
-					const timer = setInterval(() => {
-						setAdminConsentPopupActive(!popupWindow.closed);
-						if (popupWindow.closed) clearInterval(timer);
-					}, 500);
-
-					// Handle `postMessage` from `/api/ms/link` oauth callback
-					window.addEventListener("message", (e) => {
-						if (e.source !== popupWindow || e.origin !== location.origin)
+						if (!popupWindow) {
+							alert(
+								"Failed to open admin consent dialog!\nPlease disable your pop-up blocker.",
+							);
 							return;
+						}
+						setAdminConsentPopupActive(true);
 
-						popupWindow?.close();
-						syncProvider.mutate({
-							tenantSlug: tenantSlug(),
+						// Detect the popup being closed manually
+						const timer = setInterval(() => {
+							setAdminConsentPopupActive(!popupWindow.closed);
+							if (popupWindow.closed) clearInterval(timer);
+						}, 500);
+
+						// Handle `postMessage` from `/api/ms/link` oauth callback
+						window.addEventListener("message", (e) => {
+							if (e.source !== popupWindow || e.origin !== location.origin)
+								return;
+
+							popupWindow?.close();
+							Promise.all([
+								provider.refetch(),
+								domains.refetch(),
+								gettingStarted.refetch(),
+								syncProvider.mutateAsync({
+									tenantSlug: tenantSlug(),
+								}),
+							]).then(() => {
+								setAdminConsentPopupActive(false);
+								resolve(void 0);
+							});
 						});
-						setAdminConsentPopupActive(false);
 					});
-				});
-			},
-			...withDependantQueries([provider, gettingStarted]),
+				}),
 		}),
 	);
 
