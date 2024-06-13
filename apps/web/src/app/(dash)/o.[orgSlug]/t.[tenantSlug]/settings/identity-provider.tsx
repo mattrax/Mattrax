@@ -375,6 +375,14 @@ function Domains() {
 														return (
 															<Show
 																when={provider.data?.provider !== "entraId"}
+																fallback={
+																	<Suspense>
+																		<span class="text-sm text-gray-600">
+																			Synced <b>{state().data?.userCount}</b>{" "}
+																			users to Mattrax
+																		</span>
+																	</Suspense>
+																}
 															>
 																<div
 																	class={clsx(
