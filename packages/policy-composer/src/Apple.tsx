@@ -37,7 +37,7 @@ export function Apple(props: {
 
 	return (
 		<>
-			<Payloads payloads={props.payloads} />
+			{/* <Payloads payloads={props.payloads} /> */}
 			<Accordion
 				as="ul"
 				class="flex-1 flex flex-col"

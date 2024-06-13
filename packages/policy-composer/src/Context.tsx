@@ -2,7 +2,7 @@ import type { PolicyData } from "@mattrax/policy";
 import { type ParentProps, Show, createContext, useContext } from "solid-js";
 import type { SetStoreFunction } from "solid-js/store";
 
-export type PolicyPlatform = "windows" | "apple";
+export type PolicyPlatform = "windows" | "apple" | "android";
 
 export type PolicyComposerState = {
 	platform: PolicyPlatform;

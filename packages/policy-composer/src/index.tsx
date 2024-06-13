@@ -11,10 +11,13 @@ import {
 import { Apple } from "./Apple";
 import {
 	ControllerProvider,
+	useController,
 	type PolicyComposerController,
 	type PolicyPlatform,
 } from "./Context";
 import { Windows } from "./Windows";
+import { children, createEffect, createSignal } from "solid-js";
+import { Portal } from "solid-js/web";
 
 export * from "./Context";
 
@@ -23,6 +26,8 @@ export function PolicyComposer(props: {
 	windowsCSPs?: Record<string, WindowsCSP>;
 	applePayloads?: Record<string, AppleProfilePayload>;
 }) {
+	createEffect(() => console.log(props.controller.state.platform)); // TODO
+
 	return (
 		<ControllerProvider controller={props.controller}>
 			<Tabs
@@ -32,7 +37,36 @@ export function PolicyComposer(props: {
 					props.controller.setState("platform", value as PolicyPlatform)
 				}
 			>
-				<TabsContent
+				<TabsList>
+					<TabsTrigger value="windows">Windows</TabsTrigger>
+					<TabsTrigger value="apple">Apple</TabsTrigger>
+					<TabsTrigger value="android" disabled>
+						Android
+					</TabsTrigger>
+				</TabsList>
+
+				<TabsContent value="windows">Windows</TabsContent>
+				<TabsContent value="apple">Apple</TabsContent>
+
+				{/* <div class="flex-1 max-w-xl flex sticky top-12 flex-col max-h-[calc(100vh-3rem)] overflow-hidden">
+					<div class="flex justify-between py-1 px-2">
+						<TabsList>
+							<TabsTrigger value="windows">Windows</TabsTrigger>
+							<TabsTrigger value="apple">Apple</TabsTrigger>
+							<TabsTrigger value="android" disabled>
+								Android
+							</TabsTrigger>
+						</TabsList>
+
+						<div class="flex space-x-2">
+							<AsyncButton onClick={() => props.controller.onSave?.()}>
+								Save
+							</AsyncButton>
+						</div>
+					</div>
+				</div> */}
+
+				{/* <TabsContent
 					value="windows"
 					class="flex-1 flex flex-row divide-x divide-gray-200"
 				>
@@ -43,7 +77,7 @@ export function PolicyComposer(props: {
 					class="flex-1 flex flex-row divide-x divide-gray-200"
 				>
 					<Apple payloads={props.applePayloads} />
-				</TabsContent>
+				</TabsContent> */}
 			</Tabs>
 		</ControllerProvider>
 	);

@@ -16,6 +16,7 @@ import {
 } from "@mattrax/ui";
 import {
 	For,
+	type JSX,
 	Match,
 	Show,
 	Switch,
@@ -40,12 +41,15 @@ function docsURL(name: string, path: string) {
 	return `${BASE_URL}/${sanitisedName}-csp`;
 }
 
-export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
+export function Windows(props: {
+	csps?: Record<string, WindowsCSP>;
+	tabIndicator: JSX.Element;
+}) {
 	const controller = useController();
 
 	return (
 		<>
-			<CSPS csps={props.csps} />
+			{/* <CSPS csps={props.csps} tabIndicator={props.tabIndicator} /> */}
 			<Accordion
 				as="ul"
 				class="flex-1 flex flex-col"
@@ -339,7 +343,10 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 	);
 }
 
-function CSPS(props: { csps?: Record<string, WindowsCSP> }) {
+function CSPS(props: {
+	csps?: Record<string, WindowsCSP>;
+	tabIndicator: JSX.Element;
+}) {
 	const controller = useController();
 
 	const [search, setSearch] = createSignal("");
