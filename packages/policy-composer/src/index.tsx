@@ -8,16 +8,16 @@ import {
 	TabsTrigger,
 } from "@mattrax/ui";
 
+import { children, createEffect, createSignal } from "solid-js";
+import { Portal } from "solid-js/web";
 import { Apple } from "./Apple";
 import {
 	ControllerProvider,
-	useController,
 	type PolicyComposerController,
 	type PolicyPlatform,
+	useController,
 } from "./Context";
 import { Windows } from "./Windows";
-import { children, createEffect, createSignal } from "solid-js";
-import { Portal } from "solid-js/web";
 
 export * from "./Context";
 
