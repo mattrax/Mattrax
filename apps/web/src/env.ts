@@ -87,14 +87,12 @@ export function withEnv<T extends object>(
 
 			let env = event?.nativeEvent?.context?.cloudflare?.env ?? process.env;
 
-			const hostname = event?.request.url
-				? new URL(event.request.url).hostname
-				: null;
+			const url = event?.request.url ? new URL(event.request.url) : null;
 
-			const isPreviewEnv = hostname?.endsWith(".mattrax-bdc.pages.dev");
+			const isPreviewEnv = url?.host?.endsWith(".mattrax-bdc.pages.dev");
 
 			// We do it this way to break reference equality if it changes for the cache
-			env = isPreviewEnv ? { ...env, PROD_URL: hostname } : env;
+			env = isPreviewEnv && url ? { ...env, PROD_URL: url.origin } : env;
 
 			let result = cache.get(env);
 			if (!result) {
