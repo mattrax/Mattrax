@@ -85,14 +85,16 @@ export function withEnv<T extends object>(
 					"Attempted to access `withEnv` value outside of a request context",
 				);
 
-			let env = event?.nativeEvent?.context?.cloudflare?.env ?? process.env;
+			const env = event?.nativeEvent?.context?.cloudflare?.env ?? process.env;
 
-			const url = event?.request.url ? new URL(event.request.url) : null;
+			// const url = event?.request.url ? new URL(event.request.url) : null;
 
-			const isPreviewEnv = url?.host?.endsWith(".mattrax-bdc.pages.dev");
+			// const isPreviewEnv = url?.host?.endsWith(".mattrax-bdc.pages.dev");
 
-			// We do it this way to break reference equality if it changes for the cache
-			env = isPreviewEnv && url ? { ...env, PROD_URL: url.origin } : env;
+			// // We do it this way to break reference equality if it changes for the cache
+			// env = isPreviewEnv && url ? { ...env, PROD_URL: url.origin } : env;
+
+			env.PROD_URL = "https://otbeaumont.me"; // TODO
 
 			let result = cache.get(env);
 			if (!result) {
