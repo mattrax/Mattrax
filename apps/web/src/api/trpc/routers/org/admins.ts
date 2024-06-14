@@ -104,9 +104,7 @@ export const adminsRouter = createTRPCRouter({
 					.insert(accounts)
 					.values({ name, email: invite.email, id: generateId(16) })
 					.onDuplicateKeyUpdate({
-						set: {
-							pk: sql`${accounts.pk}`,
-						},
+						set: { pk: sql`${accounts.pk}` },
 					});
 
 				const [account] = await db
@@ -115,14 +113,9 @@ export const adminsRouter = createTRPCRouter({
 
 				await db
 					.insert(organisationMembers)
-					.values({
-						orgPk: invite.orgPk,
-						accountPk: account!.pk,
-					})
+					.values({ orgPk: invite.orgPk, accountPk: account!.pk })
 					.onDuplicateKeyUpdate({
-						set: {
-							accountPk: sql`${organisationMembers.accountPk}`,
-						},
+						set: { accountPk: sql`${organisationMembers.accountPk}` },
 					});
 
 				await db

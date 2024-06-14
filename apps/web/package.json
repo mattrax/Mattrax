@@ -79,6 +79,7 @@
 		"solid-js": "^1.8.17",
 		"solid-presence": "^0.1.6",
 		"solid-sonner": "^0.2.7",
+		"solid-transition-group": "^0.2.3",
 		"sst": "^3.0.32",
 		"stripe": "^15.7.0",
 		"superjson": "^2.2.1",

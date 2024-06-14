@@ -46,8 +46,10 @@ export default function Page() {
 	const jsonError = createMemo(() => parseJson(login.error?.shape?.message));
 
 	return (
-		<>
-			<CardDescription>Sign in with your email to get started</CardDescription>
+		<div class="flex flex-col items-center">
+			<CardDescription class="text-center">
+				Sign in with your email to get started
+			</CardDescription>
 
 			<Form form={form} class="pt-4 w-full max-w-80" fieldsetClass="space-y-2">
 				<Show when={jsonError()?.code === "USER_IS_IN_MANAGED_TENANT"}>
@@ -101,6 +103,6 @@ export default function Page() {
 					</A>
 				</p>
 			</Form>
-		</>
+		</div>
 	);
 }

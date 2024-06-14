@@ -61,7 +61,7 @@ export default function Page() {
 	});
 
 	return (
-		<>
+		<div class="flex flex-col items-center">
 			<CardDescription class="text-center max-w-80">
 				Check the inbox of <b>{location.state.email}</b> to get the code we sent
 				you
@@ -102,7 +102,7 @@ export default function Page() {
 					</div>
 				</OtpField>
 			</Form>
-		</>
+		</div>
 	);
 }
 
