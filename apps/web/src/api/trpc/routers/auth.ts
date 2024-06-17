@@ -8,7 +8,7 @@ import { appendResponseHeader, deleteCookie, setCookie } from "vinxi/server";
 import { z } from "zod";
 
 import { revalidate } from "@solidjs/router";
-import { checkAuth, lucia } from "~/api/auth";
+import { checkAuth, lucia, setIsLoggedInCookie } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
 import { getObjectKeys, randomSlug } from "~/api/utils";
 import {
@@ -162,11 +162,7 @@ export const authRouter = createTRPCRouter({
 				"Set-Cookie",
 				lucia.createSessionCookie(session.id).serialize(),
 			);
-
-			setCookie("isLoggedIn", "true", {
-				httpOnly: false,
-				domain: env.COOKIE_DOMAIN,
-			});
+			setIsLoggedInCookie();
 
 			flushResponse();
 			revalidate([checkAuth.key, getTenantList.key]);
@@ -203,9 +199,9 @@ export const authRouter = createTRPCRouter({
 		deleteCookie(lucia.sessionCookieName);
 		deleteCookie("isLoggedIn");
 
-		flushResponse();
-
 		await lucia.invalidateSession(data.session.id);
+
+		flushResponse();
 	}),
 
 	//   delete: authedProcedure.mutation(async ({ ctx }) => {
