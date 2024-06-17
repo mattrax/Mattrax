@@ -1,13 +1,18 @@
-import type { Component, ComponentProps } from "solid-js";
+import type { Component, ComponentProps, JSX } from "solid-js";
 import { splitProps } from "solid-js";
 
 import type { VariantProps } from "class-variance-authority";
 import { cva } from "class-variance-authority";
 
-import { cn } from "./lib";
+import clsx from "clsx";
+import { createSignal } from "solid-js";
 
 const buttonVariants = cva(
-	"ring-offset-background focus-visible:ring-ring inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+	[
+		"ring-offset-background focus-visible:ring-ring inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors transition-shadow",
+		"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+		"disabled:pointer-events-none disabled:opacity-50",
+	],
 	{
 		variants: {
 			variant: {
@@ -41,15 +46,39 @@ export interface ButtonProps
 		VariantProps<typeof buttonVariants> {}
 
 const Button: Component<ButtonProps> = (props) => {
-	const [, rest] = splitProps(props, ["variant", "size", "class"]);
+	const [, rest] = splitProps(props, ["variant", "size", "class", "type"]);
 	return (
 		<button
 			type={props.type || "button"}
-			class={cn(
+			class={clsx(
 				buttonVariants({ variant: props.variant, size: props.size }),
 				props.class,
 			)}
 			{...rest}
+		/>
+	);
+};
+
+export const AsyncButton: Component<
+	Omit<ButtonProps, "onClick"> & {
+		onClick?: (
+			...args: Parameters<JSX.EventHandler<HTMLButtonElement, MouseEvent>>
+		) => any;
+	}
+> = (props) => {
+	const [inProgress, setInProgress] = createSignal(false);
+
+	return (
+		<Button
+			{...props}
+			disabled={inProgress() || props.disabled}
+			onClick={(...args) => {
+				if (!props.onClick) return;
+
+				setInProgress(true);
+				props.onClick(...args)?.finally(() => setInProgress(false)) ??
+					setInProgress(false);
+			}}
 		/>
 	);
 };

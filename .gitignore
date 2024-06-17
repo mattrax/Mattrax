@@ -1,6 +1,7 @@
 # Derived
 *.tsbuildinfo
 stats.html
+stats-*.html
 dist
 .solid
 .output
@@ -46,17 +47,14 @@ vendor/
 .DS_Store
 Thumbs.db
 
-# Temp
-result.mobileconfig
-/dominion/certs
-/dominion/*.key
-/dominion/*.crt
-/dominion/*.csr
-/dominion/*.key
-/dominion/*.pfx
-
 # Data directory
 /data
 
 # Oscar's staging area
 /_
+/policy.yaml
+/out
+/TODO
+
+# Nx
+.nx/cache

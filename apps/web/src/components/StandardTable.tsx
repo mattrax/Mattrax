@@ -1,17 +1,26 @@
 import {
 	type ColumnDef,
 	type PartialKeys,
+	type Row,
 	type RowData,
 	type Table as TTable,
 	type TableOptions,
 	createSolidTable,
 	flexRender,
 	getCoreRowModel,
-	getPaginationRowModel,
 	getFilteredRowModel,
+	getPaginationRowModel,
 } from "@tanstack/solid-table";
 import clsx from "clsx";
-import { For, type ParentProps, createEffect, mergeProps, on } from "solid-js";
+import {
+	For,
+	type JSX,
+	type ParentProps,
+	Show,
+	children,
+	createEffect,
+	mergeProps,
+} from "solid-js";
 
 export function createStandardTable<TData extends RowData>(
 	options: Omit<
@@ -37,32 +46,16 @@ export function createStandardTable<TData extends RowData>(
 	);
 }
 
-export function createSearchParamPagination<TData extends RowData>(
+export function createSearchParamFilter<TData extends RowData>(
 	table: TTable<TData>,
-	key: string,
+	column: string,
+	searchParam: string,
 ) {
-	const [searchParams, setSearchParams] = useSearchParams();
+	const [searchParams] = useSearchParams();
 
-	const pageParam = createMemo(() => {
-		const parsed = z.coerce.number().safeParse(searchParams[key]);
-
-		if (parsed.success) return parsed.data;
-		return 0;
+	createEffect(() => {
+		table.getColumn(column)?.setFilterValue(searchParams[searchParam]);
 	});
-
-	createEffect(
-		on(
-			() => table.getState().pagination.pageIndex,
-			(index) =>
-				setSearchParams({ [key]: index || undefined }, { replace: true }),
-		),
-	);
-
-	createEffect(
-		on(pageParam, (page) => {
-			table.setPageIndex(page);
-		}),
-	);
 }
 
 import {
@@ -78,6 +71,7 @@ import {
 
 export function StandardTable<TData>(props: {
 	table: TTable<TData>;
+	rowProps?: (row: Row<TData>) => ComponentProps<typeof TableRow>;
 	class?: string;
 }) {
 	const numCols = () =>
@@ -101,7 +95,7 @@ export function StandardTable<TData>(props: {
 												: flexRender(
 														header.column.columnDef.header,
 														header.getContext(),
-												  )}
+													)}
 										</TableHead>
 									))}
 								</TableRow>
@@ -112,7 +106,10 @@ export function StandardTable<TData>(props: {
 						{props.table.getRowModel().rows.length ? (
 							<For each={props.table.getRowModel().rows}>
 								{(row) => (
-									<TableRow data-state={row.getIsSelected() && "selected"}>
+									<TableRow
+										{...props.rowProps?.(row)}
+										data-state={row.getIsSelected() && "selected"}
+									>
 										<For each={row.getVisibleCells()}>
 											{(cell) => (
 												<TableCell>
@@ -140,6 +137,50 @@ export function StandardTable<TData>(props: {
 				<StandardTablePagination table={props.table} />
 			)}
 		</>
+	);
+}
+
+export function FloatingSelectionBar<TData>(props: {
+	table: TTable<TData>;
+	children?: (data: Accessor<Row<TData>[]>) => JSX.Element;
+}) {
+	const selectedRows = () => props.table.getSelectedRowModel().rows;
+
+	return (
+		<Show when={selectedRows().length > 0}>
+			{(_) => {
+				const c = children(() => props.children?.(selectedRows));
+
+				createEscapeKeyDown({
+					onEscapeKeyDown: () => props.table.resetRowSelection(true),
+				});
+
+				return (
+					<div class="animate-in fade-in slide-in-from-bottom-2 zoom-in-[0.98] bottom-6 inset-x-0 fixed flex flex-row justify-center pointer-events-none">
+						<div class="p-2 rounded-lg bg-white border border-gray-100 text-sm flex flex-row items-stretch gap-2 pointer-events-auto shadow">
+							<div class="flex flex-row items-center gap-1.5 ml-2">
+								<span class="font-medium">
+									{selectedRows().length} Selected
+								</span>
+								<Button
+									variant="ghost"
+									size="iconSmall"
+									onClick={() => props.table.resetRowSelection(true)}
+								>
+									<IconPhXBold class="w-4 h-4" />
+								</Button>
+							</div>
+							{c() && (
+								<>
+									<div class="my-1 w-px bg-gray-300" />
+									{c()}
+								</>
+							)}
+						</div>
+					</div>
+				);
+			}}
+		</Show>
 	);
 }
 
@@ -174,23 +215,23 @@ export function StandardTablePagination<TData>(props: {
 	);
 }
 
+import { createEscapeKeyDown } from "@kobalte/core";
 import {
 	DropdownMenu,
 	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
-	DropdownMenuTrigger,
 } from "@mattrax/ui";
 import { useSearchParams } from "@solidjs/router";
-import { useZodParams } from "~/lib/useZodParams";
-import { z } from "zod";
-import { createMemo } from "solid-js";
+import type { Accessor, ComponentProps } from "solid-js";
 
 export function ColumnsDropdown<TData>(
-	props: ParentProps & { table: TTable<TData> },
+	props: ParentProps & {
+		table: TTable<TData>;
+	},
 ) {
 	return (
 		<DropdownMenu placement="bottom-end">
-			<DropdownMenuTrigger asChild>{props.children}</DropdownMenuTrigger>
+			{props.children}
 			<DropdownMenuContent>
 				<For
 					each={props.table
@@ -203,7 +244,7 @@ export function ColumnsDropdown<TData>(
 							checked={column.getIsVisible()}
 							onChange={(value) => column.toggleVisibility(!!value)}
 						>
-							{column.id.split(/(?=[A-Z])/).join(" ")}
+							{(column.columnDef.header as string).split(/(?=[A-Z])/).join(" ")}
 						</DropdownMenuCheckboxItem>
 					)}
 				</For>

@@ -4,7 +4,7 @@ import { splitProps } from "solid-js";
 import type { VariantProps } from "class-variance-authority";
 import { cva } from "class-variance-authority";
 
-import { cn } from "./lib";
+import clsx from "clsx";
 
 const badgeVariants = cva(
 	"focus:ring-ring inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2",
@@ -20,6 +20,7 @@ const badgeVariants = cva(
 				success:
 					"bg-success text-success-foreground hover:bg-success/80 border-transparent",
 				outline: "text-foreground",
+				ghost: "",
 			},
 		},
 		defaultVariants: {
@@ -36,7 +37,7 @@ const Badge: Component<BadgeProps> = (props) => {
 	const [, rest] = splitProps(props, ["variant", "class"]);
 	return (
 		<div
-			class={cn(badgeVariants({ variant: props.variant }), props.class)}
+			class={clsx(badgeVariants({ variant: props.variant }), props.class)}
 			{...rest}
 		/>
 	);

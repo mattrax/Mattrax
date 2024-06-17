@@ -1,23 +1,33 @@
 use std::{
-    fs,
     net::{Ipv6Addr, SocketAddr},
     path::PathBuf,
+    process,
     sync::Arc,
 };
 
 use better_acme::{Acme, FsStore};
 use hmac::{Hmac, Mac};
-use rcgen::{Certificate, CertificateParams, KeyPair};
+use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
 use rustls::{
     pki_types::CertificateDer, server::WebPkiClientVerifier, RootCertStore, ServerConfig,
 };
 use tokio::{net::TcpListener, sync::mpsc};
 use tracing::{error, info, warn};
+use x509_parser::{certificate::X509Certificate, der_parser::asn1_rs::FromDer};
 
-use crate::{api, cli::serve::acme::MattraxAcmeStore, config::ConfigManager, db::Db};
+use crate::{
+    api,
+    cli::serve::{acme::MattraxAcmeStore, updater::UpdateManager},
+    config::{ConfigManager, LocalConfig},
+};
 
 mod acme;
+pub mod helpers;
 mod server;
+mod updater;
+
+#[cfg(all(not(debug_assertions), feature = "serve-web"))]
+mod web;
 
 #[derive(clap::Args)]
 #[command(about = "Serve Mattrax.")]
@@ -33,22 +43,37 @@ impl Command {
         #[cfg(debug_assertions)]
         warn!("Running in development mode! Do not use in production!");
 
-        if !data_dir.exists() {
-            error!("The configuration directory does not exist!");
+        if !data_dir.exists() || !data_dir.join("config.json").exists() {
+            error!("The Mattrax configuration was not found!");
             error!("To setup a new server, run '{} init'.", binary_name());
-            return;
+            process::exit(1);
         }
-        if !data_dir.join("config.json").exists() {
-            error!("The configuration file does not exist!");
-            error!("To setup a new server, run '{} init'.", binary_name());
-            return;
-        }
+        let Ok(local_config) = LocalConfig::load(data_dir.join("config.json"))
+            .map_err(|err| error!("Failed to load local configuration: {err}"))
+        else {
+            process::exit(1);
+        };
+        info!("Node {:?}", local_config.node_id);
 
-        let config_manager = ConfigManager::from_path(data_dir.join("config.json")).unwrap();
+        let (db, config) = helpers::get_db_and_config(&local_config.db_url).await;
+        let Some(config) = config else {
+            error!(
+                "Failed to get Mattrax configuration from DB. You may need to run '{} init'.",
+                binary_name()
+            );
+            process::exit(1);
+        };
+
+        #[cfg(all(not(debug_assertions), feature = "serve-web"))]
+        web::spawn_process(&config.internal_secret);
+
+        let config_manager = ConfigManager::new(db.clone(), local_config, config).unwrap();
+        let _updater = UpdateManager::new(db.clone(), config_manager.clone());
+
         let port = {
             let config = config_manager.get();
 
-            let port = self.port.unwrap_or({
+            self.port.unwrap_or({
                 #[cfg(debug_assertions)]
                 if config.domain == "localhost" {
                     9000
@@ -57,40 +82,49 @@ impl Command {
                 }
                 #[cfg(not(debug_assertions))]
                 443
-            });
-
-            port
+            })
         };
 
-        let params = CertificateParams::from_ca_cert_der(
-            &fs::read(data_dir.join("certs").join("identity.der")).unwrap(),
-        )
-        .unwrap();
-
-        let key_pair =
-            KeyPair::from_der(&fs::read(data_dir.join("certs").join("identity-key.der")).unwrap())
-                .unwrap();
-        let db = Db::new(&config_manager.get().db_url);
-        let shared_secret =
-            Hmac::new_from_slice(config_manager.get().internal_secret.as_bytes()).unwrap();
         let (acme_tx, acme_rx) = mpsc::channel(25);
-        let state = Arc::new(api::Context {
-            config: config_manager,
-            is_dev: cfg!(debug_assertions),
-            server_port: port,
-            db,
-            // TODO: Is calling generate each time, okay????
-            identity_cert: Certificate::generate_self_signed(params, &key_pair).unwrap(),
-            identity_key: key_pair,
-            shared_secret,
-            acme_tx,
-        });
+        let state = {
+            let config = config_manager.get();
+            let identity_key = KeyPair::from_der_and_sign_algo(
+                &config.certificates.identity_key.clone().try_into().unwrap(),
+                &PKCS_ECDSA_P256_SHA256,
+            )
+            .unwrap();
+            let shared_secret = Hmac::new_from_slice(config.internal_secret.as_bytes()).unwrap();
+
+            let identity_cert_rcgen = CertificateParams::from_ca_cert_der(
+                &config.certificates.identity_cert.clone().into(),
+            )
+            .unwrap()
+            // TODO: https://github.com/rustls/rcgen/issues/274
+            .self_signed(&identity_key)
+            .unwrap();
+
+            Arc::new(api::Context {
+                config: config_manager.clone(),
+                is_dev: cfg!(debug_assertions),
+                server_port: port,
+                db,
+                identity_cert_rcgen,
+                identity_cert_x509: {
+                    // TODO: We *have* to leak memory right because of how `x509_parser` is built. Should be fixed by https://github.com/rusticata/x509-parser/issues/76
+                    let public_key = Vec::leak(config.certificates.identity_cert.clone());
+                    X509Certificate::from_der(public_key).unwrap().1.to_owned()
+                },
+                identity_key,
+                shared_secret,
+                acme_tx,
+            })
+        };
 
         let router = api::mount(state.clone());
 
         // TODO: Graceful shutdown
 
-        let config = state.config.get().clone();
+        let config = config_manager.get();
         if config.domain == "localhost" {
             let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
             let listener = TcpListener::bind(addr).await.unwrap();
@@ -100,6 +134,7 @@ impl Command {
             );
             axum::serve(listener, router).await.unwrap();
         } else {
+            let identity_cert = config.certificates.identity_cert.clone();
             let acme = Arc::new(Acme::new(
                 &config.acme_email,
                 FsStore::new(
@@ -107,7 +142,7 @@ impl Command {
                     MattraxAcmeStore::new(state.db.clone()),
                 )
                 .unwrap(),
-                config.acme_server.into_better_acme_server(),
+                config.acme_server.to_better_acme_server(),
                 state.is_dev, // TODO: We should probs document this cause it's not an obvious default
                 // TODO: Remove these argument
                 &[config.domain.clone(), config.enrollment_domain.clone()],
@@ -128,10 +163,7 @@ impl Command {
                                 WebPkiClientVerifier::builder({
                                     // TODO: Allow this to be rotated at runtime for renewal
                                     let mut root = RootCertStore::empty();
-                                    let cert: CertificateDer =
-                                        fs::read(data_dir.join("certs").join("identity.der"))
-                                            .unwrap()
-                                            .into();
+                                    let cert: CertificateDer = identity_cert.clone().into();
                                     let (added_certs, invalid_certs) =
                                         root.add_parsable_certificates([cert]);
                                     if added_certs != 1 && invalid_certs != 0 {

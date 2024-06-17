@@ -8,6 +8,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::{DateTime, TimeZone, Utc};
 use futures::{
     future::{select, Either},
@@ -77,7 +78,7 @@ impl<S: Store> Acme<S> {
             None
         } else {
             let mut acme = AcmeConfig::new(domains)
-                .contact(&[format!("mailto:{}", contact)])
+                .contact([format!("mailto:{}", contact)])
                 .cache_option(Some(StorageInterop(store.clone())))
                 .directory_lets_encrypt(matches!(server, Server::LetsEncrypt))
                 .state();
@@ -103,7 +104,10 @@ impl<S: Store> Acme<S> {
                                 // debug!("Starting new ACME order for: {domains:?}");  // TODO: tracing
                                 let _ = acme.order(domains).await;
                             }
-                            None => {} // error!("Acme channel closed!"),  // TODO: tracing
+                            None => {
+                                todo!("handle acme channel closed")
+                                // error!("Acme channel closed!"),  // TODO: tracing
+                            }
                         },
                     }
                 }
@@ -176,7 +180,7 @@ impl<S: Store> Acme<S> {
             hasher.update(server_name.as_bytes());
             hasher.update(self.server.directory_url().as_bytes());
             let result = hasher.finalize();
-            String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+            URL_SAFE_NO_PAD.encode(result.as_slice())
         };
 
         let output = match self.store.get(&key).await? {
@@ -194,7 +198,7 @@ impl<S: Store> Acme<S> {
             None => {
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
-                    "Unable to find certificate for domain '{server_name}'",
+                    format!("Unable to find certificate for domain '{server_name}'"),
                 ));
             }
         };
@@ -228,9 +232,7 @@ struct Resolver {
 impl ResolvesServerCert for Resolver {
     fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
         // This should be unreachable when the acceptor is used.
-        let Some(server_name) = client_hello.server_name() else {
-            return None;
-        };
+        let server_name = client_hello.server_name()?;
 
         let mut temp = self.temp.lock().unwrap_or_else(PoisonError::into_inner);
         match temp.get(server_name) {
@@ -267,7 +269,7 @@ impl<S: Store + Send + Sync> CertCache for StorageInterop<S> {
                 hasher.update(domain.as_bytes());
                 hasher.update(directory_url.as_bytes());
                 let result = hasher.finalize();
-                String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+                URL_SAFE_NO_PAD.encode(result.as_slice())
             };
 
             let Ok(cert) = self.0.get(&key).await else {
@@ -292,7 +294,7 @@ impl<S: Store + Send + Sync> CertCache for StorageInterop<S> {
                 hasher.update(domain.as_bytes());
                 hasher.update(directory_url.as_bytes());
                 let result = hasher.finalize();
-                String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+                URL_SAFE_NO_PAD.encode(result.as_slice())
             };
 
             self.0.set(&key, cert).await?;
@@ -318,7 +320,7 @@ impl<S: Store + Send + Sync> AccountCache for StorageInterop<S> {
             }
             hasher.update(directory_url.as_bytes());
             let result = hasher.finalize();
-            String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+            URL_SAFE_NO_PAD.encode(result.as_slice())
         };
 
         self.0.get(&key).await
@@ -337,7 +339,7 @@ impl<S: Store + Send + Sync> AccountCache for StorageInterop<S> {
             }
             hasher.update(directory_url.as_bytes());
             let result = hasher.finalize();
-            String::from_utf8_lossy(&base91::slice_encode(result.as_slice())).to_string()
+            URL_SAFE_NO_PAD.encode(result.as_slice())
         };
 
         self.0.set(&key, account).await
@@ -346,7 +348,7 @@ impl<S: Store + Send + Sync> AccountCache for StorageInterop<S> {
 
 // Copied from: https://github.com/FlorianUekermann/rustls-acme/blob/f3dcfd169373b4593bb8b6c43febe0c6ead720f5/src/state.rs#L193
 fn parse_cert(pem: &[u8]) -> Result<(CertifiedKey, [DateTime<Utc>; 2]), CertParseError> {
-    let mut pems = pem::parse_many(&pem)?;
+    let mut pems = pem::parse_many(pem)?;
     if pems.len() < 2 {
         return Err(CertParseError::TooFewPem(pems.len()));
     }

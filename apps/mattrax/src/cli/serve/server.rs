@@ -13,10 +13,9 @@ use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use tower::{Service, ServiceExt};
 use tracing::{info, warn};
 
-use crate::cli::serve::acme::MattraxAcmeStore;
+use crate::{api::ConnectInfoTy, cli::serve::acme::MattraxAcmeStore};
 
 // TODO: Graceful shutdown
-// TODO: `ConnectInfo` should include rustls client certificate
 
 /// A HTTPS server.
 /// This is the "glue code" between `axum`, `rustls` and `better-acme`.
@@ -28,12 +27,11 @@ pub async fn server(router: Router, acme: Arc<Acme<FsStore<MattraxAcmeStore>>>, 
     );
 
     let acme = Arc::new(acme);
-
-    let mut make_service = router
+    let make_service = router
         .clone()
-        .into_make_service_with_connect_info::<SocketAddr>();
+        .into_make_service_with_connect_info::<ConnectInfoTy>();
     while let Ok((stream, remote_addr)) = listener.accept().await {
-        let tower_service = unwrap_infallible(make_service.call(remote_addr).await);
+        let mut make_service = make_service.clone();
         let acme = acme.clone();
 
         tokio::spawn(async move {
@@ -66,11 +64,25 @@ pub async fn server(router: Router, acme: Arc<Acme<FsStore<MattraxAcmeStore>>>, 
                 return;
             }
 
+            let client_cert = stream
+                .get_ref()
+                .1
+                .peer_certificates()
+                .map(|i| i.iter().map(|c| c.clone().into_owned()).collect::<Vec<_>>());
+
+            let tower_service = unwrap_infallible(
+                make_service
+                    .call(ConnectInfoTy {
+                        remote_addr,
+                        client_cert,
+                    })
+                    .await,
+            );
             if let Err(err) = auto::Builder::new(TokioExecutor::new())
                 .http1()
                 .header_read_timeout(Duration::from_secs(5))
                 .timer(TokioTimer::new())
-                .serve_connection(
+                .serve_connection_with_upgrades(
                     TokioIo::new(stream.compat()),
                     hyper::service::service_fn(move |request: Request<Incoming>| {
                         tower_service.clone().oneshot(request)

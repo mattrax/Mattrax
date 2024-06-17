@@ -10,7 +10,7 @@ pub struct Atomic {
     #[easy_xml(rename = "Meta")]
     pub meta: Option<crate::Meta>,
     #[easy_xml(rename = "Add|Delete|Atomic|Replace|Get|Exec", enum)]
-    children: Vec<AtomicChild>, // TODO: One or more items
+    pub children: Vec<AtomicChild>, // TODO: One or more items
 }
 
 /// All the valid children of a [Atomic] element.
@@ -22,4 +22,40 @@ pub enum AtomicChild {
     Replace(#[easy_xml(flatten)] Replace),
     Get(#[easy_xml(flatten)] Get),
     Exec(#[easy_xml(flatten)] Exec),
+}
+
+impl From<Add> for AtomicChild {
+    fn from(value: Add) -> Self {
+        Self::Add(value)
+    }
+}
+
+impl From<Delete> for AtomicChild {
+    fn from(value: Delete) -> Self {
+        Self::Delete(value)
+    }
+}
+
+impl From<Atomic> for AtomicChild {
+    fn from(value: Atomic) -> Self {
+        Self::Atomic(value)
+    }
+}
+
+impl From<Replace> for AtomicChild {
+    fn from(value: Replace) -> Self {
+        Self::Replace(value)
+    }
+}
+
+impl From<Get> for AtomicChild {
+    fn from(value: Get) -> Self {
+        Self::Get(value)
+    }
+}
+
+impl From<Exec> for AtomicChild {
+    fn from(value: Exec) -> Self {
+        Self::Exec(value)
+    }
 }

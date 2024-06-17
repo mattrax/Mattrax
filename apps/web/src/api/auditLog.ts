@@ -1,26 +1,23 @@
-import { auditLog, db } from "~/db";
+import { auditLog } from "~/db";
+import { useAccountSafe } from "./account";
 import type { auditLogDefinition } from "./auditLogDefinition";
-import { sql } from "drizzle-orm";
+import { useTenant } from "./tenant";
+import { useTransaction } from "./utils/transaction";
 
-export function withAuditLog<T, K extends keyof typeof auditLogDefinition>(
+export function createAuditLog<K extends keyof typeof auditLogDefinition>(
 	action: K,
 	data: (typeof auditLogDefinition)[K]["#ty"],
-	[tenantPk, userPk]: [number, number | undefined],
-	cb: Parameters<typeof db.transaction<T>>[0],
 ) {
-	// TODO: I know Planetscale's HTTP adapter does a request to open and close the transaction + one for every operation
-	// TODO: Can we make our own HTTP edge that can do this in a single HTTP request???
+	const tenant = useTenant();
 
-	return db.transaction<T>(async (db) => {
-		await db.insert(auditLog).values({
-			tenantPk,
+	return useTransaction((db) =>
+		db.insert(auditLog).values({
+			tenantPk: tenant.pk,
 			action,
 			data,
-			userPk: userPk || sql`NULL`,
-		});
-
-		return await cb(db);
-	});
+			accountPk: useAccountSafe()?.pk,
+		}),
+	);
 }
 
 export type AuditLogDefinition = typeof auditLogDefinition;

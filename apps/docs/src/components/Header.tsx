@@ -2,8 +2,6 @@ import { forwardRef } from "react";
 import Link from "next/link";
 import clsx from "clsx";
 import { motion, useScroll, useTransform } from "framer-motion";
-
-import { Button } from "@/components/Button";
 import { Logo } from "@/components/Logo";
 import {
 	MobileNavigation,
@@ -39,12 +37,12 @@ export const Header = forwardRef<
 	React.ElementRef<"div">,
 	{ className?: string }
 >(function Header({ className }, ref) {
-	let { isOpen: mobileNavIsOpen } = useMobileNavigationStore();
-	let isInsideMobileNavigation = useIsInsideMobileNavigation();
+	const { isOpen: mobileNavIsOpen } = useMobileNavigationStore();
+	const isInsideMobileNavigation = useIsInsideMobileNavigation();
 
-	let { scrollY } = useScroll();
-	let bgOpacityLight = useTransform(scrollY, [0, 72], [0.5, 0.9]);
-	let bgOpacityDark = useTransform(scrollY, [0, 72], [0.2, 0.8]);
+	const { scrollY } = useScroll();
+	const bgOpacityLight = useTransform(scrollY, [0, 72], [0.5, 0.9]);
+	const bgOpacityDark = useTransform(scrollY, [0, 72], [0.2, 0.8]);
 
 	return (
 		<motion.div
@@ -81,7 +79,7 @@ export const Header = forwardRef<
 			</div>
 			<div className="flex items-center gap-5">
 				<nav className="hidden md:block">
-					<ul role="list" className="flex items-center gap-8">
+					<ul className="flex items-center gap-8">
 						<TopLevelNavItem href="https://mattrax.app">
 							Website
 						</TopLevelNavItem>

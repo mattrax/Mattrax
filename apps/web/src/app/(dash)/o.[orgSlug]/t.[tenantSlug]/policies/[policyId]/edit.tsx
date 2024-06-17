@@ -1,78 +1,195 @@
+import type { PolicyData } from "@mattrax/policy";
 import {
-	Collapsible,
-	CollapsibleContent,
-	CollapsibleTrigger,
-	Tabs,
-	TabsContent,
-	TabsList,
-	TabsTrigger,
-} from "@mattrax/ui";
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { usePolicy } from "./Context";
-import { createSignal } from "solid-js";
-import { createContentEditableController } from "@mattrax/ui/lib";
-import { BruhIconPhArrowsVerticalBold } from "./bruh";
+	PolicyComposer,
+	type PolicyComposerState,
+	type PolicyPlatform,
+} from "@mattrax/policy-composer";
+import {
+	type RouteDefinition,
+	createAsync,
+	useBeforeLeave,
+	useSearchParams,
+} from "@solidjs/router";
+import { Show, createEffect, createSignal } from "solid-js";
+import { createStore } from "solid-js/store";
+
+import { DialogContent, DialogRoot } from "@mattrax/ui";
+import { toast } from "solid-sonner";
+import { useCommandGroup } from "~/components/CommandPalette";
+import { trpc } from "~/lib";
+import { usePolicyId } from "../ctx";
+import { DeployDialog } from "./deploys/(deploys)";
+
+const windowsPoliciesPromise = import(
+	"@mattrax/configuration-schemas/windows/ddf.json?raw"
+).then(({ default: str }) => JSON.parse(str));
+
+const applePayloadsPromise = import(
+	"@mattrax/configuration-schemas/apple/payloads.json?raw"
+).then(({ default: str }) => JSON.parse(str));
+
+export const router = {
+	load: ({ params }) => {
+		trpc.useContext().policy.get.ensureData({
+			policyId: params.policyId!,
+		});
+	},
+} satisfies RouteDefinition;
 
 export default function Page() {
-	const policy = usePolicy();
-	const [policyName, setPolicyName] = createSignal("./policy.yaml");
-	const policyNameController = createContentEditableController(setPolicyName);
+	const windowsPolicies = createAsync(() => windowsPoliciesPromise);
+	const applePayloads = createAsync(() => applePayloadsPromise);
 
-	// TODO: Probs replace tabs with proper routes so it's in the URL (when we add the visual editor).
+	const policyId = usePolicyId();
+
+	const policy = trpc.policy.get.createQuery(() => ({
+		policyId: policyId(),
+	}));
+
+	const updatePolicy = trpc.policy.update.createMutation();
+
+	const [searchParams, setSearchParams] = useSearchParams<{
+		platform: PolicyPlatform;
+	}>();
+
+	const [state, setState] = createStore<PolicyComposerState>({
+		platform: searchParams.platform ?? "windows",
+	});
+
+	const [openDeployDialog, setOpenDeployDialog] = createSignal(false);
+
+	const onSave = () =>
+		updatePolicy.mutateAsync({
+			id: policyId(),
+			data: {
+				windows: Object.entries(controller.state.windows ?? {}).reduce(
+					(acc, [csp, { data, enabled }]) => {
+						if (enabled) acc[csp] = data;
+						return acc;
+					},
+					{} as PolicyData["windows"],
+				),
+				macos: Object.entries(controller.state.apple ?? {}).reduce(
+					(acc, [csp, { data, enabled }]) => {
+						if (enabled) acc[csp] = data;
+						return acc;
+					},
+					{} as PolicyData["macos"],
+				),
+				linux: null,
+				android: null,
+				scripts: [],
+			},
+		});
+
+	const controller = {
+		state,
+		setState,
+		onSave: async () => {
+			await onSave();
+
+			toast.success("Policy saved", {
+				id: "policy-save",
+				action: {
+					label: "Deploy",
+					onClick: () => setOpenDeployDialog(true),
+				},
+				duration: 3000,
+			});
+		},
+	};
+
+	useCommandGroup("Policy Editor", [
+		{
+			title: "Save",
+			onClick: () => controller.onSave(),
+		},
+		// {
+		// 	title: "Deploy",
+		// 	onClick: () => {
+		// 		// TODO: Warning if unsaved changes
+		// 		setOpenDeployDialog(true);
+		// 	},
+		// },
+		{
+			title: "Windows",
+			onClick: () =>
+				setState({
+					platform: "windows",
+				}),
+		},
+		{
+			title: "Apple",
+			onClick: () =>
+				setState({
+					platform: "apple",
+				}),
+		},
+		{
+			title: "Android",
+			onClick: () => alert("TODO"),
+			disabled: true,
+		},
+	]);
+
+	createEffect((prevStatus) => {
+		if (
+			prevStatus !== "success" &&
+			policy.status === "success" &&
+			policy.data
+		) {
+			setState({
+				windows: Object.entries(policy.data.data.windows ?? {}).reduce(
+					(acc, [csp, data]) => {
+						acc[csp] = { data, enabled: true, open: true };
+						return acc;
+					},
+					{} as NonNullable<PolicyComposerState["windows"]>,
+				),
+				apple: Object.entries(policy.data.data.macos ?? {}).reduce(
+					(acc, [csp, data]) => {
+						acc[csp] = { data, enabled: true, open: true };
+						return acc;
+					},
+					{} as NonNullable<PolicyComposerState["apple"]>,
+				),
+			});
+			useBeforeLeave((e) => {
+				// Search param changes count as leaving so we ignore them here
+				const toUrl = new URL(`${location.origin}${e.to}`);
+				if (e.from.pathname === toUrl.pathname) return;
+
+				if (!e.defaultPrevented) {
+					e.preventDefault();
+
+					if (window.confirm("Discard unsaved changes - are you sure?")) {
+						e.retry(true);
+					}
+				}
+			});
+		}
+
+		return policy.status;
+	});
+
+	createEffect(() => {
+		setSearchParams({ platform: controller.state.platform });
+	});
 
 	return (
-		<Tabs defaultValue="cli">
-			<PageLayout
-				heading={
-					<div class="flex space-x-4">
-						<PageLayoutHeading class="pr-2">Edit</PageLayoutHeading>
-
-						<TabsList class="grid w-full grid-cols-2">
-							<TabsTrigger value="cli">CLI</TabsTrigger>
-							<TabsTrigger value="visual">Visual</TabsTrigger>
-						</TabsList>
-					</div>
-				}
-			>
-				<TabsContent value="cli">
-					<h3 class="font-semibold pt-4">Get started editing this policy:</h3>
-					<h4 class="pl-2 font-mono">
-						mttx pull {policy().id}{" "}
-						<span {...policyNameController()}>{policyName()}</span>
-					</h4>
-
-					<h3 class="font-semibold pt-4">Deploy your policy:</h3>
-					<h4 class="pl-2 font-mono">
-						mttx deploy <span {...policyNameController()}>{policyName()}</span>
-					</h4>
-
-					<p class="pt-4">
-						<a
-							href="http://docs.mattrax.app/components/mttx"
-							class="text-[#0000EE]"
-							target="_blank"
-							rel="noreferrer"
-						>
-							Learn more about <span class="font-mono">mttx</span> CLI
-						</a>
-					</p>
-
-					<Collapsible>
-						<CollapsibleTrigger class="pt-4 flex items-center">
-							<BruhIconPhArrowsVerticalBold />
-							Policy content
-						</CollapsibleTrigger>
-						<CollapsibleContent>
-							<pre>{JSON.stringify(policy().data, null, 2)}</pre>
-						</CollapsibleContent>
-					</Collapsible>
-				</TabsContent>
-				<TabsContent value="visual">
-					<h2 class="text-muted-foreground opacity-70">
-						Visual editor coming soon...
-					</h2>
-				</TabsContent>
-			</PageLayout>
-		</Tabs>
+		<>
+			<PolicyComposer
+				windowsCSPs={windowsPolicies()}
+				applePayloads={applePayloads()}
+				controller={controller}
+			/>
+			<DialogRoot open={openDeployDialog()} onOpenChange={setOpenDeployDialog}>
+				<DialogContent>
+					<Show when={policy.data}>
+						{(policy) => <DeployDialog policy={policy()} />}
+					</Show>
+				</DialogContent>
+			</DialogRoot>
+		</>
 	);
 }

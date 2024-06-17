@@ -1,4 +1,4 @@
-import { type SearchOptions } from "flexsearch";
+import type { SearchOptions } from "flexsearch";
 
 declare module "@/mdx/search.mjs" {
 	export type Result = {

@@ -1,72 +1,121 @@
-import { visualizer } from "rollup-plugin-visualizer";
-import { defineConfig } from "@solidjs/start/config";
-import tsconfigPaths from "vite-tsconfig-paths";
+import { fileURLToPath } from "node:url";
 import mattraxUI from "@mattrax/ui/vite";
-import path from "node:path";
-import fs from "node:fs";
+import { defineConfig } from "@solidjs/start/config";
+import { visualizer } from "rollup-plugin-visualizer";
+import devtools from "solid-devtools/vite";
+import { cloudflare } from "unenv";
+import tsconfigPaths from "vite-tsconfig-paths";
 
 import { monorepoRoot } from "./loadEnv";
 import "./src/env";
 
+const nitroPreset = process.env.NITRO_PRESET ?? "node-server";
+const isCFPages = nitroPreset === "cloudflare_pages";
+
 export default defineConfig({
 	ssr: false,
 	routeDir: "app",
-	vite: {
+	solid: {
+		// We don't wanna apply Solid's JSX transform to the React emails.
+		exclude: ["../../packages/email/**"],
+	},
+	vite: ({ router }) => ({
 		envDir: monorepoRoot,
+		css: {
+			modules: {
+				localsConvention: "camelCaseOnly",
+			},
+		},
 		build: {
 			// Safari mobile has problems with newer syntax
-			target: "es2015",
+			target: "es2020",
+		},
+		resolve: {
+			alias: {
+				// We replace the `sst` import on client so the `env.ts` file can be used
+				sst:
+					router === "client"
+						? fileURLToPath(new URL("./src/sst-shim.js", import.meta.url))
+						: fileURLToPath(
+								new URL("./node_modules/sst/dist/index.js", import.meta.url),
+							),
+			},
 		},
 		plugins: [
+			devtools(),
 			tsconfigPaths({
 				// If this isn't set Vinxi hangs on startup
 				root: ".",
 			}),
 			mattraxUI,
-			!(process.env.VERCEL === "1")
-				? visualizer({ brotliSize: true, gzipSize: true })
-				: undefined,
+			visualizer({
+				brotliSize: true,
+				gzipSize: true,
+				filename: `stats${router === "client" ? "" : `-${router}`}.html`,
+			}),
 		],
-	},
+	}),
 	server: {
-		// vercel: {
-		//   regions: ["iad1"],
-		// },
-		// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
-		// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
-		exportConditions: ["worker"],
-		esbuild: {
-			options: {
-				/// Required for `@paralleldrive/cuid2` to work.
-				/// https://github.com/paralleldrive/cuid2/issues/62
-				target: "es2020",
-			},
-		},
+		preset: nitroPreset,
+		// Cloudflare will take care of this
+		compressPublicAssets: false,
 		experimental: {
 			asyncContext: true,
 		},
+		esbuild: {
+			options: { target: "es2020" },
+		},
+		analyze: {
+			filename: "stats-nitro.html",
+		},
+		routeRules: {
+			"/**": {
+				// @ts-expect-error: This is in our patch
+				priority: 5,
+				headers: {
+					"Cache-Control": "public,max-age=0,must-revalidate",
+					"X-Frame-Options": "DENY",
+					"X-Content-Type-Options": "nosniff",
+					"Referrer-Policy": "strict-origin-when-cross-origin",
+					// TODO: Setup a proper content security policy
+					// "Content-Security-Policy": "script-src 'self';",
+					...(isCFPages && {
+						"Cloudflare-CDN-Cache-Control": "public,max-age=31536000,immutable",
+						"Strict-Transport-Security":
+							"max-age=31536000; includeSubDomains; preload",
+					}),
+				},
+			},
+			"/favicon.ico": {
+				headers: {
+					"Cache-Control": "public,immutable,max-age=31536000",
+				},
+			},
+			"/assets/**": {
+				headers: {
+					"Cache-Control": "public,immutable,max-age=31536000",
+				},
+			},
+		},
+		...(isCFPages && {
+			// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
+			// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
+			// exportConditions: ["worker"],
+			unenv: cloudflare,
+			rollupConfig: {
+				external: ["cloudflare:sockets"],
+			},
+			cloudflare: {
+				pages: {
+					routes: {
+						// All non-api and non-asset routes are redirected to / to be served by CDN
+						exclude: ["/"],
+					},
+				},
+			},
+		}),
 	},
-});
-
-process.on("exit", () => {
-	const workerCode = path.join("dist", "_worker.js", "chunks", "runtime.mjs");
-
-	if (!fs.existsSync(workerCode)) {
-		console.warn("Skipping Cloudflare env patching...");
-		return;
-	}
-
-	// Cloudflare doesn't allow access to env outside the handler.
-	// So we ship the env with the worker code.
-	fs.writeFileSync(
-		path.join(workerCode, "../env.mjs"),
-		`const process={env:${JSON.stringify(
-			process.env,
-		)}};globalThis.process=process;`,
-	);
-
-	fs.writeFileSync(
-		workerCode,
-		`import "./env.mjs";\n${fs.readFileSync(workerCode)}`,
-	);
+	...(isCFPages && {
+		middleware: "src/cfPagesMiddleware.ts",
+	}),
 });

@@ -1,5 +1,11 @@
-import { ComponentProps, JSX, splitProps } from "solid-js";
 import clsx from "clsx";
+import {
+	type ComponentProps,
+	type JSX,
+	Show,
+	children,
+	splitProps,
+} from "solid-js";
 
 export function PageLayout(
 	props: ComponentProps<"div"> & {
@@ -7,6 +13,7 @@ export function PageLayout(
 		size?: "md" | "lg";
 	},
 ) {
+	const c = children(() => props.heading || null);
 	const [_, divProps] = splitProps(props, ["heading", "size"]);
 
 	return (
@@ -18,9 +25,9 @@ export function PageLayout(
 				props.class,
 			)}
 		>
-			{props.heading && (
-				<div class="flex flex-row items-center h-24 gap-4">{props.heading}</div>
-			)}
+			<Show when={c()}>
+				{(c) => <div class="flex flex-row items-center h-24 gap-4">{c()}</div>}
+			</Show>
 			<div class="gap-4 flex flex-col">{props.children}</div>
 		</div>
 	);

@@ -4,8 +4,8 @@ const context = createContext<ReturnType<typeof createController>>();
 
 export const ControllerProvider = context.Provider;
 
-export function createController() {
-	const [open, setOpen] = createSignal(false);
+export function createController(defaultOpen = false) {
+	const [open, setOpen] = createSignal(defaultOpen);
 
 	return {
 		open,

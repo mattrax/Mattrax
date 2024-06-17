@@ -1,10 +1,18 @@
-import type { Component } from "solid-js";
+import type { Component, ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
-import { Popover as PopoverPrimitive } from "@kobalte/core";
+import {
+	type PolymorphicProps,
+	Popover as PopoverPrimitive,
+} from "@kobalte/core";
+import type { PopoverContentProps } from "@kobalte/core/popover";
 
-import { cn } from "./lib";
-import { Controller, ControllerProvider, createController } from "./controller";
+import clsx from "clsx";
+import {
+	type Controller,
+	ControllerProvider,
+	createController,
+} from "./controller";
 
 const Popover: Component<
 	Omit<PopoverPrimitive.PopoverRootProps, "open"> &
@@ -35,15 +43,15 @@ const Popover: Component<
 
 const PopoverTrigger = PopoverPrimitive.Trigger;
 
-const PopoverContent: Component<PopoverPrimitive.PopoverContentProps> = (
-	props,
+const PopoverContent = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, PopoverContentProps>,
 ) => {
-	const [, rest] = splitProps(props, ["class"]);
+	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<PopoverPrimitive.Portal>
 			<PopoverPrimitive.Content
-				class={cn(
-					"z-50 w-72 origin-[var(--kb-popover-content-transform-origin)] rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-none data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95",
+				class={clsx(
+					"z-50 origin-[var(--kb-popover-content-transform-origin)] rounded-md border overflow-hidden bg-popover text-popover-foreground shadow-md outline-none data-[expanded]:animate-in data-[closed]:animate-out data-[closed]:fade-out-0 data-[expanded]:fade-in-0 data-[closed]:zoom-out-95 data-[expanded]:zoom-in-95",
 					props.class,
 				)}
 				{...rest}

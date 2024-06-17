@@ -23,4 +23,8 @@ impl CmdRef {
             child: cmd_id.as_str().into(),
         }
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.child
+    }
 }

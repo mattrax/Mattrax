@@ -1,90 +1,142 @@
-import { As, DropdownMenu as KDropdownMenu } from "@kobalte/core";
+/* @refresh skip */
+
+import { createReconnectingWS } from "@solid-primitives/websocket";
+import { type RouteDefinition, createAsync } from "@solidjs/router";
 import {
-	Button,
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@mattrax/ui";
-import { type RouteDefinition, useNavigate } from "@solidjs/router";
-import { For, type ParentProps, Suspense } from "solid-js";
-import { z } from "zod";
+	type ParentProps,
+	Suspense,
+	createEffect,
+	createMemo,
+	createReaction,
+} from "solid-js";
 
-import IconPhCaretUpDown from "~icons/ph/caret-up-down.jsx";
-import { AuthContext, useAuth } from "~/components/AuthContext";
-import { OrgContext, useOrg } from "./o.[orgSlug]/Context";
-import { useZodParams } from "~/lib/useZodParams";
+import { createQuery, useQueryClient } from "@tanstack/solid-query";
+import { useCommandGroup } from "~/components/CommandPalette";
 import { trpc } from "~/lib";
+import { useOrgSlug } from "./o.[orgSlug]/ctx";
+import { cachedOrgs } from "./utils";
 
-export function useOrgSlug() {
-	const params = useZodParams({ orgSlug: z.string() });
-	return () => params.orgSlug;
-}
+export const route = {
+	load: ({ params }) => {
+		trpc.useContext().org.tenants.ensureData({ orgSlug: params.orgSlug! });
+		trpc.useContext().org.list.ensureData();
+	},
+} satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
-	return <>{props.children}</>;
-}
+	createMemo(createAsync(() => cachedOrgs()));
 
-function OrgSwitcher() {
-	const auth = useAuth();
-	const org = useOrg();
-
-	const navigate = useNavigate();
+	useCommandGroup("Organisation", [
+		{
+			title: "Create Tenant",
+			onClick: () => alert(1), // TODO
+		},
+		{
+			title: "Invite User",
+			onClick: () => alert(1), // TODO
+		},
+		{
+			title: "Settings",
+			href: "settings",
+		},
+	]);
 
 	return (
-		<DropdownMenu>
-			<div class="flex flex-row items-center gap-2">
-				<span>{org().name}</span>
-				<DropdownMenuTrigger asChild>
-					<As component={Button} variant="ghost" size="iconSmall">
-						<KDropdownMenu.Icon>
-							<IconPhCaretUpDown class="h-5 w-5 -mx-1" />
-						</KDropdownMenu.Icon>
-					</As>
-				</DropdownMenuTrigger>
-			</div>
-			<DropdownMenuContent>
-				<Suspense>
-					<For each={auth().orgs}>
-						{(org) => (
-							<DropdownMenuItem
-								class={
-									"block px-4 py-2 text-sm text-left w-full truncate hover:bg-gray-200"
-								}
-								onSelect={() => navigate(`/o/${org.slug}`)}
-							>
-								{org.name}
-							</DropdownMenuItem>
-						)}
-					</For>
-
-					{/* {auth().orgs.length !== 0 && <DropdownMenuSeparator />} */}
-				</Suspense>
-			</DropdownMenuContent>
-		</DropdownMenu>
+		<>
+			{props.children}
+			<Suspense>
+				{
+					// @ts-expect-error
+					() => {
+						useInvalidationSystem();
+						return null;
+					}
+				}
+			</Suspense>
+		</>
 	);
 }
 
-const NAV_ITEMS = [
-	{ title: "Overview", href: "" },
-	{ title: "Settings", href: "settings" },
-];
+function useInvalidationSystem() {
+	const orgSlug = useOrgSlug();
+	const queryClient = useQueryClient();
 
-export const route = {
-	load: ({ params }) =>
-		trpc.useContext().org.tenants.ensureData({ orgSlug: params.orgSlug! }),
-	info: {
-		NAV_ITEMS,
-		BREADCRUMB: {
-			Component: () => {
-				return (
-					<AuthContext>
-						<OrgContext>
-							<OrgSwitcher />
-						</OrgContext>
-					</AuthContext>
-				);
-			},
+	const rustUrl = createQuery(() => ({
+		queryKey: ["where_da_rust"],
+		queryFn: async () => {
+			const resp = await fetch("/api/where_da_rust");
+			if (!resp.ok) {
+				console.warn("Failed to fetch url of Rust backend!");
+				return;
+			}
+			return await resp.text();
 		},
-	},
-} satisfies RouteDefinition;
+		refetchInterval: 10 * 60 * 1000,
+	}));
+
+	createEffect(() => {
+		if (!rustUrl.data) return;
+
+		const ws = createReconnectingWS(
+			`${rustUrl.data
+				?.replace("https://", "wss://")
+				?.replace("http://", "ws://")}/realtime`,
+			undefined,
+			{
+				// Back off in dev so the console doesn't get spammed
+				delay: import.meta.env.DEV ? 9999999 : undefined,
+			},
+		);
+
+		ws.addEventListener("open", () =>
+			ws.send(JSON.stringify({ type: "setOrg", orgSlug: orgSlug() })),
+		);
+		createReaction(() =>
+			ws.send(JSON.stringify({ type: "setOrg", orgSlug: orgSlug() })),
+		);
+
+		ws.addEventListener("message", (e) => {
+			const event = parseJsonSafe(e.data);
+			if (!event) return;
+
+			if (event.type === "invalidation") {
+				queryClient.invalidateQueries({
+					predicate: (query) => {
+						const input = query.queryKey?.[1];
+						// If it is a valid input to `tenantProcedure` or `orgProcedure`
+						if (input && typeof input === "object" && !Array.isArray(input)) {
+							// if the event has a tenant
+							if ("tenantSlug" in event) {
+								// We invalidate anything in the tenant
+								if (
+									"tenantSlug" in input &&
+									input.tenantSlug === event.tenantSlug
+								) {
+									return true;
+								}
+							} else {
+								// We invalidate anything in the org
+								if ("orgSlug" in input && input.orgSlug === event.orgSlug) {
+									return true;
+								}
+							}
+						}
+
+						return false;
+					},
+				});
+			} else if (event.type === "error") {
+				console.error("Error from realtime backend:", event.error);
+			}
+		});
+	});
+}
+
+function parseJsonSafe(json: string) {
+	try {
+		return JSON.parse(json);
+	} catch (e) {
+		console.warn("Error parsing invalidation message:", e);
+		return null;
+	}
+}

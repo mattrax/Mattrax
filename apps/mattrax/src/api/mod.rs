@@ -1,22 +1,38 @@
-use std::sync::Arc;
+use std::{env, net::SocketAddr, sync::Arc};
 
 use axum::{
-    extract::{Request, State},
+    extract::{connect_info::Connected, Request, State},
     http::HeaderValue,
     middleware::{self, Next},
     response::Response,
-    routing::get,
     Router,
 };
 use hmac::Hmac;
+use mx_db::Db;
 use rcgen::{Certificate, KeyPair};
+use reqwest::redirect::Policy;
+use rustls::pki_types::CertificateDer;
 use sha2::Sha256;
 use tokio::sync::mpsc;
+use x509_parser::certificate::X509Certificate;
 
-use crate::{config::ConfigManager, db::Db};
+use crate::config::ConfigManager;
 
 mod internal;
 mod mdm;
+mod realtime;
+
+#[derive(Clone, Debug)]
+pub struct ConnectInfoTy {
+    pub remote_addr: SocketAddr,
+    pub client_cert: Option<Vec<CertificateDer<'static>>>,
+}
+
+impl Connected<Self> for ConnectInfoTy {
+    fn connect_info(this: Self) -> Self {
+        this
+    }
+}
 
 pub struct Context {
     pub config: ConfigManager,
@@ -26,7 +42,8 @@ pub struct Context {
 
     pub shared_secret: Hmac<Sha256>,
 
-    pub identity_cert: Certificate,
+    pub identity_cert_rcgen: Certificate,
+    pub identity_cert_x509: X509Certificate<'static>,
     pub identity_key: KeyPair,
 
     pub acme_tx: mpsc::Sender<Vec<String>>,
@@ -79,11 +96,66 @@ async fn headers(State(state): State<Arc<Context>>, request: Request, next: Next
 
 pub fn mount(state: Arc<Context>) -> Router {
     // TODO: Limit body size
-    Router::new()
-        .route("/", get(|| async move { "Mattrax MDM!".to_string() }))
+    let router = Router::new()
         .nest("/internal", internal::mount(state.clone()))
+        .nest("/realtime", realtime::mount(state.clone()))
+        .nest(
+            "/psdb.v1alpha1.Database",
+            internal::sql::mount(state.clone()),
+        )
         .nest("/EnrollmentServer", mdm::enrollment::mount(state.clone()))
-        .nest("/ManagementServer", mdm::manage::mount(state.clone()))
+        .nest("/ManagementServer", mdm::manage::mount(state.clone()));
+
+    let url = cfg!(all(not(debug_assertions), feature = "serve-web"))
+        .then(|| "http://localhost:12345".to_string())
+        .or(env::var("WEB_URL").ok());
+
+    let router = if let Some(url) = url {
+        let url = reqwest::Url::parse(&url).expect("failed to parse `WEB_URL` url");
+
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .build()
+            .unwrap();
+
+        router.fallback(move |r: axum::extract::Request| {
+            let mut url = url
+                .join(r.uri().path())
+                .expect("failed to join path to localhost url");
+            url.set_query(r.uri().query());
+
+            async move {
+                let mut req = reqwest::Request::new(r.method().clone(), url);
+
+                *req.headers_mut() = r.headers().clone();
+                *req.body_mut() = Some(
+                    axum::body::to_bytes(r.into_body(), usize::MAX)
+                        .await
+                        .expect("failed to read body")
+                        .into(),
+                );
+
+                let resp = client
+                    .execute(req)
+                    .await
+                    .expect("failed to make request to node");
+
+                (
+                    resp.status(),
+                    resp.headers().clone(),
+                    resp.extensions().clone(),
+                    axum::body::Body::from_stream(resp.bytes_stream()),
+                )
+            }
+        })
+    } else {
+        router.route(
+            "/",
+            axum::routing::get(|| async move { "Mattrax MDM!".to_string() }),
+        )
+    };
+
+    router
         .layer(middleware::from_fn_with_state(state.clone(), headers))
         .with_state(state)
 }

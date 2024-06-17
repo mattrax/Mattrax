@@ -1,14 +1,14 @@
-import { getInitials, trpc } from "~/lib";
-import { useTenantSlug } from "../../t.[tenantSlug]";
 import { Avatar, AvatarFallback } from "@mattrax/ui";
-import { A } from "@solidjs/router";
-import { Suspense, For } from "solid-js";
-import { formatAuditLogEvent } from "~/lib/formatAuditLog";
 import { createTimeAgo } from "@solid-primitives/date";
+import { A } from "@solidjs/router";
+import { For, Suspense } from "solid-js";
+import { getInitials, trpc } from "~/lib";
+import { formatAuditLogEvent } from "~/lib/formatAuditLog";
+import { useTenantSlug } from "../ctx";
 
 export default function Page() {
 	const tenantSlug = useTenantSlug();
-	const auditLog = trpc.tenant.auditLog.useQuery(() => ({
+	const auditLog = trpc.tenant.auditLog.createQuery(() => ({
 		tenantSlug: tenantSlug(),
 	}));
 
@@ -19,13 +19,15 @@ export default function Page() {
 				See all activity in the current tenant
 			</p>
 			<div class="flex flex-col gap-4 pl-4">
-				<Suspense>
-					<div>
-						{auditLog.data?.length === 0 && (
+				<Suspense
+					fallback={<p class="text-muted-foreground opacity-70">Loading...</p>}
+				>
+					<For
+						each={auditLog.data}
+						fallback={
 							<p class="text-muted-foreground opacity-70">No activity!</p>
-						)}
-					</div>
-					<For each={auditLog.data}>
+						}
+					>
 						{(entry) => {
 							const formatted = formatAuditLogEvent(
 								entry.action,

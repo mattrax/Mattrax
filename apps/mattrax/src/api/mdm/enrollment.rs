@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ops::Add, sync::Arc};
+use std::{collections::BTreeMap, ops::Add, str::FromStr, sync::Arc};
 
 use axum::{
     extract::State,
@@ -11,16 +11,23 @@ use base64::prelude::*;
 use hyper::header;
 use jwt::VerifyWithKey;
 use ms_mde::{
-    Action, ActivityId, BinarySecurityToken, DiscoverRequest, DiscoverResponse, DiscoverResponseBody, DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult, EnrollmentRequest, EnrollmentResponse, EnrollmentResponseBody, RequestHeaderSecurity, RequestSecurityTokenResponse, RequestSecurityTokenResponseCollection, RequestedSecurityToken, ResponseHeader, ACTIVITY_ID_XMLNS, DISCOVER_ACTION_REQUEST, DISCOVER_ACTION_RESPONSE, DISCOVER_RESPONSE_XMLNS, ENROLLMENT_ACTION_REQUEST, ENROLLMENT_ACTION_RESPONSE, ENROLLMENT_REQUEST_TYPE_ISSUE, ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION, REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION, REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE
+    Action, ActivityId, BinarySecurityToken, DiscoverRequest, DiscoverResponse,
+    DiscoverResponseBody, DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult,
+    EnrollmentRequest, EnrollmentResponse, EnrollmentResponseBody, RequestHeaderSecurity,
+    RequestSecurityTokenResponse, RequestSecurityTokenResponseCollection, RequestedSecurityToken,
+    ResponseHeader, ACTIVITY_ID_XMLNS, DISCOVER_ACTION_REQUEST, DISCOVER_ACTION_RESPONSE,
+    DISCOVER_RESPONSE_XMLNS, ENROLLMENT_ACTION_REQUEST, ENROLLMENT_ACTION_RESPONSE,
+    ENROLLMENT_REQUEST_TYPE_ISSUE, ENROLLMENT_REQUEST_TYPE_RENEW, MICROSOFT_DEVICE_ID_EXTENSION,
+    REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION, REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE,
 };
-use mysql_common::time::OffsetDateTime;
 use rcgen::{
-    Certificate, CertificateSigningRequestParams, CustomExtension, DistinguishedName, DnType,
+    CertificateSigningRequestParams, CustomExtension, DistinguishedName, DnType,
     ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose, SerialNumber,
 };
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
-use tracing::error;
+use time::OffsetDateTime;
+use tracing::{debug, error};
 
 use crate::api::Context;
 
@@ -104,7 +111,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                             enrollment_version: "5.0".into(), // TODO: From request
                             enrollment_policy_service_url: format!("https://{enrollment_domain}/EnrollmentServer/Policy.svc"),
                             enrollment_service_url: format!("https://{enrollment_domain}/EnrollmentServer/Enrollment.svc"),
-                            authentication_service_url: Some(format!("{web_origin}/api/enrollment/login")),
+                            authentication_service_url: Some(format!("{web_origin}/enroll/")),
                         }
                     }
                 },
@@ -245,7 +252,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             //     return
             // }
 
-            let (upn, owner_pk, tenant_pk) = match cmd.header.security {
+            let (upn, owner_pk, tenant_pk, enrolled_by) = match cmd.header.security {
                 Some(RequestHeaderSecurity { binary_security_token: Some(token), .. }) => {
                     let bst_raw = match token.decode() {
                         Ok(raw) => raw,
@@ -279,11 +286,12 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                             }
 
-                            let upn = claims.get("upn").unwrap().as_str().unwrap().to_string(); // TODO: Error handling
-                            let owner_pk = claims.get("uid").unwrap().as_i64().unwrap().try_into().unwrap(); // TODO: Error handling
                             let tenant = claims.get("tid").unwrap().as_i64().unwrap().try_into().unwrap(); // TODO: Error handling
+                            let enrolled_by = claims.get("aid").map(|v| v.as_i64().unwrap().try_into().unwrap()); // TODO: Error handling                            
+                            let upn = claims.get("upn").map(|v| v.as_str().unwrap().to_string()); // TODO: Error handling
+                            let owner_pk = claims.get("uid").map(|v| v.as_i64().unwrap().try_into().unwrap()); // TODO: Error handling
 
-                            (upn, owner_pk, tenant)
+                            (upn, owner_pk, tenant, enrolled_by)
                         },
                         ty => {
                             // fault.Fault(err, "the users authenticity could not be verified", soap.FaultCodeAuthentication)
@@ -292,7 +300,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                         }
                     }
                 }
-                Some(RequestHeaderSecurity { username_token: Some(token), .. }) => {
+                Some(RequestHeaderSecurity { username_token: Some(_token), .. }) => {
                     // fault.Fault(fmt.Errorf("OnPremise authentication not supported"), "no valid authentication method was found", soap.FaultCodeInvalidSecurity)
                     error!("todo: proper soap fault. OnPremise authentication not supported");
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
@@ -309,13 +317,13 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 //         fault.Fault(fmt.Errorf("pkcs7 required for authenticating renewal"), "the users authenticity could not be verified", soap.FaultCodeAuthentication)
                 //         return ""
                 //     }
-            
+
                 //     signer := p7.GetOnlySigner()
                 //     if signer == nil {
                 //         fault.Fault(fmt.Errorf("pkcs7: binary security token has no signer"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
                 //         return ""
                 //     }
-            
+
                 //     if now := time.Now(); now.Before(signer.NotBefore) || now.After(signer.NotAfter) /* Check that the certificate has not expired */ {
                 //         fault.Fault(fmt.Errorf("pkcs7: pkcs7 signer is expired"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
                 //         return ""
@@ -329,7 +337,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 //         fault.Fault(fmt.Errorf("pkcs7: certificate command name does match renewal request DeviceID"), "the devices authenticity could not be verified", soap.FaultCodeAuthentication)
                 //         return ""
                 //     }
-            
+
                 //     return cmd.Header.WSSESecurity.Username
                 // }
             };
@@ -347,18 +355,40 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
 
-            let (cert_store, common_name, enrollment_type) = match additional_context.get("EnrollmentType") {
-                Some("Device") => ("System", device_id.to_string(), ENROLLMENT_TYPE_USER),
-                _ => ("User", upn.to_string(), ENROLLMENT_TYPE_DEVICE),
+            let Some(hw_dev_id) = additional_context.get("HWDevID") else {
+                 // TODO: Actual fault
+                 error!("todo: proper soap fault. the device is did not provide a 'HWDevID'");
+                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             };
 
-            let Ok(csr) = cmd.body.request_security_token.binary_security_token.decode().map_err(|err| {
+            let (cert_store, common_name, enrollment_type) = match additional_context.get("EnrollmentType") {
+                Some("Device") => ("System", device_id.to_string(), ENROLLMENT_TYPE_DEVICE),
+                _ => ("User", upn.unwrap_or_else(|| "system".to_string()).clone(), ENROLLMENT_TYPE_USER),
+            };
+
+            let Ok(csr) = cmd.body.request_security_token.binary_security_token.decode().map_err(|_err| {
                 // TODO: proper SOAP fault
                 error!("todo: error decoding the bst");
             }) else {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             };
-            let mut csr = CertificateSigningRequestParams::from_der(&csr).unwrap(); // TODO: Error handling
+
+            let mdm_device_id = cuid2::create_id();
+            let device_id = match state.db.get_device_by_serial(hw_dev_id.to_string()).await.unwrap().into_iter().next() {
+                Some(device) => {
+                    // TODO: Could this functionality be used to forcefully unenroll a device if you know it's serial number?
+                    if device.tenant_pk != tenant_pk {
+                        debug!("Detect device enrolling from tenant {} to {}!", device.tenant_pk, tenant_pk);
+
+                        // TODO: Wipe out all relations - https://github.com/mattrax/Mattrax/issues/362
+                    }
+
+                    device.id
+                }
+                None => cuid2::create_id(),
+            };
+
+            let mut csr = CertificateSigningRequestParams::from_der(&csr.into()).unwrap(); // TODO: Error handling
 
             // Version:               csr.Version,
             // Signature:             csr.Signature,
@@ -370,16 +400,16 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             // Issuer:
             csr.params.serial_number = Some(SerialNumber::from_slice(&[1])); // TODO: Encode proper Rust int type into the bytes
             csr.params.not_before = OffsetDateTime::now_utc();
-            csr.params.not_after = csr.params.not_before.clone().add(time::Duration::days(365));
+            csr.params.not_after = csr.params.not_before.add(time::Duration::days(365));
             csr.params.key_usages = vec![KeyUsagePurpose::DigitalSignature, KeyUsagePurpose::KeyEncipherment];
             csr.params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ClientAuth];
             // BasicConstraintsValid: true, // TODO
             csr.params.is_ca = IsCa::ExplicitNoCa;
             csr.params.custom_extensions = vec![
-                CustomExtension::from_oid_content(MICROSOFT_DEVICE_ID_EXTENSION, "TODO".as_bytes().to_vec()),
+                CustomExtension::from_oid_content(MICROSOFT_DEVICE_ID_EXTENSION, mdm_device_id.as_bytes().to_vec()),
             ];
 
-            let certificate = Certificate::from_request(csr, &state.identity_cert, &state.identity_key).unwrap();  // TODO: Error handling
+            let certificate = csr.signed_by(&state.identity_cert_rcgen, &state.identity_key).unwrap();  // TODO: Error handling
 
             // var wapProvisioningDocCharacteristics = []wap.Characteristic{
             //     certStoreCharacteristic,
@@ -439,16 +469,16 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             // rawProvisioningProfile = append([]byte(`<?xml version="1.0" encoding="UTF-8"?>`), rawProvisioningProfile...)
 
             let mut hasher = Sha1::new();
-            hasher.update(state.identity_cert.der());
+            hasher.update(state.identity_cert_rcgen.der());
             let identity_cert_fingerprint =  hasher.finalize();
-            let identity_cert_fingerprint =  hex::encode(&identity_cert_fingerprint).to_uppercase();
+            let identity_cert_fingerprint =  hex::encode(identity_cert_fingerprint).to_uppercase();
 
-            let root_certificate_der = BASE64_STANDARD.encode(state.identity_cert.der());
+            let root_certificate_der = BASE64_STANDARD.encode(state.identity_cert_rcgen.der());
 
             let mut hasher = Sha1::new();
             hasher.update(certificate.der());
             let signed_client_cert_fingerprint = hasher.finalize();
-            let signed_client_cert_fingerprint = hex::encode(&signed_client_cert_fingerprint).to_uppercase();
+            let signed_client_cert_fingerprint = hex::encode(signed_client_cert_fingerprint).to_uppercase();
 
             let client_ctr_raw = BASE64_STANDARD.encode(certificate.der());
 
@@ -458,14 +488,9 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             // TODO: Remove the device from the DB if it doesn't do an initial checkin within a certain time period
             // TODO: Get all this information from parsing the request.
 
-            let Some(hw_dev_id) = additional_context.get("HWDevID") else {
-                todo!("cringe device. No HwDevId-ass");
-            };
-
             // TODO: `HWDevID`, `DeviceID`, `OSVersion`
 
-            let device_id = cuid2::create_id();
-            state.db.create_device(device_id.clone(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), enrollment_type.into(), OS_WINDOWS.into(), hw_dev_id.into(), tenant_pk, owner_pk).await.unwrap();
+            state.db.create_device(device_id, mdm_device_id.clone(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), enrollment_type.into(), OS_WINDOWS.into(), hw_dev_id.into(), tenant_pk, owner_pk, enrolled_by).await.unwrap();
 
             // TODO: Get the device's DB id and put into this
             // TODO: Lookup and set tenant name
@@ -519,7 +544,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 <characteristic type="DMClient">
                     <characteristic type="Provider">
                         <characteristic type="Mattrax">
-                            <parm name="EntDMID" value="{device_id}" datatype="string" />
+                            <parm name="EntDMID" value="{mdm_device_id}" datatype="string" />
                             <parm name="SyncApplicationVersion" value="5.0" datatype="string" />
                             <characteristic type="Poll">
                                 <parm name="NumberOfFirstRetries" value="8" datatype="integer" />

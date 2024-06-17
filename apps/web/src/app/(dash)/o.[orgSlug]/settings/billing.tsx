@@ -1,14 +1,14 @@
 import { trpc } from "~/lib";
 
 export default function Page() {
-	const stripePortalUrl = trpc.org.billing.portalUrl.useMutation(() => ({
-		onSuccess: async (url) => {
-			window.open(url, "_self");
+	// const stripePortalUrl = trpc.org.billing.portalUrl.createMutation(() => ({
+	// 	onSuccess: async (url) => {
+	// 		window.open(url, "_self");
 
-			// Make sure the button is disabled until the user is in the new tab
-			await new Promise((resolve) => setTimeout(resolve, 500));
-		},
-	}));
+	// 		// Make sure the button is disabled until the user is in the new tab
+	// 		await new Promise((resolve) => setTimeout(resolve, 500));
+	// 	},
+	// }));
 
 	return (
 		<div>
@@ -17,9 +17,7 @@ export default function Page() {
 				Control billing settings for this tenant.
 			</p>
 			<div class="flex flex-col gap-4">
-				<p class="mt-2 mb-3 text-gray-700 text-xl">
-					While Mattrax is beta, it's free!
-				</p>
+				<p>While Mattrax is beta, it's free!</p>
 
 				{/* <p>Devices: 0</p> */}
 				{/* TODO: How much is owed and when it's due */}

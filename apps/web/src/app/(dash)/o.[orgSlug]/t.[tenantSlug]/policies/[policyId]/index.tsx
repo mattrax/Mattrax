@@ -1,6 +1,3 @@
-import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { usePolicy } from "./Context";
-import { For, Show, Suspense } from "solid-js";
 import {
 	Avatar,
 	AvatarFallback,
@@ -14,35 +11,22 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@mattrax/ui";
-import { StatItem } from "~/components/StatItem";
-import {
-	BruhIconLogosAndroidIcon,
-	BruhIconLogosIos,
-	BruhIconLogosLinuxTux,
-	BruhIconLogosMacos,
-	BruhIconLogosMicrosoftWindowsIcon,
-	BruhIconPhDevices,
-	BruhIconPhPuzzlePiece,
-	BruhIconPhUser,
-	renderStatusBadge,
-} from "./bruh";
-import { A } from "@solidjs/router";
-import { formatPolicy } from "~/lib/formatPolicy";
-import { getInitials, trpc } from "~/lib";
 import { createTimeAgo } from "@solid-primitives/date";
-
-const usePolicyOverview = () => {
-	const policy = usePolicy();
-	return {
-		policy,
-		overview: trpc.policy.overview.useQuery(() => ({
-			policyId: policy().id,
-		})),
-	};
-};
+import { A } from "@solidjs/router";
+import { For, Show, Suspense } from "solid-js";
+import { StatItem } from "~/components/StatItem";
+import { getInitials, trpc } from "~/lib";
+import { formatPolicy } from "~/lib/formatPolicy";
+import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
+import { usePolicy, usePolicyId } from "../ctx";
 
 export default function Page() {
-	const { policy, overview } = usePolicyOverview();
+	const policyId = usePolicyId();
+	const policy = usePolicy();
+
+	const overview = trpc.policy.overview.createQuery(() => ({
+		id: policyId(),
+	}));
 
 	return (
 		<PageLayout
@@ -50,22 +34,29 @@ export default function Page() {
 				<div class="flex items-center">
 					<PageLayoutHeading>Overview</PageLayoutHeading>
 
-					<div class="ml-4">
-						{policy().diff.length > 0 && (
-							<Tooltip placement="bottom-start">
-								<TooltipTrigger>
-									<A href="versions">
-										<Badge>Awaiting deploy</Badge>
-									</A>
-								</TooltipTrigger>
-								<TooltipContent>
-									This policy has unsaved changes that have not been deployed!
-								</TooltipContent>
-							</Tooltip>
-						)}
+					<Suspense>
+						<Show when={policy.data}>
+							{(policy) => (
+								<div class="ml-4">
+									{policy().diff.length > 0 && (
+										<Tooltip placement="bottom-start">
+											<TooltipTrigger>
+												<A href="deploys">
+													<Badge>Awaiting deploy</Badge>
+												</A>
+											</TooltipTrigger>
+											<TooltipContent>
+												This policy has unsaved changes that have not been
+												deployed!
+											</TooltipContent>
+										</Tooltip>
+									)}
 
-						{/* TODO: Badge if deployment is in progress */}
-					</div>
+									{/* TODO: Badge if deployment is in progress */}
+								</div>
+							)}
+						</Show>
+					</Suspense>
 				</div>
 			}
 		>
@@ -73,26 +64,26 @@ export default function Page() {
 				<StatItem
 					title="Devices"
 					href="assignees"
-					icon={<BruhIconPhDevices />}
-					value={overview?.latest?.devices || 0}
+					icon={<IconPhDevices />}
+					value={overview?.data?.devices || 0}
 				/>
 				<StatItem
 					title="Users"
 					href="assignees"
-					icon={<BruhIconPhUser />}
-					value={overview?.latest?.users || 0}
+					icon={<IconPhUser />}
+					value={overview?.data?.users || 0}
 				/>
 				<StatItem
 					title="Supported"
 					href="edit"
-					icon={<BruhIconPhPuzzlePiece />}
+					icon={<IconPhPuzzlePiece />}
 					body={
 						<div class="flex space-x-4">
-							<BruhIconLogosMicrosoftWindowsIcon />
-							<BruhIconLogosMacos />
-							<BruhIconLogosIos />
-							<BruhIconLogosAndroidIcon />
-							<BruhIconLogosLinuxTux />
+							<IconLogosMicrosoftWindowsIcon />
+							<IconLogosMacos />
+							<IconLogosIos />
+							<IconLogosAndroidIcon />
+							<IconLogosLinuxTux />
 						</div>
 					}
 				/>
@@ -117,25 +108,34 @@ function PolicyContent() {
 				</CardDescription>
 			</CardHeader>
 			<CardContent class="space-y-3 space-y-reverse">
-				<ul class="list-disc px-4">
-					<For
-						each={Object.entries(policy().data)}
-						fallback={
-							<h2 class="text-muted-foreground opacity-70">Policy is empty!</h2>
-						}
-					>
-						{([_, configuration]) => <li>{formatPolicy(configuration)}</li>}
-					</For>
-				</ul>
+				<Suspense>
+					<Show when={policy.data}>
+						{(policy) => (
+							<ul class="list-disc px-4">
+								<For
+									each={formatPolicy(policy().data)}
+									fallback={
+										<h2 class="text-muted-foreground opacity-70">
+											Policy is empty!
+										</h2>
+									}
+								>
+									{(txt) => <li>{txt}</li>}
+								</For>
+							</ul>
+						)}
+					</Show>
+				</Suspense>
 			</CardContent>
 		</Card>
 	);
 }
 
 function VersionHistory() {
-	const policy = usePolicy();
-	const versions = trpc.policy.versions.list.useQuery(() => ({
-		policyId: policy().id,
+	const policyId = usePolicyId();
+
+	const versions = trpc.policy.deploys.list.createQuery(() => ({
+		policyId: policyId(),
 		limit: 5,
 	}));
 
@@ -164,17 +164,14 @@ function VersionHistory() {
 									</Avatar>
 									<div class="ml-4 space-y-1">
 										<div class="flex flex-col">
-											<div class="flex space-x-4">
-												<p>
-													<A
-														href={`versions/${version.id}`}
-														class="underline-offset-2 hover:underline !mb-0"
-													>
-														{version.comment}
-													</A>
-												</p>
-												{renderStatusBadge(version.status)}
-											</div>
+											<p>
+												<A
+													href={`versions/${version.id}`}
+													class="underline-offset-2 hover:underline !mb-0"
+												>
+													{version.comment}
+												</A>
+											</p>
 											<p class="text-sm text-muted-foreground !mt-0">
 												{version.author} - {timeago()}
 											</p>

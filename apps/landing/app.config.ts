@@ -1,6 +1,6 @@
+import mattraxUI from "@mattrax/ui/vite";
 import { defineConfig } from "@solidjs/start/config";
 import { monorepoRoot } from "./loadEnv";
-import mattraxUI from "@mattrax/ui/vite";
 
 if (typeof process.env.VITE_MATTRAX_CLOUD_ORIGIN !== "string")
 	throw new Error("Missing 'VITE_MATTRAX_CLOUD_ORIGIN' env variable!");

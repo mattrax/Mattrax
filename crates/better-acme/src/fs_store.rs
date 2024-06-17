@@ -21,7 +21,7 @@ impl<S: Store> FsStore<S> {
         }
         std::fs::create_dir_all(&dir)?;
 
-        Ok(Self { dir, store: store })
+        Ok(Self { dir, store })
     }
 }
 

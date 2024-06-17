@@ -53,10 +53,10 @@ function MobileNavigationDialog({
 	isOpen: boolean;
 	close: () => void;
 }) {
-	let pathname = usePathname();
-	let searchParams = useSearchParams();
-	let initialPathname = useRef(pathname).current;
-	let initialSearchParams = useRef(searchParams).current;
+	const pathname = usePathname();
+	const searchParams = useSearchParams();
+	const initialPathname = useRef(pathname).current;
+	const initialSearchParams = useRef(searchParams).current;
 
 	useEffect(() => {
 		if (pathname !== initialPathname || searchParams !== initialSearchParams) {
@@ -69,7 +69,7 @@ function MobileNavigationDialog({
 			return;
 		}
 
-		let link = event.target.closest("a");
+		const link = event.target.closest("a");
 		if (
 			link &&
 			link.pathname + link.search + link.hash ===
@@ -150,9 +150,9 @@ export const useMobileNavigationStore = create<{
 }));
 
 export function MobileNavigation() {
-	let isInsideMobileNavigation = useIsInsideMobileNavigation();
-	let { isOpen, toggle, close } = useMobileNavigationStore();
-	let ToggleIcon = isOpen ? XIcon : MenuIcon;
+	const isInsideMobileNavigation = useIsInsideMobileNavigation();
+	const { isOpen, toggle, close } = useMobileNavigationStore();
+	const ToggleIcon = isOpen ? XIcon : MenuIcon;
 
 	return (
 		<IsInsideMobileNavigationContext.Provider value={true}>

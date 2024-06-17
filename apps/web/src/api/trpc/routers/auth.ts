@@ -1,131 +1,134 @@
+import { flushResponse, waitUntil } from "@mattrax/trpc-server-function/server";
+import { createId } from "@paralleldrive/cuid2";
 import { TRPCError } from "@trpc/server";
 import { eq, sql } from "drizzle-orm";
 import { generateId } from "lucia";
 import { alphabet, generateRandomString } from "oslo/crypto";
-import { appendResponseHeader, setCookie } from "vinxi/server";
+import { appendResponseHeader, deleteCookie, setCookie } from "vinxi/server";
 import { z } from "zod";
 
-import { lucia } from "~/api/auth";
+import { revalidate } from "@solidjs/router";
+import { checkAuth, lucia } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
+import { getObjectKeys, randomSlug } from "~/api/utils";
 import {
 	accountLoginCodes,
 	accounts,
 	db,
-	organisationAccounts,
+	domains,
+	organisationMembers,
 	organisations,
-	tenantAccounts,
 	tenants,
 } from "~/db";
+import { env } from "~/env";
+import { type Features, features } from "~/lib/featureFlags";
 import {
 	authedProcedure,
 	createTRPCRouter,
+	getTenantList,
 	isSuperAdmin,
 	publicProcedure,
 	superAdminProcedure,
 } from "../helpers";
-import { getObjectKeys, randomSlug } from "~/api/utils";
-import { createId } from "@paralleldrive/cuid2";
-import { type Features, features } from "~/lib/featureFlags";
 
 type UserResult = {
 	id: number;
 	name: string;
 	email: string;
-	tenants: Awaited<ReturnType<typeof fetchTenants>>;
 };
-
-const fetchTenants = (accountPk: number) =>
-	db
-		.select({
-			id: tenants.id,
-			name: tenants.name,
-			slug: tenants.slug,
-			ownerId: accounts.id,
-		})
-		.from(tenants)
-		.where(eq(tenantAccounts.accountPk, accountPk))
-		.innerJoin(tenantAccounts, eq(tenants.pk, tenantAccounts.tenantPk))
-		.innerJoin(accounts, eq(tenants.ownerPk, accounts.pk));
-
-const fetchOrgs = (accountPk: number) =>
-	db
-		.select({
-			id: organisations.id,
-			name: organisations.name,
-			slug: organisations.slug,
-			ownerId: accounts.id,
-		})
-		.from(organisations)
-		.where(eq(organisationAccounts.accountPk, accountPk))
-		.innerJoin(
-			organisationAccounts,
-			eq(organisations.pk, organisationAccounts.orgPk),
-		)
-		.innerJoin(accounts, eq(organisations.ownerPk, accounts.pk));
 
 export const authRouter = createTRPCRouter({
 	sendLoginCode: publicProcedure
-		.input(z.object({ email: z.string().email() }))
-		.mutation(async ({ input }) => {
-			const name = input.email.split("@")[0] ?? "";
-			const code = generateRandomString(8, alphabet("0-9"));
+		.input(
+			z.object({
+				email: z.string().email(),
+				addIfManaged: z.boolean().optional(),
+			}),
+		)
+		.mutation(async ({ input, ctx }) => {
+			flushResponse();
 
-			const id = generateId(16);
-			const result = await db
-				.insert(accounts)
-				.values({ name, email: input.email, id })
-				.onDuplicateKeyUpdate({
-					set: { email: input.email },
-				});
+			const parts = input.email.split("@");
+			// This should be impossible due to input validation on the frontend but we guard just in case
+			if (parts.length !== 2) throw new Error("Invalid email provided!");
 
-			let accountPk = Number.parseInt(result.insertId);
-			let accountId = id;
-
-			if (accountPk === 0) {
-				const account = await db.query.accounts.findFirst({
-					where: eq(accounts.email, input.email),
-				});
-				if (!account)
-					throw new Error("Error getting account we just inserted!");
-				accountPk = account.pk;
-				accountId = account.id;
-			}
-
-			await db.insert(accountLoginCodes).values({ accountPk, code });
-
-			await sendEmail({
-				type: "loginCode",
-				to: input.email,
-				subject: "Mattrax Login Code",
-				code,
+			const account = await db.query.accounts.findFirst({
+				where: eq(accounts.email, input.email),
 			});
 
-			return { accountId };
+			let accountPk = account?.pk;
+			if (!account) {
+				const [tenantWhichManagesThisDomain] = await db
+					.select({ tenantName: tenants.name })
+					.from(domains)
+					.where(eq(domains.domain, parts[1]!))
+					.innerJoin(tenants, eq(domains.tenantPk, tenants.pk));
+
+				if (tenantWhichManagesThisDomain && !input.addIfManaged)
+					throw new TRPCError({
+						code: "BAD_REQUEST",
+						message: JSON.stringify({
+							code: "USER_IS_IN_MANAGED_TENANT",
+							tenantName: tenantWhichManagesThisDomain.tenantName,
+						}),
+					});
+
+				const result = await db
+					.insert(accounts)
+					.values({
+						id: generateId(16),
+						name: parts[0] ?? "",
+						email: input.email,
+					})
+					.onDuplicateKeyUpdate({
+						set: { email: input.email },
+					});
+
+				accountPk = Number.parseInt(result.insertId);
+			}
+
+			const code = generateRandomString(8, alphabet("0-9"));
+
+			await db
+				.insert(accountLoginCodes)
+				.values({ accountPk: accountPk!, code });
+
+			waitUntil(
+				sendEmail({
+					type: "loginCode",
+					to: input.email,
+					subject: "Mattrax Login Code",
+					code,
+				}),
+			);
 		}),
 
 	verifyLoginCode: publicProcedure
 		.input(z.object({ code: z.string() }))
 		.mutation(async ({ input, ctx }) => {
-			const code = await db.query.accountLoginCodes.findFirst({
+			const code = await ctx.db.query.accountLoginCodes.findFirst({
 				where: eq(accountLoginCodes.code, input.code),
 			});
 
 			if (!code)
 				throw new TRPCError({ code: "NOT_FOUND", message: "Invalid code" });
 
-			await db
-				.delete(accountLoginCodes)
-				.where(eq(accountLoginCodes.code, input.code));
-
-			const [[account], [orgConnection]] = await Promise.all([
-				db
-					.select({ pk: accounts.pk, id: accounts.id, email: accounts.email })
+			const [_, [account], [orgConnection]] = await Promise.all([
+				ctx.db
+					.delete(accountLoginCodes)
+					.where(eq(accountLoginCodes.code, input.code)),
+				ctx.db
+					.select({
+						pk: accounts.pk,
+						id: accounts.id,
+						email: accounts.email,
+					})
 					.from(accounts)
 					.where(eq(accounts.pk, code.accountPk)),
-				db
-					.select({ orgPk: organisationAccounts.orgPk })
-					.from(organisationAccounts)
-					.where(eq(organisationAccounts.accountPk, code.accountPk)),
+				ctx.db
+					.select({ orgPk: organisationMembers.orgPk })
+					.from(organisationMembers)
+					.where(eq(organisationMembers.accountPk, code.accountPk)),
 			]);
 
 			if (!account)
@@ -138,28 +141,35 @@ export const authRouter = createTRPCRouter({
 				const id = createId();
 				const slug = randomSlug(account.email.split("@")[0]!);
 
-				await db.transaction(async (db) => {
+				await ctx.db.transaction(async (db) => {
 					const org = await db
 						.insert(organisations)
 						.values({ id, slug, name: slug, ownerPk: account.pk });
-					await db.insert(organisationAccounts).values({
+
+					await db.insert(organisationMembers).values({
 						accountPk: account.pk,
 						orgPk: Number.parseInt(org.insertId),
 					});
 				});
 			}
 
-			const session = await lucia.createSession(account.id, {});
+			const session = await lucia.createSession(account.id, {
+				userAgent: `w${"web"}`, // TODO
+				location: "earth", // TODO
+			});
 
 			appendResponseHeader(
-				ctx.event,
 				"Set-Cookie",
 				lucia.createSessionCookie(session.id).serialize(),
 			);
 
-			setCookie(ctx.event, "isLoggedIn", "true", {
+			setCookie("isLoggedIn", "true", {
 				httpOnly: false,
+				domain: env.COOKIE_DOMAIN,
 			});
+
+			flushResponse();
+			revalidate([checkAuth.key, getTenantList.key]);
 
 			return true;
 		}),
@@ -169,20 +179,14 @@ export const authRouter = createTRPCRouter({
 			id: account.id,
 			name: account.name,
 			email: account.email,
-			orgs: await fetchOrgs(account.pk),
-			tenants: await fetchTenants(account.pk),
 			...(account.features?.length > 0 ? { features: account.features } : {}),
 			...(isSuperAdmin(account) ? { superadmin: true } : {}),
 		};
 	}),
 
 	update: authedProcedure
-		.input(
-			z.object({
-				name: z.string().optional(),
-			}),
-		)
-		.mutation(async ({ ctx: { account }, input }) => {
+		.input(z.object({ name: z.string().optional() }))
+		.mutation(async ({ ctx: { account, db }, input }) => {
 			// Skip DB if we have nothing to update
 			if (input.name !== undefined) {
 				await db
@@ -190,17 +194,18 @@ export const authRouter = createTRPCRouter({
 					.set({ name: input.name })
 					.where(eq(accounts.pk, account.pk));
 			}
-
-			return {
-				id: account.pk,
-				name: input.name || account.name,
-				email: account.email,
-				tenants: await fetchTenants(account.pk),
-			} satisfies UserResult;
 		}),
 
-	logout: authedProcedure.mutation(async ({ ctx: { session } }) => {
-		await lucia.invalidateSession(session.id);
+	logout: publicProcedure.mutation(async () => {
+		const data = await checkAuth();
+		if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+		deleteCookie(lucia.sessionCookieName);
+		deleteCookie("isLoggedIn");
+
+		flushResponse();
+
+		await lucia.invalidateSession(data.session.id);
 	}),
 
 	//   delete: authedProcedure.mutation(async ({ ctx }) => {
@@ -208,20 +213,16 @@ export const authRouter = createTRPCRouter({
 
 	//     // TODO: Require the user to leave/delete all tenant's first
 
-	//     await db.delete(accounts).where(eq(accounts.id, session.id));
+	//     await ctx.db.delete(accounts).where(eq(accounts.id, session.id));
 	//     await ctx.session.clear();
 	//     return {};
 	//   }),
 
 	admin: createTRPCRouter({
 		getFeatures: superAdminProcedure
-			.input(
-				z.object({
-					email: z.string(),
-				}),
-			)
-			.query(async ({ input }) => {
-				const [user] = await db
+			.input(z.object({ email: z.string() }))
+			.query(async ({ input, ctx }) => {
+				const [user] = await ctx.db
 					.select({ features: accounts.features })
 					.from(accounts)
 					.where(eq(accounts.email, input.email));
@@ -249,7 +250,7 @@ export const authRouter = createTRPCRouter({
 					if (!isSuperAdmin(ctx.account))
 						throw new TRPCError({ code: "FORBIDDEN" });
 
-					const [actualAccount] = await db
+					const [actualAccount] = await ctx.db
 						.select({
 							pk: accounts.pk,
 							email: accounts.email,
@@ -272,11 +273,9 @@ export const authRouter = createTRPCRouter({
 					throw new TRPCError({ code: "FORBIDDEN" });
 				}
 
-				await db
+				await ctx.db
 					.update(accounts)
-					.set({
-						features: features.length === 0 ? sql`NULL` : features,
-					})
+					.set({ features: features.length === 0 ? sql`NULL` : features })
 					.where(eq(accounts.pk, account.pk));
 			}),
 	}),

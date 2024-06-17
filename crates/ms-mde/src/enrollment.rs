@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use easy_xml_derive::{XmlDeserialize, XmlSerialize};
 
 use crate::{header::BinarySecurityToken, RequestHeader, ResponseHeader};
@@ -52,9 +54,11 @@ pub struct EnrollmentRequest {
     pub body: EnrollmentRequestBody,
 }
 
-impl EnrollmentRequest {
-    pub fn from_str(input: &str) -> Result<Self, easy_xml::de::Error> {
-        easy_xml::de::from_str(input)
+impl FromStr for EnrollmentRequest {
+    type Err = easy_xml::de::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        easy_xml::de::from_str(s)
     }
 }
 
@@ -125,10 +129,8 @@ pub struct EnrollmentResponse {
 
 impl EnrollmentResponse {
     pub fn to_string(&self) -> Result<String, easy_xml::se::Error> {
-        easy_xml::se::to_string(self).map(|v| {
-            v.replace(r#"<?xml version="1.0" encoding="UTF-8"?>"#, "")
-                .into()
-        })
+        easy_xml::se::to_string(self)
+            .map(|v| v.replace(r#"<?xml version="1.0" encoding="UTF-8"?>"#, ""))
     }
 }
 

@@ -1,14 +1,14 @@
 import { slugifyWithCounter } from "@sindresorhus/slugify";
 import glob from "fast-glob";
-import * as fs from "fs";
+import * as fs from "node:fs";
 import { toString } from "mdast-util-to-string";
-import * as path from "path";
+import * as path from "node:path";
 import { remark } from "remark";
 import remarkMdx from "remark-mdx";
 import { createLoader } from "simple-functional-loader";
 import { filter } from "unist-util-filter";
 import { SKIP, visit } from "unist-util-visit";
-import * as url from "url";
+import * as url from "node:url";
 
 const __filename = url.fileURLToPath(import.meta.url);
 const processor = remark().use(remarkMdx).use(extractSections);
@@ -31,9 +31,9 @@ function extractSections() {
 
 		visit(tree, (node) => {
 			if (node.type === "heading" || node.type === "paragraph") {
-				let content = toString(excludeObjectExpressions(node));
+				const content = toString(excludeObjectExpressions(node));
 				if (node.type === "heading" && node.depth <= 2) {
-					let hash = node.depth === 1 ? null : slugify(content);
+					const hash = node.depth === 1 ? null : slugify(content);
 					sections.push([content, hash, []]);
 				} else {
 					sections.at(-1)?.[2].push(content);
@@ -45,7 +45,7 @@ function extractSections() {
 }
 
 export default function Search(nextConfig = {}) {
-	let cache = new Map();
+	const cache = new Map();
 
 	return Object.assign({}, nextConfig, {
 		webpack(config, options) {
@@ -53,20 +53,20 @@ export default function Search(nextConfig = {}) {
 				test: __filename,
 				use: [
 					createLoader(function () {
-						let appDir = path.resolve("./src/app");
+						const appDir = path.resolve("./src/app");
 						this.addContextDependency(appDir);
 
-						let files = glob.sync("**/*.mdx", { cwd: appDir });
-						let data = files.map((file) => {
-							let url = "/" + file.replace(/(^|\/)page\.mdx$/, "");
-							let mdx = fs.readFileSync(path.join(appDir, file), "utf8");
+						const files = glob.sync("**/*.mdx", { cwd: appDir });
+						const data = files.map((file) => {
+							const url = `/${file.replace(/(^|\/)page\.mdx$/, "")}`;
+							const mdx = fs.readFileSync(path.join(appDir, file), "utf8");
 
 							let sections = [];
 
 							if (cache.get(file)?.[0] === mdx) {
 								sections = cache.get(file)[1];
 							} else {
-								let vfile = { value: mdx, sections };
+								const vfile = { value: mdx, sections };
 								processor.runSync(processor.parse(vfile), vfile);
 								cache.set(file, [mdx, sections]);
 							}

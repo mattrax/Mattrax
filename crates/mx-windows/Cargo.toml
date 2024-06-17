@@ -1,0 +1,18 @@
+[package]
+name = "mx-windows"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+mx-db = { path = "../mx-db" }
+mx-policy = { path = "../mx-policy" }
+ms-mdm = { path = "../ms-mdm" }
+ms-mde = { path = "../ms-mde" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = "0.1.40"
+rustls = "0.23.6"
+x509-parser = { version = "0.16.0", features = ["verify"] }
+futures = { version = "0.3.30", features = ["async-await"] }

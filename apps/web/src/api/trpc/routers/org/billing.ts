@@ -1,14 +1,14 @@
+import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import type Stripe from "stripe";
-import { stripe } from "~/api/stripe";
-import { db, organisations } from "~/db";
+import { useStripe } from "~/api/stripe";
+import { organisations } from "~/db";
 import { env } from "~/env";
 import { createTRPCRouter, orgProcedure } from "../../helpers";
-import { TRPCError } from "@trpc/server";
 
 export const billingRouter = createTRPCRouter({
 	portalUrl: orgProcedure.mutation(async ({ ctx }) => {
-		const [org] = await db
+		const [org] = await ctx.db
 			.select({
 				name: organisations.name,
 				billingEmail: organisations.billingEmail,
@@ -20,6 +20,8 @@ export const billingRouter = createTRPCRouter({
 			throw new TRPCError({ code: "NOT_FOUND", message: "organisation" }); // TODO: Proper error code which the frontend knows how to handle
 
 		let customerId: string;
+		const stripe = await useStripe();
+
 		if (!org.stripeCustomerId) {
 			try {
 				const customer = await stripe.customers.create({
@@ -27,7 +29,7 @@ export const billingRouter = createTRPCRouter({
 					email: org.billingEmail || undefined,
 				});
 
-				await db
+				await ctx.db
 					.update(organisations)
 					.set({ stripeCustomerId: customer.id })
 					.where(eq(organisations.pk, ctx.org.pk));
@@ -46,7 +48,7 @@ export const billingRouter = createTRPCRouter({
 
 		const body = new URLSearchParams({
 			customer: customerId,
-			return_url: `${env.VITE_PROD_URL}/o/${ctx.org.slug}/settings`,
+			return_url: `${env.VITE_PROD_ORIGIN}/o/${ctx.org.slug}/settings`,
 		});
 
 		const resp = await fetch(
@@ -54,7 +56,7 @@ export const billingRouter = createTRPCRouter({
 			{
 				method: "POST",
 				headers: {
-					Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+					Authorization: `Bearer ${stripe.secret}`,
 					"Content-Type": "application/x-www-form-urlencoded",
 				},
 				body: body.toString(),

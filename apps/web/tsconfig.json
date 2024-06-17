@@ -10,10 +10,18 @@
 			"~/*": ["./src/*"],
 			"~c/*": ["./src/components/*"],
 			"~dash/*": ["./src/app/(dash)/*"],
+			"~[orgSlug]/*": ["./src/app/(dash)/o.[orgSlug]/*"],
+			"~[tenantSlug]": ["./src/app/(dash)/o.[orgSlug]/t.[tenantSlug].tsx"],
 			"~[tenantSlug]/*": ["./src/app/(dash)/o.[orgSlug]/t.[tenantSlug]/*"]
 		}
 	},
 	"include": ["src/"],
 	"exclude": ["node_modules", "dist"],
-	"references": [{ "path": "../email" }, { "path": "../../packages/ui" }]
+	"references": [
+		{ "path": "../../packages/ui" },
+		{ "path": "../../packages/email" },
+		{ "path": "../../packages/trpc-server-function" },
+		{ "path": "../../packages/policy" },
+		{ "path": "../../packages/policy-composer" }
+	]
 }

@@ -1,54 +1,83 @@
-import { type ParentProps, Show, Suspense, startTransition } from "solid-js";
-import { type RouteDefinition, useNavigate } from "@solidjs/router";
-import { z } from "zod";
+import { type RouteDefinition, createAsync } from "@solidjs/router";
+import { type ParentProps, Show, Suspense, createMemo } from "solid-js";
 
-import { useZodParams } from "~/lib/useZodParams";
+import { useCommandGroup } from "~/components/CommandPalette";
+import { trpc } from "~/lib";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { AuthContext } from "~c/AuthContext";
-import { TenantContext } from "./t.[tenantSlug]/Context";
-import { TenantSwitcher } from "./t.[tenantSlug]/TenantSwitcher";
-
-export function useTenantSlug() {
-	const params = useZodParams({ tenantSlug: z.string() });
-	return () => params.tenantSlug;
-}
-
-const NAV_ITEMS = [
-	{ title: "Dashboard", href: "" },
-	{ title: "Users", href: "users" },
-	{ title: "Devices", href: "devices" },
-	{ title: "Policies", href: "policies" },
-	{ title: "Applications", href: "apps" },
-	{ title: "Groups", href: "groups" },
-	{ title: "Settings", href: "settings" },
-];
+import { cachedOrgs } from "../utils";
+import { useTenantParams } from "./t.[tenantSlug]/ctx";
+import { cachedTenantsForOrg } from "./utils";
 
 export const route = {
-	info: {
-		NAV_ITEMS,
-		BREADCRUMB: {
-			hasNestedSegments: true,
-			Component: (props: any) => {
-				const navigate = useNavigate();
-
-				return (
-					<AuthContext>
-						<TenantContext>
-							<TenantSwitcher
-								setActiveTenant={(slug) => {
-									startTransition(() => navigate(`${props.path}/../${slug}`));
-								}}
-							/>
-						</TenantContext>
-					</AuthContext>
-				);
-			},
-		},
+	load: ({ params }) => {
+		trpc.useContext().tenant.list.ensureData({ orgSlug: params.orgSlug! });
 	},
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
-	const params = useZodParams({ tenantSlug: z.string() });
+	const params = useTenantParams();
+
+	const orgs = createAsync(() => cachedOrgs());
+
+	createMemo(
+		createAsync(async () => {
+			const org = orgs()?.find((o) => o.slug === params.orgSlug);
+			if (!org) return;
+			return await cachedTenantsForOrg(org.id);
+		}),
+	);
+
+	useCommandGroup("Tenant", [
+		{
+			title: "Overview",
+			href: "",
+		},
+		{
+			title: "Users",
+			href: "users",
+		},
+		{
+			title: "Devices",
+			href: "devices",
+		},
+		{
+			title: "Policies",
+			href: "policies",
+		},
+		{
+			title: "Applications",
+			href: "apps",
+		},
+		{
+			title: "Groups",
+			href: "groups",
+		},
+		{
+			title: "Settings",
+			href: "settings",
+		},
+		{
+			title: "Create Tenant",
+			onClick: () => alert(1), // TODO
+		},
+		{
+			title: "Invite Account",
+			onClick: () => alert(1), // TODO
+		},
+		{
+			title: "Create Policy",
+			onClick: () => alert(1), // TODO
+		},
+		{
+			title: "Create Application",
+			onClick: () => alert(1), // TODO
+		},
+		{
+			title: "Create Group",
+			onClick: () => alert(1), // TODO
+		},
+		// TODO: Search/open group/policy/application from popup
+	]);
 
 	return (
 		<>

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use mattrax_utils::file_logger;
+use mx_utils::file_logger;
 
 mod cli;
 

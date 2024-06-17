@@ -1,7 +1,4 @@
-use ms_mdm::{
-    util::strip_whitespace_from_xml, CmdId, Final, Get, Source, SyncBody, SyncHdr, SyncML, Target,
-};
-use pretty_assertions::assert_eq;
+use ms_mdm::{util::strip_whitespace_from_xml, SyncML};
 
 // TODO: Fix basic tests
 // #[test]

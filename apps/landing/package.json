@@ -5,27 +5,28 @@
 	"scripts": {
 		"dev": "vinxi dev --host 0.0.0.0 --port 3001",
 		"build": "vinxi build",
+		"cbuild": "NITRO_PRESET=cloudflare_pages vinxi build",
 		"start": "vinxi start"
 	},
 	"devDependencies": {
-		"@iconify/json": "^2.2.190",
+		"@iconify/json": "^2.2.211",
 		"@tailwindcss/forms": "^0.5.7",
-		"@tailwindcss/typography": "^0.5.10",
-		"autoprefixer": "^10.4.18",
-		"tailwindcss": "^3.4.1"
+		"@tailwindcss/typography": "^0.5.13",
+		"autoprefixer": "^10.4.19",
+		"tailwindcss": "^3.4.3"
 	},
 	"dependencies": {
-		"@fontsource-variable/inter": "^5.0.17",
-		"@fontsource/inter": "^5.0.17",
-		"@kobalte/core": "^0.12.3",
+		"@fontsource-variable/inter": "^5.0.18",
+		"@fontsource/inter": "^5.0.18",
+		"@kobalte/core": "^0.13.3",
 		"@mattrax/ui": "workspace:*",
-		"@solidjs/router": "^0.13.1",
-		"@solidjs/start": "1.0.0-rc.0",
-		"@tanstack/solid-form": "^0.16.0",
+		"@solidjs/router": "^0.13.3",
+		"@solidjs/start": "1.0.1",
+		"@tanstack/solid-form": "^0.20.0",
 		"h3": "^1.11.1",
-		"solid-js": "^1.8.15",
-		"vinxi": "^0.3.10",
-		"vite": "^5.1.5",
-		"zod": "^3.22.4"
+		"solid-js": "^1.8.17",
+		"vinxi": "=0.3.11",
+		"vite": "^5.2.11",
+		"zod": "^3.23.8"
 	}
 }

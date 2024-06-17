@@ -1,0 +1,23 @@
+{
+	"name": "@mattrax/trpc-server-function",
+	"type": "module",
+	"private": true,
+	"sideEffects": false,
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts",
+		"./server": "./src/server.ts",
+		"./client": "./src/client.ts"
+	},
+	"dependencies": {
+		"@solid-mediakit/trpc": "^3.0.2",
+		"@solidjs/router": "^0.13.3",
+		"@tanstack/query-core": "^5.36.1",
+		"@trpc/client": "^10.45.2",
+		"@trpc/server": "^10.45.2"
+	},
+	"peerDependencies": {
+		"vinxi": "*"
+	}
+}

@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use mattrax_utils::file_logger;
+use mx_utils::file_logger;
+use rustls::crypto;
 
 pub(crate) mod api;
 mod cli;
 pub(crate) mod config;
-pub(crate) mod db;
 
 #[tokio::main]
 async fn main() {
@@ -30,8 +30,10 @@ async fn main() {
 
     std::panic::set_hook(Box::new(move |panic| tracing::error!("{panic}")));
 
+    crypto::ring::default_provider().install_default().ok();
+
     match cli.command {
-        cli::Commands::Init(cmd) => cmd.run(data_dir),
+        cli::Commands::Init(cmd) => cmd.run(data_dir).await,
         cli::Commands::Serve(cmd) => cmd.run(data_dir).await,
     }
 }

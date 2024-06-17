@@ -1,8 +1,10 @@
 use clap::{Parser, Subcommand};
 
+mod deploy;
+mod export;
 mod login;
+mod open;
 mod pull;
-mod push;
 mod validate;
 
 #[derive(Parser)]
@@ -31,8 +33,10 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    Validate(validate::Command),
-    Push(push::Command),
-    Pull(pull::Command),
     Login(login::Command),
+    Pull(pull::Command),
+    Deploy(deploy::Command),
+    Validate(validate::Command),
+    Export(export::Command),
+    Open(open::Command),
 }

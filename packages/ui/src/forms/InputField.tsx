@@ -1,4 +1,9 @@
-import type { DeepKeys, FieldApi, FormApi } from "@tanstack/solid-form";
+import type {
+	DeepKeys,
+	FieldApi,
+	FieldComponent,
+	FormApi,
+} from "@tanstack/solid-form";
 import {
 	type Accessor,
 	type Component,
@@ -8,7 +13,7 @@ import {
 	splitProps,
 } from "solid-js";
 
-import { clsx } from "clsx";
+import clsx from "clsx";
 import { Input, Label } from "..";
 
 export function InputField<
@@ -24,6 +29,11 @@ export function InputField<
 		name: TName;
 		label?: string;
 		labelClasses?: string;
+		onInput?: (e: Event) => void;
+		fieldProps?: Omit<
+			ComponentProps<FieldComponent<TData>>,
+			"children" | "name"
+		>;
 	},
 ) {
 	const [_, inputProps] = splitProps(props, [
@@ -35,29 +45,23 @@ export function InputField<
 	]);
 	const id = createUniqueId();
 
-	const form = {
-		get Field() {
-			return props.form.Field as unknown as Component<{
-				name: TName;
-				children: (field: Accessor<FieldApi<TData, TName>>) => JSX.Element;
-			}>;
-		},
-	};
-
 	return (
-		<form.Field name={props.name}>
+		<props.form.Field name={props.name} {...props.fieldProps}>
 			{(field) => (
 				<div class={clsx("flex flex-col space-y-1.5", props.fieldClass)}>
 					{props.label && <Label for={id}>{props.label}</Label>}
 					<Input
 						{...inputProps}
 						id={id}
-						value={field().state.value}
-						onInput={(e) => field().handleChange(e.currentTarget.value as any)}
+						value={field().state.value as any}
+						onInput={(e) => {
+							if ("onInput" in props) props.onInput?.(e);
+							field().handleChange(e.currentTarget.value as any);
+						}}
 						onBlur={() => field().handleBlur()}
 					/>
 				</div>
 			)}
-		</form.Field>
+		</props.form.Field>
 	);
 }

@@ -1,21 +1,7 @@
-import {
-	type CreateTRPCSolidStart,
-	createTRPCSolidStart,
-} from "@solid-mediakit/trpc";
-import { TRPCClientError, httpBatchLink } from "@trpc/client";
-import superjson from "superjson";
+import { TRPCClientError } from "@trpc/client";
 import type { AppRouter } from "~/api";
 
-export const trpc: CreateTRPCSolidStart<AppRouter> = createTRPCSolidStart({
-	config: () => ({
-		links: [
-			httpBatchLink({
-				url: `${location.origin}/api/trpc`,
-			}),
-		],
-		transformer: superjson,
-	}),
-});
+export * from "./trpc";
 
 export function SuspenseError(props: { name: string }) {
 	// Hitting the certain higher-level suspense boundaries means we don't have a UI to show which is a bad UI so we log the warning.

@@ -5,6 +5,10 @@
 >
 > Feel free to reach out in [the Discord](https://discord.gg/WPBHmDSfAn) if your having problems!
 
+> [!WARNING]  
+> This guide should not be used for a production deployment. It is setup strictly for development purposes.
+
+
 To contribute you will require:
  - A MySQL database
  - Azure app registration - used for the Entra ID identity provider
@@ -25,11 +29,11 @@ pnpm dev
 # pnpm db:studio
 
 # MDM backend
-cargo run -p mattrax -- init
-cargo run -p mattrax -- serve
+cargo mattrax init
+cargo mattrax serve
 
-# Configure
-pnpm configure tauri dev
+# CLI
+cargo mttx help
 ```
 
 ## Things to know:

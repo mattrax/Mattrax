@@ -1,17 +1,14 @@
-import { For, type ParentProps, Suspense } from "solid-js";
 import { A } from "@solidjs/router";
+import { For, type ParentProps, Suspense } from "solid-js";
 import type { JSX } from "solid-js";
 
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
-import { AuthContext } from "~c/AuthContext";
 
-const navigation = [{ name: "General", href: "general" }];
-
-export const route = {
-	info: {
-		BREADCRUMB: { Component: () => <>Settings</> },
-	},
-};
+const navigation = [
+	{ name: "General", href: "general" },
+	{ name: "Updates", href: "updates" },
+	{ name: "Superadmins", href: "superadmins" },
+];
 
 export default function Layout(props: ParentProps) {
 	return (
@@ -29,11 +26,7 @@ export default function Layout(props: ParentProps) {
 						</For>
 					</ul>
 				</nav>
-				<main class="flex-1 overflow-y-auto px-4">
-					<Suspense>
-						<AuthContext>{props.children}</AuthContext>
-					</Suspense>
-				</main>
+				<main class="flex-1 overflow-y-auto px-4">{props.children}</main>
 			</div>
 		</PageLayout>
 	);

@@ -1,6 +1,6 @@
 import type { APIHandler } from "@solidjs/start/server";
 
-import { app } from "~/api/server";
+import { app } from "~/api/rest";
 
 const createHandler = (): APIHandler => async (event) => {
 	return await app.fetch(event.request, {

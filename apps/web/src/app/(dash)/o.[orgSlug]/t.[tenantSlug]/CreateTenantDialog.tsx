@@ -1,7 +1,6 @@
 import { type ParentProps, createSignal } from "solid-js";
 import { z } from "zod";
 
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import {
 	Button,
 	DialogContent,
@@ -9,8 +8,9 @@ import {
 	DialogRoot,
 	DialogTitle,
 } from "@mattrax/ui";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { trpc } from "~/lib";
-import { useOrgSlug } from "../../o.[orgSlug]";
+import { useOrgSlug } from "../ctx";
 
 export function CreateTenantDialog(
 	props: {
@@ -19,7 +19,7 @@ export function CreateTenantDialog(
 ) {
 	const [open, setOpen] = createSignal(false);
 
-	const mutation = trpc.tenant.create.useMutation(() => ({
+	const mutation = trpc.tenant.create.createMutation(() => ({
 		onSuccess: async (slug) => {
 			// TODO: Get the data back in the response instead of a separate request
 			// Session also holds tenants

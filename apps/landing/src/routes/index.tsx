@@ -1,5 +1,3 @@
-import type { JSX } from "solid-js";
-import DashboardImg from "../assets/dashboard.png";
 import {
 	Button,
 	Dialog,
@@ -7,20 +5,22 @@ import {
 	DialogDescription,
 	DialogHeader,
 	DialogTitle,
+	DialogTrigger,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
 	useController,
 } from "@mattrax/ui";
-import { z } from "zod";
 import {
 	Form,
 	InputField,
 	SelectField,
 	createZodForm,
 } from "@mattrax/ui/forms";
-import { As } from "@kobalte/core";
+import type { JSX } from "solid-js";
+import { z } from "zod";
+import DashboardImg from "../assets/dashboard.png";
 
 // TODO: Setup unplugin icons
 function PhLaptop(props: JSX.IntrinsicElements["svg"]) {
@@ -220,7 +220,8 @@ export default function Page() {
 
 function Waitlist() {
 	return (
-		<Dialog trigger={<As component={Button}>Join Waitlist</As>}>
+		<Dialog>
+			<DialogTrigger as={Button}>Join Waitlist</DialogTrigger>
 			<DialogContent class="md:w-auto w-11/12">
 				<DialogHeader>
 					<DialogTitle>Join Waitlist</DialogTitle>

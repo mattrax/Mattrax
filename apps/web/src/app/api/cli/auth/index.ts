@@ -1,16 +1,20 @@
 import { createId } from "@paralleldrive/cuid2";
-import { signJWT } from "~/api/jwt";
+import { signJWT } from "~/api/utils/jwt";
 
 import { cliAuthCodes, db } from "~/db";
 import { env } from "~/env";
 
 export async function POST() {
-	const id = createId();
+	throw new Error("THE CLI IS NOT SUPPORTED YET");
 
-	await db.insert(cliAuthCodes).values({ code: id });
+	// TODO: Authenticated user
 
-	return Response.json({
-		url: `${env.VITE_PROD_URL}/cli/${id}`,
-		jwt: await signJWT({ code: id }),
-	});
+	// const id = createId();
+
+	// await db.insert(cliAuthCodes).values({ code: id });
+
+	// return Response.json({
+	// 	url: `${env.VITE_PROD_ORIGIN}/login/cli/${id}`,
+	// 	jwt: await signJWT({ code: id }),
+	// });
 }

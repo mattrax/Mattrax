@@ -3,9 +3,15 @@
 	"references": [
 		{ "path": "./apps/web" },
 		{ "path": "./apps/landing" },
-		{ "path": "./apps/email" },
 		{ "path": "./packages/drizzle-to-rs" },
-		{ "path": "./packages/ui" }
+		{ "path": "./packages/configuration-schemas" },
+		{ "path": "./packages/drizzle-to-rs" },
+		{ "path": "./packages/ms-graph" },
+		{ "path": "./packages/mysql-planetscale" },
+		{ "path": "./packages/policy-composer" },
+		{ "path": "./packages/trpc-server-function" },
+		{ "path": "./packages/ui" },
+		{ "path": "./infra" }
 	],
 	"compilerOptions": {
 		"incremental": true,

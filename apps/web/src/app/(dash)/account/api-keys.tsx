@@ -1,3 +1,4 @@
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	Button,
 	Card,
@@ -36,7 +37,7 @@ const columns = [
 ];
 
 export default function Page() {
-	const apiKeys = trpc.apiKey.list.useQuery();
+	const apiKeys = trpc.apiKey.list.createQuery();
 
 	const table = createStandardTable({
 		get data() {
@@ -76,12 +77,12 @@ function CreateAPIKeyCard() {
 		open: false,
 	});
 
-	const trpcCtx = trpc.useContext();
-	const createAPIKey = trpc.apiKey.create.useMutation(() => ({
-		onSuccess: async (apiKey) => {
-			await trpcCtx.apiKey.list.refetch();
-			setDialogState({ open: true, apiKey });
-		},
+	const apiKeys = trpc.apiKey.list.createQuery(void 0, () => ({
+		enabled: false,
+	}));
+	const createAPIKey = trpc.apiKey.create.createMutation(() => ({
+		onSuccess: (apiKey) => setDialogState({ open: true, apiKey }),
+		...withDependantQueries(apiKeys),
 	}));
 	const form = createZodForm({
 		schema: z.object({ name: z.string() }),
@@ -115,8 +116,8 @@ function CreateAPIKeyCard() {
 					setDialogState((s) => {
 						if (createAPIKey.data)
 							return { open, apiKey: createAPIKey.data } satisfies DialogState;
-						else if ("apiKey" in s) return { ...s, open } satisfies DialogState;
-						else return { open: false } satisfies DialogState;
+						if ("apiKey" in s) return { ...s, open } satisfies DialogState;
+						return { open: false } satisfies DialogState;
 					})
 				}
 			>

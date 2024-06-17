@@ -1,0 +1,1 @@
+ALTER TABLE `policy_deploy_status` MODIFY COLUMN `variant` enum('pending','success','failed') NOT NULL;

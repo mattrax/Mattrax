@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 /// The 'mode' query parameter specifies the mode in which the MDM client is launched.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Mode {
@@ -8,18 +10,22 @@ pub enum Mode {
 }
 
 impl Mode {
-    pub fn from_str(s: &str) -> Option<Mode> {
-        match s {
-            "maintenance" => Some(Mode::Maintenance),
-            "machine" => Some(Mode::Machine),
-            _ => None,
-        }
-    }
-
     pub fn as_str(&self) -> &str {
         match self {
             Mode::Maintenance => "maintenance",
             Mode::Machine => "machine",
+        }
+    }
+}
+
+impl FromStr for Mode {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "maintenance" => Ok(Mode::Maintenance),
+            "machine" => Ok(Mode::Machine),
+            _ => Err(()),
         }
     }
 }

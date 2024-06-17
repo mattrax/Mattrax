@@ -1,45 +1,57 @@
 import { useNavigate } from "@solidjs/router";
 import { startTransition } from "solid-js";
 
-import { ConfirmDialog } from "~c/ConfirmDialog";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Button } from "@mattrax/ui";
 import { trpc } from "~/lib";
-import { useTenant } from "../Context";
+import { ConfirmDialog } from "~c/ConfirmDialog";
+import { useOrgSlug } from "../../ctx";
+import { useTenant } from "../ctx";
 
 export function DeleteTenantButton() {
-	const deleteTenant = trpc.tenant.delete.useMutation();
+	const orgSlug = useOrgSlug();
+	const tenants = trpc.tenant.list.createQuery(
+		() => ({
+			orgSlug: orgSlug(),
+		}),
+		() => ({
+			enabled: false,
+		}),
+	);
+
+	const deleteTenant = trpc.tenant.delete.createMutation(() => ({
+		onSuccess() {},
+		...withDependantQueries(tenants, {
+			blockOn: true,
+		}),
+	}));
 	const navigate = useNavigate();
 	const tenant = useTenant();
-	const trpcCtx = trpc.useContext();
 
 	return (
 		<ConfirmDialog>
 			{(confirm) => (
 				<Button
 					variant="destructive"
+					disabled={tenant.query.isPending}
 					onClick={() =>
 						confirm({
 							title: "Delete tenant?",
-							action: `Delete '${tenant().name}'`,
-							description: (
+							action: `Delete '${tenant()!.name}'`,
+							description: () => (
 								<>
 									Are you sure you want to delete your tenant along with all{" "}
 									<b>users</b>, <b>devices</b>, <b>policies</b>,{" "}
 									<b>applications</b> and <b>groups</b>?
 								</>
 							),
-							inputText: tenant().name,
+							inputText: tenant()!.name,
 							async onConfirm() {
 								await deleteTenant.mutateAsync({
-									tenantSlug: tenant().slug,
+									tenantSlug: tenant()!.slug,
 								});
 
-								await trpcCtx.auth.me.refetch();
-
-								// lets the rq cache update -_-
-								await new Promise((res) => setTimeout(res, 0));
-
-								await startTransition(() => navigate("/"));
+								await startTransition(() => navigate(`/o/${orgSlug()}`));
 							},
 						})
 					}

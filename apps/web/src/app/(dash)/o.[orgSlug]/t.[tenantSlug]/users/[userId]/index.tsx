@@ -1,49 +1,93 @@
-import { type ParentProps, Show, createSignal, For, Suspense } from "solid-js";
-import { As } from "@kobalte/core";
-import clsx from "clsx";
-import { z } from "zod";
-
-import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
-import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import {
 	Button,
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
 	DialogContent,
 	DialogDescription,
 	DialogHeader,
 	DialogRoot,
 	DialogTitle,
 	DialogTrigger,
+	Label,
+	SheetTrigger,
 	buttonVariants,
 } from "@mattrax/ui";
-import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { trpc } from "~/lib";
-import { useUser } from "./Context";
-import { BruhIconPhLaptop } from "./bruh";
-import { A } from "@solidjs/router";
-import {
-	AddMemberSheet,
-	memberSheetColumns,
-} from "~[tenantSlug]/AddMemberSheet";
+import { A, type RouteDefinition } from "@solidjs/router";
+import clsx from "clsx";
+import pluralize from "pluralize";
+import { For, type ParentProps, Show, Suspense, createSignal } from "solid-js";
+import { z } from "zod";
+
 import { StandardTable, createStandardTable } from "~/components/StandardTable";
+import { trpc } from "~/lib";
+import { AUTH_PROVIDER_DISPLAY, userAuthProviderUrl } from "~/lib/values";
+import {
+	VariantTableSheet,
+	type VariantTableVariants,
+	createVariantTableColumns,
+} from "~c/VariantTableSheet";
+import { useTenantSlug } from "../../ctx";
+import { useUser, useUserId } from "../ctx";
+
+export const route = {
+	load: ({ params }) => {
+		trpc.useContext().user.devices.ensureData({ id: params.userId! });
+		trpc.useContext().user.assignments.ensureData({ id: params.userId! });
+	},
+} satisfies RouteDefinition;
 
 export default function Page() {
 	const user = useUser();
 
 	return (
-		<div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col gap-4">
+		<div class="px-4 py-8 w-full max-w-5xl mx-auto flex flex-col">
 			<div class="flex flex-row justify-between">
 				<div>
-					<h1 class="text-3xl font-bold">{user().name}</h1>
-					<span class="block mt-1 text-gray-700 text-sm">{user().email}</span>
+					<h1 class="text-3xl font-bold">
+						<Suspense
+							fallback={
+								<div class="w-42 h-8 rounded-full bg-neutral-200 animate-pulse" />
+							}
+						>
+							{user.data?.name}
+						</Suspense>
+					</h1>
+					<span class="block mt-1 text-gray-700 text-sm">
+						<Suspense
+							fallback={
+								<div class="w-52 h-4 rounded-full bg-neutral-200 animate-pulse" />
+							}
+						>
+							{user.data?.email}
+						</Suspense>
+					</span>
+				</div>
+				<IdPLink />
+			</div>
+			<hr class="w-full h-px my-4 border-gray-200" />
+			<div class="flex flex-row gap-8">
+				<div class="flex-1 space-y-4">
+					<Devices />{" "}
+				</div>
+				<div class="flex-1 space-y-4">
+					<Assignments />
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function IdPLink() {
+	const user = useUser();
+
+	return (
+		<Suspense>
+			<Show when={user.data}>
+				{(user) => (
 					<Show
 						when={user().providerResourceId}
 						fallback={
-							<span class="flex flex-row items-center text-sm py-2.5 gap-1 font-medium">
+							<span class="flex flex-row items-center text-sm gap-1 font-medium">
 								<IconMaterialSymbolsWarningRounded class="w-5 h-5 text-yellow-600" />
 								User not found in{" "}
 								{AUTH_PROVIDER_DISPLAY[user().provider.variant]}
@@ -68,44 +112,45 @@ export default function Page() {
 							</a>
 						)}
 					</Show>
-				</div>
-			</div>
-
-			<Devices />
-			<Policies />
-
-			<h1 class="text-muted-foreground">
-				To make changes use your identity providers portal!
-			</h1>
-		</div>
+				)}
+			</Show>
+		</Suspense>
 	);
 }
 
 function Devices() {
+	const userId = useUserId();
 	const user = useUser();
-	const devices = trpc.user.getDevices.useQuery(() => ({
-		id: user().id,
+	const devices = trpc.user.devices.createQuery(() => ({
+		id: userId(),
 	}));
 
 	return (
-		<Card>
-			<CardHeader>
-				<div class="flex justify-between items-center">
-					<CardTitle>Devices</CardTitle>
+		<>
+			<div class="flex flex-row justify-between items-center">
+				<Label>Devices</Label>
 
-					<SendInstructionsDialog id={user().id} email={user().email}>
-						<As component={Button}>Send Instructions</As>
-					</SendInstructionsDialog>
-				</div>
-			</CardHeader>
-			<CardContent>
-				<div class="flex flex-col space-y-2">
-					<For each={devices.data}>
+				<SendInstructionsDialog>
+					<DialogTrigger as={Button} size="sm" disabled={user.isPending}>
+						Send Instructions
+					</DialogTrigger>
+				</SendInstructionsDialog>
+			</div>
+			<div class="flex flex-col space-y-2">
+				<Suspense>
+					<For
+						each={devices.data}
+						fallback={
+							<div class="w-full text-center py-8">
+								<p class="text-sm">No Results.</p>
+							</div>
+						}
+					>
 						{(device) => (
 							<A href={`../../devices/${device.id}`}>
 								<div class="flex items-center space-x-2 border rounded-md p-2">
 									<span class="text-4xl">
-										<BruhIconPhLaptop />
+										<IconPhLaptop />
 									</span>
 									<div>
 										<p class="text-xl">{device.name}</p>
@@ -115,72 +160,109 @@ function Devices() {
 							</A>
 						)}
 					</For>
-				</div>
-			</CardContent>
-		</Card>
+				</Suspense>
+			</div>
+		</>
 	);
 }
 
-function Policies() {
+function Assignments() {
+	const userId = useUserId();
 	const user = useUser();
 
-	const members = trpc.user.members.useQuery(() => ({
-		id: user().id,
+	const assignments = trpc.user.assignments.createQuery(() => ({
+		id: userId(),
 	}));
+
+	const variants = createAssignmentsVariants("../../");
 
 	const table = createStandardTable({
 		get data() {
-			return members.data ?? [];
+			if (!assignments.data) return [];
+
+			return [
+				...assignments.data.policies.map((d) => ({ ...d, variant: "policy" })),
+				...assignments.data.apps.map((d) => ({ ...d, variant: "application" })),
+			];
 		},
-		columns: memberSheetColumns,
-		pagination: true,
+		columns: createVariantTableColumns(),
 	});
 
-	const addMembers = trpc.user.addMembers.useMutation(() => ({
-		onSuccess: () => members.refetch(),
+	const addAssignments = trpc.user.addAssignments.createMutation(() => ({
+		...withDependantQueries(assignments),
 	}));
 
 	return (
-		<Card>
-			<CardHeader>
-				<div class="flex justify-between items-center">
-					<CardTitle>Policies</CardTitle>
+		<>
+			<div class="flex flex-row justify-between items-center">
+				<Label>Assignments</Label>
 
-					<AddMemberSheet
-						addMember={(members) =>
-							addMembers.mutateAsync({
-								id: user().id,
-								members,
-							})
-						}
+				<VariantTableSheet
+					title="Add Assignments"
+					description="Assign policies and apps to this user."
+					getSubmitText={(count) =>
+						`Add ${count} ${pluralize("Assignment", count)}`
+					}
+					variants={variants}
+					onSubmit={(assignments) =>
+						addAssignments.mutateAsync({
+							id: userId(),
+							assignments,
+						})
+					}
+				>
+					<SheetTrigger
+						as={Button}
+						class="ml-auto"
+						size="sm"
+						disabled={user.isPending}
 					>
-						<As component={Button} class="ml-auto">
-							Add Member
-						</As>
-					</AddMemberSheet>
-				</div>
-			</CardHeader>
-			<CardContent>
-				<Suspense>
-					<StandardTable table={table} />
-				</Suspense>
-			</CardContent>
-		</Card>
+						Add Assignments
+					</SheetTrigger>
+				</VariantTableSheet>
+			</div>
+
+			<Suspense>
+				<StandardTable table={table} />
+			</Suspense>
+		</>
 	);
 }
 
-function SendInstructionsDialog(
-	props: ParentProps<{ id: string; email: string }>,
-) {
+function createAssignmentsVariants(pathToTenant: string) {
+	const tenantSlug = useTenantSlug();
+
+	return {
+		policy: {
+			label: "Policies",
+			query: trpc.tenant.variantTable.policies.createQuery(() => ({
+				tenantSlug: tenantSlug(),
+			})),
+			href: (item) => `${pathToTenant}/policies/${item.id}`,
+		},
+		application: {
+			label: "Applications",
+			query: trpc.tenant.variantTable.apps.createQuery(() => ({
+				tenantSlug: tenantSlug(),
+			})),
+			href: (item) => `${pathToTenant}/apps/${item.id}`,
+		},
+	} satisfies VariantTableVariants;
+}
+
+function SendInstructionsDialog(props: ParentProps) {
+	const userId = useUserId();
+	const user = useUser();
+
 	const [open, setOpen] = createSignal(false);
 
-	const mutation = trpc.user.invite.useMutation();
+	const mutation = trpc.user.invite.createMutation();
 
 	const form = createZodForm({
 		schema: z.object({ message: z.string().email().optional() }),
 		onSubmit: async ({ value }) => {
 			await mutation.mutateAsync({
-				id: props.id,
+				id: userId(),
 				message: value.message,
 			});
 			setOpen(false);
@@ -195,13 +277,16 @@ function SendInstructionsDialog(
 				setOpen(o);
 			}}
 		>
-			<DialogTrigger asChild>{props.children}</DialogTrigger>
+			{props.children}
 			<DialogContent class="max-w-md">
 				<DialogHeader>
 					<DialogTitle>Send Instructions</DialogTitle>
 					<DialogDescription>
-						We will send an email to <b>{props.email}</b> with instructions on
-						how to enroll their device in this tenant.
+						We will send an email to{" "}
+						<b>
+							<Suspense fallback="...">{user.data?.email}</Suspense>
+						</b>{" "}
+						with instructions on how to enroll their device in this tenant.
 					</DialogDescription>
 				</DialogHeader>
 				<Form form={form} fieldsetClass="space-y-2">

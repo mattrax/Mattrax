@@ -1,12 +1,14 @@
+import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Checkbox, Input } from "@mattrax/ui";
-import { Navigate, useNavigate } from "@solidjs/router";
+import { Navigate } from "@solidjs/router";
 import { ErrorBoundary, For, Show, Suspense, createSignal } from "solid-js";
+
 import { getObjectKeys } from "~/api/utils";
 import { trpc } from "~/lib";
 import { features } from "~/lib/featureFlags";
 
 export default function Page() {
-	const user = trpc.auth.me.useQuery();
+	const user = trpc.auth.me.createQuery();
 
 	return (
 		<div>
@@ -19,7 +21,7 @@ export default function Page() {
 					<Show when={user.data} keyed>
 						{(activeUser) => {
 							const [email, setEmail] = createSignal(activeUser.email);
-							const getFeatures = trpc.auth.admin.getFeatures.useQuery(
+							const getFeatures = trpc.auth.admin.getFeatures.createQuery(
 								() => ({
 									email: email(),
 								}),
@@ -40,16 +42,12 @@ export default function Page() {
 									? activeUser.features ?? []
 									: getFeatures.data ?? [];
 
-							const enableFeature = trpc.auth.admin.enableFeature.useMutation(
-								() => ({
-									onSuccess: async () => {
-										await (email() === activeUser.email
-											? user
-											: getFeatures
-										).refetch();
-									},
-								}),
-							);
+							const enableFeature =
+								trpc.auth.admin.enableFeature.createMutation(() => ({
+									...withDependantQueries(
+										email() === activeUser.email ? user : getFeatures,
+									),
+								}));
 
 							return (
 								<>

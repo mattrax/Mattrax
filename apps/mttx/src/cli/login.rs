@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use reqwest::{Client, Url};
+use reqwest::{Client, StatusCode, Url};
 use tracing::{debug, info};
 
 #[derive(clap::Args)]
@@ -16,9 +16,8 @@ pub struct CreatedAuthSession {
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AuthSessionVerification {
-    // code: String,
-    api_key: Option<String>,
-    email: Option<String>,
+    api_key: String,
+    email: String,
 }
 
 impl Command {
@@ -40,34 +39,41 @@ impl Command {
 
         open::that(auth_session.url).map_err(|err| format!("session-verify/open: {err}"))?;
 
-        let (api_key, email) = loop {
+        let AuthSessionVerification { api_key, email } = loop {
             tokio::time::sleep(Duration::from_secs(3)).await;
 
             let url = base_url
                 .join(&format!("/api/cli/auth/{}", auth_session.jwt))
                 .map_err(|err| format!("session-verify/url: {err}"))?;
 
-            let verification = client
+            let response = client
                 .post(url)
                 .send()
                 .await
-                .map_err(|err| format!("session-verify/post: {err}"))?
-                .json::<AuthSessionVerification>()
-                .await
-                .map_err(|err| format!("session-verify/json: {err}"))?;
+                .map_err(|err| format!("session-verify/post: {err}"))?;
 
-            if let Some(api_key) = verification.api_key {
-                break (api_key, verification.email);
+            match response.status() {
+                StatusCode::OK => {
+                    break response
+                        .json::<AuthSessionVerification>()
+                        .await
+                        .map_err(|err| format!("session-verify/json: {err}"))?;
+                }
+                // The user still hasn't finished authentication on the frontend
+                StatusCode::ACCEPTED => continue,
+                status => {
+                    return Err(format!(
+                        "session-verify/status: {status} {:?}",
+                        response.text().await
+                    ));
+                }
             }
         };
 
-        if let Some(email) = email {
-            info!("Logged in as {email}");
-        } else {
-            info!("Logged in succssfully");
-        }
-
+        info!("Logged in as {email}");
         debug!("API Key: {api_key}");
+
+        // TODO: Store this to disk
 
         Ok(())
     }

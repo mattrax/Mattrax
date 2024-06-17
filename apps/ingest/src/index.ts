@@ -1,6 +1,6 @@
-import { parseString } from "xml2js";
 import fs from "node:fs";
 import path from "node:path";
+import { parseString } from "xml2js";
 
 // TODO: Properly account for wildcard's in the URI -> Idk how Serde will support that
 
@@ -79,7 +79,7 @@ function handleNode(node: any, path_prefix: string, results: any[]) {
 		? `/// ${node.DFProperties[0].Description?.[0].replace(
 				"\n",
 				"\n\t///",
-		  )}\n\t`
+			)}\n\t`
 		: "";
 	results.push(`\t${comment}#[serde(rename = "${path}")]\n\t${name}(${type})`);
 }
