@@ -83,6 +83,7 @@ const boxStyling: Record<
 			"background-image": `url(${integrations})`,
 			"background-repeat": "no-repeat",
 			"background-position": "50% 100%",
+			"background-size": "320px",
 		},
 	},
 	3: {
