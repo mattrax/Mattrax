@@ -35,3 +35,22 @@ cargo mattrax serve
 # CLI
 cargo mttx help
 ```
+
+## Things to know:
+
+### Unidirectional dataflow
+
+All data follows the following order:
+ - User or device -> API (Typescript) -> Rust -> DB
+ - I *will not* flow backwards,
+ - It may and probably will skip layers
+
+### tRPC
+
+TODO: `authedProcedure` vs `tenantProcedure` and when to pick each.
+
+TODO: `flushResponse`
+
+### Drizzle to RS
+
+TODO: Explain why we have this
