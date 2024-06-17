@@ -43,4 +43,8 @@ declare global {
   const IconTablerDots: typeof import('~icons/tabler/dots.jsx')['default']
   const IconTablerSelector: typeof import('~icons/tabler/selector.jsx')['default']
   const IconTablerX: typeof import('~icons/tabler/x.jsx')['default']
+  const IconCarbonCaretDown: typeof import('~icons/carbon/caret-down.jsx')['default']
+  const IconCarbonCaretSort: typeof import('~icons/carbon/caret-sort.jsx')['default']
+  const IconIcOutlineClose: typeof import('~icons/ic/outline-close.jsx')['default']
+  const IconMaterialSymbolsEditOutline: typeof import('~icons/material-symbols/edit-outline.jsx')['default']
 }
