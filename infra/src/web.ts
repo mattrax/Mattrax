@@ -52,6 +52,7 @@ const deploymentConfig = {
 			process.env.STRIPE_PUBLISHABLE_KEY ??
 			"pk_test_51HWF7EHahv0c3616yp7ja6iTu2EDPzfnvd3cahDGHhPZQMAq8vqXa5QkJquWleLzkRK6KGppESxF8yZwWtBhCJzm00WAqF2c3k",
 		PROD_ORIGIN: `https://${PROD_HOST}`,
+		PREVIEW_DOMAIN_SUFFIX: ".mattrax-bdc.pages.dev",
 	},
 	secrets: {
 		DATABASE_URL: $interpolate`https://:${secrets.InternalSecret.value}@${MDM_URL}`,

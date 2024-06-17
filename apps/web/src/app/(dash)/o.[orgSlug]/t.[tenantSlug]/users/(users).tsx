@@ -22,8 +22,6 @@ import {
 	selectCheckboxColumn,
 } from "~c/StandardTable";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
-import IconCarbonCaretSort from "~icons/carbon/caret-sort.jsx";
-import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
 import { useTenantSlug } from "../ctx";
 import { cacheMetadata } from "../metadataCache";
 

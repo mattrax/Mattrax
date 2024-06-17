@@ -26,8 +26,6 @@ import {
 	type VariantTableVariants,
 	createVariantTableColumns,
 } from "~c/VariantTableSheet";
-import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
-import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import { useTenantSlug } from "../../ctx";
 import { useUser, useUserId } from "../ctx";
 

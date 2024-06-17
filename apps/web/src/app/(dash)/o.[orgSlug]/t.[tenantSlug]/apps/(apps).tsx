@@ -19,7 +19,6 @@ import {
 	selectCheckboxColumn,
 } from "~c/StandardTable";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
-import IconCarbonCaretDown from "~icons/carbon/caret-down.jsx";
 import { useTenantSlug } from "../ctx";
 import { cacheMetadata } from "../metadataCache";
 import { CreateApplicationSheet } from "./CreateApplicationSheet";
