@@ -55,6 +55,7 @@ export const env = withEnv((env) => {
 			// Environment variables for Mattrax Cloud
 			// Do not use these unless you know what your doing
 			COOKIE_DOMAIN: z.string().optional(),
+			PREVIEW_DOMAIN_SUFFIX: z.string().optional(),
 		},
 		clientPrefix: "VITE_",
 		client: {

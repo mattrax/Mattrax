@@ -8,7 +8,6 @@ import {
 	SheetTitle,
 	SheetTrigger,
 	Tabs,
-	TabsIndicator,
 	TabsList,
 	TabsTrigger,
 } from "@mattrax/ui";

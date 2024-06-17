@@ -10,10 +10,10 @@ import {
 } from "vinxi/server";
 
 import { accounts, db, sessions } from "~/db";
-import { env, withEnv } from "~/env";
+import { env } from "~/env";
 import type { Features } from "~/lib/featureFlags";
 
-export const lucia = withEnv(() => {
+export const lucia = withAuth((domain) => {
 	const adapter = new DrizzleMySQLAdapter(db, sessions, accounts);
 
 	return new Lucia(adapter, {
@@ -23,7 +23,7 @@ export const lucia = withEnv(() => {
 			attributes: {
 				// set to `true` when using HTTPS
 				secure: import.meta.env.PROD,
-				domain: env.COOKIE_DOMAIN,
+				domain,
 			},
 		},
 		getUserAttributes: (data) => ({
@@ -105,3 +105,36 @@ export const checkAuth = cache(async () => {
 
 	if (session && account) return { session, account };
 }, "checkAuth");
+
+/// Cache the auth instance based on the incoming request's URL.
+///
+/// This is so we can properly account for preview deployments, while setting the cookie to `mattrax.app` in prod.
+function withAuth<T extends object>(fn: (domain: string | undefined) => T): T {
+	const cache = new Map();
+
+	return new Proxy({} as any, {
+		get(_, prop) {
+			const event = getRequestEvent();
+			if (!event)
+				throw new Error(
+					"Attempted to access `withAuth` value outside of a request context",
+				);
+
+			const url = new URL(event.request.url);
+			let domain = env.COOKIE_DOMAIN;
+			if (
+				env.PREVIEW_DOMAIN_SUFFIX &&
+				url.hostname.includes(env.PREVIEW_DOMAIN_SUFFIX)
+			) {
+				domain = undefined;
+			}
+
+			let result = cache.get(domain);
+			if (!result) {
+				result = fn(domain);
+				cache.set(domain, result);
+			}
+			return result[prop as keyof T];
+		},
+	});
+}
