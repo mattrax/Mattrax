@@ -1,6 +1,15 @@
 import { createAsync } from "@solidjs/router";
 import type { CreateQueryResult } from "@tanstack/solid-query";
-import { type Accessor, createEffect, untrack } from "solid-js";
+import {
+	type Accessor,
+	createComputed,
+	createEffect,
+	createMemo,
+	createRenderEffect,
+	createRoot,
+	createSignal,
+	untrack,
+} from "solid-js";
 import type { MattraxCache, TableData, TableNames } from "./dexie";
 export type { TableData, TableNames, MattraxCache } from "./dexie";
 
@@ -34,16 +43,19 @@ export function useCachedQueryData<TData>(
 	cacheQuery: () => Promise<Array<TData>>,
 ): Accessor<Array<TData> | undefined> {
 	const cachedQuery = createAsync(() => cacheQuery());
+	const [data, setData] = createSignal<TData[]>();
+
+	createComputed(() => createRoot(() => setData(query.data)));
 
 	return () => {
 		if (untrack(() => query.isLoading)) {
 			const c = cachedQuery();
-			// We subscribe to `query.data` once the cached data is available
-			if (c) query.isLoading;
+
+			if (c) data();
 
 			return c;
 		}
 
-		return query.data;
+		return data();
 	};
 }

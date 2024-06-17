@@ -31,9 +31,6 @@ import ENTRA_ID_ICON from "~/assets/EntraIDLogo.svg";
 import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { trpc } from "~/lib";
 import { AUTH_PROVIDER_DISPLAY, authProviderUrl } from "~/lib/values";
-import IconIcOutlineClose from "~icons/ic/outline-close.jsx";
-import IconMaterialSymbolsWarningRounded from "~icons/material-symbols/warning-rounded.jsx";
-import IconPrimeExternalLink from "~icons/prime/external-link.jsx";
 import { useTenantSlug } from "../ctx";
 
 export const route = {

@@ -8,26 +8,26 @@ import { Breadcrumb } from "./Breadcrumb";
 import { MultiSwitcher } from "./MultiSwitcher";
 
 export default function (props: RouteSectionProps) {
-	const orgSlug = useOrgSlug();
+	// const orgSlug = useOrgSlug();
 
-	const query = trpc.org.list.createQuery();
-	createQueryCacher(query, "orgs", (org) => ({
-		id: org.id,
-		name: org.name,
-		slug: org.slug,
-	}));
-	const orgs = useCachedQueryData(query, () => cachedOrgs());
+	// const query = trpc.org.list.createQuery();
+	// createQueryCacher(query, "orgs", (org) => ({
+	// 	id: org.id,
+	// 	name: org.name,
+	// 	slug: org.slug,
+	// }));
+	// const orgs = useCachedQueryData(query, () => cachedOrgs());
 
-	const org = () => orgs()?.find((o) => o.slug === orgSlug());
+	// const org = () => orgs()?.find((o) => o.slug === orgSlug());
 
 	return (
 		<>
-			<Breadcrumb>
+			{/* <Breadcrumb>
 				<div class="flex flex-row items-center py-1 gap-2">
 					<A href="">{org()?.name}</A>
 					<MultiSwitcher />
 				</div>
-			</Breadcrumb>
+			</Breadcrumb> */}
 			{props.children}
 		</>
 	);

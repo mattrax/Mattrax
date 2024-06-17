@@ -10,8 +10,6 @@ import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import { StandardTable, createStandardTable } from "~c/StandardTable";
 import { createVariantTableColumns } from "~c/VariantTableSheet";
-import IconIcRoundCheck from "~icons/ic/round-check.jsx";
-import IconMaterialSymbolsEditOutline from "~icons/material-symbols/edit-outline.jsx";
 
 export const route = {
 	load: ({ params }) => {
@@ -24,8 +22,6 @@ export const route = {
 	},
 } satisfies RouteDefinition;
 
-import IconPhDevices from "~icons/ph/devices";
-import IconPhUser from "~icons/ph/user";
 import { cacheMetadata, getMetadata } from "../../metadataCache";
 import { useGroup, useGroupId } from "../ctx";
 import { createAssignmentsVariants, createMembersVariants } from "./utils";

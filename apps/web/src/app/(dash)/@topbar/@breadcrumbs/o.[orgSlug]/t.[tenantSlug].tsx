@@ -33,10 +33,8 @@ export default function (props: RouteSectionProps) {
 						const tenants = useCachedQueryData(query, () =>
 							cachedTenantsForOrg(org().id),
 						);
-
 						const tenant = () =>
 							tenants()?.find((t) => t.slug === params.tenantSlug);
-
 						const base = useResolvedPath(() => "");
 						const match = useMatch(() => `${base()}/:segment/:subSegment/*`);
 
