@@ -28,8 +28,8 @@ import LandingButton, {
 } from "~/components/LandingButton";
 import Social from "~/components/Social";
 import DashboardImg from "../assets/dashboard.png";
-import lineone from "../assets/lineone.svg";
-import linetwo from "../assets/linetwo.svg";
+import lineone from "../assets/lineone.svg?url";
+import linetwo from "../assets/linetwo.svg?url";
 
 export default function Page() {
 	return (
