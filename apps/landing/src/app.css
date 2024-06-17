@@ -1,3 +1,71 @@
 body {
     font-family: "Inter Variable", sans-serif;
+    background-image: url("./assets/noise.png");
+    background-repeat: repeat;
+}
+
+/* Text highlight color */
+
+::selection {
+    background-color: #000000;
+    color: white;
+}
+
+/* Buttons */
+
+.button-inner-shadow {
+    box-shadow: inset 0 1px 1px 1px rgba(255, 255, 255, 0.3)
+}
+
+.button-inner-shadow::after {
+    content: "";
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    border-radius: 100px;
+    bottom: 0;
+    box-shadow: inset 0 1px 5px 2px rgba(255, 255, 255, 0.3);
+    pointer-events: none;
+}
+
+.bento-shadow {
+    filter: drop-shadow(0 10px 10px rgba(0, 0, 0, 0.05))
+}
+
+.black-shadow {
+    filter: drop-shadow(0 10px 10px rgba(0, 0, 0, 0.507))
+}
+
+.blue-shadow {
+    filter: drop-shadow(0 7px 7px #1d4fd881);
+}
+
+.blue-shadow:hover {
+    filter: drop-shadow(0 7px 8px #1d4fd8);
+    transform: translateY(-2px);
+}
+
+/** Bento Grid & related styles */
+
+.bento-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+@media (max-width: 400px) {
+    .applications-box {
+        background-size: 130% !important;
+    }
+    .versioning-box {
+        background-size: 130% !important;
+        background-position: 50% 80% !important;
+    }
+    .allplatforms-box {
+        background-size: 120% !important;
+        background-position: 50% 120% !important;
+    }
 }
