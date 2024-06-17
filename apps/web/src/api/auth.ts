@@ -124,10 +124,12 @@ function withAuth<T extends object>(fn: (domain: string | undefined) => T): T {
 			let domain = env.COOKIE_DOMAIN;
 			if (
 				env.PREVIEW_DOMAIN_SUFFIX &&
-				url.hostname.includes(env.PREVIEW_DOMAIN_SUFFIX)
+				url.hostname.endsWith(env.PREVIEW_DOMAIN_SUFFIX)
 			) {
 				domain = undefined;
 			}
+
+			setCookie("X-Debug", domain ?? "undefined", {}); // TODO
 
 			let result = cache.get(domain);
 			if (!result) {
