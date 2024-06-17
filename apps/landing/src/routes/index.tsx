@@ -71,7 +71,7 @@ export default function Page() {
 							well-crafted dashboard.
 						</p>
 
-						<div class="pt-4 flex justify-center space-x-2">
+						<div class="pt-4 flex flex-wrap justify-center gap-2">
 							<Waitlist />
 							<a
 								href="https://cal.com/mattrax"
