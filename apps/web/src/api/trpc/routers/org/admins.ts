@@ -5,7 +5,7 @@ import { generateId } from "lucia";
 import { appendResponseHeader, setCookie } from "vinxi/server";
 import { z } from "zod";
 
-import { lucia } from "~/api/auth";
+import { lucia, setIsLoggedInCookie } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
 import {
 	accounts,
@@ -134,11 +134,7 @@ export const adminsRouter = createTRPCRouter({
 				"Set-Cookie",
 				lucia.createSessionCookie(session.id).serialize(),
 			);
-
-			setCookie("isLoggedIn", "true", {
-				httpOnly: false,
-				domain: env.COOKIE_DOMAIN,
-			});
+			setIsLoggedInCookie();
 
 			flushResponse();
 

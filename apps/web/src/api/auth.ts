@@ -1,7 +1,7 @@
 import { DrizzleMySQLAdapter } from "@lucia-auth/adapter-drizzle";
 import { cache } from "@solidjs/router";
 import { Lucia } from "lucia";
-import { getRequestEvent } from "solid-js/web";
+import { type RequestEvent, getRequestEvent } from "solid-js/web";
 import {
 	appendResponseHeader,
 	deleteCookie,
@@ -66,12 +66,13 @@ export const checkAuth = cache(async () => {
 	"use server";
 
 	const sessionId = getCookie(lucia.sessionCookieName) ?? null;
+	const domain = getCookieDomain(getRequestEvent()!);
 
 	if (sessionId === null) {
 		if (getCookie("isLoggedIn") !== undefined)
 			deleteCookie(getRequestEvent()!.nativeEvent, "isLoggedIn", {
 				httpOnly: false,
-				domain: env.COOKIE_DOMAIN,
+				domain,
 			});
 
 		return;
@@ -89,7 +90,7 @@ export const checkAuth = cache(async () => {
 		if (getCookie("isLoggedIn") === undefined) {
 			setCookie("isLoggedIn", "true", {
 				httpOnly: false,
-				domain: env.COOKIE_DOMAIN,
+				domain,
 			});
 		}
 	} else {
@@ -99,12 +100,35 @@ export const checkAuth = cache(async () => {
 		);
 		deleteCookie(getRequestEvent()!.nativeEvent, "isLoggedIn", {
 			httpOnly: false,
-			domain: env.COOKIE_DOMAIN,
+			domain,
 		});
 	}
 
 	if (session && account) return { session, account };
 }, "checkAuth");
+
+/// Get the domain which should be used for setting cookies.
+///
+/// This is so we can properly account for preview deployments, while setting the cookie to `mattrax.app` in prod.
+function getCookieDomain(event: RequestEvent) {
+	const url = new URL(event.request.url);
+	let domain = env.COOKIE_DOMAIN;
+	if (
+		env.PREVIEW_DOMAIN_SUFFIX &&
+		url.hostname.endsWith(env.PREVIEW_DOMAIN_SUFFIX)
+	) {
+		domain = undefined;
+	}
+	return domain;
+}
+
+export function setIsLoggedInCookie() {
+	const domain = getCookieDomain(getRequestEvent()!);
+	setCookie("isLoggedIn", "true", {
+		httpOnly: false,
+		domain,
+	});
+}
 
 /// Cache the auth instance based on the incoming request's URL.
 ///
@@ -120,14 +144,7 @@ function withAuth<T extends object>(fn: (domain: string | undefined) => T): T {
 					"Attempted to access `withAuth` value outside of a request context",
 				);
 
-			const url = new URL(event.request.url);
-			let domain = env.COOKIE_DOMAIN;
-			if (
-				env.PREVIEW_DOMAIN_SUFFIX &&
-				url.hostname.includes(env.PREVIEW_DOMAIN_SUFFIX)
-			) {
-				domain = undefined;
-			}
+			const domain = getCookieDomain(event);
 
 			let result = cache.get(domain);
 			if (!result) {
