@@ -26,7 +26,6 @@
 		"class-variance-authority": "^0.7.0",
 		"clsx": "^2.1.1",
 		"h3": "^1.11.1",
-		"solid-icons": "^1.1.0",
 		"solid-js": "^1.8.17",
 		"vinxi": "=0.3.11",
 		"vite": "^5.2.11",

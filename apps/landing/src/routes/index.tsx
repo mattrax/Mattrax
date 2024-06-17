@@ -22,7 +22,6 @@ import type { JSX } from "solid-js";
 import { z } from "zod";
 import DashboardImg from "../assets/dashboard.png";
 import LandingButton from "~/components/LandingButton";
-import { FaSolidCircleInfo, FaSolidEnvelope } from "solid-icons/fa";
 import Social from "~/components/Social";
 import linetwo from "../assets/linetwo.svg";
 import lineone from "../assets/lineone.svg";
@@ -124,7 +123,7 @@ export default function Page() {
           />
           <div class="mx-auto max-w-3xl sm:text-center relative">
             <LandingButton class="mx-auto mb-12" variant="black">
-              <FaSolidCircleInfo />
+              <IconFa6SolidCircleInfo />
               Launching Alpha in mid-2024
             </LandingButton>
 
@@ -179,7 +178,7 @@ function Waitlist() {
   return (
     <Dialog>
       <DialogTrigger as={LandingButton}>
-        <FaSolidEnvelope />
+        <IconFaSolidEnvelope />
         Join waitlist
       </DialogTrigger>
       <DialogContent class="md:w-auto w-11/12">

@@ -1,4 +1,3 @@
-import { FaBrandsDiscord } from "solid-icons/fa";
 import LandingButton from "./LandingButton";
 import ctaart from "../assets/ctaart.svg";
 
@@ -26,7 +25,7 @@ const Cta = () => {
           rel="noreferrer"
         >
           <LandingButton>
-            <FaBrandsDiscord />
+            <IconFaBrandsDiscord />
             Discord
           </LandingButton>
         </a>
