@@ -47,7 +47,9 @@ All data follows the following order:
 
 ### tRPC
 
-`authedProcedure` vs `tenantProcedure` and when to pick each.
+TODO: `authedProcedure` vs `tenantProcedure` and when to pick each.
+
+TODO: `flushResponse`
 
 ### Drizzle to RS
 
