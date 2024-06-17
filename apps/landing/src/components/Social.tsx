@@ -1,6 +1,7 @@
 const links = [
 	{ icon: IconFaBrandsGithub, href: "https://github.com/mattrax/Mattrax" },
 	{ icon: IconFaBrandsDiscord, href: "https://discord.gg/WPBHmDSfAn" },
+	{ icon: IconFa6BrandsXTwitter, href: "https://twitter.com/mattraxapp" },
 ];
 
 const Social = () => {

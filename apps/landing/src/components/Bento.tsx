@@ -34,17 +34,18 @@ const info = [
 	},
 	{
 		title: "Application & patch management",
-		description: "Manage licences and keep everything up to date.",
+		description:
+			"Manage software and operating system updates to keep everything is secure.",
 	},
 	{
 		title: "Integrations",
 		description:
-			"Policy templates and REST API allow you to bring 3rd party software into Mattrax.",
+			"Built-in support for configuring 3rd party software, with a flexible API.",
 	},
 	{
 		title: "Versioning",
 		description:
-			"Track changes, require your teams approval, quickly roll-back mistakes all built-in.",
+			"Track changes to your configuration, require your teams approval and quickly roll-back mistakes.",
 	},
 ];
 

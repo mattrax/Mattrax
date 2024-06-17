@@ -15,36 +15,6 @@ const Footer = () => {
 				}}
 			/>
 			<div class="flex flex-col sm:flex-row gap-10 items-center sm:items-start w-full justify-between mt-10">
-				<p class="leading-6 text-zinc-400 text-center sm:text-left max-w-[300px]">
-					Follow us on{" "}
-					<a
-						href="https://twitter.com/mattraxapp"
-						class={linkStyle}
-						target="_blank"
-						rel="noreferrer"
-					>
-						@mattraxapp
-					</a>{" "}
-					or join the{" "}
-					<a
-						href="https://discord.gg/WPBHmDSfAn"
-						class={linkStyle}
-						target="_blank"
-						rel="noreferrer"
-					>
-						Discord
-					</a>{" "}
-					for updates and{" "}
-					<a
-						href="https://cal.com/mattrax"
-						class={linkStyle}
-						target="_blank"
-						rel="noreferrer"
-					>
-						Setup a meeting
-					</a>{" "}
-					to discuss Mattrax.
-				</p>
 				<p class="text-zinc-400">
 					Developed by{" "}
 					<a href="/company" class={linkStyle} rel="external">

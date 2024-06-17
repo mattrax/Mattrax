@@ -2,7 +2,7 @@ import { type VariantProps, cva } from "class-variance-authority";
 import clsx from "clsx";
 import { type ComponentProps, type JSXElement, splitProps } from "solid-js";
 
-const buttonVariants = cva(
+export const landingButtonVariants = cva(
 	[
 		"flex flex-row items-center gap-1.5 rounded-full transition-all duration-300",
 		"py-2.5 px-5 text-sm font-medium relative text-white button-inner-shadow",
@@ -24,7 +24,7 @@ const buttonVariants = cva(
 
 interface Props
 	extends ComponentProps<"button">,
-		VariantProps<typeof buttonVariants> {
+		VariantProps<typeof landingButtonVariants> {
 	children?: JSXElement;
 }
 
@@ -33,7 +33,10 @@ const LandingButton = (props: Props) => {
 	return (
 		<button
 			type="button"
-			class={clsx(buttonVariants({ variant: props.variant }), props.class)}
+			class={clsx(
+				landingButtonVariants({ variant: props.variant }),
+				props.class,
+			)}
 			{...rest}
 		>
 			{props.children}
