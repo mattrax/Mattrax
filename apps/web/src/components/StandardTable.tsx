@@ -10,6 +10,7 @@ import {
 	getCoreRowModel,
 	getFilteredRowModel,
 	getPaginationRowModel,
+	getSortedRowModel,
 } from "@tanstack/solid-table";
 import clsx from "clsx";
 import {
@@ -25,7 +26,11 @@ import {
 export function createStandardTable<TData extends RowData>(
 	options: Omit<
 		PartialKeys<TableOptions<TData>, "getCoreRowModel">,
-		"getPaginationRowModle" | "getFilteredRowModel"
+		| "getPaginationRowModle"
+		| "getFilteredRowModel"
+		| "getSortedRowModel"
+		| "enableSorting"
+		| "enableSortingRemoval"
 	> & { pagination?: boolean },
 ) {
 	return createSolidTable(
@@ -33,6 +38,7 @@ export function createStandardTable<TData extends RowData>(
 			{
 				getCoreRowModel: getCoreRowModel(),
 				getFilteredRowModel: getFilteredRowModel(),
+				getSortedRowModel: getSortedRowModel(),
 				defaultColumn: mergeProps(
 					{ size: "auto" as unknown as number },
 					options.defaultColumn,
@@ -40,6 +46,8 @@ export function createStandardTable<TData extends RowData>(
 				...(options.pagination && {
 					getPaginationRowModel: getPaginationRowModel(),
 				}),
+				enableSorting: true,
+				enableSortingRemoval: true,
 			} satisfies Partial<TableOptions<TData>>,
 			options,
 		),
@@ -103,8 +111,8 @@ export function StandardTable<TData>(props: {
 						</For>
 					</TableHeader>
 					<TableBody>
-						{props.table.getRowModel().rows.length ? (
-							<For each={props.table.getRowModel().rows}>
+						{props.table.getSortedRowModel().rows.length ? (
+							<For each={props.table.getSortedRowModel().rows}>
 								{(row) => (
 									<TableRow
 										{...props.rowProps?.(row)}

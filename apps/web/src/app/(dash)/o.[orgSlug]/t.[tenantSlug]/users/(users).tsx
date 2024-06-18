@@ -7,7 +7,7 @@ import {
 } from "@mattrax/ui";
 import { A, type RouteDefinition } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { Show, Suspense } from "solid-js";
+import { Match, Show, Suspense, Switch } from "solid-js";
 
 import type { RouterOutput } from "~/api/trpc";
 import { createBulkDeleteDialog } from "~/components/BulkDeleteDialog";
@@ -51,13 +51,16 @@ const columns = [
 	column.accessor("email", {
 		header: ({ column }) => {
 			return (
-				<Button
-					variant="ghost"
-					onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-				>
+				<Button variant="ghost" onClick={() => column.toggleSorting()}>
 					Email
-					{/* TODO: Indicate which way we are sorting */}
-					<IconCarbonCaretSort class="ml-2 h-4 w-4" />
+					<Switch fallback={<IconCarbonCaretSort class="ml-2 h-4 w-4" />}>
+						<Match when={column.getIsSorted() === "asc"}>
+							<IconCarbonCaretSortUp class="ml-2 h-4 w-4" />
+						</Match>
+						<Match when={column.getIsSorted() === "desc"}>
+							<IconCarbonCaretSortDown class="ml-2 h-4 w-4" />
+						</Match>
+					</Switch>
 				</Button>
 			);
 		},
