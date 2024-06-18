@@ -1,6 +1,6 @@
 import { CardDescription } from "@mattrax/ui";
 import { Form, createZodForm } from "@mattrax/ui/forms";
-import { useLocation, useNavigate } from "@solidjs/router";
+import { useLocation, useNavigate, useSearchParams } from "@solidjs/router";
 import { Show, startTransition } from "solid-js";
 import { z } from "zod";
 
@@ -14,10 +14,10 @@ import { trpc } from "~/lib";
 autofocus;
 
 export default function Page() {
+	const [query] = useSearchParams<{ next?: string }>();
 	const location = useLocation<{
 		email?: string;
 		action?: string;
-		continueTo?: string;
 	}>();
 	const navigate = useNavigate();
 
@@ -37,11 +37,8 @@ export default function Page() {
 		onSuccess: () => {
 			let to: string;
 
-			if (
-				location.state?.continueTo &&
-				URL.canParse(`${window.location.origin}${location.state.continueTo}`)
-			)
-				to = location.state.continueTo;
+			if (query?.next && URL.canParse(`${window.location.origin}${query.next}`))
+				to = query.next;
 			else to = "/";
 
 			return navigate(to, {

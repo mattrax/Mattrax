@@ -87,15 +87,16 @@ export default function App() {
 									if (parseJson(error?.shape?.message)?.code) return;
 
 									if (error.data?.code === "UNAUTHORIZED") {
+										const params = new URLSearchParams({
+											...(location.pathname !== "/" &&
+											location.pathname !== "/login"
+												? { next: location.pathname }
+												: {}),
+										});
 										startTransition(() =>
-											navigate("/login", {
+											navigate(`/login?${params.toString()}`, {
 												state: {
 													action: location.query?.action,
-													continueTo:
-														location.pathname !== "/" &&
-														location.pathname !== "/login"
-															? location.pathname
-															: undefined,
 												},
 												replace: true,
 											}),

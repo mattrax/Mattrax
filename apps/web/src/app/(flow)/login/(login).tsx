@@ -1,6 +1,6 @@
 import { Button, CardDescription } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { A, useLocation, useNavigate } from "@solidjs/router";
+import { A, useLocation, useNavigate, useSearchParams } from "@solidjs/router";
 import { Show, createMemo, createSignal, startTransition } from "solid-js";
 import { z } from "zod";
 
@@ -11,7 +11,7 @@ import { parseJson } from "~/lib/utils";
 
 export default function Page() {
 	const navigate = useNavigate();
-	const location = useLocation<{ action?: string; continueTo?: string }>();
+	const location = useLocation<{ action?: string }>();
 
 	// TODO: preload `/login/code`
 
@@ -23,9 +23,9 @@ export default function Page() {
 			// revalidate(); // TODO: Wipe entire Solid cache (I can't see a method for it)
 
 			await startTransition(() =>
-				navigate("/login/code", {
+				navigate(`/login/code${location.search}`, {
 					// Pop the reauthenticate process from the history stack
-					// replace: location.state?.continueTo !== undefined, // TODO: Finish this
+					// replace: location.query?.next !== undefined, // TODO: Finish this
 					state: { email, ...location.state },
 				}),
 			);

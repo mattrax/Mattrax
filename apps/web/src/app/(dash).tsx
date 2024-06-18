@@ -40,13 +40,11 @@ export default function Layout(props: RouteSectionProps<never, "topbar">) {
 		// isLoggedIn cookie trick for quick login navigation
 		const cookies = parse(document.cookie);
 		if (cookies.isLoggedIn !== "true") {
-			startTransition(() =>
-				navigate("/login", {
-					state: {
-						continueTo: location.pathname,
-					},
-				}),
-			);
+			const params = new URLSearchParams({
+				next: location.pathname,
+			});
+
+			startTransition(() => navigate(`/login?${params.toString()}`));
 		}
 	}
 
