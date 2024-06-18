@@ -1,1 +1,0 @@
-# Downloaded from [here](https://learn.microsoft.com/en-us/windows/client-management/mdm/configuration-service-provider-ddf) on 23/03/2024 and it is the "September 2023" edition.

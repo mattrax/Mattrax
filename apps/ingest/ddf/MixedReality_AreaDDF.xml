@@ -6,6 +6,68 @@
   <VerDTD>1.2</VerDTD>
   <Node>
     <NodeName>MixedReality</NodeName>
+    <Path>./User/Vendor/MSFT/Policy/Config</Path>
+    <DFProperties>
+      <AccessType>
+        <Get />
+      </AccessType>
+      <DFFormat>
+        <node />
+      </DFFormat>
+      <Occurrence>
+        <One />
+      </Occurrence>
+      <Scope>
+        <Permanent />
+      </Scope>
+      <DFType>
+        <MIME>com.microsoft/11/MDM/Policy</MIME>
+      </DFType>
+    </DFProperties>
+    <Node>
+      <NodeName>AutoUnlock</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy controls whether a signed-in user will be prompted for credentials when returning to the device after the device has entered suspended state. This policy is available both for the device as well as the user scope. When enabled for the device scope, auto unlock will be enabled for all users on the device. When enabled for the user scope, only the specific user will have auto unlock enabled.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>99.9.99999</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>11.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x88;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>User will be prompted for credentials.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>User will not be prompted for credentials.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+  </Node>
+  <Node>
+    <NodeName>MixedReality</NodeName>
     <Path>./Device/Vendor/MSFT/Policy/Config</Path>
     <DFProperties>
       <AccessType>
@@ -93,6 +155,47 @@
           <MSFT:EditionAllowList>0x88;</MSFT:EditionAllowList>
         </MSFT:Applicability>
         <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>AutoUnlock</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy controls whether a signed-in user will be prompted for credentials when returning to the device after the device has entered suspended state. This policy is available both for the device as well as the user scope. When enabled for the device scope, auto unlock will be enabled for all users on the device. When enabled for the user scope, only the specific user will have auto unlock enabled.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>99.9.99999</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>11.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x88;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>User will be prompted for credentials.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>User will not be prompted for credentials.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LowestValueMostSecure</MSFT:ConflictResolution>
       </DFProperties>
     </Node>
     <Node>
@@ -878,7 +981,7 @@
         </DFType>
         <DefaultValue>1</DefaultValue>
         <MSFT:Applicability>
-          <MSFT:OsBuildVersion>99.9.99999</MSFT:OsBuildVersion>
+          <MSFT:OsBuildVersion>10.0.22621</MSFT:OsBuildVersion>
           <MSFT:CspVersion>9.9</MSFT:CspVersion>
           <MSFT:EditionAllowList>0x88;</MSFT:EditionAllowList>
         </MSFT:Applicability>
@@ -919,7 +1022,7 @@
         </DFType>
         <DefaultValue>0</DefaultValue>
         <MSFT:Applicability>
-          <MSFT:OsBuildVersion>99.9.99999</MSFT:OsBuildVersion>
+          <MSFT:OsBuildVersion>10.0.22621</MSFT:OsBuildVersion>
           <MSFT:CspVersion>9.9</MSFT:CspVersion>
           <MSFT:EditionAllowList>0x88;</MSFT:EditionAllowList>
         </MSFT:Applicability>
@@ -960,7 +1063,7 @@
         </DFType>
         <DefaultValue>0</DefaultValue>
         <MSFT:Applicability>
-          <MSFT:OsBuildVersion>99.9.99999</MSFT:OsBuildVersion>
+          <MSFT:OsBuildVersion>10.0.22621</MSFT:OsBuildVersion>
           <MSFT:CspVersion>9.9</MSFT:CspVersion>
           <MSFT:EditionAllowList>0x88;</MSFT:EditionAllowList>
         </MSFT:Applicability>
@@ -1001,7 +1104,7 @@
         </DFType>
         <DefaultValue>1</DefaultValue>
         <MSFT:Applicability>
-          <MSFT:OsBuildVersion>99.9.99999</MSFT:OsBuildVersion>
+          <MSFT:OsBuildVersion>10.0.22621</MSFT:OsBuildVersion>
           <MSFT:CspVersion>9.9</MSFT:CspVersion>
           <MSFT:EditionAllowList>0x88;</MSFT:EditionAllowList>
         </MSFT:Applicability>
@@ -1042,7 +1145,7 @@
         </DFType>
         <DefaultValue>1</DefaultValue>
         <MSFT:Applicability>
-          <MSFT:OsBuildVersion>99.9.99999</MSFT:OsBuildVersion>
+          <MSFT:OsBuildVersion>10.0.22621</MSFT:OsBuildVersion>
           <MSFT:CspVersion>9.9</MSFT:CspVersion>
           <MSFT:EditionAllowList>0x88;</MSFT:EditionAllowList>
         </MSFT:Applicability>
@@ -1083,7 +1186,7 @@
         </DFType>
         <DefaultValue>0</DefaultValue>
         <MSFT:Applicability>
-          <MSFT:OsBuildVersion>99.9.99999</MSFT:OsBuildVersion>
+          <MSFT:OsBuildVersion>10.0.22621</MSFT:OsBuildVersion>
           <MSFT:CspVersion>9.9</MSFT:CspVersion>
           <MSFT:EditionAllowList>0x88;</MSFT:EditionAllowList>
         </MSFT:Applicability>
@@ -1098,6 +1201,85 @@
           </MSFT:Enum>
         </MSFT:AllowedValues>
         <MSFT:ConflictResolution>HighestValueMostSecure</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>ConfigureDeviceStandbyAction</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting controls device maintenance action during standby.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>0</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>99.9.99999</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>9.9</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x88;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="ENUM">
+          <MSFT:Enum>
+            <MSFT:Value>0</MSFT:Value>
+            <MSFT:ValueDescription>Not configured.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>1</MSFT:Value>
+            <MSFT:ValueDescription>Logoff users.</MSFT:ValueDescription>
+          </MSFT:Enum>
+          <MSFT:Enum>
+            <MSFT:Value>2</MSFT:Value>
+            <MSFT:ValueDescription>Reboot device.</MSFT:ValueDescription>
+          </MSFT:Enum>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
+      </DFProperties>
+    </Node>
+    <Node>
+      <NodeName>ConfigureDeviceStandbyActionTimeout</NodeName>
+      <DFProperties>
+        <AccessType>
+          <Add />
+          <Delete />
+          <Get />
+          <Replace />
+        </AccessType>
+        <Description>This policy setting controls when to start maintenance action after device enters standby. The timeout value is in hours.</Description>
+        <DFFormat>
+          <int />
+        </DFFormat>
+        <Occurrence>
+          <ZeroOrOne />
+        </Occurrence>
+        <Scope>
+          <Dynamic />
+        </Scope>
+        <DFType>
+          <MIME>text/plain</MIME>
+        </DFType>
+        <DefaultValue>8</DefaultValue>
+        <MSFT:Applicability>
+          <MSFT:OsBuildVersion>99.9.99999</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>9.9</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x88;</MSFT:EditionAllowList>
+        </MSFT:Applicability>
+        <MSFT:AllowedValues ValueType="Range">
+          <MSFT:Value>[1-168]</MSFT:Value>
+        </MSFT:AllowedValues>
+        <MSFT:ConflictResolution>LastWrite</MSFT:ConflictResolution>
       </DFProperties>
     </Node>
   </Node>

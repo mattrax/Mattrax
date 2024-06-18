@@ -1951,6 +1951,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ingest"
+version = "0.0.1"
+dependencies = [
+ "apple-pfm",
+ "easy-xml",
+ "glob",
+ "ms-ddf",
+ "plist",
+ "serde",
+ "serde_json",
+ "specta",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2354,20 +2368,6 @@ dependencies = [
  "mysql_common",
  "refinery",
  "serde_json",
-]
-
-[[package]]
-name = "mx-ingest"
-version = "0.0.1"
-dependencies = [
- "apple-pfm",
- "easy-xml",
- "glob",
- "ms-ddf",
- "plist",
- "serde",
- "serde_json",
- "specta",
 ]
 
 [[package]]

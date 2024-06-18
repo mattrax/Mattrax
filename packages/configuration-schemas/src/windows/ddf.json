@@ -98,24 +98,6 @@
         },
         "scope": "device"
       },
-      "/AllowSuspensionOfBitLockerProtection": {
-        "name": "AllowSuspensionOfBitLockerProtection",
-        "description": "This policy setting allows suspending protection for BitLocker Drive Encryption when enabled and prevents suspending protection when disabled.\r\n                         Warning: When policy is disabled, some scenarios will be blocked and prevent those scenarios from behaving normally.\r\n                         The format is integer.\r\n                         The expected values for this policy are:\r\n\r\n                         0 = Prevent BitLocker Drive Encryption protection from being suspended.\r\n                         1 = This is the default, when the policy is not set. Allows suspending BitLocker Drive Encryption protection.\r\n                         ",
-        "format": "int",
-        "defaultValue": 0,
-        "allowedValues": {
-          "valueType": "enum",
-          "enum": {
-            "0": {
-              "description": "Prevent BitLocker Drive Encryption protection from being suspended."
-            },
-            "1": {
-              "description": "This is the default, when the policy is not set. Allows suspending BitLocker Drive Encryption protection."
-            }
-          }
-        },
-        "scope": "device"
-      },
       "/AllowWarningForOtherDiskEncryption": {
         "name": "AllowWarningForOtherDiskEncryption",
         "description": "Allows Admin to disable all UI (notification for encryption and warning prompt for other disk encryption)\r\n                         and turn on encryption on the user machines silently.\r\n                         Warning: When you enable BitLocker on a device with third party encryption, it may render the device unusable and will\r\n                         require reinstallation of Windows.\r\n                         Note: This policy takes effect only if \"RequireDeviceEncryption\" policy is set to 1.\r\n                         The format is integer.\r\n                         The expected values for this policy are: \r\n\r\n                         1 = This is the default, when the policy is not set. Warning prompt and encryption notification is allowed.\r\n                         0 = Disables the warning prompt and encryption notification. Starting in Windows 10, next major update, \r\n                             the value 0 only takes affect on Azure Active Directory joined devices. \r\n                             Windows will attempt to silently enable BitLocker for value 0.\r\n\r\n                         If you want to disable this policy use the following SyncML:\r\n                         110./Device/Vendor/MSFT/BitLocker/AllowWarningForOtherDiskEncryptionint0",
@@ -638,6 +620,14 @@
             "format": "string",
             "scope": "device"
           },
+          "Install/AttestPrivateKey": {
+            "name": "AttestPrivateKey",
+            "description": "Defines the attest SCEP private key behavior 0 - normal, 1 - best effort, 2 - on error, fail the installation",
+            "format": "int",
+            "defaultValue": 0,
+            "allowedValues": null,
+            "scope": "device"
+          },
           "Install/CAThumbprint": {
             "name": "CAThumbprint",
             "description": "Required. Specify root CA thumbprint. It is a 20-byte value of the SHA1 certificate hash specified as a hexadecimal string value. When client authenticates SCEP server, it checks CA cert from SCEP server whether match with this cert. If not match, fail the authentication. ",
@@ -797,6 +787,28 @@
   "./Device/Vendor/MSFT/CloudDesktop": {
     "name": "CloudDesktop",
     "policies": {
+      "/BootToCloudPCEnhanced": {
+        "name": "BootToCloudPCEnhanced",
+        "title": "Boot to Cloud PC Enhanced",
+        "description": "This node allows to configure different kinds of Boot to Cloud mode. Boot to cloud mode enables users to seamlessly sign-in to a Cloud PC. For using this feature, Cloud Provider application must be installed on the PC and the user must have a Cloud PC provisioned. This node supports the below options: 0. Not Configured. 1. Enable Boot to Cloud Shared PC Mode: Boot to Cloud Shared PC mode allows multiple users to sign-in on the device and use for shared purpose. 2. Enable Boot to Cloud Dedicated Mode (Cloud only): Dedicated mode allows user to sign-in on the device using various authentication mechanism configured by their organization (For ex. PIN, Biometrics etc). This mode preserves user personalization, including their profile picture and username in local machine, and facilitates fast account switching.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Not Configured"
+            },
+            "1": {
+              "description": "Enable Boot to Cloud Shared PC Mode"
+            },
+            "2": {
+              "description": "Enable Boot to Cloud Dedicated Mode (Cloud only)"
+            }
+          }
+        },
+        "scope": "device"
+      },
       "/EnableBootToCloudSharedPCMode": {
         "name": "EnableBootToCloudSharedPCMode",
         "title": "Enable boot to cloud shared PC mode",
@@ -1109,7 +1121,7 @@
                   "description": "The device has successfully provisioned the device."
                 },
                 "2": {
-                  "description": "Provisoining is in progress."
+                  "description": "Provisioning is in progress."
                 }
               }
             },
@@ -1141,7 +1153,7 @@
           },
           "LinkedEnrollment/DiscoveryEndpoint": {
             "name": "DiscoveryEndpoint",
-            "description": "Endpoint Discovery is the process where a specific URL (the \"discovery endpoint\") is accessed, which returns a directory of endpoints for using the system including enrollment. On Get, if the endpoint is not set, client will return an rmpty string with S_OK. ",
+            "description": "Endpoint Discovery is the process where a specific URL (the \"discovery endpoint\") is accessed, which returns a directory of endpoints for using the system including enrollment. On Get, if the endpoint is not set, client will return an empty string with S_OK. ",
             "format": "string",
             "scope": "device"
           },
@@ -1363,7 +1375,7 @@
       },
       "/Host/Complete": {
         "name": "Complete",
-        "description": "This internal node indicates that the configuration has discrete settings values and is self-contained with complete setting and value pairs that do not contain placeholders that the need to be resolved later with additional data. The request is ready to be processed as is.",
+        "description": "This internal node indicates that the configuration has discrete settings values and is self-contained with complete setting and value pairs that do not contain placeholders that need to be resolved later with additional data. The request is ready to be processed as is.",
         "format": "node",
         "scope": "device"
       },
@@ -1522,6 +1534,158 @@
         },
         "scope": "device"
       },
+      "/Configuration/ArchiveMaxDepth": {
+        "name": "ArchiveMaxDepth",
+        "description": "Specify the maximum folder depth to extract from archive files for scanning. If this configuration is off or not set, the default value (0) is applied, and all archives are extracted up to the deepest folder for scanning.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "range",
+          "min": 0,
+          "max": 429496729
+        },
+        "scope": "device"
+      },
+      "/Configuration/ArchiveMaxSize": {
+        "name": "ArchiveMaxSize",
+        "description": "Specify the maximum size, in KB, of archive files to be extracted and scanned. If this configuration is off or not set, the default value (0) is applied, and all archives are extracted and scanned regardless of size.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "range",
+          "min": 0,
+          "max": 429496729
+        },
+        "scope": "device"
+      },
+      "/Configuration/BehavioralNetworkBlocks/BruteForceProtection/BruteForceProtectionAggressiveness": {
+        "name": "BruteForceProtectionAggressiveness",
+        "description": "Set the criteria for when Brute-Force Protection blocks IP addresses.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Low: Only IP addresses that are 100% confidence malicious (default)"
+            },
+            "1": {
+              "description": "Medium: Use cloud aggregation to block IP addresses that are over 99% likely malicious"
+            },
+            "2": {
+              "description": "High: Block IP addresses identified using client intelligence and context to block IP addresses that are over 90% likely malicious"
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/Configuration/BehavioralNetworkBlocks/BruteForceProtection/BruteForceProtectionConfiguredState": {
+        "name": "BruteForceProtectionConfiguredState",
+        "description": "Brute-Force Protection in Microsoft Defender Antivirus detects and blocks attempts to forcibly sign in and initiate sessions.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Not configured: Apply defaults set by the antivirus engine and platform"
+            },
+            "1": {
+              "description": "Block: Prevent suspicious and malicious behaviors"
+            },
+            "2": {
+              "description": "Audit: Generate EDR detections without blocking"
+            },
+            "4": {
+              "description": "Off: Feature is disabled with no performance impact"
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/Configuration/BehavioralNetworkBlocks/BruteForceProtection/BruteForceProtectionExclusions": {
+        "name": "BruteForceProtectionExclusions",
+        "description": "Specify IP addresses, subnets, or workstation names to exclude from being blocked by Brute-Force Protection. Note that attackers can spoof excluded addresses and names to bypass protection.",
+        "format": "string",
+        "scope": "device"
+      },
+      "/Configuration/BehavioralNetworkBlocks/BruteForceProtection/BruteForceProtectionMaxBlockTime": {
+        "name": "BruteForceProtectionMaxBlockTime",
+        "description": "Set the maximum time an IP address is blocked by Brute-Force Protection. After this time, blocked IP addresses will be able to sign-in and initiate sessions. If set to 0, internal feature logic will determine blocking time.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "range",
+          "min": 0,
+          "max": 429496729
+        },
+        "scope": "device"
+      },
+      "/Configuration/BehavioralNetworkBlocks/RemoteEncryptionProtection/RemoteEncryptionProtectionAggressiveness": {
+        "name": "RemoteEncryptionProtectionAggressiveness",
+        "description": "Set the criteria for when Remote Encryption Protection blocks IP addresses.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Low: Block only when confidence level is 100% (Default)"
+            },
+            "1": {
+              "description": "Medium: Use cloud aggregation and block when confidence level is above 99%"
+            },
+            "2": {
+              "description": "High: Use cloud intel and context, and block when confidence level is above 90%"
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/Configuration/BehavioralNetworkBlocks/RemoteEncryptionProtection/RemoteEncryptionProtectionConfiguredState": {
+        "name": "RemoteEncryptionProtectionConfiguredState",
+        "description": "Remote Encryption Protection in Microsoft Defender Antivirus detects and blocks attempts to replace local files with encrypted versions from another device.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Not configured: Apply defaults set for the antivirus engine and platform"
+            },
+            "1": {
+              "description": "Block: Prevent suspicious and malicious behaviors"
+            },
+            "2": {
+              "description": "Audit: Generate EDR detections without blocking"
+            },
+            "4": {
+              "description": "Off: Feature is off with no performance impact"
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/Configuration/BehavioralNetworkBlocks/RemoteEncryptionProtection/RemoteEncryptionProtectionExclusions": {
+        "name": "RemoteEncryptionProtectionExclusions",
+        "description": "Specify IP addresses, subnets, or workstation names to exclude from being blocked by Remote Encryption Protection. Note that attackers can spoof excluded addresses and names to bypass protection.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/Configuration/BehavioralNetworkBlocks/RemoteEncryptionProtection/RemoteEncryptionProtectionMaxBlockTime": {
+        "name": "RemoteEncryptionProtectionMaxBlockTime",
+        "description": "Set the maximum time an IP address is blocked by Remote Encryption Protection. After this time, blocked IP addresses will be able to reinitiate connections. If set to 0, internal feature logic will determine blocking time.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "range",
+          "min": 0,
+          "max": 429496729
+        },
+        "scope": "device"
+      },
       "/Configuration/DataDuplicationDirectory": {
         "name": "DataDuplicationDirectory",
         "description": "Define data duplication directory for device control.",
@@ -1531,7 +1695,13 @@
       "/Configuration/DataDuplicationLocalRetentionPeriod": {
         "name": "DataDuplicationLocalRetentionPeriod",
         "description": "Define the retention period in days of how much time the evidence data will be kept on the client machine should any transfer to the remote locations would occur.",
-        "format": "string",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "range",
+          "min": 1,
+          "max": 12
+        },
         "scope": "device"
       },
       "/Configuration/DataDuplicationMaximumQuota": {
@@ -1548,7 +1718,7 @@
       },
       "/Configuration/DataDuplicationRemoteLocation": {
         "name": "DataDuplicationRemoteLocation",
-        "description": "Define data duplication remote location for device control.",
+        "description": "Define data duplication remote location for Device Control. When configuring this setting, ensure that Device Control is Enabled and that the provided path is a remote path the user can access.",
         "format": "string",
         "scope": "device"
       },
@@ -1619,10 +1789,10 @@
           "valueType": "enum",
           "enum": {
             "0": {
-              "description": ""
+              "description": "Device Control is disabled"
             },
             "1": {
-              "description": ""
+              "description": "Device Control is enabled"
             }
           }
         },
@@ -1644,6 +1814,22 @@
             }
           }
         },
+        "scope": "device"
+      },
+      "/Configuration/DisableCoreServiceECSIntegration": {
+        "name": "DisableCoreServiceECSIntegration",
+        "description": "Turn off ECS integration for Defender core service",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/Configuration/DisableCoreServiceTelemetry": {
+        "name": "DisableCoreServiceTelemetry",
+        "description": "Turn off OneDsCollector telemetry for Defender core service",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
         "scope": "device"
       },
       "/Configuration/DisableCpuThrottleOnIdleScans": {
@@ -1943,10 +2129,10 @@
           "valueType": "enum",
           "enum": {
             "0": {
-              "description": "DNS Sinkhole is enabled"
+              "description": "DNS Sinkhole is disabled"
             },
             "1": {
-              "description": "DNS Sinkhole is disabled"
+              "description": "DNS Sinkhole is enabled"
             }
           }
         },
@@ -1965,6 +2151,42 @@
             },
             "1": {
               "description": "Enable"
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/Configuration/EnableUdpReceiveOffload": {
+        "name": "EnableUdpReceiveOffload",
+        "description": "This setting enables Udp Receive Offload Network Protection.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Udp Receive Offload is disabled"
+            },
+            "1": {
+              "description": "Udp Receive Offload is enabled"
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/Configuration/EnableUdpSegmentationOffload": {
+        "name": "EnableUdpSegmentationOffload",
+        "description": "This setting enables Udp Segmentation Offload Network Protection.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Udp Segmentation Offload is disabled"
+            },
+            "1": {
+              "description": "Udp Segmentation Offload is enabled"
             }
           }
         },
@@ -2081,6 +2303,24 @@
         },
         "scope": "device"
       },
+      "/Configuration/NetworkProtectionReputationMode": {
+        "name": "NetworkProtectionReputationMode",
+        "description": "This sets the reputation mode engine for Network Protection.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Use standard reputation engine"
+            },
+            "1": {
+              "description": "Use ESP reputation engine"
+            }
+          }
+        },
+        "scope": "device"
+      },
       "/Configuration/OobeEnableRtpAndSigUpdate": {
         "name": "OobeEnableRtpAndSigUpdate",
         "description": "This setting allows you to configure whether real-time protection and Security Intelligence Updates are enabled during OOBE (Out of Box experience).",
@@ -2116,10 +2356,10 @@
           "valueType": "enum",
           "enum": {
             "0": {
-              "description": "Performance mode is enabled (default). A service restart is required after changing this value."
+              "description": "Performance mode is enabled (default)."
             },
             "1": {
-              "description": "Performance mode is disabled. A service restart is required after changing this value."
+              "description": "Performance mode is disabled."
             }
           }
         },
@@ -2150,6 +2390,24 @@
             },
             "6": {
               "description": "Critical - Time delay: Devices will be offered updates with a 48-hour delay. Suggested for critical environments only."
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/Configuration/QuickScanIncludeExclusions": {
+        "name": "QuickScanIncludeExclusions",
+        "description": "This setting allows you to scan excluded files and directories during quick scans.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "If you set this setting to 0 or do not configure it, exclusions are not scanned during quick scans."
+            },
+            "1": {
+              "description": "If you set this setting to 1, all files and directories that are excluded from real-time protection using contextual exclusions are scanned during a quick scan."
             }
           }
         },
@@ -2191,6 +2449,57 @@
         },
         "scope": "device"
       },
+      "/Configuration/ScheduleSecurityIntelligenceUpdateDay": {
+        "name": "ScheduleSecurityIntelligenceUpdateDay",
+        "description": "This setting allows you to specify the day of the week on which to check for security intelligence updates. By default, this setting is configured to never check for security intelligence updates.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Daily"
+            },
+            "1": {
+              "description": "Sunday"
+            },
+            "2": {
+              "description": "Monday"
+            },
+            "3": {
+              "description": "Tuesday"
+            },
+            "4": {
+              "description": "Wednesday"
+            },
+            "5": {
+              "description": "Thursday"
+            },
+            "6": {
+              "description": "Friday"
+            },
+            "7": {
+              "description": "Saturday"
+            },
+            "8": {
+              "description": "Never"
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/Configuration/ScheduleSecurityIntelligenceUpdateTime": {
+        "name": "ScheduleSecurityIntelligenceUpdateTime",
+        "description": "This setting allows you to specify the time of day at which to check for security intelligence updates. The time value is represented as the number of minutes past midnight (00:00). For example, 120 is equivalent to 02:00 AM. By default, this setting is configured to check for security intelligence updates 15 minutes before the scheduled scan time. The schedule is based on local time on the computer where the check is occurring.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "range",
+          "min": 0,
+          "max": 143
+        },
+        "scope": "device"
+      },
       "/Configuration/SchedulerRandomizationTime": {
         "name": "SchedulerRandomizationTime",
         "description": "This setting allows you to configure the scheduler randomization in hours. The randomization interval is [1 - 23] hours. For more information on the randomization effect please check the RandomizeScheduleTaskTimes setting.",
@@ -2205,7 +2514,7 @@
       },
       "/Configuration/SecuredDevicesConfiguration": {
         "name": "SecuredDevicesConfiguration",
-        "description": "Defines what are the devices primary ids that should be secured by Defender Device Control. The primary id values should be pipe (|) separated. Example: RemovableMediaDevices|CdRomDevices. If this configuration is not set the default value will be applied, meaning all of the supported devices will be secured.",
+        "description": "Defines which device's primary ids should be secured by Defender Device Control. The primary id values should be pipe (|) separated. Example: RemovableMediaDevices|CdRomDevices. If this configuration is not set the default value will be applied, meaning all supported devices will be secured. Currently supported primary ids are: RemovableMediaDevices, CdRomDevices, WpdDevices, PrinterDevices.",
         "format": "string",
         "scope": "device"
       },
@@ -2348,51 +2657,39 @@
   "./Device/Vendor/MSFT/DevicePreparation": {
     "name": "DevicePreparation",
     "policies": {
-      "/BootstrapperAgent/ClassID": {
-        "name": "ClassID",
-        "description": "This node stores the class ID for the Bootstrapper Agent WinRT object.",
-        "format": "string",
-        "scope": "device"
-      },
       "/BootstrapperAgent/ExecutionContext": {
         "name": "ExecutionContext",
         "description": "This node holds opaque data that will be passed to the Bootstrapper Agent as a parameter when it is invoked to execute.",
         "format": "string",
         "scope": "device"
       },
-      "/BootstrapperAgent/InstallationStatusUri": {
-        "name": "InstallationStatusUri",
-        "description": "This node holds a URI that can be queried for the status of the Bootstrapper Agent installation.",
-        "format": "string",
+      "/MDMProvider/MdmAgentInstalled": {
+        "name": "MdmAgentInstalled",
+        "description": "This node indicates whether the mdm agent was installed or not. When set to true sets the AUTOPILOT_MDM_AGENT_REGISTERED WNF event.",
+        "format": "bool",
         "scope": "device"
       },
       "/MDMProvider/Progress": {
         "name": "Progress",
-        "description": "Noode for reporting progress status as opaque data.",
+        "description": "Node for reporting progress status as opaque data. Contract for data is between the server and EMM agent that reads the data. ",
         "format": "string",
-        "scope": "device"
-      },
-      "/MdmAgentInstalled": {
-        "name": "MdmAgentInstalled",
-        "description": "This node indicates whether the MDM agent was installed or not. When set to true sets the AUTOPILOT_MDM_AGENT_REGISTERED WNF event.",
-        "format": "bool",
         "scope": "device"
       },
       "/PageEnabled": {
         "name": "PageEnabled",
-        "description": "This node determines whether to enable or show the Device Preparation page.",
+        "description": "This node determines whether to show the Device Preparation page during OOBE.",
         "format": "bool",
         "scope": "device"
       },
       "/PageSettings": {
         "name": "PageSettings",
-        "description": "This node configures specific settings for the Device Preparation page.",
+        "description": "This node configures the Device Preparation page settings.",
         "format": "string",
         "scope": "device"
       },
       "/PageStatus": {
         "name": "PageStatus",
-        "description": "This node provides status of the Device Preparation page.  Values are an enum: 0 = Disabled; 1 = Enabled;  2 = InProgress; 3 = ExitedOnSuccess; 4 = ExitedOnFailure.",
+        "description": "This node provides status of the Device Preparation page.  ",
         "format": "int",
         "defaultValue": 0,
         "allowedValues": {
@@ -2408,10 +2705,10 @@
               "description": "InProgress"
             },
             "3": {
-              "description": "Succeeded"
+              "description": "ExitOnSuccess"
             },
             "4": {
-              "description": "Failed"
+              "description": "ExitOnFailure"
             }
           }
         },
@@ -2826,7 +3123,13 @@
           "AppUpdateSettings/AutoUpdateSettings/HoursBetweenUpdateChecks": {
             "name": "HoursBetweenUpdateChecks",
             "description": "Specifies HoursBetweenUpdateChecks for a specific package",
-            "format": "bool",
+            "format": "int",
+            "defaultValue": 0,
+            "allowedValues": {
+              "valueType": "range",
+              "min": 8,
+              "max": 1000
+            },
             "scope": "device"
           },
           "AppUpdateSettings/AutoUpdateSettings/OnLaunchUpdateCheck": {
@@ -3060,6 +3363,48 @@
         "format": "string",
         "scope": "device"
       },
+      "/Policies/AutomaticAccountManagementEnableAccount": {
+        "name": "AutomaticAccountManagementEnableAccount",
+        "description": "Use this setting to configure whether the automatically managed account is enabled or disabled.\r\n\r\nIf this setting is enabled, the target account will be enabled.\r\n\r\nIf this setting is disabled, the target account will be disabled.\r\n\r\nIf not specified, this setting defaults to False.",
+        "format": "bool",
+        "scope": "device"
+      },
+      "/Policies/AutomaticAccountManagementEnabled": {
+        "name": "AutomaticAccountManagementEnabled",
+        "description": "Use this setting to specify whether automatic account management is enabled.\r\n\r\nIf this setting is enabled, the target account will be automatically managed.\r\n\r\nIf this setting is disabled, the target account will not be automatically managed.\r\n\r\nIf not specified, this setting defaults to False.",
+        "format": "bool",
+        "scope": "device"
+      },
+      "/Policies/AutomaticAccountManagementNameOrPrefix": {
+        "name": "AutomaticAccountManagementNameOrPrefix",
+        "description": "Use this setting to configure the name or prefix of the managed local administrator account.\r\n\r\nIf specified, the value will be used as the name or name prefix of the managed account.\r\n\r\nIf not specified, this setting will default to \"WLapsAdmin\".",
+        "format": "string",
+        "scope": "device"
+      },
+      "/Policies/AutomaticAccountManagementRandomizeName": {
+        "name": "AutomaticAccountManagementRandomizeName",
+        "description": "Use this setting to configure whether the name of the automatically managed account uses a random numeric suffix each time the password is rotated.\r\n\r\nIf this setting is enabled, the name of the target account will use a random numeric suffix.\r\n\r\nIf this setting is disbled, the name of the target account will not use a random numeric suffix..\r\n\r\nIf not specified, this setting defaults to False.",
+        "format": "bool",
+        "scope": "device"
+      },
+      "/Policies/AutomaticAccountManagementTarget": {
+        "name": "AutomaticAccountManagementTarget",
+        "description": "Use this setting to configure which account is automatically managed.\r\n\r\nThe allowable settings are:\r\n\r\n0=The builtin administrator account will be managed.\r\n1=A new account created by Windows LAPS will be managed.\r\n\r\nIf not specified, this setting will default to 1.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Manage the built-in administrator account"
+            },
+            "1": {
+              "description": "Manage a new custom administrator account"
+            }
+          }
+        },
+        "scope": "device"
+      },
       "/Policies/BackupDirectory": {
         "name": "BackupDirectory",
         "description": "Use this setting to configure which directory the local admin account password is backed up to.\r\n\r\nThe allowable settings are:\r\n\r\n0=Disabled (password will not be backed up)\r\n1=Backup the password to Azure AD only\r\n2=Backup the password to Active Directory only\r\n\r\nIf not specified, this setting will default to 0.",
@@ -3081,6 +3426,18 @@
         },
         "scope": "device"
       },
+      "/Policies/PassphraseLength": {
+        "name": "PassphraseLength",
+        "description": "Use this setting to configure the number of passphrase words.\r\n\r\nIf not specified, this setting will default to 6 words\r\n\r\nThis setting has a minimum allowed value of 3 words.\r\n\r\nThis setting has a maximum allowed value of 10 words.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "range",
+          "min": 3,
+          "max": 1
+        },
+        "scope": "device"
+      },
       "/Policies/PasswordAgeDays": {
         "name": "PasswordAgeDays",
         "description": "Use this policy to configure the maximum password age of the managed local administrator account.\r\n\r\nIf not specified, this setting will default to 30 days\r\n\r\nThis setting has a minimum allowed value of 1 day when backing the password to onpremises Active Directory, and 7 days when backing the password to Azure AD.\r\n\r\nThis setting has a maximum allowed value of 365 days.",
@@ -3095,7 +3452,7 @@
       },
       "/Policies/PasswordComplexity": {
         "name": "PasswordComplexity",
-        "description": "Use this setting to configure password complexity of the managed local administrator account.\r\n\r\nThe allowable settings are:\r\n\r\n1=Large letters\r\n2=Large letters + small letters\r\n3=Large letters + small letters + numbers\r\n4=Large letters + small letters + numbers + special characters\r\n\r\nIf not specified, this setting will default to 4.",
+        "description": "Use this setting to configure password complexity of the managed local administrator account.\r\n\r\nThe allowable settings are:\r\n\r\n1=Large letters\r\n2=Large letters + small letters\r\n3=Large letters + small letters + numbers\r\n4=Large letters + small letters + numbers + special characters\r\n5=Large letters + small letters + numbers + special characters (improved readability)\r\n6=Passphrase (long words)\r\n7=Passphrase (short words)\r\n8=Passphrase (short words with unique prefixes)\r\n\r\nIf not specified, this setting will default to 4.\r\n\r\nPassphrase list taken from \"Deep Dive: EFF's New Wordlists for Random Passphrases\" by Electronic Frontier Foundation, and is used under a CC-BY-3.0 Attribution license. See https://go.microsoft.com/fwlink/?linkid=2255471 for more information.",
         "format": "int",
         "defaultValue": 0,
         "allowedValues": {
@@ -3112,6 +3469,18 @@
             },
             "4": {
               "description": "Large letters + small letters + numbers + special characters"
+            },
+            "5": {
+              "description": "Large letters + small letters + numbers + special characters (improved readability)"
+            },
+            "6": {
+              "description": "Passphrase (long words)"
+            },
+            "7": {
+              "description": "Passphrase (short words)"
+            },
+            "8": {
+              "description": "Passphrase (short words with unique prefixes)"
             }
           }
         },
@@ -3145,6 +3514,9 @@
           "enum": {
             "1": {
               "description": "Reset password: upon expiry of the grace period, the managed account password will be reset."
+            },
+            "11": {
+              "description": "Reset the password, logoff the managed account, and terminate any remaining processes: upon expiration of the grace period, the managed account password is reset, any interactive logon sessions using the managed account are logged off, and any remaining processes are terminated."
             },
             "3": {
               "description": "Reset the password and logoff the managed account: upon expiry of the grace period, the managed account password will be reset and any interactive logon sessions using the managed account will terminated."
@@ -11001,7 +11373,7 @@
     "policies": {
       "/DefaultAssociationsConfiguration": {
         "name": "DefaultAssociationsConfiguration",
-        "description": "This policy allows an administrator to set default file type and protocol associations. When set, default associations will be applied on sign-in to the PC. The association file can be created using the DISM tool (dism /online /export-defaultappassociations:appassoc. xml), and then needs to be base64 encoded before being added to SyncML. If policy is enabled and the client machine is Azure Active Directory joined, the associations assigned in SyncML will be processed and default associations will be applied.",
+        "description": "This policy allows an administrator to set default file type and protocol associations. When set, default associations will be applied on sign-in to the PC. The association file can be created using the DISM tool (dism /online /export-defaultappassociations:appassoc.xml). The file can be further edited by adding attributes to control how often associations are applied by the policy. The file then needs to be base64 encoded before being added to SyncML. If policy is enabled and the client machine is Azure Active Directory joined, the associations assigned in SyncML will be processed and default associations will be applied.",
         "format": "string",
         "scope": "device"
       },
@@ -15725,6 +16097,12 @@
         "format": "string",
         "scope": "device"
       },
+      "/EnableWindowsPackageManagerConfiguration": {
+        "name": "EnableWindowsPackageManagerConfiguration",
+        "description": "",
+        "format": "string",
+        "scope": "device"
+      },
       "/SourceAutoUpdateInterval": {
         "name": "SourceAutoUpdateInterval",
         "description": "",
@@ -16166,6 +16544,30 @@
         },
         "scope": "device"
       },
+      "/MinimumPasswordLength": {
+        "name": "MinimumPasswordLength",
+        "description": "This security setting determines the least number of characters that a password for a user account may contain. The maximum value for this setting depends on the value of the Relax minimum password length limits setting. If the Relax minimum password length limits setting is not defined, this setting may be configured from 0 to 14. If the Relax minimum password length limits setting is defined and disabled, this setting may be configured from 0 to 14. If the Relax minimum password length limits setting is defined and enabled, this setting may be configured from 0 to 128. Setting the required number of characters to 0 means that no password is required. Note By default, member computers follow the configuration of their domain controllers. Default values: 7 on domain controllers  0 on stand-alone servers  Configuring this setting larger than 14 may affect compatibility with clients, services, and applications. We recommend that you only configure this setting larger than 14 after you use the Minimum password length audit setting to test for potential incompatibilities at the new setting.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "range",
+          "min": 0,
+          "max": 12
+        },
+        "scope": "device"
+      },
+      "/MinimumPasswordLengthAudit": {
+        "name": "MinimumPasswordLengthAudit",
+        "description": "This security setting determines the minimum password length for which password length audit warning events are issued. This setting may be configured from 1 to 128. You should only enable and configure this setting when you try to determine the potential effect of increasing the minimum password length setting in your environment. If this setting is not defined, audit events will not be issued. If this setting is defined and is less than or equal to the minimum password length setting, audit events will not be issued. If this setting is defined and is greater than the minimum password length setting, and the length of a new account password is less than this setting, an audit event will be issued.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "range",
+          "min": 1,
+          "max": 12
+        },
+        "scope": "device"
+      },
       "/PasswordComplexity": {
         "name": "PasswordComplexity",
         "description": "Password must meet complexity requirements                    This security setting determines whether passwords must meet complexity requirements.  If this policy is enabled, passwords must meet the following minimum requirements:  Not contain the user's account name or parts of the user's full name that exceed two consecutive characters Be at least six characters in length Contain characters from three of the following four categories: English uppercase characters (A through Z) English lowercase characters (a through z) Base 10 digits (0 through 9) Non-alphabetic characters (for example, !, $, #, %) Complexity requirements are enforced when passwords are changed or created.",
@@ -16196,6 +16598,24 @@
         "name": "PreventLockScreenSlideShow",
         "description": "",
         "format": "string",
+        "scope": "device"
+      },
+      "/RelaxMinimumPasswordLengthLimits": {
+        "name": "RelaxMinimumPasswordLengthLimits",
+        "description": "This setting controls whether the minimum password length setting can be increased beyond the legacy limit of 14. If this setting is not defined, minimum password length may be configured to no more than 14. If this setting is defined and disabled, minimum password length may be configured to no more than 14. If this setting is defined and enabled, minimum password length may be configured more than 14.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Disabled"
+            },
+            "1": {
+              "description": "Enabled"
+            }
+          }
+        },
         "scope": "device"
       },
       "/ScreenTimeoutWhileLocked": {
@@ -19447,8 +19867,8 @@
         },
         "scope": "device"
       },
-      "/InteractiveLogon_MachineAccountThreshold": {
-        "name": "InteractiveLogon_MachineAccountThreshold",
+      "/InteractiveLogon_MachineAccountLockoutThreshold": {
+        "name": "InteractiveLogon_MachineAccountLockoutThreshold",
         "description": "Interactive logon: Machine account threshold.  The machine lockout policy is enforced only on those machines that have Bitlocker enabled for protecting OS volumes. Please ensure that appropriate recovery password backup policies are enabled. This security setting determines the number of failed logon attempts that causes the machine to be locked out. A locked out machine can only be recovered by providing recovery key at console. You can set the value between 1 and 999 failed logon attempts. If you set the value to 0, the machine will never be locked out. Values from 1 to 3 will be interpreted as 4. Failed password attempts against workstations or member servers that have been locked using either CTRL+ALT+DELETE or password protected screen savers counts as failed logon attempts. The machine lockout policy is enforced only on those machines that have Bitlocker enabled for protecting OS volumes. Please ensure that the appropriate recovery password backup policies are enabled.  Default: 0.",
         "format": "int",
         "defaultValue": 0,
@@ -19569,7 +19989,7 @@
         "allowedValues": {
           "valueType": "range",
           "min": 0,
-          "max": 1
+          "max": 9999
         },
         "scope": "device"
       },
@@ -20110,6 +20530,24 @@
         },
         "scope": "device"
       },
+      "/UserAccountControl_BehaviorOfTheElevationPromptForEnhancedAdministrators": {
+        "name": "UserAccountControl_BehaviorOfTheElevationPromptForEnhancedAdministrators",
+        "description": "User Account Control: Behavior of the elevation prompt for administrators running with enhanced privilege protection.  This policy setting controls the behavior of the elevation prompt for administrators.  The options are:  • Prompt for credentials on the secure desktop: When an operation requires elevation of privilege, the user is prompted on the secure desktop to enter a privileged user name and password. If the user enters valid credentials, the operation continues with the user's highest available privilege.  • Prompt for consent on the secure desktop: When an operation requires elevation of privilege, the user is prompted on the secure desktop to select either Permit or Deny. If the user selects Permit, the operation continues with the user's highest available privilege.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "1": {
+              "description": "Prompt for credentials on the secure desktop"
+            },
+            "2": {
+              "description": "Prompt for consent on the secure desktop"
+            }
+          }
+        },
+        "scope": "device"
+      },
       "/UserAccountControl_BehaviorOfTheElevationPromptForStandardUsers": {
         "name": "UserAccountControl_BehaviorOfTheElevationPromptForStandardUsers",
         "description": "User Account Control: Behavior of the elevation prompt for standard users This policy setting controls the behavior of the elevation prompt for standard users.  The options are:  • Prompt for credentials: (Default) When an operation requires elevation of privilege, the user is prompted to enter an administrative user name and password. If the user enters valid credentials, the operation continues with the applicable privilege.  • Automatically deny elevation requests: When an operation requires elevation of privilege, a configurable access denied error message is displayed. An enterprise that is running desktops as standard user may choose this setting to reduce help desk calls.  • Prompt for credentials on the secure desktop: When an operation requires elevation of privilege, the user is prompted on the secure desktop to enter a different user name and password. If the user enters valid credentials, the operation continues with the applicable privilege.",
@@ -20216,6 +20654,24 @@
             },
             "1": {
               "description": "Enabled"
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/UserAccountControl_TypeOfAdminApprovalMode": {
+        "name": "UserAccountControl_TypeOfAdminApprovalMode",
+        "description": "User Account Control: Configure type of Admin Approval Mode. This policy setting controls whether enhanced privilege protection is applied to admin approval mode elevations. If you change this policy setting, you must restart your computer. This policy is only supported on Windows Desktop, not Server. The options are: • Admin Approval Mode is running in legacy mode (default). • Admin Approval Mode is running with enhanced privilege protection.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "1": {
+              "description": "Legacy Admin Approval Mode"
+            },
+            "2": {
+              "description": "Admin Approval Mode with enhanced privilege protection"
             }
           }
         },
@@ -20377,6 +20833,12 @@
       },
       "/EnableStructuredExceptionHandlingOverwriteProtection": {
         "name": "EnableStructuredExceptionHandlingOverwriteProtection",
+        "description": "",
+        "format": "string",
+        "scope": "device"
+      },
+      "/NetBTNodeTypeConfiguration": {
+        "name": "NetBTNodeTypeConfiguration",
         "description": "",
         "format": "string",
         "scope": "device"
@@ -20599,6 +21061,24 @@
         "format": "string",
         "scope": "device"
       },
+      "/AutoUnlock": {
+        "name": "AutoUnlock",
+        "description": "This policy controls whether a signed-in user will be prompted for credentials when returning to the device after the device has entered suspended state. This policy is available both for the device as well as the user scope. When enabled for the device scope, auto unlock will be enabled for all users on the device. When enabled for the user scope, only the specific user will have auto unlock enabled.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "User will be prompted for credentials."
+            },
+            "1": {
+              "description": "User will not be prompted for credentials."
+            }
+          }
+        },
+        "scope": "device"
+      },
       "/AutomaticDisplayAdjustment": {
         "name": "AutomaticDisplayAdjustment",
         "description": "This policy controls if the HoloLens displays will be automatically adjusted for your eyes to improve hologram visual quality when an user wears the device. When this feature is enabled, a new user upon wearing the device will not be prompted to calibrate and yet the displays will be adjusted to suite them automatically.  However if an immersive application is launched that depends on eye tracking interactions, the user will be prompted to perform the calibration.",
@@ -20632,6 +21112,39 @@
               "description": "Brightness cannot be changed with press of brightness button."
             }
           }
+        },
+        "scope": "device"
+      },
+      "/ConfigureDeviceStandbyAction": {
+        "name": "ConfigureDeviceStandbyAction",
+        "description": "This policy setting controls device maintenance action during standby.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Not configured."
+            },
+            "1": {
+              "description": "Logoff users."
+            },
+            "2": {
+              "description": "Reboot device."
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/ConfigureDeviceStandbyActionTimeout": {
+        "name": "ConfigureDeviceStandbyActionTimeout",
+        "description": "This policy setting controls when to start maintenance action after device enters standby. The timeout value is in hours.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "range",
+          "min": 1,
+          "max": 16
         },
         "scope": "device"
       },
@@ -21037,6 +21550,60 @@
   "./Device/Vendor/MSFT/Policy/Config/NetworkListManager": {
     "name": "NetworkListManager",
     "policies": {
+      "/AllNetworks_NetworkIcon": {
+        "name": "AllNetworks_NetworkIcon",
+        "description": "This policy setting allows you to specify whether users can change the network icon for all networks to which the user connects.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "User can change icon"
+            },
+            "1": {
+              "description": "User cannot change icon"
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/AllNetworks_NetworkLocation": {
+        "name": "AllNetworks_NetworkLocation",
+        "description": "This policy setting allows you to specify whether users can change the network location for all networks to which the user connects.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "User can change location"
+            },
+            "1": {
+              "description": "User cannot change location"
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/AllNetworks_NetworkName": {
+        "name": "AllNetworks_NetworkName",
+        "description": "This policy setting allows you to specify whether users can change the network name for all networks to which the user connects.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "User can change name"
+            },
+            "1": {
+              "description": "User cannot change name"
+            }
+          }
+        },
+        "scope": "device"
+      },
       "/AllowedTlsAuthenticationEndpoints": {
         "name": "AllowedTlsAuthenticationEndpoints",
         "description": "List of URLs (seperated by Unicode character 0xF000) to endpoints accessible only within an enterprise's network. If any of the URLs can be resolved over HTTPS, the network would be considered authenticated.",
@@ -21047,6 +21614,60 @@
         "name": "ConfiguredTlsAuthenticationNetworkName",
         "description": "The string will be used to name the network authenticated against one of the endpoints listed in AllowedTlsAuthenticationEndpoints policy",
         "format": "string",
+        "scope": "device"
+      },
+      "/IdentifyingNetworks_LocationType": {
+        "name": "IdentifyingNetworks_LocationType",
+        "description": "This policy setting allows you to configure the Network Location for networks that are in a temporary state while Windows works to identify the network and location type. A network location identifies the type of network that a computer is connected to and automatically sets the appropriate firewall settings for that location.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Public"
+            },
+            "1": {
+              "description": "Private"
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/UnidentifiedNetworks_LocationType": {
+        "name": "UnidentifiedNetworks_LocationType",
+        "description": "This policy setting allows you to configure the Network Location type for networks that Windows cannot identify due to a network issue or a lack of identifiable characters in the network information received by the operating system from the network. A network location identifies the type of network that a computer is connected to and automatically sets the appropriate firewall settings for that location.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Public"
+            },
+            "1": {
+              "description": "Private"
+            }
+          }
+        },
+        "scope": "device"
+      },
+      "/UnidentifiedNetworks_UserPermissions": {
+        "name": "UnidentifiedNetworks_UserPermissions",
+        "description": "This policy setting allows you to configure the Network Location user permissions for networks that Windows cannot identify due to a network issue or a lack of identifiable characters in the network information received by the operating system from the network.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "User can change location"
+            },
+            "1": {
+              "description": "User cannot change location"
+            }
+          }
+        },
         "scope": "device"
       }
     }
@@ -21467,6 +22088,12 @@
       },
       "/ConfigureRpcTcpPort": {
         "name": "ConfigureRpcTcpPort",
+        "description": "",
+        "format": "string",
+        "scope": "device"
+      },
+      "/ConfigureWindowsProtectedPrint": {
+        "name": "ConfigureWindowsProtectedPrint",
         "description": "",
         "format": "string",
         "scope": "device"
@@ -22609,6 +23236,18 @@
         "format": "string",
         "scope": "device"
       },
+      "/DisconnectOnLockLegacyAuthn": {
+        "name": "DisconnectOnLockLegacyAuthn",
+        "description": "",
+        "format": "string",
+        "scope": "device"
+      },
+      "/DisconnectOnLockMicrosoftIdentityAuthn": {
+        "name": "DisconnectOnLockMicrosoftIdentityAuthn",
+        "description": "",
+        "format": "string",
+        "scope": "device"
+      },
       "/DoNotAllowDriveRedirection": {
         "name": "DoNotAllowDriveRedirection",
         "description": "",
@@ -22623,6 +23262,18 @@
       },
       "/DoNotAllowWebAuthnRedirection": {
         "name": "DoNotAllowWebAuthnRedirection",
+        "description": "",
+        "format": "string",
+        "scope": "device"
+      },
+      "/LimitClientToServerClipboardRedirection": {
+        "name": "LimitClientToServerClipboardRedirection",
+        "description": "",
+        "format": "string",
+        "scope": "device"
+      },
+      "/LimitServerToClientClipboardRedirection": {
+        "name": "LimitServerToClientClipboardRedirection",
         "description": "",
         "format": "string",
         "scope": "device"
@@ -23405,7 +24056,7 @@
       },
       "/AllowEditDeviceName": {
         "name": "AllowEditDeviceName",
-        "description": "Allows the user to edit the device name.",
+        "description": "This policy is deprecated.",
         "format": "int",
         "defaultValue": 0,
         "allowedValues": {
@@ -23606,6 +24257,12 @@
             },
             "1": {
               "description": "Turns on Application Installation Control, allowing users to only install apps from the Store."
+            },
+            "2": {
+              "description": "Turns on Application Installation Control, letting users know that there's a comparable app in the Store"
+            },
+            "3": {
+              "description": "Turns on Application Installation Control, warning users before installing apps from outside the Store"
             }
           }
         },
@@ -24497,6 +25154,35 @@
       }
     }
   },
+  "./Device/Vendor/MSFT/Policy/Config/Sudo": {
+    "name": "Sudo",
+    "policies": {
+      "/EnableSudo": {
+        "name": "EnableSudo",
+        "description": "",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Sudo is disabled."
+            },
+            "1": {
+              "description": "Sudo is allowed in 'force new window' mode."
+            },
+            "2": {
+              "description": "Sudo is allowed in 'disable input' mode."
+            },
+            "3": {
+              "description": "Sudo is allowed in 'inline' mode."
+            }
+          }
+        },
+        "scope": "device"
+      }
+    }
+  },
   "./Device/Vendor/MSFT/Policy/Config/System": {
     "name": "System",
     "policies": {
@@ -25063,6 +25749,14 @@
   "./Device/Vendor/MSFT/Policy/Config/SystemServices": {
     "name": "SystemServices",
     "policies": {
+      "/ConfigureComputerBrowserServiceStartupMode": {
+        "name": "ConfigureComputerBrowserServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
       "/ConfigureHomeGroupListenerServiceStartupMode": {
         "name": "ConfigureHomeGroupListenerServiceStartupMode",
         "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
@@ -25073,6 +25767,126 @@
       },
       "/ConfigureHomeGroupProviderServiceStartupMode": {
         "name": "ConfigureHomeGroupProviderServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureIISAdminServiceStartupMode": {
+        "name": "ConfigureIISAdminServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureInfraredMonitorServiceStartupMode": {
+        "name": "ConfigureInfraredMonitorServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureInternetConnectionSharingServiceStartupMode": {
+        "name": "ConfigureInternetConnectionSharingServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureLxssManagerServiceStartupMode": {
+        "name": "ConfigureLxssManagerServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureMicrosoftFTPServiceStartupMode": {
+        "name": "ConfigureMicrosoftFTPServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureRemoteProcedureCallLocatorServiceStartupMode": {
+        "name": "ConfigureRemoteProcedureCallLocatorServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureRoutingAndRemoteAccessServiceStartupMode": {
+        "name": "ConfigureRoutingAndRemoteAccessServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureSSDPDiscoveryServiceStartupMode": {
+        "name": "ConfigureSSDPDiscoveryServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureSimpleTCPIPServicesStartupMode": {
+        "name": "ConfigureSimpleTCPIPServicesStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureSpecialAdministrationConsoleHelperServiceStartupMode": {
+        "name": "ConfigureSpecialAdministrationConsoleHelperServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureUPnPDeviceHostServiceStartupMode": {
+        "name": "ConfigureUPnPDeviceHostServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureWebManagementServiceStartupMode": {
+        "name": "ConfigureWebManagementServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureWindowsMediaPlayerNetworkSharingServiceStartupMode": {
+        "name": "ConfigureWindowsMediaPlayerNetworkSharingServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureWindowsMobileHotspotServiceStartupMode": {
+        "name": "ConfigureWindowsMobileHotspotServiceStartupMode",
+        "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/ConfigureWorldWideWebPublishingServiceStartupMode": {
+        "name": "ConfigureWorldWideWebPublishingServiceStartupMode",
         "description": "This setting determines whether the service's start type is Automatic(2), Manual(3), Disabled(4). Default: Manual.",
         "format": "int",
         "defaultValue": 0,
@@ -27120,9 +27934,21 @@
         "format": "string",
         "scope": "device"
       },
+      "/AdjustMemoryQuotasForProcess": {
+        "name": "AdjustMemoryQuotasForProcess",
+        "description": "Adjust memory quotas for a process - This privilege determines who can change the maximum memory that can be consumed by a process. This privilege is useful for system tuning on a group or user basis.",
+        "format": "string",
+        "scope": "device"
+      },
       "/AllowLocalLogOn": {
         "name": "AllowLocalLogOn",
         "description": "This user right determines which users can log on to the computer. Note: Modifying this setting may affect compatibility with clients, services, and applications. For compatibility information about this setting, see Allow log on locally (https://go.microsoft.com/fwlink/?LinkId=24268 ) at the Microsoft website. ",
+        "format": "string",
+        "scope": "device"
+      },
+      "/AllowLogOnThroughRemoteDesktop": {
+        "name": "AllowLogOnThroughRemoteDesktop",
+        "description": "Allow log on through Remote Desktop Services - This policy setting determines which users or groups can access the sign-in screen of a remote device through a Remote Desktop Services connection.",
         "format": "string",
         "scope": "device"
       },
@@ -27618,6 +28444,29 @@
           "valueType": "range",
           "min": 0,
           "max": 50
+        },
+        "scope": "device"
+      }
+    }
+  },
+  "./Device/Vendor/MSFT/Policy/Config/WindowsAI": {
+    "name": "WindowsAI",
+    "policies": {
+      "/AllowImageCreator": {
+        "name": "AllowImageCreator",
+        "description": "This policy setting allows you to control whether Image Creator functionality is available in the Windows Paint app. If you disable this policy setting, Image Creator functionality will not be accessible in the Windows Paint app. If you enable or don't configure this policy setting, users will be able to access Image Creator functionality.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Disabled."
+            },
+            "1": {
+              "description": "Enabled."
+            }
+          }
         },
         "scope": "device"
       }
@@ -28179,6 +29028,14 @@
         "allowedValues": null,
         "scope": "device"
       },
+      "/AllowMappedFolders": {
+        "name": "AllowMappedFolders",
+        "description": "Allow mapping folders into Windows Sandbox",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
       "/AllowNetworking": {
         "name": "AllowNetworking",
         "description": "Allow networking in Windows Sandbox",
@@ -28206,6 +29063,14 @@
       "/AllowVideoInput": {
         "name": "AllowVideoInput",
         "description": "Allow video input in Windows Sandbox",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": null,
+        "scope": "device"
+      },
+      "/AllowWriteToMappedFolders": {
+        "name": "AllowWriteToMappedFolders",
+        "description": "Allow Sandbox to write to mapped folders",
         "format": "int",
         "defaultValue": 0,
         "allowedValues": null,
@@ -29991,6 +30856,27 @@
             "format": "string",
             "scope": "user"
           },
+          "Install/AttestPrivateKey": {
+            "name": "AttestPrivateKey",
+            "description": "Defines the attest SCEP private key behavior 0 - normal, 1 - best effort, 2 - on error, fail the installation",
+            "format": "int",
+            "defaultValue": 0,
+            "allowedValues": {
+              "valueType": "enum",
+              "enum": {
+                "0": {
+                  "description": " Do not attest private key"
+                },
+                "1": {
+                  "description": " Attest key, but in case attestation failed, best effort approach - CSR is sent to the server "
+                },
+                "2": {
+                  "description": " Attest key, but in case attestation failed, fail fast (i.e release the key and not issue a CSR to the server) "
+                }
+              }
+            },
+            "scope": "user"
+          },
           "Install/CAThumbprint": {
             "name": "CAThumbprint",
             "description": "Required. Specify root CA thumbprint. It is a 20-byte value of the SHA1 certificate hash specified as a hexadecimal string value. When client authenticates SCEP server, it checks CA cert from SCEP server whether match with this cert. If not match, fail the authentication. ",
@@ -30236,7 +31122,7 @@
                   "description": "The device has successfully provisioned the user."
                 },
                 "2": {
-                  "description": "Provisoining is in progress."
+                  "description": "Provisioning is in progress."
                 }
               }
             },
@@ -38853,6 +39739,29 @@
       }
     }
   },
+  "./User/Vendor/MSFT/Policy/Config/MixedReality": {
+    "name": "MixedReality",
+    "policies": {
+      "/AutoUnlock": {
+        "name": "AutoUnlock",
+        "description": "This policy controls whether a signed-in user will be prompted for credentials when returning to the device after the device has entered suspended state. This policy is available both for the device as well as the user scope. When enabled for the device scope, auto unlock will be enabled for all users on the device. When enabled for the user scope, only the specific user will have auto unlock enabled.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "User will be prompted for credentials."
+            },
+            "1": {
+              "description": "User will not be prompted for credentials."
+            }
+          }
+        },
+        "scope": "user"
+      }
+    }
+  },
   "./User/Vendor/MSFT/Policy/Config/Multitasking": {
     "name": "Multitasking",
     "policies": {
@@ -39016,6 +39925,23 @@
       }
     }
   },
+  "./User/Vendor/MSFT/Policy/Config/RemoteDesktopServices": {
+    "name": "RemoteDesktopServices",
+    "policies": {
+      "/LimitClientToServerClipboardRedirection": {
+        "name": "LimitClientToServerClipboardRedirection",
+        "description": "",
+        "format": "string",
+        "scope": "user"
+      },
+      "/LimitServerToClientClipboardRedirection": {
+        "name": "LimitServerToClientClipboardRedirection",
+        "description": "",
+        "format": "string",
+        "scope": "user"
+      }
+    }
+  },
   "./User/Vendor/MSFT/Policy/Config/Security": {
     "name": "Security",
     "policies": {
@@ -39073,6 +39999,29 @@
         "name": "PageVisibilityList",
         "description": "Allows IT Admins to either prevent specific pages in the System Settings app from being visible or accessible, or to do so for all pages except those specified. The mode will be specified by the policy string beginning with either the string showonly: or hide:.  Pages are identified by a shortened version of their already published URIs, which is the URI minus the ms-settings: prefix. For example, if the URI for a settings page is ms-settings:bluetooth, the page identifier used in the policy will be just bluetooth. Multiple page identifiers are separated by semicolons. The following example illustrates a policy that would allow access only to the about and bluetooth pages, which have URI ms-settings:about and ms-settings:bluetooth respectively:showonly:about;bluetooth. If the policy is not specified, the behavior will be that no pages are affected. If the policy string is formatted incorrectly, it will be ignored entirely (i. e. treated as not set) to prevent the machine from becoming unserviceable if data corruption occurs. Note that if a page is already hidden for another reason, then it will remain hidden even if it is in a showonly: list. The format of the PageVisibilityList value is as follows: The value is a unicode string up to 10,000 characters long, which will be used without case sensitivity. There are two variants: one that shows only the given pages and one which hides the given pages. The first variant starts with the string showonly: and the second with the string hide:. Following the variant identifier is a semicolon-delimited list of page identifiers, which must not have any extra whitespace. Each page identifier is the ms-settings:xyz URI for the page, minus the ms-settings: prefix, so the identifier for the page with URI ms-settings:network-wifi would be just network-wifi. The default value for this setting is an empty string, which is interpreted as show everything. Example 1, specifies that only the wifi and bluetooth pages should be shown (they have URIs ms-settings:network-wifi and ms-settings:bluetooth). All other pages (and the categories they're in) will be hidden:showonly:network-wifi;bluetooth. Example 2, specifies that the wifi page should not be shown:hide:network-wifi",
         "format": "string",
+        "scope": "user"
+      }
+    }
+  },
+  "./User/Vendor/MSFT/Policy/Config/SpeakForMe": {
+    "name": "SpeakForMe",
+    "policies": {
+      "/EnableSpeakForMe": {
+        "name": "EnableSpeakForMe",
+        "description": "This policy setting controls whether to allow create personal voices with SpeakForMe Accessibility Windows Application. If you enable this policy setting, then user can create their personal voice models. If you disable this policy setting, then user cannot create their personal voice models with SpeakForMe. If you do not configure this policy setting (default), then users can launch the training flow and create their personal voice model through SpeakForMe.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Not allowed."
+            },
+            "1": {
+              "description": "Allowed."
+            }
+          }
+        },
         "scope": "user"
       }
     }
@@ -39379,6 +40328,24 @@
   "./User/Vendor/MSFT/Policy/Config/WindowsAI": {
     "name": "WindowsAI",
     "policies": {
+      "/DisableAIDataAnalysis": {
+        "name": "DisableAIDataAnalysis",
+        "description": "This policy setting allows you to prevent Windows AI from using and analyzing user patterns and data. If you enable this policy setting, Windows AI will not be able to take advantage of historical user patterns. If you disable or do not configure this policy setting, Windows AI will be able to assist users by considering their historical behaviors and data.",
+        "format": "int",
+        "defaultValue": 0,
+        "allowedValues": {
+          "valueType": "enum",
+          "enum": {
+            "0": {
+              "description": "Enable Data Analysis for Windows AI."
+            },
+            "1": {
+              "description": "Disable Data Analysis for Windows AI."
+            }
+          }
+        },
+        "scope": "user"
+      },
       "/TurnOffWindowsCopilot": {
         "name": "TurnOffWindowsCopilot",
         "description": "This policy setting allows you to turn off Windows Copilot. If you enable this policy setting, users will not be able to use Copilot. The Copilot icon will not appear on the taskbar either. If you disable or do not configure this policy setting, users will be able to use Copilot when it's available to them.",
@@ -39388,10 +40355,10 @@
           "valueType": "enum",
           "enum": {
             "0": {
-              "description": "Enable Copilot."
+              "description": "Enable Copilot"
             },
             "1": {
-              "description": "Disable Copilot."
+              "description": "Disable Copilot"
             }
           }
         },
@@ -41721,6 +42688,18 @@
   "./Vendor/MSFT/Personalization": {
     "name": "Personalization",
     "policies": {
+      "/CompanyLogoUrl": {
+        "name": "CompanyLogoUrl",
+        "description": "A http or https Url to a jpg, jpeg or png image that neeeds to be downloaded and used as the Company Logo or a file Url to a local image on the file system that needs to be used as the Company Logo. This setting is currently available for boot to cloud shared pc mode only.",
+        "format": "string",
+        "scope": "device"
+      },
+      "/CompanyName": {
+        "name": "CompanyName",
+        "description": "This represents the name of the company. It can be at most 30 characters long. This setting is currently available only for boot to cloud shared pc mode to display the company name on sign-in screen.",
+        "format": "string",
+        "scope": "device"
+      },
       "/DesktopImageUrl": {
         "name": "DesktopImageUrl",
         "description": "A http or https Url to a jpg, jpeg or png image that needs to be downloaded and used as the Desktop Image or a file Url to a local image on the file system that needs to be used as the Desktop Image.",

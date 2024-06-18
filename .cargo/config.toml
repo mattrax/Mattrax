@@ -2,6 +2,7 @@
 mattrax = "run -p mattrax --"
 mttx = "run -p mttx -- --server http://localhost:3000 "
 mattraxd = "run -p mattraxd --"
+ingest = "run -p ingest"
 
 [env]
 WEB_URL = "http://localhost:3000" # Redirect traffic to your devserver.

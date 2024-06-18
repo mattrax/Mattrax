@@ -48,9 +48,9 @@
         </DFType>
         <DefaultValue>0</DefaultValue>
         <MSFT:Applicability>
-          <MSFT:OsBuildVersion>99.9.99999</MSFT:OsBuildVersion>
-          <MSFT:CspVersion>9.9</MSFT:CspVersion>
-          <MSFT:EditionAllowList>0x4;0x30;0x31;0x7E;0xA1;0xA2;0xA4;0xA5;0xBC;0xBF;0xCD;</MSFT:EditionAllowList>
+          <MSFT:OsBuildVersion>10.0.22621.2338</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>11.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x30;0x31;0x7E;0xA1;0xA2;0xA4;0xA5;0xBC;0xBF;0xCD;0xD2;</MSFT:EditionAllowList>
         </MSFT:Applicability>
         <MSFT:AllowedValues ValueType="ENUM">
           <MSFT:Enum>
@@ -89,9 +89,9 @@
         </DFType>
         <DefaultValue>5</DefaultValue>
         <MSFT:Applicability>
-          <MSFT:OsBuildVersion>22631.2050</MSFT:OsBuildVersion>
-          <MSFT:CspVersion>9.9</MSFT:CspVersion>
-          <MSFT:EditionAllowList>0x4;0x30;0x31;0x7E;0xA1;0xA2;0xA4;0xA5;0xBC;0xBF;0xCD;</MSFT:EditionAllowList>
+          <MSFT:OsBuildVersion>10.0.22621.2338</MSFT:OsBuildVersion>
+          <MSFT:CspVersion>11.0</MSFT:CspVersion>
+          <MSFT:EditionAllowList>0x4;0x30;0x31;0x7E;0xA1;0xA2;0xA4;0xA5;0xBC;0xBF;0xCD;0xD2;</MSFT:EditionAllowList>
         </MSFT:Applicability>
         <MSFT:AllowedValues ValueType="ENUM">
           <MSFT:Enum>
