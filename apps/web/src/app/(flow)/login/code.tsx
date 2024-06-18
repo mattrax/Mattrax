@@ -49,7 +49,7 @@ export default function Page() {
 				replace: true,
 			});
 		},
-		...withDependantQueries([me, orgs]),
+		// ...withDependantQueries([me, orgs]), // TODO: Using this here is problematic because the auth check on the backend is cached I think
 	}));
 
 	const form = createZodForm({
