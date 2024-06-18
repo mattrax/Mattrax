@@ -10,6 +10,8 @@ import { trpc } from "~/lib";
 import { parseJson } from "~/lib/utils";
 
 export default function Page() {
+	console.log("HERE LOGIN");
+
 	const navigate = useNavigate();
 	const location = useLocation<{ action?: string; continueTo?: string }>();
 
