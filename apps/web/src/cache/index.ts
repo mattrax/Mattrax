@@ -10,6 +10,7 @@ import {
 	createSignal,
 	untrack,
 } from "solid-js";
+import { joinSignals } from "~/lib/signals";
 import type { MattraxCache, TableData, TableNames } from "./dexie";
 export type { TableData, TableNames, MattraxCache } from "./dexie";
 
@@ -42,20 +43,8 @@ export function useCachedQueryData<TData>(
 	query: CreateQueryResult<Array<TData>, any>,
 	cacheQuery: () => Promise<Array<TData>>,
 ): Accessor<Array<TData> | undefined> {
-	const cachedQuery = createAsync(() => cacheQuery());
-	const [data, setData] = createSignal<TData[]>();
-
-	createComputed(() => createRoot(() => setData(query.data)));
-
-	return () => {
-		if (untrack(() => query.isLoading)) {
-			const c = cachedQuery();
-
-			if (c) data();
-
-			return c;
-		}
-
-		return data();
-	};
+	return joinSignals(
+		() => query.data,
+		createAsync(() => cacheQuery()),
+	);
 }
