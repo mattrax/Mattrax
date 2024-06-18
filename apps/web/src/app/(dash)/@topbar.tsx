@@ -32,7 +32,6 @@ import {
 	Suspense,
 	children,
 	createSignal,
-	useTransition,
 	startTransition,
 } from "solid-js";
 
