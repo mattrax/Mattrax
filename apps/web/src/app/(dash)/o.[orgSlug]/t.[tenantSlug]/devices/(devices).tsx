@@ -25,7 +25,6 @@ import { Combobox } from "@kobalte/core/combobox";
 import {
 	Button,
 	ComboboxContent,
-	// ComboboxContentVirtualized,
 	ComboboxControl,
 	ComboboxInput,
 	ComboboxItem,
@@ -99,12 +98,19 @@ const columns = [
 	column.accessor("owner", {
 		header: "Owner",
 		cell: (props) => (
-			<A
-				class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-				href={`../users/${props.getValue()!.id}`}
+			<Show
+				when={props.row.original.owner}
+				fallback={<p class="text-muted-foreground">No owner</p>}
 			>
-				{props.getValue()!.name}
-			</A>
+				{(owner) => (
+					<A
+						class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
+						href={`../users/${owner()?.id}`}
+					>
+						{owner()?.name}
+					</A>
+				)}
+			</Show>
 		),
 	}),
 	column.accessor("lastSynced", {
