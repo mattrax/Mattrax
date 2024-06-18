@@ -46,3 +46,9 @@ type UnionToTuple<T> = UnionToIntersection<
 
 export const getObjectKeys = <T extends object>(obj: T) =>
 	Object.keys(obj) as UnionToTuple<keyof T>;
+
+export function urlWithSearchParams(url: string, query: URLSearchParams) {
+	const search = query.toString();
+	if (search) return `${url}?${search}`;
+	return url;
+}

@@ -18,6 +18,7 @@ import { isTRPCClientError, trpc } from "./lib";
 import "@mattrax/ui/css";
 import "./assets/sonner.css";
 import { parseJson } from "./lib/utils";
+import { urlWithSearchParams } from "./api/utils";
 
 // TODO: Maybe PR this back to Solid DND???
 declare module "solid-js" {
@@ -93,8 +94,9 @@ export default function App() {
 												? { next: location.pathname }
 												: {}),
 										});
+
 										startTransition(() =>
-											navigate(`/login?${params.toString()}`, {
+											navigate(urlWithSearchParams("/login", params), {
 												state: {
 													action: location.query?.action,
 												},
