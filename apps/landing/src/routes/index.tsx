@@ -78,6 +78,7 @@ export default function Page() {
 								class={landingButtonVariants({})}
 								target="_blank"
 								rel="noreferrer"
+								draggable="false"
 							>
 								<IconFa6SolidPhone />
 								Discuss your needs

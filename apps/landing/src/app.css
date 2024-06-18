@@ -14,7 +14,7 @@ body {
 /* Buttons */
 
 .button-inner-shadow {
-    box-shadow: inset 0 1px 1px 1px rgba(255, 255, 255, 0.3)
+    box-shadow: inset 0 1px 1px 1px rgba(255, 255, 255, 0.3);
 }
 
 .button-inner-shadow::after {
@@ -42,9 +42,13 @@ body {
     filter: drop-shadow(0 7px 7px #1d4fd881);
 }
 
-.blue-shadow:hover {
-    filter: drop-shadow(0 7px 8px #1d4fd8);
-    transform: translateY(-2px);
+/* Prevent the hover effect on touch devices */
+@media (pointer:fine) {
+    .blue-shadow:hover {
+        filter: drop-shadow(0 7px 8px #1d4fd8);
+        transform: translateY(-2px);
+        background-color: red !important;
+    }
 }
 
 /** Bento Grid & related styles */
