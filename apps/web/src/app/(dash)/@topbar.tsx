@@ -32,7 +32,7 @@ import {
 	Suspense,
 	children,
 	createSignal,
-	useTransition,
+	startTransition,
 } from "solid-js";
 
 import LogoImg from "~/assets/MATTRAX.png";
@@ -193,11 +193,10 @@ function Logo() {
 
 function ProfileDropdown() {
 	const navigate = useNavigate();
-	const [_, start] = useTransition();
 
 	const logout = trpc.auth.logout.createMutation(() => ({
 		// We reset caches on login
-		onSuccess: () => start(() => navigate("/login")),
+		onSuccess: () => startTransition(() => navigate("/login")),
 	}));
 	// const { items } = useNavItemsContext();
 	const account = useAuth();
@@ -232,7 +231,10 @@ function ProfileDropdown() {
 							</span>
 						</DropdownMenuItem>
 					)}
-					<DropdownMenuItem onClick={() => logout.mutate()}>
+					<DropdownMenuItem
+						onClick={() => logout.mutate()}
+						disabled={logout.isPending}
+					>
 						Logout
 					</DropdownMenuItem>
 				</DropdownMenuContent>
