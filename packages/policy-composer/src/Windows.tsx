@@ -478,7 +478,7 @@ function NodeEditor(props: {
 												onClick={() => {
 													props.setData(
 														produce((d) => {
-															d[props.path] ??= [];
+															d[props.path] ??= [] as any;
 
 															(d[props.path] as any as any[]).unshift(value());
 														}),
