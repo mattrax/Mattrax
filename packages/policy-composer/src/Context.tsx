@@ -5,7 +5,7 @@ import type { SetStoreFunction } from "solid-js/store";
 export type PolicyPlatform = "windows" | "apple" | "android";
 
 export type PolicyComposerState = {
-	filter: boolean;
+	filter?: boolean;
 	platform: PolicyPlatform;
 	windows?: Record<
 		string,
