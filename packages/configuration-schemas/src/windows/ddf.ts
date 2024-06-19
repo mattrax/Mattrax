@@ -5,9 +5,9 @@ export type IntAllowedValues =
 export type Scope = "user" | "device";
 export type WindowsCSP = {
 	name: string;
-	policies: { [key in string]: WindowsDDFPolicy };
+	nodes: { [key in string]: WindowsDDFNode };
 };
-export type WindowsDDFPolicy = (
+export type WindowsDDFNode = (
 	| {
 			format: "int";
 			defaultValue: number;
@@ -15,7 +15,7 @@ export type WindowsDDFPolicy = (
 	  }
 	| { format: "bool" }
 	| { format: "string" }
-	| { format: "node" }
+	| { format: "node"; nodes: { [key in string]: WindowsDDFNode } }
 	| { format: "null" }
 	| { format: "base64" }
 	| { format: "time" }
@@ -26,6 +26,6 @@ export type WindowsDDFPolicy = (
 	name: string;
 	title?: string | null;
 	description?: string | null;
-	nodes: { [key in string]: WindowsDDFPolicy };
 	scope: Scope;
+	dynamic: string | null;
 };

@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ms_ddf::{AllowedValueGroupedNodes, DFFormatVariant, MgmtTree, Node};
+use ms_ddf::{AllowedValueGroupedNodes, DFFormatVariant, MgmtTree, Node, ScopeVariant};
 use serde::Serialize;
 use specta::{ts::ExportConfig, NamedType, Type};
 
@@ -12,7 +12,7 @@ use specta::{ts::ExportConfig, NamedType, Type};
 #[serde(rename_all = "camelCase")]
 struct WindowsCSP {
     name: String,
-    policies: BTreeMap<PathBuf, WindowsDDFPolicy>,
+    nodes: BTreeMap<String, WindowsDDFNode>,
 }
 
 #[derive(Serialize, Debug, Type, Clone, Copy)]
@@ -24,7 +24,7 @@ pub enum Scope {
 
 #[derive(Serialize, Debug, Type)]
 #[serde(rename_all = "camelCase")]
-struct WindowsDDFPolicy {
+struct WindowsDDFNode {
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
@@ -32,9 +32,8 @@ struct WindowsDDFPolicy {
     description: Option<String>,
     #[serde(flatten)]
     format: Format,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    nodes: WindowsDFFPolicyGroup,
     scope: Scope,
+    dynamic: Option<String>,
 }
 
 #[derive(Serialize, Debug, Type)]
@@ -48,7 +47,10 @@ enum Format {
     },
     Bool,
     String,
-    Node,
+    Node {
+        #[serde(skip_serializing_if = "WindowsDFFNodeGroup::is_empty")]
+        nodes: WindowsDFFNodeGroup,
+    },
     Null,
     Base64,
     Time,
@@ -58,11 +60,25 @@ enum Format {
 }
 
 impl Format {
-    fn parse(node: &Node) -> Self {
-        match &*node.properties.df_format {
+    fn parse(node: &Node, scope: Scope) -> Option<Self> {
+        Some(match &*node.properties.df_format {
             DFFormatVariant::Bool => Self::Bool,
             DFFormatVariant::String => Self::String,
-            DFFormatVariant::Node => Self::Node,
+            DFFormatVariant::Node => {
+                let mut nodes = WindowsDFFNodeGroup::new();
+
+                if node.node_name.is_empty() {
+                    for child in &node.children {
+                        nodes.extend(handle_node(child, &String::new(), scope));
+                    }
+                }
+
+                if nodes.is_empty() {
+                    return None;
+                }
+
+                Self::Node { nodes }
+            }
             DFFormatVariant::Null => Self::Null,
             DFFormatVariant::Base64 => Self::Base64,
             DFFormatVariant::Time => Self::Time,
@@ -74,7 +90,7 @@ impl Format {
                 allowed_values: IntAllowedValues::parse(node),
             },
             format => todo!("{}", format.to_string()),
-        }
+        })
     }
 }
 
@@ -139,51 +155,66 @@ struct EnumContent {
     description: Option<String>,
 }
 
-type WindowsDFFPolicyGroup = BTreeMap<PathBuf, WindowsDDFPolicy>;
+type WindowsDFFNodeGroup = BTreeMap<String, WindowsDDFNode>;
 
-fn handle_node(node: &Node, path: &Path, scope: Scope) -> WindowsDFFPolicyGroup {
-    let mut collection = WindowsDFFPolicyGroup::default();
+fn handle_node(node: &Node, path: &str, scope: Scope) -> WindowsDFFNodeGroup {
+    let mut collection = WindowsDFFNodeGroup::default();
+
+    let access_type = &node.properties.access_type;
 
     let mut path = node
         .path
         .as_ref()
-        .map(|new_path| path.join(new_path))
-        .unwrap_or_else(|| path.to_owned());
+        .map(|new_path| {
+            if path == "" {
+                new_path.to_string()
+            } else {
+                format!("{path}/{new_path}")
+            }
+        })
+        .unwrap_or_else(|| path.to_string());
 
-    let mut nodes = WindowsDFFPolicyGroup::new();
+    let mut dynamic = None;
 
     if let (Some(title), "") = (&node.properties.df_title, node.node_name.as_str()) {
-        dbg!(&title);
-        path = path.join(format!("{{{title}}}"));
-
-        for child in &node.children {
-            nodes.extend(handle_node(child, &PathBuf::new(), scope));
+        if path == "" || path == "/" {
+            path = format!("{{{title}}}");
+        } else {
+            dynamic = Some(title.to_string());
         }
     } else {
-        path = path.join(&node.node_name);
+        if path == "" || path == "/" {
+            path = format!("/{}", &node.node_name);
+        } else {
+            path = format!("{path}/{}", &node.node_name);
+        }
 
         for child in &node.children {
             collection.extend(handle_node(child, &path, scope));
         }
     }
 
-    let access_type = &node.properties.access_type;
-
     if access_type.len() == 1 && (access_type.get.is_some() || access_type.exec.is_some()) {
         return collection;
     }
 
-    collection.insert(
-        path,
-        WindowsDDFPolicy {
-            name: node.node_name.clone(),
-            title: node.properties.df_title.clone(),
-            description: node.properties.description.clone(),
-            format: Format::parse(node),
-            nodes,
-            scope,
-        },
-    );
+    if let Some(format) = Format::parse(node, scope) {
+        if matches!(format, Format::Node { .. }) && !node.node_name.is_empty() {
+            return collection;
+        }
+
+        collection.insert(
+            path,
+            WindowsDDFNode {
+                name: node.node_name.clone(),
+                title: node.properties.df_title.clone(),
+                description: node.properties.description.clone(),
+                format,
+                scope,
+                dynamic,
+            },
+        );
+    }
 
     collection
 }
@@ -194,7 +225,7 @@ fn handle_mgmt_tree(tree: MgmtTree) -> Vec<(PathBuf, WindowsCSP)> {
         .map(|node| {
             let mut csp = WindowsCSP {
                 name: node.node_name.clone(),
-                policies: Default::default(),
+                nodes: Default::default(),
             };
 
             let path = node.path.unwrap();
@@ -206,8 +237,7 @@ fn handle_mgmt_tree(tree: MgmtTree) -> Vec<(PathBuf, WindowsCSP)> {
             };
 
             for node in node.children {
-                csp.policies
-                    .extend(handle_node(&node, &PathBuf::from("/"), scope))
+                csp.nodes.extend(handle_node(&node, "/", scope))
             }
 
             (PathBuf::from(path).join(node.node_name), csp)
@@ -234,7 +264,7 @@ pub fn generate_bindings() {
             .unwrap_or_else(|_| panic!("Failed to parse {:?}", file.path()));
 
         for (path, csp) in handle_mgmt_tree(root) {
-            if !csp.policies.is_empty() {
+            if !csp.nodes.is_empty() {
                 policy_collection.0.insert(path, csp);
             }
         }

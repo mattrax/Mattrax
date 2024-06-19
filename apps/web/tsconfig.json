@@ -6,6 +6,7 @@
 		"noEmit": true,
 		"jsxImportSource": "solid-js",
 		"types": ["vinxi/client", "vite/client", "@mattrax/ui/types"],
+		"moduleResolution": "Bundler",
 		"paths": {
 			"~/*": ["./src/*"],
 			"~c/*": ["./src/components/*"],

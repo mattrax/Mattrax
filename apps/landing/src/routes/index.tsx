@@ -107,7 +107,6 @@ export default function Page() {
 				</p>
 				<Cta />
 			</div>
-
 			<div class="flex justify-center items-center pt-4 mb-5">
 				<Footer />
 			</div>

@@ -1958,6 +1958,7 @@ dependencies = [
  "easy-xml",
  "glob",
  "ms-ddf",
+ "nom",
  "plist",
  "serde",
  "serde_json",

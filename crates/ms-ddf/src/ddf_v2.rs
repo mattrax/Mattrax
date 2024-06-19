@@ -177,7 +177,7 @@ pub enum OccurrenceVariant {
 #[derive(XmlDeserialize, Debug)]
 pub struct Scope {
     #[easy_xml(rename = "Permanent|Dynamic")]
-    variant: ScopeVariant,
+    pub variant: ScopeVariant,
 }
 
 impl std::ops::Deref for Scope {

@@ -1,6 +1,11 @@
 import { Accordion } from "@kobalte/core/accordion";
-import type { WindowsCSP } from "@mattrax/configuration-schemas/windows";
+import type {
+	WindowsCSP,
+	WindowsDDFNode,
+} from "@mattrax/configuration-schemas/windows";
+import type { PolicyData } from "@mattrax/policy";
 import {
+	Button,
 	CardTitle,
 	Checkbox,
 	Input,
@@ -16,28 +21,41 @@ import {
 } from "@mattrax/ui";
 import {
 	For,
+	Index,
 	Match,
 	Show,
 	Switch,
+	batch,
+	createContext,
 	createMemo,
 	createSignal,
 	createUniqueId,
+	useContext,
 } from "solid-js";
-import { createStore, produce } from "solid-js/store";
+import { type SetStoreFunction, createStore, produce } from "solid-js/store";
 
 import { useController } from "./Context";
 import { Menubar } from "./Menubar";
 
-function docsURL(name: string, path: string) {
+function cspDocsURL(name: string, path: string) {
 	const BASE_URL =
 		"https://learn.microsoft.com/en-gb/windows/client-management/mdm";
 
 	const sanitisedName = name.toLowerCase().replace("_", "-");
 
-	if (path.includes("/Policy/"))
-		return `${BASE_URL}/policy-csp-${sanitisedName}`;
+	let hash: string | undefined;
+	if (path.startsWith("./User")) {
+		hash = "user";
+	} else if (path.startsWith("./Device")) {
+		hash = "device";
+	}
 
-	return `${BASE_URL}/${sanitisedName}-csp`;
+	const suffix = hash ? `#${hash}` : "";
+
+	if (path.includes("/Policy/"))
+		return `${BASE_URL}/policy-csp-${sanitisedName}${suffix}`;
+
+	return `${BASE_URL}/${sanitisedName}-csp${suffix}`;
 }
 
 export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
@@ -73,261 +91,92 @@ export function Windows(props: { csps?: Record<string, WindowsCSP> }) {
 					)}
 				>
 					{([payloadKey, value]) => {
-						const itemConfig = () => props.csps![payloadKey];
+						const csp = () => props.csps![payloadKey];
 
 						const when = () => {
-							const c = itemConfig();
-							if (c && value) return { itemConfig: c, value };
+							const c = csp();
+							if (c && value) return { csp: c, value };
 						};
 
 						return (
 							<Show when={when()} keyed>
-								{({ itemConfig, value }) => {
+								{({ csp, value }) => {
 									const [, setData] = createStore(value.data);
 
 									return (
-										<Accordion.Item
-											value={payloadKey}
-											as="li"
-											class="border-b border-gray-200"
-										>
-											<Accordion.Header class="shadow sticky top-12 bg-white z-10">
-												<Accordion.Trigger
-													as="div"
-													class="px-6 py-4 flex flex-row justify-between items-center group gap-4"
-												>
-													<div class="flex-1">
-														<div class="flex flex-row items-baseline gap-2 mb-1">
-															<CardTitle>{itemConfig.name}</CardTitle>
-															<a
-																class="text-sm text-gray-600 font-medium hover:underline"
-																href={docsURL(itemConfig.name, payloadKey)}
-																target="_blank"
-																rel="noopener noreferrer"
-																onClick={(e) => e.stopPropagation()}
-															>
-																{payloadKey}
-															</a>
-														</div>
-													</div>
-													<IconTablerChevronUp class="ml-auto ui-group-closed:rotate-180" />
-												</Accordion.Trigger>
-											</Accordion.Header>
-											<Accordion.Content
-												as="ul"
-												class="space-y-3 px-6 py-4 transition-all animate-accordion-up data-[expanded]:animate-accordion-down overflow-hidden"
-												onFocusIn={(e: FocusEvent) => e.stopPropagation()}
+										<NodeEditorCSPContext.Provider value={{ csp }}>
+											<Accordion.Item
+												value={payloadKey}
+												as="li"
+												class="border-b border-gray-200"
 											>
-												<For each={Object.entries(itemConfig.policies)}>
-													{([key, policy]) => {
-														const id = createUniqueId();
+												<Accordion.Header class="shadow sticky top-12 bg-white z-10">
+													<Accordion.Trigger
+														as="div"
+														class="px-4 py-4 flex flex-row justify-start items-center group gap-2"
+													>
+														<IconTablerChevronUp class="ui-group-closed:rotate-180 transition-transform" />
+														<CardTitle>{csp.name}</CardTitle>
+														<a
+															class="text-sm text-gray-600 font-medium hover:underline"
+															href={cspDocsURL(csp.name, payloadKey)}
+															target="_blank"
+															rel="noopener noreferrer"
+															onClick={(e) => e.stopPropagation()}
+														>
+															{payloadKey}
+														</a>
+													</Accordion.Trigger>
+												</Accordion.Header>
+												<Accordion.Content
+													as="ul"
+													class="space-y-4 px-6 py-4 transition-all ui-closed:animate-accordion-up ui-expanded:animate-accordion-down overflow-hidden"
+													onFocusIn={(e: FocusEvent) => e.stopPropagation()}
+												>
+													<For
+														each={Object.entries(csp.nodes).filter(
+															([key, node]) => {
+																if (!controller.state.filter) return true;
 
-														return (
-															<li>
-																<div class="flex flex-row items-center gap-1.5 relative">
-																	{value.data[key] !== undefined && (
-																		<button
-																			type="button"
-																			onClick={() => setData(key, undefined!)}
-																			class="w-2 h-2 bg-brand rounded-full absolute -left-4 top-1.5 ring-brand ring-offset-2 focus-visible:ring-2 transition-shadow outline-none"
-																		/>
-																	)}
-																	<Show when={policy.format === "bool"}>
-																		<Checkbox
-																			id={id}
-																			checked={
-																				(value.data[key] as boolean) ?? false
-																			}
-																			onChange={(checked) =>
-																				setData(key, checked)
-																			}
-																		/>
-																	</Show>
-																	<label
-																		class="font-medium text-sm"
-																		for={
-																			policy.format === "bool"
-																				? `${id}-input`
-																				: id
-																		}
-																	>
-																		{policy.title ?? policy.name}
-																	</label>
-																	<a
-																		class="text-sm text-neutral-500 hover:underline"
-																		href={`${docsURL(
-																			itemConfig.name,
-																			payloadKey,
-																		)}#${key.replace(/\//g, "").toLowerCase()}`}
-																		target="_blank"
-																		rel="noopener noreferrer"
-																	>
-																		{key}
-																	</a>
-																</div>
-																{policy.description && (
-																	<p class="text-sm text-neutral-500">
-																		{policy.description}
-																	</p>
-																)}
-																<Switch
-																	fallback={
-																		policy.format !== "bool" &&
-																		`unimplemented format (${policy.format})`
-																	}
-																>
-																	<Match
-																		when={policy.format === "int" && policy}
-																		keyed
-																	>
-																		{(policy) => (
-																			<Switch
-																				fallback={
-																					<NumberInput
-																						class="mt-2"
-																						defaultValue={policy.defaultValue}
-																						value={
-																							(value.data[key] as number) ??
-																							policy.defaultValue
-																						}
-																						onChange={(value) =>
-																							setData(key, value)
-																						}
-																					>
-																						<div class="relative">
-																							<NumberInputControl />
-																							<NumberInputIncrementTrigger />
-																							<NumberInputDecrementTrigger />
-																						</div>
-																					</NumberInput>
-																				}
-																			>
-																				<Match
-																					when={
-																						policy.allowedValues &&
-																						policy.allowedValues.valueType ===
-																							"enum" &&
-																						policy.allowedValues
-																					}
-																				>
-																					{(allowedValues) => {
-																						const options = createMemo(() =>
-																							Object.entries(
-																								allowedValues().enum,
-																							).map(([value, config]) => ({
-																								...config,
-																								value: Number(value),
-																							})),
-																						);
+																const path = `${key}${
+																	node.dynamic ? `/{${node.dynamic}}` : ""
+																}`;
+																return value.data[path] !== undefined;
+															},
+														)}
+														fallback={
+															controller.state.filter && (
+																<span class="text-gray-500">
+																	No Nodes Active
+																</span>
+															)
+														}
+													>
+														{([key, node]) => {
+															const path = () =>
+																`${key}${
+																	node.dynamic ? `/{${node.dynamic}}` : ""
+																}`;
 
-																						const selectValue = createMemo(
-																							() =>
-																								options().find(
-																									(o) =>
-																										o.value === value.data[key],
-																								) ?? null,
-																						);
+															const data = () => value.data[path()];
 
-																						type Option = ReturnType<
-																							typeof options
-																						>[number];
-
-																						return (
-																							<Select<Option | null>
-																								class="mt-2"
-																								options={options()}
-																								multiple={false}
-																								optionValue="value"
-																								optionTextValue="description"
-																								optionDisabled={() => false}
-																								placeholder="No Value"
-																								itemComponent={(props) => (
-																									<SelectItem item={props.item}>
-																										{
-																											props.item.rawValue
-																												?.description
-																										}
-																									</SelectItem>
-																								)}
-																								value={selectValue()}
-																								onChange={(option) => {
-																									if (option)
-																										setData(key, option.value);
-																									else setData(key, undefined!);
-																								}}
-																							>
-																								<SelectTrigger>
-																									<SelectValue<Option>>
-																										{(state) => (
-																											<>
-																												{
-																													state.selectedOption()
-																														.description
-																												}
-																											</>
-																										)}
-																									</SelectValue>
-																								</SelectTrigger>
-																								<SelectContent />
-																							</Select>
-																						);
-																					}}
-																				</Match>
-																				<Match
-																					when={
-																						policy.allowedValues &&
-																						policy.allowedValues.valueType ===
-																							"range" &&
-																						policy.allowedValues
-																					}
-																				>
-																					{(allowedValues) => {
-																						return (
-																							<NumberInput
-																								class="mt-2"
-																								minValue={allowedValues().min}
-																								maxValue={allowedValues().max}
-																								defaultValue={
-																									policy.defaultValue
-																								}
-																								value={
-																									(value.data[key] as number) ??
-																									policy.defaultValue
-																								}
-																								onChange={(value) =>
-																									setData(key, value)
-																								}
-																							>
-																								<div class="relative">
-																									<NumberInputControl />
-																									<NumberInputIncrementTrigger />
-																									<NumberInputDecrementTrigger />
-																								</div>
-																							</NumberInput>
-																						);
-																					}}
-																				</Match>
-																			</Switch>
-																		)}
-																	</Match>
-																	<Match
-																		when={policy.format === "string" && policy}
-																	>
-																		<Input
-																			class="mt-2"
-																			value={value.data[key] as string}
-																			onChange={(e) =>
-																				setData(key, e.currentTarget.value)
-																			}
-																		/>
-																	</Match>
-																</Switch>
-															</li>
-														);
-													}}
-												</For>
-											</Accordion.Content>
-										</Accordion.Item>
+															return (
+																<li>
+																	<NodeEditor
+																		path={path()}
+																		data={data()}
+																		setData={setData}
+																		node={node}
+																		payloadKey={payloadKey}
+																		fullNodePath={path()}
+																	/>
+																</li>
+															);
+														}}
+													</For>
+												</Accordion.Content>
+											</Accordion.Item>
+										</NodeEditorCSPContext.Provider>
 									);
 								}}
 							</Show>
@@ -358,9 +207,13 @@ function CSPS(props: { csps?: Record<string, WindowsCSP> }) {
 	});
 
 	const sortedCSPs = createMemo(() =>
-		Object.entries(props.csps || {}).sort(([, a], [, b]) =>
-			a.name.localeCompare(b.name),
-		),
+		Object.entries(props.csps || {})
+			.filter(([uri]) => {
+				if (!controller.state.filter) return true;
+
+				return controller.state.windows?.[uri]?.enabled ?? false;
+			})
+			.sort(([, a], [, b]) => a.name.localeCompare(b.name)),
 	);
 
 	const filteredCSPs = createMemo(() => {
@@ -389,7 +242,7 @@ function CSPS(props: { csps?: Record<string, WindowsCSP> }) {
 			</div>
 			<ul class="rounded-lg overflow-y-auto flex-1">
 				<For each={filteredCSPs()}>
-					{([uri, value]) => {
+					{([uri, csp]) => {
 						const id = createUniqueId();
 
 						return (
@@ -397,6 +250,7 @@ function CSPS(props: { csps?: Record<string, WindowsCSP> }) {
 								<Checkbox
 									disabled={!controller.state.windows}
 									id={id}
+									checked={controller.state.windows?.[uri]?.enabled ?? false}
 									onChange={(value) => {
 										if (value)
 											controller.setState("windows", uri, (k) => ({
@@ -409,11 +263,11 @@ function CSPS(props: { csps?: Record<string, WindowsCSP> }) {
 								/>
 								<div class="overflow-hidden flex flex-col items-stretch flex-1">
 									<label for={`${id}-input`} class="font-medium">
-										{value.name}
+										{csp.name}
 									</label>
 									<a
 										class="block text-sm text-neutral-500 overflow-y-auto scrollbar-none hover:underline"
-										href={docsURL(value.name, uri)}
+										href={cspDocsURL(csp.name, uri)}
 										target="_blank"
 										rel="noopener noreferrer"
 									>
@@ -426,5 +280,384 @@ function CSPS(props: { csps?: Record<string, WindowsCSP> }) {
 				</For>
 			</ul>
 		</div>
+	);
+}
+
+const NodeEditorCSPContext = createContext<{
+	csp: WindowsCSP;
+}>(null!);
+
+function NodeEditor(props: {
+	path: string;
+	data?: PolicyData["windows"][string][string];
+	setData: SetStoreFunction<PolicyData["windows"][string]>;
+	node: WindowsDDFNode;
+	payloadKey: string;
+	fullNodePath: string;
+}) {
+	const controller = useController();
+	const id = createUniqueId();
+	const cspCtx = useContext(NodeEditorCSPContext)!;
+
+	const node = () => props.node;
+
+	return (
+		<>
+			<div class="flex flex-row items-center gap-1.5 relative">
+				{props.data !== undefined && (
+					<button
+						type="button"
+						onClick={() => props.setData(props.path, undefined!)}
+						class="w-2 h-2 bg-brand rounded-full absolute -left-4 top-1.5 ring-brand ring-offset-2 focus-visible:ring-2 transition-shadow outline-none"
+					/>
+				)}
+				<Show when={node().format === "bool"}>
+					<Checkbox
+						id={id}
+						checked={(!!props.data as boolean) ?? false}
+						onChange={(checked) => props.setData(props.path, checked)}
+					/>
+				</Show>
+				<label
+					class="font-medium text-sm"
+					for={node().format === "bool" ? `${id}-input` : id}
+				>
+					{node().title ?? node().name}
+				</label>
+				<a
+					class="text-sm text-neutral-500 hover:underline"
+					href={`${cspDocsURL(
+						cspCtx.csp.name,
+						props.payloadKey,
+					)}${props.fullNodePath.replace(/[\/\{\}]/g, "").toLowerCase()}`}
+					target="_blank"
+					rel="noopener noreferrer"
+				>
+					{props.path}
+				</a>
+			</div>
+			{node().description && (
+				<p class="text-sm text-neutral-500">{node().description}</p>
+			)}
+			<Switch
+				fallback={
+					node().format !== "bool" && `unimplemented format (${node().format})`
+				}
+			>
+				<Match
+					when={(() => {
+						const n = node();
+						return n.format === "int" && n;
+					})()}
+					keyed
+				>
+					{(policy) => (
+						<Switch
+							fallback={
+								<NumberInput
+									class="mt-2"
+									defaultValue={policy.defaultValue}
+									value={(props.data as number) ?? policy.defaultValue}
+									onChange={(value) => props.setData(props.path, value)}
+								>
+									<div class="relative">
+										<NumberInputControl />
+										<NumberInputIncrementTrigger />
+										<NumberInputDecrementTrigger />
+									</div>
+								</NumberInput>
+							}
+						>
+							<Match
+								when={
+									policy.allowedValues &&
+									policy.allowedValues.valueType === "enum" &&
+									policy.allowedValues
+								}
+							>
+								{(allowedValues) => {
+									const options = createMemo(() =>
+										Object.entries(allowedValues().enum).map(
+											([value, config]) => ({
+												...config,
+												value: Number(value),
+											}),
+										),
+									);
+
+									const selectValue = createMemo(
+										() => options().find((o) => o.value === props.data) ?? null,
+									);
+
+									type Option = ReturnType<typeof options>[number];
+
+									return (
+										<Select<Option | null>
+											class="mt-2"
+											options={options()}
+											multiple={false}
+											optionValue="value"
+											optionTextValue="description"
+											optionDisabled={() => false}
+											placeholder="No Value"
+											itemComponent={(props) => (
+												<SelectItem item={props.item}>
+													{props.item.rawValue?.description}
+												</SelectItem>
+											)}
+											value={selectValue()}
+											onChange={(option) => {
+												if (option) props.setData(props.path, option.value);
+												else props.setData(props.path, undefined!);
+											}}
+										>
+											<SelectTrigger>
+												<SelectValue<Option>>
+													{(state) => <>{state.selectedOption().description}</>}
+												</SelectValue>
+											</SelectTrigger>
+											<SelectContent />
+										</Select>
+									);
+								}}
+							</Match>
+							<Match
+								when={
+									policy.allowedValues &&
+									policy.allowedValues.valueType === "range" &&
+									policy.allowedValues
+								}
+							>
+								{(allowedValues) => {
+									return (
+										<NumberInput
+											class="mt-2"
+											minValue={allowedValues().min}
+											maxValue={allowedValues().max}
+											defaultValue={policy.defaultValue}
+											value={(props.data as number) ?? policy.defaultValue}
+											onChange={(value) => props.setData(props.path, value)}
+										>
+											<div class="relative">
+												<NumberInputControl />
+												<NumberInputIncrementTrigger />
+												<NumberInputDecrementTrigger />
+											</div>
+										</NumberInput>
+									);
+								}}
+							</Match>
+						</Switch>
+					)}
+				</Match>
+				<Match when={props.node.format === "string" && props.node}>
+					<Switch
+						fallback={
+							<Input
+								class="mt-2"
+								value={(props.data as string) ?? ""}
+								onChange={(e) =>
+									props.setData(props.path, e.currentTarget.value)
+								}
+							/>
+						}
+					>
+						<Match when={props.node.dynamic}>
+							{(_) => {
+								const [value, setValue] = createSignal("");
+
+								return (
+									<>
+										<div class="flex flex-row gap-2 items-center mt-2">
+											<Input
+												value={value()}
+												onChange={(e) => setValue(e.currentTarget.value)}
+											/>
+											<Button
+												class="shrink-0"
+												onClick={() => {
+													props.setData(
+														produce((d) => {
+															d[props.path] ??= [];
+
+															(d[props.path] as any as any[]).unshift(value());
+														}),
+													);
+												}}
+											>
+												Add Node
+											</Button>
+										</div>
+
+										<ul class="border border-gray-3000 rounded overflow-hidden mt-2 p-2 gap-2 flex flex-col">
+											<Show
+												when={props.data as any as string[]}
+												fallback={
+													<div class="text-center text-gray-500 text-sm">
+														No Items
+													</div>
+												}
+											>
+												{(values) => (
+													<Index each={values()}>
+														{(value, index) => (
+															<li class="flex flex-row gap-2">
+																<Input value={value()} />
+																<Button
+																	class="shrink-0"
+																	onClick={() => {
+																		batch(() => {
+																			props.setData(
+																				produce((d) => {
+																					const a = d[
+																						props.path
+																					] as any as any[];
+																					a.splice(index, 1);
+
+																					if (a.length === 0)
+																						delete d[props.path];
+																				}),
+																			);
+																		});
+																	}}
+																>
+																	Remove
+																</Button>
+															</li>
+														)}
+													</Index>
+												)}
+											</Show>
+										</ul>
+									</>
+								);
+							}}
+						</Match>
+					</Switch>
+				</Match>
+				<Match when={props.node.format === "node" && props.node}>
+					{(node) => {
+						const [nodeValue, setNodeValue] = createSignal("");
+
+						const [expanded, setExpanded] = createSignal(
+							Object.keys(props.data ?? {}),
+						);
+
+						return (
+							<>
+								<div class="flex flex-row gap-2 my-2">
+									<Input
+										placeholder={node().title ?? ""}
+										value={nodeValue()}
+										onInput={(e) => setNodeValue(e.target.value)}
+									/>
+									<Button
+										class="shrink-0"
+										onClick={() => {
+											batch(() => {
+												props.setData(props.path, { [nodeValue()]: {} });
+												setExpanded((e) => [...e, nodeValue()]);
+
+												setNodeValue("");
+											});
+										}}
+									>
+										Add Node
+									</Button>
+								</div>
+								<Accordion
+									as="ul"
+									class="border border-gray-3000 rounded divide-y divide-gray-300 overflow-hidden"
+									value={expanded()}
+									onChange={setExpanded}
+									multiple
+								>
+									<For
+										each={Object.entries(
+											(props.data as Record<string, any>) ?? {},
+										)}
+										fallback={
+											<div class="py-2 text-center text-gray-500 text-sm">
+												No Items
+											</div>
+										}
+									>
+										{([name, data]) => (
+											<Accordion.Item as="li" value={name}>
+												<Accordion.Header class="flex flex-row justify-between items-center p-2 shadow gap-2">
+													<Accordion.Trigger class="group p-2">
+														<IconTablerChevronUp class="ui-group-closed:rotate-180 transition-transform text-base" />
+													</Accordion.Trigger>
+													<Input value={name} />
+													<Button
+														class="shrink-0"
+														onClick={() => {
+															batch(() => {
+																props.setData(props.path, name, undefined!);
+
+																if (Object.keys(props.data ?? {}).length === 0)
+																	props.setData(props.path, undefined!);
+															});
+														}}
+													>
+														Remove
+													</Button>
+												</Accordion.Header>
+												<Accordion.Content
+													as="ul"
+													class="p-6 flex flex-col gap-4 transition-all ui-closed:animate-accordion-up ui-expanded:animate-accordion-down"
+												>
+													<For
+														each={Object.entries(node().nodes).filter(
+															([key, node]) => {
+																if (!controller.state.filter) return true;
+
+																const path = `${key}${
+																	node.dynamic ? `/{${node.dynamic}}` : ""
+																}`;
+																return data[path] !== undefined;
+															},
+														)}
+													>
+														{([key, node]) => {
+															const path = () =>
+																`${key}${
+																	node.dynamic ? `/{${node.dynamic}}` : ""
+																}`;
+
+															return (
+																<li>
+																	<NodeEditor
+																		path={path()}
+																		node={node}
+																		data={data[path()]}
+																		payloadKey={`${props.payloadKey}${props.path}`}
+																		setData={(...args: any[]) => {
+																			props.setData(
+																				props.path,
+																				name,
+																				// @ts-ignore
+																				...args,
+																			);
+																		}}
+																		fullNodePath={`${
+																			props.fullNodePath
+																		}${path()}`}
+																	/>
+																</li>
+															);
+														}}
+													</For>
+												</Accordion.Content>
+											</Accordion.Item>
+										)}
+									</For>
+								</Accordion>
+							</>
+						);
+					}}
+				</Match>
+			</Switch>
+		</>
 	);
 }

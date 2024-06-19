@@ -31,6 +31,7 @@ declare global {
   const IconLogosMacos: typeof import('~icons/logos/macos.jsx')['default']
   const IconLogosMicrosoftWindowsIcon: typeof import('~icons/logos/microsoft-windows-icon.jsx')['default']
   const IconMaterialSymbolsEditOutline: typeof import('~icons/material-symbols/edit-outline.jsx')['default']
+  const IconMaterialSymbolsFilterListRounded: typeof import('~icons/material-symbols/filter-list-rounded.jsx')['default']
   const IconMaterialSymbolsWarningRounded: typeof import('~icons/material-symbols/warning-rounded.jsx')['default']
   const IconMdiSlashForward: typeof import('~icons/mdi/slash-forward.jsx')['default']
   const IconPhAppWindow: typeof import('~icons/ph/app-window.jsx')['default']

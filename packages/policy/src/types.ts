@@ -88,4 +88,8 @@ export type Trigger =
 	 * Trigger every time the device talks with Mattrax.
 	 */
 	| { type: "checkin" };
-export type WindowsConfigValue = number | string | boolean;
+export type WindowsConfigValue =
+	| number
+	| string
+	| boolean
+	| { [key: string]: Record<string, WindowsConfigValue> };

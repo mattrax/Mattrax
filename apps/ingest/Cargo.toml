@@ -13,3 +13,4 @@ serde_json = { workspace = true }
 specta = { workspace = true }
 glob = "0.3.1"
 plist = "1.6.1"
+nom = "7.1.3"
