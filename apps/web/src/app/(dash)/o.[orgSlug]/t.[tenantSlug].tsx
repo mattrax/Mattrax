@@ -5,18 +5,18 @@ import { useCommandGroup } from "~/components/CommandPalette";
 import { trpc } from "~/lib";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { useTenantParams } from "./t.[tenantSlug]/ctx";
-import { useTenants } from "./utils";
+import { useTenantsForOrg } from "./utils";
 
 export const route = {
-	load: ({ params }) => {
-		trpc.useContext().tenant.list.ensureData({ orgSlug: params.orgSlug! });
-	},
+	// load: ({ params }) => {
+	// 	trpc.useContext().tenant.list.ensureData({ orgSlug: params.orgSlug! });
+	// },
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
 	const params = useTenantParams();
 
-	useTenants();
+	// useTenantsForOrg();
 
 	useCommandGroup("Tenant", [
 		{

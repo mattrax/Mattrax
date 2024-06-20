@@ -17,7 +17,7 @@ import { useOrgs } from "./utils";
 
 export const route = {
 	load: ({ params }) => {
-		trpc.useContext().org.tenants.ensureData({ orgSlug: params.orgSlug! });
+		// trpc.useContext().org.tenants.ensureData({ orgSlug: params.orgSlug! }); // TODO
 		trpc.useContext().org.list.ensureData();
 	},
 } satisfies RouteDefinition;

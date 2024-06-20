@@ -225,8 +225,8 @@ import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { useNavigate } from "@solidjs/router";
 import clsx from "clsx";
 import { trpc } from "~/lib";
-import { useOrgs } from "../../utils";
 import { useTenantsForOrg } from "../../o.[orgSlug]/utils";
+import { useOrgs } from "../../utils";
 
 export function CreateTenantDialog(props: {
 	open: boolean;

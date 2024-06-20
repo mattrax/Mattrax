@@ -1,4 +1,4 @@
-import { Show, createSignal, onMount, type ParentProps } from "solid-js";
+import { type ParentProps, Show, createSignal, onMount } from "solid-js";
 
 // A `Show` component that delays the rendering of its children until a specified timeout has passed.
 export function Delayed(props: ParentProps<{ delay: number }>) {

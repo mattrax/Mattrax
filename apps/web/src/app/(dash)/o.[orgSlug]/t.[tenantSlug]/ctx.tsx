@@ -1,4 +1,7 @@
+import type { UseTRPCQueryResult } from "@solid-mediakit/trpc";
 import { useNavigate } from "@solidjs/router";
+import { createQuery } from "@tanstack/solid-query";
+import type { AnyQueryProcedure, Procedure } from "@trpc/server";
 import { createEffect } from "solid-js";
 import { z } from "zod";
 

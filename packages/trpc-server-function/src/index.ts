@@ -168,6 +168,9 @@ export const createServerFunctionLink = <TRouter extends AnyRouter>(
 
 				promise
 					.then((p) => p)
+					.then(
+						(p) => new Promise((resolve) => setTimeout(() => resolve(p), 5000)),
+					)
 					.then(async (response) => {
 						if (queryClient) {
 							const dependantQueries = Promise.all(

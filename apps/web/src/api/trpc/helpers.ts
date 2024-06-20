@@ -157,13 +157,15 @@ const getMemberOrg = cache(
 	"getMemberOrg",
 );
 
+const orgProcedureSchema = z.union([
+	z.object({ orgSlug: z.string() }),
+	z.object({ orgId: z.string() }),
+]);
+
+export type OrgProcedureInput = z.infer<typeof orgProcedureSchema>;
+
 export const orgProcedure = authedProcedure
-	.input(
-		z.union([
-			z.object({ orgSlug: z.string() }),
-			z.object({ orgId: z.string() }),
-		]),
-	)
+	.input(orgProcedureSchema)
 	.use(async (opts) => {
 		const { ctx, input, type } = opts;
 

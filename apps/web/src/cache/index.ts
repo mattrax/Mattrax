@@ -1,8 +1,8 @@
 import { createAsync } from "@solidjs/router";
 import type { CreateQueryResult } from "@tanstack/solid-query";
+import type { Collection } from "dexie";
 import { createEffect, createResource } from "solid-js";
 import type { MattraxCache, TableData, TableNames } from "./dexie";
-import type { Collection } from "dexie";
 export type { TableData, TableNames, MattraxCache } from "./dexie";
 
 export const getMattraxCache = () =>

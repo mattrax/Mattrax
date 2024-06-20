@@ -6,11 +6,11 @@ import {
 } from "@solidjs/router";
 import { Match, Switch, createEffect } from "solid-js";
 
+import { Button, Delayed } from "@mattrax/ui";
 import { parse } from "cookie-es";
 import { trpc } from "~/lib";
-import { Button, Delayed } from "@mattrax/ui";
-import { useOrgs } from "./(dash)/utils";
 import { useTenantsForOrg } from "./(dash)/o.[orgSlug]/utils";
+import { useOrgs } from "./(dash)/utils";
 
 export const route = {
 	load: () => {

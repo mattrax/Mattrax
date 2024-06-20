@@ -7,10 +7,10 @@ import {
 import { Show } from "solid-js";
 
 import { useTenantParams } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/ctx";
+import { useTenantsForOrg } from "~/app/(dash)/o.[orgSlug]/utils";
+import { useOrgs } from "~/app/(dash)/utils";
 import { Breadcrumb } from "../Breadcrumb";
 import { MultiSwitcher } from "../MultiSwitcher";
-import { useOrgs } from "~/app/(dash)/utils";
-import { useTenantsForOrg } from "~/app/(dash)/o.[orgSlug]/utils";
 
 export default function (props: RouteSectionProps) {
 	const params = useTenantParams();
