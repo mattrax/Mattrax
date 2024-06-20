@@ -4,9 +4,8 @@ import { type ParentProps, Show, Suspense, createMemo } from "solid-js";
 import { useCommandGroup } from "~/components/CommandPalette";
 import { trpc } from "~/lib";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { cachedOrgs } from "../utils";
 import { useTenantParams } from "./t.[tenantSlug]/ctx";
-import { cachedTenantsForOrg } from "./utils";
+import { useTenants } from "./utils";
 
 export const route = {
 	load: ({ params }) => {
@@ -17,15 +16,7 @@ export const route = {
 export default function Layout(props: ParentProps) {
 	const params = useTenantParams();
 
-	const orgs = createAsync(() => cachedOrgs());
-
-	createMemo(
-		createAsync(async () => {
-			const org = orgs()?.find((o) => o.slug === params.orgSlug);
-			if (!org) return;
-			return await cachedTenantsForOrg(org.id);
-		}),
-	);
+	useTenants();
 
 	useCommandGroup("Tenant", [
 		{
@@ -84,7 +75,18 @@ export default function Layout(props: ParentProps) {
 			<MErrorBoundary>
 				{/* we key here on purpose - tenants are the root-most unit of isolation */}
 				<Show when={params.tenantSlug} keyed>
-					<Suspense>{props.children}</Suspense>
+					<Suspense
+						fallback={
+							<Show when={false}>
+								{(_) => {
+									console.warn("t.[tenantSlug] layout suspensed!");
+									return null;
+								}}
+							</Show>
+						}
+					>
+						{props.children}
+					</Suspense>
 				</Show>
 			</MErrorBoundary>
 		</>

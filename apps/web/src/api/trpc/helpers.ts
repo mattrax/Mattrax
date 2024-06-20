@@ -127,35 +127,50 @@ export const superAdminProcedure = authedProcedure.use((opts) => {
 	return opts.next({ ctx });
 });
 
-const getMemberOrg = cache(async (slug: string, accountPk: number) => {
-	const [org] = await db
-		.select({
-			pk: organisations.pk,
-			slug: organisations.slug,
-			name: organisations.name,
-			ownerPk: organisations.ownerPk,
-		})
-		.from(organisations)
-		.where(
-			and(
-				eq(organisations.slug, slug),
-				eq(organisationMembers.accountPk, accountPk),
-			),
-		)
-		.innerJoin(
-			organisationMembers,
-			eq(organisations.pk, organisationMembers.orgPk),
-		);
+type GetMemberOrgCondition = { slug: string } | { id: string };
 
-	return org;
-}, "getMemberOrg");
+const getMemberOrg = cache(
+	async (condition: GetMemberOrgCondition, accountPk: number) => {
+		const [org] = await db
+			.select({
+				pk: organisations.pk,
+				slug: organisations.slug,
+				name: organisations.name,
+				ownerPk: organisations.ownerPk,
+			})
+			.from(organisations)
+			.where(
+				and(
+					"id" in condition
+						? eq(organisations.id, condition.id)
+						: eq(organisations.slug, condition.slug),
+					eq(organisationMembers.accountPk, accountPk),
+				),
+			)
+			.innerJoin(
+				organisationMembers,
+				eq(organisations.pk, organisationMembers.orgPk),
+			);
+
+		return org;
+	},
+	"getMemberOrg",
+);
 
 export const orgProcedure = authedProcedure
-	.input(z.object({ orgSlug: z.string() }))
+	.input(
+		z.union([
+			z.object({ orgSlug: z.string() }),
+			z.object({ orgId: z.string() }),
+		]),
+	)
 	.use(async (opts) => {
 		const { ctx, input, type } = opts;
 
-		const org = await getMemberOrg(input.orgSlug, ctx.account.pk);
+		const org = await getMemberOrg(
+			"orgSlug" in input ? { slug: input.orgSlug } : { id: input.orgId },
+			ctx.account.pk,
+		);
 
 		if (!org)
 			throw new TRPCError({ code: "FORBIDDEN", message: "organisation" });

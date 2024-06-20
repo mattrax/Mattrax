@@ -1,3 +1,12 @@
+import { Show, createSignal, onMount, type ParentProps } from "solid-js";
+
+// A `Show` component that delays the rendering of its children until a specified timeout has passed.
+export function Delayed(props: ParentProps<{ delay: number }>) {
+	const [show, setShow] = createSignal(false);
+	onMount(() => setTimeout(() => setShow(true), props.delay));
+	return <Show when={show()}>{props.children}</Show>;
+}
+
 // import { type JSX, createSignal, Show, type Accessor } from "solid-js";
 // import createPresence from "solid-presence";
 

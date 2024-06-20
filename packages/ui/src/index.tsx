@@ -29,4 +29,4 @@ export * from "./toggle";
 export * from "./context-menu";
 export * from "./number-input";
 export * from "./description-list";
-// export * from "./show";
+export * from "./show";

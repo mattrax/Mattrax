@@ -7,34 +7,26 @@ import {
 import { Show } from "solid-js";
 
 import { useTenantParams } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/ctx";
-import { createQueryCacher, useCachedQueryData } from "~/cache";
-import { trpc } from "~/lib";
-import { cachedTenantsForOrg } from "~[orgSlug]/utils";
-import { cachedOrgs } from "~dash/utils";
 import { Breadcrumb } from "../Breadcrumb";
 import { MultiSwitcher } from "../MultiSwitcher";
+import { useOrgs } from "~/app/(dash)/utils";
+import { useTenantsForOrg } from "~/app/(dash)/o.[orgSlug]/utils";
 
 export default function (props: RouteSectionProps) {
 	const params = useTenantParams();
 
-	const query = trpc.org.list.createQuery();
-	const orgs = useCachedQueryData(query, () => cachedOrgs());
-	const org = () => orgs()?.find((o) => o.slug === params.orgSlug);
+	const orgs = useOrgs();
+	const org = () => orgs.data?.find((o) => o.slug === params.orgSlug);
 
 	return (
 		<>
 			<Breadcrumb>
 				<Show when={org()}>
 					{(org) => {
-						const query = trpc.tenant.list.createQuery(() => ({
-							orgSlug: params.orgSlug,
-						}));
-						createQueryCacher(query, "tenants", (t) => ({ ...t }));
-						const tenants = useCachedQueryData(query, () =>
-							cachedTenantsForOrg(org().id),
-						);
+						const tenants = useTenantsForOrg(() => org().id);
 						const tenant = () =>
-							tenants()?.find((t) => t.slug === params.tenantSlug);
+							tenants.data?.find((t) => t.slug === params.tenantSlug);
+
 						const base = useResolvedPath(() => "");
 						const match = useMatch(() => `${base()}/:segment/:subSegment/*`);
 

@@ -1,59 +1,84 @@
-import { Navigate, useLocation, useSearchParams } from "@solidjs/router";
+import {
+	Navigate,
+	useLocation,
+	useNavigate,
+	useSearchParams,
+} from "@solidjs/router";
 import { Match, Switch, createEffect } from "solid-js";
 
 import { parse } from "cookie-es";
-import { useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
-import { cachedTenantsForOrg } from "./(dash)/o.[orgSlug]/utils";
-import { cachedOrgs } from "./(dash)/utils";
+import { Button, Delayed } from "@mattrax/ui";
+import { useOrgs } from "./(dash)/utils";
+import { useTenantsForOrg } from "./(dash)/o.[orgSlug]/utils";
 
 export const route = {
-	load: () => trpc.useContext().auth.me.ensureData(),
+	load: () => {
+		trpc.useContext().auth.me.ensureData();
+		trpc.useContext().org.list.ensureData();
+	},
 };
 
 export default function Page() {
+	const navigate = useNavigate();
 	const location = useLocation<{ action?: string }>();
 	const [search] = useSearchParams<{ action?: string }>();
 	const action = location.state?.action || search?.action;
 
-	const query = trpc.org.list.createQuery();
-	const orgs = useCachedQueryData(query, () => cachedOrgs());
+	const orgs = useOrgs();
 
 	const defaultOrg = () => {
-		const o = orgs();
-		if (!o) return;
-
-		return o[0] ?? null;
+		const o = orgs.data;
+		if (!o) return; // `undefined` is loading
+		return o[0] ?? null; // `null` means no orgs
 	};
 
 	return (
-		<Switch>
+		<Switch
+			fallback={
+				// We delay rendering in the hope the data comes back quick enough
+				<Delayed delay={300}>
+					<div class="flex-1 flex flex-col justify-center items-center space-y-2">
+						<IconSvgSpinners90Ring width="2.5em" height="2.5em" />
+						<p>Loading...</p>
+					</div>
+				</Delayed>
+			}
+		>
+			{/* When not authenticated we send the user back to login */}
 			<Match when={parse(document.cookie).isLoggedIn !== "true"}>
 				<Navigate href="/login" />
 			</Match>
+			{/* If the user doesn't have any organisations */}
 			<Match when={defaultOrg() === null}>
-				{
-					(() => {
-						if (query.data !== undefined)
-							throw new Error(
-								"No organisations found, re-login to create a default one.",
-							);
-					}) as any
-				}
+				<div class="flex-1 flex flex-col justify-center items-center space-y-2">
+					<h1 class="text-3xl font-semibold">No organisations found</h1>
+					<p class="text-gray-600 max-w-4xl text-center">
+						You must re-login to create a default one. <br /> If this does not
+						work please contact{" "}
+						<a href="mailto:hello@mattrax.app" class="underline">
+							hello@mattrax.app
+						</a>
+						!
+					</p>
+					<Button
+						onClick={() => {
+							document.cookie = "isLoggedIn=false";
+							navigate("/login");
+						}}
+					>
+						Try again
+					</Button>
+				</div>
 			</Match>
 			<Match when={defaultOrg()}>
 				{(
 					org, // If we have an active tenant, send the user to it
 				) => {
-					const query = trpc.tenant.list.createQuery(() => ({
-						orgSlug: org().slug,
-					}));
-					const tenants = useCachedQueryData(query, () =>
-						cachedTenantsForOrg(org().id),
-					);
+					const tenants = useTenantsForOrg(() => org().id);
 
 					const defaultTenant = () => {
-						const t = tenants();
+						const t = tenants.data;
 						if (!t) return;
 
 						return t[0] ?? null;

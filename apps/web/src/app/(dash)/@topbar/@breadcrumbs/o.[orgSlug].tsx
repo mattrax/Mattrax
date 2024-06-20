@@ -1,24 +1,15 @@
 import { A, type RouteSectionProps } from "@solidjs/router";
 
-import { createQueryCacher, useCachedQueryData } from "~/cache";
-import { trpc } from "~/lib";
 import { useOrgSlug } from "../../o.[orgSlug]/ctx";
-import { cachedOrgs } from "../../utils";
 import { Breadcrumb } from "./Breadcrumb";
 import { MultiSwitcher } from "./MultiSwitcher";
+import { useOrgs } from "../../utils";
 
 export default function (props: RouteSectionProps) {
 	const orgSlug = useOrgSlug();
+	const orgs = useOrgs();
 
-	const query = trpc.org.list.createQuery();
-	createQueryCacher(query, "orgs", (org) => ({
-		id: org.id,
-		name: org.name,
-		slug: org.slug,
-	}));
-	const orgs = useCachedQueryData(query, () => cachedOrgs());
-
-	const org = () => orgs()?.find((o) => o.slug === orgSlug());
+	const org = () => orgs.data?.find((o) => o.slug === orgSlug());
 
 	return (
 		<>

@@ -27,15 +27,14 @@ export function MultiSwitcher() {
 		{ type: "org"; slug: string; id: string } | "create"
 	>();
 
-	const query = trpc.org.list.createQuery();
-	const orgs = useCachedQueryData(query, () => cachedOrgs());
+	const orgs = useOrgs();
 
 	const [selectedTenant, setSelectedTenant] = createSignal<
 		string | null | undefined
 	>();
 
 	createEffect(() => {
-		const firstOrg = orgs()?.[0];
+		const firstOrg = orgs.data?.[0];
 		if (selectedOrg() || !firstOrg) return;
 		setSelectedOrg({
 			type: "org",
@@ -44,7 +43,7 @@ export function MultiSwitcher() {
 		});
 	});
 
-	const thisOrg = () => orgs()?.find((o) => o.slug === params.orgSlug);
+	const thisOrg = () => orgs.data?.find((o) => o.slug === params.orgSlug);
 
 	return (
 		<>
@@ -60,6 +59,7 @@ export function MultiSwitcher() {
 						setOpen={(o) => {
 							if (!o) setModal(undefined);
 						}}
+						orgId={o().id}
 						orgSlug={o().slug}
 					/>
 				)}
@@ -96,7 +96,7 @@ export function MultiSwitcher() {
           </div> */}
 						<div class="text-xs text-gray-600 px-3 pt-5">Organisations</div>
 						<ul class="p-1 pt-2 flex flex-col">
-							<For each={orgs()}>
+							<For each={orgs.data}>
 								{(org) => (
 									<li
 										onClick={() => setOpen(false)}
@@ -154,27 +154,14 @@ export function MultiSwitcher() {
 							keyed
 						>
 							{(org) => {
-								const query = trpc.tenant.list.createQuery(() => ({
-									orgSlug: org.slug,
-								}));
-
-								createQueryCacher(query, "tenants", (tenant) => ({
-									id: tenant.id,
-									name: tenant.name,
-									slug: tenant.slug,
-									orgId: org.id,
-								}));
-
-								const tenants = useCachedQueryData(query, () =>
-									cachedTenantsForOrg(org.id),
-								);
+								const tenants = useTenantsForOrg(() => org.id);
 
 								return (
 									<>
 										<div class="text-xs text-gray-600 px-3 pt-5">Tenants</div>
 										<Suspense>
 											<ul class="p-1 pt-2 flex flex-col">
-												<For each={tenants()}>
+												<For each={tenants.data}>
 													{(tenant) => (
 														<li
 															onClick={() => setOpen(false)}
@@ -237,30 +224,30 @@ import {
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { useNavigate } from "@solidjs/router";
 import clsx from "clsx";
-import { createQueryCacher, useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
-import { cachedTenantsForOrg } from "~[orgSlug]/utils";
-import { cachedOrgs } from "~dash/utils";
+import { useOrgs } from "../../utils";
+import { useTenantsForOrg } from "../../o.[orgSlug]/utils";
 
 export function CreateTenantDialog(props: {
 	open: boolean;
 	setOpen: (o: boolean) => void;
+	orgId: string;
 	orgSlug: string;
 }) {
 	const navigate = useNavigate();
 	const tenants = trpc.tenant.list.createQuery(
 		() => ({
-			orgSlug: props.orgSlug,
+			orgId: props.orgId,
 		}),
 		() => ({ enabled: false }),
 	);
 
 	const mutation = trpc.tenant.create.createMutation(() => ({
-		onSuccess: async (slug, { orgSlug }) => {
+		onSuccess: async (slug) => {
 			// Session also holds tenants
 			// await props.refetchSession();
 			await startTransition(async () => {
-				navigate(`/o/${orgSlug}/t/${slug}`);
+				navigate(`/o/${props.orgSlug}/t/${slug}`);
 				props.setOpen(false);
 			});
 		},
@@ -270,7 +257,7 @@ export function CreateTenantDialog(props: {
 	const form = createZodForm({
 		schema: z.object({ name: z.string() }),
 		onSubmit: ({ value }) =>
-			mutation.mutateAsync({ name: value.name, orgSlug: props.orgSlug }),
+			mutation.mutateAsync({ name: value.name, orgId: props.orgId }),
 	});
 
 	createEffect(() => {
