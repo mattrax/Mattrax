@@ -22,7 +22,11 @@ mx-db = { path = "../../crates/mx-db" }
 
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
-tokio = { version = "1.37.0", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.37.0", features = [
+  "macros",
+  "rt-multi-thread",
+  "process",
+] }
 clap = { version = "4.5.4", features = ["derive"] }
 axum = { version = "0.7.5", features = ["http2", "macros", "ws"] }
 axum-extra = { version = "0.9.3", features = ["cookie"] }

@@ -29,6 +29,7 @@ dist
 # Environment
 .env
 .env*.local
+.github/secret
 
 # dependencies
 node_modules

@@ -10,7 +10,8 @@ use axum::{
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Deserialize;
-use tracing::error;
+use tokio::process::Command;
+use tracing::{error, warn};
 
 use super::Context;
 
@@ -65,6 +66,41 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
             ),
         )
         .layer(middleware::from_fn_with_state(state.clone(), internal_auth))
+        .route("/redeploy", get({
+            #[derive(Deserialize)]
+            struct RedeployArgs {
+                secret: String,
+            }
+
+            |State(state): State<Arc<Context>>, Query(query): Query<RedeployArgs>| async move {
+                if state.config.get().internal_secret != query.secret {
+                    return (StatusCode::UNAUTHORIZED, "Unauthorized");
+                }
+    
+                // We delay slightly so the response is sent before the redeploy
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    
+                    warn!("Mattrax redeploy triggered by user...");
+    
+                    Command::new("systemctl")
+                    .arg("restart")
+                    .arg("mattrax")
+                    .output()
+                    .await
+                    .map_or_else(
+                        |e| {
+                            error!("Failed to restart the service: {}", e);
+                            StatusCode::INTERNAL_SERVER_ERROR
+                        },
+                        |_| StatusCode::OK,
+                    );
+                });
+    
+                return (StatusCode::OK, "ok!");
+            }
+        })
+        )
         .with_state(state)
 }
 

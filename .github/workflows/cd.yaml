@@ -17,6 +17,33 @@ env:
   VITE_MATTRAX_CLOUD_ORIGIN: https://cloud.mattrax.app
 
 jobs:
+  mattrax:
+    name: mattrax
+    runs-on: ubuntu-latest
+    concurrency:
+      group: mattrax
+    environment:
+      name: mattrax
+      url: https://mdm.mattrax.app
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+      
+      - name: Install Cargo Zigbuild
+        run: pip install cargo-zigbuild
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+      
+      - name: Install Rust target for 'aarch64-unknown-linux-musl'
+        run: rustup target add aarch64-unknown-linux-musl
+      
+      - name: Build & deploy binary
+        run: ./.github/deploy.sh # TODO: Populate `.github/secret` so the command works
+
   sst:
     name: SST
     runs-on: ubuntu-latest
