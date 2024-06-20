@@ -18,7 +18,7 @@ import { toast } from "solid-sonner";
 import { useCommandGroup } from "~/components/CommandPalette";
 import { trpc } from "~/lib";
 import { usePolicyId } from "../ctx";
-import { DeployDialog } from "./deploys/(deploys)";
+import { DeployDialog } from "./deploys/dialog";
 
 const windowsPoliciesPromise = import(
 	"@mattrax/configuration-schemas/windows/ddf.json?raw"
