@@ -42,7 +42,9 @@ jobs:
         run: rustup target add aarch64-unknown-linux-musl
       
       - name: Build & deploy binary
-        run: ./.github/deploy.sh # TODO: Populate `.github/secret` so the command works
+        run: |
+          alias wrangler="pnpm dlx wrangler"
+          ./.github/deploy.sh # TODO: Populate `.github/secret` so the command works
 
   sst:
     name: SST
