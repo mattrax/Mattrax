@@ -4,7 +4,7 @@ import { For, type JSX, type ParentProps } from "solid-js";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 
 const navigation = [
-	{ name: "General", href: "general" },
+	{ name: "General", href: "" },
 	{ name: "Administrators", href: "administrators" },
 	{ name: "Billing", href: "billing" },
 ];
