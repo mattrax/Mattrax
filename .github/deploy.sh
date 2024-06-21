@@ -13,4 +13,4 @@ cargo zigbuild --release --target aarch64-unknown-linux-musl -p mattrax
 wrangler r2 object put "static/mattrax/$HASH/aarch64-unknown-linux" --file=target/aarch64-unknown-linux-musl/release/mattrax --cache-control "public, max-age=31536000, immutable"
 echo "$HASH" | wrangler r2 object put "static/nightly" --pipe
 
-curl -v "https://mdm.mattrax.app/internal/redeploy?secret=${InternalSecret}"
+curl -v "https://mdm.mattrax.app/internal/redeploy?secret=${MDM_INTERNAL_SECRET}"
