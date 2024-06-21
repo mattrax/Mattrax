@@ -47,9 +47,11 @@ jobs:
 
       - name: Set InternalSecret env
         run: |
-          export $(sst secret list | grep "MDM_INTERNAL_SECRET" | xargs)
+          cd infra && sst secret list | grep "MDM_INTERNAL_SECRET" >> $GITHUB_ENV
 
       - name: Build & deploy binary
+        env:
+          MDM_INTERNAL_SECRET: ${{ env.MDM_INTERNAL_SECRET }}
         run: |
           alias wrangler="pnpm dlx wrangler"
           source ./.github/deploy.sh
