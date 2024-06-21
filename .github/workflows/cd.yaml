@@ -45,10 +45,15 @@ jobs:
       - name: Install Rust target for 'aarch64-unknown-linux-musl'
         run: rustup target add aarch64-unknown-linux-musl
 
+      - name: Set InternalSecret env
+        run: |
+          export $(sst secret list | grep "InternalSecret" | xargs)
+
       - name: Build & deploy binary
         run: |
           alias wrangler="pnpm dlx wrangler"
-          source ./.github/deploy.sh # TODO: Populate `.github/secret` so the command works
+          export $(sst secret list | xargs)
+          source ./.github/deploy.sh
 
   sst:
     name: SST
