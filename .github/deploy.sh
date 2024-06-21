@@ -3,6 +3,8 @@
 
 set -e
 
+shopt -s expand_aliases
+
 export HASH=$(git rev-parse HEAD)
 export CLOUDFLARE_ACCOUNT_ID="f02b3ef168fe64129e9941b4fb2e4dc1"
 
