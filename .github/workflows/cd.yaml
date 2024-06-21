@@ -28,11 +28,11 @@ jobs:
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
-      
+
       - uses: pnpm/action-setup@v4
         with:
           version: latest
-      
+
       - name: Install Cargo Zigbuild
         run: pip install cargo-zigbuild
 
@@ -41,14 +41,14 @@ jobs:
 
       - name: Setup Rust toolchain
         run: rustup toolchain install stable --profile minimal
-      
+
       - name: Install Rust target for 'aarch64-unknown-linux-musl'
         run: rustup target add aarch64-unknown-linux-musl
-      
+
       - name: Build & deploy binary
         run: |
           alias wrangler="pnpm dlx wrangler"
-          ./.github/deploy.sh # TODO: Populate `.github/secret` so the command works
+          source ./.github/deploy.sh # TODO: Populate `.github/secret` so the command works
 
   sst:
     name: SST
