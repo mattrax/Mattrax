@@ -45,6 +45,9 @@ jobs:
       - name: Install Rust target for 'aarch64-unknown-linux-musl'
         run: rustup target add aarch64-unknown-linux-musl
 
+      - name: Install SST
+        run: curl -fsSL https://ion.sst.dev/install | bash
+
       - name: Set InternalSecret env
         run: |
           cd infra && sst secret list | grep "MDM_INTERNAL_SECRET" >> $GITHUB_ENV
