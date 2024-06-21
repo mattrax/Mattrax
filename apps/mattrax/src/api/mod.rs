@@ -151,7 +151,13 @@ pub fn mount(state: Arc<Context>) -> Router {
     } else {
         router.route(
             "/",
-            axum::routing::get(|| async move { "Mattrax MDM!".to_string() }),
+            axum::routing::get(|| async move {
+                format!(
+                    "Mattrax MDM {} ({})",
+                    env!("CARGO_PKG_VERSION"),
+                    env!("GIT_HASH")
+                )
+            }),
         )
     };
 
