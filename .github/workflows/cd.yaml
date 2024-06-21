@@ -50,7 +50,7 @@ jobs:
 
       - name: Set InternalSecret env
         run: |
-          cd infra && sst secret list | grep "MDM_INTERNAL_SECRET" >> $GITHUB_ENV
+          cd infra && sst secret list >> $GITHUB_ENV
 
       - name: Build & deploy binary
         env:
