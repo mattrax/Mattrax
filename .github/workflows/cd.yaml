@@ -57,7 +57,7 @@ jobs:
 
       - name: Set SST envs
         run: |
-          cd infra && sst secret list >> $GITHUB_ENV
+          cd infra && sst secret list --stage brendonovich >> $GITHUB_ENV
         env:
           ARM_USE_OIDC: true
           ARM_CLIENT_ID: a17b56f1-0b10-4029-9a89-7f703d3573f8
