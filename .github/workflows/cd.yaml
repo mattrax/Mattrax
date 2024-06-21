@@ -17,14 +17,9 @@ env:
   VITE_MATTRAX_CLOUD_ORIGIN: https://cloud.mattrax.app
 
 jobs:
-  mattrax:
-    name: mattrax
+  build-mattrax:
+    name: Build Mattrax
     runs-on: ubuntu-latest
-    concurrency:
-      group: mattrax
-    environment:
-      name: mattrax
-      url: https://mdm.mattrax.app
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -52,26 +47,15 @@ jobs:
       - name: Install Rust target for 'aarch64-unknown-linux-musl'
         run: rustup target add aarch64-unknown-linux-musl
 
-      - name: Install SST
-        run: curl -fsSL https://ion.sst.dev/install | bash
-
-      - name: Set SST envs
-        run: |
-          cd infra && sst secret list --stage brendonovich | grep "MDM_INTERNAL_SECRET" >> $GITHUB_ENV
-        env:
-          ARM_USE_OIDC: true
-          ARM_CLIENT_ID: a17b56f1-0b10-4029-9a89-7f703d3573f8
-          ARM_TENANT_ID: 22d6679c-fc23-425a-b69b-e5e604dd80db
-          AZURE_SUBSCRIPTION_ID: 22d6679c-fc23-425a-b69b-e5e604dd80db
-          OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
-          OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
-
-      - name: Build & deploy binary
-        env:
-          MDM_INTERNAL_SECRET: ${{ env.MDM_INTERNAL_SECRET }}
+      - name: Build & upload binary
         run: |
           alias wrangler="pnpm dlx wrangler"
-          source ./.github/deploy.sh
+          export HASH=$(git rev-parse HEAD)
+
+          cargo zigbuild --release --target aarch64-unknown-linux-musl -p mattrax
+
+          wrangler r2 object put "static/mattrax/$HASH/aarch64-unknown-linux" --file=target/aarch64-unknown-linux-musl/release/mattrax --cache-control "public, max-age=31536000, immutable"
+          echo "$HASH" | wrangler r2 object put "static/nightly" --pipe
 
   sst:
     name: SST
@@ -111,7 +95,7 @@ jobs:
           OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
           OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
 
-  build:
+  build-web:
     strategy:
       matrix:
         projects:
@@ -144,7 +128,7 @@ jobs:
           name: ${{ matrix.projects }}-dist
           path: apps/${{ matrix.projects }}/dist
 
-  deploy:
+  deploy-web:
     strategy:
       matrix:
         projects:
@@ -157,7 +141,8 @@ jobs:
       - sst
       # This will wait for *all* projects to build, not just the one we care about.
       # GitHub don't provide a better solution :(
-      - build
+      - build-web
+      - build-mattrax
     # Run regardless of if previous steps were skipped
     if: ${{ !failure() && !cancelled() }}
     environment:
@@ -186,3 +171,38 @@ jobs:
       - name: Export `DEPLOYMENT_URL`
         id: result
         run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
+
+  deploy-mattrax:
+    name: Deploy Mattrax
+    runs-on: ubuntu-latest
+    needs: [build-mattrax, sst]
+    concurrency:
+      group: mattrax
+    environment:
+      name: mattrax
+      url: https://mdm.mattrax.app
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install SST
+        run: curl -fsSL https://ion.sst.dev/install | bash
+
+      - name: Set SST envs
+        run: |
+          cd infra && sst secret list --stage brendonovich | grep "MDM_INTERNAL_SECRET" >> $GITHUB_ENV
+        env:
+          ARM_USE_OIDC: true
+          ARM_CLIENT_ID: a17b56f1-0b10-4029-9a89-7f703d3573f8
+          ARM_TENANT_ID: 22d6679c-fc23-425a-b69b-e5e604dd80db
+          AZURE_SUBSCRIPTION_ID: 22d6679c-fc23-425a-b69b-e5e604dd80db
+          OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
+          OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+
+      - name: Deploy Mattrax
+        run: |
+          curl -v "https://mdm.mattrax.app/internal/redeploy?secret=${{ env.MDM_INTERNAL_SECRET }}"
