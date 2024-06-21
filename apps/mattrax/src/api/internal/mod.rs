@@ -76,13 +76,13 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                 if state.config.get().internal_secret != query.secret {
                     return (StatusCode::UNAUTHORIZED, "Unauthorized");
                 }
-    
+
                 // We delay slightly so the response is sent before the redeploy
                 tokio::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    
+
                     warn!("Mattrax redeploy triggered by user...");
-    
+
                     Command::new("systemctl")
                     .arg("restart")
                     .arg("mattrax")
@@ -96,7 +96,7 @@ pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
                         |_| StatusCode::OK,
                     );
                 });
-    
+
                 return (StatusCode::OK, "ok!");
             }
         })
