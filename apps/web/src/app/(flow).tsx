@@ -15,7 +15,7 @@ export default function Layout(props: ParentProps) {
 	return (
 		<div class="flex-1 flex flex-col">
 			<div class="w-full flex-[10]" />
-			<div class="flex flex-col items-center justify-start animate-in slide-in-from-top-4 fade-in duration-500 min-h-[16rem]">
+			<div class="flex flex-col items-center justify-start animate-in slide-in-from-top-4 fade-in duration-500 min-h-[18rem]">
 				<div class="sm:mx-auto sm:w-full sm:max-w-md flex items-center justify-center pb-2">
 					<h2 class="mt-4 text-center text-4xl font-bold leading-9 tracking-tight text-gray-900">
 						Mattrax

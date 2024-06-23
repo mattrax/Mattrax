@@ -5,7 +5,7 @@ import { trpc } from "~/lib";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 
 const navigation = [
-	{ name: "General", href: "general" },
+	{ name: "General", href: "" },
 	{ name: "API Keys", href: "api-keys" },
 ];
 

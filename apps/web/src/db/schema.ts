@@ -1,19 +1,23 @@
 import type { PolicyData } from "@mattrax/policy";
 import { createId } from "@paralleldrive/cuid2";
+import type { AuthenticatorTransportFuture } from "@simplewebauthn/types";
 import {
 	bigint,
 	boolean,
+	int,
 	json,
 	mysqlEnum,
 	mysqlTable,
 	primaryKey,
 	serial,
 	smallint,
+	text,
 	timestamp,
 	unique,
 	varbinary,
 	varchar,
 } from "drizzle-orm/mysql-core";
+
 import type { Features } from "~/lib/featureFlags";
 import { auditLogDefinition } from "../api/auditLogDefinition";
 import { getObjectKeys } from "../api/utils";
@@ -100,6 +104,23 @@ export const accountLoginCodes = mysqlTable("account_login_codes", {
 		.references(() => accounts.pk)
 		.notNull(),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const passkeyChallenges = mysqlTable("passkey_challenges", {
+	challenge: varchar("challenge", { length: 256 }).unique(),
+});
+
+export const passkeys = mysqlTable("passkeys", {
+	accountPk: serialRelation("account")
+		.references(() => accounts.pk)
+		.notNull()
+		.unique(),
+	publicKey: text("public_key").notNull(),
+	credentialId: varchar("credential_id", { length: 128 })
+		.notNull()
+		.primaryKey(),
+	counter: int("counter").notNull(),
+	transports: json("transports").$type<AuthenticatorTransportFuture[]>(),
 });
 
 // When authenticating with the CLI, this code will be used to authenticate.

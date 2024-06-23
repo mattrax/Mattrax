@@ -29,7 +29,9 @@ export default function Page() {
 	return (
 		<Switch>
 			<Match when={parse(document.cookie).isLoggedIn !== "true"}>
-				<Navigate href="/login" />
+				<Navigate
+					href={`/login?${new URLSearchParams({ next: location.pathname })}}`}
+				/>
 			</Match>
 			<Match when={defaultOrg() === null}>
 				{

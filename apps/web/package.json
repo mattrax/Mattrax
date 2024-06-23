@@ -31,6 +31,9 @@
 		"@microsoft/microsoft-graph-client": "^3.0.7",
 		"@paralleldrive/cuid2": "^2.2.2",
 		"@planetscale/database": "^1.18.0",
+		"@simplewebauthn/browser": "^10.0.0",
+		"@simplewebauthn/server": "^10.0.0",
+		"@simplewebauthn/typescript-types": "^8.3.4",
 		"@solid-mediakit/trpc": "^3.0.2",
 		"@solid-primitives/autofocus": "^0.0.111",
 		"@solid-primitives/context": "^0.2.3",
@@ -92,6 +95,7 @@
 	"devDependencies": {
 		"@iconify/json": "^2.2.211",
 		"@microsoft/microsoft-graph-types": "^2.40.0",
+		"@simplewebauthn/types": "^10.0.0",
 		"@tailwindcss/forms": "^0.5.7",
 		"@types/prismjs": "^1.26.4",
 		"@types/react": "^18.3.2",

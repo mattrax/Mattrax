@@ -15,6 +15,7 @@ import {
 } from "~/db";
 import { env } from "~/env";
 import { createTRPCRouter, orgProcedure, publicProcedure } from "../../helpers";
+import { handleLoginSuccess } from "../auth";
 
 export const adminsRouter = createTRPCRouter({
 	list: orgProcedure.query(async ({ ctx }) => {
@@ -125,16 +126,7 @@ export const adminsRouter = createTRPCRouter({
 				return account!;
 			});
 
-			const session = await lucia.createSession(account.id, {
-				userAgent: "web", // TODO
-				location: "earth", // TODO
-			});
-
-			appendResponseHeader(
-				"Set-Cookie",
-				lucia.createSessionCookie(session.id).serialize(),
-			);
-			setIsLoggedInCookie();
+			await handleLoginSuccess(account.id);
 
 			flushResponse();
 

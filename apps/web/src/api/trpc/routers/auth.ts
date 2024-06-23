@@ -1,13 +1,24 @@
 import { flushResponse, waitUntil } from "@mattrax/trpc-server-function/server";
 import { createId } from "@paralleldrive/cuid2";
+import {
+	generateAuthenticationOptions,
+	generateRegistrationOptions,
+	verifyAuthenticationResponse,
+	verifyRegistrationResponse,
+} from "@simplewebauthn/server";
+import type {
+	AuthenticationResponseJSON,
+	AuthenticatorDevice,
+	RegistrationResponseJSON,
+} from "@simplewebauthn/types";
+import { revalidate } from "@solidjs/router";
 import { TRPCError } from "@trpc/server";
 import { eq, sql } from "drizzle-orm";
 import { generateId } from "lucia";
 import { alphabet, generateRandomString } from "oslo/crypto";
-import { appendResponseHeader, deleteCookie, setCookie } from "vinxi/server";
+import { appendResponseHeader, deleteCookie, useSession } from "vinxi/server";
 import { z } from "zod";
 
-import { revalidate } from "@solidjs/router";
 import { checkAuth, lucia, setIsLoggedInCookie } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
 import { getObjectKeys, randomSlug } from "~/api/utils";
@@ -18,6 +29,7 @@ import {
 	domains,
 	organisationMembers,
 	organisations,
+	passkeys,
 	tenants,
 } from "~/db";
 import { env } from "~/env";
@@ -31,12 +43,6 @@ import {
 	superAdminProcedure,
 } from "../helpers";
 
-type UserResult = {
-	id: number;
-	name: string;
-	email: string;
-};
-
 export const authRouter = createTRPCRouter({
 	sendLoginCode: publicProcedure
 		.input(
@@ -45,9 +51,7 @@ export const authRouter = createTRPCRouter({
 				addIfManaged: z.boolean().optional(),
 			}),
 		)
-		.mutation(async ({ input, ctx }) => {
-			flushResponse();
-
+		.mutation(async ({ input }) => {
 			const parts = input.email.split("@");
 			// This should be impossible due to input validation on the frontend but we guard just in case
 			if (parts.length !== 2) throw new Error("Invalid email provided!");
@@ -153,16 +157,7 @@ export const authRouter = createTRPCRouter({
 				});
 			}
 
-			const session = await lucia.createSession(account.id, {
-				userAgent: `w${"web"}`, // TODO
-				location: "earth", // TODO
-			});
-
-			appendResponseHeader(
-				"Set-Cookie",
-				lucia.createSessionCookie(session.id).serialize(),
-			);
-			setIsLoggedInCookie();
+			await handleLoginSuccess(account.id);
 
 			flushResponse();
 			revalidate([checkAuth.key, getTenantList.key]);
@@ -171,6 +166,7 @@ export const authRouter = createTRPCRouter({
 		}),
 
 	me: authedProcedure.query(async ({ ctx: { account } }) => {
+		await new Promise((res) => setTimeout(res, 2000));
 		return {
 			id: account.id,
 			name: account.name,
@@ -213,6 +209,166 @@ export const authRouter = createTRPCRouter({
 	//     await ctx.session.clear();
 	//     return {};
 	//   }),
+
+	passkey: createTRPCRouter({
+		register: createTRPCRouter({
+			start: publicProcedure.mutation(async () => {
+				const data = await checkAuth();
+
+				if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+				const { account } = data;
+
+				const options = await generateRegistrationOptions({
+					rpID: new URL(env.VITE_PROD_ORIGIN).hostname,
+					rpName: "Mattrax",
+					userID: new TextEncoder().encode(account.id),
+					userName: account.email,
+					attestationType: "direct",
+					excludeCredentials: [],
+					authenticatorSelection: {
+						residentKey: "preferred",
+					},
+					// Support for the two most common algorithms: ES256, and RS256
+					supportedAlgorithmIDs: [-7, -257],
+				});
+
+				const session = await useSession<{
+					passkeyChallenge?: string;
+				}>({ password: env.INTERNAL_SECRET });
+				await session.update({
+					passkeyChallenge: options.challenge,
+				});
+
+				return options;
+			}),
+			finish: publicProcedure
+				.input(
+					z.object({
+						response: z.custom<RegistrationResponseJSON>(),
+					}),
+				)
+				.mutation(async ({ input }) => {
+					const data = await checkAuth();
+
+					if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
+
+					const { account } = data;
+
+					const session = await useSession<{
+						passkeyChallenge?: string;
+					}>({ password: env.INTERNAL_SECRET });
+					if (!session.data.passkeyChallenge)
+						throw new TRPCError({ code: "BAD_REQUEST" });
+
+					const verification = await verifyRegistrationResponse({
+						response: input.response,
+						expectedChallenge: session.data.passkeyChallenge,
+						expectedOrigin: env.VITE_PROD_ORIGIN,
+						expectedRPID: new URL(env.VITE_PROD_ORIGIN).hostname,
+						requireUserVerification: true,
+					});
+
+					if (verification.verified && verification.registrationInfo) {
+						await session.update((data) => {
+							data.passkeyChallenge = undefined;
+							return data;
+						});
+
+						await db.insert(passkeys).values({
+							accountPk: data.account.pk,
+							credentialId: verification.registrationInfo.credentialID,
+							publicKey: Buffer.from(
+								verification.registrationInfo.credentialPublicKey,
+							).toString("base64"),
+							counter: verification.registrationInfo.counter,
+							transports: input.response.response.transports,
+						});
+
+						return true;
+					}
+
+					return false;
+				}),
+		}),
+		login: createTRPCRouter({
+			start: publicProcedure.mutation(async () => {
+				const options = await generateAuthenticationOptions({
+					timeout: 60000,
+					allowCredentials: [],
+					userVerification: "required",
+					rpID: new URL(env.VITE_PROD_ORIGIN).hostname,
+				});
+
+				const session = await useSession<{
+					passkeyChallenge?: string;
+				}>({ password: env.INTERNAL_SECRET });
+				await session.update({
+					passkeyChallenge: options.challenge,
+				});
+
+				return options;
+			}),
+			finish: publicProcedure
+				.input(z.object({ response: z.custom<AuthenticationResponseJSON>() }))
+				.mutation(async ({ input }) => {
+					const session = await useSession<{
+						passkeyChallenge?: string;
+					}>({ password: env.INTERNAL_SECRET });
+					if (!session.data.passkeyChallenge)
+						throw new TRPCError({ code: "BAD_REQUEST" });
+
+					const passkey = (
+						await db
+							.select({
+								credentialId: passkeys.credentialId,
+								publicKey: passkeys.publicKey,
+								transports: passkeys.transports,
+								account: accounts,
+							})
+							.from(passkeys)
+							.where(eq(passkeys.credentialId, input.response.id))
+							.innerJoin(accounts, eq(accounts.pk, passkeys.accountPk))
+					)[0];
+
+					if (!passkey) throw new TRPCError({ code: "NOT_FOUND" });
+					const { account } = passkey;
+
+					const authenticator: AuthenticatorDevice = {
+						credentialID: input.response.id,
+						credentialPublicKey: new Uint8Array(
+							Buffer.from(passkey.publicKey, "base64"),
+						),
+						counter: 0,
+						transports: passkey.transports ?? undefined,
+					};
+
+					const { verified, authenticationInfo } =
+						await verifyAuthenticationResponse({
+							response: input.response,
+							expectedChallenge: session.data.passkeyChallenge,
+							expectedOrigin: env.VITE_PROD_ORIGIN,
+							expectedRPID: new URL(env.VITE_PROD_ORIGIN).hostname,
+							authenticator,
+						});
+
+					if (verified) {
+						await handleLoginSuccess(account.id);
+						return authenticationInfo;
+					}
+				}),
+		}),
+		exists: authedProcedure.query(async ({ ctx }) => {
+			const passkey = await db.query.passkeys.findFirst({
+				where: eq(passkeys.accountPk, ctx.account.pk),
+			});
+
+			return !!passkey;
+		}),
+		remove: authedProcedure.mutation(async ({ ctx }) => {
+			await db.delete(passkeys).where(eq(passkeys.accountPk, ctx.account.pk));
+		}),
+	}),
 
 	admin: createTRPCRouter({
 		getFeatures: superAdminProcedure
@@ -276,3 +432,16 @@ export const authRouter = createTRPCRouter({
 			}),
 	}),
 });
+
+export async function handleLoginSuccess(accountId: string) {
+	const session = await lucia.createSession(accountId, {
+		userAgent: `w${"web"}`, // TODO
+		location: "earth", // TODO
+	});
+
+	appendResponseHeader(
+		"Set-Cookie",
+		lucia.createSessionCookie(session.id).serialize(),
+	);
+	setIsLoggedInCookie();
+}

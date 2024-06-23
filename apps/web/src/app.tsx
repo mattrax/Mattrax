@@ -88,9 +88,11 @@ export default function App() {
 									if (parseJson(error?.shape?.message)?.code) return;
 
 									if (error.data?.code === "UNAUTHORIZED") {
+										if (location.pathname.startsWith("/login")) return;
+
 										const params = new URLSearchParams({
 											...(location.pathname !== "/" &&
-											location.pathname !== "/login"
+											!location.pathname.startsWith("/login")
 												? { next: location.pathname }
 												: {}),
 										});

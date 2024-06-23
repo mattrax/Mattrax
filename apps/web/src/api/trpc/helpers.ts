@@ -39,7 +39,9 @@ export const createTRPCRouter = t.router;
 // Public (unauthenticated) procedure
 export const publicProcedure = t.procedure.use(async ({ next }) => {
 	try {
-		return next();
+		const resp = await next();
+		flushResponse();
+		return resp;
 	} catch (err) {
 		flushResponse();
 		throw err;
@@ -84,12 +86,7 @@ export const getTenantList = cache(
 
 // Authenticated procedure
 export const authedProcedure = publicProcedure.use(async ({ next }) => {
-	const data = await checkAuth().catch((e) => {
-		flushResponse();
-		throw e;
-	});
-
-	flushResponse();
+	const data = await checkAuth().finally(flushResponse);
 
 	if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 

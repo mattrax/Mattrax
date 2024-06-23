@@ -1,6 +1,6 @@
 import { CardDescription } from "@mattrax/ui";
 import { Form, createZodForm } from "@mattrax/ui/forms";
-import { useLocation, useNavigate, useSearchParams } from "@solidjs/router";
+import { useLocation, useNavigate } from "@solidjs/router";
 import { Show, startTransition } from "solid-js";
 import { z } from "zod";
 
@@ -9,12 +9,12 @@ import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { autofocus } from "@solid-primitives/autofocus";
 import clsx from "clsx";
 import { trpc } from "~/lib";
+import { createLoginOnSuccess } from "./util";
 
 // Don't bundle split this Solid directive
 autofocus;
 
 export default function Page() {
-	const [query] = useSearchParams<{ next?: string }>();
 	const location = useLocation<{
 		email?: string;
 		action?: string;
@@ -26,29 +26,9 @@ export default function Page() {
 		return;
 	}
 
-	const me = trpc.auth.me.createQuery(undefined, () => ({
-		enabled: false,
-	}));
-	const orgs = trpc.org.list.createQuery(undefined, () => ({
-		enabled: false,
-	}));
-
+	const onSuccess = createLoginOnSuccess();
 	const verify = trpc.auth.verifyLoginCode.createMutation(() => ({
-		onSuccess: () => {
-			let to: string;
-
-			if (query?.next && URL.canParse(`${window.location.origin}${query.next}`))
-				to = query.next;
-			else to = "/";
-
-			return navigate(to, {
-				state: {
-					action: location.state?.action,
-				},
-				// Ensures the history stack is `/login` then `/users-page`
-				replace: true,
-			});
-		},
+		onSuccess,
 		// ...withDependantQueries([me, orgs]), // TODO: Using this here is problematic because the auth check on the backend is cached I think
 	}));
 

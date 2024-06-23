@@ -1,11 +1,9 @@
-import { Button, CardDescription } from "@mattrax/ui";
+import { AsyncButton, Button, CardDescription } from "@mattrax/ui";
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
-import { A, useLocation, useNavigate, useSearchParams } from "@solidjs/router";
+import { A, useLocation, useNavigate } from "@solidjs/router";
 import { Show, createMemo, createSignal, startTransition } from "solid-js";
 import { z } from "zod";
 
-import { useQueryClient } from "@tanstack/solid-query";
-import { resetMattraxCache } from "~/cache";
 import { trpc } from "~/lib";
 import { parseJson } from "~/lib/utils";
 
@@ -15,11 +13,8 @@ export default function Page() {
 
 	// TODO: preload `/login/code`
 
-	const queryClient = useQueryClient();
 	const login = trpc.auth.sendLoginCode.createMutation(() => ({
 		onSuccess: async (_, { email }) => {
-			queryClient.clear();
-			await resetMattraxCache();
 			// revalidate(); // TODO: Wipe entire Solid cache (I can't see a method for it)
 
 			await startTransition(() =>
@@ -45,13 +40,20 @@ export default function Page() {
 
 	const jsonError = createMemo(() => parseJson(login.error?.shape?.message));
 
+	const [passkeyLoginActive, setPasskeyLoginActive] = createSignal(false);
+
 	return (
 		<div class="flex flex-col items-center">
 			<CardDescription class="text-center">
-				Sign in with your email to get started
+				Log in to use Mattrax
 			</CardDescription>
 
-			<Form form={form} class="pt-4 w-full max-w-80" fieldsetClass="space-y-2">
+			<Form
+				form={form}
+				class="pt-4 w-full max-w-80"
+				fieldsetClass="space-y-2"
+				disabled={passkeyLoginActive()}
+			>
 				<Show when={jsonError()?.code === "USER_IS_IN_MANAGED_TENANT"}>
 					<p class="text-red-500 text-sm text-center">
 						Your domain is under management by <b>{jsonError()?.tenantName}</b>.
@@ -93,9 +95,17 @@ export default function Page() {
 
 				<Button type="submit" class="w-full">
 					<span class="text-sm font-semibold leading-6">
-						{login.isPending ? "Submitting" : "Continue"}
+						{login.isPending ? "Submitting" : "Continue with email"}
 					</span>
 				</Button>
+
+				<hr />
+
+				<LoginWithPasskeyButton
+					onStart={() => setPasskeyLoginActive(true)}
+					onEnd={() => setPasskeyLoginActive(false)}
+				/>
+
 				<p class="text-center text-sm text-gray-500">
 					If your not an administrator,{" "}
 					<A href="/enroll" target="_self" class="underline">
@@ -104,5 +114,43 @@ export default function Page() {
 				</p>
 			</Form>
 		</div>
+	);
+}
+
+import { startAuthentication } from "@simplewebauthn/browser";
+import { createLoginOnSuccess } from "./util";
+
+function LoginWithPasskeyButton(props: {
+	onStart: () => void;
+	onEnd: () => void;
+}) {
+	const start = trpc.auth.passkey.login.start.createMutation();
+
+	const onSuccess = createLoginOnSuccess();
+	const finish = trpc.auth.passkey.login.finish.createMutation(() => ({
+		onSuccess,
+	}));
+
+	return (
+		<AsyncButton
+			type="button"
+			class="w-full"
+			variant="outline"
+			onClick={async () => {
+				props.onStart();
+
+				try {
+					const options = await start.mutateAsync();
+
+					const attestationResponse = await startAuthentication(options);
+
+					await finish.mutateAsync({ response: attestationResponse });
+				} finally {
+					props.onEnd();
+				}
+			}}
+		>
+			Log in with passkey
+		</AsyncButton>
 	);
 }
