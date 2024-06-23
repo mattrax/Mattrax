@@ -166,7 +166,6 @@ export const authRouter = createTRPCRouter({
 		}),
 
 	me: authedProcedure.query(async ({ ctx: { account } }) => {
-		await new Promise((res) => setTimeout(res, 2000));
 		return {
 			id: account.id,
 			name: account.name,

@@ -86,8 +86,6 @@ export const policyRouter = createTRPCRouter({
 				.orderBy(desc(policyDeploy.doneAt))
 				.limit(1);
 
-			await new Promise((resolve) => setTimeout(resolve, 1000));
-
 			return {
 				// The differences between the policies state and the last deployed version
 				diff: generatePolicyDiff(lastVersion?.data ?? ({} as any), policy.data),
