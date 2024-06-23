@@ -1,7 +1,7 @@
 {
 	"version": "5",
 	"dialect": "mysql",
-	"id": "abe0adb9-ad00-45ae-b3bb-531f3b188433",
+	"id": "255bac9e-11bc-4401-9f48-362fcfa333be",
 	"prevId": "c0a6c778-615c-42ea-920c-3fb9b780f8c2",
 	"tables": {
 		"account_login_codes": {
@@ -1096,19 +1096,19 @@
 					"name": "challenge",
 					"type": "varchar(256)",
 					"primaryKey": false,
-					"notNull": false,
+					"notNull": true,
 					"autoincrement": false
 				}
 			},
 			"indexes": {},
 			"foreignKeys": {},
-			"compositePrimaryKeys": {},
-			"uniqueConstraints": {
-				"passkey_challenges_challenge_unique": {
-					"name": "passkey_challenges_challenge_unique",
+			"compositePrimaryKeys": {
+				"passkey_challenges_challenge": {
+					"name": "passkey_challenges_challenge",
 					"columns": ["challenge"]
 				}
-			}
+			},
+			"uniqueConstraints": {}
 		},
 		"passkeys": {
 			"name": "passkeys",

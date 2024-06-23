@@ -1,6 +1,6 @@
 CREATE TABLE `passkey_challenges` (
-	`challenge` varchar(256),
-	CONSTRAINT `passkey_challenges_challenge_unique` UNIQUE(`challenge`)
+	`challenge` varchar(256) NOT NULL,
+	CONSTRAINT `passkey_challenges_challenge` PRIMARY KEY(`challenge`)
 );
 
 CREATE TABLE `passkeys` (
