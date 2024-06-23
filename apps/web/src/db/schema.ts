@@ -107,7 +107,7 @@ export const accountLoginCodes = mysqlTable("account_login_codes", {
 });
 
 export const passkeyChallenges = mysqlTable("passkey_challenges", {
-	challenge: varchar("challenge", { length: 256 }).unique(),
+	challenge: varchar("challenge", { length: 256 }).primaryKey(),
 });
 
 export const passkeys = mysqlTable("passkeys", {
