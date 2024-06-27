@@ -5,7 +5,7 @@ use ms_mdm::{
 };
 use mx_db::{CreatePolicyDeployStatus, Db, GetDeviceResult};
 use mx_db::{GetPendingDeployStatusesResult, GetPolicyDataForCheckinResult};
-use mx_policy::{DmValue, PolicyData};
+use mx_policy::{DmValue, MaybeNestedDMValue, PolicyData};
 
 // TODO: Error handling
 // TODO: Support resolving soft conflicts using information from DFF files.
@@ -220,20 +220,22 @@ fn resolve(
     for (policy, _, last, conflicts) in policy_content.iter() {
         for (key, children) in last.as_ref().map(|v| &v.windows).into_iter().flatten() {
             for (child_key, value) in children {
-                let value: DmValue = value.clone().into();
+                let value: MaybeNestedDMValue = value.clone().into();
 
-                // We mark all node's that were previously deployed as `Delete` so they are removed.
-                desired.insert(
-                    format!("{}{}", key, child_key),
-                    ManagementNode::Delete {
-                        deploy_pk: policy
-                            .last_deploy
-                            .as_ref()
-                            .expect("trust in the process")
-                            .pk,
-                        value,
-                    },
-                );
+                if let Some(value) = value.0.left() {
+                    // We mark all node's that were previously deployed as `Delete` so they are removed.
+                    desired.insert(
+                        format!("{}{}", key, child_key),
+                        ManagementNode::Delete {
+                            deploy_pk: policy
+                                .last_deploy
+                                .as_ref()
+                                .expect("trust in the process")
+                                .pk,
+                            value,
+                        },
+                    );
+                }
             }
         }
 
@@ -254,43 +256,45 @@ fn resolve(
         for (key, children) in latest.windows {
             for (child_key, desired_value) in children {
                 let key = format!("{}{}", key, child_key);
-                let desired_value: DmValue = desired_value.into();
+                let desired_value: MaybeNestedDMValue = desired_value.into();
 
-                match desired.get(&key) {
-                    Some(ManagementNode::Delete { deploy_pk, value }) => {
-                        desired.insert(
-                            key,
-                            ManagementNode::Replace {
-                                deploy_pk: policy.latest_deploy.pk,
-                                changed: &desired_value != value,
-                                value: desired_value,
-                            },
-                        );
-                    }
-                    Some(ManagementNode::Add { deploy_pk, value })
-                    | Some(ManagementNode::Replace {
-                        deploy_pk, value, ..
-                    }) => {
-                        // If the values match then we don't need to do anything.
-                        if *value == desired_value {
-                            continue;
+                if let Some(desired_value) = desired_value.0.left() {
+                    match desired.get(&key) {
+                        Some(ManagementNode::Delete { deploy_pk, value }) => {
+                            desired.insert(
+                                key,
+                                ManagementNode::Replace {
+                                    deploy_pk: policy.latest_deploy.pk,
+                                    changed: &desired_value != value,
+                                    value: desired_value,
+                                },
+                            );
                         }
+                        Some(ManagementNode::Add { deploy_pk, value })
+                        | Some(ManagementNode::Replace {
+                            deploy_pk, value, ..
+                        }) => {
+                            // If the values match then we don't need to do anything.
+                            if *value == desired_value {
+                                continue;
+                            }
 
-                        conflicts
-                            .entry(key)
-                            .and_modify(|v: &mut Vec<u64>| v.push(policy.latest_deploy.pk))
-                            .or_insert_with(|| vec![*deploy_pk, policy.latest_deploy.pk]);
-                    }
-                    None => {
-                        desired.insert(
-                            key,
-                            ManagementNode::Add {
-                                deploy_pk: policy.latest_deploy.pk,
-                                value: desired_value,
-                            },
-                        );
-                    }
-                };
+                            conflicts
+                                .entry(key)
+                                .and_modify(|v: &mut Vec<u64>| v.push(policy.latest_deploy.pk))
+                                .or_insert_with(|| vec![*deploy_pk, policy.latest_deploy.pk]);
+                        }
+                        None => {
+                            desired.insert(
+                                key,
+                                ManagementNode::Add {
+                                    deploy_pk: policy.latest_deploy.pk,
+                                    value: desired_value,
+                                },
+                            );
+                        }
+                    };
+                }
             }
         }
     }

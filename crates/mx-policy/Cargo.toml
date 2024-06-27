@@ -12,3 +12,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { version = "0.4.38", features = ["serde"] }
 rust_decimal = "1.35.0"
+either = "1.13.0"

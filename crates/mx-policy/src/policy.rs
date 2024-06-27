@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use either::Either;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -27,15 +28,23 @@ pub enum WindowsConfigValue {
     Integer(i32),
     String(String),
     Boolean(bool),
+    Nested(HashMap<String, WindowsConfigValue>),
 }
 
-impl Into<DmValue> for WindowsConfigValue {
-    fn into(self) -> DmValue {
-        match self {
+pub struct MaybeNestedDMValue(pub Either<DmValue, HashMap<String, MaybeNestedDMValue>>);
+
+impl From<WindowsConfigValue> for MaybeNestedDMValue {
+    fn from(value: WindowsConfigValue) -> Self {
+        Self(Either::Left(match value {
             WindowsConfigValue::Integer(v) => DmValue::Integer(v.try_into().unwrap()),
             WindowsConfigValue::String(v) => DmValue::String(v),
             WindowsConfigValue::Boolean(v) => DmValue::Boolean(v),
-        }
+            WindowsConfigValue::Nested(v) => {
+                return Self(Either::Right(
+                    v.into_iter().map(|(k, v)| (k, v.into())).collect(),
+                ))
+            }
+        }))
     }
 }
 
