@@ -4,6 +4,7 @@ import {
 	A,
 	Navigate,
 	type RouteDefinition,
+	redirect,
 	useNavigate,
 } from "@solidjs/router";
 import {
@@ -12,58 +13,74 @@ import {
 	Show,
 	Suspense,
 	Switch,
+	createEffect,
 	createSignal,
 	startTransition,
 } from "solid-js";
 import { z } from "zod";
 
-import { type MattraxCache, type TableData, useCachedQueryData } from "~/cache";
+import {
+	type MattraxCache,
+	type TableData,
+	createQueryCacher,
+	useCachedQueryData,
+} from "~/cache";
 import { PageLayout } from "~/components/PageLayout";
 import { trpc } from "~/lib";
-import { cachedOrgs } from "../utils";
 import { useOrgSlug } from "./ctx";
-import { cachedTenantsForOrg } from "./utils";
+import { useTenants } from "./utils";
 
 export const route = {
-	load: ({ params }) =>
-		trpc.useContext().org.tenants.ensureData({ orgSlug: params.orgSlug! }),
+	load: async ({ params }) => {
+		// const cache = await getMattraxCache();
+		// const [metadata, data] = await Promise.all([
+		// 	cache.metadata.where("table").equals(table).first(),
+		// 	(filter ? filter(cache[table]) : cache[table]).toArray(),
+		// ]);
+		// const orgs = await trpc.useContext().org.list.fetch();
+		// const org = orgs.find((org) => org.slug === params.orgSlug);
+		// if (org) trpc.useContext().org.tenants.ensureData({ orgId: org.id });
+		// console.log("PRELOAD", org?.id);
+	},
 } satisfies RouteDefinition;
 
 export default function Page() {
 	const orgSlug = useOrgSlug();
-
-	const tenantsQuery = trpc.org.tenants.createQuery(() => ({
-		orgSlug: orgSlug(),
-	}));
-	const tenants = useCachedQueryData(tenantsQuery, async () => {
-		const slug = orgSlug();
-		const orgs = await cachedOrgs();
-		const org = orgs.find((o) => o.slug === slug);
-		if (!org) return [];
-
-		return await cachedTenantsForOrg(org.id);
-	});
+	const tenants = useTenants();
 
 	const [open, setOpen] = createSignal(true);
 	setInterval(() => setOpen(!open()), 5000);
 
+	createEffect(() =>
+		console.log(
+			JSON.parse(
+				JSON.stringify({
+					data: tenants()?.data,
+					pending: tenants()?.isPending,
+					stale: tenants()?.isStale,
+				}),
+			),
+		),
+	);
+
+	// TODO: `Suspense` fallback
 	return (
-		<Suspense>
-			<Show when={tenants()}>
+		<Suspense fallback={<p>TODO</p>}>
+			<Show when={tenants()?.data} fallback={<p>TODO</p>}>
 				{(tenants) => (
-					<Switch>
-						<Match when={tenants().length < 1}>
+					<Switch fallback={<h1>TODO</h1>}>
+						{/* We forcefully wait for the response from the server to prevent a flash of create before list view */}
+						{/* !tenantsQuery.isPending && */}
+						{/* <Match when={tenants().length < 1}>
 							<CreateTenant />
-						</Match>
-						<Match when={tenants().length === 1 && tenants()[0]!}>
+						</Match> */}
+						{/* <Match when={tenants().length === 1 && tenants()[0]!}>
 							{(tenant) => (
 								<Navigate href={`/o/${orgSlug()}/t/${tenant().slug}`} />
 							)}
-						</Match>
-						<Match when={tenants().length > 1}>
-							<PageLayout class="pt-6">
-								<TenantList tenants={tenants()} />
-							</PageLayout>
+						</Match> */}
+						<Match when={tenants()}>
+							<TenantList tenants={tenants()} />
 						</Match>
 					</Switch>
 				)}
@@ -76,10 +93,10 @@ function TenantList(props: {
 	tenants: Array<TableData<MattraxCache["tenants"]>>;
 }) {
 	return (
-		<>
+		<PageLayout class="pt-6">
 			<span class="p-1 text-sm text-gray-800 font-semibold">Tenants</span>
 			<ul class="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-				<For each={props.tenants}>
+				<For each={props.tenants} fallback={<CreateTenant />}>
 					{(tenant) => (
 						<li class="w-full text-sm">
 							<A
@@ -93,7 +110,7 @@ function TenantList(props: {
 					)}
 				</For>
 			</ul>
-		</>
+		</PageLayout>
 	);
 }
 

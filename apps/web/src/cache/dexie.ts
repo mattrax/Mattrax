@@ -1,6 +1,6 @@
 import Dexie from "dexie";
 
-export type TableNames = "orgs" | "tenants";
+export type TableNames = "orgs" | "tenants" | "metadata";
 
 class MattraxCache
 	extends Dexie
@@ -11,14 +11,16 @@ class MattraxCache
 		{ id: string; slug: string; name: string; orgId: string },
 		string
 	>;
+	metadata!: Dexie.Table<{ table: string; last_updated: Date }, string>;
 
-	VERSION = 2;
+	VERSION = 3;
 
 	constructor() {
 		super("mattrax-cache");
 		this.version(this.VERSION).stores({
 			orgs: "id",
 			tenants: "id, orgId, slug",
+			metadata: "table",
 		});
 	}
 }

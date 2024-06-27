@@ -1,12 +1,11 @@
 /* @refresh skip */
 
 import { createReconnectingWS } from "@solid-primitives/websocket";
-import { type RouteDefinition, createAsync } from "@solidjs/router";
+import type { RouteDefinition } from "@solidjs/router";
 import {
 	type ParentProps,
 	Suspense,
 	createEffect,
-	createMemo,
 	createReaction,
 } from "solid-js";
 
@@ -14,17 +13,17 @@ import { createQuery, useQueryClient } from "@tanstack/solid-query";
 import { useCommandGroup } from "~/components/CommandPalette";
 import { trpc } from "~/lib";
 import { useOrgSlug } from "./o.[orgSlug]/ctx";
-import { cachedOrgs } from "./utils";
+import { useOrgs } from "./utils";
 
 export const route = {
 	load: ({ params }) => {
-		trpc.useContext().org.tenants.ensureData({ orgSlug: params.orgSlug! });
+		// trpc.useContext().org.tenants.ensureData({ orgSlug: params.orgSlug! }); // TODO
 		trpc.useContext().org.list.ensureData();
 	},
 } satisfies RouteDefinition;
 
 export default function Layout(props: ParentProps) {
-	createMemo(createAsync(() => cachedOrgs()));
+	useOrgs();
 
 	useCommandGroup("Organisation", [
 		{
