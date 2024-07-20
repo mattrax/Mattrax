@@ -2,12 +2,12 @@
 	"name": "@mattrax/infra",
 	"private": true,
 	"devDependencies": {
-		"@pulumi/aws": "^6.45.0",
-		"@pulumi/azuread": "^5.53.2"
+		"@pulumi/aws": "^6.36.0",
+		"@pulumi/azuread": "^5.49.1"
 	},
 	"dependencies": {
-		"@pulumi/cloudflare": "^5.34.0",
-		"@pulumi/pulumi": "^3.125.0",
-		"sst": "^3.0.37"
+		"@pulumi/cloudflare": "^5.28.0",
+		"@pulumi/pulumi": "^3.116.1",
+		"sst": "3"
 	}
 }
