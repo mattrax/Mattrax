@@ -43,8 +43,7 @@
 		"nitropack": "=2.9.6",
 		"@tanstack/solid-form": "=0.20.0",
 		"vinxi": "0.4.1",
-		"@solidjs/router": "0.13.3",
-		"sst": "3.0.30"
+		"@solidjs/router": "0.13.3"
 	},
 	"pnpm": {
 		"patchedDependencies": {

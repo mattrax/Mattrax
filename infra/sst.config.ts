@@ -18,19 +18,19 @@ export default $config({
 		};
 	},
 	async run() {
-		$linkable(aws.iam.AccessKey, (r) => ({
+		sst.Linkable.wrap(aws.iam.AccessKey, (r) => ({
 			properties: { id: r.id, secret: r.secret },
 		}));
 
-		$linkable(azuread.Application, (r) => ({
+		sst.Linkable.wrap(azuread.Application, (r) => ({
 			properties: { cilentId: r.clientId },
 		}));
 
-		$linkable(azuread.ApplicationPassword, (r) => ({
+		sst.Linkable.wrap(azuread.ApplicationPassword, (r) => ({
 			properties: { value: r.value },
 		}));
 
-		$linkable(random.RandomBytes, (r) => ({
+		sst.Linkable.wrap(random.RandomBytes, (r) => ({
 			properties: { base64: r.base64 },
 		}));
 
