@@ -41,7 +41,9 @@
 	"resolutions": {
 		"drizzle-orm": "^0.30.8",
 		"nitropack": "=2.9.6",
-		"@tanstack/solid-form": "=0.20.0"
+		"@tanstack/solid-form": "=0.20.0",
+		"vinxi": "0.4.1",
+		"@solidjs/router": "0.13.3"
 	},
 	"pnpm": {
 		"patchedDependencies": {
@@ -50,7 +52,8 @@
 			"nitropack@2.9.6": "patches/nitropack@2.9.6.patch",
 			"@tanstack/solid-form@0.20.0": "patches/@tanstack__solid-form@0.20.0.patch",
 			"cmdk-solid@1.0.1": "patches/cmdk-solid@1.0.1.patch",
-			"@solidjs/start@1.0.6": "patches/@solidjs__start@1.0.6.patch"
+			"@solidjs/start@1.0.6": "patches/@solidjs__start@1.0.6.patch",
+			"@solidjs/router@0.13.3": "patches/@solidjs__router@0.13.3.patch"
 		}
 	}
 }

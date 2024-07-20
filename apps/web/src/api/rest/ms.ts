@@ -100,6 +100,7 @@ export const msRouter = new Hono<HonoEnv>()
 			} = queryParams;
 
 			const sessionId =
+				// @ts-expect-error
 				getCookie(c.env.h3Event, lucia.sessionCookieName) ?? null;
 			if (sessionId === null) return new Response("Unauthorised!"); // TODO: Proper error UI as the user may land here
 
