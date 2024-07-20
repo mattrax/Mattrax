@@ -17,7 +17,7 @@
 		"db:rs": "DRIZZLE=1 bun run ./apps/web/src/db/rust.ts",
 		"typecheck": "tsc -b",
 		"lint": "biome lint .",
-		"fix": "biome lint --apply . && biome format --write . && biome check . --apply",
+		"fix": "biome lint --write . && biome format --write . && biome check . --write",
 		"format": "biome format --write .",
 		"prepare": "husky"
 	},
