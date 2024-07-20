@@ -559,20 +559,20 @@ importers:
   infra:
     dependencies:
       '@pulumi/cloudflare':
-        specifier: ^5.28.0
+        specifier: ^5.34.0
         version: 5.34.0(typescript@5.5.3)
       '@pulumi/pulumi':
-        specifier: ^3.116.1
+        specifier: ^3.125.0
         version: 3.125.0(typescript@5.5.3)
       sst:
-        specifier: '3'
-        version: 3.0.37(hono@4.5.0)
+        specifier: '=3.0.36'
+        version: 3.0.36(hono@4.5.0)
     devDependencies:
       '@pulumi/aws':
-        specifier: ^6.36.0
+        specifier: ^6.45.0
         version: 6.45.0(typescript@5.5.3)
       '@pulumi/azuread':
-        specifier: ^5.49.1
+        specifier: ^5.53.2
         version: 5.53.2(typescript@5.5.3)
 
   packages/configuration-schemas: {}
@@ -8642,6 +8642,17 @@ packages:
   ssri@10.0.6:
     resolution: {integrity: sha512-MGrFH9Z4NP9Iyhqn16sDtBpRRNJ0Y2hNa6D65h736fVSaPCHr4DM4sWUNvVaSuC+0OBGhwsrydQwmgfg5LncqQ==}
     engines: {node: ^14.17.0 || ^16.13.0 || >=18.0.0}
+
+  sst@3.0.36:
+    resolution: {integrity: sha512-zxDgTAwgMywCayWP2JhunR4Ht3MHzGvrH32tU97HEOuaw2mIa6pw2DBI0s0uFB+PwXjPRiNZcMqJnGegGYvLYA==}
+    peerDependencies:
+      hono: 4.x
+      valibot: 0.30.x
+    peerDependenciesMeta:
+      hono:
+        optional: true
+      valibot:
+        optional: true
 
   sst@3.0.37:
     resolution: {integrity: sha512-FgZIvBMEtGKO2UtS47YryfDAoK+4IPAYJYftDRjCM2Dmxh+0HHocCAXW/A2ZpNOK36y9hT9w+Naycq2OhtLCNg==}
@@ -18725,6 +18736,18 @@ snapshots:
   ssri@10.0.6:
     dependencies:
       minipass: 7.1.2
+
+  sst@3.0.36(hono@4.5.0):
+    dependencies:
+      '@aws-sdk/client-lambda': 3.478.0
+      '@tsconfig/node20': 20.1.4
+      aws4fetch: 1.0.19
+      jose: 5.2.3
+      openid-client: 5.6.4
+    optionalDependencies:
+      hono: 4.5.0
+    transitivePeerDependencies:
+      - aws-crt
 
   sst@3.0.37(hono@4.5.0):
     dependencies:

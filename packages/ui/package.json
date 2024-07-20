@@ -21,7 +21,7 @@
 	"dependencies": {
 		"@corvu/tailwind": "^0.1.5",
 		"@kobalte/core": "^0.13.3",
-		"@solidjs/router": "^0.13.6",
+		"@solidjs/router": "0.13.3",
 		"@tanstack/form-core": "^0.20.3",
 		"@tanstack/solid-form": "^0.20.0",
 		"@tanstack/solid-virtual": "^3.8.3",

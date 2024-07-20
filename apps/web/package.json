@@ -47,7 +47,7 @@
 		"@solid-primitives/storage": "^3.8.0",
 		"@solid-primitives/timer": "^1.3.9",
 		"@solid-primitives/websocket": "^1.2.2",
-		"@solidjs/router": "^0.13.6",
+		"@solidjs/router": "0.13.3",
 		"@solidjs/start": "1.0.1",
 		"@t3-oss/env-core": "^0.10.1",
 		"@tanstack/solid-form": "^0.20.0",
@@ -88,7 +88,7 @@
 		"superjson": "^2.2.1",
 		"tailwindcss": "^3.4.6",
 		"ts-pattern": "^5.2.0",
-		"vinxi": "^0.3.14",
+		"vinxi": "0.4.1",
 		"xml2js": "^0.6.2",
 		"zod": "^3.23.8"
 	},
