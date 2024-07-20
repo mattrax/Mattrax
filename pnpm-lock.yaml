@@ -10,6 +10,7 @@ overrides:
   '@tanstack/solid-form': '=0.20.0'
   vinxi: 0.4.1
   '@solidjs/router': 0.13.3
+  sst: 3.0.30
 
 patchedDependencies:
   '@react-email/tailwind@0.0.16':
@@ -468,8 +469,8 @@ importers:
         specifier: ^0.2.3
         version: 0.2.3(solid-js@1.8.18)
       sst:
-        specifier: ^3.0.37
-        version: 3.0.37(hono@4.5.0)
+        specifier: 3.0.30
+        version: 3.0.30(hono@4.5.0)
       stripe:
         specifier: ^15.12.0
         version: 15.12.0
@@ -565,8 +566,8 @@ importers:
         specifier: ^3.125.0
         version: 3.125.0(typescript@5.5.3)
       sst:
-        specifier: '=3.0.15'
-        version: 3.0.15
+        specifier: 3.0.30
+        version: 3.0.30(hono@4.5.0)
     devDependencies:
       '@pulumi/aws':
         specifier: ^6.45.0
@@ -6388,10 +6389,6 @@ packages:
   highlight-words-core@1.2.2:
     resolution: {integrity: sha512-BXUKIkUuh6cmmxzi5OIbUJxrG8OAk2MqoL1DtO3Wo9D2faJg2ph5ntyuQeLqaHJmzER6H5tllCDA9ZnNe9BVGg==}
 
-  hono@4.0.1:
-    resolution: {integrity: sha512-S9cREGPJIAK437RhroOf1PGlJPIlt5itl69OmQ6onPLo5pdCbSHGL8v4uAKxrdHjcTyuoyvKPqWm5jv0dGkdFA==}
-    engines: {node: '>=16.0.0'}
-
   hono@4.5.0:
     resolution: {integrity: sha512-ZbezypZfn4odyApjCCv+Fw5OgweBqRLA/EsMyc4FUknFvBJcBIKhHy4sqmD1rWpBc/3wUlaQ6tqOPjk36R1ckg==}
     engines: {node: '>=16.0.0'}
@@ -8647,11 +8644,8 @@ packages:
     resolution: {integrity: sha512-MGrFH9Z4NP9Iyhqn16sDtBpRRNJ0Y2hNa6D65h736fVSaPCHr4DM4sWUNvVaSuC+0OBGhwsrydQwmgfg5LncqQ==}
     engines: {node: ^14.17.0 || ^16.13.0 || >=18.0.0}
 
-  sst@3.0.15:
-    resolution: {integrity: sha512-TPCOOFd4QESs700pSv2GvY8BPkX+8nrO+QESwsUhIk+mwS8dQx+F8Hl7ghNEfnUN6kU4pkfVOxWgMLrZXUAoNg==}
-
-  sst@3.0.37:
-    resolution: {integrity: sha512-FgZIvBMEtGKO2UtS47YryfDAoK+4IPAYJYftDRjCM2Dmxh+0HHocCAXW/A2ZpNOK36y9hT9w+Naycq2OhtLCNg==}
+  sst@3.0.30:
+    resolution: {integrity: sha512-Yly2WCGkH5eC4bHO9M4B+LqkAQhiGGP/lgDRDJ17dnXl9VQxmYE/8K30tGaNm0NGGAjjoqW0WtURdP0K7XCv/g==}
     peerDependencies:
       hono: 4.x
       valibot: 0.30.x
@@ -11177,7 +11171,7 @@ snapshots:
       solid-presence: 0.1.7(solid-js@1.8.18)
       solid-sonner: 0.2.8(solid-js@1.8.18)
       solid-transition-group: 0.2.3(solid-js@1.8.18)
-      sst: 3.0.37(hono@4.5.0)
+      sst: 3.0.30(hono@4.5.0)
       stripe: 15.12.0
       superjson: 2.2.1
       tailwindcss: 3.4.6
@@ -15889,8 +15883,6 @@ snapshots:
 
   highlight-words-core@1.2.2: {}
 
-  hono@4.0.1: {}
-
   hono@4.5.0: {}
 
   hookable@5.5.3: {}
@@ -18735,16 +18727,7 @@ snapshots:
     dependencies:
       minipass: 7.1.2
 
-  sst@3.0.15:
-    dependencies:
-      '@aws-sdk/client-lambda': 3.478.0
-      hono: 4.0.1
-      jose: 5.2.3
-      openid-client: 5.6.4
-    transitivePeerDependencies:
-      - aws-crt
-
-  sst@3.0.37(hono@4.5.0):
+  sst@3.0.30(hono@4.5.0):
     dependencies:
       '@aws-sdk/client-lambda': 3.478.0
       '@tsconfig/node20': 20.1.4
