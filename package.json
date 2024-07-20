@@ -26,32 +26,31 @@
 		"pnpm": "^9"
 	},
 	"dependencies": {
-		"@biomejs/biome": "^1.7.3",
-		"@solidjs/start": "1.0.1",
+		"@biomejs/biome": "^1.8.3",
+		"@solidjs/start": "1.0.6",
 		"dotenv": "^16.4.5",
-		"drizzle-kit": "^0.21.2",
-		"pg": "^8.11.5",
-		"typescript": "^5.4.5"
+		"drizzle-kit": "^0.21.4",
+		"pg": "^8.12.0",
+		"typescript": "^5.5.3"
 	},
 	"devDependencies": {
-		"husky": "^9.0.11",
+		"husky": "^9.1.1",
 		"nx": "19.1.1",
-		"wrangler": "^3.57.1"
+		"wrangler": "^3.65.1"
 	},
 	"resolutions": {
-		"drizzle-orm": "^0.30.8"
+		"drizzle-orm": "^0.30.8",
+		"nitropack": "=2.9.6",
+		"@tanstack/solid-form": "=0.20.0"
 	},
 	"pnpm": {
 		"patchedDependencies": {
-			"@solidjs/router@0.13.3": "patches/@solidjs__router@0.13.3.patch",
 			"drizzle-orm@0.30.10": "patches/drizzle-orm@0.30.10.patch",
 			"@react-email/tailwind@0.0.16": "patches/@react-email__tailwind@0.0.16.patch",
 			"nitropack@2.9.6": "patches/nitropack@2.9.6.patch",
-			"@solid-mediakit/trpc@3.0.2": "patches/@solid-mediakit__trpc@3.0.2.patch",
 			"@tanstack/solid-form@0.20.0": "patches/@tanstack__solid-form@0.20.0.patch",
 			"cmdk-solid@1.0.1": "patches/cmdk-solid@1.0.1.patch",
-			"@solidjs/start@1.0.1": "patches/@solidjs__start@1.0.1.patch",
-			"vinxi@0.3.12": "patches/vinxi@0.3.12.patch"
+			"@solidjs/start@1.0.6": "patches/@solidjs__start@1.0.6.patch"
 		}
 	}
 }

@@ -113,32 +113,34 @@ const CommandList: Component<ParentProps<CommandPrimitive.CommandListProps>> = (
 	);
 };
 
-const CommandEmpty: Component<ParentProps<CommandPrimitive.CommandEmptyProps>> =
-	(props) => {
-		const [local, others] = splitProps(props, ["class"]);
+const CommandEmpty: Component<
+	ParentProps<CommandPrimitive.CommandEmptyProps>
+> = (props) => {
+	const [local, others] = splitProps(props, ["class"]);
 
-		return (
-			<CommandPrimitive.CommandEmpty
-				class={clsx("py-6 text-center text-sm", local.class)}
-				{...others}
-			/>
-		);
-	};
+	return (
+		<CommandPrimitive.CommandEmpty
+			class={clsx("py-6 text-center text-sm", local.class)}
+			{...others}
+		/>
+	);
+};
 
-const CommandGroup: Component<ParentProps<CommandPrimitive.CommandGroupProps>> =
-	(props) => {
-		const [local, others] = splitProps(props, ["class"]);
+const CommandGroup: Component<
+	ParentProps<CommandPrimitive.CommandGroupProps>
+> = (props) => {
+	const [local, others] = splitProps(props, ["class"]);
 
-		return (
-			<CommandPrimitive.CommandGroup
-				class={clsx(
-					"overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground",
-					local.class,
-				)}
-				{...others}
-			/>
-		);
-	};
+	return (
+		<CommandPrimitive.CommandGroup
+			class={clsx(
+				"overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground",
+				local.class,
+			)}
+			{...others}
+		/>
+	);
+};
 
 const CommandSeparator: Component<
 	VoidProps<CommandPrimitive.CommandSeparatorProps>

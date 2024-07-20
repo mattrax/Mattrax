@@ -1,0 +1,155 @@
+diff --git a/dist/middleware/index.d.ts b/dist/middleware/index.d.ts
+index cbbb721295002d9ec060015eaab7fd00163b3937..8a8d03d251f8bc1582f1d46a973817dd9132851d 100644
+--- a/dist/middleware/index.d.ts
++++ b/dist/middleware/index.d.ts
+@@ -12,7 +12,7 @@ export declare function createMiddleware({ onRequest, onBeforeResponse }: {
+     onRequest?: RequestMiddleware | RequestMiddleware[] | undefined;
+     onBeforeResponse?: ResponseMiddleware | ResponseMiddleware[] | undefined;
+ }): {
+-    onRequest?: import("h3")._RequestMiddleware<import("h3").EventHandlerRequest> | import("h3")._RequestMiddleware<import("h3").EventHandlerRequest>[] | undefined;
+-    onBeforeResponse?: import("h3")._ResponseMiddleware<import("h3").EventHandlerRequest, any> | import("h3")._ResponseMiddleware<import("h3").EventHandlerRequest, any>[] | undefined;
++    onRequest?: import("vinxi/http")._RequestMiddleware<import("vinxi/http").EventHandlerRequest> | import("vinxi/http")._RequestMiddleware<import("vinxi/http").EventHandlerRequest>[] | undefined;
++    onBeforeResponse?: import("vinxi/http")._ResponseMiddleware<import("vinxi/http").EventHandlerRequest, any> | import("vinxi/http")._ResponseMiddleware<import("vinxi/http").EventHandlerRequest, any>[] | undefined;
+ };
+ export {};
+diff --git a/dist/router/FileRoutes.js b/dist/router/FileRoutes.js
+index d07d72135bfcdbf182de8151341f6fe437452b64..bb9aaada0503a367f7ce15650436f18521f71377 100644
+--- a/dist/router/FileRoutes.js
++++ b/dist/router/FileRoutes.js
+@@ -14,7 +14,13 @@ export function createRoutes() {
+                 lazyRoute(route.$component, import.meta.env.START_ISLANDS
+                     ? import.meta.env.MANIFEST["ssr"]
+                     : import.meta.env.MANIFEST["client"], import.meta.env.MANIFEST["ssr"]),
+-            children: route.children ? route.children.map(createRoute) : undefined
++            children: route.children ? route.children.map(createRoute) : undefined,
++            ...(route.slots && {
++                slots: Object.entries(route.slots).reduce((acc, [slot, route]) => {
++                    acc[slot] = createRoute(route);
++                    return acc;
++                }, {})
++            })
+         };
+     }
+     const routes = routeConfigs.map(createRoute);
+diff --git a/dist/router/routes.d.ts b/dist/router/routes.d.ts
+index 80a90eb0bfbbf4b7e347e40c2dd4e920c38f4139..06b6b273733f45ebe666aa74e4a0799839053aad 100644
+--- a/dist/router/routes.d.ts
++++ b/dist/router/routes.d.ts
+@@ -1,9 +1,11 @@
+-interface Route {
++export interface Route {
+     path: string;
+     id: string;
+     children?: Route[];
++    slots?: Record<string, Route>;
+     page?: boolean;
+     $component?: any;
++    $$route?: any;
+     $GET?: any;
+     $POST?: any;
+     $PUT?: any;
+@@ -23,4 +25,3 @@ export declare function matchAPIRoute(path: string, method: string): {
+     handler: any;
+     params: Record<string, any> | undefined;
+ } | undefined;
+-export {};
+diff --git a/dist/router/routes.js b/dist/router/routes.js
+index 013b027463e34140080730704f93daa9c821afee..92643c0260c9e8a1560ed0ed7a6365cfa85d51e0 100644
+--- a/dist/router/routes.js
++++ b/dist/router/routes.js
+@@ -6,11 +6,46 @@ function defineRoutes(fileRoutes) {
+         const parentRoute = Object.values(routes).find(o => {
+             return id.startsWith(o.id + "/");
+         });
++        // Route is a leaf segment
+         if (!parentRoute) {
+-            routes.push({ ...route, id, path: id.replace(/\/\([^)/]+\)/g, "").replace(/\([^)/]+\)/g, "") });
++            routes.push({
++                ...route,
++                id,
++                path: id
++                    // strip out escape group for escaping nested routes - e.g. foo(bar) -> foo
++                    .replace(/\/\([^)/]+\)/g, "")
++                    .replace(/\([^)/]+\)/g, "")
++            });
+             return routes;
+         }
+-        processRoute(parentRoute.children || (parentRoute.children = []), route, id.slice(parentRoute.id.length), full);
++        const idWithoutParent = id.slice(parentRoute.id.length);
++        // Route belongs to a slot
++        if (idWithoutParent.startsWith("/@")) {
++            let slotRoute = parentRoute;
++            let idWithoutSlot = idWithoutParent;
++            // Drill down through directly nested slots
++            // Recursing would nest via 'children' but we want to nest via 'slots',
++            // so this is handled as a special case
++            while (idWithoutSlot.startsWith("/@")) {
++                const slotName = /\/@([^/]+)/g.exec(idWithoutSlot)[1];
++                const slots = (slotRoute.slots ??= {});
++                idWithoutSlot = idWithoutSlot.slice(slotName.length + 2);
++                // Route is a slot definition
++                if (idWithoutSlot === "") {
++                    const slot = { ...route };
++                    delete slot.path;
++                    slots[slotName] = slot;
++                    return routes;
++                }
++                slotRoute = slots[slotName] ??= {};
++            }
++            // We only resume with children once all the directly nested slots are traversed
++            processRoute((slotRoute.children ??= []), route, idWithoutSlot, full);
++        }
++        // Route just has a parent
++        else {
++            processRoute((parentRoute.children ??= []), route, idWithoutParent, full);
++        }
+         return routes;
+     }
+     return fileRoutes
+@@ -38,7 +73,10 @@ const router = createRouter({
+     routes: fileRoutes.reduce((memo, route) => {
+         if (!containsHTTP(route))
+             return memo;
+-        let path = route.path.replace(/\/\([^)/]+\)/g, "").replace(/\([^)/]+\)/g, "").replace(/\*([^/]*)/g, (_, m) => `**:${m}`);
++        let path = route.path
++            .replace(/\/\([^)/]+\)/g, "")
++            .replace(/\([^)/]+\)/g, "")
++            .replace(/\*([^/]*)/g, (_, m) => `**:${m}`);
+         if (/:[^/]*\?/g.test(path)) {
+             throw new Error(`Optional parameters are not supported in API routes: ${path}`);
+         }
+diff --git a/dist/runtime/server-handler.d.ts b/dist/runtime/server-handler.d.ts
+index f89692acb2e5d70723901f7353fe33934ee3dfea..91122e0ed778238fbd8eb4a7c6c1e1786d750ee4 100644
+--- a/dist/runtime/server-handler.d.ts
++++ b/dist/runtime/server-handler.d.ts
+@@ -1,2 +1,2 @@
+-declare const _default: import("h3").EventHandler<import("h3").EventHandlerRequest, Promise<unknown>>;
++declare const _default: import("vinxi/http").EventHandler<import("vinxi/http").EventHandlerRequest, Promise<unknown>>;
+ export default _default;
+diff --git a/dist/server/handler.d.ts b/dist/server/handler.d.ts
+index 82b69478c9f23f489e1c5604dc5354cae27891d9..5c9483ba280125baf613c2dd7f4626561239e045 100644
+--- a/dist/server/handler.d.ts
++++ b/dist/server/handler.d.ts
+@@ -4,9 +4,9 @@ import type { FetchEvent, HandlerOptions, PageEvent, ResponseStub } from "./type
+  * If not, falls back to the 302 (temporary redirect)
+  */
+ export declare function getExpectedRedirectStatus(response: ResponseStub): number;
+-export declare function createBaseHandler(fn: (context: PageEvent) => unknown, createPageEvent: (event: FetchEvent) => Promise<PageEvent>, options?: HandlerOptions | ((context: PageEvent) => HandlerOptions | Promise<HandlerOptions>)): import("h3").EventHandler<import("h3").EventHandlerRequest, Promise<any>>;
++export declare function createBaseHandler(fn: (context: PageEvent) => unknown, createPageEvent: (event: FetchEvent) => Promise<PageEvent>, options?: HandlerOptions | ((context: PageEvent) => HandlerOptions | Promise<HandlerOptions>)): import("vinxi/http").EventHandler<import("vinxi/http").EventHandlerRequest, Promise<any>>;
+ /**
+  *
+  * Read more: https://docs.solidjs.com/solid-start/reference/server/create-handler
+  */
+-export declare function createHandler(fn: (context: PageEvent) => unknown, options?: HandlerOptions | ((context: PageEvent) => HandlerOptions | Promise<HandlerOptions>)): import("h3").EventHandler<import("h3").EventHandlerRequest, Promise<any>>;
++export declare function createHandler(fn: (context: PageEvent) => unknown, options?: HandlerOptions | ((context: PageEvent) => HandlerOptions | Promise<HandlerOptions>)): import("vinxi/http").EventHandler<import("vinxi/http").EventHandlerRequest, Promise<any>>;
+diff --git a/dist/server/spa/handler.d.ts b/dist/server/spa/handler.d.ts
+index 182023ecbb49944c3f0eab96272d108654645987..0eca03a8345cd13aa0d44543911c37957d156266 100644
+--- a/dist/server/spa/handler.d.ts
++++ b/dist/server/spa/handler.d.ts
+@@ -3,5 +3,5 @@ import { FetchEvent, HandlerOptions, PageEvent } from "../types";
+  *
+  * Read more: https://docs.solidjs.com/solid-start/reference/server/create-handler
+  */
+-export declare function createHandler(fn: (context: PageEvent) => unknown, options?: HandlerOptions | ((context: PageEvent) => HandlerOptions)): import("h3").EventHandler<import("h3").EventHandlerRequest, Promise<any>>;
++export declare function createHandler(fn: (context: PageEvent) => unknown, options?: HandlerOptions | ((context: PageEvent) => HandlerOptions)): import("vinxi/http").EventHandler<import("vinxi/http").EventHandlerRequest, Promise<any>>;
+ export declare function createPageEvent(ctx: FetchEvent): Promise<PageEvent>;

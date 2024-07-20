@@ -29,9 +29,10 @@ const ProgressLabel: Component<ProgressPrimitive.ProgressLabelProps> = (
 	return <ProgressPrimitive.Label as={Label} {...props} />;
 };
 
-const ProgressValueLabel: Component<ProgressPrimitive.ProgressValueLabelProps> =
-	(props) => {
-		return <ProgressPrimitive.ValueLabel as={Label} {...props} />;
-	};
+const ProgressValueLabel: Component<
+	ProgressPrimitive.ProgressValueLabelProps
+> = (props) => {
+	return <ProgressPrimitive.ValueLabel as={Label} {...props} />;
+};
 
 export { Progress, ProgressLabel, ProgressValueLabel };
