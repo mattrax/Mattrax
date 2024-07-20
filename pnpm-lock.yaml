@@ -559,20 +559,20 @@ importers:
   infra:
     dependencies:
       '@pulumi/cloudflare':
-        specifier: ^5.34.0
+        specifier: ^5.28.0
         version: 5.34.0(typescript@5.5.3)
       '@pulumi/pulumi':
-        specifier: ^3.125.0
+        specifier: ^3.116.1
         version: 3.125.0(typescript@5.5.3)
       sst:
-        specifier: ^3.0.37
+        specifier: '3'
         version: 3.0.37(hono@4.5.0)
     devDependencies:
       '@pulumi/aws':
-        specifier: ^6.45.0
+        specifier: ^6.36.0
         version: 6.45.0(typescript@5.5.3)
       '@pulumi/azuread':
-        specifier: ^5.53.2
+        specifier: ^5.49.1
         version: 5.53.2(typescript@5.5.3)
 
   packages/configuration-schemas: {}
