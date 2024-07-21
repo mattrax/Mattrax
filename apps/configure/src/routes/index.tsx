@@ -5,7 +5,7 @@ import {
 	useNavigate,
 } from "@solidjs/router";
 import { ErrorBoundary, Match, Suspense, Switch } from "solid-js";
-import { accessToken, generateOAuthUrl, verifyOAuthCode } from "../util";
+import { accessToken, generateOAuthUrl, verifyOAuthCode } from "../util/auth";
 
 export default function Page() {
 	const location = useLocation();

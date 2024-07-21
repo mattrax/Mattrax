@@ -1,6 +1,6 @@
 import { Navigate } from "@solidjs/router";
 import { type ParentProps, Show } from "solid-js";
-import { accessToken } from "../util";
+import { accessToken } from "../util/auth";
 
 export default function Layout(props: ParentProps) {
 	return (

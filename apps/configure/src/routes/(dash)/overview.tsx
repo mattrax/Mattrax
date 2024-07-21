@@ -1,75 +1,127 @@
 import { createAsync, useNavigate } from "@solidjs/router";
-import { ErrorBoundary, Suspense } from "solid-js";
-import { clearUsers, createIdbQuery, syncUsers } from "../../sync";
-import { accessToken, logout } from "../../util";
+import { ErrorBoundary, For, Suspense } from "solid-js";
+import { accessToken, logout } from "../../util/auth";
+import { createIdbQuery, db, invalidateStore } from "../../util/db";
+import {
+	syncAll,
+	syncEntityWithDelta,
+	syncEntityWithoutDelta,
+	useUser,
+} from "../../util/sync";
+
+// TODO: Remove this
+export async function clearUsers() {
+	const tx = (await db).transaction(["users", "_meta"], "readwrite");
+	tx.db.delete("_meta", "users");
+	tx.db.clear("users");
+	await tx.done;
+	invalidateStore(["_meta", "users"]);
+}
 
 export default function Page() {
 	const navigate = useNavigate();
 
-	const me = createAsync(async () => {
-		const resp = await fetch("https://graph.microsoft.com/v1.0/me", {
-			headers: {
-				Authorization: accessToken()!,
-			},
-		});
-		if (!resp.ok) throw new Error("Failed to fetch user info");
-
-		return await resp.json();
-	});
-
-	// const mePhoto = createAsync(async () => {
-	//   const resp = await fetch("https://graph.microsoft.com/v1.0/me/photo", {
-	//     headers: {
-	//       Authorization: accessToken()!,
-	//     },
-	//   });
-
-	//   let body: any | undefined;
-
-	//   try {
-	//     if (resp.status === 404) {
-	//       body = JSON.parse(await resp.json());
-	//       console.log(body); // TODO
-	//       if (body?.error?.code === "ImageNotFound") return null;
-	//     }
-	//   } catch (e) {}
-
-	//   if (!resp.ok) throw new Error("Failed to get profile photo");
-
-	//   if (!body) body = await resp.json();
-	//   return body;
-	// });
-
-	// TODO: We need a UI state to handle the original sync w/ a progress bar
-	// const [syncing, { refetch: resync }] = createResource(async () =>
-	//   syncUsers()
-	// );
-
+	const me = useUser();
 	const users = createIdbQuery("users");
 
-	// TODO: Render before the sync is done but show indicator
-
-	// TODO: Can we bind the UI directly to IndexedDB so changes across tabs sync???
 	// TODO: Full-text search???
 
 	return (
 		<>
 			<h1>Authenticated</h1>
-			{/* TODO: Error boundary */}
-			<Suspense fallback={<p>Loading...</p>}>
-				<pre>{me()?.displayName}</pre>
-				<pre>{me()?.userPrincipalName}</pre>
-				{/* <pre>{JSON.stringify(mePhoto())}</pre> */}
-			</Suspense>
+			<ErrorBoundary fallback={<p>Failed to load user...</p>}>
+				<Suspense fallback={<p>Loading...</p>}>
+					<pre>{me.data?.name}</pre>
+					<pre>{me.data?.upn}</pre>
+				</Suspense>
+			</ErrorBoundary>
 			<div class="flex p-4 space-x-4">
-				{/* <button type="button"  onClick={() => resync()} disabled={syncing.loading}>
-          Sync
-        </button> */}
 				<button
 					type="button"
-					onClick={() => syncUsers().then(() => alert("done"))}
+					onClick={() => {
+						const now = performance.now();
+						syncAll().then(() =>
+							alert(`Synced in ${performance.now() - now}ms`),
+						);
+					}}
 				>
-					Sync
+					Sync All
+				</button>
+				<button
+					type="button"
+					onClick={() =>
+						syncEntityWithDelta("users", (user) => ({
+							id: user.id,
+							name: user.displayName,
+							upn: user.userPrincipalName,
+						})).then(() => alert("done"))
+					}
+				>
+					Sync Users
+				</button>
+				<button
+					type="button"
+					onClick={() =>
+						syncEntityWithDelta("devices", (device) => {
+							console.log(device);
+							return {
+								id: device.id,
+								name: device.displayName,
+							};
+						}).then(() => alert("done"))
+					}
+				>
+					Sync Devices
+				</button>
+				<button
+					type="button"
+					onClick={() =>
+						syncEntityWithDelta("groups", (group) => {
+							console.log(group);
+							return {
+								id: group.id,
+								name: group.displayName,
+							};
+						}).then(() => alert("done"))
+					}
+				>
+					Sync Groups
+				</button>
+				<button
+					type="button"
+					onClick={() =>
+						syncEntityWithoutDelta(
+							"policies",
+							(policy) => {
+								console.log(policy);
+								return {
+									id: policy.id,
+									name: policy.name,
+								};
+							},
+							"deviceManagement/configurationPolicies",
+						).then(() => alert("done"))
+					}
+				>
+					Sync Policies
+				</button>
+				<button
+					type="button"
+					onClick={() =>
+						syncEntityWithoutDelta(
+							"apps",
+							(app) => {
+								console.log(app);
+								return {
+									id: app.id,
+									name: app.displayName,
+								};
+							},
+							"deviceAppManagement/mobileApps",
+						).then(() => alert("done"))
+					}
+				>
+					Sync Apps
 				</button>
 				<button type="button" onClick={() => clearUsers()}>
 					Reset users
@@ -89,7 +141,10 @@ export default function Page() {
 			<ErrorBoundary fallback={null}>
 				<Suspense fallback={<p>Loading...</p>}>
 					{/* TODO: Render accountEnabled */}
-					<pre>{JSON.stringify(users(), null, 2)}</pre>
+					{/* <pre>{JSON.stringify(users(), null, 2)}</pre> */}
+					<For each={users.data} fallback={<p>No users found...</p>}>
+						{(user) => <pre>{user.name}</pre>}
+					</For>
 				</Suspense>
 			</ErrorBoundary>
 		</>

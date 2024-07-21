@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import { db, resetDb } from "./db";
 
 const clientId = "5dd42e00-78e7-474a-954a-bb4e5085e820";
 
@@ -67,6 +68,7 @@ export function logout() {
 	localStorage.removeItem("access_token");
 	localStorage.removeItem("refresh_token");
 	localStorage.removeItem("expires_in");
+	resetDb();
 }
 
 const possible =
