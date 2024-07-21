@@ -1,0 +1,25 @@
+{
+	"name": "@mattrax/configure",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "tsc -b && vite build",
+		"preview": "vite preview"
+	},
+	"dependencies": {
+		"@solid-primitives/event-listener": "^2.3.3",
+		"@solidjs/router": "^0.14.1",
+		"idb": "^8.0.0",
+		"solid-js": "^1.8.18"
+	},
+	"devDependencies": {
+		"autoprefixer": "^10.4.19",
+		"postcss": "^8.4.39",
+		"tailwindcss": "^3.4.6",
+		"typescript": "^5.2.2",
+		"vite": "^5.3.4",
+		"vite-plugin-solid": "^2.10.2"
+	}
+}

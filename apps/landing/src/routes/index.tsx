@@ -55,7 +55,7 @@ export default function Page() {
 					<div class="mx-auto max-w-3xl sm:text-center relative">
 						<LandingButton class="mx-auto mb-12" variant="black" disabled>
 							<IconFa6SolidCircleInfo />
-							Launching Alpha in mid-2024
+							Launching Alpha in late-2024
 						</LandingButton>
 
 						<p class="mt-2 mb-20 text-center text-4xl sm:text-6xl font-bold tracking-tight text-gray-900">
