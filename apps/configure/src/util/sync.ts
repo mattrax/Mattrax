@@ -4,6 +4,7 @@ import { useAccessToken } from "../routes/(dash)";
 import { logout } from "./auth";
 import {
 	type Database,
+	type MetaTableKeys,
 	db,
 	invalidateStore,
 	subscribeToInvalidations,
@@ -25,21 +26,23 @@ async function f(accessToken: string, url: string) {
 }
 
 // TODO: Handle https://learn.microsoft.com/en-us/graph/delta-query-overview#synchronization-reset
-export async function syncEntityWithDelta(
+export async function syncEntity(
 	accessToken: string,
-	storeName: StoreNames<Database>,
+	storeName: StoreNames<Database> & MetaTableKeys,
+	endpoint: string,
 	map: (data: any) => any,
 ) {
 	let url: string | null =
 		(await await (await db).get("_meta", storeName)) ||
-		`https://graph.microsoft.com/v1.0/${storeName}/delta`;
+		`https://graph.microsoft.com${endpoint}`;
 
 	while (url !== null) {
 		const tx = (await db).transaction([storeName, "_meta"], "readwrite");
 		const data = await f(accessToken, url);
 
 		for (const item of data.value) {
-			// TODO: Handle if a entity is deleted or updated
+			// TODO: Handle if a entity is deleted or updated -> Some won't have that
+
 			// TODO: Do an upsert instead of just erroring on duplicate key
 			tx.db.add(storeName, map(item));
 		}
@@ -48,43 +51,10 @@ export async function syncEntityWithDelta(
 			console.log("More data to fetch...");
 			url = data["@odata.nextLink"];
 			tx.db.put("_meta", data["@odata.nextLink"], storeName);
-		}
-		if (data["@odata.deltaLink"]) {
+		} else if (data["@odata.deltaLink"]) {
 			console.log("Got Delta link", data["@odata.deltaLink"]);
 			tx.db.put("_meta", data["@odata.deltaLink"], storeName);
 			url = null;
-		}
-
-		await tx.done;
-		invalidateStore(["_meta", storeName]);
-	}
-}
-
-// Microsoft is mega cringe and doesn't support delta queries for some endpoints
-// TODO: I think this might be able to be merged with `syncEntityWithDelta` into one function???
-export async function syncEntityWithoutDelta(
-	accessToken: string,
-	storeName: StoreNames<Database>,
-	map: (data: any) => any,
-	microsoftGraphEndpoint: string,
-) {
-	let url: string | null =
-		`https://graph.microsoft.com/beta/${microsoftGraphEndpoint}?top=100`;
-
-	while (url !== null) {
-		const tx = (await db).transaction([storeName, "_meta"], "readwrite");
-		const data = await f(accessToken, url);
-
-		for (const item of data.value) {
-			// TODO: Handle if a entity is deleted or updated
-			// TODO: Do an upsert instead of just erroring on duplicate key
-			tx.db.add(storeName, map(item));
-		}
-
-		if (data["@odata.nextLink"]) {
-			console.log("More to fetch...");
-			url = data["@odata.nextLink"];
-			tx.db.put("_meta", data["@odata.nextLink"], storeName);
 		} else {
 			console.log("Done...");
 			tx.db.delete("_meta", storeName);
@@ -98,28 +68,29 @@ export async function syncEntityWithoutDelta(
 
 export async function syncAll(accessToken: string) {
 	const result = await Promise.allSettled([
-		syncEntityWithDelta(accessToken, "users", (user) => ({
+		syncEntity(accessToken, "users", "/v1.0/users/delta", (user) => ({
 			id: user.id,
 			name: user.displayName,
 			upn: user.userPrincipalName,
 		})),
-		syncEntityWithDelta(accessToken, "devices", (device) => {
+		syncEntity(accessToken, "devices", "/v1.0/devices/delta", (device) => {
 			console.log(device);
 			return {
 				id: device.id,
 				name: device.displayName,
 			};
 		}),
-		syncEntityWithDelta(accessToken, "groups", (group) => {
+		syncEntity(accessToken, "groups", "/v1.0/groups/delta", (group) => {
 			console.log(group);
 			return {
 				id: group.id,
 				name: group.displayName,
 			};
 		}),
-		syncEntityWithoutDelta(
+		syncEntity(
 			accessToken,
 			"policies",
+			"/beta/deviceManagement/configurationPolicies",
 			(policy) => {
 				console.log(policy);
 				return {
@@ -127,11 +98,11 @@ export async function syncAll(accessToken: string) {
 					name: policy.name,
 				};
 			},
-			"deviceManagement/configurationPolicies",
 		),
-		syncEntityWithoutDelta(
+		syncEntity(
 			accessToken,
 			"apps",
+			"/beta/deviceAppManagement/mobileApps",
 			(app) => {
 				console.log(app);
 				return {
@@ -139,7 +110,6 @@ export async function syncAll(accessToken: string) {
 					name: app.displayName,
 				};
 			},
-			"deviceAppManagement/mobileApps",
 		),
 	]);
 

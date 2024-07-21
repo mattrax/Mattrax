@@ -3,12 +3,7 @@ import { ErrorBoundary, For, Suspense } from "solid-js";
 import { useAccessToken } from "../(dash)";
 import { logout } from "../../util/auth";
 import { createIdbQuery, db, invalidateStore } from "../../util/db";
-import {
-	syncAll,
-	syncEntityWithDelta,
-	syncEntityWithoutDelta,
-	useUser,
-} from "../../util/sync";
+import { syncAll, syncEntity, useUser } from "../../util/sync";
 
 // TODO: Remove this
 export async function clearUsers() {
@@ -49,10 +44,10 @@ export default function Page() {
 				>
 					Sync All
 				</button>
-				<button
+				{/* <button
 					type="button"
 					onClick={() =>
-						syncEntityWithDelta(accessToken, "users", (user) => ({
+						syncEntity(accessToken, "users", (user) => ({
 							id: user.id,
 							name: user.displayName,
 							upn: user.userPrincipalName,
@@ -64,7 +59,7 @@ export default function Page() {
 				<button
 					type="button"
 					onClick={() =>
-						syncEntityWithDelta(accessToken, "devices", (device) => {
+						syncEntity(accessToken, "devices", (device) => {
 							console.log(device);
 							return {
 								id: device.id,
@@ -78,7 +73,7 @@ export default function Page() {
 				<button
 					type="button"
 					onClick={() =>
-						syncEntityWithDelta(accessToken, "groups", (group) => {
+						syncEntity(accessToken, "groups", (group) => {
 							console.log(group);
 							return {
 								id: group.id,
@@ -92,7 +87,7 @@ export default function Page() {
 				<button
 					type="button"
 					onClick={() =>
-						syncEntityWithoutDelta(
+						syncEntity(
 							accessToken,
 							"policies",
 							(policy) => {
@@ -111,7 +106,7 @@ export default function Page() {
 				<button
 					type="button"
 					onClick={() =>
-						syncEntityWithoutDelta(
+						syncEntity(
 							accessToken,
 							"apps",
 							(app) => {
@@ -126,7 +121,7 @@ export default function Page() {
 					}
 				>
 					Sync Apps
-				</button>
+				</button> */}
 				<button type="button" onClick={() => clearUsers()}>
 					Reset users
 				</button>

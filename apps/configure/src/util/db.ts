@@ -2,18 +2,20 @@ import { makeEventListener } from "@solid-primitives/event-listener";
 import { createQuery } from "@tanstack/solid-query";
 import { type DBSchema, type StoreKey, type StoreNames, openDB } from "idb";
 
+export type MetaTableKeys =
+	| "users"
+	| "devices"
+	| "groups"
+	| "policies"
+	| "apps"
+	| "accessToken"
+	| "refreshToken";
+
 export interface Database extends DBSchema {
 	// Used to store delta or next page links for each entity
 	// This allows us to resume fetching data from where we left off or fetch the diff since the last sync.
 	_meta: {
-		key:
-			| "users"
-			| "devices"
-			| "groups"
-			| "policies"
-			| "apps"
-			| "accessToken"
-			| "refreshToken";
+		key: MetaTableKeys;
 		value: string;
 	};
 	// Entities from Microsoft
