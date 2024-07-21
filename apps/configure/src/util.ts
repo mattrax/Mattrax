@@ -25,7 +25,7 @@ export async function generateOAuthUrl() {
 	return `https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?${params.toString()}`;
 }
 
-export async function verifyCode(code: string) {
+export async function verifyOAuthCode(code: string) {
 	const code_verifier = sessionStorage.getItem("code_verifier");
 	if (!code_verifier) throw new Error("Code verifier not found");
 

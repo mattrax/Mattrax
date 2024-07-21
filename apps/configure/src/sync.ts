@@ -96,7 +96,7 @@ export async function clearUsers() {
 	emitSync();
 }
 
-export function createQuery<Name extends StoreNames<MyDB>>(
+export function createIdbQuery<Name extends StoreNames<MyDB>>(
 	storeName: Name,
 	query?: StoreKey<MyDB, Name> | IDBKeyRange | null,
 	count?: number,

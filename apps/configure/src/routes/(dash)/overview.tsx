@@ -1,69 +1,11 @@
-import { createAsync, useLocation, useNavigate } from "@solidjs/router";
-import { ErrorBoundary, Match, Suspense, Switch } from "solid-js";
-import { clearUsers, createQuery, syncUsers } from "./sync";
-import {
-	accessToken,
-	generateOAuthUrl,
-	logout,
-	verifyCode as verifyOAuthCode,
-} from "./util";
+import { createAsync, useNavigate } from "@solidjs/router";
+import { ErrorBoundary, Suspense } from "solid-js";
+import { clearUsers, createIdbQuery, syncUsers } from "../../sync";
+import { accessToken, logout } from "../../util";
 
-function App() {
-	const location = useLocation();
+export default function Page() {
 	const navigate = useNavigate();
 
-	return (
-		<div class="p-4">
-			<Switch fallback={<UnauthenticatedApp />}>
-				<Match when={location.query?.error !== undefined}>
-					<p class="bg-red-500">
-						{location.query?.error_description || location.query?.error}
-					</p>
-				</Match>
-				<Match when={location.query?.code !== undefined} keyed>
-					{(_) => {
-						// TODO: Error handling for `verifyCode`
-						const access_token = createAsync(async () => {
-							await verifyOAuthCode(location.query.code);
-							// Clear the query params
-							navigate("/");
-						});
-
-						return (
-							<ErrorBoundary
-								fallback={
-									<>
-										<p>Error verifying access token! Please try again!</p>
-										<a href="/">Try again...</a>
-									</>
-								}
-							>
-								<Suspense fallback={<p>Verifying...</p>}>
-									{access_token() ? null : null}
-								</Suspense>
-							</ErrorBoundary>
-						);
-					}}
-				</Match>
-				<Match when={accessToken() !== null}>
-					<AuthenticatedApp />
-				</Match>
-			</Switch>
-		</div>
-	);
-}
-
-function UnauthenticatedApp() {
-	const loginUrl = createAsync(() => generateOAuthUrl());
-
-	return (
-		<Suspense>
-			<a href={loginUrl()}>Login</a>
-		</Suspense>
-	);
-}
-
-function AuthenticatedApp() {
 	const me = createAsync(async () => {
 		const resp = await fetch("https://graph.microsoft.com/v1.0/me", {
 			headers: {
@@ -103,7 +45,7 @@ function AuthenticatedApp() {
 	//   syncUsers()
 	// );
 
-	const users = createQuery("users");
+	const users = createIdbQuery("users");
 
 	// TODO: Render before the sync is done but show indicator
 
@@ -132,7 +74,13 @@ function AuthenticatedApp() {
 				<button type="button" onClick={() => clearUsers()}>
 					Reset users
 				</button>
-				<button type="button" onClick={() => logout()}>
+				<button
+					type="button"
+					onClick={() => {
+						logout();
+						navigate("/");
+					}}
+				>
 					Logout
 				</button>
 			</div>
@@ -147,5 +95,3 @@ function AuthenticatedApp() {
 		</>
 	);
 }
-
-export default App;

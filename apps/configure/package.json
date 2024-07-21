@@ -11,6 +11,8 @@
 	"dependencies": {
 		"@solid-primitives/event-listener": "^2.3.3",
 		"@solidjs/router": "^0.14.1",
+		"@tanstack/solid-query": "^5.51.9",
+		"@tanstack/solid-query-devtools": "^5.51.9",
 		"idb": "^8.0.0",
 		"solid-js": "^1.8.18"
 	},
