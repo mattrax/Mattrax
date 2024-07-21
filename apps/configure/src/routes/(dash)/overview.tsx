@@ -1,9 +1,15 @@
 import { useNavigate } from "@solidjs/router";
-import { ErrorBoundary, For, Suspense } from "solid-js";
+import {
+	ErrorBoundary,
+	For,
+	Suspense,
+	createMemo,
+	createSignal,
+} from "solid-js";
 import { useAccessToken } from "../(dash)";
 import { logout } from "../../util/auth";
 import { createIdbQuery, db, invalidateStore } from "../../util/db";
-import { syncAll, syncEntity, useUser } from "../../util/sync";
+import { syncAll, useUser } from "../../util/sync";
 
 // TODO: Remove this
 export async function clearUsers() {
@@ -20,8 +26,18 @@ export default function Page() {
 
 	const me = useUser();
 	const users = createIdbQuery("users");
+	const [query, setQuery] = createSignal("");
 
-	// TODO: Full-text search???
+	// TODO: Make search work on all fields
+	// TODO: Using indexes?
+	// TODO: Maybe full-text search
+	const filteredUsers = createMemo(() => {
+		const q = query();
+		if (q === "") return users.data || [];
+		return (users.data || []).filter((user) =>
+			user.name.toLowerCase().includes(q.toLowerCase()),
+		);
+	});
 
 	return (
 		<>
@@ -136,12 +152,15 @@ export default function Page() {
 				</button>
 			</div>
 			{/* {syncing.loading ? <p>Syncing...</p> : null} */}
-			<input type="search" placeholder="Search users..." />
+			<input
+				type="search"
+				onInput={(e) => setQuery(e.currentTarget.value)}
+				placeholder="Search users..."
+			/>
 			<ErrorBoundary fallback={null}>
 				<Suspense fallback={<p>Loading...</p>}>
-					{/* TODO: Render accountEnabled */}
-					{/* <pre>{JSON.stringify(users(), null, 2)}</pre> */}
-					<For each={users.data} fallback={<p>No users found...</p>}>
+					{/* // TODO: Render `accountEnabled` badge*/}
+					<For each={filteredUsers()} fallback={<p>No users found...</p>}>
 						{(user) => <pre>{user.name}</pre>}
 					</For>
 				</Suspense>
