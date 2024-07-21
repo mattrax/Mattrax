@@ -1,12 +1,6 @@
-import { createSignal } from "solid-js";
-import { db, resetDb } from "./db";
+import { db, invalidateStore, resetDb } from "./db";
 
 const clientId = "5dd42e00-78e7-474a-954a-bb4e5085e820";
-
-// TODO: Keep this in the component lifecycle
-export const [accessToken, setAccessToken] = createSignal(
-	localStorage.getItem("access_token"),
-);
 
 export async function generateOAuthUrl() {
 	const codeVerifier = generateRandomString(64);
@@ -51,24 +45,18 @@ export async function verifyOAuthCode(code: string) {
 	sessionStorage.removeItem("code_verifier");
 
 	const data = await resp.json();
-	localStorage.setItem(
-		"access_token",
-		`${data.token_type} ${data.access_token}`,
-	);
-	setAccessToken(`${data.token_type} ${data.access_token}`);
-	localStorage.setItem("refresh_token", data.refresh_token);
-	localStorage.setItem("expires_in", data.expires_in);
+	await (await db).put("_meta", data.access_token, "accessToken");
+	await (await db).put("_meta", data.refresh_token, "refreshToken");
+	invalidateStore("auth");
 	return data.access_token;
 }
 
 export function logout() {
-	// TODO: Can we ask Microsoft to burn the token?
-
-	setAccessToken(null);
-	localStorage.removeItem("access_token");
-	localStorage.removeItem("refresh_token");
-	localStorage.removeItem("expires_in");
-	resetDb();
+	db.then(async (db) => {
+		await db.delete("_meta", "accessToken");
+		invalidateStore("auth");
+		resetDb();
+	});
 }
 
 const possible =

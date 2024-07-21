@@ -1,16 +1,22 @@
 import { createQuery } from "@tanstack/solid-query";
 import type { StoreNames } from "idb";
-import { accessToken, logout } from "./auth";
-import { type Database, db, invalidateStore } from "./db";
+import { useAccessToken } from "../routes/(dash)";
+import { logout } from "./auth";
+import {
+	type Database,
+	db,
+	invalidateStore,
+	subscribeToInvalidations,
+} from "./db";
 
 // TODO: If multiple tabs reload during a sync the `nextLink` will be picked up by multiple of them.
 // TODO: This will drain network and potentially make Microsoft rate-limit us.
 // TODO: We should probs mutex the whole sync process across tabs.
 
-async function f(url: string) {
+async function f(accessToken: string, url: string) {
 	const resp = await fetch(url, {
 		headers: {
-			Authorization: accessToken()!,
+			Authorization: accessToken,
 		},
 	});
 	if (resp.status === 401) logout(); // TODO: Automatic relogin
@@ -20,6 +26,7 @@ async function f(url: string) {
 
 // TODO: Handle https://learn.microsoft.com/en-us/graph/delta-query-overview#synchronization-reset
 export async function syncEntityWithDelta(
+	accessToken: string,
 	storeName: StoreNames<Database>,
 	map: (data: any) => any,
 ) {
@@ -29,7 +36,7 @@ export async function syncEntityWithDelta(
 
 	while (url !== null) {
 		const tx = (await db).transaction([storeName, "_meta"], "readwrite");
-		const data = await f(url);
+		const data = await f(accessToken, url);
 
 		for (const item of data.value) {
 			// TODO: Handle if a entity is deleted or updated
@@ -56,6 +63,7 @@ export async function syncEntityWithDelta(
 // Microsoft is mega cringe and doesn't support delta queries for some endpoints
 // TODO: I think this might be able to be merged with `syncEntityWithDelta` into one function???
 export async function syncEntityWithoutDelta(
+	accessToken: string,
 	storeName: StoreNames<Database>,
 	map: (data: any) => any,
 	microsoftGraphEndpoint: string,
@@ -65,7 +73,7 @@ export async function syncEntityWithoutDelta(
 
 	while (url !== null) {
 		const tx = (await db).transaction([storeName, "_meta"], "readwrite");
-		const data = await f(url);
+		const data = await f(accessToken, url);
 
 		for (const item of data.value) {
 			// TODO: Handle if a entity is deleted or updated
@@ -88,21 +96,21 @@ export async function syncEntityWithoutDelta(
 	}
 }
 
-export async function syncAll() {
+export async function syncAll(accessToken: string) {
 	const result = await Promise.allSettled([
-		syncEntityWithDelta("users", (user) => ({
+		syncEntityWithDelta(accessToken, "users", (user) => ({
 			id: user.id,
 			name: user.displayName,
 			upn: user.userPrincipalName,
 		})),
-		syncEntityWithDelta("devices", (device) => {
+		syncEntityWithDelta(accessToken, "devices", (device) => {
 			console.log(device);
 			return {
 				id: device.id,
 				name: device.displayName,
 			};
 		}),
-		syncEntityWithDelta("groups", (group) => {
+		syncEntityWithDelta(accessToken, "groups", (group) => {
 			console.log(group);
 			return {
 				id: group.id,
@@ -110,6 +118,7 @@ export async function syncAll() {
 			};
 		}),
 		syncEntityWithoutDelta(
+			accessToken,
 			"policies",
 			(policy) => {
 				console.log(policy);
@@ -121,6 +130,7 @@ export async function syncAll() {
 			"deviceManagement/configurationPolicies",
 		),
 		syncEntityWithoutDelta(
+			accessToken,
 			"apps",
 			(app) => {
 				console.log(app);
@@ -147,12 +157,13 @@ export function useUser() {
 		console.error("Error parsing cached user", err);
 	}
 
-	// TODO: Maybe adding in `https://graph.microsoft.com/v1.0/me/photo`???`
+	// TODO: Maybe adding in `https://graph.microsoft.com/v1.0/me/photo`???
 
-	return createQuery(() => ({
+	const accessToken = useAccessToken();
+	const query = createQuery(() => ({
 		queryKey: ["me"],
 		queryFn: async () => {
-			const data = await f("https://graph.microsoft.com/v1.0/me");
+			const data = await f(accessToken, "https://graph.microsoft.com/v1.0/me");
 			const result = {
 				id: data.id,
 				name: data.displayName,
@@ -164,4 +175,10 @@ export function useUser() {
 		// So Typescript infers from `queryFn`
 		initialData: initialData as never,
 	}));
+
+	subscribeToInvalidations((store) => {
+		if (store === "auth") query.refetch();
+	});
+
+	return query;
 }

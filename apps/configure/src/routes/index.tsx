@@ -5,11 +5,13 @@ import {
 	useNavigate,
 } from "@solidjs/router";
 import { ErrorBoundary, Match, Suspense, Switch } from "solid-js";
-import { accessToken, generateOAuthUrl, verifyOAuthCode } from "../util/auth";
+import { generateOAuthUrl, verifyOAuthCode } from "../util/auth";
+import { useAccessTokenRaw } from "./(dash)";
 
 export default function Page() {
 	const location = useLocation();
 	const navigate = useNavigate();
+	const accessToken = useAccessTokenRaw();
 
 	return (
 		<div class="p-4">
@@ -44,7 +46,7 @@ export default function Page() {
 						);
 					}}
 				</Match>
-				<Match when={accessToken() !== null}>
+				<Match when={accessToken()}>
 					<Navigate href="/overview" />
 				</Match>
 			</Switch>

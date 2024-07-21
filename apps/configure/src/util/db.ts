@@ -6,7 +6,14 @@ export interface Database extends DBSchema {
 	// Used to store delta or next page links for each entity
 	// This allows us to resume fetching data from where we left off or fetch the diff since the last sync.
 	_meta: {
-		key: "users" | "devices" | "groups" | "policies" | "apps";
+		key:
+			| "users"
+			| "devices"
+			| "groups"
+			| "policies"
+			| "apps"
+			| "accessToken"
+			| "refreshToken";
 		value: string;
 	};
 	// Entities from Microsoft
@@ -92,9 +99,11 @@ export async function resetDb() {
 
 const syncBroadcastChannel = new BroadcastChannel("sync");
 
+type InvalidationKey = StoreNames<Database> | "auth";
+
 // Subscribe to store invalidations to trigger queries to rerun of the data
-function subscribeToInvalidations(
-	onChange: (store: StoreNames<Database>) => void,
+export function subscribeToInvalidations(
+	onChange: (store: InvalidationKey) => void,
 ) {
 	const onChangeInner = (data: any) => {
 		if (typeof data === "string") onChange(data as any);
@@ -120,7 +129,7 @@ function subscribeToInvalidations(
 
 // This will invalidate a store, triggering all queries against it to rerun updating the UI.
 export function invalidateStore(
-	storeName: StoreNames<Database> | StoreNames<Database>[],
+	storeName: InvalidationKey | InvalidationKey[],
 ) {
 	syncBroadcastChannel.postMessage(storeName);
 	document.dispatchEvent(new CustomEvent("#sync", { detail: storeName }));

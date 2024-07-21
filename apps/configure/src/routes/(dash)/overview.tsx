@@ -1,6 +1,7 @@
-import { createAsync, useNavigate } from "@solidjs/router";
+import { useNavigate } from "@solidjs/router";
 import { ErrorBoundary, For, Suspense } from "solid-js";
-import { accessToken, logout } from "../../util/auth";
+import { useAccessToken } from "../(dash)";
+import { logout } from "../../util/auth";
 import { createIdbQuery, db, invalidateStore } from "../../util/db";
 import {
 	syncAll,
@@ -20,6 +21,7 @@ export async function clearUsers() {
 
 export default function Page() {
 	const navigate = useNavigate();
+	const accessToken = useAccessToken();
 
 	const me = useUser();
 	const users = createIdbQuery("users");
@@ -40,7 +42,7 @@ export default function Page() {
 					type="button"
 					onClick={() => {
 						const now = performance.now();
-						syncAll().then(() =>
+						syncAll(accessToken).then(() =>
 							alert(`Synced in ${performance.now() - now}ms`),
 						);
 					}}
@@ -50,7 +52,7 @@ export default function Page() {
 				<button
 					type="button"
 					onClick={() =>
-						syncEntityWithDelta("users", (user) => ({
+						syncEntityWithDelta(accessToken, "users", (user) => ({
 							id: user.id,
 							name: user.displayName,
 							upn: user.userPrincipalName,
@@ -62,7 +64,7 @@ export default function Page() {
 				<button
 					type="button"
 					onClick={() =>
-						syncEntityWithDelta("devices", (device) => {
+						syncEntityWithDelta(accessToken, "devices", (device) => {
 							console.log(device);
 							return {
 								id: device.id,
@@ -76,7 +78,7 @@ export default function Page() {
 				<button
 					type="button"
 					onClick={() =>
-						syncEntityWithDelta("groups", (group) => {
+						syncEntityWithDelta(accessToken, "groups", (group) => {
 							console.log(group);
 							return {
 								id: group.id,
@@ -91,6 +93,7 @@ export default function Page() {
 					type="button"
 					onClick={() =>
 						syncEntityWithoutDelta(
+							accessToken,
 							"policies",
 							(policy) => {
 								console.log(policy);
@@ -109,6 +112,7 @@ export default function Page() {
 					type="button"
 					onClick={() =>
 						syncEntityWithoutDelta(
+							accessToken,
 							"apps",
 							(app) => {
 								console.log(app);

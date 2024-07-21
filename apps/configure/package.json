@@ -9,6 +9,7 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
+		"@solid-primitives/context": "^0.2.3",
 		"@solid-primitives/event-listener": "^2.3.3",
 		"@solidjs/router": "^0.14.1",
 		"@tanstack/solid-query": "^5.51.9",
