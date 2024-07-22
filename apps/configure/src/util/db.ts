@@ -1,6 +1,7 @@
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { createQuery } from "@tanstack/solid-query";
 import { type DBSchema, type StoreKey, type StoreNames, openDB } from "idb";
+import type { Filter } from "../routes/(dash)/search";
 
 export type MetaTableKeys =
 	| "users"
@@ -17,6 +18,17 @@ export interface Database extends DBSchema {
 	_meta: {
 		key: MetaTableKeys;
 		value: string;
+	};
+	// Stored views
+	views: {
+		key: string;
+		value: {
+			id: string;
+			// slug?: string;
+			name: string;
+			description?: string;
+			data: Filter[];
+		};
 	};
 	// Entities from Microsoft
 	users: {
@@ -60,6 +72,9 @@ export interface Database extends DBSchema {
 export const db = openDB<Database>("data", 1, {
 	upgrade(db) {
 		db.createObjectStore("_meta");
+		db.createObjectStore("views", {
+			keyPath: "id",
+		});
 		db.createObjectStore("users", {
 			keyPath: "id",
 		});
@@ -84,6 +99,7 @@ export const db = openDB<Database>("data", 1, {
 // TODO: Typescript proof this is all the stores
 const tables = [
 	"_meta",
+	"views",
 	"users",
 	"devices",
 	"groups",

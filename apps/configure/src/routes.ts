@@ -58,6 +58,18 @@ export const routes = [
 				),
 			},
 			{
+				path: "/views",
+				component: lazy(() => import("./routes/(dash)/views/(views)")),
+			},
+			{
+				path: "/views/:viewId",
+				component: lazy(() => import("./routes/(dash)/views/[viewId]")),
+			},
+			{
+				path: "/search",
+				component: lazy(() => import("./routes/(dash)/search")),
+			},
+			{
 				path: "/settings",
 				component: lazy(() => import("./routes/(dash)/settings")),
 			},

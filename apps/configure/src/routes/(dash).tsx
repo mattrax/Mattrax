@@ -103,6 +103,8 @@ const items = [
 	{ title: "Groups", href: "/groups" },
 	{ title: "Policies", href: "/policies" },
 	{ title: "Applications", href: "/applications" },
+	{ title: "Views", href: "/views" },
+	{ title: "Search", href: "/search" },
 	{ title: "Settings", href: "/settings" },
 ];
 

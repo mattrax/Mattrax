@@ -24,6 +24,7 @@
 		"noUncheckedIndexedAccess": true,
 
     "paths": {
+      "~/*": ["./src/*"],
       "~c/*": ["./src/components/*"],
     },
     "types": ["vite/client", "@mattrax/ui/types"],

@@ -92,7 +92,7 @@ export function StandardTable<TData>(props: {
 
 	return (
 		<>
-			<div class={clsx("rounded-md border", props.class)}>
+			<div class={props.class}>
 				<Table>
 					<TableHeader>
 						<For each={props.table.getHeaderGroups()}>
