@@ -2,7 +2,7 @@ import {
 	type PolymorphicProps,
 	Select as SelectPrimitive,
 } from "@kobalte/core";
-import type { Component, ComponentProps, JSX, ValidComponent } from "solid-js";
+import type { Component, JSX, ValidComponent } from "solid-js";
 import { For, Show, Suspense, splitProps } from "solid-js";
 
 import type { ListboxItemProps } from "@kobalte/core/listbox";

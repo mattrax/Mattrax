@@ -1,4 +1,4 @@
-import type { Component, ValidComponent } from "solid-js";
+import type { ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
 import {

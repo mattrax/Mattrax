@@ -15,15 +15,15 @@ import type {
 	ListboxItemProps,
 } from "@kobalte/core/listbox";
 import clsx from "clsx";
-import type { JSX, ValidComponent } from "solid-js";
-import { For, createMemo, createSignal, splitProps } from "solid-js";
+import type { ValidComponent } from "solid-js";
+import { splitProps } from "solid-js";
 
 const ComboboxRoot = ComboboxPrimitive.Root;
 
 const ComboboxItem = <T extends ValidComponent = "li">(
 	props: PolymorphicProps<T, ListboxItemProps>,
 ) => {
-	const [local, rest] = splitProps(
+	const [_, rest] = splitProps(
 		props as ComboboxPrimitive.ComboboxItemProps & {
 			class?: string | undefined;
 		},

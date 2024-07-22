@@ -10,7 +10,7 @@ import type {
 	NumberFieldIncrementTriggerProps,
 	NumberFieldInputProps,
 } from "@kobalte/core/number-field";
-import { type Component, type ValidComponent, splitProps } from "solid-js";
+import { type ValidComponent, splitProps } from "solid-js";
 
 import clsx from "clsx";
 

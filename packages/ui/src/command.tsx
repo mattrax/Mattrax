@@ -1,12 +1,11 @@
 import type {
 	Component,
 	ComponentProps,
-	ParentComponent,
 	ParentProps,
 	ValidComponent,
 	VoidProps,
 } from "solid-js";
-import { createContext, createSignal, splitProps, useContext } from "solid-js";
+import { createContext, splitProps, useContext } from "solid-js";
 
 import type { DialogRootProps } from "@kobalte/core/dialog";
 import * as CommandPrimitive from "cmdk-solid";

@@ -1,4 +1,4 @@
-import type { Component, ValidComponent } from "solid-js";
+import type { ValidComponent } from "solid-js";
 import { createSignal, onMount, splitProps } from "solid-js";
 
 import { type PolymorphicProps, Tabs as TabsPrimitive } from "@kobalte/core";

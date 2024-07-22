@@ -1,3 +1,4 @@
+import { buttonVariants } from "@mattrax/ui";
 import {
 	Navigate,
 	createAsync,
@@ -60,7 +61,9 @@ function UnauthenticatedApp() {
 	return (
 		<Suspense>
 			<h1 class="uppercase font-extrabold text-2xl mb-4">Mattrax Configure</h1>
-			<a href={loginUrl()}>Login</a>
+			<a href={loginUrl()} class={buttonVariants()}>
+				Login
+			</a>
 		</Suspense>
 	);
 }

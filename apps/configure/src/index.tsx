@@ -1,10 +1,11 @@
 /* @refresh reload */
 import { Router, useLocation } from "@solidjs/router";
-import { render } from "solid-js/web";
-import "./index.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import { type ParentProps, lazy } from "solid-js";
+import { render } from "solid-js/web";
 import { routes } from "./routes";
+import "./index.css";
+import "@mattrax/ui/css";
 
 const TanstackQueryDevtools = lazy(() =>
 	import("@tanstack/solid-query-devtools").then((m) => ({

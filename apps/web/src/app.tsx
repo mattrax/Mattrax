@@ -16,7 +16,6 @@ import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { isTRPCClientError, trpc } from "./lib";
 
 import "@mattrax/ui/css";
-import "./assets/sonner.css";
 import { urlWithSearchParams } from "./api/utils";
 import { parseJson } from "./lib/utils";
 

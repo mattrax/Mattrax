@@ -9,6 +9,7 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
+		"@mattrax/ui": "workspace:*",
 		"@solid-primitives/context": "^0.2.3",
 		"@solid-primitives/event-listener": "^2.3.3",
 		"@solidjs/router": "^0.14.1",
@@ -18,6 +19,7 @@
 		"solid-js": "^1.8.18"
 	},
 	"devDependencies": {
+		"@iconify/json": "^2.2.229",
 		"autoprefixer": "^10.4.19",
 		"postcss": "^8.4.39",
 		"tailwindcss": "^3.4.6",
