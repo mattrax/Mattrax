@@ -69,6 +69,9 @@ importers:
 
   apps/configure:
     dependencies:
+      '@kobalte/core':
+        specifier: ^0.13.3
+        version: 0.13.3(solid-js@1.8.18)
       '@mattrax/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -87,6 +90,9 @@ importers:
       '@tanstack/solid-query-devtools':
         specifier: ^5.51.9
         version: 5.51.9(@tanstack/solid-query@5.51.9(solid-js@1.8.18))(solid-js@1.8.18)
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
       idb:
         specifier: ^8.0.0
         version: 8.0.0

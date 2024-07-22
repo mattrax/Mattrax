@@ -1,7 +1,6 @@
 import { createQuery } from "@tanstack/solid-query";
 import type { StoreNames } from "idb";
-import { useAccessToken } from "../routes/(dash)";
-import { logout } from "./auth";
+import { logout, useAccessToken } from "./auth";
 import {
 	type Database,
 	type MetaTableKeys,
@@ -133,7 +132,10 @@ export function useUser() {
 	const query = createQuery(() => ({
 		queryKey: ["me"],
 		queryFn: async () => {
-			const data = await f(accessToken, "https://graph.microsoft.com/v1.0/me");
+			const data = await f(
+				accessToken(),
+				"https://graph.microsoft.com/v1.0/me",
+			);
 			const result = {
 				id: data.id,
 				name: data.displayName,

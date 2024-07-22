@@ -20,6 +20,8 @@
 
     /* Linting */
     "strict": true,
+    "strictNullChecks": true,
+		"noUncheckedIndexedAccess": true,
   },
   "include": ["src"]
 }

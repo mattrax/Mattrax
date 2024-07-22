@@ -1,6 +1,13 @@
+/* @refresh reload */
+import { createContextProvider } from "@solid-primitives/context";
 import { db, invalidateStore, resetDb } from "./db";
 
 const clientId = "5dd42e00-78e7-474a-954a-bb4e5085e820";
+
+export const [AccessTokenProvider, useAccessToken] = createContextProvider(
+	(props: { accessToken: () => string }) => () => props.accessToken(),
+	undefined!,
+);
 
 export async function generateOAuthUrl() {
 	const codeVerifier = generateRandomString(64);
@@ -51,12 +58,10 @@ export async function verifyOAuthCode(code: string) {
 	return data.access_token;
 }
 
-export function logout() {
-	db.then(async (db) => {
-		await db.delete("_meta", "accessToken");
-		invalidateStore("auth");
-		resetDb();
-	});
+export async function logout() {
+	await (await db).delete("_meta", "accessToken");
+	invalidateStore("auth");
+	resetDb();
 }
 
 const possible =

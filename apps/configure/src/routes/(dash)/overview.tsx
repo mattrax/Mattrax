@@ -3,11 +3,11 @@ import {
 	ErrorBoundary,
 	For,
 	Suspense,
+	createEffect,
 	createMemo,
 	createSignal,
 } from "solid-js";
-import { useAccessToken } from "../(dash)";
-import { logout } from "../../util/auth";
+import { useAccessToken } from "../../util/auth";
 import { createIdbQuery, db, invalidateStore } from "../../util/db";
 import { syncAll, useUser } from "../../util/sync";
 
@@ -53,7 +53,7 @@ export default function Page() {
 					type="button"
 					onClick={() => {
 						const now = performance.now();
-						syncAll(accessToken).then(() =>
+						syncAll(accessToken()).then(() =>
 							alert(`Synced in ${performance.now() - now}ms`),
 						);
 					}}
@@ -140,15 +140,6 @@ export default function Page() {
 				</button> */}
 				<button type="button" onClick={() => clearUsers()}>
 					Reset users
-				</button>
-				<button
-					type="button"
-					onClick={() => {
-						logout();
-						navigate("/");
-					}}
-				>
-					Logout
 				</button>
 			</div>
 			{/* {syncing.loading ? <p>Syncing...</p> : null} */}

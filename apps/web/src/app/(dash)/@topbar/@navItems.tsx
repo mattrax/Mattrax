@@ -39,7 +39,7 @@ export default function (props: ParentProps) {
 					<Tabs
 						as="nav"
 						value={`${prefix()}/${value()}`}
-						class="bg-white text-white sticky top-0 z-40 bg-white -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
+						class="bg-white text-white sticky top-0 z-40 -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
 					>
 						{/* Tab list nedes to remount each time items change to make sure the selected tab gets updated at the right time */}
 						<Show when={items()} keyed>

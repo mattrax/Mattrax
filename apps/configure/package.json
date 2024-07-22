@@ -9,12 +9,14 @@
 		"preview": "vite preview"
 	},
 	"dependencies": {
+		"@kobalte/core": "^0.13.3",
 		"@mattrax/ui": "workspace:*",
 		"@solid-primitives/context": "^0.2.3",
 		"@solid-primitives/event-listener": "^2.3.3",
 		"@solidjs/router": "^0.14.1",
 		"@tanstack/solid-query": "^5.51.9",
 		"@tanstack/solid-query-devtools": "^5.51.9",
+		"clsx": "^2.1.1",
 		"idb": "^8.0.0",
 		"solid-js": "^1.8.18"
 	},
