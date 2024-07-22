@@ -1,5 +1,5 @@
 import { ErrorBoundary, Suspense } from "solid-js";
-import { useUser } from "../../util/sync";
+import { useUser } from "~/lib/sync";
 
 export default function Page() {
 	const me = useUser();

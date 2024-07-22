@@ -1,8 +1,8 @@
 import { createAsync } from "@solidjs/router";
 import { Show } from "solid-js";
 import { z } from "zod";
+import { createIdbQuery } from "~/lib/db";
 import { useZodParams } from "~/lib/useZodParams";
-import { createIdbQuery } from "../../../util/db";
 import { SearchPage, createSearchPageContext } from "../search";
 
 export default function Page() {

@@ -33,7 +33,7 @@ import {
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~/components/StandardTable";
-import { db } from "../../util/db";
+import { db } from "~/lib/db";
 
 // TODO: Rest of the possibilities + clean this up
 export type Filter =

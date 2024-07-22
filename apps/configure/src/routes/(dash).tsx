@@ -25,14 +25,9 @@ import {
 	createSignal,
 	onMount,
 } from "solid-js";
-import { AccessTokenProvider, logout } from "../util/auth";
-import {
-	db,
-	invalidateStore,
-	resetDb,
-	subscribeToInvalidations,
-} from "../util/db";
-import { syncAll, useUser } from "../util/sync";
+import { AccessTokenProvider, logout } from "~/lib/auth";
+import { db, subscribeToInvalidations } from "~/lib/db";
+import { syncAll, useUser } from "~/lib/sync";
 
 export function useAccessTokenRaw() {
 	const [accessToken, setAccessToken] = createSignal<string | null | undefined>(

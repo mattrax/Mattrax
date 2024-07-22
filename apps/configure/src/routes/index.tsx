@@ -6,7 +6,7 @@ import {
 	useNavigate,
 } from "@solidjs/router";
 import { ErrorBoundary, Match, Suspense, Switch } from "solid-js";
-import { generateOAuthUrl, verifyOAuthCode } from "../util/auth";
+import { generateOAuthUrl, verifyOAuthCode } from "~/lib/auth";
 import { useAccessTokenRaw } from "./(dash)";
 
 export default function Page() {

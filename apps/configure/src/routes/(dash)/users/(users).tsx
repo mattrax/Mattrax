@@ -2,6 +2,7 @@ import { Button } from "@mattrax/ui";
 import { A } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Suspense } from "solid-js";
+import { type Database, createIdbQuery } from "~/lib/db";
 import { createBulkDeleteDialog } from "~c/BulkDeleteDialog";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
@@ -12,7 +13,6 @@ import {
 	selectCheckboxColumn,
 } from "~c/StandardTable";
 import { TableSearchParamsInput } from "~c/TableSearchParamsInput";
-import { type Database, createIdbQuery } from "../../../util/db";
 
 const column = createColumnHelper<Database["users"]["value"]>();
 
