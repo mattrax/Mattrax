@@ -22,11 +22,10 @@ export default function Page() {
 						{location.query?.error_description || location.query?.error}
 					</p>
 				</Match>
-				<Match when={location.query?.code !== undefined} keyed>
-					{(_) => {
-						// TODO: Error handling for `verifyCode`
+				<Match when={location.query?.code} keyed>
+					{(code) => {
 						const access_token = createAsync(async () => {
-							await verifyOAuthCode(location.query.code);
+							await verifyOAuthCode(code);
 							// Clear the query params
 							navigate("/");
 						});
@@ -36,7 +35,9 @@ export default function Page() {
 								fallback={
 									<>
 										<p>Error verifying access token! Please try again!</p>
-										<a href="/">Try again...</a>
+										<a href="/" class={buttonVariants()}>
+											Try again...
+										</a>
 									</>
 								}
 							>

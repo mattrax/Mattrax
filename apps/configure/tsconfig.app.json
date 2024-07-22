@@ -22,6 +22,11 @@
     "strict": true,
     "strictNullChecks": true,
 		"noUncheckedIndexedAccess": true,
+
+    "paths": {
+      "~c/*": ["./src/components/*"],
+    },
+    "types": ["vite/client", "@mattrax/ui/types"],
   },
   "include": ["src"]
 }

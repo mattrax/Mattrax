@@ -3,6 +3,7 @@
 	"references": [
 		{ "path": "./apps/web" },
 		{ "path": "./apps/landing" },
+		{ "path": "./apps/configure" },
 		{ "path": "./packages/drizzle-to-rs" },
 		{ "path": "./packages/configuration-schemas" },
 		{ "path": "./packages/drizzle-to-rs" },

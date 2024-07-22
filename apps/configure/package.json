@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
-		"build": "tsc -b && vite build",
+		"build": "vite build",
 		"preview": "vite preview"
 	},
 	"dependencies": {
@@ -16,6 +16,7 @@
 		"@solidjs/router": "^0.14.1",
 		"@tanstack/solid-query": "^5.51.9",
 		"@tanstack/solid-query-devtools": "^5.51.9",
+		"@tanstack/solid-table": "^8.19.3",
 		"clsx": "^2.1.1",
 		"idb": "^8.0.0",
 		"solid-js": "^1.8.18"
@@ -27,6 +28,8 @@
 		"tailwindcss": "^3.4.6",
 		"typescript": "^5.2.2",
 		"vite": "^5.3.4",
-		"vite-plugin-solid": "^2.10.2"
+		"vite-plugin-html": "^3.2.2",
+		"vite-plugin-solid": "^2.10.2",
+		"vite-tsconfig-paths": "^4.3.2"
 	}
 }

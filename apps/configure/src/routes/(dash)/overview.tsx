@@ -21,7 +21,6 @@ export async function clearUsers() {
 }
 
 export default function Page() {
-	const navigate = useNavigate();
 	const accessToken = useAccessToken();
 
 	const me = useUser();

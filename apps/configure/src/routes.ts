@@ -61,9 +61,10 @@ export const routes = [
 				path: "/settings",
 				component: lazy(() => import("./routes/(dash)/settings")),
 			},
+			{
+				path: "/*",
+				component: lazy(() => import("./routes/[...404]")),
+			},
 		],
-	},
-	{
-		component: lazy(() => import("./routes/[...404]")),
 	},
 ] satisfies RouteDefinition[];

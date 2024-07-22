@@ -1,20 +1,4 @@
-import { A, Navigate, useLocation, useNavigate } from "@solidjs/router";
-import {
-	For,
-	type ParentProps,
-	Show,
-	Suspense,
-	createEffect,
-	createSignal,
-	onMount,
-} from "solid-js";
-import {
-	db,
-	invalidateStore,
-	resetDb,
-	subscribeToInvalidations,
-} from "../util/db";
-import { AccessTokenProvider, logout } from "../util/auth";
+import { Tabs } from "@kobalte/core/tabs";
 import {
 	Avatar,
 	AvatarFallback,
@@ -29,10 +13,26 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@mattrax/ui";
-import { Tabs } from "@kobalte/core/tabs";
-import { syncAll, useUser } from "../util/sync";
+import { A, Navigate, useLocation, useNavigate } from "@solidjs/router";
 import { createMutation } from "@tanstack/solid-query";
 import clsx from "clsx";
+import {
+	For,
+	type ParentProps,
+	Show,
+	Suspense,
+	createEffect,
+	createSignal,
+	onMount,
+} from "solid-js";
+import { AccessTokenProvider, logout } from "../util/auth";
+import {
+	db,
+	invalidateStore,
+	resetDb,
+	subscribeToInvalidations,
+} from "../util/db";
+import { syncAll, useUser } from "../util/sync";
 
 export function useAccessTokenRaw() {
 	const [accessToken, setAccessToken] = createSignal<string | null | undefined>(
@@ -175,7 +175,10 @@ function ProfileDropdown() {
 					<AvatarFallback>{getInitials(user.data?.name || "")}</AvatarFallback>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent>
-					<DropdownMenuLabel>{user.data?.upn}</DropdownMenuLabel>
+					<DropdownMenuLabel>
+						<p>{user.data?.name}</p>
+						<p class="text-sm">{user.data?.upn}</p>
+					</DropdownMenuLabel>
 					<DropdownMenuSeparator />
 					<DropdownMenuItem
 						onClick={() => logoutMutation.mutate()}

@@ -6,6 +6,7 @@
 		},
 		{
 			"path": "./tsconfig.node.json"
-		}
+		},
+		{ "path": "../../packages/ui" }
 	]
 }
