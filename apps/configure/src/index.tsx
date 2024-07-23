@@ -6,6 +6,7 @@ import { render } from "solid-js/web";
 import { routes } from "./routes";
 import "./index.css";
 import "@mattrax/ui/css";
+import { Toaster } from "solid-sonner";
 
 const TanstackQueryDevtools = lazy(() =>
 	import("@tanstack/solid-query-devtools").then((m) => ({
@@ -31,6 +32,7 @@ function Root(props: ParentProps) {
 	return (
 		<>
 			{isDevMode && <TanstackQueryDevtools />}
+			<Toaster />
 			{props.children}
 		</>
 	);

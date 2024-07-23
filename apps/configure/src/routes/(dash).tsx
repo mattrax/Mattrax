@@ -235,11 +235,11 @@ function SyncPanel() {
 		triggerSync();
 		if (token) {
 			setSyncing(true);
-			const now = performance.now();
-			syncAll(token).then(() => {
-				console.log(`Synced in ${performance.now() - now}ms`);
-				setSyncing(false);
-			});
+			syncAll(
+				token,
+				// If not first-sync this was initiated by the user so show toasts.
+				triggerSync() !== 0,
+			).then(() => setSyncing(false));
 		}
 		// TODO: Catch errors and `setSyncing(false)`
 	});

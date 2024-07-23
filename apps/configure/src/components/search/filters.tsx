@@ -2,7 +2,7 @@ import {
 	type AccessorKeyColumnDef,
 	createColumnHelper,
 } from "@tanstack/solid-table";
-import type { Database } from "~/lib/db";
+import { type Database, db } from "~/lib/db";
 
 // TODO: Rest of the possibilities + clean this up
 export type Filter =
@@ -19,9 +19,11 @@ export type Filter =
 			value: string; // TODO: Allow multiple values
 	  };
 
+// TODO: Rename this object probs???
 export const filters = {
 	users: {
-		table: () => {
+		load: async () => await (await db).getAll("users"),
+		columns: () => {
 			const column = createColumnHelper<Database["users"]["value"]>();
 
 			return [
@@ -78,6 +80,9 @@ export const filters = {
 				// TODO: Actions
 			];
 		},
+		// filters: {
+		// 	"name"
+		// }
 		// TODO: Define bulk actions like delete
 		// columns: {
 		// 	name: {
@@ -86,7 +91,8 @@ export const filters = {
 		// },
 	},
 	devices: {
-		table: () => {
+		load: async () => await (await db).getAll("devices"),
+		columns: () => {
 			const column = createColumnHelper<Database["devices"]["value"]>();
 
 			return [
@@ -105,7 +111,8 @@ export const filters = {
 		},
 	},
 	groups: {
-		table: () => {
+		load: async () => await (await db).getAll("groups"),
+		columns: () => {
 			const column = createColumnHelper<Database["groups"]["value"]>();
 
 			return [
@@ -124,7 +131,8 @@ export const filters = {
 		},
 	},
 	policies: {
-		table: () => {
+		load: async () => await (await db).getAll("policies"),
+		columns: () => {
 			const column = createColumnHelper<Database["policies"]["value"]>();
 
 			return [
@@ -143,7 +151,8 @@ export const filters = {
 		},
 	},
 	apps: {
-		table: () => {
+		load: async () => await (await db).getAll("apps"),
+		columns: () => {
 			const column = createColumnHelper<Database["apps"]["value"]>();
 
 			return [
@@ -161,4 +170,11 @@ export const filters = {
 			];
 		},
 	},
-} satisfies Record<string, { table: () => AccessorKeyColumnDef<any, any>[] }>;
+} satisfies Record<
+	string,
+	{
+		// TODO: Tie column and data types together
+		load: () => Promise<any>;
+		columns: () => AccessorKeyColumnDef<any, any>[];
+	}
+>;

@@ -14,7 +14,6 @@ import {
 	getPaginationRowModel,
 	getSortedRowModel,
 } from "@tanstack/solid-table";
-import clsx from "clsx";
 import {
 	For,
 	type JSX,

@@ -3,7 +3,13 @@ import { createQuery } from "@tanstack/solid-query";
 import { type DBSchema, type StoreKey, type StoreNames, openDB } from "idb";
 import type { Filter } from "~/components/search/filters";
 
-export type TableName = "users" | "devices" | "groups" | "policies" | "apps";
+export type TableName =
+	| "users"
+	| "devices"
+	| "groups"
+	| "policies"
+	| "scripts"
+	| "apps";
 
 export type MetaTableKeys =
 	| `${TableName}|delta`
@@ -23,7 +29,6 @@ export interface Database extends DBSchema {
 		key: string;
 		value: {
 			id: string;
-			// slug?: string;
 			name: string;
 			description?: string;
 			data: Filter[];
@@ -34,15 +39,71 @@ export interface Database extends DBSchema {
 		key: string;
 		value: {
 			id: string;
-			name: string;
+			type: "member" | "guest";
 			upn: string;
+			name: string;
+			nameParts: {
+				givenName?: string;
+				surname?: string;
+			};
+			accountEnabled: boolean;
+			employeeId?: string;
+			officeLocation?: string;
+			phones: string[];
+			preferredLanguage?: string;
+			lastPasswordChangeDateTime?: string;
+			createdDateTime: string; // TODO: As `Date`
+			// TODO: Maybe information of user sync source to disable mutations when not supported???
 		};
 	};
 	devices: {
 		key: string;
 		value: {
 			id: string;
+			deviceId: string;
 			name: string;
+			deviceOwnership: "unknown" | "company" | "personal";
+			type: "RegisteredDevice" | "SecureVM" | "Printer" | "Shared" | "IoT";
+			trustType: "Workplace" | "AzureAd" | "ServerAd" | "unknown";
+			enrollment: {
+				profileName?: string;
+				type:
+					| "unknown"
+					| "userEnrollment"
+					| "deviceEnrollmentManager"
+					| "appleBulkWithUser"
+					| "appleBulkWithoutUser"
+					| "windowsAzureADJoin"
+					| "windowsBulkUserless"
+					| "windowsAutoEnrollment"
+					| "windowsBulkAzureDomainJoin"
+					| "windowsCoManagement";
+			};
+			isCompliant?: boolean;
+			isManaged: boolean;
+			isRooted: boolean;
+			managementType:
+				| "eas"
+				| "mdm"
+				| "easMdm"
+				| "intuneClient"
+				| "easIntuneClient"
+				| "configurationManagerClient"
+				| "configurationManagerClientMdm"
+				| "configurationManagerClientMdmEas"
+				| "unknown"
+				| "jamf"
+				| "googleCloudDevicePolicyController";
+			manufacturer?: string;
+			model?: string;
+			operatingSystem?: string;
+			operatingSystemVersion?: string;
+			// TODO: `serialNumber`???
+			// TODO: Primary user UPN
+			// TODO: Last checkedin time???
+			lastSignInDate?: string; // TODO: As `Date`
+			registrationDateTime?: string; // TODO: As `Date`
+			deviceCategory?: string;
 		};
 	};
 	groups: {
@@ -50,6 +111,25 @@ export interface Database extends DBSchema {
 		value: {
 			id: string;
 			name: string;
+			description?: string;
+			securityEnabled: boolean;
+			visibility?: "Private" | "Public" | "HiddenMembership";
+			// TODO: Can't be `$select`ed
+			// isArchived: boolean;
+			// TODO: How do you configure this in UI??? I checked Azure and Office 365
+			// theme?: "Teal" | "Purple" | "Green" | "Blue" | "Pink" | "Orange" | "Red";
+			createdDateTime: string; // TODO: As `Date`
+		};
+	};
+	groupMembers: {
+		key: string;
+		value: {
+			groupId: string;
+			type:
+				| "#microsoft.graph.user"
+				| "#microsoft.graph.group"
+				| "#microsoft.graph.device";
+			id: string;
 		};
 	};
 	policies: {
@@ -57,15 +137,103 @@ export interface Database extends DBSchema {
 		value: {
 			id: string;
 			name: string;
-		};
+			description?: string;
+			createdDateTime: string; // TODO: As `Date`
+			lastModifiedDateTime: string; // TODO: As `Date`
+		} & (
+			| {
+					platforms?:
+						| "none"
+						| "android"
+						| "iOS"
+						| "macOS"
+						| "windows10X"
+						| "windows10"
+						| "linux"
+						| "unknownFutureValue";
+					technologies?:
+						| "none"
+						| "mdm"
+						| "windows10XManagement"
+						| "configManager"
+						| "appleRemoteManagement"
+						| "microsoftSense"
+						| "exchangeOnline"
+						| "mobileApplicationManagement"
+						| "linuxMdm"
+						| "extensibility"
+						| "enrollment"
+						| "endpointPrivilegeManagement"
+						| "unknownFutureValue"
+						| "windowsOsRecovery";
+					settings: {
+						id: string;
+						settingInstance: any; // TODO: Typescript
+					}[];
+			  }
+			| {
+					"@odata.type":
+						| "#microsoft.graph.iosCustomConfiguration"
+						| "#microsoft.graph.windows10CustomConfiguration"
+						| "#microsoft.graph.windows10GeneralConfiguration"
+						| "#microsoft.graph.windowsWifiConfiguration"
+						| string; // TODO: Find all of them
+					version: number;
+			  }
+		);
 	};
-	apps: {
+	// TODO: Policy to device/user/group assignments
+	scripts: {
 		key: string;
 		value: {
 			id: string;
 			name: string;
+
+			scriptContent: string;
+			fileName: string;
+			runAsAccount: "system" | "user";
+
+			createdDateTime: string; // TODO: As `Date`
+			lastModifiedDateTime: string; // TODO: As `Date`
+		} & ( // Powershell
+			| {
+					enforceSignatureCheck: boolean;
+					runAs32Bit: boolean;
+			  }
+			// Bash
+			| {
+					executionFrequency: any; // TODO: Type
+					retryCount: number;
+					blockExecutionNotifications: boolean;
+			  }
+		);
+	};
+	// TODO: Script to device/user/group assignments
+	apps: {
+		key: string;
+		value: {
+			id: string;
+			type:
+				| "#microsoft.graph.iosStoreApp"
+				| "#microsoft.graph.managedIOSStoreApp"
+				| "#microsoft.graph.managedAndroidStoreApp"
+				| "#microsoft.graph.winGetApp"
+				| string; // TODO: Find all of them
+			name: string;
+			description?: string;
+			publisher?: string;
+			largeIcon?: any; // TODO: types
+			createdDateTime: string; // TODO: As `Date`
+			lastModifiedDateTime: string; // TODO: As `Date`
+			isFeatured: boolean;
+			privacyInformationUrl?: string;
+			informationUrl?: string;
+			owner?: string;
+			developer?: string;
+			notes?: string;
 		};
 	};
+	// TODO: App to device/user/group assignments
 }
 
 export const db = openDB<Database>("data", 1, {
@@ -83,7 +251,13 @@ export const db = openDB<Database>("data", 1, {
 		db.createObjectStore("groups", {
 			keyPath: "id",
 		});
+		db.createObjectStore("groupMembers", {
+			keyPath: ["groupId", "type", "id"],
+		});
 		db.createObjectStore("policies", {
+			keyPath: "id",
+		});
+		db.createObjectStore("scripts", {
 			keyPath: "id",
 		});
 		db.createObjectStore("apps", {

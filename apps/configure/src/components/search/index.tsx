@@ -1,7 +1,8 @@
 import { Input } from "@mattrax/ui";
+import { createAsync } from "@solidjs/router";
 import { createQuery } from "@tanstack/solid-query";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { Show, Suspense, createSignal } from "solid-js";
+import { For, ParentProps, Show, Suspense, createSignal } from "solid-js";
 import {
 	FloatingSelectionBar,
 	StandardTable,
@@ -19,25 +20,6 @@ export function createSearchPageContext(defaultFilters: Filter[] = []) {
 
 	return { filters, setFilters, defaultFilters };
 }
-
-// TODO: Break the following into `filters.ts` once refactored
-
-const column = createColumnHelper<any>(); // TODO: Not using any
-const columns = [
-	selectCheckboxColumn,
-	column.accessor("name", {
-		header: "Name",
-		cell: (props) => (
-			<a
-				class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-				href="todo" // TODO: {`/users/${props.row.original.id}`}
-			>
-				{props.row.original.name}
-			</a>
-		),
-	}),
-	// TODO: This needs to dispatch to the correct entity type to render it
-];
 
 export function SearchPage(
 	props: ReturnType<typeof createSearchPageContext> & {
@@ -168,80 +150,115 @@ export function SearchPage(
 				<FilterBar {...props} />
 			</Show>
 
-			{/* // TODO: Optionally render results as chart or state item */}
+			<Content {...props} />
+		</div>
+	);
+}
 
-			<Show
-				when={props
+function Content(props: ReturnType<typeof createSearchPageContext>) {
+	// TODO: Optionally render results as chart or state item
+
+	// TODO: Remove this
+	const hasAnyItemFilter = () =>
+		props.filters().some((f) => f.type === "enum" && f.target === "type");
+
+	const data = createAsync(async () => {
+		let result: any[] = [];
+		for (const [key, def] of Object.entries(filters)) {
+			if (
+				!hasAnyItemFilter() ||
+				props
 					.filters()
-					.find((f) => f.type === "enum" && f.target === "type")}
-			>
-				{(filter) => {
-					// @ts-expect-error // TODO: Fix this
-					const columns = filters?.[filter().value]?.table();
-					if (!columns) return <p>TODO</p>; // TODO: Make this not possible?
+					.some(
+						(f) => f.type === "enum" && f.target === "type" && f.value === key,
+					)
+			) {
+				result = result.concat(await def.load());
+			}
+		}
 
-					const table = createStandardTable({
-						get data() {
-							return query.data || [];
-						},
-						columns: [selectCheckboxColumn, ...columns],
-					});
-					// createSearchParamFilter(table, "name", "search");
+		// console.log("RESULT", result); // TODO
+		return result;
+	});
 
-					// const dialog = createBulkDeleteDialog({
-					// 	table,
-					// 	onDelete: (data) => {
-					// 		console.log(data);
-					// 		alert("Do delete"); // TODO
-					// 	},
-					// });
+	const table = createStandardTable({
+		get data() {
+			return data() || [];
+		},
+		get columns() {
+			// Get all of the possible columns given the active filters
+			const columns = Object.entries(filters).flatMap(([key, info]) => {
+				const isThisItemActive = props
+					.filters()
+					.some(
+						(f) => f.type === "enum" && f.target === "type" && f.value === key,
+					);
+				if (hasAnyItemFilter() && !isThisItemActive) return [];
 
-					return (
-						<>
-							<Suspense>
-								<StandardTable table={table} />
-							</Suspense>
-							<FloatingSelectionBar table={table}>
-								{(rows) => (
-									<>
-										{/* <Button
+				return info.tableColumns();
+			});
+
+			// Filter out duplicate columns by accessorKey
+			// TODO: Which definition should we use if they render differently (Eg. different link)
+			const filteredColumns = columns.filter(
+				(a, index) =>
+					index === columns.findIndex((b) => a.accessorKey === b.accessorKey),
+			);
+
+			return [selectCheckboxColumn, ...filteredColumns];
+		},
+	});
+	// createSearchParamFilter(table, "name", "search");
+
+	// const dialog = createBulkDeleteDialog({
+	// 	table,
+	// 	onDelete: (data) => {
+	// 		console.log(data);
+	// 		alert("Do delete"); // TODO
+	// 	},
+	// });
+
+	return (
+		<Suspense>
+			<StandardTable table={table} />
+
+			<FloatingSelectionBar table={table}>
+				{(rows) => (
+					<>
+						{/* <Button
 									variant="destructive"
 									size="sm"
 									onClick={() => dialog.show(rows())}
 								>
 									Delete
 								</Button> */}
-									</>
+					</>
+				)}
+			</FloatingSelectionBar>
+			{/* <BulkDeleteDialog
+				dialog={dialog}
+				title={({ count }) => <>Delete {pluralize("User", count())}</>}
+				description={({ count, rows }) => (
+					<>
+						Are you sure you want to delete{" "}
+						<Switch>
+							<Match when={count() > 1}>
+								{count()} {pluralize("user", count())}
+							</Match>
+							<Match when={rows()[0]}>
+								{(data) => (
+									<div class="inline text-nowrap">
+										<span class="text-black font-medium">
+											{data().original.name}
+										</span>
+									</div>
 								)}
-							</FloatingSelectionBar>
-							{/* <BulkDeleteDialog
-								dialog={dialog}
-								title={({ count }) => <>Delete {pluralize("User", count())}</>}
-								description={({ count, rows }) => (
-									<>
-										Are you sure you want to delete{" "}
-										<Switch>
-											<Match when={count() > 1}>
-												{count()} {pluralize("user", count())}
-											</Match>
-											<Match when={rows()[0]}>
-												{(data) => (
-													<div class="inline text-nowrap">
-														<span class="text-black font-medium">
-															{data().original.name}
-														</span>
-													</div>
-												)}
-											</Match>
-										</Switch>
-										?
-									</>
-								)}
-							/> */}
-						</>
-					);
-				}}
-			</Show>
-		</div>
+							</Match>
+						</Switch>
+						?
+					</>
+				)}
+			/> */}
+		</Suspense>
 	);
 }
