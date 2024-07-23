@@ -1,6 +1,7 @@
 /* @refresh reload */
 import { createContextProvider } from "@solid-primitives/context";
 import { db, invalidateStore, resetDb } from "./db";
+import { fetchUserData } from "./sync";
 
 const clientId = "5dd42e00-78e7-474a-954a-bb4e5085e820";
 
@@ -56,6 +57,17 @@ export async function verifyOAuthCode(code: string) {
 	await (await db).put("_meta", data.refresh_token, "refreshToken");
 	invalidateStore("auth");
 	return data.access_token;
+}
+
+export async function fetchAndCacheUserData(accessToken: string) {
+	const data = await fetchUserData(accessToken);
+	const result = {
+		id: data.id,
+		name: data.displayName,
+		upn: data.userPrincipalName,
+	};
+	localStorage.setItem("user", JSON.stringify(result));
+	return result;
 }
 
 export async function logout() {

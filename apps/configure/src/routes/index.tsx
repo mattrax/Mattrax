@@ -6,7 +6,11 @@ import {
 	useNavigate,
 } from "@solidjs/router";
 import { ErrorBoundary, Match, Suspense, Switch } from "solid-js";
-import { generateOAuthUrl, verifyOAuthCode } from "~/lib/auth";
+import {
+	fetchAndCacheUserData,
+	generateOAuthUrl,
+	verifyOAuthCode,
+} from "~/lib/auth";
 import { useAccessTokenRaw } from "./(dash)";
 
 export default function Page() {
@@ -25,7 +29,9 @@ export default function Page() {
 				<Match when={location.query?.code} keyed>
 					{(code) => {
 						const access_token = createAsync(async () => {
-							await verifyOAuthCode(code);
+							const token = await verifyOAuthCode(code);
+							await fetchAndCacheUserData(token);
+
 							// Clear the query params
 							navigate("/");
 						});

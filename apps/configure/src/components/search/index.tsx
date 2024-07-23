@@ -1,31 +1,28 @@
 import { Input } from "@mattrax/ui";
 import { createQuery } from "@tanstack/solid-query";
 import { createColumnHelper } from "@tanstack/solid-table";
+import { Show, Suspense, createSignal } from "solid-js";
 import {
-	type Accessor,
-	type Setter,
-	Show,
-	Suspense,
-	createSignal,
-} from "solid-js";
-import {
+	FloatingSelectionBar,
 	StandardTable,
 	createStandardTable,
 	selectCheckboxColumn,
 } from "~/components/StandardTable";
 import { db } from "~/lib/db";
 import { FilterBar } from "./FilterBar";
-import type { Filter } from "./filters";
+import { type Filter, filters } from "./filters";
 
 export function createSearchPageContext(defaultFilters: Filter[] = []) {
+	// TODO: We should probs put some of this state into the URL???
+
 	const [filters, setFilters] = createSignal<Filter[]>(defaultFilters);
-	return { filters, setFilters };
+
+	return { filters, setFilters, defaultFilters };
 }
 
 // TODO: Break the following into `filters.ts` once refactored
 
 const column = createColumnHelper<any>(); // TODO: Not using any
-
 const columns = [
 	selectCheckboxColumn,
 	column.accessor("name", {
@@ -42,11 +39,11 @@ const columns = [
 	// TODO: This needs to dispatch to the correct entity type to render it
 ];
 
-export function SearchPage(props: {
-	filters: Accessor<Filter[]>;
-	setFilters: Setter<Filter[]>;
-	showFilterBar?: boolean;
-}) {
+export function SearchPage(
+	props: ReturnType<typeof createSearchPageContext> & {
+		showFilterBar?: boolean;
+	},
+) {
 	// TODO: Ordering
 	// TODO: Result format (table or chart)
 
@@ -111,22 +108,6 @@ export function SearchPage(props: {
 		},
 	}));
 
-	const table = createStandardTable({
-		get data() {
-			return query.data || [];
-		},
-		columns,
-	});
-	// createSearchParamFilter(table, "name", "search");
-
-	// const dialog = createBulkDeleteDialog({
-	// 	table,
-	// 	onDelete: (data) => {
-	// 		console.log(data);
-	// 		alert("Do delete"); // TODO
-	// 	},
-	// });
-
 	return (
 		<div class="p-4">
 			{/* // TODO: Don't use `eq` op cause this should be full-text search */}
@@ -184,16 +165,83 @@ export function SearchPage(props: {
 				</Show>
 			</div>
 			<Show when={props.showFilterBar !== false}>
-				<FilterBar filters={props.filters} setFilters={props.setFilters} />
+				<FilterBar {...props} />
 			</Show>
 
-			{/* // TODO: Optionally render results as chart */}
-			<Suspense>
-				<StandardTable table={table} />
-			</Suspense>
+			{/* // TODO: Optionally render results as chart or state item */}
 
-			{/* // TODO: Remove this */}
-			<pre class="pt-2">{JSON.stringify(props.filters(), null, 2)}</pre>
+			<Show
+				when={props
+					.filters()
+					.find((f) => f.type === "enum" && f.target === "type")}
+			>
+				{(filter) => {
+					// @ts-expect-error // TODO: Fix this
+					const columns = filters?.[filter().value]?.table();
+					if (!columns) return <p>TODO</p>; // TODO: Make this not possible?
+
+					const table = createStandardTable({
+						get data() {
+							return query.data || [];
+						},
+						columns: [selectCheckboxColumn, ...columns],
+					});
+					// createSearchParamFilter(table, "name", "search");
+
+					// const dialog = createBulkDeleteDialog({
+					// 	table,
+					// 	onDelete: (data) => {
+					// 		console.log(data);
+					// 		alert("Do delete"); // TODO
+					// 	},
+					// });
+
+					return (
+						<>
+							<Suspense>
+								<StandardTable table={table} />
+							</Suspense>
+							<FloatingSelectionBar table={table}>
+								{(rows) => (
+									<>
+										{/* <Button
+									variant="destructive"
+									size="sm"
+									onClick={() => dialog.show(rows())}
+								>
+									Delete
+								</Button> */}
+									</>
+								)}
+							</FloatingSelectionBar>
+							{/* <BulkDeleteDialog
+								dialog={dialog}
+								title={({ count }) => <>Delete {pluralize("User", count())}</>}
+								description={({ count, rows }) => (
+									<>
+										Are you sure you want to delete{" "}
+										<Switch>
+											<Match when={count() > 1}>
+												{count()} {pluralize("user", count())}
+											</Match>
+											<Match when={rows()[0]}>
+												{(data) => (
+													<div class="inline text-nowrap">
+														<span class="text-black font-medium">
+															{data().original.name}
+														</span>
+													</div>
+												)}
+											</Match>
+										</Switch>
+										?
+									</>
+								)}
+							/> */}
+						</>
+					);
+				}}
+			</Show>
 		</div>
 	);
 }

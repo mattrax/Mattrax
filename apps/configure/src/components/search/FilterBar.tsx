@@ -25,12 +25,10 @@ import {
 	Switch,
 } from "solid-js";
 import { db } from "~/lib/db";
+import type { createSearchPageContext } from ".";
 import type { Filter } from "./filters";
 
-export function FilterBar(props: {
-	filters: Accessor<Filter[]>;
-	setFilters: Setter<Filter[]>;
-}) {
+export function FilterBar(props: ReturnType<typeof createSearchPageContext>) {
 	const navigate = useNavigate();
 	const createView = createMutation(() => ({
 		mutationKey: ["createView"],
@@ -58,20 +56,25 @@ export function FilterBar(props: {
 
 			<Show when={props.filters().length > 0}>
 				<>
-					<Tooltip>
-						{/* // TODO: Ask the user for the view name */}
-						<TooltipTrigger
-							as="button"
-							type="button"
-							class="text-center"
-							onClick={() => createView.mutate(props.filters())}
-						>
-							<div class="flex items-center justify-center h-full">
-								<IconPhFloppyDisk />
-							</div>
-						</TooltipTrigger>
-						<TooltipContent>Create new view from active filters</TooltipContent>
-					</Tooltip>
+					<Show when={props.filters() !== props.defaultFilters}>
+						<Tooltip>
+							{/* // TODO: Ask the user for the view name */}
+							<TooltipTrigger
+								as="button"
+								type="button"
+								class="text-center"
+								onClick={() => createView.mutate(props.filters())}
+							>
+								<div class="flex items-center justify-center h-full">
+									<IconPhFloppyDisk />
+								</div>
+							</TooltipTrigger>
+							<TooltipContent>
+								Create new view from active filters
+							</TooltipContent>
+						</Tooltip>
+					</Show>
+
 					<Tooltip>
 						<TooltipTrigger
 							as="button"

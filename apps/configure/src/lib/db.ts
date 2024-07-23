@@ -1,14 +1,13 @@
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { createQuery } from "@tanstack/solid-query";
 import { type DBSchema, type StoreKey, type StoreNames, openDB } from "idb";
-import type { Filter } from "../routes/(dash)/search";
+import type { Filter } from "~/components/search/filters";
+
+export type TableName = "users" | "devices" | "groups" | "policies" | "apps";
 
 export type MetaTableKeys =
-	| "users"
-	| "devices"
-	| "groups"
-	| "policies"
-	| "apps"
+	| `${TableName}|delta`
+	| `${TableName}|syncedAt`
 	| "accessToken"
 	| "refreshToken";
 

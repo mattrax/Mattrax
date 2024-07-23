@@ -1,9 +1,9 @@
 import { createQuery } from "@tanstack/solid-query";
 import type { StoreNames } from "idb";
-import { logout, useAccessToken } from "./auth";
+import { fetchAndCacheUserData, logout, useAccessToken } from "./auth";
 import {
 	type Database,
-	type MetaTableKeys,
+	type TableName,
 	db,
 	invalidateStore,
 	subscribeToInvalidations,
@@ -27,12 +27,12 @@ async function f(accessToken: string, url: string) {
 // TODO: Handle https://learn.microsoft.com/en-us/graph/delta-query-overview#synchronization-reset
 export async function syncEntity(
 	accessToken: string,
-	storeName: StoreNames<Database> & MetaTableKeys,
+	storeName: StoreNames<Database> & TableName,
 	endpoint: string,
 	map: (data: any) => any,
 ) {
 	let url: string | null =
-		(await await (await db).get("_meta", storeName)) ||
+		(await await (await db).get("_meta", `${storeName}|delta`)) ||
 		`https://graph.microsoft.com${endpoint}`;
 
 	while (url !== null) {
@@ -49,14 +49,16 @@ export async function syncEntity(
 		if (data["@odata.nextLink"]) {
 			console.log("More data to fetch...");
 			url = data["@odata.nextLink"];
-			tx.db.put("_meta", data["@odata.nextLink"], storeName);
+			tx.db.put("_meta", data["@odata.nextLink"], `${storeName}|delta`);
 		} else if (data["@odata.deltaLink"]) {
 			console.log("Got Delta link", data["@odata.deltaLink"]);
-			tx.db.put("_meta", data["@odata.deltaLink"], storeName);
+			tx.db.put("_meta", data["@odata.deltaLink"], `${storeName}|delta`);
+			tx.db.put("_meta", new Date().toString(), `${storeName}|syncedAt`);
 			url = null;
 		} else {
 			console.log("Done...");
-			tx.db.delete("_meta", storeName);
+			tx.db.delete("_meta", `${storeName}|delta`);
+			tx.db.put("_meta", new Date().toString(), `${storeName}|syncedAt`);
 			url = null;
 		}
 
@@ -67,20 +69,23 @@ export async function syncEntity(
 
 export async function syncAll(accessToken: string) {
 	const result = await Promise.allSettled([
-		syncEntity(accessToken, "users", "/v1.0/users/delta", (user) => ({
-			id: user.id,
-			name: user.displayName,
-			upn: user.userPrincipalName,
-		})),
+		syncEntity(accessToken, "users", "/v1.0/users/delta", (user) => {
+			// console.log(user);
+			return {
+				id: user.id,
+				name: user.displayName,
+				upn: user.userPrincipalName,
+			};
+		}),
 		syncEntity(accessToken, "devices", "/v1.0/devices/delta", (device) => {
-			console.log(device);
+			// console.log(device);
 			return {
 				id: device.id,
 				name: device.displayName,
 			};
 		}),
 		syncEntity(accessToken, "groups", "/v1.0/groups/delta", (group) => {
-			console.log(group);
+			// console.log(group);
 			return {
 				id: group.id,
 				name: group.displayName,
@@ -91,7 +96,7 @@ export async function syncAll(accessToken: string) {
 			"policies",
 			"/beta/deviceManagement/configurationPolicies",
 			(policy) => {
-				console.log(policy);
+				// console.log(policy);
 				return {
 					id: policy.id,
 					name: policy.name,
@@ -103,7 +108,7 @@ export async function syncAll(accessToken: string) {
 			"apps",
 			"/beta/deviceAppManagement/mobileApps",
 			(app) => {
-				console.log(app);
+				// console.log(app);
 				return {
 					id: app.id,
 					name: app.displayName,
@@ -113,7 +118,7 @@ export async function syncAll(accessToken: string) {
 	]);
 
 	// TODO: Handle errors with toast message or something
-	console.log(result);
+	// console.log(result);
 }
 
 // TODO: Maybe move to another file?
@@ -131,19 +136,7 @@ export function useUser() {
 	const accessToken = useAccessToken();
 	const query = createQuery(() => ({
 		queryKey: ["me"],
-		queryFn: async () => {
-			const data = await f(
-				accessToken(),
-				"https://graph.microsoft.com/v1.0/me",
-			);
-			const result = {
-				id: data.id,
-				name: data.displayName,
-				upn: data.userPrincipalName,
-			};
-			localStorage.setItem("user", JSON.stringify(result));
-			return result;
-		},
+		queryFn: () => fetchAndCacheUserData(accessToken()),
 		// So Typescript infers from `queryFn`
 		initialData: initialData as never,
 	}));
@@ -153,4 +146,8 @@ export function useUser() {
 	});
 
 	return query;
+}
+
+export async function fetchUserData(accessToken: string) {
+	return await f(accessToken, "https://graph.microsoft.com/v1.0/me");
 }
