@@ -195,7 +195,7 @@ function Content(props: ReturnType<typeof createSearchPageContext>) {
 					);
 				if (hasAnyItemFilter() && !isThisItemActive) return [];
 
-				return info.tableColumns();
+				return info.columns();
 			});
 
 			// Filter out duplicate columns by accessorKey
