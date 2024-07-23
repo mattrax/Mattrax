@@ -9,9 +9,11 @@ import {
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
+	Kbd,
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
+	buttonVariants,
 } from "@mattrax/ui";
 import { A, Navigate, useLocation, useNavigate } from "@solidjs/router";
 import { createMutation } from "@tanstack/solid-query";
@@ -70,7 +72,7 @@ export default function Layout(props: ParentProps) {
 function Navbar() {
 	return (
 		<>
-			<div class="relative flex flex-row items-center px-6 gap-2 h-16 shrink-0 border-b border-gray-200">
+			<div class="w-[100vw] relative flex flex-row items-center px-6 gap-2 h-16 shrink-0 border-b border-gray-200">
 				<a href="/overview" class="uppercase font-extrabold text-2xl">
 					MATTRAX CONFIGURE
 				</a>
@@ -81,6 +83,20 @@ function Navbar() {
 					{/* // TODO: Feedback button */}
 
 					<SyncPanel />
+
+					<Tooltip>
+						<TooltipTrigger
+							as="a"
+							href="/search"
+							class={clsx(buttonVariants({ variant: "ghost" }), "!m-0")}
+						>
+							<IconPhMagnifyingGlass />
+						</TooltipTrigger>
+						<TooltipContent>
+							{/* // TODO: Hook up keyboard shortcut */}
+							Search <Kbd>S</Kbd>
+						</TooltipContent>
+					</Tooltip>
 
 					<ProfileDropdown />
 				</div>
@@ -99,7 +115,6 @@ const items = [
 	{ title: "Policies", href: "/policies" },
 	{ title: "Applications", href: "/applications" },
 	{ title: "Views", href: "/views" },
-	{ title: "Search", href: "/search" },
 	{ title: "Settings", href: "/settings" },
 ];
 
@@ -134,13 +149,33 @@ function NavItems() {
 						</Tabs.Trigger>
 					)}
 				</For>
+
+				{/* <div class="flex-1" /> */}
+
+				{/* <div class="">
+					<Tabs.Trigger
+						value="/search"
+						as={A}
+						href="/search"
+						activeClass="text-black selected"
+						inactiveClass="text-gray-500"
+						class="py-2 flex text-center align-middle relative group focus:outline-none"
+					>
+						<div class="text-sm rounded px-3 py-1.5 hover:bg-black/5 hover:text-black group-focus-visible:bg-black/5 group-focus-visible:text-black group-focus:outline-none transition-colors duration-75">
+							<IconPhMagnifyingGlass />
+						</div>
+					</Tabs.Trigger>
+				</div> */}
 			</Tabs.List>
-			<Tabs.Indicator
-				class="absolute bottom-0 flex flex-row px-2 h-[2px]"
-				classList={{ "duration-200 transition-all": mounted() }}
-			>
-				<div class="bg-brand flex-1 rounded-full" />
-			</Tabs.Indicator>
+
+			<Show when={location.pathname !== "/search"}>
+				<Tabs.Indicator
+					class="absolute bottom-0 flex flex-row px-2 h-[2px]"
+					classList={{ "duration-200 transition-all": mounted() }}
+				>
+					<div class="bg-brand flex-1 rounded-full" />
+				</Tabs.Indicator>
+			</Show>
 		</Tabs>
 	);
 }

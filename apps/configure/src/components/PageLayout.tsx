@@ -24,7 +24,7 @@ export function PageLayout(
 		>
 			<Show when={c()}>
 				{(c) => (
-					<div class="flex flex-row items-center justify-between h-24 gap-4">
+					<div class="flex flex-row items-center justify-between py-4 gap-4">
 						{c()}
 					</div>
 				)}

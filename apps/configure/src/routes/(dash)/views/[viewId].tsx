@@ -1,9 +1,9 @@
-import { createAsync } from "@solidjs/router";
 import { Show } from "solid-js";
 import { z } from "zod";
+import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
+import { SearchPage, createSearchPageContext } from "~/components/search";
 import { createIdbQuery } from "~/lib/db";
 import { useZodParams } from "~/lib/useZodParams";
-import { SearchPage, createSearchPageContext } from "../search";
 
 export default function Page() {
 	// TODO: Showing warning when changing filters
@@ -15,6 +15,7 @@ export default function Page() {
 	// TODO: if the view is modified in another tab we are gonna wipe out any changes which is not great.
 	const views = createIdbQuery("views"); // TODO: Filter to a specific view using IndexedDB query here???
 
+	// TODO: Loading state!
 	return (
 		<Show when={views.data}>
 			{(views) => {
@@ -24,7 +25,13 @@ export default function Page() {
 				}
 
 				const ctx = createSearchPageContext(view.data);
-				return <SearchPage {...ctx} />;
+				return (
+					<PageLayout
+						heading={<PageLayoutHeading>{view.name}</PageLayoutHeading>}
+					>
+						<SearchPage {...ctx} />
+					</PageLayout>
+				);
 			}}
 		</Show>
 	);

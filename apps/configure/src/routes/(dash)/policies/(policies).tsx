@@ -1,3 +1,18 @@
+import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
+import { SearchPage, createSearchPageContext } from "~/components/search";
+
 export default function Page() {
-	return <h1 class="text-muted-foreground opacity-70">Coming soon...</h1>;
+	const ctx = createSearchPageContext([
+		{
+			type: "enum",
+			target: "type",
+			value: "policies",
+		},
+	]);
+
+	return (
+		<PageLayout heading={<PageLayoutHeading>Policies</PageLayoutHeading>}>
+			<SearchPage {...ctx} showFilterBar={false} />
+		</PageLayout>
+	);
 }
