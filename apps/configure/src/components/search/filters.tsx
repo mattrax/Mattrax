@@ -1,8 +1,4 @@
-import {
-	type AccessorKeyColumnDef,
-	createColumnHelper,
-} from "@tanstack/solid-table";
-import { type Database, db } from "~/lib/db";
+import type { JSX } from "solid-js";
 
 // TODO: Rest of the possibilities + clean this up
 export type Filter =
@@ -19,162 +15,22 @@ export type Filter =
 			value: string; // TODO: Allow multiple values
 	  };
 
-// TODO: Rename this object probs???
-export const filters = {
-	users: {
-		load: async () => await (await db).getAll("users"),
-		columns: () => {
-			const column = createColumnHelper<Database["users"]["value"]>();
+export function defineEntity<T>(entity: Entity<T>) {
+	return entity;
+}
 
-			return [
-				column.accessor("name", {
-					header: "Name",
-					cell: (props) => (
-						<a
-							class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-							href={`/users/${props.row.original.id}`}
-						>
-							{props.row.original.name}
-						</a>
-					),
-				}),
-				// column.accessor("email", {
-				// 	header: ({ column }) => {
-				// 		return (
-				// 			<Button variant="ghost" onClick={() => column.toggleSorting()}>
-				// 				Email
-				// 				<Switch fallback={<IconCarbonCaretSort class="ml-2 h-4 w-4" />}>
-				// 					<Match when={column.getIsSorted() === "asc"}>
-				// 						<IconCarbonCaretSortUp class="ml-2 h-4 w-4" />
-				// 					</Match>
-				// 					<Match when={column.getIsSorted() === "desc"}>
-				// 						<IconCarbonCaretSortDown class="ml-2 h-4 w-4" />
-				// 					</Match>
-				// 				</Switch>
-				// 			</Button>
-				// 		);
-				// 	},
-				// }),
-				// column.accessor("provider.variant", {
-				// 	header: "Provider",
-				// 	cell: (props) => {
-				// 		const providerDisplayName = () => AUTH_PROVIDER_DISPLAY[props.getValue()];
-				// 		return (
-				// 			<span class="flex flex-row gap-1 items-center">
-				// 				<Badge variant="outline">{providerDisplayName()}</Badge>
-				// 				<Show when={props.row.original.resourceId === null}>
-				// 					<Tooltip>
-				// 						<TooltipTrigger>
-				// 							<IconMaterialSymbolsWarningRounded class="w-4 h-4 text-yellow-600" />
-				// 						</TooltipTrigger>
-				// 						<TooltipContent>
-				// 							User not found in {providerDisplayName()}
-				// 						</TooltipContent>
-				// 					</Tooltip>
-				// 				</Show>
-				// 			</span>
-				// 		);
-				// 	},
-				// }),
-				// TODO: Link to OAuth provider
-				// TODO: Actions
-			];
-		},
-		// filters: {
-		// 	"name"
-		// }
-		// TODO: Define bulk actions like delete
-		// columns: {
-		// 	name: {
-		// 		// TODO: Document which filters are supported
-		// 	},
-		// },
-	},
-	devices: {
-		load: async () => await (await db).getAll("devices"),
-		columns: () => {
-			const column = createColumnHelper<Database["devices"]["value"]>();
+export type Entity<T> = {
+	load: () => Promise<T[]>;
+	columns: ColumnDefinitions<T>;
+};
 
-			return [
-				column.accessor("name", {
-					header: "Name",
-					cell: (props) => (
-						<a
-							class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-							href={`/devices/${props.row.original.id}`}
-						>
-							{props.row.original.name}
-						</a>
-					),
-				}),
-			];
-		},
-	},
-	groups: {
-		load: async () => await (await db).getAll("groups"),
-		columns: () => {
-			const column = createColumnHelper<Database["groups"]["value"]>();
-
-			return [
-				column.accessor("name", {
-					header: "Name",
-					cell: (props) => (
-						<a
-							class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-							href={`/groups/${props.row.original.id}`}
-						>
-							{props.row.original.name}
-						</a>
-					),
-				}),
-			];
-		},
-	},
-	policies: {
-		load: async () => await (await db).getAll("policies"),
-		columns: () => {
-			const column = createColumnHelper<Database["policies"]["value"]>();
-
-			return [
-				column.accessor("name", {
-					header: "Name",
-					cell: (props) => (
-						<a
-							class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-							href={`/policies/${props.row.original.id}`}
-						>
-							{props.row.original.name}
-						</a>
-					),
-				}),
-			];
-		},
-	},
-	apps: {
-		load: async () => await (await db).getAll("apps"),
-		columns: () => {
-			const column = createColumnHelper<Database["apps"]["value"]>();
-
-			return [
-				column.accessor("name", {
-					header: "Name",
-					cell: (props) => (
-						<a
-							class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-							href={`/applications/${props.row.original.id}`}
-						>
-							{props.row.original.name}
-						</a>
-					),
-				}),
-			];
-		},
-	},
-} satisfies Record<
+export type ColumnDefinitions<T> = Record<
+	// Used to uniquely identify the semantic meaning of the column.
+	// These will be merged across entities using the first `header` that is discovered.
+	// The render function will still be called on the specific entity to ensure links and the like remain correct.
 	string,
 	{
-		// TODO: Tie column and data types together
-		load: () => Promise<any>;
-		columns: () => AccessorKeyColumnDef<any, any>[];
+		header: JSX.Element;
+		render: (data: T) => JSX.Element;
 	}
 >;

@@ -1,17 +1,21 @@
-import { Input } from "@mattrax/ui";
+import {
+	Checkbox,
+	Input,
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@mattrax/ui";
 import { createAsync } from "@solidjs/router";
 import { createQuery } from "@tanstack/solid-query";
-import { createColumnHelper } from "@tanstack/solid-table";
-import { For, ParentProps, Show, Suspense, createSignal } from "solid-js";
-import {
-	FloatingSelectionBar,
-	StandardTable,
-	createStandardTable,
-	selectCheckboxColumn,
-} from "~/components/StandardTable";
+import { createWindowVirtualizer } from "@tanstack/solid-virtual";
+import { For, Show, Suspense, createMemo, createSignal } from "solid-js";
 import { db } from "~/lib/db";
 import { FilterBar } from "./FilterBar";
-import { type Filter, filters } from "./filters";
+import { entities } from "./configuration";
+import type { Filter } from "./filters";
 
 export function createSearchPageContext(defaultFilters: Filter[] = []) {
 	// TODO: We should probs put some of this state into the URL???
@@ -156,58 +160,12 @@ export function SearchPage(
 }
 
 function Content(props: ReturnType<typeof createSearchPageContext>) {
-	// TODO: Optionally render results as chart or state item
+	// TODO: Optionally render results as chart or counter
 
-	// TODO: Remove this
-	const hasAnyItemFilter = () =>
-		props.filters().some((f) => f.type === "enum" && f.target === "type");
-
-	const data = createAsync(async () => {
-		let result: any[] = [];
-		for (const [key, def] of Object.entries(filters)) {
-			if (
-				!hasAnyItemFilter() ||
-				props
-					.filters()
-					.some(
-						(f) => f.type === "enum" && f.target === "type" && f.value === key,
-					)
-			) {
-				result = result.concat(await def.load());
-			}
-		}
-
-		// console.log("RESULT", result); // TODO
-		return result;
-	});
-
-	const table = createStandardTable({
-		get data() {
-			return data() || [];
-		},
-		get columns() {
-			// Get all of the possible columns given the active filters
-			const columns = Object.entries(filters).flatMap(([key, info]) => {
-				const isThisItemActive = props
-					.filters()
-					.some(
-						(f) => f.type === "enum" && f.target === "type" && f.value === key,
-					);
-				if (hasAnyItemFilter() && !isThisItemActive) return [];
-
-				return info.columns();
-			});
-
-			// Filter out duplicate columns by accessorKey
-			// TODO: Which definition should we use if they render differently (Eg. different link)
-			const filteredColumns = columns.filter(
-				(a, index) =>
-					index === columns.findIndex((b) => a.accessorKey === b.accessorKey),
-			);
-
-			return [selectCheckboxColumn, ...filteredColumns];
-		},
-	});
+	// const table = createStandardTable({
+	// 	data: [],
+	// 	columns: [],
+	// });
 	// createSearchParamFilter(table, "name", "search");
 
 	// const dialog = createBulkDeleteDialog({
@@ -219,22 +177,33 @@ function Content(props: ReturnType<typeof createSearchPageContext>) {
 	// });
 
 	return (
-		<Suspense>
-			<StandardTable table={table} />
+		<Suspense
+			fallback={
+				<Show when>
+					{() =>
+						(
+							// TODO: We don't want this. Theorically the table should suspend on a row level and can remove this barrier.
+							// biome-ignore lint/style/noCommaOperator: <explanation>
+							console.error("Table parent suspended!"), null
+						)}
+				</Show>
+			}
+		>
+			<TableContent {...props} />
 
-			<FloatingSelectionBar table={table}>
+			{/* <FloatingSelectionBar table={table}>
 				{(rows) => (
 					<>
-						{/* <Button
+						<Button
 									variant="destructive"
 									size="sm"
 									onClick={() => dialog.show(rows())}
 								>
 									Delete
-								</Button> */}
+								</Button>
 					</>
 				)}
-			</FloatingSelectionBar>
+			</FloatingSelectionBar> */}
 			{/* <BulkDeleteDialog
 				dialog={dialog}
 				title={({ count }) => <>Delete {pluralize("User", count())}</>}
@@ -260,5 +229,187 @@ function Content(props: ReturnType<typeof createSearchPageContext>) {
 				)}
 			/> */}
 		</Suspense>
+	);
+}
+
+function TableContent(props: ReturnType<typeof createSearchPageContext>) {
+	// TODO: Remove this
+	const hasAnyItemFilter = () =>
+		props.filters().some((f) => f.type === "enum" && f.target === "type");
+
+	const rawData = createAsync(async () => {
+		const result = (
+			await Promise.all(
+				Object.entries(entities).map(async ([key, def]) => {
+					if (
+						!hasAnyItemFilter() ||
+						props
+							.filters()
+							.some(
+								(f) =>
+									f.type === "enum" && f.target === "type" && f.value === key,
+							)
+					) {
+						return (await def.load()).map((data) => ({ type: key, data }));
+					}
+
+					return [];
+				}),
+			)
+		).flat();
+
+		console.log("RESULT2", result); // TODO
+		return result;
+	});
+
+	// TODO: Really we wanna do ordering in IndexedDB so that we can only load active data the virtualiser requires????
+
+	// TODO:
+	// TODO: - Get config from UI/URL (maybe break out implementation to the `filters` object too)
+	// TODO: - Sorting by multiple columns
+	// TODO: - Sorting by multiple data types (Eg. String, number, boolean, enum)
+	// TODO: - Handling of columns not on an entity
+	const orderedData = createMemo(() => {
+		const d = rawData();
+		if (!d) return [];
+
+		return d.sort((a, b) => a.data.name.localeCompare(b.data.name));
+	});
+
+	const virtualizer = createWindowVirtualizer({
+		// TODO: Can we guess the number of rows and rely on `Suspense` on each row for a loading state???
+		get count() {
+			return orderedData()?.length ?? 0;
+		},
+		estimateSize: () => 52.5, // TODO
+		overscan: 5,
+	});
+
+	// TODO: Allow the user to enable/disable columns
+	const columns = createMemo(() => {
+		// Get all of the possible columns given the active filters
+		const columns = Object.entries(entities).flatMap(([key, info]) => {
+			const isThisItemActive = props
+				.filters()
+				.some(
+					(f) => f.type === "enum" && f.target === "type" && f.value === key,
+				);
+			if (hasAnyItemFilter() && !isThisItemActive) return [];
+			// return info.columns();
+			return Object.entries(info?.columns || {});
+		});
+
+		// Filter out duplicate columns by accessorKey
+		// TODO: Ensure this picks the first one (for the header title)
+		const filteredColumns = columns.filter(
+			(a, index) => index === columns.findIndex((b) => a[0] === b[0]),
+		);
+		// const filteredColumns = columns; // TODO
+
+		console.log("FILTERED COLS", filteredColumns); // TODO
+		return filteredColumns;
+	});
+
+	// TODO: Bring back `selectCheckboxColumn`
+
+	return (
+		<>
+			{/* // TODO: Replace "items" with the valid entities that can be returned??? */}
+			<p class="text-sm py-2">Got {orderedData()?.length ?? 0} items</p>
+			<Table>
+				<TableHeader>
+					{/* // TODO: We need to handle grouped columns by having multiple `TableRows`'s (for columns on 1-1 relations Eg. user name on device owner) */}
+					<TableRow>
+						<TableHead class="w-1">
+							<Checkbox
+								class="w-4"
+								// TODO:
+								// checked={table.getIsAllPageRowsSelected()}
+								// indeterminate={table.getIsSomePageRowsSelected()}
+								// onChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+								aria-label="Select all"
+							/>
+						</TableHead>
+
+						<For each={columns()}>
+							{([_, column]) => (
+								<TableHead
+								// style={{ width: `${header.getSize()}px` }}
+								// draggable // TODO: DND reordering
+								>
+									{column.header}
+								</TableHead>
+							)}
+						</For>
+					</TableRow>
+				</TableHeader>
+				<TableBody
+					style={{
+						height: `${virtualizer.getTotalSize()}px`,
+						width: "100%",
+						position: "relative",
+					}}
+				>
+					<For
+						each={virtualizer.getVirtualItems()}
+						fallback={
+							<TableRow>
+								<TableCell colSpan={columns().length} class="h-24 text-center">
+									No results.
+								</TableCell>
+							</TableRow>
+						}
+					>
+						{(virtualItem) => {
+							const item = orderedData()[virtualItem.index]!;
+
+							// TODO: Suspense at row level instead of table level
+
+							return (
+								<TableRow
+									// {...props.rowProps?.(row)}
+									class="flex"
+									style={{
+										// TODO: move to Tailwind
+										position: "absolute",
+										top: 0,
+										left: 0,
+										width: "100%",
+										height: `${virtualItem.size}px`,
+										transform: `translateY(${
+											virtualItem.start - virtualizer.options.scrollMargin
+										}px)`,
+									}}
+									// TODO: Active state
+									// data-state={row.getIsSelected() && "selected"}
+								>
+									<TableCell>
+										<Checkbox
+											class="w-4"
+											// TODO:
+											// checked={row.getIsSelected()}
+											// onChange={(value) => row.toggleSelected(!!value)}
+											aria-label="Select row"
+										/>
+									</TableCell>
+
+									<For each={columns()}>
+										{([key, _]) => {
+											return (
+												<TableCell class="flex-1 overflow-hidden">
+													<Show when={entities[item.type].columns[key]}>
+														{(col) => col().render(item.data)}
+													</Show>
+												</TableCell>
+											);
+										}}
+									</For>
+								</TableRow>
+							);
+						}}
+					</For>
+				</TableBody>
+			</Table>
+		</>
 	);
 }

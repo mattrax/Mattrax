@@ -17,6 +17,7 @@
 		"@tanstack/solid-query": "^5.51.9",
 		"@tanstack/solid-query-devtools": "^5.51.9",
 		"@tanstack/solid-table": "^8.19.3",
+		"@tanstack/solid-virtual": "^3.8.3",
 		"clsx": "^2.1.1",
 		"idb": "^8.0.0",
 		"solid-js": "^1.8.18",

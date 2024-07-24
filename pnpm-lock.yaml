@@ -93,6 +93,9 @@ importers:
       '@tanstack/solid-table':
         specifier: ^8.19.3
         version: 8.19.3(solid-js@1.8.18)
+      '@tanstack/solid-virtual':
+        specifier: ^3.8.3
+        version: 3.8.3(solid-js@1.8.18)
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
