@@ -72,7 +72,7 @@ export default function Layout(props: ParentProps) {
 function Navbar() {
 	return (
 		<>
-			<div class="w-[100vw] relative flex flex-row items-center px-6 gap-2 h-16 shrink-0 border-b border-gray-200">
+			<div class="w-[100vw] relative flex flex-row items-center px-6 gap-2 h-16 shrink-0 border-b border-gray-200 z-10">
 				<a href="/overview" class="uppercase font-extrabold text-2xl">
 					MATTRAX CONFIGURE
 				</a>
@@ -129,7 +129,7 @@ function NavItems() {
 		<Tabs
 			as="nav"
 			value={location.pathname}
-			class="bg-white text-white sticky top-0 z-40 -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row"
+			class="bg-white text-white sticky top-0 z-40 -mt-2 overflow-x-auto scrollbar-none shrink-0 flex flex-row z-10"
 		>
 			<Tabs.List class="flex flex-row px-2 border-b border-gray-200 w-full">
 				<For each={items}>

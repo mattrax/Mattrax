@@ -81,6 +81,15 @@ importers:
       '@solid-primitives/event-listener':
         specifier: ^2.3.3
         version: 2.3.3(solid-js@1.8.18)
+      '@solid-primitives/memo':
+        specifier: ^1.3.9
+        version: 1.3.9(solid-js@1.8.18)
+      '@solid-primitives/resize-observer':
+        specifier: ^2.0.26
+        version: 2.0.26(solid-js@1.8.18)
+      '@solid-primitives/set':
+        specifier: ^0.4.11
+        version: 0.4.11(solid-js@1.8.18)
       '@solidjs/router':
         specifier: 0.13.3
         version: 0.13.3(patch_hash=zvbzyeqkevh5uh2poupaukupca)(solid-js@1.8.18)
@@ -4152,6 +4161,11 @@ packages:
 
   '@solid-primitives/scheduled@1.4.3':
     resolution: {integrity: sha512-HfWN5w7b7FEc6VPLBKnnE302h90jsLMuR28Fcf7neRGGf8jBj6wm6/UFQ00VlKexHFMR6KQ2u4VBh5a1ZcqM8g==}
+    peerDependencies:
+      solid-js: ^1.6.12
+
+  '@solid-primitives/set@0.4.11':
+    resolution: {integrity: sha512-DBA4KjOvqc8aer0EO14MkJM6pgs+WHujkfRVwwE31i7NVzpiqp3RY9it2dvmLthj4MHzvOBoeZosgN8Pm44GiA==}
     peerDependencies:
       solid-js: ^1.6.12
 
@@ -13141,6 +13155,11 @@ snapshots:
 
   '@solid-primitives/scheduled@1.4.3(solid-js@1.8.18)':
     dependencies:
+      solid-js: 1.8.18
+
+  '@solid-primitives/set@0.4.11(solid-js@1.8.18)':
+    dependencies:
+      '@solid-primitives/trigger': 1.0.11(solid-js@1.8.18)
       solid-js: 1.8.18
 
   '@solid-primitives/static-store@0.0.5(solid-js@1.8.18)':

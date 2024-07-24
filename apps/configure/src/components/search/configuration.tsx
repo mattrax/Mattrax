@@ -4,14 +4,19 @@ import { Badge } from "@mattrax/ui";
 import { db } from "~/lib/db";
 import { type Entity, defineEntity } from "./filters";
 
+const typeColumn = (type: string) =>
+	({
+		header: "Type",
+		// Badge width + padding
+		size: 66.82 + 2 * 16,
+		render: () => <Badge variant="secondary">{type.toUpperCase()}</Badge>,
+	}) as const;
+
 export const entities = {
 	users: defineEntity({
 		load: async () => await (await db).getAll("users"),
 		columns: {
-			type: {
-				header: "Type",
-				render: (_) => <Badge variant="secondary">USER</Badge>,
-			},
+			type: typeColumn("USER"),
 			name: {
 				header: "Name",
 				render: (user) => (
@@ -57,10 +62,7 @@ export const entities = {
 	devices: defineEntity({
 		load: async () => await (await db).getAll("devices"),
 		columns: {
-			type: {
-				header: "Type",
-				render: (_) => <Badge variant="secondary">DEVICE</Badge>,
-			},
+			type: typeColumn("DEVICE"),
 			name: {
 				header: "Name",
 				render: (device) => (
@@ -85,10 +87,7 @@ export const entities = {
 	groups: defineEntity({
 		load: async () => await (await db).getAll("groups"),
 		columns: {
-			type: {
-				header: "Type",
-				render: (_) => <Badge variant="secondary">GROUP</Badge>,
-			},
+			type: typeColumn("GROUP"),
 			name: {
 				header: "Name",
 				render: (group) => (
@@ -109,10 +108,7 @@ export const entities = {
 	policies: defineEntity({
 		load: async () => await (await db).getAll("policies"),
 		columns: {
-			type: {
-				header: "Type",
-				render: (_) => <Badge variant="secondary">POLICY</Badge>,
-			},
+			type: typeColumn("POLICY"),
 			name: {
 				header: "Name",
 				render: (policy) => (
@@ -133,10 +129,7 @@ export const entities = {
 	apps: defineEntity({
 		load: async () => await (await db).getAll("apps"),
 		columns: {
-			type: {
-				header: "Type",
-				render: (_) => <Badge variant="secondary">APP</Badge>,
-			},
+			type: typeColumn("APP"),
 			name: {
 				header: "Name",
 				render: (app) => (

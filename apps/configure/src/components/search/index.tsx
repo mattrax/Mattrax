@@ -1,4 +1,6 @@
+import { createEscapeKeyDown } from "@kobalte/core";
 import {
+	Button,
 	Checkbox,
 	Input,
 	Table,
@@ -8,10 +10,24 @@ import {
 	TableHeader,
 	TableRow,
 } from "@mattrax/ui";
+import { createEventListener } from "@solid-primitives/event-listener";
+import { makeResizeObserver } from "@solid-primitives/resize-observer";
+import { ReactiveSet } from "@solid-primitives/set";
 import { createAsync } from "@solidjs/router";
 import { createQuery } from "@tanstack/solid-query";
 import { createWindowVirtualizer } from "@tanstack/solid-virtual";
-import { For, Show, Suspense, createMemo, createSignal } from "solid-js";
+import {
+	For,
+	Show,
+	Suspense,
+	createEffect,
+	createMemo,
+	createSignal,
+	onMount,
+	startTransition,
+	untrack,
+} from "solid-js";
+import { createMutable, createStore, reconcile } from "solid-js/store";
 import { db } from "~/lib/db";
 import { FilterBar } from "./FilterBar";
 import { entities } from "./configuration";
@@ -232,7 +248,12 @@ function Content(props: ReturnType<typeof createSearchPageContext>) {
 	);
 }
 
+// TODO: Break out into `table.tsx`
 function TableContent(props: ReturnType<typeof createSearchPageContext>) {
+	const selected = new ReactiveSet<number>([]);
+	const toggleSelected = (index: number) =>
+		selected.has(index) ? selected.delete(index) : selected.add(index);
+
 	// TODO: Remove this
 	const hasAnyItemFilter = () =>
 		props.filters().some((f) => f.type === "enum" && f.target === "type");
@@ -258,7 +279,6 @@ function TableContent(props: ReturnType<typeof createSearchPageContext>) {
 			)
 		).flat();
 
-		console.log("RESULT2", result); // TODO
 		return result;
 	});
 
@@ -281,8 +301,8 @@ function TableContent(props: ReturnType<typeof createSearchPageContext>) {
 		get count() {
 			return orderedData()?.length ?? 0;
 		},
-		estimateSize: () => 52.5, // TODO
-		overscan: 5,
+		estimateSize: () => 52.5,
+		overscan: 30,
 	});
 
 	// TODO: Allow the user to enable/disable columns
@@ -299,55 +319,106 @@ function TableContent(props: ReturnType<typeof createSearchPageContext>) {
 			return Object.entries(info?.columns || {});
 		});
 
-		// Filter out duplicate columns by accessorKey
-		// TODO: Ensure this picks the first one (for the header title)
+		// Filter out duplicate columns by accessorKey (picking the first one for the `header`)
 		const filteredColumns = columns.filter(
 			(a, index) => index === columns.findIndex((b) => a[0] === b[0]),
 		);
-		// const filteredColumns = columns; // TODO
 
-		console.log("FILTERED COLS", filteredColumns); // TODO
 		return filteredColumns;
 	});
 
-	// TODO: Bring back `selectCheckboxColumn`
+	// Store the width of each column so the user can resize them
+	const columnWidths = createMutable<Record<string, number>>({});
+	const columnContentMaxWidths = createMutable<Record<string, number>>({});
+	createEffect(() => {
+		const c = columns();
+		if (!c) return;
+
+		for (const [key, info] of c) {
+			const expected = info.size === "auto" ? undefined : info.size;
+			// We untrack so when `columnsSizes` is updated, we don't re-run this effect as it would fix the size to the default.
+			// The effect only needs to run when the active columns change to ensure we have the default sizes set.
+			untrack(() => {
+				if (columnWidths[key] !== expected) columnWidths[key] = expected;
+			});
+		}
+	});
+
+	// As the virtualizer only accounts for the table body, we track the height w/ the header for the resize column bars.
+	const [tableHeight, setTableHeight] = createSignal<number>(0);
+	const { observe } = makeResizeObserver((event) => {
+		for (const entry of event) {
+			if (entry.target instanceof HTMLTableElement)
+				setTableHeight(entry.target.clientHeight);
+		}
+	});
 
 	return (
 		<>
 			{/* // TODO: Replace "items" with the valid entities that can be returned??? */}
 			<p class="text-sm py-2">Got {orderedData()?.length ?? 0} items</p>
-			<Table>
+			<Table ref={(table) => observe(table)}>
 				<TableHeader>
 					{/* // TODO: We need to handle grouped columns by having multiple `TableRows`'s (for columns on 1-1 relations Eg. user name on device owner) */}
-					<TableRow>
-						<TableHead class="w-1">
+					<TableRow class="flex">
+						<TableHead class="size-12 flex justify-center items-center">
 							<Checkbox
-								class="w-4"
-								// TODO:
-								// checked={table.getIsAllPageRowsSelected()}
-								// indeterminate={table.getIsSomePageRowsSelected()}
-								// onChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+								checked={selected.size === orderedData()?.length}
+								indeterminate={
+									selected.size > 0 && selected.size < orderedData().length
+								}
+								onChange={(value) =>
+									startTransition(() => {
+										value
+											? orderedData().forEach((_, i) => selected.add(i))
+											: selected.clear();
+									})
+								}
 								aria-label="Select all"
 							/>
 						</TableHead>
 
 						<For each={columns()}>
-							{([_, column]) => (
-								<TableHead
-								// style={{ width: `${header.getSize()}px` }}
-								// draggable // TODO: DND reordering
-								>
-									{column.header}
-								</TableHead>
-							)}
+							{([key, column]) => {
+								let ref!: HTMLTableCellElement;
+
+								return (
+									<TableHead
+										ref={ref}
+										class="relative flex justify-start items-center"
+										style={{
+											...(columnWidths[key]
+												? { width: `${columnWidths[key]}px` }
+												: { flex: "1" }),
+										}}
+										data-col-key={key}
+										// draggable
+									>
+										{column.header}
+
+										<ColumnResizeBar
+											tableHeight={tableHeight()}
+											setWidth={(delta) => {
+												// When `columnWidths[key]` is not set (Eg. for flex) we need to find out what is is within the DOM and set it.
+												if (!columnWidths[key])
+													columnWidths[key] = ref.clientWidth;
+												columnWidths[key] = columnWidths[key] + delta;
+											}}
+											onDblClick={() => {
+												if (columnContentMaxWidths[key] === undefined) return;
+												columnWidths[key] = columnContentMaxWidths[key];
+											}}
+										/>
+									</TableHead>
+								);
+							}}
 						</For>
 					</TableRow>
 				</TableHeader>
 				<TableBody
+					class="w-full relative"
 					style={{
 						height: `${virtualizer.getTotalSize()}px`,
-						width: "100%",
-						position: "relative",
 					}}
 				>
 					<For
@@ -367,36 +438,45 @@ function TableContent(props: ReturnType<typeof createSearchPageContext>) {
 
 							return (
 								<TableRow
-									// {...props.rowProps?.(row)}
-									class="flex"
+									class="absolute w-full top-0 left-0 flex"
 									style={{
-										// TODO: move to Tailwind
-										position: "absolute",
-										top: 0,
-										left: 0,
-										width: "100%",
 										height: `${virtualItem.size}px`,
 										transform: `translateY(${
 											virtualItem.start - virtualizer.options.scrollMargin
 										}px)`,
 									}}
-									// TODO: Active state
-									// data-state={row.getIsSelected() && "selected"}
+									data-state={selected.has(virtualItem.index) && "selected"}
 								>
-									<TableCell>
+									<TableCell class="size-12">
 										<Checkbox
-											class="w-4"
-											// TODO:
-											// checked={row.getIsSelected()}
-											// onChange={(value) => row.toggleSelected(!!value)}
+											checked={selected.has(virtualItem.index)}
+											onChange={() => toggleSelected(virtualItem.index)}
 											aria-label="Select row"
 										/>
 									</TableCell>
 
 									<For each={columns()}>
 										{([key, _]) => {
+											let ref!: HTMLTableCellElement;
+
+											onMount(() => {
+												if (
+													columnContentMaxWidths[key] === undefined ||
+													ref.scrollWidth > columnContentMaxWidths[key]
+												)
+													columnContentMaxWidths[key] = ref.scrollWidth;
+											});
+
 											return (
-												<TableCell class="flex-1 overflow-hidden">
+												<TableCell
+													ref={ref}
+													class="overflow-scroll"
+													style={{
+														...(columnWidths[key]
+															? { width: `${columnWidths[key]}px` }
+															: { flex: "1" }),
+													}}
+												>
 													<Show when={entities[item.type].columns[key]}>
 														{(col) => col().render(item.data)}
 													</Show>
@@ -410,6 +490,69 @@ function TableContent(props: ReturnType<typeof createSearchPageContext>) {
 					</For>
 				</TableBody>
 			</Table>
+
+			<Show when={selected.size > 0}>
+				{(_) => {
+					createEscapeKeyDown({
+						onEscapeKeyDown: () => selected.clear(),
+					});
+
+					return (
+						<div class="animate-in fade-in slide-in-from-bottom-2 zoom-in-[0.98] bottom-6 inset-x-0 fixed flex flex-row justify-center pointer-events-none">
+							<div class="p-2 rounded-lg bg-white border border-gray-100 text-sm flex flex-row items-stretch gap-2 pointer-events-auto shadow">
+								<div class="flex flex-row items-center gap-1.5 ml-2">
+									<span class="font-medium">{selected.size} Selected</span>
+									<Button
+										variant="ghost"
+										size="iconSmall"
+										onClick={() => selected.clear()}
+									>
+										<IconPhXBold class="w-4 h-4" />
+									</Button>
+								</div>
+								<div class="my-1 w-px bg-gray-300" />
+
+								{/* // TODO: Render actions */}
+							</div>
+						</div>
+					);
+				}}
+			</Show>
 		</>
+	);
+}
+
+function ColumnResizeBar(props: {
+	tableHeight: number;
+	setWidth: (delta: number) => void;
+	onDblClick?: () => void;
+}) {
+	let ref!: HTMLDivElement;
+	const [lastMousePosition, setLastMousePosition] = createSignal<number>();
+
+	createEventListener(document, "mouseup", () =>
+		setLastMousePosition(undefined),
+	);
+	createEventListener(document, "mousemove", (e) => {
+		const pos = lastMousePosition();
+		if (!pos) return;
+		const dx = e.clientX - pos;
+		setLastMousePosition(e.clientX);
+		props.setWidth(dx);
+	});
+
+	return (
+		<div
+			ref={ref}
+			class="z-20 absolute top-0 right-0 w-[5px] cursor-col-resize select-none hover:border-r-2 hover:border-blue-400"
+			classList={{
+				"border-r-2 border-blue-400": lastMousePosition() !== undefined,
+			}}
+			style={{
+				height: `${props.tableHeight}px`,
+			}}
+			onMouseDown={(e) => setLastMousePosition(e.clientX)}
+			onDblClick={props.onDblClick}
+		/>
 	);
 }

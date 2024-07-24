@@ -30,7 +30,11 @@ export type ColumnDefinitions<T> = Record<
 	// The render function will still be called on the specific entity to ensure links and the like remain correct.
 	string,
 	{
+		// The header to display above the column.
 		header: JSX.Element;
+		// The size of the column in `px`.
+		size?: "auto" | number;
+		// The content to render in the individual table cell.
 		render: (data: T) => JSX.Element;
 	}
 >;
