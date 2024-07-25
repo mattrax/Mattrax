@@ -2,13 +2,24 @@ import { createEscapeKeyDown } from "@kobalte/core";
 import {
 	Button,
 	Checkbox,
+	DropdownMenu,
+	DropdownMenuCheckboxItem,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
 	Input,
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
 	Table,
 	TableBody,
 	TableCell,
 	TableHead,
 	TableHeader,
 	TableRow,
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
 } from "@mattrax/ui";
 import { createEventListener } from "@solid-primitives/event-listener";
 import { makeResizeObserver } from "@solid-primitives/resize-observer";
@@ -27,11 +38,11 @@ import {
 	startTransition,
 	untrack,
 } from "solid-js";
-import { createMutable, createStore, reconcile } from "solid-js/store";
+import { createMutable } from "solid-js/store";
 import { db } from "~/lib/db";
 import { FilterBar } from "./FilterBar";
 import { entities } from "./configuration";
-import type { Filter } from "./filters";
+import type { ColumnDefinitions, Filter } from "./filters";
 
 export function createSearchPageContext(defaultFilters: Filter[] = []) {
 	// TODO: We should probs put some of this state into the URL???
@@ -207,19 +218,6 @@ function Content(props: ReturnType<typeof createSearchPageContext>) {
 		>
 			<TableContent {...props} />
 
-			{/* <FloatingSelectionBar table={table}>
-				{(rows) => (
-					<>
-						<Button
-									variant="destructive"
-									size="sm"
-									onClick={() => dialog.show(rows())}
-								>
-									Delete
-								</Button>
-					</>
-				)}
-			</FloatingSelectionBar> */}
 			{/* <BulkDeleteDialog
 				dialog={dialog}
 				title={({ count }) => <>Delete {pluralize("User", count())}</>}
@@ -254,9 +252,20 @@ function TableContent(props: ReturnType<typeof createSearchPageContext>) {
 	const toggleSelected = (index: number) =>
 		selected.has(index) ? selected.delete(index) : selected.add(index);
 
+	// TODO: If `data` changes automatically remove all items from `selected` that are no longer in the list
+
 	// TODO: Remove this
 	const hasAnyItemFilter = () =>
 		props.filters().some((f) => f.type === "enum" && f.target === "type");
+
+	const [ordering, setOrdering] = createSignal<"asc" | "desc">("asc");
+	const [orderedBy, setOrderedBy] = createSignal("name"); // TODO: Work out this default
+	const toggleOrdering = (key: string) => () => {
+		setOrdering(
+			orderedBy() !== key ? "asc" : (o) => (o === "asc" ? "desc" : "asc"),
+		);
+		setOrderedBy(key);
+	};
 
 	const rawData = createAsync(async () => {
 		const result = (
@@ -305,8 +314,28 @@ function TableContent(props: ReturnType<typeof createSearchPageContext>) {
 		overscan: 30,
 	});
 
-	// TODO: Allow the user to enable/disable columns
-	const columns = createMemo(() => {
+	// TODO: Deduplicate with `columns` implementation
+	const actions = createMemo(() => {
+		// Get all of the possible columns given the active filters
+		const actions = Object.entries(entities).flatMap(([key, info]) => {
+			const isThisItemActive = props
+				.filters()
+				.some(
+					(f) => f.type === "enum" && f.target === "type" && f.value === key,
+				);
+			if (hasAnyItemFilter() && !isThisItemActive) return [];
+			return Object.entries(info?.actions || {});
+		});
+
+		// Filter out duplicate columns by key (picking the first one for the `header`)
+		const filteredActions = actions.filter(
+			(a, index) => index === actions.findIndex((b) => a[0] === b[0]),
+		);
+
+		return filteredActions;
+	});
+
+	const defaultColumns = createMemo(() => {
 		// Get all of the possible columns given the active filters
 		const columns = Object.entries(entities).flatMap(([key, info]) => {
 			const isThisItemActive = props
@@ -315,17 +344,24 @@ function TableContent(props: ReturnType<typeof createSearchPageContext>) {
 					(f) => f.type === "enum" && f.target === "type" && f.value === key,
 				);
 			if (hasAnyItemFilter() && !isThisItemActive) return [];
-			// return info.columns();
 			return Object.entries(info?.columns || {});
 		});
 
-		// Filter out duplicate columns by accessorKey (picking the first one for the `header`)
+		// Filter out duplicate columns by key (picking the first one for the `header`)
 		const filteredColumns = columns.filter(
 			(a, index) => index === columns.findIndex((b) => a[0] === b[0]),
 		);
 
 		return filteredColumns;
 	});
+
+	// TODO: Allow the user to enable/disable columns
+	const [columns, setColumns] = createSignal(
+		[] as [string, ColumnDefinitions<any>][],
+	);
+
+	// TODO: When filters changes it will wreak havoc on the columns. We need to handle this better.
+	createEffect(() => setColumns(defaultColumns()));
 
 	// Store the width of each column so the user can resize them
 	const columnWidths = createMutable<Record<string, number>>({});
@@ -353,14 +389,77 @@ function TableContent(props: ReturnType<typeof createSearchPageContext>) {
 		}
 	});
 
+	let tableHeaderRowRef!: HTMLTableRowElement;
+
 	return (
 		<>
-			{/* // TODO: Replace "items" with the valid entities that can be returned??? */}
-			<p class="text-sm py-2">Got {orderedData()?.length ?? 0} items</p>
-			<Table ref={(table) => observe(table)}>
+			<div class="flex space-x-4">
+				{/* // TODO: Replace "items" with the valid entities that can be returned??? */}
+				<p class="text-sm py-2">Got {orderedData()?.length ?? 0} items</p>
+
+				<DropdownMenu>
+					<DropdownMenuTrigger class="select-none">Columns</DropdownMenuTrigger>
+					<DropdownMenuContent>
+						<For each={defaultColumns()}>
+							{([key, column]) => (
+								<DropdownMenuCheckboxItem
+									checked={columns().some(([k]) => k === key)}
+									onChange={(checked) => {
+										if (checked) {
+											setColumns((columns) => [...columns, [key, column]]);
+										} else {
+											setColumns((columns) =>
+												columns.filter(([k]) => k !== key),
+											);
+										}
+									}}
+								>
+									{column.header}
+								</DropdownMenuCheckboxItem>
+							)}
+						</For>
+					</DropdownMenuContent>
+				</DropdownMenu>
+
+				<Popover>
+					<PopoverTrigger>Display</PopoverTrigger>
+					<PopoverContent>Place content for the popover here.</PopoverContent>
+				</Popover>
+			</div>
+
+			<Table
+				ref={(table) => observe(table)}
+				// TODO: `onDrag` instead of `onDragEnd`???
+				onDragEnd={(e) => {
+					let moveAfter: string | null;
+					for (const child of tableHeaderRowRef.children) {
+						const colKey = child.getAttribute("data-col-key");
+						const endPosition = child.getBoundingClientRect().left;
+
+						if (e.clientX > endPosition) {
+							moveAfter = colKey;
+						}
+					}
+
+					console.log("MOVE AFTER", moveAfter);
+
+					setColumns((columns) => {
+						const newColumns = [...columns];
+						const [draggedColumn] = newColumns.splice(
+							newColumns.findIndex(([key]) => key === e.data),
+							1,
+						);
+						const insertIndex = newColumns.findIndex(
+							([key]) => key === moveAfter,
+						);
+						newColumns.splice(insertIndex, 0, draggedColumn);
+						return newColumns;
+					});
+				}}
+			>
 				<TableHeader>
 					{/* // TODO: We need to handle grouped columns by having multiple `TableRows`'s (for columns on 1-1 relations Eg. user name on device owner) */}
-					<TableRow class="flex">
+					<TableRow class="flex" ref={tableHeaderRowRef}>
 						<TableHead class="size-12 flex justify-center items-center">
 							<Checkbox
 								checked={selected.size === orderedData()?.length}
@@ -382,19 +481,58 @@ function TableContent(props: ReturnType<typeof createSearchPageContext>) {
 							{([key, column]) => {
 								let ref!: HTMLTableCellElement;
 
+								const [isDragging, setIsDragging] = createSignal(false);
+								createEventListener(ref, "mouseup", () => setIsDragging(false));
+
 								return (
 									<TableHead
 										ref={ref}
 										class="relative flex justify-start items-center"
+										classList={{ "opacity-25 bg-red-500": isDragging() }}
 										style={{
 											...(columnWidths[key]
 												? { width: `${columnWidths[key]}px` }
 												: { flex: "1" }),
 										}}
+										draggable={isDragging()}
+										// TODO: Keep or not
 										data-col-key={key}
-										// draggable
 									>
 										{column.header}
+
+										<div class="flex-1" />
+
+										<Tooltip>
+											<TooltipTrigger
+												as="div"
+												class="select-none"
+												onClick={toggleOrdering(key)}
+												onKeyPress={toggleOrdering(key)}
+											>
+												<Show
+													when={orderedBy() === key}
+													fallback={
+														<IconCarbonCaretSort class="ml-2 h-4 w-4" />
+													}
+												>
+													<Show
+														when={ordering() === "asc"}
+														fallback={
+															<IconCarbonCaretSortDown class="ml-2 h-4 w-4" />
+														}
+													>
+														<IconCarbonCaretSortUp class="ml-2 h-4 w-4" />
+													</Show>
+												</Show>
+											</TooltipTrigger>
+											<TooltipContent>Ordering</TooltipContent>
+										</Tooltip>
+
+										{/* // TODO: Tooltip */}
+										<IconPhDotsSixVerticalLight
+											class="ml-2 h-4 w-4 cursor-grab"
+											onMouseDown={() => setIsDragging(true)}
+										/>
 
 										<ColumnResizeBar
 											tableHeight={tableHeight()}
@@ -512,7 +650,22 @@ function TableContent(props: ReturnType<typeof createSearchPageContext>) {
 								</div>
 								<div class="my-1 w-px bg-gray-300" />
 
-								{/* // TODO: Render actions */}
+								<For each={actions()}>
+									{([key, action]) => (
+										<Button
+											variant={action.variant || "ghost"}
+											onClick={() =>
+												action.apply(
+													[...selected].map((i) => orderedData()[i]!.data),
+												)
+											}
+										>
+											{action.title}
+										</Button>
+									)}
+								</For>
+
+								<BulkExportButton data={orderedData()} columns={columns()} />
 							</div>
 						</div>
 					);
@@ -554,5 +707,66 @@ function ColumnResizeBar(props: {
 			onMouseDown={(e) => setLastMousePosition(e.clientX)}
 			onDblClick={props.onDblClick}
 		/>
+	);
+}
+
+function BulkExportButton(props: {
+	data: any[];
+	columns: [string, ColumnDefinitions<any>][];
+}) {
+	const download = (name: string, contentType: string, data: string) => {
+		const link = document.createElement("a");
+		link.setAttribute(
+			"href",
+			encodeURI(`data:${contentType};charset=utf-8,${data}`),
+		);
+		link.setAttribute("download", name);
+		document.body.appendChild(link); // Required for FF
+		link.click();
+	};
+
+	const exportCsv = () => {
+		let result = `${props.columns.map(([_, column]) => column.header).join(",")}\n`; // TODO: Might be JSX which will break this
+
+		for (const row of props.data) {
+			for (const [key, _] of props.columns) {
+				let cell = entities[row.type].columns[key]?.raw(row.data);
+				if (cell === undefined) cell = "";
+
+				result = `${result}${cell},`;
+			}
+			result = `${result}\n`;
+		}
+
+		download("export.csv", "text/csv", result);
+	};
+
+	const exportJson = () => {
+		const result = [];
+		for (const row of props.data) {
+			result.push(
+				props.columns.map(([key, _]) =>
+					entities[row.type].columns[key]?.raw(row.data),
+				),
+			);
+		}
+
+		download(
+			"export.json",
+			"application/json",
+			JSON.stringify(result, null, 2),
+		);
+	};
+
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger as={Button} variant="ghost">
+				Export
+			</DropdownMenuTrigger>
+			<DropdownMenuContent>
+				<DropdownMenuItem onClick={exportCsv}>CSV</DropdownMenuItem>
+				<DropdownMenuItem onClick={exportJson}>JSON</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 }

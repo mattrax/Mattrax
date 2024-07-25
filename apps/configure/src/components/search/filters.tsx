@@ -1,3 +1,4 @@
+import type { ButtonProps } from "@mattrax/ui";
 import type { JSX } from "solid-js";
 
 // TODO: Rest of the possibilities + clean this up
@@ -22,6 +23,8 @@ export function defineEntity<T>(entity: Entity<T>) {
 export type Entity<T> = {
 	load: () => Promise<T[]>;
 	columns: ColumnDefinitions<T>;
+	filters?: never[];
+	actions: ActionDefinitions<T>;
 };
 
 export type ColumnDefinitions<T> = Record<
@@ -36,5 +39,22 @@ export type ColumnDefinitions<T> = Record<
 		size?: "auto" | number;
 		// The content to render in the individual table cell.
 		render: (data: T) => JSX.Element;
+		// Render to raw data. Used for csv and json exporting.
+		raw: (data: T) => string;
+	}
+>;
+
+export type ActionDefinitions<T> = Record<
+	// Used to uniquely identify the semantic meaning of the column.
+	// These will be merged across entities using the first `title` that is discovered.
+	// The apply function will still be called on the specific entity to ensure links and the like remain correct.
+	string,
+	{
+		// The title of the action.
+		title: string;
+		// Button variant
+		variant?: ButtonProps["variant"];
+		// The function to run when the action is applied.
+		apply: (data: T[]) => Promise<void>;
 	}
 >;

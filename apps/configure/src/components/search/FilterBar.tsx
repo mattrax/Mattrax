@@ -2,6 +2,7 @@ import {
 	DropdownMenu,
 	DropdownMenuCheckboxItem,
 	DropdownMenuContent,
+	DropdownMenuItem,
 	DropdownMenuPortal,
 	DropdownMenuSub,
 	DropdownMenuSubContent,
@@ -13,7 +14,7 @@ import {
 	TooltipTrigger,
 } from "@mattrax/ui";
 import { useNavigate } from "@solidjs/router";
-import { createMutation, createQuery } from "@tanstack/solid-query";
+import { createMutation } from "@tanstack/solid-query";
 import clsx from "clsx";
 import {
 	type Accessor,
@@ -127,13 +128,33 @@ function AppliedFilters(props: {
 									<FilterText>Type</FilterText>
 								</StaticSection>
 
-								<InteractiveSection class="border-l px-2">
-									is
-								</InteractiveSection>
+								<DropdownMenu>
+									<DropdownMenuTrigger
+										as={InteractiveSection}
+										class="border-l px-2 hover:bg-gray-200"
+									>
+										is
+									</DropdownMenuTrigger>
+									<DropdownMenuContent>
+										<DropdownMenuItem>is</DropdownMenuItem>
+										<DropdownMenuItem>is not</DropdownMenuItem>
+									</DropdownMenuContent>
+								</DropdownMenu>
 
-								<InteractiveSection class="gap-1 border-l border-app-darkerBox/70 py-0.5 pl-1.5 pr-2 text-sm">
-									{filter.value}
-								</InteractiveSection>
+								<DropdownMenu>
+									<DropdownMenuTrigger
+										as={InteractiveSection}
+										class="gap-1 border-l border-gray-800/70 py-0.5 pl-1.5 pr-2 text-sm hover:bg-gray-200"
+									>
+										{filter.value}
+									</DropdownMenuTrigger>
+									<DropdownMenuContent>
+										<DropdownMenuCheckboxItem>
+											{filter.value}
+										</DropdownMenuCheckboxItem>
+										<DropdownMenuCheckboxItem>b</DropdownMenuCheckboxItem>
+									</DropdownMenuContent>
+								</DropdownMenu>
 
 								<RemoveFilter
 									onClick={() =>

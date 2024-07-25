@@ -10,6 +10,7 @@ const typeColumn = (type: string) =>
 		// Badge width + padding
 		size: 66.82 + 2 * 16,
 		render: () => <Badge variant="secondary">{type.toUpperCase()}</Badge>,
+		raw: () => type.toUpperCase(),
 	}) as const;
 
 export const entities = {
@@ -27,10 +28,12 @@ export const entities = {
 						{user.name}
 					</a>
 				),
+				raw: (user) => user.name,
 			},
 			email: {
 				header: "Email",
 				render: (user) => <p>{user.upn}</p>,
+				raw: (user) => user.upn,
 			},
 			// column.accessor("provider.variant", {
 			// 	header: "Provider",
@@ -56,8 +59,22 @@ export const entities = {
 			// TODO: Link to OAuth provider
 			// TODO: Actions
 		},
-		// TODO: Define filters
-		// TODO: Define bulk actions like delete
+		actions: {
+			delete: {
+				title: "Delete",
+				variant: "destructive",
+				apply: async (data) => alert("TODO: Bulk delete"),
+			},
+			// TODO: Assign to group
+		},
+		// filters: {
+		// 	device: {
+		// 		type: "enum",
+		// 		target: "device",
+		// 		value: "Device",
+		// 	},
+		// 	}
+		// },
 	}),
 	devices: defineEntity({
 		load: async () => await (await db).getAll("devices"),
@@ -73,15 +90,59 @@ export const entities = {
 						{device.name}
 					</a>
 				),
+				raw: (device) => device.name,
 			},
 			model: {
 				header: "Model",
 				render: (device) => <p>{device.model}</p>,
+				raw: (device) => device.model,
 			},
 			manufacturer: {
 				header: "Manufacturer",
 				render: (device) => <p>{device.manufacturer}</p>,
+				raw: (device) => device.manufacturer,
 			},
+		},
+		actions: {
+			sync: {
+				title: "Sync",
+				apply: async (data) => alert("TODO: Sync"),
+			},
+			// TODO: Make these devices actions only available on supported OS's
+			diagnostics: {
+				title: "Collect diagnostics",
+				apply: async (data) => alert("TODO: Collect diagnostics"),
+			},
+			rename: {
+				title: "Rename",
+				apply: async (data) => alert("TODO: Rename"),
+			},
+			delete: {
+				title: "Delete",
+				variant: "destructive",
+				apply: async (data) => alert("TODO: Bulk delete"),
+			},
+			retire: {
+				title: "Retire",
+				variant: "destructive",
+				apply: async (data) => alert("TODO: Retire device"),
+			},
+			wipe: {
+				title: "Wipe",
+				variant: "destructive",
+				apply: async (data) => alert("TODO: Wipe"),
+			},
+			reset: {
+				title: "Autopilot reset",
+				variant: "destructive",
+				apply: async (data) => alert("TODO: Autopilot reset"),
+			},
+			restart: {
+				title: "Restart",
+				variant: "destructive",
+				apply: async (data) => alert("TODO: Restart"),
+			},
+			// TODO: Maybe "Send notification"???
 		},
 	}),
 	groups: defineEntity({
@@ -98,10 +159,19 @@ export const entities = {
 						{group.name}
 					</a>
 				),
+				raw: (group) => group.name,
 			},
 			description: {
 				header: "Description",
 				render: (group) => <p>{group.description}</p>,
+				raw: (group) => group.description,
+			},
+		},
+		actions: {
+			delete: {
+				title: "Delete",
+				variant: "destructive",
+				apply: async (data) => alert("TODO: Bulk delete"),
 			},
 		},
 	}),
@@ -119,10 +189,19 @@ export const entities = {
 						{policy.name}
 					</a>
 				),
+				raw: (policy) => policy.name,
 			},
 			description: {
 				header: "Description",
 				render: (group) => <p>{group.description}</p>,
+				raw: (group) => group.description,
+			},
+		},
+		actions: {
+			delete: {
+				title: "Delete",
+				variant: "destructive",
+				apply: async (data) => alert("TODO: Bulk delete"),
 			},
 		},
 	}),
@@ -140,10 +219,19 @@ export const entities = {
 						{app.name}
 					</a>
 				),
+				raw: (app) => app.name,
 			},
 			description: {
 				header: "Description",
 				render: (group) => <p>{group.description}</p>,
+				raw: (group) => group.description,
+			},
+		},
+		actions: {
+			delete: {
+				title: "Delete",
+				variant: "destructive",
+				apply: async (data) => alert("TODO: Bulk delete"),
 			},
 		},
 	}),
