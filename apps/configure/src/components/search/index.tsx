@@ -1,21 +1,32 @@
 import { Input, LineChart } from "@mattrax/ui";
 import { useSearchParams } from "@solidjs/router";
-import { createQuery } from "@tanstack/solid-query";
-import { Show, Suspense, createSignal } from "solid-js";
-import { db } from "~/lib/db";
+import { Match, Show, Suspense, Switch, createSignal } from "solid-js";
 import { FilterBar } from "./FilterBar";
 import { TableContent } from "./TableContent";
-import type { ColumnDefinitions, Filter } from "./filters";
+import type { Filter } from "./filters";
+
+type Format = "table" | "chart";
 
 export function createSearchPageContext(defaultFilters: Filter[] = []) {
-	const [searchParams] = useSearchParams();
+	const [searchParams, setSearchParams] = useSearchParams<{
+		filters?: string; // TODO
+		offset?: string; // TODO
+		format?: Format;
+	}>();
+
+	// TODO: Autoscroll to this on load (only valid for table)
+	// const offset = setSearchParams
+
+	const [format, setFormat] = createSignal<Format>(
+		searchParams.format ?? "table",
+	);
 
 	// TODO: We should probs put some of this state into the URL???
 	const [filters, setFilters] = createSignal<Filter[]>(defaultFilters);
 
 	// TODO: ordering
 
-	return { filters, setFilters, defaultFilters };
+	return { filters, setFilters, format, setFormat, defaultFilters };
 }
 
 export function SearchPage(
@@ -25,67 +36,6 @@ export function SearchPage(
 ) {
 	// TODO: Ordering
 	// TODO: Result format (table or chart)
-
-	// TODO: Make this reactive to DB changes!!!
-	const query = createQuery(() => ({
-		queryKey: ["search", props.filters()],
-		// TODO: Filtering inside or outside Tanstack Query??? I can see merits both ways
-		queryFn: async (ctx) => {
-			let result: any[] = [];
-
-			const d = await db;
-			const activeFilters = ctx.queryKey[1] as Filter[];
-
-			if (activeFilters.some((f) => f.type === "enum" && f.target === "type")) {
-				for (const filter of activeFilters) {
-					if (filter.type === "enum" && filter.target === "type") {
-						switch (filter.value) {
-							case "users":
-								result = result.concat(await d.getAll("users"));
-								break;
-							case "devices":
-								result = result.concat(await d.getAll("devices"));
-								break;
-							case "groups":
-								result = result.concat(await d.getAll("groups"));
-								break;
-							case "policies":
-								result = result.concat(await d.getAll("policies"));
-								break;
-							case "apps":
-								result = result.concat(await d.getAll("apps"));
-								break;
-						}
-					}
-				}
-			} else {
-				result = result.concat(await d.getAll("users"));
-				result = result.concat(await d.getAll("devices"));
-				result = result.concat(await d.getAll("groups"));
-				result = result.concat(await d.getAll("policies"));
-				result = result.concat(await d.getAll("apps"));
-			}
-
-			const searchQuery = activeFilters.find(
-				(f) => f.type === "string" && f.op === "eq",
-			);
-			if (searchQuery) {
-				result = result.filter((r) => {
-					for (const [key, value] of Object.entries(r)) {
-						if (
-							typeof value === "string" &&
-							value.toLowerCase().includes(searchQuery.value.toLowerCase())
-						) {
-							return true;
-						}
-					}
-					return false;
-				});
-			}
-
-			return result;
-		},
-	}));
 
 	return (
 		<div class="p-4">
@@ -177,14 +127,18 @@ function Content(props: ReturnType<typeof createSearchPageContext>) {
 				</Show>
 			}
 		>
-			<TableContent {...props} />
-
-			{/* // TODO: Area chart, Pie chart, Bar chart */}
-			{/* <div class="h-96">
-				<LineChart data={chartData} />
-			</div> */}
-
-			{/* // TODO: StatItem */}
+			<Switch>
+				<Match when={props.format() === "table"}>
+					<TableContent {...props} />
+				</Match>
+				<Match when={props.format() === "chart"}>
+					{/* // TODO: Area chart, Pie chart, Bar chart */}
+					<div class="h-96">
+						<LineChart data={chartData} />
+					</div>
+				</Match>
+				{/* // TODO: StatItem */}
+			</Switch>
 		</Suspense>
 	);
 }

@@ -62,6 +62,7 @@ export function TableContent(
 		setOrderedBy(key);
 	};
 
+	// TODO: Make this reactive to DB changes!!!
 	const rawData = createAsync(async () => {
 		const result = (
 			await Promise.all(
@@ -186,6 +187,8 @@ export function TableContent(
 
 	let tableHeaderRowRef!: HTMLTableRowElement;
 
+	const [dragging, setDragging] = createSignal();
+
 	return (
 		<>
 			<div class="flex space-x-4">
@@ -222,36 +225,7 @@ export function TableContent(
 				</Popover>
 			</div>
 
-			<Table
-				ref={(table) => observe(table)}
-				// TODO: `onDrag` instead of `onDragEnd`???
-				onDragEnd={(e) => {
-					let moveAfter: string | null;
-					for (const child of tableHeaderRowRef.children) {
-						const colKey = child.getAttribute("data-col-key");
-						const endPosition = child.getBoundingClientRect().left;
-
-						if (e.clientX > endPosition) {
-							moveAfter = colKey;
-						}
-					}
-
-					console.log("MOVE AFTER", moveAfter);
-
-					setColumns((columns) => {
-						const newColumns = [...columns];
-						const [draggedColumn] = newColumns.splice(
-							newColumns.findIndex(([key]) => key === e.data),
-							1,
-						);
-						const insertIndex = newColumns.findIndex(
-							([key]) => key === moveAfter,
-						);
-						newColumns.splice(insertIndex, 0, draggedColumn);
-						return newColumns;
-					});
-				}}
-			>
+			<Table ref={(table) => observe(table)}>
 				<TableHeader>
 					{/* // TODO: We need to handle grouped columns by having multiple `TableRows`'s (for columns on 1-1 relations Eg. user name on device owner) */}
 					<TableRow class="flex" ref={tableHeaderRowRef}>
@@ -276,6 +250,7 @@ export function TableContent(
 							{([key, column]) => {
 								let ref!: HTMLTableCellElement;
 
+								// TODO: Move up and use other signal????
 								const [isDragging, setIsDragging] = createSignal(false);
 								createEventListener(ref, "mouseup", () => setIsDragging(false));
 
@@ -289,9 +264,51 @@ export function TableContent(
 												? { width: `${columnWidths[key]}px` }
 												: { flex: "1" }),
 										}}
-										draggable={isDragging()}
+										draggable={dragging() !== undefined}
 										// TODO: Keep or not
 										data-col-key={key}
+										onDragEnter={(e) => {
+											const draggingOverKey =
+												e.currentTarget.getAttribute("data-col-key");
+
+											console.log(draggingOverKey, dragging());
+
+											setColumns((columns) => {
+												const newColumns = [...columns];
+												const [draggedColumn] = newColumns.splice(
+													newColumns.findIndex(([key]) => key === dragging()),
+													1,
+												);
+												const insertIndex = newColumns.findIndex(
+													([key]) => key === draggingOverKey,
+												);
+												newColumns.splice(insertIndex, 0, draggedColumn);
+												return newColumns;
+											});
+										}}
+										onDragExit={(e) => {
+											const draggingOverKey =
+												e.currentTarget.getAttribute("data-col-key");
+
+											console.log(draggingOverKey, dragging());
+
+											setColumns((columns) => {
+												const newColumns = [...columns];
+												const [draggedColumn] = newColumns.splice(
+													newColumns.findIndex(([key]) => key === dragging()),
+													1,
+												);
+												const insertIndex = newColumns.findIndex(
+													([key]) => key === draggingOverKey,
+												);
+												newColumns.splice(insertIndex, 0, draggedColumn);
+												return newColumns;
+											});
+										}}
+										onDragEnd={() => {
+											setIsDragging(false);
+											setDragging(undefined);
+										}}
 									>
 										{column.header}
 
@@ -326,7 +343,10 @@ export function TableContent(
 										{/* // TODO: Tooltip */}
 										<IconPhDotsSixVerticalLight
 											class="ml-2 h-4 w-4 cursor-grab"
-											onMouseDown={() => setIsDragging(true)}
+											onMouseDown={() => {
+												setDragging(key);
+												setIsDragging(true);
+											}}
 										/>
 
 										<ColumnResizeBar

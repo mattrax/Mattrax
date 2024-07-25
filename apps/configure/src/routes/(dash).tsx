@@ -23,13 +23,17 @@ import {
 	type ParentProps,
 	Show,
 	Suspense,
-	createEffect,
 	createSignal,
 	onMount,
 } from "solid-js";
-import { AccessTokenProvider, logout } from "~/lib/auth";
+import { logout } from "~/lib/auth";
 import { db, subscribeToInvalidations } from "~/lib/db";
-import { syncAll, useUser } from "~/lib/sync";
+import {
+	SyncEngineProvider,
+	initSyncEngine,
+	useSyncEngine,
+	useUser,
+} from "~/lib/sync";
 
 export function useAccessTokenRaw() {
 	const [accessToken, setAccessToken] = createSignal<string | null | undefined>(
@@ -48,24 +52,24 @@ export function useAccessTokenRaw() {
 }
 
 export default function Layout(props: ParentProps) {
-	const accessToken = useAccessTokenRaw();
+	const accessToken = useAccessTokenRaw(); // TODO: Move into sync engine
+	const syncEngine = initSyncEngine();
+
+	onMount(() => syncEngine.syncAll());
 
 	return (
-		<>
+		<SyncEngineProvider engine={syncEngine}>
 			<Navbar />
+
+			{/* // TODO: This could be done better */}
 			<Suspense>
 				<Show when={accessToken() === null}>
 					<Navigate href="/" />
 				</Show>
-				<Show when={accessToken()}>
-					{(accessToken) => (
-						<AccessTokenProvider accessToken={accessToken}>
-							{props.children}
-						</AccessTokenProvider>
-					)}
-				</Show>
 			</Suspense>
-		</>
+
+			{props.children}
+		</SyncEngineProvider>
 	);
 }
 
@@ -225,24 +229,7 @@ function ProfileDropdown() {
 }
 
 function SyncPanel() {
-	const accessToken = useAccessTokenRaw();
-	const [syncing, setSyncing] = createSignal(false);
-	const [triggerSync, setTriggerSync] = createSignal(0);
-
-	/// TODO: Cross-tab sync the status
-	createEffect(() => {
-		const token = accessToken();
-		triggerSync();
-		if (token) {
-			setSyncing(true);
-			syncAll(
-				token,
-				// If not first-sync this was initiated by the user so show toasts.
-				triggerSync() !== 0,
-			).then(() => setSyncing(false));
-		}
-		// TODO: Catch errors and `setSyncing(false)`
-	});
+	const sync = useSyncEngine();
 
 	return (
 		<div class="flex">
@@ -251,9 +238,12 @@ function SyncPanel() {
 					as="div"
 					class={clsx(
 						"flex justify-center items-center w-10",
-						syncing() ? "" : "hidden",
+						sync.isSyncing() ? "" : "hidden",
 					)}
 				>
+					{/* // TODO: Progress bar */}
+					<p>{sync.progress()}</p>
+
 					<div class="relative inline-flex">
 						<div class="w-5 h-5 bg-black rounded-full" />
 						<div class="w-5 h-5 bg-black rounded-full absolute top-0 left-0 animate-ping" />
@@ -266,8 +256,8 @@ function SyncPanel() {
 				<TooltipTrigger
 					as={Button}
 					variant="ghost"
-					onClick={() => setTriggerSync((v) => v + 1)}
-					disabled={syncing()}
+					onClick={() => sync.syncAll()}
+					disabled={sync.isSyncing()}
 				>
 					Sync
 				</TooltipTrigger>

@@ -67,14 +67,31 @@ export const entities = {
 			},
 			// TODO: Assign to group
 		},
-		// filters: {
-		// 	device: {
-		// 		type: "enum",
-		// 		target: "device",
-		// 		value: "Device",
-		// 	},
-		// 	}
-		// },
+		// TODO: Should filters be a global thing or scoped to the entity???
+		filters: {
+			email: {
+				title: "Email",
+				icon: IconPhEnvelope,
+				operations: [
+					// TODO: Allow the user to define `string[]` for it
+					{
+						title: "in",
+						apply: (data) => {},
+					},
+					{
+						title: "not in",
+						apply: (data) => {},
+					},
+					// TODO: Allow the user to define `string` using Combobox (with values from DB)
+					{
+						title: "equals",
+						apply: (data) => {},
+					},
+				],
+				// render: (data) => data.email,
+			},
+		},
+		// TODO: Relations
 	}),
 	devices: defineEntity({
 		load: async () => await (await db).getAll("devices"),
@@ -144,6 +161,7 @@ export const entities = {
 			},
 			// TODO: Maybe "Send notification"???
 		},
+		filters: {},
 	}),
 	groups: defineEntity({
 		load: async () => await (await db).getAll("groups"),
@@ -174,6 +192,7 @@ export const entities = {
 				apply: async (data) => alert("TODO: Bulk delete"),
 			},
 		},
+		filters: {},
 	}),
 	policies: defineEntity({
 		load: async () => await (await db).getAll("policies"),
@@ -204,6 +223,7 @@ export const entities = {
 				apply: async (data) => alert("TODO: Bulk delete"),
 			},
 		},
+		filters: {},
 	}),
 	apps: defineEntity({
 		load: async () => await (await db).getAll("apps"),
@@ -234,5 +254,6 @@ export const entities = {
 				apply: async (data) => alert("TODO: Bulk delete"),
 			},
 		},
+		filters: {},
 	}),
 } satisfies Record<string, Entity<any>>;

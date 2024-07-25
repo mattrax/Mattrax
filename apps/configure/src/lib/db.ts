@@ -182,7 +182,17 @@ export interface Database extends DBSchema {
 			  }
 		);
 	};
-	// TODO: Policy to device/user/group assignments
+	policiesAssignments: {
+		key: string;
+		value: {
+			policyId: string;
+			type:
+				| "#microsoft.graph.user"
+				| "#microsoft.graph.group"
+				| "#microsoft.graph.device";
+			id: string;
+		};
+	};
 	scripts: {
 		key: string;
 		value: {
@@ -208,7 +218,17 @@ export interface Database extends DBSchema {
 			  }
 		);
 	};
-	// TODO: Script to device/user/group assignments
+	scriptAssignments: {
+		key: string;
+		value: {
+			policyId: string;
+			type:
+				| "#microsoft.graph.user"
+				| "#microsoft.graph.group"
+				| "#microsoft.graph.device";
+			id: string;
+		};
+	};
 	apps: {
 		key: string;
 		value: {
@@ -233,7 +253,17 @@ export interface Database extends DBSchema {
 			notes?: string;
 		};
 	};
-	// TODO: App to device/user/group assignments
+	appAssignments: {
+		key: string;
+		value: {
+			policyId: string;
+			type:
+				| "#microsoft.graph.user"
+				| "#microsoft.graph.group"
+				| "#microsoft.graph.device";
+			id: string;
+		};
+	};
 }
 
 export const db = openDB<Database>("data", 1, {
@@ -257,11 +287,20 @@ export const db = openDB<Database>("data", 1, {
 		db.createObjectStore("policies", {
 			keyPath: "id",
 		});
+		db.createObjectStore("policiesAssignments", {
+			keyPath: ["groupId", "type", "id"],
+		});
 		db.createObjectStore("scripts", {
 			keyPath: "id",
 		});
+		db.createObjectStore("scriptAssignments", {
+			keyPath: ["groupId", "type", "id"],
+		});
 		db.createObjectStore("apps", {
 			keyPath: "id",
+		});
+		db.createObjectStore("appAssignments", {
+			keyPath: ["groupId", "type", "id"],
 		});
 	},
 	terminated() {

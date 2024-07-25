@@ -23,7 +23,7 @@ export function defineEntity<T>(entity: Entity<T>) {
 export type Entity<T> = {
 	load: () => Promise<T[]>;
 	columns: ColumnDefinitions<T>;
-	filters?: never[];
+	filters: FilterDefinitions<T>;
 	actions: ActionDefinitions<T>;
 };
 
@@ -56,5 +56,17 @@ export type ActionDefinitions<T> = Record<
 		variant?: ButtonProps["variant"];
 		// The function to run when the action is applied.
 		apply: (data: T[]) => Promise<void>;
+	}
+>;
+
+export type FilterDefinitions<T> = Record<
+	// Used to uniquely identify the semantic meaning of the column.
+	// These will be merged across entities using the first `title`/`icon` that is discovered.
+	string,
+	{
+		title: string;
+		icon?: JSX.Element;
+
+		// TODO: Define filters apply filters
 	}
 >;

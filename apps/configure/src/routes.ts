@@ -42,7 +42,7 @@ export const routes = [
 				component: lazy(() => import("./routes/(dash)/policies/(policies)")),
 			},
 			{
-				path: "/policies/:groupId",
+				path: "/policies/:policyId",
 				component: lazy(() => import("./routes/(dash)/policies/[policyId]")),
 			},
 			{

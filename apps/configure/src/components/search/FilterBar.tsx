@@ -8,7 +8,11 @@ import {
 	DropdownMenuSubContent,
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
+	Input,
 	Kbd,
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
@@ -27,6 +31,7 @@ import {
 } from "solid-js";
 import { db } from "~/lib/db";
 import type { createSearchPageContext } from ".";
+import { entities } from "./configuration";
 import type { Filter } from "./filters";
 
 export function FilterBar(props: ReturnType<typeof createSearchPageContext>) {
@@ -168,7 +173,52 @@ function AppliedFilters(props: {
 					</Switch>
 				)}
 			</For>
+
+			{/* <DemoFilters /> */}
 		</div>
+	);
+}
+
+// TODO: Remove this
+function DemoFilters() {
+	return (
+		<FilterContainer>
+			{/* // TODO: Dropdown and allow selecting multiple columns. Eg. search for X in name or description only */}
+			<StaticSection>
+				<IconPhEnvelope />
+				<FilterText>Email</FilterText>
+			</StaticSection>
+
+			<DropdownMenu>
+				<DropdownMenuTrigger
+					as={InteractiveSection}
+					class="border-l px-2 hover:bg-gray-200"
+				>
+					equals
+				</DropdownMenuTrigger>
+				<DropdownMenuContent>
+					<DropdownMenuItem>equals</DropdownMenuItem>
+					<DropdownMenuItem>not equals</DropdownMenuItem>
+					<DropdownMenuItem>contains</DropdownMenuItem>
+					<DropdownMenuItem>starts with</DropdownMenuItem>
+					<DropdownMenuItem>ends with</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
+
+			<Popover>
+				<PopoverTrigger
+					as={InteractiveSection}
+					class="gap-1 border-l border-gray-800/70 py-0.5 pl-1.5 pr-2 text-sm hover:bg-gray-200"
+				>
+					Testing
+				</PopoverTrigger>
+				<PopoverContent>
+					<Input value="Testing" />
+				</PopoverContent>
+			</Popover>
+
+			<RemoveFilter />
+		</FilterContainer>
 	);
 }
 
@@ -346,6 +396,28 @@ function AddFilterButton(props: {
 						</DropdownMenuSubContent>
 					</DropdownMenuPortal>
 				</DropdownMenuSub>
+
+				<For
+					each={Object.entries(entities).flatMap(([k, e]) =>
+						Object.entries(e.filters || {}).map(
+							([kk, e]) => [k, kk, e] as const,
+						),
+					)}
+				>
+					{([entityKey, filterKey, filter]) => (
+						<DropdownMenuSub>
+							<DropdownMenuSubTrigger>
+								<span class="mr-2">{filter.icon ?? null}</span>
+								{filter.title}
+							</DropdownMenuSubTrigger>
+							<DropdownMenuPortal>
+								<DropdownMenuSubContent>
+									<DropdownMenuItem>TODO</DropdownMenuItem>
+								</DropdownMenuSubContent>
+							</DropdownMenuPortal>
+						</DropdownMenuSub>
+					)}
+				</For>
 
 				{/* // TODO: Query by membership in group */}
 
