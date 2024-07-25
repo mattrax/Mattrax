@@ -31,3 +31,4 @@ export * from "./number-input";
 export * from "./description-list";
 // export * from "./show";
 export * from "./kbd";
+export * from "./chart";
