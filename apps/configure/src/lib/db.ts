@@ -322,7 +322,11 @@ export const db = openDB<Database>("data", 1, {
 
 const syncBroadcastChannel = new BroadcastChannel("sync");
 
-type InvalidationKey = StoreNames<Database> | "auth" | "isSyncing";
+type InvalidationKey =
+	| StoreNames<Database>
+	| "auth"
+	| "isSyncing"
+	| "syncProgress";
 
 // Subscribe to store invalidations to trigger queries to rerun of the data
 export function subscribeToInvalidations(

@@ -47,6 +47,15 @@ export function initSyncEngine() {
 	};
 
 	const [isSyncing, setIsSyncing] = createSignal(false);
+	const [progress, setProgress] = createSignal(0); // TODO: Sync `progress` between tabs
+
+	subscribeToInvalidations((store) => {
+		if (store === "syncProgress")
+			setProgress(
+				// TODO: Make this ephemeral instead of using `localStorage`?
+				Number.parseInt(localStorage.getItem("syncProgress") ?? "0") || 0,
+			);
+	});
 
 	// Polling is not *great* but it's the most reliable way to keep track across tabs.
 	const isSyncingCheck = createTimer2(
@@ -89,7 +98,7 @@ export function initSyncEngine() {
 
 	return {
 		isSyncing: isSyncing,
-		progress: () => 0,
+		progress,
 		user,
 		async logout() {
 			await (await db).delete("_kv", "accessToken");
@@ -114,6 +123,7 @@ export function initSyncEngine() {
 			const result = await navigator.locks.request("sync", async (lock) => {
 				if (!lock) return;
 
+				setProgress(0);
 				invalidateStore("isSyncing");
 				isSyncingCheck.trigger();
 
@@ -123,6 +133,7 @@ export function initSyncEngine() {
 				} catch (err) {
 					console.error("Error syncing", err);
 				}
+				setProgress(0);
 				const elapsed = ((performance.now() - start) / 1000).toFixed(2);
 				console.log("Synced in", elapsed, "s");
 				return elapsed;
@@ -147,15 +158,16 @@ function mapUser(data: any) {
 }
 
 // The core sync coordination function.
-async function doSync(db: IDBPDatabase<Database>, Authorization: string) {
+async function doSync(db: IDBPDatabase<Database>, accessToken: string) {
 	console.log("Syncing...");
 
 	const fetch = async (url: string, init?: RequestInit) => {
 		// TODO: Join `init` to extra options
+		const headers = new Headers(init?.headers);
+		headers.append("Authorization", accessToken);
 		const resp = await globalThis.fetch(url, {
-			headers: {
-				Authorization,
-			},
+			...init,
+			headers,
 		});
 		if (resp.status === 401) {
 			// TODO: Automatic relogin using refresh token if possible
@@ -169,8 +181,66 @@ async function doSync(db: IDBPDatabase<Database>, Authorization: string) {
 	// TODO: Detecting if we just finished syncing.
 	// TODO: Detect if any syncs are currently in progress Eg. nextPage not delta
 
+	// TODO: Including avatar
 	const user = await fetch("https://graph.microsoft.com/v1.0/me");
 	await db.put("_kv", mapUser(user), "user"); // TODO: Fix types
+
+	const isFirstSync = (await db.count("users")) === 0;
+
+	const resp = await fetch("https://graph.microsoft.com/v1.0/$batch", {
+		method: "POST",
+		headers: new Headers({
+			"Content-Type": "application/json",
+		}),
+		body: JSON.stringify({
+			requests: [
+				...(isFirstSync
+					? [
+							{
+								id: "1",
+								method: "GET",
+								url: "/users/$count",
+								headers: {
+									ConsistencyLevel: "eventual",
+								},
+							},
+						]
+					: []),
+				{
+					id: "2",
+					method: "GET",
+					url: "/users/delta",
+				},
+			],
+		}),
+	});
+
+	const usersCountResp = resp.responses.find((r: any) => r.id === "1");
+	const usersDeltaResp = resp.responses.find((r: any) => r.id === "2");
+	// TODO: Error handling on these responses
+
+	if (usersCountResp) {
+		const usersCount = usersCountResp.body;
+		let loadedCount = usersDeltaResp.body.value.length;
+		const updateProgress = () => {
+			const progress = ((loadedCount / usersCount) * 100).toFixed(0);
+			localStorage.setItem("syncProgress", progress);
+			invalidateStore("syncProgress");
+		};
+
+		updateProgress();
+		let url = usersDeltaResp.body["@odata.nextLink"];
+		while (url !== null) {
+			const delta = await fetch(url);
+			loadedCount += delta.value.length;
+			updateProgress();
+			if (delta["@odata.nextLink"]) {
+				url = delta["@odata.nextLink"];
+			} else {
+				url = null;
+			}
+		}
+	}
 
 	// TODO: Sync everything else
 	// TODO: Progress tracking!!!
@@ -181,5 +251,5 @@ async function doSync(db: IDBPDatabase<Database>, Authorization: string) {
 	// await db.put("_meta", users, {});
 	// console.log(users);
 
-	// await new Promise((resolve) => setTimeout(resolve, 10000)); // TODO: Remove this
+	// await new Promise((resolve) => setTimeout(resolve, 1000)); // TODO: Remove this
 }

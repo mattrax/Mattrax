@@ -10,6 +10,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 	Kbd,
+	ProgressCircle,
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
@@ -212,16 +213,23 @@ function SyncPanel() {
 						sync.isSyncing() ? "" : "hidden",
 					)}
 				>
-					{/* // TODO: Progress bar */}
-					<p>{sync.progress()}</p>
-
-					<div class="relative inline-flex">
-						<div class="w-5 h-5 bg-black rounded-full" />
-						<div class="w-5 h-5 bg-black rounded-full absolute top-0 left-0 animate-ping" />
-						<div class="w-5 h-5 bg-black rounded-full absolute top-0 left-0 animate-pulse" />
-					</div>
+					<ProgressCircle
+						size="xs"
+						value={sync.progress()}
+						strokeWidth={
+							sync.isSyncing() && sync.progress() === 0 ? 0 : undefined
+						}
+					>
+						<div class="relative inline-flex">
+							<div class="w-5 h-5 rounded-full" />
+							<div class="w-5 h-5 bg-black rounded-full absolute top-0 left-0 animate-ping" />
+							<Show when={sync.isSyncing() && sync.progress() === 0}>
+								<div class="w-5 h-5 bg-black rounded-full absolute top-0 left-0 animate-pulse" />
+							</Show>
+						</div>
+					</ProgressCircle>
 				</TooltipTrigger>
-				<TooltipContent>Actively syncing with Microsoft...</TooltipContent>
+				<TooltipContent>Progress syncing with Microsoft...</TooltipContent>
 			</Tooltip>
 			<Tooltip>
 				<TooltipTrigger
