@@ -1,6 +1,5 @@
 /* @refresh reload */
-import { db, invalidateStore, resetDb } from "./db";
-import { type SyncEngine, fetchUserData } from "./sync";
+import { initDatabase } from "./sync";
 
 const clientId = "5dd42e00-78e7-474a-954a-bb4e5085e820";
 
@@ -46,28 +45,17 @@ export async function verifyOAuthCode(code: string) {
 	if (!resp.ok) throw new Error("Failed to verify code");
 	sessionStorage.removeItem("code_verifier");
 
+	// TODO: Move this into the sync engine
 	const data = await resp.json();
-	await (await db).put("_meta", data.access_token, "accessToken");
-	await (await db).put("_meta", data.refresh_token, "refreshToken");
-	invalidateStore("auth");
-	return data.access_token;
-}
 
-export async function fetchAndCacheUserData(accessToken: string) {
-	const data = await fetchUserData(accessToken);
-	const result = {
-		id: data.id,
-		name: data.displayName,
-		upn: data.userPrincipalName,
-	};
-	localStorage.setItem("user", JSON.stringify(result));
-	return result;
-}
+	const user = await fetch("https://graph.microsoft.com/v1.0/me", {
+		headers: {
+			Authorization: `Bearer ${data.access_token}`,
+		},
+	});
+	if (!user.ok) throw new Error("Failed to fetch user");
 
-export async function logout() {
-	await (await db).delete("_meta", "accessToken");
-	invalidateStore("auth");
-	resetDb();
+	initDatabase(data.access_token, data.refresh_token, await user.json());
 }
 
 const possible =

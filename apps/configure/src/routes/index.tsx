@@ -1,22 +1,22 @@
 import { buttonVariants } from "@mattrax/ui";
-import {
-	Navigate,
-	createAsync,
-	useLocation,
-	useNavigate,
-} from "@solidjs/router";
+import { createAsync, useLocation, useNavigate } from "@solidjs/router";
 import { ErrorBoundary, Match, Suspense, Switch } from "solid-js";
-import {
-	fetchAndCacheUserData,
-	generateOAuthUrl,
-	verifyOAuthCode,
-} from "~/lib/auth";
-import { useAccessTokenRaw } from "./(dash)";
+import { generateOAuthUrl, verifyOAuthCode } from "~/lib/auth";
+import { db, subscribeToInvalidations } from "~/lib/db";
 
 export default function Page() {
 	const location = useLocation();
 	const navigate = useNavigate();
-	const accessToken = useAccessTokenRaw();
+
+	const checkAuth = async () => {
+		const accessToken = await (await db).get("_kv", "accessToken");
+		const user = await (await db).get("_kv", "user");
+		if (user && accessToken) navigate("/overview", { replace: true });
+	};
+	checkAuth();
+	subscribeToInvalidations((store) => {
+		if (store === "auth") checkAuth();
+	});
 
 	return (
 		<div class="p-4">
@@ -28,12 +28,9 @@ export default function Page() {
 				</Match>
 				<Match when={location.query?.code} keyed>
 					{(code) => {
-						const access_token = createAsync(async () => {
-							const token = await verifyOAuthCode(code);
-							await fetchAndCacheUserData(token);
-
-							// Clear the query params
-							navigate("/");
+						const accessToken = createAsync(async () => {
+							await verifyOAuthCode(code);
+							navigate("/overview", { replace: true });
 						});
 
 						return (
@@ -42,20 +39,17 @@ export default function Page() {
 									<>
 										<p>Error verifying access token! Please try again!</p>
 										<a href="/" class={buttonVariants()}>
-											Try again...
+											Try again
 										</a>
 									</>
 								}
 							>
 								<Suspense fallback={<p>Verifying...</p>}>
-									{access_token() ? null : null}
+									{accessToken() ? null : null}
 								</Suspense>
 							</ErrorBoundary>
 						);
 					}}
-				</Match>
-				<Match when={accessToken()}>
-					<Navigate href="/overview" />
 				</Match>
 			</Switch>
 		</div>

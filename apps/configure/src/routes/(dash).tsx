@@ -15,7 +15,7 @@ import {
 	TooltipTrigger,
 	buttonVariants,
 } from "@mattrax/ui";
-import { A, Navigate, useLocation, useNavigate } from "@solidjs/router";
+import { A, useLocation, useNavigate } from "@solidjs/router";
 import { createMutation } from "@tanstack/solid-query";
 import clsx from "clsx";
 import {
@@ -26,33 +26,9 @@ import {
 	createSignal,
 	onMount,
 } from "solid-js";
-import { logout } from "~/lib/auth";
-import { db, subscribeToInvalidations } from "~/lib/db";
-import {
-	SyncEngineProvider,
-	initSyncEngine,
-	useSyncEngine,
-	useUser,
-} from "~/lib/sync";
-
-export function useAccessTokenRaw() {
-	const [accessToken, setAccessToken] = createSignal<string | null | undefined>(
-		undefined,
-	);
-	const setAccessTokenCb = () =>
-		db.then(async (db) =>
-			setAccessToken((await db.get("_meta", "accessToken")) ?? null),
-		);
-	onMount(setAccessTokenCb);
-	subscribeToInvalidations((store) => {
-		if (store === "auth") setAccessTokenCb();
-	});
-
-	return accessToken;
-}
+import { SyncEngineProvider, initSyncEngine, useSyncEngine } from "~/lib/sync";
 
 export default function Layout(props: ParentProps) {
-	const accessToken = useAccessTokenRaw(); // TODO: Move into sync engine
 	const syncEngine = initSyncEngine();
 
 	onMount(() => syncEngine.syncAll());
@@ -60,13 +36,6 @@ export default function Layout(props: ParentProps) {
 	return (
 		<SyncEngineProvider engine={syncEngine}>
 			<Navbar />
-
-			{/* // TODO: This could be done better */}
-			<Suspense>
-				<Show when={accessToken() === null}>
-					<Navigate href="/" />
-				</Show>
-			</Suspense>
 
 			{props.children}
 		</SyncEngineProvider>
@@ -185,13 +154,13 @@ function NavItems() {
 }
 
 function ProfileDropdown() {
+	const sync = useSyncEngine();
 	const navigate = useNavigate();
-	const user = useUser();
 
 	const logoutMutation = createMutation(() => ({
 		mutationKey: ["logout"],
 		mutationFn: async () => {
-			await logout();
+			await sync.logout();
 			navigate("/");
 		},
 	}));
@@ -208,12 +177,14 @@ function ProfileDropdown() {
 				<DropdownMenuTrigger as={Avatar}>
 					{/* // TODO: Properly hook this up with Microsoft */}
 					{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
-					<AvatarFallback>{getInitials(user.data?.name || "")}</AvatarFallback>
+					<AvatarFallback>
+						{getInitials(sync.user()?.name || "")}
+					</AvatarFallback>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent>
 					<DropdownMenuLabel>
-						<p>{user.data?.name}</p>
-						<p class="text-sm">{user.data?.upn}</p>
+						<p>{sync.user()?.name}</p>
+						<p class="text-sm">{sync.user()?.upn}</p>
 					</DropdownMenuLabel>
 					<DropdownMenuSeparator />
 					<DropdownMenuItem

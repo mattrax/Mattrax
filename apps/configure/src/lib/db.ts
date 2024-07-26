@@ -11,18 +11,29 @@ export type TableName =
 	| "scripts"
 	| "apps";
 
-export type MetaTableKeys =
-	| `${TableName}|delta`
-	| `${TableName}|syncedAt`
-	| "accessToken"
-	| "refreshToken";
-
 export interface Database extends DBSchema {
-	// Used to store delta or next page links for each entity
-	// This allows us to resume fetching data from where we left off or fetch the diff since the last sync.
-	_meta: {
-		key: MetaTableKeys;
+	// Used to store general information
+	_kv: {
+		key:
+			| "user"
+			| "accessToken"
+			| "refreshToken"
+			| "configurationSettings"
+			| "configurationCategories";
 		value: string;
+	};
+	// Track the nextPage links for each active paginated query and keep track of delta links ready for the next sync.
+	_meta: {
+		key: TableName;
+		value:
+			| {
+					nextPage: string;
+			  }
+			| {
+					// not all tables we sync support delta links
+					deltaLink?: string;
+					syncedAt: Date;
+			  };
 	};
 	// Stored views
 	views: {
@@ -268,6 +279,7 @@ export interface Database extends DBSchema {
 
 export const db = openDB<Database>("data", 1, {
 	upgrade(db) {
+		db.createObjectStore("_kv");
 		db.createObjectStore("_meta");
 		db.createObjectStore("views", {
 			keyPath: "id",
@@ -308,28 +320,9 @@ export const db = openDB<Database>("data", 1, {
 	},
 });
 
-// TODO: Typescript proof this is all the stores
-const tables = [
-	"_meta",
-	"views",
-	"users",
-	"devices",
-	"groups",
-	"policies",
-	"apps",
-] as const;
-
-export async function resetDb() {
-	const tx = (await db).transaction(tables);
-	for (const table of tables) {
-		tx.db.clear(table);
-	}
-	await tx.done;
-}
-
 const syncBroadcastChannel = new BroadcastChannel("sync");
 
-type InvalidationKey = StoreNames<Database> | "auth";
+type InvalidationKey = StoreNames<Database> | "auth" | "isSyncing";
 
 // Subscribe to store invalidations to trigger queries to rerun of the data
 export function subscribeToInvalidations(

@@ -1,4 +1,5 @@
 import {
+	Button,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -12,16 +13,15 @@ import { createAsync } from "@solidjs/router";
 import {
 	type Accessor,
 	For,
-	type JSX,
 	Show,
 	Suspense,
 	createEffect,
 	createMemo,
 } from "solid-js";
+import { createMutable } from "solid-js/store";
 import { z } from "zod";
 import { type Database, db } from "~/lib/db";
-import { getConfigurationCategories, useSyncEngine } from "~/lib/sync";
-import { getConfigurationSettings } from "~/lib/sync";
+import { useSyncEngine } from "~/lib/sync";
 import { useZodParams } from "~/lib/useZodParams";
 
 export default function Page() {
@@ -39,12 +39,16 @@ export default function Page() {
 
 	const configurationSettings = createAsync(
 		// TODO: This is cripplingly slow on first load
-		async () => await getConfigurationSettings(await sync.getAccessToken()),
+		async () => await new Promise((resolve) => {}),
+		// TODO: await getConfigurationSettings(await sync.getAccessToken()),
 	);
 
 	const configurationCategories = createAsync(
-		async () => await getConfigurationCategories(await sync.getAccessToken()),
+		async () => await new Promise((resolve) => {}),
+		// TODO: await getConfigurationCategories(await sync.getAccessToken()),
 	);
+
+	const state = createMutable<Record<string, any>>({});
 
 	createEffect(() => console.log(data())); // TODO
 
@@ -65,6 +69,15 @@ export default function Page() {
 			>
 				<h1 class="text-2xl">{data()?.name}</h1>
 
+				<Button
+					onClick={() => {
+						console.log(state);
+						// TODO: Save
+					}}
+				>
+					Save
+				</Button>
+
 				{/* // TODO: Actions like delete, open in Azure & export to json */}
 
 				{/* // TODO: Manage assignments */}
@@ -76,6 +89,7 @@ export default function Page() {
 							policy={data()}
 							configurationSettings={configurationSettings()}
 							configurationCategories={configurationCategories()}
+							state={state}
 						/>
 					)}
 				</Show>
@@ -88,6 +102,7 @@ function RenderSettingsCatalog(props: {
 	policy: Database["policies"]["value"];
 	configurationSettings: Accessor<any>;
 	configurationCategories: Accessor<any>;
+	state: Record<string, any>;
 }) {
 	if ((!"settings") in props.policy)
 		return <div>This policy is not a settings catalog!</div>;
@@ -133,6 +148,10 @@ function RenderSettingsCatalog(props: {
 											(s) =>
 												s.settingInstance.settingDefinitionId === definition.id,
 										);
+
+										// TODO: Set in render is kinda bad
+										props.state[definition.id] =
+											setting.settingInstance.choiceSettingValue.value;
 
 										// TODO: `setting.settingInstanceTemplateReference`
 
