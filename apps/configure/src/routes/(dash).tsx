@@ -2,6 +2,7 @@ import { Tabs } from "@kobalte/core/tabs";
 import {
 	Avatar,
 	AvatarFallback,
+	AvatarImage,
 	Button,
 	DropdownMenu,
 	DropdownMenuContent,
@@ -176,8 +177,9 @@ function ProfileDropdown() {
 		>
 			<DropdownMenu>
 				<DropdownMenuTrigger as={Avatar}>
-					{/* // TODO: Properly hook this up with Microsoft */}
-					{/* <AvatarImage src="https://github.com/otbeaumont.png" /> */}
+					<Show when={sync.user()?.avatar}>
+						{(src) => <AvatarImage src={src()} />}
+					</Show>
 					<AvatarFallback>
 						{getInitials(sync.user()?.name || "")}
 					</AvatarFallback>

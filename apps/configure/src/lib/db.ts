@@ -27,6 +27,8 @@ export interface Database extends DBSchema {
 		key: TableName;
 		value:
 			| {
+					count: number;
+					offset: number;
 					nextPage: string;
 			  }
 			| {

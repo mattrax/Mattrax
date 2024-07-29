@@ -2,7 +2,7 @@
 import { createContextProvider } from "@solid-primitives/context";
 import { useNavigate } from "@solidjs/router";
 import type { IDBPDatabase } from "idb";
-import { createResource, createSignal } from "solid-js";
+import { type Setter, createResource, createSignal } from "solid-js";
 import { createTimer2 } from "./createTimer";
 import {
 	type Database,
@@ -131,6 +131,12 @@ export function initSyncEngine() {
 				try {
 					await doSync(await db, accessToken);
 				} catch (err) {
+					if (err instanceof UnauthorizedError) {
+						// TODO: Refresh access token and try again???
+
+						await this.logout();
+						return;
+					}
 					console.error("Error syncing", err);
 				}
 				setProgress(0);
@@ -154,7 +160,54 @@ function mapUser(data: any) {
 		id: data.id,
 		name: data.displayName,
 		upn: data.userPrincipalName,
+		avatar: undefined as string | undefined,
+		avatarEtag: undefined as string | undefined,
 	};
+}
+
+class UnauthorizedError extends Error {
+	constructor() {
+		super("Unauthorized");
+	}
+}
+
+type Operation = {
+	id: string;
+	method: "GET" | "POST" | "PATCH" | "DELETE";
+	url: string;
+	headers?: Record<string, string>;
+};
+type OperationResponse = {
+	id: string;
+	body: unknown;
+	headers: Record<string, string>;
+	status: number;
+};
+type OperationGroup = {
+	ops: Operation[];
+	callback: (data: OperationResponse | OperationResponse[]) => Promise<void>;
+};
+const operations: OperationGroup[] = [];
+let progress: { id: string; total: number; current: number }[] = [];
+function registerBatchedOperation<const T extends Operation | Operation[]>(
+	op: T,
+	callback: (
+		data: T extends Array<any>
+			? {
+					[I in keyof T]: OperationResponse;
+				}
+			: OperationResponse,
+	) => Promise<void> | void,
+) {
+	operations.push({
+		ops: Array.isArray(op) ? op : [op],
+		callback: callback as any,
+	});
+}
+
+function registerProgress(id: string, total: number, current: number) {
+	progress = progress.filter((p) => p.id !== id);
+	progress.push({ id, total, current });
 }
 
 // The core sync coordination function.
@@ -169,11 +222,7 @@ async function doSync(db: IDBPDatabase<Database>, accessToken: string) {
 			...init,
 			headers,
 		});
-		if (resp.status === 401) {
-			// TODO: Automatic relogin using refresh token if possible
-
-			throw new Error("Unauthorized");
-		}
+		if (resp.status === 401) throw new UnauthorizedError();
 		if (!resp.ok) throw new Error("Failed to fetch data");
 		return await resp.json();
 	};
@@ -181,75 +230,194 @@ async function doSync(db: IDBPDatabase<Database>, accessToken: string) {
 	// TODO: Detecting if we just finished syncing.
 	// TODO: Detect if any syncs are currently in progress Eg. nextPage not delta
 
-	// TODO: Including avatar
-	const user = await fetch("https://graph.microsoft.com/v1.0/me");
-	await db.put("_kv", mapUser(user), "user"); // TODO: Fix types
+	let queued: OperationGroup[] = [];
+	let i = 0;
+	while (true) {
+		// Each of these will register operations.
+		await Promise.all([syncMe(db, i), syncUsers(db, i)]);
 
-	const isFirstSync = (await db.count("users")) === 0;
+		queued = operations.splice(0, operations.length);
+		if (queued.length === 0) break;
 
-	const resp = await fetch("https://graph.microsoft.com/v1.0/$batch", {
-		method: "POST",
-		headers: new Headers({
-			"Content-Type": "application/json",
-		}),
-		body: JSON.stringify({
-			requests: [
-				...(isFirstSync
-					? [
-							{
-								id: "1",
-								method: "GET",
-								url: "/users/$count",
-								headers: {
-									ConsistencyLevel: "eventual",
-								},
-							},
-						]
-					: []),
+		const resp = await fetch("https://graph.microsoft.com/v1.0/$batch", {
+			method: "POST",
+			headers: new Headers({
+				"Content-Type": "application/json",
+			}),
+			body: JSON.stringify({
+				requests: queued.flatMap(({ ops }) => ops),
+			}),
+		});
+
+		await Promise.all(
+			queued.map(async (queued) => {
+				const args = [];
+				for (const op of queued.ops) {
+					const r = resp.responses.find((r) => r.id === op.id);
+					if (!resp)
+						throw new Error(
+							`Expected to find response with id "${r.id}" but it was not found!`,
+						);
+					args.push(r);
+				}
+				await queued.callback(queued.ops.length === 1 ? args[0] : args);
+
+				let total = 0;
+				for (const p of progress) {
+					console.log(progress.length, p.current, p.total);
+
+					const progressOfP = p.current / p.total;
+					if (Number.isNaN(progressOfP)) continue;
+					total += (1 / progress.length) * progressOfP;
+				}
+				localStorage.setItem("syncProgress", (total * 100).toFixed(2));
+				invalidateStore("syncProgress");
+			}),
+		);
+
+		i++;
+	}
+}
+
+// TODO: Maybe break out below into it's own file???
+
+async function syncMe(db: IDBPDatabase<Database>, i: number) {
+	const me = await db.get("_kv", "user");
+
+	if (i === 0)
+		registerBatchedOperation(
+			[
 				{
-					id: "2",
+					id: "me",
 					method: "GET",
-					url: "/users/delta",
+					url: "/me?$select=id,displayName,userPrincipalName",
+				},
+				{
+					id: "mePhoto",
+					method: "GET",
+					url: "/me/photo/$value",
+					headers: {
+						"If-None-Match": me?.avatarEtag,
+					},
 				},
 			],
-		}),
-	});
+			async ([me, mePhoto]) => {
+				if (me.status !== 200)
+					throw new Error(`Failed to fetch me. Got status ${me.status}`);
 
-	const usersCountResp = resp.responses.find((r: any) => r.id === "1");
-	const usersDeltaResp = resp.responses.find((r: any) => r.id === "2");
-	// TODO: Error handling on these responses
+				const user = mapUser(me.body);
 
-	if (usersCountResp) {
-		const usersCount = usersCountResp.body;
-		let loadedCount = usersDeltaResp.body.value.length;
-		const updateProgress = () => {
-			const progress = ((loadedCount / usersCount) * 100).toFixed(0);
-			localStorage.setItem("syncProgress", progress);
-			invalidateStore("syncProgress");
-		};
+				// Will be `404` if the user has no photo.
+				if (mePhoto.status === 200) {
+					user.avatar = `data:image/*;base64,${mePhoto.body}`;
+					user.avatarEtag = mePhoto.headers?.ETag;
+				} else if (mePhoto.status !== 404 && mePhoto.status !== 304) {
+					// We only log cause this is not a critical error.
+					console.error(
+						`Failed to fetch me photo. Got status ${mePhoto.status}`,
+					);
+				}
 
-		updateProgress();
-		let url = usersDeltaResp.body["@odata.nextLink"];
-		while (url !== null) {
-			const delta = await fetch(url);
-			loadedCount += delta.value.length;
-			updateProgress();
-			if (delta["@odata.nextLink"]) {
-				url = delta["@odata.nextLink"];
-			} else {
-				url = null;
-			}
-		}
+				// TODO: Fix types
+				await db.put("_kv", user, "user");
+			},
+		);
+}
+
+const stripGraphAPIPrefix = (url: string) => {
+	let r = url
+		.replace("https://graph.microsoft.com/v1.0", "")
+		.replace("https://graph.microsoft.com/beta", "");
+
+	// Microsoft return urls with double slashes sometimes so this prevents us ended up with a slash for every recursion.
+	while (r.startsWith("//")) {
+		r = r.slice(1);
 	}
 
-	// TODO: Sync everything else
-	// TODO: Progress tracking!!!
+	return r;
+};
 
-	// const users = await fetch<any>(
-	// 	"https://graph.microsoft.com/v1.0/users/delta",
-	// );
-	// await db.put("_meta", users, {});
-	// console.log(users);
+async function syncUsers(db: IDBPDatabase<Database>, i: number) {
+	// This to to ensure no matter the order that each sync operation returns, it's chunk of the total percentage is represented correctly.
+	registerProgress("users", Number.NaN, 0);
 
-	// await new Promise((resolve) => setTimeout(resolve, 1000)); // TODO: Remove this
+	const meta = await db.get("_meta", "users");
+
+	const inner = async (count: number, offset: number, resp: any) => {
+		for (const user in resp.value) {
+			// TODO: Delta diffs
+			console.log("USER", user);
+		}
+
+		if (resp?.["@odata.deltaLink"]) {
+			// TODO: Clear all users in DB that were not updated (if this is not a delta sync!).
+		}
+
+		registerProgress("users", count, offset + resp.value.length);
+		await db.put(
+			"_meta",
+			resp?.["@odata.deltaLink"]
+				? {
+						deltaLink: resp["@odata.deltaLink"],
+						syncedAt: new Date(),
+					}
+				: {
+						count,
+						offset: offset + resp.value.length,
+						nextPage: resp["@odata.nextLink"],
+					},
+			"users",
+		);
+	};
+
+	if (meta && "nextPage" in meta && meta.nextPage) {
+		registerBatchedOperation(
+			{
+				id: "users",
+				method: "GET",
+				url: stripGraphAPIPrefix(meta.nextPage),
+			},
+			async (resp) => {
+				if (resp.status !== 200)
+					throw new Error(`Failed to fetch users. Got status ${resp.status}"`);
+
+				await inner(meta.count, meta.offset, resp.body);
+			},
+		);
+	} else {
+		if (meta && "deltaLink" in meta && meta.deltaLink && i !== 0) return;
+
+		const url =
+			meta && "deltaLink" in meta && meta.deltaLink
+				? stripGraphAPIPrefix(meta.deltaLink)
+				: "/users/delta"; // TODO: $select
+
+		registerBatchedOperation(
+			[
+				{
+					id: "usersCount",
+					method: "GET",
+					url: "/users/$count",
+					headers: {
+						ConsistencyLevel: "eventual",
+					},
+				},
+				{
+					id: "users",
+					method: "GET",
+					url,
+				},
+			],
+			async ([usersCount, users]) => {
+				if (users.status !== 200)
+					throw new Error(`Failed to fetch users. Got status ${users.status}"`);
+				if (usersCount.status !== 200)
+					throw new Error(
+						`Failed to fetch users count. Got status ${users.status}"`,
+					);
+
+				await inner(usersCount.body as number, 0, users.body);
+			},
+		);
+	}
 }

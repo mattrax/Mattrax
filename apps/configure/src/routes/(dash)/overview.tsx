@@ -1,7 +1,7 @@
-import { StatItem } from "~/components/StatItem";
 import { createAsync } from "@solidjs/router";
-import { db } from "~/lib/db";
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
+import { StatItem } from "~/components/StatItem";
+import { db } from "~/lib/db";
 
 export default function Page() {
 	const counts = createAsync(async () => {

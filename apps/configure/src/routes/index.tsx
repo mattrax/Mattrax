@@ -22,9 +22,13 @@ export default function Page() {
 		<div class="p-4">
 			<Switch fallback={<UnauthenticatedApp />}>
 				<Match when={location.query?.error !== undefined}>
+					{/* // TODO: Properly style this flow */}
 					<p class="bg-red-500">
 						{location.query?.error_description || location.query?.error}
 					</p>
+					<a href="/" class={buttonVariants()}>
+						Try again
+					</a>
 				</Match>
 				<Match when={location.query?.code} keyed>
 					{(code) => {
@@ -33,11 +37,14 @@ export default function Page() {
 							navigate("/overview", { replace: true });
 						});
 
+						// TODO: Properly style this flow
 						return (
 							<ErrorBoundary
 								fallback={
 									<>
-										<p>Error verifying access token! Please try again!</p>
+										<p class="bg-red-500">
+											Error verifying access token! Please try again!
+										</p>
 										<a href="/" class={buttonVariants()}>
 											Try again
 										</a>
