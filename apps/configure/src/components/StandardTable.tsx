@@ -1,4 +1,4 @@
-/// Coped from `@mattrax/web` we should probs break out and share?
+/// Copied from `@mattrax/web` we should probs break out and share?
 
 import {
 	type ColumnDef,

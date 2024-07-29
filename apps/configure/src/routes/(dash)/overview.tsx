@@ -1,18 +1,53 @@
-import { ErrorBoundary, Suspense } from "solid-js";
-import { useSyncEngine } from "~/lib/sync";
+import { StatItem } from "~/components/StatItem";
+import { createAsync } from "@solidjs/router";
+import { db } from "~/lib/db";
+import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
 
 export default function Page() {
-	const sync = useSyncEngine();
+	const counts = createAsync(async () => {
+		return {
+			users: await (await db).count("users"),
+			devices: await (await db).count("devices"),
+			groups: await (await db).count("groups"),
+			policies: await (await db).count("policies"),
+			applications: await (await db).count("apps"),
+		};
+	});
 
 	return (
-		<div class="p-4">
-			<h1>Authenticated</h1>
-			<ErrorBoundary fallback={<p>Failed to load user...</p>}>
-				<Suspense fallback={<p>Loading...</p>}>
-					<pre>{sync.user()?.name}</pre>
-					<pre>{sync.user()?.upn}</pre>
-				</Suspense>
-			</ErrorBoundary>
-		</div>
+		<PageLayout heading={<PageLayoutHeading>Overview</PageLayoutHeading>}>
+			<div class="grid gap-4 grid-cols-5">
+				<StatItem
+					title="Users"
+					href="users"
+					icon={<IconPhUser />}
+					value={counts()?.users || 0}
+				/>
+				<StatItem
+					title="Devices"
+					href="devices"
+					icon={<IconPhDevices />}
+					value={counts()?.devices || 0}
+				/>
+				<StatItem
+					title="Policies"
+					href="policies"
+					icon={<IconPhScroll />}
+					value={counts()?.policies || 0}
+				/>
+				<StatItem
+					title="Applications"
+					href="apps"
+					icon={<IconPhAppWindow />}
+					value={counts()?.groups || 0}
+				/>
+				<StatItem
+					title="Groups"
+					href="groups"
+					icon={<IconPhSelection />}
+					value={counts()?.groups || 0}
+				/>
+			</div>
+		</PageLayout>
 	);
 }
