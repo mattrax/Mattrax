@@ -93,7 +93,6 @@ const ProgressCircle: Component<ProgressCircleProps> = (rawProps) => {
 function getLimitedValue(input: number | undefined) {
 	if (input === undefined) {
 		return 0;
-		// biome-ignore lint/style/noUselessElse:
 	} else if (input > 100) {
 		return 100;
 	}

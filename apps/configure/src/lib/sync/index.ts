@@ -1,15 +1,21 @@
-/* @refresh reload */
 import { createContextProvider } from "@solid-primitives/context";
 import { useNavigate } from "@solidjs/router";
-import type { IDBPDatabase } from "idb";
-import { type Setter, createResource, createSignal } from "solid-js";
-import { createTimer2 } from "./createTimer";
+import type { IDBPDatabase, StoreNames } from "idb";
+import { createResource, createSignal } from "solid-js";
+import { createTimer2 } from "../createTimer";
 import {
 	type Database,
 	db,
 	invalidateStore,
 	subscribeToInvalidations,
-} from "./db";
+} from "../db";
+import * as schema from "./schema";
+import {
+	type OperationGroup,
+	clearProgress,
+	getProgress,
+	popOperations,
+} from "./state";
 
 export type SyncEngine = ReturnType<typeof initSyncEngine>;
 
@@ -83,7 +89,7 @@ export function initSyncEngine() {
 		}
 		if (!user) {
 			const user = await fetch("https://graph.microsoft.com/v1.0/me");
-			await db.put("_kv", mapUser(user), "user"); // TODO: Fix types
+			await (await db).put("_kv", mapUser(user), "user"); // TODO: Fix types
 		}
 
 		return user;
@@ -129,7 +135,7 @@ export function initSyncEngine() {
 
 				const start = performance.now();
 				try {
-					await doSync(await db, accessToken);
+					await sync(await db, accessToken);
 				} catch (err) {
 					if (err instanceof UnauthorizedError) {
 						// TODO: Refresh access token and try again???
@@ -137,7 +143,7 @@ export function initSyncEngine() {
 						await this.logout();
 						return;
 					}
-					console.error("Error syncing", err);
+					console.error("Error occurred during sync:", err);
 				}
 				setProgress(0);
 				const elapsed = ((performance.now() - start) / 1000).toFixed(2);
@@ -154,8 +160,9 @@ export function initSyncEngine() {
 	};
 }
 
+// TODO: Really this should go in `schema.ts` and not be exported???
 // Convert between a Microsoft Graph user object and our internal user object.
-function mapUser(data: any) {
+export function mapUser(data: any) {
 	return {
 		id: data.id,
 		name: data.displayName,
@@ -171,47 +178,7 @@ class UnauthorizedError extends Error {
 	}
 }
 
-type Operation = {
-	id: string;
-	method: "GET" | "POST" | "PATCH" | "DELETE";
-	url: string;
-	headers?: Record<string, string>;
-};
-type OperationResponse = {
-	id: string;
-	body: unknown;
-	headers: Record<string, string>;
-	status: number;
-};
-type OperationGroup = {
-	ops: Operation[];
-	callback: (data: OperationResponse | OperationResponse[]) => Promise<void>;
-};
-const operations: OperationGroup[] = [];
-let progress: { id: string; total: number; current: number }[] = [];
-function registerBatchedOperation<const T extends Operation | Operation[]>(
-	op: T,
-	callback: (
-		data: T extends Array<any>
-			? {
-					[I in keyof T]: OperationResponse;
-				}
-			: OperationResponse,
-	) => Promise<void> | void,
-) {
-	operations.push({
-		ops: Array.isArray(op) ? op : [op],
-		callback: callback as any,
-	});
-}
-
-function registerProgress(id: string, total: number, current: number) {
-	progress = progress.filter((p) => p.id !== id);
-	progress.push({ id, total, current });
-}
-
-// The core sync coordination function.
-async function doSync(db: IDBPDatabase<Database>, accessToken: string) {
+async function sync(db: IDBPDatabase<Database>, accessToken: string) {
 	console.log("Syncing...");
 
 	const fetch = async (url: string, init?: RequestInit) => {
@@ -234,12 +201,12 @@ async function doSync(db: IDBPDatabase<Database>, accessToken: string) {
 	let i = 0;
 	while (true) {
 		// Each of these will register operations.
-		await Promise.all([syncMe(db, i), syncUsers(db, i)]);
+		await Promise.all(Object.values(schema).map((sync) => sync(db, i)));
 
-		queued = operations.splice(0, operations.length);
+		queued = popOperations();
 		if (queued.length === 0) break;
 
-		const resp = await fetch("https://graph.microsoft.com/v1.0/$batch", {
+		const resp = await fetch("https://graph.microsoft.com/beta/$batch", {
 			method: "POST",
 			headers: new Headers({
 				"Content-Type": "application/json",
@@ -260,12 +227,11 @@ async function doSync(db: IDBPDatabase<Database>, accessToken: string) {
 						);
 					args.push(r);
 				}
-				await queued.callback(queued.ops.length === 1 ? args[0] : args);
+				await queued.callback(args);
 
 				let total = 0;
+				const progress = getProgress();
 				for (const p of progress) {
-					console.log(progress.length, p.current, p.total);
-
 					const progressOfP = p.current / p.total;
 					if (Number.isNaN(progressOfP)) continue;
 					total += (1 / progress.length) * progressOfP;
@@ -277,147 +243,8 @@ async function doSync(db: IDBPDatabase<Database>, accessToken: string) {
 
 		i++;
 	}
-}
 
-// TODO: Maybe break out below into it's own file???
-
-async function syncMe(db: IDBPDatabase<Database>, i: number) {
-	const me = await db.get("_kv", "user");
-
-	if (i === 0)
-		registerBatchedOperation(
-			[
-				{
-					id: "me",
-					method: "GET",
-					url: "/me?$select=id,displayName,userPrincipalName",
-				},
-				{
-					id: "mePhoto",
-					method: "GET",
-					url: "/me/photo/$value",
-					headers: {
-						"If-None-Match": me?.avatarEtag,
-					},
-				},
-			],
-			async ([me, mePhoto]) => {
-				if (me.status !== 200)
-					throw new Error(`Failed to fetch me. Got status ${me.status}`);
-
-				const user = mapUser(me.body);
-
-				// Will be `404` if the user has no photo.
-				if (mePhoto.status === 200) {
-					user.avatar = `data:image/*;base64,${mePhoto.body}`;
-					user.avatarEtag = mePhoto.headers?.ETag;
-				} else if (mePhoto.status !== 404 && mePhoto.status !== 304) {
-					// We only log cause this is not a critical error.
-					console.error(
-						`Failed to fetch me photo. Got status ${mePhoto.status}`,
-					);
-				}
-
-				// TODO: Fix types
-				await db.put("_kv", user, "user");
-			},
-		);
-}
-
-const stripGraphAPIPrefix = (url: string) => {
-	let r = url
-		.replace("https://graph.microsoft.com/v1.0", "")
-		.replace("https://graph.microsoft.com/beta", "");
-
-	// Microsoft return urls with double slashes sometimes so this prevents us ended up with a slash for every recursion.
-	while (r.startsWith("//")) {
-		r = r.slice(1);
-	}
-
-	return r;
-};
-
-async function syncUsers(db: IDBPDatabase<Database>, i: number) {
-	// This to to ensure no matter the order that each sync operation returns, it's chunk of the total percentage is represented correctly.
-	registerProgress("users", Number.NaN, 0);
-
-	const meta = await db.get("_meta", "users");
-
-	const inner = async (count: number, offset: number, resp: any) => {
-		for (const user in resp.value) {
-			// TODO: Delta diffs
-			console.log("USER", user);
-		}
-
-		if (resp?.["@odata.deltaLink"]) {
-			// TODO: Clear all users in DB that were not updated (if this is not a delta sync!).
-		}
-
-		registerProgress("users", count, offset + resp.value.length);
-		await db.put(
-			"_meta",
-			resp?.["@odata.deltaLink"]
-				? {
-						deltaLink: resp["@odata.deltaLink"],
-						syncedAt: new Date(),
-					}
-				: {
-						count,
-						offset: offset + resp.value.length,
-						nextPage: resp["@odata.nextLink"],
-					},
-			"users",
-		);
-	};
-
-	if (meta && "nextPage" in meta && meta.nextPage) {
-		registerBatchedOperation(
-			{
-				id: "users",
-				method: "GET",
-				url: stripGraphAPIPrefix(meta.nextPage),
-			},
-			async (resp) => {
-				if (resp.status !== 200)
-					throw new Error(`Failed to fetch users. Got status ${resp.status}"`);
-
-				await inner(meta.count, meta.offset, resp.body);
-			},
-		);
-	} else {
-		if (meta && "deltaLink" in meta && meta.deltaLink && i !== 0) return;
-
-		const url =
-			meta && "deltaLink" in meta && meta.deltaLink
-				? stripGraphAPIPrefix(meta.deltaLink)
-				: "/users/delta"; // TODO: $select
-
-		registerBatchedOperation(
-			[
-				{
-					id: "usersCount",
-					method: "GET",
-					url: "/users/$count",
-					headers: {
-						ConsistencyLevel: "eventual",
-					},
-				},
-				{
-					id: "users",
-					method: "GET",
-					url,
-				},
-			],
-			async ([usersCount, users]) => {
-				if (users.status !== 200)
-					throw new Error(`Failed to fetch users. Got status ${users.status}"`);
-				if (usersCount.status !== 200)
-					throw new Error(
-						`Failed to fetch users count. Got status ${users.status}"`,
-					);
-
-				await inner(usersCount.body as number, 0, users.body);
-			},
-		);
-	}
+	clearProgress();
+	localStorage.removeItem("syncProgress");
+	invalidateStore("syncProgress");
 }

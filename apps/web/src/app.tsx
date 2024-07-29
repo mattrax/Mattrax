@@ -105,7 +105,6 @@ export default function App() {
 											}),
 										);
 										return;
-										// biome-ignore lint/style/noUselessElse:
 									} else if (error.data?.code === "FORBIDDEN") {
 										if (error.message === "tenant") navigate("/");
 										else

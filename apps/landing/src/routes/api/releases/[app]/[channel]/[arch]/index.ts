@@ -12,7 +12,6 @@ export async function GET({ params }: APIEvent) {
 		return new Response("Coming soon...", {
 			status: 500,
 		});
-		// biome-ignore lint/style/noUselessElse:
 	} else if (params.channel === "nightly") {
 		const resp = await fetch(`${staticUrl}/nightly`);
 		if (!resp.ok)

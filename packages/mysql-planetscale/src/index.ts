@@ -88,7 +88,6 @@ export function createFetchHandler(uri: string): NonNullable<Config["fetch"]> {
 						if (v === null) {
 							lengths.push(-1);
 							continue;
-							// biome-ignore lint/style/noUselessElse:
 						} else if (
 							typeof v === "string" ||
 							typeof v === "number" ||
