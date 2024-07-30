@@ -76,7 +76,7 @@ export interface Database extends DBSchema {
 			deviceId: string;
 			name: string;
 			deviceOwnership: "unknown" | "company" | "personal";
-			type: "RegisteredDevice" | "SecureVM" | "Printer" | "Shared" | "IoT";
+			type?: "RegisteredDevice" | "SecureVM" | "Printer" | "Shared" | "IoT";
 			trustType: "Workplace" | "AzureAd" | "ServerAd" | "unknown";
 			enrollment: {
 				profileName?: string;
@@ -141,7 +141,8 @@ export interface Database extends DBSchema {
 			type:
 				| "#microsoft.graph.user"
 				| "#microsoft.graph.group"
-				| "#microsoft.graph.device";
+				| "#microsoft.graph.device"
+				| "#microsoft.graph.servicePrincipal";
 			id: string;
 		};
 	};

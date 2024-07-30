@@ -28,6 +28,7 @@ import {
 	createSignal,
 	onMount,
 } from "solid-js";
+import { toast } from "solid-sonner";
 import { SyncEngineProvider, initSyncEngine, useSyncEngine } from "~/lib/sync";
 
 export default function Layout(props: ParentProps) {
@@ -237,7 +238,14 @@ function SyncPanel() {
 				<TooltipTrigger
 					as={Button}
 					variant="ghost"
-					onClick={() => sync.syncAll()}
+					onClick={() =>
+						sync.syncAll().then((elapsed) => {
+							if (elapsed)
+								toast.success(
+									`Successfully synced with Microsoft in ${elapsed}s`,
+								);
+						})
+					}
 					disabled={sync.isSyncing()}
 				>
 					Sync

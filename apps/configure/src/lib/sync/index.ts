@@ -16,6 +16,7 @@ import {
 	getProgress,
 	popOperations,
 } from "./state";
+import { toast } from "solid-sonner";
 
 export type SyncEngine = ReturnType<typeof initSyncEngine>;
 
@@ -112,7 +113,7 @@ export function initSyncEngine() {
 			await (await db).delete("_kv", "user");
 			invalidateStore("auth");
 		},
-		async syncAll() {
+		async syncAll(): Promise<string | undefined> {
 			const accessToken = (await kv()).accessToken;
 			if (!accessToken) {
 				console.warn("Sync attempted without valid access token. Ignoring!");
@@ -144,6 +145,9 @@ export function initSyncEngine() {
 						return;
 					}
 					console.error("Error occurred during sync:", err);
+					toast.error("Error syncing with Microsoft!", {
+						description: "Your error has been reported to the team!",
+					});
 				}
 				setProgress(0);
 				const elapsed = ((performance.now() - start) / 1000).toFixed(2);

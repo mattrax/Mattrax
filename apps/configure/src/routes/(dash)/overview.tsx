@@ -39,7 +39,7 @@ export default function Page() {
 					title="Applications"
 					href="apps"
 					icon={<IconPhAppWindow />}
-					value={counts()?.groups || 0}
+					value={counts()?.applications || 0}
 				/>
 				<StatItem
 					title="Groups"

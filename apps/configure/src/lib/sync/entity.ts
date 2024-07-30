@@ -16,6 +16,20 @@ const stripGraphAPIPrefix = (url: string) => {
 	return r;
 };
 
+function odataResponseSchema<S extends z.AnyZodObject>(schema: S) {
+	return z.object({
+		"@odata.deltaLink": z.string().optional(),
+		"@odata.nextLink": z.string().optional(),
+		"@odata.count": z.number().optional(),
+		value: z.array(
+			z.union([
+				schema,
+				z.object({ "@removed": z.object({}).passthrough(), id: z.any() }),
+			]),
+		),
+	});
+}
+
 // TODO: Handle https://learn.microsoft.com/en-us/graph/delta-query-overview#synchronization-reset
 export function defineSyncEntity<T extends z.AnyZodObject>(
 	name: StoreNames<Database> & TableName,
@@ -29,9 +43,12 @@ export function defineSyncEntity<T extends z.AnyZodObject>(
 		// The schema of each item in the returning data.
 		schema: T;
 		// Insert or update the data in the database.
-		upsert: (data: z.output<T>) => Promise<void>;
+		upsert: (db: IDBPDatabase<Database>, data: z.output<T>) => Promise<void>;
 		// Remove an entity from the database.
-		delete: (id: string) => Promise<void>;
+		delete: (
+			db: IDBPDatabase<Database>,
+			id: z.output<T>["id"],
+		) => Promise<void>;
 	},
 ) {
 	return async (db: IDBPDatabase<Database>, i: number) => {
@@ -40,29 +57,40 @@ export function defineSyncEntity<T extends z.AnyZodObject>(
 
 		const meta = await db.get("_meta", name);
 
-		const inner = async (count: number, offset: number, resp: any) => {
-			for (const value of resp.value) {
-				// TODO: Handle delta diffs
+		const inner = async (
+			count: number,
+			offset: number,
+			resp: z.output<ReturnType<typeof odataResponseSchema<T>>>,
+		) => {
+			await Promise.all(
+				resp.value.map(async (value) => {
+					if (value["@removed"]) {
+						await options.delete(db, value.id);
+					} else {
+						await options.upsert(db, value);
+					}
+				}),
+			);
 
-				console.log(name, value);
-			}
-
-			if (resp?.["@odata.deltaLink"]) {
+			const isLastPage =
+				resp?.["@odata.deltaLink"] || resp?.["@odata.nextLink"] === undefined;
+			if (isLastPage) {
 				// TODO: Clear all users in DB that were not updated (if this is not a delta sync!).
 			}
 
 			registerProgress(name, count, offset + resp.value.length);
 			await db.put(
 				"_meta",
-				resp?.["@odata.deltaLink"]
+				isLastPage
 					? {
-							deltaLink: resp["@odata.deltaLink"],
+							deltaLink: resp?.["@odata.deltaLink"],
 							syncedAt: new Date(),
 						}
 					: {
 							count,
 							offset: offset + resp.value.length,
-							nextPage: resp["@odata.nextLink"],
+							// We assert, because `isLastPage` accounts for this. TS is just not smart enough.
+							nextPage: resp["@odata.nextLink"]!,
 						},
 				name,
 			);
@@ -75,18 +103,25 @@ export function defineSyncEntity<T extends z.AnyZodObject>(
 					method: "GET",
 					url: stripGraphAPIPrefix(meta.nextPage),
 				},
-				async ([resp]) => {
-					if (resp.status !== 200)
+				async ([dataResp]) => {
+					if (dataResp.status !== 200)
 						throw new Error(
-							`Failed to fetch ${name}. Got status ${resp.status}"`,
+							`Failed to fetch ${name}. Got status ${dataResp.status}"`,
 						);
-					await inner(meta.count, meta.offset, resp.body);
+					const result = odataResponseSchema(options.schema).safeParse(
+						dataResp.body,
+					);
+					if (result.error)
+						throw new Error(
+							`Failed to parse ${name} response. ${result.error.message}`,
+						);
+
+					await inner(meta.count, meta.offset, result.data);
 				},
 			);
 		} else {
-			// Once the sync completes the deltaLink is stored but we don't want to start a syncing again in this "session".
-			// So we only follow deltaLinks when this is the first sync.
-			if (meta && "deltaLink" in meta && meta.deltaLink && i !== 0) return;
+			// Once the sync completes the deltaLink & syncedAt are stored but we don't want to start a syncing again in this "session".
+			if (meta && "syncedAt" in meta && i !== 0) return;
 
 			const url =
 				meta && "deltaLink" in meta && meta.deltaLink
@@ -113,17 +148,20 @@ export function defineSyncEntity<T extends z.AnyZodObject>(
 							] as const)
 						: []),
 				],
-				async ([data, countResp]) => {
-					if (data.status !== 200)
+				async ([dataResp, countResp]) => {
+					if (dataResp.status !== 200)
 						throw new Error(
-							`Failed to fetch ${name}. Got status ${data.status}"`,
+							`Failed to fetch ${name}. Got status ${dataResp.status}"`,
+						);
+					const result = odataResponseSchema(options.schema).safeParse(
+						dataResp.body,
+					);
+					if (result.error)
+						throw new Error(
+							`Failed to parse ${name} response. ${result.error.message}`,
 						);
 
-					let count = z
-						.number()
-						.optional()
-						.parse((data.body as any)?.["@odata.count"]);
-
+					let count = result.data?.["@odata.count"];
 					if (count === undefined)
 						if (countResp) {
 							if (countResp.status !== 200)
@@ -137,9 +175,25 @@ export function defineSyncEntity<T extends z.AnyZodObject>(
 							throw new Error(`Failed to determine ${name} count!`);
 						}
 
-					await inner(count, 0, data.body);
+					await inner(count, 0, result.data);
 				},
 			);
 		}
 	};
+}
+
+// Merge two objects.
+//
+// If a key in `b` contains `undefined` and the same key is present in `a` it will be merged as `a`'s value.
+// If a key in `b` is `undefined` and the same key is not present in `a` it will be treated as `undefined`.
+export function merge<T extends Record<any, any>>(a: T | undefined, b: T) {
+	return {
+		...a,
+		...Object.fromEntries(
+			Object.entries(b).map(([k, v]) => {
+				if (v === undefined && a && a[k] !== undefined) return [k, a[k]];
+				return [k, v];
+			}),
+		),
+	} as T;
 }

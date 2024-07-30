@@ -5,7 +5,7 @@ import type { IDBPDatabase } from "idb";
 import { z } from "zod";
 import type { Database } from "../db";
 import { mapUser } from "../sync";
-import { defineSyncEntity } from "./entity";
+import { defineSyncEntity, merge } from "./entity";
 import { registerBatchedOperation } from "./state";
 
 export async function me(db: IDBPDatabase<Database>, i: number) {
@@ -57,115 +57,165 @@ export const users = defineSyncEntity("users", {
 	countEndpoint: "/users/$count",
 	schema: z.object({
 		id: z.string(),
+		userType: z.enum(["Member", "Guest"]),
+		userPrincipalName: z.string(),
+		displayName: z.string(),
+		givenName: z.string().optional(),
+		surname: z.string().optional(),
+		accountEnabled: z.boolean(),
+		employeeId: z.string().optional(),
+		officeLocation: z.string().optional(),
+		businessPhones: z.array(z.string()).optional(),
+		mobilePhone: z.string().optional(),
+		preferredLanguage: z.string().optional(),
+		lastPasswordChangeDateTime: z.string().optional(),
+		createdDateTime: z.string(),
 	}),
-	upsert: async (user) => {
-		console.log("INSERT USER", user);
+	upsert: async (db, data) => {
+		const tx = db.transaction("users", "readwrite");
+		await tx.store.put(
+			merge(await tx.store.get(data.id), {
+				id: data.id,
+				type: data.userType === "Guest" ? "guest" : "member",
+				upn: data.userPrincipalName,
+				name: data.displayName,
+				nameParts: {
+					givenName: data?.givenName,
+					surname: data?.surname,
+				},
+				accountEnabled: data.accountEnabled,
+				employeeId: data?.employeeId,
+				officeLocation: data?.officeLocation,
+				phones: [
+					...(data?.businessPhones ?? []),
+					...(data?.mobilePhone ? [data.mobilePhone] : []),
+				],
+				preferredLanguage: data?.preferredLanguage,
+				lastPasswordChangeDateTime: data?.lastPasswordChangeDateTime,
+				createdDateTime: data.createdDateTime,
+			}),
+		);
+		await tx.done;
 	},
-	delete: async (id) => {
-		console.log("DELETE USER", id);
-	},
-
-	// (user) =>
-	// ({
-	// 	id: user.id,
-	// 	type: user.userType === "Guest" ? "guest" : "member",
-	// 	upn: user.userPrincipalName,
-	// 	name: user.displayName,
-	// 	nameParts: {
-	// 		givenName: user?.givenName,
-	// 		surname: user?.surname,
-	// 	},
-	// 	accountEnabled: user.accountEnabled,
-	// 	employeeId: user?.employeeId,
-	// 	officeLocation: user?.officeLocation,
-	// 	phones: [
-	// 		...(user?.businessPhones ?? []),
-	// 		...(user?.mobilePhone ? [user.mobilePhone] : []),
-	// 	],
-	// 	preferredLanguage: user?.preferredLanguage,
-	// 	lastPasswordChangeDateTime: user?.lastPasswordChangeDateTime,
-	// 	createdDateTime: user.createdDateTime,
-	// }) satisfies Database["users"]["value"],
+	delete: async (db, id) => await db.delete("users", id),
 });
 
+function castLowerCase<T extends z.ZodTypeAny>(schema: T) {
+	return z.preprocess(
+		(s) => (typeof s === "string" ? s.toLowerCase() : s),
+		schema,
+	);
+}
+
+// TODO: Also sourcing extra data from "/deviceManagement/managedDevices"???
 export const devices = defineSyncEntity("devices", {
 	endpoint:
 		"/devices/delta?$select=id,deviceId,displayName,deviceOwnership,profileType,trustType,enrollmentProfileName,enrollmentType,isCompliant,isManaged,isRooted,managementType,manufacturer,model,operatingSystem,operatingSystemVersion,approximateLastSignInDateTime,registrationDateTime,deviceCategory",
 	countEndpoint: "/devices/$count",
 	schema: z.object({
 		id: z.string(),
+		deviceId: z.string(),
+		displayName: z.string(),
+		deviceOwnership: castLowerCase(
+			z.enum(["company", "personal", "unknown"]),
+		).default("unknown"),
+		profileType: z
+			.enum(["RegisteredDevice", "SecureVM", "Printer", "Shared", "IoT"])
+			.optional(),
+		trustType: z.enum(["Workplace", "AzureAd", "ServerAd"]).optional(),
+		enrollmentProfileName: z.string().optional(),
+		enrollmentType: z
+			.enum([
+				"unknown",
+				"userEnrollment",
+				"deviceEnrollmentManager",
+				"appleBulkWithUser",
+				"appleBulkWithoutUser",
+				"windowsAzureADJoin",
+				"windowsBulkUserless",
+				"windowsAutoEnrollment",
+				"windowsBulkAzureDomainJoin",
+				"windowsCoManagement",
+
+				// This isn't in the docs but it is in the data so...
+				// TODO: Maybe check OpenAPI docs if we can discover more values they aren't telling us about?
+				"AzureDomainJoined",
+				"DeviceEnrollment",
+			])
+			.default("unknown"),
+		isCompliant: z.boolean().optional(),
+		isManaged: z.boolean().default(false),
+		isRooted: z.boolean().default(false),
+		managementType: castLowerCase(
+			z.enum([
+				"eas",
+				"mdm",
+				"easMdm",
+				"intuneClient",
+				"easIntuneClient",
+				"configurationManagerClient",
+				"configurationManagerClientMdm",
+				"configurationManagerClientMdmEas",
+				"unknown",
+				"jamf",
+				"googleCloudDevicePolicyController",
+			]),
+		).default("unknown"),
+		manufacturer: z.string().optional(),
+		model: z.string().optional(),
+		operatingSystem: z.string().optional(),
+		operatingSystemVersion: z.string().optional(),
+		approximateLastSignInDateTime: z.string().optional(),
+		registrationDateTime: z.string().optional(),
+		deviceCategory: z.string().optional(),
 	}),
-	upsert: async (user) => {
-		console.log("INSERT DEVICE", user);
-	},
-	delete: async (id) => {
-		console.log("DELETE DEVICE", id);
-	},
+	upsert: async (db, data) => {
+		const tx = db.transaction(["devices"], "readwrite");
+		const devices = tx.objectStore("devices");
+		await devices.put(
+			merge(await devices.get(data.id), {
+				id: data.id,
+				deviceId: data.deviceId,
+				name: data.displayName,
+				deviceOwnership: data.deviceOwnership,
+				type: data.profileType,
+				trustType: data?.trustType || "unknown",
+				enrollment: {
+					profileName: data?.enrollmentProfileName,
+					type: data.enrollmentType,
+				},
+				isCompliant: data.isCompliant,
+				isManaged: data.isManaged,
+				isRooted: data.isRooted,
+				managementType: data.managementType,
+				manufacturer: data.manufacturer,
+				model: data?.model,
+				operatingSystem: data?.operatingSystem,
+				operatingSystemVersion: data?.operatingSystemVersion,
+				lastSignInDate: data?.approximateLastSignInDateTime,
+				registrationDateTime: data?.registrationDateTime,
+				deviceCategory: data?.deviceCategory,
+			}),
+		);
 
-	// (device) =>
-	// ({
-	// 	id: device.id,
-	// 	deviceId: device?.deviceId,
-	// 	name: device.displayName,
-	// 	deviceOwnership: device?.deviceOwnership || "unknown",
-	// 	type: device?.profileType || "unknown",
-	// 	trustType: device?.trustType || "unknown",
-	// 	enrollment: {
-	// 		profileName: device?.enrollmentProfileName,
-	// 		type: device?.enrollmentType || "unknown",
-	// 	},
-	// 	isCompliant: device?.isCompliant,
-	// 	isManaged: device?.isManaged || false,
-	// 	isRooted: device?.isRooted || false,
-	// 	managementType: device?.managementType || "unknown",
-	// 	manufacturer: device?.manufacturer,
-	// 	model: device?.model,
-	// 	operatingSystem: device?.operatingSystem,
-	// 	operatingSystemVersion: device?.operatingSystemVersion,
-	// 	lastSignInDate: device?.approximateLastSignInDateTime,
-	// 	registrationDateTime: device?.registrationDateTime,
-	// 	deviceCategory: device?.deviceCategory,
-	// }) satisfies Database["devices"]["value"],
+		// TODO
+		// const members = tx.objectStore("groupMembers");
+		// for (const member of data["members@delta"]) {
+		// 	if (member["@removed"]) {
+		// 		await members.delete(data.id);
+		// 	} else {
+		// 		members.put({
+		// 			groupId: data.id,
+		// 			type: member["@odata.type"],
+		// 			id: member.id,
+		// 		});
+		// 	}
+		// }
+
+		await tx.done;
+	},
+	delete: async (db, id) => await db.delete("devices", id),
 });
-
-// export const devices2 = defineSyncEntity("devices", {
-// 	endpoint: "/deviceManagement/managedDevices",
-// 	countEndpoint: "/devices/$count",
-// 	schema: z.object({
-// 		id: z.string(),
-// 	}),
-// 	upsert: async (user) => {
-// 		console.log("INSERT DEVICE", user);
-// 	},
-// 	delete: async (id) => {
-// 		console.log("DELETE DEVICE", id);
-// 	},
-
-// 	// (device) =>
-// 	// ({
-// 	// 	id: device.id,
-// 	// 	deviceId: device?.deviceId,
-// 	// 	name: device.displayName,
-// 	// 	deviceOwnership: device?.deviceOwnership || "unknown",
-// 	// 	type: device?.profileType || "unknown",
-// 	// 	trustType: device?.trustType || "unknown",
-// 	// 	enrollment: {
-// 	// 		profileName: device?.enrollmentProfileName,
-// 	// 		type: device?.enrollmentType || "unknown",
-// 	// 	},
-// 	// 	isCompliant: device?.isCompliant,
-// 	// 	isManaged: device?.isManaged || false,
-// 	// 	isRooted: device?.isRooted || false,
-// 	// 	managementType: device?.managementType || "unknown",
-// 	// 	manufacturer: device?.manufacturer,
-// 	// 	model: device?.model,
-// 	// 	operatingSystem: device?.operatingSystem,
-// 	// 	operatingSystemVersion: device?.operatingSystemVersion,
-// 	// 	lastSignInDate: device?.approximateLastSignInDateTime,
-// 	// 	registrationDateTime: device?.registrationDateTime,
-// 	// 	deviceCategory: device?.deviceCategory,
-// 	// }) satisfies Database["devices"]["value"],
-// });
 
 export const groups = defineSyncEntity("groups", {
 	endpoint:
@@ -173,32 +223,56 @@ export const groups = defineSyncEntity("groups", {
 	countEndpoint: "/groups/$count",
 	schema: z.object({
 		id: z.string(),
+		displayName: z.string(),
+		description: z.string().optional(),
+		securityEnabled: z.boolean().default(false),
+		visibility: z.enum(["Private", "Public", "HiddenMembership"]).nullable(),
+		createdDateTime: z.string(),
+		"members@delta": z
+			.array(
+				z.object({
+					"@odata.type": z.union([
+						z.literal("#microsoft.graph.user"),
+						z.literal("#microsoft.graph.group"),
+						z.literal("#microsoft.graph.device"),
+						z.literal("#microsoft.graph.servicePrincipal"),
+					]),
+					id: z.string(),
+					"@removed": z.object({}).passthrough().optional(),
+				}),
+			)
+			.default([]),
 	}),
-	upsert: async (user) => {
-		console.log("INSERT DEVICE", user);
-	},
-	delete: async (id) => {
-		console.log("DELETE DEVICE", id);
-	},
+	upsert: async (db, data) => {
+		const tx = db.transaction(["groups", "groupMembers"], "readwrite");
+		const groups = tx.objectStore("groups");
+		await groups.put(
+			merge(await groups.get(data.id), {
+				id: data.id,
+				name: data.displayName,
+				description: data?.description,
+				securityEnabled: data.securityEnabled,
+				visibility: data?.visibility ?? undefined,
+				createdDateTime: data.createdDateTime,
+			}),
+		);
 
-	// (group) =>
-	// ({
-	// 	id: group.id,
-	// 	name: group.displayName,
-	// 	description: group?.description,
-	// 	securityEnabled: group?.securityEnabled || false,
-	// 	visibility: group?.visibility,
-	// 	createdDateTime: group.createdDateTime,
-	// }) satisfies Database["groups"]["value"],
+		const members = tx.objectStore("groupMembers");
+		for (const member of data["members@delta"]) {
+			if (member["@removed"]) {
+				await members.delete(data.id);
+			} else {
+				members.put({
+					groupId: data.id,
+					type: member["@odata.type"],
+					id: member.id,
+				});
+			}
+		}
 
-	// TODO: Await these unless they are correctly being put into the transaction???
-	// group?.["members@delta"]?.map((member: any) => {
-	// 	db.add("groupMembers", {
-	// 		groupId: group.id,
-	// 		type: member?.["@odata.type"],
-	// 		id: member?.["@odata.type"],
-	// 	});
-	// });
+		await tx.done;
+	},
+	delete: async (db, id) => await db.delete("groups", id),
 });
 
 // export const policiesSettingsCatalogs = defineSyncEntity("policies", {
@@ -331,41 +405,75 @@ export const groups = defineSyncEntity("groups", {
 // // 	// }) satisfies Database["scripts"]["value"],
 // // });
 
-// export const apps = defineSyncEntity("apps", {
-// 	endpoint:
-// 		"/deviceAppManagement/mobileApps?$select=id,displayName,description,publisher,largeIcon,createdDateTime,lastModifiedDateTime,isFeatured,privacyInformationUrl,informationUrl,owner,developer,notes&$expand=assignments",
-// 	countEndpoint: undefined,
-// 	schema: z.object({
-// 		id: z.string(),
-// 	}),
-// 	upsert: async (user) => {
-// 		console.log("INSERT SCRIPT", user);
-// 	},
-// 	delete: async (id) => {
-// 		console.log("DELETE SCRIPT", id);
-// 	},
+export const apps = defineSyncEntity("apps", {
+	endpoint:
+		"/deviceAppManagement/mobileApps?$select=id,displayName,description,publisher,largeIcon,createdDateTime,lastModifiedDateTime,isFeatured,privacyInformationUrl,informationUrl,owner,developer,notes&$expand=assignments",
+	countEndpoint: undefined,
+	schema: z.object({
+		id: z.string(),
+		"@odata.type": z.union([
+			z.literal("#microsoft.graph.iosStoreApp"),
+			z.literal("#microsoft.graph.managedIOSStoreApp"),
+			z.literal("#microsoft.graph.managedAndroidStoreApp"),
+			z.literal("#microsoft.graph.managedAndroidStoreApp"),
+			z.literal("#microsoft.graph.winGetApp"),
+			// TODO: Work out all variants
+		]),
+		displayName: z.string(),
+		description: z.string().optional(),
+		publisher: z.string().optional(),
+		largeIcon: z.any().optional(),
+		createdDateTime: z.string(),
+		lastModifiedDateTime: z.string(),
+		isFeatured: z.boolean().default(false),
+		privacyInformationUrl: z.string().nullable(),
+		informationUrl: z.string().nullable(),
+		owner: z.string().nullable(),
+		developer: z.string().nullable(),
+		notes: z.string().nullable(),
+		assignments: z.array(z.any()).default([]),
+	}),
+	upsert: async (db, data) => {
+		const tx = db.transaction(["apps", "appAssignments"], "readwrite");
+		const apps = tx.objectStore("apps");
+		await apps.put(
+			merge(await apps.get(data.id), {
+				id: data.id,
+				type: data["@odata.type"],
+				name: data.displayName,
+				description: data.description,
+				publisher: data.publisher,
+				largeIcon: data.largeIcon,
+				createdDateTime: data.createdDateTime,
+				lastModifiedDateTime: data.lastModifiedDateTime,
+				isFeatured: data.isFeatured,
+				privacyInformationUrl: data.privacyInformationUrl ?? undefined,
+				informationUrl: data.informationUrl ?? undefined,
+				owner: data.owner ?? undefined,
+				developer: data.developer ?? undefined,
+				notes: data.notes ?? undefined,
+			}),
+		);
 
-// 	// (app) =>
-// 	// ({
-// 	// 	id: app.id,
-// 	// 	type: app["@odata.type"],
-// 	// 	name: app.displayName,
-// 	// 	description: app?.description,
-// 	// 	publisher: app?.publisher,
-// 	// 	largeIcon: app?.largeIcon,
-// 	// 	createdDateTime: app.createdDateTime,
-// 	// 	lastModifiedDateTime: app.lastModifiedDateTime,
-// 	// 	isFeatured: app?.isFeatured || false,
-// 	// 	privacyInformationUrl: app?.privacyInformationUrl,
-// 	// 	informationUrl: app?.informationUrl,
-// 	// 	owner: app?.owner,
-// 	// 	developer: app?.developer,
-// 	// 	notes: app?.notes,
+		const assignments = tx.objectStore("appAssignments");
+		for (const assignment of data.assignments) {
+			// TODO: Properly handle app assignments
+			console.log("APP ASSIGNMENT", assignment);
+			// if (member["@removed"]) {
+			// 	await members.delete(data.id);
+			// } else {
+			// 	members.put({
+			// 		groupId: data.id,
+			// 		type: member["@odata.type"],
+			// 		id: member.id,
+			// 	});
+			// }
+		}
 
-// 	// 	// TODO:
-// 	// 	assignments: app.assignments,
-// 	// }) satisfies Database["apps"]["value"],
-// });
+		await tx.done;
+	},
+	delete: async (db, id) => await db.delete("apps", id),
+});
 
 // TODO: https://graph.microsoft.com/beta/deviceManagement/reusableSettings
 // TODO: https://graph.microsoft.com/beta/deviceManagement/configurationSettings
