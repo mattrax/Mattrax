@@ -1,10 +1,26 @@
 {
 	"name": "@mattrax/mysql-planetscale",
 	"type": "module",
+	"version": "0.0.3",
 	"private": true,
 	"sideEffects": false,
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",
+	"publishConfig": {
+		"main": "./dist/index.js",
+		"types": "./dist/index.d.ts",
+		"exports": {
+			".": {
+				"import": "./dist/index.js",
+				"require": "./dist/index.js",
+				"types": "./dist/index.d.ts"
+			},
+			"./package.json": "./package.json"
+		}
+	},
+	"scripts": {
+		"build": "tsc"
+	},
 	"dependencies": {
 		"@planetscale/database": "^1.18.0",
 		"mysql2": "^3.10.3"
