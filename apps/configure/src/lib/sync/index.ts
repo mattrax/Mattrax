@@ -2,6 +2,7 @@ import { createContextProvider } from "@solid-primitives/context";
 import { useNavigate } from "@solidjs/router";
 import type { IDBPDatabase, StoreNames } from "idb";
 import { createResource, createSignal } from "solid-js";
+import { toast } from "solid-sonner";
 import { createTimer2 } from "../createTimer";
 import {
 	type Database,
@@ -16,7 +17,6 @@ import {
 	getProgress,
 	popOperations,
 } from "./state";
-import { toast } from "solid-sonner";
 
 export type SyncEngine = ReturnType<typeof initSyncEngine>;
 

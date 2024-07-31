@@ -83,12 +83,16 @@ export function createFetchHandler(uri: string): NonNullable<Config["fetch"]> {
 					let i = 0;
 					for (const [_, v] of Object.entries(r)) {
 						const field = fields[i]!;
+						i += 1;
 
-						let buf: Uint8Array;
 						if (v === null) {
 							lengths.push(-1);
 							continue;
-						} else if (
+						}
+
+						let buf: Uint8Array;
+
+						if (
 							typeof v === "string" ||
 							typeof v === "number" ||
 							typeof v === "boolean"
@@ -119,7 +123,6 @@ export function createFetchHandler(uri: string): NonNullable<Config["fetch"]> {
 						lengths.push(buf.length);
 						result = appendBuffer(result, buf);
 						currentOffset += buf.length;
-						i += 1;
 					}
 
 					return {
