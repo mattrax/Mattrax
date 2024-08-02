@@ -8,10 +8,10 @@ import { mapUser } from "../sync";
 import { defineSyncEntity, merge } from "./entity";
 import { registerBatchedOperation } from "./state";
 
-export async function me(db: IDBPDatabase<Database>, i: number) {
+export async function me(db: IDBPDatabase<Database>, t: number) {
 	const me = await db.get("_kv", "user");
 
-	if (i === 0)
+	if (t === 0)
 		registerBatchedOperation(
 			[
 				{
@@ -28,7 +28,9 @@ export async function me(db: IDBPDatabase<Database>, i: number) {
 					},
 				},
 			],
-			async ([me, mePhoto]) => {
+			async (responses) => {
+				const [me, mePhoto] = [responses[0]!, responses[1]!];
+
 				if (me.status !== 200)
 					throw new Error(`Failed to fetch me. Got status ${me.status}`);
 
@@ -80,18 +82,18 @@ export const users = defineSyncEntity("users", {
 				upn: data.userPrincipalName,
 				name: data.displayName,
 				nameParts: {
-					givenName: data?.givenName,
-					surname: data?.surname,
+					givenName: data.givenName,
+					surname: data.surname,
 				},
 				accountEnabled: data.accountEnabled,
-				employeeId: data?.employeeId,
-				officeLocation: data?.officeLocation,
+				employeeId: data.employeeId,
+				officeLocation: data.officeLocation,
 				phones: [
-					...(data?.businessPhones ?? []),
-					...(data?.mobilePhone ? [data.mobilePhone] : []),
+					...(data.businessPhones ?? []),
+					...(data.mobilePhone ? [data.mobilePhone] : []),
 				],
-				preferredLanguage: data?.preferredLanguage,
-				lastPasswordChangeDateTime: data?.lastPasswordChangeDateTime,
+				preferredLanguage: data.preferredLanguage,
+				lastPasswordChangeDateTime: data.lastPasswordChangeDateTime,
 				createdDateTime: data.createdDateTime,
 			}),
 		);
@@ -170,18 +172,17 @@ export const devices = defineSyncEntity("devices", {
 		deviceCategory: z.string().optional(),
 	}),
 	upsert: async (db, data) => {
-		const tx = db.transaction(["devices"], "readwrite");
-		const devices = tx.objectStore("devices");
-		await devices.put(
-			merge(await devices.get(data.id), {
+		const tx = db.transaction("devices", "readwrite");
+		await tx.store.put(
+			merge(await tx.store.get(data.id), {
 				id: data.id,
 				deviceId: data.deviceId,
 				name: data.displayName,
 				deviceOwnership: data.deviceOwnership,
 				type: data.profileType,
-				trustType: data?.trustType || "unknown",
+				trustType: data.trustType || "unknown",
 				enrollment: {
-					profileName: data?.enrollmentProfileName,
+					profileName: data.enrollmentProfileName,
 					type: data.enrollmentType,
 				},
 				isCompliant: data.isCompliant,
@@ -189,29 +190,14 @@ export const devices = defineSyncEntity("devices", {
 				isRooted: data.isRooted,
 				managementType: data.managementType,
 				manufacturer: data.manufacturer,
-				model: data?.model,
-				operatingSystem: data?.operatingSystem,
-				operatingSystemVersion: data?.operatingSystemVersion,
-				lastSignInDate: data?.approximateLastSignInDateTime,
-				registrationDateTime: data?.registrationDateTime,
-				deviceCategory: data?.deviceCategory,
+				model: data.model,
+				operatingSystem: data.operatingSystem,
+				operatingSystemVersion: data.operatingSystemVersion,
+				lastSignInDate: data.approximateLastSignInDateTime,
+				registrationDateTime: data.registrationDateTime,
+				deviceCategory: data.deviceCategory,
 			}),
 		);
-
-		// TODO
-		// const members = tx.objectStore("groupMembers");
-		// for (const member of data["members@delta"]) {
-		// 	if (member["@removed"]) {
-		// 		await members.delete(data.id);
-		// 	} else {
-		// 		members.put({
-		// 			groupId: data.id,
-		// 			type: member["@odata.type"],
-		// 			id: member.id,
-		// 		});
-		// 	}
-		// }
-
 		await tx.done;
 	},
 	delete: async (db, id) => await db.delete("devices", id),
@@ -250,9 +236,9 @@ export const groups = defineSyncEntity("groups", {
 			merge(await groups.get(data.id), {
 				id: data.id,
 				name: data.displayName,
-				description: data?.description,
+				description: data.description,
 				securityEnabled: data.securityEnabled,
-				visibility: data?.visibility ?? undefined,
+				visibility: data.visibility ?? undefined,
 				createdDateTime: data.createdDateTime,
 			}),
 		);
@@ -275,135 +261,113 @@ export const groups = defineSyncEntity("groups", {
 	delete: async (db, id) => await db.delete("groups", id),
 });
 
-// export const policiesSettingsCatalogs = defineSyncEntity("policies", {
-// 	endpoint:
-// 		"/deviceManagement/configurationPolicies?$select=id,name,description,platforms,technologies,createdDateTime,lastModifiedDateTime&$expand=assignments,settings",
-// 	countEndpoint: "/deviceManagement/configurationPolicies/$count",
-// 	schema: z.object({
-// 		id: z.string(),
-// 	}),
-// 	upsert: async (user) => {
-// 		console.log("INSERT POLICY", user);
-// 	},
-// 	delete: async (id) => {
-// 		console.log("DELETE POLICY", id);
-// 	},
+export const policies = defineSyncEntity("policies", {
+	endpoint: [
+		// Settings Catalogs
+		"/deviceManagement/configurationPolicies?$select=id,name,description,platforms,technologies,createdDateTime,lastModifiedDateTime&$expand=assignments,settings",
+		// Templates
+		"/deviceManagement/deviceConfigurations?$select=id,displayName,description,createdDateTime,lastModifiedDateTime,version&$expand=assignments&$count=true",
+	],
+	countEndpoint: undefined,
+	schema: z.object({
+		id: z.string(),
+	}),
+	upsert: async (user) => {
+		console.log("INSERT POLICY", user);
+	},
+	delete: async (id) => {
+		console.log("DELETE POLICY", id);
+	},
 
-// 	// (policy) =>
-// 	// 	({
-// 	// 		id: policy.id,
-// 	// 		name: policy.name,
-// 	// 		description: policy?.description,
-// 	// 		createdDateTime: policy.createdDateTime,
-// 	// 		lastModifiedDateTime: policy.lastModifiedDateTime,
-// 	// 		platforms: policy.platforms,
-// 	// 		// creationSource: policy?.creationSource,
-// 	// 		// templateReference: policy?.templateReference,
-// 	// 		// priority: policy?.priorityMetaData,
-// 	// 		settings: policy?.settings,
+	// (policy) =>
+	// 	({
+	// 		id: policy.id,
+	// 		name: policy.name,
+	// 		description: policy?.description,
+	// 		createdDateTime: policy.createdDateTime,
+	// 		lastModifiedDateTime: policy.lastModifiedDateTime,
+	// 		platforms: policy.platforms,
+	// 		// creationSource: policy?.creationSource,
+	// 		// templateReference: policy?.templateReference,
+	// 		// priority: policy?.priorityMetaData,
+	// 		settings: policy?.settings,
 
-// 	// 		// TODO:
-// 	// 		assignments: policy?.assignments,
-// 	// 	}) satisfies Database["policies"]["value"],
-// 	// async (policy, db) => {
-// 	// 	// TODO: Await these unless they are correctly being put into the transaction???
-// 	// 	policy?.assignments?.map((assignment) => {
-// 	// 		db.add("policyAssignments", {
-// 	// 			policyId: policy.id,
-// 	// 			type: "todo",
-// 	// 			id: "todo",
-// 	// 		});
-// 	// 	});
-// 	// },
-// });
+	// 		// TODO:
+	// 		assignments: policy?.assignments,
+	// 	}) satisfies Database["policies"]["value"],
+	// async (policy, db) => {
+	// 	// TODO: Await these unless they are correctly being put into the transaction???
+	// 	policy?.assignments?.map((assignment) => {
+	// 		db.add("policyAssignments", {
+	// 			policyId: policy.id,
+	// 			type: "todo",
+	// 			id: "todo",
+	// 		});
+	// 	});
+	// },
 
-// export const policiesTemplates = defineSyncEntity("policies", {
-// 	endpoint:
-// 		"/deviceManagement/deviceConfigurations?$select=id,displayName,description,createdDateTime,lastModifiedDateTime,version&$expand=assignments",
-// 	countEndpoint: "/deviceManagement/deviceConfigurations/$count",
-// 	schema: z.object({
-// 		id: z.string(),
-// 	}),
-// 	upsert: async (user) => {
-// 		console.log("INSERT POLICY", user);
-// 	},
-// 	delete: async (id) => {
-// 		console.log("DELETE POLICY", id);
-// 	},
+	// (policy) =>
+	// ({
+	// 	id: policy.id,
+	// 	name: policy.displayName,
+	// 	description: policy?.description,
+	// 	createdDateTime: policy.createdDateTime,
+	// 	lastModifiedDateTime: policy.lastModifiedDateTime,
 
-// 	// (policy) =>
-// 	// ({
-// 	// 	id: policy.id,
-// 	// 	name: policy.displayName,
-// 	// 	description: policy?.description,
-// 	// 	createdDateTime: policy.createdDateTime,
-// 	// 	lastModifiedDateTime: policy.lastModifiedDateTime,
+	// 	"@odata.type": policy["@odata.type"],
+	// 	version: policy.version,
 
-// 	// 	"@odata.type": policy["@odata.type"],
-// 	// 	version: policy.version,
+	// 	// TODO:
+	// 	assignments: policy?.assignments,
+	// }) satisfies Database["policies"]["value"],
+});
 
-// 	// 	// TODO:
-// 	// 	assignments: policy?.assignments,
-// 	// }) satisfies Database["policies"]["value"],
-// });
+export const scripts = defineSyncEntity("scripts", {
+	endpoint: [
+		// Powershell
+		"/deviceManagement/deviceManagementScripts?$expand=assignments,groupAssignments&$count=true",
+		// Shell
+		"/deviceManagement/deviceShellScripts?$expand=assignments,groupAssignments&$count=true",
+	],
+	countEndpoint: undefined,
+	schema: z.object({
+		id: z.string(),
+	}),
+	upsert: async (user) => {
+		console.log("INSERT POLICY", user);
+	},
+	delete: async (id) => {
+		console.log("DELETE POLICY", id);
+	},
 
-// export const powershellScripts = defineSyncEntity("scripts", {
-// 	endpoint:
-// 		"/deviceManagement/deviceManagementScripts?$expand=assignments,groupAssignments&$count=true",
-// 	countEndpoint: undefined,
-// 	schema: z.object({
-// 		id: z.string(),
-// 	}),
-// 	upsert: async (user) => {
-// 		console.log("INSERT SCRIPT", user);
-// 	},
-// 	delete: async (id) => {
-// 		console.log("DELETE SCRIPT", id);
-// 	},
+	// (script) =>
+	// ({
+	// 	id: script.id,
+	// 	name: script.displayName,
+	// 	scriptContent: script.scriptContent,
+	// 	fileName: script.fileName,
+	// 	createdDateTime: script.createdDateTime,
+	// 	lastModifiedDateTime: script.lastModifiedDateTime,
 
-// 	// (script) =>
-// 	// ({
-// 	// 	id: script.id,
-// 	// 	name: script.displayName,
-// 	// 	scriptContent: script.scriptContent,
-// 	// 	fileName: script.fileName,
-// 	// 	createdDateTime: script.createdDateTime,
-// 	// 	lastModifiedDateTime: script.lastModifiedDateTime,
+	// 	// TODO:
+	// 	assignments: script?.assignments,
+	// 	groupAssignments: script?.groupAssignments,
+	// }) satisfies Database["scripts"]["value"],
 
-// 	// 	// TODO:
-// 	// 	assignments: script?.assignments,
-// 	// 	groupAssignments: script?.groupAssignments,
-// 	// }) satisfies Database["scripts"]["value"],
-// });
+	// (script) =>
+	// ({
+	// 	id: script.id,
+	// 	name: script.displayName,
+	// 	scriptContent: script.scriptContent,
+	// 	fileName: script.fileName,
+	// 	createdDateTime: script.createdDateTime,
+	// 	lastModifiedDateTime: script.lastModifiedDateTime,
 
-// // export const shellScripts = defineSyncEntity("scripts", {
-// // 	endpoint:
-// // 		"/deviceManagement/deviceShellScripts?$expand=assignments,groupAssignments",
-// // 	countEndpoint: "/deviceManagement/deviceShellScripts/$count",
-// // 	schema: z.object({
-// // 		id: z.string(),
-// // 	}),
-// // 	upsert: async (user) => {
-// // 		console.log("INSERT SCRIPT", user);
-// // 	},
-// // 	delete: async (id) => {
-// // 		console.log("DELETE SCRIPT", id);
-// // 	},
-
-// // 	// (script) =>
-// // 	// ({
-// // 	// 	id: script.id,
-// // 	// 	name: script.displayName,
-// // 	// 	scriptContent: script.scriptContent,
-// // 	// 	fileName: script.fileName,
-// // 	// 	createdDateTime: script.createdDateTime,
-// // 	// 	lastModifiedDateTime: script.lastModifiedDateTime,
-
-// // 	// 	// TODO:
-// // 	// 	assignments: script?.assignments,
-// // 	// 	groupAssignments: script?.groupAssignments,
-// // 	// }) satisfies Database["scripts"]["value"],
-// // });
+	// 	// TODO:
+	// 	assignments: script?.assignments,
+	// 	groupAssignments: script?.groupAssignments,
+	// }) satisfies Database["scripts"]["value"],
+});
 
 export const apps = defineSyncEntity("apps", {
 	endpoint:

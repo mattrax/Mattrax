@@ -135,6 +135,7 @@ export function initSyncEngine() {
 				isSyncingCheck.trigger();
 
 				const start = performance.now();
+				let wasError = false;
 				try {
 					await sync(await db, accessToken);
 				} catch (err) {
@@ -146,13 +147,16 @@ export function initSyncEngine() {
 					}
 					console.error("Error occurred during sync:", err);
 					toast.error("Error syncing with Microsoft!", {
+						id: "sync-error",
 						description: "Your error has been reported to the team!",
 					});
+					wasError = true;
 				}
 				setProgress(0);
 				const elapsed = ((performance.now() - start) / 1000).toFixed(2);
 				console.log("Synced in", elapsed, "s");
-				return elapsed;
+				// This is to avoid the success toast showing up.
+				return wasError ? undefined : elapsed;
 			});
 			isSyncingCheck.trigger();
 			return result;
@@ -202,10 +206,10 @@ async function sync(db: IDBPDatabase<Database>, accessToken: string) {
 	// TODO: Detect if any syncs are currently in progress Eg. nextPage not delta
 
 	let queued: OperationGroup[] = [];
-	let i = 0;
+	let t = 0;
 	while (true) {
 		// Each of these will register operations.
-		await Promise.all(Object.values(schema).map((sync) => sync(db, i)));
+		await Promise.all(Object.values(schema).map((sync) => sync(db, t)));
 
 		queued = popOperations();
 		if (queued.length === 0) break;
@@ -224,7 +228,7 @@ async function sync(db: IDBPDatabase<Database>, accessToken: string) {
 			queued.map(async (queued) => {
 				const args = [];
 				for (const op of queued.ops) {
-					const r = resp.responses.find((r) => r.id === op.id);
+					const r = resp.responses.find((r: any) => r.id === op.id);
 					if (!resp)
 						throw new Error(
 							`Expected to find response with id "${r.id}" but it was not found!`,
@@ -245,7 +249,7 @@ async function sync(db: IDBPDatabase<Database>, accessToken: string) {
 			}),
 		);
 
-		i++;
+		t++;
 	}
 
 	clearProgress();

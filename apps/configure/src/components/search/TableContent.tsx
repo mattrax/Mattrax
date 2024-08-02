@@ -231,7 +231,11 @@ export function TableContent(
 					<TableRow class="flex" ref={tableHeaderRowRef}>
 						<TableHead class="size-12 flex justify-center items-center">
 							<Checkbox
-								checked={selected.size === orderedData()?.length}
+								checked={
+									selected.size === orderedData()?.length &&
+									orderedData()?.length !== 0
+								}
+								disabled={orderedData()?.length === 0}
 								indeterminate={
 									selected.size > 0 && selected.size < orderedData().length
 								}

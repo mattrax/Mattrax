@@ -21,18 +21,12 @@ export type OperationGroup = {
 const operations: OperationGroup[] = [];
 let progress: { id: string; total: number; current: number }[] = [];
 
-export function registerBatchedOperation<
-	const T extends Operation | Operation[],
->(
-	op: T,
-	callback: (
-		data: T extends Array<any>
-			? {
-					[I in keyof T]: OperationResponse;
-				}
-			: [OperationResponse],
-	) => Promise<void> | void,
+export function registerBatchedOperation(
+	op: Operation | Operation[],
+	// It is safe to assume `responses` will always match the order of `op`
+	callback: (responses: OperationResponse[]) => Promise<void> | void,
 ) {
+	if (Array.isArray(op) && op.length === 0) return;
 	operations.push({
 		ops: Array.isArray(op) ? op : [op],
 		callback: callback as any,

@@ -1,7 +1,11 @@
 import type { IDBPDatabase, StoreNames } from "idb";
 import { z } from "zod";
 import type { Database, TableName } from "../db";
-import { registerBatchedOperation, registerProgress } from "./state";
+import {
+	type Operation,
+	registerBatchedOperation,
+	registerProgress,
+} from "./state";
 
 const stripGraphAPIPrefix = (url: string) => {
 	let r = url
@@ -36,7 +40,7 @@ export function defineSyncEntity<T extends z.AnyZodObject>(
 	options: {
 		// The Microsoft endpoint to fetch the data.
 		// This is relative as we use `/$batch`.
-		endpoint: string;
+		endpoint: string | string[];
 		// When not provided it is expected the endpoint returns a `@odata.count`.
 		// `@odata.count` is not supported for Delta queries hence this.
 		countEndpoint: string | undefined;
@@ -51,134 +55,124 @@ export function defineSyncEntity<T extends z.AnyZodObject>(
 		) => Promise<void>;
 	},
 ) {
-	return async (db: IDBPDatabase<Database>, i: number) => {
+	return async (db: IDBPDatabase<Database>, t: number) => {
+		const endpoints = Array.isArray(options.endpoint)
+			? options.endpoint
+			: [options.endpoint];
+
 		// This to to ensure no matter the order that each sync operation returns, it's chunk of the total percentage is always accounted for.
-		registerProgress(name, Number.NaN, 0);
+		endpoints.forEach((_, i) =>
+			registerProgress(`${name}-${i}`, Number.NaN, 0),
+		);
 
-		const meta = await db.get("_meta", name);
+		let metas = await db.get("_meta", name);
 
-		const inner = async (
-			count: number,
-			offset: number,
-			resp: z.output<ReturnType<typeof odataResponseSchema<T>>>,
-		) => {
-			await Promise.all(
-				resp.value.map(async (value) => {
-					if (value["@removed"]) {
-						await options.delete(db, value.id);
-					} else {
-						await options.upsert(db, value);
-					}
-				}),
-			);
+		endpoints.forEach((endpointUrl, i) => {
+			const meta = metas ? metas?.[i] : undefined;
 
-			const isLastPage =
-				resp?.["@odata.deltaLink"] || resp?.["@odata.nextLink"] === undefined;
-			if (isLastPage) {
-				// TODO: Clear all users in DB that were not updated (if this is not a delta sync!).
+			const operations: Operation[] = [];
+			if (meta && "nextPage" in meta) {
+				operations.push({
+					id: `${name}-${i}`,
+					method: "GET",
+					url: stripGraphAPIPrefix(meta.nextPage),
+				});
+			} else if (t === 0) {
+				operations.push({
+					id: `${name}-${i}`,
+					method: "GET",
+					url:
+						meta && "deltaLink" in meta && meta.deltaLink
+							? stripGraphAPIPrefix(meta.deltaLink)
+							: endpointUrl,
+				});
+				if (options.countEndpoint)
+					operations.push({
+						id: `${name}-count`,
+						method: "GET",
+						url: options.countEndpoint,
+						headers: {
+							ConsistencyLevel: "eventual",
+						},
+					});
 			}
 
-			registerProgress(name, count, offset + resp.value.length);
-			await db.put(
-				"_meta",
-				isLastPage
+			registerBatchedOperation(operations, async (responses) => {
+				const response = responses.shift()!;
+				const countResp = responses.shift();
+
+				console.log(name, response, countResp, responses.length); // TODO
+
+				if (response.status !== 200)
+					throw new Error(
+						`Failed to fetch ${name}. Got status ${response.status} from request "${response.id}"`,
+					);
+				const result = odataResponseSchema(options.schema).safeParse(
+					response.body,
+				);
+				if (result.error)
+					throw new Error(
+						`Failed to parse ${name} response from request "${response.id}". ${result.error.message}`,
+					);
+
+				// TODO: What if multiple counts!!!!!
+				let count = result.data?.["@odata.count"];
+				if (count === undefined)
+					if (countResp) {
+						if (countResp.status !== 200)
+							throw new Error(
+								`Failed to fetch ${name} count. Got status ${countResp.status}"`,
+							);
+
+						count = z.number().parse(countResp.body);
+					} else if (meta && "count" in meta) {
+						count = meta.count;
+					} else {
+						// The `options.countEndpoint` or `@odata.count` is required.
+						throw new Error(`Failed to determine ${name} count!`);
+					}
+
+				const offset = meta && "offset" in meta ? meta.offset : 0;
+
+				await Promise.all(
+					result.data.value.map(async (value) => {
+						if (value["@removed"]) {
+							await options.delete(db, value.id);
+						} else {
+							await options.upsert(db, value);
+						}
+					}),
+				);
+
+				const isLastPage =
+					result.data?.["@odata.deltaLink"] ||
+					result.data?.["@odata.nextLink"] === undefined;
+				if (isLastPage) {
+					console.log("isLastPage for ", name, i); // TODO
+					// TODO: Clear all users in DB that were not updated (if this is not a delta sync!).
+				}
+
+				// TODO: We should hold a lock on `_meta` or do something smart cause this is pretty unsafe.
+				registerProgress(
+					`${name}-${i}`,
+					count,
+					offset + result.data.value.length,
+				);
+				if (!metas) metas = {};
+				metas[i] = isLastPage
 					? {
-							deltaLink: resp?.["@odata.deltaLink"],
+							deltaLink: result.data?.["@odata.deltaLink"],
 							syncedAt: new Date(),
 						}
 					: {
 							count,
-							offset: offset + resp.value.length,
+							offset: offset + result.data.value.length,
 							// We assert, because `isLastPage` accounts for this. TS is just not smart enough.
-							nextPage: resp["@odata.nextLink"]!,
-						},
-				name,
-			);
-		};
-
-		if (meta && "nextPage" in meta && meta.nextPage) {
-			registerBatchedOperation(
-				{
-					id: name,
-					method: "GET",
-					url: stripGraphAPIPrefix(meta.nextPage),
-				},
-				async ([dataResp]) => {
-					if (dataResp.status !== 200)
-						throw new Error(
-							`Failed to fetch ${name}. Got status ${dataResp.status}"`,
-						);
-					const result = odataResponseSchema(options.schema).safeParse(
-						dataResp.body,
-					);
-					if (result.error)
-						throw new Error(
-							`Failed to parse ${name} response. ${result.error.message}`,
-						);
-
-					await inner(meta.count, meta.offset, result.data);
-				},
-			);
-		} else {
-			// Once the sync completes the deltaLink & syncedAt are stored but we don't want to start a syncing again in this "session".
-			if (meta && "syncedAt" in meta && i !== 0) return;
-
-			const url =
-				meta && "deltaLink" in meta && meta.deltaLink
-					? stripGraphAPIPrefix(meta.deltaLink)
-					: options.endpoint;
-
-			registerBatchedOperation(
-				[
-					{
-						id: name,
-						method: "GET",
-						url,
-					},
-					...(options.countEndpoint
-						? ([
-								{
-									id: `${name}Count`,
-									method: "GET",
-									url: options.countEndpoint,
-									headers: {
-										ConsistencyLevel: "eventual",
-									},
-								},
-							] as const)
-						: []),
-				],
-				async ([dataResp, countResp]) => {
-					if (dataResp.status !== 200)
-						throw new Error(
-							`Failed to fetch ${name}. Got status ${dataResp.status}"`,
-						);
-					const result = odataResponseSchema(options.schema).safeParse(
-						dataResp.body,
-					);
-					if (result.error)
-						throw new Error(
-							`Failed to parse ${name} response. ${result.error.message}`,
-						);
-
-					let count = result.data?.["@odata.count"];
-					if (count === undefined)
-						if (countResp) {
-							if (countResp.status !== 200)
-								throw new Error(
-									`Failed to fetch ${name} count. Got status ${countResp.status}"`,
-								);
-
-							count = z.number().parse(countResp.body);
-						} else {
-							// The `options.countEndpoint` or `@odata.count` is required.
-							throw new Error(`Failed to determine ${name} count!`);
-						}
-
-					await inner(count, 0, result.data);
-				},
-			);
-		}
+							nextPage: result.data["@odata.nextLink"]!,
+						};
+				await db.put("_meta", metas, name);
+			});
+		});
 	};
 }
 

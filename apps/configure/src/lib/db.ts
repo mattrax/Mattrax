@@ -25,17 +25,29 @@ export interface Database extends DBSchema {
 	// Track the nextPage links for each active paginated query and keep track of delta links ready for the next sync.
 	_meta: {
 		key: TableName;
-		value:
-			| {
-					count: number;
-					offset: number;
-					nextPage: string;
-			  }
-			| {
-					// not all tables we sync support delta links
-					deltaLink?: string;
-					syncedAt: Date;
-			  };
+		value: {
+			[id: number]:
+				| {
+						count: number;
+						offset: number;
+						nextPage: string;
+				  }
+				| {
+						// not all tables we sync support delta links
+						deltaLink?: string;
+						syncedAt: Date;
+				  };
+		};
+	};
+	// Queued mutations
+	_mutations: {
+		key: string;
+		value: {
+			id: string;
+			// type: "create" | "update" | "delete";
+			// table: TableName;
+			// data: any;
+		};
 	};
 	// Stored views
 	views: {
