@@ -20,7 +20,7 @@ const stripGraphAPIPrefix = (url: string) => {
 	return r;
 };
 
-function odataResponseSchema<S extends z.AnyZodObject>(schema: S) {
+function odataResponseSchema<S extends z.ZodTypeAny>(schema: S) {
 	return z.object({
 		"@odata.deltaLink": z.string().optional(),
 		"@odata.nextLink": z.string().optional(),
@@ -35,7 +35,7 @@ function odataResponseSchema<S extends z.AnyZodObject>(schema: S) {
 }
 
 // TODO: Handle https://learn.microsoft.com/en-us/graph/delta-query-overview#synchronization-reset
-export function defineSyncEntity<T extends z.AnyZodObject>(
+export function defineSyncEntity<T extends z.ZodTypeAny>(
 	name: StoreNames<Database> & TableName,
 	options: {
 		// The Microsoft endpoint to fetch the data.
@@ -101,8 +101,6 @@ export function defineSyncEntity<T extends z.AnyZodObject>(
 				const response = responses.shift()!;
 				const countResp = responses.shift();
 
-				console.log(name, response, countResp, responses.length); // TODO
-
 				if (response.status !== 200)
 					throw new Error(
 						`Failed to fetch ${name}. Got status ${response.status} from request "${response.id}"`,
@@ -147,8 +145,10 @@ export function defineSyncEntity<T extends z.AnyZodObject>(
 				const isLastPage =
 					result.data?.["@odata.deltaLink"] ||
 					result.data?.["@odata.nextLink"] === undefined;
+
+				// TODO: This should only run once all other operations under the same table are done.
 				if (isLastPage) {
-					console.log("isLastPage for ", name, i); // TODO
+					// console.log("isLastPage for ", name, i); // TODO
 					// TODO: Clear all users in DB that were not updated (if this is not a delta sync!).
 				}
 

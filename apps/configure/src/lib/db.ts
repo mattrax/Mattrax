@@ -224,8 +224,8 @@ export interface Database extends DBSchema {
 		value: {
 			id: string;
 			name: string;
-
-			scriptContent: string;
+			description?: string;
+			scriptContent?: string;
 			fileName: string;
 			runAsAccount: "system" | "user";
 
@@ -238,7 +238,7 @@ export interface Database extends DBSchema {
 			  }
 			// Bash
 			| {
-					executionFrequency: any; // TODO: Type
+					executionFrequency: string;
 					retryCount: number;
 					blockExecutionNotifications: boolean;
 			  }

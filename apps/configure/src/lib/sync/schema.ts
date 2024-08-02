@@ -269,57 +269,90 @@ export const policies = defineSyncEntity("policies", {
 		"/deviceManagement/deviceConfigurations?$select=id,displayName,description,createdDateTime,lastModifiedDateTime,version&$expand=assignments&$count=true",
 	],
 	countEndpoint: undefined,
-	schema: z.object({
-		id: z.string(),
-	}),
-	upsert: async (user) => {
-		console.log("INSERT POLICY", user);
+	schema: z.preprocess(
+		(val) =>
+			typeof val !== "object" || val === null
+				? val
+				: "@odata.type" in val
+					? val
+					: { ...val, "@odata.type": "__NO_ODATA_TYPE__" },
+
+		z.intersection(
+			z.object({
+				id: z.string(),
+				description: z
+					.string()
+					.nullable()
+					// Microsoft's endpoints are inconsistent.
+					.transform((v) => (v === "" ? null : v)),
+				createdDateTime: z.string(),
+				lastModifiedDateTime: z.string(),
+				// TODO
+				// assignments: policy?.assignments,
+			}),
+			z.discriminatedUnion("@odata.type", [
+				z.object({
+					"@odata.type": z.literal("__NO_ODATA_TYPE__"),
+					name: z.string(),
+					platforms: z.any(), // TODO: Type
+					// creationSource: z.any(),
+					// templateReference: z.any(),
+					// priority: z.any(),
+					settings: z.array(z.any()), // TODO: Type
+				}),
+				z.object({
+					"@odata.type": z.enum([
+						"#microsoft.graph.iosCustomConfiguration",
+						"#microsoft.graph.windows10CustomConfiguration",
+						"#microsoft.graph.windows10GeneralConfiguration",
+						"#microsoft.graph.windowsWifiConfiguration",
+						// TODO: Find all of them
+					]),
+					displayName: z.string(),
+					version: z.number(),
+				}),
+			]),
+		),
+	),
+	upsert: async (db, data) => {
+		const tx = db.transaction(["policies", "policiesAssignments"], "readwrite");
+		const policies = tx.objectStore("policies");
+		await policies.put(
+			merge(await policies.get(data.id), {
+				id: data.id,
+				description: data.description ?? undefined,
+				createdDateTime: data.createdDateTime,
+				lastModifiedDateTime: data.lastModifiedDateTime,
+				...(data["@odata.type"] === "__NO_ODATA_TYPE__"
+					? {
+							name: data.name,
+							platforms: data.platforms,
+							settings: data.settings,
+						}
+					: {
+							name: data.displayName,
+							"@odata.type": data["@odata.type"],
+							version: data.version,
+						}),
+			}),
+		);
+
+		// const assignments = tx.objectStore("policiesAssignments");
+		// for (const member of data["members@delta"]) {
+		// 	if (member["@removed"]) {
+		// 		await members.delete(data.id);
+		// 	} else {
+		// 		members.put({
+		// 			groupId: data.id,
+		// 			type: member["@odata.type"],
+		// 			id: member.id,
+		// 		});
+		// 	}
+		// }
+
+		await tx.done;
 	},
-	delete: async (id) => {
-		console.log("DELETE POLICY", id);
-	},
-
-	// (policy) =>
-	// 	({
-	// 		id: policy.id,
-	// 		name: policy.name,
-	// 		description: policy?.description,
-	// 		createdDateTime: policy.createdDateTime,
-	// 		lastModifiedDateTime: policy.lastModifiedDateTime,
-	// 		platforms: policy.platforms,
-	// 		// creationSource: policy?.creationSource,
-	// 		// templateReference: policy?.templateReference,
-	// 		// priority: policy?.priorityMetaData,
-	// 		settings: policy?.settings,
-
-	// 		// TODO:
-	// 		assignments: policy?.assignments,
-	// 	}) satisfies Database["policies"]["value"],
-	// async (policy, db) => {
-	// 	// TODO: Await these unless they are correctly being put into the transaction???
-	// 	policy?.assignments?.map((assignment) => {
-	// 		db.add("policyAssignments", {
-	// 			policyId: policy.id,
-	// 			type: "todo",
-	// 			id: "todo",
-	// 		});
-	// 	});
-	// },
-
-	// (policy) =>
-	// ({
-	// 	id: policy.id,
-	// 	name: policy.displayName,
-	// 	description: policy?.description,
-	// 	createdDateTime: policy.createdDateTime,
-	// 	lastModifiedDateTime: policy.lastModifiedDateTime,
-
-	// 	"@odata.type": policy["@odata.type"],
-	// 	version: policy.version,
-
-	// 	// TODO:
-	// 	assignments: policy?.assignments,
-	// }) satisfies Database["policies"]["value"],
+	delete: async (db, id) => await db.delete("policies", id),
 });
 
 export const scripts = defineSyncEntity("scripts", {
@@ -330,43 +363,81 @@ export const scripts = defineSyncEntity("scripts", {
 		"/deviceManagement/deviceShellScripts?$expand=assignments,groupAssignments&$count=true",
 	],
 	countEndpoint: undefined,
-	schema: z.object({
-		id: z.string(),
-	}),
-	upsert: async (user) => {
-		console.log("INSERT POLICY", user);
+	schema: z.intersection(
+		z.object({
+			id: z.string(),
+			displayName: z.string(),
+			description: z
+				.string()
+				.nullable()
+				// Microsoft's endpoints are cringe.
+				.transform((v) => (v === "" ? null : v)),
+			createdDateTime: z.string(),
+			lastModifiedDateTime: z.string(),
+			runAsAccount: z.enum(["system", "user"]),
+			fileName: z.string(),
+			scriptContent: z.string().nullable(),
+
+			// TODO:
+			// 	assignments: script?.assignments,
+			// 	groupAssignments: script?.groupAssignments,
+		}),
+		z.union([
+			z.object({
+				executionFrequency: z.string().duration(),
+				retryCount: z.number(),
+				blockExecutionNotifications: z.boolean(),
+			}),
+			z.object({
+				enforceSignatureCheck: z.boolean(),
+				runAs32Bit: z.boolean(),
+			}),
+		]),
+	),
+	upsert: async (db, data) => {
+		const tx = db.transaction(["scripts", "scriptAssignments"], "readwrite");
+		const scripts = tx.objectStore("scripts");
+		await scripts.put(
+			merge(await scripts.get(data.id), {
+				id: data.id,
+				name: data.displayName,
+				description: data.description ?? undefined,
+				createdDateTime: data.createdDateTime,
+				lastModifiedDateTime: data.lastModifiedDateTime,
+				runAsAccount: data.runAsAccount,
+				fileName: data.fileName,
+				scriptContent: data.scriptContent ?? undefined,
+				...("executionFrequency" in data
+					? {
+							// Bash
+							executionFrequency: data.executionFrequency,
+							retryCount: data.retryCount,
+							blockExecutionNotifications: data.blockExecutionNotifications,
+						}
+					: {
+							// Powershell
+							enforceSignatureCheck: data.enforceSignatureCheck,
+							runAs32Bit: data.runAs32Bit,
+						}),
+			}),
+		);
+
+		// const assignments = tx.objectStore("scriptAssignments");
+		// for (const member of data["members@delta"]) {
+		// 	if (member["@removed"]) {
+		// 		await members.delete(data.id);
+		// 	} else {
+		// 		members.put({
+		// 			groupId: data.id,
+		// 			type: member["@odata.type"],
+		// 			id: member.id,
+		// 		});
+		// 	}
+		// }
+
+		await tx.done;
 	},
-	delete: async (id) => {
-		console.log("DELETE POLICY", id);
-	},
-
-	// (script) =>
-	// ({
-	// 	id: script.id,
-	// 	name: script.displayName,
-	// 	scriptContent: script.scriptContent,
-	// 	fileName: script.fileName,
-	// 	createdDateTime: script.createdDateTime,
-	// 	lastModifiedDateTime: script.lastModifiedDateTime,
-
-	// 	// TODO:
-	// 	assignments: script?.assignments,
-	// 	groupAssignments: script?.groupAssignments,
-	// }) satisfies Database["scripts"]["value"],
-
-	// (script) =>
-	// ({
-	// 	id: script.id,
-	// 	name: script.displayName,
-	// 	scriptContent: script.scriptContent,
-	// 	fileName: script.fileName,
-	// 	createdDateTime: script.createdDateTime,
-	// 	lastModifiedDateTime: script.lastModifiedDateTime,
-
-	// 	// TODO:
-	// 	assignments: script?.assignments,
-	// 	groupAssignments: script?.groupAssignments,
-	// }) satisfies Database["scripts"]["value"],
+	delete: async (db, id) => await db.delete("scripts", id),
 });
 
 export const apps = defineSyncEntity("apps", {
