@@ -5,8 +5,14 @@ import type { IDBPDatabase } from "idb";
 import { z } from "zod";
 import type { Database } from "../db";
 import { mapUser } from "../sync";
-import { defineSyncEntity, merge } from "./entity";
+import { defineSyncEntity, merge, odataResponseSchema } from "./entity";
 import { registerBatchedOperation } from "./state";
+
+const userSchema = z.object({
+	id: z.string(),
+	displayName: z.string(),
+	userPrincipalName: z.string(),
+});
 
 export async function me(db: IDBPDatabase<Database>, t: number) {
 	const me = await db.get("_kv", "user");
@@ -34,7 +40,13 @@ export async function me(db: IDBPDatabase<Database>, t: number) {
 				if (me.status !== 200)
 					throw new Error(`Failed to fetch me. Got status ${me.status}`);
 
-				const user = mapUser(me.body);
+				const result = userSchema.safeParse(me.body);
+				if (result.error)
+					throw new Error(
+						`Failed to parse me response. ${result.error.message}`,
+					);
+
+				const user = mapUser(result.data);
 
 				// Will be `404` if the user has no photo.
 				if (mePhoto.status === 200) {
@@ -49,6 +61,54 @@ export async function me(db: IDBPDatabase<Database>, t: number) {
 
 				// TODO: Fix types
 				await db.put("_kv", user, "user");
+			},
+		);
+}
+
+const orgSchema = z.object({
+	id: z.string(),
+	displayName: z.string(),
+	verifiedDomains: z.array(
+		z.object({
+			capabilities: z.string(),
+			isDefault: z.boolean(),
+			isInitial: z.boolean(),
+			name: z.string(),
+			type: z.enum(["Managed"]),
+		}),
+	),
+});
+
+export async function organization(db: IDBPDatabase<Database>, t: number) {
+	if (t === 0)
+		registerBatchedOperation(
+			[
+				{
+					id: "organization",
+					method: "GET",
+					url: "/organization?$select=id,displayName,verifiedDomains",
+				},
+			],
+			async (responses) => {
+				const org = responses[0]!;
+
+				if (org.status !== 200)
+					throw new Error(`Failed to fetch org. Got status ${org.status}`);
+
+				const result = odataResponseSchema(orgSchema).safeParse(org.body);
+				if (result.error)
+					throw new Error(
+						`Failed to parse organization response. ${result.error.message}`,
+					);
+
+				if (result.data.value[0] === undefined) {
+					throw new Error("No organisations was found!");
+				} else if (result.data.value.length > 1) {
+					console.warn("Found multiple organisations. Choosing the first one!");
+				}
+
+				// TODO: Fix types
+				await db.put("_kv", result.data.value[0], "org");
 			},
 		);
 }

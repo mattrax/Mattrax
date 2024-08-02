@@ -16,6 +16,7 @@ export interface Database extends DBSchema {
 	_kv: {
 		key:
 			| "user"
+			| "org"
 			| "accessToken"
 			| "refreshToken"
 			| "configurationSettings"

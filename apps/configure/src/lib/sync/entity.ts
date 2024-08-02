@@ -20,7 +20,7 @@ const stripGraphAPIPrefix = (url: string) => {
 	return r;
 };
 
-function odataResponseSchema<S extends z.ZodTypeAny>(schema: S) {
+export function odataResponseSchema<S extends z.ZodTypeAny>(schema: S) {
 	return z.object({
 		"@odata.deltaLink": z.string().optional(),
 		"@odata.nextLink": z.string().optional(),
