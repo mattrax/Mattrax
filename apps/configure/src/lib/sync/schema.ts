@@ -261,6 +261,34 @@ export const groups = defineSyncEntity("groups", {
 	delete: async (db, id) => await db.delete("groups", id),
 });
 
+const assignmentTarget = z.discriminatedUnion("@odata.type", [
+	z.object({
+		"@odata.type": z.enum([
+			"#microsoft.graph.exclusionGroupAssignmentTarget",
+			"#microsoft.graph.groupAssignmentTarget",
+		]),
+		deviceAndAppManagementAssignmentFilterId: z.string().nullable(),
+		deviceAndAppManagementAssignmentFilterType: z.enum([
+			"none",
+			"include",
+			"exclude",
+		]),
+		groupId: z.string(),
+	}),
+	z.object({
+		"@odata.type": z.enum([
+			"#microsoft.graph.allLicensedUsersAssignmentTarget",
+			"#microsoft.graph.allDevicesAssignmentTarget",
+		]),
+		deviceAndAppManagementAssignmentFilterId: z.string().nullable(),
+		deviceAndAppManagementAssignmentFilterType: z.enum([
+			"none",
+			"include",
+			"exclude",
+		]),
+	}),
+]);
+
 export const policies = defineSyncEntity("policies", {
 	endpoint: [
 		// Settings Catalogs
@@ -287,8 +315,14 @@ export const policies = defineSyncEntity("policies", {
 					.transform((v) => (v === "" ? null : v)),
 				createdDateTime: z.string(),
 				lastModifiedDateTime: z.string(),
-				// TODO
-				// assignments: policy?.assignments,
+				assignments: z.array(
+					z.object({
+						id: z.string(),
+						source: z.enum(["direct", "policySets"]),
+						sourceId: z.string(),
+						target: assignmentTarget,
+					}),
+				),
 			}),
 			z.discriminatedUnion("@odata.type", [
 				z.object({
@@ -377,10 +411,29 @@ export const scripts = defineSyncEntity("scripts", {
 			runAsAccount: z.enum(["system", "user"]),
 			fileName: z.string(),
 			scriptContent: z.string().nullable(),
-
-			// TODO:
-			// 	assignments: script?.assignments,
-			// 	groupAssignments: script?.groupAssignments,
+			assignments: z.array(
+				z.object({
+					id: z.string(),
+					target: z.object({
+						"@odata.type": z.enum([
+							"#microsoft.graph.allDevicesAssignmentTarget",
+							"#microsoft.graph.allLicensedUsersAssignmentTarget",
+							"microsoft.graph.scopeTagGroupAssignmentTarget",
+							// TODO: Any other ones?
+						]),
+						deviceAndAppManagementAssignmentFilterId: z.string().nullable(),
+						deviceAndAppManagementAssignmentFilterType: z.string(),
+						targetType: z.string().optional(),
+						entraObjectId: z.string().optional(),
+					}),
+				}),
+			),
+			groupAssignments: z.array(
+				z.object({
+					id: z.string(),
+					targetGroupId: z.string(),
+				}),
+			),
 		}),
 		z.union([
 			z.object({
@@ -466,7 +519,57 @@ export const apps = defineSyncEntity("apps", {
 		owner: z.string().nullable(),
 		developer: z.string().nullable(),
 		notes: z.string().nullable(),
-		assignments: z.array(z.any()).default([]),
+		assignments: z
+			.array(
+				z.object({
+					id: z.string(),
+					intent: z.enum([
+						"available",
+						"required",
+						"uninstall",
+						"availableWithoutEnrollment",
+					]),
+					source: z.enum(["direct", "policySets"]),
+					sourceId: z.string().nullable(),
+					target: assignmentTarget,
+					settings: z.discriminatedUnion("@odata.type", [
+						z.object({
+							"@odata.type": z.literal(
+								"#microsoft.graph.iosStoreAppAssignmentSettings",
+							),
+							vpnConfigurationId: z.unknown().optional(),
+							uninstallOnDeviceRemoval: z.boolean(),
+							isRemovable: z.boolean(),
+							preventManagedAppBackup: z.boolean(),
+						}),
+						z.object({
+							"@odata.type": z.literal(
+								"#microsoft.graph.winGetAppAssignmentSettings",
+							),
+							notifications: z.enum([
+								"showAll",
+								"showReboot",
+								"hideAll",
+								"unknownFutureValue",
+							]),
+							restartSettings: z
+								.object({
+									gracePeriodInMinutes: z.number(),
+									countdownDisplayBeforeRestartInMinutes: z.number(),
+									restartNotificationSnoozeDurationInMinutes: z.number(),
+								})
+								.nullable(),
+							installTimeSettings: z
+								.object({
+									useLocalTime: z.boolean(),
+									deadlineDateTime: z.string(), // TODO: Date
+								})
+								.nullable(),
+						}),
+					]),
+				}),
+			)
+			.default([]),
 	}),
 	upsert: async (db, data) => {
 		const tx = db.transaction(["apps", "appAssignments"], "readwrite");
@@ -490,20 +593,18 @@ export const apps = defineSyncEntity("apps", {
 			}),
 		);
 
-		const assignments = tx.objectStore("appAssignments");
-		for (const assignment of data.assignments) {
-			// TODO: Properly handle app assignments
-			console.log("APP ASSIGNMENT", assignment);
-			// if (member["@removed"]) {
-			// 	await members.delete(data.id);
-			// } else {
-			// 	members.put({
-			// 		groupId: data.id,
-			// 		type: member["@odata.type"],
-			// 		id: member.id,
-			// 	});
-			// }
-		}
+		// const assignments = tx.objectStore("appAssignments");
+		// for (const assignment of data.assignments) {
+		// 	if (member["@removed"]) {
+		// 		await members.delete(data.id);
+		// 	} else {
+		// 		members.put({
+		// 			groupId: data.id,
+		// 			type: member["@odata.type"],
+		// 			id: member.id,
+		// 		});
+		// 	}
+		// }
 
 		await tx.done;
 	},
