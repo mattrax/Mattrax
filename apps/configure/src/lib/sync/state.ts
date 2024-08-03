@@ -14,27 +14,58 @@ export type OperationResponse = {
 
 export type OperationGroup = {
 	ops: Operation[];
-	callback: (data: OperationResponse | OperationResponse[]) => Promise<void>;
+	callback: (data: OperationResponse[]) => Promise<void> | void;
+};
+
+export type Scope = {
+	operations: OperationGroup[];
+	callback: () => Promise<void> | void;
 };
 
 // We push/pop from these globals. Similar to SolidJS
-const operations: OperationGroup[] = [];
+// const operations: OperationGroup[] = [];
+let nextScopeId = 0;
+let scopes: Record<number, Scope> = {};
 let progress: { id: string; total: number; current: number }[] = [];
 
+export function createScope(callback: () => Promise<void> | void) {
+	nextScopeId += 1;
+	const scopeId = nextScopeId;
+
+	scopes[scopeId] = {
+		operations: [],
+		callback,
+	};
+
+	return {
+		// It is safe to assume these will fire the order they were registered
+		registerOperation(
+			op: Operation | Operation[],
+			// It is safe to assume `responses` will always match the order of `op`
+			callback: (responses: OperationResponse[]) => Promise<void> | void,
+		) {
+			if (Array.isArray(op) && op.length === 0) return;
+			scopes[scopeId]!.operations.push({
+				ops: Array.isArray(op) ? op : [op],
+				callback: callback as any,
+			});
+		},
+	};
+}
+
+// It is safe to assume these will fire the order they were registered
 export function registerBatchedOperation(
 	op: Operation | Operation[],
 	// It is safe to assume `responses` will always match the order of `op`
 	callback: (responses: OperationResponse[]) => Promise<void> | void,
 ) {
-	if (Array.isArray(op) && op.length === 0) return;
-	operations.push({
-		ops: Array.isArray(op) ? op : [op],
-		callback: callback as any,
-	});
+	createScope(() => {}).registerOperation(op, callback);
 }
 
-export function popOperations() {
-	return operations.splice(0, operations.length);
+export function popScopes() {
+	const s = Object.values(scopes);
+	scopes = {};
+	return s;
 }
 
 export function registerProgress(id: string, total: number, current: number) {

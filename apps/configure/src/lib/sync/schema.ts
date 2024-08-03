@@ -4,8 +4,10 @@
 import type { IDBPDatabase } from "idb";
 import { z } from "zod";
 import type { Database } from "../db";
+import { getKey, setKey } from "../kv";
 import { mapUser } from "../sync";
 import { defineSyncEntity, merge, odataResponseSchema } from "./entity";
+import { registerBatchedOperationAsync } from "./microsoft";
 import { registerBatchedOperation } from "./state";
 
 const userSchema = z.object({
@@ -14,55 +16,50 @@ const userSchema = z.object({
 	userPrincipalName: z.string(),
 });
 
-export async function me(db: IDBPDatabase<Database>, t: number) {
-	const me = await db.get("_kv", "user");
+export async function me(db: IDBPDatabase<Database>, accessToken: string) {
+	const oldMe = await getKey(db, "user");
 
-	if (t === 0)
-		registerBatchedOperation(
-			[
-				{
-					id: "me",
-					method: "GET",
-					url: "/me?$select=id,displayName,userPrincipalName",
-				},
-				{
-					id: "mePhoto",
-					method: "GET",
-					url: "/me/photo/$value",
-					headers: {
-						"If-None-Match": me?.avatarEtag,
-					},
-				},
-			],
-			async (responses) => {
-				const [me, mePhoto] = [responses[0]!, responses[1]!];
-
-				if (me.status !== 200)
-					throw new Error(`Failed to fetch me. Got status ${me.status}`);
-
-				const result = userSchema.safeParse(me.body);
-				if (result.error)
-					throw new Error(
-						`Failed to parse me response. ${result.error.message}`,
-					);
-
-				const user = mapUser(result.data);
-
-				// Will be `404` if the user has no photo.
-				if (mePhoto.status === 200) {
-					user.avatar = `data:image/*;base64,${mePhoto.body}`;
-					user.avatarEtag = mePhoto.headers?.ETag;
-				} else if (mePhoto.status !== 404 && mePhoto.status !== 304) {
-					// We only log cause this is not a critical error.
-					console.error(
-						`Failed to fetch me photo. Got status ${mePhoto.status}`,
-					);
-				}
-
-				// TODO: Fix types
-				await db.put("_kv", user, "user");
+	const responses = await registerBatchedOperationAsync(
+		[
+			{
+				id: "me",
+				method: "GET",
+				url: "/me?$select=id,displayName,userPrincipalName",
 			},
-		);
+			{
+				id: "mePhoto",
+				method: "GET",
+				url: "/me/photo/$value",
+				headers: {
+					"If-None-Match": oldMe?.avatarEtag,
+				},
+			},
+		],
+		accessToken,
+	);
+
+	const [me, mePhoto] = [responses[0]!, responses[1]!];
+
+	if (me.status !== 200)
+		throw new Error(`Failed to fetch me. Got status ${me.status}`);
+
+	const result = userSchema.safeParse(me.body);
+	if (result.error)
+		throw new Error(`Failed to parse me response. ${result.error.message}`);
+
+	const user = mapUser(result.data);
+
+	// Will be `404` if the user has no photo.
+	if (mePhoto.status === 200) {
+		user.avatar = `data:image/*;base64,${mePhoto.body}`;
+		user.avatarEtag = mePhoto.headers?.ETag;
+	} else if (mePhoto.status !== 404 && mePhoto.status !== 304) {
+		// We only log cause this is not a critical error.
+		console.error(`Failed to fetch me photo. Got status ${mePhoto.status}`);
+	}
+
+	// TODO: Fix types
+	await db.put("_kv", user, "user");
 }
 
 const orgSchema = z.object({
@@ -79,38 +76,39 @@ const orgSchema = z.object({
 	),
 });
 
-export async function organization(db: IDBPDatabase<Database>, t: number) {
-	if (t === 0)
-		registerBatchedOperation(
-			[
-				{
-					id: "organization",
-					method: "GET",
-					url: "/organization?$select=id,displayName,verifiedDomains",
-				},
-			],
-			async (responses) => {
-				const org = responses[0]!;
+export type Org = z.infer<typeof orgSchema>;
 
-				if (org.status !== 200)
-					throw new Error(`Failed to fetch org. Got status ${org.status}`);
+export async function organization(
+	db: IDBPDatabase<Database>,
+	accessToken: string,
+) {
+	const responses = await registerBatchedOperationAsync(
+		{
+			id: "organization",
+			method: "GET",
+			url: "/organization?$select=id,displayName,verifiedDomains",
+		},
+		accessToken,
+	);
 
-				const result = odataResponseSchema(orgSchema).safeParse(org.body);
-				if (result.error)
-					throw new Error(
-						`Failed to parse organization response. ${result.error.message}`,
-					);
+	const org = responses[0]!;
 
-				if (result.data.value[0] === undefined) {
-					throw new Error("No organisations was found!");
-				} else if (result.data.value.length > 1) {
-					console.warn("Found multiple organisations. Choosing the first one!");
-				}
+	if (org.status !== 200)
+		throw new Error(`Failed to fetch org. Got status ${org.status}`);
 
-				// TODO: Fix types
-				await db.put("_kv", result.data.value[0], "org");
-			},
+	const result = odataResponseSchema(orgSchema).safeParse(org.body);
+	if (result.error)
+		throw new Error(
+			`Failed to parse organization response. ${result.error.message}`,
 		);
+
+	if (result.data.value[0] === undefined) {
+		throw new Error("No organisations was found!");
+	} else if (result.data.value.length > 1) {
+		console.warn("Found multiple organisations. Choosing the first one!");
+	}
+
+	await setKey(db, "org", result.data.value[0]);
 }
 
 export const users = defineSyncEntity("users", {
@@ -133,10 +131,11 @@ export const users = defineSyncEntity("users", {
 		lastPasswordChangeDateTime: z.string().optional(),
 		createdDateTime: z.string(),
 	}),
-	upsert: async (db, data) => {
+	upsert: async (db, data, _syncId) => {
 		const tx = db.transaction("users", "readwrite");
 		await tx.store.put(
 			merge(await tx.store.get(data.id), {
+				_syncId,
 				id: data.id,
 				type: data.userType === "Guest" ? "guest" : "member",
 				upn: data.userPrincipalName,
@@ -160,6 +159,14 @@ export const users = defineSyncEntity("users", {
 		await tx.done;
 	},
 	delete: async (db, id) => await db.delete("users", id),
+	cleanup: async (db, syncId) => {
+		// const tx = db.transaction("users", "readwrite");
+		// const users = tx.store.getAll();
+		// for (const user of await users) {
+		// 	if (user._syncId !== syncId) tx.store.delete(user.id);
+		// }
+		// await tx.done;
+	},
 });
 
 function castLowerCase<T extends z.ZodTypeAny>(schema: T) {
@@ -231,10 +238,11 @@ export const devices = defineSyncEntity("devices", {
 		registrationDateTime: z.string().optional(),
 		deviceCategory: z.string().optional(),
 	}),
-	upsert: async (db, data) => {
+	upsert: async (db, data, _syncId) => {
 		const tx = db.transaction("devices", "readwrite");
 		await tx.store.put(
 			merge(await tx.store.get(data.id), {
+				_syncId,
 				id: data.id,
 				deviceId: data.deviceId,
 				name: data.displayName,
@@ -261,6 +269,14 @@ export const devices = defineSyncEntity("devices", {
 		await tx.done;
 	},
 	delete: async (db, id) => await db.delete("devices", id),
+	cleanup: async (db, syncId) => {
+		// const tx = db.transaction("devices", "readwrite");
+		// const devices = tx.store.getAll();
+		// for (const device of await devices) {
+		// 	if (device._syncId !== syncId) tx.store.delete(device.id);
+		// }
+		// await tx.done;
+	},
 });
 
 export const groups = defineSyncEntity("groups", {
@@ -289,11 +305,12 @@ export const groups = defineSyncEntity("groups", {
 			)
 			.default([]),
 	}),
-	upsert: async (db, data) => {
+	upsert: async (db, data, _syncId) => {
 		const tx = db.transaction(["groups", "groupMembers"], "readwrite");
 		const groups = tx.objectStore("groups");
 		await groups.put(
 			merge(await groups.get(data.id), {
+				_syncId,
 				id: data.id,
 				name: data.displayName,
 				description: data.description,
@@ -309,6 +326,7 @@ export const groups = defineSyncEntity("groups", {
 				await members.delete(data.id);
 			} else {
 				members.put({
+					_syncId,
 					groupId: data.id,
 					type: member["@odata.type"],
 					id: member.id,
@@ -319,6 +337,14 @@ export const groups = defineSyncEntity("groups", {
 		await tx.done;
 	},
 	delete: async (db, id) => await db.delete("groups", id),
+	cleanup: async (db, syncId) => {
+		// const tx = db.transaction(["groups", "groupMembers"], "readwrite");
+		// const groups = tx.objectStore("groups").getAll();
+		// for (const device of await groups) {
+		// 	if (device._syncId !== syncId) tx.store.delete(device.id);
+		// }
+		// await tx.done;
+	},
 });
 
 const assignmentTarget = z.discriminatedUnion("@odata.type", [
@@ -408,11 +434,12 @@ export const policies = defineSyncEntity("policies", {
 			]),
 		),
 	),
-	upsert: async (db, data) => {
+	upsert: async (db, data, _syncId) => {
 		const tx = db.transaction(["policies", "policiesAssignments"], "readwrite");
 		const policies = tx.objectStore("policies");
 		await policies.put(
 			merge(await policies.get(data.id), {
+				_syncId,
 				id: data.id,
 				description: data.description ?? undefined,
 				createdDateTime: data.createdDateTime,
@@ -437,6 +464,7 @@ export const policies = defineSyncEntity("policies", {
 		// 		await members.delete(data.id);
 		// 	} else {
 		// 		members.put({
+		// 			_syncId,
 		// 			groupId: data.id,
 		// 			type: member["@odata.type"],
 		// 			id: member.id,
@@ -447,6 +475,19 @@ export const policies = defineSyncEntity("policies", {
 		await tx.done;
 	},
 	delete: async (db, id) => await db.delete("policies", id),
+	cleanup: async (db, syncId) => {
+		const tx = db.transaction(["policies", "policiesAssignments"], "readwrite");
+		const policies = tx.objectStore("policies");
+		for (const e of await policies.getAll()) {
+			if (e._syncId !== syncId) policies.delete(e.id);
+		}
+
+		const policiesAssignments = tx.objectStore("policiesAssignments");
+		for (const e of await policiesAssignments.getAll()) {
+			if (e._syncId !== syncId) policiesAssignments.delete(e.id);
+		}
+		await tx.done;
+	},
 });
 
 export const scripts = defineSyncEntity("scripts", {
@@ -507,11 +548,12 @@ export const scripts = defineSyncEntity("scripts", {
 			}),
 		]),
 	),
-	upsert: async (db, data) => {
+	upsert: async (db, data, _syncId) => {
 		const tx = db.transaction(["scripts", "scriptAssignments"], "readwrite");
 		const scripts = tx.objectStore("scripts");
 		await scripts.put(
 			merge(await scripts.get(data.id), {
+				_syncId,
 				id: data.id,
 				name: data.displayName,
 				description: data.description ?? undefined,
@@ -541,6 +583,7 @@ export const scripts = defineSyncEntity("scripts", {
 		// 		await members.delete(data.id);
 		// 	} else {
 		// 		members.put({
+		//			_syncId,
 		// 			groupId: data.id,
 		// 			type: member["@odata.type"],
 		// 			id: member.id,
@@ -551,6 +594,19 @@ export const scripts = defineSyncEntity("scripts", {
 		await tx.done;
 	},
 	delete: async (db, id) => await db.delete("scripts", id),
+	cleanup: async (db, syncId) => {
+		const tx = db.transaction(["scripts", "scriptAssignments"], "readwrite");
+		const scripts = tx.objectStore("scripts");
+		for (const e of await scripts.getAll()) {
+			if (e._syncId !== syncId) scripts.delete(e.id);
+		}
+
+		const scriptAssignments = tx.objectStore("scriptAssignments");
+		for (const e of await scriptAssignments.getAll()) {
+			if (e._syncId !== syncId) scriptAssignments.delete(e.id);
+		}
+		await tx.done;
+	},
 });
 
 export const apps = defineSyncEntity("apps", {
@@ -631,11 +687,12 @@ export const apps = defineSyncEntity("apps", {
 			)
 			.default([]),
 	}),
-	upsert: async (db, data) => {
+	upsert: async (db, data, _syncId) => {
 		const tx = db.transaction(["apps", "appAssignments"], "readwrite");
 		const apps = tx.objectStore("apps");
 		await apps.put(
 			merge(await apps.get(data.id), {
+				_syncId,
 				id: data.id,
 				type: data["@odata.type"],
 				name: data.displayName,
@@ -669,6 +726,19 @@ export const apps = defineSyncEntity("apps", {
 		await tx.done;
 	},
 	delete: async (db, id) => await db.delete("apps", id),
+	cleanup: async (db, syncId) => {
+		const tx = db.transaction(["apps", "appAssignments"], "readwrite");
+		const apps = tx.objectStore("apps");
+		for (const e of await apps.getAll()) {
+			if (e._syncId !== syncId) apps.delete(e.id);
+		}
+
+		const appAssignments = tx.objectStore("appAssignments");
+		for (const e of await appAssignments.getAll()) {
+			if (e._syncId !== syncId) appAssignments.delete(e.id);
+		}
+		await tx.done;
+	},
 });
 
 // TODO: https://graph.microsoft.com/beta/deviceManagement/reusableSettings

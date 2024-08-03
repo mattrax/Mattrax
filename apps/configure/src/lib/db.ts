@@ -2,6 +2,7 @@ import { makeEventListener } from "@solid-primitives/event-listener";
 import { createQuery } from "@tanstack/solid-query";
 import { type DBSchema, type StoreKey, type StoreNames, openDB } from "idb";
 import type { Filter } from "~/components/search/filters";
+import type { SyncOperation } from "./sync/operation";
 
 export type TableName =
 	| "users"
@@ -14,31 +15,26 @@ export type TableName =
 export interface Database extends DBSchema {
 	// Used to store general information
 	_kv: {
-		key:
-			| "user"
-			| "org"
-			| "accessToken"
-			| "refreshToken"
-			| "configurationSettings"
-			| "configurationCategories";
-		value: string;
+		key: string;
+		value: any;
 	};
 	// Track the nextPage links for each active paginated query and keep track of delta links ready for the next sync.
+	// This table should be interfaced with through `defineSyncOperation` to ensure you do it correctly.
 	_meta: {
-		key: TableName;
-		value: {
-			[id: number]:
-				| {
-						count: number;
-						offset: number;
-						nextPage: string;
-				  }
-				| {
-						// not all tables we sync support delta links
-						deltaLink?: string;
-						syncedAt: Date;
-				  };
-		};
+		key: SyncOperation;
+		value:
+			| {
+					// Idle
+					syncedAt: Date;
+					meta: any;
+			  }
+			| {
+					// Syncing
+					syncId: string;
+					completed: number;
+					total: number;
+					meta?: any;
+			  };
 	};
 	// Queued mutations
 	_mutations: {
@@ -64,6 +60,7 @@ export interface Database extends DBSchema {
 	users: {
 		key: string;
 		value: {
+			_syncId: string;
 			id: string;
 			type: "member" | "guest";
 			upn: string;
@@ -85,6 +82,7 @@ export interface Database extends DBSchema {
 	devices: {
 		key: string;
 		value: {
+			_syncId: string;
 			id: string;
 			deviceId: string;
 			name: string;
@@ -135,6 +133,7 @@ export interface Database extends DBSchema {
 	groups: {
 		key: string;
 		value: {
+			_syncId: string;
 			id: string;
 			name: string;
 			description?: string;
@@ -150,6 +149,7 @@ export interface Database extends DBSchema {
 	groupMembers: {
 		key: string;
 		value: {
+			_syncId: string;
 			groupId: string;
 			type:
 				| "#microsoft.graph.user"
@@ -162,6 +162,7 @@ export interface Database extends DBSchema {
 	policies: {
 		key: string;
 		value: {
+			_syncId: string;
 			id: string;
 			name: string;
 			description?: string;
@@ -212,6 +213,7 @@ export interface Database extends DBSchema {
 	policiesAssignments: {
 		key: string;
 		value: {
+			_syncId: string;
 			policyId: string;
 			type:
 				| "#microsoft.graph.user"
@@ -223,6 +225,7 @@ export interface Database extends DBSchema {
 	scripts: {
 		key: string;
 		value: {
+			_syncId: string;
 			id: string;
 			name: string;
 			description?: string;
@@ -248,6 +251,7 @@ export interface Database extends DBSchema {
 	scriptAssignments: {
 		key: string;
 		value: {
+			_syncId: string;
 			policyId: string;
 			type:
 				| "#microsoft.graph.user"
@@ -259,6 +263,7 @@ export interface Database extends DBSchema {
 	apps: {
 		key: string;
 		value: {
+			_syncId: string;
 			id: string;
 			type:
 				| "#microsoft.graph.iosStoreApp"
@@ -283,6 +288,7 @@ export interface Database extends DBSchema {
 	appAssignments: {
 		key: string;
 		value: {
+			_syncId: string;
 			policyId: string;
 			type:
 				| "#microsoft.graph.user"

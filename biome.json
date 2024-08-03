@@ -18,7 +18,8 @@
 			".sst",
 			"configuration-schemas/**/*.json",
 			"sst-env.d.ts",
-			"tsconfig.app.json"
+			"tsconfig.app.json",
+			"indexed-db-observers-polyfill.js"
 		]
 	},
 	"organizeImports": {

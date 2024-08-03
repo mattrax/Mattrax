@@ -15,6 +15,7 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
+    "allowJs": true,
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
 

@@ -7,6 +7,7 @@ import { Toaster } from "solid-sonner";
 import { routes } from "./routes";
 import "./index.css";
 import "@mattrax/ui/css";
+import "./indexed-db-observers-polyfill.js";
 
 const TanstackQueryDevtools = lazy(() =>
 	import("@tanstack/solid-query-devtools").then((m) => ({

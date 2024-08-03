@@ -1,6 +1,5 @@
 import { createContextProvider } from "@solid-primitives/context";
 import { useNavigate } from "@solidjs/router";
-import type { IDBPDatabase, StoreNames } from "idb";
 import { createResource, createSignal } from "solid-js";
 import { toast } from "solid-sonner";
 import { createTimer2 } from "../createTimer";
@@ -11,12 +10,6 @@ import {
 	subscribeToInvalidations,
 } from "../db";
 import * as schema from "./schema";
-import {
-	type OperationGroup,
-	clearProgress,
-	getProgress,
-	popOperations,
-} from "./state";
 
 export type SyncEngine = ReturnType<typeof initSyncEngine>;
 
@@ -137,7 +130,10 @@ export function initSyncEngine() {
 				const start = performance.now();
 				let wasError = false;
 				try {
-					await sync(await db, accessToken);
+					const d = await db;
+					await Promise.all(
+						Object.values(schema).map((sync) => sync(d, accessToken)),
+					);
 				} catch (err) {
 					if (err instanceof UnauthorizedError) {
 						// TODO: Refresh access token and try again???
@@ -180,79 +176,10 @@ export function mapUser(data: any) {
 	};
 }
 
+export type User = ReturnType<typeof mapUser>;
+
 class UnauthorizedError extends Error {
 	constructor() {
 		super("Unauthorized");
 	}
-}
-
-async function sync(db: IDBPDatabase<Database>, accessToken: string) {
-	console.log("Syncing...");
-
-	const fetch = async (url: string, init?: RequestInit) => {
-		// TODO: Join `init` to extra options
-		const headers = new Headers(init?.headers);
-		headers.append("Authorization", accessToken);
-		const resp = await globalThis.fetch(url, {
-			...init,
-			headers,
-		});
-		if (resp.status === 401) throw new UnauthorizedError();
-		if (!resp.ok) throw new Error("Failed to fetch data");
-		return await resp.json();
-	};
-
-	// TODO: Detecting if we just finished syncing.
-	// TODO: Detect if any syncs are currently in progress Eg. nextPage not delta
-
-	let queued: OperationGroup[] = [];
-	let t = 0;
-	while (true) {
-		// Each of these will register operations.
-		await Promise.all(Object.values(schema).map((sync) => sync(db, t)));
-
-		queued = popOperations();
-		if (queued.length === 0) break;
-
-		const resp = await fetch("https://graph.microsoft.com/beta/$batch", {
-			method: "POST",
-			headers: new Headers({
-				"Content-Type": "application/json",
-			}),
-			body: JSON.stringify({
-				requests: queued.flatMap(({ ops }) => ops),
-			}),
-		});
-
-		await Promise.all(
-			queued.map(async (queued) => {
-				const args = [];
-				for (const op of queued.ops) {
-					const r = resp.responses.find((r: any) => r.id === op.id);
-					if (!resp)
-						throw new Error(
-							`Expected to find response with id "${r.id}" but it was not found!`,
-						);
-					args.push(r);
-				}
-				await queued.callback(args);
-
-				let total = 0;
-				const progress = getProgress();
-				for (const p of progress) {
-					const progressOfP = p.current / p.total;
-					if (Number.isNaN(progressOfP)) continue;
-					total += (1 / progress.length) * progressOfP;
-				}
-				localStorage.setItem("syncProgress", (total * 100).toFixed(2));
-				invalidateStore("syncProgress");
-			}),
-		);
-
-		t++;
-	}
-
-	clearProgress();
-	localStorage.removeItem("syncProgress");
-	invalidateStore("syncProgress");
 }
