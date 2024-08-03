@@ -4,7 +4,7 @@
 import type { IDBPDatabase } from "idb";
 import { z } from "zod";
 import type { Database } from "../db";
-import { getKey, setKey } from "../kv";
+import { getKey, setKey as putKey } from "../kv";
 import { mapUser } from "../sync";
 import { defineSyncEntity, merge, odataResponseSchema } from "./entity";
 import { registerBatchedOperationAsync } from "./microsoft";
@@ -58,8 +58,7 @@ export async function me(db: IDBPDatabase<Database>, accessToken: string) {
 		console.error(`Failed to fetch me photo. Got status ${mePhoto.status}`);
 	}
 
-	// TODO: Fix types
-	await db.put("_kv", user, "user");
+	await putKey(db, "user", user);
 }
 
 const orgSchema = z.object({
@@ -108,7 +107,7 @@ export async function organization(
 		console.warn("Found multiple organisations. Choosing the first one!");
 	}
 
-	await setKey(db, "org", result.data.value[0]);
+	await putKey(db, "org", result.data.value[0]);
 }
 
 export const users = defineSyncEntity("users", {

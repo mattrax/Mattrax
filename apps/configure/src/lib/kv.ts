@@ -26,3 +26,10 @@ export async function setKey<K extends keyof KvValue>(
 ): Promise<void> {
 	await db.put("_kv", value, key);
 }
+
+export async function deleteKey<K extends keyof KvValue>(
+	db: IDBPDatabase<Database>,
+	key: K,
+): Promise<void> {
+	await db.delete("_kv", key);
+}

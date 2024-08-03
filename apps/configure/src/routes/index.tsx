@@ -3,14 +3,15 @@ import { createAsync, useLocation, useNavigate } from "@solidjs/router";
 import { ErrorBoundary, Match, Suspense, Switch } from "solid-js";
 import { generateOAuthUrl, verifyOAuthCode } from "~/lib/auth";
 import { db, subscribeToInvalidations } from "~/lib/db";
+import { getKey } from "~/lib/kv";
 
 export default function Page() {
 	const location = useLocation();
 	const navigate = useNavigate();
 
 	const checkAuth = async () => {
-		const accessToken = await (await db).get("_kv", "accessToken");
-		const user = await (await db).get("_kv", "user");
+		const accessToken = await getKey(await db, "accessToken");
+		const user = await getKey(await db, "user");
 		if (user && accessToken) navigate("/overview", { replace: true });
 	};
 	checkAuth();

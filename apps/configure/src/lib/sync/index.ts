@@ -9,6 +9,7 @@ import {
 	invalidateStore,
 	subscribeToInvalidations,
 } from "../db";
+import { deleteKey, setKey } from "../kv";
 import * as schema from "./schema";
 
 export type SyncEngine = ReturnType<typeof initSyncEngine>;
@@ -24,9 +25,9 @@ export async function initDatabase(
 	user: any,
 ) {
 	// TODO: Create the actual `db` here
-	await (await db).put("_kv", accessToken, "accessToken");
-	await (await db).put("_kv", refreshToken, "refreshToken");
-	await (await db).put("_kv", mapUser(user), "user"); // TODO: Fix types
+	await setKey(await db, "accessToken", accessToken);
+	await setKey(await db, "refreshToken", refreshToken);
+	await setKey(await db, "user", mapUser(user));
 	invalidateStore("auth");
 }
 
@@ -83,7 +84,7 @@ export function initSyncEngine() {
 		}
 		if (!user) {
 			const user = await fetch("https://graph.microsoft.com/v1.0/me");
-			await (await db).put("_kv", mapUser(user), "user"); // TODO: Fix types
+			await setKey(await db, "user", mapUser(user));
 		}
 
 		return user;
@@ -101,9 +102,9 @@ export function initSyncEngine() {
 		progress,
 		user,
 		async logout() {
-			await (await db).delete("_kv", "accessToken");
-			await (await db).delete("_kv", "refreshToken");
-			await (await db).delete("_kv", "user");
+			await deleteKey(await db, "accessToken");
+			await deleteKey(await db, "refreshToken");
+			await deleteKey(await db, "user");
 			invalidateStore("auth");
 		},
 		async syncAll(): Promise<string | undefined> {

@@ -30,7 +30,7 @@ type SyncOperationContext = {
 
 /// Define a sync operation which has it's state managed the `_meta` table.
 ///
-/// This deals with all the complicated logic of tracking and updating the progress of the operation, along with resuming once interrupted.
+/// This deals with all the complicated logic of tracking and updating the progress of the operation, along with resuming if it is interrupted.
 ///
 /// Internally this function uses the Web Locks API because IndexedDB transaction suck phat ballz (and it auto-commits on an `await`, like wtf).
 export function defineSyncOperation<M>(
