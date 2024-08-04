@@ -1,17 +1,15 @@
-import { Button } from "@mattrax/ui";
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
 import { StatItem } from "~/components/StatItem";
-import { db } from "~/lib/db";
 import { createDbQuery } from "~/lib/query";
 
 export default function Page() {
-	const counts = createDbQuery(async () => {
+	const counts = createDbQuery(async (db) => {
 		return {
-			users: await (await db).count("users"),
-			devices: await (await db).count("devices"),
-			groups: await (await db).count("groups"),
-			policies: await (await db).count("policies"),
-			applications: await (await db).count("apps"),
+			users: await db.count("users"),
+			devices: await db.count("devices"),
+			groups: await db.count("groups"),
+			policies: await db.count("policies"),
+			applications: await db.count("apps"),
 		};
 	});
 
@@ -38,7 +36,7 @@ export default function Page() {
 				/>
 				<StatItem
 					title="Applications"
-					href="apps"
+					href="applications"
 					icon={<IconPhAppWindow />}
 					value={counts()?.applications || 0}
 				/>

@@ -1,23 +1,41 @@
 import { buttonVariants } from "@mattrax/ui";
 import { createAsync, useLocation, useNavigate } from "@solidjs/router";
-import { ErrorBoundary, Match, Suspense, Switch } from "solid-js";
+import { openDB } from "idb";
+import {
+	ErrorBoundary,
+	Match,
+	Suspense,
+	Switch,
+	createResource,
+} from "solid-js";
 import { generateOAuthUrl, verifyOAuthCode } from "~/lib/auth";
-import { getKey } from "~/lib/kv";
-import { createDbQuery } from "~/lib/query";
+import { listenForKvChanges } from "~/lib/query";
 
 export default function Page() {
 	const location = useLocation();
 	const navigate = useNavigate();
 
-	createDbQuery(async (db) => {
-		const accessToken = await getKey(await db, "accessToken");
-		const user = await getKey(await db, "user");
-		if (user && accessToken) navigate("/overview", { replace: true });
+	const [_, { refetch }] = createResource(async () => {
+		const databases = await window.indexedDB.databases();
+		for (const database of databases) {
+			// How is this even possible
+			if (!database.name || !database.version) continue;
+			// We open using raw IndexedDB as we don't want to modify the schema.
+			const db = await openDB(database.name, database.version);
+			// This is probably not a Mattrax DB
+			if (!db.objectStoreNames.contains("_kv")) continue;
+			const accessToken = await db.get("_kv", "accessToken");
+			// Cleanup
+			db.close();
+			// Check for authentication information
+			if (accessToken !== undefined) navigate(`/${database.name}`);
+		}
 	});
+	listenForKvChanges(() => refetch());
 
 	return (
 		<div class="p-4">
-			<Switch fallback={<UnauthenticatedApp />}>
+			<Switch fallback={<LandingPage />}>
 				<Match when={location.query?.error !== undefined}>
 					{/* // TODO: Properly style this flow */}
 					<p class="bg-red-500">
@@ -30,22 +48,25 @@ export default function Page() {
 				<Match when={location.query?.code} keyed>
 					{(code) => {
 						const accessToken = createAsync(async () => {
-							await verifyOAuthCode(code);
-							navigate("/overview", { replace: true });
+							const userId = await verifyOAuthCode(code);
+							navigate(`/${userId}`, { replace: true });
 						});
 
 						// TODO: Properly style this flow
 						return (
 							<ErrorBoundary
 								fallback={
-									<>
-										<p class="bg-red-500">
+									<div class="flex flex-col space-y-2 max-w-sm">
+										<h1 class="text-red-500 font-bold text-2xl">
+											An error occurred
+										</h1>
+										<p class="text-red-500">
 											Error verifying access token! Please try again!
 										</p>
 										<a href="/" class={buttonVariants()}>
 											Try again
 										</a>
-									</>
+									</div>
 								}
 							>
 								<Suspense fallback={<p>Verifying...</p>}>
@@ -60,7 +81,7 @@ export default function Page() {
 	);
 }
 
-function UnauthenticatedApp() {
+function LandingPage() {
 	const loginUrl = createAsync(() => generateOAuthUrl());
 
 	return (

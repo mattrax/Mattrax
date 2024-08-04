@@ -1,26 +1,21 @@
 import { createContextProvider } from "@solid-primitives/context";
+import type { IDBPDatabase } from "idb";
 import { toast } from "solid-sonner";
-import { logout } from "../auth";
-import { db } from "../db";
-import { getKey, setKey } from "../kv";
+import type { Database } from "../db";
+import { deleteKey, getKey } from "../kv";
 import * as schema from "./schema";
 
-export type SyncEngine = ReturnType<typeof initSyncEngine>;
+export type SyncEngine = ReturnType<typeof initSync>;
 
-export const [SyncEngineProvider, useSyncEngine] = createContextProvider(
+export const [SyncProvider, useSync] = createContextProvider(
 	(props: { engine: SyncEngine }) => props.engine,
 	undefined!,
 );
 
-export async function initDatabase(accessToken: string, refreshToken: string) {
-	// TODO: Create the actual `db` here
-	await setKey(await db, "accessToken", accessToken);
-	await setKey(await db, "refreshToken", refreshToken);
-}
-
-export function initSyncEngine() {
+export function initSync(db: IDBPDatabase<Database>) {
 	return {
-		async syncAll(): Promise<string | undefined> {
+		db,
+		async syncAll(abort: AbortController): Promise<string | undefined> {
 			// Be aware the way use this lock intentionally queues up syncs.
 			// Eg. if two tabs hit this code path, one will sync and then the other will sync (both triggering a full sync).
 			//
@@ -30,9 +25,9 @@ export function initSyncEngine() {
 			// To mitigate the impacts of this we should // TODO
 			const result = await navigator.locks.request("sync", async (lock) => {
 				if (!lock) return;
-				const d = await db;
+				if (abort.signal.aborted) return;
 
-				const accessToken = await getKey(d, "accessToken");
+				const accessToken = await getKey(db, "accessToken");
 				if (!accessToken) {
 					console.warn("Sync attempted without valid access token. Ignoring!");
 					return;
@@ -42,13 +37,19 @@ export function initSyncEngine() {
 				let wasError = false;
 				try {
 					await Promise.all(
-						Object.values(schema).map((sync) => sync(d, accessToken)),
+						Object.values(schema).map((sync) => sync(db, abort, accessToken)),
 					);
+					// We done care about the result if the sync was cancelled.
+					if (abort.signal.aborted) return;
 				} catch (err) {
+					// We done care about the error if the sync was aborted.
+					if (abort.signal.aborted) return;
 					if (err instanceof UnauthorizedError) {
 						// TODO: Refresh access token and try again???
 
-						await logout();
+						await deleteKey(db, "accessToken");
+						await deleteKey(db, "refreshToken");
+						await deleteKey(db, "user");
 						return;
 					}
 					console.error("Error occurred during sync:", err);
@@ -64,10 +65,6 @@ export function initSyncEngine() {
 				return wasError ? undefined : elapsed;
 			});
 			return result;
-		},
-		mutation() {
-			// TODO: Queueing up mutation into IndexedDB
-			// TODO: Applying mutations with proper Atomic locking.
 		},
 	};
 }

@@ -14,6 +14,7 @@ export default function Page() {
 
 	// TODO: if the view is modified in another tab we are gonna wipe out any changes which is not great.
 	const views = createDbQuery((db) => db.getAll("views")); // TODO: Filter to a specific view using IndexedDB query here???
+	// TODO: 404 handling
 
 	// TODO: Loading state!
 	return (

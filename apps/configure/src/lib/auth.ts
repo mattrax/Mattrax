@@ -1,8 +1,7 @@
 import { useNavigate } from "@solidjs/router";
-import { db } from "./db";
-import { deleteKey, getKey, setKey } from "./kv";
+import { openAndInitDb } from "./db";
+import { getKey, setKey } from "./kv";
 import { createDbQuery } from "./query";
-import { initDatabase } from "./sync";
 
 const clientId = "5dd42e00-78e7-474a-954a-bb4e5085e820";
 
@@ -50,7 +49,20 @@ export async function verifyOAuthCode(code: string) {
 
 	const data = await resp.json();
 
-	initDatabase(data.access_token, data.refresh_token);
+	const user = await fetch("https://graph.microsoft.com/v1.0/me?$select=id", {
+		headers: { Authorization: `Bearer ${data.access_token}` },
+	});
+	if (!user.ok) throw new Error("Failed to fetch user");
+
+	// TODO: Validate the user & access_tokens against Zod schema
+
+	const userId = (await user.json()).id;
+
+	const db = await openAndInitDb(userId, true);
+	await setKey(db, "accessToken", data.access_token);
+	await setKey(db, "refreshToken", data.refresh_token);
+
+	return userId;
 }
 
 const possible =
@@ -102,12 +114,6 @@ export function useUser() {
 		}
 		return user;
 	});
-}
-
-export async function logout() {
-	await deleteKey(await db, "accessToken");
-	await deleteKey(await db, "refreshToken");
-	await deleteKey(await db, "user");
 }
 
 // TODO: Really this should go in `schema.ts` and not be exported???

@@ -17,35 +17,193 @@ import {
 	TooltipTrigger,
 	buttonVariants,
 } from "@mattrax/ui";
-import { A, useLocation, useNavigate } from "@solidjs/router";
+import {
+	A,
+	Navigate,
+	createAsync,
+	useCurrentMatches,
+	useLocation,
+	useNavigate,
+} from "@solidjs/router";
 import { createMutation } from "@tanstack/solid-query";
 import clsx from "clsx";
+import type { IDBPDatabase } from "idb";
 import {
+	ErrorBoundary,
 	For,
 	type ParentProps,
 	Show,
 	Suspense,
 	createSignal,
+	onCleanup,
 	onMount,
 } from "solid-js";
 import { toast } from "solid-sonner";
-import { logout, useUser } from "~/lib/auth";
+import { z } from "zod";
+import { useUser } from "~/lib/auth";
 import { createTimer2 } from "~/lib/createTimer";
+import { type Database, dbVersion, openAndInitDb } from "~/lib/db";
+import { deleteKey } from "~/lib/kv";
 import { createCrossTabListener, createDbQuery } from "~/lib/query";
-import { SyncEngineProvider, initSyncEngine, useSyncEngine } from "~/lib/sync";
+import { SyncProvider, initSync, useSync } from "~/lib/sync";
+import { useZodParams } from "~/lib/useZodParams";
 
 export default function Layout(props: ParentProps) {
-	const syncEngine = initSyncEngine();
-	createCrossTabListener();
-
-	onMount(() => syncEngine.syncAll());
+	const params = useZodParams({
+		userId: z.string(),
+	});
 
 	return (
-		<SyncEngineProvider engine={syncEngine}>
-			<Navbar />
+		<CapabilitiesOverlay>
+			<Show when={params.userId} keyed>
+				{(userId) => {
+					const db = createAsync<IDBPDatabase<Database>>(async (prevDb) => {
+						if (prevDb) prevDb.close();
+						return await openAndInitDb(userId);
+					});
 
-			{props.children}
-		</SyncEngineProvider>
+					return (
+						<ErrorBoundary
+							fallback={(err) => {
+								if (
+									// This event is when DB that doesn't exist is opened.
+									// We do some hackery in `upgrade` when we detect this condition.
+									err instanceof DOMException &&
+									err.name === "AbortError"
+								) {
+									return <Navigate href="/" />;
+								}
+
+								return GenericErrorScreen(err);
+							}}
+						>
+							<Suspense>
+								<Show when={db()} keyed>
+									{(db) => {
+										const sync = initSync(db);
+										createCrossTabListener(db);
+
+										const abort = new AbortController();
+										onMount(() => sync.syncAll(abort));
+										onCleanup(() => {
+											abort.abort();
+											db.close();
+										});
+
+										return (
+											<SyncProvider engine={sync}>
+												{/* // TODO: Can we lift `Navbar` out of blocking section? */}
+												<Suspense fallback={<ThrowOnSuspense id="header" />}>
+													<Navbar />
+												</Suspense>
+
+												<ErrorBoundary fallback={GenericErrorScreen}>
+													<Suspense>{props.children}</Suspense>
+												</ErrorBoundary>
+											</SyncProvider>
+										);
+									}}
+								</Show>
+							</Suspense>
+						</ErrorBoundary>
+					);
+				}}
+			</Show>
+		</CapabilitiesOverlay>
+	);
+}
+
+// This makes it easy to determine if we mess up suspense boundaries.
+// We should never be relying on the layout's suspense, we should be suspending at the leaves of the page!
+// If we just return `null` instead of suspending the UI might jank (Eg. the navbar just disappearing)
+function ThrowOnSuspense(props: { id: string }): null {
+	throw new Error(`The ${props.id} triggered the layout suspense!`);
+}
+
+function CapabilitiesOverlay(props: ParentProps) {
+	return (
+		<Show
+			when={"locks" in navigator}
+			fallback={
+				<ErrorScreen>
+					Your browser does not support Web Locks. <br />
+					Please upgrade your browser to use Mattrax.
+				</ErrorScreen>
+			}
+		>
+			<Show
+				when={"indexedDB" in window}
+				fallback={
+					<ErrorScreen>
+						Your browser does not support IndexedDB. <br />
+						Please upgrade your browser to use Mattrax.
+					</ErrorScreen>
+				}
+			>
+				{props.children}
+			</Show>
+		</Show>
+	);
+}
+
+function GenericErrorScreen(err: Error) {
+	const mutation = createMutation(() => ({
+		mutationFn: async (data) => {
+			const databases = await indexedDB.databases();
+			for (const { name, version } of databases) {
+				if (!name || !version) continue;
+				if (version !== dbVersion) continue;
+				await indexedDB.deleteDatabase(name);
+				location.reload();
+			}
+		},
+	}));
+
+	return (
+		<ErrorScreen>
+			Error while initializing the page.
+			<pre>{err.toString()}</pre>
+			Please reload the page to try again!
+			<br />
+			<br />
+			If you having persistent issues, you can try to{" "}
+			<button
+				type="button"
+				class="underline"
+				disabled={mutation.isPending}
+				onClick={async () => {
+					// `await` in case we are in Tauri.
+					if (
+						await confirm(
+							"Are you sure you want to reset all local data?\nYou will loose everything not synced with Microsoft including views.",
+						)
+					) {
+						mutation.mutate();
+					}
+				}}
+			>
+				reset everything
+			</button>
+			.
+		</ErrorScreen>
+	);
+}
+
+function ErrorScreen(props: ParentProps) {
+	return (
+		<div class="h-screen w-screen flex justify-center items-center">
+			<div class="w-full flex flex-col items-center justify-center">
+				<div class="sm:mx-auto sm:w-full sm:max-w-md flex items-center justify-center pb-2">
+					<h2 class="mt-4 text-center text-4xl font-bold leading-9 tracking-tight text-gray-900">
+						Mattrax
+					</h2>
+				</div>
+
+				<p class="text-muted-foreground text-md text-center">
+					{props.children}
+				</p>
+			</div>
+		</div>
 	);
 }
 
@@ -88,14 +246,14 @@ function Navbar() {
 }
 
 const items = [
-	{ title: "Overview", href: "/overview" },
-	{ title: "Users", href: "/users" },
-	{ title: "Devices", href: "/devices" },
-	{ title: "Groups", href: "/groups" },
-	{ title: "Policies", href: "/policies" },
-	{ title: "Applications", href: "/applications" },
-	{ title: "Views", href: "/views" },
-	{ title: "Settings", href: "/settings" },
+	{ title: "Overview", href: "" },
+	{ title: "Users", href: "users" },
+	{ title: "Devices", href: "devices" },
+	{ title: "Groups", href: "groups" },
+	{ title: "Policies", href: "policies" },
+	{ title: "Applications", href: "applications" },
+	{ title: "Views", href: "views" },
+	{ title: "Settings", href: "settings" },
 ];
 
 function NavItems() {
@@ -104,6 +262,9 @@ function NavItems() {
 
 	// Wait for the first render + a microtask to finish before animating the indicator
 	onMount(() => setTimeout(() => setMounted(true), 5));
+
+	const matches = useCurrentMatches();
+	const relativeUrl = (url: string) => `${matches?.[0]?.path || ""}${url}`;
 
 	return (
 		<Tabs
@@ -115,7 +276,7 @@ function NavItems() {
 				<For each={items}>
 					{(item) => (
 						<Tabs.Trigger
-							value={item.href}
+							value={relativeUrl(item.href)}
 							as={A}
 							end={item.href === ""}
 							href={item.href}
@@ -148,14 +309,14 @@ function NavItems() {
 				</div> */}
 			</Tabs.List>
 
-			<Show when={location.pathname !== "/search"}>
-				<Tabs.Indicator
-					class="absolute bottom-0 flex flex-row px-2 h-[2px]"
-					classList={{ "duration-200 transition-all": mounted() }}
-				>
-					<div class="bg-brand flex-1 rounded-full" />
-				</Tabs.Indicator>
-			</Show>
+			{/* <Show when={location.pathname !== "/search"}> */}
+			<Tabs.Indicator
+				class="absolute bottom-0 flex flex-row px-2 h-[2px]"
+				classList={{ "duration-200 transition-all": mounted() }}
+			>
+				<div class="bg-brand flex-1 rounded-full" />
+			</Tabs.Indicator>
+			{/* </Show> */}
 		</Tabs>
 	);
 }
@@ -163,11 +324,14 @@ function NavItems() {
 function ProfileDropdown() {
 	const user = useUser();
 	const navigate = useNavigate();
+	const sync = useSync();
 
 	const logoutMutation = createMutation(() => ({
 		mutationKey: ["logout"],
 		mutationFn: async () => {
-			await logout();
+			await deleteKey(sync.db, "accessToken");
+			await deleteKey(sync.db, "refreshToken");
+			await deleteKey(sync.db, "user");
 			navigate("/");
 		},
 	}));
@@ -192,6 +356,12 @@ function ProfileDropdown() {
 						<p>{user()?.name}</p>
 						<p class="text-sm">{user()?.upn}</p>
 					</DropdownMenuLabel>
+
+					{/* // TODO: Account switching */}
+					<DropdownMenuLabel>
+						<p>Oscar 2</p>
+					</DropdownMenuLabel>
+
 					<DropdownMenuSeparator />
 					<DropdownMenuItem
 						onClick={() => logoutMutation.mutate()}
@@ -206,7 +376,7 @@ function ProfileDropdown() {
 }
 
 function SyncPanel() {
-	const sync = useSyncEngine();
+	const sync = useSync();
 
 	const [isSyncing, setIsSyncing] = createSignal(false);
 
@@ -223,7 +393,7 @@ function SyncPanel() {
 	);
 	isSyncingCheck.trigger();
 
-	const progress = createDbQuery(async (db) => {
+	const progressRaw = createDbQuery(async (db) => {
 		isSyncingCheck.trigger();
 
 		let total = 0;
@@ -239,6 +409,12 @@ function SyncPanel() {
 		}
 		return total * 100;
 	});
+
+	// Avoid suspending
+	const progress = () => progressRaw.latest ?? 0;
+
+	const abort = new AbortController();
+	onCleanup(() => abort.abort());
 
 	return (
 		<div class="flex">
@@ -271,7 +447,7 @@ function SyncPanel() {
 					as={Button}
 					variant="ghost"
 					onClick={() =>
-						sync.syncAll().then((elapsed) => {
+						sync.syncAll(abort).then((elapsed) => {
 							if (elapsed)
 								toast.success(
 									`Successfully synced with Microsoft in ${elapsed}s`,

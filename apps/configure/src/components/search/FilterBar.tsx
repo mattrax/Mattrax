@@ -29,18 +29,19 @@ import {
 	Show,
 	Switch,
 } from "solid-js";
-import { db } from "~/lib/db";
+import { useSync } from "~/lib/sync";
 import type { createSearchPageContext } from ".";
 import { entities } from "./configuration";
 import type { Filter } from "./filters";
 
 export function FilterBar(props: ReturnType<typeof createSearchPageContext>) {
 	const navigate = useNavigate();
+	const sync = useSync();
 	const createView = createMutation(() => ({
 		mutationKey: ["createView"],
 		mutationFn: async (data: Filter[]) => {
 			const id = crypto.randomUUID();
-			await (await db).add("views", {
+			await sync.db.add("views", {
 				id,
 				name: "New view", // TODO: Ask user
 				description: "My cool view",

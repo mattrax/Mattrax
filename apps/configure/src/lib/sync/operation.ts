@@ -1,5 +1,5 @@
 import type { IDBPDatabase } from "idb";
-import { type Database, type TableName, db } from "../db";
+import type { Database, TableName } from "../db";
 
 export type SyncOperation = TableName | "me" | "organization";
 
@@ -56,7 +56,11 @@ export function defineSyncOperation<M>(
 		},
 	) => Promise<void> | void,
 ) {
-	return async (db: IDBPDatabase<Database>, accessToken: string) => {
+	return async (
+		db: IDBPDatabase<Database>,
+		abort: AbortController,
+		accessToken: string,
+	) => {
 		// Ensure we are in the "syncing" state
 		const [syncId, initialMetadata, initialCompleted, initialTotal]: [
 			string,
@@ -96,6 +100,8 @@ export function defineSyncOperation<M>(
 			initialTotal,
 		];
 		do {
+			if (abort.signal.aborted) return;
+
 			result = await callback({
 				db,
 				syncId,
@@ -140,28 +146,4 @@ export function defineSyncOperation<M>(
 			});
 		} while (result.type !== "complete");
 	};
-}
-
-/// Compute the progress of all active sync operations.
-export async function computeProgress() {
-	// TODO: Do using reactive query system???
-
-	const metas = await (await db).getAll("_meta");
-
-	const activeMetas = metas
-		// We only want items that are actively syncing
-		.filter((meta) => "syncId" in meta);
-
-	// TODO: Finish this
-
-	// const total = activeMetas.reduce
-
-	// for (const meta of metas) {
-	// 	// We only want items that are actively syncing
-	// 	if (!("syncId" in meta)) continue;
-
-	// 	console.log(meta);
-	// }
-
-	return 0;
 }

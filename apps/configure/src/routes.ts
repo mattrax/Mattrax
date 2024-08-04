@@ -7,11 +7,12 @@ export const routes = [
 		component: lazy(() => import("./routes/index")),
 	},
 	{
+		path: "/:userId",
 		component: lazy(() => import("./routes/(dash)")),
 		children: [
 			{
-				path: "/overview",
-				component: lazy(() => import("./routes/(dash)/overview")),
+				path: "/",
+				component: lazy(() => import("./routes/(dash)/(overview)")),
 			},
 			{
 				path: "/users",

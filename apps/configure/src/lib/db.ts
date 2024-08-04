@@ -297,50 +297,59 @@ export interface Database extends DBSchema {
 	};
 }
 
-export const db = openDB<Database>("data", 1, {
-	upgrade(db) {
-		db.createObjectStore("_kv");
-		db.createObjectStore("_meta");
-		db.createObjectStore("_mutations");
-		db.createObjectStore("views", {
-			keyPath: "id",
-		});
-		db.createObjectStore("users", {
-			keyPath: "id",
-		});
-		db.createObjectStore("devices", {
-			keyPath: "id",
-		});
-		db.createObjectStore("groups", {
-			keyPath: "id",
-		});
-		db.createObjectStore("groupMembers", {
-			keyPath: ["groupId", "type", "id"],
-		});
-		db.createObjectStore("policies", {
-			keyPath: "id",
-		});
-		db.createObjectStore("policiesAssignments", {
-			keyPath: ["groupId", "type", "id"],
-		});
-		db.createObjectStore("scripts", {
-			keyPath: "id",
-		});
-		db.createObjectStore("scriptAssignments", {
-			keyPath: ["groupId", "type", "id"],
-		});
-		db.createObjectStore("apps", {
-			keyPath: "id",
-		});
-		db.createObjectStore("appAssignments", {
-			keyPath: ["groupId", "type", "id"],
-		});
-	},
-	blocked(currentVersion, blockedVersion, event) {
-		console.log(currentVersion, blockedVersion, event);
-		// TODO: Handle this???
-	},
-	terminated() {
-		// TODO: Warning & disable all UI state???
-	},
-});
+export const dbVersion = 1;
+
+export const openAndInitDb = (name: string, createIfNotFound = false) =>
+	openDB<Database>(name, dbVersion, {
+		upgrade(db, oldVersion, newVersion, tx) {
+			// Aborting causes the DB creation to fail
+			if (oldVersion === 0 && !createIfNotFound) return tx.abort();
+
+			db.createObjectStore("_kv");
+			db.createObjectStore("_meta");
+			db.createObjectStore("_mutations");
+			db.createObjectStore("views", {
+				keyPath: "id",
+			});
+			db.createObjectStore("users", {
+				keyPath: "id",
+			});
+			db.createObjectStore("devices", {
+				keyPath: "id",
+			});
+			db.createObjectStore("groups", {
+				keyPath: "id",
+			});
+			db.createObjectStore("groupMembers", {
+				keyPath: ["groupId", "type", "id"],
+			});
+			db.createObjectStore("policies", {
+				keyPath: "id",
+			});
+			db.createObjectStore("policiesAssignments", {
+				keyPath: ["groupId", "type", "id"],
+			});
+			db.createObjectStore("scripts", {
+				keyPath: "id",
+			});
+			db.createObjectStore("scriptAssignments", {
+				keyPath: ["groupId", "type", "id"],
+			});
+			db.createObjectStore("apps", {
+				keyPath: "id",
+			});
+			db.createObjectStore("appAssignments", {
+				keyPath: ["groupId", "type", "id"],
+			});
+		},
+		blocking(currentVersion, blockedVersion, event) {
+			// TODO
+		},
+		blocked(currentVersion, blockedVersion, event) {
+			console.log(currentVersion, blockedVersion, event);
+			// TODO: Handle this???
+		},
+		terminated() {
+			// TODO: Warning & disable all UI state???
+		},
+	});

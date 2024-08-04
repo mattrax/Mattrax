@@ -36,6 +36,7 @@ import {
 	untrack,
 } from "solid-js";
 import { createMutable } from "solid-js/store";
+import { useSync } from "~/lib/sync";
 import type { createSearchPageContext } from ".";
 import { entities } from "./configuration";
 import type { ColumnDefinitions, Filter } from "./filters";
@@ -63,6 +64,7 @@ export function TableContent(
 	};
 
 	// TODO: Make this reactive to DB changes!!!
+	const sync = useSync();
 	const rawData = createAsync(async () => {
 		const result = (
 			await Promise.all(
@@ -76,7 +78,10 @@ export function TableContent(
 									f.type === "enum" && f.target === "type" && f.value === key,
 							)
 					) {
-						return (await def.load()).map((data) => ({ type: key, data }));
+						return (await def.load(sync.db)).map((data) => ({
+							type: key,
+							data,
+						}));
 					}
 
 					return [];

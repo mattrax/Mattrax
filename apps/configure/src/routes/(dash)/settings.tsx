@@ -2,15 +2,18 @@ import {
 	Card,
 	CardContent,
 	CardDescription,
-	CardFooter,
 	CardHeader,
 	CardTitle,
 } from "@mattrax/ui";
 import { A } from "@solidjs/router";
-import type { JSX, ParentProps } from "solid-js";
+import { type JSX, type ParentProps, Suspense } from "solid-js";
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
+import { getKey } from "~/lib/kv";
+import { createDbQuery } from "~/lib/query";
 
 export default function Page() {
+	const org = createDbQuery((db) => getKey(db, "org"));
+
 	return (
 		<PageLayout heading={<PageLayoutHeading>Settings</PageLayoutHeading>}>
 			<div class="flex flex-row">
@@ -23,15 +26,18 @@ export default function Page() {
 				<main class="flex-1 overflow-y-auto px-4">
 					<Card>
 						<CardHeader>
-							<CardTitle>Card Title</CardTitle>
-							<CardDescription>Card Description</CardDescription>
+							<CardTitle>
+								{/* // TODO: Suspense UI */}
+								<Suspense fallback="...">{org()?.displayName}</Suspense>
+							</CardTitle>
+							<CardDescription>
+								{/* // TODO: Suspense UI */}
+								<Suspense fallback="...">{org()?.id}</Suspense>
+							</CardDescription>
 						</CardHeader>
 						<CardContent>
 							<p>Card Content</p>
 						</CardContent>
-						{/* <CardFooter>
-							<p>Card Footer</p>
-						</CardFooter> */}
 					</Card>
 				</main>
 			</div>

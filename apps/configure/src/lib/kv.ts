@@ -1,6 +1,6 @@
 import type { IDBPDatabase } from "idb";
+import type { User } from "./auth";
 import type { Database } from "./db";
-import type { User } from "./sync";
 import type { Org } from "./sync/schema";
 
 export type KvValue = {

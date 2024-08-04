@@ -1,8 +1,7 @@
-import { createAsync } from "@solidjs/router";
 import { Suspense } from "solid-js";
 import { z } from "zod";
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
-import { db } from "~/lib/db";
+import { createDbQuery } from "~/lib/query";
 import { useZodParams } from "~/lib/useZodParams";
 
 export default function Page() {
@@ -10,11 +9,7 @@ export default function Page() {
 		userId: z.string(),
 	});
 
-	// TODO: Make this reactive to DB changes
-	const data = createAsync(
-		async () => await (await db).get("users", params.userId),
-	);
-
+	const data = createDbQuery((db) => db.get("users", params.userId));
 	// TODO: 404 handling
 
 	return (

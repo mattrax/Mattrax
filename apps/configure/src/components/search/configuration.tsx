@@ -1,7 +1,6 @@
 // This file contains the configuration for data fetching, filtering, ordering, and rendering.
 
 import { Badge } from "@mattrax/ui";
-import { db } from "~/lib/db";
 import { type Entity, defineEntity } from "./filters";
 
 const typeColumn = (type: string) =>
@@ -15,7 +14,7 @@ const typeColumn = (type: string) =>
 
 export const entities = {
 	users: defineEntity({
-		load: async () => await (await db).getAll("users"),
+		load: async (db) => await db.getAll("users"),
 		columns: {
 			type: typeColumn("USER"),
 			name: {
@@ -94,7 +93,7 @@ export const entities = {
 		// TODO: Relations
 	}),
 	devices: defineEntity({
-		load: async () => await (await db).getAll("devices"),
+		load: async (db) => await db.getAll("devices"),
 		columns: {
 			type: typeColumn("DEVICE"),
 			name: {
@@ -164,7 +163,7 @@ export const entities = {
 		filters: {},
 	}),
 	groups: defineEntity({
-		load: async () => await (await db).getAll("groups"),
+		load: async (db) => await db.getAll("groups"),
 		columns: {
 			type: typeColumn("GROUP"),
 			name: {
@@ -195,7 +194,7 @@ export const entities = {
 		filters: {},
 	}),
 	policies: defineEntity({
-		load: async () => await (await db).getAll("policies"),
+		load: async (db) => await db.getAll("policies"),
 		columns: {
 			type: typeColumn("POLICY"),
 			name: {
@@ -226,7 +225,7 @@ export const entities = {
 		filters: {},
 	}),
 	apps: defineEntity({
-		load: async () => await (await db).getAll("apps"),
+		load: async (db) => await db.getAll("apps"),
 		columns: {
 			type: typeColumn("APP"),
 			name: {
