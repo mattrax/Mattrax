@@ -2,7 +2,7 @@ import { Show } from "solid-js";
 import { z } from "zod";
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
 import { SearchPage, createSearchPageContext } from "~/components/search";
-import { createIdbQuery } from "~/lib/db";
+import { createDbQuery } from "~/lib/query";
 import { useZodParams } from "~/lib/useZodParams";
 
 export default function Page() {
@@ -13,11 +13,11 @@ export default function Page() {
 	const params = useZodParams({ viewId: z.string() });
 
 	// TODO: if the view is modified in another tab we are gonna wipe out any changes which is not great.
-	const views = createIdbQuery("views"); // TODO: Filter to a specific view using IndexedDB query here???
+	const views = createDbQuery((db) => db.getAll("views")); // TODO: Filter to a specific view using IndexedDB query here???
 
 	// TODO: Loading state!
 	return (
-		<Show when={views.data}>
+		<Show when={views()}>
 			{(views) => {
 				const view = views().find((v) => v.id === params.viewId);
 				if (!view) {

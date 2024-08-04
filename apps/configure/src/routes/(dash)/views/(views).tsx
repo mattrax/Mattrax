@@ -1,6 +1,7 @@
-import { A, useNavigate } from "@solidjs/router";
+import { A } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import { type Database, createIdbQuery, db } from "~/lib/db";
+import type { Database } from "~/lib/db";
+import { createDbQuery } from "~/lib/query";
 import { createBulkDeleteDialog } from "~c/BulkDeleteDialog";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
 import {
@@ -68,7 +69,7 @@ const columns = [
 ];
 
 export default function Page() {
-	const views = createIdbQuery("views");
+	const views = createDbQuery((db) => db.getAll("views"));
 
 	const table = createStandardTable({
 		get data() {

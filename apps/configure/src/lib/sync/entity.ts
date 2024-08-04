@@ -78,7 +78,15 @@ export function defineSyncEntity<T extends z.ZodTypeAny>(
 
 	return defineSyncOperation<EntityMeta>(
 		name,
-		async ({ db, syncId, syncedAt, metadata, accessToken }) => {
+		async ({
+			db,
+			syncId,
+			syncedAt,
+			metadata,
+			total,
+			completed,
+			accessToken,
+		}) => {
 			const result = await Promise.all(
 				endpoints.map(async (endpointUrl, i) => {
 					const meta = metadata ? metadata?.[i] : undefined;
@@ -99,16 +107,16 @@ export function defineSyncEntity<T extends z.ZodTypeAny>(
 									? stripGraphAPIPrefix(meta.deltaLink)
 									: endpointUrl,
 						});
-						if (options.countEndpoint && syncedAt)
-							operations.push({
-								id: `${name}-count`,
-								method: "GET",
-								url: options.countEndpoint,
-								headers: {
-									ConsistencyLevel: "eventual",
-								},
-							});
 					}
+					if (total === undefined && options.countEndpoint)
+						operations.push({
+							id: `${name}-count`,
+							method: "GET",
+							url: options.countEndpoint,
+							headers: {
+								ConsistencyLevel: "eventual",
+							},
+						});
 
 					const responses = await registerBatchedOperationAsync(
 						operations,
@@ -130,24 +138,32 @@ export function defineSyncEntity<T extends z.ZodTypeAny>(
 							`Failed to parse ${name} response from request "${response.id}". ${result.error.message}`,
 						);
 
-					// TODO: Fix progress
-					// let count = result.data?.["@odata.count"];
-					// if (count === undefined)
-					// 	if (countResp) {
-					// 		if (countResp.status !== 200)
-					// 			throw new Error(
-					// 				`Failed to fetch ${name} count. Got status ${countResp.status}"`,
-					// 			);
+					let newTotal = undefined;
+					if (total === undefined) {
+						newTotal = result.data?.["@odata.count"];
+						if (newTotal === undefined)
+							if (countResp) {
+								if (countResp.status !== 200)
+									throw new Error(
+										`Failed to fetch ${name} count. Got status ${countResp.status}"`,
+									);
 
-					// 		count = z.number().parse(countResp.body);
-					// 	} else if (meta && "count" in meta) {
-					// 		count = meta.count;
-					// 	} else {
-					// 		// The `options.countEndpoint` or `@odata.count` is required.
-					// 		throw new Error(`Failed to determine ${name} count!`);
-					// 	}
+								newTotal = z.number().parse(countResp.body);
+							} else {
+								console.log(
+									total,
+									newTotal,
+									result.data?.["@odata.count"],
+									countResp,
+									operations,
+									responses,
+									options.countEndpoint,
+								);
 
-					// const offset = meta && "offset" in meta ? meta.offset : 0;
+								// `options.countEndpoint` or `@odata.count` are required!!!
+								throw new Error(`Failed to determine ${name} count!`);
+							}
+					}
 
 					await Promise.all(
 						result.data.value.map(async (value) => {
@@ -159,22 +175,6 @@ export function defineSyncEntity<T extends z.ZodTypeAny>(
 						}),
 					);
 
-					// const isLastPage =
-					// 	result.data?.["@odata.deltaLink"] ||
-					// 	result.data?.["@odata.nextLink"] === undefined;
-
-					// isLastPage ? {
-					// deltaLink: result.data?.["@odata.deltaLink"],
-					// syncedAt: new Date(),
-					// lastSyncId: syncId,
-					// }
-					// : {
-					// count,
-					// offset: offset + result.data.value.length,
-					// // We assert, because `isLastPage` accounts for this. TS is just not smart enough.
-					// nextPage: result.data["@odata.nextLink"]!,
-					// };
-
 					return [
 						i,
 						result.data?.["@odata.nextLink"]
@@ -184,15 +184,39 @@ export function defineSyncEntity<T extends z.ZodTypeAny>(
 							: {
 									deltaLink: result.data?.["@odata.deltaLink"],
 								},
+						newTotal,
+						result.data.value.length,
 					] as const;
 				}),
 			);
 
+			const newTotal = total
+				? total
+				: result.reduce((acc, [, , newTotal]) => acc + newTotal!, 0);
+			let newCompleted = result.reduce(
+				(acc, [, , , completed]) => acc + completed,
+				completed,
+			);
+			if (newCompleted > newTotal) {
+				console.error(
+					`Completed (${newCompleted}) is greater than total (${newTotal}) for ${name}`,
+				);
+				// To ensure the progress doesn't end up as `Infinity`.
+				newCompleted = newTotal;
+			}
+
 			return {
 				// Remember `in` doesn't care that `r.deltaLink === undefined`.
-				type: result.every(([i, r]) => "deltaLink" in r)
-					? "complete"
-					: "continue",
+				...(result.every(([i, r]) => "deltaLink" in r)
+					? {
+							type: "complete",
+						}
+					: {
+							type: "continue",
+							total: newTotal,
+							completed: newCompleted,
+						}),
+
 				meta: Object.fromEntries(result),
 			};
 		},

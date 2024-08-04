@@ -1,6 +1,4 @@
-import { makeEventListener } from "@solid-primitives/event-listener";
-import { createQuery } from "@tanstack/solid-query";
-import { type DBSchema, type StoreKey, type StoreNames, openDB } from "idb";
+import { type DBSchema, openDB } from "idb";
 import type { Filter } from "~/components/search/filters";
 import type { SyncOperation } from "./sync/operation";
 
@@ -303,6 +301,7 @@ export const db = openDB<Database>("data", 1, {
 	upgrade(db) {
 		db.createObjectStore("_kv");
 		db.createObjectStore("_meta");
+		db.createObjectStore("_mutations");
 		db.createObjectStore("views", {
 			keyPath: "id",
 		});
@@ -337,67 +336,11 @@ export const db = openDB<Database>("data", 1, {
 			keyPath: ["groupId", "type", "id"],
 		});
 	},
+	blocked(currentVersion, blockedVersion, event) {
+		console.log(currentVersion, blockedVersion, event);
+		// TODO: Handle this???
+	},
 	terminated() {
 		// TODO: Warning & disable all UI state???
 	},
 });
-
-const syncBroadcastChannel = new BroadcastChannel("sync");
-
-type InvalidationKey =
-	| StoreNames<Database>
-	| "auth"
-	| "isSyncing"
-	| "syncProgress";
-
-// Subscribe to store invalidations to trigger queries to rerun of the data
-export function subscribeToInvalidations(
-	onChange: (store: InvalidationKey) => void,
-) {
-	const onChangeInner = (data: any) => {
-		if (typeof data === "string") onChange(data as any);
-		else if (typeof data === "object" && Array.isArray(data)) {
-			for (const store of data) {
-				onChange(store);
-			}
-		} else {
-			console.error(
-				`subscribeToInvalidations: got invalid type '${typeof data}'`,
-			);
-		}
-	};
-
-	makeEventListener(syncBroadcastChannel, "message", (event) => {
-		if (event.origin !== window.origin) return;
-		onChangeInner(event.data);
-	});
-	makeEventListener(document, "#sync", (event) =>
-		onChangeInner((event as any).detail),
-	);
-}
-
-// This will invalidate a store, triggering all queries against it to rerun updating the UI.
-export function invalidateStore(
-	storeName: InvalidationKey | InvalidationKey[],
-) {
-	syncBroadcastChannel.postMessage(storeName);
-	document.dispatchEvent(new CustomEvent("#sync", { detail: storeName }));
-}
-
-// Construct a reactive IndexedDB query for usage within SolidJS.
-export function createIdbQuery<Name extends StoreNames<Database>>(
-	storeName: Name,
-	query?: StoreKey<Database, Name> | IDBKeyRange | null,
-	count?: number,
-) {
-	const data = createQuery(() => ({
-		queryKey: [storeName, query, count],
-		queryFn: async () => await (await db).getAll(storeName, query, count),
-	}));
-
-	subscribeToInvalidations((store) => {
-		if (store === storeName) data.refetch();
-	});
-
-	return data;
-}

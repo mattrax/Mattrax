@@ -87,6 +87,9 @@ importers:
       '@solid-primitives/resize-observer':
         specifier: ^2.0.26
         version: 2.0.26(solid-js@1.8.18)
+      '@solid-primitives/resource':
+        specifier: ^0.3.0
+        version: 0.3.0(solid-js@1.8.18)
       '@solid-primitives/set':
         specifier: ^0.4.11
         version: 0.4.11(solid-js@1.8.18)
@@ -4162,6 +4165,11 @@ packages:
     resolution: {integrity: sha512-KbPhwal6ML9OHeUTZszBbt6PYSMj89d4wVCLxlvDYL4U0+p+xlCEaqz6v9dkCwm/0Lb+Wed7W5T1dQZCP3JUUw==}
     peerDependencies:
       solid-js: ^1.6.12
+
+  '@solid-primitives/resource@0.3.0':
+    resolution: {integrity: sha512-RwazhRQIhyU3Xx9buSl3Y1Qosa3p3lirFaX+UnWeVCKiQ3rlxvyFiliX41F6X0UBSgo7GjM8BBNQrn+EgyL/ug==}
+    peerDependencies:
+      solid-js: ^1.6.0
 
   '@solid-primitives/rootless@1.4.5':
     resolution: {integrity: sha512-GFJE9GC3ojx0aUKqAUZmQPyU8fOVMtnVNrkdk2yS4kd17WqVSpXpoTmo9CnOwA+PG7FTzdIkogvfLQSLs4lrww==}
@@ -13163,6 +13171,10 @@ snapshots:
       '@solid-primitives/utils': 6.2.3(solid-js@1.8.18)
       solid-js: 1.8.18
 
+  '@solid-primitives/resource@0.3.0(solid-js@1.8.18)':
+    dependencies:
+      solid-js: 1.8.18
+
   '@solid-primitives/rootless@1.4.5(solid-js@1.8.18)':
     dependencies:
       '@solid-primitives/utils': 6.2.3(solid-js@1.8.18)
@@ -15256,7 +15268,7 @@ snapshots:
       eslint: 9.7.0
       eslint-import-resolver-node: 0.3.9
       eslint-import-resolver-typescript: 3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.7.0)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.7.0))(eslint@9.7.0)
-      eslint-plugin-import: 2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.7.0)(typescript@5.5.4))(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.7.0)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.7.0))(eslint@9.7.0))(eslint@9.7.0)
+      eslint-plugin-import: 2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.7.0)(typescript@5.5.4))(eslint-import-resolver-typescript@3.6.1)(eslint@9.7.0)
       eslint-plugin-jsx-a11y: 6.9.0(eslint@9.7.0)
       eslint-plugin-react: 7.34.4(eslint@9.7.0)
       eslint-plugin-react-hooks: 4.6.2(eslint@9.7.0)
@@ -15289,7 +15301,7 @@ snapshots:
       enhanced-resolve: 5.17.0
       eslint: 9.7.0
       eslint-module-utils: 2.8.1(@typescript-eslint/parser@7.2.0(eslint@9.7.0)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.7.0)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.7.0))(eslint@9.7.0))(eslint@9.7.0)
-      eslint-plugin-import: 2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.7.0)(typescript@5.5.4))(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.7.0)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.7.0))(eslint@9.7.0))(eslint@9.7.0)
+      eslint-plugin-import: 2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.7.0)(typescript@5.5.4))(eslint-import-resolver-typescript@3.6.1)(eslint@9.7.0)
       fast-glob: 3.3.2
       get-tsconfig: 4.7.6
       is-core-module: 2.15.0
@@ -15311,7 +15323,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.7.0)(typescript@5.5.4))(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.7.0)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.7.0))(eslint@9.7.0))(eslint@9.7.0):
+  eslint-plugin-import@2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.7.0)(typescript@5.5.4))(eslint-import-resolver-typescript@3.6.1)(eslint@9.7.0):
     dependencies:
       array-includes: 3.1.8
       array.prototype.findlastindex: 1.2.5

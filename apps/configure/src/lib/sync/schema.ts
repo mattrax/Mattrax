@@ -3,12 +3,12 @@
 
 import type { IDBPDatabase } from "idb";
 import { z } from "zod";
+import { mapUser } from "../auth";
 import type { Database } from "../db";
 import { getKey, setKey as putKey } from "../kv";
-import { mapUser } from "../sync";
 import { defineSyncEntity, merge, odataResponseSchema } from "./entity";
 import { registerBatchedOperationAsync } from "./microsoft";
-import { registerBatchedOperation } from "./state";
+import { defineSyncOperation } from "./operation";
 
 const userSchema = z.object({
 	id: z.string(),
@@ -16,50 +16,58 @@ const userSchema = z.object({
 	userPrincipalName: z.string(),
 });
 
-export async function me(db: IDBPDatabase<Database>, accessToken: string) {
-	const oldMe = await getKey(db, "user");
+export const me = defineSyncOperation<undefined>(
+	"me",
+	async ({ db, accessToken }) => {
+		const oldMe = await getKey(db, "user");
 
-	const responses = await registerBatchedOperationAsync(
-		[
-			{
-				id: "me",
-				method: "GET",
-				url: "/me?$select=id,displayName,userPrincipalName",
-			},
-			{
-				id: "mePhoto",
-				method: "GET",
-				url: "/me/photo/$value",
-				headers: {
-					"If-None-Match": oldMe?.avatarEtag,
+		const responses = await registerBatchedOperationAsync(
+			[
+				{
+					id: "me",
+					method: "GET",
+					url: "/me?$select=id,displayName,userPrincipalName",
 				},
-			},
-		],
-		accessToken,
-	);
+				{
+					id: "mePhoto",
+					method: "GET",
+					url: "/me/photo/$value",
+					headers: {
+						"If-None-Match": oldMe?.avatarEtag,
+					},
+				},
+			],
+			accessToken,
+		);
 
-	const [me, mePhoto] = [responses[0]!, responses[1]!];
+		const [me, mePhoto] = [responses[0]!, responses[1]!];
 
-	if (me.status !== 200)
-		throw new Error(`Failed to fetch me. Got status ${me.status}`);
+		if (me.status !== 200)
+			throw new Error(`Failed to fetch me. Got status ${me.status}`);
 
-	const result = userSchema.safeParse(me.body);
-	if (result.error)
-		throw new Error(`Failed to parse me response. ${result.error.message}`);
+		const result = userSchema.safeParse(me.body);
+		if (result.error)
+			throw new Error(`Failed to parse me response. ${result.error.message}`);
 
-	const user = mapUser(result.data);
+		const user = mapUser(result.data);
 
-	// Will be `404` if the user has no photo.
-	if (mePhoto.status === 200) {
-		user.avatar = `data:image/*;base64,${mePhoto.body}`;
-		user.avatarEtag = mePhoto.headers?.ETag;
-	} else if (mePhoto.status !== 404 && mePhoto.status !== 304) {
-		// We only log cause this is not a critical error.
-		console.error(`Failed to fetch me photo. Got status ${mePhoto.status}`);
-	}
+		// Will be `404` if the user has no photo.
+		if (mePhoto.status === 200) {
+			user.avatar = `data:image/*;base64,${mePhoto.body}`;
+			user.avatarEtag = mePhoto.headers?.ETag;
+		} else if (mePhoto.status !== 404 && mePhoto.status !== 304) {
+			// We only log cause this is not a critical error.
+			console.error(`Failed to fetch me photo. Got status ${mePhoto.status}`);
+		}
 
-	await putKey(db, "user", user);
-}
+		await putKey(db, "user", user);
+
+		return {
+			type: "complete",
+			meta: undefined,
+		};
+	},
+);
 
 const orgSchema = z.object({
 	id: z.string(),
@@ -77,38 +85,43 @@ const orgSchema = z.object({
 
 export type Org = z.infer<typeof orgSchema>;
 
-export async function organization(
-	db: IDBPDatabase<Database>,
-	accessToken: string,
-) {
-	const responses = await registerBatchedOperationAsync(
-		{
-			id: "organization",
-			method: "GET",
-			url: "/organization?$select=id,displayName,verifiedDomains",
-		},
-		accessToken,
-	);
-
-	const org = responses[0]!;
-
-	if (org.status !== 200)
-		throw new Error(`Failed to fetch org. Got status ${org.status}`);
-
-	const result = odataResponseSchema(orgSchema).safeParse(org.body);
-	if (result.error)
-		throw new Error(
-			`Failed to parse organization response. ${result.error.message}`,
+export const organization = defineSyncOperation(
+	"organization",
+	async ({ db, accessToken }) => {
+		const responses = await registerBatchedOperationAsync(
+			{
+				id: "organization",
+				method: "GET",
+				url: "/organization?$select=id,displayName,verifiedDomains",
+			},
+			accessToken,
 		);
 
-	if (result.data.value[0] === undefined) {
-		throw new Error("No organisations was found!");
-	} else if (result.data.value.length > 1) {
-		console.warn("Found multiple organisations. Choosing the first one!");
-	}
+		const org = responses[0]!;
 
-	await putKey(db, "org", result.data.value[0]);
-}
+		if (org.status !== 200)
+			throw new Error(`Failed to fetch org. Got status ${org.status}`);
+
+		const result = odataResponseSchema(orgSchema).safeParse(org.body);
+		if (result.error)
+			throw new Error(
+				`Failed to parse organization response. ${result.error.message}`,
+			);
+
+		if (result.data.value[0] === undefined) {
+			throw new Error("No organisations was found!");
+		} else if (result.data.value.length > 1) {
+			console.warn("Found multiple organisations. Choosing the first one!");
+		}
+
+		await putKey(db, "org", result.data.value[0]);
+
+		return {
+			type: "complete",
+			meta: undefined,
+		};
+	},
+);
 
 export const users = defineSyncEntity("users", {
 	endpoint:
@@ -319,19 +332,20 @@ export const groups = defineSyncEntity("groups", {
 			}),
 		);
 
-		const members = tx.objectStore("groupMembers");
-		for (const member of data["members@delta"]) {
-			if (member["@removed"]) {
-				await members.delete(data.id);
-			} else {
-				members.put({
-					_syncId,
-					groupId: data.id,
-					type: member["@odata.type"],
-					id: member.id,
-				});
-			}
-		}
+		// TODO: This breaks the IndexedDB observers polyfill.
+		// const members = tx.objectStore("groupMembers");
+		// for (const member of data["members@delta"]) {
+		// 	if (member["@removed"]) {
+		// 		await members.delete(data.id);
+		// 	} else {
+		// 		members.put({
+		// 			_syncId,
+		// 			groupId: data.id,
+		// 			type: member["@odata.type"],
+		// 			id: member.id,
+		// 		});
+		// 	}
+		// }
 
 		await tx.done;
 	},

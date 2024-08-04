@@ -1,13 +1,13 @@
 import type { IDBPDatabase } from "idb";
 import { type Database, type TableName, db } from "../db";
 
-export type SyncOperation = TableName;
+export type SyncOperation = TableName | "me" | "organization";
 
 type SyncOperationResult<M> =
 	| {
 			type: "continue";
-			// count: number;
-			// total: number;
+			completed: number;
+			total: number;
 			meta: M;
 	  }
 	| {
@@ -23,7 +23,11 @@ type SyncOperationContext = {
 	// The last sync time.
 	// This will only be set for the first operation in a sync session.
 	syncedAt?: Date;
-
+	// The total count of items to sync.
+	// This will be empty of the first sync.
+	total?: number;
+	// The total count of items that have been synced in the current session.
+	completed: number;
 	// TODO: Maybe don't do it like this. Really `registerBatchedOperationsAsync` should ask for the latest, instead of using the potentially outdated one it has???
 	accessToken: string;
 };
@@ -52,43 +56,69 @@ export function defineSyncOperation<M>(
 		},
 	) => Promise<void> | void,
 ) {
-	// TODO: Invalidate progress -> Using IndexedDB observer stuff???
-
-	// TODO: Can we not call callback if this operation is done for the current sync session? Look the callback should be safe but idk.
-
 	return async (db: IDBPDatabase<Database>, accessToken: string) => {
 		// Ensure we are in the "syncing" state
-		const [syncId, initialMetadata]: [string, any] =
-			await navigator.locks.request(`|sync|meta|${name}`, async (lock) => {
-				if (!lock) return;
-				const meta = await db.get("_meta", name);
-				let syncId: string;
-				if (meta && "syncId" in meta) {
-					// We are resuming an active sync that was interrupted
-					syncId = meta.syncId;
-					console.log("Continuing sync interrupted", name, syncId); // TODO: debug
-				} else {
-					// We are starting a new sync
-					// or alternatively, we are resuming *and* this specific operation was completed in the previous partial-session (which causes it to be resynced)
-					syncId = Date.now().toString();
-					await db.put(
-						"_meta",
-						{ syncId, completed: 0, total: Number.NaN, meta: meta?.meta },
-						name,
-					);
-					console.log("Starting sync", name, syncId); // TODO: debug
-				}
-				return [syncId, meta?.meta];
-			});
+		const [syncId, initialMetadata, initialCompleted, initialTotal]: [
+			string,
+			any,
+			number,
+			number,
+		] = await navigator.locks.request(`|sync|meta|${name}`, async (lock) => {
+			if (!lock) return;
+			const meta = await db.get("_meta", name);
+			let syncId: string;
+			let completed = 0;
+			let total = Number.NaN;
+			if (meta && "syncId" in meta) {
+				// We are resuming an active sync that was interrupted
+				syncId = meta.syncId;
+				completed = meta.completed;
+				total = meta.total;
+				console.log("Continuing sync interrupted", name, syncId); // TODO: debug
+			} else {
+				// We are starting a new sync
+				// or alternatively, we are resuming *and* this specific operation was completed in the previous partial-session (which causes it to be resynced)
+				syncId = Date.now().toString();
+				await db.put(
+					"_meta",
+					{ syncId, completed: 0, total: Number.NaN, meta: meta?.meta },
+					name,
+				);
+				console.log("Starting sync", name, syncId); // TODO: debug
+			}
+			return [syncId, meta?.meta, completed, total];
+		});
 
 		let result: SyncOperationResult<M>;
-		let metadata = initialMetadata;
+		let [metadata, completed, total] = [
+			initialMetadata,
+			initialCompleted,
+			initialTotal,
+		];
 		do {
-			result = await callback({ db, syncId, metadata, accessToken });
+			result = await callback({
+				db,
+				syncId,
+				metadata,
+				accessToken,
+				completed,
+				total: Number.isNaN(total) ? undefined : total,
+			});
 			metadata = result.meta;
+			if (result.type === "continue") {
+				completed = result.completed;
+				total = result.total;
+			}
 
 			if (result.type === "complete")
-				await onComplete?.({ db, syncId, metadata: result.meta, accessToken });
+				await onComplete?.({
+					db,
+					syncId,
+					metadata: result.meta,
+					accessToken,
+					completed,
+					total: Number.isNaN(total) ? undefined : total,
+				});
 
 			await navigator.locks.request(`|sync|meta|${name}`, async (lock) => {
 				if (!lock) return;
@@ -101,8 +131,8 @@ export function defineSyncOperation<M>(
 							}
 						: {
 								syncId,
-								completed: 0, // TODO
-								total: Number.NaN, // TODO
+								completed: result.completed,
+								total: result.total,
 								meta: result.meta,
 							},
 					name,

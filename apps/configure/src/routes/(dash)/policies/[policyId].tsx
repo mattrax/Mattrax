@@ -144,6 +144,7 @@ function RenderSettingsCatalog(props: {
 							<div class="flex flex-col space-y-2">
 								<For each={definitions}>
 									{(definition) => {
+										// @ts-expect-error
 										const setting = props.policy.settings.find(
 											(s) =>
 												s.settingInstance.settingDefinitionId === definition.id,
@@ -184,7 +185,7 @@ function RenderSettingsCatalog(props: {
 												"#microsoft.graph.deviceManagementConfigurationChoiceSettingDefinition"
 											) {
 												const items = Object.fromEntries(
-													definition.options.map((o) => [o.itemId, o]),
+													definition.options.map((o: any) => [o.itemId, o]),
 												);
 
 												// TODO: Determine when to use `Switch` over `Select`???

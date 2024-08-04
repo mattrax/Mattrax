@@ -1,4 +1,23 @@
-import type { Operation, OperationGroup, OperationResponse } from "./state";
+import { UnauthorizedError } from ".";
+
+export type Operation = {
+	id: string;
+	method: "GET" | "POST" | "PATCH" | "DELETE";
+	url: string;
+	headers?: Record<string, string>;
+};
+
+export type OperationResponse = {
+	id: string;
+	body: unknown;
+	headers: Record<string, string>;
+	status: number;
+};
+
+type OperationGroup = {
+	ops: Operation[];
+	resolve: (data: OperationResponse[]) => void;
+};
 
 const operations: OperationGroup[] = [];
 
@@ -7,11 +26,11 @@ export async function registerBatchedOperationAsync(
 	op: Operation | Operation[],
 	accessToken: string,
 ): Promise<OperationResponse[]> {
-	return await new Promise((resolve) => {
+	return await new Promise((resolve, reject) => {
 		if (Array.isArray(op) && op.length === 0) return; // TODO: `resolve` never called so stalls!!!!
 		operations.push({
 			ops: Array.isArray(op) ? op : [op],
-			callback: resolve,
+			resolve,
 		});
 
 		// Batching using a timer is technically slower but it allows us to fully separate the logic into layer which is worth it.
@@ -32,8 +51,8 @@ export async function registerBatchedOperationAsync(
 					requests,
 				}),
 			});
-
-			// TODO: Use the special `fetch` wrapper that handles unauthorised, refresh tokens, etc
+			if (resp.status === 401) return reject(new UnauthorizedError());
+			if (!resp.ok) throw new Error("Failed to fetch data");
 
 			const data = await resp.json();
 
@@ -48,7 +67,7 @@ export async function registerBatchedOperationAsync(
 							);
 						args.push(r);
 					}
-					await group.callback(args);
+					await group.resolve(args);
 				}),
 			);
 		}, 20);

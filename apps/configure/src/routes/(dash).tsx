@@ -29,10 +29,14 @@ import {
 	onMount,
 } from "solid-js";
 import { toast } from "solid-sonner";
+import { logout, useUser } from "~/lib/auth";
+import { createTimer2 } from "~/lib/createTimer";
+import { createCrossTabListener, createDbQuery } from "~/lib/query";
 import { SyncEngineProvider, initSyncEngine, useSyncEngine } from "~/lib/sync";
 
 export default function Layout(props: ParentProps) {
 	const syncEngine = initSyncEngine();
+	createCrossTabListener();
 
 	onMount(() => syncEngine.syncAll());
 
@@ -157,13 +161,13 @@ function NavItems() {
 }
 
 function ProfileDropdown() {
-	const sync = useSyncEngine();
+	const user = useUser();
 	const navigate = useNavigate();
 
 	const logoutMutation = createMutation(() => ({
 		mutationKey: ["logout"],
 		mutationFn: async () => {
-			await sync.logout();
+			await logout();
 			navigate("/");
 		},
 	}));
@@ -178,17 +182,15 @@ function ProfileDropdown() {
 		>
 			<DropdownMenu>
 				<DropdownMenuTrigger as={Avatar}>
-					<Show when={sync.user()?.avatar}>
+					<Show when={user()?.avatar}>
 						{(src) => <AvatarImage src={src()} />}
 					</Show>
-					<AvatarFallback>
-						{getInitials(sync.user()?.name || "")}
-					</AvatarFallback>
+					<AvatarFallback>{getInitials(user()?.name || "")}</AvatarFallback>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent>
 					<DropdownMenuLabel>
-						<p>{sync.user()?.name}</p>
-						<p class="text-sm">{sync.user()?.upn}</p>
+						<p>{user()?.name}</p>
+						<p class="text-sm">{user()?.upn}</p>
 					</DropdownMenuLabel>
 					<DropdownMenuSeparator />
 					<DropdownMenuItem
@@ -206,6 +208,38 @@ function ProfileDropdown() {
 function SyncPanel() {
 	const sync = useSyncEngine();
 
+	const [isSyncing, setIsSyncing] = createSignal(false);
+
+	// Polling is not *great* but it's the most reliable way to keep track across tabs because the Web Lock's API has no way to listen for changes.
+	const isSyncingCheck = createTimer2(
+		async () => {
+			const locks = await navigator.locks.query();
+			setIsSyncing(locks.held?.find((l) => l.name === "sync") !== undefined);
+		},
+		// We regularly poll because we just can't trust that the other tab will tell us when it releases the lock (it could have crashed/been closed)
+		// We can pretty safely assume we will get a message when the lock is acquired but not when it's released.
+		// Given this we poll a lot more aggressively when we're holding the lock.
+		() => (isSyncing() ? 250 : 1000),
+	);
+	isSyncingCheck.trigger();
+
+	const progress = createDbQuery(async (db) => {
+		isSyncingCheck.trigger();
+
+		let total = 0;
+		const metas = await db.getAll("_meta");
+		for (const meta of metas) {
+			if ("syncedAt" in meta) {
+				total += (1 / metas.length) * 1;
+			} else {
+				const innerProgress = meta.completed / meta.total;
+				if (Number.isNaN(innerProgress)) continue;
+				total += (1 / metas.length) * innerProgress;
+			}
+		}
+		return total * 100;
+	});
+
 	return (
 		<div class="flex">
 			<Tooltip>
@@ -213,20 +247,18 @@ function SyncPanel() {
 					as="div"
 					class={clsx(
 						"flex justify-center items-center w-10",
-						sync.isSyncing() ? "" : "hidden",
+						isSyncing() ? "" : "hidden",
 					)}
 				>
 					<ProgressCircle
 						size="xs"
-						value={sync.progress()}
-						strokeWidth={
-							sync.isSyncing() && sync.progress() === 0 ? 0 : undefined
-						}
+						value={progress()}
+						strokeWidth={isSyncing() && progress() === 0 ? 0 : undefined}
 					>
 						<div class="relative inline-flex">
 							<div class="w-5 h-5 rounded-full" />
 							<div class="w-5 h-5 bg-black rounded-full absolute top-0 left-0 animate-ping" />
-							<Show when={sync.isSyncing() && sync.progress() === 0}>
+							<Show when={isSyncing() && progress() === 0}>
 								<div class="w-5 h-5 bg-black rounded-full absolute top-0 left-0 animate-pulse" />
 							</Show>
 						</div>
@@ -246,7 +278,7 @@ function SyncPanel() {
 								);
 						})
 					}
-					disabled={sync.isSyncing()}
+					disabled={isSyncing()}
 				>
 					Sync
 				</TooltipTrigger>

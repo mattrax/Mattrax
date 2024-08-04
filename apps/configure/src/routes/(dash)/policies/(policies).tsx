@@ -1,9 +1,7 @@
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
 import { SearchPage, createSearchPageContext } from "~/components/search";
-import { useSyncEngine } from "~/lib/sync";
 
 export default function Page() {
-	const sync = useSyncEngine();
 	const ctx = createSearchPageContext([
 		{
 			type: "enum",
@@ -16,7 +14,7 @@ export default function Page() {
 		<PageLayout heading={<PageLayoutHeading>Policies</PageLayoutHeading>}>
 			<SearchPage {...ctx} showFilterBar={false} />
 
-			<button
+			{/* <button
 				type="button"
 				onClick={async () => {
 					const token = await sync.getAccessToken();
@@ -60,7 +58,7 @@ export default function Page() {
 				}}
 			>
 				Debug
-			</button>
+			</button> */}
 		</PageLayout>
 	);
 }

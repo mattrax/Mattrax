@@ -1,4 +1,7 @@
-/* @refresh reload */
+import { useNavigate } from "@solidjs/router";
+import { db } from "./db";
+import { deleteKey, getKey, setKey } from "./kv";
+import { createDbQuery } from "./query";
 import { initDatabase } from "./sync";
 
 const clientId = "5dd42e00-78e7-474a-954a-bb4e5085e820";
@@ -45,17 +48,9 @@ export async function verifyOAuthCode(code: string) {
 	if (!resp.ok) throw new Error("Failed to verify code");
 	sessionStorage.removeItem("code_verifier");
 
-	// TODO: Move this into the sync engine
 	const data = await resp.json();
 
-	const user = await fetch("https://graph.microsoft.com/v1.0/me", {
-		headers: {
-			Authorization: `Bearer ${data.access_token}`,
-		},
-	});
-	if (!user.ok) throw new Error("Failed to fetch user");
-
-	initDatabase(data.access_token, data.refresh_token, await user.json());
+	initDatabase(data.access_token, data.refresh_token);
 }
 
 const possible =
@@ -80,3 +75,51 @@ async function generateCodeChallenge(codeVerifier: string) {
 		.replace(/\+/g, "-")
 		.replace(/\//g, "_");
 }
+
+export function useUser() {
+	const navigate = useNavigate();
+	return createDbQuery(async (db) => {
+		const user = await getKey(db, "user");
+		if (!user) {
+			const accessToken = await getKey(db, "accessToken");
+			if (!accessToken) {
+				navigate("/");
+				await new Promise((resolve) => {});
+			}
+
+			// TODO: We are taking a risk that if DB updates come in now, we will fetch the user multiple times.
+			// TODO: Maybe implement this as a partial sync???
+
+			const userData = await fetch("https://graph.microsoft.com/v1.0/me", {
+				headers: {
+					Authorization: `Bearer ${accessToken}`,
+				},
+			});
+			// TODO: Zod validation on fetch + handle unauthorised redirect.
+			const user = mapUser(await userData.json());
+			await setKey(await db, "user", user);
+			return user;
+		}
+		return user;
+	});
+}
+
+export async function logout() {
+	await deleteKey(await db, "accessToken");
+	await deleteKey(await db, "refreshToken");
+	await deleteKey(await db, "user");
+}
+
+// TODO: Really this should go in `schema.ts` and not be exported???
+// Convert between a Microsoft Graph user object and our internal user object.
+export function mapUser(data: any) {
+	return {
+		id: data.id,
+		name: data.displayName,
+		upn: data.userPrincipalName,
+		avatar: undefined as string | undefined,
+		avatarEtag: undefined as string | undefined,
+	};
+}
+
+export type User = ReturnType<typeof mapUser>;
