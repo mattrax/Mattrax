@@ -8,23 +8,24 @@ import {
 	Switch,
 	createResource,
 } from "solid-js";
-import { generateOAuthUrl, verifyOAuthCode } from "~/lib/auth";
+import { verifyOAuthCode } from "~/lib/auth";
+import { getKey } from "~/lib/kv";
 import { listenForKvChanges } from "~/lib/query";
+import HomePage from "./home";
 
 export default function Page() {
 	const location = useLocation();
 	const navigate = useNavigate();
 
 	const [_, { refetch }] = createResource(async () => {
-		const databases = await window.indexedDB.databases();
-		for (const database of databases) {
+		for (const database of await window.indexedDB.databases()) {
 			// How is this even possible
 			if (!database.name || !database.version) continue;
 			// We open using raw IndexedDB as we don't want to modify the schema.
 			const db = await openDB(database.name, database.version);
 			// This is probably not a Mattrax DB
 			if (!db.objectStoreNames.contains("_kv")) continue;
-			const accessToken = await db.get("_kv", "accessToken");
+			const accessToken = await getKey(db as any, "accessToken");
 			// Cleanup
 			db.close();
 			// Check for authentication information
@@ -34,8 +35,8 @@ export default function Page() {
 	listenForKvChanges(() => refetch());
 
 	return (
-		<div class="p-4">
-			<Switch fallback={<LandingPage />}>
+		<>
+			<Switch fallback={<HomePage />}>
 				<Match when={location.query?.error !== undefined}>
 					{/* // TODO: Properly style this flow */}
 					<p class="bg-red-500">
@@ -77,19 +78,6 @@ export default function Page() {
 					}}
 				</Match>
 			</Switch>
-		</div>
-	);
-}
-
-function LandingPage() {
-	const loginUrl = createAsync(() => generateOAuthUrl());
-
-	return (
-		<Suspense>
-			<h1 class="uppercase font-extrabold text-2xl mb-4">Mattrax Configure</h1>
-			<a href={loginUrl()} class={buttonVariants()}>
-				Login
-			</a>
-		</Suspense>
+		</>
 	);
 }

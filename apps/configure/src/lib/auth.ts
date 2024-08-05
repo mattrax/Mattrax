@@ -5,7 +5,9 @@ import { createDbQuery } from "./query";
 
 const clientId = "5dd42e00-78e7-474a-954a-bb4e5085e820";
 
-export async function generateOAuthUrl() {
+export async function generateOAuthUrl(
+	prompt?: "none" | "login" | "consent" | "select_account" | undefined,
+) {
 	const codeVerifier = generateRandomString(64);
 	window.sessionStorage.setItem("code_verifier", codeVerifier);
 
@@ -17,6 +19,7 @@ export async function generateOAuthUrl() {
 		scope: "https://graph.microsoft.com/.default",
 		code_challenge: await generateCodeChallenge(codeVerifier),
 		code_challenge_method: "S256",
+		...(prompt ? { prompt } : {}),
 		// TODO: `login_hint`
 	});
 

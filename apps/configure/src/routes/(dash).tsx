@@ -21,13 +21,14 @@ import {
 	A,
 	Navigate,
 	createAsync,
+	createAsyncStore,
 	useCurrentMatches,
 	useLocation,
 	useNavigate,
 } from "@solidjs/router";
 import { createMutation } from "@tanstack/solid-query";
 import clsx from "clsx";
-import type { IDBPDatabase } from "idb";
+import { type IDBPDatabase, openDB } from "idb";
 import {
 	ErrorBoundary,
 	For,
@@ -40,10 +41,10 @@ import {
 } from "solid-js";
 import { toast } from "solid-sonner";
 import { z } from "zod";
-import { useUser } from "~/lib/auth";
+import { type User, generateOAuthUrl, useUser } from "~/lib/auth";
 import { createTimer2 } from "~/lib/createTimer";
 import { type Database, dbVersion, openAndInitDb } from "~/lib/db";
-import { deleteKey } from "~/lib/kv";
+import { deleteKey, getKey } from "~/lib/kv";
 import { createCrossTabListener, createDbQuery } from "~/lib/query";
 import { SyncProvider, initSync, useSync } from "~/lib/sync";
 import { useZodParams } from "~/lib/useZodParams";
@@ -352,17 +353,17 @@ function ProfileDropdown() {
 					<AvatarFallback>{getInitials(user()?.name || "")}</AvatarFallback>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent>
-					<DropdownMenuLabel>
-						<p>{user()?.name}</p>
-						<p class="text-sm">{user()?.upn}</p>
-					</DropdownMenuLabel>
-
-					{/* // TODO: Account switching */}
-					<DropdownMenuLabel>
-						<p>Oscar 2</p>
-					</DropdownMenuLabel>
+					<ProfileDropdownAccountSwitcher user={user()} />
 
 					<DropdownMenuSeparator />
+					<DropdownMenuItem onClick={() => alert("TODO")} disabled={true}>
+						Account settings
+					</DropdownMenuItem>
+
+					<DropdownMenuSeparator />
+					<DropdownMenuItem as="a" href="/home">
+						Home Page
+					</DropdownMenuItem>
 					<DropdownMenuItem
 						onClick={() => logoutMutation.mutate()}
 						disabled={logoutMutation.isPending}
@@ -372,6 +373,76 @@ function ProfileDropdown() {
 				</DropdownMenuContent>
 			</DropdownMenu>
 		</Suspense>
+	);
+}
+
+function ProfileDropdownAccountSwitcher(props: { user: User | undefined }) {
+	const sync = useSync();
+
+	const databases = createAsyncStore(async () =>
+		(
+			await Promise.allSettled(
+				(
+					await window.indexedDB.databases()
+				).map(async (database) => {
+					// How is this even possible
+					if (!database.name || !database.version) return;
+					// We also skip the currently active DB
+					if (database.name === sync.db.name) return;
+					// We open using raw IndexedDB as we don't want to modify the schema.
+					const db = await openDB(database.name, database.version);
+					// This is probably not a Mattrax DB
+					if (!db.objectStoreNames.contains("_kv")) return;
+					// Get user and org
+					const user = await getKey(db as any, "user");
+					const org = await getKey(db as any, "org");
+					if (!user || !org) return;
+					// Cleanup
+					db.close();
+
+					return [user, org] as const;
+				}),
+			)
+		)
+			.filter((x) => x.status === "fulfilled")
+			.map((x) => x.value)
+			.filter((x) => x !== undefined),
+	);
+
+	const loginUrl = createAsync(() => generateOAuthUrl("select_account"));
+
+	return (
+		<DropdownMenu sameWidth>
+			<DropdownMenuTrigger>
+				<DropdownMenuLabel class="hover:bg-gray-200 rounded-md w-full">
+					<p>{props.user?.name}</p>
+					<p class="text-sm">{props.user?.upn}</p>
+				</DropdownMenuLabel>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent>
+				<Suspense fallback={<p>Loading...</p>}>
+					<For each={databases()}>
+						{([user, org]) => (
+							<a href={`/${user.id}`}>
+								<DropdownMenuLabel class="hover:bg-gray-200 rounded-md">
+									<p>{user.name}</p>
+									<p class="text-sm">{user.upn}</p>
+								</DropdownMenuLabel>
+							</a>
+						)}
+					</For>
+					<Show
+						when={databases()?.length === 0}
+						fallback={<DropdownMenuSeparator />}
+					>
+						{null}
+					</Show>
+				</Suspense>
+				<DropdownMenuItem as="a" href={loginUrl()}>
+					Add another account
+				</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 }
 

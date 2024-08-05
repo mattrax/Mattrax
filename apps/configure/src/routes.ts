@@ -7,6 +7,10 @@ export const routes = [
 		component: lazy(() => import("./routes/index")),
 	},
 	{
+		path: "/home",
+		component: lazy(() => import("./routes/home")),
+	},
+	{
 		path: "/:userId",
 		component: lazy(() => import("./routes/(dash)")),
 		children: [
