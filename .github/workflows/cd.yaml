@@ -146,7 +146,9 @@ jobs:
       
       - name: Download binary
         working-directory: ./infra/cloud
-        run: wget -O mattrax "https://static.mattrax.app/mattrax/$(git rev-parse HEAD)/aarch64-unknown-linux"
+        run: |
+          wget -O mattrax "https://static.mattrax.app/mattrax/$(git rev-parse HEAD)/aarch64-unknown-linux"
+          chmod +x mattrax
       
       - name: Deploy to Fly
         run: flyctl deploy
