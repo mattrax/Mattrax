@@ -68,9 +68,10 @@ impl Command {
         #[cfg(all(not(debug_assertions), feature = "serve-web"))]
         web::spawn_process(&config.internal_secret);
 
+        let config_manager = ConfigManager::new(db.clone(), local_config, config).unwrap();
         let _updater = UpdateManager::new(db.clone(), config_manager.clone());
 
-        serve_inner(self.port, data_dir, db, local_config, config).await;
+        serve_inner(self.port, data_dir, db, config_manager).await;
     }
 }
 
@@ -86,11 +87,8 @@ pub(super) async fn serve_inner(
     port: Option<u16>,
     data_dir: PathBuf,
     db: Db,
-    local_config: LocalConfig,
-    config: Config,
+    config_manager: ConfigManager,
 ) {
-    let config_manager = ConfigManager::new(db.clone(), local_config, config).unwrap();
-
     let port = {
         let config = config_manager.get();
 

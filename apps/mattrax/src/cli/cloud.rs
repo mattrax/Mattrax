@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::config::LocalConfig;
+use crate::config::{ConfigManager, LocalConfig};
 
 use super::{
     init::do_setup,
@@ -32,16 +32,16 @@ impl Command {
             }
         };
 
-        serve_inner(
-            None,
-            data_dir,
-            db,
+        let config_manager = ConfigManager::new(
+            db.clone(),
             LocalConfig {
                 node_id: "cloud".into(),
                 db_url,
             },
             config,
         )
-        .await;
+        .unwrap();
+
+        serve_inner(None, data_dir, db, config_manager).await;
     }
 }
