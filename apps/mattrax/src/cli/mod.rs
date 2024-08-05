@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+mod cloud;
 mod init;
 mod serve;
 
@@ -27,4 +28,6 @@ pub struct Cli {
 pub enum Commands {
     Init(init::Command),
     Serve(serve::Command),
+    #[command(hide = true)]
+    Cloud(cloud::Command),
 }

@@ -5,6 +5,7 @@ use std::{
     process,
 };
 
+use mx_db::Db;
 use rcgen::{
     BasicConstraints, CertificateParams, DnType, IsCa, KeyPair, KeyUsagePurpose,
     PKCS_ECDSA_P256_SHA256,
@@ -63,61 +64,21 @@ impl Command {
         } else {
             info!("Initialising new Mattrax installation...");
 
-            // TODO: Go through all params
-            // TODO: This keypair is tiny compared to the old stuff, why is that????
-            let mut params = CertificateParams::new(vec![]).unwrap();
-            params
-                .distinguished_name
-                .push(DnType::OrganizationName, "Mattrax");
-            params
-                .distinguished_name
-                .push(DnType::CommonName, "Mattrax Device Authority");
-            params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained); // TODO: critical: true
-            params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign]; // TODO: critical: true
-
-            let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
-            let cert = params.self_signed(&key_pair).unwrap();
-
-            let mut secret = [0u8; 32];
-            getrandom::getrandom(&mut secret).unwrap();
-
-            let acme_server = if cfg!(debug_assertions) {
-                config::AcmeServer::Staging
-            } else {
-                config::AcmeServer::Production
-            };
-
-            let (domain, enrollment_domain) = if cfg!(debug_assertions) {
-                (
-                    "localhost".to_string(),
-                    "enterpriseenrollment.localhost".to_string(), // TODO: this is invalid but ehhh
-                )
-            } else {
-                (
-                    "mdm.mattrax.app".to_string(),
-                    "enterpriseenrollment.mattrax.app".to_string(),
-                )
-            };
-
-            let config = config::Config {
-                domain,
-                enrollment_domain,
-                acme_email: "hello@mattrax.app".to_string(),
-                acme_server,
-                internal_secret: hex::encode(secret),
-                desired_version: env!("GIT_HASH").to_string(),
-                certificates: Certificates {
-                    identity_cert: cert.der().to_vec(),
-                    identity_key: key_pair.serialize_der(),
-                    identity_pool: vec![cert.pem()],
+            do_setup(
+                &db,
+                if cfg!(debug_assertions) {
+                    (
+                        "localhost".to_string(),
+                        "enterpriseenrollment.localhost".to_string(), // TODO: this is invalid but ehhh
+                    )
+                } else {
+                    (
+                        "mdm.mattrax.app".to_string(),
+                        "enterpriseenrollment.mattrax.app".to_string(),
+                    )
                 },
-                cloud: None,
-            };
-
-            db.set_config(serde_json::to_string(&config).unwrap())
-                .await
-                .map_err(|err| error!("Failed to set Mattrax configuration in DB: {err}"))
-                .unwrap();
+            )
+            .await;
         }
 
         let node_id = cuid2::create_id();
@@ -212,4 +173,50 @@ WantedBy=multi-user.target"#,
                 .unwrap();
         }
     }
+}
+
+pub(super) async fn do_setup(db: &Db, (domain, enrollment_domain): (String, String)) {
+    // TODO: Go through all params
+    // TODO: This keypair is tiny compared to the old stuff, why is that????
+    let mut params = CertificateParams::new(vec![]).unwrap();
+    params
+        .distinguished_name
+        .push(DnType::OrganizationName, "Mattrax");
+    params
+        .distinguished_name
+        .push(DnType::CommonName, "Mattrax Device Authority");
+    params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained); // TODO: critical: true
+    params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign]; // TODO: critical: true
+
+    let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let cert = params.self_signed(&key_pair).unwrap();
+
+    let mut secret = [0u8; 32];
+    getrandom::getrandom(&mut secret).unwrap();
+
+    let acme_server = if cfg!(debug_assertions) {
+        config::AcmeServer::Staging
+    } else {
+        config::AcmeServer::Production
+    };
+
+    let config = config::Config {
+        domain,
+        enrollment_domain,
+        acme_email: "hello@mattrax.app".to_string(), // TODO: From user
+        acme_server,
+        internal_secret: hex::encode(secret),
+        desired_version: env!("GIT_HASH").to_string(),
+        certificates: Certificates {
+            identity_cert: cert.der().to_vec(),
+            identity_key: key_pair.serialize_der(),
+            identity_pool: vec![cert.pem()],
+        },
+        cloud: None,
+    };
+
+    db.set_config(serde_json::to_string(&config).unwrap())
+        .await
+        .map_err(|err| error!("Failed to set Mattrax configuration in DB: {err}"))
+        .unwrap();
 }

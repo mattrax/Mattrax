@@ -10,6 +10,8 @@
 
 mattrax.fly.dev {
 	redir https://mdm.mattrax.app
+	header X-Region {$FLY_REGION}
+	header Server Mattrax
 }
 
 mdm.mattrax.app {
@@ -21,10 +23,14 @@ mdm.mattrax.app {
 	}
 
 	reverse_proxy localhost:9000
+	header X-Region {$FLY_REGION}
+	header Server Mattrax
 }
 
 enterpriseenrollment.mattrax.app {
 	reverse_proxy localhost:9000
+	header X-Region {$FLY_REGION}
+	header Server Mattrax
 }
 
 https:// {
@@ -33,4 +39,6 @@ https:// {
 	}
 
 	reverse_proxy localhost:9000
+	header X-Region {$FLY_REGION}
+	header Server Mattrax
 }

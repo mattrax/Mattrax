@@ -35,5 +35,6 @@ async fn main() {
     match cli.command {
         cli::Commands::Init(cmd) => cmd.run(data_dir).await,
         cli::Commands::Serve(cmd) => cmd.run(data_dir).await,
+        cli::Commands::Cloud(cmd) => cmd.run(data_dir).await,
     }
 }
