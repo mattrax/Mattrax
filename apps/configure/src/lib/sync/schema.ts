@@ -83,7 +83,7 @@ const orgSchema = z.object({
 	),
 	assignedPlans: z.array(
 		z.object({
-			assignedDateTime: z.string(),
+			assignedDateTime: z.string().datetime(),
 			capabilityStatus: z.enum([
 				"Enabled",
 				"Warning",
@@ -205,8 +205,8 @@ export const users = defineSyncEntity("users", {
 		businessPhones: z.array(z.string()).optional(),
 		mobilePhone: z.string().optional(),
 		preferredLanguage: z.string().optional(),
-		lastPasswordChangeDateTime: z.string().optional(),
-		createdDateTime: z.string(),
+		lastPasswordChangeDateTime: z.string().datetime().optional(),
+		createdDateTime: z.string().datetime(),
 	}),
 	upsert: async (db, data, _syncId) => {
 		const tx = db.transaction("users", "readwrite");
@@ -311,8 +311,8 @@ export const devices = defineSyncEntity("devices", {
 		model: z.string().optional(),
 		operatingSystem: z.string().optional(),
 		operatingSystemVersion: z.string().optional(),
-		approximateLastSignInDateTime: z.string().optional(),
-		registrationDateTime: z.string().optional(),
+		approximateLastSignInDateTime: z.string().datetime().optional(),
+		registrationDateTime: z.string().datetime().optional(),
 		deviceCategory: z.string().optional(),
 	}),
 	upsert: async (db, data, _syncId) => {
@@ -366,7 +366,7 @@ export const groups = defineSyncEntity("groups", {
 		description: z.string().optional(),
 		securityEnabled: z.boolean().default(false),
 		visibility: z.enum(["Private", "Public", "HiddenMembership"]).nullable(),
-		createdDateTime: z.string(),
+		createdDateTime: z.string().datetime(),
 		"members@delta": z
 			.array(
 				z.object({
@@ -477,8 +477,8 @@ export const policies = defineSyncEntity("policies", {
 					.nullable()
 					// Microsoft's endpoints are inconsistent.
 					.transform((v) => (v === "" ? null : v)),
-				createdDateTime: z.string(),
-				lastModifiedDateTime: z.string(),
+				createdDateTime: z.string().datetime(),
+				lastModifiedDateTime: z.string().datetime(),
 				assignments: z.array(
 					z.object({
 						id: z.string(),
@@ -585,8 +585,8 @@ export const scripts = defineSyncEntity("scripts", {
 				.nullable()
 				// Microsoft's endpoints are cringe.
 				.transform((v) => (v === "" ? null : v)),
-			createdDateTime: z.string(),
-			lastModifiedDateTime: z.string(),
+			createdDateTime: z.string().datetime(),
+			lastModifiedDateTime: z.string().datetime(),
 			runAsAccount: z.enum(["system", "user"]),
 			fileName: z.string(),
 			scriptContent: z.string().nullable(),
@@ -705,8 +705,8 @@ export const apps = defineSyncEntity("apps", {
 		description: z.string().optional(),
 		publisher: z.string().optional(),
 		largeIcon: z.any().optional(),
-		createdDateTime: z.string(),
-		lastModifiedDateTime: z.string(),
+		createdDateTime: z.string().datetime(),
+		lastModifiedDateTime: z.string().datetime(),
 		isFeatured: z.boolean().default(false),
 		privacyInformationUrl: z.string().nullable(),
 		informationUrl: z.string().nullable(),

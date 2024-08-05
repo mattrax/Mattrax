@@ -1,6 +1,7 @@
 // This file contains the configuration for data fetching, filtering, ordering, and rendering.
 
 import { Badge } from "@mattrax/ui";
+import { A } from "@solidjs/router";
 import { type Entity, defineEntity } from "./filters";
 
 const typeColumn = (type: string) =>
@@ -20,12 +21,12 @@ export const entities = {
 			name: {
 				header: "Name",
 				render: (user) => (
-					<a
+					<A
 						class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-						href={`/users/${user.id}`}
+						href={`../users/${user.id}`}
 					>
 						{user.name}
-					</a>
+					</A>
 				),
 				raw: (user) => user.name,
 			},
@@ -99,12 +100,12 @@ export const entities = {
 			name: {
 				header: "Name",
 				render: (device) => (
-					<a
+					<A
 						class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-						href={`/devices/${device.id}`}
+						href={`../devices/${device.id}`}
 					>
 						{device.name}
-					</a>
+					</A>
 				),
 				raw: (device) => device.name,
 			},
@@ -169,12 +170,12 @@ export const entities = {
 			name: {
 				header: "Name",
 				render: (group) => (
-					<a
+					<A
 						class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-						href={`/groups/${group.id}`}
+						href={`../groups/${group.id}`}
 					>
 						{group.name}
-					</a>
+					</A>
 				),
 				raw: (group) => group.name,
 			},
@@ -200,12 +201,12 @@ export const entities = {
 			name: {
 				header: "Name",
 				render: (policy) => (
-					<a
+					<A
 						class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-						href={`/policies/${policy.id}`}
+						href={`../policies/${policy.id}`}
 					>
 						{policy.name}
-					</a>
+					</A>
 				),
 				raw: (policy) => policy.name,
 			},
@@ -231,12 +232,12 @@ export const entities = {
 			name: {
 				header: "Name",
 				render: (app) => (
-					<a
+					<A
 						class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-						href={`/applications/${app.id}`}
+						href={`../applications/${app.id}`}
 					>
 						{app.name}
-					</a>
+					</A>
 				),
 				raw: (app) => app.name,
 			},

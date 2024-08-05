@@ -20,7 +20,7 @@ const columns = [
 		cell: (props) => (
 			<A
 				class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
-				href={`/views/${props.row.original.id}`}
+				href={props.row.original.id}
 			>
 				{props.row.original.name}
 			</A>
@@ -73,7 +73,7 @@ export default function Page() {
 
 	const table = createStandardTable({
 		get data() {
-			return views.data || [];
+			return views() || [];
 		},
 		columns,
 	});
@@ -98,9 +98,9 @@ export default function Page() {
 					<PageLayoutHeading>Views</PageLayoutHeading>
 					<p>
 						Create views from{" "}
-						<a href="/search" class="underline">
+						<A href="../search" class="underline">
 							search
-						</a>
+						</A>
 					</p>
 				</>
 			}

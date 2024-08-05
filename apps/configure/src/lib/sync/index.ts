@@ -3,6 +3,7 @@ import type { IDBPDatabase } from "idb";
 import { toast } from "solid-sonner";
 import type { Database } from "../db";
 import { deleteKey, getKey } from "../kv";
+import { didLastSyncCompleteSuccessfully } from "./operation";
 import * as schema from "./schema";
 
 export type SyncEngine = ReturnType<typeof initSync>;
@@ -16,6 +17,16 @@ export function initSync(db: IDBPDatabase<Database>) {
 	return {
 		db,
 		async syncAll(abort: AbortController): Promise<string | undefined> {
+			if (abort.signal.aborted) return;
+			if (!navigator.onLine) {
+				console.warn("Sync cancelled due to navigator being offline!");
+				return;
+			}
+
+			const isSyncLockAlreadyHeld = (await navigator.locks.query()).held?.find(
+				(lock) => lock.name === "sync",
+			);
+
 			// Be aware the way use this lock intentionally queues up syncs.
 			// Eg. if two tabs hit this code path, one will sync and then the other will sync (both triggering a full sync).
 			//
@@ -25,7 +36,13 @@ export function initSync(db: IDBPDatabase<Database>) {
 			// To mitigate the impacts of this we should // TODO
 			const result = await navigator.locks.request("sync", async (lock) => {
 				if (!lock) return;
-				if (abort.signal.aborted) return;
+
+				// The sync was queued while a sync was already in progress but it succeeded so we can skip it.
+				if (
+					abort.signal.aborted ||
+					(isSyncLockAlreadyHeld && (await didLastSyncCompleteSuccessfully(db)))
+				)
+					return;
 
 				const accessToken = await getKey(db, "accessToken");
 				if (!accessToken) {

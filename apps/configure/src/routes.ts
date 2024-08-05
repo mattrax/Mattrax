@@ -11,7 +11,7 @@ export const routes = [
 		component: lazy(() => import("./routes/home")),
 	},
 	{
-		path: "/:userId",
+		path: "/:uid",
 		component: lazy(() => import("./routes/(dash)")),
 		children: [
 			{
@@ -31,7 +31,7 @@ export const routes = [
 				component: lazy(() => import("./routes/(dash)/devices/(devices)")),
 			},
 			{
-				path: "/devices/:userId",
+				path: "/devices/:deviceId",
 				component: lazy(() => import("./routes/(dash)/devices/[deviceId]")),
 			},
 			{

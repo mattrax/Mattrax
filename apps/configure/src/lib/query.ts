@@ -17,6 +17,9 @@ function createDbObserver(
 	db: IDBPDatabase<Database>,
 	onChange: (objectStore: string) => void,
 ) {
+	const stores = [...db.objectStoreNames];
+	if (stores.length === 0) return;
+
 	// @ts-expect-error // TODO: Typescript support for IndexedDB Observers polyfill
 	const observer = db.observe(
 		// This subscribes to all object stores.
@@ -28,8 +31,10 @@ function createDbObserver(
 			onChange(metadata.objectStoreName);
 		},
 	);
-
-	onCleanup(() => observer.stop());
+	if (!observer) console.error("Error registering observer!");
+	onCleanup(() => {
+		if (observer) observer.stop();
+	});
 }
 
 // create a query that will automatically rerun when the database changes

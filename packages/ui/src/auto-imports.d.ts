@@ -50,6 +50,8 @@ declare global {
   const IconPhFunnelSimple: typeof import('~icons/ph/funnel-simple.jsx')['default']
   const IconPhInfo: typeof import('~icons/ph/info.jsx')['default']
   const IconPhLaptop: typeof import('~icons/ph/laptop.jsx')['default']
+  const IconPhLightningDuotone: typeof import('~icons/ph/lightning-duotone.jsx')['default']
+  const IconPhLightningThin: typeof import('~icons/ph/lightning-thin.jsx')['default']
   const IconPhMagnifyingGlass: typeof import('~icons/ph/magnifying-glass.jsx')['default']
   const IconPhMagnifyingGlassDuotone: typeof import('~icons/ph/magnifying-glass-duotone.jsx')['default']
   const IconPhMagnifyingGlassLight: typeof import('~icons/ph/magnifying-glass-light.jsx')['default']

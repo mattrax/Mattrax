@@ -38,13 +38,15 @@ export default function Page() {
 		<>
 			<Switch fallback={<HomePage />}>
 				<Match when={location.query?.error !== undefined}>
-					{/* // TODO: Properly style this flow */}
-					<p class="bg-red-500">
-						{location.query?.error_description || location.query?.error}
-					</p>
-					<a href="/" class={buttonVariants()}>
-						Try again
-					</a>
+					<div class="p-4">
+						{/* // TODO: Properly style this flow */}
+						<p class="bg-red-500">
+							{location.query?.error_description || location.query?.error}
+						</p>
+						<a href="/" class={buttonVariants()}>
+							Try again
+						</a>
+					</div>
 				</Match>
 				<Match when={location.query?.code} keyed>
 					{(code) => {
@@ -57,7 +59,7 @@ export default function Page() {
 						return (
 							<ErrorBoundary
 								fallback={
-									<div class="flex flex-col space-y-2 max-w-sm">
+									<div class="flex flex-col space-y-2 max-w-sm p-4">
 										<h1 class="text-red-500 font-bold text-2xl">
 											An error occurred
 										</h1>
@@ -70,7 +72,7 @@ export default function Page() {
 									</div>
 								}
 							>
-								<Suspense fallback={<p>Verifying...</p>}>
+								<Suspense fallback={<p class="p-4">Verifying...</p>}>
 									{accessToken() ? null : null}
 								</Suspense>
 							</ErrorBoundary>

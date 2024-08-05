@@ -47,7 +47,7 @@ export function FilterBar(props: ReturnType<typeof createSearchPageContext>) {
 				description: "My cool view",
 				data,
 			});
-			navigate(`/views/${id}`);
+			navigate(`../views/${id}`);
 		},
 	}));
 

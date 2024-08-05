@@ -3,6 +3,7 @@ import {
 	Avatar,
 	AvatarFallback,
 	AvatarImage,
+	Badge,
 	Button,
 	DropdownMenu,
 	DropdownMenuContent,
@@ -17,13 +18,15 @@ import {
 	TooltipTrigger,
 	buttonVariants,
 } from "@mattrax/ui";
+import { createConnectivitySignal } from "@solid-primitives/connectivity";
+import { makeEventListener } from "@solid-primitives/event-listener";
 import {
 	A,
 	Navigate,
 	createAsync,
 	createAsyncStore,
-	useCurrentMatches,
 	useLocation,
+	useMatch,
 	useNavigate,
 } from "@solidjs/router";
 import { createMutation } from "@tanstack/solid-query";
@@ -35,6 +38,8 @@ import {
 	type ParentProps,
 	Show,
 	Suspense,
+	createEffect,
+	createResource,
 	createSignal,
 	onCleanup,
 	onMount,
@@ -52,12 +57,12 @@ import { useZodParams } from "~/lib/useZodParams";
 
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({
-		userId: z.string(),
+		uid: z.string(),
 	});
 
 	return (
 		<CapabilitiesOverlay>
-			<Show when={params.userId} keyed>
+			<Show when={params.uid} keyed>
 				{(userId) => {
 					const db = createAsync<IDBPDatabase<Database>>(async (prevDb) => {
 						// TODO
@@ -93,6 +98,42 @@ export default function Layout(props: ParentProps) {
 											abort.abort();
 											// db.close(); // TODO
 										});
+
+										makeEventListener(document, "visibilitychange", () =>
+											sync.syncAll(abort),
+										);
+
+										const [isPrimaryTab, setIsPrimaryTab] = createSignal(false);
+										createEffect(async () => {
+											while (!abort.signal.aborted) {
+												await navigator.locks
+													.request(
+														"primarytab",
+														{
+															signal: abort.signal,
+														},
+														async (lock) => {
+															if (!lock) return;
+
+															setIsPrimaryTab(true);
+															// We hold the lock for the tab's life
+															await new Promise((resolve) =>
+																abort.signal.addEventListener("abort", () =>
+																	resolve(undefined),
+																),
+															);
+														},
+													)
+													.then(() => setIsPrimaryTab(false))
+													.catch(() => setIsPrimaryTab(false));
+											}
+										});
+										createTimer2(
+											async () => {
+												if (isPrimaryTab()) await sync.syncAll(abort);
+											},
+											() => 60_000,
+										);
 
 										return (
 											<SyncProvider engine={sync}>
@@ -214,9 +255,9 @@ function Navbar() {
 	return (
 		<>
 			<div class="w-[100vw] relative flex flex-row items-center px-6 gap-2 h-16 shrink-0 border-b border-gray-200 z-10">
-				<a href="/overview" class="uppercase font-extrabold text-2xl">
+				<A href="" class="uppercase font-extrabold text-2xl">
 					MATTRAX CONFIGURE
-				</a>
+				</A>
 
 				<div class="flex-1" />
 
@@ -227,8 +268,8 @@ function Navbar() {
 
 					<Tooltip>
 						<TooltipTrigger
-							as="a"
-							href="/search"
+							as={A}
+							href="search"
 							class={clsx(buttonVariants({ variant: "ghost" }), "!m-0")}
 						>
 							<IconPhMagnifyingGlass />
@@ -266,8 +307,11 @@ function NavItems() {
 	// Wait for the first render + a microtask to finish before animating the indicator
 	onMount(() => setTimeout(() => setMounted(true), 5));
 
-	const matches = useCurrentMatches();
-	const relativeUrl = (url: string) => `${matches?.[0]?.path || ""}${url}`;
+	const match = useMatch(() => "/:uid/*rest");
+	const relativeUrl = (url: string) => {
+		const m = match();
+		return `/${m?.params.uid}${url === "" ? "" : `/${url}`}`;
+	};
 
 	return (
 		<Tabs
@@ -312,14 +356,14 @@ function NavItems() {
 				</div> */}
 			</Tabs.List>
 
-			{/* <Show when={location.pathname !== "/search"}> */}
-			<Tabs.Indicator
-				class="absolute bottom-0 flex flex-row px-2 h-[2px]"
-				classList={{ "duration-200 transition-all": mounted() }}
-			>
-				<div class="bg-brand flex-1 rounded-full" />
-			</Tabs.Indicator>
-			{/* </Show> */}
+			<Show when={location.pathname !== relativeUrl("search")}>
+				<Tabs.Indicator
+					class="absolute bottom-0 flex flex-row px-2 h-[2px]"
+					classList={{ "duration-200 transition-all": mounted() }}
+				>
+					<div class="bg-brand flex-1 rounded-full" />
+				</Tabs.Indicator>
+			</Show>
 		</Tabs>
 	);
 }
@@ -452,6 +496,7 @@ function SyncPanel() {
 	const sync = useSync();
 
 	const [isSyncing, setIsSyncing] = createSignal(false);
+	const isOnline = createConnectivitySignal();
 
 	// Polling is not *great* but it's the most reliable way to keep track across tabs because the Web Lock's API has no way to listen for changes.
 	const isSyncingCheck = createTimer2(
@@ -489,49 +534,134 @@ function SyncPanel() {
 	const abort = new AbortController();
 	onCleanup(() => abort.abort());
 
+	const [persistentStorageAccess, { refetch }] = createResource(async () => {
+		if ("storage" in navigator && (navigator.storage?.persist as any)) {
+			const isFirefox = navigator.userAgent.toLowerCase().includes("firefox");
+			const doneStorageRequest =
+				localStorage.getItem("storage-request") === "true";
+
+			if (await navigator.storage.persisted()) {
+				return true;
+			} else {
+				// Firefox shows a permission prompt on `persist` (like an actually capable browser) so we don't wanna spam it if the user says no.
+				if (isFirefox && doneStorageRequest) return;
+
+				// In a perfect world this would be `if (!result) ...` but Firefox sometimes reports `true` when the user blocks it.
+				// That's surely a bug.
+				localStorage.setItem("storage-request", "true");
+
+				return await navigator.storage.persist();
+			}
+		}
+		// We fallback to true as if storage was granted.
+		// Technically this is an incorrect assumption but if the user can't do anything about it,
+		// why tell them.
+		return true;
+	});
+	const requestStoragePermission = () => {
+		// This is okay to use these because this will only be shown if the check in `persistentStorageAccess()` passes.
+		navigator.storage.persist().then((persistent) => {
+			if (persistent) {
+				toast.info("Persistent storage access granted!", {
+					id: "persistent-storage",
+					// We clear this or the description from the error variant may stick around.
+					// Probably because they share the same ID or a bug in Solid Sonner?
+					description: "",
+				});
+				localStorage.removeItem("storage-request");
+				refetch();
+			} else {
+				toast.error("Your browser did not grant us access!", {
+					id: "persistent-storage",
+					description:
+						"chrome" in window || "webkitIndexedDB" in window
+							? "This may not work in Incognito mode."
+							: "Safari and Chrome use heuristics to determine this so you will need to keep trying.",
+				});
+			}
+		});
+	};
+
 	return (
-		<div class="flex">
-			<Tooltip>
-				<TooltipTrigger
-					as="div"
-					class={clsx(
-						"flex justify-center items-center w-10",
-						isSyncing() ? "" : "hidden",
-					)}
-				>
-					<ProgressCircle
-						size="xs"
-						value={progress()}
-						strokeWidth={isSyncing() && progress() === 0 ? 0 : undefined}
+		<div class="flex justify-center items-center space-x-2">
+			<Suspense>
+				<Show when={!persistentStorageAccess() ?? false}>
+					<div>
+						<Tooltip>
+							<TooltipTrigger
+								as={Badge}
+								variant="secondary"
+								class="cursor-default"
+								onClick={requestStoragePermission}
+							>
+								<IconPhFloppyDisk class="mr-[1px]" />
+								Temporary storage
+							</TooltipTrigger>
+							<TooltipContent>
+								Your browser has not given us permission to mark your data as
+								safe from deletion. Click to request it again!
+							</TooltipContent>
+						</Tooltip>
+					</div>
+				</Show>
+			</Suspense>
+			<Show
+				when={isSyncing()}
+				fallback={
+					<div>
+						<Show when={!isOnline()}>
+							<Badge variant="secondary" class="cursor-default">
+								<IconPhLightningDuotone />
+								Offline
+							</Badge>
+						</Show>
+					</div>
+				}
+			>
+				<Tooltip>
+					<TooltipTrigger
+						as="div"
+						class="flex justify-center items-center w-10"
 					>
-						<div class="relative inline-flex">
-							<div class="w-5 h-5 rounded-full" />
-							<div class="w-5 h-5 bg-black rounded-full absolute top-0 left-0 animate-ping" />
-							<Show when={isSyncing() && progress() === 0}>
-								<div class="w-5 h-5 bg-black rounded-full absolute top-0 left-0 animate-pulse" />
-							</Show>
-						</div>
-					</ProgressCircle>
-				</TooltipTrigger>
-				<TooltipContent>Progress syncing with Microsoft...</TooltipContent>
-			</Tooltip>
+						<ProgressCircle
+							size="xs"
+							value={progress()}
+							strokeWidth={isSyncing() && progress() === 0 ? 0 : undefined}
+						>
+							<div class="relative inline-flex">
+								<div class="w-5 h-5 rounded-full" />
+								<div class="w-5 h-5 bg-black rounded-full absolute top-0 left-0 animate-ping" />
+								<Show when={isSyncing() && progress() === 0}>
+									<div class="w-5 h-5 bg-black rounded-full absolute top-0 left-0 animate-pulse" />
+								</Show>
+							</div>
+						</ProgressCircle>
+					</TooltipTrigger>
+					<TooltipContent>Progress syncing with Microsoft...</TooltipContent>
+				</Tooltip>
+			</Show>
 			<Tooltip>
-				<TooltipTrigger
-					as={Button}
-					variant="ghost"
-					onClick={() =>
-						sync.syncAll(abort).then((elapsed) => {
-							if (elapsed)
-								toast.success(
-									`Successfully synced with Microsoft in ${elapsed}s`,
-								);
-						})
-					}
-					disabled={isSyncing()}
-				>
-					Sync
+				<TooltipTrigger>
+					<Button
+						variant="ghost"
+						onClick={() =>
+							sync.syncAll(abort).then((elapsed) => {
+								if (elapsed)
+									toast.success(
+										`Successfully synced with Microsoft in ${elapsed}s`,
+									);
+							})
+						}
+						disabled={isSyncing() || !isOnline()}
+					>
+						Sync
+					</Button>
 				</TooltipTrigger>
-				<TooltipContent>Sync the local database with Microsoft!</TooltipContent>
+				<TooltipContent>
+					<Show when={isOnline()} fallback="You must be online to sync!">
+						Sync the local database with Microsoft!
+					</Show>
+				</TooltipContent>
 			</Tooltip>
 		</div>
 	);

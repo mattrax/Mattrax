@@ -302,8 +302,13 @@ export const dbVersion = 1;
 export const openAndInitDb = (name: string, createIfNotFound = false) =>
 	openDB<Database>(name, dbVersion, {
 		upgrade(db, oldVersion, newVersion, tx) {
-			// Aborting causes the DB creation to fail
-			if (oldVersion === 0 && !createIfNotFound) return tx.abort();
+			// Aborting causes the DB creation to fail (in only Chrome *sigh*)
+			if (oldVersion === 0 && !createIfNotFound) {
+				if ("chrome" in window) return tx.abort();
+				db.close();
+				window.indexedDB.deleteDatabase(name);
+				return;
+			}
 
 			db.createObjectStore("_kv");
 			db.createObjectStore("_meta");

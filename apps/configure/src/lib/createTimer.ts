@@ -18,6 +18,8 @@ export function createTimer2(
 		});
 	};
 
+	timer = setTimeout(trigger, untrack(timeout));
+
 	onCleanup(() => {
 		if (timer) clearTimeout(timer);
 	});

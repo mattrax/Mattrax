@@ -75,6 +75,9 @@ importers:
       '@mattrax/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@solid-primitives/connectivity':
+        specifier: ^0.3.20
+        version: 0.3.20(solid-js@1.8.18)
       '@solid-primitives/context':
         specifier: ^0.2.3
         version: 0.2.3(solid-js@1.8.18)
@@ -4078,6 +4081,11 @@ packages:
 
   '@solid-primitives/bounds@0.0.118':
     resolution: {integrity: sha512-Qj42w8LlnhJ3r/t+t0c0vrdwIvvQMPgjEFGmLiwREaA85ojLbgL9lSBq2tKvljeLCvRVkgj10KEUf+vc99VCIg==}
+    peerDependencies:
+      solid-js: ^1.6.12
+
+  '@solid-primitives/connectivity@0.3.20':
+    resolution: {integrity: sha512-63bGNDf+cyrqS/UADXta9L/LYLaen8SzWSz+nkyytzkgh7YKvu5GscqrApudYjs6Qfu93qX956JvCPw4CWPyHw==}
     peerDependencies:
       solid-js: ^1.6.12
 
@@ -13076,6 +13084,13 @@ snapshots:
       '@solid-primitives/event-listener': 2.3.3(solid-js@1.8.18)
       '@solid-primitives/resize-observer': 2.0.26(solid-js@1.8.18)
       '@solid-primitives/static-store': 0.0.5(solid-js@1.8.18)
+      '@solid-primitives/utils': 6.2.3(solid-js@1.8.18)
+      solid-js: 1.8.18
+
+  '@solid-primitives/connectivity@0.3.20(solid-js@1.8.18)':
+    dependencies:
+      '@solid-primitives/event-listener': 2.3.3(solid-js@1.8.18)
+      '@solid-primitives/rootless': 1.4.5(solid-js@1.8.18)
       '@solid-primitives/utils': 6.2.3(solid-js@1.8.18)
       solid-js: 1.8.18
 

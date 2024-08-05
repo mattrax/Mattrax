@@ -154,3 +154,10 @@ export async function resetSyncState(db: IDBPDatabase<Database>) {
 		await db.clear("_meta");
 	});
 }
+
+export async function didLastSyncCompleteSuccessfully(
+	db: IDBPDatabase<Database>,
+) {
+	const meta = await db.getAll("_meta");
+	return meta.every((m) => "syncedAt" in m);
+}
