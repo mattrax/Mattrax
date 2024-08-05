@@ -144,10 +144,12 @@ pub(super) async fn serve_inner(
 
     let config = config_manager.get();
 
-    if config.domain == "localhost" || config.cloud.is_some() {
+    let is_cloud = config.cloud.is_some() || std::env::var("MATTRAX_CLOUD").is_ok();
+
+    if config.domain == "localhost" || is_cloud {
         let port = config.cloud.as_ref().map(|_| 9000).unwrap_or(port);
 
-        if config.cloud.is_some() {
+        if is_cloud {
             info!("Running in cloud mode.");
 
             std::fs::write(
