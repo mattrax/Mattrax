@@ -131,7 +131,7 @@ jobs:
   deploy-mattrax:
     name: Deploy Mattrax
     runs-on: ubuntu-latest
-    needs: [build-mattrax, sst]
+    needs: [build-mattrax] # TODO: sst
     concurrency:
       group: mattrax
     environment:
