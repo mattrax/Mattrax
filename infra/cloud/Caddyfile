@@ -1,20 +1,36 @@
 {
-    storage mysql
-    admin off
-    email hello@mattrax.app
-    acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+	storage mysql
+	admin off
+	email hello@mattrax.app
+	acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+	on_demand_tls {
+		ask http://localhost:9000/internal/caddy?auth={$INTERNAL_SECRET}
+	}
 }
 
 mattrax.fly.dev {
-    redir https://mdm.mattrax.app
+	redir https://mdm.mattrax.app
 }
 
 mdm.mattrax.app {
-    reverse_proxy localhost:9000
+	tls {
+		client_auth {
+			mode verify_if_given
+			trusted_ca_cert_file /mtls-roots.pem
+		}
+	}
 
-    # TODO: Mutual TLS
+	reverse_proxy localhost:9000
 }
 
 enterpriseenrollment.mattrax.app {
-    respond "Mattrax EnterpriseEnrollment from Caddy!"
+	reverse_proxy localhost:9000
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+
+	reverse_proxy localhost:9000
 }

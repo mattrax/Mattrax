@@ -131,8 +131,16 @@ impl Command {
 
             if config.cloud.is_some() {
                 info!("Running in cloud mode.");
+
+                std::fs::write(
+                    "/mtls-roots.pem",
+                    config.certificates.identity_pool.join(""),
+                )
+                .unwrap();
+
                 std::process::Command::new("caddy")
                     .args(&["run", "--config", "/Caddyfile"])
+                    .env("INTERNAL_SECRET", &config.internal_secret)
                     .spawn()
                     .unwrap();
             }

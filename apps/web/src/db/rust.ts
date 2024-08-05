@@ -13,6 +13,7 @@ import {
 	db,
 	deviceActions,
 	devices,
+	domains,
 	groupAssignables,
 	kv,
 	organisationMembers,
@@ -158,6 +159,19 @@ exportQueries(
 					})
 					.from(kv)
 					.where(eq(kv.key, sql`CONCAT('cert:', ${args.key})`)),
+		}),
+		defineOperation({
+			name: "get_domain",
+			args: {
+				domain: "String",
+			},
+			query: (args) =>
+				db
+					.select({
+						createdAt: domains.createdAt,
+					})
+					.from(domains)
+					.where(eq(domains.domain, args.domain)),
 		}),
 		defineOperation({
 			name: "store_certificate",

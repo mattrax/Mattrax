@@ -35,6 +35,10 @@ pub struct GetNodeResult {
 pub struct GetCertificateResult {
     pub value: Vec<u8>,
 }
+#[derive(Debug)]
+pub struct GetDomainResult {
+    pub created_at: NaiveDateTime,
+}
 
 #[derive(Debug)]
 pub struct GetSessionAndUserAccountResult {
@@ -188,6 +192,24 @@ impl Db {
         while let Some(mut row) = result.next().await.unwrap() {
             ret.push(GetCertificateResult {
                 value: from_value(&mut row, 0),
+            });
+        }
+        Ok(ret)
+    }
+}
+impl Db {
+    pub async fn get_domain(
+        &self,
+        domain: String,
+    ) -> Result<Vec<GetDomainResult>, mysql_async::Error> {
+        let mut result = r#"select `created_at` from `domains` where `domains`.`domain` = ?"#
+            .with(mysql_async::Params::Positional(vec![domain.clone().into()]))
+            .run(&self.pool)
+            .await?;
+        let mut ret = vec![];
+        while let Some(mut row) = result.next().await.unwrap() {
+            ret.push(GetDomainResult {
+                created_at: from_value(&mut row, 0),
             });
         }
         Ok(ret)
