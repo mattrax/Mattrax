@@ -125,7 +125,18 @@ impl Command {
         // TODO: Graceful shutdown
 
         let config = config_manager.get();
-        if config.domain == "localhost" {
+
+        if config.domain == "localhost" || config.cloud.is_some() {
+            let port = config.cloud.as_ref().map(|_| 9000).unwrap_or(port);
+
+            if config.cloud.is_some() {
+                info!("Running in cloud mode.");
+                std::process::Command::new("caddy")
+                    .args(&["run", "--config", "/Caddyfile"])
+                    .spawn()
+                    .unwrap();
+            }
+
             let addr = SocketAddr::from((Ipv6Addr::UNSPECIFIED, port));
             let listener = TcpListener::bind(addr).await.unwrap();
             info!(

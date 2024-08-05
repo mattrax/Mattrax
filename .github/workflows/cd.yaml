@@ -141,34 +141,18 @@ jobs:
       - name: Git clone the repository
         uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: "arn:aws:iam::101829795063:role/mattrax-gh-actions"
-          aws-region: us-east-1
-          role-session-name: mattrax-sst-workflow
-
-      - name: Install SST
-        run: curl -fsSL https://ion.sst.dev/install | bash
-
-      - name: Set SST envs
-        run: |
-          cd infra && sst secret list --stage brendonovich | grep "MDM_INTERNAL_SECRET" >> $GITHUB_ENV
+      - name: Install Flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@v1.4
+      
+      - name: Download binary
+        working-directory: ./infra/cloud
+        run: wget -O mattrax "https://static.mattrax.app/mattrax/$(git rev-parse HEAD)/aarch64-unknown-linux"
+      
+      - name: Deploy to Fly
+        run: flyctl deploy
+        working-directory: ./infra/cloud
         env:
-          ARM_USE_OIDC: true
-          ARM_CLIENT_ID: a17b56f1-0b10-4029-9a89-7f703d3573f8
-          ARM_TENANT_ID: 22d6679c-fc23-425a-b69b-e5e604dd80db
-          AZURE_SUBSCRIPTION_ID: 22d6679c-fc23-425a-b69b-e5e604dd80db
-          OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
-          OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
-
-      - name: Deploy Mattrax
-        run: |
-          curl -v "https://mdm.mattrax.app/internal/redeploy?secret=${{ env.MDM_INTERNAL_SECRET }}"
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
   deploy-web:
     strategy:

@@ -1,0 +1,20 @@
+{
+    storage mysql
+    admin off
+    email hello@mattrax.app
+    acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+mattrax.fly.dev {
+    redir https://mdm.mattrax.app
+}
+
+mdm.mattrax.app {
+    reverse_proxy localhost:9000
+
+    # TODO: Mutual TLS
+}
+
+enterpriseenrollment.mattrax.app {
+    respond "Mattrax EnterpriseEnrollment from Caddy!"
+}

@@ -1,0 +1,49 @@
+# fly.toml app configuration file generated for mattrax-edge on 2024-08-05T22:11:25+08:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'mattrax'
+primary_region = 'bos'
+
+[env]
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+
+[deploy]
+strategy = "bluegreen"
+
+[[services]]
+  internal_port = 443
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[services.ports]]
+  port = 443
+
+[[services.tcp_checks]]
+  grace_period = "1s"
+  interval = "15s"
+  restart_limit = 0
+  timeout = "2s"
+
+[[services]]
+  internal_port = 80
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[services.ports]]
+  port = 80
+
+[[services.tcp_checks]]
+  grace_period = "1s"
+  interval = "15s"
+  restart_limit = 0
+  timeout = "2s"
+
+[checks]
