@@ -147,3 +147,10 @@ export function defineSyncOperation<M>(
 		} while (result.type !== "complete");
 	};
 }
+
+export async function resetSyncState(db: IDBPDatabase<Database>) {
+	await navigator.locks.request("sync", async (lock) => {
+		if (!lock) return;
+		await db.clear("_meta");
+	});
+}

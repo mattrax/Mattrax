@@ -44,6 +44,7 @@ import { z } from "zod";
 import { type User, generateOAuthUrl, useUser } from "~/lib/auth";
 import { createTimer2 } from "~/lib/createTimer";
 import { type Database, dbVersion, openAndInitDb } from "~/lib/db";
+import { getDbCached } from "~/lib/db-cache";
 import { deleteKey, getKey } from "~/lib/kv";
 import { createCrossTabListener, createDbQuery } from "~/lib/query";
 import { SyncProvider, initSync, useSync } from "~/lib/sync";
@@ -59,8 +60,10 @@ export default function Layout(props: ParentProps) {
 			<Show when={params.userId} keyed>
 				{(userId) => {
 					const db = createAsync<IDBPDatabase<Database>>(async (prevDb) => {
-						if (prevDb) prevDb.close();
-						return await openAndInitDb(userId);
+						// TODO
+						// if (prevDb) prevDb.close();
+						// return await openAndInitDb(userId);
+						return await getDbCached(userId);
 					});
 
 					return (
@@ -88,7 +91,7 @@ export default function Layout(props: ParentProps) {
 										onMount(() => sync.syncAll(abort));
 										onCleanup(() => {
 											abort.abort();
-											db.close();
+											// db.close(); // TODO
 										});
 
 										return (
@@ -164,10 +167,9 @@ function GenericErrorScreen(err: Error) {
 		<ErrorScreen>
 			Error while initializing the page.
 			<pre>{err.toString()}</pre>
-			Please reload the page to try again!
 			<br />
-			<br />
-			If you having persistent issues, you can try to{" "}
+			Please reload the page to try again! <br />
+			If your having persistent issues, you can try to{" "}
 			<button
 				type="button"
 				class="underline"
@@ -192,7 +194,7 @@ function GenericErrorScreen(err: Error) {
 
 function ErrorScreen(props: ParentProps) {
 	return (
-		<div class="h-screen w-screen flex justify-center items-center">
+		<div class="absolute top-0 left-0 h-screen w-screen flex justify-center items-center">
 			<div class="w-full flex flex-col items-center justify-center">
 				<div class="sm:mx-auto sm:w-full sm:max-w-md flex items-center justify-center pb-2">
 					<h2 class="mt-4 text-center text-4xl font-bold leading-9 tracking-tight text-gray-900">

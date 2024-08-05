@@ -32,4 +32,5 @@ export * from "./description-list";
 // export * from "./show";
 export * from "./kbd";
 export * from "./chart";
+export * from "./progress";
 export * from "./progress-circle";
