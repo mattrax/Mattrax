@@ -20,4 +20,4 @@ COPY Caddyfile /Caddyfile
 COPY mattrax /mattrax
 
 ENTRYPOINT ["/mattrax"]
-CMD ["serve"]
+CMD ["cloud"]
