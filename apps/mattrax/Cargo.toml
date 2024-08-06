@@ -25,6 +25,7 @@ tokio = { version = "1.37.0", features = [
   "macros",
   "rt-multi-thread",
   "process",
+  "signal"
 ] }
 clap = { version = "4.5.4", features = ["derive"] }
 axum = { version = "0.7.5", features = ["http2", "macros", "ws"] }

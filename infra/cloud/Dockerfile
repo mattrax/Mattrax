@@ -13,8 +13,6 @@ FROM scratch
 EXPOSE 80
 EXPOSE 443
 
-ENV MATTRAX_CLOUD=true
-
 COPY --from=0 /caddy /caddy
 COPY Caddyfile /Caddyfile
 COPY mattrax /mattrax

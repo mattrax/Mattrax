@@ -8,7 +8,7 @@ use std::{
 use hmac::{Hmac, Mac};
 use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
 use tokio::{net::TcpListener, signal};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use x509_parser::{certificate::X509Certificate, der_parser::asn1_rs::FromDer};
 
 use crate::{
@@ -38,7 +38,7 @@ impl Command {
         info!("Starting Mattrax...");
 
         #[cfg(debug_assertions)]
-        warn!("Running in development mode! Do not use in production!");
+        tracing::warn!("Running in development mode! Do not use in production!");
 
         if !data_dir.exists() || !data_dir.join("config.json").exists() {
             error!("The Mattrax configuration was not found!");
@@ -175,7 +175,7 @@ impl Command {
             listener.local_addr().unwrap_or(addr)
         );
         axum::serve(listener, router)
-            .with_graceful_shutdown(shutdown_signal()) // TODO
+            .with_graceful_shutdown(shutdown_signal())
             .await
             .unwrap();
     }
