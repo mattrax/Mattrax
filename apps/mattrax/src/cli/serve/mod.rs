@@ -158,7 +158,7 @@ pub(super) async fn serve_inner(
             )
             .unwrap();
 
-            std::process::Command::new("caddy")
+            std::process::Command::new("/caddy")
                 .args(&["run", "--config", "/Caddyfile"])
                 .env("INTERNAL_SECRET", &config.internal_secret)
                 .spawn()
