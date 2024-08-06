@@ -1,6 +1,0 @@
-{
-	"include": ["sst-env.d.ts"],
-	"compilerOptions": {
-		"skipLibCheck": true
-	}
-}
