@@ -18,19 +18,19 @@ mdm.mattrax.app {
 	tls {
 		client_auth {
 			mode verify_if_given
-			trusted_ca_cert_file /mtls-roots.pem
+			trust_pool file {
+				pem_file /mtls-roots.pem
+			}
 		}
 	}
 
 	reverse_proxy localhost:9000
 	header X-Region {$FLY_REGION}
-	header Server Mattrax
 }
 
 enterpriseenrollment.mattrax.app {
 	reverse_proxy localhost:9000
 	header X-Region {$FLY_REGION}
-	header Server Mattrax
 }
 
 https:// {
