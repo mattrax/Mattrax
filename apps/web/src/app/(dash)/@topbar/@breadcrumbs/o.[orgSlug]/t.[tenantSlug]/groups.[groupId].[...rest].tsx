@@ -1,6 +1,6 @@
 import { Badge } from "@mattrax/ui";
-import { useGroupId } from "~/app/(dash)/o/[orgSlug]/t/[tenantSlug]/groups/ctx";
-import { getMetadata } from "~/app/(dash)/o/[orgSlug]/t/[tenantSlug]/metadataCache";
+import { useGroupId } from "~/app/(dash)/o/o.[orgSlug]/t/[tenantSlug]/groups/ctx";
+import { getMetadata } from "~/app/(dash)/o/o.[orgSlug]/t/[tenantSlug]/metadataCache";
 import { trpc } from "~/lib";
 import { Breadcrumb } from "../../Breadcrumb";
 

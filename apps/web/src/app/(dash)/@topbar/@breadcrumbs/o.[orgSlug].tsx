@@ -2,7 +2,7 @@ import { A, type RouteSectionProps } from "@solidjs/router";
 
 import { createQueryCacher, useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
-import { useOrgSlug } from "../../o/[orgSlug]/ctx";
+import { useOrgSlug } from "../../o/o.[orgSlug]/ctx";
 import { cachedOrgs } from "../../utils";
 import { Breadcrumb } from "./Breadcrumb";
 import { MultiSwitcher } from "./MultiSwitcher";

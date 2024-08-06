@@ -13,8 +13,8 @@ import {
 import { createQuery, useQueryClient } from "@tanstack/solid-query";
 import { useCommandGroup } from "~/components/CommandPalette";
 import { trpc } from "~/lib";
-import { cachedOrgs } from "../utils";
-import { useOrgSlug } from "./[orgSlug]/ctx";
+import { useOrgSlug } from "./o.[orgSlug]/ctx";
+import { cachedOrgs } from "./utils";
 
 export const route = {
 	load: ({ params }) => {

@@ -7,6 +7,7 @@ import { CommandPalette, useCommandGroup } from "~/components/CommandPalette";
 
 import { trpc } from "~/lib";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
+import Topbar from "./(dash)/@topbar";
 
 export const route = {
 	load: () => {
@@ -14,7 +15,7 @@ export const route = {
 	},
 };
 
-export default function Layout(props: RouteSectionProps<never, "topbar">) {
+export default function Layout(props: RouteSectionProps<never>) {
 	const navigate = useNavigate();
 
 	onMount(async () => {
@@ -51,7 +52,8 @@ export default function Layout(props: RouteSectionProps<never, "topbar">) {
 	return (
 		<MErrorBoundary>
 			<CommandPalette>
-				{props.slots.topbar}
+				<Topbar />
+
 				{props.children}
 				<Show when>
 					{(_) => {

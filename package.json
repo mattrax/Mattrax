@@ -1,7 +1,10 @@
 {
 	"name": "@mattrax/monorepo",
 	"private": true,
-	"workspaces": ["apps/*", "packages/*"],
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/web dev",
 		"landing": "pnpm --filter @mattrax/landing --",
@@ -45,6 +48,8 @@
 		"@solidjs/router": "0.13.3"
 	},
 	"pnpm": {
-		"patchedDependencies": {}
+		"patchedDependencies": {
+			"@solidjs/start@1.0.6": "patches/@solidjs__start@1.0.6.patch"
+		}
 	}
 }
