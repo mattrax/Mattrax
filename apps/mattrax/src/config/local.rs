@@ -9,11 +9,17 @@ use serde::{Deserialize, Serialize};
 /// This configuration is store in a JSON file on disk.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalConfig {
-    pub node_id: String,
+    /// The url to the MySQL database.
     pub db_url: String,
 }
 
 impl LocalConfig {
+    pub fn from_env() -> Self {
+        Self {
+            db_url: std::env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
+        }
+    }
+
     pub fn load(path: impl AsRef<Path>) -> io::Result<Self> {
         let path = path.as_ref();
         let mut file = File::open(path).map_err(|err| {

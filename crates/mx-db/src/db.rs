@@ -27,19 +27,9 @@ pub struct GetConfigResult {
 }
 
 #[derive(Debug)]
-pub struct GetNodeResult {
-    pub value: Vec<u8>,
-}
-
-#[derive(Debug)]
-pub struct GetCertificateResult {
-    pub value: Vec<u8>,
-}
-#[derive(Debug)]
 pub struct GetDomainResult {
     pub created_at: NaiveDateTime,
 }
-
 #[derive(Debug)]
 pub struct GetSessionAndUserAccountResult {
     pub pk: u64,
@@ -159,45 +149,6 @@ impl Db {
     }
 }
 impl Db {
-    pub async fn get_node(&self, id: String) -> Result<Vec<GetNodeResult>, mysql_async::Error> {
-        let mut result = r#"select `value` from `kv` where `kv`.`key` = CONCAT('server:', ?)"#
-            .with(mysql_async::Params::Positional(vec![id.clone().into()]))
-            .run(&self.pool)
-            .await?;
-        let mut ret = vec![];
-        while let Some(mut row) = result.next().await.unwrap() {
-            ret.push(GetNodeResult {
-                value: from_value(&mut row, 0),
-            });
-        }
-        Ok(ret)
-    }
-}
-impl Db {
-    pub async fn update_node(&self, id: String, config: String) -> Result<(), mysql_async::Error> {
-        let mut result = r#"insert into `kv` (`key`, `value`, `last_modified`) values (CONCAT('server:', ?), ?, default) on duplicate key update `value` = ?"#.with(mysql_async::Params::Positional(vec![id.clone().into(),config.clone().into(),config.clone().into()])).run(&self.pool).await?;
-        Ok(())
-    }
-}
-impl Db {
-    pub async fn get_certificate(
-        &self,
-        key: String,
-    ) -> Result<Vec<GetCertificateResult>, mysql_async::Error> {
-        let mut result = r#"select `value` from `kv` where `kv`.`key` = CONCAT('cert:', ?)"#
-            .with(mysql_async::Params::Positional(vec![key.clone().into()]))
-            .run(&self.pool)
-            .await?;
-        let mut ret = vec![];
-        while let Some(mut row) = result.next().await.unwrap() {
-            ret.push(GetCertificateResult {
-                value: from_value(&mut row, 0),
-            });
-        }
-        Ok(ret)
-    }
-}
-impl Db {
     pub async fn get_domain(
         &self,
         domain: String,
@@ -213,17 +164,6 @@ impl Db {
             });
         }
         Ok(ret)
-    }
-}
-impl Db {
-    pub async fn store_certificate(
-        &self,
-        key: String,
-        certificate: Vec<u8>,
-    ) -> Result<(), mysql_async::Error> {
-        let last_modified = chrono::Utc::now().naive_utc();
-        let mut result = r#"insert into `kv` (`key`, `value`, `last_modified`) values (CONCAT('cert:', ?), ?, default) on duplicate key update `value` = ?, `last_modified` = NOW()"#.with(mysql_async::Params::Positional(vec![key.clone().into(),certificate.clone().into(),certificate.clone().into()])).run(&self.pool).await?;
-        Ok(())
     }
 }
 impl Db {

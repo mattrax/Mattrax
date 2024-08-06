@@ -45,8 +45,6 @@ pub struct Context {
     pub identity_cert_rcgen: Certificate,
     pub identity_cert_x509: X509Certificate<'static>,
     pub identity_key: KeyPair,
-
-    pub acme_tx: mpsc::Sender<Vec<String>>,
 }
 
 impl Context {

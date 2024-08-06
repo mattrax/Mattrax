@@ -5,27 +5,19 @@ use std::{
     sync::Arc,
 };
 
-use better_acme::{Acme, FsStore};
 use hmac::{Hmac, Mac};
-use mx_db::Db;
 use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
-use rustls::{
-    pki_types::CertificateDer, server::WebPkiClientVerifier, RootCertStore, ServerConfig,
-};
-use tokio::{net::TcpListener, sync::mpsc};
+use tokio::{net::TcpListener, signal};
 use tracing::{error, info, warn};
 use x509_parser::{certificate::X509Certificate, der_parser::asn1_rs::FromDer};
 
 use crate::{
     api,
-    cli::serve::{acme::MattraxAcmeStore, updater::UpdateManager},
-    config::{Config, ConfigManager, LocalConfig},
+    cli::init::do_setup,
+    config::{CloudConfig, ConfigManager, LocalConfig},
 };
 
-mod acme;
 pub mod helpers;
-mod server;
-mod updater;
 
 #[cfg(all(not(debug_assertions), feature = "serve-web"))]
 mod web;
@@ -35,6 +27,10 @@ mod web;
 pub struct Command {
     #[arg(short, long, help = "Port to listen on")]
     port: Option<u16>,
+
+    /// You should not use this!
+    #[arg(long, hide = false, default_value = "false")]
+    cloud: bool,
 }
 
 impl Command {
@@ -49,109 +45,116 @@ impl Command {
             error!("To setup a new server, run '{} init'.", binary_name());
             process::exit(1);
         }
-        let Ok(local_config) = LocalConfig::load(data_dir.join("config.json"))
-            .map_err(|err| error!("Failed to load local configuration: {err}"))
-        else {
-            process::exit(1);
+
+        let local_config = if self.cloud {
+            info!("Running in Mattrax cloud mode!");
+
+            LocalConfig::from_env()
+        } else {
+            let Ok(local_config) = LocalConfig::load(data_dir.join("config.json"))
+                .map_err(|err| error!("Failed to load local configuration: {err}"))
+            else {
+                process::exit(1);
+            };
+
+            local_config
         };
-        info!("Node {:?}", local_config.node_id);
 
         let (db, config) = helpers::get_db_and_config(&local_config.db_url).await;
-        let Some(config) = config else {
-            error!(
-                "Failed to get Mattrax configuration from DB. You may need to run '{} init'.",
-                binary_name()
-            );
-            process::exit(1);
+        let config = if let Some(config) = config {
+            if self.cloud
+                && config.internal_secret
+                    != std::env::var("INTERNAL_SECRET").expect("INTERNAL_SECRET must be set")
+            {
+                error!("'INTERNAL_SECRET' does not match the one in the database.");
+                process::exit(1);
+            }
+
+            config
+        } else {
+            if self.cloud {
+                do_setup(
+                    &db,
+                    "mdm.mattrax.app".into(),
+                    "enterpriseenrollment.mattrax.app".into(),
+                    Some(CloudConfig {
+                        frontend: Some("cloud.mattrax.app".into()),
+                    }),
+                    std::env::var("INTERNAL_SECRET").expect("INTERNAL_SECRET must be set"),
+                )
+                .await
+            } else {
+                error!(
+                    "Failed to get Mattrax configuration from DB. You may need to run '{} init'.",
+                    binary_name()
+                );
+                process::exit(1);
+            }
         };
 
         #[cfg(all(not(debug_assertions), feature = "serve-web"))]
         web::spawn_process(&config.internal_secret);
 
         let config_manager = ConfigManager::new(db.clone(), local_config, config).unwrap();
-        let _updater = UpdateManager::new(db.clone(), config_manager.clone());
 
-        serve_inner(self.port, data_dir, db, config_manager).await;
-    }
-}
+        let port = {
+            let config = config_manager.get();
 
-/// Determine the name of the current binary.
-pub fn binary_name() -> String {
-    std::env::args()
-        .next()
-        .unwrap_or(env!("CARGO_PKG_NAME").to_string())
-}
+            config
+                .cloud
+                .as_ref()
+                .map(|_| 9000)
+                .or(self.port)
+                .unwrap_or({
+                    #[cfg(debug_assertions)]
+                    if config.domain == "localhost" {
+                        9000
+                    } else {
+                        443
+                    }
+                    #[cfg(not(debug_assertions))]
+                    443
+                })
+        };
 
-// TODO: Probs remove and just structure commands for Cloud better
-pub(super) async fn serve_inner(
-    port: Option<u16>,
-    data_dir: PathBuf,
-    db: Db,
-    config_manager: ConfigManager,
-) {
-    let port = {
+        let state = {
+            let config = config_manager.get();
+            let identity_key = KeyPair::from_der_and_sign_algo(
+                &config.certificates.identity_key.clone().try_into().unwrap(),
+                &PKCS_ECDSA_P256_SHA256,
+            )
+            .unwrap();
+            let shared_secret = Hmac::new_from_slice(config.internal_secret.as_bytes()).unwrap();
+
+            let identity_cert_rcgen = CertificateParams::from_ca_cert_der(
+                &config.certificates.identity_cert.clone().into(),
+            )
+            .unwrap()
+            // TODO: https://github.com/rustls/rcgen/issues/274
+            .self_signed(&identity_key)
+            .unwrap();
+
+            Arc::new(api::Context {
+                config: config_manager.clone(),
+                is_dev: cfg!(debug_assertions),
+                server_port: port,
+                db,
+                identity_cert_rcgen,
+                identity_cert_x509: {
+                    // TODO: We *have* to leak memory right because of how `x509_parser` is built. Should be fixed by https://github.com/rusticata/x509-parser/issues/76
+                    let public_key = Vec::leak(config.certificates.identity_cert.clone());
+                    X509Certificate::from_der(public_key).unwrap().1.to_owned()
+                },
+                identity_key,
+                shared_secret,
+            })
+        };
+
+        let router = api::mount(state.clone());
+
         let config = config_manager.get();
 
-        port.unwrap_or({
-            #[cfg(debug_assertions)]
-            if config.domain == "localhost" {
-                9000
-            } else {
-                443
-            }
-            #[cfg(not(debug_assertions))]
-            443
-        })
-    };
-
-    let (acme_tx, acme_rx) = mpsc::channel(25);
-    let state = {
-        let config = config_manager.get();
-        let identity_key = KeyPair::from_der_and_sign_algo(
-            &config.certificates.identity_key.clone().try_into().unwrap(),
-            &PKCS_ECDSA_P256_SHA256,
-        )
-        .unwrap();
-        let shared_secret = Hmac::new_from_slice(config.internal_secret.as_bytes()).unwrap();
-
-        let identity_cert_rcgen =
-            CertificateParams::from_ca_cert_der(&config.certificates.identity_cert.clone().into())
-                .unwrap()
-                // TODO: https://github.com/rustls/rcgen/issues/274
-                .self_signed(&identity_key)
-                .unwrap();
-
-        Arc::new(api::Context {
-            config: config_manager.clone(),
-            is_dev: cfg!(debug_assertions),
-            server_port: port,
-            db,
-            identity_cert_rcgen,
-            identity_cert_x509: {
-                // TODO: We *have* to leak memory right because of how `x509_parser` is built. Should be fixed by https://github.com/rusticata/x509-parser/issues/76
-                let public_key = Vec::leak(config.certificates.identity_cert.clone());
-                X509Certificate::from_der(public_key).unwrap().1.to_owned()
-            },
-            identity_key,
-            shared_secret,
-            acme_tx,
-        })
-    };
-
-    let router = api::mount(state.clone());
-
-    // TODO: Graceful shutdown
-
-    let config = config_manager.get();
-
-    let is_cloud = config.cloud.is_some() || std::env::var("MATTRAX_CLOUD").is_ok();
-
-    if config.domain == "localhost" || is_cloud {
-        let port = config.cloud.as_ref().map(|_| 9000).unwrap_or(port);
-
-        if is_cloud {
-            info!("Running in cloud mode.");
-
+        if self.cloud {
             std::fs::write(
                 "/mtls-roots.pem",
                 config.certificates.identity_pool.join(""),
@@ -171,77 +174,40 @@ pub(super) async fn serve_inner(
             "Listening on http://{}",
             listener.local_addr().unwrap_or(addr)
         );
-        axum::serve(listener, router).await.unwrap();
-    } else {
-        let identity_cert = config.certificates.identity_cert.clone();
-        let acme = Arc::new(Acme::new(
-            &config.acme_email,
-            FsStore::new(
-                data_dir.join("acme"),
-                MattraxAcmeStore::new(state.db.clone()),
-            )
-            .unwrap(),
-            config.acme_server.to_better_acme_server(),
-            state.is_dev, // TODO: We should probs document this cause it's not an obvious default
-            // TODO: Remove these argument
-            &[config.domain.clone(), config.enrollment_domain.clone()],
-            Some(Box::new(move |resolver| {
-                // Served for `enterpriseenrollment.*` domains.
-                // Doesn't allow client auth because Microsoft MDM client's enrollment system breaks with it.
-                let enrollment_config = Arc::new(
-                    ServerConfig::builder()
-                        .with_no_client_auth()
-                        .with_cert_resolver(resolver.clone()),
-                );
+        axum::serve(listener, router)
+            .with_graceful_shutdown(shutdown_signal()) // TODO
+            .await
+            .unwrap();
+    }
+}
 
-                // Served for the configured domain name.
-                // Allows client auth for MDM clients but doesn't require it for other requests.
-                let management_config = Arc::new(
-                    ServerConfig::builder()
-                        .with_client_cert_verifier(
-                            WebPkiClientVerifier::builder({
-                                // TODO: Allow this to be rotated at runtime for renewal
-                                let mut root = RootCertStore::empty();
-                                let cert: CertificateDer = identity_cert.clone().into();
-                                let (added_certs, invalid_certs) =
-                                    root.add_parsable_certificates([cert]);
-                                if added_certs != 1 && invalid_certs != 0 {
-                                    panic!("Failed to add identity certificate to root store");
-                                }
+/// Determine the name of the current binary.
+pub fn binary_name() -> String {
+    std::env::args()
+        .next()
+        .unwrap_or(env!("CARGO_PKG_NAME").to_string())
+}
 
-                                Arc::new(root)
-                            })
-                            // We check for the cert in the handler
-                            .allow_unauthenticated()
-                            .build()
-                            .unwrap(),
-                        )
-                        .with_cert_resolver(resolver),
-                );
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
 
-                let primary_domain = state.config.get().domain.clone();
-                Arc::new(move |domain| match domain {
-                    d if d == primary_domain => management_config.clone(),
-                    _ => enrollment_config.clone(),
-                })
-            })),
-        ));
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
 
-        tokio::spawn({
-            let acme = acme.clone();
-            let mut acme_rx = acme_rx;
-            async move {
-                while let Some(domains) = acme_rx.recv().await {
-                    acme.request_certificate(domains).await;
-                }
-            }
-        });
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
 
-        server::server(
-            router,
-            acme,
-            SocketAddr::from((Ipv6Addr::UNSPECIFIED, port)),
-        )
-        .await;
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
     }
 }

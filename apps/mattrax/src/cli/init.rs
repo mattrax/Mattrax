@@ -14,7 +14,7 @@ use tracing::{error, info, warn};
 
 use crate::{
     cli::serve::{binary_name, helpers},
-    config::{self, Certificates, LocalConfig, Node},
+    config::{self, Certificates, CloudConfig, Config, LocalConfig},
 };
 
 #[derive(clap::Args)]
@@ -26,14 +26,6 @@ pub struct Command {
 
 impl Command {
     pub async fn run(&self, data_dir: PathBuf) {
-        let path = PathBuf::from("/run/systemd/system");
-        let is_systemd_found = path.exists();
-
-        if is_systemd_found && nix::unistd::geteuid().as_raw() != 0 {
-            error!("Mattrax must not be run as root to install the systemd service.!");
-            return;
-        }
-
         if data_dir.join("config.json").exists() {
             error!(
                 "Mattrax is already initialised, found 'config.json'. Run `{} serve` to get started!",
@@ -64,37 +56,26 @@ impl Command {
         } else {
             info!("Initialising new Mattrax installation...");
 
-            do_setup(
-                &db,
-                if cfg!(debug_assertions) {
-                    (
-                        "localhost".to_string(),
-                        "enterpriseenrollment.localhost".to_string(), // TODO: this is invalid but ehhh
-                    )
-                } else {
-                    (
-                        "mdm.mattrax.app".to_string(),
-                        "enterpriseenrollment.mattrax.app".to_string(),
-                    )
-                },
-            )
-            .await;
+            let mut secret = [0u8; 32];
+            getrandom::getrandom(&mut secret).unwrap();
+
+            let (domain, enrollment_domain) = if cfg!(debug_assertions) {
+                (
+                    "localhost".to_string(),
+                    "enterpriseenrollment.localhost".to_string(), // TODO: this is invalid but ehhh
+                )
+            } else {
+                (
+                    "mdm.mattrax.app".to_string(),
+                    "enterpriseenrollment.mattrax.app".to_string(),
+                )
+            };
+
+            do_setup(&db, domain, enrollment_domain, None, hex::encode(secret)).await;
         }
-
-        let node_id = cuid2::create_id();
-
-        let node = Node {
-            version: env!("GIT_HASH").to_string(),
-        };
-
-        db.update_node(node_id.clone(), serde_json::to_string(&node).unwrap())
-            .await
-            .map_err(|err| error!("Failed to initialise node in DB: {err}"))
-            .unwrap();
 
         fs::create_dir_all(&data_dir).unwrap();
         let Ok(_) = LocalConfig {
-            node_id: node_id.clone(),
             db_url: db_url.to_string(),
         }
         .save(data_dir.join("config.json"))
@@ -103,79 +84,19 @@ impl Command {
         };
 
         info!(
-            "Initialised node '{node_id}'. Run '{} serve' to start the server.",
+            "Initialised installation! Run '{} serve' to start the server.",
             binary_name()
         );
-
-        if path.exists() {
-            info!("Found systemd, installing and enabling service...");
-
-            // TODO: Check for `useradd` cause it's doesn't exist on all systems
-            // process::Command::new("useradd")
-            //     .arg("mattrax")
-            //     .arg("-s")
-            //     .arg("/sbin/nologin")
-            //     .arg("-M")
-            //     .status()
-            //     .unwrap();
-
-            // TODO: non-root user
-            // User=mattrax
-            // Group=mattrax
-            fs::write(
-                "/etc/systemd/system/mattrax.service",
-                format!(
-                    r#"[Unit]
-Description=Mattrax MDM
-ConditionPathExists={}
-After=network.target
-StartLimitIntervalSec=60
-    
-[Service]
-Type=simple
-Restart=on-failure
-RestartSec=10
-ExecStart=mattrax serve
-    
-[Install]
-WantedBy=multi-user.target"#,
-                    data_dir.to_str().unwrap()
-                ),
-            )
-            .unwrap();
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-
-                fs::set_permissions(
-                    "/etc/systemd/system/mattrax.service",
-                    fs::Permissions::from_mode(0o664),
-                )
-                .unwrap();
-
-                // fs::set_permissions(&data_dir, fs::Permissions::from_mode(0o664)).unwrap();
-
-                // let res = nix::unistd::User::from_name("mattrax").unwrap().unwrap();
-                // chownr::chownr(&data_dir, Some(res.uid), Some(res.gid)).unwrap();
-            }
-
-            process::Command::new("systemctl")
-                .arg("daemon-reload")
-                .status()
-                .unwrap();
-
-            process::Command::new("systemctl")
-                .arg("enable")
-                .arg("--now")
-                .arg("mattrax.service")
-                .status()
-                .unwrap();
-        }
     }
 }
 
-pub(super) async fn do_setup(db: &Db, (domain, enrollment_domain): (String, String)) {
+pub(super) async fn do_setup(
+    db: &Db,
+    domain: String,
+    enrollment_domain: String,
+    cloud: Option<CloudConfig>,
+    internal_secret: String,
+) -> Config {
     // TODO: Go through all params
     // TODO: This keypair is tiny compared to the old stuff, why is that????
     let mut params = CertificateParams::new(vec![]).unwrap();
@@ -191,32 +112,22 @@ pub(super) async fn do_setup(db: &Db, (domain, enrollment_domain): (String, Stri
     let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
     let cert = params.self_signed(&key_pair).unwrap();
 
-    let mut secret = [0u8; 32];
-    getrandom::getrandom(&mut secret).unwrap();
-
-    let acme_server = if cfg!(debug_assertions) {
-        config::AcmeServer::Staging
-    } else {
-        config::AcmeServer::Production
-    };
-
     let config = config::Config {
         domain,
         enrollment_domain,
-        acme_email: "hello@mattrax.app".to_string(), // TODO: From user
-        acme_server,
-        internal_secret: hex::encode(secret),
-        desired_version: env!("GIT_HASH").to_string(),
+        internal_secret,
         certificates: Certificates {
             identity_cert: cert.der().to_vec(),
             identity_key: key_pair.serialize_der(),
             identity_pool: vec![cert.pem()],
         },
-        cloud: None,
+        cloud,
     };
 
     db.set_config(serde_json::to_string(&config).unwrap())
         .await
         .map_err(|err| error!("Failed to set Mattrax configuration in DB: {err}"))
         .unwrap();
+
+    config
 }
