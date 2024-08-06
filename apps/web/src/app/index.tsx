@@ -4,7 +4,7 @@ import { Match, Switch, createEffect } from "solid-js";
 import { parse } from "cookie-es";
 import { useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
-import { cachedTenantsForOrg } from "./(dash)/o.[orgSlug]/utils";
+import { cachedTenantsForOrg } from "./(dash)/o/[orgSlug]/utils";
 import { cachedOrgs } from "./(dash)/utils";
 
 export const route = {

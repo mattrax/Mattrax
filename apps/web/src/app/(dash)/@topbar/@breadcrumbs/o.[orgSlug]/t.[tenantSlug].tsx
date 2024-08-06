@@ -6,10 +6,10 @@ import {
 } from "@solidjs/router";
 import { Show } from "solid-js";
 
-import { useTenantParams } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/ctx";
+import { useTenantParams } from "~/app/(dash)/o/[orgSlug]/t/[tenantSlug]/ctx";
+import { cachedTenantsForOrg } from "~/app/(dash)/o/[orgSlug]/utils";
 import { createQueryCacher, useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
-import { cachedTenantsForOrg } from "~[orgSlug]/utils";
 import { cachedOrgs } from "~dash/utils";
 import { Breadcrumb } from "../Breadcrumb";
 import { MultiSwitcher } from "../MultiSwitcher";

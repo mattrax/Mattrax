@@ -22,7 +22,7 @@
 		"@mattrax/ui": "workspace:*",
 		"@solidjs/router": "0.14.1",
 		"@solidjs/start": "1.0.6",
-		"@tanstack/solid-form": "^0.26.4",
+		"@tanstack/solid-form": "^0.27.0",
 		"class-variance-authority": "^0.7.0",
 		"clsx": "^2.1.1",
 		"h3": "^1.12.0",
