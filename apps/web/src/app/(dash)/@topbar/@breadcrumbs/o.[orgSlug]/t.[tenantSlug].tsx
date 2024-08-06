@@ -6,8 +6,8 @@ import {
 } from "@solidjs/router";
 import { Show } from "solid-js";
 
-import { useTenantParams } from "~/app/(dash)/o/o.[orgSlug]/t/[tenantSlug]/ctx";
-import { cachedTenantsForOrg } from "~/app/(dash)/o/o.[orgSlug]/utils";
+import { useTenantParams } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/ctx";
+import { cachedTenantsForOrg } from "~/app/(dash)/o.[orgSlug]/utils";
 import { createQueryCacher, useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
 import { cachedOrgs } from "~dash/utils";

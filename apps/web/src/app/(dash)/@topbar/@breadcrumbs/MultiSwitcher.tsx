@@ -237,7 +237,7 @@ import {
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { useNavigate } from "@solidjs/router";
 import clsx from "clsx";
-import { cachedTenantsForOrg } from "~/app/(dash)/o/o.[orgSlug]/utils";
+import { cachedTenantsForOrg } from "~/app/(dash)/o.[orgSlug]/utils";
 import { createQueryCacher, useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
 import { cachedOrgs } from "~dash/utils";

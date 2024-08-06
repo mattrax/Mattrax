@@ -19,13 +19,7 @@ import {
 	PopoverTrigger,
 	Textarea,
 } from "@mattrax/ui";
-import {
-	A,
-	type RouteSectionProps,
-	useIsRouting,
-	useMatch,
-	useNavigate,
-} from "@solidjs/router";
+import { A, useIsRouting, useMatch, useNavigate } from "@solidjs/router";
 import clsx from "clsx";
 import {
 	type ParentProps,
@@ -38,25 +32,27 @@ import {
 import LogoImg from "~/assets/MATTRAX.png";
 import { useCommandGroup } from "~/components/CommandPalette";
 import { getInitials, trpc } from "~/lib";
+import type { RouteSectionProps } from "../(dash)";
 import classes from "./@topbar/NavIndicator.module.css";
-import { NavItemsSlot } from "./@topbar/interop";
 import { useAuth } from "./utils";
 
-export default function (props: RouteSectionProps<never>) {
-	// const navItems = children(() => props.slots.navItems);
+export default function (
+	props: RouteSectionProps<never, "navItems" | "breadcrumbs">,
+) {
+	const navItems = children(() => props.slots.navItems);
 
 	return (
 		<>
 			<div
 				class={clsx(
 					"relative flex flex-row items-center px-6 gap-2 h-16 shrink-0",
-					// !navItems() && "border-b border-gray-200",
+					!navItems() && "border-b border-gray-200",
 				)}
 			>
 				<NavigationAnnouncer />
 				<Logo />
 
-				{/* {props.slots.breadcrumbs} */}
+				{props.slots.breadcrumbs}
 
 				<div class="flex-1" />
 
@@ -85,8 +81,7 @@ export default function (props: RouteSectionProps<never>) {
 				</div>
 			</div>
 
-			{/* {navItems()} */}
-			<NavItemsSlot />
+			{navItems()}
 		</>
 	);
 }
