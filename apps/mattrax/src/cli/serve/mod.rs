@@ -40,17 +40,17 @@ impl Command {
         #[cfg(debug_assertions)]
         tracing::warn!("Running in development mode! Do not use in production!");
 
-        if !data_dir.exists() || !data_dir.join("config.json").exists() {
-            error!("The Mattrax configuration was not found!");
-            error!("To setup a new server, run '{} init'.", binary_name());
-            process::exit(1);
-        }
-
         let local_config = if self.cloud {
             info!("Running in Mattrax cloud mode!");
 
             LocalConfig::from_env()
         } else {
+            if !data_dir.exists() || !data_dir.join("config.json").exists() {
+                error!("The Mattrax configuration was not found!");
+                error!("To setup a new server, run '{} init'.", binary_name());
+                process::exit(1);
+            }
+
             let Ok(local_config) = LocalConfig::load(data_dir.join("config.json"))
                 .map_err(|err| error!("Failed to load local configuration: {err}"))
             else {
