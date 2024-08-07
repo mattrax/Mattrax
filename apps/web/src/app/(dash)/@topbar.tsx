@@ -19,13 +19,7 @@ import {
 	PopoverTrigger,
 	Textarea,
 } from "@mattrax/ui";
-import {
-	A,
-	type RouteSectionProps,
-	useIsRouting,
-	useMatch,
-	useNavigate,
-} from "@solidjs/router";
+import { A, useIsRouting, useMatch, useNavigate } from "@solidjs/router";
 import clsx from "clsx";
 import {
 	type ParentProps,
@@ -38,6 +32,7 @@ import {
 import LogoImg from "~/assets/MATTRAX.png";
 import { useCommandGroup } from "~/components/CommandPalette";
 import { getInitials, trpc } from "~/lib";
+import type { RouteSectionProps } from "../(dash)";
 import classes from "./@topbar/NavIndicator.module.css";
 import { useAuth } from "./utils";
 
@@ -85,6 +80,7 @@ export default function (
 					<ProfileDropdown />
 				</div>
 			</div>
+
 			{navItems()}
 		</>
 	);

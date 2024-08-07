@@ -1,0 +1,44 @@
+{
+	storage mysql
+	admin off
+	email hello@mattrax.app
+	acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+	on_demand_tls {
+		ask http://localhost:9000/internal/caddy?auth={$INTERNAL_SECRET}
+	}
+}
+
+mattrax.fly.dev {
+	redir https://mdm.mattrax.app
+	header X-Region {$FLY_REGION}
+	header Server Mattrax
+}
+
+mdm.mattrax.app {
+	tls {
+		client_auth {
+			mode verify_if_given
+			trust_pool file {
+				pem_file /mtls-roots.pem
+			}
+		}
+	}
+
+	reverse_proxy localhost:9000
+	header X-Region {$FLY_REGION}
+}
+
+enterpriseenrollment.mattrax.app {
+	reverse_proxy localhost:9000
+	header X-Region {$FLY_REGION}
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+
+	reverse_proxy localhost:9000
+	header X-Region {$FLY_REGION}
+	header Server Mattrax
+}

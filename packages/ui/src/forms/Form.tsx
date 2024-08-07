@@ -11,7 +11,7 @@ import type { z } from "zod";
 
 export function createZodForm<S extends z.ZodSchema<any, z.ZodObjectDef, any>>(
 	opts: Omit<
-		FormOptions<z.infer<S>, typeof zodValidator>,
+		FormOptions<z.infer<S>, ReturnType<typeof zodValidator>>,
 		"validatorAdapter" | "defaultValues"
 	> & {
 		schema: S;
@@ -25,7 +25,7 @@ export function createZodForm<S extends z.ZodSchema<any, z.ZodObjectDef, any>>(
 				typeof opts.defaultValues === "function"
 					? (undefined as any as S)
 					: opts.defaultValues,
-			validatorAdapter: zodValidator,
+			validatorAdapter: zodValidator(),
 			validators: {
 				onSubmit: opts.schema,
 			},

@@ -22,9 +22,9 @@
 	},
 	"dependencies": {
 		"@planetscale/database": "^1.18.0",
-		"mysql2": "^3.10.3"
+		"mysql2": "^3.11.0"
 	},
 	"devDependencies": {
-		"@types/node": "^20.14.11"
+		"@types/node": "^22.1.0"
 	}
 }

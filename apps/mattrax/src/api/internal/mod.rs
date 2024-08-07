@@ -10,8 +10,7 @@ use axum::{
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Deserialize;
-use tokio::process::Command;
-use tracing::{error, warn};
+use tracing::error;
 
 use super::Context;
 
@@ -45,62 +44,87 @@ struct IssueCertParams {
     domain: String,
 }
 
+#[derive(Deserialize)]
+struct CaddyParams {
+    domain: String,
+    auth: String,
+}
+
 pub fn mount(state: Arc<Context>) -> Router<Arc<Context>> {
     Router::new()
         .route("/", get(|| async move { "Hello World" }))
         .route(
             "/issue-cert",
             post(
-                |State(state): State<Arc<Context>>, Query(query): Query<IssueCertParams>| async move {
+                |State(_state): State<Arc<Context>>, Query(_query): Query<IssueCertParams>| async move {
                     // TODO: Rate limit all requests -> The cron job should trigger it again once Let's Encrypt rate limits have been reset
                     // TODO: Rate limit requests for a specific domain
 
-                    match state.acme_tx.send(vec![query.domain]).await {
-                        Ok(()) => StatusCode::OK,
-                        Err(_) => {
-                            error!("The ACME task has been killed. Unable to queue new certificate to be issued.");
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        }
-                    }
+                    // match state.acme_tx.send(vec![query.domain]).await {
+                    //     Ok(()) => StatusCode::OK,
+                    //     Err(_) => {
+                    //         error!("The ACME task has been killed. Unable to queue new certificate to be issued.");
+                    //         StatusCode::INTERNAL_SERVER_ERROR
+                    //     }
+                    // }
+
+                    // TODO: Not implemented as we are using Caddy On-Demand TLS for now. This will come back later though for self-hosting!
+                    StatusCode::OK
                 },
             ),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), internal_auth))
-        .route("/redeploy", get({
-            #[derive(Deserialize)]
-            struct RedeployArgs {
-                secret: String,
-            }
-
-            |State(state): State<Arc<Context>>, Query(query): Query<RedeployArgs>| async move {
-                if state.config.get().internal_secret != query.secret {
-                    return (StatusCode::UNAUTHORIZED, "Unauthorized");
+        .route("/caddy", get(
+            |State(state): State<Arc<Context>>, params: Query<CaddyParams>| async move {
+                if state.config.get().internal_secret != params.auth {
+                    return StatusCode::UNAUTHORIZED;
                 }
 
-                // We delay slightly so the response is sent before the redeploy
-                tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
-                    warn!("Mattrax redeploy triggered by user...");
-
-                    Command::new("systemctl")
-                    .arg("restart")
-                    .arg("mattrax")
-                    .output()
-                    .await
-                    .map_or_else(
-                        |e| {
-                            error!("Failed to restart the service: {}", e);
-                            StatusCode::INTERNAL_SERVER_ERROR
-                        },
-                        |_| StatusCode::OK,
-                    );
-                });
-
-                return (StatusCode::OK, "ok!");
+                match state.db.get_domain(params.domain.clone()).await.map(|d| d.into_iter().next()) {
+                    Ok(Some(_)) => StatusCode::OK,
+                    Ok(None) => StatusCode::FORBIDDEN,
+                    Err(err) => {
+                        error!("Error checking domain {:?}: {err}", params.domain);
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    }
+                }
             }
-        })
-        )
+        ))
+        .layer(middleware::from_fn_with_state(state.clone(), internal_auth))
+        // .route("/redeploy", get({
+        //     #[derive(Deserialize)]
+        //     struct RedeployArgs {
+        //         secret: String,
+        //     }
+
+        //     |State(state): State<Arc<Context>>, Query(query): Query<RedeployArgs>| async move {
+        //         if state.config.get().internal_secret != query.secret {
+        //             return (StatusCode::UNAUTHORIZED, "Unauthorized");
+        //         }
+
+        //         // We delay slightly so the response is sent before the redeploy
+        //         tokio::spawn(async move {
+        //             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        //             warn!("Mattrax redeploy triggered by user...");
+
+        //             Command::new("systemctl")
+        //             .arg("restart")
+        //             .arg("mattrax")
+        //             .output()
+        //             .await
+        //             .map_or_else(
+        //                 |e| {
+        //                     error!("Failed to restart the service: {}", e);
+        //                     StatusCode::INTERNAL_SERVER_ERROR
+        //                 },
+        //                 |_| StatusCode::OK,
+        //             );
+        //         });
+
+        //         return (StatusCode::OK, "ok!");
+        //     }
+        // })
+        // )
         .with_state(state)
 }
 

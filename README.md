@@ -32,7 +32,6 @@ The components are:
  - [`apps/mattraxd`](apps/mattraxd) - Agent for managed devices that manages script execution and more
  - [`apps/landing`](apps/landing) - [Landing website](https://mattrax.app)
  - [`apps/docs`](apps/docs) - [Documentation website](https://docs.mattrax.app)
- - [`apps/android`](apps/android) - Android application for device management
 
 We mainly use the following technologies:
  - [SolidJS](https://www.solidjs.com)

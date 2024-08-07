@@ -13,6 +13,7 @@ import {
 	db,
 	deviceActions,
 	devices,
+	domains,
 	groupAssignables,
 	kv,
 	organisationMembers,
@@ -115,70 +116,17 @@ exportQueries(
 					}),
 		}),
 		defineOperation({
-			name: "get_node",
+			name: "get_domain",
 			args: {
-				id: "String",
+				domain: "String",
 			},
 			query: (args) =>
 				db
 					.select({
-						value: kv.value,
+						createdAt: domains.createdAt,
 					})
-					.from(kv)
-					.where(eq(kv.key, sql`CONCAT('server:', ${args.id})`)),
-		}),
-		defineOperation({
-			name: "update_node",
-			args: {
-				id: "String",
-				config: "String",
-			},
-			query: (args) =>
-				db
-					.insert(kv)
-					.values({
-						key: sql`CONCAT('server:', ${args.id})`,
-						value: args.config,
-					})
-					.onDuplicateKeyUpdate({
-						set: {
-							value: args.config,
-						},
-					}),
-		}),
-		defineOperation({
-			name: "get_certificate",
-			args: {
-				key: "String",
-			},
-			query: (args) =>
-				db
-					.select({
-						value: kv.value,
-					})
-					.from(kv)
-					.where(eq(kv.key, sql`CONCAT('cert:', ${args.key})`)),
-		}),
-		defineOperation({
-			name: "store_certificate",
-			args: {
-				key: "String",
-				certificate: "Vec<u8>",
-				last_modified: "Now",
-			},
-			query: (args) =>
-				db
-					.insert(kv)
-					.values({
-						key: sql`CONCAT('cert:', ${args.key})`,
-						value: args.certificate,
-					})
-					.onDuplicateKeyUpdate({
-						set: {
-							value: args.certificate,
-							lastModified: sql`NOW()`,
-						},
-					}),
+					.from(domains)
+					.where(eq(domains.domain, args.domain)),
 		}),
 		defineOperation({
 			name: "get_session_and_user",

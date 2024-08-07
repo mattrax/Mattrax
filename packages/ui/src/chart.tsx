@@ -179,7 +179,7 @@ function showTooltip(context: ChartContext) {
 	content += `<div class="mt-1 text-muted-foreground">`;
 	const body = model.body.flatMap((body) => body.lines);
 	body.forEach((line, i) => {
-		const colors = model.labelColors[i];
+		const colors = model.labelColors[i]!;
 		content += `
         <div class="flex items-center">
           <span class="inline-block h-2 w-2 mr-1 rounded-full border" style="background: ${colors.backgroundColor}; border-color: ${colors.borderColor}"></span>

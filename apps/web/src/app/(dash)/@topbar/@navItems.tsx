@@ -12,7 +12,7 @@ import {
 
 export default function (props: ParentProps) {
 	const items = children(() => {
-		return props.children;
+		return [props.children];
 	}) as unknown as () =>
 		| [{ items: { title: string; href: string }[]; base(): string }]
 		| undefined;

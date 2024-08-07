@@ -237,9 +237,9 @@ import {
 import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
 import { useNavigate } from "@solidjs/router";
 import clsx from "clsx";
+import { cachedTenantsForOrg } from "~/app/(dash)/o.[orgSlug]/utils";
 import { createQueryCacher, useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
-import { cachedTenantsForOrg } from "~[orgSlug]/utils";
 import { cachedOrgs } from "~dash/utils";
 
 export function CreateTenantDialog(props: {
