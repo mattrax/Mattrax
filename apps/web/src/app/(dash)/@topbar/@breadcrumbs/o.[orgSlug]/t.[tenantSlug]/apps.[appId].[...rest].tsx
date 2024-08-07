@@ -1,7 +1,7 @@
 import { Badge } from "@mattrax/ui";
 
-import { useAppId } from "~/app/(dash)/o/o.[orgSlug]/t/[tenantSlug]/apps/ctx";
-import { getMetadata } from "~/app/(dash)/o/o.[orgSlug]/t/[tenantSlug]/metadataCache";
+import { useAppId } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/apps/ctx";
+import { getMetadata } from "~/app/(dash)/o.[orgSlug]/t.[tenantSlug]/metadataCache";
 import { trpc } from "~/lib";
 import { Breadcrumb } from "../../Breadcrumb";
 

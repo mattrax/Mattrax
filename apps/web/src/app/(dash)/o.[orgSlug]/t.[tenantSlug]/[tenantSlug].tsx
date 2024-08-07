@@ -4,9 +4,9 @@ import { type ParentProps, Show, Suspense, createMemo } from "solid-js";
 import { useCommandGroup } from "~/components/CommandPalette";
 import { trpc } from "~/lib";
 import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { cachedTenantsForOrg } from "../../utils";
-import { cachedOrgs } from "../utils";
-import { useTenantParams } from "./t.[tenantSlug]/ctx";
+import { cachedTenantsForOrg } from "../utils";
+import { cachedOrgs } from "../../utils";
+import { useTenantParams } from "../t.[tenantSlug]/ctx";
 
 export const route = {
 	load: ({ params }) => {

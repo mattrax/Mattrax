@@ -2,7 +2,7 @@ import { slugifyWithCounter } from "@sindresorhus/slugify";
 import * as acorn from "acorn";
 import { toString } from "mdast-util-to-string";
 import { mdxAnnotations } from "mdx-annotations";
-import shiki from "shiki";
+import * as shiki from "shiki";
 import { visit } from "unist-util-visit";
 
 function rehypeParseCodeBlocks() {
@@ -25,7 +25,7 @@ function rehypeShiki() {
 		highlighter =
 			highlighter ?? (await shiki.getHighlighter({ theme: "css-variables" }));
 
-		visit(tree, "element", (node) => {
+		visit(tree, "element", async (node) => {
 			if (node.tagName === "pre" && node.children[0]?.tagName === "code") {
 				const codeNode = node.children[0];
 				const textNode = codeNode.children[0];
@@ -33,17 +33,17 @@ function rehypeShiki() {
 				node.properties.code = textNode.value;
 
 				if (node.properties.language) {
-					const tokens = highlighter.codeToThemedTokens(
-						textNode.value,
-						node.properties.language,
-					);
-
-					textNode.value = shiki.renderToHtml(tokens, {
-						elements: {
-							pre: ({ children }) => children,
-							code: ({ children }) => children,
-							line: ({ children }) => `<span>${children}</span>`,
-						},
+					
+					textNode.value = await shiki.codeToHtml(textNode.value, {
+						lang: node.properties.language,
+						theme: 'vitesse-light',
+						// transformers: [
+						// 	{
+						// 		pre: ({ children }) => children,
+						// 		code: ({ children }) => children,
+						// 		line: ({ children }) => `<span>${children}</span>`,
+						// 	}
+						// ]
 					});
 				}
 			}
