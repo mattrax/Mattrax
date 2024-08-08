@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import mattraxUI from "@mattrax/ui/vite";
 import { defineConfig } from "@solidjs/start/config";
@@ -104,4 +106,16 @@ export default defineConfig({
 	...(isCFPages && {
 		middleware: "src/cfPagesMiddleware.ts",
 	}),
+});
+
+process.on("exit", () => {
+	console.log("Patching `_routes.json`...");
+
+	fs.writeFileSync(
+		path.join("dist", "_routes.json"),
+		JSON.stringify({
+			version: 1,
+			exclude: ["/_build/*", "/assets/*", "/favicon.ico", "/tos"],
+		}),
+	);
 });
