@@ -27,7 +27,7 @@ specta = { version = "=2.0.0-rc.11", features = [
 # TODO: This patch is from the unreleased `0.13.0` but I patched it to lie and pretend to be `0.21.1`
 rcgen = { git = "https://github.com/oscartbeaumont/rcgen", rev = "a3cd77f13f51b441b5d172aeac2f528c4a79c3bc" }
 # TODO: Waiting for https://github.com/FlorianUekermann/rustls-acme/pull/49 or my own PR cause that one is stale.
-rustls-acme = { git = "https://github.com/oscartbeaumont/rustls-acme", rev = "051ebd0433ad66855b728f7b848369a58ee4ebbf" }
+# rustls-acme = { git = "https://github.com/oscartbeaumont/rustls-acme", rev = "051ebd0433ad66855b728f7b848369a58ee4ebbf" }
 
 # Some minor improvements
 easy-xml = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }

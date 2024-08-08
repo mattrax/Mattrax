@@ -22,6 +22,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           cache: "pnpm"
+          node-version: latest
 
       - name: Install dependencies
         run: pnpm i
@@ -53,6 +54,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           cache: "pnpm"
+          node-version: latest
 
       - name: Install dependencies
         run: pnpm i
@@ -81,6 +83,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           cache: "pnpm"
+          node-version: latest
 
       - name: Install dependencies
         run: pnpm i
