@@ -223,7 +223,7 @@ jobs:
       - name: Deploy
         run: |
           set -o pipefail
-          pnpm dlx wrangler pages deploy dist/ --project-name mattrax-configure 2>&1 | tee -a BUILD_OUTPUT
+          pnpm dlx wrangler pages deploy apps/configure/dist/ --project-name mattrax-configure 2>&1 | tee -a BUILD_OUTPUT
 
       - name: Export `DEPLOYMENT_URL`
         id: result
