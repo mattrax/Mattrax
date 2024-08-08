@@ -14,9 +14,10 @@ import {
 	Input,
 	buttonVariants,
 } from "@mattrax/ui";
-import { createWritableMemo } from "@solid-primitives/memo";
+import { createEventListener } from "@solid-primitives/event-listener";
+import { action, useAction, useSubmission } from "@solidjs/router";
 import clsx from "clsx";
-import { For, type JSX, Show, Suspense } from "solid-js";
+import { For, type JSX, Show, Suspense, createSignal, onMount } from "solid-js";
 import { z } from "zod";
 import { determineDeviceImage } from "~/assets";
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
@@ -30,6 +31,7 @@ export default function Page() {
 	const params = useZodParams({
 		userId: z.string(),
 	});
+	const sync = useSync();
 
 	const data = createDbQuery((db) => db.get("users", params.userId));
 	// TODO: 404 handling
@@ -138,12 +140,19 @@ export default function Page() {
 				</div>
 			}
 		>
-			<Debug userId={params.userId} />
-
 			<Card>
 				<div class="p-8 grid grid-cols-4 gap-y-8 gap-x-4">
 					<Field label="Identifier" value={data()?.id} />
-					<Field label="Name" value={data()?.name} />
+					<Field
+						label="Name"
+						value={data()?.name}
+						onChange={(name) =>
+							updateUser(sync, {
+								id: params.userId,
+								name,
+							})
+						}
+					/>
 					<Field label="User principal name" value={data()?.upn} />
 					<Field
 						label="Account Status"
@@ -277,31 +286,6 @@ export default function Page() {
 	);
 }
 
-function Debug(props: { userId: string }) {
-	const sync = useSync();
-
-	const data = createDbQuery((db) => db.get("users", props.userId));
-
-	const [name, setName] = createWritableMemo(() => data()?.name || "");
-
-	return (
-		<>
-			<Input value={name()} onChange={(e) => setName(e.currentTarget.value)} />
-			<Button
-				onClick={() => {
-					console.log("save", name());
-					updateUser(sync, {
-						id: props.userId,
-						name: name(),
-					});
-				}}
-			>
-				Save
-			</Button>
-		</>
-	);
-}
-
 // TODO: Break out somewhere else
 
 export const renderDate = (d: string | undefined) =>
@@ -310,7 +294,7 @@ export const renderDate = (d: string | undefined) =>
 export function Field<T>(props: {
 	label: string;
 	value: T | undefined;
-	onChange?: (value: T) => void;
+	onChange?: (value: T) => Promise<void> | void;
 	render?: (value: T | undefined) => JSX.Element;
 }) {
 	const render = (t: T | undefined) => {
@@ -318,17 +302,72 @@ export function Field<T>(props: {
 		return t as JSX.Element;
 	};
 
-	// TODO: Editable field
 	// TODO: Schema validation for new input?
+	// TODO: Suspense fallback
+
+	const [editing, setEditing] = createSignal(false);
 
 	return (
 		<div>
 			<p class="text-sm text-stone-500 font-medium tracking-tight">
 				{props.label}
 			</p>
-			<p class="text-sm font-medium">
-				<Suspense>{render(props.value)}</Suspense>
-			</p>
+			<Show
+				when={editing()}
+				fallback={
+					// biome-ignore lint/a11y/useKeyWithClickEvents:
+					<p
+						class="text-sm font-medium"
+						onClick={(e) => {
+							if (window.getSelection()?.toString() !== "") return;
+							e.preventDefault();
+							if (props.onChange) setEditing(true);
+						}}
+					>
+						<Suspense>{render(props.value)}</Suspense>
+					</p>
+				}
+			>
+				{(_) => {
+					let ref!: HTMLInputElement;
+
+					const onChangeAction = action(async (data) => {
+						await props.onChange?.(data);
+						setEditing(false);
+					});
+
+					const trigger = useAction(onChangeAction);
+					const state = useSubmission(onChangeAction);
+
+					const fire = () => {
+						if (state.pending) return;
+						if (ref.value !== props.value) {
+							trigger(ref.value);
+						} else {
+							setEditing(false);
+						}
+					};
+
+					createEventListener(document, "click", (e) => {
+						if (e.target === ref) return;
+						fire();
+					});
+
+					createEventListener(document, "keydown", (e) => {
+						if (e.key === "Escape" || e.key === "Tab") setEditing(false);
+						if (e.key === "Enter" && e.target === ref) {
+							fire();
+						}
+					});
+
+					onMount(() => ref.focus());
+
+					// TODO: Suspense?
+					return (
+						<Input ref={ref} value={props.value} disabled={state.pending} />
+					);
+				}}
+			</Show>
 		</div>
 	);
 }
