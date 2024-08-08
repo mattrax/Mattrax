@@ -16,5 +16,13 @@ export async function GET({ request }: APIEvent) {
 		result = err.toString();
 	}
 
-	return new Response(JSON.stringify({ ...env, _db_result: result }));
+	return new Response(
+		JSON.stringify({
+			env: JSON.stringify(env),
+			env2: {
+				DATABASE_URL: env.DATABASE_URL,
+			},
+			_db_result: result,
+		}),
+	);
 }
