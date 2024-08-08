@@ -109,14 +109,19 @@ export default defineConfig({
 });
 
 process.on("exit", () => {
-	console.log("Patching `_routes.json`...");
+	const routesFile = path.join("dist", "_routes.json");
 
-	fs.writeFileSync(
-		path.join("dist", "_routes.json"),
-		JSON.stringify({
-			version: 1,
-			include: ["/*"],
-			exclude: ["/_build/*", "/assets/*", "/favicon.ico", "/tos"],
-		}),
-	);
+	if (fs.existsSync(routesFile)) {
+		fs.writeFileSync(
+			routesFile,
+			JSON.stringify({
+				version: 1,
+				include: ["/*"],
+				exclude: ["/_build/*", "/assets/*", "/favicon.ico", "/tos"],
+			}),
+		);
+		console.log("Patched `_routes.json`...");
+	} else {
+		console.log("`_routes.json` not found. Skipping patch...");
+	}
 });

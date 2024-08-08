@@ -7,9 +7,10 @@ app = 'mattrax'
 primary_region = 'bos'
 
 [env]
+RUST_LOG = "debug"
 
 [[vm]]
-  memory = '1gb'
+  memory = '512mb'
   cpu_kind = 'shared'
   cpus = 1
 
