@@ -8,9 +8,6 @@ patchedDependencies:
   '@solidjs/start@1.0.6':
     hash: 3c4gwxs3pt6xe3wn3vd4pa5a4i
     path: patches/@solidjs__start@1.0.6.patch
-  cmdk-solid:
-    hash: rgn2watxbcjkleu6cuuivydsue
-    path: patches/cmdk-solid.patch
 
 importers:
 
@@ -784,7 +781,7 @@ importers:
         version: 2.1.1
       cmdk-solid:
         specifier: ^1.1.0
-        version: 1.1.0(patch_hash=rgn2watxbcjkleu6cuuivydsue)(solid-js@1.8.19)
+        version: 1.1.0(solid-js@1.8.19)
       solid-js:
         specifier: ^1.8.19
         version: 1.8.19
@@ -13261,7 +13258,7 @@ snapshots:
 
   cluster-key-slot@1.1.2: {}
 
-  cmdk-solid@1.1.0(patch_hash=rgn2watxbcjkleu6cuuivydsue)(solid-js@1.8.19):
+  cmdk-solid@1.1.0(solid-js@1.8.19):
     dependencies:
       '@kobalte/core': 0.12.6(solid-js@1.8.19)
       '@kobalte/utils': 0.9.0(solid-js@1.8.19)

@@ -108,9 +108,8 @@ export function CommandPalette(props: ParentProps) {
 																value={`${category.category}|${action.title}`}
 																aria-disabled={action.disabled}
 																disabled={action.disabled}
-																// @ts-expect-error: We patch this into `solid-cmdk`
-																onSelect={(_, e) => {
-																	if (action.disabled || e.metaKey) return;
+																onSelect={() => {
+																	if (action.disabled) return;
 																	if ("onClick" in action) action.onClick();
 																	if ("href" in action) navigate(href()!);
 																	setOpen(false);
