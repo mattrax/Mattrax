@@ -435,3 +435,6 @@ exportQueries(
 	],
 	path.join(import.meta.dirname, "../../../../crates/mx-db/src/db.rs"),
 );
+
+// TODO:
+console.log("DEBUG PATH", import.meta.dirname);
