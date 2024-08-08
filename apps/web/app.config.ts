@@ -115,6 +115,7 @@ process.on("exit", () => {
 		path.join("dist", "_routes.json"),
 		JSON.stringify({
 			version: 1,
+			include: ["/*"],
 			exclude: ["/_build/*", "/assets/*", "/favicon.ico", "/tos"],
 		}),
 	);
