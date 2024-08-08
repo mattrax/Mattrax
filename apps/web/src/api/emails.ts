@@ -27,7 +27,7 @@ export async function sendEmail(args: RequestSchema) {
 		throw new Error(msg);
 	}
 
-	// We lazy load to keep React + React email outta the main bundle
+	// We lazy load the email stuff
 	await (await import("@mattrax/email").then((mod) => mod._sender))(
 		args,
 		aws.client,

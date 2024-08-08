@@ -44,7 +44,7 @@ importers:
         version: 9.1.4
       nx:
         specifier: 19.5.6
-        version: 19.5.6(@swc/core@1.7.6)
+        version: 19.5.6(@swc/core@1.7.6(@swc/helpers@0.5.12))
       wrangler:
         specifier: ^3.68.0
         version: 3.68.0(@cloudflare/workers-types@4.20240729.0)
@@ -150,13 +150,13 @@ importers:
         version: 0.2.1(tailwindcss@3.4.7)
       '@mdx-js/loader':
         specifier: ^3.0.1
-        version: 3.0.1(webpack@5.93.0(@swc/core@1.7.6)(esbuild@0.19.12))
+        version: 3.0.1(webpack@5.93.0(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12))
       '@mdx-js/react':
         specifier: ^3.0.1
         version: 3.0.1(@types/react@18.3.3)(react@18.3.1)
       '@next/mdx':
         specifier: ^14.2.5
-        version: 14.2.5(@mdx-js/loader@3.0.1(webpack@5.93.0(@swc/core@1.7.6)(esbuild@0.19.12)))(@mdx-js/react@3.0.1(@types/react@18.3.3)(react@18.3.1))
+        version: 14.2.5(@mdx-js/loader@3.0.1(webpack@5.93.0(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12)))(@mdx-js/react@3.0.1(@types/react@18.3.3)(react@18.3.1))
       '@sindresorhus/slugify':
         specifier: ^2.2.1
         version: 2.2.1
@@ -392,7 +392,7 @@ importers:
         version: 8.3.4
       '@solid-mediakit/trpc':
         specifier: ^3.0.3
-        version: 3.0.3(@solidjs/router@0.13.3(solid-js@1.8.19))(@solidjs/start@1.0.6(patch_hash=3c4gwxs3pt6xe3wn3vd4pa5a4i)(rollup@4.20.0)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@planetscale/database@1.18.0)(pg@8.12.0))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))(vite@5.3.5(@types/node@22.1.0)(terser@5.31.3)))(@tanstack/solid-query@5.51.21(solid-js@1.8.19))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@planetscale/database@1.18.0)(pg@8.12.0))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))
+        version: 3.0.3(@solidjs/router@0.13.3(solid-js@1.8.19))(@solidjs/start@1.0.6(patch_hash=3c4gwxs3pt6xe3wn3vd4pa5a4i)(rollup@4.20.0)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.18.0)(@types/react@18.3.3)(mysql2@3.11.0)(pg@8.12.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))(vite@5.3.5(@types/node@22.1.0)(terser@5.31.3)))(@tanstack/solid-query@5.51.21(solid-js@1.8.19))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.18.0)(@types/react@18.3.3)(mysql2@3.11.0)(pg@8.12.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))
       '@solid-primitives/autofocus':
         specifier: ^0.0.111
         version: 0.0.111(solid-js@1.8.19)
@@ -671,6 +671,9 @@ importers:
         specifier: ^3.23.8
         version: 3.23.8
     devDependencies:
+      '@types/node':
+        specifier: ^22.1.0
+        version: 22.1.0
       '@types/react':
         specifier: ^18.3.3
         version: 18.3.3
@@ -728,7 +731,7 @@ importers:
     dependencies:
       '@solid-mediakit/trpc':
         specifier: ^3.0.3
-        version: 3.0.3(@solidjs/router@0.13.3(solid-js@1.8.19))(@solidjs/start@1.0.6(patch_hash=3c4gwxs3pt6xe3wn3vd4pa5a4i)(rollup@4.20.0)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@planetscale/database@1.18.0)(pg@8.12.0))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))(vite@5.3.5(@types/node@22.1.0)(terser@5.31.3)))(@tanstack/solid-query@5.51.21(solid-js@1.8.19))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@planetscale/database@1.18.0)(pg@8.12.0))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))
+        version: 3.0.3(@solidjs/router@0.13.3(solid-js@1.8.19))(@solidjs/start@1.0.6(patch_hash=3c4gwxs3pt6xe3wn3vd4pa5a4i)(rollup@4.20.0)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.18.0)(@types/react@18.3.3)(mysql2@3.11.0)(pg@8.12.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))(vite@5.3.5(@types/node@22.1.0)(terser@5.31.3)))(@tanstack/solid-query@5.51.21(solid-js@1.8.19))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.18.0)(@types/react@18.3.3)(mysql2@3.11.0)(pg@8.12.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))
       '@solidjs/router':
         specifier: 0.13.3
         version: 0.13.3(solid-js@1.8.19)
@@ -10447,7 +10450,7 @@ snapshots:
       '@simplewebauthn/browser': 10.0.0
       '@simplewebauthn/server': 10.0.1(encoding@0.1.13)
       '@simplewebauthn/typescript-types': 8.3.4
-      '@solid-mediakit/trpc': 3.0.3(@solidjs/router@0.13.3(solid-js@1.8.19))(@solidjs/start@1.0.6(patch_hash=3c4gwxs3pt6xe3wn3vd4pa5a4i)(rollup@4.20.0)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@planetscale/database@1.18.0)(pg@8.12.0))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))(vite@5.3.5(@types/node@22.1.0)(terser@5.31.3)))(@tanstack/solid-query@5.51.21(solid-js@1.8.19))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@planetscale/database@1.18.0)(pg@8.12.0))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))
+      '@solid-mediakit/trpc': 3.0.3(@solidjs/router@0.13.3(solid-js@1.8.19))(@solidjs/start@1.0.6(patch_hash=3c4gwxs3pt6xe3wn3vd4pa5a4i)(rollup@4.20.0)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.18.0)(@types/react@18.3.3)(mysql2@3.11.0)(pg@8.12.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))(vite@5.3.5(@types/node@22.1.0)(terser@5.31.3)))(@tanstack/solid-query@5.51.21(solid-js@1.8.19))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.18.0)(@types/react@18.3.3)(mysql2@3.11.0)(pg@8.12.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))
       '@solid-primitives/autofocus': 0.0.111(solid-js@1.8.19)
       '@solid-primitives/context': 0.2.3(solid-js@1.8.19)
       '@solid-primitives/date': 2.0.22(solid-js@1.8.19)
@@ -10566,11 +10569,11 @@ snapshots:
       - valibot
       - vite
 
-  '@mdx-js/loader@3.0.1(webpack@5.93.0(@swc/core@1.7.6)(esbuild@0.19.12))':
+  '@mdx-js/loader@3.0.1(webpack@5.93.0(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12))':
     dependencies:
       '@mdx-js/mdx': 3.0.1
       source-map: 0.7.4
-      webpack: 5.93.0(@swc/core@1.7.6)(esbuild@0.19.12)
+      webpack: 5.93.0(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12)
     transitivePeerDependencies:
       - supports-color
 
@@ -10640,11 +10643,11 @@ snapshots:
     dependencies:
       glob: 10.3.10
 
-  '@next/mdx@14.2.5(@mdx-js/loader@3.0.1(webpack@5.93.0(@swc/core@1.7.6)(esbuild@0.19.12)))(@mdx-js/react@3.0.1(@types/react@18.3.3)(react@18.3.1))':
+  '@next/mdx@14.2.5(@mdx-js/loader@3.0.1(webpack@5.93.0(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12)))(@mdx-js/react@3.0.1(@types/react@18.3.3)(react@18.3.1))':
     dependencies:
       source-map: 0.7.4
     optionalDependencies:
-      '@mdx-js/loader': 3.0.1(webpack@5.93.0(@swc/core@1.7.6)(esbuild@0.19.12))
+      '@mdx-js/loader': 3.0.1(webpack@5.93.0(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12))
       '@mdx-js/react': 3.0.1(@types/react@18.3.3)(react@18.3.1)
 
   '@next/swc-darwin-arm64@14.1.4':
@@ -10845,9 +10848,9 @@ snapshots:
 
   '@nothing-but/utils@0.12.1': {}
 
-  '@nrwl/tao@19.5.6(@swc/core@1.7.6)':
+  '@nrwl/tao@19.5.6(@swc/core@1.7.6(@swc/helpers@0.5.12))':
     dependencies:
-      nx: 19.5.6(@swc/core@1.7.6)
+      nx: 19.5.6(@swc/core@1.7.6(@swc/helpers@0.5.12))
       tslib: 2.6.3
     transitivePeerDependencies:
       - '@swc-node/register'
@@ -11937,7 +11940,7 @@ snapshots:
       '@solid-primitives/utils': 6.2.3(solid-js@1.8.19)
       solid-js: 1.8.19
 
-  '@solid-mediakit/trpc@3.0.3(@solidjs/router@0.13.3(solid-js@1.8.19))(@solidjs/start@1.0.6(patch_hash=3c4gwxs3pt6xe3wn3vd4pa5a4i)(rollup@4.20.0)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@planetscale/database@1.18.0)(pg@8.12.0))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))(vite@5.3.5(@types/node@22.1.0)(terser@5.31.3)))(@tanstack/solid-query@5.51.21(solid-js@1.8.19))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@planetscale/database@1.18.0)(pg@8.12.0))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))':
+  '@solid-mediakit/trpc@3.0.3(@solidjs/router@0.13.3(solid-js@1.8.19))(@solidjs/start@1.0.6(patch_hash=3c4gwxs3pt6xe3wn3vd4pa5a4i)(rollup@4.20.0)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.18.0)(@types/react@18.3.3)(mysql2@3.11.0)(pg@8.12.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))(vite@5.3.5(@types/node@22.1.0)(terser@5.31.3)))(@tanstack/solid-query@5.51.21(solid-js@1.8.19))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.18.0)(@types/react@18.3.3)(mysql2@3.11.0)(pg@8.12.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))':
     dependencies:
       '@solidjs/router': 0.13.3(solid-js@1.8.19)
       '@solidjs/start': 1.0.6(patch_hash=3c4gwxs3pt6xe3wn3vd4pa5a4i)(rollup@4.20.0)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20240729.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.18.0)(@types/react@18.3.3)(mysql2@3.11.0)(pg@8.12.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.3)(xml2js@0.6.2))(vite@5.3.5(@types/node@22.1.0)(terser@5.31.3))
@@ -12226,7 +12229,7 @@ snapshots:
       '@swc/core-win32-x64-msvc': 1.3.101
       '@swc/helpers': 0.5.12
 
-  '@swc/core@1.7.6':
+  '@swc/core@1.7.6(@swc/helpers@0.5.12)':
     dependencies:
       '@swc/counter': 0.1.3
       '@swc/types': 0.1.12
@@ -12241,6 +12244,7 @@ snapshots:
       '@swc/core-win32-arm64-msvc': 1.7.6
       '@swc/core-win32-ia32-msvc': 1.7.6
       '@swc/core-win32-x64-msvc': 1.7.6
+      '@swc/helpers': 0.5.12
     optional: true
 
   '@swc/counter@0.1.3': {}
@@ -16010,10 +16014,10 @@ snapshots:
     dependencies:
       boolbase: 1.0.0
 
-  nx@19.5.6(@swc/core@1.7.6):
+  nx@19.5.6(@swc/core@1.7.6(@swc/helpers@0.5.12)):
     dependencies:
       '@napi-rs/wasm-runtime': 0.2.4
-      '@nrwl/tao': 19.5.6(@swc/core@1.7.6)
+      '@nrwl/tao': 19.5.6(@swc/core@1.7.6(@swc/helpers@0.5.12))
       '@yarnpkg/lockfile': 1.1.0
       '@yarnpkg/parsers': 3.0.0-rc.46
       '@zkochan/js-yaml': 0.0.7
@@ -16058,7 +16062,7 @@ snapshots:
       '@nx/nx-linux-x64-musl': 19.5.6
       '@nx/nx-win32-arm64-msvc': 19.5.6
       '@nx/nx-win32-x64-msvc': 19.5.6
-      '@swc/core': 1.7.6
+      '@swc/core': 1.7.6(@swc/helpers@0.5.12)
     transitivePeerDependencies:
       - debug
 
@@ -17443,7 +17447,7 @@ snapshots:
       solid-js: 1.8.19
       solid-use: 0.8.0(solid-js@1.8.19)
 
-  terser-webpack-plugin@5.3.10(@swc/core@1.3.101(@swc/helpers@0.5.12))(esbuild@0.19.11)(webpack@5.93.0(@swc/core@1.7.6)(esbuild@0.19.12)):
+  terser-webpack-plugin@5.3.10(@swc/core@1.3.101(@swc/helpers@0.5.12))(esbuild@0.19.11)(webpack@5.93.0(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.25
       jest-worker: 27.5.1
@@ -17455,16 +17459,16 @@ snapshots:
       '@swc/core': 1.3.101(@swc/helpers@0.5.12)
       esbuild: 0.19.11
 
-  terser-webpack-plugin@5.3.10(@swc/core@1.7.6)(esbuild@0.19.12)(webpack@5.93.0(@swc/core@1.7.6)(esbuild@0.19.12)):
+  terser-webpack-plugin@5.3.10(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12)(webpack@5.93.0(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.25
       jest-worker: 27.5.1
       schema-utils: 3.3.0
       serialize-javascript: 6.0.2
       terser: 5.31.3
-      webpack: 5.93.0(@swc/core@1.7.6)(esbuild@0.19.12)
+      webpack: 5.93.0(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12)
     optionalDependencies:
-      '@swc/core': 1.7.6
+      '@swc/core': 1.7.6(@swc/helpers@0.5.12)
       esbuild: 0.19.12
 
   terser@5.31.3:
@@ -18010,7 +18014,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 3.3.0
       tapable: 2.2.1
-      terser-webpack-plugin: 5.3.10(@swc/core@1.3.101(@swc/helpers@0.5.12))(esbuild@0.19.11)(webpack@5.93.0(@swc/core@1.7.6)(esbuild@0.19.12))
+      terser-webpack-plugin: 5.3.10(@swc/core@1.3.101(@swc/helpers@0.5.12))(esbuild@0.19.11)(webpack@5.93.0(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12))
       watchpack: 2.4.1
       webpack-sources: 3.2.3
     transitivePeerDependencies:
@@ -18018,7 +18022,7 @@ snapshots:
       - esbuild
       - uglify-js
 
-  webpack@5.93.0(@swc/core@1.7.6)(esbuild@0.19.12):
+  webpack@5.93.0(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12):
     dependencies:
       '@types/eslint-scope': 3.7.7
       '@types/estree': 1.0.5
@@ -18041,7 +18045,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 3.3.0
       tapable: 2.2.1
-      terser-webpack-plugin: 5.3.10(@swc/core@1.7.6)(esbuild@0.19.12)(webpack@5.93.0(@swc/core@1.7.6)(esbuild@0.19.12))
+      terser-webpack-plugin: 5.3.10(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12)(webpack@5.93.0(@swc/core@1.7.6(@swc/helpers@0.5.12))(esbuild@0.19.12))
       watchpack: 2.4.1
       webpack-sources: 3.2.3
     transitivePeerDependencies:

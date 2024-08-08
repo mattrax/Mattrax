@@ -11,10 +11,11 @@ import {
 } from "@react-email/components";
 import { Tailwind } from "@react-email/tailwind";
 import React from "react";
+import type { RequestSchema } from "../src";
 
-interface Props {
-	tenantName: string;
-}
+export const type = "userEnrollmentInvite";
+
+type Props = Extract<RequestSchema, { type: typeof type }>;
 
 function UserEnrollmentInvite(props: Props) {
 	const previewText = `Join ${props.tenantName} on Mattrax`;

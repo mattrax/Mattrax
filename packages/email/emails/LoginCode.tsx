@@ -10,10 +10,11 @@ import {
 } from "@react-email/components";
 import { Tailwind } from "@react-email/tailwind";
 import React from "react";
+import type { RequestSchema } from "../src";
 
-interface Props {
-	code: string;
-}
+export const type = "loginCode";
+
+type Props = Extract<RequestSchema, { type: typeof type }>;
 
 function LoginCodeEmail(props: Props) {
 	return (

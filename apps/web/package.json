@@ -4,13 +4,10 @@
 	"private": true,
 	"scripts": {
 		"dev": "vinxi dev --host 0.0.0.0",
-		"build": "vinxi build",
+		"build": "pnpm -C ../../ email compile && vinxi build",
 		"start": "vinxi start",
 		"stats": "pnpm build && open stats.html",
-		"email:build": "email build --dir ./src/emails",
-		"email:dev": "email dev --port 3002 --dir ./src/emails",
-		"email:export": "email export --dir ./src/emails",
-		"cbuild": "NITRO_PRESET=cloudflare_pages vinxi build"
+		"cbuild": "NITRO_PRESET=cloudflare_pages pnpm build"
 	},
 	"dependencies": {
 		"@corvu/otp-field": "^0.1.2",

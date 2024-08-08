@@ -10,14 +10,15 @@
 		"doc": "pnpm --filter @mattrax/docs --",
 		"docs": "pnpm --filter @mattrax/docs --",
 		"web": "pnpm --filter @mattrax/web --",
+		"email": "pnpm --filter @mattrax/email --",
 		"db:push": "DRIZZLE=1 drizzle-kit push && DRIZZLE=1 bun run ./apps/web/src/db/rust.ts",
 		"db:gen": "DRIZZLE=1 drizzle-kit generate && DRIZZLE=1 bun run ./apps/web/src/db/rust.ts && pnpm format",
 		"db:studio": "DRIZZLE=1 drizzle-kit studio",
 		"db:rs": "DRIZZLE=1 bun run ./apps/web/src/db/rust.ts",
 		"typecheck": "tsc -b",
 		"lint": "biome lint .",
-		"fix": "biome lint --write . && biome format --write . && biome check . --write",
-		"format": "biome format --write .",
+		"fix": "biome lint --write && biome format --write && biome check --write",
+		"format": "biome format --write",
 		"prepare": "husky"
 	},
 	"engines": {

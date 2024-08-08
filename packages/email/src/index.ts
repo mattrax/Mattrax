@@ -1,10 +1,6 @@
-import { render } from "@react-email/render";
 import type { AwsClient } from "aws4fetch";
 import { z } from "zod";
-
-import LoginCodeEmail from "../emails/LoginCode";
-import TenantAdminInviteEmail from "../emails/TenantAdminInvite";
-import UserEnrollmentInviteEmail from "../emails/UserEnrollmentInvite";
+import { emails } from "./emails.gen";
 
 const REQUEST_SCHEMA = z
 	.object({
@@ -37,18 +33,8 @@ export async function _sender(
 	aws: AwsClient,
 	fromAddress: string,
 ) {
-	let component: any;
-	if (args.type === "tenantAdminInvite") {
-		component = TenantAdminInviteEmail(args);
-	} else if (args.type === "loginCode") {
-		component = LoginCodeEmail(args);
-	} else if (args.type === "userEnrollmentInvite") {
-		component = UserEnrollmentInviteEmail(args);
-	} else {
-		throw new Error("Unknown email type");
-	}
+	const emailHtml = emails[args.type](args as any);
 
-	const emailHtml = render(component);
 	const resp = await aws.fetch(
 		"https://email.us-east-1.amazonaws.com/v2/email/outbound-emails",
 		{
