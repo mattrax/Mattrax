@@ -9,7 +9,7 @@
 		"start": "vinxi start"
 	},
 	"devDependencies": {
-		"@iconify/json": "^2.2.234",
+		"@iconify/json": "^2.2.235",
 		"@tailwindcss/forms": "^0.5.7",
 		"@tailwindcss/typography": "^0.5.14",
 		"autoprefixer": "^10.4.20",

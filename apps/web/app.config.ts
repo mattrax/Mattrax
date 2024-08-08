@@ -68,35 +68,21 @@ export default defineConfig({
 		analyze: {
 			filename: "stats-nitro.html",
 		},
-		routeRules: {
-			"/**": {
-				// @ts-expect-error: This is in our patch
-				priority: 5,
-				headers: {
-					"Cache-Control": "public,max-age=0,must-revalidate",
-					"X-Frame-Options": "DENY",
-					"X-Content-Type-Options": "nosniff",
-					"Referrer-Policy": "strict-origin-when-cross-origin",
-					// TODO: Setup a proper content security policy
-					// "Content-Security-Policy": "script-src 'self';",
-					...(isCFPages && {
-						"Cloudflare-CDN-Cache-Control": "public,max-age=31536000,immutable",
-						"Strict-Transport-Security":
-							"max-age=31536000; includeSubDomains; preload",
-					}),
+		// We define these rules for production in `_headers`
+		routeRules: isCFPages
+			? {}
+			: {
+					"/**": {
+						// @ts-expect-error: This is in our patch
+						priority: 5,
+						headers: {
+							"Cache-Control": "public,max-age=0,must-revalidate",
+							"X-Frame-Options": "DENY",
+							"X-Content-Type-Options": "nosniff",
+							"Referrer-Policy": "strict-origin-when-cross-origin",
+						},
+					},
 				},
-			},
-			"/favicon.ico": {
-				headers: {
-					"Cache-Control": "public,immutable,max-age=31536000",
-				},
-			},
-			"/assets/**": {
-				headers: {
-					"Cache-Control": "public,immutable,max-age=31536000",
-				},
-			},
-		},
 		...(isCFPages && {
 			// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
 			// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.

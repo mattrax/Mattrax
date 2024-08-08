@@ -8,6 +8,9 @@ patchedDependencies:
   '@solidjs/start@1.0.6':
     hash: 3c4gwxs3pt6xe3wn3vd4pa5a4i
     path: patches/@solidjs__start@1.0.6.patch
+  cmdk-solid:
+    hash: rgn2watxbcjkleu6cuuivydsue
+    path: patches/cmdk-solid.patch
 
 importers:
 
@@ -106,8 +109,8 @@ importers:
         version: 3.23.8
     devDependencies:
       '@iconify/json':
-        specifier: ^2.2.234
-        version: 2.2.234
+        specifier: ^2.2.235
+        version: 2.2.235
       autoprefixer:
         specifier: ^10.4.20
         version: 10.4.20(postcss@8.4.41)
@@ -306,8 +309,8 @@ importers:
         version: 3.23.8
     devDependencies:
       '@iconify/json':
-        specifier: ^2.2.234
-        version: 2.2.234
+        specifier: ^2.2.235
+        version: 2.2.235
       '@tailwindcss/forms':
         specifier: ^0.5.7
         version: 0.5.7(tailwindcss@3.4.8)
@@ -559,8 +562,8 @@ importers:
         version: 3.23.8
     devDependencies:
       '@iconify/json':
-        specifier: ^2.2.234
-        version: 2.2.234
+        specifier: ^2.2.235
+        version: 2.2.235
       '@microsoft/microsoft-graph-types':
         specifier: ^2.40.0
         version: 2.40.0
@@ -781,7 +784,7 @@ importers:
         version: 2.1.1
       cmdk-solid:
         specifier: ^1.1.0
-        version: 1.1.0(solid-js@1.8.19)
+        version: 1.1.0(patch_hash=rgn2watxbcjkleu6cuuivydsue)(solid-js@1.8.19)
       solid-js:
         specifier: ^1.8.19
         version: 1.8.19
@@ -793,8 +796,8 @@ importers:
         version: 3.23.8
     devDependencies:
       '@iconify/json':
-        specifier: ^2.2.234
-        version: 2.2.234
+        specifier: ^2.2.235
+        version: 2.2.235
       unplugin-auto-import:
         specifier: ^0.18.2
         version: 0.18.2(rollup@4.20.0)
@@ -2175,8 +2178,8 @@ packages:
     resolution: {integrity: sha512-d2CGZR2o7fS6sWB7DG/3a95bGKQyHMACZ5aW8qGkkqQpUoZV6C0X7Pc7l4ZNMZkfNBf4VWNe9E1jRsf0G146Ew==}
     engines: {node: '>=18.18'}
 
-  '@iconify/json@2.2.234':
-    resolution: {integrity: sha512-2z0+I0YhHelZ+MPX7wHsSGKv81PicsnVlRfCYNmhZ0s1tyPo7Kkvt8QWjytPZV6f/ypb111I5jpTFB+W7bcAgQ==}
+  '@iconify/json@2.2.235':
+    resolution: {integrity: sha512-8a5r/uIZY3DvJPCkRCMly0BgmsxItMTR6RjGnifQ0kGrLSE7TpdYIfQya9Ckd2qfWjD20WZmWblpFm1FcF6ybQ==}
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
@@ -4154,9 +4157,6 @@ packages:
     peerDependencies:
       tailwindcss: '>=3.0.0 || insiders'
 
-  '@tanstack/form-core@0.27.0':
-    resolution: {integrity: sha512-v8YwMX9kevEERhtmgoWkJi0ihYcpLoImcu4o/Eub/yXBjZFbTnbZkLp/du++CYaVCu5ZsJdqzqL3mQXlk8ymaw==}
-
   '@tanstack/form-core@0.28.0':
     resolution: {integrity: sha512-HU1MDIZmhB635BJfL73fLAdTVOE1xseYrbMJKywbnwY2cEpIjKcu/5gC656bSI1jF//+NJEWRL68ZgrUevWc2A==}
 
@@ -4174,11 +4174,6 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0
       react-dom: ^16.8.0 || ^17.0.0 || ^18.0.0
-
-  '@tanstack/solid-form@0.27.0':
-    resolution: {integrity: sha512-36QJKLiERQa1/vxufCedPD/dsxB3WXVLUiJWARn0SnJaKlHh8Yz6kUdp0O0o602uu0g5oES547yztCLj99UFuw==}
-    peerDependencies:
-      solid-js: ^1.6.0
 
   '@tanstack/solid-form@0.28.0':
     resolution: {integrity: sha512-m7FNckeRBzzBNED88HlYQPDY0YcRStD1qco40FX5ULHTdi4A9tognZ6aJmRm4dXb5qE0oxHDMWSv7FqrOj5IXQ==}
@@ -4227,11 +4222,6 @@ packages:
 
   '@tanstack/virtual-core@3.8.4':
     resolution: {integrity: sha512-iO5Ujgw3O1yIxWDe9FgUPNkGjyT657b1WNX52u+Wv1DyBFEpdCdGkuVaky0M3hHFqNWjAmHWTn4wgj9rTr7ZQg==}
-
-  '@tanstack/zod-form-adapter@0.27.0':
-    resolution: {integrity: sha512-xKNJkRGc+BXjup6uPZOocxo6hOr8ZmqKAKzncIlaGXnJlLIyFaaoBMLK8+Zwz+j+tO7vzECxaP+dQMCtssct1g==}
-    peerDependencies:
-      zod: ^3.x
 
   '@tanstack/zod-form-adapter@0.28.0':
     resolution: {integrity: sha512-KbwVlgGu54ZF3wJbNbYPNen4OYbVe0nuwmPObm+v/BwiCdE7Yv3wA/iHzQqB2wY+DdjWIeHl6o4m/kyuiTVqwg==}
@@ -7537,9 +7527,6 @@ packages:
   printable-characters@1.0.42:
     resolution: {integrity: sha512-dKp+C4iXWK4vVYZmYSd0KBH5F/h1HoZRsbJ82AVKRO3PEo8L4lBS/vLwhVtpwwuYcoIsVY+1JYKR268yn480uQ==}
 
-  prism-code-editor@3.4.0-beta.1:
-    resolution: {integrity: sha512-QH6v2vYzZtpVqIHyFePk2repRQbD47C1eoZ5GXk9Ifvy1cLbhOidjO2nnXiuVjrzBBxpUhUzJjFuRAOs5iAyHQ==}
-
   prism-code-editor@3.4.0-beta.2:
     resolution: {integrity: sha512-X+CBeNJBBVSYg6v26sK8Lgpvtp6Jqv1hTCKEvr6zqFeiYM+g+QoKz9sOwQyB/DlLUwoR7rQCNh2dPDfRDLm2gw==}
 
@@ -10242,7 +10229,7 @@ snapshots:
 
   '@humanwhocodes/retry@0.3.0': {}
 
-  '@iconify/json@2.2.234':
+  '@iconify/json@2.2.235':
     dependencies:
       '@iconify/types': 2.0.0
       pathe: 1.1.2
@@ -10490,13 +10477,13 @@ snapshots:
       '@solidjs/router': 0.14.1(solid-js@1.8.19)
       '@solidjs/start': 1.0.6(patch_hash=3c4gwxs3pt6xe3wn3vd4pa5a4i)(rollup@4.20.0)(solid-js@1.8.19)(vinxi@0.4.1(@planetscale/database@1.18.0)(@types/node@22.1.0)(drizzle-orm@0.32.2(@cloudflare/workers-types@4.20240806.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.18.0)(@types/react@18.3.3)(mysql2@3.11.0)(pg@8.12.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.31.4)(xml2js@0.6.2))(vite@5.4.0(@types/node@22.1.0)(terser@5.31.4))
       '@t3-oss/env-core': 0.11.0(typescript@5.5.4)(zod@3.23.8)
-      '@tanstack/solid-form': 0.27.0(solid-js@1.8.19)
+      '@tanstack/solid-form': 0.28.0(solid-js@1.8.19)
       '@tanstack/solid-query': 5.51.21(solid-js@1.8.19)
       '@tanstack/solid-query-devtools': 5.51.21(@tanstack/solid-query@5.51.21(solid-js@1.8.19))(solid-js@1.8.19)
       '@tanstack/solid-query-persist-client': 5.51.21(@tanstack/solid-query@5.51.21(solid-js@1.8.19))(solid-js@1.8.19)
       '@tanstack/solid-table': 8.20.1(solid-js@1.8.19)
       '@tanstack/solid-virtual': 3.8.4(solid-js@1.8.19)
-      '@tanstack/zod-form-adapter': 0.27.0(zod@3.23.8)
+      '@tanstack/zod-form-adapter': 0.28.0(zod@3.23.8)
       '@trpc/client': 10.45.2(@trpc/server@10.45.2)
       '@trpc/server': 10.45.2
       '@types/pluralize': 0.0.33
@@ -10514,7 +10501,7 @@ snapshots:
       lucia: 3.2.0
       oslo: 1.2.1
       pluralize: 8.0.0
-      prism-code-editor: 3.4.0-beta.1
+      prism-code-editor: 3.4.0-beta.2
       prism-themes: 1.9.0
       prismjs: 1.29.0
       react: 18.3.1
@@ -12313,10 +12300,6 @@ snapshots:
       postcss-selector-parser: 6.0.10
       tailwindcss: 3.4.8
 
-  '@tanstack/form-core@0.27.0':
-    dependencies:
-      '@tanstack/store': 0.5.5
-
   '@tanstack/form-core@0.28.0':
     dependencies:
       '@tanstack/store': 0.5.5
@@ -12334,12 +12317,6 @@ snapshots:
       '@tanstack/virtual-core': 3.8.4
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-
-  '@tanstack/solid-form@0.27.0(solid-js@1.8.19)':
-    dependencies:
-      '@tanstack/form-core': 0.27.0
-      '@tanstack/solid-store': 0.5.5(solid-js@1.8.19)
-      solid-js: 1.8.19
 
   '@tanstack/solid-form@0.28.0(solid-js@1.8.19)':
     dependencies:
@@ -12384,11 +12361,6 @@ snapshots:
   '@tanstack/table-core@8.20.1': {}
 
   '@tanstack/virtual-core@3.8.4': {}
-
-  '@tanstack/zod-form-adapter@0.27.0(zod@3.23.8)':
-    dependencies:
-      '@tanstack/form-core': 0.27.0
-      zod: 3.23.8
 
   '@tanstack/zod-form-adapter@0.28.0(zod@3.23.8)':
     dependencies:
@@ -13289,7 +13261,7 @@ snapshots:
 
   cluster-key-slot@1.1.2: {}
 
-  cmdk-solid@1.1.0(solid-js@1.8.19):
+  cmdk-solid@1.1.0(patch_hash=rgn2watxbcjkleu6cuuivydsue)(solid-js@1.8.19):
     dependencies:
       '@kobalte/core': 0.12.6(solid-js@1.8.19)
       '@kobalte/utils': 0.9.0(solid-js@1.8.19)
@@ -14020,7 +13992,7 @@ snapshots:
       eslint: 9.8.0
       eslint-import-resolver-node: 0.3.9
       eslint-import-resolver-typescript: 3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.8.0)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.8.0))(eslint@9.8.0)
-      eslint-plugin-import: 2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.8.0)(typescript@5.5.4))(eslint-import-resolver-typescript@3.6.1)(eslint@9.8.0)
+      eslint-plugin-import: 2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.8.0)(typescript@5.5.4))(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.8.0)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.8.0))(eslint@9.8.0))(eslint@9.8.0)
       eslint-plugin-jsx-a11y: 6.9.0(eslint@9.8.0)
       eslint-plugin-react: 7.35.0(eslint@9.8.0)
       eslint-plugin-react-hooks: 4.6.2(eslint@9.8.0)
@@ -14053,7 +14025,7 @@ snapshots:
       enhanced-resolve: 5.17.1
       eslint: 9.8.0
       eslint-module-utils: 2.8.1(@typescript-eslint/parser@7.2.0(eslint@9.8.0)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.8.0)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.8.0))(eslint@9.8.0))(eslint@9.8.0)
-      eslint-plugin-import: 2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.8.0)(typescript@5.5.4))(eslint-import-resolver-typescript@3.6.1)(eslint@9.8.0)
+      eslint-plugin-import: 2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.8.0)(typescript@5.5.4))(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.8.0)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.8.0))(eslint@9.8.0))(eslint@9.8.0)
       fast-glob: 3.3.2
       get-tsconfig: 4.7.6
       is-core-module: 2.15.0
@@ -14075,7 +14047,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.8.0)(typescript@5.5.4))(eslint-import-resolver-typescript@3.6.1)(eslint@9.8.0):
+  eslint-plugin-import@2.29.1(@typescript-eslint/parser@7.2.0(eslint@9.8.0)(typescript@5.5.4))(eslint-import-resolver-typescript@3.6.1(@typescript-eslint/parser@7.2.0(eslint@9.8.0)(typescript@5.5.4))(eslint-import-resolver-node@0.3.9)(eslint-plugin-import@2.29.1(eslint@9.8.0))(eslint@9.8.0))(eslint@9.8.0):
     dependencies:
       array-includes: 3.1.8
       array.prototype.findlastindex: 1.2.5
@@ -16497,8 +16469,6 @@ snapshots:
       react-is: 18.3.1
 
   printable-characters@1.0.42: {}
-
-  prism-code-editor@3.4.0-beta.1: {}
 
   prism-code-editor@3.4.0-beta.2: {}
 

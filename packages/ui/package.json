@@ -36,7 +36,7 @@
 		"zod": "^3.23.8"
 	},
 	"devDependencies": {
-		"@iconify/json": "^2.2.234",
+		"@iconify/json": "^2.2.235",
 		"unplugin-auto-import": "^0.18.2",
 		"unplugin-icons": "^0.19.2",
 		"vite": "^5.4.0",

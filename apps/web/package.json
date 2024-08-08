@@ -90,7 +90,7 @@
 		"zod": "^3.23.8"
 	},
 	"devDependencies": {
-		"@iconify/json": "^2.2.234",
+		"@iconify/json": "^2.2.235",
 		"@microsoft/microsoft-graph-types": "^2.40.0",
 		"@simplewebauthn/types": "^10.0.0",
 		"@tailwindcss/forms": "^0.5.7",
