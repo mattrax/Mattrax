@@ -39,9 +39,9 @@ export interface Database extends DBSchema {
 		key: string;
 		value: {
 			id: string;
-			// type: "create" | "update" | "delete";
-			// table: TableName;
-			// data: any;
+			type: string;
+			applied: boolean;
+			data: any;
 		};
 	};
 	// Stored views
@@ -317,7 +317,9 @@ export const openAndInitDb = (name: string, createIfNotFound = false) =>
 
 			db.createObjectStore("_kv");
 			db.createObjectStore("_meta");
-			db.createObjectStore("_mutations");
+			db.createObjectStore("_mutations", {
+				keyPath: "id",
+			});
 			db.createObjectStore("views", {
 				keyPath: "id",
 			});

@@ -11,8 +11,10 @@ import {
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
+	Input,
 	buttonVariants,
 } from "@mattrax/ui";
+import { createWritableMemo } from "@solid-primitives/memo";
 import clsx from "clsx";
 import { For, type JSX, Show, Suspense } from "solid-js";
 import { z } from "zod";
@@ -20,6 +22,8 @@ import { determineDeviceImage } from "~/assets";
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
 import { getKey } from "~/lib/kv";
 import { createDbQuery } from "~/lib/query";
+import { useSync } from "~/lib/sync";
+import { updateUser } from "~/lib/sync/mutations";
 import { useZodParams } from "~/lib/useZodParams";
 
 export default function Page() {
@@ -134,6 +138,8 @@ export default function Page() {
 				</div>
 			}
 		>
+			<Debug userId={params.userId} />
+
 			<Card>
 				<div class="p-8 grid grid-cols-4 gap-y-8 gap-x-4">
 					<Field label="Identifier" value={data()?.id} />
@@ -268,6 +274,31 @@ export default function Page() {
 				</CardContent>
 			</Card>
 		</PageLayout>
+	);
+}
+
+function Debug(props: { userId: string }) {
+	const sync = useSync();
+
+	const data = createDbQuery((db) => db.get("users", props.userId));
+
+	const [name, setName] = createWritableMemo(() => data()?.name || "");
+
+	return (
+		<>
+			<Input value={name()} onChange={(e) => setName(e.currentTarget.value)} />
+			<Button
+				onClick={() => {
+					console.log("save", name());
+					updateUser(sync, {
+						id: props.userId,
+						name: name(),
+					});
+				}}
+			>
+				Save
+			</Button>
+		</>
 	);
 }
 

@@ -252,6 +252,8 @@ export default function Page() {
 					/>
 
 					<Field label="Device Category" value={data()?.deviceCategory} />
+
+					{/* // TODO: Enrolled by, Management name vs hostname, serial number, last check-in time, primary user, notes */}
 				</div>
 			</Card>
 		</PageLayout>

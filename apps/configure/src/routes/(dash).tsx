@@ -92,25 +92,23 @@ export default function Layout(props: ParentProps) {
 										const sync = initSync(db);
 										createCrossTabListener(db);
 
-										const abort = new AbortController();
-										onMount(() => sync.syncAll(abort));
+										onMount(() => sync.syncAll(sync.abort));
 										onCleanup(() => {
-											abort.abort();
 											// db.close(); // TODO
 										});
 
 										makeEventListener(document, "visibilitychange", () =>
-											sync.syncAll(abort),
+											sync.syncAll(sync.abort),
 										);
 
 										const [isPrimaryTab, setIsPrimaryTab] = createSignal(false);
 										createEffect(async () => {
-											while (!abort.signal.aborted) {
+											while (!sync.abort.signal.aborted) {
 												await navigator.locks
 													.request(
 														"primarytab",
 														{
-															signal: abort.signal,
+															signal: sync.abort.signal,
 														},
 														async (lock) => {
 															if (!lock) return;
@@ -118,8 +116,9 @@ export default function Layout(props: ParentProps) {
 															setIsPrimaryTab(true);
 															// We hold the lock for the tab's life
 															await new Promise((resolve) =>
-																abort.signal.addEventListener("abort", () =>
-																	resolve(undefined),
+																sync.abort.signal.addEventListener(
+																	"abort",
+																	() => resolve(undefined),
 																),
 															);
 														},
@@ -130,7 +129,7 @@ export default function Layout(props: ParentProps) {
 										});
 										createTimer2(
 											async () => {
-												if (isPrimaryTab()) await sync.syncAll(abort);
+												if (isPrimaryTab()) await sync.syncAll(sync.abort);
 											},
 											() => 60_000,
 										);

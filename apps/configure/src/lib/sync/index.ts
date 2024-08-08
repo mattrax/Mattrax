@@ -1,8 +1,10 @@
 import { createContextProvider } from "@solid-primitives/context";
 import type { IDBPDatabase } from "idb";
+import { onCleanup } from "solid-js";
 import { toast } from "solid-sonner";
 import type { Database } from "../db";
 import { deleteKey, getKey } from "../kv";
+import { applyMigrations } from "./mutation";
 import { didLastSyncCompleteSuccessfully } from "./operation";
 import * as schema from "./schema";
 
@@ -14,8 +16,12 @@ export const [SyncProvider, useSync] = createContextProvider(
 );
 
 export function initSync(db: IDBPDatabase<Database>) {
+	const abort = new AbortController();
+	onCleanup(() => abort.abort());
+
 	return {
 		db,
+		abort,
 		async syncAll(abort: AbortController): Promise<string | undefined> {
 			if (abort.signal.aborted) return;
 			if (!navigator.onLine) {
@@ -53,9 +59,12 @@ export function initSync(db: IDBPDatabase<Database>) {
 				const start = performance.now();
 				let wasError = false;
 				try {
-					await Promise.all(
-						Object.values(schema).map((sync) => sync(db, abort, accessToken)),
-					);
+					await Promise.all([
+						...Object.values(schema).map((sync) =>
+							sync(db, abort, accessToken),
+						),
+						applyMigrations(db, abort, accessToken),
+					]);
 					// We done care about the result if the sync was cancelled.
 					if (abort.signal.aborted) return;
 				} catch (err) {
