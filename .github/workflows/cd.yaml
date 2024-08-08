@@ -199,3 +199,32 @@ jobs:
       - name: Export `DEPLOYMENT_URL`
         id: result
         run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
+
+  configure:
+    name: Build & Deploy Configure
+    runs-on: ubuntu-latest
+    environment:
+      name: configure
+      url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install
+        run: pnpm i
+
+      - name: Build
+        run: pnpm configure build
+
+      - name: Deploy
+        run: |
+          set -o pipefail
+          pnpm dlx wrangler pages deploy dist/ --project-name mattrax-configure 2>&1 | tee -a BUILD_OUTPUT
+
+      - name: Export `DEPLOYMENT_URL`
+        id: result
+        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
