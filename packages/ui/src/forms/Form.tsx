@@ -8,6 +8,7 @@ import {
 	splitProps,
 } from "solid-js";
 import type { z } from "zod";
+import type { SolidFormOutput } from ".";
 
 export function createZodForm<S extends z.ZodSchema<any, z.ZodObjectDef, any>>(
 	opts: Omit<
@@ -17,7 +18,7 @@ export function createZodForm<S extends z.ZodSchema<any, z.ZodObjectDef, any>>(
 		schema: S;
 		defaultValues?: z.infer<S> | (() => z.infer<S>);
 	},
-) {
+): SolidFormOutput<z.infer<S>, ReturnType<typeof zodValidator>> {
 	const form = createForm(
 		createMemo(() => ({
 			...opts,

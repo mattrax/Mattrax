@@ -3,6 +3,8 @@ import type {
 	FieldApi,
 	FieldComponent,
 	FormApi,
+	Validator,
+	createForm,
 } from "@tanstack/solid-form";
 import {
 	type Accessor,
@@ -14,6 +16,7 @@ import {
 } from "solid-js";
 
 import clsx from "clsx";
+import type { SolidFormOutput } from ".";
 import { Input, Label } from "..";
 
 export function InputField<
@@ -24,7 +27,7 @@ export function InputField<
 		ComponentProps<typeof Input>,
 		"id" | "value" | "onInput" | "onBlur" | "form"
 	> & {
-		form: FormApi<TData, any>;
+		form: SolidFormOutput<TData, any>;
 		fieldClass?: string;
 		name: TName;
 		label?: string;

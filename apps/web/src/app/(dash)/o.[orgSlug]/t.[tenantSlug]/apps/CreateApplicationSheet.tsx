@@ -171,7 +171,7 @@ export function CreateApplicationSheet(props: {
 						<SheetTitle>Create Application</SheetTitle>
 					</SheetHeader>
 					<div class="flex flex-col space-y-1.5">
-						<form.Field name="targetType" preserveValue>
+						<form.Field name="targetType">
 							{(field) => (
 								<Tabs
 									value={field().state.value}
@@ -196,7 +196,7 @@ export function CreateApplicationSheet(props: {
 							onInput={debounce((e) => setSearch(e.target.value), 200)}
 						/>
 					</div>
-					<form.Field name="targetId" preserveValue>
+					<form.Field name="targetId">
 						{(field) => (
 							<RadioGroup.Root
 								class="flex-1 overflow-y-auto !mt-1.5"

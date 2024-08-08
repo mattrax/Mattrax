@@ -174,7 +174,6 @@ function CreateGroupDialog(props: ParentProps) {
 					fieldsetClass="space-y-2 flex flex-col"
 				>
 					<InputField
-						fieldProps={{ preserveValue: true }}
 						type="text"
 						form={form}
 						name="name"

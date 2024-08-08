@@ -9,7 +9,7 @@ export async function useStripe() {
 
 		return Object.assign(
 			new Stripe(secret, {
-				apiVersion: "2024-04-10",
+				apiVersion: "2024-06-20",
 				timeout: 1500,
 				httpClient: Stripe.createFetchHttpClient(),
 			}),

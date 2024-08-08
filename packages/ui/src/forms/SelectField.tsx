@@ -9,6 +9,7 @@ import {
 } from "solid-js";
 
 import clsx from "clsx";
+import type { SolidFormOutput } from ".";
 import { Label, Select } from "..";
 
 type DistributiveOmit<T, K extends keyof any> = T extends any
@@ -23,7 +24,7 @@ export function SelectField<
 		ComponentProps<typeof Select<TData[TName]>>,
 		"id" | "value" | "onChange" | "onBlur" | "form"
 	> & {
-		form: FormApi<TData, any>;
+		form: SolidFormOutput<TData, any>;
 		fieldClass?: string;
 		name: TName;
 		label?: string;

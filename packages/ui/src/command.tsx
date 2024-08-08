@@ -154,9 +154,7 @@ const CommandSeparator: Component<
 	);
 };
 
-const CommandItem = <T extends ValidComponent = "div">(
-	props: CommandPrimitive.CommandItemProps<T>,
-) => {
+const CommandItem = (props: CommandPrimitive.CommandItemProps) => {
 	const [local, others] = splitProps(props as any, ["class"]);
 
 	return (

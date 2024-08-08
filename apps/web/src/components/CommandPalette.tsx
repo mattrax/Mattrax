@@ -103,8 +103,9 @@ export function CommandPalette(props: ParentProps) {
 
 														return (
 															<CommandItem
-																as={href() ? "a" : "div"}
-																href={href()}
+																// TODO: Allow these to be a proper `a` tag
+																// as={href() ? "a" : "div"}
+																// href={href()}
 																value={`${category.category}|${action.title}`}
 																aria-disabled={action.disabled}
 																disabled={action.disabled}
