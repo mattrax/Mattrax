@@ -11,10 +11,10 @@
 		"docs": "pnpm --filter @mattrax/docs --",
 		"web": "pnpm --filter @mattrax/web --",
 		"email": "pnpm --filter @mattrax/email --",
-		"db:push": "DRIZZLE=1 drizzle-kit push && DRIZZLE=1 bun run ./apps/web/src/db/rust.ts",
-		"db:gen": "DRIZZLE=1 drizzle-kit generate && DRIZZLE=1 bun run ./apps/web/src/db/rust.ts && pnpm format",
+		"db:push": "DRIZZLE=1 drizzle-kit push && DRIZZLE=1 tsx ./apps/web/src/db/rust.ts",
+		"db:gen": "DRIZZLE=1 drizzle-kit generate && DRIZZLE=1 tsx ./apps/web/src/db/rust.ts && pnpm format",
 		"db:studio": "DRIZZLE=1 drizzle-kit studio",
-		"db:rs": "DRIZZLE=1 bun run ./apps/web/src/db/rust.ts",
+		"db:rs": "DRIZZLE=1 tsx ./apps/web/src/db/rust.ts",
 		"typecheck": "tsc -b",
 		"lint": "biome lint .",
 		"fix": "biome lint --write && biome format --write && biome check --write",
@@ -31,6 +31,7 @@
 		"dotenv": "^16.4.5",
 		"drizzle-kit": "^0.23.2",
 		"pg": "^8.12.0",
+		"tsx": "^4.16.5",
 		"typescript": "^5.5.4"
 	},
 	"devDependencies": {

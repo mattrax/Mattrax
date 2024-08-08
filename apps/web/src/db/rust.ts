@@ -433,5 +433,5 @@ exportQueries(
 				}),
 		}),
 	],
-	path.join(__dirname, "../../../../crates/mx-db/src/db.rs"),
+	path.join(import.meta.dirname, "../../../../crates/mx-db/src/db.rs"),
 );

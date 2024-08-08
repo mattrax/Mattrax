@@ -18,7 +18,6 @@ And have the following software installed:
  - [Rust](https://www.rust-lang.org)
  - [pnpm](https://pnpm.io)
  - [Node.js](https://nodejs.org)
- - (for some internal tooling) [Bun](https://bun.sh)
 
 ```bash
 # API & Web UI
