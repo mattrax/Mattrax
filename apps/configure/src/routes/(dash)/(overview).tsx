@@ -9,13 +9,14 @@ export default function Page() {
 			devices: await db.count("devices"),
 			groups: await db.count("groups"),
 			policies: await db.count("policies"),
+			scripts: await db.count("scripts"),
 			applications: await db.count("apps"),
 		};
 	});
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Overview</PageLayoutHeading>}>
-			<div class="grid gap-4 grid-cols-5">
+			<div class="grid gap-4 grid-cols-6">
 				<StatItem
 					title="Users"
 					href="users"
@@ -33,6 +34,12 @@ export default function Page() {
 					href="policies"
 					icon={<IconPhScroll />}
 					value={counts()?.policies || 0}
+				/>
+				<StatItem
+					title="Scripts"
+					href="scripts"
+					icon={<IconPhTerminal />}
+					value={counts()?.scripts || 0}
 				/>
 				<StatItem
 					title="Applications"

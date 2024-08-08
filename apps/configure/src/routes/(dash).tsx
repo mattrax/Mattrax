@@ -295,6 +295,7 @@ const items = [
 	{ title: "Devices", href: "devices" },
 	{ title: "Groups", href: "groups" },
 	{ title: "Policies", href: "policies" },
+	{ title: "Scripts", href: "scripts" },
 	{ title: "Applications", href: "applications" },
 	{ title: "Views", href: "views" },
 	{ title: "Settings", href: "settings" },
@@ -585,7 +586,7 @@ function SyncPanel() {
 	return (
 		<div class="flex justify-center items-center space-x-2">
 			<Suspense>
-				<Show when={!persistentStorageAccess() ?? false}>
+				<Show when={!(persistentStorageAccess() ?? false)}>
 					<div>
 						<Tooltip>
 							<TooltipTrigger

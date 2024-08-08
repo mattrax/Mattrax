@@ -225,6 +225,37 @@ export const entities = {
 		},
 		filters: {},
 	}),
+	scripts: defineEntity({
+		load: async (db) => await db.getAll("scripts"),
+		columns: {
+			type: typeColumn("SCRIPT"),
+			name: {
+				header: "Name",
+				render: (script) => (
+					<A
+						class="font-medium hover:underline focus:underline p-1 -m-1 w-full block"
+						href={`../scripts/${script.id}`}
+					>
+						{script.name}
+					</A>
+				),
+				raw: (script) => script.name,
+			},
+			description: {
+				header: "Description",
+				render: (group) => <p>{group.description}</p>,
+				raw: (group) => group.description!, // TODO: Remove assert
+			},
+		},
+		actions: {
+			delete: {
+				title: "Delete",
+				variant: "destructive",
+				apply: async (data) => alert("TODO: Bulk delete"),
+			},
+		},
+		filters: {},
+	}),
 	apps: defineEntity({
 		load: async (db) => await db.getAll("apps"),
 		columns: {

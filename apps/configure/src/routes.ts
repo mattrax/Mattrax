@@ -51,6 +51,14 @@ export const routes = [
 				component: lazy(() => import("./routes/(dash)/policies/[policyId]")),
 			},
 			{
+				path: "/scripts",
+				component: lazy(() => import("./routes/(dash)/scripts/(scripts)")),
+			},
+			{
+				path: "/scripts/:scriptId",
+				component: lazy(() => import("./routes/(dash)/scripts/[scriptId]")),
+			},
+			{
 				path: "/applications",
 				component: lazy(
 					() => import("./routes/(dash)/applications/(applications)"),

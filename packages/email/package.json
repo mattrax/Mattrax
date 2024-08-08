@@ -7,7 +7,7 @@
 	"types": "./src/index.ts",
 	"scripts": {
 		"dev": "email dev",
-		"compile": "tsx ./bin/compile.ts && pnpm -C ../.. fix"
+		"compile": "tsx ./bin/compile.ts && pnpm -C ../.. format"
 	},
 	"dependencies": {
 		"@react-email/components": "0.0.22",
