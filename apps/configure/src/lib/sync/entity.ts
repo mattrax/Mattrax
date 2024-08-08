@@ -1,9 +1,8 @@
 import type { IDBPDatabase, StoreNames } from "idb";
 import { z } from "zod";
 import type { Database, TableName } from "../db";
-import { registerBatchedOperationAsync } from "./microsoft";
+import { type Operation, registerBatchedOperationAsync } from "./microsoft";
 import { defineSyncOperation } from "./operation";
-import type { Operation } from "./state";
 
 const stripGraphAPIPrefix = (url: string) => {
 	let r = url

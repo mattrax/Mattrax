@@ -99,7 +99,12 @@ export interface Database extends DBSchema {
 					| "windowsBulkUserless"
 					| "windowsAutoEnrollment"
 					| "windowsBulkAzureDomainJoin"
-					| "windowsCoManagement";
+					| "windowsCoManagement"
+
+					// This isn't in the docs but it is in the data so...
+					// TODO: Maybe check OpenAPI docs if we can discover more values they aren't telling us about?
+					| "AzureDomainJoined"
+					| "DeviceEnrollment";
 			};
 			isCompliant?: boolean;
 			isManaged: boolean;

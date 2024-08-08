@@ -25,6 +25,9 @@ import {
 	sessions,
 } from ".";
 
+// TODO:
+console.log("DEBUG PATH", import.meta.dirname);
+
 dotenv.config({
 	path: "../../../../.env",
 });
@@ -435,6 +438,3 @@ exportQueries(
 	],
 	path.join(import.meta.dirname, "../../../../crates/mx-db/src/db.rs"),
 );
-
-// TODO:
-console.log("DEBUG PATH", import.meta.dirname);

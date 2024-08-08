@@ -118,12 +118,12 @@ function Content(props: ReturnType<typeof createSearchPageContext>) {
 		<Suspense
 			fallback={
 				<Show when>
-					{() =>
-						(
-							// TODO: We don't want this. Theorically the table should suspend on a row level and can remove this barrier.
-							// biome-ignore lint/style/noCommaOperator: <explanation>
-							console.error("Table parent suspended!"), null
-						)}
+					{(() => {
+						// TODO: We don't want this. Theorically the table should suspend on a row level and can remove this barrier.
+						console.error("Table parent suspended!");
+
+						return null;
+					})()}
 				</Show>
 			}
 		>

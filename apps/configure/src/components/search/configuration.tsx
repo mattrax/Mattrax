@@ -71,23 +71,23 @@ export const entities = {
 		filters: {
 			email: {
 				title: "Email",
-				icon: IconPhEnvelope,
-				operations: [
-					// TODO: Allow the user to define `string[]` for it
-					{
-						title: "in",
-						apply: (data) => {},
-					},
-					{
-						title: "not in",
-						apply: (data) => {},
-					},
-					// TODO: Allow the user to define `string` using Combobox (with values from DB)
-					{
-						title: "equals",
-						apply: (data) => {},
-					},
-				],
+				icon: IconPhEnvelope as any,
+				// operations: [
+				// 	// TODO: Allow the user to define `string[]` for it
+				// 	{
+				// 		title: "in",
+				// 		apply: (data) => {},
+				// 	},
+				// 	{
+				// 		title: "not in",
+				// 		apply: (data) => {},
+				// 	},
+				// 	// TODO: Allow the user to define `string` using Combobox (with values from DB)
+				// 	{
+				// 		title: "equals",
+				// 		apply: (data) => {},
+				// 	},
+				// ],
 				// render: (data) => data.email,
 			},
 		},
@@ -112,12 +112,12 @@ export const entities = {
 			model: {
 				header: "Model",
 				render: (device) => <p>{device.model}</p>,
-				raw: (device) => device.model,
+				raw: (device) => device.model!, // TODO: Remove assert
 			},
 			manufacturer: {
 				header: "Manufacturer",
 				render: (device) => <p>{device.manufacturer}</p>,
-				raw: (device) => device.manufacturer,
+				raw: (device) => device.manufacturer!, // TODO: Remove assert
 			},
 		},
 		actions: {
@@ -182,7 +182,7 @@ export const entities = {
 			description: {
 				header: "Description",
 				render: (group) => <p>{group.description}</p>,
-				raw: (group) => group.description,
+				raw: (group) => group.description!, // TODO: Remove assert
 			},
 		},
 		actions: {
@@ -213,7 +213,7 @@ export const entities = {
 			description: {
 				header: "Description",
 				render: (group) => <p>{group.description}</p>,
-				raw: (group) => group.description,
+				raw: (group) => group.description!, // TODO: Remove assert
 			},
 		},
 		actions: {
@@ -244,7 +244,7 @@ export const entities = {
 			description: {
 				header: "Description",
 				render: (group) => <p>{group.description}</p>,
-				raw: (group) => group.description,
+				raw: (group) => group.description!, // TODO: Remove assert
 			},
 		},
 		actions: {

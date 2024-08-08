@@ -32,9 +32,11 @@ export const me = defineSyncOperation<undefined>(
 					id: "mePhoto",
 					method: "GET",
 					url: "/me/photo/$value",
-					headers: {
-						"If-None-Match": oldMe?.avatarEtag,
-					},
+					headers: oldMe?.avatarEtag
+						? {
+								"If-None-Match": oldMe?.avatarEtag,
+							}
+						: {},
 				},
 			],
 			accessToken,
