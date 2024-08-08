@@ -2,7 +2,6 @@
 	storage mysql
 	admin off
 	email hello@mattrax.app
-	acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
 	on_demand_tls {
 		ask http://localhost:9000/internal/caddy?auth={$INTERNAL_SECRET}
 	}
