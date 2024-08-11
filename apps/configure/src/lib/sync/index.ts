@@ -1,5 +1,4 @@
 import { createContextProvider } from "@solid-primitives/context";
-import type { IDBPDatabase } from "idb";
 import { onCleanup } from "solid-js";
 import { toast } from "solid-sonner";
 import type { Database } from "../db";
@@ -15,7 +14,7 @@ export const [SyncProvider, useSync] = createContextProvider(
 	undefined!,
 );
 
-export function initSync(db: IDBPDatabase<Database>) {
+export function initSync(db: Database) {
 	const abort = new AbortController();
 	onCleanup(() => abort.abort());
 

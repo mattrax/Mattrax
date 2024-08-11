@@ -20,7 +20,6 @@ import {
 } from "solid-js";
 import { createMutable } from "solid-js/store";
 import { z } from "zod";
-import type { Database } from "~/lib/db";
 import { createDbQuery } from "~/lib/query";
 import { useZodParams } from "~/lib/useZodParams";
 
@@ -96,7 +95,7 @@ export default function Page() {
 }
 
 // function RenderSettingsCatalog(props: {
-// 	policy: Database["policies"]["value"];
+// 	policy: InferStoreValue<"policies">;
 // 	configurationSettings: Accessor<any>;
 // 	configurationCategories: Accessor<any>;
 // 	state: Record<string, any>;

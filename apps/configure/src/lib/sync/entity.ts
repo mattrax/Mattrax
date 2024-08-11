@@ -1,6 +1,5 @@
-import type { IDBPDatabase, StoreNames } from "idb";
 import { z } from "zod";
-import type { Database, TableName } from "../db";
+import type { Database, StoreNames, TableName } from "../db";
 import { type Operation, registerBatchedOperationAsync } from "./microsoft";
 import { defineSyncOperation } from "./operation";
 
@@ -44,7 +43,7 @@ type EntityMeta = {
 
 // TODO: Handle https://learn.microsoft.com/en-us/graph/delta-query-overview#synchronization-reset
 export function defineSyncEntity<T extends z.ZodTypeAny>(
-	name: StoreNames<Database> & TableName,
+	name: StoreNames & TableName,
 	options: {
 		// The Microsoft endpoint to fetch the data.
 		// This is relative as we use `/$batch`.
@@ -55,20 +54,13 @@ export function defineSyncEntity<T extends z.ZodTypeAny>(
 		// The schema of each item in the returning data.
 		schema: T;
 		// Insert or update the data in the database.
-		upsert: (
-			db: IDBPDatabase<Database>,
-			data: z.output<T>,
-			syncId: string,
-		) => Promise<void>;
+		upsert: (db: Database, data: z.output<T>, syncId: string) => Promise<void>;
 		// Remove an entity from the database.
 		// Be aware this will only be called for delta queries. Your expected to implement `cleanup` for full-syncs.
-		delete: (
-			db: IDBPDatabase<Database>,
-			id: z.output<T>["id"],
-		) => Promise<void>;
+		delete: (db: Database, id: z.output<T>["id"]) => Promise<void>;
 		// Run after the sync is completed.
 		// This is useful for cleaning up all data not returned in the current full-sync (as non-delta queries have no remove action).
-		cleanup: (db: IDBPDatabase<Database>, syncId: string) => Promise<void>;
+		cleanup: (db: Database, syncId: string) => Promise<void>;
 	},
 ) {
 	const endpoints = Array.isArray(options.endpoint)

@@ -1,4 +1,3 @@
-import type { IDBPDatabase } from "idb";
 import type { useSync } from ".";
 import type { Database } from "../db";
 import * as allMutations from "./mutations";
@@ -11,7 +10,9 @@ export function defineMutation<M>(
 		commit: (data: M, accessToken: string) => Promise<void> | void;
 		// apply the mutation against the local database
 		// We rely on the upsert behaviour of sync to revert this
-		apply: (db: IDBPDatabase<Database>, data: M) => Promise<void> | void;
+		apply: (db: Database, data: M) => Promise<void> | void;
+		// rollback the mutation against the local database
+		rollback: (db: Database, data: M) => Promise<void> | void;
 	},
 ) {
 	const callback = async (sync: ReturnType<typeof useSync>, data: M) => {
@@ -58,7 +59,7 @@ const mutations = Object.fromEntries(
 // TODO: Handle `applied: false` mutations on load
 
 export async function applyMigrations(
-	db: IDBPDatabase<Database>,
+	db: Database,
 	abort: AbortController,
 	accessToken: string,
 ) {

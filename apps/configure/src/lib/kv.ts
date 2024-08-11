@@ -1,4 +1,3 @@
-import type { IDBPDatabase } from "idb";
 import type { User } from "./auth";
 import type { Database } from "./db";
 import type { Org } from "./sync/schema";
@@ -13,14 +12,14 @@ export type KvValue = {
 };
 
 export async function getKey<K extends keyof KvValue | undefined = undefined>(
-	db: IDBPDatabase<Database>,
+	db: Database,
 	key?: K,
 ): Promise<(K extends keyof KvValue ? KvValue[K] : KvValue) | undefined> {
 	return key ? await db.get("_kv", key) : await db.getAll("_kv");
 }
 
 export async function setKey<K extends keyof KvValue>(
-	db: IDBPDatabase<Database>,
+	db: Database,
 	key: K,
 	value: KvValue[K],
 ): Promise<void> {
@@ -28,7 +27,7 @@ export async function setKey<K extends keyof KvValue>(
 }
 
 export async function deleteKey<K extends keyof KvValue>(
-	db: IDBPDatabase<Database>,
+	db: Database,
 	key: K,
 ): Promise<void> {
 	await db.delete("_kv", key);

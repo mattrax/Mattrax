@@ -1,6 +1,6 @@
 import { A } from "@solidjs/router";
 import { createColumnHelper } from "@tanstack/solid-table";
-import type { Database } from "~/lib/db";
+import type { InferStoreValue } from "~/lib/db";
 import { createDbQuery } from "~/lib/query";
 import { createBulkDeleteDialog } from "~c/BulkDeleteDialog";
 import { PageLayout, PageLayoutHeading } from "~c/PageLayout";
@@ -11,7 +11,7 @@ import {
 	selectCheckboxColumn,
 } from "~c/StandardTable";
 
-const column = createColumnHelper<Database["views"]["value"]>();
+const column = createColumnHelper<InferStoreValue<"views">>();
 
 const columns = [
 	selectCheckboxColumn,

@@ -348,23 +348,24 @@ export function Field<T>(props: {
 						}
 					};
 
-					createEventListener(document, "click", (e) => {
-						if (e.target === ref) return;
-						fire();
-					});
-
-					createEventListener(document, "keydown", (e) => {
-						if (e.key === "Escape" || e.key === "Tab") setEditing(false);
-						if (e.key === "Enter" && e.target === ref) {
-							fire();
-						}
-					});
-
 					onMount(() => ref.focus());
 
 					// TODO: Suspense?
 					return (
-						<Input ref={ref} value={props.value} disabled={state.pending} />
+						<Input
+							ref={ref}
+							value={props.value as any}
+							disabled={state.pending}
+							onKeyDown={(e) => {
+								if (e.key === "Escape") setEditing(false);
+								if (e.key === "Enter") fire();
+							}}
+							onFocusOut={() => {
+								if (!editing()) return;
+								setEditing(false);
+								fire();
+							}}
+						/>
 					);
 				}}
 			</Show>

@@ -31,7 +31,7 @@ import {
 } from "@solidjs/router";
 import { createMutation } from "@tanstack/solid-query";
 import clsx from "clsx";
-import { type IDBPDatabase, openDB } from "idb";
+import { openDB } from "idb";
 import {
 	ErrorBoundary,
 	For,
@@ -48,7 +48,7 @@ import { toast } from "solid-sonner";
 import { z } from "zod";
 import { type User, generateOAuthUrl, useUser } from "~/lib/auth";
 import { createTimer2 } from "~/lib/createTimer";
-import { type Database, dbVersion, openAndInitDb } from "~/lib/db";
+import { type Database, dbVersion } from "~/lib/db";
 import { getDbCached } from "~/lib/db-cache";
 import { deleteKey, getKey } from "~/lib/kv";
 import { createCrossTabListener, createDbQuery } from "~/lib/query";
@@ -64,7 +64,7 @@ export default function Layout(props: ParentProps) {
 		<CapabilitiesOverlay>
 			<Show when={params.uid} keyed>
 				{(userId) => {
-					const db = createAsync<IDBPDatabase<Database>>(async (prevDb) => {
+					const db = createAsync<Database>(async (prevDb) => {
 						// TODO
 						// if (prevDb) prevDb.close();
 						// return await openAndInitDb(userId);
@@ -191,6 +191,8 @@ function CapabilitiesOverlay(props: ParentProps) {
 }
 
 function GenericErrorScreen(err: Error) {
+	console.error(err);
+
 	const mutation = createMutation(() => ({
 		mutationFn: async (data) => {
 			const databases = await indexedDB.databases();

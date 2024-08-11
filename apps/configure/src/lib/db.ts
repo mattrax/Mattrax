@@ -1,4 +1,5 @@
-import { type DBSchema, openDB } from "idb";
+import type { DBSchema, StoreNames as IDBPStoreNames } from "idb";
+import { type IDBPDatabaseExt, openDB } from "idbp";
 import type { Filter } from "~/components/search/filters";
 import type { SyncOperation } from "./sync/operation";
 
@@ -10,7 +11,12 @@ export type TableName =
 	| "scripts"
 	| "apps";
 
-export interface Database extends DBSchema {
+export type Database = IDBPDatabaseExt<DbTypes>;
+export type StoreNames = IDBPStoreNames<DbTypes>;
+export type InferStoreKey<T extends keyof DbTypes> = DbTypes[T]["value"];
+export type InferStoreValue<T extends keyof DbTypes> = DbTypes[T]["value"];
+
+export interface DbTypes extends DBSchema {
 	// Used to store general information
 	_kv: {
 		key: string;
@@ -305,7 +311,7 @@ export interface Database extends DBSchema {
 export const dbVersion = 1;
 
 export const openAndInitDb = (name: string, createIfNotFound = false) =>
-	openDB<Database>(name, dbVersion, {
+	openDB<DbTypes>(name, dbVersion, {
 		upgrade(db, oldVersion, newVersion, tx) {
 			// Aborting causes the DB creation to fail (in only Chrome *sigh*)
 			if (oldVersion === 0 && !createIfNotFound) {

@@ -1,5 +1,4 @@
 import type { ButtonProps } from "@mattrax/ui";
-import type { IDBPDatabase } from "idb";
 import type { JSX } from "solid-js";
 import type { Database } from "~/lib/db";
 
@@ -23,7 +22,7 @@ export function defineEntity<T>(entity: Entity<T>) {
 }
 
 export type Entity<T> = {
-	load: (db: IDBPDatabase<Database>) => Promise<T[]>;
+	load: (db: Database) => Promise<T[]>;
 	columns: ColumnDefinitions<T>;
 	filters: FilterDefinitions<T>;
 	actions: ActionDefinitions<T>;

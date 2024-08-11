@@ -3,12 +3,11 @@
 
 import type { IDBPDatabase } from "idb";
 import { z } from "zod";
-import { mapUser } from "../auth";
-import type { Database } from "../db";
-import { getKey, setKey as putKey } from "../kv";
-import { defineSyncEntity, merge, odataResponseSchema } from "./entity";
-import { registerBatchedOperationAsync } from "./microsoft";
-import { defineSyncOperation } from "./operation";
+import { mapUser } from "../../auth";
+import { getKey, setKey as putKey } from "../../kv";
+import { defineSyncEntity, merge, odataResponseSchema } from "../entity";
+import { registerBatchedOperationAsync } from "../microsoft";
+import { defineSyncOperation } from "../operation";
 
 const userSchema = z.object({
 	id: z.string(),

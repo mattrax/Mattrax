@@ -27,6 +27,8 @@
     "paths": {
       "~/*": ["./src/*"],
       "~c/*": ["./src/components/*"],
+      "idbp": ["./src/lib/idbp/index"],
+      "idbp/utils": ["./src/lib/idbp/utils"],
     },
     "types": ["vite/client", "@mattrax/ui/types"],
   },

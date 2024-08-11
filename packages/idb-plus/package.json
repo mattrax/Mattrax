@@ -1,0 +1,20 @@
+{
+	"name": "idb-plus",
+	"version": "0.0.1",
+	"description": "A bunch of utilities for idb",
+	"author": "Oscar Beaumont",
+	"license": "MIT",
+	"main": "src/index.ts",
+	"keywords": ["indexeddb", "idb", "observers", "reactive"],
+	"scripts": {
+		"test": "vitest"
+	},
+	"peerDependencies": {
+		"idb": "^8.0.0"
+	},
+	"devDependencies": {
+		"fake-indexeddb": "^6.0.0",
+		"idb": "^8.0.0",
+		"vitest": "^2.0.5"
+	}
+}

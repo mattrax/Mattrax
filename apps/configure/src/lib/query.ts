@@ -1,6 +1,5 @@
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { createDeepSignal } from "@solid-primitives/resource";
-import type { IDBPDatabase } from "idb";
 import {
 	type Resource,
 	type ResourceActions,
@@ -14,27 +13,19 @@ const syncBroadcastChannel = new BroadcastChannel("sync");
 
 // Create an observer for the database, using the IndexedDB Observers polyfill.
 function createDbObserver(
-	db: IDBPDatabase<Database>,
+	db: Database,
 	onChange: (objectStore: string) => void,
 ) {
 	const stores = [...db.objectStoreNames];
 	if (stores.length === 0) return;
 
-	// @ts-expect-error // TODO: Typescript support for IndexedDB Observers polyfill
-	const observer = db.observe(
-		// This subscribes to all object stores.
-		// This is going to be less efficient but it's the easiest way to get the better DX now without proxies or monkey patching.
-		// If we want something more efficient we need to track the object stores used in the `query` fn. Maybe could do with transaction but that's got it's own problems (auto-commit).
-		[...db.objectStoreNames],
-		(changes: any, metadata: any) => {
-			if (!changes || changes.length === 0) return;
-			onChange(metadata.objectStoreName);
-		},
-	);
-	if (!observer) console.error("Error registering observer!");
-	onCleanup(() => {
-		if (observer) observer.stop();
-	});
+	// TODO: Batching updates (30ms or so maybe) so SolidJS is under less stress
+
+	// This subscribes to all object stores.
+	// This is going to be less efficient but it's the easiest way to get the better DX now cause to filter we need autotracking.
+	// If we want something more efficient we need to track the object stores used in the `query` fn. Maybe could do with transaction but that's got it's own problems (auto-commit).
+	const cleanup = db.idbp.subscribe((e) => onChange(e.storeName as string));
+	onCleanup(() => cleanup());
 }
 
 // create a query that will automatically rerun when the database changes
@@ -42,7 +33,7 @@ function createDbObserver(
 // Ensure you keep expensive operations out of the query function and use memo's instead.
 // The query is reconciled into a store to ensure downstream dependencies are only trigger when required.
 export function createDbQuery<T>(
-	query: (db: IDBPDatabase<Database>) => Promise<T> | T,
+	query: (db: Database) => Promise<T> | T,
 	options: { initialValue?: T } = {},
 ) {
 	const sync = useSync();
@@ -70,7 +61,7 @@ export function createDbQuery<T>(
 }
 
 // Creates a listener that lets other tabs know when the database has been updated.
-export const createCrossTabListener = (db: IDBPDatabase<Database>) =>
+export const createCrossTabListener = (db: Database) =>
 	createDbObserver(db, (objectStore) =>
 		syncBroadcastChannel.postMessage(JSON.stringify([db.name, objectStore])),
 	);

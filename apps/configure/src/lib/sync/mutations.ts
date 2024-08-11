@@ -12,16 +12,14 @@ export const updateUser = defineMutation<{
 				method: "PATCH",
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: accessToken, // TODO: Get access token
+					Authorization: accessToken,
 				},
 				body: JSON.stringify({
 					displayName: data.name,
 				}),
 			},
 		);
-
 		// TODO: Handle Microsoft unauthorised error
-
 		// TODO: Ensure response is reported as valid
 	},
 	apply: async (db, data) => {
@@ -34,5 +32,33 @@ export const updateUser = defineMutation<{
 			name: data.name,
 		});
 		await tx.done;
+	},
+	rollback: async (db, data) => {
+		// TODO: We really need a rollback if this fails to commit to Microsoft
+	},
+});
+
+export const deleteUser = defineMutation<{
+	id: string;
+}>("deleteUser", {
+	commit: async (data, accessToken) => {
+		// TODO: Use Microsoft batching API
+		const response = await fetch(
+			`https://graph.microsoft.com/beta/users/${data.id}`,
+			{
+				method: "DELETE",
+				headers: {
+					Authorization: accessToken,
+				},
+			},
+		);
+		// TODO: Handle Microsoft unauthorised error
+		// TODO: Ensure response is reported as valid
+	},
+	apply: async (db, data) => {
+		// TODO
+	},
+	rollback: async (db, data) => {
+		// TODO: We really need a rollback if this fails to commit to Microsoft
 	},
 });

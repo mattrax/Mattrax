@@ -1,4 +1,3 @@
-import type { IDBPDatabase } from "idb";
 import type { Database, TableName } from "../db";
 
 export type SyncOperation = TableName | "me" | "organization";
@@ -17,7 +16,7 @@ type SyncOperationResult<M> =
 
 type SyncOperationContext = {
 	// IndexDB instance
-	db: IDBPDatabase<Database>;
+	db: Database;
 	// The identifier of the current sync operation
 	syncId: string;
 	// The last sync time.
@@ -56,11 +55,7 @@ export function defineSyncOperation<M>(
 		},
 	) => Promise<void> | void,
 ) {
-	return async (
-		db: IDBPDatabase<Database>,
-		abort: AbortController,
-		accessToken: string,
-	) => {
+	return async (db: Database, abort: AbortController, accessToken: string) => {
 		// Ensure we are in the "syncing" state
 		const [syncId, initialMetadata, initialCompleted, initialTotal]: [
 			string,
@@ -148,16 +143,14 @@ export function defineSyncOperation<M>(
 	};
 }
 
-export async function resetSyncState(db: IDBPDatabase<Database>) {
+export async function resetSyncState(db: Database) {
 	await navigator.locks.request("sync", async (lock) => {
 		if (!lock) return;
 		await db.clear("_meta");
 	});
 }
 
-export async function didLastSyncCompleteSuccessfully(
-	db: IDBPDatabase<Database>,
-) {
+export async function didLastSyncCompleteSuccessfully(db: Database) {
 	const meta = await db.getAll("_meta");
 	return meta.every((m) => "syncedAt" in m);
 }
