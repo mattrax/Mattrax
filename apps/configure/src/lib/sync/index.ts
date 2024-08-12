@@ -4,8 +4,10 @@ import { toast } from "solid-sonner";
 import type { Database } from "../db";
 import { deleteKey, getKey } from "../kv";
 import { applyMigrations } from "./mutation";
-import { didLastSyncCompleteSuccessfully } from "./operation";
-import * as schema from "./schema";
+import {
+	type defineSyncOperation,
+	didLastSyncCompleteSuccessfully,
+} from "./operation";
 
 export type SyncEngine = ReturnType<typeof initSync>;
 
@@ -13,6 +15,8 @@ export const [SyncProvider, useSync] = createContextProvider(
 	(props: { engine: SyncEngine }) => props.engine,
 	undefined!,
 );
+
+const schema = import.meta.glob("./schema/*.ts");
 
 export function initSync(db: Database) {
 	const abort = new AbortController();
@@ -59,9 +63,21 @@ export function initSync(db: Database) {
 				let wasError = false;
 				try {
 					await Promise.all([
-						...Object.values(schema).map((sync) =>
-							sync(db, abort, accessToken),
-						),
+						...Object.values(schema).map(async (sync) => {
+							await Promise.all(
+								Object.values((await sync()) as any)
+									.filter(
+										(v: any) => "isSyncOperation" in v && v.isSyncOperation,
+									)
+									.map((operation: any) =>
+										(operation as ReturnType<typeof defineSyncOperation>)(
+											db,
+											abort,
+											accessToken,
+										),
+									),
+							);
+						}),
 						applyMigrations(db, abort, accessToken),
 					]);
 					// We done care about the result if the sync was cancelled.

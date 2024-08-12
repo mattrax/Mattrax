@@ -55,7 +55,11 @@ export function defineSyncOperation<M>(
 		},
 	) => Promise<void> | void,
 ) {
-	return async (db: Database, abort: AbortController, accessToken: string) => {
+	const syncFn = async (
+		db: Database,
+		abort: AbortController,
+		accessToken: string,
+	) => {
 		// Ensure we are in the "syncing" state
 		const [syncId, initialMetadata, initialCompleted, initialTotal]: [
 			string,
@@ -141,6 +145,8 @@ export function defineSyncOperation<M>(
 			});
 		} while (result.type !== "complete");
 	};
+
+	return Object.assign(syncFn, { isSyncOperation: true });
 }
 
 export async function resetSyncState(db: Database) {

@@ -1,6 +1,6 @@
 import { useNavigate } from "@solidjs/router";
 import { openAndInitDb } from "./db";
-import { getKey, setKey } from "./kv";
+import { getKey, putKey } from "./kv";
 import { createDbQuery } from "./query";
 
 const clientId = "5dd42e00-78e7-474a-954a-bb4e5085e820";
@@ -62,8 +62,8 @@ export async function verifyOAuthCode(code: string) {
 	const userId = (await user.json()).id;
 
 	const db = await openAndInitDb(userId, true);
-	await setKey(db, "accessToken", data.access_token);
-	await setKey(db, "refreshToken", data.refresh_token);
+	await putKey(db, "accessToken", data.access_token);
+	await putKey(db, "refreshToken", data.refresh_token);
 
 	return userId;
 }
@@ -112,7 +112,7 @@ export function useUser() {
 			});
 			// TODO: Zod validation on fetch + handle unauthorised redirect.
 			const user = mapUser(await userData.json());
-			await setKey(await db, "user", user);
+			await putKey(await db, "user", user);
 			return user;
 		}
 		return user;

@@ -18,7 +18,7 @@ export async function getKey<K extends keyof KvValue | undefined = undefined>(
 	return key ? await db.get("_kv", key) : await db.getAll("_kv");
 }
 
-export async function setKey<K extends keyof KvValue>(
+export async function putKey<K extends keyof KvValue>(
 	db: Database,
 	key: K,
 	value: KvValue[K],
