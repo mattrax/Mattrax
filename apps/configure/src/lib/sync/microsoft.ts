@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { UnauthorizedError } from ".";
 
 export type Operation = {
@@ -71,5 +72,19 @@ export async function registerBatchedOperationAsync(
 				}),
 			);
 		}, 20);
+	});
+}
+
+export function odataResponseSchema<S extends z.ZodTypeAny>(schema: S) {
+	return z.object({
+		"@odata.deltaLink": z.string().optional(),
+		"@odata.nextLink": z.string().optional(),
+		"@odata.count": z.number().optional(),
+		value: z.array(
+			z.union([
+				schema,
+				z.object({ "@removed": z.object({}).passthrough(), id: z.any() }),
+			]),
+		),
 	});
 }

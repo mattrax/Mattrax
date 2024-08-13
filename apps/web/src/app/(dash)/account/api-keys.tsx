@@ -84,10 +84,10 @@ function CreateAPIKeyCard() {
 		onSuccess: (apiKey) => setDialogState({ open: true, apiKey }),
 		...withDependantQueries(apiKeys),
 	}));
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ name: z.string() }),
 		onSubmit: ({ value }) => createAPIKey.mutateAsync(value),
-	});
+	}));
 
 	return (
 		<Card>

@@ -104,7 +104,7 @@ function CreateTenant() {
 	const navigate = useNavigate();
 	const trpcCtx = trpc.useContext();
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ name: z.string() }),
 		async onSubmit(data) {
 			const tenantId = await createTenant.mutateAsync({
@@ -119,7 +119,7 @@ function CreateTenant() {
 
 			await startTransition(() => navigate(`t/${tenantId}`));
 		},
-	});
+	}));
 
 	return (
 		<div class="flex flex-col justify-center items-center flex-1 w-full">

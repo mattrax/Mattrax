@@ -33,18 +33,18 @@ export default function Page() {
 		...withDependantQueries(policy),
 	}));
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ name: z.string() }),
-		defaultValues: () => ({
+		defaultValues: {
 			name: policy.data?.name || "",
-		}),
+		},
 		onSubmit: ({ value }) => {
 			updatePolicy.mutateAsync({
 				id: policyId(),
 				name: value.name,
 			});
 		},
-	});
+	}));
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Settings</PageLayoutHeading>}>

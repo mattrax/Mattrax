@@ -73,7 +73,7 @@ export default function Layout(props: ParentProps) {
 
 					return (
 						<ErrorBoundary
-							fallback={(err) => {
+							fallback={(err, reset) => {
 								if (
 									// This event is when DB that doesn't exist is opened.
 									// We do some hackery in `upgrade` when we detect this condition.
@@ -83,7 +83,7 @@ export default function Layout(props: ParentProps) {
 									return <Navigate href="/" />;
 								}
 
-								return GenericErrorScreen(err);
+								return GenericErrorScreen(err, reset);
 							}}
 						>
 							<Suspense>
@@ -190,7 +190,7 @@ function CapabilitiesOverlay(props: ParentProps) {
 	);
 }
 
-function GenericErrorScreen(err: Error) {
+function GenericErrorScreen(err: Error, reset: () => void) {
 	console.error(err);
 
 	const mutation = createMutation(() => ({
@@ -204,6 +204,9 @@ function GenericErrorScreen(err: Error) {
 			}
 		},
 	}));
+
+	// Solid gets stuck on the error boundary despite HMR updates coming in.
+	if (import.meta.hot) import.meta.hot.on("vite:afterUpdate", () => reset());
 
 	return (
 		<ErrorScreen>

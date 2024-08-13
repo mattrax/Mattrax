@@ -167,7 +167,7 @@ function DropdownBody() {
 		deployment: zodEnumFromObjectKeys(deploymentMethod),
 	});
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema,
 		onSubmit: async ({ value }) => {
 			// This endpoint is defined in Nitro and proxies to `cloud.mattrax.app` so we can avoid CORS
@@ -192,7 +192,7 @@ function DropdownBody() {
 
 			controller.setOpen(false);
 		},
-	});
+	}));
 
 	// `state().isValid` seems to be always `true` (probs cause `createZodForm` only does validation on submit) // TODO: Maybe fix this properly?
 	const isFormValid = form.useStore(

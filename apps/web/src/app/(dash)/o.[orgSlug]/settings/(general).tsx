@@ -26,22 +26,22 @@ export default function Page() {
 		}),
 	}));
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({
 			name: z.string(),
 			slug: z.string(),
 		}),
-		defaultValues: () => ({
+		defaultValues: {
 			name: org()?.name || "",
 			slug: org()?.slug || "",
-		}),
+		},
 		onSubmit: ({ value }) =>
 			editOrg.mutateAsync({
 				orgSlug: orgSlug(),
 				name: value.name,
 				slug: value.slug,
 			}),
-	});
+	}));
 
 	return (
 		<div>

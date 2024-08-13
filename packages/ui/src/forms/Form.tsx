@@ -1,49 +1,39 @@
 import { useBeforeLeave } from "@solidjs/router";
-import { type FormOptions, createForm } from "@tanstack/solid-form";
-import { zodValidator } from "@tanstack/zod-form-adapter";
 import {
-	type ComponentProps,
-	createEffect,
-	createMemo,
-	splitProps,
-} from "solid-js";
+	type DeepKeys,
+	type FormOptions,
+	createForm,
+} from "@tanstack/solid-form";
+import { zodValidator } from "@tanstack/zod-form-adapter";
+import { type ComponentProps, Show, createMemo, splitProps } from "solid-js";
 import type { z } from "zod";
 import type { SolidFormOutput } from ".";
 
 export function createZodForm<S extends z.ZodSchema<any, z.ZodObjectDef, any>>(
-	opts: Omit<
+	opts: () => Omit<
 		FormOptions<z.infer<S>, ReturnType<typeof zodValidator>>,
-		"validatorAdapter" | "defaultValues"
+		"validatorAdapter"
 	> & {
 		schema: S;
-		defaultValues?: z.infer<S> | (() => z.infer<S>);
 	},
 ): SolidFormOutput<z.infer<S>, ReturnType<typeof zodValidator>> {
 	const form = createForm(
-		createMemo(() => ({
-			...opts,
-			defaultValues:
-				typeof opts.defaultValues === "function"
-					? (undefined as any as S)
-					: opts.defaultValues,
-			validatorAdapter: zodValidator(),
-			validators: {
-				onSubmit: opts.schema,
-			},
-		})),
+		createMemo(() => {
+			const o = opts();
+			return {
+				...o,
+				validatorAdapter: zodValidator(),
+				validators: {
+					// TODO: Reenable once: https://github.com/TanStack/form/pull/656
+					// onBlur: o.schema,
+					// onChange: o.schema,
+					// onSubmit: o.schema,
+					...({ theSchema: o.schema } as Record<string, unknown>),
+				},
+				// onSubmitInvalid // TODO: Focus the field
+			};
+		}),
 	);
-
-	createEffect(() => {
-		if (typeof opts.defaultValues !== "function") return;
-		// @ts-expect-error: checked on last line
-		const defaultValues = opts.defaultValues();
-
-		for (const key in defaultValues) {
-			if (form.getFieldInfo(key as any).instance?.state.meta.isDirty !== true)
-				form.setFieldValue(key as any, defaultValues[key]);
-		}
-	});
-
 	return form;
 }
 
@@ -94,6 +84,17 @@ export function Form<S extends z.ZodSchema<any, z.ZodObjectDef, any>>(
 				void props.form.handleSubmit();
 			}}
 		>
+			{/* This is a hack to trick Safari into not asking to save the password to keychain */}
+			<Show when={props.autocomplete === "off"}>
+				<input
+					type="password"
+					id="fakePassword"
+					style="border: 0; width: 10px; height: 10px; background-color: red; opacity: 0; position: absolute; bottom: 0px; left: 0px"
+					tabIndex="-1"
+					aria-disabled="true"
+				/>
+			</Show>
+
 			<props.form.Subscribe>
 				{(state) => (
 					<fieldset
@@ -106,4 +107,21 @@ export function Form<S extends z.ZodSchema<any, z.ZodObjectDef, any>>(
 			</props.form.Subscribe>
 		</form>
 	);
+}
+
+export function getFormError<T>(
+	form: SolidFormOutput<T, any>,
+	name: DeepKeys<T>,
+) {
+	return form.useStore((state) => {
+		const meta = form.getFieldMeta(name);
+		// console.log("getFormError", meta);
+		// console.log(meta?.hideError, meta?.errors?.[0]); // TODO
+
+		// We don't want to show errors `onChange` the first time the user types in it.
+		// Helps to avoids "min length of X" errors when the user hasn't finished typing.
+		// @ts-expect-error: This isn't an official field, it's set by the `InputField` component
+		if (meta?.hideError) return;
+		return meta?.errors?.[0];
+	})();
 }

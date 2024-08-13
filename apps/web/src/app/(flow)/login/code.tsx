@@ -32,10 +32,10 @@ export default function Page() {
 		// ...withDependantQueries([me, orgs]), // TODO: Using this here is problematic because the auth check on the backend is cached I think
 	}));
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ code: z.string() }),
 		onSubmit: ({ value }) => verify.mutateAsync(value),
-	});
+	}));
 
 	return (
 		<div class="flex flex-col items-center">

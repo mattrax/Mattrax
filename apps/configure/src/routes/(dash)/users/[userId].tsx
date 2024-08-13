@@ -14,17 +14,16 @@ import {
 	Input,
 	buttonVariants,
 } from "@mattrax/ui";
-import { createEventListener } from "@solid-primitives/event-listener";
 import { action, useAction, useSubmission } from "@solidjs/router";
 import clsx from "clsx";
 import { For, type JSX, Show, Suspense, createSignal, onMount } from "solid-js";
 import { z } from "zod";
 import { determineDeviceImage } from "~/assets";
-import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
+import { PageLayout } from "~/components/PageLayout";
 import { getKey } from "~/lib/kv";
 import { createDbQuery } from "~/lib/query";
 import { useSync } from "~/lib/sync";
-import { updateUser } from "~/lib/sync/mutations";
+import { updateUser } from "~/lib/sync/actions";
 import { useZodParams } from "~/lib/useZodParams";
 
 export default function Page() {

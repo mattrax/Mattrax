@@ -25,6 +25,6 @@
 		"mysql2": "^3.11.0"
 	},
 	"devDependencies": {
-		"@types/node": "^22.1.0"
+		"@types/node": "^22.2.0"
 	}
 }

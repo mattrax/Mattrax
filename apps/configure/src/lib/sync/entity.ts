@@ -1,6 +1,10 @@
 import { z } from "zod";
 import type { Database, StoreNames, TableName } from "../db";
-import { type Operation, registerBatchedOperationAsync } from "./microsoft";
+import {
+	type Operation,
+	odataResponseSchema,
+	registerBatchedOperationAsync,
+} from "./microsoft";
 import { defineSyncOperation } from "./operation";
 
 const stripGraphAPIPrefix = (url: string) => {
@@ -15,21 +19,6 @@ const stripGraphAPIPrefix = (url: string) => {
 
 	return r;
 };
-
-// TODO: Break out into Microsoft stuff???
-export function odataResponseSchema<S extends z.ZodTypeAny>(schema: S) {
-	return z.object({
-		"@odata.deltaLink": z.string().optional(),
-		"@odata.nextLink": z.string().optional(),
-		"@odata.count": z.number().optional(),
-		value: z.array(
-			z.union([
-				schema,
-				z.object({ "@removed": z.object({}).passthrough(), id: z.any() }),
-			]),
-		),
-	});
-}
 
 type EntityMeta = {
 	[key: number]:

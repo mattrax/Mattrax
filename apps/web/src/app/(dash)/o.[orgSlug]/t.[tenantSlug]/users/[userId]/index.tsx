@@ -258,7 +258,7 @@ function SendInstructionsDialog(props: ParentProps) {
 
 	const mutation = trpc.user.invite.createMutation();
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ message: z.string().email().optional() }),
 		onSubmit: async ({ value }) => {
 			await mutation.mutateAsync({
@@ -267,7 +267,7 @@ function SendInstructionsDialog(props: ParentProps) {
 			});
 			setOpen(false);
 		},
-	});
+	}));
 
 	return (
 		<DialogRoot

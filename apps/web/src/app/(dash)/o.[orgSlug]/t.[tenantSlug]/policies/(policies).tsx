@@ -174,14 +174,14 @@ function CreatePolicyDialog(props: ParentProps) {
 		...withDependantQueries([users, gettingStarted]),
 	}));
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ name: z.string() }),
 		onSubmit: ({ value }) =>
 			createPolicy.mutateAsync({
 				name: value.name,
 				tenantSlug: tenantSlug(),
 			}),
-	});
+	}));
 
 	return (
 		<Popover>

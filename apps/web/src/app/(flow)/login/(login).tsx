@@ -30,13 +30,13 @@ export default function Page() {
 	const [lastSubmittedEmail, setLastSubmittedEmail] = createSignal<
 		string | undefined
 	>();
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ email: z.string() }),
 		onSubmit: async ({ value }) => {
 			setLastSubmittedEmail(value.email);
 			await login.mutateAsync(value);
 		},
-	});
+	}));
 
 	const jsonError = createMemo(() => parseJson(login.error?.shape?.message));
 

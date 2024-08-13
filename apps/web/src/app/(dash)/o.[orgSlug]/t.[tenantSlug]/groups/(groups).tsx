@@ -155,14 +155,14 @@ function CreateGroupDialog(props: ParentProps) {
 		},
 	}));
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ name: z.string() }),
 		onSubmit: ({ value }) =>
 			mutation.mutateAsync({
 				name: value.name,
 				tenantSlug: tenantSlug(),
 			}),
-	});
+	}));
 
 	return (
 		<Popover>

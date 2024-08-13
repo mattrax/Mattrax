@@ -110,13 +110,14 @@ export function CreateApplicationSheet(props: {
 	const [open, setOpen] = createSignal(false);
 
 	const createApplication = trpc.app.create.createMutation();
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({
 			targetType: z.custom<keyof typeof APPLICATION_TARGETS>(),
 			targetId: z.string(),
 		}),
 		defaultValues: {
-			targetType: "iOS",
+			// WARNING: This `as const` is to prevent Typescript crashing `Error: Debug Failure. No error for last overload signature`
+			targetType: "iOS" as const,
 			targetId: "",
 		},
 		onSubmit: async ({ value }) => {
@@ -127,7 +128,7 @@ export function CreateApplicationSheet(props: {
 			});
 			await startTransition(() => navigate(app.id));
 		},
-	});
+	}));
 
 	const [search, setSearch] = createSignal("");
 

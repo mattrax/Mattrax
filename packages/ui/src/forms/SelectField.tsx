@@ -1,4 +1,4 @@
-import type { DeepKeys, FieldApi, FormApi } from "@tanstack/solid-form";
+import type { DeepKeys, FieldApi } from "@tanstack/solid-form";
 import {
 	type Accessor,
 	type Component,

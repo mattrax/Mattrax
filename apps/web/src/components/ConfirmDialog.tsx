@@ -45,7 +45,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 	);
 
 	let res: ((v: boolean) => void) | undefined;
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		get schema() {
 			let schema = z.object({ input: z.string() });
 			if (state.inputText === undefined) schema = z.object({}) as any;
@@ -57,7 +57,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 			setState("open", false);
 			res?.(true);
 		},
-	});
+	}));
 
 	return (
 		<DialogRoot

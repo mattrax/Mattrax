@@ -1,0 +1,178 @@
+diff --git a/dist/cjs/createField.d.cts b/dist/cjs/createField.d.cts
+index d8860fa7f36a6a2396e5fe8cd246e2e12f78571e..0e59b1585570d7c132c555977e347df5f9617858 100644
+--- a/dist/cjs/createField.d.cts
++++ b/dist/cjs/createField.d.cts
+@@ -1,7 +1,6 @@
+ import { FieldApi, DeepKeys, DeepValue, Narrow, Validator } from '@tanstack/form-core';
+ import { JSXElement } from 'solid-js';
+ import { CreateFieldOptions } from './types.cjs';
+-
+ interface SolidFieldApi<TParentData, TFormValidator extends Validator<TParentData, unknown> | undefined = undefined> {
+     Field: FieldComponent<TParentData, TFormValidator>;
+ }
+diff --git a/dist/cjs/createForm.cjs.map b/dist/cjs/createForm.cjs.map
+index 320b6608e2c924578b642d117175f08453b41c42..2eae50f11ca4beeadd88c8494f8a5ccc2d3cf0c8 100644
+--- a/dist/cjs/createForm.cjs.map
++++ b/dist/cjs/createForm.cjs.map
+@@ -1 +1 @@
+-{"version":3,"file":"createForm.cjs","sources":["../../src/createForm.tsx"],"sourcesContent":["import { FormApi, functionalUpdate } from '@tanstack/form-core'\nimport { type JSXElement, createComputed, onMount } from 'solid-js'\nimport { useStore } from '@tanstack/solid-store'\nimport {\n  type CreateField,\n  Field,\n  type FieldComponent,\n  createField,\n} from './createField'\nimport type { FormOptions, FormState, Validator } from '@tanstack/form-core'\n\ntype NoInfer<T> = [T][T extends any ? 0 : never]\n\ninterface SolidFormApi<\n  TFormData,\n  TFormValidator extends Validator<TFormData, unknown> | undefined = undefined,\n> {\n  Field: FieldComponent<TFormData, TFormValidator>\n  createField: CreateField<TFormData, TFormValidator>\n  useStore: <TSelected = NoInfer<FormState<TFormData>>>(\n    selector?: (state: NoInfer<FormState<TFormData>>) => TSelected,\n  ) => () => TSelected\n  Subscribe: <TSelected = NoInfer<FormState<TFormData>>>(props: {\n    selector?: (state: NoInfer<FormState<TFormData>>) => TSelected\n    children: ((state: () => NoInfer<TSelected>) => JSXElement) | JSXElement\n  }) => JSXElement\n}\n\nexport function createForm<\n  TParentData,\n  TFormValidator extends\n    | Validator<TParentData, unknown>\n    | undefined = undefined,\n>(opts?: () => FormOptions<TParentData, TFormValidator>) {\n  const options = opts?.()\n  const api = new FormApi<TParentData, TFormValidator>(options)\n  const extendedApi: typeof api & SolidFormApi<TParentData, TFormValidator> =\n    api as never\n\n  extendedApi.Field = (props) => <Field {...props} form={api} />\n  extendedApi.createField = (props) =>\n    createField(() => {\n      return { ...props(), form: api }\n    })\n  extendedApi.useStore = (selector) => useStore(api.store, selector)\n  extendedApi.Subscribe = (props) =>\n    functionalUpdate(props.children, useStore(api.store, props.selector))\n\n  onMount(api.mount)\n\n  /**\n   * formApi.update should not have any side effects. Think of it like a `useRef`\n   * that we need to keep updated every render with the most up-to-date information.\n   */\n  createComputed(() => api.update(opts?.()))\n\n  return extendedApi\n}\n"],"names":["createForm","opts","options","api","FormApi","extendedApi","Field","props","_$createComponent","_$mergeProps","form","createField","useStore","selector","store","Subscribe","functionalUpdate","children","onMount","mount","createComputed","update"],"mappings":";;;;;;;AA4BO,SAASA,WAKdC,MAAuD;AACvD,QAAMC,UAAUD;AACVE,QAAAA,MAAM,IAAIC,iBAAqCF,OAAO;AAC5D,QAAMG,cACJF;AAEFE,cAAYC,QAASC,CAAAA,UAAKC,IAAMF,gBAAAA,YAAAA,OAAKG,eAAKF,OAAK;AAAA,IAAEG,MAAMP;AAAAA,EAAO,CAAA,CAAA;AAClDQ,cAAAA,cAAeJ,CACzBI,UAAAA,YAAAA,YAAY,MAAM;AACT,WAAA;AAAA,MAAE,GAAGJ,MAAM;AAAA,MAAGG,MAAMP;AAAAA,IAAAA;AAAAA,EAAI,CAChC;AACHE,cAAYO,WAAYC,CAAAA,aAAaD,WAAST,SAAAA,IAAIW,OAAOD,QAAQ;AACrDE,cAAAA,YAAaR,CACvBS,UAAAA,SAAAA,iBAAiBT,MAAMU,UAAUL,oBAAST,IAAIW,OAAOP,MAAMM,QAAQ,CAAC;AAEtEK,kBAAQf,IAAIgB,KAAK;AAMjBC,UAAAA,eAAe,MAAMjB,IAAIkB,OAAOpB,8BAAQ,CAAC;AAElCI,SAAAA;AACT;;"}
+\ No newline at end of file
++{"version":3,"file":"createForm.cjs","sources":["../../src/createForm.tsx"],"sourcesContent":["import { FormApi, functionalUpdate } from '@tanstack/form-core'\nimport { type JSXElement, createComputed, onMount } from 'solid-js'\nimport { useStore } from '@tanstack/solid-store'\nimport {\n  type CreateField,\n  Field,\n  type FieldComponent,\n  createField,\n} from './createField'\nimport type { FormOptions, FormState, Validator } from '@tanstack/form-core'\n\ntype NoInfer<T> = [T][T extends any ? 0 : never]\n\nexport interface SolidFormApi<\n  TFormData,\n  TFormValidator extends Validator<TFormData, unknown> | undefined = undefined,\n> {\n  Field: FieldComponent<TFormData, TFormValidator>\n  createField: CreateField<TFormData, TFormValidator>\n  useStore: <TSelected = NoInfer<FormState<TFormData>>>(\n    selector?: (state: NoInfer<FormState<TFormData>>) => TSelected,\n  ) => () => TSelected\n  Subscribe: <TSelected = NoInfer<FormState<TFormData>>>(props: {\n    selector?: (state: NoInfer<FormState<TFormData>>) => TSelected\n    children: ((state: () => NoInfer<TSelected>) => JSXElement) | JSXElement\n  }) => JSXElement\n}\n\nexport function createForm<\n  TParentData,\n  TFormValidator extends\n    | Validator<TParentData, unknown>\n    | undefined = undefined,\n>(opts?: () => FormOptions<TParentData, TFormValidator>) {\n  const options = opts?.()\n  const api = new FormApi<TParentData, TFormValidator>(options)\n  const extendedApi: typeof api & SolidFormApi<TParentData, TFormValidator> =\n    api as never\n\n  extendedApi.Field = (props) => <Field {...props} form={api} />\n  extendedApi.createField = (props) =>\n    createField(() => {\n      return { ...props(), form: api }\n    })\n  extendedApi.useStore = (selector) => useStore(api.store, selector)\n  extendedApi.Subscribe = (props) =>\n    functionalUpdate(props.children, useStore(api.store, props.selector))\n\n  onMount(api.mount)\n\n  /**\n   * formApi.update should not have any side effects. Think of it like a `useRef`\n   * that we need to keep updated every render with the most up-to-date information.\n   */\n  createComputed(() => api.update(opts?.()))\n\n  return extendedApi\n}\n"],"names":["createForm","opts","options","api","FormApi","extendedApi","Field","props","_$createComponent","_$mergeProps","form","createField","useStore","selector","store","Subscribe","functionalUpdate","children","onMount","mount","createComputed","update"],"mappings":";;;;;;;AA4BO,SAASA,WAKdC,MAAuD;AACvD,QAAMC,UAAUD;AACVE,QAAAA,MAAM,IAAIC,iBAAqCF,OAAO;AAC5D,QAAMG,cACJF;AAEFE,cAAYC,QAASC,CAAAA,UAAKC,IAAMF,gBAAAA,YAAAA,OAAKG,eAAKF,OAAK;AAAA,IAAEG,MAAMP;AAAAA,EAAO,CAAA,CAAA;AAClDQ,cAAAA,cAAeJ,CACzBI,UAAAA,YAAAA,YAAY,MAAM;AACT,WAAA;AAAA,MAAE,GAAGJ,MAAM;AAAA,MAAGG,MAAMP;AAAAA,IAAAA;AAAAA,EAAI,CAChC;AACHE,cAAYO,WAAYC,CAAAA,aAAaD,WAAST,SAAAA,IAAIW,OAAOD,QAAQ;AACrDE,cAAAA,YAAaR,CACvBS,UAAAA,SAAAA,iBAAiBT,MAAMU,UAAUL,oBAAST,IAAIW,OAAOP,MAAMM,QAAQ,CAAC;AAEtEK,kBAAQf,IAAIgB,KAAK;AAMjBC,UAAAA,eAAe,MAAMjB,IAAIkB,OAAOpB,8BAAQ,CAAC;AAElCI,SAAAA;AACT;;"}
+\ No newline at end of file
+diff --git a/dist/cjs/createForm.d.cts b/dist/cjs/createForm.d.cts
+index 0a78954174edce6fb848340cd227a3933bbf1163..c7760db4878ac3ed4c52b924ee1a171674f9d59c 100644
+--- a/dist/cjs/createForm.d.cts
++++ b/dist/cjs/createForm.d.cts
+@@ -1,9 +1,8 @@
+ import { FormApi, FormOptions, FormState, Validator } from '@tanstack/form-core';
+ import { JSXElement } from 'solid-js';
+ import { CreateField, FieldComponent } from './createField.cjs';
+-
+ type NoInfer<T> = [T][T extends any ? 0 : never];
+-interface SolidFormApi<TFormData, TFormValidator extends Validator<TFormData, unknown> | undefined = undefined> {
++export interface SolidFormApi<TFormData, TFormValidator extends Validator<TFormData, unknown> | undefined = undefined> {
+     Field: FieldComponent<TFormData, TFormValidator>;
+     createField: CreateField<TFormData, TFormValidator>;
+     useStore: <TSelected = NoInfer<FormState<TFormData>>>(selector?: (state: NoInfer<FormState<TFormData>>) => TSelected) => () => TSelected;
+diff --git a/dist/cjs/index.d.cts b/dist/cjs/index.d.cts
+index 02c7c7338f00c4880a6ce152197b3f3e9adb971e..f443a21847baf8976e61a2e19e14f74e6b8482f4 100644
+--- a/dist/cjs/index.d.cts
++++ b/dist/cjs/index.d.cts
+@@ -1,4 +1,4 @@
+ export * from '@tanstack/form-core';
+-export { createForm } from './createForm.cjs';
++export { createForm, type SolidFormApi } from './createForm.cjs';
+ export type { CreateField, FieldComponent } from './createField.cjs';
+ export { createField, Field } from './createField.cjs';
+diff --git a/dist/cjs/types.d.cts b/dist/cjs/types.d.cts
+index d6ab9393113548787e415734a68cdf1e5e1934c3..dff81c85db90c008b5b2c55a2b7c81e36563e371 100644
+--- a/dist/cjs/types.d.cts
++++ b/dist/cjs/types.d.cts
+@@ -1,5 +1,4 @@
+ import { DeepKeys, DeepValue, FieldApiOptions, Validator } from '@tanstack/form-core';
+-
+ export type CreateFieldOptions<TParentData, TName extends DeepKeys<TParentData>, TFieldValidator extends Validator<DeepValue<TParentData, TName>, unknown> | undefined = undefined, TFormValidator extends Validator<TParentData, unknown> | undefined = undefined, TData extends DeepValue<TParentData, TName> = DeepValue<TParentData, TName>> = FieldApiOptions<TParentData, TName, TFieldValidator, TFormValidator, TData> & {
+     mode?: 'value' | 'array';
+ };
+diff --git a/dist/esm/createField.d.ts b/dist/esm/createField.d.ts
+index a395e72179bb8eb363baff1e5347a72b937e332a..5555c50c64777583db636f0d171c9f5f2a7235ec 100644
+--- a/dist/esm/createField.d.ts
++++ b/dist/esm/createField.d.ts
+@@ -1,7 +1,6 @@
+ import { FieldApi, DeepKeys, DeepValue, Narrow, Validator } from '@tanstack/form-core';
+ import { JSXElement } from 'solid-js';
+ import { CreateFieldOptions } from './types.js';
+-
+ interface SolidFieldApi<TParentData, TFormValidator extends Validator<TParentData, unknown> | undefined = undefined> {
+     Field: FieldComponent<TParentData, TFormValidator>;
+ }
+diff --git a/dist/esm/createForm.d.ts b/dist/esm/createForm.d.ts
+index 39f5deebb63d6911454a1a653814befaf584ecf7..f0b2a7e67615b8f9b29f75f1f98c40d189d257e9 100644
+--- a/dist/esm/createForm.d.ts
++++ b/dist/esm/createForm.d.ts
+@@ -1,9 +1,8 @@
+ import { FormApi, FormOptions, FormState, Validator } from '@tanstack/form-core';
+ import { JSXElement } from 'solid-js';
+ import { CreateField, FieldComponent } from './createField.js';
+-
+ type NoInfer<T> = [T][T extends any ? 0 : never];
+-interface SolidFormApi<TFormData, TFormValidator extends Validator<TFormData, unknown> | undefined = undefined> {
++export interface SolidFormApi<TFormData, TFormValidator extends Validator<TFormData, unknown> | undefined = undefined> {
+     Field: FieldComponent<TFormData, TFormValidator>;
+     createField: CreateField<TFormData, TFormValidator>;
+     useStore: <TSelected = NoInfer<FormState<TFormData>>>(selector?: (state: NoInfer<FormState<TFormData>>) => TSelected) => () => TSelected;
+diff --git a/dist/esm/createForm.js.map b/dist/esm/createForm.js.map
+index b5fe6ac78671ca3929f7f22a990fe2d9502175a3..dee84546333622aca4880444e787ec2054cc6a24 100644
+--- a/dist/esm/createForm.js.map
++++ b/dist/esm/createForm.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"createForm.js","sources":["../../src/createForm.tsx"],"sourcesContent":["import { FormApi, functionalUpdate } from '@tanstack/form-core'\nimport { type JSXElement, createComputed, onMount } from 'solid-js'\nimport { useStore } from '@tanstack/solid-store'\nimport {\n  type CreateField,\n  Field,\n  type FieldComponent,\n  createField,\n} from './createField'\nimport type { FormOptions, FormState, Validator } from '@tanstack/form-core'\n\ntype NoInfer<T> = [T][T extends any ? 0 : never]\n\ninterface SolidFormApi<\n  TFormData,\n  TFormValidator extends Validator<TFormData, unknown> | undefined = undefined,\n> {\n  Field: FieldComponent<TFormData, TFormValidator>\n  createField: CreateField<TFormData, TFormValidator>\n  useStore: <TSelected = NoInfer<FormState<TFormData>>>(\n    selector?: (state: NoInfer<FormState<TFormData>>) => TSelected,\n  ) => () => TSelected\n  Subscribe: <TSelected = NoInfer<FormState<TFormData>>>(props: {\n    selector?: (state: NoInfer<FormState<TFormData>>) => TSelected\n    children: ((state: () => NoInfer<TSelected>) => JSXElement) | JSXElement\n  }) => JSXElement\n}\n\nexport function createForm<\n  TParentData,\n  TFormValidator extends\n    | Validator<TParentData, unknown>\n    | undefined = undefined,\n>(opts?: () => FormOptions<TParentData, TFormValidator>) {\n  const options = opts?.()\n  const api = new FormApi<TParentData, TFormValidator>(options)\n  const extendedApi: typeof api & SolidFormApi<TParentData, TFormValidator> =\n    api as never\n\n  extendedApi.Field = (props) => <Field {...props} form={api} />\n  extendedApi.createField = (props) =>\n    createField(() => {\n      return { ...props(), form: api }\n    })\n  extendedApi.useStore = (selector) => useStore(api.store, selector)\n  extendedApi.Subscribe = (props) =>\n    functionalUpdate(props.children, useStore(api.store, props.selector))\n\n  onMount(api.mount)\n\n  /**\n   * formApi.update should not have any side effects. Think of it like a `useRef`\n   * that we need to keep updated every render with the most up-to-date information.\n   */\n  createComputed(() => api.update(opts?.()))\n\n  return extendedApi\n}\n"],"names":["createForm","opts","options","api","FormApi","extendedApi","Field","props","_$createComponent","_$mergeProps","form","createField","useStore","selector","store","Subscribe","functionalUpdate","children","onMount","mount","createComputed","update"],"mappings":";;;;;AA4BO,SAASA,WAKdC,MAAuD;AACvD,QAAMC,UAAUD;AACVE,QAAAA,MAAM,IAAIC,QAAqCF,OAAO;AAC5D,QAAMG,cACJF;AAEFE,cAAYC,QAASC,CAAAA,UAAKC,gBAAMF,OAAKG,WAAKF,OAAK;AAAA,IAAEG,MAAMP;AAAAA,EAAO,CAAA,CAAA;AAClDQ,cAAAA,cAAeJ,CACzBI,UAAAA,YAAY,MAAM;AACT,WAAA;AAAA,MAAE,GAAGJ,MAAM;AAAA,MAAGG,MAAMP;AAAAA,IAAAA;AAAAA,EAAI,CAChC;AACHE,cAAYO,WAAYC,CAAAA,aAAaD,SAAST,IAAIW,OAAOD,QAAQ;AACrDE,cAAAA,YAAaR,CACvBS,UAAAA,iBAAiBT,MAAMU,UAAUL,SAAST,IAAIW,OAAOP,MAAMM,QAAQ,CAAC;AAEtEK,UAAQf,IAAIgB,KAAK;AAMjBC,iBAAe,MAAMjB,IAAIkB,OAAOpB,8BAAQ,CAAC;AAElCI,SAAAA;AACT;"}
+\ No newline at end of file
++{"version":3,"file":"createForm.js","sources":["../../src/createForm.tsx"],"sourcesContent":["import { FormApi, functionalUpdate } from '@tanstack/form-core'\nimport { type JSXElement, createComputed, onMount } from 'solid-js'\nimport { useStore } from '@tanstack/solid-store'\nimport {\n  type CreateField,\n  Field,\n  type FieldComponent,\n  createField,\n} from './createField'\nimport type { FormOptions, FormState, Validator } from '@tanstack/form-core'\n\ntype NoInfer<T> = [T][T extends any ? 0 : never]\n\nexport interface SolidFormApi<\n  TFormData,\n  TFormValidator extends Validator<TFormData, unknown> | undefined = undefined,\n> {\n  Field: FieldComponent<TFormData, TFormValidator>\n  createField: CreateField<TFormData, TFormValidator>\n  useStore: <TSelected = NoInfer<FormState<TFormData>>>(\n    selector?: (state: NoInfer<FormState<TFormData>>) => TSelected,\n  ) => () => TSelected\n  Subscribe: <TSelected = NoInfer<FormState<TFormData>>>(props: {\n    selector?: (state: NoInfer<FormState<TFormData>>) => TSelected\n    children: ((state: () => NoInfer<TSelected>) => JSXElement) | JSXElement\n  }) => JSXElement\n}\n\nexport function createForm<\n  TParentData,\n  TFormValidator extends\n    | Validator<TParentData, unknown>\n    | undefined = undefined,\n>(opts?: () => FormOptions<TParentData, TFormValidator>) {\n  const options = opts?.()\n  const api = new FormApi<TParentData, TFormValidator>(options)\n  const extendedApi: typeof api & SolidFormApi<TParentData, TFormValidator> =\n    api as never\n\n  extendedApi.Field = (props) => <Field {...props} form={api} />\n  extendedApi.createField = (props) =>\n    createField(() => {\n      return { ...props(), form: api }\n    })\n  extendedApi.useStore = (selector) => useStore(api.store, selector)\n  extendedApi.Subscribe = (props) =>\n    functionalUpdate(props.children, useStore(api.store, props.selector))\n\n  onMount(api.mount)\n\n  /**\n   * formApi.update should not have any side effects. Think of it like a `useRef`\n   * that we need to keep updated every render with the most up-to-date information.\n   */\n  createComputed(() => api.update(opts?.()))\n\n  return extendedApi\n}\n"],"names":["createForm","opts","options","api","FormApi","extendedApi","Field","props","_$createComponent","_$mergeProps","form","createField","useStore","selector","store","Subscribe","functionalUpdate","children","onMount","mount","createComputed","update"],"mappings":";;;;;AA4BO,SAASA,WAKdC,MAAuD;AACvD,QAAMC,UAAUD;AACVE,QAAAA,MAAM,IAAIC,QAAqCF,OAAO;AAC5D,QAAMG,cACJF;AAEFE,cAAYC,QAASC,CAAAA,UAAKC,gBAAMF,OAAKG,WAAKF,OAAK;AAAA,IAAEG,MAAMP;AAAAA,EAAO,CAAA,CAAA;AAClDQ,cAAAA,cAAeJ,CACzBI,UAAAA,YAAY,MAAM;AACT,WAAA;AAAA,MAAE,GAAGJ,MAAM;AAAA,MAAGG,MAAMP;AAAAA,IAAAA;AAAAA,EAAI,CAChC;AACHE,cAAYO,WAAYC,CAAAA,aAAaD,SAAST,IAAIW,OAAOD,QAAQ;AACrDE,cAAAA,YAAaR,CACvBS,UAAAA,iBAAiBT,MAAMU,UAAUL,SAAST,IAAIW,OAAOP,MAAMM,QAAQ,CAAC;AAEtEK,UAAQf,IAAIgB,KAAK;AAMjBC,iBAAe,MAAMjB,IAAIkB,OAAOpB,8BAAQ,CAAC;AAElCI,SAAAA;AACT;"}
+\ No newline at end of file
+diff --git a/dist/esm/index.d.ts b/dist/esm/index.d.ts
+index 5a152e3931f17811d211faf4e6b3501d3bc87bfe..e3caab2ed1e82a05272a71bf71070d6682da44b1 100644
+--- a/dist/esm/index.d.ts
++++ b/dist/esm/index.d.ts
+@@ -1,4 +1,4 @@
+ export * from '@tanstack/form-core';
+-export { createForm } from './createForm.js';
++export { createForm, type SolidFormApi } from './createForm.js';
+ export type { CreateField, FieldComponent } from './createField.js';
+ export { createField, Field } from './createField.js';
+diff --git a/dist/esm/types.d.ts b/dist/esm/types.d.ts
+index d6ab9393113548787e415734a68cdf1e5e1934c3..dff81c85db90c008b5b2c55a2b7c81e36563e371 100644
+--- a/dist/esm/types.d.ts
++++ b/dist/esm/types.d.ts
+@@ -1,5 +1,4 @@
+ import { DeepKeys, DeepValue, FieldApiOptions, Validator } from '@tanstack/form-core';
+-
+ export type CreateFieldOptions<TParentData, TName extends DeepKeys<TParentData>, TFieldValidator extends Validator<DeepValue<TParentData, TName>, unknown> | undefined = undefined, TFormValidator extends Validator<TParentData, unknown> | undefined = undefined, TData extends DeepValue<TParentData, TName> = DeepValue<TParentData, TName>> = FieldApiOptions<TParentData, TName, TFieldValidator, TFormValidator, TData> & {
+     mode?: 'value' | 'array';
+ };
+diff --git a/dist/source/createForm.d.ts b/dist/source/createForm.d.ts
+index 475dfa3ca51bc1da3e795d0685752ddea57a1656..e799cd9998601ff8f586307bec6ec0ea38f23c61 100644
+--- a/dist/source/createForm.d.ts
++++ b/dist/source/createForm.d.ts
+@@ -1,9 +1,8 @@
+-import { FormApi } from '@tanstack/form-core';
+ import { type JSXElement } from 'solid-js';
+ import { type CreateField, type FieldComponent } from './createField';
+ import type { FormOptions, FormState, Validator } from '@tanstack/form-core';
+ type NoInfer<T> = [T][T extends any ? 0 : never];
+-interface SolidFormApi<TFormData, TFormValidator extends Validator<TFormData, unknown> | undefined = undefined> {
++export interface SolidFormApi<TFormData, TFormValidator extends Validator<TFormData, unknown> | undefined = undefined> {
+     Field: FieldComponent<TFormData, TFormValidator>;
+     createField: CreateField<TFormData, TFormValidator>;
+     useStore: <TSelected = NoInfer<FormState<TFormData>>>(selector?: (state: NoInfer<FormState<TFormData>>) => TSelected) => () => TSelected;
+@@ -12,5 +11,5 @@ interface SolidFormApi<TFormData, TFormValidator extends Validator<TFormData, un
+         children: ((state: () => NoInfer<TSelected>) => JSXElement) | JSXElement;
+     }) => JSXElement;
+ }
+-export declare function createForm<TParentData, TFormValidator extends Validator<TParentData, unknown> | undefined = undefined>(opts?: () => FormOptions<TParentData, TFormValidator>): FormApi<TParentData, TFormValidator> & SolidFormApi<TParentData, TFormValidator>;
++export declare function createForm<TParentData, TFormValidator extends Validator<TParentData, unknown> | undefined = undefined>(opts?: () => FormOptions<TParentData, TFormValidator>): any;
+ export {};
+diff --git a/dist/source/index.d.ts b/dist/source/index.d.ts
+index 4e7d089df5c53c905877905a1adbaaf05b4a4eb1..a87a268a8b47fc49eb9057303a74a7ebd14b5d04 100644
+--- a/dist/source/index.d.ts
++++ b/dist/source/index.d.ts
+@@ -1,4 +1,4 @@
+ export * from '@tanstack/form-core';
+-export { createForm } from './createForm';
++export { createForm, type SolidFormApi } from './createForm';
+ export type { CreateField, FieldComponent } from './createField';
+ export { createField, Field } from './createField';
+diff --git a/dist/source/index.jsx.map b/dist/source/index.jsx.map
+index 5bb8458e2a92d699c7e1123112c5acaff60971b3..4ce9f6a4d1e34eb2e3c0d26bbc716e104846252e 100644
+--- a/dist/source/index.jsx.map
++++ b/dist/source/index.jsx.map
+@@ -1 +1 @@
+-{"version":3,"file":"index.jsx","sourceRoot":"","sources":["../../src/index.tsx"],"names":[],"mappings":"AAAA,cAAc,qBAAqB,CAAA;AAEnC,OAAO,EAAE,UAAU,EAAE,MAAM,cAAc,CAAA;AAGzC,OAAO,EAAE,WAAW,EAAE,KAAK,EAAE,MAAM,eAAe,CAAA"}
+\ No newline at end of file
++{"version":3,"file":"index.jsx","sourceRoot":"","sources":["../../src/index.tsx"],"names":[],"mappings":"AAAA,cAAc,qBAAqB,CAAA;AAEnC,OAAO,EAAE,UAAU,EAAqB,MAAM,cAAc,CAAA;AAG5D,OAAO,EAAE,WAAW,EAAE,KAAK,EAAE,MAAM,eAAe,CAAA"}
+\ No newline at end of file
+diff --git a/src/createForm.tsx b/src/createForm.tsx
+index 97843f63ede4133514c277b512b6b6087bf1135a..8e780954571d5fe57a88fc05db90cd59baa5ecea 100644
+--- a/src/createForm.tsx
++++ b/src/createForm.tsx
+@@ -11,7 +11,7 @@ import type { FormOptions, FormState, Validator } from '@tanstack/form-core'
+ 
+ type NoInfer<T> = [T][T extends any ? 0 : never]
+ 
+-interface SolidFormApi<
++export interface SolidFormApi<
+   TFormData,
+   TFormValidator extends Validator<TFormData, unknown> | undefined = undefined,
+ > {
+diff --git a/src/index.tsx b/src/index.tsx
+index 3daa18e2b237c39b8dede8fa39eb5d6074ca0cf5..f0622af1b682554716242eca1bff0aba3de87c82 100644
+--- a/src/index.tsx
++++ b/src/index.tsx
+@@ -1,6 +1,6 @@
+ export * from '@tanstack/form-core'
+ 
+-export { createForm } from './createForm'
++export { createForm, type SolidFormApi } from './createForm'
+ 
+ export type { CreateField, FieldComponent } from './createField'
+ export { createField, Field } from './createField'

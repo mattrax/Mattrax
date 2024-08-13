@@ -34,11 +34,11 @@ export function CreateTenantDialog(
 
 	const orgSlug = useOrgSlug();
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ name: z.string() }),
 		onSubmit: ({ value }) =>
 			mutation.mutateAsync({ name: value.name, orgSlug: orgSlug() }),
-	});
+	}));
 
 	return (
 		<DialogRoot open={open()} setOpen={setOpen}>

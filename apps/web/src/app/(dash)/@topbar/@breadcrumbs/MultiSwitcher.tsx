@@ -267,11 +267,11 @@ export function CreateTenantDialog(props: {
 		...withDependantQueries(tenants),
 	}));
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ name: z.string() }),
 		onSubmit: ({ value }) =>
 			mutation.mutateAsync({ name: value.name, orgSlug: props.orgSlug }),
-	});
+	}));
 
 	createEffect(() => {
 		if (props.open) form.reset();
@@ -317,10 +317,10 @@ function CreateOrgDialog(props: {
 		...withDependantQueries(orgs),
 	}));
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ name: z.string() }),
 		onSubmit: ({ value }) => mutation.mutateAsync({ name: value.name }),
-	});
+	}));
 
 	createEffect(() => {
 		if (props.open) form.reset();

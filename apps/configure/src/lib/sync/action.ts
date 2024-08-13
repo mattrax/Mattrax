@@ -1,9 +1,8 @@
 import type { useSync } from ".";
 import type { Database } from "../db";
-import * as allMutations from "./mutations";
 
 // TODO
-export function defineMutation<M>(
+export function defineAction<M>(
 	name: string,
 	options: {
 		// commit the mutation to the remote API
@@ -49,13 +48,6 @@ export function defineMutation<M>(
 	return Object.assign(callback, { mutation: { name, options } });
 }
 
-const mutations = Object.fromEntries(
-	Object.values(allMutations).map((mutation) => [
-		mutation.mutation.name,
-		mutation,
-	]),
-);
-
 // TODO: Handle `applied: false` mutations on load
 
 export async function applyMigrations(
@@ -63,6 +55,15 @@ export async function applyMigrations(
 	abort: AbortController,
 	accessToken: string,
 ) {
+	// TODO: This could be improved to only import the actions we actually need!
+	// TODO: but that would probs require some basic codegen (cause we need to know each files exports without importing it).
+	const mutations = Object.fromEntries(
+		Object.values(await import("./actions/index")).map((mutation) => [
+			mutation.mutation.name,
+			mutation,
+		]),
+	);
+
 	await navigator.locks.request("mutations", async (lock) => {
 		if (!lock) return;
 

@@ -3,7 +3,7 @@ import { onCleanup } from "solid-js";
 import { toast } from "solid-sonner";
 import type { Database } from "../db";
 import { deleteKey, getKey } from "../kv";
-import { applyMigrations } from "./mutation";
+import { applyMigrations } from "./action";
 import {
 	type defineSyncOperation,
 	didLastSyncCompleteSuccessfully,

@@ -1,6 +1,39 @@
-import { defineMutation } from "./mutation";
+import { defineAction } from "../action";
 
-export const updateUser = defineMutation<{
+// TODO: Some inference of fields on Zod/sync schema?
+
+export const createUser = defineAction<{
+	id: string;
+	displayName: string;
+	accountEnabled: boolean;
+	mailNickname: string;
+	passwordProfile: any; // TODO
+	userPrincipalName: string;
+}>("createUser", {
+	commit: async (data, accessToken) => {
+		// TODO: Use Microsoft batching API
+		const response = await fetch("https://graph.microsoft.com/beta/users", {
+			method: "PATCH",
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: accessToken,
+			},
+			body: JSON.stringify({
+				// displayName: data.name,
+			}),
+		});
+		// TODO: Handle Microsoft unauthorised error
+		// TODO: Ensure response is reported as valid
+	},
+	apply: async (db, data) => {
+		// db.put("users", {}); // TODO: Da hell is the `id` gonna be?
+	},
+	rollback: async (db, data) => {
+		// TODO: We really need a rollback if this fails to commit to Microsoft
+	},
+});
+
+export const updateUser = defineAction<{
 	id: string;
 	name: string;
 }>("updateUser", {
@@ -38,7 +71,7 @@ export const updateUser = defineMutation<{
 	},
 });
 
-export const deleteUser = defineMutation<{
+export const deleteUser = defineAction<{
 	id: string;
 }>("deleteUser", {
 	commit: async (data, accessToken) => {

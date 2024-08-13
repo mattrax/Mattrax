@@ -43,7 +43,7 @@ function GeneralCard() {
 		...withDependantQueries(me),
 	}));
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ name: z.string(), email: z.string().email() }),
 		// TODO: We should use a function for this so it updates from the server data when the fields aren't dirty.
 		// TODO: Right now this breaks the field focus
@@ -55,7 +55,7 @@ function GeneralCard() {
 			updateAccount.mutateAsync({
 				name: value.name,
 			}),
-	});
+	}));
 
 	const triggerSave = debounce(() => {
 		// TODO: This should probs use the form but it disabled the field which is annoying AF.

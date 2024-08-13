@@ -22,22 +22,22 @@
 		"@tanstack/solid-query": "^5.51.21",
 		"@tanstack/solid-query-devtools": "^5.51.21",
 		"@tanstack/solid-table": "^8.20.1",
-		"@tanstack/solid-virtual": "^3.8.4",
+		"@tanstack/solid-virtual": "^3.8.6",
 		"clsx": "^2.1.1",
 		"idb": "^8.0.0",
-		"solid-js": "^1.8.19",
+		"solid-js": "^1.8.20",
 		"solid-sonner": "^0.2.8",
 		"zod": "^3.23.8"
 	},
 	"devDependencies": {
-		"@iconify/json": "^2.2.235",
+		"@iconify/json": "^2.2.236",
 		"autoprefixer": "^10.4.20",
 		"postcss": "^8.4.41",
-		"tailwindcss": "^3.4.8",
+		"tailwindcss": "^3.4.9",
 		"typescript": "^5.5.4",
 		"vite": "^5.4.0",
 		"vite-plugin-html": "^3.2.2",
 		"vite-plugin-solid": "^2.10.2",
-		"vite-tsconfig-paths": "^5.0.0"
+		"vite-tsconfig-paths": "^5.0.1"
 	}
 }

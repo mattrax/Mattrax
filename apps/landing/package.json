@@ -9,11 +9,11 @@
 		"start": "vinxi start"
 	},
 	"devDependencies": {
-		"@iconify/json": "^2.2.235",
+		"@iconify/json": "^2.2.236",
 		"@tailwindcss/forms": "^0.5.7",
 		"@tailwindcss/typography": "^0.5.14",
 		"autoprefixer": "^10.4.20",
-		"tailwindcss": "^3.4.8"
+		"tailwindcss": "^3.4.9"
 	},
 	"dependencies": {
 		"@fontsource-variable/inter": "^5.0.20",
@@ -26,7 +26,7 @@
 		"class-variance-authority": "^0.7.0",
 		"clsx": "^2.1.1",
 		"h3": "^1.12.0",
-		"solid-js": "^1.8.19",
+		"solid-js": "^1.8.20",
 		"vinxi": "0.4.1",
 		"vite": "^5.4.0",
 		"zod": "^3.23.8"

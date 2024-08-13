@@ -1,6 +1,6 @@
 import type { User } from "./auth";
 import type { Database } from "./db";
-import type { Org } from "./sync/schema";
+import type { Org } from "./sync/schema/auth";
 
 export type KvValue = {
 	user: User;

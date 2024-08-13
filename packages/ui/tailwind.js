@@ -34,6 +34,8 @@ module.exports = {
 				"caret-blink": "caret-blink 1.25s ease-out infinite",
 				"height-in": "height-in 250ms ease-in-out",
 				"height-out": "height-out 150ms ease-in-out",
+				"accordion-down": "accordion-down 0.2s ease-out",
+				"accordion-up": "accordion-up 0.2s ease-out",
 			},
 			keyframes: {
 				"caret-blink": {
@@ -49,6 +51,14 @@ module.exports = {
 					"0%": { opacity: "100%" },
 					"50%": { height: "100%", opacity: "75%" },
 					"100%": { opacity: "0" },
+				},
+				"accordion-down": {
+					from: { height: 0 },
+					to: { height: "var(--kb-accordion-content-height)" },
+				},
+				"accordion-up": {
+					from: { height: "var(--kb-accordion-content-height)" },
+					to: { height: 0 },
 				},
 			},
 			transitionProperty: {

@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { mapUser } from "~/lib/auth";
 import { getKey, putKey } from "../../kv";
-import { odataResponseSchema } from "../entity";
-import { registerBatchedOperationAsync } from "../microsoft";
+import {
+	odataResponseSchema,
+	registerBatchedOperationAsync,
+} from "../microsoft";
 import { defineSyncOperation } from "../operation";
 
 const userSchema = z.object({

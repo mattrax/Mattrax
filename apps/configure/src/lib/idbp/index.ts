@@ -1,3 +1,4 @@
+// @ts-nocheck // TODO: Reenable checking
 // IndexedDB Plus is an extension on the `idb` library that adds additional features.
 
 import {

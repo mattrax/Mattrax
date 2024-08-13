@@ -45,19 +45,19 @@ function SettingsCard() {
 		}),
 	}));
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ name: z.string(), slug: z.string() }),
-		defaultValues: () => ({
+		defaultValues: {
 			name: tenant()?.name || "",
 			slug: tenant()?.slug || "",
-		}),
+		},
 		onSubmit: ({ value }) =>
 			updateTenant.mutateAsync({
 				name: value.name,
 				slug: value.slug,
 				tenantSlug: tenantSlug(),
 			}),
-	});
+	}));
 
 	return (
 		<Card class="flex flex-col">

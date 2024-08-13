@@ -177,7 +177,7 @@ function InviteAdminCard() {
 		...withDependantQueries([invites, admins]),
 	}));
 
-	const form = createZodForm({
+	const form = createZodForm(() => ({
 		schema: z.object({ email: z.string().email() }),
 		onSubmit: async ({ value }) => {
 			await inviteAdmin.mutateAsync({
@@ -186,7 +186,7 @@ function InviteAdminCard() {
 			});
 			form.setFieldValue("email", "");
 		},
-	});
+	}));
 
 	return (
 		<Card>
