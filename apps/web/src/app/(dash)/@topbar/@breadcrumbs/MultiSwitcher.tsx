@@ -234,7 +234,7 @@ import {
 	DialogRoot,
 	DialogTitle,
 } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
 import { useNavigate } from "@solidjs/router";
 import clsx from "clsx";
 import { cachedTenantsForOrg } from "~/app/(dash)/o.[orgSlug]/utils";

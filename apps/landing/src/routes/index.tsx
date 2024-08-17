@@ -17,7 +17,7 @@ import {
 	InputField,
 	SelectField,
 	createZodForm,
-} from "@mattrax/ui/forms";
+} from "@mattrax/ui/forms/legacy";
 import type { JSX } from "solid-js";
 import { z } from "zod";
 import Bento from "~/components/Bento";

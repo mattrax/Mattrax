@@ -11,7 +11,7 @@ import {
 	DialogRoot,
 	DialogTitle,
 } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
 import { createColumnHelper } from "@tanstack/solid-table";
 import { Show, createSignal } from "solid-js";
 import { Suspense } from "solid-js";

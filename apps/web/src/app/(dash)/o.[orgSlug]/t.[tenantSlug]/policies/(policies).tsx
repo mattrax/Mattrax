@@ -142,7 +142,7 @@ export default function Page() {
 	);
 }
 
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
 import { useNavigate } from "@solidjs/router";
 import pluralize from "pluralize";
 import { z } from "zod";

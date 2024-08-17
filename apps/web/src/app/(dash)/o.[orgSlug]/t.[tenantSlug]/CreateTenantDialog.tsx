@@ -8,7 +8,7 @@ import {
 	DialogRoot,
 	DialogTitle,
 } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
 import { trpc } from "~/lib";
 import { useOrgSlug } from "../ctx";
 

@@ -30,7 +30,9 @@
 		"rules": {
 			"recommended": true,
 			"suspicious": {
-				"noExplicitAny": "off"
+				"noExplicitAny": "off",
+				"noAssignInExpressions": "off",
+				"noConfusingVoidType": "off"
 			},
 			"style": {
 				"noNonNullAssertion": "off",

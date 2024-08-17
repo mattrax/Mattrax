@@ -11,7 +11,7 @@ import {
 	TabsList,
 	TabsTrigger,
 } from "@mattrax/ui";
-import { Form, createZodForm } from "@mattrax/ui/forms";
+import { Form, createZodForm } from "@mattrax/ui/forms/legacy";
 import { debounce } from "@solid-primitives/scheduled";
 import { useNavigate } from "@solidjs/router";
 import { createQuery } from "@tanstack/solid-query";

@@ -136,7 +136,7 @@ export default function Page() {
 	);
 }
 
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
 import pluralize from "pluralize";
 
 import { BulkDeleteDialog, createBulkDeleteDialog } from "~c/BulkDeleteDialog";

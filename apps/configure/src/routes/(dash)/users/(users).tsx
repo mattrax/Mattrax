@@ -4,9 +4,6 @@ import {
 	AccordionItem,
 	AccordionTrigger,
 	Button,
-	Kbd,
-	Label,
-	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
@@ -24,19 +21,18 @@ import {
 	Form,
 	InputField,
 	SelectField,
-	createForm2,
-	createZodForm,
-	getFormError,
+	createForm,
 } from "@mattrax/ui/forms";
+import { latestNoSuspense } from "@mattrax/ui/lib";
 import { createConnectivitySignal } from "@solid-primitives/connectivity";
-import { useNavigate } from "@solidjs/router";
-import clsx from "clsx";
-import { Show, createEffect, createSignal } from "solid-js";
+import { createAsync, useNavigate } from "@solidjs/router";
+import { Show, Suspense, createSignal } from "solid-js";
 import { z } from "zod";
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
 import { SearchPage, createSearchPageContext } from "~/components/search";
 import { getKey } from "~/lib/kv";
 import { createDbQuery } from "~/lib/query";
+import { useSync } from "~/lib/sync";
 
 export default function Page() {
 	const ctx = createSearchPageContext([
@@ -71,6 +67,7 @@ export default function Page() {
 
 function CreateUserSheetContent() {
 	const navigate = useNavigate();
+	const sync = useSync();
 	const isOnline = createConnectivitySignal();
 	const org = createDbQuery((db) => getKey(db, "org"));
 
@@ -78,69 +75,42 @@ function CreateUserSheetContent() {
 	const defaultPassword = generateDefaultPassword();
 	const [passwordVisible, setPasswordVisible] = createSignal(false);
 
-	const form = createZodForm(() => ({
-		schema: z.object({
-			// TODO: Validate on all values
-			name: z.string().min(2).max(256), // TODO: Make min 1
-			upnLocal: z.string(), // TODO: .min(1).max(64),
-			upnRemote: z.string(),
-			mailNickname: z.string(), // TODO: .max(64),
-			accountEnabled: z.boolean(),
-			// TODO:  The new password must contain characters from at least 3 out of: Lowercase characters, Uppercase characters, Numbers, Symbols. The new password must not be weak or commonly used.
-			// This field is not named *password* so browser don't ignore `autocomplete="off"` when they see `name="password"`
-			// https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion#preventing_autofilling_with_autocompletenew-password
-			password: z.string(), // TODO: .min(8).max(256),
-		}),
-		defaultValues: {
-			name: "",
-			upnLocal: "",
-			upnRemote: org()?.verifiedDomains?.[0]?.name ?? "",
-			mailNickname: "",
-			accountEnabled: true,
-			password: defaultPassword,
+	const form = createForm({
+		schema: () =>
+			z.object({
+				name: z.string().min(1).max(256),
+				upnLocal: z.string().min(1).max(64),
+				upnRemote: z.string().default(org()?.verifiedDomains?.[0]?.name ?? ""),
+				mailNickname: z.string().max(64),
+				accountEnabled: z.boolean().default(true),
+				// TODO: The new password must contain characters from at least 3 out of: Lowercase characters, Uppercase characters, Numbers, Symbols. The new password must not be weak or commonly used.
+				// This field is not named *password* so browser don't ignore `autocomplete="off"` when they see `name="password"`
+				// https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion#preventing_autofilling_with_autocompletenew-password
+				password: z.string().min(8).max(256).default(defaultPassword),
+			}),
+		async onSubmit(data) {
+			// TODO: Implement this
+			console.log("SUBMIT", data);
+			await new Promise((r) => setTimeout(r, 1000));
+			navigate("/");
 		},
-		onSubmit: async ({ value }) => {
-			// alert("TODO");
-			await new Promise((r) => setTimeout(r, 3000));
-			navigate("/"); // TODO
-		},
-	}));
-
-	const form2 = createForm2({
-		schema: z.object({
-			// TODO: Validate on all values
-			name: z.string().min(2).max(256), // TODO: Make min 1
-			upnLocal: z.string(), // TODO: .min(1).max(64),
-			upnRemote: z.string(),
-			mailNickname: z.string(), // TODO: .max(64),
-			accountEnabled: z.boolean(),
-			// TODO:  The new password must contain characters from at least 3 out of: Lowercase characters, Uppercase characters, Numbers, Symbols. The new password must not be weak or commonly used.
-			// This field is not named *password* so browser don't ignore `autocomplete="off"` when they see `name="password"`
-			// https://developer.mozilla.org/en-US/docs/Web/Security/Practical_implementation_guides/Turning_off_form_autocompletion#preventing_autofilling_with_autocompletenew-password
-			password: z.string(), // TODO: .min(8).max(256),
-		}),
-		defaultValues: () => ({
-			name: "Hello",
-		}),
 	});
-	createEffect(() => console.log(form2));
 
-	const formErrors = form.useStore((state) => state.errors);
-	const isValid = form.useStore((state) => state.isValid);
-	const error = () => {
-		if ((org()?.verifiedDomains.length ?? 0) === 0)
+	const duplicateUserError = createAsync(async () => {
+		if (form.data.upnLocal === "" || form.data.upnRemote === "") return;
+		const upn = `${form.data.upnLocal}@${form.data.upnRemote}`;
+		const user = await sync.db.getFromIndex("users", "upn", upn);
+		if (!user) return;
+		return `User ${upn} already exists`;
+	});
+
+	const domainVerificationError = () => {
+		if ((latestNoSuspense(org)?.verifiedDomains.length ?? 0) === 0)
 			// TODO: Link the user to the domain verification page
 			return "Your organization must have a verified domain!";
 
-		if (!isOnline()) return "You must be online to create a user!";
-
-		// TODO: Remove this?
-		const firstError = formErrors()[0];
-		if (firstError) return firstError.toString();
+		return latestNoSuspense(duplicateUserError);
 	};
-
-	// const todo = form.useStore((state) => state.values);
-	// createEffect(() => console.log(isValid(), [...formErrors()], todo())); // TODO
 
 	return (
 		<SheetContent>
@@ -165,17 +135,16 @@ function CreateUserSheetContent() {
 					autocomplete="off"
 					onInput={(e) => {
 						const value = e.target.value.split(" ")[0]?.toLowerCase() || "";
-						if (form.getFieldMeta("upnLocal")?.isDirty !== true)
-							form.setFieldValue("upnLocal", value, {
-								dontUpdateMeta: true,
-							});
-						if (form.getFieldMeta("mailNickname")?.isDirty !== true)
-							form.setFieldValue("mailNickname", value, {
-								dontUpdateMeta: true,
-							});
+						if (form.fields.upnLocal.meta.touched !== true)
+							form.fields.upnLocal.updateNoMeta(value);
+						if (form.fields.mailNickname.meta.touched !== true)
+							form.fields.mailNickname.updateNoMeta(value);
 					}}
 				/>
-				<Show when={getFormError(form, "name")}>
+
+				<Show
+					when={form.fields.name.meta.touched && form.fields.name.meta.error}
+				>
 					{(error) => <p class="text-red-500">{error()}</p>}
 				</Show>
 
@@ -197,8 +166,12 @@ function CreateUserSheetContent() {
 						form={form}
 						name="upnRemote"
 						fieldClass="flex-1"
-						disabled={org.loading || org()?.verifiedDomains.length === 0}
-						options={org()?.verifiedDomains.map((d) => d.name) ?? []}
+						disabled={
+							org.loading || latestNoSuspense(org)?.verifiedDomains.length === 0
+						}
+						options={
+							latestNoSuspense(org)?.verifiedDomains.map((d) => d.name) ?? []
+						}
 						placeholder={
 							<Show when={org.loading}>
 								<span class="text-muted-foreground/70">Loading...</span>
@@ -220,6 +193,12 @@ function CreateUserSheetContent() {
 					</SelectField>
 				</div>
 
+				<Suspense>
+					<Show when={domainVerificationError()}>
+						{(error) => <p class="text-red-500">{error()}</p>}
+					</Show>
+				</Suspense>
+
 				<div class="flex items-end space-x-2">
 					<InputField
 						form={form}
@@ -231,15 +210,6 @@ function CreateUserSheetContent() {
 						autocomplete="off"
 					/>
 
-					{/* <Button
-						variant="secondary"
-						onClick={() =>
-							form.setFieldValue("password", generateDefaultPassword())
-						}
-					>
-						<IconPhArrowClockwiseBold />
-					</Button> */}
-					{/* // form.setFieldValue("password", generateDefaultPassword()) */}
 					{/* // TODO: Inset into field or not? */}
 					<Button
 						variant="secondary"
@@ -251,6 +221,14 @@ function CreateUserSheetContent() {
 								"scale-125": passwordVisible(),
 							}}
 						/>
+					</Button>
+					<Button
+						variant="secondary"
+						onClick={() =>
+							(form.fields.password.value = generateDefaultPassword())
+						}
+					>
+						<IconPhArrowClockwiseBold />
 					</Button>
 				</div>
 				{/* // TODO: password policy */}
@@ -290,14 +268,23 @@ function CreateUserSheetContent() {
 				<div class="flex-1" />
 
 				<SheetFooter class="items-center">
-					{/* // TODO: Ignore form errors on this */}
-					<Show when={error()}>
-						{(error) => <p class="text-red-600 text-sm">Error: {error()}</p>}
+					<Show when={!isOnline()}>
+						<p class="text-red-600 text-sm">
+							You must be online to create a user!
+						</p>
 					</Show>
 
 					<div class="flex-1" />
 
-					<Button type="submit" disabled={!isValid() || error() !== undefined}>
+					<Button
+						type="submit"
+						disabled={
+							!form.isValid ||
+							form.isSubmitting ||
+							domainVerificationError() !== undefined ||
+							!isOnline()
+						}
+					>
 						Create
 					</Button>
 				</SheetFooter>

@@ -11,7 +11,7 @@ import {
 	SheetTrigger,
 	buttonVariants,
 } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
 import { A, type RouteDefinition } from "@solidjs/router";
 import clsx from "clsx";
 import pluralize from "pluralize";

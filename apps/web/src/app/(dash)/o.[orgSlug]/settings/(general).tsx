@@ -1,6 +1,6 @@
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Button, Tooltip, TooltipContent, TooltipTrigger } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
 import { useNavigate } from "@solidjs/router";
 import { z } from "zod";
 import { ConfirmDialog } from "~/components/ConfirmDialog";

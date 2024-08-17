@@ -8,8 +8,8 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@mattrax/ui";
-import { Form, createZodForm } from "@mattrax/ui/forms";
-import { InputField } from "@mattrax/ui/forms";
+import { Form, createZodForm } from "@mattrax/ui/forms/legacy";
+import { InputField } from "@mattrax/ui/forms/legacy";
 import { type RouteDefinition, useNavigate } from "@solidjs/router";
 import { z } from "zod";
 

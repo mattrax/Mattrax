@@ -12,7 +12,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
 import { trpc } from "~/lib";
 import { ConfirmDialog } from "~c/ConfirmDialog";
 import { useAuth } from "../../utils";

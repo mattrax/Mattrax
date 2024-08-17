@@ -1,5 +1,5 @@
 import { AsyncButton, Button, CardDescription } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
 import { A, useLocation, useNavigate } from "@solidjs/router";
 import { Show, createMemo, createSignal, startTransition } from "solid-js";
 import { z } from "zod";

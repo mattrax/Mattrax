@@ -367,10 +367,7 @@ function buildResultType(
 					.map(([k, ty]) => {
 						const impl =
 							resultTypes.get(ty)?.impl(index) ??
-							`from_value(&mut row, ${
-								// biome-ignore lint/suspicious/noAssignInExpressions:
-								(index.i += 1)
-							})`;
+							`from_value(&mut row, ${(index.i += 1)})`;
 						return `${camelToSnakeCase(k)}: ${impl}`;
 					})
 					.join(",\n")}

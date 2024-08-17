@@ -1,5 +1,5 @@
 import { Button, Card, CardContent, CardHeader } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
 import {
 	A,
 	Navigate,

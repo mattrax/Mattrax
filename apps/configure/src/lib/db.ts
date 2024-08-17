@@ -82,6 +82,9 @@ export interface DbTypes extends DBSchema {
 			createdDateTime: string; // TODO: As `Date`
 			// TODO: Maybe information of user sync source to disable mutations when not supported???
 		};
+		indexes: {
+			upn: string;
+		};
 	};
 	devices: {
 		key: string;
@@ -329,9 +332,10 @@ export const openAndInitDb = (name: string, createIfNotFound = false) =>
 			db.createObjectStore("views", {
 				keyPath: "id",
 			});
-			db.createObjectStore("users", {
+			const users = db.createObjectStore("users", {
 				keyPath: "id",
 			});
+			users.createIndex("upn", "upn", { unique: true });
 			db.createObjectStore("devices", {
 				keyPath: "id",
 			});

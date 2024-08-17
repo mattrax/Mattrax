@@ -9,6 +9,7 @@
 	"exports": {
 		".": "./src/index.tsx",
 		"./forms": "./src/forms/index.tsx",
+		"./forms/legacy": "./src/forms/legacy/index.tsx",
 		"./lib": "./src/lib/index.ts",
 		"./tailwind": "./tailwind.js",
 		"./vite": "./vite.js",

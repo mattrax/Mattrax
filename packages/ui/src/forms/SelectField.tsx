@@ -1,32 +1,21 @@
-import type { DeepKeys, FieldApi } from "@tanstack/solid-form";
-import {
-	type Accessor,
-	type Component,
-	type ComponentProps,
-	type JSX,
-	createUniqueId,
-	splitProps,
-} from "solid-js";
+import { type ComponentProps, createUniqueId, splitProps } from "solid-js";
 
 import clsx from "clsx";
-import type { SolidFormOutput } from ".";
 import { Label, Select } from "..";
+import { Field, type FormState, type KeysMatching } from "./createForm";
 
 type DistributiveOmit<T, K extends keyof any> = T extends any
 	? Omit<T, K>
 	: never;
 
-export function SelectField<
-	TData extends Record<string, any>,
-	TName extends DeepKeys<TData>,
->(
+export function SelectField<T, K extends KeysMatching<T, string>>(
 	props: DistributiveOmit<
-		ComponentProps<typeof Select<TData[TName]>>,
+		ComponentProps<typeof Select<T[K]>>,
 		"id" | "value" | "onChange" | "onBlur" | "form"
 	> & {
-		form: SolidFormOutput<TData, any>;
+		form: FormState<T>;
 		fieldClass?: string;
-		name: TName;
+		name: K;
 		label?: string;
 		labelClasses?: string;
 	},
@@ -40,17 +29,8 @@ export function SelectField<
 	]);
 	const id = createUniqueId();
 
-	const form = {
-		get Field() {
-			return props.form.Field as unknown as Component<{
-				name: TName;
-				children: (field: Accessor<FieldApi<TData, TName>>) => JSX.Element;
-			}>;
-		},
-	};
-
 	return (
-		<form.Field name={props.name}>
+		<Field name={props.name} form={props.form}>
 			{(field) => (
 				<div class={clsx("flex flex-col space-y-1.5", props.fieldClass)}>
 					{props.label !== undefined && (
@@ -61,12 +41,11 @@ export function SelectField<
 					<Select
 						{...(selectProps as any)}
 						id={id}
-						value={field().state.value}
-						onChange={(e) => field().handleChange(e as any)}
-						onBlur={() => field().handleBlur()}
+						value={field.value}
+						onChange={(e) => (field.value = e as any)}
 					/>
 				</div>
 			)}
-		</form.Field>
+		</Field>
 	);
 }

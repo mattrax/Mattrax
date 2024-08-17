@@ -13,7 +13,7 @@ import {
 	DialogRoot,
 	DialogTitle,
 } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
 import { startRegistration } from "@simplewebauthn/browser";
 import { debounce } from "@solid-primitives/scheduled";
 import type { ComponentProps } from "solid-js";

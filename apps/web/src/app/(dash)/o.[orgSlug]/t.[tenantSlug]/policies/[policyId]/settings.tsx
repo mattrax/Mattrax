@@ -1,6 +1,6 @@
 import { withDependantQueries } from "@mattrax/trpc-server-function/client";
 import { Button, Label } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms";
+import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
 import { useNavigate } from "@solidjs/router";
 import { startTransition } from "solid-js";
 import { z } from "zod";

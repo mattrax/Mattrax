@@ -1,5 +1,5 @@
 import { CardDescription } from "@mattrax/ui";
-import { Form, createZodForm } from "@mattrax/ui/forms";
+import { Form, createZodForm } from "@mattrax/ui/forms/legacy";
 import { useLocation, useNavigate } from "@solidjs/router";
 import { Show, startTransition } from "solid-js";
 import { z } from "zod";
