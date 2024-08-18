@@ -10,7 +10,6 @@ import {
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
-	useController,
 } from "@mattrax/ui";
 import {
 	Form,
@@ -18,6 +17,7 @@ import {
 	SelectField,
 	createZodForm,
 } from "@mattrax/ui/forms/legacy";
+import { useController } from "@mattrax/ui/lib";
 import type { JSX } from "solid-js";
 import { z } from "zod";
 import Bento from "~/components/Bento";

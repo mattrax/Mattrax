@@ -31,6 +31,23 @@ const TabsList = <T extends ValidComponent = "div">(
 	);
 };
 
+// TODO: Should we keep this?
+const TabsList2 = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, TabsListProps>,
+) => {
+	const [local, rest] = splitProps(props as any, ["class", "children"]);
+	return (
+		<div class="border-b border-gray-200">
+			<TabsPrimitive.List
+				class={clsx("-mb-px flex space-x-8", props.class)}
+				{...rest}
+			>
+				{local.children}
+			</TabsPrimitive.List>
+		</div>
+	);
+};
+
 const TabsTrigger = <T extends ValidComponent = "button">(
 	props: PolymorphicProps<T, TabsTriggerProps>,
 ) => {
@@ -42,6 +59,26 @@ const TabsTrigger = <T extends ValidComponent = "button">(
 		<TabsPrimitive.Trigger
 			class={clsx(
 				"peer z-[2] data-[selected]:text-foreground inline-flex items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 outline-none",
+				local.class,
+			)}
+			{...rest}
+		/>
+	);
+};
+
+// TODO: Should we keep this?
+const TabsTrigger2 = <T extends ValidComponent = "button">(
+	props: PolymorphicProps<T, TabsTriggerProps>,
+) => {
+	const [local, rest] = splitProps(
+		props as PolymorphicProps<"button", TabsTriggerProps>,
+		["class"],
+	);
+	return (
+		<TabsPrimitive.Trigger
+			class={clsx(
+				"whitespace-nowrap border-b-2 border-transparent px-1 py-4 text-sm font-medium text-gray-500 hover:border-gray-300 hover:text-gray-700 data-[selected]:border-blue-500 data-[selected]:text-blue-600",
+				// "peer z-[2] data-[selected]:text-foreground inline-flex items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 outline-none",
 				local.class,
 			)}
 			{...rest}
@@ -90,4 +127,12 @@ const TabsIndicator = <T extends ValidComponent = "div">(
 	);
 };
 
-export { Tabs, TabsList, TabsTrigger, TabsContent, TabsIndicator };
+export {
+	Tabs,
+	TabsList,
+	TabsList2,
+	TabsTrigger,
+	TabsTrigger2,
+	TabsContent,
+	TabsIndicator,
+};

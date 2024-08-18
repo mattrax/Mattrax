@@ -49,7 +49,6 @@ export default function Page() {
 
 	return (
 		<PageLayout
-			class="max-w-7xl space-y-2"
 			heading={
 				<>
 					<PageLayoutHeading>Users</PageLayoutHeading>

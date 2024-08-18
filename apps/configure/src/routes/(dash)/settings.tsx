@@ -3,24 +3,21 @@ import {
 	Button,
 	Card,
 	CardContent,
-	CardDescription,
-	CardHeader,
 	CardTitle,
 	Progress,
-	Tooltip,
-	TooltipContent,
-	TooltipTrigger,
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+	Switch as USwitch,
+	badgeVariants,
+	buttonVariants,
 } from "@mattrax/ui";
-import { A, useNavigate } from "@solidjs/router";
+import { useNavigate } from "@solidjs/router";
 import { createMutation } from "@tanstack/solid-query";
-import {
-	For,
-	type JSX,
-	type ParentProps,
-	Show,
-	Suspense,
-	onCleanup,
-} from "solid-js";
+import clsx from "clsx";
+import { For, Match, Show, Switch, onCleanup } from "solid-js";
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
 import { getKey } from "~/lib/kv";
 import { createDbQuery } from "~/lib/query";
@@ -32,65 +29,68 @@ export default function Page() {
 
 	return (
 		<PageLayout heading={<PageLayoutHeading>Settings</PageLayoutHeading>}>
-			<div class="flex flex-row">
-				<nav class="sticky top-0 w-44 flex flex-col gap-y-5 bg-white pl-4">
-					<ul class="space-y-1">
-						<SidebarItem href="">General</SidebarItem>
-						{/* <SidebarItem href="#">Enrollment</SidebarItem> */}
-					</ul>
-				</nav>
-				<main class="flex-1 overflow-y-auto px-4">
-					<Card>
-						<CardHeader>
-							<CardTitle>
-								{/* // TODO: Better Suspense UI */}
-								<Suspense fallback="...">{org()?.name}</Suspense>
-							</CardTitle>
-							<CardDescription
-								class="flex items-center space-x-4"
-								// TODO: Animation wen copying to clipboard
-								onClick={() => navigator.clipboard.writeText(org()?.id || "")}
-							>
-								{/* // TODO: Suspense UI */}
-								<Suspense fallback="...">{org()?.id}</Suspense>
-								<IconPhCopyDuotone />
-							</CardDescription>
-							<CardDescription>
-								{/* // TODO: Better Suspense UI */}
-								<Suspense fallback="...">{org()?.plan}</Suspense>
-							</CardDescription>
+			<Card>
+				<div class="w-full flex justify-between items-center p-6 pb-0">
+					<CardTitle class="h-5">Tenant information</CardTitle>
 
-							{/* // TODO: Show license */}
-						</CardHeader>
-						<CardContent class="flex flex-col space-y-2">
-							<DomainPanel />
-							<BillingPanel />
-							<ActionsPanel />
-						</CardContent>
-					</Card>
-				</main>
-			</div>
+					<a
+						class={clsx(buttonVariants({ variant: "link" }), "!p-0")}
+						classList={{
+							"cursor-default select-none": !org()?.id,
+						}}
+						href={`https://portal.azure.com/${org()?.id}#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/Overview`}
+						target="_blank"
+						rel="noreferrer"
+					>
+						Microsoft Entra ID
+						<IconPrimeExternalLink class="inline ml-1" />
+					</a>
+				</div>
+				<CardContent>
+					<dl class="divide-y divide-gray-100">
+						<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+							{/* // TODO: Allow changing it */}
+							<dt class="text-sm font-medium leading-6 text-gray-900">Name</dt>
+							<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+								{org()?.name}
+							</dd>
+						</div>
+						<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+							{/* // TODO: Link to manage it */}
+							<dt class="text-sm font-medium leading-6 text-gray-900">
+								License
+							</dt>
+							<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+								{org()?.plan}
+							</dd>
+						</div>
+						<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+							{/* // TODO: Allow copying it easily */}
+							<dt class="text-sm font-medium leading-6 text-gray-900">
+								Tenant ID
+							</dt>
+							<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+								<pre>{org()?.id}</pre>
+							</dd>
+						</div>
+						<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+							<dt class="text-sm font-medium leading-6 text-gray-900">
+								Country or region
+							</dt>
+							<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+								{getCountryNameFromCode(org()?.countryLetterCode)}
+							</dd>
+						</div>
+					</dl>
+				</CardContent>
+			</Card>
+
+			<BillingPanel />
+			<DomainsPanel />
+			<AdvancedPanel />
+
+			<Actions />
 		</PageLayout>
-	);
-}
-
-function DomainPanel() {
-	const org = createDbQuery((db) => getKey(db, "org"));
-
-	return (
-		<div class="pb-4">
-			<h1 class="text-2xl font-bold tracking-tight">Domains</h1>
-			<For each={org()?.verifiedDomains}>
-				{(domain) => (
-					<div class="flex space-x-2">
-						<p>{domain.name}</p>
-						<Show when={domain.isInitial}>
-							<Badge>Initial</Badge>
-						</Show>
-					</div>
-				)}
-			</For>
-		</div>
 	);
 }
 
@@ -129,57 +129,215 @@ function BillingPanel() {
 	};
 
 	return (
-		<div class="flex flex-col space-y-2">
-			<h1 class="text-2xl font-bold tracking-tight">Billing</h1>
-			<p>Manage your billing to maintain access to Mattrax Configure.</p>
-
-			<h2 class="text-md font-bold tracking-tight">Devices</h2>
-			<Show when={getPlan()} keyed fallback={<p>Failed to find plan!</p>}>
-				{([_, plan]) => (
-					<Progress
-						value={(devices() / plan.devices) * 100}
-						color={
-							devices() > Math.floor((plan.devices / 4) * 3)
-								? "bg-orange-500"
-								: undefined
-						}
-					/>
-				)}
-			</Show>
-			<p>
-				Your currently managing{" "}
-				<span class="font-bold tracking-tight uppercase">{devices()}</span> out
-				of the maximum{" "}
-				<span class="font-bold tracking-tight uppercase">
-					{getPlan()?.[1].devices}
-				</span>{" "}
-				devices on plan{" "}
-				<span class="font-bold tracking-tight uppercase">
-					{getPlan()?.[0] || "unknown"}
-				</span>{" "}
-				which costs{" "}
-				<span class="font-bold tracking-tight">
-					{getPlan()?.[1].cost}$/month
-				</span>
-				.
-			</p>
-			<Button class="w-64" disabled={true} onClick={() => alert("TODO")}>
-				Manage Billing Information
-			</Button>
-		</div>
+		<Card>
+			<div class="w-full flex justify-between items-center p-6 pb-0">
+				<CardTitle class="h-5">Billing</CardTitle>
+			</div>
+			<CardContent>
+				<dl class="divide-y divide-gray-100">
+					<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+						<dt class="text-sm font-medium leading-6 text-gray-900">
+							Active plan
+						</dt>
+						<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+							<span class="uppercase">{getPlan()?.[0] || "unknown"}</span>
+							<span class="opacity-75">
+								{" "}
+								- While in alpha billing is disabled!
+							</span>
+						</dd>
+					</div>
+					<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+						<dt class="text-sm font-medium leading-6 text-gray-900">
+							Price (monthly)
+						</dt>
+						<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+							{getPlan()?.[1].cost}$
+						</dd>
+					</div>
+					<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+						<dt class="text-sm font-medium leading-6 text-gray-900">Usage</dt>
+						<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0 flex flex-col space-y-1">
+							<h3 class="text-md font-bold tracking-tight">Devices:</h3>
+							<Show
+								when={getPlan()}
+								keyed
+								fallback={<p>Failed to find plan!</p>}
+							>
+								{([_, plan]) => (
+									<Progress
+										value={(devices() / plan.devices) * 100}
+										color={
+											devices() > Math.floor((plan.devices / 4) * 3)
+												? "bg-orange-500"
+												: undefined
+										}
+									/>
+								)}
+							</Show>
+							<p class="text-muted-foreground text-sm">
+								Your currently manage {devices()} devices out of the{" "}
+								{getPlan()?.[1].devices} supported by your plan.
+							</p>
+						</dd>
+					</div>
+				</dl>
+			</CardContent>
+		</Card>
 	);
 }
 
-function ActionsPanel() {
+function DomainsPanel() {
+	const org = createDbQuery((db) => getKey(db, "org"));
+
+	return (
+		<Card>
+			<div class="w-full flex justify-between items-center p-6 pb-0">
+				<CardTitle class="h-5">Domains</CardTitle>
+
+				<a
+					class={clsx(buttonVariants({ variant: "link" }), "!p-0")}
+					classList={{
+						"cursor-default select-none": !org()?.id,
+					}}
+					href={`https://portal.azure.com/${org()?.id}#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/Domains`}
+					target="_blank"
+					rel="noreferrer"
+				>
+					Microsoft Entra ID
+					<IconPrimeExternalLink class="inline ml-1" />
+				</a>
+			</div>
+			<CardContent>
+				<dl class="divide-y divide-gray-100">
+					<For each={org()?.verifiedDomains} fallback={<p>TODO</p>}>
+						{(domain) => (
+							<div class="px-4 py-3 sm:grid sm:grid-cols-4 sm:gap-4 sm:px-0">
+								<dt class="text-sm font-medium leading-6 text-gray-900 sm:col-span-2">
+									{domain.name}
+								</dt>
+								<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-1 sm:mt-0">
+									<Switch>
+										<Match
+											// TODO: Hook up data - `!domain.isVerified`
+											when={domain.name === "sg5hb.onmicrosoft.com"}
+										>
+											<a
+												// TODO: Build a custom verification UI flow
+												href={`https://portal.azure.com/${org()?.id}#view/Microsoft_AAD_IAM/DomainProperties.ReactView/domainName/${encodeURIComponent(domain.name)}/verificationSucceeded~/false`}
+												target="_blank"
+												class={clsx(
+													badgeVariants({ variant: "ghost" }),
+													"bg-orange-400 text-amber-100",
+												)}
+												classList={{
+													"cursor-default select-none": !org()?.id,
+												}}
+												rel="noreferrer"
+											>
+												Verification required!
+											</a>
+										</Match>
+										<Match
+											// TODO: Hook up data - `domain.isPrimary`
+											when={true}
+										>
+											<Badge>Primary</Badge>
+										</Match>
+										<Match when={domain.isInitial}>
+											<Badge>Initial</Badge>
+										</Match>
+									</Switch>
+								</dd>
+								<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-1 sm:mt-0 flex space-x-2 justify-end">
+									<Show
+										// TODO: Hook up data -> `!domain.isPrimary`
+										when={true}
+									>
+										<Button onClick={() => alert("TODO")}>Make primary</Button>
+									</Show>
+									<Button variant="destructive" onClick={() => alert("TODO")}>
+										Delete
+									</Button>
+								</dd>
+							</div>
+						)}
+					</For>
+				</dl>
+			</CardContent>
+		</Card>
+	);
+}
+
+function AdvancedPanel() {
+	return (
+		<Card>
+			<div class="w-full flex justify-between p-6 pb-0">
+				<CardTitle class="h-5">Advanced</CardTitle>
+			</div>
+			<CardContent>
+				<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+					<dt class="text-sm font-medium leading-6 text-gray-900">
+						<h3>Show keyboard shortcuts</h3>
+						<h4 class="text-xs text-muted-foreground">
+							Show hints across the UI for keyboard shortcuts
+						</h4>
+					</dt>
+					<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+						{/* // TODO: Hook this up */}
+						<USwitch onChange={(e) => alert("todo")} />
+					</dd>
+				</div>
+				<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+					<dt class="text-sm font-medium leading-6 text-gray-900">
+						<h3>MDM backend</h3>
+						<h4 class="text-xs text-muted-foreground">
+							Configure the source of truth for device management
+						</h4>
+					</dt>
+					<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+						<Select
+							value="Intune"
+							options={["Intune", "Mattrax"]}
+							disabled={true}
+							itemComponent={(props) => (
+								<SelectItem item={props.item}>{props.item.rawValue}</SelectItem>
+							)}
+						>
+							<SelectTrigger aria-label="MDM Backend" class="max-w-[180px]">
+								<SelectValue<string>>
+									{(state) => state.selectedOption()}
+								</SelectValue>
+							</SelectTrigger>
+							<SelectContent />
+						</Select>
+					</dd>
+				</div>
+				<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+					<dt class="text-sm font-medium leading-6 text-gray-900">
+						<h3>Link with Git provider</h3>
+						<h4 class="text-xs text-muted-foreground">
+							Connect with a Git provider for version control
+						</h4>
+					</dt>
+					<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+						<Button
+							variant="ghost"
+							disabled={true}
+							onClick={() => alert("todo")}
+						>
+							<IconLogosGithubIcon />
+						</Button>
+					</dd>
+				</div>
+			</CardContent>
+		</Card>
+	);
+}
+
+function Actions() {
 	const navigate = useNavigate();
 	const sync = useSync();
-	const deleteDb = createMutation(() => ({
-		mutationFn: async (data) => {
-			sync.db.close();
-			await window.indexedDB.deleteDatabase(sync.db.name);
-			navigate("/");
-		},
-	}));
 
 	const abort = new AbortController();
 	onCleanup(() => abort.abort());
@@ -191,66 +349,64 @@ function ActionsPanel() {
 		},
 	}));
 
+	const deleteDb = createMutation(() => ({
+		mutationFn: async (data) => {
+			sync.db.close();
+			await window.indexedDB.deleteDatabase(sync.db.name);
+			navigate("/");
+		},
+	}));
+
 	return (
-		<>
-			<h1 class="text-2xl font-bold tracking-tight">Actions</h1>
-			<div class="flex space-x-4">
-				<Tooltip>
-					<TooltipTrigger
-						as={Button}
-						disabled={fullResync.isPending}
-						onClick={() => fullResync.mutate()}
-					>
-						Full resync
-					</TooltipTrigger>
-					<TooltipContent>
-						<p>Do a full resync of all data. This may take a while!</p>
-					</TooltipContent>
-				</Tooltip>
+		<section>
+			<h2 class="text-lg font-semibold">Actions</h2>
+			<div class="bg-slate-100 rounded-md w-full py-4 px-6 mt-2 flex justify-between items-center">
+				<div>
+					<h6 class="text-slate-700 text-md font-medium">Refresh database</h6>
+					<p class="text-slate-700 text-sm font-normal">
+						Completely refresh the local database with Microsoft!
+					</p>
+				</div>
+
+				<Button
+					disabled={fullResync.isPending}
+					onClick={() => fullResync.mutate()}
+				>
+					Resync
+				</Button>
+			</div>
+
+			<div class="bg-red-100 rounded-md w-full py-4 px-6 mt-2 flex justify-between items-center">
+				<div>
+					<h6 class="text-red-700 text-md font-medium">
+						Delete the local database!
+					</h6>
+					<p class="text-red-700 text-sm font-normal">
+						This action will permanently remove all local data and you will be
+						logged out!
+					</p>
+				</div>
 
 				{/* // TODO: Confirmation dialog */}
-				<Tooltip>
-					<TooltipTrigger
-						as={Button}
-						variant="destructive"
-						disabled={deleteDb.isPending}
-						onClick={() => deleteDb.mutate()}
-					>
-						Delete database
-					</TooltipTrigger>
-					<TooltipContent>
-						<p>Delete all data for this user & logout!</p>
-					</TooltipContent>
-				</Tooltip>
+				<Button
+					variant="destructive"
+					disabled={deleteDb.isPending}
+					onClick={() => deleteDb.mutate()}
+				>
+					Delete
+				</Button>
 			</div>
-		</>
+		</section>
 	);
 }
 
-const SidebarItem = (
-	props: ParentProps & {
-		href: string;
-		// disabled?: boolean;
-		icon?: (props: JSX.SvgSVGAttributes<SVGSVGElement>) => JSX.Element;
-	},
-) => (
-	<A
-		end
-		href={props.href}
-		class="block group rounded-md p-2 text-sm leading-6 font-semibold"
-		activeClass="bg-gray-50 text-brand active-page"
-		inactiveClass="text-gray-700 hover:text-brand hover:bg-gray-50 inactive-page"
-	>
-		<div>
-			{props.icon && (
-				<props.icon
-					class={
-						"h-6 w-6 shrink-0 group-[.active-page]:text-brand group-[.inactive-page]:text-gray-400 group-[.inactive-page]:group-hover:text-brand"
-					}
-					aria-hidden="true"
-				/>
-			)}
-			{props.children}
-		</div>
-	</A>
-);
+function getCountryNameFromCode(code: string | undefined) {
+	if (!code) return null;
+	try {
+		return new Intl.DisplayNames(["en"], {
+			type: "region",
+		}).of(code);
+	} catch (t) {
+		return code;
+	}
+}

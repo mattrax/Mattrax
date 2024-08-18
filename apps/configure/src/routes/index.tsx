@@ -11,6 +11,7 @@ import {
 import { verifyOAuthCode } from "~/lib/auth";
 import { getKey } from "~/lib/kv";
 import { listenForKvChanges } from "~/lib/query";
+import { ModalScreen } from "./(dash)";
 import HomePage from "./home";
 
 export default function Page() {
@@ -55,24 +56,30 @@ export default function Page() {
 							navigate(`/${userId}`, { replace: true });
 						});
 
-						// TODO: Properly style this flow
 						return (
 							<ErrorBoundary
 								fallback={
-									<div class="flex flex-col space-y-2 max-w-sm p-4">
-										<h1 class="text-red-500 font-bold text-2xl">
-											An error occurred
-										</h1>
-										<p class="text-red-500">
-											Error verifying access token! Please try again!
-										</p>
+									<ModalScreen>
+										<span class="text-red-500">
+											Error while authenticating with Microsoft!
+										</span>
+										<br />
 										<a href="/" class={buttonVariants()}>
 											Try again
 										</a>
-									</div>
+									</ModalScreen>
 								}
 							>
-								<Suspense fallback={<p class="p-4">Verifying...</p>}>
+								<Suspense
+									fallback={
+										<ModalScreen>
+											Authenticating with Microsoft...
+											<span class="text-xl">
+												<IconSvgSpinners90Ring class="size-10 mt-4" />
+											</span>
+										</ModalScreen>
+									}
+								>
 									{accessToken() ? null : null}
 								</Suspense>
 							</ErrorBoundary>

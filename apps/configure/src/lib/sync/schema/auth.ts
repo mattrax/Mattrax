@@ -71,6 +71,7 @@ export const me = defineSyncOperation<undefined>(
 const orgSchema = z.object({
 	id: z.string(),
 	displayName: z.string(),
+	countryLetterCode: z.string(),
 	verifiedDomains: z.array(
 		z.object({
 			capabilities: z.string(),
@@ -99,8 +100,9 @@ const orgSchema = z.object({
 export type Org = {
 	id: string;
 	name: string;
+	countryLetterCode: string;
 	verifiedDomains: z.infer<typeof orgSchema>["verifiedDomains"];
-	plan: any; // TODO
+	plan: string;
 };
 
 export const organization = defineSyncOperation(
@@ -110,7 +112,7 @@ export const organization = defineSyncOperation(
 			{
 				id: "organization",
 				method: "GET",
-				url: "/organization?$select=id,displayName,verifiedDomains,assignedPlans",
+				url: "/organization?$select=id,displayName,verifiedDomains,assignedPlans,countryLetterCode",
 			},
 			accessToken,
 		);
@@ -139,6 +141,7 @@ export const organization = defineSyncOperation(
 		await putKey(db, "org", {
 			id: data.id,
 			name: data.displayName,
+			countryLetterCode: data.countryLetterCode,
 			verifiedDomains: data.verifiedDomains,
 			plan: determinePlan(data.assignedPlans),
 		});

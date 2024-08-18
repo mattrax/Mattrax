@@ -5,8 +5,8 @@ import {
 	DialogHeader,
 	DialogTitle,
 	Textarea,
-	useController,
 } from "@mattrax/ui";
+import { useController } from "@mattrax/ui/lib";
 import {
 	For,
 	Match,

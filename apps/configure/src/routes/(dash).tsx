@@ -83,7 +83,7 @@ export default function Layout(props: ParentProps) {
 									return <Navigate href="/" />;
 								}
 
-								return GenericErrorScreen(err, reset);
+								return GenericErrorBoundary(err, reset);
 							}}
 						>
 							<Suspense>
@@ -141,7 +141,7 @@ export default function Layout(props: ParentProps) {
 													<Navbar />
 												</Suspense>
 
-												<ErrorBoundary fallback={GenericErrorScreen}>
+												<ErrorBoundary fallback={GenericErrorBoundary}>
 													<Suspense>{props.children}</Suspense>
 												</ErrorBoundary>
 											</SyncProvider>
@@ -169,19 +169,19 @@ function CapabilitiesOverlay(props: ParentProps) {
 		<Show
 			when={"locks" in navigator}
 			fallback={
-				<ErrorScreen>
+				<ModalScreen>
 					Your browser does not support Web Locks. <br />
 					Please upgrade your browser to use Mattrax.
-				</ErrorScreen>
+				</ModalScreen>
 			}
 		>
 			<Show
 				when={"indexedDB" in window}
 				fallback={
-					<ErrorScreen>
+					<ModalScreen>
 						Your browser does not support IndexedDB. <br />
 						Please upgrade your browser to use Mattrax.
-					</ErrorScreen>
+					</ModalScreen>
 				}
 			>
 				{props.children}
@@ -190,7 +190,7 @@ function CapabilitiesOverlay(props: ParentProps) {
 	);
 }
 
-function GenericErrorScreen(err: Error, reset: () => void) {
+function GenericErrorBoundary(err: Error, reset: () => void) {
 	console.error(err);
 
 	const mutation = createMutation(() => ({
@@ -209,7 +209,7 @@ function GenericErrorScreen(err: Error, reset: () => void) {
 	if (import.meta.hot) import.meta.hot.on("vite:afterUpdate", () => reset());
 
 	return (
-		<ErrorScreen>
+		<ModalScreen>
 			Error while initializing the page.
 			<pre>{err.toString()}</pre>
 			<br />
@@ -232,12 +232,11 @@ function GenericErrorScreen(err: Error, reset: () => void) {
 			>
 				reset everything
 			</button>
-			.
-		</ErrorScreen>
+		</ModalScreen>
 	);
 }
 
-function ErrorScreen(props: ParentProps) {
+export function ModalScreen(props: ParentProps) {
 	return (
 		<div class="absolute top-0 left-0 h-screen w-screen flex justify-center items-center">
 			<div class="w-full flex flex-col items-center justify-center">
@@ -247,7 +246,7 @@ function ErrorScreen(props: ParentProps) {
 					</h2>
 				</div>
 
-				<p class="text-muted-foreground text-md text-center">
+				<p class="text-muted-foreground text-md text-center flex flex-col items-center">
 					{props.children}
 				</p>
 			</div>

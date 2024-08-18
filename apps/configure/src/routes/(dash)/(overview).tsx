@@ -1,21 +1,22 @@
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
 import { StatItem } from "~/components/StatItem";
+import { getKey } from "~/lib/kv";
 import { createDbQuery } from "~/lib/query";
 
 export default function Page() {
-	const counts = createDbQuery(async (db) => {
-		return {
-			users: await db.count("users"),
-			devices: await db.count("devices"),
-			groups: await db.count("groups"),
-			policies: await db.count("policies"),
-			scripts: await db.count("scripts"),
-			applications: await db.count("apps"),
-		};
-	});
+	const org = createDbQuery((db) => getKey(db, "org"));
+	const counts = createDbQuery(async (db) =>
+		Object.fromEntries(
+			await Promise.all(
+				(
+					["users", "devices", "groups", "policies", "scripts", "apps"] as const
+				).map(async (type) => [type, await db.count(type)]),
+			),
+		),
+	);
 
 	return (
-		<PageLayout heading={<PageLayoutHeading>Overview</PageLayoutHeading>}>
+		<PageLayout heading={<PageLayoutHeading>{org()?.name}</PageLayoutHeading>}>
 			<div class="grid gap-4 grid-cols-6">
 				<StatItem
 					title="Users"
