@@ -103,7 +103,7 @@ export function TableContent(
 		const d = rawData();
 		if (!d) return [];
 
-		return d.sort((a, b) => a.data.name.localeCompare(b.data.name));
+		return [...d].sort((a, b) => a.data.name.localeCompare(b.data.name));
 	});
 
 	const virtualizer = createWindowVirtualizer({

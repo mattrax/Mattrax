@@ -23,7 +23,7 @@ import {
 	type Controller,
 	ControllerProvider,
 	createController,
-} from "./controller";
+} from "./lib/controller";
 
 const DropdownMenu = <T extends ValidComponent = "div">(
 	props: Omit<

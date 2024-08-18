@@ -19,7 +19,7 @@ export const routes = [
 				component: lazy(() => import("./routes/(dash)/(overview)")),
 			},
 			{
-				path: "/users",
+				path: ["/users", "/users/new"],
 				component: lazy(() => import("./routes/(dash)/users/(users)")),
 			},
 			{

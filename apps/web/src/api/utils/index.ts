@@ -16,8 +16,6 @@ export function getEmailDomain(email: string) {
 }
 
 export function omit<T, K extends string>(obj: T, keys: K[]): Omit<T, K> {
-	// biome-ignore lint/complexity/noForEach: <explanation>
-	// biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
 	keys.forEach((k) => ((obj as any)[k] = undefined));
 
 	return obj;

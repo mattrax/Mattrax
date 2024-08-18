@@ -174,7 +174,6 @@ export const deviceRouter = createTRPCRouter({
 			const pols: Array<number> = [],
 				apps: Array<number> = [];
 
-			// biome-ignore lint/complexity/noForEach: <explanation>
 			input.assignments.forEach((a) => {
 				if (a.variant === "policy") pols.push(a.pk);
 				else apps.push(a.pk);

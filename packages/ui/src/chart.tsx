@@ -171,7 +171,6 @@ function showTooltip(context: ChartContext) {
 
 	let content = "";
 
-	// biome-ignore lint/complexity/noForEach:
 	model.title.forEach((title) => {
 		content += `<h3 class="font-semibold leading-none tracking-tight">${title}</h3>`;
 	});

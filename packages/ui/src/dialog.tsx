@@ -19,7 +19,7 @@ import {
 	type Controller,
 	ControllerProvider,
 	createController,
-} from "./controller";
+} from "./lib/controller";
 
 const Dialog: Component<
 	Omit<DialogRootProps, "open"> &

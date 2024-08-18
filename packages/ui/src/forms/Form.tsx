@@ -18,7 +18,7 @@ export function Form<S>(
 	]);
 
 	useBeforeLeave((e) => {
-		if (!props.guardBeforeLeave) return;
+		if (props.guardBeforeLeave === false) return;
 		if (props.form.isDirty && !props.form.isSubmitting && !e.defaultPrevented) {
 			// preventDefault to block immediately and prompt user async
 			e.preventDefault();

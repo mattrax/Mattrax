@@ -12,7 +12,7 @@ import {
 	type Controller,
 	ControllerProvider,
 	createController,
-} from "./controller";
+} from "./lib/controller";
 
 const Popover: Component<
 	Omit<PopoverPrimitive.PopoverRootProps, "open"> &

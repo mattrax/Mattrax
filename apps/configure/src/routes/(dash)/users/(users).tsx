@@ -25,7 +25,7 @@ import {
 } from "@mattrax/ui/forms";
 import { latestNoSuspense } from "@mattrax/ui/lib";
 import { createConnectivitySignal } from "@solid-primitives/connectivity";
-import { createAsync, useNavigate } from "@solidjs/router";
+import { createAsync, useLocation, useNavigate } from "@solidjs/router";
 import { Show, Suspense, createSignal } from "solid-js";
 import { z } from "zod";
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
@@ -35,6 +35,8 @@ import { createDbQuery } from "~/lib/query";
 import { useSync } from "~/lib/sync";
 
 export default function Page() {
+	const navigate = useNavigate();
+	const location = useLocation();
 	const ctx = createSearchPageContext([
 		{
 			type: "enum",
@@ -43,19 +45,36 @@ export default function Page() {
 		},
 	]);
 
+	const isSheetOpen = () => location.pathname.endsWith("/new");
+
 	return (
 		<PageLayout
 			class="max-w-7xl space-y-2"
 			heading={
 				<>
 					<PageLayoutHeading>Users</PageLayoutHeading>
-					<Sheet open={true}>
-						<SheetTrigger as={Button}>
+					<Sheet
+						open={isSheetOpen()}
+						onOpenChange={(isOpen) => {
+							if (!isOpen) navigate("..");
+						}}
+					>
+						<SheetTrigger
+							as={Button}
+							onClick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								navigate("new");
+							}}
+						>
 							Create
 							{/* // TODO: Add keyboard shortcut */}
 							{/* <Kbd class="ml-2">N</Kbd> */}
 						</SheetTrigger>
-						<CreateUserSheetContent />
+
+						<SheetContent>
+							<CreateUserSheet />
+						</SheetContent>
 					</Sheet>
 				</>
 			}
@@ -65,7 +84,7 @@ export default function Page() {
 	);
 }
 
-function CreateUserSheetContent() {
+function CreateUserSheet() {
 	const navigate = useNavigate();
 	const sync = useSync();
 	const isOnline = createConnectivitySignal();
@@ -113,7 +132,7 @@ function CreateUserSheetContent() {
 	};
 
 	return (
-		<SheetContent>
+		<>
 			<SheetHeader>
 				<SheetTitle>Create user</SheetTitle>
 				<SheetDescription>
@@ -289,7 +308,7 @@ function CreateUserSheetContent() {
 					</Button>
 				</SheetFooter>
 			</Form>
-		</SheetContent>
+		</>
 	);
 }
 
