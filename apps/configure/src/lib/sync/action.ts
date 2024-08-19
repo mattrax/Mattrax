@@ -1,19 +1,38 @@
-import type { useSync } from ".";
+import {
+	type CreateMutationResult,
+	type DefaultError,
+	type QueryClient,
+	type SolidMutationOptions,
+	createMutation,
+} from "@tanstack/solid-query";
+import type { Accessor } from "solid-js";
+import { useSync } from ".";
 import type { Database } from "../db";
+import { getKey } from "../kv";
+
+type MutationOptions<M> = {
+	// commit the mutation to the remote API
+	commit: (data: M, accessToken: string) => Promise<void> | void;
+	// TODO: Should `apply` and `rollback` be optional long-term??? For the online first-stuff it makes sense
+	// apply the mutation against the local database
+	// We rely on the upsert behaviour of sync to revert this
+	apply?: (db: Database, data: M) => Promise<void> | void;
+	// rollback the mutation against the local database
+	rollback?: (db: Database, data: M) => Promise<void> | void;
+};
+
+type Action<M> = ((
+	sync: ReturnType<typeof useSync>,
+	data: M,
+) => Promise<void>) & {
+	mutation: { name: string; options: MutationOptions<M> };
+};
 
 // TODO
 export function defineAction<M>(
 	name: string,
-	options: {
-		// commit the mutation to the remote API
-		commit: (data: M, accessToken: string) => Promise<void> | void;
-		// apply the mutation against the local database
-		// We rely on the upsert behaviour of sync to revert this
-		apply: (db: Database, data: M) => Promise<void> | void;
-		// rollback the mutation against the local database
-		rollback: (db: Database, data: M) => Promise<void> | void;
-	},
-) {
+	options: MutationOptions<M>,
+): Action<M> {
 	const callback = async (sync: ReturnType<typeof useSync>, data: M) => {
 		const id = crypto.randomUUID();
 
@@ -29,7 +48,7 @@ export function defineAction<M>(
 			});
 
 			try {
-				await options.apply(sync.db, data);
+				await options.apply?.(sync.db, data);
 
 				await sync.db.put("_mutations", {
 					id,
@@ -88,4 +107,35 @@ export async function applyMigrations(
 			}
 		}
 	});
+}
+
+// This hook allows using an action in an ephemeral scope (Eg. online-first mode).
+export function useEphemeralAction<
+	TError = DefaultError,
+	TVariables = void,
+	TContext = unknown,
+>(
+	action: Action<TVariables>,
+	options?: () => Omit<
+		SolidMutationOptions<void, TError, TVariables, TContext>,
+		"mutationKey" | "mutationFn"
+	>,
+	queryClient?: Accessor<QueryClient>,
+): CreateMutationResult<void, TError, TVariables, TContext> {
+	const sync = useSync();
+	return createMutation(
+		() => ({
+			mutationKey: [action.name],
+			mutationFn: async (data) => {
+				const accessToken = await getKey(sync.db, "accessToken");
+				if (!accessToken) return; // TODO: Redirect to login momentarily
+
+				await action.mutation.options.apply?.(sync.db, data);
+				await action.mutation.options.commit(data, accessToken);
+			},
+			...options?.(),
+		}),
+		// TODO: Toast on error?
+		queryClient,
+	);
 }

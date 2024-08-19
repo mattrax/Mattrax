@@ -8,7 +8,7 @@ export const users = defineSyncEntity("users", {
 	schema: z.object({
 		id: z.string(),
 		userType: z.enum(["Member", "Guest"]),
-		userPrincipalName: z.string(),
+		userPrincipalName: z.string().email(),
 		displayName: z.string(),
 		givenName: z.string().optional(),
 		surname: z.string().optional(),
@@ -29,6 +29,7 @@ export const users = defineSyncEntity("users", {
 				id: data.id,
 				type: data.userType === "Guest" ? "guest" : "member",
 				upn: data.userPrincipalName,
+				domain: data.userPrincipalName.split("@").pop()!,
 				name: data.displayName,
 				nameParts: {
 					givenName: data.givenName,

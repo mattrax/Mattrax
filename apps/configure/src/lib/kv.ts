@@ -1,10 +1,11 @@
 import type { User } from "./auth";
 import type { Database } from "./db";
-import type { Org } from "./sync/schema/auth";
+import type { MobilityApp, Org } from "./sync/schema/auth";
 
 export type KvValue = {
 	user: User;
 	org: Org;
+	orgMobility: MobilityApp[];
 	accessToken: string;
 	refreshToken: string;
 	configurationSettings: string;

@@ -9,7 +9,7 @@ import {
 } from "solid-js";
 import { createMutable } from "solid-js/store";
 import { z } from "zod";
-import { isLoading, latest } from "../lib"; // TODO: Bring back `latest`???
+import { isLoading } from "../solid";
 
 export type FormState<T> = {
 	fields: {

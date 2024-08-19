@@ -1,11 +1,6 @@
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { createDeepSignal } from "@solid-primitives/resource";
-import {
-	type Resource,
-	type ResourceActions,
-	createResource,
-	onCleanup,
-} from "solid-js";
+import { createResource, onCleanup, startTransition } from "solid-js";
 import type { Database } from "./db";
 import { useSync } from "./sync";
 
@@ -37,27 +32,32 @@ export function createDbQuery<T>(
 	options: { initialValue?: T } = {},
 ) {
 	const sync = useSync();
-	const [data, actions] = createResource(async () => await query(sync.db), {
+	const [data, actions] = createResource<T>(() => query(sync.db), {
 		storage: createDeepSignal,
 		initialValue: options.initialValue,
 	});
 
-	createDbObserver(sync.db, actions.refetch);
+	let queue: number | undefined;
+	const refetch = () => {
+		if (queue) return;
+		queue = setTimeout(() => {
+			queue = undefined;
+			startTransition(() => actions.refetch());
+		}, 30);
+	};
+	onCleanup(() => clearTimeout(queue));
+
+	createDbObserver(sync.db, refetch);
 	createCrossTabObserver((dbName, objectStore) => {
 		if (sync.db.name !== dbName) return;
 		// TODO: Filtering by `objectStore`
-		actions.refetch();
+		refetch();
 	});
 
-	return Object.assign(
-		// Run-once async
-		() => data.latest || data(),
-		// Neater to put it all together
-		{
-			refetch: actions.refetch,
-			mutate: actions.mutate,
-		},
-	) as Resource<T> & ResourceActions<T>;
+	return Object.assign(data, {
+		refetch: actions.refetch,
+		mutate: actions.mutate,
+	});
 }
 
 // Creates a listener that lets other tabs know when the database has been updated.

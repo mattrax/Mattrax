@@ -72,15 +72,6 @@ const orgSchema = z.object({
 	id: z.string(),
 	displayName: z.string(),
 	countryLetterCode: z.string(),
-	verifiedDomains: z.array(
-		z.object({
-			capabilities: z.string(),
-			isDefault: z.boolean(),
-			isInitial: z.boolean(),
-			name: z.string(),
-			type: z.enum(["Managed"]),
-		}),
-	),
 	assignedPlans: z.array(
 		z.object({
 			assignedDateTime: z.string().datetime(),
@@ -97,27 +88,45 @@ const orgSchema = z.object({
 	),
 });
 
+const domainSchema = z.object({
+	id: z.string(),
+	authenticationType: z.enum(["Managed", "Federated"]),
+	isAdminManaged: z.boolean(),
+	isDefault: z.boolean(),
+	isInitial: z.boolean(),
+	isRoot: z.boolean(),
+	isVerified: z.boolean(),
+});
+
 export type Org = {
 	id: string;
 	name: string;
 	countryLetterCode: string;
-	verifiedDomains: z.infer<typeof orgSchema>["verifiedDomains"];
 	plan: string;
+	domains: z.infer<typeof domainSchema>[];
 };
 
 export const organization = defineSyncOperation(
 	"organization",
 	async ({ db, accessToken }) => {
 		const responses = await registerBatchedOperationAsync(
-			{
-				id: "organization",
-				method: "GET",
-				url: "/organization?$select=id,displayName,verifiedDomains,assignedPlans,countryLetterCode",
-			},
+			[
+				{
+					id: "organization",
+					method: "GET",
+					url: "/organization?$select=id,displayName,assignedPlans,countryLetterCode",
+				},
+				{
+					id: "orgDomains",
+					method: "GET",
+					url: "/domains?$select=id,authenticationType,isAdminManaged,isDefault,isInitial,isRoot,isVerified",
+				},
+			],
 			accessToken,
 		);
 
 		const org = responses[0]!;
+		const domains = responses[1]!;
 
 		if (org.status !== 200)
 			throw new Error(`Failed to fetch org. Got status ${org.status}`);
@@ -138,18 +147,120 @@ export const organization = defineSyncOperation(
 		if ("@removed" in data)
 			throw new Error("A non-delta query returned `@removed`!");
 
+		let d: z.infer<typeof domainSchema>[] = [];
+		if (domains.status === 200) {
+			const result2 = odataResponseSchema(domainSchema).safeParse(domains.body);
+			if (result2.error)
+				console.error(
+					`Failed to parse domains response. ${result2.error.message}`,
+				);
+
+			// @ts-expect-error // TODO: Fix this with better odata validation
+			d = result2.data?.value || [];
+		} else {
+			console.error(`Failed to domains org. Got status ${domains.status}`);
+		}
+
 		await putKey(db, "org", {
 			id: data.id,
 			name: data.displayName,
 			countryLetterCode: data.countryLetterCode,
-			verifiedDomains: data.verifiedDomains,
 			plan: determinePlan(data.assignedPlans),
+			domains: d,
 		});
 
 		return {
 			type: "complete",
 			meta: undefined,
 		};
+	},
+);
+
+const mobilityAppSchema = z.object({
+	id: z.string(),
+	appliesTo: z.enum(["none", "all", "selected"]),
+	// Only present when `appliesTo` is `selected`
+	includedGroups: z
+		.array(
+			z.object({
+				id: z.string(),
+				displayName: z.string(),
+			}),
+		)
+		.optional(),
+	displayName: z.string(),
+	description: z.string().optional(),
+	isValid: z.boolean(),
+
+	discoveryUrl: z.string().optional(),
+	complianceUrl: z.string().optional(),
+	termsOfUseUrl: z.string().optional(),
+});
+
+export type MobilityApp = z.infer<typeof mobilityAppSchema>;
+
+export const organizationMobility = defineSyncOperation<"getLogos" | undefined>(
+	"organizationMobility",
+	async ({ db, accessToken, metadata }) => {
+		if (metadata === "getLogos") {
+			const responses = await registerBatchedOperationAsync(
+				{
+					id: "orgMobility",
+					method: "GET",
+					url: "/policies/mobileDeviceManagementPolicies?$select=id,appliesTo,displayName,description,isValid,discoveryUrl,complianceUrl,termsOfUseUrl&$expand=includedGroups($select=id,displayName)",
+				},
+				accessToken,
+			);
+
+			const apps = responses[0]!;
+
+			if (apps.status !== 200)
+				throw new Error(
+					`Failed to fetch org mobility. Got status ${apps.status}`,
+				);
+
+			const result = odataResponseSchema(mobilityAppSchema).safeParse(
+				apps.body,
+			);
+			if (result.error)
+				throw new Error(
+					`Failed to parse org mobility response. ${result.error.message}`,
+				);
+			// @ts-expect-error // TODO: Fix types
+			await putKey(db, "orgMobility", result.data.value);
+
+			return {
+				type: "complete",
+				meta: undefined,
+			};
+			// return {
+			// 	type: "continue",
+			// 	meta: "getLogos",
+			// };
+		} else {
+			// TODO: Fetch icons -> It's a pain cause we need the `servicePrincipals` and app template URL's
+			// const apps = await getKey(db, "orgMobility");
+			// if (apps) {
+			// 	// TODO: ETag caching
+			// 	const responses = await registerBatchedOperationAsync(
+			// 		apps.map((app, i) => ({
+			// 			id: `orgMobilityLogo-${i}`,
+			// 			method: "GET",
+			// 			url: `/servicePrincipals(appId='${encodeURIComponent(app.id)}')/info/logoUrl`,
+			// 		})),
+			// 		accessToken,
+			// 	);
+
+			// 	// /applicationTemplates/0000000a-0000-0000-c000-000000000000?$select=logoUrl
+
+			// 	console.log(responses); // TODO
+			// }
+
+			return {
+				type: "complete",
+				meta: undefined,
+			};
+		}
 	},
 );
 

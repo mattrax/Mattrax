@@ -18,6 +18,7 @@ import {
 	TooltipTrigger,
 	buttonVariants,
 } from "@mattrax/ui";
+import { latest } from "@mattrax/ui/solid";
 import { createConnectivitySignal } from "@solid-primitives/connectivity";
 import { makeEventListener } from "@solid-primitives/event-listener";
 import {
@@ -52,8 +53,32 @@ import { type Database, dbVersion } from "~/lib/db";
 import { getDbCached } from "~/lib/db-cache";
 import { deleteKey, getKey } from "~/lib/kv";
 import { createCrossTabListener, createDbQuery } from "~/lib/query";
-import { SyncProvider, initSync, useSync } from "~/lib/sync";
+import { SyncProvider, createSync, useSync } from "~/lib/sync";
 import { useZodParams } from "~/lib/useZodParams";
+
+// Restore scroll position after hot-reload
+declare global {
+	interface Window {
+		_scroll_pos?: [number, number];
+	}
+}
+
+if (import.meta.hot) {
+	import.meta.hot.on("vite:beforeUpdate", () => {
+		window._scroll_pos = [
+			document.documentElement.scrollTop,
+			document.documentElement.scrollLeft,
+		];
+	});
+
+	import.meta.hot.on("vite:afterUpdate", () => {
+		const scroll = window._scroll_pos;
+		setTimeout(() => {
+			if (scroll) document.documentElement.scrollTo(scroll["1"], scroll["0"]);
+			window._scroll_pos = undefined;
+		}, 100);
+	});
+}
 
 export default function Layout(props: ParentProps) {
 	const params = useZodParams({
@@ -89,7 +114,7 @@ export default function Layout(props: ParentProps) {
 							<Suspense>
 								<Show when={db()} keyed>
 									{(db) => {
-										const sync = initSync(db);
+										const sync = createSync(db);
 										createCrossTabListener(db);
 
 										onMount(() => sync.syncAll(sync.abort));
@@ -533,7 +558,7 @@ function SyncPanel() {
 	});
 
 	// Avoid suspending
-	const progress = () => progressRaw.latest ?? 0;
+	const progress = () => latest(progressRaw) ?? 0;
 
 	const abort = new AbortController();
 	onCleanup(() => abort.abort());
@@ -589,7 +614,7 @@ function SyncPanel() {
 	return (
 		<div class="flex justify-center items-center space-x-2">
 			<Suspense>
-				<Show when={!(persistentStorageAccess() ?? false)}>
+				<Show when={!(latest(persistentStorageAccess) ?? false)}>
 					<div>
 						<Tooltip>
 							<TooltipTrigger
@@ -671,7 +696,7 @@ function SyncPanel() {
 	);
 }
 
-function getInitials(string: string) {
+export function getInitials(string: string) {
 	const names = string.split(" ");
 	// @ts-expect-error
 	let initials = names[0].substring(0, 1).toUpperCase();

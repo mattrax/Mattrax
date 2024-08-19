@@ -23,7 +23,7 @@ import {
 	SelectField,
 	createForm,
 } from "@mattrax/ui/forms";
-import { latestNoSuspense } from "@mattrax/ui/lib";
+import { latest } from "@mattrax/ui/solid";
 import { createConnectivitySignal } from "@solid-primitives/connectivity";
 import { createAsync, useLocation, useNavigate } from "@solidjs/router";
 import { Show, Suspense, createSignal } from "solid-js";
@@ -98,7 +98,9 @@ function CreateUserSheet() {
 			z.object({
 				name: z.string().min(1).max(256),
 				upnLocal: z.string().min(1).max(64),
-				upnRemote: z.string().default(org()?.verifiedDomains?.[0]?.name ?? ""),
+				upnRemote: z
+					.string()
+					.default(org()?.domains.filter((d) => d.isVerified)?.[0]?.id ?? ""),
 				mailNickname: z.string().max(64),
 				accountEnabled: z.boolean().default(true),
 				// TODO: The new password must contain characters from at least 3 out of: Lowercase characters, Uppercase characters, Numbers, Symbols. The new password must not be weak or commonly used.
@@ -122,12 +124,15 @@ function CreateUserSheet() {
 		return `User ${upn} already exists`;
 	});
 
+	const verifiedDomains = () =>
+		latest(org)?.domains.filter((d) => d.isVerified) || [];
+
 	const domainVerificationError = () => {
-		if ((latestNoSuspense(org)?.verifiedDomains.length ?? 0) === 0)
+		if (verifiedDomains().length === 0)
 			// TODO: Link the user to the domain verification page
 			return "Your organization must have a verified domain!";
 
-		return latestNoSuspense(duplicateUserError);
+		return latest(duplicateUserError);
 	};
 
 	return (
@@ -184,12 +189,8 @@ function CreateUserSheet() {
 						form={form}
 						name="upnRemote"
 						fieldClass="flex-1"
-						disabled={
-							org.loading || latestNoSuspense(org)?.verifiedDomains.length === 0
-						}
-						options={
-							latestNoSuspense(org)?.verifiedDomains.map((d) => d.name) ?? []
-						}
+						disabled={org.loading || verifiedDomains().length === 0}
+						options={verifiedDomains().map((d) => d.id)}
 						placeholder={
 							<Show when={org.loading}>
 								<span class="text-muted-foreground/70">Loading...</span>

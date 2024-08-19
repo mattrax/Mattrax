@@ -6,6 +6,7 @@ export type Operation = {
 	method: "GET" | "POST" | "PATCH" | "DELETE";
 	url: string;
 	headers?: Record<string, string>;
+	body?: any;
 };
 
 export type OperationResponse = {

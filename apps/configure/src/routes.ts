@@ -83,7 +83,7 @@ export const routes = [
 				component: lazy(() => import("./routes/(dash)/search")),
 			},
 			{
-				path: "/settings",
+				path: ["/settings", "/settings/domains/:domain"],
 				component: lazy(() => import("./routes/(dash)/settings")),
 			},
 			{

@@ -1,6 +1,10 @@
 import type { Database, TableName } from "../db";
 
-export type SyncOperation = TableName | "me" | "organization";
+export type SyncOperation =
+	| TableName
+	| "me"
+	| "organization"
+	| "organizationMobility";
 
 type SyncOperationResult<M> =
 	| {

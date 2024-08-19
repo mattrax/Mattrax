@@ -11,6 +11,7 @@
 		"./forms": "./src/forms/index.tsx",
 		"./forms/legacy": "./src/forms/legacy/index.tsx",
 		"./lib": "./src/lib/index.ts",
+		"./solid": "./src/solid/index.ts",
 		"./tailwind": "./tailwind.js",
 		"./vite": "./vite.js",
 		"./types": "./src/types.d.ts",

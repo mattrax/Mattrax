@@ -43,9 +43,9 @@ const handlers: Partial<{
 		return result;
 	},
 	put: (db) => async (storeName, value, key) => {
-		console.log("PUT", storeName, value, key); // TODO
+		// console.log("PUT", storeName, value, key); // TODO
 		const result = await db.put(storeName, value, key);
-		console.log(db); // TODO: `db` can be `objectStore` -> Reflect in types or fix?
+		// console.log(db); // TODO: `db` can be `objectStore` -> Reflect in types or fix?
 		db.dispatchEvent(constructEvent({ storeName, type: "put", key }));
 		return result;
 	},

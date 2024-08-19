@@ -1,7 +1,7 @@
 /* @refresh reload */
 import { Router, useLocation } from "@solidjs/router";
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
-import { type ParentProps, lazy } from "solid-js";
+import { type ParentProps, lazy, onMount } from "solid-js";
 import { render } from "solid-js/web";
 import { Toaster } from "solid-sonner";
 import { routes } from "./routes";
@@ -28,6 +28,10 @@ function Root(props: ParentProps) {
 
 	const isDevMode =
 		import.meta.env.DEV || localStorage.getItem("dev") === "true";
+
+	onMount(() =>
+		setTimeout(() => document.body.classList.remove("disable-animations"), 800),
+	);
 
 	return (
 		<>

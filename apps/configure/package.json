@@ -18,6 +18,7 @@
 		"@solid-primitives/resize-observer": "^2.0.26",
 		"@solid-primitives/resource": "^0.3.0",
 		"@solid-primitives/set": "^0.4.11",
+		"@solid-primitives/storage": "^4.0.0",
 		"@solidjs/router": "0.14.1",
 		"@tanstack/solid-query": "^5.51.21",
 		"@tanstack/solid-query-devtools": "^5.51.21",

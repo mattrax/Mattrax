@@ -1,6 +1,7 @@
 import { createContextProvider } from "@solid-primitives/context";
 import { onCleanup } from "solid-js";
 import { toast } from "solid-sonner";
+import { syncDisabled } from "../config";
 import type { Database } from "../db";
 import { deleteKey, getKey } from "../kv";
 import { applyMigrations } from "./action";
@@ -9,7 +10,7 @@ import {
 	didLastSyncCompleteSuccessfully,
 } from "./operation";
 
-export type SyncEngine = ReturnType<typeof initSync>;
+export type SyncEngine = ReturnType<typeof createSync>;
 
 export const [SyncProvider, useSync] = createContextProvider(
 	(props: { engine: SyncEngine }) => props.engine,
@@ -18,7 +19,7 @@ export const [SyncProvider, useSync] = createContextProvider(
 
 const schema = import.meta.glob("./schema/*.ts");
 
-export function initSync(db: Database) {
+export function createSync(db: Database) {
 	const abort = new AbortController();
 	onCleanup(() => abort.abort());
 
@@ -29,6 +30,14 @@ export function initSync(db: Database) {
 			if (abort.signal.aborted) return;
 			if (!navigator.onLine) {
 				console.warn("Sync cancelled due to navigator being offline!");
+				return;
+			}
+			if (syncDisabled()) {
+				console.warn("Sync cancelled due to sync being disabled!");
+				toast.warning("Sync is disabled!", {
+					id: "sync-disabled",
+					duration: 1000,
+				});
 				return;
 			}
 

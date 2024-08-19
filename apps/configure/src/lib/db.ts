@@ -68,6 +68,9 @@ export interface DbTypes extends DBSchema {
 			id: string;
 			type: "member" | "guest";
 			upn: string;
+			// This the part after the last `@` in `upn`.
+			// It's only purpose is for efficient index-based lookup's
+			domain: string;
 			name: string;
 			nameParts: {
 				givenName?: string;
@@ -84,6 +87,7 @@ export interface DbTypes extends DBSchema {
 		};
 		indexes: {
 			upn: string;
+			domain: string;
 		};
 	};
 	devices: {
@@ -336,6 +340,7 @@ export const openAndInitDb = (name: string, createIfNotFound = false) =>
 				keyPath: "id",
 			});
 			users.createIndex("upn", "upn", { unique: true });
+			users.createIndex("domain", "domain", { unique: false });
 			db.createObjectStore("devices", {
 				keyPath: "id",
 			});
