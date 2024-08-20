@@ -20,10 +20,11 @@ type Props<T extends ValidComponent = "div"> = PolymorphicProps<
 const Switch = <T extends ValidComponent = "div">(props: Props<T>) => {
 	const [local, rest] = splitProps(props as Props<"div">, [
 		"label",
+		"class",
 		"errorMessage",
 	]);
 	return (
-		<SwitchPrimitive.Root {...rest}>
+		<SwitchPrimitive.Root class={clsx("relative", props.class)} {...rest}>
 			<SwitchPrimitive.Input />
 			<div class="items-top flex space-x-2">
 				<SwitchPrimitive.Control class="bg-input focus-visible:ring-ring focus-visible:ring-offset-background data-[checked]:bg-primary peer inline-flex h-[24px] w-[44px] shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50">
