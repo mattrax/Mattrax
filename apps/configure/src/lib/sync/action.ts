@@ -11,8 +11,9 @@ import type { Database } from "../db";
 import { getKey } from "../kv";
 
 type MutationOptions<M> = {
+	// TODO: Should `commit` get the API? I suppose for non-optimistic updates it kinda needs it.
 	// commit the mutation to the remote API
-	commit: (data: M, accessToken: string) => Promise<void> | void;
+	commit: (data: M, accessToken: string, db: Database) => Promise<void> | void;
 	// TODO: Should `apply` and `rollback` be optional long-term??? For the online first-stuff it makes sense
 	// apply the mutation against the local database
 	// We rely on the upsert behaviour of sync to revert this
@@ -98,7 +99,7 @@ export async function applyMigrations(
 				);
 
 			try {
-				await def.mutation.options.commit(mutation.data, accessToken);
+				await def.mutation.options.commit(mutation.data, accessToken, db);
 				await db.delete("_mutations", mutation.id);
 			} catch (err) {
 				console.error(
@@ -131,7 +132,7 @@ export function useEphemeralAction<
 				if (!accessToken) return; // TODO: Redirect to login momentarily
 
 				await action.mutation.options.apply?.(sync.db, data);
-				await action.mutation.options.commit(data, accessToken);
+				await action.mutation.options.commit(data, accessToken, sync.db);
 			},
 			...options?.(),
 		}),

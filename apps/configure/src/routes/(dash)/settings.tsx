@@ -11,6 +11,7 @@ import {
 	DialogDescription,
 	DialogHeader,
 	DialogTitle,
+	DoubleClickButton,
 	Input,
 	Progress,
 	Select,
@@ -22,6 +23,9 @@ import {
 	TabsContent,
 	TabsList,
 	TabsTrigger,
+	Tooltip,
+	TooltipContent,
+	TooltipTrigger,
 	Switch as USwitch,
 	badgeVariants,
 	buttonVariants,
@@ -37,10 +41,12 @@ import {
 	Suspense,
 	Switch,
 	createEffect,
+	createMemo,
 	createSignal,
 	onCleanup,
 	onMount,
 } from "solid-js";
+import { toast } from "solid-sonner";
 import { z } from "zod";
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
 import {
@@ -53,10 +59,27 @@ import { getKey } from "~/lib/kv";
 import { createDbQuery } from "~/lib/query";
 import { useSync } from "~/lib/sync";
 import { useEphemeralAction } from "~/lib/sync/action";
-import { createDomain, verifyDomain } from "~/lib/sync/actions/tenant";
+import {
+	createDomain,
+	deleteDomain,
+	verifyDomain,
+} from "~/lib/sync/actions/tenant";
 import { resetSyncState } from "~/lib/sync/operation";
 import { useZodParams } from "~/lib/useZodParams";
 import { getInitials } from "../(dash)";
+
+const domainRegex =
+	/^(((?!-))(xn--|_)?[a-z0-9-]{0,61}[a-z0-9]{1,1}\.)*(xn--)?([a-z0-9][a-z0-9\-]{0,60}|[a-z0-9-]{1,30}\.[a-z]{2,})$/;
+const zDomain = z
+	.string()
+	.refine((v) => v.includes(".") && domainRegex.test(v), {
+		message: (
+			<>
+				Please enter a valid domain name. For example{" "}
+				<span class="text-sm font-semibold text-red-600">example.com</span>
+			</>
+		) as string,
+	});
 
 export default function Page() {
 	const org = createDbQuery((db) => getKey(db, "org"));
@@ -279,10 +302,15 @@ function SyncPanel() {
 }
 
 function DomainsPanel() {
-	const navigate = useNavigate();
 	const org = createDbQuery((db) => getKey(db, "org"));
-	const [newDomain, setNewDomain] = createSignal<string | undefined>();
-	const create = useEphemeralAction(createDomain);
+	const remove = useEphemeralAction(deleteDomain, () => ({
+		onError(err) {
+			toast.error("Failed to delete domain!", {
+				id: "delete-domain",
+				description: err.message,
+			});
+		},
+	}));
 
 	return (
 		<Card>
@@ -319,11 +347,10 @@ function DomainsPanel() {
 									</dt>
 									<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0 flex justify-between items-center">
 										<div class="flex space-x-4">
-											{/* // TODO: Add Tooltip to badge */}
 											<Switch
 												fallback={
 													<>
-														<Badge class="cursor-default">
+														<Badge class="cursor-default w-[64px] flex justify-center">
 															{domain.isDefault
 																? "Primary"
 																: domain.isInitial
@@ -353,37 +380,44 @@ function DomainsPanel() {
 													</a>
 												</Match>
 												<Match when={!domain.isVerified}>
-													<A
-														href={`domains/${encodeURIComponent(domain.id)}`}
-														class={clsx(
-															badgeVariants({ variant: "ghost" }),
-															"bg-orange-400 text-amber-100",
-														)}
-														classList={{
-															"cursor-default select-none": !org()?.id,
-														}}
-														rel="noreferrer"
-													>
-														Unverified
-													</A>
+													<Tooltip>
+														<TooltipTrigger
+															as={A}
+															href={`domains/${encodeURIComponent(domain.id)}`}
+															class={clsx(
+																badgeVariants({ variant: "ghost" }),
+																"bg-orange-400 text-amber-100 hover:shadow-xl hover:bg-orange-300",
+															)}
+															classList={{
+																"cursor-default select-none": !org()?.id,
+															}}
+															rel="noreferrer"
+														>
+															Unverified
+														</TooltipTrigger>
+														<TooltipContent>
+															Click here to verify this domain for use.
+														</TooltipContent>
+													</Tooltip>
 												</Match>
 											</Switch>
 										</div>
 
 										<Show
 											when={
-												domain.isInitial ||
-												domain.isDefault ||
-												(latest(count) ?? 0) > 0
+												!domain.isInitial &&
+												!domain.isDefault &&
+												(latest(count) ?? 0) === 0
 											}
 										>
-											<Button
+											<DoubleClickButton
 												variant="destructive"
 												size="sm"
-												onClick={() => alert("TODO")}
+												onClick={() => remove.mutate({ domain: domain.id })}
+												disabled={remove.isPending}
 											>
-												Delete
-											</Button>
+												{(c) => (c ? "Confirm" : "Delete")}
+											</DoubleClickButton>
 										</Show>
 									</dd>
 								</div>
@@ -391,57 +425,133 @@ function DomainsPanel() {
 						}}
 					</For>
 
-					{/* // TODO: This should reuse the same component with the one above??? */}
-					<Show when={newDomain() !== undefined}>
-						<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
-							<dt
-								class="text-sm font-medium leading-6 text-gray-900 flex items-center"
-								contentEditable
-								ref={(ref) => onMount(() => ref.focus())}
-								// onChange={(e) => {
-								// 	console.log("CHANGE", e.currentTarget.textContent || "");
-								// 	setNewDomain(e.currentTarget.textContent || "");
-								// }}
-								onKeyDown={(e) => {
-									console.log(e.key, newDomain()); // TODO
-
-									if (e.key === "Escape") setNewDomain(undefined);
-									const domain = newDomain();
-									if (e.key === "Enter" && domain !== undefined) {
-										if (domain === "") {
-											setNewDomain(undefined);
-											return;
-										}
-
-										alert(1);
-
-										// TODO: Input validation -> is it a domain?
-										navigate(`domains/${encodeURIComponent(domain)}`);
-										setNewDomain(undefined); // TODO: After the modal closes
-									}
-								}}
-								onFocusOut={() => {
-									// TODO: Warn if not empty it won't be saved
-									setNewDomain(undefined);
-								}}
-							>
-								{newDomain()}
-							</dt>
-						</div>
-					</Show>
-
-					<div class="w-full">
-						<button
-							type="button"
-							class="text-muted-foreground my-2 text-sm hover:underline"
-							onClick={() => setNewDomain("")}
-						>
-							Add new domain...
-						</button>
-					</div>
+					<CreateDomain />
 				</dl>
 			</CardContent>
 		</Card>
+	);
+}
+
+function CreateDomain() {
+	const navigate = useNavigate();
+	const [newDomain, setNewDomain] = createSignal<string | undefined>();
+	const create = useEphemeralAction(createDomain, () => ({
+		onSuccess(_, { domain }) {
+			navigate(`domains/${encodeURIComponent(domain)}`);
+		},
+		onError(err) {
+			toast.error("Failed to create domain!", {
+				id: "create-domain",
+				description: err.message,
+			});
+		},
+		onSettled() {
+			setNewDomain(undefined);
+		},
+	}));
+
+	let ref!: HTMLParagraphElement;
+
+	const validationError = createMemo(() => {
+		const d = newDomain();
+		if (!d) return;
+		return zDomain.safeParse(d).error?.errors?.[0]?.message;
+	});
+
+	// TODO: Warn if adding domain that is already managed
+
+	const submit = () => {
+		if (create.isPending) return;
+
+		const domain = newDomain();
+		if (domain === undefined) return;
+		if (domain === "") {
+			setNewDomain(undefined);
+			return;
+		}
+		if (validationError()) {
+			if (!ref.classList.contains("animate-shake")) {
+				ref.classList.add("animate-shake");
+				setTimeout(() => ref.classList.remove("animate-shake"), 500);
+			}
+			return;
+		}
+
+		create.mutate({
+			domain,
+		});
+	};
+
+	return (
+		<>
+			<Show when={newDomain() !== undefined}>
+				<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+					<dt class="text-sm font-medium leading-6 text-gray-900 flex items-center flex justify-between">
+						<p
+							class="flex-1"
+							contentEditable={!create.isPending}
+							ref={(r) => {
+								onMount(() => ref.focus());
+								ref = r;
+							}}
+							onInput={(e) => setNewDomain(e.currentTarget.textContent || "")}
+							onKeyDown={(e) => {
+								if (e.key === "Escape") setNewDomain(undefined);
+								if (e.key === "Enter") {
+									// Prevent actually adding newlines
+									e.preventDefault();
+									submit();
+								}
+							}}
+							onFocusOut={(e) => {
+								// TODO: I'm not sure if this is *good* for accessibility
+								// TODO: but if we don't do this we need a good way to warn about unsaved changes
+								// TODO: or to just wipe out the changes and idk how I feel about either of them.
+								e.currentTarget.focus();
+							}}
+						/>
+						<Show when={!create.isPending} fallback={<IconSvgSpinners90Ring />}>
+							<div class="flex space-x-1 pl-1">
+								<button
+									type="button"
+									class="hover:text-slate-500"
+									onClick={() => submit()}
+								>
+									<IconIcRoundCheck />
+								</button>
+								<button
+									type="button"
+									class="hover:text-slate-500"
+									onClick={() => setNewDomain(undefined)}
+								>
+									<IconPhX />
+								</button>
+							</div>
+						</Show>
+					</dt>
+					<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0 flex justify-between items-center">
+						<Show when={validationError()}>
+							{(error) => (
+								<p class="mt-1 text-sm leading-6 text-red-600 sm:col-span-2 sm:mt-0">
+									{error()}
+								</p>
+							)}
+						</Show>
+					</dd>
+				</div>
+			</Show>
+
+			<div class="w-full">
+				<button
+					type="button"
+					class="text-muted-foreground my-2 text-sm hover:underline"
+					onClick={() => setNewDomain("")}
+					disabled={newDomain() !== undefined}
+				>
+					Add new domain...
+				</button>
+			</div>
+		</>
 	);
 }
 

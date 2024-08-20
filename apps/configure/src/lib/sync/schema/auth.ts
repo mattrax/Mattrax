@@ -88,7 +88,7 @@ const orgSchema = z.object({
 	),
 });
 
-const domainSchema = z.object({
+export const domainSchema = z.object({
 	id: z.string(),
 	authenticationType: z.enum(["Managed", "Federated"]),
 	isAdminManaged: z.boolean(),
@@ -166,7 +166,7 @@ export const organization = defineSyncOperation(
 			name: data.displayName,
 			countryLetterCode: data.countryLetterCode,
 			plan: determinePlan(data.assignedPlans),
-			domains: d,
+			domains: d.sort((a, b) => a.id.localeCompare(b.id)),
 		});
 
 		return {
@@ -203,6 +203,29 @@ export const organizationMobility = defineSyncOperation<"getLogos" | undefined>(
 	"organizationMobility",
 	async ({ db, accessToken, metadata }) => {
 		if (metadata === "getLogos") {
+			// TODO: Fetch icons -> It's a pain cause we need the `servicePrincipals` and app template URL's
+			// const apps = await getKey(db, "orgMobility");
+			// if (apps) {
+			// 	// TODO: ETag caching
+			// 	const responses = await registerBatchedOperationAsync(
+			// 		apps.map((app, i) => ({
+			// 			id: `orgMobilityLogo-${i}`,
+			// 			method: "GET",
+			// 			url: `/servicePrincipals(appId='${encodeURIComponent(app.id)}')/info/logoUrl`,
+			// 		})),
+			// 		accessToken,
+			// 	);
+
+			// 	// /applicationTemplates/0000000a-0000-0000-c000-000000000000?$select=logoUrl
+
+			// 	console.log(responses); // TODO
+			// }
+
+			return {
+				type: "complete",
+				meta: undefined,
+			};
+		} else {
 			const responses = await registerBatchedOperationAsync(
 				{
 					id: "orgMobility",
@@ -226,6 +249,7 @@ export const organizationMobility = defineSyncOperation<"getLogos" | undefined>(
 				throw new Error(
 					`Failed to parse org mobility response. ${result.error.message}`,
 				);
+
 			// @ts-expect-error // TODO: Fix types
 			await putKey(db, "orgMobility", result.data.value);
 
@@ -237,29 +261,6 @@ export const organizationMobility = defineSyncOperation<"getLogos" | undefined>(
 			// 	type: "continue",
 			// 	meta: "getLogos",
 			// };
-		} else {
-			// TODO: Fetch icons -> It's a pain cause we need the `servicePrincipals` and app template URL's
-			// const apps = await getKey(db, "orgMobility");
-			// if (apps) {
-			// 	// TODO: ETag caching
-			// 	const responses = await registerBatchedOperationAsync(
-			// 		apps.map((app, i) => ({
-			// 			id: `orgMobilityLogo-${i}`,
-			// 			method: "GET",
-			// 			url: `/servicePrincipals(appId='${encodeURIComponent(app.id)}')/info/logoUrl`,
-			// 		})),
-			// 		accessToken,
-			// 	);
-
-			// 	// /applicationTemplates/0000000a-0000-0000-c000-000000000000?$select=logoUrl
-
-			// 	console.log(responses); // TODO
-			// }
-
-			return {
-				type: "complete",
-				meta: undefined,
-			};
 		}
 	},
 );

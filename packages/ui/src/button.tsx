@@ -59,7 +59,44 @@ const Button: Component<ButtonProps> = (props) => {
 	);
 };
 
-export const AsyncButton: Component<
+const DoubleClickButton: Component<
+	Omit<ButtonProps, "children" | "onClick"> & {
+		onClick: JSX.EventHandler<HTMLButtonElement, MouseEvent>;
+		children: (_: boolean) => JSX.Element;
+	}
+> = (props) => {
+	const [clicked, setClicked] = createSignal(false);
+	const [, rest] = splitProps(props, [
+		"variant",
+		"size",
+		"class",
+		"type",
+		"children",
+		"onClick",
+	]);
+	return (
+		<button
+			type={props.type || "button"}
+			class={clsx(
+				buttonVariants({ variant: props.variant, size: props.size }),
+				props.class,
+			)}
+			onClick={(e) => {
+				if (!clicked()) {
+					setClicked(true);
+					setTimeout(() => setClicked(false), 1000);
+					return;
+				}
+				props.onClick?.(e);
+			}}
+			{...rest}
+		>
+			{props.children(clicked())}
+		</button>
+	);
+};
+
+const AsyncButton: Component<
 	Omit<ButtonProps, "onClick"> & {
 		onClick?: (
 			...args: Parameters<JSX.EventHandler<HTMLButtonElement, MouseEvent>>
@@ -83,4 +120,4 @@ export const AsyncButton: Component<
 	);
 };
 
-export { Button, buttonVariants };
+export { Button, DoubleClickButton, AsyncButton, buttonVariants };
