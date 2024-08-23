@@ -35,12 +35,12 @@ const info = [
 	{
 		title: "Application & patch management",
 		description:
-			"Manage software and operating system updates to keep everything is secure.",
+			"Manage software and operating system updates to keep everything secure.",
 	},
 	{
 		title: "Integrations",
 		description:
-			"Built-in support for configuring 3rd party software, with a flexible API.",
+			"Built-in support for configuring 3rd party software, and an API for custom integrations.",
 	},
 	{
 		title: "Versioning",

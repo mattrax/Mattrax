@@ -67,7 +67,7 @@ export default function Page() {
 						</h2>
 						<p class="mt-4 mb-5 text-lg text-center leading-8 text-zinc-500">
 							Mattrax MDM is a full device management solution with the ability
-							to manage your organisations entire fleet from a single,
+							to manage your organizations entire fleet from a single,
 							well-crafted dashboard.
 						</p>
 
@@ -103,7 +103,9 @@ export default function Page() {
 				</div>
 				<Bento />
 				<p class="text-center text-lg">
-					That's not it - <b>there's more...</b>
+					That's not all,
+					<br /> we support your existing IDP, can be self-hosted, and{" "}
+					<b>much more...</b>
 				</p>
 				<Cta />
 			</div>

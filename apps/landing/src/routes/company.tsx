@@ -27,7 +27,7 @@ export default function Page() {
 								<div class="flex">
 									<img
 										class="w-16 h-16 rounded-full"
-										src="https://gravatar.com/avatar/41655c1232c6dd52cdeac8d01beb25502c52b270a46d9e8c6c487261775d0a48?size=512"
+										src="https://github.com/oscartbeaumont.png"
 										alt="Oscar Beaumont"
 									/>
 									<div class="flex flex-col justify-start ml-3">
@@ -40,27 +40,25 @@ export default function Page() {
 										>
 											oscar@mattrax.app
 										</a>
-										<p class="mt-1 text-base text-gray-600">Co-founder</p>
+										<p class="mt-1 text-base text-gray-600 font-bold">
+											Founder
+										</p>
 									</div>
 								</div>
 
 								<div class="flex">
 									<img
 										class="w-16 h-16 rounded-full"
-										src="https://gravatar.com/avatar/8dcfb438d50edbc0133b55391e0f43d77c4249021a46777fa15a1be16d7bdda3?size=512"
+										src="https://github.com/brendonovich.png"
 										alt="Brendan Allan"
 									/>
 									<div class="flex flex-col justify-start ml-3">
 										<h5 class="text-lg font-semibold text-gray-900">
 											Brendan Allan
 										</h5>
-										<a
-											class="mt-1 text-base text-gray-500"
-											href="mailto:brendan@mattrax.app"
-										>
-											brendan@mattrax.app
-										</a>
-										<p class="mt-1 text-base text-gray-600">Co-founder</p>
+										<p class="mt-1 text-base text-gray-600">
+											Part-time developer
+										</p>
 									</div>
 								</div>
 							</div>
