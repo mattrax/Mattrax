@@ -9,6 +9,6 @@ export const [syncDisabled, setSyncDisabled] = makePersisted(
 );
 
 export const [showKdbShortcuts, setShowKdbShortcuts] = makePersisted(
-	createSignal(true),
+	createSignal(false),
 	{ name: "kdb-shortcuts", storage: localStorage },
 );

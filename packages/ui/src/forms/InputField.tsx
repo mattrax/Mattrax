@@ -53,7 +53,7 @@ export function InputField<T, K extends KeysMatching<T, string>>(
 							if ("onInput" in props) props.onInput?.(e);
 							field.value = e.currentTarget.value as any;
 						}}
-						// This is a workaround to prevent the browser from asking to save the passwords
+						// This is a workaround to prevent the browser from asking to save the password
 						readOnly={
 							props.autocomplete === "off" && props.form.isSubmitting
 								? true
