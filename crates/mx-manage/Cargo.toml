@@ -1,8 +1,9 @@
 [package]
-name = "mattrax-platform"
-description = "" # TODO
+name = "mx-manage"
+description = "The core management server for Mattrax"
 version = "0.0.1"
 edition = "2021"
+repository = "https://github.com/mattrax/Mattrax"
 publish = false
 
 # TODO: Prune dependencies
@@ -11,7 +12,6 @@ mx-utils = { path = "../../crates/mx-utils" }
 ms-mde = { path = "../../crates/ms-mde" }
 mx-windows = { path = "../../crates/mx-windows" }
 mx-db = { path = "../../crates/mx-db" }
-mx-manage = { path = "../../crates/mx-manage" }
 
 lambda_http = "0.13.0"
 tracing = "0.1.40"

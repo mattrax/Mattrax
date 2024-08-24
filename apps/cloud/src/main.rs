@@ -3,7 +3,7 @@ use axum::{
     response::{Html, Response},
     routing::get,
 };
-use mattrax_platform::{Application, Authentication};
+use mx_manage::{Application, Authentication};
 use rcgen::{CertificateParams, KeyPair};
 use std::{borrow::Cow, collections::HashMap, env::set_var, error::Error, time::Duration};
 use tower_http::trace::TraceLayer;
@@ -79,7 +79,7 @@ async fn main() -> Result<(), lambda_http::Error> {
         .self_signed(&key)
         .unwrap();
 
-    let router = mattrax_platform::mount(Lambda { manage_domain, enrollment_domain, cert, key })
+    let router = mx_manage::mount(Lambda { manage_domain, enrollment_domain, cert, key })
         .route("/", get(|| async move { Html(r#"<pre><h1>Mattrax MDM Platform</h1><a href="https://mattrax.app">Home</a><br /><a href="/docs">Documentation</a></pre>"#) }))
         .route("/auth", get(|Query(query): Query<HashMap<String, String>>| async move {
             let appru = query.get("appru").map(String::to_string).unwrap_or_else(|| "".to_string());
@@ -92,8 +92,8 @@ async fn main() -> Result<(), lambda_http::Error> {
         }))
         .route("/enroll", get(|| async move { Html(r#"<a href="ms-device-enrollment:?mode=mdm&username=oscar@otbeaumont.me&servername=https://playground.otbeaumont.me">Enroll</a>"#) }))
         // TODO: 404 handler
-        .route("/docs", get(|| async move { Html(include_str!("../../static/scalar.html")) }))
-        .route("/openapi.yaml", get(|| async move { Html(include_str!("../../static/openapi.yaml")) }))
+        .route("/docs", get(|| async move { Html(include_str!("../static/scalar.html")) }))
+        .route("/openapi.yaml", get(|| async move { Html(include_str!("../static/openapi.yaml")) }))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request<_>| {

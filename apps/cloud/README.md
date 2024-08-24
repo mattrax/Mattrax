@@ -1,7 +1,5 @@
-# Platform
+# Cloud
 
-The Mattrax MDM platform!
+**This is not design for self-hosting!!! Checkout [`apps/mattrax`](../mattrax)**
 
-## Usage
-
-TODO
+Services for Mattrax's Cloud offering.
