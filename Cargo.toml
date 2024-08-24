@@ -5,7 +5,7 @@ members = [
   "apps/mattrax",
   "apps/mattraxd",
   "apps/mttx",
-  "apps/platform",
+  "apps/cloud",
   "crates/*",
 ]
 
