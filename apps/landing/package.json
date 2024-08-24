@@ -9,6 +9,8 @@
 		"start": "vinxi start"
 	},
 	"devDependencies": {
+		"@content-collections/core": "^0.6.4",
+		"@content-collections/solid-start": "^0.1.1",
 		"@iconify/json": "^2.2.241",
 		"@tailwindcss/forms": "^0.5.7",
 		"@tailwindcss/typography": "^0.5.14",

@@ -1,3 +1,4 @@
+import contentCollections from "@content-collections/solid-start";
 import mattraxUI from "@mattrax/ui/vite";
 import { defineConfig } from "@solidjs/start/config";
 import { monorepoRoot } from "./loadEnv";
@@ -21,7 +22,7 @@ export default defineConfig({
 	},
 	vite: {
 		envDir: monorepoRoot,
-		plugins: [mattraxUI],
+		plugins: [contentCollections(), mattraxUI],
 		server: {
 			fs: {
 				allow: ["../../node_modules"],

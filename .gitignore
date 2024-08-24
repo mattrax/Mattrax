@@ -57,8 +57,7 @@ Thumbs.db
 /out
 /TODO
 
-# Nx
+# Other
 .nx
-
-# SST
 .sst
+.content-collections
