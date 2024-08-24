@@ -1,6 +1,12 @@
 use std::sync::Arc;
 
-use axum::{routing::post, Router};
+use axum::{
+    extract::{Request, State},
+    routing::post,
+    Router,
+};
+use http::request::Parts;
+use lambda_http::{request::RequestContext, RequestExt};
 
 use crate::Application;
 
@@ -8,10 +14,14 @@ pub fn mount<T: Application>() -> Router<Arc<T>> {
     Router::new().route(
         "/Manage.svc",
         post(
-            //ConnectInfo(info): ConnectInfo<ConnectInfoTy>,
-            // State(state): State<Arc<Context>>,
-            |body: String| async move {
-                // TODO: Mutual TLS authentication
+            |State(app): State<Arc<T>>, req: Parts, body: String| async move {
+                // TODO: Abstract this onto `Application` so it can work locally or with Lambda
+                let ctx = match req.request_context_ref() {
+                    Some(RequestContext::ApiGatewayV2(ctx)) => ctx.authentication.clone(),
+                    _ => todo!(),
+                };
+
+                println!("{req:?} {ctx:?}"); // TODO
 
                 // TODO: Hook back up management stuff
                 // let result = mx_windows::handler(

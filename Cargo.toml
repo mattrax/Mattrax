@@ -41,4 +41,4 @@ refinery-core = { git = "https://github.com/rust-db/refinery", rev = "ff1c5c07c0
 chownr = { git = "https://github.com/oscartbeaumont/chownr-rs", rev = "05101de6d2eb27a18374688f9339772aff827f85" }
 
 # TODO: This should only be used when using SST Live Lambda!
-# lambda_runtime = { git = "https://github.com/oscartbeaumont/aws-lambda-rust-runtime", rev = "9d75ac7168dd6869bfa8deb1bc83018830dc617f" }
+lambda_runtime = { git = "https://github.com/oscartbeaumont/aws-lambda-rust-runtime", rev = "9d75ac7168dd6869bfa8deb1bc83018830dc617f" }

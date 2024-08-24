@@ -3,9 +3,13 @@
 import "sst"
 declare module "sst" {
   export interface Resource {
-    "api": {
+    "certs": {
       "name": string
-      "type": "sst.aws.Function"
+      "type": "sst.aws.Bucket"
+    }
+    "platform": {
+      "type": "sst.aws.ApiGatewayV2"
+      "url": string
     }
   }
 }

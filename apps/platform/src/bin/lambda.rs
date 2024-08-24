@@ -1,8 +1,13 @@
-use axum::{extract::Query, response::Html, routing::get};
-use base64::{prelude::BASE64_STANDARD, Engine};
+use axum::{
+    extract::{MatchedPath, Query, Request},
+    response::{Html, Response},
+    routing::get,
+};
 use mattrax_platform::{Application, Authentication};
-use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
-use std::{borrow::Cow, collections::HashMap, env::set_var, error::Error};
+use rcgen::{CertificateParams, KeyPair};
+use std::{borrow::Cow, collections::HashMap, env::set_var, error::Error, time::Duration};
+use tower_http::trace::TraceLayer;
+use tracing::{info_span, Span};
 
 struct Lambda {
     manage_domain: String,
@@ -29,7 +34,7 @@ impl Application for Lambda {
 
     fn determine_authentication_method(&self) -> Authentication {
         Authentication::Federated {
-            url: format!("{}/auth", self.enrollment_domain).into(),
+            url: format!("https://{}/auth", self.enrollment_domain).into(),
         }
     }
 
@@ -55,7 +60,7 @@ impl Application for Lambda {
 
 #[tokio::main]
 async fn main() -> Result<(), lambda_http::Error> {
-    // tracing::init_default_subscriber(); // TODO
+    tracing_subscriber::fmt().init();
 
     // If you use API Gateway stages, the Rust Runtime will include the stage name
     // as part of the path that your application receives. We don't want this!
@@ -64,17 +69,11 @@ async fn main() -> Result<(), lambda_http::Error> {
     let manage_domain = std::env::var("MANAGE_DOMAIN").expect("'MANAGE_DOMAIN' must be set");
     let enrollment_domain =
         std::env::var("ENROLLMENT_DOMAIN").expect("'ENROLLMENT_DOMAIN' must be set");
-    let cert = BASE64_STANDARD
-        .decode(std::env::var("IDENTITY_CERT").expect("'IDENTITY_CERT' must be set"))
-        .unwrap();
-    let key = BASE64_STANDARD
-        .decode(std::env::var("IDENTITY_KEY").expect("'IDENTITY_KEY' must be set"))
-        .unwrap();
+    let cert = std::env::var("IDENTITY_CERT").expect("'IDENTITY_CERT' must be set");
+    let key = std::env::var("IDENTITY_KEY").expect("'IDENTITY_KEY' must be set");
 
-    let key =
-        KeyPair::from_der_and_sign_algo(&key.try_into().unwrap(), &PKCS_ECDSA_P256_SHA256).unwrap();
-
-    let cert = CertificateParams::from_ca_cert_der(&cert.into())
+    let key = KeyPair::from_pem(&key).unwrap();
+    let cert = CertificateParams::from_ca_cert_pem(&cert)
         .unwrap()
         // TODO: https://github.com/rustls/rcgen/issues/274
         .self_signed(&key)
@@ -94,7 +93,27 @@ async fn main() -> Result<(), lambda_http::Error> {
         .route("/enroll", get(|| async move { Html(r#"<a href="ms-device-enrollment:?mode=mdm&username=oscar@otbeaumont.me&servername=https://playground.otbeaumont.me">Enroll</a>"#) }))
         // TODO: 404 handler
         .route("/docs", get(|| async move { Html(include_str!("../../static/scalar.html")) }))
-        .route("/openapi.yaml", get(|| async move { Html(include_str!("../../static/openapi.yaml")) }));
+        .route("/openapi.yaml", get(|| async move { Html(include_str!("../../static/openapi.yaml")) }))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &Request<_>| {
+                    let matched_path = request
+                        .extensions()
+                        .get::<MatchedPath>()
+                        .map(MatchedPath::as_str);
+
+                    info_span!(
+                        "http_request",
+                        method = ?request.method(),
+                        matched_path,
+                        some_other_field = tracing::field::Empty,
+                    )
+                })
+                .on_response(|resp: &Response, latency: Duration, _span: &Span| {
+                    #[cfg(debug_assertions)]
+                    tracing::info!("responded with {} in {:?}", resp.status(), latency);
+                })
+        );
 
     lambda_http::run(router).await
 }

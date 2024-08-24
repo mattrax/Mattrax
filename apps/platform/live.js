@@ -10,6 +10,7 @@ execSync("cargo watch -x 'run --bin lambda'", {
 	env: {
 		...process.env,
 		// RUSTFLAGS: "-Awarnings", // TODO: Merge in user's RUSTFLAGS -> Don't do this cause it means rebuilding everything
+		CARGO_TERM_COLOR: "always",
 		AWS_LAMBDA_FUNCTION_MEMORY_SIZE: "1024",
 		AWS_LAMBDA_RUNTIME_API: `http://${process.env.AWS_LAMBDA_RUNTIME_API}`,
 	},
