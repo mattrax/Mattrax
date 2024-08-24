@@ -21,10 +21,10 @@
 		"build": "tsc"
 	},
 	"dependencies": {
-		"@planetscale/database": "^1.18.0",
+		"@planetscale/database": "^1.19.0",
 		"mysql2": "^3.11.0"
 	},
 	"devDependencies": {
-		"@types/node": "^22.2.0"
+		"@types/node": "^22.5.0"
 	}
 }

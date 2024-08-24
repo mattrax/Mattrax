@@ -13,5 +13,5 @@ mx-utils = { path = "../../crates/mx-utils" }
 
 tracing = { workspace = true }
 
-clap = { version = "4.5.13", features = ["derive"] }
+clap = { version = "4.5.16", features = ["derive"] }
 tracing-subscriber = "0.3.18"

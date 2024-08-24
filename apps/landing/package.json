@@ -9,26 +9,26 @@
 		"start": "vinxi start"
 	},
 	"devDependencies": {
-		"@iconify/json": "^2.2.236",
+		"@iconify/json": "^2.2.241",
 		"@tailwindcss/forms": "^0.5.7",
 		"@tailwindcss/typography": "^0.5.14",
 		"autoprefixer": "^10.4.20",
-		"tailwindcss": "^3.4.9"
+		"tailwindcss": "^3.4.10"
 	},
 	"dependencies": {
 		"@fontsource-variable/inter": "^5.0.20",
 		"@fontsource/inter": "^5.0.20",
 		"@kobalte/core": "^0.13.4",
 		"@mattrax/ui": "workspace:*",
-		"@solidjs/router": "0.14.1",
+		"@solidjs/router": "0.14.3",
 		"@solidjs/start": "1.0.6",
-		"@tanstack/solid-form": "^0.28.0",
+		"@tanstack/solid-form": "^0.29.2",
 		"class-variance-authority": "^0.7.0",
 		"clsx": "^2.1.1",
 		"h3": "^1.12.0",
-		"solid-js": "^1.8.20",
+		"solid-js": "^1.8.21",
 		"vinxi": "0.4.1",
-		"vite": "^5.4.0",
+		"vite": "^5.4.2",
 		"zod": "^3.23.8"
 	}
 }

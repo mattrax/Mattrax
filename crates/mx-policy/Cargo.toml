@@ -11,5 +11,5 @@ specta = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { version = "0.4.38", features = ["serde"] }
-rust_decimal = "1.35.0"
+rust_decimal = "1.36.0"
 either = "1.13.0"

@@ -29,15 +29,15 @@
 		"@biomejs/biome": "^1.8.3",
 		"@solidjs/start": "1.0.6",
 		"dotenv": "^16.4.5",
-		"drizzle-kit": "^0.24.0",
+		"drizzle-kit": "^0.24.1",
 		"pg": "^8.12.0",
-		"tsx": "^4.17.0",
+		"tsx": "^4.18.0",
 		"typescript": "^5.5.4"
 	},
 	"devDependencies": {
-		"husky": "^9.1.4",
-		"nx": "19.5.7",
-		"wrangler": "^3.70.0"
+		"husky": "^9.1.5",
+		"nx": "19.6.2",
+		"wrangler": "^3.72.2"
 	},
 	"pnpm": {
 		"patchedDependencies": {
