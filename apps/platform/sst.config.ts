@@ -49,13 +49,17 @@ export default $config({
 			contentType: "application/x-pem-file",
 		});
 
-		// TODO: Disable the API gateways default domain
 		const api = new sst.aws.ApiGatewayV2("platform", {
 			domain: {
 				name: enrollmentDomain,
 
 				cert: todoCertificateArn,
 				dns: false,
+			},
+			transform: {
+				api: {
+					disableExecuteApiEndpoint: true,
+				},
 			},
 		});
 
