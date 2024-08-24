@@ -20,15 +20,15 @@ use ms_mde::{
     REQUEST_SECURITY_TOKEN_RESPONSE_COLLECTION, REQUEST_SECURITY_TOKEN_TYPE, WSSE_NAMESPACE,
 };
 use rcgen::{
-    CertificateSigningRequestParams, CustomExtension, DistinguishedName, DnType,
-    ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose, SerialNumber,
+    CertificateSigningRequestParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
+    KeyUsagePurpose, SerialNumber,
 };
 use serde::Deserialize;
 use sha1::{Digest, Sha1};
 use time::OffsetDateTime;
-use tracing::{debug, error};
+use tracing::error;
 
-use crate::Application;
+use crate::{Application, DeviceInformation};
 
 // TODO: Generate from Drizzle
 const ENROLLMENT_TYPE_USER: &str = "user";
@@ -482,7 +482,12 @@ pub fn mount<T: Application>() -> Router<Arc<T>> {
 
             // TODO: `HWDevID`, `DeviceID`, `OSVersion`
 
-            app.create_device(auth, ()).await.unwrap();
+            app.create_device(auth, DeviceInformation {
+                device_id: device_id.into(),
+                hw_device_id: hw_dev_id.into(),
+                enrollment_type: enrollment_type.into(),
+                additional_context,
+            }).await.unwrap();
 
             // state.db.create_device(device_id, mdm_device_id.clone(), additional_context.get("DeviceName").unwrap_or("Unknown").to_string(), enrollment_type.into(), OS_WINDOWS.into(), hw_dev_id.into(), tenant_pk, owner_pk, enrolled_by).await.unwrap();
 

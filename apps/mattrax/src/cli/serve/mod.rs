@@ -8,7 +8,7 @@ use std::{
 use hmac::{Hmac, Mac};
 use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
 use tokio::{net::TcpListener, signal};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use x509_parser::{certificate::X509Certificate, der_parser::asn1_rs::FromDer};
 
 use crate::{
@@ -36,6 +36,11 @@ pub struct Command {
 impl Command {
     pub async fn run(&self, data_dir: PathBuf) {
         info!("Starting Mattrax...");
+
+        warn!("Currently we are focusing on the development of Mattrax Cloud, so this CLI is not guaranteed to work! Set `ACCEPT=1` to continue.");
+        if std::env::var("ACCEPT").is_err() {
+            return;
+        }
 
         #[cfg(debug_assertions)]
         tracing::warn!("Running in development mode! Do not use in production!");

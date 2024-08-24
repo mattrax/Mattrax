@@ -13,7 +13,6 @@ use rcgen::{Certificate, KeyPair};
 use reqwest::redirect::Policy;
 use rustls::pki_types::CertificateDer;
 use sha2::Sha256;
-use tokio::sync::mpsc;
 use x509_parser::certificate::X509Certificate;
 
 use crate::config::ConfigManager;
@@ -100,9 +99,7 @@ pub fn mount(state: Arc<Context>) -> Router {
         .nest(
             "/psdb.v1alpha1.Database",
             internal::sql::mount(state.clone()),
-        )
-        .nest("/EnrollmentServer", mdm::enrollment::mount(state.clone()))
-        .nest("/ManagementServer", mdm::manage::mount(state.clone()));
+        );
 
     let url = cfg!(all(not(debug_assertions), feature = "serve-web"))
         .then(|| "http://localhost:12345".to_string())
@@ -161,5 +158,6 @@ pub fn mount(state: Arc<Context>) -> Router {
 
     router
         .layer(middleware::from_fn_with_state(state.clone(), headers))
-        .with_state(state)
+        .with_state(state.clone())
+        .merge(mx_manage::mount(mdm::App { state }))
 }

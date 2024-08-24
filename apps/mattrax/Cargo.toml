@@ -18,6 +18,7 @@ mx-utils = { path = "../../crates/mx-utils" }
 ms-mde = { path = "../../crates/ms-mde" }
 mx-windows = { path = "../../crates/mx-windows" }
 mx-db = { path = "../../crates/mx-db" }
+mx-manage = { path = "../../crates/mx-manage" }
 
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"

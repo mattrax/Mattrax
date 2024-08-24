@@ -1,12 +1,7 @@
 use std::sync::Arc;
 
-use axum::{
-    extract::{Request, State},
-    routing::post,
-    Router,
-};
-use http::request::Parts;
-use lambda_http::{request::RequestContext, RequestExt};
+use axum::{extract::State, response::IntoResponse, routing::post, Router};
+use http::{header, request::Parts};
 
 use crate::Application;
 
@@ -15,29 +10,18 @@ pub fn mount<T: Application>() -> Router<Arc<T>> {
         "/Manage.svc",
         post(
             |State(app): State<Arc<T>>, req: Parts, body: String| async move {
-                // TODO: Abstract this onto `Application` so it can work locally or with Lambda
-                let ctx = match req.request_context_ref() {
-                    Some(RequestContext::ApiGatewayV2(ctx)) => ctx.authentication.clone(),
-                    _ => todo!(),
+                let auth = app.authenticate_management_session(&req).unwrap(); // TODO: error handling
+                let Some(auth) = auth else {
+                    return todo!();
                 };
 
-                println!("{req:?} {ctx:?}"); // TODO
+                let result = app.manage(auth, body).await.unwrap(); // TODO: error handling
 
-                // TODO: Hook back up management stuff
-                // let result = mx_windows::handler(
-                //     &state.db,
-                //     &state.identity_cert_x509,
-                //     body,
-                //     info.client_cert.and_then(|x| x.into_iter().next()),
-                // )
-                // .await;
-
-                // (
-                //     [(header::CONTENT_TYPE, "application/vnd.syncml.dm+xml")],
-                //     result,
-                // )
-                //     .into_response()
-                unimplemented!()
+                (
+                    [(header::CONTENT_TYPE, "application/vnd.syncml.dm+xml")],
+                    result,
+                )
+                    .into_response()
             },
         ),
     )

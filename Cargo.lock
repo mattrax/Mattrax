@@ -2111,6 +2111,7 @@ dependencies = [
  "jwt",
  "ms-mde",
  "mx-db",
+ "mx-manage",
  "mx-utils",
  "mx-windows",
  "mysql_async",

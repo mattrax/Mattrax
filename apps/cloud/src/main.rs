@@ -3,7 +3,8 @@ use axum::{
     response::{Html, Response},
     routing::get,
 };
-use mx_manage::{Application, Authentication};
+use lambda_http::{request::RequestContext, RequestExt};
+use mx_manage::{Application, Authentication, DeviceInformation};
 use rcgen::{CertificateParams, KeyPair};
 use std::{borrow::Cow, collections::HashMap, env::set_var, error::Error, time::Duration};
 use tower_http::trace::TraceLayer;
@@ -18,6 +19,7 @@ struct Lambda {
 
 impl Application for Lambda {
     type EnrollmentAuthenticationMetadata = ();
+    type ManagementAuthenticationMetadata = ();
     type Error = Box<dyn Error>;
 
     fn enrollment_domain(&self) -> Cow<'_, str> {
@@ -49,12 +51,34 @@ impl Application for Lambda {
     async fn create_device(
         &self,
         auth: Self::EnrollmentAuthenticationMetadata,
-        // TODO: A bunch of information about the device
-        device: (),
+        device: DeviceInformation,
     ) -> Result<(), Self::Error> {
         // TODO: Do this
 
         Ok(())
+    }
+
+    fn authenticate_management_session(
+        &self,
+        req: &http::request::Parts,
+    ) -> Result<Option<Self::ManagementAuthenticationMetadata>, Self::Error> {
+        let ctx = match req.request_context_ref() {
+            Some(RequestContext::ApiGatewayV2(ctx)) => ctx.authentication.clone(),
+            _ => todo!(),
+        };
+
+        // TODO
+        println!("{req:?} {ctx:?}");
+
+        Ok(Some(()))
+    }
+
+    async fn manage(
+        &self,
+        auth: Self::ManagementAuthenticationMetadata,
+        body: String,
+    ) -> Result<String, Self::Error> {
+        unimplemented!();
     }
 }
 
