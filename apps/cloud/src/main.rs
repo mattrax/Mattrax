@@ -1,5 +1,6 @@
 use axum::{
     extract::{MatchedPath, Query, Request},
+    http::request::Parts,
     response::{Html, Response},
     routing::get,
 };
@@ -60,7 +61,7 @@ impl Application for Lambda {
 
     fn authenticate_management_session(
         &self,
-        req: &http::request::Parts,
+        req: &Parts,
     ) -> Result<Option<Self::ManagementAuthenticationMetadata>, Self::Error> {
         let ctx = match req.request_context_ref() {
             Some(RequestContext::ApiGatewayV2(ctx)) => ctx.authentication.clone(),

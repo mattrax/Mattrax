@@ -2,13 +2,12 @@ use std::{ops::Add, str::FromStr, sync::Arc};
 
 use axum::{
     extract::State,
-    http::{HeaderValue, StatusCode},
+    http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };
 use base64::prelude::*;
-use hyper::header;
 use ms_mde::{
     Action, ActivityId, BinarySecurityToken, DiscoverRequest, DiscoverResponse,
     DiscoverResponseBody, DiscoverResponseDiscoverResponse, DiscoverResponseDiscoverResult,

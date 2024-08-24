@@ -1,7 +1,6 @@
 use std::{collections::BTreeMap, error::Error, sync::Arc};
 
-use axum::extract::ConnectInfo;
-use http::request::Parts;
+use axum::{extract::ConnectInfo, http::request::Parts};
 use jwt::VerifyWithKey;
 use mx_manage::{Application, Authentication, DeviceInformation};
 use tracing::debug;

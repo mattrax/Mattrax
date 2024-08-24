@@ -2,8 +2,7 @@
 
 use std::{borrow::Cow, fmt::Debug, future::Future, sync::Arc};
 
-use axum::Router;
-use http::request::Parts;
+use axum::{http::request::Parts, Router};
 use ms_mde::AdditionalContext;
 use rcgen::{Certificate, KeyPair};
 

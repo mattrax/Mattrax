@@ -56,8 +56,7 @@ impl Command {
         } else {
             info!("Initialising new Mattrax installation...");
 
-            let mut secret = [0u8; 32];
-            getrandom::getrandom(&mut secret).unwrap();
+            let mut secret: [u8; 32] = rand::random();
 
             let (domain, enrollment_domain) = if cfg!(debug_assertions) {
                 (

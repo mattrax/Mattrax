@@ -1,7 +1,12 @@
 use std::sync::Arc;
 
-use axum::{extract::State, response::IntoResponse, routing::post, Router};
-use http::{header, request::Parts};
+use axum::{
+    extract::State,
+    http::{header, request::Parts},
+    response::IntoResponse,
+    routing::post,
+    Router,
+};
 
 use crate::Application;
 
