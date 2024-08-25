@@ -1,3 +1,7 @@
+---
+title: Policy
+---
+
 ## What is a policy?
 
 In Mattrax a policy is a set of rules that define the expected state of a device. Mattrax will take care of enforcing these rules for you. <br /> A policy consists of a collection of:

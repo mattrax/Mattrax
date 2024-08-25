@@ -13,12 +13,13 @@ import { allDocs } from "content-collections";
 import {
 	For,
 	type ParentProps,
-	type Setter,
 	Show,
 	createEffect,
 	createSignal,
 	onCleanup,
 } from "solid-js";
+
+type SidebarState = "open" | "visible" | "collapsed";
 
 export default function Page(props: ParentProps) {
 	return (
@@ -30,17 +31,33 @@ export default function Page(props: ParentProps) {
 }
 
 function Sidebar() {
-	const [collapsed, setCollapsed] = createSignal(false);
+	const [state, setState] = createSignal<SidebarState>("open");
 
 	return (
-		<>
+		<div
+			classList={{
+				"absolute top-0 bottom-0": state() === "collapsed",
+			}}
+			onMouseLeave={() =>
+				setState((p) => {
+					if (p === "visible") return "collapsed";
+					return p;
+				})
+			}
+		>
 			<div
-				data-collapse={collapsed()}
-				aria-hidden={collapsed()}
+				class="fixed inset-y-0 start-0 w-6 max-md:hidden xl:w-[50px]"
+				onMouseEnter={() => setState("visible")}
+			/>
+
+			<div
+				data-collapse={state() !== "open"}
+				aria-hidden={state() !== "open"}
+				tabIndex={state() === "collapsed" ? "-1" : undefined}
 				class="fixed flex flex-col bg-fd-card text-sm md:sticky md:top-0 md:h-dvh md:w-[var(--fd-c-sidebar)] md:min-w-[var(--fd-sidebar-width)] md:border-e md:ps-[calc(var(--fd-c-sidebar)-var(--fd-sidebar-width))] max-md:inset-0 max-md:bg-fd-background/80 max-md:pt-14 max-md:text-[15px] max-md:backdrop-blur-md max-md:data-[open=false]:hidden"
 				classList={{
-					"md:translate-x-0": !collapsed(),
-					"md:translate-x-[-100%]": collapsed(),
+					"md:translate-x-0": state() !== "open",
+					"md:translate-x-[-100%]": state() === "collapsed",
 				}}
 			>
 				<div class="flex-1">
@@ -48,14 +65,24 @@ function Sidebar() {
 					<Search />
 					<Items />
 				</div>
-				<Footer setCollapsed={setCollapsed} />
+				<Footer
+					toggleCollapsed={() =>
+						setState((prev) => (prev === "open" ? "collapsed" : "open"))
+					}
+				/>
 			</div>
-			<Show when={collapsed()}>
+
+			<Show when={state() === "collapsed"}>
 				<div class="absolute bottom-0 left-0 p-2">
-					<CollapseSidebarButton setCollapsed={setCollapsed} />
+					<CollapseSidebarButton
+						toggleCollapsed={() =>
+							setState((prev) => (prev === "open" ? "collapsed" : "open"))
+						}
+						tabIndex="0"
+					/>
 				</div>
 			</Show>
-		</>
+		</div>
 	);
 }
 
@@ -187,6 +214,8 @@ function CommandK(props: { cmdk: EventTarget }) {
 }
 
 function Items() {
+	console.log(allDocs); // TODO
+
 	return (
 		<ul class="px-4 py-6 md:px-3">
 			<For each={allDocs}>
@@ -217,7 +246,7 @@ function Item(props: ParentProps<{ url: string }>) {
 }
 
 function Footer(props: {
-	setCollapsed: Setter<boolean>;
+	toggleCollapsed: () => void;
 }) {
 	return (
 		<div class="flex flex-row items-center border-t py-1 max-md:px-4 md:mx-3">
@@ -243,14 +272,16 @@ function Footer(props: {
 }
 
 function CollapseSidebarButton(props: {
-	setCollapsed: Setter<boolean>;
+	toggleCollapsed: () => void;
+	tabIndex?: string;
 }) {
 	return (
 		<button
 			type="button"
 			aria-label="Collapse Sidebar"
 			class="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors duration-100 disabled:pointer-events-none disabled:opacity-50 hover:bg-fd-accent hover:text-fd-accent-foreground p-1.5 [&amp;_svg]:size-5 ms-auto max-md:hidden"
-			onClick={() => props.setCollapsed((o) => !o)}
+			onClick={props.toggleCollapsed}
+			tabIndex={props.tabIndex}
 		>
 			<IconLucidePanelLeft class="size-5" />
 		</button>

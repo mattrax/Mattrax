@@ -25,6 +25,7 @@ export default defineConfig({
 		envDir: monorepoRoot,
 		plugins: [
 			contentCollections({
+				isEnabled: true,
 				configPath: "src/content-collections.ts",
 			}),
 			mattraxUI,

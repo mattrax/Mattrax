@@ -1,3 +1,7 @@
+---
+title: Device
+---
+
 TODO
 
 # TODO: Enrollment types (user vs device)

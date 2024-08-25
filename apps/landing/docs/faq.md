@@ -1,3 +1,7 @@
+---
+title: FAQ
+---
+
 # Frequently Asked Questions
 
 ## Why not another MDM solution?

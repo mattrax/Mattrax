@@ -1,3 +1,7 @@
+---
+title: Self hosting
+---
+
 # Self hosting
 
 <WarningNote>

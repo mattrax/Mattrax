@@ -1,8 +1,9 @@
-import { useParams } from "@solidjs/router";
+import { Navigate, useLocation, useParams } from "@solidjs/router";
 import { allDocs } from "content-collections";
 import { Show } from "solid-js";
 
 export default function Page() {
+	const location = useLocation();
 	const params = useParams();
 
 	// TODO: Can we make this work with static analysis so that we can lazy load the `content` of all pages???
@@ -12,13 +13,18 @@ export default function Page() {
 	};
 
 	return (
-		<Show when={doc()} fallback={<NotFoundPage />}>
-			{(doc) => (
-				<div>
-					<h3 class="bold">{doc().title}</h3>
-					<article class="prose lg:prose-md" innerHTML={doc().html} />
-				</div>
-			)}
+		<Show
+			when={!location.pathname.endsWith("/")}
+			fallback={<Navigate href={location.pathname.slice(0, -1)} />}
+		>
+			<Show when={doc()} fallback={<NotFoundPage />}>
+				{(doc) => (
+					<div>
+						<h3 class="bold">{doc().title}</h3>
+						<article class="prose lg:prose-md" innerHTML={doc().html} />
+					</div>
+				)}
+			</Show>
 		</Show>
 	);
 }

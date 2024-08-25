@@ -1,3 +1,7 @@
+---
+title: Application
+---
+
 ## Do you support application management?
 
 We take care of application management including integrations with [Apple Volume Purchase Program](https://www.apple.com/business/vpp/), [Microsoft Store for Business](https://www.microsoft.com/en-us/store/b/business), [Brew](https://brew.sh) and [Chocolatey](https://chocolatey.org). <br />

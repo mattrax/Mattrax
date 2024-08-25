@@ -27,7 +27,6 @@ declare global {
   const IconIcRoundCheck: typeof import('~icons/ic/round-check.jsx')['default']
   const IconLogosAndroidIcon: typeof import('~icons/logos/android-icon.jsx')['default']
   const IconLogosDiscordIcon: typeof import('~icons/logos/discord-icon.jsx')['default']
-  const IconLogosGitHubIcon: typeof import('~icons/logos/git-hub-icon.jsx')['default']
   const IconLogosGithubIcon: typeof import('~icons/logos/github-icon.jsx')['default']
   const IconLogosIos: typeof import('~icons/logos/ios.jsx')['default']
   const IconLogosLinuxTux: typeof import('~icons/logos/linux-tux.jsx')['default']
