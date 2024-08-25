@@ -8,15 +8,6 @@
 		"cbuild": "NITRO_PRESET=cloudflare_pages vinxi build",
 		"start": "vinxi start"
 	},
-	"devDependencies": {
-		"@content-collections/core": "^0.6.4",
-		"@content-collections/solid-start": "^0.1.1",
-		"@iconify/json": "^2.2.241",
-		"@tailwindcss/forms": "^0.5.7",
-		"@tailwindcss/typography": "^0.5.14",
-		"autoprefixer": "^10.4.20",
-		"tailwindcss": "^3.4.10"
-	},
 	"dependencies": {
 		"@fontsource-variable/inter": "^5.0.20",
 		"@fontsource/inter": "^5.0.20",
@@ -32,5 +23,15 @@
 		"vinxi": "0.4.1",
 		"vite": "^5.4.2",
 		"zod": "^3.23.8"
+	},
+	"devDependencies": {
+		"@content-collections/core": "^0.6.4",
+		"@content-collections/markdown": "^0.1.0",
+		"@content-collections/solid-start": "^0.1.1",
+		"@iconify/json": "^2.2.241",
+		"@tailwindcss/typography": "^0.5.14",
+		"autoprefixer": "^10.4.20",
+		"fumadocs-ui": "^13.3.2",
+		"tailwindcss": "^3.4.10"
 	}
 }

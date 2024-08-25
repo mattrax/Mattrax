@@ -18,7 +18,8 @@
 		"./css": "./src/index.css",
 		"./card": "./src/card.tsx",
 		"./input": "./src/input.tsx",
-		"./button": "./src/button.tsx"
+		"./button": "./src/button.tsx",
+		"./tooltip": "./src/tooltip.tsx"
 	},
 	"dependencies": {
 		"@corvu/tailwind": "^0.1.5",

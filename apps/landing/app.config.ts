@@ -15,6 +15,7 @@ export default defineConfig({
 	server: {
 		prerender: {
 			crawlLinks: true,
+			routes: ["/", "/docs"],
 		},
 		routeRules: {
 			"/api/waitlist": { proxy: waitlistEndpoint },
@@ -22,7 +23,12 @@ export default defineConfig({
 	},
 	vite: {
 		envDir: monorepoRoot,
-		plugins: [contentCollections(), mattraxUI],
+		plugins: [
+			contentCollections({
+				configPath: "src/content-collections.ts",
+			}),
+			mattraxUI,
+		],
 		server: {
 			fs: {
 				allow: ["../../node_modules"],

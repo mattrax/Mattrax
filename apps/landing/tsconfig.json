@@ -8,10 +8,10 @@
 		"types": ["vinxi/client", "vite/client", "@mattrax/ui/types"],
 		"paths": {
 			"~/*": ["./src/*"],
-			"content-collections": ["./.content-collections/generated"]
+			"content-collections": ["./src/.content-collections/generated"]
 		}
 	},
-	"include": ["src/"],
+	"include": ["src/", "content-collections.ts"],
 	"exclude": ["node_modules", "dist"],
 	"references": [{ "path": "../../packages/ui" }]
 }
