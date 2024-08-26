@@ -8,6 +8,7 @@ primary_region = 'bos'
 
 [env]
 RUST_LOG = "debug"
+ACCEPT = "1" # A Mattrax thing which is required for now
 
 [[vm]]
   memory = '512mb'
