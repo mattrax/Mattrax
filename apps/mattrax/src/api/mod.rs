@@ -92,6 +92,9 @@ async fn headers(State(state): State<Arc<Context>>, request: Request, next: Next
 }
 
 pub fn mount(state: Arc<Context>) -> Router {
+    let core_router = mx_core::mount().build().unwrap();
+    let ctx_fn = move || mx_core::Context {};
+
     // TODO: Limit body size
     let router = Router::new()
         .nest("/internal", internal::mount(state.clone()))
@@ -99,7 +102,12 @@ pub fn mount(state: Arc<Context>) -> Router {
         .nest(
             "/psdb.v1alpha1.Database",
             internal::sql::mount(state.clone()),
-        );
+        )
+        .nest(
+            "/rspc",
+            rspc_axum::Endpoint::new(core_router.clone(), ctx_fn.clone()),
+        )
+        .nest("/api", rspc_openapi::mount(core_router, ctx_fn));
 
     let url = cfg!(all(not(debug_assertions), feature = "serve-web"))
         .then(|| "http://localhost:12345".to_string())

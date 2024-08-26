@@ -1,87 +1,14 @@
 use axum::{
-    extract::{MatchedPath, Query, Request},
-    http::request::Parts,
-    response::{Html, Response},
-    routing::get,
+    extract::{MatchedPath, Request},
+    response::Response,
 };
-use lambda_http::{request::RequestContext, RequestExt};
-use mx_manage::{Application, Authentication, DeviceInformation};
 use rcgen::{CertificateParams, KeyPair};
-use std::{borrow::Cow, collections::HashMap, env::set_var, error::Error, time::Duration};
+use std::{env::set_var, time::Duration};
 use tower_http::trace::TraceLayer;
 use tracing::{info_span, Span};
 
-struct Lambda {
-    manage_domain: String,
-    enrollment_domain: String,
-    cert: rcgen::Certificate,
-    key: rcgen::KeyPair,
-}
-
-impl Application for Lambda {
-    type EnrollmentAuthenticationMetadata = ();
-    type ManagementAuthenticationMetadata = ();
-    type Error = Box<dyn Error>;
-
-    fn enrollment_domain(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.enrollment_domain)
-    }
-
-    fn manage_domain(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.manage_domain)
-    }
-
-    fn identity_keypair(&self) -> (&rcgen::Certificate, &rcgen::KeyPair) {
-        (&self.cert, &self.key)
-    }
-
-    fn determine_authentication_method(&self) -> Authentication {
-        Authentication::Federated {
-            url: format!("https://{}/auth", self.enrollment_domain).into(),
-        }
-    }
-
-    fn verify_authentication(
-        &self,
-        bst: String,
-    ) -> Result<Option<Self::EnrollmentAuthenticationMetadata>, Self::Error> {
-        // TODO: Make this actually do stuff
-        Ok(Some(()))
-    }
-
-    async fn create_device(
-        &self,
-        auth: Self::EnrollmentAuthenticationMetadata,
-        device: DeviceInformation,
-    ) -> Result<(), Self::Error> {
-        // TODO: Do this
-
-        Ok(())
-    }
-
-    fn authenticate_management_session(
-        &self,
-        req: &Parts,
-    ) -> Result<Option<Self::ManagementAuthenticationMetadata>, Self::Error> {
-        let ctx = match req.request_context_ref() {
-            Some(RequestContext::ApiGatewayV2(ctx)) => ctx.authentication.clone(),
-            _ => todo!(),
-        };
-
-        // TODO
-        println!("{req:?} {ctx:?}");
-
-        Ok(Some(()))
-    }
-
-    async fn manage(
-        &self,
-        auth: Self::ManagementAuthenticationMetadata,
-        body: String,
-    ) -> Result<String, Self::Error> {
-        unimplemented!();
-    }
-}
+mod api;
+mod mdm;
 
 #[tokio::main]
 async fn main() -> Result<(), lambda_http::Error> {
@@ -104,41 +31,33 @@ async fn main() -> Result<(), lambda_http::Error> {
         .self_signed(&key)
         .unwrap();
 
-    let router = mx_manage::mount(Lambda { manage_domain, enrollment_domain, cert, key })
-        .route("/", get(|| async move { Html(r#"<pre><h1>Mattrax MDM Platform</h1><a href="https://mattrax.app">Home</a><br /><a href="/docs">Documentation</a></pre>"#) }))
-        .route("/auth", get(|Query(query): Query<HashMap<String, String>>| async move {
-            let appru = query.get("appru").map(String::to_string).unwrap_or_else(|| "".to_string());
+    let router = mx_manage::mount(mdm::App {
+        manage_domain,
+        enrollment_domain,
+        cert,
+        key,
+    })
+    .merge(api::mount())
+    .layer(
+        TraceLayer::new_for_http()
+            .make_span_with(|request: &Request<_>| {
+                let matched_path = request
+                    .extensions()
+                    .get::<MatchedPath>()
+                    .map(MatchedPath::as_str);
 
-            Html(format!(r#"<h3>MDM Federated Login</h3>
-                <form method="post" action="{appru}">
-                    <p><input type="hidden" name="wresult" value="TODOSpecialTokenWhichVerifiesAuth" /></p>
-                    <input type="submit" value="Login" />
-                </form>"#))
-        }))
-        .route("/enroll", get(|| async move { Html(r#"<a href="ms-device-enrollment:?mode=mdm&username=oscar@otbeaumont.me&servername=https://playground.otbeaumont.me">Enroll</a>"#) }))
-        // TODO: 404 handler
-        .route("/docs", get(|| async move { Html(include_str!("../static/scalar.html")) }))
-        .route("/openapi.yaml", get(|| async move { Html(include_str!("../static/openapi.yaml")) }))
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(|request: &Request<_>| {
-                    let matched_path = request
-                        .extensions()
-                        .get::<MatchedPath>()
-                        .map(MatchedPath::as_str);
-
-                    info_span!(
-                        "http_request",
-                        method = ?request.method(),
-                        matched_path,
-                        some_other_field = tracing::field::Empty,
-                    )
-                })
-                .on_response(|resp: &Response, latency: Duration, _span: &Span| {
-                    #[cfg(debug_assertions)]
-                    tracing::info!("responded with {} in {:?}", resp.status(), latency);
-                })
-        );
+                info_span!(
+                    "http_request",
+                    method = ?request.method(),
+                    matched_path,
+                    some_other_field = tracing::field::Empty,
+                )
+            })
+            .on_response(|resp: &Response, latency: Duration, _span: &Span| {
+                #[cfg(debug_assertions)]
+                tracing::info!("responded with {} in {:?}", resp.status(), latency);
+            }),
+    );
 
     lambda_http::run(router).await
 }

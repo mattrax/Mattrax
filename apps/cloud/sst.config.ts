@@ -24,6 +24,8 @@ export default $config({
 		};
 	},
 	async run() {
+		const discordWebhookUrl = new sst.Secret("DiscordWebhookUrl");
+
 		const identityKey = new tls.PrivateKey("identityKey", {
 			algorithm: "ECDSA",
 			ecdsaCurve: "P256",
@@ -94,7 +96,7 @@ export default $config({
 						handler: "bootstrap",
 						architecture: "arm64",
 						runtime: "provided.al2023",
-						bundle: build("mattrax-platform", "lambda"),
+						bundle: build("mx-cloud", "mx-cloud"),
 					}),
 			memory: "128 MB",
 			environment: {
@@ -102,6 +104,7 @@ export default $config({
 				MANAGE_DOMAIN: managementDomain,
 				IDENTITY_CERT: identityCert.certPem,
 				IDENTITY_KEY: identityKey.privateKeyPemPkcs8,
+				FEEDBACK_DISCORD_WEBHOOK_URL: discordWebhookUrl.value,
 			},
 		});
 	},

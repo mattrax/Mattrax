@@ -22,12 +22,18 @@ tokio = { version = "^1", features = [
 axum = { version = "^0.7" }
 serde = { version = "^1", features = ["derive"] }
 serde_json = { version = "^1" }
-specta = { version = "=2.0.0-rc.11", features = [
-  "typescript",
+specta = { version = "=2.0.0-rc.20", features = [
+  "derive",
   "serde_json",
   "chrono",
   "rust_decimal",
 ] }
+specta-typescript = "0.0.7"
+
+# TODO: Move to crates.io release once available
+rspc = { git = "https://github.com/specta-rs/rspc", rev = "b9e3fc65a5741851891e54a1ade45787584e6a77" }
+rspc-openapi = { git = "https://github.com/specta-rs/rspc", rev = "b9e3fc65a5741851891e54a1ade45787584e6a77" }
+rspc-axum = { git = "https://github.com/specta-rs/rspc", rev = "b9e3fc65a5741851891e54a1ade45787584e6a77" }
 
 [patch.crates-io]
 # TODO: This is likely a security risk, will fix it properly once the MVP is out.

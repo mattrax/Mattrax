@@ -3,6 +3,10 @@
 import "sst"
 declare module "sst" {
   export interface Resource {
+    "DiscordWebhookUrl": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "certs": {
       "name": string
       "type": "sst.aws.Bucket"

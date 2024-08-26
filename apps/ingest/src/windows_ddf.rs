@@ -6,7 +6,8 @@ use std::{
 
 use ms_ddf::{AllowedValueGroupedNodes, DFFormatVariant, MgmtTree, Node, ScopeVariant};
 use serde::Serialize;
-use specta::{ts::ExportConfig, NamedType, Type};
+use specta::{NamedType, Type};
+use specta_typescript::Typescript;
 
 #[derive(Serialize, Debug, Type)]
 #[serde(rename_all = "camelCase")]
@@ -280,8 +281,8 @@ pub fn generate_bindings() {
     let mut types = String::new();
     let type_map = &mut Default::default();
 
-    specta::ts::export_named_datatype(
-        &ExportConfig::default(),
+    specta_typescript::export_named_datatype(
+        &Typescript::default(),
         &WindowsCSPCollection::definition_named_data_type(type_map),
         type_map,
     )
@@ -289,7 +290,7 @@ pub fn generate_bindings() {
 
     type_map.iter().for_each(|(_, ty)| {
         types.push_str(
-            &specta::ts::export_named_datatype(&Default::default(), ty, type_map).unwrap(),
+            &specta_typescript::export_named_datatype(&Default::default(), ty, type_map).unwrap(),
         );
         types.push('\n');
     });

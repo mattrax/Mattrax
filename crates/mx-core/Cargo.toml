@@ -1,0 +1,13 @@
+[package]
+name = "mx-core"
+description = "The Mattrax core"
+version = "0.0.1"
+edition = "2021"
+repository = "https://github.com/mattrax/Mattrax"
+publish = false
+
+[dependencies]
+rspc = { workspace = true }
+rspc-openapi = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+specta = { workspace = true }

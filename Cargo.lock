@@ -1033,6 +1033,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
 [[package]]
+name = "erased-serde"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24e2389d65ab4fab27dc2a5de7b191e1f6617d1f1c8855c0dc569c94a4cbb18d"
+dependencies = [
+ "serde",
+ "typeid",
+]
+
+[[package]]
 name = "errno"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1716,6 +1726,7 @@ dependencies = [
  "serde",
  "serde_json",
  "specta",
+ "specta-typescript",
 ]
 
 [[package]]
@@ -2019,6 +2030,7 @@ dependencies = [
  "hmac",
  "hyper",
  "jwt",
+ "mx-core",
  "mx-db",
  "mx-manage",
  "mx-utils",
@@ -2028,6 +2040,8 @@ dependencies = [
  "rand",
  "rcgen",
  "reqwest",
+ "rspc-axum",
+ "rspc-openapi",
  "rustls",
  "serde",
  "serde_json",
@@ -2036,20 +2050,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "x509-parser 0.16.0",
-]
-
-[[package]]
-name = "mattrax-cloud"
-version = "0.0.1"
-dependencies = [
- "axum",
- "lambda_http",
- "mx-manage",
- "rcgen",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -2163,6 +2163,35 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "urlencoding",
+]
+
+[[package]]
+name = "mx-cloud"
+version = "0.0.1"
+dependencies = [
+ "axum",
+ "lambda_http",
+ "mx-core",
+ "mx-manage",
+ "rcgen",
+ "reqwest",
+ "rspc-axum",
+ "rspc-openapi",
+ "serde",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "mx-core"
+version = "0.0.1"
+dependencies = [
+ "rspc",
+ "rspc-openapi",
+ "serde",
+ "specta",
 ]
 
 [[package]]
@@ -2544,6 +2573,15 @@ dependencies = [
  "openssl-src",
  "pkg-config",
  "vcpkg",
+]
+
+[[package]]
+name = "ordered-float"
+version = "2.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
@@ -3130,6 +3168,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "rspc"
+version = "0.3.0"
+source = "git+https://github.com/specta-rs/rspc?rev=b9e3fc65a5741851891e54a1ade45787584e6a77#b9e3fc65a5741851891e54a1ade45787584e6a77"
+dependencies = [
+ "erased-serde",
+ "futures",
+ "serde",
+ "serde-value",
+ "specta",
+ "specta-util",
+]
+
+[[package]]
+name = "rspc-axum"
+version = "0.2.0"
+source = "git+https://github.com/specta-rs/rspc?rev=b9e3fc65a5741851891e54a1ade45787584e6a77#b9e3fc65a5741851891e54a1ade45787584e6a77"
+dependencies = [
+ "axum",
+ "form_urlencoded",
+ "futures",
+ "rspc",
+ "serde_json",
+]
+
+[[package]]
+name = "rspc-openapi"
+version = "0.0.0"
+source = "git+https://github.com/specta-rs/rspc?rev=b9e3fc65a5741851891e54a1ade45787584e6a77#b9e3fc65a5741851891e54a1ade45787584e6a77"
+dependencies = [
+ "axum",
+ "futures",
+ "rspc",
+ "serde_json",
+]
+
+[[package]]
 name = "rust_decimal"
 version = "1.36.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3315,6 +3389,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-value"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
+dependencies = [
+ "ordered-float",
+ "serde",
+]
+
+[[package]]
 name = "serde_derive"
 version = "1.0.209"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3494,15 +3578,12 @@ dependencies = [
 
 [[package]]
 name = "specta"
-version = "2.0.0-rc.11"
+version = "2.0.0-rc.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ed13baa3131e5b627ca78dca1097aa84dd83509b18ac9f876a0db5e70413636"
+checksum = "4ccbb212565d2dc177bc15ecb7b039d66c4490da892436a4eee5b394d620c9bc"
 dependencies = [
  "chrono",
- "once_cell",
- "paste",
  "rust_decimal",
- "serde",
  "serde_json",
  "specta-macros",
  "thiserror",
@@ -3510,14 +3591,45 @@ dependencies = [
 
 [[package]]
 name = "specta-macros"
-version = "2.0.0-rc.10"
+version = "2.0.0-rc.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef33e9678ae36993fcbfc46aa29568ef10d32fd54428808759c6a450998c43ec"
+checksum = "68999d29816965eb9e5201f60aec02a76512139811661a7e8e653abc810b8f72"
 dependencies = [
  "Inflector",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.76",
+]
+
+[[package]]
+name = "specta-serde"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12260cbb21abb2e83a0375b1521867910e3aed8a7afa782206150ce552cd2e5a"
+dependencies = [
+ "specta",
+ "thiserror",
+]
+
+[[package]]
+name = "specta-typescript"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1e4472229365ceb6395487e3a60d921ad8e21f9ad06eaecc396f098902c9adc"
+dependencies = [
+ "specta",
+ "specta-serde",
+ "thiserror",
+]
+
+[[package]]
+name = "specta-util"
+version = "0.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8113d65b58a6de3184b01d6df9e50b6d4bbe7f724251f576d84f23228824456"
+dependencies = [
+ "serde",
+ "specta",
 ]
 
 [[package]]
@@ -4074,6 +4186,12 @@ dependencies = [
  "rand",
  "static_assertions",
 ]
+
+[[package]]
+name = "typeid"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e13db2e0ccd5e14a544e8a246ba2312cd25223f616442d7f2cb0e3db614236e"
 
 [[package]]
 name = "typenum"

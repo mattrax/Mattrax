@@ -14,8 +14,8 @@ default = []
 serve-web = []
 
 [dependencies]
+mx-core = { path = "../../crates/mx-core" }
 mx-utils = { path = "../../crates/mx-utils" }
-# ms-mde = { path = "../../crates/ms-mde" }
 mx-windows = { path = "../../crates/mx-windows" }
 mx-db = { path = "../../crates/mx-db" }
 mx-manage = { path = "../../crates/mx-manage" }
@@ -30,6 +30,8 @@ tokio = { workspace = true, features = [
 axum = { workspace = true, features = ["http2", "macros", "ws"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+rspc-axum = { workspace = true }
+rspc-openapi = { workspace = true }
 
 tracing-subscriber = "0.3.18"
 clap = { version = "4.5.16", features = ["derive"] }

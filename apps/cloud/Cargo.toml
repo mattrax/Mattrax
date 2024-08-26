@@ -1,18 +1,23 @@
 [package]
-name = "mattrax-cloud"
+name = "mx-cloud"
 description = "Services for Mattrax's Cloud offering"
 version = "0.0.1"
 edition = "2021"
 publish = false
 
 [dependencies]
+mx-core = { path = "../../crates/mx-core" }
 mx-manage = { path = "../../crates/mx-manage" }
 
 tracing = { workspace = true }
 axum = { workspace = true, features = ["http2", "macros", "ws"] }
+serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true }
+rspc-axum = { workspace = true }
+rspc-openapi = { workspace = true }
 
 lambda_http = "0.13.0"
 tracing-subscriber = "0.3.18"
 rcgen = { version = "0.13.1", features = ["x509-parser"] }
 tower-http = { version = "0.5.2", features = ["trace"] }
+reqwest = "0.12.7"
