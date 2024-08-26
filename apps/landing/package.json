@@ -27,7 +27,7 @@
 	"devDependencies": {
 		"@content-collections/core": "^0.6.4",
 		"@content-collections/markdown": "^0.1.0",
-		"@content-collections/solid-start": "^0.1.1",
+		"@content-collections/vite": "^0.2.1",
 		"@iconify/json": "^2.2.241",
 		"@tailwindcss/typography": "^0.5.14",
 		"autoprefixer": "^10.4.20",

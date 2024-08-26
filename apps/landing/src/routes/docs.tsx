@@ -214,8 +214,6 @@ function CommandK(props: { cmdk: EventTarget }) {
 }
 
 function Items() {
-	console.log(allDocs); // TODO
-
 	return (
 		<ul class="px-4 py-6 md:px-3">
 			<For each={allDocs}>

@@ -61,3 +61,4 @@ Thumbs.db
 .nx
 .sst
 .content-collections
+.app.config.*.js

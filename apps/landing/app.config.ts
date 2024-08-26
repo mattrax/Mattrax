@@ -1,4 +1,4 @@
-import contentCollections from "@content-collections/solid-start";
+import contentCollections from "@content-collections/vite";
 import mattraxUI from "@mattrax/ui/vite";
 import { defineConfig } from "@solidjs/start/config";
 import { monorepoRoot } from "./loadEnv";
@@ -24,9 +24,12 @@ export default defineConfig({
 	vite: {
 		envDir: monorepoRoot,
 		plugins: [
+			// We don't use the Solid Start adapter due to https://github.com/sdorra/content-collections/pull/269
 			contentCollections({
-				isEnabled: true,
 				configPath: "src/content-collections.ts",
+				isEnabled(config) {
+					return config.router?.name === "ssr";
+				},
 			}),
 			mattraxUI,
 		],
