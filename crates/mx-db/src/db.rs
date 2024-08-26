@@ -97,6 +97,11 @@ pub struct CreatePolicyDeployStatus {
     pub deploy_pk: u64,
     pub conflicts: Option<String>,
 }
+#[derive(Debug)]
+pub struct GetFullAccountResult {
+    pub name: String,
+    pub email: String,
+}
 
 #[derive(Clone)]
 pub struct Db {
@@ -353,5 +358,24 @@ impl Db {
         let done_at = chrono::Utc::now().naive_utc();
         let mut result = format!(r#"insert into `policy_deploy_status` (`deploy`, `device`, `variant`, `conflicts`, `done_at`) values {}"#, (0..values.len()).map(|_| "(?, ?, ?, ?, ?)").collect::<Vec<_>>().join(",")).with(mysql_async::Params::Positional(values.into_iter().map(|v| vec![v.deploy_pk.clone().into(),v.device_pk.clone().into(),"pending".clone().into(),v.conflicts.clone().into(),done_at.clone().into()]).flatten().collect())).run(&self.pool).await?;
         Ok(())
+    }
+}
+impl Db {
+    pub async fn get_full_account(
+        &self,
+        pk: u64,
+    ) -> Result<Vec<GetFullAccountResult>, mysql_async::Error> {
+        let mut result = r#"select `name`, `email` from `accounts` where `accounts`.`pk` = ?"#
+            .with(mysql_async::Params::Positional(vec![pk.clone().into()]))
+            .run(&self.pool)
+            .await?;
+        let mut ret = vec![];
+        while let Some(mut row) = result.next().await.unwrap() {
+            ret.push(GetFullAccountResult {
+                name: from_value(&mut row, 0),
+                email: from_value(&mut row, 1),
+            });
+        }
+        Ok(ret)
     }
 }

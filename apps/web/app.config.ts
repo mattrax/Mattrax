@@ -32,6 +32,16 @@ export default defineConfig({
 			// Safari mobile has problems with newer syntax
 			target: "es2020",
 		},
+		server: {
+			// TODO: Remove this
+			proxy: {
+				"/api2": {
+					target: "http://localhost:9000",
+					changeOrigin: true,
+					rewrite: (path) => path.replace(/^\/api2/, ""),
+				},
+			},
+		},
 		resolve: {
 			alias: {
 				// We replace the `sst` import on client so the `env.ts` file can be used

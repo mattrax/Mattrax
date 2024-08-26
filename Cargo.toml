@@ -28,12 +28,13 @@ specta = { version = "=2.0.0-rc.20", features = [
   "chrono",
   "rust_decimal",
 ] }
+specta-util = { version = "0.0.7" }
 specta-typescript = "0.0.7"
 
 # TODO: Move to crates.io release once available
-rspc = { git = "https://github.com/specta-rs/rspc", rev = "b9e3fc65a5741851891e54a1ade45787584e6a77" }
-rspc-openapi = { git = "https://github.com/specta-rs/rspc", rev = "b9e3fc65a5741851891e54a1ade45787584e6a77" }
-rspc-axum = { git = "https://github.com/specta-rs/rspc", rev = "b9e3fc65a5741851891e54a1ade45787584e6a77" }
+rspc = { git = "https://github.com/specta-rs/rspc", rev = "56d0230adf541515235add9e12c885222e447167" }
+rspc-openapi = { git = "https://github.com/specta-rs/rspc", rev = "56d0230adf541515235add9e12c885222e447167" }
+rspc-axum = { git = "https://github.com/specta-rs/rspc", rev = "56d0230adf541515235add9e12c885222e447167" }
 
 [patch.crates-io]
 # TODO: This is likely a security risk, will fix it properly once the MVP is out.

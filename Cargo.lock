@@ -2170,6 +2170,7 @@ name = "mx-cloud"
 version = "0.0.1"
 dependencies = [
  "axum",
+ "axum-extra",
  "lambda_http",
  "mx-core",
  "mx-manage",
@@ -2188,10 +2189,16 @@ dependencies = [
 name = "mx-core"
 version = "0.0.1"
 dependencies = [
+ "chrono",
+ "mx-db",
  "rspc",
  "rspc-openapi",
  "serde",
+ "serde_json",
  "specta",
+ "specta-util",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -3170,7 +3177,7 @@ dependencies = [
 [[package]]
 name = "rspc"
 version = "0.3.0"
-source = "git+https://github.com/specta-rs/rspc?rev=b9e3fc65a5741851891e54a1ade45787584e6a77#b9e3fc65a5741851891e54a1ade45787584e6a77"
+source = "git+https://github.com/specta-rs/rspc?rev=56d0230adf541515235add9e12c885222e447167#56d0230adf541515235add9e12c885222e447167"
 dependencies = [
  "erased-serde",
  "futures",
@@ -3183,7 +3190,7 @@ dependencies = [
 [[package]]
 name = "rspc-axum"
 version = "0.2.0"
-source = "git+https://github.com/specta-rs/rspc?rev=b9e3fc65a5741851891e54a1ade45787584e6a77#b9e3fc65a5741851891e54a1ade45787584e6a77"
+source = "git+https://github.com/specta-rs/rspc?rev=56d0230adf541515235add9e12c885222e447167#56d0230adf541515235add9e12c885222e447167"
 dependencies = [
  "axum",
  "form_urlencoded",
@@ -3195,7 +3202,7 @@ dependencies = [
 [[package]]
 name = "rspc-openapi"
 version = "0.0.0"
-source = "git+https://github.com/specta-rs/rspc?rev=b9e3fc65a5741851891e54a1ade45787584e6a77#b9e3fc65a5741851891e54a1ade45787584e6a77"
+source = "git+https://github.com/specta-rs/rspc?rev=56d0230adf541515235add9e12c885222e447167#56d0230adf541515235add9e12c885222e447167"
 dependencies = [
  "axum",
  "futures",

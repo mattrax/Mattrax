@@ -435,6 +435,20 @@ exportQueries(
 					doneAt: args.doneAt,
 				}),
 		}),
+		defineOperation({
+			name: "get_full_account",
+			args: {
+				pk: "u64",
+			},
+			query: (args) =>
+				db
+					.select({
+						name: accounts.name,
+						email: accounts.email,
+					})
+					.from(accounts)
+					.where(eq(accounts.pk, args.pk)),
+		}),
 	],
 	path.join(import.meta.dirname, "../../../../crates/mx-db/src/db.rs"),
 );

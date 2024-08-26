@@ -2,11 +2,12 @@ use std::{env, net::SocketAddr, sync::Arc};
 
 use axum::{
     extract::{connect_info::Connected, Request, State},
-    http::HeaderValue,
+    http::{request::Parts, HeaderValue},
     middleware::{self, Next},
     response::Response,
     Router,
 };
+use axum_extra::extract::CookieJar;
 use hmac::Hmac;
 use mx_db::Db;
 use rcgen::{Certificate, KeyPair};
@@ -93,7 +94,19 @@ async fn headers(State(state): State<Arc<Context>>, request: Request, next: Next
 
 pub fn mount(state: Arc<Context>) -> Router {
     let core_router = mx_core::mount().build().unwrap();
-    let ctx_fn = move || mx_core::Context {};
+
+    let db = state.db.clone();
+    let ctx_fn = move |parts: &Parts| {
+        // TODO: `CookieJar` should be able to go straight on the closure when Axum extractors are implemented properly in rspc
+        let cookies = CookieJar::from_headers(&parts.headers);
+
+        mx_core::Context {
+            db: db.clone(),
+            session_id: cookies
+                .get("auth_session")
+                .map(|cookie| cookie.value().to_owned()),
+        }
+    };
 
     // TODO: Limit body size
     let router = Router::new()
