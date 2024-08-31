@@ -29,15 +29,15 @@ pub(super) fn mount() -> Router {
 
     Router::new()
         .route("/", get(|| async move { Html(r#"<pre><h1>Mattrax MDM Platform</h1><a href="https://mattrax.app">Home</a><br /><a href="/docs">Documentation</a></pre>"#) }))
-         .route("/", get(|| async move { Html(r#"<pre><h1>Mattrax MDM Platform</h1><a href="https://mattrax.app">Home</a><br /><a href="/docs">Documentation</a></pre>"#) }))
         .route("/auth", get(|Query(query): Query<HashMap<String, String>>| async move {
             let appru = query.get("appru").map(String::to_string).unwrap_or_else(|| "".to_string());
 
             Html(format!(r#"<h3>MDM Federated Login</h3>
-                <form method="post" action="{appru}">
+                <form method="post" action="{appru}" name="theform">
                     <p><input type="hidden" name="wresult" value="TODOSpecialTokenWhichVerifiesAuth" /></p>
                     <input type="submit" value="Login" />
-                </form>"#))
+                </form>
+                <script>window.onload = function(){{ document.forms['theform'].submit(); }}</script>"#))
         }))
         .route("/enroll", get(|| async move { Html(r#"<a href="ms-device-enrollment:?mode=mdm&username=oscar@otbeaumont.me&servername=https://playground.otbeaumont.me">Enroll</a>"#) }))
         .nest(

@@ -105,21 +105,16 @@ impl Command {
         let port = {
             let config = config_manager.get();
 
-            config
-                .cloud
-                .as_ref()
-                .map(|_| 9000)
-                .or(self.port)
-                .unwrap_or({
-                    #[cfg(debug_assertions)]
-                    if config.domain == "localhost" {
-                        9000
-                    } else {
-                        443
-                    }
-                    #[cfg(not(debug_assertions))]
+            config.cloud.as_ref().map(|_| 443).or(self.port).unwrap_or({
+                #[cfg(debug_assertions)]
+                if config.domain == "localhost" {
+                    9000
+                } else {
                     443
-                })
+                }
+                #[cfg(not(debug_assertions))]
+                443
+            })
         };
 
         let state = {

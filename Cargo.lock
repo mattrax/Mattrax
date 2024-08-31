@@ -2172,6 +2172,7 @@ dependencies = [
  "axum",
  "axum-extra",
  "lambda_http",
+ "ms-mdm",
  "mx-core",
  "mx-manage",
  "rcgen",

@@ -22,3 +22,4 @@ rcgen = { version = "0.13.1", features = ["x509-parser"] }
 tower-http = { version = "0.5.2", features = ["trace"] }
 axum-extra = { version = "0.9.3", features = ["cookie"] }
 reqwest = "0.12.7"
+ms-mdm = { version = "0.0.1", path = "../../crates/ms-mdm" }

@@ -3,7 +3,7 @@
 import { execSync } from "node:child_process";
 import path from "node:path";
 
-execSync("cargo watch -x 'run --bin lambda'", {
+execSync("cargo watch -x 'run --bin mx-cloud'", {
 	stdio: "inherit",
 	shell: "/bin/zsh",
 	cwd: path.join(process.cwd(), ".."),

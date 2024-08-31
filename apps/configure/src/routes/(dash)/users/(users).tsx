@@ -4,6 +4,7 @@ import {
 	AccordionItem,
 	AccordionTrigger,
 	Button,
+	Kbd,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
@@ -26,10 +27,12 @@ import {
 import { latest } from "@mattrax/ui/solid";
 import { createConnectivitySignal } from "@solid-primitives/connectivity";
 import { createAsync, useLocation, useNavigate } from "@solidjs/router";
-import { Show, Suspense, createSignal } from "solid-js";
+import { Show, Suspense, createComputed, createSignal } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
 import { PageLayout, PageLayoutHeading } from "~/components/PageLayout";
 import { SearchPage, createSearchPageContext } from "~/components/search";
+import { showKdbShortcuts } from "~/lib/config";
 import { getKey } from "~/lib/kv";
 import { createDbQuery } from "~/lib/query";
 import { useSync } from "~/lib/sync";
@@ -67,8 +70,11 @@ export default function Page() {
 							}}
 						>
 							Create
-							{/* // TODO: Add keyboard shortcut */}
-							{/* <Kbd class="ml-2">N</Kbd> */}
+							<Show when={showKdbShortcuts()}>
+								<Kbd variant="dark" class="ml-2">
+									N
+								</Kbd>
+							</Show>
 						</SheetTrigger>
 
 						<SheetContent>
@@ -81,6 +87,13 @@ export default function Page() {
 			<SearchPage {...ctx} showFilterBar={false} />
 		</PageLayout>
 	);
+}
+
+// A `useMemo` baked by a store with reconcile.
+function createMemoStore<T extends object>(signal: () => T) {
+	const [store, setStore] = createStore<T>(undefined!);
+	createComputed(() => setStore(reconcile(signal())));
+	return store;
 }
 
 function CreateUserSheet() {
@@ -124,11 +137,37 @@ function CreateUserSheet() {
 		return `User ${upn} already exists`;
 	});
 
-	const verifiedDomains = () =>
-		latest(org)?.domains.filter((d) => d.isVerified) || [];
+	const verifiedDomains = createMemoStore(
+		() => latest(org)?.domains.filter((d) => d.isVerified) || [],
+	);
+
+	console.log([...verifiedDomains]);
+
+	// createEffect(() => console.log(JSON.stringify(verifiedDomains()))); // TODO
+
+	// const verifiedDomains = () => [
+	// 	{
+	// 		id: "mdm.mattrax.app",
+	// 		authenticationType: "Managed",
+	// 		isAdminManaged: true,
+	// 		isDefault: true,
+	// 		isInitial: false,
+	// 		isRoot: true,
+	// 		isVerified: true,
+	// 	},
+	// 	{
+	// 		id: "sg5hb.onmicrosoft.com",
+	// 		authenticationType: "Managed",
+	// 		isAdminManaged: true,
+	// 		isDefault: false,
+	// 		isInitial: true,
+	// 		isRoot: true,
+	// 		isVerified: true,
+	// 	},
+	// ];
 
 	const domainVerificationError = () => {
-		if (verifiedDomains().length === 0)
+		if (verifiedDomains.length === 0)
 			// TODO: Link the user to the domain verification page
 			return "Your organization must have a verified domain!";
 
@@ -189,8 +228,8 @@ function CreateUserSheet() {
 						form={form}
 						name="upnRemote"
 						fieldClass="flex-1"
-						disabled={org.loading || verifiedDomains().length === 0}
-						options={verifiedDomains().map((d) => d.id)}
+						disabled={org.loading || verifiedDomains.length === 0}
+						options={verifiedDomains.map((d) => d.id)}
 						placeholder={
 							<Show when={org.loading}>
 								<span class="text-muted-foreground/70">Loading...</span>
@@ -305,6 +344,11 @@ function CreateUserSheet() {
 						}
 					>
 						Create
+						<Show when={showKdbShortcuts()}>
+							<Kbd variant="dark" class="ml-2">
+								Shift + Enter
+							</Kbd>
+						</Show>
 					</Button>
 				</SheetFooter>
 			</Form>

@@ -4,12 +4,12 @@ import path from "node:path";
 
 // TODO: Disable the generation of `sst-env.d.ts`
 
-const enrollmentDomain = "playground.otbeaumont.me";
-const managementDomain = "playground2.otbeaumont.me";
+const enrollmentDomain = "EnterpriseEnrollment.mattrax.cloud";
+const managementDomain = "manage.mattrax.cloud";
 
 // TODO: Hook up Cloudflare as DNS provider through SST to automate this
 const todoCertificateArn =
-	"arn:aws:acm:us-east-1:101829795063:certificate/2ed8e328-1867-46cf-a598-066c7759eed7";
+	"arn:aws:acm:us-east-1:101829795063:certificate/4c87bd74-87fb-4a07-90bc-5e9c5554d8e8";
 
 export default $config({
 	app(input) {

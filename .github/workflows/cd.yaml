@@ -100,7 +100,6 @@ jobs:
       matrix:
         projects:
           - landing
-          - docs
           - web
     name: Build ${{ matrix.projects }}
     runs-on: ubuntu-latest

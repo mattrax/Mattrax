@@ -55,10 +55,9 @@ Thumbs.db
 /_
 /policy.yaml
 /out
-/TODO
 
 # Other
 .nx
 .sst
 .content-collections
-.app.config.*.js
+app.config.*.js

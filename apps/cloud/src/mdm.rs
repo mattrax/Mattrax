@@ -1,7 +1,11 @@
 use axum::http::request::Parts;
 use lambda_http::{request::RequestContext, RequestExt};
+use ms_mdm::{
+    Add, CmdId, CmdRef, Final, Format, Item, Meta, MsgRef, Status, SyncBody, SyncHdr, SyncML,
+    Target,
+};
 use mx_manage::{Application, Authentication, DeviceInformation};
-use std::{borrow::Cow, error::Error};
+use std::{borrow::Cow, error::Error, str::FromStr};
 
 pub(super) struct App {
     pub(super) manage_domain: String,
@@ -71,6 +75,79 @@ impl Application for App {
         auth: Self::ManagementAuthenticationMetadata,
         body: String,
     ) -> Result<String, Self::Error> {
-        unimplemented!();
+        let cmd = match SyncML::from_str(&body) {
+            Ok(cmd) => cmd,
+            Err(err) => {
+                println!("\nBODY: {body}\n");
+                panic!("{:?}", err); // TODO: Error handling
+            }
+        };
+
+        // TODO: Do this helper better
+        let mut cmd_id = 0;
+        let mut next_cmd_id = move || {
+            cmd_id += 1;
+            CmdId::new(format!("{}", cmd_id)).expect("can't be zero")
+        };
+
+        let mut children = vec![
+            Status {
+                cmd_id: next_cmd_id(),
+                msg_ref: MsgRef::from(&cmd.hdr),
+                cmd_ref: CmdRef::zero(), // TODO: Remove `zero` function and use special helper???
+                cmd: "SyncHdr".into(),
+                data: "200".into(),
+                // data: Data {
+                //     msft_originalerror: None,
+                //     child: "200".into(), // TODO: Use SyncML status abstraction
+                // },
+                item: vec![],
+                target_ref: None,
+                source_ref: None,
+            }
+            .into(),
+            Add {
+                cmd_id: next_cmd_id(),
+                meta: None,
+                item: vec![Item {
+                    source: None,
+                    target: Some(Target::new(
+                        "./User/Vendor/MSFT/Policy/Config/Education/AllowGraphingCalculator",
+                    )),
+                    meta: Some(Meta {
+                        format: Some(Format {
+                            xmlns: "syncml:metinf".into(),
+                            value: "int".into(),
+                        }),
+                        ttype: None,
+                    }),
+                    data: Some("0".into()),
+                }],
+            }
+            .into(),
+        ];
+
+        let hdr = cmd.hdr.clone();
+        let response = SyncML {
+            hdr: SyncHdr {
+                version: hdr.version,
+                version_protocol: hdr.version_protocol,
+                session_id: hdr.session_id,
+                msg_id: hdr.msg_id,
+                target: hdr.source.into(),
+                source: hdr.target.into(),
+                // TODO: Make this work
+                meta: None,
+                // meta: Some(Meta {
+                //     max_request_body_size: Some(MAX_REQUEST_BODY_SIZE),
+                // }),
+            },
+            child: SyncBody {
+                children,
+                _final: Some(Final),
+            },
+        };
+
+        Ok(response.to_string().unwrap()) // TODO: Error handling
     }
 }
