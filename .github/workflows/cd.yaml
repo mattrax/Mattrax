@@ -2,19 +2,11 @@ name: CD
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
-
-env:
-  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-  CLOUDFLARE_ACCOUNT_ID: f02b3ef168fe64129e9941b4fb2e4dc1
-  # Used when building landing
-  VITE_MATTRAX_CLOUD_ORIGIN: https://cloud.mattrax.app
 
 jobs:
   sst:
@@ -23,7 +15,6 @@ jobs:
     environment: production
     concurrency:
       group: production
-    # if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' # TODO
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -34,191 +25,16 @@ jobs:
           role-to-assume: "arn:aws:iam::101829795063:role/mattrax-gh-actions"
           aws-region: us-east-1
           role-session-name: mattrax-sst
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
-      - name: Install SST
-        run: curl -fsSL https://ion.sst.dev/install | bash
-
-      - run: sst deploy --stage prod
-        # env:
-        # ARM_USE_OIDC: true
-        # ARM_CLIENT_ID: a17b56f1-0b10-4029-9a89-7f703d3573f8
-        # ARM_TENANT_ID: 22d6679c-fc23-425a-b69b-e5e604dd80db
-        # AZURE_SUBSCRIPTION_ID: 22d6679c-fc23-425a-b69b-e5e604dd80db
-        # OAUTH_CLIENT_ID: kXdvzkEgiN11CNTRL
-        # OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
-
-  build-mattrax:
-    name: Build Mattrax
-    runs-on: ubuntu-latest
-    steps:
-      - name: Git clone the repository
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: "arn:aws:iam::101829795063:role/mattrax-gh-actions"
-          aws-region: us-east-1
-          role-session-name: mattrax-sst-workflow
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
-      - name: Install Cargo Zigbuild
-        run: pip install cargo-zigbuild
-
+      
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Setup Rust toolchain
-        run: rustup toolchain install stable --profile minimal
-
-      - name: Install Rust target for 'x86_64-unknown-linux-musl'
-        run: rustup target add x86_64-unknown-linux-musl
-
-      - name: Build & upload binary
-        run: |
-          pnpm i -g wrangler
-          export HASH=$(git rev-parse HEAD)
-
-          cargo zigbuild --release --target x86_64-unknown-linux-musl -p mattrax
-
-          wrangler r2 object put "static/mattrax/$HASH/x86_64-unknown-linux" --file=target/x86_64-unknown-linux-musl/release/mattrax --cache-control "public, max-age=31536000, immutable"
-          echo "$HASH" | wrangler r2 object put "static/nightly" --pipe
-
-  build-js:
-    strategy:
-      matrix:
-        projects:
-          - landing
-          - web
-    name: Build ${{ matrix.projects }}
-    runs-on: ubuntu-latest
-    environment:
-      name: ${{ matrix.projects.name }}
-    steps:
-      - name: Git clone the repository
-        uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
           version: latest
 
-      - name: Install
+      - name: Install dependencies
         run: pnpm i
 
-      - name: Build
-        run: pnpm run ${{ matrix.projects }} cbuild
-        env:
-          VITE_PROD_ORIGIN: https://cloud.mattrax.app
-
-      - name: Upload result
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.projects }}-dist
-          path: apps/${{ matrix.projects }}/dist
-
-  deploy-mattrax:
-    name: Deploy Mattrax
-    runs-on: ubuntu-latest
-    needs: [build-mattrax] # TODO: sst
-    concurrency:
-      group: mattrax
-    environment:
-      name: mattrax
-      url: https://mdm.mattrax.app
-    steps:
-      - name: Git clone the repository
-        uses: actions/checkout@v4
-
-      - name: Install Flyctl
-        uses: superfly/flyctl-actions/setup-flyctl@v1.4
-      
-      - name: Download binary
-        working-directory: ./infra/cloud
-        run: |
-          wget -O mattrax "https://static.mattrax.app/mattrax/$(git rev-parse HEAD)/x86_64-unknown-linux"
-          chmod +x mattrax
-      
-      - name: Deploy to Fly
-        run: flyctl deploy --wait-timeout 2m
-        working-directory: ./infra/cloud
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
-  deploy-js:
-    strategy:
-      matrix:
-        projects:
-          - { name: landing, project: mattrax-landing }
-          - { name: web, project: mattrax }
-    name: Deploy ${{ matrix.projects.name }}
-    runs-on: ubuntu-latest
-    needs:
-      # - sst # TODO
-      # This will wait for *all* projects to build, not just the one we care about.
-      # GitHub don't provide a better solution :(
-      - build-js
-      # - deploy-mattrax # TODO
-    # Run regardless of if previous steps were skipped
-    if: ${{ !failure() && !cancelled() }}
-    environment:
-      name: ${{ matrix.projects.name }}
-      url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
-    steps:
-      # We pull this so Wrangler can link the deploy to the commit/branch
-      - name: Git clone the repository
-        uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.projects.name }}-dist
-          path: dist
-
-      - name: Deploy
-        run: |
-          set -o pipefail
-          pnpm dlx wrangler pages deploy dist/ --project-name ${{ matrix.projects.project }} 2>&1 | tee -a BUILD_OUTPUT
-
-      - name: Export `DEPLOYMENT_URL`
-        id: result
-        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
-
-  configure:
-    name: Build & Deploy Configure
-    runs-on: ubuntu-latest
-    environment:
-      name: configure
-      url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
-    steps:
-      - name: Git clone the repository
-        uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
-      - name: Install
-        run: pnpm i
-
-      - name: Build
-        run: pnpm configure build
-
-      - name: Deploy
-        run: |
-          set -o pipefail
-          pnpm dlx wrangler pages deploy apps/configure/dist/ --project-name mattrax-configure 2>&1 | tee -a BUILD_OUTPUT
-
-      - name: Export `DEPLOYMENT_URL`
-        id: result
-        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
+      - name: SST
+        run: pnpm sst deploy --stage prod

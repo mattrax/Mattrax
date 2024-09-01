@@ -13,6 +13,7 @@ const waitlistEndpoint = new URL(
 export default defineConfig({
 	ssr: true,
 	server: {
+		compressPublicAssets: false, // TODO: I think this is being ignored.
 		prerender: {
 			crawlLinks: true,
 			routes: ["/", "/docs"],

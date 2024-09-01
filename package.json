@@ -1,7 +1,6 @@
 {
 	"name": "@mattrax/monorepo",
 	"private": true,
-	"workspaces": ["apps/*", "packages/*"],
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/web dev",
 		"landing": "pnpm --filter @mattrax/landing --",
@@ -11,6 +10,7 @@
 		"docs": "pnpm --filter @mattrax/docs --",
 		"web": "pnpm --filter @mattrax/web --",
 		"email": "pnpm --filter @mattrax/email --",
+		"sst": "sst",
 		"db:push": "DRIZZLE=1 drizzle-kit push && DRIZZLE=1 tsx ./apps/web/src/db/rust.ts",
 		"db:gen": "DRIZZLE=1 drizzle-kit generate && DRIZZLE=1 tsx ./apps/web/src/db/rust.ts && pnpm format",
 		"db:studio": "DRIZZLE=1 drizzle-kit studio",
@@ -37,7 +37,7 @@
 	"devDependencies": {
 		"husky": "^9.1.5",
 		"nx": "19.6.2",
-		"wrangler": "^3.72.2"
+		"sst": "3.0.70"
 	},
 	"pnpm": {
 		"patchedDependencies": {

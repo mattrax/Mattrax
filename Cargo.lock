@@ -2175,6 +2175,7 @@ dependencies = [
  "ms-mdm",
  "mx-core",
  "mx-manage",
+ "openssl",
  "rcgen",
  "reqwest",
  "rspc-axum",

@@ -9,6 +9,8 @@ publish = false
 mx-core = { path = "../../crates/mx-core" }
 mx-manage = { path = "../../crates/mx-manage" }
 
+openssl = { version = "0.10.66", features = ["vendored"] }
+
 tracing = { workspace = true }
 axum = { workspace = true, features = ["http2", "macros", "ws"] }
 serde = { workspace = true, features = ["derive"] }
