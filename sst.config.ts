@@ -11,6 +11,7 @@ import path from "node:path";
 //  - Security HTTP headers using response policy
 //  - Configure `www.mattrax.app` redirect using alias + CloudFront function
 //  - Quick preview environment for PRs (Eg. using shared resources like CloudFront so it's not stupidly slow)
+//  - Logs in GH Actions should be folded individually so that can actually be understood, with regular process logs before completion?
 
 export default $config({
 	app(input) {
@@ -85,6 +86,9 @@ export default $config({
 			create: "./.github/cl.sh build --arm64 --release -p mx-cloud",
 			update: "./.github/cl.sh build --arm64 --release -p mx-cloud",
 			dir: process.cwd(),
+			environment: {
+				CARGO_TERM_COLOR: "always",
+			},
 		});
 
 		const api = new sst.aws.Function(
@@ -93,7 +97,7 @@ export default $config({
 				handler: "bootstrap",
 				architecture: "arm64",
 				runtime: "provided.al2023",
-				bundle: path.join("target", "lambda", "mx-cloud"),
+				bundle: path.join(process.cwd(), "target", "lambda", "mx-cloud"),
 				memory: "128 MB",
 				environment: {
 					PRIMARY_DOMAIN,
