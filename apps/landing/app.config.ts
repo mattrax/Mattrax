@@ -38,7 +38,6 @@ export default defineConfig({
 				allow: ["../../node_modules"],
 			},
 		},
-
 		build: {
 			assetsInlineLimit: 0,
 		},
