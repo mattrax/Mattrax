@@ -41,7 +41,12 @@ export default $config({
 				: `${$app.stage}-landing.dev.mattrax.app`;
 
 		// Secrets
-		// const discordWebhookUrl = new sst.Secret("DiscordWebhookUrl");
+		const feedbackDiscordWebhookUrl = new sst.Secret(
+			"FeedbackDiscordWebhookUrl",
+		);
+		const waitlistDiscordWebhookUrl = new sst.Secret(
+			"WaitlistDiscordWebhookUrl",
+		);
 
 		// Defaults
 		$transform(
@@ -52,6 +57,11 @@ export default $config({
 			aws.apigatewayv2.Api,
 			(args) => (args.disableExecuteApiEndpoint = true),
 		);
+
+		// Email
+		const email = new sst.aws.Email("email", {
+			sender: "hello@mattrax.app",
+		});
 
 		// MDM Identity Authority
 		const identityKey = new tls.PrivateKey("identityKey", {
@@ -90,7 +100,8 @@ export default $config({
 					MANAGE_DOMAIN,
 					IDENTITY_CERT: identityCert.certPem,
 					IDENTITY_KEY: identityKey.privateKeyPemPkcs8,
-					// FEEDBACK_DISCORD_WEBHOOK_URL: discordWebhookUrl.value,
+					FEEDBACK_DISCORD_WEBHOOK_URL: feedbackDiscordWebhookUrl.value,
+					WAITLIST_DISCORD_WEBHOOK_URL: waitlistDiscordWebhookUrl.value,
 				},
 				url: {
 					authorization: "none", // TODO: Setup "iam",
@@ -120,7 +131,7 @@ export default $config({
 		});
 
 		new sst.aws.ApiGatewayV2("manage", {
-			// domain: MANAGE_DOMAIN,
+			domain: MANAGE_DOMAIN,
 			transform: {
 				domainName: {
 					mutualTlsAuthentication: {
@@ -133,7 +144,7 @@ export default $config({
 
 		// `apps/landing`
 		new sst.aws.StaticSite("landing", {
-			// domain: LANDING_DOMAIN,
+			domain: LANDING_DOMAIN,
 			environment: {
 				VITE_MATTRAX_CLOUD_ORIGIN: "https://cloud.mattrax.app",
 			},
@@ -166,7 +177,7 @@ export default $config({
 
 		// `apps/web`
 		new sst.aws.StaticSite("web", {
-			// domain: PRIMARY_DOMAIN,
+			domain: PRIMARY_DOMAIN,
 			build: {
 				output: path.join("apps", "web", ".output", "public"),
 				command: "pnpm web build",

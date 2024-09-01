@@ -45,6 +45,7 @@ pub(super) fn mount() -> Router {
             rspc_axum::Endpoint::new(router.clone(), ctx_fn.clone()),
         )
         .nest("/api", rspc_openapi::mount(router, ctx_fn))
+        .merge(meta())
     // TODO: 404 handler
 }
 
@@ -65,47 +66,90 @@ struct FeedbackRequest {
     content: String,
 }
 
+#[derive(Deserialize)]
+struct WaitlistRequest {
+    // TODO: Max length on string inputs
+    // TODO: Validate this is an email?
+    email: String,
+    name: Option<String>,
+    interest: WaitlistInterestReason,
+    deployment: WaitlistDeploymentMethod,
+}
+
+#[derive(Deserialize)]
+enum WaitlistInterestReason {
+    #[serde(rename = "personal")]
+    Personal,
+    #[serde(rename = "internal-it-team")]
+    InternalTeam,
+    #[serde(rename = "msp-provider")]
+    ManagedServiceProvider,
+    #[serde(rename = "other")]
+    Other,
+}
+
+#[derive(Deserialize)]
+enum WaitlistDeploymentMethod {
+    #[serde(rename = "managed-cloud")]
+    ManagedCloud,
+    #[serde(rename = "private-cloud")]
+    PrivateCloud,
+    #[serde(rename = "onprem")]
+    OnPremises,
+    #[serde(rename = "other")]
+    Other,
+}
+
 fn meta() -> Router {
     let client = reqwest::Client::new(); // TODO: Set user agent
     let feedback_discord_webhook = std::env::var("FEEDBACK_DISCORD_WEBHOOK_URL");
 
-    Router::new().route(
-        "/api/feedback",
-        post(|body: Json<FeedbackRequest>| async move {
-            // TODO: Authentication
+    Router::new()
+        .route(
+            "/api/feedback",
+            post(|body: Json<FeedbackRequest>| async move {
+                // TODO: Authentication
 
-            if let Ok(url) = feedback_discord_webhook {
-                let body = body
-                    .content
-                    .split("\n")
-                    .map(|l| format!("> {}", l))
-                    .collect::<Vec<String>>();
-                // body.push(format!("`{}`", ctx.account.email)); // TODO
+                if let Ok(url) = feedback_discord_webhook {
+                    let body = body
+                        .content
+                        .split("\n")
+                        .map(|l| format!("> {}", l))
+                        .collect::<Vec<String>>();
+                    // body.push(format!("`{}`", ctx.account.email)); // TODO
 
-                match client
-                    .post(url)
-                    .form(&[("content", body.join("\n"))])
-                    .send()
-                    .await
-                {
-                    Ok(r) if !r.status().is_success() => {
-                        error!(
-                            "Error sending feedback to Discord: Got status {}",
-                            r.status()
-                        );
-                        return (StatusCode::INTERNAL_SERVER_ERROR, "error");
+                    match client
+                        .post(url)
+                        .form(&[("content", body.join("\n"))])
+                        .send()
+                        .await
+                    {
+                        Ok(r) if !r.status().is_success() => {
+                            error!(
+                                "Error sending feedback to Discord: Got status {}",
+                                r.status()
+                            );
+                            return (StatusCode::INTERNAL_SERVER_ERROR, "error");
+                        }
+                        Err(err) => {
+                            error!("Error sending feedback to Discord: {err:?}");
+                            return (StatusCode::INTERNAL_SERVER_ERROR, "error");
+                        }
+                        _ => {}
                     }
-                    Err(err) => {
-                        error!("Error sending feedback to Discord: {err:?}");
-                        return (StatusCode::INTERNAL_SERVER_ERROR, "error");
-                    }
-                    _ => {}
+                } else {
+                    return (StatusCode::CONFLICT, "disabled");
                 }
-            } else {
-                return (StatusCode::CONFLICT, "disabled");
-            }
 
-            (StatusCode::OK, "ok")
-        }),
-    )
+                (StatusCode::OK, "ok")
+            }),
+        )
+        .route(
+            "/api/waitlist",
+            post(|body: Json<WaitlistRequest>| async move {
+                // TODO: Make this work
+
+                (StatusCode::OK, "todo")
+            }),
+        )
 }
