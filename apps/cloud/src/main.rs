@@ -19,8 +19,7 @@ async fn main() -> Result<(), lambda_http::Error> {
     set_var("AWS_LAMBDA_HTTP_IGNORE_STAGE_IN_PATH", "true");
 
     let manage_domain = std::env::var("MANAGE_DOMAIN").expect("'MANAGE_DOMAIN' must be set");
-    let enrollment_domain =
-        std::env::var("ENROLLMENT_DOMAIN").expect("'ENROLLMENT_DOMAIN' must be set");
+    let primary_domain = std::env::var("PRIMARY_DOMAIN").expect("'PRIMARY_DOMAIN' must be set");
     let cert = std::env::var("IDENTITY_CERT").expect("'IDENTITY_CERT' must be set");
     let key = std::env::var("IDENTITY_KEY").expect("'IDENTITY_KEY' must be set");
 
@@ -33,7 +32,7 @@ async fn main() -> Result<(), lambda_http::Error> {
 
     let router = mx_manage::mount(mdm::App {
         manage_domain,
-        enrollment_domain,
+        primary_domain,
         cert,
         key,
     })

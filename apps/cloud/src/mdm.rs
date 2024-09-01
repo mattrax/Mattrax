@@ -9,7 +9,7 @@ use std::{borrow::Cow, error::Error, str::FromStr};
 
 pub(super) struct App {
     pub(super) manage_domain: String,
-    pub(super) enrollment_domain: String,
+    pub(super) primary_domain: String,
     pub(super) cert: rcgen::Certificate,
     pub(super) key: rcgen::KeyPair,
 }
@@ -20,7 +20,7 @@ impl Application for App {
     type Error = Box<dyn Error>;
 
     fn enrollment_domain(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.enrollment_domain)
+        Cow::Borrowed(&self.primary_domain)
     }
 
     fn manage_domain(&self) -> Cow<'_, str> {
@@ -33,7 +33,7 @@ impl Application for App {
 
     fn determine_authentication_method(&self) -> Authentication {
         Authentication::Federated {
-            url: format!("https://{}/auth", self.enrollment_domain).into(),
+            url: format!("https://{}/auth", self.primary_domain).into(),
         }
     }
 
