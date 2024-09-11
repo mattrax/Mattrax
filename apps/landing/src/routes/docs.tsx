@@ -17,11 +17,31 @@ import {
 	createEffect,
 	createSignal,
 	onCleanup,
+	onMount,
 } from "solid-js";
 
 type SidebarState = "open" | "visible" | "collapsed";
 
 export default function Page(props: ParentProps) {
+	// TODO: Really this would be better at the start of `entry-client.tsx` so it's earlier in the execution lifecycle.
+	// TODO: but the `/` page doesn't have a dark mode variant for now so this is a workaround.
+	// const prefersColorSchema = window.matchMedia?.(
+	// 	"(prefers-color-scheme: dark)",
+	// );
+	// const computeTheme = () => {
+	// 	let theme = localStorage.getItem("theme");
+	// 	if (!theme) theme = prefersColorSchema?.matches === true ? "dark" : "light";
+	// 	if (theme === "dark") {
+	// 		document.body.classList.add("dark");
+	// 	} else {
+	// 		document.body.classList.remove("dark");
+	// 	}
+	// };
+	// computeTheme();
+	// prefersColorSchema?.addEventListener("change", () => computeTheme());
+
+	// onMount(() => {});
+
 	return (
 		<div class="w-full flex">
 			<Sidebar />

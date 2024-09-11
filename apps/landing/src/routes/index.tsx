@@ -18,7 +18,7 @@ import {
 	createZodForm,
 } from "@mattrax/ui/forms/legacy";
 import { useController } from "@mattrax/ui/lib";
-import type { JSX } from "solid-js";
+import { type JSX, onMount } from "solid-js";
 import { z } from "zod";
 import Bento from "~/components/Bento";
 import Cta from "~/components/Cta";
@@ -32,6 +32,9 @@ import lineone from "../assets/lineone.svg?url";
 import linetwo from "../assets/linetwo.svg?url";
 
 export default function Page() {
+	// Ensure we remove the dark mode class when the page is mounted cause we don't support dark mode here yet.
+	// onMount(() => document.body.classList.remove("dark")); // TODO
+
 	return (
 		<main>
 			<div class="mt-32 sm:mt-28">
