@@ -2,30 +2,28 @@ use std::collections::HashMap;
 
 use axum::{
     extract::Query,
-    http::request::Parts,
     response::Html,
     routing::{get, post},
     Json, Router,
 };
-use axum_extra::extract::CookieJar;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use tracing::error;
 
 pub(super) fn mount() -> Router {
-    let router = mx_core::mount().build().unwrap();
+    // let router = mx_core::mount().build().unwrap();
 
-    let ctx_fn = move |parts: &Parts| {
-        // TODO: `CookieJar` should be able to go straight on the closure when Axum extractors are implemented properly in rspc
-        let cookies = CookieJar::from_headers(&parts.headers);
+    // let ctx_fn = move |parts: &Parts| {
+    //     // TODO: `CookieJar` should be able to go straight on the closure when Axum extractors are implemented properly in rspc
+    //     let cookies = CookieJar::from_headers(&parts.headers);
 
-        mx_core::Context {
-            db: todo!(),
-            session_id: cookies
-                .get("auth_session")
-                .map(|cookie| cookie.value().to_owned()),
-        }
-    };
+    //     mx_core::Context {
+    //         db: todo!(),
+    //         session_id: cookies
+    //             .get("auth_session")
+    //             .map(|cookie| cookie.value().to_owned()),
+    //     }
+    // };
 
     Router::new()
         .route("/", get(|| async move { Html(r#"<pre><h1>Mattrax MDM Platform</h1><a href="https://mattrax.app">Home</a><br /><a href="/docs">Documentation</a></pre>"#) }))
@@ -39,12 +37,12 @@ pub(super) fn mount() -> Router {
                 </form>
                 <script>window.onload = function(){{ document.forms['theform'].submit(); }}</script>"#))
         }))
-        .route("/enroll", get(|| async move { Html(r#"<a href="ms-device-enrollment:?mode=mdm&username=oscar@otbeaumont.me&servername=https://playground.otbeaumont.me">Enroll</a>"#) }))
-        .nest(
-            "/rspc",
-            rspc_axum::Endpoint::new(router.clone(), ctx_fn.clone()),
-        )
-        .nest("/api", rspc_openapi::mount(router, ctx_fn))
+    .route("/enroll", get(|| async move { Html(r#"<a href="ms-device-enrollment:?mode=mdm&username=oscar@otbeaumont.me&servername=https://playground.otbeaumont.me">Enroll</a>"#) }))
+    // .nest(
+    //     "/rspc",
+    //     rspc_axum::Endpoint::new(router.clone(), ctx_fn.clone()),
+    // )
+    // .nest("/api", rspc_openapi::mount(router, ctx_fn))
     // TODO: 404 handler
 }
 

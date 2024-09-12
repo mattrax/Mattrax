@@ -2,9 +2,7 @@
 resolver = "2"
 members = [
   "apps/ingest",
-  "apps/mattrax",
-  "apps/mattraxd",
-  "apps/mttx",
+  "apps/mattraxd", 
   "apps/cloud",
   "crates/*",
 ]
