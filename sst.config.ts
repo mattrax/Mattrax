@@ -109,13 +109,16 @@ export default $config({
 				...($dev
 					? {
 							runtime: "nodejs20.x",
-							handler: "live.handler",
+							handler: "apps/cloud/live.handler",
 						}
 					: {
 							handler: "bootstrap",
 							architecture: "arm64",
 							runtime: "provided.al2023",
-							bundle: path.join(process.cwd(), "target", "lambda", "lambda"),
+							// SST/Pulumi is having problems with `dependsOn` so we force their hand.
+							bundle: cloudBuild.stdout.apply(() =>
+								path.join(process.cwd(), "target", "lambda", "lambda"),
+							),
 						}),
 				memory: "128 MB",
 				environment: {
