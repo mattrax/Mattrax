@@ -154,7 +154,10 @@ function Search() {
 					<div class="ms-auto inline-flex gap-0.5">
 						<kbd class="rounded-md border bg-fd-background px-1.5">
 							<Show
-								when={navigator.platform.toUpperCase().indexOf("MAC") >= 0}
+								when={
+									typeof navigator !== "undefined" &&
+									navigator.platform.toUpperCase().indexOf("MAC") >= 0
+								}
 								fallback="Ctrl"
 							>
 								⌘
