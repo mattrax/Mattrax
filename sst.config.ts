@@ -85,6 +85,17 @@ export default $config({
 			},
 		});
 
+		new command.local.Command(
+			"todo",
+			{
+				create:
+					"echo 'ITS IS DONE' && ls target/lambda && ls target/lambda/lambda",
+			},
+			{
+				dependsOn: [cloudBuild],
+			},
+		);
+
 		const cloudFunction = new sst.aws.Function(
 			"cloud",
 			{

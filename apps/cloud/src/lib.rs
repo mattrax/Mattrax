@@ -9,6 +9,7 @@ use axum::{
     Router,
 };
 use rcgen::{Certificate, CertificateParams, KeyPair};
+use reqwest::StatusCode;
 use tower_http::trace::TraceLayer;
 use tracing::{info_span, Span};
 
@@ -107,7 +108,7 @@ impl Context {
                     }),
             )
             .route_layer(middleware::from_fn(headers))
-        // TODO: 404 handler
+            .fallback(|| async move { (StatusCode::NOT_FOUND, "404: Not Found") })
     }
 }
 
