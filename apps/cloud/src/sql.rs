@@ -9,8 +9,8 @@
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
-    extract::State,
-    middleware,
+    extract::{Request, State},
+    middleware::Next,
     response::{IntoResponse, Response},
     routing::post,
     Json, Router,
@@ -232,6 +232,25 @@ pub fn mount() -> Router<Arc<Context>> {
                     }
                 }),
             )
+}
+
+pub async fn auth(State(state): State<Arc<Context>>, request: Request, next: Next) -> Response {
+    let authorization = request
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok());
+
+    if authorization
+        != Some(&format!(
+            "Basic {}",
+            STANDARD.encode(format!(":{}", &state.internal_db_secret))
+        ))
+        && authorization != Some(&format!("Bearer {}", state.internal_db_secret))
+    {
+        return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
+    }
+
+    next.run(request).await
 }
 
 fn error(msg: String) -> Response {

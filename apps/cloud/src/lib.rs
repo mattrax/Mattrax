@@ -20,6 +20,7 @@ mod sql;
 pub struct Context {
     pub manage_domain: String,
     pub enrollment_domain: String,
+    pub internal_db_secret: String,
     pub cert: Certificate,
     pub key: KeyPair,
     pub client: reqwest::Client,
@@ -39,6 +40,8 @@ impl Context {
                 .map_err(|_| "'MANAGE_DOMAIN' must be set")?,
             enrollment_domain: std::env::var("ENROLLMENT_DOMAIN")
                 .map_err(|_| "'ENROLLMENT_DOMAIN' must be set")?,
+            internal_db_secret: std::env::var("INTERNAL_DB_SECRET")
+                .map_err(|_| "'INTERNAL_DB_SECRET' must be set")?,
             cert: CertificateParams::from_ca_cert_pem(
                 &std::env::var("IDENTITY_CERT").map_err(|_| "'IDENTITY_CERT' must be set")?,
             )
@@ -83,7 +86,10 @@ impl Context {
                 }),
             )
             .merge(api::mount())
-            .nest("/psdb.v1alpha1.Database", sql::mount())
+            .nest(
+                "/psdb.v1alpha1.Database",
+                sql::mount().route_layer(middleware::from_fn_with_state(this.clone(), sql::auth)),
+            )
             .merge(todo())
             .with_state(this.clone())
             .merge(mx_manage::mount(mdm::App(this)))

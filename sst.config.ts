@@ -17,6 +17,7 @@ export default $config({
 			cloudflare: true,
 			tls: true,
 			command: true,
+			random: true,
 		},
 	}),
 	async run() {
@@ -29,12 +30,16 @@ export default $config({
 
 		// Configuration
 		const DATABASE_URL = new sst.Secret("DatabaseURL");
-		// const AUTH_SECRET =
 
 		// Derived
 		const webSubdomain = $app.stage === "prod" ? "cloud" : `${$app.stage}-web`;
 		const manageSubdomain =
 			$app.stage === "prod" ? "manage" : `${$app.stage}-manage`;
+
+		// Automatic
+		const INTERNAL_DB_SECRET = new random.RandomString("internalDbSecret", {
+			length: 16,
+		});
 
 		// Defaults
 		$transform(sst.aws.Function, (args) => {
@@ -85,11 +90,13 @@ export default $config({
 			},
 		});
 
+		// TODO: Remove this
 		new command.local.Command(
 			"todo",
 			{
-				create:
-					"echo 'ITS IS DONE' && ls target/lambda && ls target/lambda/lambda",
+				create: `echo 'ITS IS DONE' && ls target/lambda && ls target/lambda/lambda && echo '${process.cwd()}'`,
+				triggers: [crypto.randomUUID()],
+				dir: process.cwd(),
 			},
 			{
 				dependsOn: [cloudBuild],
@@ -113,6 +120,7 @@ export default $config({
 				memory: "128 MB",
 				environment: {
 					DATABASE_URL: DATABASE_URL.value,
+					INTERNAL_DB_SECRET: INTERNAL_DB_SECRET.result,
 					ENROLLMENT_DOMAIN: renderZoneDomain(zone, webSubdomain),
 					MANAGE_DOMAIN: renderZoneDomain(zone, manageSubdomain),
 					IDENTITY_CERT: identityCert.certPem,
@@ -154,6 +162,7 @@ export default $config({
 				command: "pnpm landing build",
 				output: path.join("apps", "landing", "dist"),
 				environment: {
+					// DATABASE_URL: INTERNAL_DB_SECRET.result, // TODO
 					NITRO_PRESET: "cloudflare_pages",
 					// TODO: Make this use the correct domain
 					VITE_MATTRAX_CLOUD_ORIGIN: "https://bruh.mattrax.app",
