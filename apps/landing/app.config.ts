@@ -43,6 +43,12 @@ export default defineConfig({
 						"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
 				},
 			},
+			"/company/": {
+				headers: {
+					"Cache-Control":
+						"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
+				},
+			},
 			"/docs/*": {
 				headers: {
 					"Cache-Control":

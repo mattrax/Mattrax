@@ -28,11 +28,12 @@ specta = { version = "=2.0.0-rc.20", features = [
 ] }
 specta-util = { version = "0.0.7" }
 specta-typescript = "0.0.7"
-
-# TODO: Move to crates.io release once available
-rspc = { git = "https://github.com/specta-rs/rspc", rev = "56d0230adf541515235add9e12c885222e447167" }
-rspc-openapi = { git = "https://github.com/specta-rs/rspc", rev = "56d0230adf541515235add9e12c885222e447167" }
-rspc-axum = { git = "https://github.com/specta-rs/rspc", rev = "56d0230adf541515235add9e12c885222e447167" }
+mysql_async = { version = "0.34.2", default-features = false, features = [
+    "default-rustls",
+    "derive",
+    "tracing",
+    "chrono",
+] }
 
 [patch.crates-io]
 # TODO: This is likely a security risk, will fix it properly once the MVP is out.
@@ -49,4 +50,4 @@ easy-xml-derive = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f
 refinery-core = { git = "https://github.com/rust-db/refinery", rev = "ff1c5c07c00f196e8ec4f10827ab882db2fd9d14" }
 
 # TODO: This should only be used when using SST Live Lambda!
-lambda_runtime = { git = "https://github.com/oscartbeaumont/aws-lambda-rust-runtime", rev = "9d75ac7168dd6869bfa8deb1bc83018830dc617f" }
+# lambda_runtime = { git = "https://github.com/oscartbeaumont/aws-lambda-rust-runtime", rev = "9d75ac7168dd6869bfa8deb1bc83018830dc617f" }

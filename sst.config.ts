@@ -31,6 +31,11 @@ export default $config({
 		const DATABASE_URL = new sst.Secret("DatabaseURL");
 		// const AUTH_SECRET =
 
+		// Derived
+		const webSubdomain = $app.stage === "prod" ? "cloud" : `${$app.stage}-web`;
+		const manageSubdomain =
+			$app.stage === "prod" ? "manage" : `${$app.stage}-manage`;
+
 		// Defaults
 		$transform(sst.aws.Function, (args) => {
 			args.architecture ??= "arm64";
@@ -71,10 +76,13 @@ export default $config({
 		// `apps/cloud`
 		const cloudBuild = new command.local.Command("cloudBuild", {
 			create:
-				"./.github/cl.sh build --arm64 --release -p mx-cloud --bin mx-cloud",
+				"./.github/cl.sh build --arm64 --release -p mx-cloud --bin lambda",
 			dir: process.cwd(),
 			// TODO: We should be able to ask Nx if the project has changed and only deploy if required.
 			triggers: [crypto.randomUUID()],
+			environment: {
+				CARGO_TERM_COLOR: "always",
+			},
 		});
 
 		const cloudFunction = new sst.aws.Function(
@@ -89,13 +97,13 @@ export default $config({
 							handler: "bootstrap",
 							architecture: "arm64",
 							runtime: "provided.al2023",
-							bundle: path.join(process.cwd(), "target", "lambda", "mx-cloud"),
+							bundle: path.join(process.cwd(), "target", "lambda", "lambda"),
 						}),
 				memory: "128 MB",
 				environment: {
 					DATABASE_URL: DATABASE_URL.value,
-					// ENROLLMENT_DOMAIN: enrollmentDomain,
-					// MANAGE_DOMAIN: managementDomain,
+					ENROLLMENT_DOMAIN: renderZoneDomain(zone, webSubdomain),
+					MANAGE_DOMAIN: renderZoneDomain(zone, manageSubdomain),
 					IDENTITY_CERT: identityCert.certPem,
 					IDENTITY_KEY: identityKey.privateKeyPemPkcs8,
 					// FEEDBACK_DISCORD_WEBHOOK_URL: discordWebhookUrl.value,
@@ -114,6 +122,7 @@ export default $config({
 				zone,
 				sub: $app.stage === "prod" ? "cloud" : `${$app.stage}-web.dev`,
 			},
+			// TODO: Also configure domain for `manage`???
 			build: {
 				command: "pnpm web build",
 				output: path.join("apps", "web", "dist"),

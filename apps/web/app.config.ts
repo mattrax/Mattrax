@@ -94,6 +94,51 @@ export default defineConfig({
 							"Referrer-Policy": "strict-origin-when-cross-origin",
 						},
 					},
+					// TODO: Automatically generate from the Solid Router definition???
+					"/": {
+						headers: {
+							// Don't cache on client but cache in Cloudflare for 1hr and keep serving if the origin is offline for another hour.
+							// `no-transform` disables the Cloudflare Beacon which causes the Etag to get removed.
+							"Cache-Control":
+								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
+						},
+					},
+					"/tos": {
+						headers: {
+							"Cache-Control":
+								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
+						},
+					},
+					"/account": {
+						headers: {
+							"Cache-Control":
+								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
+						},
+					},
+					"/invite": {
+						headers: {
+							"Cache-Control":
+								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
+						},
+					},
+					"/login": {
+						headers: {
+							"Cache-Control":
+								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
+						},
+					},
+					"/enroll": {
+						headers: {
+							"Cache-Control":
+								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
+						},
+					},
+					"/o/*": {
+						headers: {
+							"Cache-Control":
+								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
+						},
+					},
 				},
 		...(isCFPages && {
 			// TODO: We could probs PR this to the Vercel Edge preset in Nitro.

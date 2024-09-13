@@ -5,14 +5,9 @@ use ms_mdm::{
     Target,
 };
 use mx_manage::{Application, Authentication, DeviceInformation};
-use std::{borrow::Cow, error::Error, str::FromStr};
+use std::{borrow::Cow, error::Error, str::FromStr, sync::Arc};
 
-pub(super) struct App {
-    pub(super) manage_domain: String,
-    pub(super) enrollment_domain: String,
-    pub(super) cert: rcgen::Certificate,
-    pub(super) key: rcgen::KeyPair,
-}
+pub(super) struct App(pub Arc<super::Context>);
 
 impl Application for App {
     type EnrollmentAuthenticationMetadata = ();
@@ -20,20 +15,20 @@ impl Application for App {
     type Error = Box<dyn Error>;
 
     fn enrollment_domain(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.enrollment_domain)
+        Cow::Borrowed(&self.0.enrollment_domain)
     }
 
     fn manage_domain(&self) -> Cow<'_, str> {
-        Cow::Borrowed(&self.manage_domain)
+        Cow::Borrowed(&self.0.manage_domain)
     }
 
     fn identity_keypair(&self) -> (&rcgen::Certificate, &rcgen::KeyPair) {
-        (&self.cert, &self.key)
+        (&self.0.cert, &self.0.key)
     }
 
     fn determine_authentication_method(&self) -> Authentication {
         Authentication::Federated {
-            url: format!("https://{}/auth", self.enrollment_domain).into(),
+            url: format!("https://{}/auth", self.0.enrollment_domain).into(),
         }
     }
 
