@@ -28,6 +28,8 @@ export default $config({
 		});
 
 		// Configuration
+		const DATABASE_URL = new sst.Secret("DatabaseURL");
+		// const AUTH_SECRET =
 
 		// Defaults
 		$transform(sst.aws.Function, (args) => {
@@ -48,21 +50,79 @@ export default $config({
 			);
 		});
 
+		// MDM Identity Authority
+		const identityKey = new tls.PrivateKey("identityKey", {
+			algorithm: "ECDSA",
+			ecdsaCurve: "P256",
+		});
+
+		// TODO: Can we automate renewing this certificate???
+		const identityCert = new tls.SelfSignedCert("identityCert", {
+			allowedUses: ["cert_signing", "crl_signing"], // TODO: critical: true
+			validityPeriodHours: 365 * 24, // 1 year
+			privateKeyPem: identityKey.privateKeyPem,
+			isCaCertificate: true, // TODO: critical: true
+			subject: {
+				commonName: "Mattrax Device Authority",
+				organization: "Mattax Inc.",
+			},
+		});
+
 		// `apps/cloud`
+		const cloudBuild = new command.local.Command("cloudBuild", {
+			create:
+				"./.github/cl.sh build --arm64 --release -p mx-cloud --bin mx-cloud",
+			dir: process.cwd(),
+			// TODO: We should be able to ask Nx if the project has changed and only deploy if required.
+			triggers: [crypto.randomUUID()],
+		});
+
+		const cloudFunction = new sst.aws.Function(
+			"cloud",
+			{
+				...($dev
+					? {
+							runtime: "nodejs20.x",
+							handler: "live.handler",
+						}
+					: {
+							handler: "bootstrap",
+							architecture: "arm64",
+							runtime: "provided.al2023",
+							bundle: path.join(process.cwd(), "target", "lambda", "mx-cloud"),
+						}),
+				memory: "128 MB",
+				environment: {
+					DATABASE_URL: DATABASE_URL.value,
+					// ENROLLMENT_DOMAIN: enrollmentDomain,
+					// MANAGE_DOMAIN: managementDomain,
+					IDENTITY_CERT: identityCert.certPem,
+					IDENTITY_KEY: identityKey.privateKeyPemPkcs8,
+					// FEEDBACK_DISCORD_WEBHOOK_URL: discordWebhookUrl.value,
+				},
+				// TODO: We should probs setup IAM on this???
+				url: true,
+			},
+			{
+				dependsOn: [cloudBuild],
+			},
+		);
+
 		// `apps/web`
-		// CloudflarePages("web", {
-		// 	domain: {
-		// 		zone,
-		// 		sub: $app.stage === "prod" ? "@" : `${$app.stage}-landing.dev`,
-		// 	},
-		// 	build: {
-		// 		command: "pnpm web build",
-		// 		output: path.join("apps", "landing", "dist"),
-		// 		environment: {
-		// 			NITRO_PRESET: "cloudflare_pages",
-		// 		},
-		// 	},
-		// });
+		CloudflarePages("web", {
+			domain: {
+				zone,
+				sub: $app.stage === "prod" ? "cloud" : `${$app.stage}-web.dev`,
+			},
+			build: {
+				command: "pnpm web build",
+				output: path.join("apps", "web", "dist"),
+				environment: {
+					NITRO_PRESET: "cloudflare_pages",
+					// TODO: Configure all the environment variables
+				},
+			},
+		});
 
 		// `apps/landing`
 		CloudflarePages("landing", {
@@ -80,6 +140,10 @@ export default $config({
 				},
 			},
 		});
+
+		return {
+			todo: cloudFunction.url,
+		};
 	},
 });
 
@@ -119,7 +183,7 @@ function CloudflarePages(
 	);
 
 	// TODO: We only need to deploy when Nx says something changed. Eg. changing landing should skip deploying web.
-	const replaceOnChanges = ["*"];
+	const triggers = [crypto.randomUUID()];
 
 	const build = new command.local.Command(
 		`${name}Build`,
@@ -127,10 +191,9 @@ function CloudflarePages(
 			create: opts.build.command,
 			environment: opts.build.environment,
 			dir: process.cwd(),
-			triggers: [crypto.randomUUID()],
+			triggers,
 		},
 		{
-			replaceOnChanges,
 			dependsOn: opts.dependsOn,
 		},
 	);
@@ -144,11 +207,10 @@ function CloudflarePages(
 				CLOUDFLARE_ACCOUNT_ID: accountId,
 			},
 			dir: process.cwd(),
-			triggers: [crypto.randomUUID()],
+			triggers,
 		},
 		{
 			dependsOn: [site, build],
-			replaceOnChanges,
 		},
 	);
 

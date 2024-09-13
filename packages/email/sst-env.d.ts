@@ -5,5 +5,14 @@ import "sst"
 export {}
 declare module "sst" {
   export interface Resource {
+    "DatabaseURL": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "cloud": {
+      "name": string
+      "type": "sst.aws.Function"
+      "url": string
+    }
   }
 }

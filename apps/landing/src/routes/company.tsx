@@ -56,9 +56,7 @@ export default function Page() {
 										<h5 class="text-lg font-semibold text-gray-900">
 											Brendan Allan
 										</h5>
-										<p class="mt-1 text-base text-gray-600">
-											Part-time developer
-										</p>
+										<p class="mt-1 text-base text-gray-600">Developer</p>
 									</div>
 								</div>
 							</div>

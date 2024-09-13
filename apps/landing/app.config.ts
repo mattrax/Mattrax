@@ -20,7 +20,42 @@ export default defineConfig({
 			routes: ["/", "/docs"],
 		},
 		routeRules: {
+			"/**": {
+				headers: {
+					"X-Frame-Options": "DENY",
+					"X-Content-Type-Options": "nosniff",
+					"Referrer-Policy": "strict-origin-when-cross-origin",
+				},
+			},
 			"/api/waitlist": { proxy: waitlistEndpoint },
+			// TODO: Can we automatically set this for all Solid Router routes???
+			"/": {
+				headers: {
+					// Don't cache on client but cache in Cloudflare for 1hr and keep serving if the origin is offline for another hour.
+					// `no-transform` disables the Cloudflare Beacon which causes the Etag to get removed.
+					"Cache-Control":
+						"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
+				},
+			},
+			"/company": {
+				headers: {
+					"Cache-Control":
+						"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
+				},
+			},
+			"/docs/*": {
+				headers: {
+					"Cache-Control":
+						"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
+				},
+			},
+			"/favicon.ico": {
+				headers: {
+					"Cache-Control":
+						// Cache for 24hrs on client and Cloudflare and serve for another 24hrs if the origin is offline.
+						"public, max-age=1440, s-maxage=1440, stale-if-error=1440, no-transform",
+				},
+			},
 		},
 	},
 	vite: {
@@ -56,7 +91,7 @@ process.on("exit", () => {
 			JSON.stringify({
 				version: 1,
 				// The entire site is prerendered!
-				include: [],
+				include: ["/_fine_you_can_you_a_single_route_cloudflare"],
 				exclude: ["/*"],
 				// If we wanna change it use the following:
 				// include: ["/*"],
