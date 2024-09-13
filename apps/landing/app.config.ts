@@ -55,8 +55,10 @@ process.on("exit", () => {
 			routesFile,
 			JSON.stringify({
 				version: 1,
-				include: ["/*"],
-				exclude: ["/_build/*", "/assets/*", "/favicon.ico", "/ogp.png"],
+				// The entire site is prerendered!
+				exclude: ["/*"],
+				// include: ["/*"],
+				// exclude: ["/_build/*", "/assets/*", "/favicon.ico", "/ogp.png"],
 			}),
 		);
 		console.log("Patched `_routes.json`...");
