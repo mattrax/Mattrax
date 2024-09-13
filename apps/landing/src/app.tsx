@@ -1,7 +1,7 @@
 import { Router, useLocation } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
-import { isServer, Suspense } from "solid-js/web";
-import { createComputed, createEffect, type ParentProps } from "solid-js";
+import { type ParentProps, createComputed, createEffect } from "solid-js";
+import { Suspense, isServer } from "solid-js/web";
 
 import "@fontsource-variable/inter";
 import "@mattrax/ui/css";

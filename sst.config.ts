@@ -1,6 +1,7 @@
 /// <reference path="./.sst/platform/config.d.ts" />
 
 import path from "node:path";
+import crypto from "node:crypto";
 
 if ("CLOUDFLARE_DEFAULT_ACCOUNT_ID" in process.env === false)
 	throw new Error("'CLOUDFLARE_DEFAULT_ACCOUNT_ID' is required");
