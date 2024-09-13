@@ -56,7 +56,9 @@ process.on("exit", () => {
 			JSON.stringify({
 				version: 1,
 				// The entire site is prerendered!
+				include: [],
 				exclude: ["/*"],
+				// If we wanna change it use the following:
 				// include: ["/*"],
 				// exclude: ["/_build/*", "/assets/*", "/favicon.ico", "/ogp.png"],
 			}),
