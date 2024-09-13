@@ -1,28 +1,28 @@
 {
 	"name": "@mattrax/monorepo",
 	"private": true,
-	"workspaces": ["apps/*", "packages/*"],
 	"scripts": {
-		"dev": "pnpm --filter @mattrax/web dev",
-		"landing": "pnpm --filter @mattrax/landing --",
 		"configure": "pnpm --filter @mattrax/configure --",
-		"ingest": "pnpm --filter @mattrax/ingest --",
+		"db:gen": "DRIZZLE=1 drizzle-kit generate && DRIZZLE=1 tsx ./apps/web/src/db/rust.ts && pnpm format",
+		"db:push": "DRIZZLE=1 drizzle-kit push && DRIZZLE=1 tsx ./apps/web/src/db/rust.ts",
+		"db:rs": "DRIZZLE=1 tsx ./apps/web/src/db/rust.ts",
+		"db:studio": "DRIZZLE=1 drizzle-kit studio",
+		"dev": "pnpm --filter @mattrax/web dev",
 		"doc": "pnpm --filter @mattrax/docs --",
 		"docs": "pnpm --filter @mattrax/docs --",
-		"web": "pnpm --filter @mattrax/web --",
 		"email": "pnpm --filter @mattrax/email --",
-		"db:push": "DRIZZLE=1 drizzle-kit push && DRIZZLE=1 tsx ./apps/web/src/db/rust.ts",
-		"db:gen": "DRIZZLE=1 drizzle-kit generate && DRIZZLE=1 tsx ./apps/web/src/db/rust.ts && pnpm format",
-		"db:studio": "DRIZZLE=1 drizzle-kit studio",
-		"db:rs": "DRIZZLE=1 tsx ./apps/web/src/db/rust.ts",
-		"typecheck": "tsc -b",
-		"lint": "biome lint .",
+		"sst": "sst",
 		"fix": "biome lint --write && biome format --write && biome check --write",
 		"format": "biome format --write",
-		"prepare": "husky"
+		"ingest": "pnpm --filter @mattrax/ingest --",
+		"landing": "pnpm --filter @mattrax/landing --",
+		"lint": "biome lint .",
+		"prepare": "husky",
+		"typecheck": "tsc -b",
+		"web": "pnpm --filter @mattrax/web --"
 	},
 	"engines": {
-		"node": ">=18",
+		"node": ">=20.17",
 		"pnpm": "^9"
 	},
 	"dependencies": {
@@ -37,7 +37,8 @@
 	"devDependencies": {
 		"husky": "^9.1.5",
 		"nx": "19.6.2",
-		"wrangler": "^3.72.2"
+		"sst": "3.1.4",
+		"wrangler": "^3.76.0"
 	},
 	"pnpm": {
 		"patchedDependencies": {

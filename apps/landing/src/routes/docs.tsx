@@ -112,7 +112,7 @@ function LogoAndActions() {
 						href="https://github.com/mattrax/mattrax"
 						class="hover:bg-accent"
 					>
-						<IconLogosGithubIcon class="size-4 mr-1" />
+						<IconLogosGithubIcon class="size-4 mr-1 dark:invert" />
 						GitHub
 					</DropdownMenuItem>
 
