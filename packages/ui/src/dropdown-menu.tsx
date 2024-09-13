@@ -81,7 +81,7 @@ const DropdownMenuContent = <T extends ValidComponent = "div">(
 		<DropdownMenuPrimitive.Portal>
 			<DropdownMenuPrimitive.Content
 				class={clsx(
-					"bg-popover text-popover-foreground animate-content-hide data-[expanded]:animate-content-show z-50 min-w-[8rem] origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border p-1 shadow-md bg-white",
+					"bg-popover text-popover-foreground animate-content-hide data-[expanded]:animate-content-show z-50 min-w-[8rem] origin-[var(--kb-menu-content-transform-origin)] overflow-hidden rounded-md border p-1 shadow-md bg-white dark:bg-black dark:text-white",
 					props.class,
 				)}
 				{...rest}

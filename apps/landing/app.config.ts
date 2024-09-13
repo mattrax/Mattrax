@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import contentCollections from "@content-collections/vite";
 import mattraxUI from "@mattrax/ui/vite";
 import { defineConfig } from "@solidjs/start/config";
@@ -43,4 +45,22 @@ export default defineConfig({
 			assetsInlineLimit: 0,
 		},
 	},
+});
+
+process.on("exit", () => {
+	const routesFile = path.join("dist", "_routes.json");
+
+	if (fs.existsSync(routesFile)) {
+		fs.writeFileSync(
+			routesFile,
+			JSON.stringify({
+				version: 1,
+				include: ["/*"],
+				exclude: ["/_build/*", "/assets/*", "/favicon.ico", "/ogp.png"],
+			}),
+		);
+		console.log("Patched `_routes.json`...");
+	} else {
+		console.log("`_routes.json` not found. Skipping patch...");
+	}
 });

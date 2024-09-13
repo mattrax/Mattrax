@@ -33,7 +33,7 @@ import linetwo from "../assets/linetwo.svg?url";
 
 export default function Page() {
 	return (
-		<main>
+		<main class="light text-black">
 			<div class="mt-32 sm:mt-28">
 				<div class="mx-auto max-w-7xl px-6 lg:px-8 relative">
 					<div

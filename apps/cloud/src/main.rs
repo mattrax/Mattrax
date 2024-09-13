@@ -9,10 +9,12 @@ use tracing::{info_span, Span};
 
 mod api;
 mod mdm;
+mod sql;
 
 #[tokio::main]
 async fn main() -> Result<(), lambda_http::Error> {
     tracing_subscriber::fmt().init();
+    std::panic::set_hook(Box::new(move |panic| tracing::error!("{panic}")));
 
     // If you use API Gateway stages, the Rust Runtime will include the stage name
     // as part of the path that your application receives. We don't want this!

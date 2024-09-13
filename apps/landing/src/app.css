@@ -1,5 +1,8 @@
 body {
     font-family: "Inter Variable", sans-serif;
+}
+
+.noise-background {
     background-image: url("./assets/noise.png");
     background-repeat: repeat;
 }

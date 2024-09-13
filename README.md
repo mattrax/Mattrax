@@ -28,10 +28,9 @@ This repository is a monorepo of all Mattrax projects.
 The components are:
  - [`apps/web`](apps/web) - [Solid frontend & tRPC API](https://cloud.mattrax.app)
  - [`apps/mattrax`](apps/mattrax) - MDM backend
- - [`apps/mttx`](apps/mttx) - Mattrax CLI
  - [`apps/mattraxd`](apps/mattraxd) - Agent for managed devices that manages script execution and more
- - [`apps/landing`](apps/landing) - [Landing website](https://mattrax.app) & [documentation](https://mattrax.app/docs)
- - [`apps/cloud`](apps/web) - Services for Mattrax's Cloud offering
+ - [`apps/landing`](apps/landing) - [Landing & documentation website](https://mattrax.app)
+ - [`apps/cloud`](apps/cloud) - Services for Mattrax's Cloud offering
 
 We mainly use the following technologies:
  - [SolidJS](https://www.solidjs.com)

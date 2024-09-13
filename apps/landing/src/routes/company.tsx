@@ -1,6 +1,6 @@
 export default function Page() {
 	return (
-		<main>
+		<main class="light text-black">
 			<div class="mt-32 sm:mt-56">
 				<div class="mx-auto max-w-7xl px-6 lg:px-8">
 					<div class="mx-auto max-w-4xl sm:text-center">

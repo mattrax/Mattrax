@@ -6,8 +6,7 @@
 		"dev": "vinxi dev --host 0.0.0.0",
 		"build": "pnpm -C ../../ email compile && vinxi build",
 		"start": "vinxi start",
-		"stats": "pnpm build && open stats.html",
-		"cbuild": "NITRO_PRESET=cloudflare_pages pnpm build"
+		"stats": "pnpm build && open stats.html"
 	},
 	"dependencies": {
 		"@corvu/otp-field": "^0.1.2",
