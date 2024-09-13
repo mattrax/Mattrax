@@ -50,19 +50,19 @@ export default $config({
 
 		// `apps/cloud`
 		// `apps/web`
-		CloudflarePages("web", {
-			domain: {
-				zone,
-				sub: $app.stage === "prod" ? "@" : `${$app.stage}-landing.dev`,
-			},
-			build: {
-				command: "pnpm web build",
-				output: path.join("apps", "landing", "dist"),
-				environment: {
-					NITRO_PRESET: "cloudflare_pages",
-				},
-			},
-		});
+		// CloudflarePages("web", {
+		// 	domain: {
+		// 		zone,
+		// 		sub: $app.stage === "prod" ? "@" : `${$app.stage}-landing.dev`,
+		// 	},
+		// 	build: {
+		// 		command: "pnpm web build",
+		// 		output: path.join("apps", "landing", "dist"),
+		// 		environment: {
+		// 			NITRO_PRESET: "cloudflare_pages",
+		// 		},
+		// 	},
+		// });
 
 		// `apps/landing`
 		CloudflarePages("landing", {
