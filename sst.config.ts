@@ -11,7 +11,7 @@ export default $config({
 	app: (input) => ({
 		name: "mattrax",
 		removal: input?.stage === "prod" ? "retain" : "remove",
-		home: "local", // TODO: cloudflare
+		home: "cloudflare",
 		providers: {
 			aws: { region: "us-east-1" },
 			cloudflare: true,
@@ -50,6 +50,20 @@ export default $config({
 
 		// `apps/cloud`
 		// `apps/web`
+		CloudflarePages("web", {
+			domain: {
+				zone,
+				sub: $app.stage === "prod" ? "@" : `${$app.stage}-landing.dev`,
+			},
+			build: {
+				command: "pnpm web build",
+				output: path.join("apps", "landing", "dist"),
+				environment: {
+					NITRO_PRESET: "cloudflare_pages",
+				},
+			},
+		});
+
 		// `apps/landing`
 		CloudflarePages("landing", {
 			domain: {
@@ -65,19 +79,12 @@ export default $config({
 					VITE_MATTRAX_CLOUD_ORIGIN: "https://bruh.mattrax.app",
 				},
 			},
-			// site: {
-			// 	deploymentConfigs: {
-			// 		production: {
-			// 			environmentVariables: {},
-			// 		},
-			// 		preview: {
-			// 			environmentVariables: {},
-			// 		},
-			// 	},
-			// },
 		});
 	},
 });
+
+const renderZoneDomain = (zone: cloudflare.GetZoneResult, sub: string) =>
+	`${sub === "@" ? "" : `${sub}.`}${zone.name}`;
 
 /// A construct which takes care of creating a Cloudflare Pages project and creating an associated deployment.
 function CloudflarePages(
@@ -148,7 +155,7 @@ function CloudflarePages(
 	if (opts.domain) {
 		new cloudflare.PagesDomain(`${name}Domain`, {
 			accountId,
-			domain: `${opts.domain.sub === "@" ? "" : `${opts.domain.sub}.`}${opts.domain.zone.name}`,
+			domain: renderZoneDomain(opts.domain.zone, opts.domain.sub),
 			projectName: site.name,
 		});
 
