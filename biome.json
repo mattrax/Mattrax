@@ -18,7 +18,8 @@
 			"configuration-schemas/**/*.json",
 			"sst-env.d.ts",
 			"tsconfig.app.json",
-			"indexed-db-observers-polyfill.js"
+			"indexed-db-observers-polyfill.js",
+			"packages/ui/src/sonner.css"
 		]
 	},
 	"organizeImports": {
@@ -42,6 +43,9 @@
 			},
 			"complexity": {
 				"noForEach": "off"
+			},
+			"a11y": {
+				"noLabelWithoutControl": "off"
 			}
 		}
 	},

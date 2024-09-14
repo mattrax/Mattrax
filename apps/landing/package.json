@@ -8,29 +8,29 @@
 		"start": "vinxi start"
 	},
 	"dependencies": {
-		"@fontsource-variable/inter": "^5.0.20",
-		"@fontsource/inter": "^5.0.20",
-		"@kobalte/core": "^0.13.4",
+		"@fontsource-variable/inter": "^5.1.0",
+		"@fontsource/inter": "^5.1.0",
+		"@kobalte/core": "^0.13.6",
 		"@mattrax/ui": "workspace:*",
-		"@solidjs/router": "0.14.3",
+		"@solidjs/router": "0.14.5",
 		"@solidjs/start": "1.0.6",
-		"@tanstack/solid-form": "^0.29.2",
+		"@tanstack/solid-form": "^0.32.0",
 		"class-variance-authority": "^0.7.0",
 		"clsx": "^2.1.1",
 		"h3": "^1.12.0",
-		"solid-js": "^1.8.21",
-		"vinxi": "0.4.1",
-		"vite": "^5.4.2",
+		"solid-js": "^1.8.22",
+		"vinxi": "0.4.3",
+		"vite": "^5.4.5",
 		"zod": "^3.23.8"
 	},
 	"devDependencies": {
-		"@content-collections/core": "^0.6.4",
-		"@content-collections/markdown": "^0.1.0",
-		"@content-collections/vite": "^0.2.1",
-		"@iconify/json": "^2.2.241",
-		"@tailwindcss/typography": "^0.5.14",
+		"@content-collections/core": "^0.7.0",
+		"@content-collections/markdown": "^0.1.1",
+		"@content-collections/vite": "^0.2.2",
+		"@iconify/json": "^2.2.248",
+		"@tailwindcss/typography": "^0.5.15",
 		"autoprefixer": "^10.4.20",
-		"fumadocs-ui": "^13.3.2",
-		"tailwindcss": "^3.4.10"
+		"fumadocs-ui": "^13.4.10",
+		"tailwindcss": "^3.4.11"
 	}
 }

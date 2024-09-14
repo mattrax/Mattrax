@@ -8,7 +8,6 @@ const Pagination: Component<ComponentProps<"nav">> = (props) => {
 	const [, rest] = splitProps(props, ["class"]);
 	return (
 		<nav
-			role="navigation"
 			aria-label="pagination"
 			class={clsx("mx-auto flex w-full justify-center", props.class)}
 			{...rest}

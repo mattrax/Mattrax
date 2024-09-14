@@ -11,11 +11,11 @@
 		}
 	},
 	"dependencies": {
-		"@kobalte/core": "^0.13.4",
+		"@kobalte/core": "^0.13.6",
 		"@mattrax/configuration-schemas": "workspace:*",
 		"@mattrax/policy": "workspace:*",
 		"@mattrax/ui": "workspace:*",
-		"@tanstack/solid-virtual": "^3.10.4",
-		"solid-js": "^1.8.21"
+		"@tanstack/solid-virtual": "^3.10.7",
+		"solid-js": "^1.8.22"
 	}
 }

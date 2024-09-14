@@ -157,8 +157,6 @@ process.on("exit", () => {
 				exclude: [
 					// HTML/favicon.ico routes
 					...staticRoutes,
-					// Handled by `_redirects`
-					"/EnrollmentServer/*",
 					// Static files
 					"/_build/*",
 					"/assets/*",

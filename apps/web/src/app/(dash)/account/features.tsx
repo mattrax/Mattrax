@@ -35,12 +35,12 @@ export default function Page() {
 								// Show all features for superadmin, otherwise only show enabled features.
 								activeUser.superadmin
 									? getObjectKeys(features)
-									: activeUser.features ?? [];
+									: (activeUser.features ?? []);
 
 							const enabledFeatures = () =>
 								email() === activeUser.email
-									? activeUser.features ?? []
-									: getFeatures.data ?? [];
+									? (activeUser.features ?? [])
+									: (getFeatures.data ?? []);
 
 							const enableFeature =
 								trpc.auth.admin.enableFeature.createMutation(() => ({
