@@ -79,6 +79,7 @@ export default $config({
 		// Fastmail email
 		if ($app.stage === "prod") {
 			const cnames = {
+				"mesmtp._domainkey.mattrax.app": "mesmtp.mattrax.app.dkim.fmhosted.com",
 				"fm1._domainkey": "fm1.mattrax.app.dkim.fmhosted.com",
 				"fm2._domainkey": "fm2.mattrax.app.dkim.fmhosted.com",
 				"fm3._domainkey": "fm3.mattrax.app.dkim.fmhosted.com",
