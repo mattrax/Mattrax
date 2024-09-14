@@ -206,6 +206,7 @@ export default $config({
 			policy: webPolicy.then((p) => p.json),
 		});
 
+		const VITE_PROD_ORIGIN = `https://${renderZoneDomain(zone, webSubdomain)}`;
 		const env: { [K in keyof Env]: $util.Input<Env[K]> } = {
 			NODE_ENV: "production",
 			INTERNAL_SECRET: INTERNAL_SECRET.result,
@@ -217,7 +218,7 @@ export default $config({
 			ENTRA_CLIENT_ID: ENTRA_CLIENT_ID.value,
 			ENTRA_CLIENT_SECRET: ENTRA_CLIENT_SECRET.value,
 			COOKIE_DOMAIN: renderZoneDomain(zone, "@"),
-			VITE_PROD_ORIGIN: `https://${renderZoneDomain(zone, webSubdomain)}`,
+			VITE_PROD_ORIGIN,
 		};
 
 		const web = CloudflarePages("web", {
@@ -231,6 +232,7 @@ export default $config({
 				environment: {
 					NITRO_PRESET: "cloudflare_pages",
 					NODE_ENV: "production",
+					VITE_PROD_ORIGIN,
 				},
 			},
 			site: {
