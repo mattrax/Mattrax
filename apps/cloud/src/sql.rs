@@ -243,9 +243,9 @@ pub async fn auth(State(state): State<Arc<Context>>, request: Request, next: Nex
     if authorization
         != Some(&format!(
             "Basic {}",
-            STANDARD.encode(format!(":{}", &state.internal_db_secret))
+            STANDARD.encode(format!(":{}", &state.internal_secret))
         ))
-        && authorization != Some(&format!("Bearer {}", state.internal_db_secret))
+        && authorization != Some(&format!("Bearer {}", state.internal_secret))
     {
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
     }

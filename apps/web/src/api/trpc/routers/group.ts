@@ -6,7 +6,6 @@ import { z } from "zod";
 import { cache } from "@solidjs/router";
 import { createAuditLog } from "~/api/auditLog";
 import { withTenant } from "~/api/tenant";
-import { invalidate } from "~/api/utils/realtime";
 import { createTransaction } from "~/api/utils/transaction";
 import {
 	GroupMemberVariants,
@@ -43,7 +42,7 @@ const groupProcedure = authedProcedure
 		return withTenant(tenant, () =>
 			next({ ctx: { group, tenant } }).then((result) => {
 				// TODO: Right now we invalidate everything but we will need to be more specific in the future
-				if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
+				// if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
 				return result;
 			}),
 		);

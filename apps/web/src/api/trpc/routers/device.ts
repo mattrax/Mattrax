@@ -4,7 +4,6 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { withTenant } from "~/api/tenant";
 import { omit } from "~/api/utils";
-import { invalidate } from "~/api/utils/realtime";
 import { createEnrollmentSession } from "~/app/enroll/util";
 import {
 	applicationAssignables,
@@ -33,7 +32,7 @@ const deviceProcedure = authedProcedure
 		return withTenant(tenant, () =>
 			next({ ctx: { device, tenant } }).then((result) => {
 				// TODO: Right now we invalidate everything but we will need to be more specific in the future
-				if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
+				// if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
 				return result;
 			}),
 		);
@@ -224,7 +223,7 @@ export const deviceRouter = createTRPCRouter({
 		.mutation(async ({ ctx, input }) => {
 			const p = new URLSearchParams();
 			p.set("mode", "mdm");
-			p.set("servername", env.ENTERPRISE_ENROLLMENT_URL);
+			p.set("servername", env.VITE_PROD_ORIGIN);
 
 			let data: { uid: number; upn: string } | undefined = undefined;
 			if (input.userId) {

@@ -58,78 +58,71 @@ export default function Layout(props: ParentProps) {
 }
 
 function useInvalidationSystem() {
-	const orgSlug = useOrgSlug();
-	const queryClient = useQueryClient();
-
-	const rustUrl = createQuery(() => ({
-		queryKey: ["where_da_rust"],
-		queryFn: async () => {
-			const resp = await fetch("/api/where_da_rust");
-			if (!resp.ok) {
-				console.warn("Failed to fetch url of Rust backend!");
-				return;
-			}
-			return await resp.text();
-		},
-		refetchInterval: 10 * 60 * 1000,
-	}));
-
-	createEffect(() => {
-		if (!rustUrl.data) return;
-
-		const ws = createReconnectingWS(
-			`${rustUrl.data
-				?.replace("https://", "wss://")
-				?.replace("http://", "ws://")}/realtime`,
-			undefined,
-			{
-				// Back off in dev so the console doesn't get spammed
-				delay: import.meta.env.DEV ? 9999999 : undefined,
-			},
-		);
-
-		ws.addEventListener("open", () =>
-			ws.send(JSON.stringify({ type: "setOrg", orgSlug: orgSlug() })),
-		);
-		createReaction(() =>
-			ws.send(JSON.stringify({ type: "setOrg", orgSlug: orgSlug() })),
-		);
-
-		ws.addEventListener("message", (e) => {
-			const event = parseJsonSafe(e.data);
-			if (!event) return;
-
-			if (event.type === "invalidation") {
-				queryClient.invalidateQueries({
-					predicate: (query) => {
-						const input = query.queryKey?.[1];
-						// If it is a valid input to `tenantProcedure` or `orgProcedure`
-						if (input && typeof input === "object" && !Array.isArray(input)) {
-							// if the event has a tenant
-							if ("tenantSlug" in event) {
-								// We invalidate anything in the tenant
-								if (
-									"tenantSlug" in input &&
-									input.tenantSlug === event.tenantSlug
-								) {
-									return true;
-								}
-							} else {
-								// We invalidate anything in the org
-								if ("orgSlug" in input && input.orgSlug === event.orgSlug) {
-									return true;
-								}
-							}
-						}
-
-						return false;
-					},
-				});
-			} else if (event.type === "error") {
-				console.error("Error from realtime backend:", event.error);
-			}
-		});
-	});
+	// const orgSlug = useOrgSlug();
+	// const queryClient = useQueryClient();
+	// const rustUrl = createQuery(() => ({
+	// 	queryKey: ["where_da_rust"],
+	// 	queryFn: async () => {
+	// 		const resp = await fetch("/api/where_da_rust");
+	// 		if (!resp.ok) {
+	// 			console.warn("Failed to fetch url of Rust backend!");
+	// 			return;
+	// 		}
+	// 		return await resp.text();
+	// 	},
+	// 	refetchInterval: 10 * 60 * 1000,
+	// }));
+	// createEffect(() => {
+	// 	if (!rustUrl.data) return;
+	// 	const ws = createReconnectingWS(
+	// 		`${rustUrl.data
+	// 			?.replace("https://", "wss://")
+	// 			?.replace("http://", "ws://")}/realtime`,
+	// 		undefined,
+	// 		{
+	// 			// Back off in dev so the console doesn't get spammed
+	// 			delay: import.meta.env.DEV ? 9999999 : undefined,
+	// 		},
+	// 	);
+	// 	ws.addEventListener("open", () =>
+	// 		ws.send(JSON.stringify({ type: "setOrg", orgSlug: orgSlug() })),
+	// 	);
+	// 	createReaction(() =>
+	// 		ws.send(JSON.stringify({ type: "setOrg", orgSlug: orgSlug() })),
+	// 	);
+	// 	ws.addEventListener("message", (e) => {
+	// 		const event = parseJsonSafe(e.data);
+	// 		if (!event) return;
+	// 		if (event.type === "invalidation") {
+	// 			queryClient.invalidateQueries({
+	// 				predicate: (query) => {
+	// 					const input = query.queryKey?.[1];
+	// 					// If it is a valid input to `tenantProcedure` or `orgProcedure`
+	// 					if (input && typeof input === "object" && !Array.isArray(input)) {
+	// 						// if the event has a tenant
+	// 						if ("tenantSlug" in event) {
+	// 							// We invalidate anything in the tenant
+	// 							if (
+	// 								"tenantSlug" in input &&
+	// 								input.tenantSlug === event.tenantSlug
+	// 							) {
+	// 								return true;
+	// 							}
+	// 						} else {
+	// 							// We invalidate anything in the org
+	// 							if ("orgSlug" in input && input.orgSlug === event.orgSlug) {
+	// 								return true;
+	// 							}
+	// 						}
+	// 					}
+	// 					return false;
+	// 				},
+	// 			});
+	// 		} else if (event.type === "error") {
+	// 			console.error("Error from realtime backend:", event.error);
+	// 		}
+	// 	});
+	// });
 }
 
 function parseJsonSafe(json: string) {

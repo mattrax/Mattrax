@@ -38,8 +38,7 @@ export const env = withEnv((env) => {
 			// This token is also used to authenticate `apps/web` with the Rust code when making HTTP requests
 			INTERNAL_SECRET: z.string(),
 			DATABASE_URL: z.string(),
-			MDM_URL: z.string(),
-			ENTERPRISE_ENROLLMENT_URL: z.string(),
+			MANAGE_URL: z.string(),
 			FROM_ADDRESS: z.string(),
 			NODE_ENV: z.enum(["development", "production"]).default("development"),
 			// Emails and other AWS services
@@ -49,13 +48,12 @@ export const env = withEnv((env) => {
 			ENTRA_CLIENT_ID: z.string(),
 			ENTRA_CLIENT_SECRET: z.string(),
 			// Stipe billing
-			STRIPE_PUBLISHABLE_KEY: optionalInDev(z.string()),
-			STRIPE_SECRET_KEY: optionalInDev(z.string()),
+			// STRIPE_PUBLISHABLE_KEY: optionalInDev(z.string()),
+			// STRIPE_SECRET_KEY: optionalInDev(z.string()),
 
 			// Environment variables for Mattrax Cloud
 			// Do not use these unless you know what your doing
 			COOKIE_DOMAIN: z.string().optional(),
-			PREVIEW_DOMAIN_SUFFIX: z.string().optional(),
 		},
 		clientPrefix: "VITE_",
 		client: {
@@ -97,3 +95,5 @@ export function withEnv<T extends object>(
 		},
 	});
 }
+
+export type Env = typeof env;

@@ -140,7 +140,7 @@ export async function GET({ request, nativeEvent }: APIEvent) {
 		if (payload !== null) {
 			const p = new URLSearchParams();
 			p.set("mode", "mdm");
-			p.set("servername", env.ENTERPRISE_ENROLLMENT_URL);
+			p.set("servername", env.VITE_PROD_ORIGIN);
 			if (payload.upn) p.set("username", payload.upn);
 			p.set("accesstoken", enroll_session);
 

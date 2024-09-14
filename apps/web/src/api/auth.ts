@@ -113,10 +113,7 @@ export const checkAuth = cache(async () => {
 function getCookieDomain(event: RequestEvent) {
 	const url = new URL(event.request.url);
 	let domain = env.COOKIE_DOMAIN;
-	if (
-		env.PREVIEW_DOMAIN_SUFFIX &&
-		url.hostname.endsWith(env.PREVIEW_DOMAIN_SUFFIX)
-	) {
+	if (url.hostname.endsWith(".pages.dev")) {
 		domain = undefined;
 	}
 	return domain;

@@ -9,7 +9,6 @@ import { union } from "drizzle-orm/mysql-core";
 import { createAuditLog } from "~/api/auditLog";
 import { withTenant } from "~/api/tenant";
 import { omit } from "~/api/utils";
-import { invalidate } from "~/api/utils/realtime";
 import { createTransaction } from "~/api/utils/transaction";
 import {
 	GroupMemberVariants,
@@ -45,7 +44,7 @@ const policyProcedure = authedProcedure
 		return withTenant(tenant, () =>
 			next({ ctx: { policy, tenant } }).then((result) => {
 				// TODO: Right now we invalidate everything but we will need to be more specific in the future
-				if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
+				// if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
 				return result;
 			}),
 		);

@@ -219,7 +219,7 @@ export const tenantRouter = createTRPCRouter({
 
 		const cfg = mobilityConfig.find(
 			(r: any) =>
-				r.discoveryUrl === `${env.MDM_URL}/EnrollmentServer/Discovery.svc`,
+				r.discoveryUrl === `${env.MANAGE_URL}/EnrollmentServer/Discovery.svc`,
 		);
 
 		const result = !cfg

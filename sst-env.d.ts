@@ -9,10 +9,22 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "EntraClientID": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "EntraClientSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "cloud": {
       "name": string
       "type": "sst.aws.Function"
       "url": string
+    }
+    "email": {
+      "sender": string
+      "type": "sst.aws.Email"
     }
   }
 }

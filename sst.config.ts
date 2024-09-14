@@ -2,6 +2,7 @@
 
 import crypto from "node:crypto";
 import path from "node:path";
+import type { Env } from "./apps/web/src/env";
 
 if ("CLOUDFLARE_DEFAULT_ACCOUNT_ID" in process.env === false)
 	throw new Error("'CLOUDFLARE_DEFAULT_ACCOUNT_ID' is required");
@@ -30,6 +31,8 @@ export default $config({
 
 		// Configuration
 		const DATABASE_URL = new sst.Secret("DatabaseURL");
+		const ENTRA_CLIENT_ID = new sst.Secret("EntraClientID");
+		const ENTRA_CLIENT_SECRET = new sst.Secret("EntraClientSecret");
 
 		// Derived
 		const webSubdomain = $app.stage === "prod" ? "cloud" : `${$app.stage}-web`;
@@ -37,8 +40,9 @@ export default $config({
 			$app.stage === "prod" ? "manage" : `${$app.stage}-manage`;
 
 		// Automatic
-		const INTERNAL_DB_SECRET = new random.RandomString("internalDbSecret", {
+		const INTERNAL_SECRET = new random.RandomString("internalSecret", {
 			length: 16,
+			overrideSpecial: "$-_.+!*'()",
 		});
 
 		// Defaults
@@ -59,6 +63,61 @@ export default $config({
 				},
 			);
 		});
+
+		// Email
+		const email =
+			$app.stage !== "prod"
+				? sst.aws.Email.get("email", "mattrax.app")
+				: new sst.aws.Email("email", {
+						sender: "mattrax.app",
+						dmarc:
+							"v=DMARC1; p=reject; rua=mailto:re+awpujuxug4y@dmarc.postmarkapp.com; adkim=r; aspf=r;",
+						dns: sst.cloudflare.dns(),
+					});
+		const sender = $interpolate`hello@${email.sender}`;
+
+		// Fastmail email
+		if ($app.stage === "prod") {
+			const cnames = {
+				"fm1._domainkey": "fm1.mattrax.app.dkim.fmhosted.com",
+				"fm2._domainkey": "fm2.mattrax.app.dkim.fmhosted.com",
+				"fm3._domainkey": "fm3.mattrax.app.dkim.fmhosted.com",
+			};
+			const mxs = [
+				["in1-smtp.messagingengine.com", 10],
+				["in2-smtp.messagingengine.com", 20],
+			] as const;
+			const txts = [
+				"v=spf1 include:spf.messagingengine.com include:amazonses.com -all",
+			];
+
+			for (const [name, content] of Object.entries(cnames)) {
+				new cloudflare.Record(`CnameRecord${name}`, {
+					zoneId: zone.id,
+					name: email.sender,
+					type: "CNAME",
+					content,
+					proxied: false,
+				});
+			}
+			for (const [content, priority] of mxs) {
+				new cloudflare.Record(`MxRecord${content}`, {
+					zoneId: zone.id,
+					name: email.sender,
+					type: "MX",
+					content,
+					priority,
+				});
+			}
+			for (const value of txts) {
+				new cloudflare.Record(`TxtRecord${value}`, {
+					zoneId: zone.id,
+					name: email.sender,
+					type: "TXT",
+					content: value,
+				});
+			}
+		}
 
 		// MDM Identity Authority
 		const identityKey = new tls.PrivateKey("identityKey", {
@@ -90,20 +149,7 @@ export default $config({
 			},
 		});
 
-		// TODO: Remove this
-		new command.local.Command(
-			"todo",
-			{
-				create: `echo 'ITS IS DONE' && ls target/lambda && ls target/lambda/lambda && echo '${process.cwd()}'`,
-				triggers: [crypto.randomUUID()],
-				dir: process.cwd(),
-			},
-			{
-				dependsOn: [cloudBuild],
-			},
-		);
-
-		const cloudFunction = new sst.aws.Function(
+		const cloud = new sst.aws.Function(
 			"cloud",
 			{
 				...($dev
@@ -123,7 +169,7 @@ export default $config({
 				memory: "128 MB",
 				environment: {
 					DATABASE_URL: DATABASE_URL.value,
-					INTERNAL_DB_SECRET: INTERNAL_DB_SECRET.result,
+					INTERNAL_SECRET: INTERNAL_SECRET.result,
 					ENROLLMENT_DOMAIN: renderZoneDomain(zone, webSubdomain),
 					MANAGE_DOMAIN: renderZoneDomain(zone, manageSubdomain),
 					IDENTITY_CERT: identityCert.certPem,
@@ -137,26 +183,69 @@ export default $config({
 				dependsOn: [cloudBuild],
 			},
 		);
+		const cloudHost = cloud.url.apply((url) => new URL(url).host);
 
 		// `apps/web`
-		CloudflarePages("web", {
+		const webUser = new aws.iam.User("web");
+		const webAccessKey = new aws.iam.AccessKey("webAccessKey", {
+			user: webUser.name,
+		});
+		const webPolicy = aws.iam.getPolicyDocument({
+			statements: [
+				{
+					effect: "Allow",
+					actions: ["ses:SendEmail*"],
+					resources: ["*"],
+				},
+			],
+		});
+		new aws.iam.UserPolicy("webUserPolicy", {
+			name: "webPolicy",
+			user: webUser.name,
+			policy: webPolicy.then((p) => p.json),
+		});
+
+		const env: { [K in keyof Env]: $util.Input<Env[K]> } = {
+			NODE_ENV: "production",
+			INTERNAL_SECRET: INTERNAL_SECRET.result,
+			DATABASE_URL: $interpolate`https://:${INTERNAL_SECRET.result}@${cloudHost}`,
+			MANAGE_URL: renderZoneDomain(zone, manageSubdomain),
+			FROM_ADDRESS: $interpolate`Mattrax <${sender}>`,
+			AWS_ACCESS_KEY_ID: webAccessKey.id,
+			AWS_SECRET_ACCESS_KEY: webAccessKey.secret,
+			ENTRA_CLIENT_ID: ENTRA_CLIENT_ID.value,
+			ENTRA_CLIENT_SECRET: ENTRA_CLIENT_SECRET.value,
+			COOKIE_DOMAIN: renderZoneDomain(zone, "@"),
+			VITE_PROD_ORIGIN: `https://${renderZoneDomain(zone, webSubdomain)}`,
+		};
+
+		const web = CloudflarePages("web", {
 			domain: {
 				zone,
 				sub: $app.stage === "prod" ? "cloud" : `${$app.stage}-web.dev`,
 			},
-			// TODO: Also configure domain for `manage`???
 			build: {
 				command: "pnpm web build",
 				output: path.join("apps", "web", "dist"),
 				environment: {
 					NITRO_PRESET: "cloudflare_pages",
-					// TODO: Configure all the environment variables
+					NODE_ENV: "production",
+				},
+			},
+			site: {
+				deploymentConfigs: {
+					preview: {
+						environmentVariables: env as any,
+					},
+					production: {
+						environmentVariables: env as any,
+					},
 				},
 			},
 		});
 
 		// `apps/landing`
-		CloudflarePages("landing", {
+		const landing = CloudflarePages("landing", {
 			domain: {
 				zone,
 				sub: $app.stage === "prod" ? "@" : `${$app.stage}-landing.dev`,
@@ -165,16 +254,17 @@ export default $config({
 				command: "pnpm landing build",
 				output: path.join("apps", "landing", "dist"),
 				environment: {
-					// DATABASE_URL: INTERNAL_DB_SECRET.result, // TODO
 					NITRO_PRESET: "cloudflare_pages",
-					// TODO: Make this use the correct domain
-					VITE_MATTRAX_CLOUD_ORIGIN: "https://bruh.mattrax.app",
+					NODE_ENV: "production",
+					VITE_MATTRAX_CLOUD_ORIGIN: cloud.url,
 				},
 			},
 		});
 
 		return {
-			todo: cloudFunction.url,
+			cloudApi: cloud.url,
+			landing: landing.url,
+			web: web.url,
 		};
 	},
 });
@@ -189,7 +279,7 @@ function CloudflarePages(
 		build: {
 			command: string;
 			output: string;
-			environment?: Record<string, string>;
+			environment?: Record<string, $util.Input<string>>;
 		};
 		site?: Partial<Omit<cloudflare.PagesProjectArgs, "name">>;
 		domain?: {
@@ -246,10 +336,12 @@ function CloudflarePages(
 		},
 	);
 
+	let domain = "";
 	if (opts.domain) {
+		domain = renderZoneDomain(opts.domain.zone, opts.domain.sub);
 		new cloudflare.PagesDomain(`${name}Domain`, {
 			accountId,
-			domain: renderZoneDomain(opts.domain.zone, opts.domain.sub),
+			domain,
 			projectName: site.name,
 		});
 
@@ -265,6 +357,8 @@ function CloudflarePages(
 	// TODO: Cloudflare Access for preview deployments
 
 	return {
-		// TODO: Return the URL of the preview deployment or prod
+		// TODO: Return the URL of the deployment instead of this for development.
+		url: `https://${domain}`,
+		previewSubdomain: site.subdomain,
 	};
 }

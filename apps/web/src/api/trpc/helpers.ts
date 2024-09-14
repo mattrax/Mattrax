@@ -11,7 +11,6 @@ import { db, organisationMembers, organisations, tenants } from "~/db";
 import { withAccount } from "../account";
 import { checkAuth } from "../auth";
 import { withTenant } from "../tenant";
-import { invalidate } from "../utils/realtime";
 
 export const createTRPCContext = (event: H3Event) => {
 	return {
@@ -159,7 +158,7 @@ export const orgProcedure = authedProcedure
 
 		return opts.next({ ctx: { ...ctx, org } }).then((result) => {
 			// TODO: Right now we invalidate everything but we will need to be more specific in the future
-			if (type === "mutation") invalidate(org.slug);
+			// if (type === "mutation") invalidate(org.slug);
 			return result;
 		});
 	});
@@ -198,7 +197,7 @@ export const tenantProcedure = authedProcedure
 		return withTenant(tenant, () =>
 			opts.next({ ctx: { ...ctx, tenant } }).then((result) => {
 				// TODO: Right now we invalidate everything but we will need to be more specific in the future
-				if (type === "mutation") invalidate(tenant.orgSlug, input.tenantSlug);
+				// if (type === "mutation") invalidate(tenant.orgSlug, input.tenantSlug);
 				return result;
 			}),
 		);
