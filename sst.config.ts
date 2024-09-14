@@ -95,7 +95,7 @@ export default $config({
 			for (const [name, content] of Object.entries(cnames)) {
 				new cloudflare.Record(`CnameRecord${name}`, {
 					zoneId: zone.id,
-					name: email.sender,
+					name: name,
 					type: "CNAME",
 					content,
 					proxied: false,
@@ -104,7 +104,7 @@ export default $config({
 			for (const [content, priority] of mxs) {
 				new cloudflare.Record(`MxRecord${content}`, {
 					zoneId: zone.id,
-					name: email.sender,
+					name: "@",
 					type: "MX",
 					content,
 					priority,
@@ -113,7 +113,7 @@ export default $config({
 			for (const value of txts) {
 				new cloudflare.Record(`TxtRecord${value}`, {
 					zoneId: zone.id,
-					name: email.sender,
+					name: "@",
 					type: "TXT",
 					content: value,
 				});
