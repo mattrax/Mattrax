@@ -33,6 +33,12 @@ export default $config({
 		const DATABASE_URL = new sst.Secret("DatabaseURL");
 		const ENTRA_CLIENT_ID = new sst.Secret("EntraClientID");
 		const ENTRA_CLIENT_SECRET = new sst.Secret("EntraClientSecret");
+		const WAITLIST_DISCORD_WEBHOOK_URL = new sst.Secret(
+			"WaitlistDiscordWebhookURL",
+		);
+		const FEEDBACK_DISCORD_WEBHOOK_URL = new sst.Secret(
+			"FeedbackDiscordWebhookURL",
+		);
 
 		// Derived
 		const webSubdomain = $app.stage === "prod" ? "cloud" : `${$app.stage}-web`;
@@ -175,7 +181,6 @@ export default $config({
 					MANAGE_DOMAIN: renderZoneDomain(zone, manageSubdomain),
 					IDENTITY_CERT: identityCert.certPem,
 					IDENTITY_KEY: identityKey.privateKeyPemPkcs8,
-					// FEEDBACK_DISCORD_WEBHOOK_URL: discordWebhookUrl.value,
 				},
 				// TODO: We should probs setup IAM on this???
 				url: true,
@@ -220,6 +225,8 @@ export default $config({
 			ENTRA_CLIENT_SECRET: ENTRA_CLIENT_SECRET.value,
 			COOKIE_DOMAIN: renderZoneDomain(zone, "@"),
 			VITE_PROD_ORIGIN,
+			WAITLIST_DISCORD_WEBHOOK_URL: WAITLIST_DISCORD_WEBHOOK_URL.value,
+			FEEDBACK_DISCORD_WEBHOOK_URL: FEEDBACK_DISCORD_WEBHOOK_URL.value,
 		};
 
 		const web = CloudflarePages("web", {
@@ -260,7 +267,7 @@ export default $config({
 				environment: {
 					NITRO_PRESET: "cloudflare_pages",
 					NODE_ENV: "production",
-					VITE_MATTRAX_CLOUD_ORIGIN: cloud.url,
+					VITE_MATTRAX_CLOUD_ORIGIN: web.url,
 				},
 			},
 		});

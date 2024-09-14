@@ -1,5 +1,5 @@
+import { sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { Resource } from "sst";
 import { z } from "zod";
 import {
 	db,
@@ -34,18 +34,29 @@ export const waitlistRouter = new Hono<HonoEnv>().post("/", async (c) => {
 				`**deployment**: ${result.data.deployment}`,
 				`\`${result.data.email}\``,
 			].join("\n"),
-			Resource.WaitlistDiscordWebhookURL.value,
+			env.WAITLIST_DISCORD_WEBHOOK_URL,
 		);
 	} catch (err) {
 		console.error("Failed to send discord message", err);
 	}
 
-	await db.insert(waitlist).values({
-		email: result.data.email,
-		name: result.data.name,
-		interest: result.data.interest,
-		deployment: result.data.deployment,
-	});
+	try {
+		await db
+			.insert(waitlist)
+			.values({
+				email: result.data.email,
+				name: result.data.name,
+				interest: result.data.interest,
+				deployment: result.data.deployment,
+			})
+			.onDuplicateKeyUpdate({
+				set: {
+					email: sql`email`,
+				},
+			});
+	} catch (err) {
+		console.error("Failed to insert into waitlist", err);
+	}
 
 	return c.text("ok");
 });

@@ -52,6 +52,10 @@ export const env = withEnv((env) => {
 			// STRIPE_PUBLISHABLE_KEY: optionalInDev(z.string()),
 			// STRIPE_SECRET_KEY: optionalInDev(z.string()),
 
+			// Cloud stuff
+			WAITLIST_DISCORD_WEBHOOK_URL: z.string().optional(),
+			FEEDBACK_DISCORD_WEBHOOK_URL: z.string().optional(),
+
 			// Environment variables for Mattrax Cloud
 			// Do not use these unless you know what your doing
 			COOKIE_DOMAIN: z.string().optional(),

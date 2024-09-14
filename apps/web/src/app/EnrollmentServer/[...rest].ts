@@ -5,7 +5,7 @@ async function handler({ request, params }: APIEvent) {
 	console.log(params.rest);
 
 	const url = new URL(env.RUST_URL);
-	url.pathname = params.rest!;
+	url.pathname = `/EnrollmentServer${params.rest!}`;
 	console.log(url.toString());
 	const resp = await fetch(url.toString(), {
 		method: request.method,

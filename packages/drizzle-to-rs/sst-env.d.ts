@@ -17,6 +17,14 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "FeedbackDiscordWebhookURL": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "WaitlistDiscordWebhookURL": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "cloud": {
       "name": string
       "type": "sst.aws.Function"

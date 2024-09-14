@@ -96,12 +96,18 @@ process.on("exit", () => {
 			routesFile,
 			JSON.stringify({
 				version: 1,
-				// The entire site is prerendered!
-				include: ["/_fine_you_can_you_a_single_route_cloudflare"],
-				exclude: ["/*"],
+				// TODO: The entire site is prerendered but `/api/waitlist` needs to work and exclude `/*` overrides the `include` pattern. Argh!
 				// If we wanna change it use the following:
-				// include: ["/*"],
-				// exclude: ["/_build/*", "/assets/*", "/favicon.ico", "/ogp.png"],
+				include: ["/api/waitlist"],
+				exclude: [
+					"/",
+					"/company",
+					"/docs/*",
+					"/_build/*",
+					"/assets/*",
+					"/favicon.ico",
+					"/ogp.png",
+				],
 			}),
 		);
 		console.log("Patched `_routes.json`...");

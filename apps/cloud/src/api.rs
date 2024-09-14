@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use axum::Router;
+// extract::State, routing::post, Json,
+// use serde::Deserialize;
 
 use crate::Context;
 
@@ -10,11 +12,13 @@ use crate::Context;
 // }
 
 pub fn mount() -> Router<Arc<Context>> {
-    //     let feedback_discord_webhook = std::env::var("FEEDBACK_DISCORD_WEBHOOK_URL");
+    // let feedback_discord_webhook = std::env::var("FEEDBACK_DISCORD_WEBHOOK_URL");
+
     Router::new()
     // .route(
-    //         "/api/feedback",
-    //         post(|body: Json<FeedbackRequest>| async move {
+    //     "/api/feedback",
+    //     post(
+    //         |state: State<Arc<Context>>, body: Json<FeedbackRequest>| async move {
     //             // TODO: Authentication
 
     //             if let Ok(url) = feedback_discord_webhook {
@@ -25,7 +29,8 @@ pub fn mount() -> Router<Arc<Context>> {
     //                     .collect::<Vec<String>>();
     //                 // body.push(format!("`{}`", ctx.account.email)); // TODO
 
-    //                 match client
+    //                 match state
+    //                     .client
     //                     .post(url)
     //                     .form(&[("content", body.join("\n"))])
     //                     .send()
@@ -49,6 +54,7 @@ pub fn mount() -> Router<Arc<Context>> {
     //             }
 
     //             (StatusCode::OK, "ok")
-    //         }),
-    //     )
+    //         },
+    //     ),
+    // )
 }
