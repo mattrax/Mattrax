@@ -212,6 +212,7 @@ export default $config({
 			INTERNAL_SECRET: INTERNAL_SECRET.result,
 			DATABASE_URL: $interpolate`https://:${INTERNAL_SECRET.result}@${cloudHost}`,
 			MANAGE_URL: renderZoneDomain(zone, manageSubdomain),
+			RUST_URL: cloud.url,
 			FROM_ADDRESS: $interpolate`Mattrax <${sender}>`,
 			AWS_ACCESS_KEY_ID: webAccessKey.id,
 			AWS_SECRET_ACCESS_KEY: webAccessKey.secret,

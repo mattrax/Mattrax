@@ -39,6 +39,7 @@ export const env = withEnv((env) => {
 			INTERNAL_SECRET: z.string(),
 			DATABASE_URL: z.string(),
 			MANAGE_URL: z.string(),
+			RUST_URL: z.string(),
 			FROM_ADDRESS: z.string(),
 			NODE_ENV: z.enum(["development", "production"]).default("development"),
 			// Emails and other AWS services

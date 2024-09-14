@@ -14,6 +14,19 @@ import "./src/env";
 const nitroPreset = process.env.NITRO_PRESET ?? "node-server";
 const isCFPages = nitroPreset === "cloudflare_pages";
 
+// TODO: Maybe generate from Solid Router
+// These skip the Worker so they can be served by CF's edge.
+// (our Worker has smart placement for the API so it's not edge)
+const staticRoutes = [
+	"/",
+	"/tos",
+	"/account",
+	"/invite",
+	"/login",
+	"/enroll",
+	"/o/*",
+];
+
 export default defineConfig({
 	ssr: false,
 	routeDir: "app",
@@ -81,65 +94,34 @@ export default defineConfig({
 			filename: "stats-nitro.html",
 		},
 		// We define these rules for production in `_headers`
-		routeRules: isCFPages
-			? {}
-			: {
-					"/**": {
-						// @ts-expect-error: This is in our patch
-						priority: 5,
-						headers: {
-							"Cache-Control": "public,max-age=0,must-revalidate",
-							"X-Frame-Options": "DENY",
-							"X-Content-Type-Options": "nosniff",
-							"Referrer-Policy": "strict-origin-when-cross-origin",
-						},
-					},
-					// TODO: Automatically generate from the Solid Router definition???
-					"/": {
-						headers: {
-							// Don't cache on client but cache in Cloudflare for 1hr and keep serving if the origin is offline for another hour.
-							// `no-transform` disables the Cloudflare Beacon which causes the Etag to get removed.
-							"Cache-Control":
-								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
-						},
-					},
-					"/tos": {
-						headers: {
-							"Cache-Control":
-								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
-						},
-					},
-					"/account": {
-						headers: {
-							"Cache-Control":
-								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
-						},
-					},
-					"/invite": {
-						headers: {
-							"Cache-Control":
-								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
-						},
-					},
-					"/login": {
-						headers: {
-							"Cache-Control":
-								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
-						},
-					},
-					"/enroll": {
-						headers: {
-							"Cache-Control":
-								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
-						},
-					},
-					"/o/*": {
-						headers: {
-							"Cache-Control":
-								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
-						},
-					},
+		routeRules: {
+			"/**": {
+				headers: {
+					"X-Frame-Options": "DENY",
+					"X-Content-Type-Options": "nosniff",
+					"Referrer-Policy": "strict-origin-when-cross-origin",
+					"Strict-Transport-Security":
+						"max-age=31536000; includeSubDomains; preload",
 				},
+			},
+			"/favicon.ico": {
+				headers: {
+					"Cache-Control":
+						"public, max-age=1440, s-maxage=1440, stale-if-error=1440, no-transform",
+				},
+			},
+			...Object.fromEntries(
+				staticRoutes.map((route) => [
+					route,
+					{
+						headers: {
+							"Cache-Control":
+								"public, max-age=0, s-maxage=3600, stale-if-error=3600, no-transform",
+						},
+					},
+				]),
+			),
+		},
 		...(isCFPages && {
 			// TODO: We could probs PR this to the Vercel Edge preset in Nitro.
 			// This is to ensure Stripe pulls in the Cloudflare Workers version not the Node version.
@@ -172,9 +154,18 @@ process.on("exit", () => {
 			JSON.stringify({
 				version: 1,
 				include: ["/*"],
-				exclude: ["/_build/*", "/assets/*", "/favicon.ico", "/tos"],
+				exclude: [
+					// HTML/favicon.ico routes
+					...staticRoutes,
+					// Handled by `_redirects`
+					"/EnrollmentServer/*",
+					// Static files
+					"/_build/*",
+					"/assets/*",
+				],
 			}),
 		);
+
 		console.log("Patched `_routes.json`...");
 	} else {
 		console.log("`_routes.json` not found. Skipping patch...");

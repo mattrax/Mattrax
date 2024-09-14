@@ -1,0 +1,2 @@
+# Hint Cloudflare to avoid going to the Worker for HTML
+/o/* /index.html 200
