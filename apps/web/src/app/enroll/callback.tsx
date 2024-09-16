@@ -2,7 +2,6 @@ import { CardDescription } from "@mattrax/ui/card";
 import type { APIEvent } from "@solidjs/start/server";
 import type { ParentProps } from "solid-js";
 import { setCookie } from "vinxi/http";
-import { upsertEntraIdUser } from "~/api/trpc/routers/tenant/identityProvider";
 import { decryptJWT, signJWT } from "~/api/utils/jwt";
 import { renderWithApp } from "~/entry-server";
 import { env } from "~/env";
@@ -56,30 +55,31 @@ export async function GET({ request }: APIEvent) {
 		));
 
 	const { userPrincipalName } = user;
-	const dbUser = await upsertEntraIdUser(user, tid, providerId);
-	if (!dbUser)
-		return renderWithApp(() => (
-			<ErrorPage>Failed to find or create your user within Mattrax.</ErrorPage>
-		));
+	throw new Error("TODO: Authentication");
+	// const dbUser = await upsertEntraIdUser(user, tid, providerId);
+	// if (!dbUser)
+	// 	return renderWithApp(() => (
+	// 		<ErrorPage>Failed to find or create your user within Mattrax.</ErrorPage>
+	// 	));
 
-	// TODO: Upsert if the user doesn't exist already
-	const jwt = await createEnrollmentSession(
-		{
-			tid,
-			uid: dbUser.pk,
-			upn: userPrincipalName,
-		},
-		15,
-	);
-	if (appru) return renderMDMCallback(appru, jwt);
+	// // TODO: Upsert if the user doesn't exist already
+	// const jwt = await createEnrollmentSession(
+	// 	{
+	// 		tid,
+	// 		uid: dbUser.pk,
+	// 		upn: userPrincipalName,
+	// 	},
+	// 	15,
+	// );
+	// if (appru) return renderMDMCallback(appru, jwt);
 
-	setCookie("enroll_session", jwt, {
-		httpOnly: true,
-		// set to `true` when using HTTPS
-		secure: import.meta.env.PROD,
-	});
+	// setCookie("enroll_session", jwt, {
+	// 	httpOnly: true,
+	// 	// set to `true` when using HTTPS
+	// 	secure: import.meta.env.PROD,
+	// });
 
-	return Response.redirect(new URL("/enroll", url));
+	// return Response.redirect(new URL("/enroll", url));
 }
 
 async function getToken(tenantId: string, code: string) {

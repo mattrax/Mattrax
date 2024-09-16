@@ -40,20 +40,13 @@ export default function Page() {
 
 	const jsonError = createMemo(() => parseJson(login.error?.shape?.message));
 
-	const [passkeyLoginActive, setPasskeyLoginActive] = createSignal(false);
-
 	return (
 		<div class="flex flex-col items-center">
 			<CardDescription class="text-center">
 				Log in to use Mattrax
 			</CardDescription>
 
-			<Form
-				form={form}
-				class="pt-4 w-full max-w-80"
-				fieldsetClass="space-y-2"
-				disabled={passkeyLoginActive()}
-			>
+			<Form form={form} class="pt-4 w-full max-w-80" fieldsetClass="space-y-2">
 				<Show when={jsonError()?.code === "USER_IS_IN_MANAGED_TENANT"}>
 					<p class="text-red-500 text-sm text-center">
 						Your domain is under management by <b>{jsonError()?.tenantName}</b>.
@@ -101,11 +94,6 @@ export default function Page() {
 
 				<hr />
 
-				<LoginWithPasskeyButton
-					onStart={() => setPasskeyLoginActive(true)}
-					onEnd={() => setPasskeyLoginActive(false)}
-				/>
-
 				<p class="text-center text-sm text-gray-500">
 					If your not an administrator,{" "}
 					<A href="/enroll" target="_self" class="underline">
@@ -114,43 +102,5 @@ export default function Page() {
 				</p>
 			</Form>
 		</div>
-	);
-}
-
-import { startAuthentication } from "@simplewebauthn/browser";
-import { createLoginOnSuccess } from "./util";
-
-function LoginWithPasskeyButton(props: {
-	onStart: () => void;
-	onEnd: () => void;
-}) {
-	const start = trpc.auth.passkey.login.start.createMutation();
-
-	const onSuccess = createLoginOnSuccess();
-	const finish = trpc.auth.passkey.login.finish.createMutation(() => ({
-		onSuccess,
-	}));
-
-	return (
-		<AsyncButton
-			type="button"
-			class="w-full"
-			variant="outline"
-			onClick={async () => {
-				props.onStart();
-
-				try {
-					const options = await start.mutateAsync();
-
-					const attestationResponse = await startAuthentication(options);
-
-					await finish.mutateAsync({ response: attestationResponse });
-				} finally {
-					props.onEnd();
-				}
-			}}
-		>
-			Log in with passkey
-		</AsyncButton>
 	);
 }

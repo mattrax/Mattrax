@@ -1,6 +1,5 @@
 import { createEnv } from "@t3-oss/env-core";
 import { getRequestEvent } from "solid-js/web";
-import { Resource } from "sst";
 import { z } from "zod";
 
 function optionalInDev<T extends z.ZodTypeAny>(
@@ -10,25 +9,10 @@ function optionalInDev<T extends z.ZodTypeAny>(
 }
 
 export const env = withEnv((env) => {
-	// we're in an sst cloud environment
-	const isSSTEnvironment = "SST_RESOURCE_App" in env;
-
-	let runtimeEnv: Record<string, any> = {
+	const runtimeEnv: Record<string, any> = {
 		VITE_PROD_ORIGIN: import.meta.env.VITE_PROD_ORIGIN,
 		...env,
 	};
-
-	if (typeof document === "undefined" && isSSTEnvironment) {
-		runtimeEnv = {
-			...runtimeEnv,
-			INTERNAL_SECRET: Resource.InternalSecret.value,
-			AWS_ACCESS_KEY_ID: Resource.MattraxWebIAMUserAccessKey.id,
-			AWS_SECRET_ACCESS_KEY: Resource.MattraxWebIAMUserAccessKey.secret,
-			ENTRA_CLIENT_ID: Resource.EntraClientID.value,
-			ENTRA_CLIENT_SECRET: Resource.EntraClientSecret.value,
-			STRIPE_SECRET_KEY: Resource.StripeSecretKey.value,
-		};
-	}
 
 	return createEnv({
 		server: {

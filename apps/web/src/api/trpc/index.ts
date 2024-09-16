@@ -1,29 +1,19 @@
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { createTRPCContext, createTRPCRouter } from "./helpers";
-import { apiKeyRouter } from "./routers/apiKey";
-import { applicationRouter } from "./routers/app";
-import { authRouter } from "./routers/auth";
-import { deviceRouter } from "./routers/device";
-import { groupRouter } from "./routers/group";
-import { internalRouter } from "./routers/internal";
-import { metaRouter } from "./routers/meta";
-import { orgRouter } from "./routers/org";
-import { policyRouter } from "./routers/policy";
-import { tenantRouter } from "./routers/tenant/index";
-import { userRouter } from "./routers/user";
+// import { authRouter } from "./routers/auth";
+// import { deviceRouter } from "./routers/device";
+// import { metaRouter } from "./routers/meta";
+// import { orgRouter } from "./routers/org";
+// import { tenantRouter } from "./routers/tenant/index";
+// import { blueprintRouter } from "./routers/blueprint";
 
 export const appRouter = createTRPCRouter({
-	app: applicationRouter,
-	auth: authRouter,
-	device: deviceRouter,
-	group: groupRouter,
-	internal: internalRouter,
-	policy: policyRouter,
-	tenant: tenantRouter,
-	user: userRouter,
-	meta: metaRouter,
-	apiKey: apiKeyRouter,
-	org: orgRouter,
+	// blueprint: blueprintRouter,
+	// auth: authRouter,
+	// device: deviceRouter,
+	// tenant: tenantRouter,
+	// meta: metaRouter,
+	// org: orgRouter,
 });
 
 export const createContext = createTRPCContext;

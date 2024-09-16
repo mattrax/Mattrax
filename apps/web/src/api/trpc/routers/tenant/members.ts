@@ -41,6 +41,7 @@ export const variantTableRouter = createTRPCRouter({
 				.from(groups)
 				.where(eq(groups.tenantPk, ctx.tenant.pk));
 		}),
+
 	policies: tenantProcedure.query(async ({ ctx }) => {
 		return await ctx.db
 			.select({
@@ -51,6 +52,7 @@ export const variantTableRouter = createTRPCRouter({
 			.from(policies)
 			.where(eq(policies.tenantPk, ctx.tenant.pk));
 	}),
+
 	apps: tenantProcedure.query(async ({ ctx }) => {
 		return await ctx.db
 			.select({

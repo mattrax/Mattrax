@@ -2,7 +2,7 @@ import { Navigate, useLocation, useSearchParams } from "@solidjs/router";
 import { Match, Switch, createEffect } from "solid-js";
 
 import { parse } from "cookie-es";
-import { useCachedQueryData } from "~/cache";
+// import { useCachedQueryData } from "~/cache";
 import { trpc } from "~/lib";
 import { cachedTenantsForOrg } from "./(dash)/o.[orgSlug]/utils";
 import { cachedOrgs } from "./(dash)/utils";
@@ -17,7 +17,8 @@ export default function Page() {
 	const action = location.state?.action || search?.action;
 
 	const query = trpc.org.list.createQuery();
-	const orgs = useCachedQueryData(query, () => cachedOrgs());
+	// const orgs = useCachedQueryData(query, () => cachedOrgs());
+	const orgs = cachedOrgs();
 
 	const defaultOrg = () => {
 		const o = orgs();
