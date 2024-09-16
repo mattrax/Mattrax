@@ -15,6 +15,7 @@ import type { Component, ComponentProps, ValidComponent } from "solid-js";
 import { Show, splitProps } from "solid-js";
 
 import clsx from "clsx";
+import { Button, type ButtonProps } from "./button";
 import {
 	type Controller,
 	ControllerProvider,
