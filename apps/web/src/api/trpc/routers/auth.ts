@@ -1,5 +1,4 @@
 import { flushResponse, waitUntil } from "@mattrax/trpc-server-function/server";
-import { createId } from "@paralleldrive/cuid2";
 import { revalidate } from "@solidjs/router";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
@@ -10,26 +9,12 @@ import { z } from "zod";
 
 import { checkAuth, lucia, setIsLoggedInCookie } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
-import { randomSlug } from "~/api/utils";
-import {
-	accountLoginCodes,
-	accounts,
-	db,
-	domains,
-	organisationMembers,
-	organisations,
-	passkeys,
-	tenants,
-} from "~/db";
-import { env } from "~/env";
-import { type Features, features } from "~/lib/featureFlags";
+import { accountLoginCodes, accounts, db, tenants } from "~/db";
 import {
 	authedProcedure,
 	createTRPCRouter,
 	getTenantList,
-	isSuperAdmin,
 	publicProcedure,
-	superAdminProcedure,
 } from "../helpers";
 
 export const authRouter = createTRPCRouter({
@@ -51,20 +36,20 @@ export const authRouter = createTRPCRouter({
 
 			let accountPk = account?.pk;
 			if (!account) {
-				const [tenantWhichManagesThisDomain] = await db
-					.select({ tenantName: tenants.name })
-					.from(domains)
-					.where(eq(domains.domain, parts[1]!))
-					.innerJoin(tenants, eq(domains.tenantPk, tenants.pk));
+				// const [tenantWhichManagesThisDomain] = await db
+				// 	.select({ tenantName: tenants.name })
+				// 	.from(domains)
+				// 	.where(eq(domains.domain, parts[1]!))
+				// 	.innerJoin(tenants, eq(domains.tenantPk, tenants.pk));
 
-				if (tenantWhichManagesThisDomain && !input.addIfManaged)
-					throw new TRPCError({
-						code: "BAD_REQUEST",
-						message: JSON.stringify({
-							code: "USER_IS_IN_MANAGED_TENANT",
-							tenantName: tenantWhichManagesThisDomain.tenantName,
-						}),
-					});
+				// if (tenantWhichManagesThisDomain && !input.addIfManaged)
+				// 	throw new TRPCError({
+				// 		code: "BAD_REQUEST",
+				// 		message: JSON.stringify({
+				// 			code: "USER_IS_IN_MANAGED_TENANT",
+				// 			tenantName: tenantWhichManagesThisDomain.tenantName,
+				// 		}),
+				// 	});
 
 				const result = await db
 					.insert(accounts)
@@ -106,7 +91,7 @@ export const authRouter = createTRPCRouter({
 			if (!code)
 				throw new TRPCError({ code: "NOT_FOUND", message: "Invalid code" });
 
-			const [_, [account], [orgConnection]] = await Promise.all([
+			const [_, [account]] = await Promise.all([
 				ctx.db
 					.delete(accountLoginCodes)
 					.where(eq(accountLoginCodes.code, input.code)),
@@ -118,10 +103,10 @@ export const authRouter = createTRPCRouter({
 					})
 					.from(accounts)
 					.where(eq(accounts.pk, code.accountPk)),
-				ctx.db
-					.select({ orgPk: organisationMembers.orgPk })
-					.from(organisationMembers)
-					.where(eq(organisationMembers.accountPk, code.accountPk)),
+				// ctx.db
+				// 	.select({ orgPk: organisationMembers.orgPk })
+				// 	.from(organisationMembers)
+				// 	.where(eq(organisationMembers.accountPk, code.accountPk)),
 			]);
 
 			if (!account)
@@ -130,21 +115,21 @@ export const authRouter = createTRPCRouter({
 					message: "Account not found",
 				});
 
-			if (!orgConnection) {
-				const id = createId();
-				const slug = randomSlug(account.email.split("@")[0]!);
+			// if (!orgConnection) {
+			// 	const id = createId();
+			// 	const slug = randomSlug(account.email.split("@")[0]!);
 
-				await ctx.db.transaction(async (db) => {
-					const org = await db
-						.insert(organisations)
-						.values({ id, slug, name: slug, ownerPk: account.pk });
+			// 	await ctx.db.transaction(async (db) => {
+			// 		const org = await db
+			// 			.insert(organisations)
+			// 			.values({ id, slug, name: slug, ownerPk: account.pk });
 
-					await db.insert(organisationMembers).values({
-						accountPk: account.pk,
-						orgPk: Number.parseInt(org.insertId),
-					});
-				});
-			}
+			// 		await db.insert(organisationMembers).values({
+			// 			accountPk: account.pk,
+			// 			orgPk: Number.parseInt(org.insertId),
+			// 		});
+			// 	});
+			// }
 
 			await handleLoginSuccess(account.id);
 
@@ -159,8 +144,6 @@ export const authRouter = createTRPCRouter({
 			id: account.id,
 			name: account.name,
 			email: account.email,
-			...(account.features?.length > 0 ? { features: account.features } : {}),
-			...(isSuperAdmin(account) ? { superadmin: true } : {}),
 		};
 	}),
 

@@ -268,7 +268,7 @@ export const devices = mysqlTable("devices", {
 	freeStorageSpaceInBytes: bigint("free_storage", { mode: "number" }),
 	totalStorageSpaceInBytes: bigint("total_storage", { mode: "number" }),
 
-	owner: serialRelation("owner").references(() => users.pk),
+	// owner: serialRelation("owner").references(() => users.pk),
 
 	azureADDeviceId: varchar("azure_ad_did", { length: 256 }).unique(),
 

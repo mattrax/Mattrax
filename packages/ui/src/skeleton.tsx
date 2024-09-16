@@ -1,14 +1,22 @@
-import type { Component, ComponentProps } from "solid-js";
-import { splitProps } from "solid-js";
-
+import type { PolymorphicProps } from "@kobalte/core/polymorphic";
+import * as SkeletonPrimitive from "@kobalte/core/skeleton";
 import clsx from "clsx";
+import { type ValidComponent, splitProps } from "solid-js";
 
-const Skeleton: Component<ComponentProps<"div">> = (props) => {
-	const [, rest] = splitProps(props, ["class"]);
+type SkeletonRootProps<T extends ValidComponent = "div"> =
+	SkeletonPrimitive.SkeletonRootProps<T> & { class?: string | undefined };
+
+const Skeleton = <T extends ValidComponent = "div">(
+	props: PolymorphicProps<T, SkeletonRootProps<T>>,
+) => {
+	const [local, others] = splitProps(props as SkeletonRootProps, ["class"]);
 	return (
-		<div
-			class={clsx("bg-primary/10 animate-pulse rounded-md", props.class)}
-			{...rest}
+		<SkeletonPrimitive.Root
+			class={clsx(
+				"bg-primary/10 data-[animate='true']:animate-pulse ",
+				local.class,
+			)}
+			{...others}
 		/>
 	);
 };

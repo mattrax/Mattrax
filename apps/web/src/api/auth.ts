@@ -11,7 +11,6 @@ import {
 
 import { accounts, db, sessions } from "~/db";
 import { env } from "~/env";
-import type { Features } from "~/lib/featureFlags";
 
 export const lucia = withAuth((domain) => {
 	const adapter = new DrizzleMySQLAdapter(db, sessions, accounts);
@@ -31,7 +30,6 @@ export const lucia = withAuth((domain) => {
 			id: data.id,
 			email: data.email,
 			name: data.name,
-			features: data.features,
 		}),
 		getSessionAttributes: (data) => ({
 			userAgent: data.userAgent,
@@ -53,7 +51,6 @@ interface DatabaseUserAttributes {
 	id: string;
 	email: string;
 	name: string;
-	features: Features[];
 }
 
 interface DatabaseSessionAttributes {

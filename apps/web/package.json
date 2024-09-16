@@ -68,6 +68,7 @@
 		"hono": "^4.6.1",
 		"jose": "^5.9.2",
 		"lucia": "^3.2.0",
+		"minidenticons": "^4.2.1",
 		"oslo": "^1.2.1",
 		"pluralize": "^8.0.0",
 		"prism-code-editor": "3.4.0",
