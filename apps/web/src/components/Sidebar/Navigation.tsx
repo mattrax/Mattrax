@@ -18,6 +18,8 @@ export function Navigation() {
 				<A
 					href={href}
 					class="min-w-8 flex h-8 flex-1 items-center gap-2 overflow-hidden rounded-md px-1.5 text-sm font-medium outline-none ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+					activeClass="bg-zinc-200"
+					end
 				>
 					<Show when={icon} keyed>
 						{(Icon) => <Icon class="h-4 w-4 shrink-0" />}
@@ -32,20 +34,21 @@ export function Navigation() {
 
 	return (
 		<ul class="grid gap-0.5">
-			{item("Overview", "/", IconPhGear)}
+			{item("Overview", "", IconPhGear)}
 			{/* // TODO: Hook up this active state: defaultOpen={item.isActive} */}
 			<Collapsible>
 				<li>
 					<div class="relative flex items-center">
-						<a
-							href="/devices"
+						<A
+							href="devices"
 							class="min-w-8 flex h-8 flex-1 items-center gap-2 overflow-hidden rounded-md px-1.5 text-sm font-medium outline-none ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
+							activeClass="bg-zinc-200"
 						>
 							<IconPhLaptop class="h-4 w-4 shrink-0" />
 							<div class="flex flex-1 overflow-hidden">
 								<div class="line-clamp-1 pr-6">Devices</div>
 							</div>
-						</a>
+						</A>
 						<CollapsibleTrigger
 							as={Button}
 							variant="ghost"
@@ -60,19 +63,19 @@ export function Navigation() {
 					<CollapsibleContent class="px-4 py-0.5">
 						<ul class="grid border-l px-2">
 							<li>
-								<a
-									href="#todo"
+								<A
+									href="devices/enroll"
 									class="min-w-8 flex h-8 items-center gap-2 overflow-hidden rounded-md px-2 text-sm font-medium text-zinc-500 ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 dark:text-zinc-400 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
 								>
 									<div class="line-clamp-1">Enroll</div>
-								</a>
+								</A>
 							</li>
 						</ul>
 					</CollapsibleContent>
 				</li>
 			</Collapsible>
-			{item("Blueprints", "/blueprints", IconPhScroll)}
-			{item("Settings", "/settings", IconPhGear)}
+			{item("Blueprints", "blueprints", IconPhScroll)}
+			{item("Settings", "settings", IconPhGear)}
 		</ul>
 	);
 }
