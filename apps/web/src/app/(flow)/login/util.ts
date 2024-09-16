@@ -2,8 +2,6 @@ import { useLocation, useNavigate, useSearchParams } from "@solidjs/router";
 import { useQueryClient } from "@tanstack/solid-query";
 import { startTransition } from "solid-js";
 
-import { resetMattraxCache } from "~/cache";
-
 export function createLoginOnSuccess() {
 	const [query] = useSearchParams<{ next?: string }>();
 	const location = useLocation<{
@@ -22,7 +20,7 @@ export function createLoginOnSuccess() {
 		else to = "/";
 
 		queryClient.clear();
-		await resetMattraxCache();
+		// await resetMattraxCache();
 
 		await startTransition(() =>
 			navigate(to, {

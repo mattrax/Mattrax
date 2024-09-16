@@ -29,7 +29,6 @@ import {
 	restricted,
 	tenantProcedure,
 } from "../../helpers";
-import { identityProviderRouter } from "./identityProvider";
 import { variantTableRouter } from "./members";
 
 export type StatsTarget =
@@ -316,6 +315,5 @@ export const tenantRouter = createTRPCRouter({
 		});
 	}),
 
-	identityProvider: identityProviderRouter,
 	variantTable: variantTableRouter,
 });
