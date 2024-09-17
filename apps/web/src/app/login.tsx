@@ -15,7 +15,7 @@ import { parse } from "cookie-es";
 // Don't bundle split this Solid directive
 autofocus;
 
-export default function Page() {
+export default function () {
 	const [email, setEmail] = createSignal<string | undefined>(undefined);
 
 	// TODO: Should we do this cause it could probs end up in an infinite loop in a edge-case.

@@ -1,3 +1,17 @@
+import { BreadcrumbItem } from "@mattrax/ui";
+import { Page } from "~/components/Page";
+
+export default function () {
+	return (
+		<Page
+			title="Settings"
+			breadcrumbs={[<BreadcrumbItem>Settings</BreadcrumbItem>]}
+		>
+			TODO
+		</Page>
+	);
+}
+
 // export default function () {
 // 	return <div class="flex-1 lg:max-w-2xl">
 // 		<div class="space-y-6"><div><h3 class="text-lg font-medium">Profile</h3>
@@ -10,10 +24,6 @@
 // 		</button><select aria-hidden="true" tabindex="-1" style="position: absolute; border: 0px; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; overflow-wrap: normal;">
 // 			<option value=""></option><option value="m@example.com">m@example.com</option><option value="m@google.com">m@google.com</option><option value="m@support.com">m@support.com</option></select><p id=":r5q:-form-item-description" class="text-[0.8rem] text-muted-foreground">You can manage verified email addresses in your <a href="/examples/forms">email settings</a>.</p></div><div class="space-y-2"><label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" for=":r5s:-form-item">Bio</label><textarea class="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none" placeholder="Tell us a little bit about yourself" name="bio" id=":r5s:-form-item" aria-describedby=":r5s:-form-item-description" aria-invalid="false">I own a computer.</textarea><p id=":r5s:-form-item-description" class="text-[0.8rem] text-muted-foreground">You can <span>@mention</span> other users and organizations to link to them.</p></div><div /><div class="space-y-2" /><label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" for=":r5t:-form-item">URLs</label><p id=":r5t:-form-item-description" class="text-[0.8rem] text-muted-foreground">Add links to your website, blog, or social media profiles.</p><input class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" id=":r5t:-form-item" aria-describedby=":r5t:-form-item-description" aria-invalid="false" value="https://shadcn.com" name="urls.0.value"></div><div class="space-y-2"><label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 sr-only" for=":r5u:-form-item">URLs</label><p id=":r5u:-form-item-description" class="text-[0.8rem] text-muted-foreground sr-only">Add links to your website, blog, or social media profiles.</p><input class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" id=":r5u:-form-item" aria-describedby=":r5u:-form-item-description" aria-invalid="false" value="http://twitter.com/shadcn" name="urls.1.value"></div><button class="inline-flex items-center justify-center whitespace-nowrap font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-8 rounded-md px-3 text-xs mt-2" type="button">Add URL</button></div><button class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground shadow hover:bg-primary/90 h-9 px-4 py-2" type="submit">Update profile</button></form></div></div>
 // }
-
-export default function () {
-	return <h1>TODO</h1>;
-}
 
 // import {
 // 	Avatar,

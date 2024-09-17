@@ -1,7 +1,5 @@
 import { BreadcrumbItem } from "@mattrax/ui";
-import { For } from "solid-js";
 import { Page } from "~/components/Page";
-import { trpc } from "~/lib";
 
 export default function () {
 	return (
@@ -13,14 +11,15 @@ export default function () {
 				</BreadcrumbItem>,
 			]}
 		>
-			<div class="space-y-4">
-				<div class="flex items-center justify-between">
+			<div class="space-y-4 w-full">
+				<div class="flex items-center justify-between w-full">
 					<div class="flex flex-1 items-center space-x-2">
 						<input
 							class="flex rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 h-8 w-[150px] lg:w-[250px]"
 							placeholder="Filter tasks..."
 							value=""
 						/>
+						<div class="flex-1" />
 						<button
 							class="inline-flex items-center justify-center whitespace-nowrap font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground rounded-md px-3 text-xs h-8 border-dashed"
 							type="button"

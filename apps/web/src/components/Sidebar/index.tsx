@@ -11,7 +11,7 @@ export function SidebarLayout(props: ParentProps) {
 				"--sidebar-width": "16rem",
 			}}
 			class={
-				"flex min-h-screen bg-zinc-100/50 pl-0 transition-all duration-300 ease-in-out data-[sidebar=closed]:pl-0 sm:pl-[--sidebar-width] dark:bg-zinc-800/50"
+				"min-h-screen max-w-screen bg-zinc-100/50 pl-0 transition-all duration-300 ease-in-out data-[sidebar=closed]:pl-0 sm:pl-[--sidebar-width] dark:bg-zinc-800/50"
 			}
 		>
 			{props.children}
