@@ -33,6 +33,15 @@ export const tenantRouter = createTRPCRouter({
 			},
 		];
 	}),
+	stats: authedProcedure.query(async ({ ctx }) => {
+		// await new Promise((resolve) => setTimeout(resolve, 1000)); // TODO: Remove
+
+		// TODO: Hook this up properly
+		return {
+			devices: 5,
+			blueprints: 6,
+		};
+	}),
 
 	// TODO: Fix up auth and stuff
 	// list: orgProcedure.query(async ({ ctx }) =>

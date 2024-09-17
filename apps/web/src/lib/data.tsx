@@ -2,6 +2,8 @@ import { createComputed } from "solid-js";
 import { trpc } from "./trpc";
 import type { RouterOutput } from "~/api";
 
+// TODO: Can we allow disabling the cache for testing & artificially slowing down queries
+
 const ACCOUNT_LS_KEY = "account";
 const TENANTS_LS_KEY = "tenants";
 
@@ -64,26 +66,8 @@ export const getCachedTenants = () => {
 	}
 };
 
-// export const useTenant = (tenantId: string) => {
-// 	const tenants = useTenants();
-
-// 	const tenant = tenants.data?.find((t) => t.id === tenantId);
-
-// 	return new Proxy(
-// 		{},
-// 		{
-// 			get(target, prop) {
-// 				if (!tenant) {
-// 					throw new Error("Tenant not found"); // TODO: Handle this gracefully
-// 					// TODO: 404 redirect
-// 				}
-
-// 				return tenant?.[prop] ?? undefined;
-// 			},
-// 		},
-// 	);
-// };
-
 export const useTenantStats = (tenantId: string) => {
-	// TODO
+	const data = trpc.tenant.stats.createQuery();
+	// TODO: Caching
+	return data;
 };
