@@ -19,7 +19,8 @@
 		"./card": "./src/card.tsx",
 		"./input": "./src/input.tsx",
 		"./button": "./src/button.tsx",
-		"./tooltip": "./src/tooltip.tsx"
+		"./tooltip": "./src/tooltip.tsx",
+		"./breadcrumb": "./src/breadcrumb.tsx"
 	},
 	"dependencies": {
 		"@corvu/tailwind": "^0.1.5",

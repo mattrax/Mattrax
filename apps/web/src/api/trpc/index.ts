@@ -4,14 +4,14 @@ import { authRouter } from "./routers/auth";
 // import { deviceRouter } from "./routers/device";
 import { metaRouter } from "./routers/meta";
 // import { orgRouter } from "./routers/org";
-// import { tenantRouter } from "./routers/tenant/index";
+import { tenantRouter } from "./routers/tenant/index";
 // import { blueprintRouter } from "./routers/blueprint";
 
 export const appRouter = createTRPCRouter({
 	// blueprint: blueprintRouter,
 	auth: authRouter,
 	// device: deviceRouter,
-	// tenant: tenantRouter,
+	tenant: tenantRouter,
 	meta: metaRouter,
 	// org: orgRouter,
 });
