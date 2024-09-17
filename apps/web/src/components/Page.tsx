@@ -6,10 +6,9 @@ import {
 	BreadcrumbSeparator,
 	Input,
 } from "@mattrax/ui";
-import { A, useCurrentMatches } from "@solidjs/router";
+import { useCurrentMatches } from "@solidjs/router";
 import { For, type JSX, type ParentProps } from "solid-js";
 
-// TODO
 export function Page(
 	props: ParentProps & { title: string; breadcrumbs: JSX.Element[] },
 ) {
@@ -18,9 +17,8 @@ export function Page(
 	// The tenant layout is the first match so this will resolve it's path
 	const overviewPageHref = () => matches()?.[0]?.path || "/";
 
-	// TODO: Two `main` elements on a page isn't great
 	return (
-		<main class="grid flex-1 items-start gap-4 p-4 sm:px-6 sm:py-0 md:gap-8">
+		<div class="grid flex-1 items-start gap-4 p-4 sm:px-6 sm:py-0 md:gap-8">
 			<header class="flex justify-between">
 				<Breadcrumb class="hidden md:flex">
 					<BreadcrumbList>
@@ -42,7 +40,9 @@ export function Page(
 				</Breadcrumb>
 
 				<div class="relative ml-auto flex-1 md:grow-0">
-					<IconPhMagnifyingGlass class="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+					<span class="absolute left-2.5 top-2.5 h-4 w-4">
+						<IconPhMagnifyingGlass class="text-zinc-500 dark:text-zinc-400" />
+					</span>
 					<Input
 						type="search"
 						placeholder="Search..."
@@ -53,6 +53,6 @@ export function Page(
 			</header>
 			<h1 class="text-3xl font-bold tracking-tight">{props.title}</h1>
 			<div>{props.children}</div>
-		</main>
+		</div>
 	);
 }
