@@ -28,6 +28,13 @@ import { OtherNavigation } from "~/components/Sidebar/OtherNavigation";
 import { useAccount, useTenants } from "~/lib/data";
 import { useZodParams } from "~/lib/useZodParams";
 
+export const useTenantId = () => {
+	const params = useZodParams({
+		tenantId: z.string(),
+	});
+	return () => params.tenantId;
+};
+
 export default function (props: ParentProps) {
 	const params = useZodParams({
 		// This is optional as the sidebar should be available on `/account`, etc
