@@ -18,7 +18,7 @@ export function Page(
 	const overviewPageHref = () => matches()?.[0]?.path || "/";
 
 	return (
-		<div class="grid flex-1 items-start gap-4 p-4 sm:px-6 sm:py-0 md:gap-8">
+		<div class="flex flex-col space-y-4 p-4 sm:px-6 sm:py-0 md:space-y-8">
 			<header class="flex justify-between">
 				<Breadcrumb class="hidden md:flex">
 					<BreadcrumbList>
@@ -52,7 +52,7 @@ export function Page(
 				</div>
 			</header>
 			<h1 class="text-3xl font-bold tracking-tight">{props.title}</h1>
-			<div>{props.children}</div>
+			<main>{props.children}</main>
 		</div>
 	);
 }

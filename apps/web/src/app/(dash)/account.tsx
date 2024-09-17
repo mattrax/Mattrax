@@ -1,5 +1,15 @@
+import { BreadcrumbItem } from "@mattrax/ui";
+import { Page } from "~/components/Page";
+
 export default function () {
-	return <h1>Hello World</h1>;
+	return (
+		<Page
+			title="Account"
+			breadcrumbs={[<BreadcrumbItem>Settings</BreadcrumbItem>]}
+		>
+			TODO
+		</Page>
+	);
 }
 
 // function ManageAccountDialogContent() {
