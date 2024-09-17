@@ -1,12 +1,14 @@
 import { For } from "solid-js";
 import { Page } from "~/components/Page";
 import { trpc } from "~/lib";
+import { useTenantStats } from "~/lib/data";
 
 export default function () {
-	// const stats = trpc.
+	// const tenantSlug = useTenantSlug();
+	// const stats = useTenantStats(tenantSlug());
 
 	return (
-		<Page title="Overview">
+		<Page title="Overview" breadcrumbs={[]}>
 			<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
 				<For each={Array.from({ length: 4 })}>
 					{() => (
@@ -25,7 +27,8 @@ export default function () {
 									stroke-width="2"
 									class="h-4 w-4 text-muted-foreground"
 								>
-									<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+									<title>TODO</title>
+									<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
 								</svg>
 							</div>
 							<div class="p-6 pt-0">
