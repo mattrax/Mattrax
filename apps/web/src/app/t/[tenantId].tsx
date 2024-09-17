@@ -45,7 +45,7 @@ export default function (props: ParentProps) {
 					<Footer />
 				</SidebarFooter>
 			</Sidebar>
-			<main class="p-4">{props.children}</main>
+			<main class="p-4 w-full">{props.children}</main>
 		</SidebarLayout>
 	);
 }

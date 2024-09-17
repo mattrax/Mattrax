@@ -33,3 +33,4 @@ export * from "./chart";
 export * from "./progress";
 export * from "./progress-circle";
 export * from "./accordion";
+export * from "./breadcrumb";
