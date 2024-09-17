@@ -7,7 +7,12 @@ import {
 import { A } from "@solidjs/router";
 import { type JSX, Show } from "solid-js";
 
-export function Navigation(props: { disabled: boolean }) {
+export function Navigation(props: {
+	tenantId: string | undefined;
+	disabled: boolean;
+}) {
+	const resolvePath = (path: string) => `/t/${props.tenantId}/${path}`;
+
 	const item = (
 		title: string,
 		href: string,
@@ -16,7 +21,7 @@ export function Navigation(props: { disabled: boolean }) {
 		<li>
 			<div class="relative flex items-center">
 				<A
-					href={href}
+					href={resolvePath(href)}
 					class="min-w-8 flex h-8 flex-1 items-center gap-2 overflow-hidden rounded-md px-1.5 text-sm font-medium outline-none ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
 					activeClass={props.disabled ? "" : "bg-zinc-200"}
 					end
@@ -45,7 +50,7 @@ export function Navigation(props: { disabled: boolean }) {
 				<li>
 					<div class="relative flex items-center">
 						<A
-							href="devices"
+							href={resolvePath("devices")}
 							class="min-w-8 flex h-8 flex-1 items-center gap-2 overflow-hidden rounded-md px-1.5 text-sm font-medium outline-none ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
 							activeClass="bg-zinc-200"
 							aria-disabled={props.disabled}
@@ -75,7 +80,7 @@ export function Navigation(props: { disabled: boolean }) {
 						<ul class="grid border-l px-2">
 							<li>
 								<A
-									href="devices/enroll"
+									href={resolvePath("devices/enroll")}
 									class="min-w-8 flex h-8 items-center gap-2 overflow-hidden rounded-md px-2 text-sm font-medium text-zinc-500 ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 dark:text-zinc-400 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
 								>
 									<div class="line-clamp-1">Enroll</div>
