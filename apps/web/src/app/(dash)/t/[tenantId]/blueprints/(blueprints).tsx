@@ -5,8 +5,12 @@ import { Table } from "~/components/Table";
 export default function () {
 	return (
 		<Page
-			title="Devices"
-			breadcrumbs={[<BreadcrumbItem>Devices</BreadcrumbItem>]}
+			title="Blueprints"
+			breadcrumbs={[
+				<BreadcrumbItem>
+					<BreadcrumbItem>Blueprints</BreadcrumbItem>
+				</BreadcrumbItem>,
+			]}
 		>
 			<Table />
 		</Page>

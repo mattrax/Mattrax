@@ -7,7 +7,70 @@ export default function () {
 			title="Settings"
 			breadcrumbs={[<BreadcrumbItem>Settings</BreadcrumbItem>]}
 		>
-			TODO
+			<div class="text-card-foreground rounded-lg border shadow-sm">
+				<div class="w-full flex justify-between items-center p-6 pb-0">
+					<h3 class="text-lg font-semibold leading-none tracking-tight h-5">
+						Tenant
+					</h3>
+					<a
+						target="_blank"
+						rel="noreferrer"
+						class="ring-offset-background focus-visible:ring-ring inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 text-primary underline-offset-4 hover:underline h-10 px-4 py-2 !p-0"
+						href="https://portal.azure.com/3509b545-2799-4c5c-a0d2-f822ddbd416c#view/Microsoft_AAD_IAM/ActiveDirectoryMenuBlade/~/Overview"
+					>
+						Microsoft Entra ID
+						<svg
+							viewBox="0 0 24 24"
+							width="1.2em"
+							height="1.2em"
+							class="inline ml-1"
+						>
+							<path
+								fill="currentColor"
+								d="M18 20.75H6A2.75 2.75 0 0 1 3.25 18V6A2.75 2.75 0 0 1 6 3.25h6a.75.75 0 0 1 0 1.5H6A1.25 1.25 0 0 0 4.75 6v12A1.25 1.25 0 0 0 6 19.25h12A1.25 1.25 0 0 0 19.25 18v-6a.75.75 0 0 1 1.5 0v6A2.75 2.75 0 0 1 18 20.75m2-12a.76.76 0 0 1-.75-.75V4.75H16a.75.75 0 0 1 0-1.5h4a.76.76 0 0 1 .75.75v4a.76.76 0 0 1-.75.75"
+							></path>
+							<path
+								fill="currentColor"
+								d="M13.5 11.25A.74.74 0 0 1 13 11a.75.75 0 0 1 0-1l6.5-6.5a.75.75 0 1 1 1.06 1.06L14 11a.74.74 0 0 1-.5.25"
+							></path>
+						</svg>
+					</a>
+				</div>
+				<div class="p-6 pt-0">
+					<dl class="divide-y divide-gray-100">
+						<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+							<dt class="text-sm font-medium leading-6 text-gray-900">Name</dt>
+							<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+								Mattrax
+							</dd>
+						</div>
+						<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+							<dt class="text-sm font-medium leading-6 text-gray-900">
+								License
+							</dt>
+							<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+								Microsoft Entra ID P2
+							</dd>
+						</div>
+						<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+							<dt class="text-sm font-medium leading-6 text-gray-900">
+								Identifier
+							</dt>
+							<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+								<pre>3509b545-2799-4c5c-a0d2-f822ddbd416c</pre>
+							</dd>
+						</div>
+						<div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-0">
+							<dt class="text-sm font-medium leading-6 text-gray-900">
+								Country or region
+							</dt>
+							<dd class="mt-1 text-sm leading-6 text-gray-700 sm:col-span-2 sm:mt-0">
+								Singapore
+							</dd>
+						</div>
+					</dl>
+				</div>
+			</div>
 		</Page>
 	);
 }

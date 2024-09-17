@@ -1,6 +1,6 @@
 import { useParams } from "@solidjs/router";
 import { createEffect } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
 
 export function useZodParams<S extends z.ZodRawShape>(schema: S) {
@@ -11,7 +11,7 @@ export function useZodParams<S extends z.ZodRawShape>(schema: S) {
 
 	createEffect(
 		() => {
-			setParsedParams(zodSchema.parse(params));
+			setParsedParams(reconcile(zodSchema.parse(params)));
 		},
 		{ defer: true },
 	);
