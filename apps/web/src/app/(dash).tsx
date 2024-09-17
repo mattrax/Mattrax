@@ -64,7 +64,7 @@ export default function (props: ParentProps) {
 					<Footer />
 				</SidebarFooter>
 			</Sidebar>
-			<div class="p-4 min-h-screen overflow-auto">
+			<div class="p-4 min-h-screen h-screen overflow-auto">
 				<ErrorBoundary fallback={ErrorScreen}>
 					<Suspense>{props.children}</Suspense>
 				</ErrorBoundary>
