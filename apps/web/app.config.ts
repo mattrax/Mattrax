@@ -140,9 +140,6 @@ export default defineConfig({
 			},
 		}),
 	},
-	...(isCFPages && {
-		middleware: "src/cfPagesMiddleware.ts",
-	}),
 });
 
 process.on("exit", () => {

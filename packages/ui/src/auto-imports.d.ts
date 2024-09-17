@@ -92,6 +92,7 @@ declare global {
   const IconPhTerminal: typeof import('~icons/ph/terminal.jsx')['default']
   const IconPhTerminalDuotone: typeof import('~icons/ph/terminal-duotone.jsx')['default']
   const IconPhUser: typeof import('~icons/ph/user.jsx')['default']
+  const IconPhUserBold: typeof import('~icons/ph/user-bold.jsx')['default']
   const IconPhWarningCircleDuotone: typeof import('~icons/ph/warning-circle-duotone.jsx')['default']
   const IconPhX: typeof import('~icons/ph/x.jsx')['default']
   const IconPhXBold: typeof import('~icons/ph/x-bold.jsx')['default']

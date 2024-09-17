@@ -8,12 +8,11 @@ import { tenantRouter } from "./routers/tenant/index";
 // import { blueprintRouter } from "./routers/blueprint";
 
 export const appRouter = createTRPCRouter({
-	// blueprint: blueprintRouter,
 	auth: authRouter,
-	// device: deviceRouter,
 	tenant: tenantRouter,
+	// blueprint: blueprintRouter,
+	// device: deviceRouter,
 	meta: metaRouter,
-	// org: orgRouter,
 });
 
 export const createContext = createTRPCContext;

@@ -2,12 +2,17 @@ import { flushResponse, waitUntil } from "@mattrax/trpc-server-function/server";
 import { revalidate } from "@solidjs/router";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
-import { generateId } from "lucia";
+import { generateId, type User } from "lucia";
 import { alphabet, generateRandomString } from "oslo/crypto";
 import { appendResponseHeader, deleteCookie, useSession } from "vinxi/server";
 import { z } from "zod";
 
-import { checkAuth, lucia, setIsLoggedInCookie } from "~/api/auth";
+import {
+	checkAuth,
+	type DatabaseUserAttributes,
+	lucia,
+	setIsLoggedInCookie,
+} from "~/api/auth";
 import { sendEmail } from "~/api/emails";
 import { accountLoginCodes, accounts, db, tenants } from "~/db";
 import {
@@ -17,12 +22,22 @@ import {
 	publicProcedure,
 } from "../helpers";
 
+async function mapAccount(account: DatabaseUserAttributes) {
+	// await new Promise((resolve) => setTimeout(resolve, 10000)); // TODO
+
+	return {
+		id: account.id,
+		name: account.name,
+		email: account.email,
+	};
+}
+
 export const authRouter = createTRPCRouter({
 	sendLoginCode: publicProcedure
 		.input(
 			z.object({
 				email: z.string().email(),
-				addIfManaged: z.boolean().optional(),
+				// addIfManaged: z.boolean().optional(),
 			}),
 		)
 		.mutation(async ({ input }) => {
@@ -100,6 +115,7 @@ export const authRouter = createTRPCRouter({
 						pk: accounts.pk,
 						id: accounts.id,
 						email: accounts.email,
+						name: accounts.name,
 					})
 					.from(accounts)
 					.where(eq(accounts.pk, code.accountPk)),
@@ -136,16 +152,12 @@ export const authRouter = createTRPCRouter({
 			flushResponse();
 			revalidate([checkAuth.key, getTenantList.key]);
 
-			return true;
+			return mapAccount(account);
 		}),
 
-	me: authedProcedure.query(async ({ ctx: { account } }) => {
-		return {
-			id: account.id,
-			name: account.name,
-			email: account.email,
-		};
-	}),
+	me: authedProcedure.query(async ({ ctx: { account } }) =>
+		mapAccount(account),
+	),
 
 	update: authedProcedure
 		.input(z.object({ name: z.string().optional() }))

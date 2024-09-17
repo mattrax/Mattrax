@@ -7,7 +7,7 @@ import {
 import { A } from "@solidjs/router";
 import { type JSX, Show } from "solid-js";
 
-export function Navigation() {
+export function Navigation(props: { disabled: boolean }) {
 	const item = (
 		title: string,
 		href: string,
@@ -18,8 +18,13 @@ export function Navigation() {
 				<A
 					href={href}
 					class="min-w-8 flex h-8 flex-1 items-center gap-2 overflow-hidden rounded-md px-1.5 text-sm font-medium outline-none ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-					activeClass="bg-zinc-200"
+					activeClass={props.disabled ? "" : "bg-zinc-200"}
 					end
+					aria-disabled={props.disabled}
+					classList={{
+						"pointer-events-none": props.disabled,
+						"opacity-50": props.disabled,
+					}}
 				>
 					<Show when={icon} keyed>
 						{(Icon) => <Icon class="h-4 w-4 shrink-0" />}
@@ -43,6 +48,11 @@ export function Navigation() {
 							href="devices"
 							class="min-w-8 flex h-8 flex-1 items-center gap-2 overflow-hidden rounded-md px-1.5 text-sm font-medium outline-none ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
 							activeClass="bg-zinc-200"
+							aria-disabled={props.disabled}
+							classList={{
+								"pointer-events-none": props.disabled,
+								"opacity-50": props.disabled,
+							}}
 						>
 							<IconPhLaptop class="h-4 w-4 shrink-0" />
 							<div class="flex flex-1 overflow-hidden">
@@ -53,6 +63,7 @@ export function Navigation() {
 							as={Button}
 							variant="ghost"
 							class="absolute right-1 h-6 w-6 rounded-md p-0 ring-zinc-950 transition-all focus-visible:ring-2 data-[state=open]:rotate-90 dark:ring-zinc-300"
+							disabled={props.disabled}
 						>
 							<span>
 								<IconPhCaretDown class="h-4 w-4 text-zinc-500 dark:text-zinc-400" />

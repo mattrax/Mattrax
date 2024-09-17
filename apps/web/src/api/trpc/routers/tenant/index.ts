@@ -5,41 +5,49 @@ import { z } from "zod";
 import { randomSlug } from "~/api/utils";
 import { accounts, devices, tenants } from "~/db";
 import { env } from "~/env";
-import {
-	createTRPCRouter,
-	orgProcedure,
-	restricted,
-	tenantProcedure,
-} from "../../helpers";
+import { authedProcedure, createTRPCRouter } from "../../helpers";
 import { variantTableRouter } from "./members";
 
-export type StatsTarget =
-	| "devices"
-	| "users"
-	| "policies"
-	| "applications"
-	| "groups";
-
-const microsoftSkusThatSupportMobility = [
-	"DEVELOPERPACK_E5",
-	"Microsoft_Entra_ID_Governance",
-	"AAD_PREMIUM_P2",
-];
+// export type StatsTarget =
+// 	| "devices"
+// 	| "users"
+// 	| "policies"
+// 	| "applications"
+// 	| "groups";
 
 export const tenantRouter = createTRPCRouter({
+	list: authedProcedure.query(async ({ ctx }) => {
+		// await new Promise((resolve) => setTimeout(resolve, 1000)); // TODO: Remove
+
+		// TODO: Hook this up properly
+		return [
+			{
+				id: "abc",
+				name: "Acme School Inc",
+				// slug: "acme-school-inc",
+			},
+			{
+				id: "def",
+				name: "Oscar's Tenant",
+				// slug: "acme-school-inc",
+			},
+		];
+	}),
+
+	// TODO: Fix up auth and stuff
 	// list: orgProcedure.query(async ({ ctx }) =>
 	// 	ctx.db
 	// 		.select({
 	// 			id: tenants.id,
 	// 			name: tenants.name,
 	// 			slug: tenants.slug,
-	// 			orgId: organisations.id,
 	// 		})
 	// 		.from(tenants)
-	// 		.where(eq(tenants.orgPk, ctx.org.pk))
-	// 		.innerJoin(organisations, eq(organisations.pk, tenants.orgPk))
+	// 		// .where(eq(tenants.orgPk, ctx.org.pk))
+	// 		// .innerJoin(organisations, eq(organisations.pk, tenants.orgPk))
 	// 		.orderBy(tenants.id),
 	// ),
+
 	// create: orgProcedure
 	// 	.input(z.object({ name: z.string().min(1) }))
 	// 	.mutation(async ({ ctx, input }) => {
