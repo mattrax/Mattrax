@@ -1,6 +1,6 @@
 import OtpField from "@corvu/otp-field";
 import { Button, CardDescription } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
+import { Form, InputField, createForm } from "@mattrax/ui/forms";
 import { Navigate, useNavigate, useSearchParams } from "@solidjs/router";
 import { type Setter, Show, createSignal, startTransition } from "solid-js";
 import { z } from "zod";
@@ -36,10 +36,10 @@ function EmailPage(props: { setEmail: Setter<string | undefined> }) {
 		onSuccess: (_, { email }) => startTransition(() => props.setEmail(email)),
 	}));
 
-	const form = createZodForm(() => ({
-		schema: z.object({ email: z.string() }),
-		onSubmit: ({ value }) => login.mutateAsync(value),
-	}));
+	const form = createForm({
+		schema: () => z.object({ email: z.string() }),
+		onSubmit: (value) => login.mutateAsync(value),
+	});
 
 	return (
 		<div class="flex flex-col items-center">
@@ -97,10 +97,10 @@ function CodePage(props: { email: string }) {
 		},
 	}));
 
-	const form = createZodForm(() => ({
-		schema: z.object({ code: z.string() }),
-		onSubmit: ({ value }) => verify.mutateAsync(value),
-	}));
+	const form = createForm({
+		schema: () => z.object({ code: z.string() }),
+		onSubmit: (value) => verify.mutateAsync(value),
+	});
 
 	return (
 		<div class="flex flex-col items-center">
@@ -112,34 +112,32 @@ function CodePage(props: { email: string }) {
 				<OtpField
 					maxLength={8}
 					class="flex"
-					onValueChange={(value) => form.setFieldValue("code", value)}
-					onComplete={(e) => form.handleSubmit()}
-					ref={(el) => {
-						el.focus();
-					}}
+					onValueChange={(value) => (form.fields.code.value = value)}
+					onComplete={() => form.onSubmit()}
+					ref={(el) => el.focus()}
 				>
 					<OtpField.Input
 						aria-label="Verification Code"
 						class="opacity-0"
 						name="code"
-						disabled={form.state.isSubmitting}
+						disabled={form.isSubmitting}
 						use:autofocus
 						autofocus
 					/>
 					<div class="flex items-center space-x-2">
-						<OTPSlot index={0} disabled={form.state.isSubmitting} />
-						<OTPSlot index={1} disabled={form.state.isSubmitting} />
-						<OTPSlot index={2} disabled={form.state.isSubmitting} />
-						<OTPSlot index={3} disabled={form.state.isSubmitting} />
+						<OTPSlot index={0} disabled={form.isSubmitting} />
+						<OTPSlot index={1} disabled={form.isSubmitting} />
+						<OTPSlot index={2} disabled={form.isSubmitting} />
+						<OTPSlot index={3} disabled={form.isSubmitting} />
 					</div>
 					<div class="flex size-10 items-center justify-center font-bold">
 						-
 					</div>
 					<div class="flex items-center space-x-2">
-						<OTPSlot index={4} disabled={form.state.isSubmitting} />
-						<OTPSlot index={5} disabled={form.state.isSubmitting} />
-						<OTPSlot index={6} disabled={form.state.isSubmitting} />
-						<OTPSlot index={7} disabled={form.state.isSubmitting} />
+						<OTPSlot index={4} disabled={form.isSubmitting} />
+						<OTPSlot index={5} disabled={form.isSubmitting} />
+						<OTPSlot index={6} disabled={form.isSubmitting} />
+						<OTPSlot index={7} disabled={form.isSubmitting} />
 					</div>
 				</OtpField>
 			</Form>

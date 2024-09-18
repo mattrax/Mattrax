@@ -1,73 +1,117 @@
-import { BreadcrumbItem } from "@mattrax/ui";
+import {
+	BreadcrumbItem,
+	Button,
+	Card,
+	CardContent,
+	CardDescription,
+	CardFooter,
+	CardHeader,
+	CardTitle,
+} from "@mattrax/ui";
+import { createForm, Form, InputField } from "@mattrax/ui/forms";
+import { z } from "zod";
+import { ConfirmDialog } from "~/components/ConfirmDialog";
 import { Page } from "~/components/Page";
+import { trpc } from "~/lib";
+import { useAccount } from "~/lib/data";
 
 export default function () {
+	const account = useAccount();
+
+	const ctx = trpc.useContext();
+	const updateAccount = trpc.auth.update.createMutation(() => ({
+		// TODO: dependant queries
+		onSuccess: () => ctx.auth.me.invalidate(),
+	}));
+	const deleteAccount = trpc.auth.delete.createMutation(() => ({
+		onSuccess: () => {
+			localStorage.clear();
+			window.location.assign("/login");
+		},
+	}));
+
+	const form = createForm({
+		schema: () =>
+			z.object({
+				name: z.string().default(account.data?.name || ""),
+				email: z.string().default(account.data?.email || ""),
+			}),
+		onSubmit: (data) => updateAccount.mutateAsync(data),
+	});
+
 	return (
 		<Page
 			title="Account"
 			breadcrumbs={[<BreadcrumbItem>Settings</BreadcrumbItem>]}
+			class="max-w-4xl flex flex-col space-y-6"
+			// hideSearch
 		>
-			TODO
+			<Card>
+				<CardHeader>
+					<CardTitle>Account settings</CardTitle>
+					<CardDescription>
+						Manage your account settings and preferences
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<Form form={form} fieldsetClass="flex flex-col space-y-6">
+						<InputField form={form} name="name" label="Name" />
+						<InputField form={form} name="email" label="Email" disabled />
+					</Form>
+				</CardContent>
+				<CardFooter class="!px-6 !py-3 border-t">
+					<Button disabled={form.isSubmitting} onClick={() => form.onSubmit()}>
+						Save
+					</Button>
+				</CardFooter>
+			</Card>
+
+			<Card class="!border-red-200">
+				<CardHeader>
+					<CardTitle>Delete account</CardTitle>
+					<CardDescription>
+						Permanently remove your account and all related data! This action is
+						not reversible, so please take care.
+					</CardDescription>
+				</CardHeader>
+				<CardFooter class="flex items-center justify-center !px-6 !py-3 rounded-b-xl !bg-red-100/50">
+					<div class="flex-1" />
+					<ConfirmDialog>
+						{(confirm) => (
+							<Button
+								variant="destructive"
+								disabled={account.isLoading}
+								onClick={() =>
+									confirm({
+										title: "Delete account?",
+										description: () => (
+											<>
+												This will delete all of your account data, along with
+												any orphaned tenants.{" "}
+												<span class="text-red-400">
+													Please be careful as this action is not reversible!
+												</span>
+												<br />
+												<br />
+												{/* // TODO: Remove this once the backend is implemented properly */}
+												Be aware it can take up to 24 hours for your account to
+												be fully deleted. Please avoid logging in during this
+												time.
+											</>
+										),
+										action: "Delete",
+										closeButton: null,
+										inputText: account.data?.email,
+										onConfirm: async () => deleteAccount.mutateAsync(),
+									})
+								}
+							>
+								Delete
+							</Button>
+						)}
+					</ConfirmDialog>
+				</CardFooter>
+			</Card>
 		</Page>
 	);
 }
-
-// function ManageAccountDialogContent() {
-// 	const me = trpc.auth.me.createQuery();
-
-// 	// TODO: Rollback form on failure
-// 	// TODO: Optimistic UI?
-// 	const updateAccount = trpc.auth.update.createMutation(() => ({
-// 		onSuccess: () =>
-// 			toast.success("Account updated", {
-// 				id: "account-updated",
-// 			}),
-// 		// ...withDependantQueries(me), // TODO: Implement
-// 	}));
-
-// 	// const form = createZodForm(() => ({
-// 	// 	schema: z.object({ name: z.string(), email: z.string().email() }),
-// 	// 	// TODO: We should use a function for this so it updates from the server data when the fields aren't dirty.
-// 	// 	// TODO: Right now this breaks the field focus
-// 	// 	defaultValues: {
-// 	// 		name: me.data?.name || "",
-// 	// 		email: me.data?.email || "",
-// 	// 	},
-// 	// 	onSubmit: ({ value }) =>
-// 	// 		updateAccount.mutateAsync({
-// 	// 			name: value.name,
-// 	// 		}),
-// 	// }));
-
-// 	// const triggerSave = debounce(() => {
-// 	// 	// TODO: This should probs use the form but it disabled the field which is annoying AF.
-// 	// 	updateAccount.mutateAsync({
-// 	// 		name: form.getFieldValue("name"),
-// 	// 	});
-// 	// }, 500);
-
-// 	return (
-// 		<DialogContent>
-// 			<DialogHeader>
-// 				<DialogTitle>Manage account</DialogTitle>
-// 				{/* <DialogDescription>
-// 					This action cannot be undone. This will permanently delete your
-// 					account and remove your data from our servers.
-// 				</DialogDescription> */}
-
-// 				{/* <Input></Input> */}
-// 				{/* <InputField
-// 						fieldClass="col-span-1"
-// 						form={form}
-// 						name="name"
-// 						label="Name"
-// 						onInput={() => triggerSave()}
-// 					/> */}
-
-// 				{/* // TODO: Change name */}
-// 				{/* // TODO: Change email */}
-// 				{/* // TODO: Delete account */}
-// 			</DialogHeader>
-// 		</DialogContent>
-// 	);
-// }

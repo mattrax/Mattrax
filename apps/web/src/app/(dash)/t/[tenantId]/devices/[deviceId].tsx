@@ -1,6 +1,6 @@
 import { BreadcrumbItem, BreadcrumbLink } from "@mattrax/ui/breadcrumb";
 import { z } from "zod";
-import { Page, Page2 } from "~/components/Page";
+import { Page } from "~/components/Page";
 import { useZodParams } from "~/lib/useZodParams";
 
 export default function () {
@@ -11,8 +11,8 @@ export default function () {
 	const deviceType = "XPS 13 9310 2-in-1";
 
 	return (
-		<Page2
-			title="Devices"
+		<Page
+			title={null}
 			breadcrumbs={[
 				<BreadcrumbItem>
 					<BreadcrumbLink href="../../devices">Devices</BreadcrumbLink>
@@ -37,7 +37,7 @@ export default function () {
 						{deviceType}
 					</h2>
 				</div>
-				<div class="flex-1"></div>
+				<div class="flex-1" />
 				<div class="flex space-x-4">
 					{/* <a
 						target="_blank"
@@ -210,6 +210,6 @@ export default function () {
 					</div>
 				</div>
 			</div>
-		</Page2>
+		</Page>
 	);
 }

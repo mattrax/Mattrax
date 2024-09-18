@@ -14,7 +14,6 @@
 		"@mattrax/ui": "workspace:*",
 		"@solidjs/router": "0.14.5",
 		"@solidjs/start": "1.0.6",
-		"@tanstack/solid-form": "^0.32.0",
 		"class-variance-authority": "^0.7.0",
 		"clsx": "^2.1.1",
 		"h3": "^1.12.0",

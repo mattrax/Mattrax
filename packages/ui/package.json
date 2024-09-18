@@ -9,7 +9,6 @@
 	"exports": {
 		".": "./src/index.tsx",
 		"./forms": "./src/forms/index.tsx",
-		"./forms/legacy": "./src/forms/legacy/index.tsx",
 		"./lib": "./src/lib/index.ts",
 		"./solid": "./src/solid/index.ts",
 		"./tailwind": "./tailwind.js",
@@ -27,8 +26,6 @@
 		"@kobalte/core": "^0.13.6",
 		"@solid-primitives/refs": "^1.0.8",
 		"@solidjs/router": "0.14.5",
-		"@tanstack/form-core": "^0.32.0",
-		"@tanstack/solid-form": "^0.32.0",
 		"@tanstack/solid-virtual": "^3.10.8",
 		"@tanstack/zod-form-adapter": "^0.32.0",
 		"chart.js": "^4.4.4",

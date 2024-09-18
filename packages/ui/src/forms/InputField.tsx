@@ -1,6 +1,7 @@
 import {
 	type ComponentProps,
 	type JSX,
+	createEffect,
 	createUniqueId,
 	splitProps,
 } from "solid-js";
@@ -9,7 +10,7 @@ import clsx from "clsx";
 import { Input, Label } from "..";
 import { Field, type FormState, type KeysMatching } from "./createForm";
 
-export function InputField<T, K extends KeysMatching<T, string>>(
+export function InputField<T, K extends KeysMatching<Required<T>, string>>(
 	props: Omit<
 		ComponentProps<typeof Input>,
 		"id" | "value" | "onInput" | "onBlur" | "form"

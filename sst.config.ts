@@ -39,6 +39,7 @@ export default $config({
 		const FEEDBACK_DISCORD_WEBHOOK_URL = new sst.Secret(
 			"FeedbackDiscordWebhookURL",
 		);
+		const DO_THE_THING_WEBHOOK_URL = new sst.Secret("DoTheThingWebhookURL");
 
 		// Derived
 		const webSubdomain = $app.stage === "prod" ? "cloud" : `${$app.stage}-web`;
@@ -227,6 +228,7 @@ export default $config({
 			VITE_PROD_ORIGIN,
 			WAITLIST_DISCORD_WEBHOOK_URL: WAITLIST_DISCORD_WEBHOOK_URL.value,
 			FEEDBACK_DISCORD_WEBHOOK_URL: FEEDBACK_DISCORD_WEBHOOK_URL.value,
+			DO_THE_THING_WEBHOOK_URL: DO_THE_THING_WEBHOOK_URL.value,
 		};
 
 		const web = CloudflarePages("web", {
