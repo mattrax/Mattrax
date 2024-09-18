@@ -15,7 +15,6 @@ import type { Component, ComponentProps, ValidComponent } from "solid-js";
 import { Show, splitProps } from "solid-js";
 
 import clsx from "clsx";
-import { Button, type ButtonProps } from "./button";
 import {
 	type Controller,
 	ControllerProvider,
@@ -113,7 +112,7 @@ const DialogContent = <T extends ValidComponent = "div">(
 					{props.children}
 
 					<Show when={props.closeButton !== false}>
-						<DialogPrimitive.CloseButton class="ring-offset-background focus:ring-ring data-[expanded]:bg-accent data-[expanded]:text-muted-foreground absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:pointer-events-none">
+						<DialogPrimitive.CloseButton class="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-zinc-950 focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-zinc-100 data-[state=open]:text-zinc-500 dark:ring-offset-zinc-950 dark:focus:ring-zinc-300 dark:data-[state=open]:bg-zinc-800 dark:data-[state=open]:text-zinc-400 disabled:pointer-events-none">
 							<IconTablerX class="h-4 w-4" />
 							<span class="sr-only">Close</span>
 						</DialogPrimitive.CloseButton>
@@ -171,7 +170,7 @@ const DialogDescription = <T extends ValidComponent = "p">(
 	const [, rest] = splitProps(props as any, ["class"]);
 	return (
 		<DialogPrimitive.Description
-			class={clsx("text-muted-foreground text-sm", props.class)}
+			class={clsx("text-sm text-zinc-500 dark:text-zinc-400", props.class)}
 			{...rest}
 		/>
 	);

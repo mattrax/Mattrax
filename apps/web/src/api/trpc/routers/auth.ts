@@ -21,6 +21,8 @@ import {
 	getTenantList,
 	publicProcedure,
 } from "../helpers";
+import { sendDiscordMessage } from "./meta";
+import { env } from "~/env";
 
 async function mapAccount(account: DatabaseUserAttributes) {
 	// await new Promise((resolve) => setTimeout(resolve, 10000)); // TODO
@@ -171,6 +173,7 @@ export const authRouter = createTRPCRouter({
 			}
 		}),
 
+	// `authedProcedure` implies `flushResponse` and we need manual control for the cookies!
 	logout: publicProcedure.mutation(async () => {
 		const data = await checkAuth();
 		if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -183,22 +186,28 @@ export const authRouter = createTRPCRouter({
 		flushResponse();
 	}),
 
-	//   delete: authedProcedure.mutation(async ({ ctx }) => {
-	//     const session = ctx.session.data;
+	// `authedProcedure` implies `flushResponse` and we need manual control for the cookies!
+	delete: publicProcedure.mutation(async ({ ctx }) => {
+		const data = await checkAuth();
+		if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-	//     // TODO: Require the user to leave/delete all tenant's first
+		// TODO: Require the user to leave/delete all tenant's first
 
-	//     await ctx.db.delete(accounts).where(eq(accounts.id, session.id));
-	//     await ctx.session.clear();
-	//     return {};
-	//   }),
+		// TODO: Implement this properly
+		await sendDiscordMessage(
+			`User \`${data.account.id}\` with email \`${data.account.email}\` requested account deletion!`,
+			env.DO_THE_THING_WEBHOOK_URL,
+		);
+
+		deleteCookie(lucia.sessionCookieName);
+		deleteCookie("isLoggedIn");
+		await lucia.invalidateSession(data.session.id);
+		flushResponse();
+	}),
 });
 
 export async function handleLoginSuccess(accountId: string) {
-	const session = await lucia.createSession(accountId, {
-		userAgent: `w${"web"}`, // TODO
-		location: "earth", // TODO
-	});
+	const session = await lucia.createSession(accountId, {});
 
 	appendResponseHeader(
 		"Set-Cookie",

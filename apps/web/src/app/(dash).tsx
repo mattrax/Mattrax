@@ -1,3 +1,4 @@
+import { getPlatformShortcut, Kbd } from "@mattrax/ui";
 import { Navigate } from "@solidjs/router";
 import { parse } from "cookie-es";
 import { Suspense, type ParentProps, ErrorBoundary } from "solid-js";
@@ -47,7 +48,6 @@ export default function (props: ParentProps) {
 				</SidebarHeader>
 				<SidebarContent>
 					<SidebarItem>
-						{/* <SidebarLabel>Platform</SidebarLabel> */}
 						<Navigation
 							tenantId={params.tenantId}
 							disabled={
@@ -58,13 +58,27 @@ export default function (props: ParentProps) {
 					<SidebarItem class="mt-auto">
 						<SidebarLabel>Other</SidebarLabel>
 						<OtherNavigation />
+						<div class="relative flex items-center">
+							<button
+								type="button"
+								class="bg-zinc-50 min-w-8 flex h-8 flex-1 items-center gap-2 overflow-hidden rounded-md px-1.5 text-sm text-zinc-500 font-medium outline-none ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 disabled:pointer-events-none disabled:opacity-50"
+								disabled
+							>
+								<IconPhMagnifyingGlass class="h-4 w-4 shrink-0" />
+								<div class="flex flex-1 overflow-hidden">
+									<div class="line-clamp-1 pr-6">Search</div>
+								</div>
+
+								<Kbd variant="light">{getPlatformShortcut()} K</Kbd>
+							</button>
+						</div>
 					</SidebarItem>
 				</SidebarContent>
 				<SidebarFooter>
 					<Footer />
 				</SidebarFooter>
 			</Sidebar>
-			<div class="p-4 min-h-screen h-screen overflow-auto">
+			<div class="min-h-screen h-screen overflow-auto">
 				<ErrorBoundary fallback={ErrorScreen}>
 					<Suspense>{props.children}</Suspense>
 				</ErrorBoundary>

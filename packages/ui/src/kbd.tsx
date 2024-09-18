@@ -1,9 +1,10 @@
 import clsx from "clsx";
+import type { JSX } from "solid-js";
 
 export function Kbd(props: {
 	variant?: "dark" | "light";
 	class?: string;
-	children: string;
+	children: JSX.Element;
 }) {
 	return (
 		<kbd
@@ -18,4 +19,9 @@ export function Kbd(props: {
 			{props.children}
 		</kbd>
 	);
+}
+
+export function getPlatformShortcut() {
+	if (navigator.platform.startsWith("Mac")) return "⌘";
+	return "Ctrl";
 }

@@ -11,14 +11,9 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@mattrax/ui";
-import {
-	Form,
-	InputField,
-	SelectField,
-	createZodForm,
-} from "@mattrax/ui/forms/legacy";
+import { Form, InputField, SelectField, createForm } from "@mattrax/ui/forms";
 import { useController } from "@mattrax/ui/lib";
-import type { JSX } from "solid-js";
+import { createEffect, type JSX } from "solid-js";
 import { z } from "zod";
 import Bento from "~/components/Bento";
 import Cta from "~/components/Cta";
@@ -159,19 +154,19 @@ const deploymentMethod = {
 	other: "Other",
 } as const;
 
+const schema = z.object({
+	email: z.string().email(),
+	name: z.string().optional(),
+	interest: zodEnumFromObjectKeys(interestReasons).default("personal"),
+	deployment: zodEnumFromObjectKeys(deploymentMethod).default("managed-cloud"),
+});
+
 function DropdownBody() {
 	const controller = useController();
 
-	const schema = z.object({
-		email: z.string().email(),
-		name: z.string().optional(),
-		interest: zodEnumFromObjectKeys(interestReasons),
-		deployment: zodEnumFromObjectKeys(deploymentMethod),
-	});
-
-	const form = createZodForm(() => ({
-		schema,
-		onSubmit: async ({ value }) => {
+	const form = createForm({
+		schema: () => schema,
+		onSubmit: async (value) => {
 			// This endpoint is defined in Nitro and proxies to `cloud.mattrax.app` so we can avoid CORS
 			const resp = await fetch("/api/waitlist", {
 				method: "POST",
@@ -194,11 +189,10 @@ function DropdownBody() {
 
 			controller.setOpen(false);
 		},
-	}));
+	});
 
-	// `state().isValid` seems to be always `true` (probs cause `createZodForm` only does validation on submit) // TODO: Maybe fix this properly?
-	const isFormValid = form.useStore(
-		(state) => schema.safeParse(state.values).success,
+	createEffect(() =>
+		console.log(Object.values(form.fields).map((v) => v.meta.error)),
 	);
 
 	return (
@@ -251,7 +245,7 @@ function DropdownBody() {
 				<SelectContent />
 			</SelectField>
 
-			<Button type="submit" disabled={!isFormValid()}>
+			<Button type="submit" disabled={!form.isValid}>
 				Submit
 			</Button>
 		</Form>

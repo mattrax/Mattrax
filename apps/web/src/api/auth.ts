@@ -31,10 +31,7 @@ export const lucia = withAuth((domain) => {
 			email: data.email,
 			name: data.name,
 		}),
-		getSessionAttributes: (data) => ({
-			userAgent: data.userAgent,
-			location: data.location,
-		}),
+		getSessionAttributes: (data) => ({}),
 	});
 });
 
@@ -53,11 +50,7 @@ export interface DatabaseUserAttributes {
 	name: string;
 }
 
-interface DatabaseSessionAttributes {
-	// Web or CLI session
-	userAgent: `${"w" | "c"}${string}`;
-	location: string;
-}
+type DatabaseSessionAttributes = Record<string, never>;
 
 export const checkAuth = cache(async () => {
 	"use server";
