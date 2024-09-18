@@ -26,6 +26,13 @@ export const useTenantId = () => {
 	return () => params.tenantId;
 };
 
+export const useTenant = () => {
+	const tenantId = useTenantId();
+	const tenants = useTenants();
+	console.log(tenants.data, tenantId());
+	return () => tenants.data?.find((tenant) => tenant.id === tenantId());
+};
+
 export default function (props: ParentProps) {
 	const params = useZodParams({
 		// This is optional as the sidebar should be available on `/account`, etc

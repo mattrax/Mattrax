@@ -4,7 +4,7 @@ import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { generateId, type User } from "lucia";
 import { alphabet, generateRandomString } from "oslo/crypto";
-import { appendResponseHeader, deleteCookie, useSession } from "vinxi/server";
+import { appendResponseHeader, deleteCookie } from "vinxi/server";
 import { z } from "zod";
 
 import {
@@ -15,18 +15,11 @@ import {
 } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
 import { accountLoginCodes, accounts, db, tenants } from "~/db";
-import {
-	authedProcedure,
-	createTRPCRouter,
-	getTenantList,
-	publicProcedure,
-} from "../helpers";
+import { authedProcedure, createTRPCRouter, publicProcedure } from "../helpers";
 import { sendDiscordMessage } from "./meta";
 import { env } from "~/env";
 
 async function mapAccount(account: DatabaseUserAttributes) {
-	// await new Promise((resolve) => setTimeout(resolve, 10000)); // TODO
-
 	return {
 		id: account.id,
 		name: account.name,
@@ -44,7 +37,7 @@ export const authRouter = createTRPCRouter({
 		)
 		.mutation(async ({ input }) => {
 			const parts = input.email.split("@");
-			// This should be impossible due to input validation on the frontend but we guard just in case
+			// This should be impossible due to input validation but we guard just in case
 			if (parts.length !== 2) throw new Error("Invalid email provided!");
 
 			const account = await db.query.accounts.findFirst({
@@ -106,7 +99,10 @@ export const authRouter = createTRPCRouter({
 			});
 
 			if (!code)
-				throw new TRPCError({ code: "NOT_FOUND", message: "Invalid code" });
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Invalid login code",
+				});
 
 			const [_, [account]] = await Promise.all([
 				ctx.db
@@ -152,7 +148,7 @@ export const authRouter = createTRPCRouter({
 			await handleLoginSuccess(account.id);
 
 			flushResponse();
-			revalidate([checkAuth.key, getTenantList.key]);
+			revalidate(checkAuth.key);
 
 			return mapAccount(account);
 		}),
@@ -173,7 +169,7 @@ export const authRouter = createTRPCRouter({
 			}
 		}),
 
-	// `authedProcedure` implies `flushResponse` and we need manual control for the cookies!
+	// `authedProcedure` calls `flushResponse` before the handler so we can't use it here!
 	logout: publicProcedure.mutation(async () => {
 		const data = await checkAuth();
 		if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -182,11 +178,9 @@ export const authRouter = createTRPCRouter({
 		deleteCookie("isLoggedIn");
 
 		await lucia.invalidateSession(data.session.id);
-
-		flushResponse();
 	}),
 
-	// `authedProcedure` implies `flushResponse` and we need manual control for the cookies!
+	// `authedProcedure` calls `flushResponse` before the handler so we can't use it here!
 	delete: publicProcedure.mutation(async ({ ctx }) => {
 		const data = await checkAuth();
 		if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
@@ -202,7 +196,6 @@ export const authRouter = createTRPCRouter({
 		deleteCookie(lucia.sessionCookieName);
 		deleteCookie("isLoggedIn");
 		await lucia.invalidateSession(data.session.id);
-		flushResponse();
 	}),
 });
 

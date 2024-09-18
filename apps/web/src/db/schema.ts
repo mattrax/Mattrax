@@ -1,20 +1,13 @@
-import type { PolicyData } from "@mattrax/policy";
 import { createId } from "@paralleldrive/cuid2";
-import type { AuthenticatorTransportFuture } from "@simplewebauthn/types";
 import {
 	bigint,
-	boolean,
-	int,
 	json,
 	mysqlEnum,
 	mysqlTable,
 	primaryKey,
 	serial,
-	smallint,
-	text,
 	timestamp,
 	unique,
-	varbinary,
 	varchar,
 } from "drizzle-orm/mysql-core";
 
@@ -91,148 +84,67 @@ export const accountLoginCodes = mysqlTable("account_login_codes", {
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
-// // Organisations represent the physical entity that is using Mattrax.
-// // Eg. a company, school district, or MSP.
-// //
-// // An organisation is just a collect of many tenants, billing information and a set of accounts which have access to it.
-// //
-// export const organisations = mysqlTable("organisations", {
-// 	pk: serial("pk").primaryKey(),
-// 	id: cuid("id").notNull().unique(),
-// 	name: varchar("name", { length: 100 }).notNull(),
-// 	slug: varchar("slug", { length: 256 }).notNull().unique(),
-// 	billingEmail: varchar("billing_email", { length: 256 }),
-// 	stripeCustomerId: varchar("stripe_customer_id", { length: 256 }),
-// 	ownerPk: serialRelation("owner")
-// 		.references(() => accounts.pk)
-// 		.notNull(),
-// });
-
-// export const organisationMembers = mysqlTable(
-// 	"organisation_members",
-// 	{
-// 		orgPk: serialRelation("org")
-// 			.references(() => organisations.pk)
-// 			.notNull(),
-// 		accountPk: serialRelation("account")
-// 			.references(() => accounts.pk)
-// 			.notNull(),
-// 	},
-// 	(table) => ({ pk: primaryKey({ columns: [table.orgPk, table.accountPk] }) }),
-// );
-
-// export const organisationInvites = mysqlTable(
-// 	"organisation_invites",
-// 	{
-// 		code: varchar("code", { length: 256 }).primaryKey(),
-// 		orgPk: serialRelation("org")
-// 			.references(() => organisations.pk)
-// 			.notNull(),
-// 		email: varchar("email", { length: 256 }).notNull(),
-// 		createdAt: timestamp("created_at").defaultNow(),
-// 	},
-// 	(table) => ({
-// 		emailUnique: unique().on(table.orgPk, table.email),
-// 	}),
-// );
-
+// A tenant represents a distinct entity using Mattrax.
+// All groups devices, users, policies and applications are owned by a tenant.
+//
+// A tenant will generally map to a company or organisation.
 export const tenants = mysqlTable("tenant", {
 	pk: serial("pk").primaryKey(),
 	id: cuid("id").notNull().unique(),
 	name: varchar("name", { length: 100 }).notNull(),
-	slug: varchar("slug", { length: 256 }).notNull().unique(),
-	ownerPk: serialRelation("owner").references(() => accounts.pk),
+	stripeCustomerId: varchar("stripe_customer_id", { length: 256 }),
+	billingEmail: varchar("billing_email", { length: 256 }),
 });
 
-// TODO: `deviceEnrollment`
-// TODO: `blueprint`, `blueprintAssignment`
+export const tenantMembers = mysqlTable(
+	"tenant_members",
+	{
+		tenantPk: serialRelation("tenant")
+			.references(() => tenants.pk)
+			.notNull(),
+		accountPk: serialRelation("account")
+			.references(() => accounts.pk)
+			.notNull(),
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.tenantPk, table.accountPk] }),
+	}),
+);
 
-// const policyDataCol = json("data").notNull().default({}).$type<PolicyData>();
+export const tenantInvites = mysqlTable(
+	"tenant_invites",
+	{
+		code: varchar("code", { length: 256 }).primaryKey(),
+		tenantPk: serialRelation("tenant")
+			.references(() => tenants.pk)
+			.notNull(),
+		email: varchar("email", { length: 256 }).notNull(),
+		createdAt: timestamp("created_at").defaultNow(),
+	},
+	(table) => ({
+		emailUnique: unique().on(table.tenantPk, table.email),
+	}),
+);
 
-// export const policies = mysqlTable("policies", {
-// 	pk: serial("pk").primaryKey(),
+// export const enrollmentAttempts = mysqlTable("enrollment_attempts", {
 // 	id: cuid("id").notNull().unique(),
-// 	priority: smallint("priority").notNull().default(128),
-// 	name: varchar("name", { length: 256 }).notNull(),
-// 	data: policyDataCol,
-// 	tenantPk: serialRelation("tenant")
-// 		.references(() => tenants.pk)
-// 		.notNull(),
-// 	lastModified: timestamp("last_modified").notNull().defaultNow(),
-// 	createdAt: timestamp("created_at").notNull().defaultNow(),
+// 	status: mysqlEnum("status", ["pending", "success", "failed"]).notNull(),
+// 	// TODO: Device information, error information
+// 	doneAt: timestamp("created_at").notNull().defaultNow(),
 // });
 
-// export const PolicyAssignableVariants = {
-// 	user: "user",
-// 	device: "device",
-// 	group: "group",
-// } as const;
-
-// export const policyAssignableVariants = [
-// 	PolicyAssignableVariants.user,
-// 	PolicyAssignableVariants.device,
-// 	PolicyAssignableVariants.group,
-// ] as const;
-// export type PolicyAssignableVariant = (typeof policyAssignableVariants)[number];
-
-// export const policyAssignments = mysqlTable(
-// 	"policy_assignables",
-// 	{
-// 		policyPk: serialRelation("policy")
-// 			.references(() => policies.pk)
-// 			.notNull(),
-// 		// The primary key of the user or device or group
-// 		pk: serialRelation("pk").notNull(),
-// 		variant: mysqlEnum("variant", policyAssignableVariants).notNull(),
-// 	},
-// 	(table) => ({
-// 		pk: primaryKey({
-// 			columns: [table.policyPk, table.pk, table.variant],
-// 		}),
-// 	}),
-// );
-
-// // A deployment is an immutable snapshot of the policy at a point in time when it was deployed.
-// // Deployments are linear by `createdAt` and are immutable.
-// export const policyDeploy = mysqlTable("policy_deploy", {
-// 	pk: serial("pk").primaryKey(),
-// 	id: cuid("id")
-// 		.notNull()
-// 		.unique()
-// 		.$default(() => createId()),
-// 	policyPk: serialRelation("policy")
-// 		.references(() => policies.pk)
-// 		.notNull(),
-// 	data: policyDataCol,
-// 	comment: varchar("comment", { length: 256 }).notNull(),
-// 	author: serialRelation("author")
-// 		.references(() => accounts.pk)
-// 		.notNull(),
-// 	doneAt: timestamp("done_at").notNull().defaultNow(),
-// });
-
-// // The status of applying a policy deploy to a specific device.
-// //
-// // Policy deploy status's are not immutable. A redeploy will cause it to update.
-// export const policyDeployStatus = mysqlTable(
-// 	"policy_deploy_status",
-// 	{
-// 		deployPk: serialRelation("deploy")
-// 			.references(() => policyDeploy.pk)
-// 			.notNull(),
-// 		devicePk: serialRelation("device")
-// 			.references(() => devices.pk)
-// 			.notNull(),
-// 		status: mysqlEnum("variant", ["pending", "success", "failed"]).notNull(),
-// 		conflicts: json("conflicts").$type<never>(), // TODO: Proper type using Specta
-// 		doneAt: timestamp("done_at").notNull().defaultNow(),
-// 	},
-// 	(table) => ({
-// 		pk: primaryKey({
-// 			columns: [table.deployPk, table.devicePk],
-// 		}),
-// 	}),
-// );
+export const blueprints = mysqlTable("blueprints", {
+	pk: serial("pk").primaryKey(),
+	id: cuid("id").notNull().unique(),
+	name: varchar("name", { length: 256 }).notNull(),
+	description: varchar("description", { length: 256 }),
+	data: json("data").notNull().default({}), // TODO: .$type<PolicyData>()
+	tenantPk: serialRelation("tenant")
+		.references(() => tenants.pk)
+		.notNull(),
+	lastModified: timestamp("last_modified").notNull().defaultNow(),
+	createdAt: timestamp("created_at").notNull().defaultNow(),
+});
 
 export const possibleOSes = [
 	"Windows",
@@ -250,7 +162,7 @@ export const devices = mysqlTable("devices", {
 	// This will always change between re-enrollments
 
 	//  which is desired for the frontend cache key to stay consistent.
-	mdm_id: cuid("mdm_id").notNull().unique(),
+	mdm_id: cuid("mdm_id").notNull().unique(), // TODO: Do we need this?
 	name: varchar("name", { length: 256 }).notNull(),
 	description: varchar("description", { length: 256 }),
 
@@ -277,123 +189,35 @@ export const devices = mysqlTable("devices", {
 	enrolledBy: serialRelation("enrolled_by"),
 	lastSynced: timestamp("last_synced").notNull().defaultNow(),
 
+	blueprint: serialRelation("blueprint").references(() => blueprints.pk),
+
 	tenantPk: serialRelation("tenant")
 		.references(() => tenants.pk)
 		.notNull(),
 });
 
-// export const possibleDeviceActions = [
-// 	"restart",
-// 	"shutdown",
-// 	"lost",
-// 	"wipe",
-// 	"retire",
-// ] as const;
+export const possibleDeviceActions = [
+	"restart",
+	"shutdown",
+	"lost",
+	"wipe",
+	"retire",
+] as const;
 
-// // Device actions are ephemeral. They will be deleted after they are completed.
-// export const deviceActions = mysqlTable(
-// 	"device_actions",
-// 	{
-// 		action: mysqlEnum("action", possibleDeviceActions).notNull(),
-// 		devicePk: serialRelation("device")
-// 			.notNull()
-// 			.references(() => devices.pk),
-// 		createdBy: serialRelation("created_by")
-// 			.notNull()
-// 			.references(() => accounts.pk),
-// 		createdAt: timestamp("created_at").notNull().defaultNow(),
-// 	},
-// 	(table) => ({
-// 		pk: primaryKey({ columns: [table.action, table.devicePk] }),
-// 	}),
-// );
-
-// export const GroupMemberVariants = {
-// 	user: "user",
-// 	device: "device",
-// } as const;
-
-// export const groupMemberVariants = [
-// 	GroupMemberVariants.user,
-// 	GroupMemberVariants.device,
-// ] as const;
-// export type GroupMemberVariant = (typeof groupMemberVariants)[number];
-
-// export const groupAssignables = mysqlTable(
-// 	"group_assignables",
-// 	{
-// 		groupPk: serialRelation("group")
-// 			.references(() => groups.pk)
-// 			.notNull(),
-// 		// The primary key of the user or device
-// 		pk: serialRelation("pk").notNull(),
-// 		variant: mysqlEnum("variant", groupMemberVariants).notNull(),
-// 	},
-// 	(table) => ({
-// 		pk: primaryKey({ columns: [table.groupPk, table.pk, table.variant] }),
-// 	}),
-// );
-
-// export const groups = mysqlTable("groups", {
-// 	pk: serial("pk").primaryKey(),
-// 	id: cuid("id").notNull().unique(),
-// 	name: varchar("name", { length: 256 }).notNull(),
-// 	tenantPk: serialRelation("tenant")
-// 		.references(() => tenants.pk)
-// 		.notNull(),
-// });
-
-// export const applications = mysqlTable("apps", {
-// 	pk: serial("pk").primaryKey(),
-// 	id: cuid("id").notNull().unique(),
-// 	name: varchar("name", { length: 256 }).notNull(),
-// 	description: varchar("description", { length: 256 }),
-// 	tenantPk: serialRelation("tenant")
-// 		.references(() => tenants.pk)
-// 		.notNull(),
-// });
-
-// export const ApplicationAssignablesVariants = {
-// 	user: "user",
-// 	device: "device",
-// 	group: "group",
-// } as const;
-
-// export const applicationAssignablesVariants = [
-// 	ApplicationAssignablesVariants.user,
-// 	ApplicationAssignablesVariants.device,
-// 	ApplicationAssignablesVariants.group,
-// ] as const;
-// export type ApplicationAssignableVariant =
-// 	(typeof applicationAssignablesVariants)[number];
-
-// export const applicationAssignables = mysqlTable(
-// 	"application_assignments",
-// 	{
-// 		applicationPk: serialRelation("appPk")
-// 			.references(() => applications.pk)
-// 			.notNull(),
-// 		// The primary key of the user or device or group
-// 		pk: serialRelation("pk").notNull(),
-// 		variant: mysqlEnum("variant", applicationAssignablesVariants).notNull(),
-// 	},
-// 	(table) => ({
-// 		pk: primaryKey({
-// 			columns: [table.applicationPk, table.pk, table.variant],
-// 		}),
-// 	}),
-// );
-
-// export const domains = mysqlTable("domains", {
-// 	domain: varchar("domain", { length: 256 }).primaryKey(),
-// 	tenantPk: serialRelation("tenant")
-// 		.references(() => tenants.pk)
-// 		.notNull(),
-// 	createdAt: timestamp("created_at").notNull().defaultNow(),
-// 	enterpriseEnrollmentAvailable: boolean("enterprise_enrollment_available")
-// 		.notNull()
-// 		.default(false),
-// 	identityProviderPk: serialRelation("identity_provider")
-// 		.notNull()
-// 		.references(() => identityProviders.pk),
-// });
+// Device actions are ephemeral. They will be deleted after they are completed.
+export const deviceActions = mysqlTable(
+	"device_actions",
+	{
+		action: mysqlEnum("action", possibleDeviceActions).notNull(),
+		devicePk: serialRelation("device")
+			.notNull()
+			.references(() => devices.pk),
+		createdBy: serialRelation("created_by")
+			.notNull()
+			.references(() => accounts.pk),
+		createdAt: timestamp("created_at").notNull().defaultNow(),
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.action, table.devicePk] }),
+	}),
+);

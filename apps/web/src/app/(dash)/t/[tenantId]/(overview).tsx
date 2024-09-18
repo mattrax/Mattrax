@@ -1,12 +1,10 @@
 import { Show, Suspense, type JSX } from "solid-js";
-import { useTenantId } from "~/app/(dash)";
 import { createCounter } from "~/components/Counter";
 import { Page } from "~/components/Page";
 import { useTenantStats } from "~/lib/data";
 
 export default function () {
-	const tenantId = useTenantId();
-	const stats = useTenantStats(tenantId());
+	const stats = useTenantStats();
 
 	return (
 		<Page title="Overview" breadcrumbs={[]}>
@@ -19,7 +17,7 @@ export default function () {
 				<StatItem
 					title="Blueprints"
 					icon={<IconPhScroll />}
-					value={stats.data?.devices || 0}
+					value={stats.data?.blueprints || 0}
 				/>
 			</div>
 		</Page>
@@ -36,7 +34,7 @@ function StatItem(props: { title: string; icon: JSX.Element; value: number }) {
 			<div class="p-6 pt-0">
 				<div class="text-2xl font-bold">
 					<Suspense>
-						<Show when={props.value} keyed>
+						<Show when={props.value !== undefined} keyed>
 							{(value) => {
 								const counter = createCounter(() => ({
 									value: props.value!,

@@ -11,6 +11,7 @@ import { trpc } from "~/lib";
 import { useQueryClient } from "@tanstack/solid-query";
 import { doLogin } from "~/lib/data";
 import { parse } from "cookie-es";
+import { toast } from "solid-sonner";
 
 // Don't bundle split this Solid directive
 autofocus;
@@ -25,7 +26,7 @@ export default function () {
 	return (
 		<ModalPage>
 			<Show when={email()} fallback={<EmailPage setEmail={setEmail} />}>
-				{(email) => <CodePage email={email()} />}
+				{(email) => <CodePage email={email()} setEmail={setEmail} />}
 			</Show>
 		</ModalPage>
 	);
@@ -73,7 +74,10 @@ function EmailPage(props: { setEmail: Setter<string | undefined> }) {
 	);
 }
 
-function CodePage(props: { email: string }) {
+function CodePage(props: {
+	email: string;
+	setEmail: Setter<string | undefined>;
+}) {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const [query] = useSearchParams<{ next?: string }>();
@@ -95,6 +99,13 @@ function CodePage(props: { email: string }) {
 				}),
 			);
 		},
+		onError: (err) => {
+			// TODO: Make it let you send another code to the same email cause this will be infuriating.
+			toast.error(err.message, {
+				description: "Please try again!",
+			});
+			props.setEmail(undefined);
+		},
 	}));
 
 	const form = createForm({
@@ -113,7 +124,12 @@ function CodePage(props: { email: string }) {
 					maxLength={8}
 					class="flex"
 					onValueChange={(value) => (form.fields.code.value = value)}
-					onComplete={() => form.onSubmit()}
+					onComplete={(v) => {
+						// When pasting `onValueChange` doesn't fire so we must handle it here.
+						form.fields.code.value = v;
+						// When pasting `onComplete` double fires
+						if (!form.isSubmitting) form.onSubmit();
+					}}
 					ref={(el) => el.focus()}
 				>
 					<OtpField.Input

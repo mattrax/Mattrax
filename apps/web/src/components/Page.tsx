@@ -22,7 +22,7 @@ export function Page(
 	const overviewPageHref = () => matches()?.[0]?.path || "/";
 
 	return (
-		<div class="flex flex-col p-4 sm:px-6 sm:py-2">
+		<div class="h-full flex flex-col p-4 sm:px-6 sm:py-2">
 			<header class="flex justify-between h-[36px]">
 				<Breadcrumb class="hidden md:flex">
 					<BreadcrumbList>

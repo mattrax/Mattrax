@@ -50,3 +50,23 @@ export function urlWithSearchParams(url: string, query: URLSearchParams) {
 	if (search) return `${url}?${search}`;
 	return url;
 }
+
+export const restricted = new Set([
+	// Misleading names
+	"admin",
+	"administrator",
+	"help",
+	"mod",
+	"moderator",
+	"staff",
+	"mattrax",
+	"root",
+	"contact",
+	"support",
+	"home",
+	"employee",
+	// Reserved Mattrax routes
+	"enroll",
+	"profile",
+	"account",
+]);
