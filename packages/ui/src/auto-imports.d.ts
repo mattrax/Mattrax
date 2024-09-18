@@ -82,6 +82,7 @@ declare global {
   const IconPhMagnifyingGlass: typeof import('~icons/ph/magnifying-glass.jsx')['default']
   const IconPhMagnifyingGlassDuotone: typeof import('~icons/ph/magnifying-glass-duotone.jsx')['default']
   const IconPhMagnifyingGlassLight: typeof import('~icons/ph/magnifying-glass-light.jsx')['default']
+  const IconPhMapTrifold: typeof import('~icons/ph/map-trifold.jsx')['default']
   const IconPhPlus: typeof import('~icons/ph/plus.jsx')['default']
   const IconPhPlusCircle: typeof import('~icons/ph/plus-circle.jsx')['default']
   const IconPhPuzzlePiece: typeof import('~icons/ph/puzzle-piece.jsx')['default']
