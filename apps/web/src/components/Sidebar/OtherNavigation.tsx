@@ -14,11 +14,12 @@ export function OtherNavigation() {
 		title: string,
 		href: string,
 		Icon: (props: { class: string }) => JSX.Element,
+		newTab?: boolean,
 	) => (
 		<li>
 			<a
 				href={href}
-				target="_blank"
+				target={newTab === false ? undefined : "_blank"}
 				rel="noopener noreferrer"
 				class="flex h-7 items-center gap-2.5 overflow-hidden rounded-md px-1.5 text-xs ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
 			>
@@ -104,6 +105,7 @@ export function OtherNavigation() {
 			</li>
 
 			{item("Support", "mailto:hello@mattrax.app", IconLucideLifeBuoy)}
+			{item("Roadmap", "/roadmap", IconPhMapTrifold, false)}
 		</ul>
 	);
 }
