@@ -1,6 +1,7 @@
 import { createComputed } from "solid-js";
 import { trpc } from "./trpc";
 import type { RouterOutput } from "~/api";
+import { useTenantId } from "~/app/(dash)";
 
 // TODO: Can we allow disabling the cache for testing & artificially slowing down queries
 
@@ -66,8 +67,11 @@ export const getCachedTenants = () => {
 	}
 };
 
-export const useTenantStats = (tenantId: string) => {
-	const data = trpc.tenant.stats.createQuery();
+export const useTenantStats = () => {
+	const tenantId = useTenantId();
+	const data = trpc.tenant.stats.createQuery(() => ({
+		tenantId: tenantId(),
+	}));
 	// TODO: Caching
 	return data;
 };

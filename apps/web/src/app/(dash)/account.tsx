@@ -42,9 +42,8 @@ export default function () {
 	return (
 		<Page
 			title="Account"
-			breadcrumbs={[<BreadcrumbItem>Settings</BreadcrumbItem>]}
+			breadcrumbs={[<BreadcrumbItem>Account</BreadcrumbItem>]}
 			class="max-w-4xl flex flex-col space-y-6"
-			// hideSearch
 		>
 			<Card>
 				<CardHeader>
@@ -60,7 +59,10 @@ export default function () {
 					</Form>
 				</CardContent>
 				<CardFooter class="!px-6 !py-3 border-t">
-					<Button disabled={form.isSubmitting} onClick={() => form.onSubmit()}>
+					<Button
+						disabled={form.isSubmitting || !form.isValid}
+						onClick={() => form.onSubmit()}
+					>
 						Save
 					</Button>
 				</CardFooter>
@@ -88,7 +90,7 @@ export default function () {
 											<>
 												This will delete all of your account data, along with
 												any orphaned tenants.{" "}
-												<span class="text-red-400">
+												<span class="text-red-500">
 													Please be careful as this action is not reversible!
 												</span>
 												<br />

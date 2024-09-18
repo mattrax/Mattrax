@@ -112,7 +112,11 @@ export function createForm<S extends z.AnyZodObject>(
 
 		// Actions
 		onSubmit() {
-			if (this.isSubmitting || this.isDisabled || !this.isValid) {
+			if (!this.isValid) {
+				console.warn("Form is not valid!");
+				return;
+			}
+			if (this.isSubmitting || this.isDisabled) {
 				console.warn("Form is disabled or already submitting. Skipping...");
 				return;
 			}

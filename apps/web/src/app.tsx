@@ -107,9 +107,7 @@ export default function App() {
 										return;
 									} else if (error.data?.code === "FORBIDDEN") {
 										if (error.message === "tenant") navigate("/");
-										else
-											errorMsg =
-												"You are not allowed to access this resource!,";
+										errorMsg = `This ${error.message} does not exist or you are not allowed to access it!`;
 									} else if (error.data?.code === "NOT_FOUND") {
 										// not founds are handled at an app level with `.get` queries returning `null`
 										return;
