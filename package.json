@@ -26,19 +26,19 @@
 		"pnpm": "^9"
 	},
 	"dependencies": {
-		"@biomejs/biome": "^1.9.0",
+		"@biomejs/biome": "^1.9.1",
 		"@solidjs/start": "1.0.6",
 		"dotenv": "^16.4.5",
 		"drizzle-kit": "^0.24.2",
-		"pg": "^8.12.0",
+		"pg": "^8.13.0",
 		"tsx": "^4.19.1",
 		"typescript": "^5.6.2"
 	},
 	"devDependencies": {
 		"husky": "^9.1.6",
 		"nx": "19.7.3",
-		"sst": "3.1.10",
-		"wrangler": "^3.78.2"
+		"sst": "3.1.14",
+		"wrangler": "^3.78.4"
 	},
 	"pnpm": {
 		"patchedDependencies": {
