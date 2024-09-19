@@ -7,7 +7,7 @@ import clsx from "clsx";
 import type { ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
-const Checkbox = <T extends ValidComponent = "div">(
+const Checkbox = <T extends ValidComponent = "input">(
 	props: PolymorphicProps<T, CheckboxRootProps>,
 ) => {
 	const [, rest] = splitProps(props as any, ["class"]);
@@ -24,7 +24,7 @@ const Checkbox = <T extends ValidComponent = "div">(
 					"ui-checked:bg-primary ui-checked:text-primary-foreground ui-disabled:cursor-not-allowed ui-disabled:opacity-50",
 				)}
 				onClick={(e) => {
-					// debugger;
+					props.onClick?.(e);
 					e.stopPropagation();
 				}}
 			>

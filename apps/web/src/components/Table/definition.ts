@@ -11,6 +11,8 @@ export type ColumnDefinition<T> = {
 	title: string;
 	// Size in parts. Default is 1.
 	size?: number;
+	// TODO: optional but remove from `orderBy` if not
+	sort: (a: T, b: T) => number;
 	render: (row: T) => JSX.Element;
 };
 

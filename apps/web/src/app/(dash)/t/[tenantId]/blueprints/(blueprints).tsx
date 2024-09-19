@@ -14,6 +14,7 @@ const def = defineTable<RouterOutput["blueprint"]["list"][number]>({
 		name: {
 			title: "Name",
 			size: 2,
+			sort: (a, b) => a.name.localeCompare(b.name),
 			render: (row) => (
 				<A href={`./${row.id}`} class="text-black">
 					{row.name}
@@ -22,10 +23,14 @@ const def = defineTable<RouterOutput["blueprint"]["list"][number]>({
 		},
 		description: {
 			title: "Description",
+			sort: (a, b) => a.description.localeCompare(b.description),
 			render: (row) => row.description,
 		},
 		lastModified: {
 			title: "Last Modified",
+			sort: (a, b) =>
+				// @ts-expect-error: Trust me dates sort
+				b.lastModified - a.lastModified,
 			render: (row) => {
 				const [date] = createTimeAgo(row.lastModified);
 				return <p class="text-gray-500">{date()}</p>;
@@ -33,6 +38,7 @@ const def = defineTable<RouterOutput["blueprint"]["list"][number]>({
 		},
 		devices: {
 			title: "Devices",
+			sort: (a, b) => a.devices - b.devices,
 			render: (row) => row.devices,
 		},
 	},
