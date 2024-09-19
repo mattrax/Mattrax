@@ -13,7 +13,7 @@ import {
 } from "@mattrax/ui";
 import { Form, InputField, SelectField, createForm } from "@mattrax/ui/forms";
 import { useController } from "@mattrax/ui/lib";
-import { createEffect, type JSX } from "solid-js";
+import { type JSX, createEffect } from "solid-js";
 import { z } from "zod";
 import Bento from "~/components/Bento";
 import Cta from "~/components/Cta";

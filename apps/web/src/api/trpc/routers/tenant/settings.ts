@@ -1,15 +1,15 @@
-import { eq, and } from "drizzle-orm";
+import { waitUntil } from "@mattrax/trpc-server-function/server";
+import { TRPCError } from "@trpc/server";
+import { and, eq } from "drizzle-orm";
+import { z } from "zod";
+import { sendEmail } from "~/api/emails";
 import { accounts, tenantInvites, tenantMembers, tenants } from "~/db";
+import { env } from "~/env";
 import {
 	createTRPCRouter,
 	publicProcedure,
 	tenantProcedure,
 } from "../../helpers";
-import { TRPCError } from "@trpc/server";
-import { z } from "zod";
-import { sendEmail } from "~/api/emails";
-import { waitUntil } from "@mattrax/trpc-server-function/server";
-import { env } from "~/env";
 
 export const settingsRouter = createTRPCRouter({
 	get: tenantProcedure.query(async ({ ctx }) => {

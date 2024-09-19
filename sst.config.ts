@@ -249,6 +249,9 @@ export default $config({
 				deploymentConfigs: {
 					preview: {
 						environmentVariables: env as any,
+						placement: {
+							mode: "smart",
+						},
 					},
 					production: {
 						environmentVariables: env as any,

@@ -2,6 +2,8 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { union } from "drizzle-orm/mysql-core";
 import { z } from "zod";
 
+import { createId } from "@paralleldrive/cuid2";
+import { TRPCError } from "@trpc/server";
 import { blueprints, devices, tenantMembers, tenants } from "~/db";
 import { env } from "~/env";
 import {
@@ -9,8 +11,6 @@ import {
 	createTRPCRouter,
 	tenantProcedure,
 } from "../../helpers";
-import { TRPCError } from "@trpc/server";
-import { createId } from "@paralleldrive/cuid2";
 import { sendDiscordMessage } from "../meta";
 import { settingsRouter } from "./settings";
 

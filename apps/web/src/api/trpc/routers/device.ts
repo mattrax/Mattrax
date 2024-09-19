@@ -1,51 +1,30 @@
-import { and, eq, sql } from "drizzle-orm";
+import { asc, count, eq } from "drizzle-orm";
 import { z } from "zod";
-
-import { TRPCError } from "@trpc/server";
-import { omit } from "~/api/utils";
-import { db, deviceActions, devices, possibleDeviceActions } from "~/db";
-import { env } from "~/env";
-import { authedProcedure, createTRPCRouter, tenantProcedure } from "../helpers";
-
-// const deviceProcedure = authedProcedure
-// 	.input(z.object({ id: z.string() }))
-// 	.use(async ({ next, input, ctx, type }) => {
-// 		const device = await ctx.db.query.devices.findFirst({
-// 			where: eq(devices.id, input.id),
-// 		});
-// 		if (!device) throw new TRPCError({ code: "NOT_FOUND", message: "device" });
-
-// 		const tenant = await ctx.ensureTenantMember(device.tenantPk);
-
-// 		return withTenant(tenant, () =>
-// 			next({ ctx: { device, tenant } }).then((result) => {
-// 				// TODO: Right now we invalidate everything but we will need to be more specific in the future
-// 				// if (type === "mutation") invalidate(tenant.orgSlug, tenant.slug);
-// 				return result;
-// 			}),
-// 		);
-// 	});
+import { blueprints, db, devices } from "~/db";
+import { createTRPCRouter, tenantProcedure } from "../helpers";
 
 export const deviceRouter = createTRPCRouter({
-	// list: tenantProcedure.query(async ({ ctx }) => {
-	// 	return await ctx.db
-	// 		.select({
-	// 			id: devices.id,
-	// 			name: devices.name,
-	// 			enrollmentType: devices.enrollmentType,
-	// 			os: devices.os,
-	// 			serialNumber: devices.serialNumber,
-	// 			lastSynced: devices.lastSynced,
-	// 			owner: {
-	// 				id: users.id,
-	// 				name: users.name,
-	// 			},
-	// 			enrolledAt: devices.enrolledAt,
-	// 		})
-	// 		.from(devices)
-	// 		.leftJoin(users, eq(users.pk, devices.owner))
-	// 		.where(and(eq(devices.tenantPk, ctx.tenant.pk)));
-	// }),
+	list: tenantProcedure.query(async ({ ctx }) => {
+		return await db
+			.select({
+				id: devices.id,
+				name: devices.name,
+				enrollmentType: devices.enrollmentType,
+				os: devices.os,
+				serialNumber: devices.serialNumber,
+				lastSynced: devices.lastSynced,
+				blueprint: {
+					id: blueprints.id,
+					name: blueprints.name,
+				},
+				enrolledAt: devices.enrolledAt,
+			})
+			.from(devices)
+			.where(eq(devices.tenantPk, ctx.tenant.pk))
+			.innerJoin(blueprints, eq(blueprints.pk, devices.blueprint))
+			.orderBy(asc(devices.name));
+	}),
+
 	// get: authedProcedure
 	// 	.input(z.object({ deviceId: z.string() }))
 	// 	.query(async ({ ctx, input }) => {

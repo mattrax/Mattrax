@@ -1,4 +1,4 @@
-import { Show, Suspense, type JSX } from "solid-js";
+import { type JSX, Show, Suspense } from "solid-js";
 import { createCounter } from "~/components/Counter";
 import { Page } from "~/components/Page";
 import { useTenantStats } from "~/lib/data";
