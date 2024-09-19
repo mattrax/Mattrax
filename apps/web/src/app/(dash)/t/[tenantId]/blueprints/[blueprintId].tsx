@@ -1,6 +1,6 @@
 import { BreadcrumbItem, BreadcrumbLink } from "@mattrax/ui/breadcrumb";
 import { z } from "zod";
-import { Page, Page2 } from "~/components/Page";
+import { Page } from "~/components/Page";
 import { useZodParams } from "~/lib/useZodParams";
 
 export default function () {
@@ -10,7 +10,8 @@ export default function () {
 	const blueprintName = "Marketing Blueprint";
 
 	return (
-		<Page2
+		<Page
+			title={null}
 			breadcrumbs={[
 				<BreadcrumbItem>
 					<BreadcrumbLink href="../../blueprints">Blueprints</BreadcrumbLink>
@@ -41,6 +42,6 @@ export default function () {
 					<h1>Hello World</h1>
 				</div>
 			</div>
-		</Page2>
+		</Page>
 	);
 }
