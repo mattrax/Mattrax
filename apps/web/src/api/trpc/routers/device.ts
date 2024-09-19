@@ -11,7 +11,7 @@ export const deviceRouter = createTRPCRouter({
 				name: devices.name,
 				enrollmentType: devices.enrollmentType,
 				os: devices.os,
-				serialNumber: devices.serialNumber,
+				serial: devices.serialNumber,
 				lastSynced: devices.lastSynced,
 				blueprint: {
 					id: blueprints.id,

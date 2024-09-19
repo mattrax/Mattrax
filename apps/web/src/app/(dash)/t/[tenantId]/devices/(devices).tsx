@@ -15,6 +15,7 @@ const def = defineTable<RouterOutput["device"]["list"][number]>({
 		name: {
 			title: "Name",
 			size: 2,
+			sort: (a, b) => a.name.localeCompare(b.name),
 			render: (row) => (
 				<A href={`./${row.id}`} class="text-black">
 					{row.name}
@@ -23,10 +24,12 @@ const def = defineTable<RouterOutput["device"]["list"][number]>({
 		},
 		enrollmentType: {
 			title: "Enrollment Type",
+			sort: (a, b) => a.enrollmentType.localeCompare(b.enrollmentType),
 			render: (row) => <Badge>{row.enrollmentType.toUpperCase()}</Badge>,
 		},
 		os: {
 			title: "Operating System",
+			sort: (a, b) => a.os.localeCompare(b.os),
 			render: (row) => (
 				<span class="h-full">
 					{match(row.os)
@@ -42,10 +45,12 @@ const def = defineTable<RouterOutput["device"]["list"][number]>({
 		},
 		serial: {
 			title: "Serial Number",
-			render: (row) => row.serialNumber,
+			sort: (a, b) => a.serial.localeCompare(b.serial),
+			render: (row) => row.serial,
 		},
 		blueprint: {
 			title: "Blueprint",
+			sort: (a, b) => a.blueprint.name.localeCompare(b.blueprint.name),
 			render: (row) => {
 				return (
 					<A href={`../blueprints/${row.blueprint.id}`} class="text-black">
@@ -56,6 +61,9 @@ const def = defineTable<RouterOutput["device"]["list"][number]>({
 		},
 		enrolledAt: {
 			title: "Enrolled At",
+			sort: (a, b) =>
+				// @ts-expect-error: Trust me dates can sort
+				b.enrolledAt - a.enrolledAt,
 			render: (row) => {
 				const [date] = createTimeAgo(row.enrolledAt);
 				return <p class="text-gray-500">{date()}</p>;
@@ -106,8 +114,7 @@ const def = defineTable<RouterOutput["device"]["list"][number]>({
 	},
 	search: (t, query) => {
 		let score = stringSimilarity(t.name, query);
-		if (t.serialNumber)
-			score = Math.max(score, stringSimilarity(t.serialNumber, query));
+		if (t.serial) score = Math.max(score, stringSimilarity(t.serial, query));
 		return score;
 	},
 });
