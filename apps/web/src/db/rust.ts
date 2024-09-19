@@ -230,7 +230,6 @@ exportQueries(
 		// 	},
 		// 	query: (args) => {
 		// 		const scopedPolicies = scopedPoliciesForDeviceSubquery(args.device_pk);
-
 		// 		// We get the latest deploy of each policy.
 		// 		const latestDeploy_inner = db
 		// 			.select({
@@ -244,7 +243,6 @@ exportQueries(
 		// 			.innerJoin(policyDeploy, eq(scopedPolicies.pk, policyDeploy.policyPk))
 		// 			.groupBy(policyDeploy.policyPk)
 		// 			.as("li");
-
 		// 		// We join back in the data into `latestDeploy_inner` as `groupBy` limits the columns we can select in the inner query.
 		// 		const latestDeploy = db
 		// 			.select({
@@ -259,7 +257,6 @@ exportQueries(
 		// 				eq(latestDeploy_inner.deployPk, policyDeploy.pk),
 		// 			)
 		// 			.as("l");
-
 		// 		// We get the last deployed version of each policy for this device.
 		// 		const lastDeploy_inner = db
 		// 			.select({
@@ -280,7 +277,6 @@ exportQueries(
 		// 			)
 		// 			.groupBy(policyDeploy.policyPk)
 		// 			.as("ji");
-
 		// 		// We join back in the data into `lastDeploy_inner` as `groupBy` limits the columns we can select in the inner query.
 		// 		const lastDeploy = db
 		// 			.select({
@@ -303,7 +299,6 @@ exportQueries(
 		// 				),
 		// 			)
 		// 			.as("j");
-
 		// 		return db
 		// 			.select({
 		// 				scope: latestDeploy.scope,
@@ -329,9 +324,7 @@ exportQueries(
 		// // 	},
 		// // 	query: (args) => {
 		// // 		const scopedPolicies = scopedPoliciesForDeviceSubquery(args.device_pk);
-
 		// // 		// TODO: Avoid selecting policies we've already removed -> Maybe we add a marker to `result`
-
 		// // 		return db
 		// // 			.select({
 		// // 				pk: policyDeploy.pk,

@@ -46,7 +46,6 @@ export const deviceRouter = createTRPCRouter({
 	// 		.leftJoin(users, eq(users.pk, devices.owner))
 	// 		.where(and(eq(devices.tenantPk, ctx.tenant.pk)));
 	// }),
-
 	// get: authedProcedure
 	// 	.input(z.object({ deviceId: z.string() }))
 	// 	.query(async ({ ctx, input }) => {
@@ -74,12 +73,9 @@ export const deviceRouter = createTRPCRouter({
 	// 			.leftJoin(users, eq(users.pk, devices.owner))
 	// 			.where(eq(devices.id, input.deviceId));
 	// 		if (!device) return null;
-
 	// 		await ctx.ensureTenantMember(device.tenantPk);
-
 	// 		return omit(device, ["tenantPk"]);
 	// 	}),
-
 	// action: authedProcedure
 	// 	.input(
 	// 		z.object({
@@ -92,9 +88,7 @@ export const deviceRouter = createTRPCRouter({
 	// 			where: eq(devices.id, input.deviceId),
 	// 		});
 	// 		if (!device) return null;
-
 	// 		await ctx.ensureTenantMember(device.tenantPk);
-
 	// 		if (input.action !== "sync") {
 	// 			await ctx.db.insert(deviceActions).values({
 	// 				action: input.action,
@@ -102,16 +96,12 @@ export const deviceRouter = createTRPCRouter({
 	// 				createdBy: ctx.account.pk,
 	// 			});
 	// 		}
-
 	// 		// TODO: Talk with WNS or APNS to ask the device to checkin to MDM.
 	// 		console.log("TODO: Trigger MDM device checkin");
-
 	// 		return {};
 	// 	}),
-
 	// assignments: deviceProcedure.query(async ({ ctx }) => {
 	// 	const { device } = ctx;
-
 	// 	const [p, a] = await Promise.all([
 	// 		ctx.db
 	// 			.select({ pk: policies.pk, id: policies.id, name: policies.name })
@@ -141,10 +131,8 @@ export const deviceRouter = createTRPCRouter({
 	// 				eq(applicationAssignables.applicationPk, applications.pk),
 	// 			),
 	// 	]);
-
 	// 	return { policies: p, apps: a };
 	// }),
-
 	// addAssignments: deviceProcedure
 	// 	.input(
 	// 		z.object({
@@ -160,12 +148,10 @@ export const deviceRouter = createTRPCRouter({
 	// 		// biome-ignore lint/style/useSingleVarDeclarator: <explanation>
 	// 		const pols: Array<number> = [],
 	// 			apps: Array<number> = [];
-
 	// 		input.assignments.forEach((a) => {
 	// 			if (a.variant === "policy") pols.push(a.pk);
 	// 			else apps.push(a.pk);
 	// 		});
-
 	// 		const ops: Promise<unknown>[] = [];
 	// 		if (pols.length > 0)
 	// 			ops.push(
@@ -184,7 +170,6 @@ export const deviceRouter = createTRPCRouter({
 	// 						},
 	// 					}),
 	// 			);
-
 	// 		if (apps.length > 0)
 	// 			ops.push(
 	// 				db
@@ -202,17 +187,14 @@ export const deviceRouter = createTRPCRouter({
 	// 						},
 	// 					}),
 	// 			);
-
 	// 		await db.transaction((db) => Promise.all(ops));
 	// 	}),
-
 	// generateEnrollmentSession: tenantProcedure
 	// 	.input(z.object({ userId: z.string().nullable() }))
 	// 	.mutation(async ({ ctx, input }) => {
 	// 		const p = new URLSearchParams();
 	// 		p.set("mode", "mdm");
 	// 		p.set("servername", env.VITE_PROD_ORIGIN);
-
 	// 		let data: { uid: number; upn: string } | undefined = undefined;
 	// 		if (input.userId) {
 	// 			const [user] = await db
@@ -223,14 +205,12 @@ export const deviceRouter = createTRPCRouter({
 	// 				.from(users)
 	// 				.where(eq(users.id, input.userId));
 	// 			if (!user) throw new TRPCError({ code: "NOT_FOUND", message: "user" }); // TODO: Handle this on the frontend
-
 	// 			p.set("username", user.upn);
 	// 			data = {
 	// 				uid: user.pk,
 	// 				upn: user.upn,
 	// 			};
 	// 		}
-
 	// 		const jwt = await createEnrollmentSession(
 	// 			data
 	// 				? {
@@ -244,9 +224,7 @@ export const deviceRouter = createTRPCRouter({
 	// 			// 7 days
 	// 			7 * 24 * 60,
 	// 		);
-
 	// 		p.set("accesstoken", jwt);
-
 	// 		return `ms-device-enrollment:?${p.toString()}`;
 	// 	}),
 });

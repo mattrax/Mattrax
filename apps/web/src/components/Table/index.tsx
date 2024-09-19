@@ -7,7 +7,11 @@ import { For } from "solid-js";
 // TODO: Maybe rename cause this overlaps with `@mattrax/ui`
 // TODO: Export data button
 
-export function Table() {
+type TableProps<T> = {
+	data: T[];
+};
+
+export function Table<T>(props: TableProps<T>) {
 	return (
 		<div class="space-y-4 w-full">
 			<TableHeader />
@@ -139,7 +143,8 @@ export function Table() {
 							</tr>
 						</thead>
 						<tbody class="[&amp;_tr:last-child]:border-0">
-							<For each={Array.from({ length: 10 })}>{(i) => <TableRow />}</For>
+							{/* // TODO: Suspense */}
+							<For each={props.data}>{(row) => <TableRow row={row} />}</For>
 						</tbody>
 					</table>
 				</div>
@@ -246,7 +251,7 @@ function TableHeader() {
 	);
 }
 
-function TableRow() {
+function TableRow<T>(props: { row: T }) {
 	return (
 		<tr
 			class="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
@@ -261,6 +266,7 @@ function TableRow() {
 					value="on"
 					class="peer h-4 w-4 shrink-0 rounded-sm border border-primary shadow focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground translate-y-[2px]"
 					aria-label="Select row"
+					disabled
 				></button>
 			</td>
 			<td class="p-2 align-middle [&amp;:has([role=checkbox])]:pr-0 [&amp;>[role=checkbox]]:translate-y-[2px]">
@@ -268,12 +274,13 @@ function TableRow() {
 			</td>
 			<td class="p-2 align-middle [&amp;:has([role=checkbox])]:pr-0 [&amp;>[role=checkbox]]:translate-y-[2px]">
 				<div class="flex space-x-2">
-					<div class="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-foreground">
+					{/* <div class="inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-foreground">
 						Feature
-					</div>
+					</div> */}
 					<span class="max-w-[500px] truncate font-medium">
-						You can't quantify the program without synthesizing the neural OCR
-						interface!
+						{/* You can't quantify the program without synthesizing the neural OCR
+						interface! */}
+						{props.row.name}
 					</span>
 				</div>
 			</td>

@@ -8,7 +8,7 @@ export default function () {
 			title="Devices"
 			breadcrumbs={[<BreadcrumbItem>Devices</BreadcrumbItem>]}
 		>
-			<Table />
+			<Table data={[]} />
 		</Page>
 	);
 }

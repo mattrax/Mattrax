@@ -1,35 +1,18 @@
+// TODO: Remove this file once testing is done
+
 import { BreadcrumbItem } from "@mattrax/ui";
 import { Suspense } from "solid-js";
 import { useTenantId } from "~/app/(dash)";
 import { Page } from "~/components/Page";
 import { Table } from "~/components/Table";
 import { trpc } from "~/lib";
-import {
-	createCollectedGenerator,
-	refetchWhenStale,
-} from "~/lib/createCollectedGenerator";
 
 export default function () {
 	const tenantId = useTenantId();
-	const ctx = trpc.useContext();
 
-	const blueprints = createCollectedGenerator((signal) =>
-		ctx.blueprint.list.fetch(
-			{
-				tenantId: tenantId(),
-			},
-			{
-				queryKey: [
-					["blueprint", "list"],
-					{
-						tenantId: tenantId(),
-					},
-				],
-				signal,
-			},
-		),
-	);
-	refetchWhenStale(blueprints);
+	const blueprints = trpc.blueprint.list2.createQuery(() => ({
+		tenantId: tenantId(),
+	}));
 
 	return (
 		<Page
@@ -41,8 +24,7 @@ export default function () {
 			]}
 		>
 			<Suspense fallback={<p>TODO: Loading...</p>}>
-				{/* <p>{blueprints.loading.toString()}</p> */}
-				<Table data={blueprints.data.flat() || []} />
+				<Table data={blueprints.data?.flat() || []} />
 			</Suspense>
 		</Page>
 	);
