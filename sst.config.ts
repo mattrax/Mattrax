@@ -252,6 +252,9 @@ export default $config({
 					},
 					production: {
 						environmentVariables: env as any,
+						placement: {
+							mode: "smart",
+						},
 					},
 				},
 			},
