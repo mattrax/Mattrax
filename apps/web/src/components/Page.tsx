@@ -7,7 +7,7 @@ import {
 	Input,
 } from "@mattrax/ui";
 import { useCurrentMatches } from "@solidjs/router";
-import { For, Show, type JSX, type ParentProps } from "solid-js";
+import { For, type JSX, type ParentProps, Show } from "solid-js";
 
 export function Page(
 	props: ParentProps & {

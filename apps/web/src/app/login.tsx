@@ -1,17 +1,17 @@
 import OtpField from "@corvu/otp-field";
 import { Button, CardDescription } from "@mattrax/ui";
 import { Form, InputField, createForm } from "@mattrax/ui/forms";
+import { autofocus } from "@solid-primitives/autofocus";
 import { Navigate, useNavigate, useSearchParams } from "@solidjs/router";
 import { type Setter, Show, createSignal, startTransition } from "solid-js";
 import { z } from "zod";
-import { autofocus } from "@solid-primitives/autofocus";
 import { ModalPage } from "~/components/ModalPage";
 
-import { trpc } from "~/lib";
 import { useQueryClient } from "@tanstack/solid-query";
-import { doLogin } from "~/lib/data";
 import { parse } from "cookie-es";
 import { toast } from "solid-sonner";
+import { trpc } from "~/lib";
+import { doLogin } from "~/lib/data";
 
 // Don't bundle split this Solid directive
 autofocus;

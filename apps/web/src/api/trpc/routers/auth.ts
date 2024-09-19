@@ -2,22 +2,22 @@ import { flushResponse, waitUntil } from "@mattrax/trpc-server-function/server";
 import { revalidate } from "@solidjs/router";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
-import { generateId, type User } from "lucia";
+import { type User, generateId } from "lucia";
 import { alphabet, generateRandomString } from "oslo/crypto";
 import { appendResponseHeader, deleteCookie } from "vinxi/server";
 import { z } from "zod";
 
 import {
-	checkAuth,
 	type DatabaseUserAttributes,
+	checkAuth,
 	lucia,
 	setIsLoggedInCookie,
 } from "~/api/auth";
 import { sendEmail } from "~/api/emails";
 import { accountLoginCodes, accounts, db, tenants } from "~/db";
+import { env } from "~/env";
 import { authedProcedure, createTRPCRouter, publicProcedure } from "../helpers";
 import { sendDiscordMessage } from "./meta";
-import { env } from "~/env";
 
 async function mapAccount(account: DatabaseUserAttributes) {
 	return {

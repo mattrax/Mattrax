@@ -1,7 +1,7 @@
-import { getPlatformShortcut, Kbd } from "@mattrax/ui";
+import { Kbd, getPlatformShortcut } from "@mattrax/ui";
 import { Navigate } from "@solidjs/router";
 import { parse } from "cookie-es";
-import { Suspense, type ParentProps, ErrorBoundary } from "solid-js";
+import { ErrorBoundary, type ParentProps, Suspense } from "solid-js";
 import { z } from "zod";
 import {
 	Sidebar,

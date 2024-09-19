@@ -1,7 +1,7 @@
 import { createComputed } from "solid-js";
-import { trpc } from "./trpc";
 import type { RouterOutput } from "~/api";
 import { useTenantId } from "~/app/(dash)";
+import { trpc } from "./trpc";
 
 // TODO: Can we allow disabling the cache for testing & artificially slowing down queries
 

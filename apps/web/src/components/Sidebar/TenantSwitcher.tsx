@@ -1,16 +1,16 @@
 import {
 	DropdownMenu,
-	DropdownMenuTrigger,
 	DropdownMenuContent,
-	DropdownMenuLabel,
 	DropdownMenuItem,
-	DropdownMenuShortcut,
+	DropdownMenuLabel,
 	DropdownMenuSeparator,
+	DropdownMenuShortcut,
+	DropdownMenuTrigger,
 	Skeleton,
 } from "@mattrax/ui";
-import { Navigate, A } from "@solidjs/router";
+import { A, Navigate } from "@solidjs/router";
 import { minidenticon } from "minidenticons";
-import { Suspense, Show, For, type JSX } from "solid-js";
+import { For, type JSX, Show, Suspense } from "solid-js";
 import { z } from "zod";
 import { useAccount, useTenants } from "~/lib/data";
 import { useZodParams } from "~/lib/useZodParams";

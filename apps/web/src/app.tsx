@@ -9,10 +9,15 @@ import {
 	keepPreviousData,
 	onlineManager,
 } from "@tanstack/solid-query";
-import { Suspense, lazy, onCleanup, startTransition } from "solid-js";
+import {
+	ErrorBoundary,
+	Suspense,
+	lazy,
+	onCleanup,
+	startTransition,
+} from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 
-import { MErrorBoundary } from "~c/MattraxErrorBoundary";
 import { isTRPCClientError, trpc } from "./lib";
 
 import "@mattrax/ui/css";
@@ -142,12 +147,18 @@ export default function App() {
 							}),
 						);
 
+						// TODO: Style this error boundary
 						return (
-							<MErrorBoundary>
+							<ErrorBoundary
+								fallback={(err) => {
+									console.error(err);
+									return null;
+								}}
+							>
 								{import.meta.env.DEV && <SolidQueryDevtools />}
 								<Toaster />
 								<Suspense>{props.children}</Suspense>
-							</MErrorBoundary>
+							</ErrorBoundary>
 						);
 					}}
 				>
