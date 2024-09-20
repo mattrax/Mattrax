@@ -1,45 +1,146 @@
+import {
+	Button,
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuLabel,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+	Separator,
+	buttonVariants,
+} from "@mattrax/ui";
 import { BreadcrumbItem, BreadcrumbLink } from "@mattrax/ui/breadcrumb";
-import { z } from "zod";
+import { A, useCurrentMatches } from "@solidjs/router";
+import clsx from "clsx";
+import { For, type ParentProps, Switch } from "solid-js";
 import { Page } from "~/components/Page";
-import { useZodParams } from "~/lib/useZodParams";
+import { useBlueprint } from "~/lib/data";
 
-export default function () {
-	const params = useZodParams({ blueprintId: z.string() });
+const SEPARATOR = Symbol("SEPARATOR");
+const sidebar = [
+	{
+		name: "General",
+		href: "",
+	},
+	{
+		name: "Applications",
+		href: "apps",
+	},
+	{
+		name: "Security",
+		href: "security",
+	},
+	{
+		name: "Wi-Fi",
+		href: "wifi",
+	},
+	{
+		name: "Restrictions",
+		href: "restrictions",
+	},
+	{
+		name: "Custom",
+		href: "custom",
+	},
+	SEPARATOR,
+	{
+		name: "Devices",
+		href: "devices",
+	},
+] as const;
 
-	// TODO: Hook up the API
-	const blueprintName = "Marketing Blueprint";
+export default function (props: ParentProps) {
+	const blueprint = useBlueprint();
+	const matches = useCurrentMatches();
 
+	const title = () =>
+		matches()[matches().length - 1]?.route.info?.title || null;
+	const description = () =>
+		matches()[matches().length - 1]?.route.info?.description || null;
+
+	// TODO: Suspense
 	return (
 		<Page
-			title={null}
+			title={"Blueprint 0"}
 			breadcrumbs={[
 				<BreadcrumbItem>
 					<BreadcrumbLink href="../../blueprints">Blueprints</BreadcrumbLink>
 				</BreadcrumbItem>,
 				<BreadcrumbItem class="font-bold text-black/60">
-					{blueprintName}
+					{blueprint.data?.name}
 				</BreadcrumbItem>,
 			]}
+			right={
+				<DropdownMenu placement="top-end">
+					<DropdownMenuTrigger as={Button} variant="ghost" class="border">
+						Actions
+						<IconPhCaretDown class="ml-1" />
+					</DropdownMenuTrigger>
+					<DropdownMenuContent>
+						<DropdownMenuItem onClick={() => alert("todo")}>
+							<IconPhArrowCounterClockwise class="mr-1" />
+							Sync
+						</DropdownMenuItem>
+						<DropdownMenuItem onClick={() => alert("todo")}>
+							<IconPhCopy class="mr-1" />
+							Duplicate
+						</DropdownMenuItem>
+						<DropdownMenuItem onClick={() => alert("todo")}>
+							<IconPhTrash class="mr-1" />
+							Delete
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			}
 		>
-			<div class="flex items-center space-x-4 p-4 w-full">
-				<IconPhScroll class="w-20 h-20" />
-				<div>
-					<h1 class="text-3xl font-bold">{blueprintName}</h1>
-					<h2 class="flex items-center mt-1 opacity-80 text-sm">
-						{/* // TODO: Show the supported OS's */}
-						<IconLogosMicrosoftWindowsIcon class="mr-2" />
-					</h2>
-				</div>
-			</div>
+			<div class="flex flex-col space-y-8 lg:flex-row lg:space-x-6 lg:space-y-0 h-screen">
+				<aside class="flex space-x-2 lg:flex-col lg:space-x-0 lg:space-y-1 w-full max-w-52 pr-4 border-r-2 h-full">
+					<div class="flex justify-between">
+						<h1 class="text-3xl font-bold tracking-tight !mt-2 mb-4 md:mb-5">
+							Blueprint 0
+						</h1>
 
-			<div class="flex flex-col space-y-8 lg:flex-row lg:space-x-12 lg:space-y-0">
-				<aside class="-mx-4 lg:w-1/5">
-					{/* // TODO: Implement the sidebar: https://github.com/shadcn-ui/ui/blob/main/apps/www/components/sidebar-nav.tsx */}
-					<h1>TODO: Navbar</h1>
-					{/* <SidebarNav items={sidebarNavItems} /> */}
+						{/* <div>{props.right ?? null}</div> */}
+					</div>
+
+					<For each={sidebar}>
+						{(item) => {
+							if (item === SEPARATOR)
+								return (
+									<div class=" py-1">
+										<Separator />
+									</div>
+								);
+
+							return (
+								<A
+									end
+									href={item.href}
+									class={clsx(
+										buttonVariants({ variant: "ghost" }),
+										"!justify-start",
+									)}
+									activeClass="bg-muted hover:bg-muted"
+									inactiveClass="hover:bg-transparent hover:underline"
+								>
+									{item.name}
+								</A>
+							);
+						}}
+					</For>
+
+					{/* <Button onClick={() => alert("todo")} class="mb-2 mt-8">
+						Save
+					</Button> */}
 				</aside>
-				<div class="flex-1 lg:max-w-2xl">
-					<h1>Hello World</h1>
+				<div class="flex-1 space-y-6">
+					{/* <div>
+						<h3 class="text-lg font-medium">{title()}</h3>
+						<p class="text-sm text-muted-foreground">{description()}</p>
+					</div>
+					<Separator /> */}
+
+					{props.children}
 				</div>
 			</div>
 		</Page>

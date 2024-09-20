@@ -46,7 +46,7 @@ export const publicProcedure = t.procedure.use(async ({ next }) => {
 });
 
 const isTenantMember = cache(async (tenantPk: number, accountPk: number) => {
-	const [org] = await db
+	const [tenant] = await db
 		.select({})
 		.from(tenants)
 		.where(eq(tenants.pk, tenantPk))
@@ -58,7 +58,7 @@ const isTenantMember = cache(async (tenantPk: number, accountPk: number) => {
 			),
 		);
 
-	return org !== undefined;
+	return tenant !== undefined;
 }, "isTenantMember");
 
 // Authenticated procedure

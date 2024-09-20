@@ -1,4 +1,4 @@
-import { BreadcrumbItem, Button } from "@mattrax/ui";
+import { BreadcrumbItem, Button, buttonVariants } from "@mattrax/ui";
 import { createTimeAgo } from "@solid-primitives/date";
 import { A } from "@solidjs/router";
 import { Suspense } from "solid-js";
@@ -71,6 +71,11 @@ export default function () {
 					<BreadcrumbItem>Blueprints</BreadcrumbItem>
 				</BreadcrumbItem>,
 			]}
+			right={
+				<A href="./new" class={buttonVariants({})}>
+					Create Blueprint
+				</A>
+			}
 		>
 			<Suspense fallback={<p>TODO: Loading...</p>}>
 				<Table def={def} data={blueprints.data?.flat()} />
