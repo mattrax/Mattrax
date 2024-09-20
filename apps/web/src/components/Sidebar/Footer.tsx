@@ -71,7 +71,7 @@ export function Footer() {
 			<DropdownMenuContent class="w-56">
 				<DropdownMenuGroup>
 					<DropdownMenuItem as={A} href="/account" class="gap-2">
-						<IconPhCircleWavyCheck class="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+						<IconPhUserGear class="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
 						Account
 					</DropdownMenuItem>
 				</DropdownMenuGroup>
