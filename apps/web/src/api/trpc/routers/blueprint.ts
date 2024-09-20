@@ -1,3 +1,4 @@
+import { createId } from "@paralleldrive/cuid2";
 import { and, asc, count, eq } from "drizzle-orm";
 import { z } from "zod";
 import { blueprints, db, devices } from "~/db";
@@ -50,35 +51,20 @@ export const blueprintRouter = createTRPCRouter({
 	create: tenantProcedure
 		.input(
 			z.object({
-				// id: z.string(),
 				name: z.string().min(1).max(255),
 			}),
 		)
-		.mutation(({ ctx, input }) => {
-			// TODO
+		.mutation(async ({ ctx, input }) => {
+			const id = createId();
+
+			await ctx.db.insert(blueprints).values({
+				id,
+				tenantPk: ctx.tenant.pk,
+				name: input.name,
+			});
+
+			return id;
 		}),
-
-	// ctx.db.transaction(async (db) => {
-	// 	const id = createId();
-	// 	await db.insert(tenants).values({
-	// 		id,
-	// 		name: input.name,
-	// 		billingEmail: input.billingEmail,
-	// 	});
-
-	// 	const [tenant] = await db
-	// 		.select({ pk: tenants.pk })
-	// 		.from(tenants)
-	// 		.where(eq(tenants.id, id));
-	// 	if (!tenant) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
-
-	// 	await db.insert(tenantMembers).values({
-	// 		tenantPk: tenant.pk,
-	// 		accountPk: ctx.account.pk,
-	// 	});
-
-	// 	return id;
-	// }),
 
 	update: tenantProcedure
 		.input(
