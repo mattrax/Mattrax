@@ -114,7 +114,7 @@ export function Page(
 					</BreadcrumbList>
 				</Breadcrumb>
 			</header>
-			{/* <Show when={props.title !== null}>
+			<Show when={props.title !== null}>
 				<div class="flex justify-between">
 					<h1 class="text-3xl font-bold tracking-tight !mt-2 mb-4 md:mb-5">
 						{props.title}
@@ -122,7 +122,7 @@ export function Page(
 
 					<div>{props.right ?? null}</div>
 				</div>
-			</Show> */}
+			</Show>
 			<main class={props.class}>{props.children}</main>
 		</div>
 	);
