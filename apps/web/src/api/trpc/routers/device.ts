@@ -1,7 +1,9 @@
 import { asc, count, eq } from "drizzle-orm";
 import { z } from "zod";
 import { blueprints, db, devices } from "~/db";
+import { env } from "~/env";
 import { createTRPCRouter, tenantProcedure } from "../helpers";
+import { sendDiscordMessage } from "./meta";
 
 export const deviceRouter = createTRPCRouter({
 	list: tenantProcedure.query(async ({ ctx }) => {
@@ -25,36 +27,39 @@ export const deviceRouter = createTRPCRouter({
 			.orderBy(asc(devices.name));
 	}),
 
-	// get: authedProcedure
-	// 	.input(z.object({ deviceId: z.string() }))
-	// 	.query(async ({ ctx, input }) => {
-	// 		const [device] = await ctx.db
-	// 			.select({
-	// 				id: devices.id,
-	// 				name: devices.name,
-	// 				description: devices.description,
-	// 				enrollmentType: devices.enrollmentType,
-	// 				os: devices.os,
-	// 				serialNumber: devices.serialNumber,
-	// 				manufacturer: devices.manufacturer,
-	// 				azureADDeviceId: devices.azureADDeviceId,
-	// 				freeStorageSpaceInBytes: devices.freeStorageSpaceInBytes,
-	// 				totalStorageSpaceInBytes: devices.totalStorageSpaceInBytes,
-	// 				imei: devices.imei,
-	// 				model: devices.model,
-	// 				lastSynced: devices.lastSynced,
-	// 				enrolledAt: devices.enrolledAt,
-	// 				tenantPk: devices.tenantPk,
-	// 				ownerId: users.id,
-	// 				ownerName: users.name,
-	// 			})
-	// 			.from(devices)
-	// 			.leftJoin(users, eq(users.pk, devices.owner))
-	// 			.where(eq(devices.id, input.deviceId));
-	// 		if (!device) return null;
-	// 		await ctx.ensureTenantMember(device.tenantPk);
-	// 		return omit(device, ["tenantPk"]);
-	// 	}),
+	get: tenantProcedure
+		.input(z.object({ deviceId: z.string() }))
+		.query(async ({ ctx, input }) => {
+			const [device] = await ctx.db
+				.select({
+					id: devices.id,
+					name: devices.name,
+					description: devices.description,
+					enrollmentType: devices.enrollmentType,
+					os: devices.os,
+					serial: devices.serialNumber,
+					manufacturer: devices.manufacturer,
+					// azureADDeviceId: devices.azureADDeviceId,
+					// freeStorageSpaceInBytes: devices.freeStorageSpaceInBytes,
+					// totalStorageSpaceInBytes: devices.totalStorageSpaceInBytes,
+					// imei: devices.imei,
+					// model: devices.model,
+					// lastSynced: devices.lastSynced,
+					// enrolledAt: devices.enrolledAt,
+					// tenantPk: devices.tenantPk,
+					// ownerId: users.id,
+					// ownerName: users.name,
+				})
+				.from(devices)
+				.where(
+					and(
+						eq(devices.tenantPk, ctx.tenant.pk),
+						eq(devices.id, input.deviceId),
+					),
+				);
+			return device;
+		}),
+
 	// action: authedProcedure
 	// 	.input(
 	// 		z.object({
@@ -112,62 +117,7 @@ export const deviceRouter = createTRPCRouter({
 	// 	]);
 	// 	return { policies: p, apps: a };
 	// }),
-	// addAssignments: deviceProcedure
-	// 	.input(
-	// 		z.object({
-	// 			assignments: z.array(
-	// 				z.object({
-	// 					pk: z.number(),
-	// 					variant: z.enum(["policy", "application"]),
-	// 				}),
-	// 			),
-	// 		}),
-	// 	)
-	// 	.mutation(async ({ ctx: { device, db }, input }) => {
-	// 		// biome-ignore lint/style/useSingleVarDeclarator: <explanation>
-	// 		const pols: Array<number> = [],
-	// 			apps: Array<number> = [];
-	// 		input.assignments.forEach((a) => {
-	// 			if (a.variant === "policy") pols.push(a.pk);
-	// 			else apps.push(a.pk);
-	// 		});
-	// 		const ops: Promise<unknown>[] = [];
-	// 		if (pols.length > 0)
-	// 			ops.push(
-	// 				db
-	// 					.insert(policyAssignments)
-	// 					.values(
-	// 						pols.map((pk) => ({
-	// 							pk: device.pk,
-	// 							policyPk: pk,
-	// 							variant: sql`'device'`,
-	// 						})),
-	// 					)
-	// 					.onDuplicateKeyUpdate({
-	// 						set: {
-	// 							pk: sql`${policyAssignments.pk}`,
-	// 						},
-	// 					}),
-	// 			);
-	// 		if (apps.length > 0)
-	// 			ops.push(
-	// 				db
-	// 					.insert(applicationAssignables)
-	// 					.values(
-	// 						apps.map((pk) => ({
-	// 							pk: device.pk,
-	// 							applicationPk: pk,
-	// 							variant: sql`'device'`,
-	// 						})),
-	// 					)
-	// 					.onDuplicateKeyUpdate({
-	// 						set: {
-	// 							pk: sql`${applicationAssignables.pk}`,
-	// 						},
-	// 					}),
-	// 			);
-	// 		await db.transaction((db) => Promise.all(ops));
-	// 	}),
+
 	// generateEnrollmentSession: tenantProcedure
 	// 	.input(z.object({ userId: z.string().nullable() }))
 	// 	.mutation(async ({ ctx, input }) => {
@@ -206,4 +156,14 @@ export const deviceRouter = createTRPCRouter({
 	// 		p.set("accesstoken", jwt);
 	// 		return `ms-device-enrollment:?${p.toString()}`;
 	// 	}),
+
+	assignBlueprint: tenantProcedure
+		.input(
+			z.object({
+				ids: z.array(z.string()),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			// TODO
+		}),
 });

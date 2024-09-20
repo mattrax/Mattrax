@@ -41,9 +41,8 @@ export default function (props: ParentProps) {
 
 	// If unauthenticated send to login
 	// It's *super important* this is in the layout, not the child because the children are lazy loaded.
-	if (parse(document.cookie).isLoggedIn !== "true") {
+	if (parse(document.cookie).isLoggedIn !== "true")
 		return <Navigate href="/login" />;
-	}
 
 	const tenants = useTenants();
 

@@ -27,7 +27,8 @@ export const settingsRouter = createTRPCRouter({
 					email: accounts.email,
 				})
 				.from(accounts)
-				.leftJoin(tenantMembers, eq(tenantMembers.tenantPk, ctx.tenant.pk)),
+				.leftJoin(tenantMembers, eq(tenantMembers.tenantPk, ctx.tenant.pk))
+				.where(eq(tenantMembers.tenantPk, ctx.tenant.pk)),
 			ctx.db
 				.select({
 					email: tenantInvites.email,

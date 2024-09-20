@@ -1,4 +1,9 @@
-import { type ComponentProps, createUniqueId, splitProps } from "solid-js";
+import {
+	type ComponentProps,
+	type JSX,
+	createUniqueId,
+	splitProps,
+} from "solid-js";
 
 import clsx from "clsx";
 import { Checkbox, Label } from "..";
@@ -14,7 +19,7 @@ export function CheckboxField<T, K extends KeysMatching<T, boolean>>(
 		name: K;
 		label?: string;
 		labelClasses?: string;
-		description?: string;
+		description?: JSX.Element;
 		descriptionClasses?: string;
 		onChange?: (e: boolean) => void;
 	},

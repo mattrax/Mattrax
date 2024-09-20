@@ -1,5 +1,5 @@
-import { Navigate } from "@solidjs/router";
-import { Show, Suspense } from "solid-js";
+import { type NavigateProps, useLocation, useNavigate } from "@solidjs/router";
+import { Show, Suspense, startTransition } from "solid-js";
 import { useAccount, useTenants } from "~/lib/data";
 
 export default function () {
@@ -23,8 +23,20 @@ export default function () {
 		>
 			{/* Send to first tenant or create new tenant */}
 			<Show when={tenants.data} keyed>
-				{(tenants) => <Navigate href={`/t/${tenants[0]?.id || "new"}`} />}
+				{(tenants) => (
+					<NavigateInTransition href={`/t/${tenants[0]?.id || "new"}`} />
+				)}
 			</Show>
 		</Suspense>
 	);
+}
+
+// Copy of `Navigate` from Solid Router that does the navigation in a transition
+export function NavigateInTransition(props: NavigateProps) {
+	const navigate = useNavigate();
+	const location = useLocation();
+	const { href, state } = props;
+	const path = typeof href === "function" ? href({ navigate, location }) : href;
+	startTransition(() => navigate(path, { replace: true, state }));
+	return null;
 }

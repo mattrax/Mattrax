@@ -64,17 +64,19 @@ export function Navigation(props: {
 								<div class="line-clamp-1 pr-6">Devices</div>
 							</div>
 						</A>
-						<CollapsibleTrigger
-							as={Button}
-							variant="ghost"
-							class="absolute right-1 h-6 w-6 rounded-md p-0 ring-zinc-950 transition-all focus-visible:ring-2 data-[state=open]:rotate-90 dark:ring-zinc-300"
-							disabled={props.disabled}
-						>
-							<span>
-								<IconPhCaretDown class="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
-							</span>
-							<span class="sr-only">Toggle</span>
-						</CollapsibleTrigger>
+						<div class="absolute right-1 flex items-center">
+							<CollapsibleTrigger
+								as={Button}
+								variant="ghost"
+								class="!h-1 !w-1 !p-[10px] rounded-md ring-zinc-950 transition-all focus-visible:ring-2 data-[state=open]:rotate-90 dark:ring-zinc-300"
+								disabled={props.disabled}
+							>
+								<span>
+									<IconPhCaretDown class="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+								</span>
+								<span class="sr-only">Toggle</span>
+							</CollapsibleTrigger>
+						</div>
 					</div>
 					<CollapsibleContent class="px-4 py-0.5">
 						<ul class="grid border-l px-2">
@@ -92,6 +94,9 @@ export function Navigation(props: {
 			</Collapsible>
 			{item("Blueprints", "blueprints", IconPhScroll)}
 			{item("Settings", "settings", IconPhGear)}
+			<Show when={import.meta.env.DEV}>
+				{item("Composer", "composer", IconPhNotePencil)}
+			</Show>
 		</ul>
 	);
 }
