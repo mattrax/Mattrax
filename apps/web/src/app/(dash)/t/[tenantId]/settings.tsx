@@ -7,6 +7,7 @@ import {
 	CardFooter,
 	CardHeader,
 	CardTitle,
+	Separator,
 } from "@mattrax/ui";
 import { Form, InputField, createForm } from "@mattrax/ui/forms";
 import { useNavigate } from "@solidjs/router";
@@ -67,6 +68,105 @@ export default function () {
 			breadcrumbs={[<BreadcrumbItem>Settings</BreadcrumbItem>]}
 			class="max-w-4xl flex flex-col space-y-6"
 		>
+			<div class="flex flex-col space-y-8 lg:flex-row lg:space-x-12 lg:space-y-0 h-screen">
+				{/* <aside class="flex space-x-2 lg:flex-col lg:space-x-0 lg:space-y-1 w-full max-w-40 pr-2 border-r-2 h-full">
+					<For each={sidebar}>
+						{(item) => (
+							<A
+								end
+								href={item.href}
+								class={clsx(
+									buttonVariants({ variant: "ghost" }),
+									"!justify-start",
+								)}
+								activeClass="bg-muted hover:bg-muted"
+								inactiveClass="hover:bg-transparent hover:underline"
+							>
+								{item.name}
+							</A>
+						)}
+					</For>
+				</aside> */}
+				<div class="flex-1 lg:max-w-2xl">
+					<div class="space-y-6">
+						<div>
+							<h3 class="text-lg font-medium">Tenant settings</h3>
+							<p class="text-sm text-muted-foreground">
+								Manage your tenant's general configuration
+							</p>
+						</div>
+						<Separator />
+
+						<Form form={form} fieldsetClass="flex flex-col space-y-6">
+							<InputField form={form} name="name" label="Name" />
+							<InputField
+								form={form}
+								name="billingEmail"
+								label="Billing Email"
+							/>
+						</Form>
+					</div>
+
+					<div class="space-y-6 pt-4">
+						<div>
+							<h3 class="text-lg font-medium">Billing</h3>
+							<p class="text-sm text-muted-foreground">
+								Manage your Mattrax plan and monitor usage
+							</p>
+						</div>
+						<Separator />
+
+						<p class="text-sm text-zinc-500 dark:text-zinc-400">Coming soon</p>
+					</div>
+
+					<div class="space-y-6 pt-4">
+						<div>
+							<h3 class="text-lg font-medium">Danger zone</h3>
+							<p class="text-sm text-muted-foreground">TODO: Something smart</p>
+						</div>
+						<Separator />
+
+						<ConfirmDialog>
+							{(confirm) => (
+								<Button
+									variant="destructive"
+									disabled={!tenant()}
+									onClick={() =>
+										confirm({
+											title: "Delete tenant?",
+											description: () => (
+												<>
+													This will delete all of your tenant data, including
+													all devices and blueprints!{" "}
+													<span class="text-red-500">
+														Please be careful as this action is not reversible!
+													</span>
+													<br />
+													<br />
+													{/* // TODO: Remove this once the backend is implemented properly */}
+													Be aware it can take up to 24 hours for your tenant to
+													be fully deleted. It will continue to show up in the
+													UI for that time.
+												</>
+											),
+											action: "Delete",
+											closeButton: null,
+											inputText: tenant()?.name,
+											onConfirm: async () =>
+												deleteTenant.mutateAsync({
+													tenantId: tenantId(),
+												}),
+										})
+									}
+								>
+									Delete
+								</Button>
+							)}
+						</ConfirmDialog>
+					</div>
+				</div>
+			</div>
+
 			<Card>
 				<CardHeader>
 					<CardTitle>Tenant settings</CardTitle>

@@ -1,14 +1,15 @@
-import { createComputed } from "solid-js";
+import { z } from "zod";
 import type { RouterOutput } from "~/api";
 import { useTenantId } from "~/app/(dash)";
 import { trpc } from "./trpc";
+import { useZodParams } from "./useZodParams";
 
 // TODO: Can we allow disabling the cache for testing & artificially slowing down queries
 
 const ACCOUNT_LS_KEY = "account";
 const TENANTS_LS_KEY = "tenants";
 
-export const useAccount = () => {
+export function useAccount() {
 	const query = trpc.auth.me.createQuery(void 0, () => ({
 		// initialData: getCachedAccount(),
 	}));
@@ -23,9 +24,9 @@ export const useAccount = () => {
 	// });
 
 	return query;
-};
+}
 
-export const getCachedAccount = () => {
+export function getCachedAccount() {
 	try {
 		const data = localStorage.getItem(ACCOUNT_LS_KEY);
 		if (!data) return undefined;
@@ -34,13 +35,13 @@ export const getCachedAccount = () => {
 	} catch (err) {
 		return undefined;
 	}
-};
+}
 
 export function doLogin(user: RouterOutput["auth"]["me"]) {
 	localStorage.setItem(ACCOUNT_LS_KEY, JSON.stringify(user));
 }
 
-export const useTenants = () => {
+export function useTenants() {
 	const query = trpc.tenant.list.createQuery(void 0, () => ({
 		// initialData: getCachedTenants(),
 	}));
@@ -55,9 +56,9 @@ export const useTenants = () => {
 	// });
 
 	return query;
-};
+}
 
-export const getCachedTenants = () => {
+export function getCachedTenants() {
 	try {
 		const data = localStorage.getItem(TENANTS_LS_KEY);
 		if (!data) return undefined;
@@ -65,13 +66,34 @@ export const getCachedTenants = () => {
 	} catch (err) {
 		return undefined;
 	}
-};
+}
 
-export const useTenantStats = () => {
+export function useTenantStats() {
 	const tenantId = useTenantId();
 	const data = trpc.tenant.stats.createQuery(() => ({
 		tenantId: tenantId(),
 	}));
+	// TODO: Handle 404
 	// TODO: Caching
 	return data;
-};
+}
+
+export function useBlueprint() {
+	const tenantId = useTenantId();
+	const params = useZodParams({ blueprintId: z.string() });
+	// TODO: Handle 404
+	return trpc.blueprint.get.createQuery(() => ({
+		tenantId: tenantId(),
+		id: params.blueprintId,
+	}));
+}
+
+export function useDevice() {
+	const tenantId = useTenantId();
+	const params = useZodParams({ blueprintId: z.string() });
+	// TODO: Handle 404
+	return trpc.device.get.createQuery(() => ({
+		tenantId: tenantId(),
+		deviceId: params.blueprintId,
+	}));
+}

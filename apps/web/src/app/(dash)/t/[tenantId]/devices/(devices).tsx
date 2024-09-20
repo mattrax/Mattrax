@@ -101,16 +101,12 @@ const def = defineTable<RouterOutput["device"]["list"][number]>({
 		},
 	},
 	bulkActions: {
-		delete: () => (
-			<Button variant="destructive" size="sm" onClick={() => alert("TODO")}>
-				Delete
-			</Button>
-		),
 		assign: () => (
 			<Button size="sm" onClick={() => alert("TODO")}>
 				Assign blueprint
 			</Button>
 		),
+		// TODO: Device actions
 	},
 	search: (t, query) => {
 		let score = stringSimilarity(t.name, query);
