@@ -61,7 +61,8 @@ export default function (props: ParentProps) {
 	// TODO: Suspense
 	return (
 		<Page
-			title={"Blueprint 0"}
+			// title={"Blueprint 0"}
+			title={null}
 			breadcrumbs={[
 				<BreadcrumbItem>
 					<BreadcrumbLink href="../../blueprints">Blueprints</BreadcrumbLink>
@@ -133,12 +134,12 @@ export default function (props: ParentProps) {
 						Save
 					</Button> */}
 				</aside>
-				<div class="flex-1 space-y-6">
-					{/* <div>
+				<div class="flex-1 space-y-6 pt-4">
+					<div>
 						<h3 class="text-lg font-medium">{title()}</h3>
 						<p class="text-sm text-muted-foreground">{description()}</p>
 					</div>
-					<Separator /> */}
+					<Separator />
 
 					{props.children}
 				</div>
