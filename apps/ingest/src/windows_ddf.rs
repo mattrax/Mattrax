@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ms_ddf::{AllowedValueGroupedNodes, DFFormatVariant, MgmtTree, Node, ScopeVariant};
+use ms_ddf::{AllowedValueGroupedNodes, DFFormatVariant, MgmtTree, Node};
 use serde::Serialize;
 use specta::{NamedType, Type};
 use specta_typescript::Typescript;

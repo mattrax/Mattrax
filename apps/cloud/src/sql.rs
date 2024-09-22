@@ -10,19 +10,18 @@ use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     extract::{Request, State},
+    http::StatusCode,
     middleware::Next,
     response::{IntoResponse, Response},
     routing::post,
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
-// use hyper::StatusCode;
 use mysql_async::{
     consts::{ColumnFlags, ColumnType},
     prelude::*,
     Column, Row, Transaction, TxOpts, Value,
 };
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::RwLock;
