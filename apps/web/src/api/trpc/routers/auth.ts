@@ -27,6 +27,12 @@ async function mapAccount(account: DatabaseUserAttributes) {
 	};
 }
 
+function formatDefaultName(name: string) {
+	const firstChar = name[0];
+	if (!firstChar) return "User";
+	return `${firstChar.toUpperCase()}${name.slice(1).replaceAll("-", " ").replaceAll("_", " ")}`;
+}
+
 export const authRouter = createTRPCRouter({
 	sendLoginCode: publicProcedure
 		.input(
@@ -65,7 +71,7 @@ export const authRouter = createTRPCRouter({
 					.insert(accounts)
 					.values({
 						id: generateId(16),
-						name: parts[0] ?? "",
+						name: formatDefaultName(parts[0] || ""),
 						email: input.email,
 					})
 					.onDuplicateKeyUpdate({

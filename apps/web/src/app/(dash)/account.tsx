@@ -41,9 +41,8 @@ export default function () {
 
 	return (
 		<Page
-			title="Account"
-			breadcrumbs={[<BreadcrumbItem>Account</BreadcrumbItem>]}
-			class="max-w-4xl flex flex-col space-y-6"
+			breadcrumbs={[<BreadcrumbItem bold>Account</BreadcrumbItem>]}
+			class="p-4 max-w-4xl flex flex-col space-y-6"
 		>
 			<Card>
 				<CardHeader>

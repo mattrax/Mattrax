@@ -1,4 +1,4 @@
-import { Badge, BreadcrumbItem, Button } from "@mattrax/ui";
+import { Badge, BreadcrumbItem, Button, buttonVariants } from "@mattrax/ui";
 import { createTimeAgo } from "@solid-primitives/date";
 import { A } from "@solidjs/router";
 import { Suspense } from "solid-js";
@@ -123,15 +123,23 @@ export default function () {
 
 	return (
 		<Page
-			title="Devices"
-			breadcrumbs={[
-				<BreadcrumbItem>
-					<BreadcrumbItem>Devices</BreadcrumbItem>
-				</BreadcrumbItem>,
-			]}
+			breadcrumbs={[<BreadcrumbItem bold>Devices</BreadcrumbItem>]}
+			class="p-4"
 		>
 			<Suspense fallback={<p>TODO: Loading...</p>}>
-				<Table def={def} data={devices.data?.flat()} />
+				<Table
+					def={def}
+					data={devices.data?.flat()}
+					left={
+						<A
+							href="./enroll"
+							class={buttonVariants({ size: "sm", variant: "outline" })}
+						>
+							<IconPhLink class="pr-1 h-5 w-5" />
+							Enroll
+						</A>
+					}
+				/>
 			</Suspense>
 		</Page>
 	);

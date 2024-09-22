@@ -37,8 +37,7 @@ export default function () {
 
 	return (
 		<Page
-			title={null}
-			breadcrumbs={[<BreadcrumbItem>Create Tenant</BreadcrumbItem>]}
+			breadcrumbs={[<BreadcrumbItem bold>Create Tenant</BreadcrumbItem>]}
 			class="w-full h-full flex flex-col space-y-6 items-center justify-center"
 		>
 			<Card class="max-w-md">

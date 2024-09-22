@@ -7,7 +7,7 @@ export default function () {
 	const stats = useTenantStats();
 
 	return (
-		<Page title="Overview" breadcrumbs={[]}>
+		<Page breadcrumbs={[]} class="p-4">
 			<div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
 				<StatItem
 					title="Devices"

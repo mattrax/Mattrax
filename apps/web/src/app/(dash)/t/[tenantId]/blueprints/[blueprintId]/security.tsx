@@ -13,14 +13,6 @@ import { useTenantId } from "~/app/(dash)";
 import { trpc } from "~/lib";
 import { useBlueprint } from "~/lib/data";
 
-export const route = {
-	info: {
-		title: "Security",
-		description:
-			"Configure common security settings for devices in this blueprint",
-	},
-};
-
 export default function () {
 	const tenantId = useTenantId();
 	const blueprint = useBlueprint();

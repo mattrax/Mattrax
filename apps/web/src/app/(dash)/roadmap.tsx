@@ -6,58 +6,61 @@ import { Page } from "~/components/Page";
 export default function () {
 	return (
 		<Page
-			title="Roadmap"
-			breadcrumbs={[<BreadcrumbItem>Roadmap</BreadcrumbItem>]}
-			class="p-4 max-w-xl"
+			breadcrumbs={[<BreadcrumbItem bold>Roadmap</BreadcrumbItem>]}
+			class="p-4 max-w-xl flex flex-col space-y-4"
 		>
-			<div class="relative pl-6 after:absolute after:inset-y-0 after:left-0 after:w-px after:bg-muted-foreground/20">
-				<div class="grid gap-6">
-					<For each={Object.entries(roadmap)}>
-						{([title, section]) => (
-							<div class="grid gap-1 text-sm relative">
-								<div
-									class={clsx(
-										"aspect-square w-3 rounded-full absolute left-0 translate-x-[-29.5px] z-10 top-2",
-										Object.values(section.items).every(
-											(status) => status === "done",
-										)
-											? "bg-green-500"
-											: Object.values(section.items).some(
-														(status) => status === "progress",
-													)
-												? "bg-orange-500"
-												: "bg-muted-foreground",
-									)}
-								/>
-								<div class="font-medium text-xl">{title}</div>
-								<Show when={section.description}>
-									{(description) => (
-										<div class="text-md text-zinc-500 dark:text-zinc-400">
-											{description()}
-										</div>
-									)}
-								</Show>
-								<ul class="flex flex-col space-y-1 list-disc pl-2 ml-2">
-									<For each={Object.entries(section.items)}>
-										{([item, status]) => (
-											<li
-												class={clsx(
-													"text-sm text-zinc-500 dark:text-zinc-400 font-light",
-													status === "done"
-														? "line-through marker:text-green-500"
-														: status === "progress"
-															? "italic marker:text-orange-500"
-															: "",
-												)}
-											>
-												{item}
-											</li>
+			<h1 class="text-3xl font-bold tracking-tight">Roadmap</h1>
+
+			<div class="px-4">
+				<div class="relative pl-6 after:absolute after:inset-y-0 after:left-0 after:w-px after:bg-muted-foreground/20">
+					<div class="grid gap-6">
+						<For each={Object.entries(roadmap)}>
+							{([title, section]) => (
+								<div class="grid gap-1 text-sm relative">
+									<div
+										class={clsx(
+											"aspect-square w-3 rounded-full absolute left-0 translate-x-[-29.5px] z-10 top-2",
+											Object.values(section.items).every(
+												(status) => status === "done",
+											)
+												? "bg-green-500"
+												: Object.values(section.items).some(
+															(status) => status === "progress",
+														)
+													? "bg-orange-500"
+													: "bg-muted-foreground",
 										)}
-									</For>
-								</ul>
-							</div>
-						)}
-					</For>
+									/>
+									<div class="font-medium text-xl">{title}</div>
+									<Show when={section.description}>
+										{(description) => (
+											<div class="text-md text-zinc-500 dark:text-zinc-400">
+												{description()}
+											</div>
+										)}
+									</Show>
+									<ul class="flex flex-col space-y-1 list-disc pl-2 ml-2">
+										<For each={Object.entries(section.items)}>
+											{([item, status]) => (
+												<li
+													class={clsx(
+														"text-sm text-zinc-500 dark:text-zinc-400 font-light",
+														status === "done"
+															? "line-through marker:text-green-500"
+															: status === "progress"
+																? "italic marker:text-orange-500"
+																: "",
+													)}
+												>
+													{item}
+												</li>
+											)}
+										</For>
+									</ul>
+								</div>
+							)}
+						</For>
+					</div>
 				</div>
 			</div>
 		</Page>
