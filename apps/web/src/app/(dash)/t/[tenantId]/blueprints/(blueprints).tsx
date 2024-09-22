@@ -65,20 +65,23 @@ export default function () {
 
 	return (
 		<Page
-			title="Blueprints"
-			breadcrumbs={[
-				<BreadcrumbItem>
-					<BreadcrumbItem>Blueprints</BreadcrumbItem>
-				</BreadcrumbItem>,
-			]}
-			right={
-				<A href="./new" class={buttonVariants({})}>
-					Create Blueprint
-				</A>
-			}
+			breadcrumbs={[<BreadcrumbItem bold>Blueprints</BreadcrumbItem>]}
+			class="p-4"
 		>
 			<Suspense fallback={<p>TODO: Loading...</p>}>
-				<Table def={def} data={blueprints.data?.flat()} />
+				<Table
+					def={def}
+					data={blueprints.data?.flat()}
+					left={
+						<A
+							href="./new"
+							class={buttonVariants({ size: "sm", variant: "outline" })}
+						>
+							<IconPhPencilDuotone class="pr-1 h-5 w-5" />
+							Create
+						</A>
+					}
+				/>
 			</Suspense>
 		</Page>
 	);

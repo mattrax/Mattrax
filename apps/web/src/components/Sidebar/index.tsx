@@ -1,15 +1,25 @@
+import { createContextProvider } from "@solid-primitives/context";
 import clsx from "clsx";
 import { type ParentProps, createSignal } from "solid-js";
 
+const [Provider, useCtx] = createContextProvider(
+	(props: { initial: number }) => {
+		const [count, setCount] = createSignal(props.initial);
+		const increment = () => setCount(count() + 1);
+		return { count, increment };
+	},
+);
+
 export function SidebarLayout(props: ParentProps) {
-	const [sidebar, setSidebar] = createSignal<"open" | "closed">("open");
+	const [sidebar, setSidebar] = createSignal<"full" | "icons" | false>("full");
 
 	return (
 		<div
 			data-sidebar={sidebar()}
 			style={{
-				"--sidebar-width": "16rem",
+				"--sidebar-width": sidebar() === "icons" ? "3rem" : "16rem",
 			}}
+			aria-hidden={sidebar() === false}
 			class={
 				"min-h-screen max-w-screen bg-zinc-100/50 pl-0 transition-all duration-300 ease-in-out data-[sidebar=closed]:pl-0 sm:pl-[--sidebar-width] dark:bg-zinc-800/50"
 			}
