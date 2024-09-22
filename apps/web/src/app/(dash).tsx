@@ -64,20 +64,6 @@ export default function (props: ParentProps) {
 					<SidebarItem class="mt-auto">
 						<SidebarLabel>Other</SidebarLabel>
 						<OtherNavigation />
-						<div class="relative flex items-center">
-							<button
-								type="button"
-								class="bg-zinc-50 min-w-8 flex h-8 flex-1 items-center gap-2 overflow-hidden rounded-md px-1.5 text-sm text-zinc-500 font-medium outline-none ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:ring-2 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 disabled:pointer-events-none disabled:opacity-50"
-								disabled
-							>
-								<IconPhMagnifyingGlass class="h-4 w-4 shrink-0" />
-								<div class="flex flex-1 overflow-hidden">
-									<div class="line-clamp-1 pr-6">Search</div>
-								</div>
-
-								<Kbd variant="light">{getPlatformShortcut()} K</Kbd>
-							</button>
-						</div>
 					</SidebarItem>
 				</SidebarContent>
 				<SidebarFooter>

@@ -16,6 +16,7 @@ import { createContextProvider } from "@solid-primitives/context";
 import { ReactiveSet } from "@solid-primitives/set";
 import {
 	For,
+	type JSX,
 	Show,
 	batch,
 	createEffect,
@@ -176,13 +177,14 @@ const [Provider, useCtx] = createContextProvider(
 type TableProps<T> = {
 	def: TableDefinition<T>;
 	data: T[] | undefined;
+	left?: JSX.Element;
 };
 
 export function Table<T>(props: TableProps<T>) {
 	return (
 		<Provider {...(props as any)}>
 			<div class="space-y-4 w-full">
-				<FilterBar />
+				<FilterBar left={props.left} />
 				<div class="rounded-md border">
 					<div class="relative w-full overflow-auto">
 						<table class="w-full caption-bottom text-sm">
@@ -199,12 +201,14 @@ export function Table<T>(props: TableProps<T>) {
 	);
 }
 
-function FilterBar() {
+function FilterBar(props: { left?: JSX.Element }) {
 	const ctx = useCtx();
 
 	return (
 		<div class="flex items-center justify-between w-full">
 			<div class="flex flex-1 items-center space-x-2">
+				{props.left ?? null}
+
 				<Input
 					placeholder="Search..."
 					value={ctx.search()?.[0] ?? ""}

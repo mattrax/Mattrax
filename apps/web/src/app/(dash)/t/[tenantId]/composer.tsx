@@ -1,7 +1,7 @@
 import { PolicyComposer } from "@mattrax/policy-composer";
-import { BreadcrumbItem } from "@mattrax/ui";
+import { BreadcrumbItem, BreadcrumbLink } from "@mattrax/ui";
 import { createAsync } from "@solidjs/router";
-import { Suspense, createSignal } from "solid-js";
+import { Suspense } from "solid-js";
 import { createStore } from "solid-js/store";
 import { Page } from "~/components/Page";
 
@@ -32,10 +32,11 @@ export default function () {
 
 	return (
 		<Page
-			title={null}
 			breadcrumbs={[
-				<BreadcrumbItem>Policy A</BreadcrumbItem>,
-				<BreadcrumbItem>Composer</BreadcrumbItem>,
+				<BreadcrumbItem>
+					<BreadcrumbLink href="#todo">Policy A</BreadcrumbLink>
+				</BreadcrumbItem>,
+				<BreadcrumbItem bold>Composer</BreadcrumbItem>,
 			]}
 		>
 			<div class="w-screen h-screen">

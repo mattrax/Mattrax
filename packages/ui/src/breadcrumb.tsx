@@ -16,8 +16,15 @@ const BreadcrumbList = (props: ComponentProps<"ol">) => (
 	/>
 );
 
-const BreadcrumbItem = (props: ComponentProps<"li">) => (
-	<li class="inline-flex items-center gap-1.5" {...props} />
+const BreadcrumbItem = (props: ComponentProps<"li"> & { bold?: boolean }) => (
+	<li
+		class={clsx(
+			"inline-flex items-center gap-1.5",
+			props.class,
+			props.bold ? "font-bold text-black/60" : "",
+		)}
+		{...props}
+	/>
 );
 
 const BreadcrumbLink = (props: ComponentProps<typeof A>) => (

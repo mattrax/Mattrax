@@ -1,8 +1,9 @@
-import { Button } from "@mattrax/ui";
+import { BreadcrumbItem, BreadcrumbLink, Button } from "@mattrax/ui";
 import { Form, InputField, createForm } from "@mattrax/ui/forms";
 import { useNavigate } from "@solidjs/router";
 import { z } from "zod";
 import { useTenantId } from "~/app/(dash)";
+import { Page } from "~/components/Page";
 import { trpc } from "~/lib";
 
 // TODO: I wanna merge this with the blueprint editor so you can start authoring without doing a create first?
@@ -27,14 +28,20 @@ export default function () {
 	});
 
 	return (
-		<Form
-			form={form}
-			fieldsetClass="flex flex-col space-y-6 max-w-2xl"
+		<Page
+			breadcrumbs={[
+				<BreadcrumbItem>
+					<BreadcrumbLink href="..">Blueprints</BreadcrumbLink>
+				</BreadcrumbItem>,
+				<BreadcrumbItem bold>New</BreadcrumbItem>,
+			]}
 			class="p-4"
 		>
-			<InputField form={form} name="name" label="Name" />
+			<Form form={form} fieldsetClass="flex flex-col space-y-6 max-w-2xl">
+				<InputField form={form} name="name" label="Name" />
 
-			<Button type="submit">Create</Button>
-		</Form>
+				<Button type="submit">Create</Button>
+			</Form>
+		</Page>
 	);
 }

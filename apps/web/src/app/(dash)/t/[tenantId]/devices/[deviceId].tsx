@@ -12,14 +12,11 @@ export default function () {
 
 	return (
 		<Page
-			title={null}
 			breadcrumbs={[
 				<BreadcrumbItem>
 					<BreadcrumbLink href="../../devices">Devices</BreadcrumbLink>
 				</BreadcrumbItem>,
-				<BreadcrumbItem class="font-bold text-black/60">
-					{deviceName}
-				</BreadcrumbItem>,
+				<BreadcrumbItem bold>{deviceName}</BreadcrumbItem>,
 			]}
 		>
 			<div class="flex items-center space-x-4 p-4 w-full">
