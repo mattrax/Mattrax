@@ -1,9 +1,7 @@
-import { asc, count, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { blueprints, db, devices } from "~/db";
-import { env } from "~/env";
 import { createTRPCRouter, tenantProcedure } from "../helpers";
-import { sendDiscordMessage } from "./meta";
 
 export const deviceRouter = createTRPCRouter({
 	list: tenantProcedure.query(async ({ ctx }) => {

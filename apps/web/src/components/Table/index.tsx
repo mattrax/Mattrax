@@ -403,7 +403,7 @@ function TableBody() {
 					<td class="p-2 align-middle [&amp;:has([role=checkbox])]:pr-0 [&amp;>[role=checkbox]]:translate-y-[2px]">
 						<Checkbox
 							checked={ctx.selected.has(i())}
-							onClick={(e) => {
+							onClick={() => {
 								// TODO: Bulk deselect
 								// if (e.shiftKey && ctx.lastChecked()) {
 								// 	alert("TODO: Multi-select");

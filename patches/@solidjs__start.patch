@@ -1,0 +1,31 @@
+diff --git a/config/index.js b/config/index.js
+index 0b53874cc5eb5cff12c99230c079d261cc71bd31..dfb0144edac87285e8d0bb77bf9b4f3323f48839 100644
+--- a/config/index.js
++++ b/config/index.js
+@@ -123,7 +123,7 @@ export function defineConfig(baseConfig = {}) {
+               resolve: {
+                 alias: {
+                   "#start/app": join(process.cwd(), start.appRoot, `app${entryExtension}`),
+-                  "~": join(process.cwd(), start.appRoot),
++                  // "~": join(process.cwd(), start.appRoot),
+                   ...(!start.ssr
+                     ? {
+                         "@solidjs/start/server": "@solidjs/start/server/spa"
+@@ -188,7 +188,7 @@ export function defineConfig(baseConfig = {}) {
+               resolve: {
+                 alias: {
+                   "#start/app": join(process.cwd(), start.appRoot, `app${entryExtension}`),
+-                  "~": join(process.cwd(), start.appRoot),
++                  // "~": join(process.cwd(), start.appRoot),
+                   ...(start.experimental.islands
+                     ? {
+                         "@solidjs/start/client": "@solidjs/start/client/islands"
+@@ -258,7 +258,7 @@ export function defineConfig(baseConfig = {}) {
+               resolve: {
+                 alias: {
+                   "#start/app": join(process.cwd(), start.appRoot, `app${entryExtension}`),
+-                  "~": join(process.cwd(), start.appRoot),
++                  // "~": join(process.cwd(), start.appRoot),
+                   ...(!start.ssr
+                     ? {
+                         "@solidjs/start/server": "@solidjs/start/server/spa"

@@ -38,6 +38,7 @@ export default function () {
 		onSubmit: (data) =>
 			updateBlueprint.mutateAsync({
 				tenantId: tenantId(),
+				id: "todo", // TODO
 				...data,
 			}),
 	});

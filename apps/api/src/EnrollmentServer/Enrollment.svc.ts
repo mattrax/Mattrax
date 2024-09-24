@@ -35,6 +35,7 @@ export async function POST({ request }: APIEvent) {
 		]["#text"],
 	);
 
+	// @ts-expect-error
 	const certStore = enrollmentType === "Device" ? "Device" : "User";
 
 	if (authBst !== "TODOSpecialTokenWhichVerifiesAuth") {

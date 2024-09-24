@@ -1,13 +1,14 @@
 {
 	"extends": "../../tsconfig.json",
 	"compilerOptions": {
-		"composite": false,
-		"jsx": "preserve",
+		"composite": true,
+		"outDir": "./distt",
 		"noEmit": true,
+		"jsx": "preserve",
 		"jsxImportSource": "solid-js",
 		"types": ["vinxi/client", "vite/client", "@mattrax/ui/types"],
 		"moduleResolution": "Bundler",
-		"allowImportingTsExtensions": true,
+		"baseUrl": ".",
 		"paths": {
 			"~/*": ["./src/*"],
 			"~c/*": ["./src/components/*"],
@@ -24,6 +25,7 @@
 		{ "path": "../../packages/email" },
 		{ "path": "../../packages/trpc-server-function" },
 		{ "path": "../../packages/policy" },
-		{ "path": "../../packages/policy-composer" }
+		{ "path": "../../packages/policy-composer" },
+		{ "path": "../api" }
 	]
 }

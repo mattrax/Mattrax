@@ -7,7 +7,6 @@ import type { H3Event } from "vinxi/server";
 import { ZodError, z } from "zod";
 
 import { db, tenantMembers, tenants } from "~/db";
-import { withAccount } from "../account";
 import { checkAuth } from "../auth";
 
 export const createTRPCContext = (event: H3Event) => {
@@ -67,17 +66,15 @@ export const authedProcedure = publicProcedure.use(async ({ next }) => {
 
 	if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
-	return withAccount(data.account, () =>
-		next({
-			ctx: {
-				...data,
-				ensureTenantMember: async (tenantPk: number) => {
-					if (!isTenantMember(tenantPk, data.account.pk))
-						throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
-				},
+	return next({
+		ctx: {
+			...data,
+			ensureTenantMember: async (tenantPk: number) => {
+				if (!isTenantMember(tenantPk, data.account.pk))
+					throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
 			},
-		}),
-	);
+		},
+	});
 });
 
 const getTenant = cache(async (tenantId: string, accountPk: number) => {

@@ -127,25 +127,7 @@ export default $config({
 			}
 		}
 
-		// MDM Identity Authority
-		const identityKey = new tls.PrivateKey("identityKey", {
-			algorithm: "ECDSA",
-			ecdsaCurve: "P256",
-		});
-
-		// TODO: Can we automate renewing this certificate???
-		const identityCert = new tls.SelfSignedCert("identityCert", {
-			allowedUses: ["cert_signing", "crl_signing"], // TODO: critical: true
-			validityPeriodHours: 365 * 24, // 1 year
-			privateKeyPem: identityKey.privateKeyPem,
-			isCaCertificate: true, // TODO: critical: true
-			subject: {
-				commonName: "Mattrax Device Authority",
-				organization: "Mattax Inc.",
-			},
-		});
-
-		// `apps/cloud`
+		// `apps/cloud` - SQL proxy
 		const cloudBuild = new command.local.Command("cloudBuild", {
 			create:
 				"./.github/cl.sh build --arm64 --release -p mx-cloud --bin lambda",
@@ -160,28 +142,17 @@ export default $config({
 		const cloud = new sst.aws.Function(
 			"cloud",
 			{
-				...($dev
-					? {
-							runtime: "nodejs20.x",
-							handler: "apps/cloud/live.handler",
-						}
-					: {
-							handler: "bootstrap",
-							architecture: "arm64",
-							runtime: "provided.al2023",
-							// SST/Pulumi is having problems with `dependsOn` so we force their hand.
-							bundle: cloudBuild.stdout.apply(() =>
-								path.join(process.cwd(), "target", "lambda", "lambda"),
-							),
-						}),
+				handler: "bootstrap",
+				architecture: "arm64",
+				runtime: "provided.al2023",
+				// SST/Pulumi is having problems with `dependsOn` so we force their hand.
+				bundle: cloudBuild.stdout.apply(() =>
+					path.join(process.cwd(), "target", "lambda", "lambda"),
+				),
 				memory: "128 MB",
 				environment: {
 					DATABASE_URL: DATABASE_URL.value,
 					INTERNAL_SECRET: INTERNAL_SECRET.result,
-					ENROLLMENT_DOMAIN: renderZoneDomain(zone, webSubdomain),
-					MANAGE_DOMAIN: renderZoneDomain(zone, manageSubdomain),
-					IDENTITY_CERT: identityCert.certPem,
-					IDENTITY_KEY: identityKey.privateKeyPemPkcs8,
 				},
 				// TODO: We should probs setup IAM on this???
 				url: true,
@@ -237,8 +208,8 @@ export default $config({
 				sub: $app.stage === "prod" ? "cloud" : `${$app.stage}-web.dev`,
 			},
 			build: {
-				command: "pnpm web build",
-				output: path.join("apps", "web", "dist"),
+				command: "pnpm api build",
+				output: path.join("apps", "api", "dist"),
 				environment: {
 					NITRO_PRESET: "cloudflare_pages",
 					NODE_ENV: "production",

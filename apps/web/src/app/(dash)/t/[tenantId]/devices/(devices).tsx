@@ -1,10 +1,10 @@
+import type { RouterOutput } from "@mattrax/api/client";
 import { Badge, BreadcrumbItem, Button, buttonVariants } from "@mattrax/ui";
 import { createTimeAgo } from "@solid-primitives/date";
 import { A } from "@solidjs/router";
 import { Suspense } from "solid-js";
 import { stringSimilarity } from "string-similarity-js";
 import { match } from "ts-pattern";
-import type { RouterOutput } from "~/api";
 import { useTenantId } from "~/app/(dash)";
 import { Page } from "~/components/Page";
 import { Table, defineTable, toOptions } from "~/components/Table";

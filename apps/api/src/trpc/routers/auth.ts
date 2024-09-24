@@ -12,9 +12,9 @@ import {
 	checkAuth,
 	lucia,
 	setIsLoggedInCookie,
-} from "~/api/auth";
-import { sendEmail } from "~/api/emails";
+} from "~/auth";
 import { accountLoginCodes, accounts, db, tenants } from "~/db";
+import { sendEmail } from "~/emails";
 import { env } from "~/env";
 import { authedProcedure, createTRPCRouter, publicProcedure } from "../helpers";
 import { sendDiscordMessage } from "./meta";

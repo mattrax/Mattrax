@@ -14,6 +14,7 @@
 		"@kobalte/core": "^0.13.6",
 		"@kobalte/tailwindcss": "^0.9.0",
 		"@lucia-auth/adapter-drizzle": "^1.1.0",
+		"@mattrax/api": "workspace:*",
 		"@mattrax/configuration-schemas": "workspace:*",
 		"@mattrax/drizzle-to-rs": "workspace:*",
 		"@mattrax/email": "workspace:*",

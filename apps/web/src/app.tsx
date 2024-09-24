@@ -18,11 +18,10 @@ import {
 } from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 
-import { isTRPCClientError, trpc } from "./lib";
+import { isTRPCClientError, trpc, urlWithSearchParams } from "./lib";
+import { parseJson } from "./lib/utils";
 
 import "@mattrax/ui/css";
-import { urlWithSearchParams } from "./api/utils";
-import { parseJson } from "./lib/utils";
 
 // TODO: Maybe PR this back to Solid DND???
 declare module "solid-js" {

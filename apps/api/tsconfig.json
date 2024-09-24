@@ -1,0 +1,15 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"composite": true,
+		"outDir": "./distt",
+		"moduleResolution": "Bundler",
+		"allowJs": true,
+		"types": ["node", "vite/client"],
+		"paths": {
+			"~/*": ["./src/*"]
+		}
+	},
+	"include": ["src/", "deploy.ts", "config.js"],
+	"exclude": ["node_modules", "dist"]
+}

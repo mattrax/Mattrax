@@ -16,34 +16,32 @@ export const env = withEnv((env) => {
 
 	return createEnv({
 		server: {
-			// Used to secure the JWT's used for MDM authentication
-			// This is shared with Rust so both sides can sign/verify JWT's
-			//
-			// This token is also used to authenticate `apps/web` with the Rust code when making HTTP requests
+			NODE_ENV: z.enum(["development", "production"]).default("development"),
 			INTERNAL_SECRET: z.string(),
 			DATABASE_URL: z.string(),
 			MANAGE_URL: z.string(),
-			RUST_URL: z.string(),
+
+			// Emails
 			FROM_ADDRESS: z.string(),
-			NODE_ENV: z.enum(["development", "production"]).default("development"),
-			// Emails and other AWS services
 			AWS_ACCESS_KEY_ID: optionalInDev(z.string()),
 			AWS_SECRET_ACCESS_KEY: optionalInDev(z.string()),
-			// Used for syncing users from Entra to Mattrax
+
+			// Used for Entra identity provider
 			ENTRA_CLIENT_ID: z.string(),
 			ENTRA_CLIENT_SECRET: z.string(),
+
 			// Stipe billing
 			// STRIPE_PUBLISHABLE_KEY: optionalInDev(z.string()),
 			// STRIPE_SECRET_KEY: optionalInDev(z.string()),
 
-			// Cloud stuff
+			// Tracing
+			AXIOM_DATASET: z.string().optional(),
+			AXIOM_API_TOKEN: z.string().optional(),
+
+			// Discord webhooks
 			WAITLIST_DISCORD_WEBHOOK_URL: z.string().optional(),
 			FEEDBACK_DISCORD_WEBHOOK_URL: z.string().optional(),
 			DO_THE_THING_WEBHOOK_URL: z.string().optional(),
-
-			// Environment variables for Mattrax Cloud
-			// Do not use these unless you know what your doing
-			COOKIE_DOMAIN: z.string().optional(),
 		},
 		clientPrefix: "VITE_",
 		client: {
