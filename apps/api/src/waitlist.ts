@@ -8,8 +8,7 @@ import {
 	waitlistInterestReasons,
 } from "~/db";
 import { env } from "~/env";
-import type { HonoEnv } from ".";
-import { sendDiscordMessage } from "../trpc/routers/meta";
+import { sendDiscordMessage } from "./trpc/routers/meta";
 
 const waitlistRequest = z.object({
 	email: z.string().email(),
@@ -18,7 +17,7 @@ const waitlistRequest = z.object({
 	deployment: z.enum(waitlistDeploymentMethod),
 });
 
-export const waitlistRouter = new Hono<HonoEnv>().post("/", async (c) => {
+export const waitlistRouter = new Hono().post("/", async (c) => {
 	const result = waitlistRequest.safeParse(await c.req.json());
 	if (!result.success) {
 		c.status(400);

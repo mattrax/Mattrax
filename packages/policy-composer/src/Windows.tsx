@@ -211,7 +211,7 @@ function CSPS(props: { csps?: Record<string, WindowsCSP> }) {
 			.filter(([uri]) => {
 				if (!controller.state.filter) return true;
 
-				return controller.state.windows?.[uri]?.enabled ?? false;
+				return controller.state.windows?.[uri]?.enabled || false;
 			})
 			.sort(([, a], [, b]) => a.name.localeCompare(b.name)),
 	);
@@ -250,7 +250,7 @@ function CSPS(props: { csps?: Record<string, WindowsCSP> }) {
 								<Checkbox
 									disabled={!controller.state.windows}
 									id={id}
-									checked={controller.state.windows?.[uri]?.enabled ?? false}
+									checked={controller.state.windows?.[uri]?.enabled || false}
 									onChange={(value) => {
 										if (value)
 											controller.setState("windows", uri, (k) => ({
@@ -314,7 +314,7 @@ function NodeEditor(props: {
 				<Show when={node().format === "bool"}>
 					<Checkbox
 						id={id}
-						checked={(!!props.data as boolean) ?? false}
+						checked={(!!props.data as boolean) || false}
 						onChange={(checked) => props.setData(props.path, checked)}
 					/>
 				</Show>

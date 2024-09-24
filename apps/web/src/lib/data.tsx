@@ -1,5 +1,5 @@
+import type { RouterOutput } from "@mattrax/api/client";
 import { z } from "zod";
-import type { RouterOutput } from "~/api";
 import { useTenantId } from "~/app/(dash)";
 import { trpc } from "./trpc";
 import { useZodParams } from "./useZodParams";

@@ -3,6 +3,7 @@
 	"references": [
 		{ "path": "./apps/web" },
 		{ "path": "./apps/landing" },
+		{ "path": "./apps/api" },
 		{ "path": "./packages/drizzle-to-rs" },
 		{ "path": "./packages/configuration-schemas" },
 		{ "path": "./packages/drizzle-to-rs" },
@@ -26,6 +27,9 @@
 		"noUncheckedIndexedAccess": true,
 		"isolatedModules": true,
 		"composite": true,
-		"skipLibCheck": true
+		"skipLibCheck": true,
+		"declaration": true,
+		"declarationMap": true,
+		"outDir": "${configDir}/dist"
 	}
 }

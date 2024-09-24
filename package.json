@@ -2,24 +2,19 @@
 	"name": "@mattrax/monorepo",
 	"private": true,
 	"scripts": {
-		"configure": "pnpm --filter @mattrax/configure --",
-		"db:gen": "DRIZZLE=1 drizzle-kit generate && DRIZZLE=1 tsx ./apps/web/src/db/rust.ts && pnpm format",
-		"db:push": "DRIZZLE=1 drizzle-kit push && DRIZZLE=1 tsx ./apps/web/src/db/rust.ts",
-		"db:rs": "DRIZZLE=1 tsx ./apps/web/src/db/rust.ts",
-		"db:studio": "DRIZZLE=1 drizzle-kit studio",
 		"dev": "pnpm --filter @mattrax/web dev",
-		"doc": "pnpm --filter @mattrax/docs --",
-		"docs": "pnpm --filter @mattrax/docs --",
+		"web": "pnpm --filter @mattrax/web --",
+		"api": "pnpm --filter @mattrax/api --",
 		"email": "pnpm --filter @mattrax/email --",
+		"ingest": "pnpm --filter @mattrax/ingest --",
+		"db:push": "DRIZZLE=1 drizzle-kit push",
+		"db:studio": "DRIZZLE=1 drizzle-kit studio",
 		"sst": "sst",
 		"fix": "biome lint --write && biome format --write && biome check --write",
 		"format": "biome format --write",
-		"ingest": "pnpm --filter @mattrax/ingest --",
-		"landing": "pnpm --filter @mattrax/landing --",
 		"lint": "biome lint .",
-		"prepare": "husky",
 		"typecheck": "tsc -b",
-		"web": "pnpm --filter @mattrax/web --"
+		"prepare": "husky"
 	},
 	"engines": {
 		"node": ">=20.17",
@@ -39,5 +34,10 @@
 		"nx": "19.7.3",
 		"sst": "3.1.14",
 		"wrangler": "^3.78.4"
+	},
+	"pnpm": {
+		"patchedDependencies": {
+			"@solidjs/start": "patches/@solidjs__start.patch"
+		}
 	}
 }

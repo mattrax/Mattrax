@@ -1,6 +1,6 @@
 import { Client, type Config } from "@planetscale/database";
 import { drizzle } from "drizzle-orm/planetscale-serverless";
-import { withEnv } from "../env";
+import { withEnv } from "~/env";
 
 export * from "./schema";
 import * as schema from "./schema";
