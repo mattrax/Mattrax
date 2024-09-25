@@ -51,6 +51,7 @@ declare global {
   const IconPhArrowRight: typeof import('~icons/ph/arrow-right.jsx')['default']
   const IconPhArrowSquareOut: typeof import('~icons/ph/arrow-square-out.jsx')['default']
   const IconPhArrowsVerticalBold: typeof import('~icons/ph/arrows-vertical-bold.jsx')['default']
+  const IconPhBug: typeof import('~icons/ph/bug.jsx')['default']
   const IconPhCaretDown: typeof import('~icons/ph/caret-down.jsx')['default']
   const IconPhCaretRight: typeof import('~icons/ph/caret-right.jsx')['default']
   const IconPhCaretUpDown: typeof import('~icons/ph/caret-up-down.jsx')['default']

@@ -25,7 +25,7 @@ execSync("pnpm web build", {
 	cwd: path.join(__dirname, "..", ".."),
 	env: {
 		NITRO_PRESET: "cloudflare_pages",
-		GIT_SHA: gitSha,
+		VITE_PUBLIC_GIT_SHA: gitSha,
 		...process.env,
 	},
 });
@@ -56,13 +56,14 @@ const result = await build({
 	conditions: ["solid", "worker", "browser", "import", "production"],
 	platform: "node",
 	splitting: true,
+	minify: true,
+	legalComments: "none",
 	plugins: [solidPlugin({ solid: { generate: "ssr" } })],
 	define: {
-		"import.meta.env": JSON.stringify({
-			DEV: false,
-			NODE_ENV: JSON.stringify("production"),
-			GIT_SHA: gitSha,
-		}),
+		"import.meta.env.DEV": JSON.stringify(false),
+		"import.meta.env.MODE": JSON.stringify("production"),
+		"import.meta.env.NODE_ENV": JSON.stringify("production"),
+		"import.meta.env.GIT_SHA": JSON.stringify(gitSha),
 	},
 	metafile: true,
 });

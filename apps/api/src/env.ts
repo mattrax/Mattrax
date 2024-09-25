@@ -38,6 +38,10 @@ export const env = withEnv((env) => {
 			AXIOM_DATASET: z.string().optional(),
 			AXIOM_API_TOKEN: z.string().optional(),
 
+			// API gateway
+			API_GATEWAY_ARN: z.string().optional(),
+			TRUSTSTORE_BUCKET: z.string().optional(),
+
 			// Discord webhooks
 			WAITLIST_DISCORD_WEBHOOK_URL: z.string().optional(),
 			FEEDBACK_DISCORD_WEBHOOK_URL: z.string().optional(),

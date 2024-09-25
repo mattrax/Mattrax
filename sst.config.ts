@@ -184,12 +184,43 @@ export default $config({
 			policy: webPolicy.then((p) => p.json),
 		});
 
+		const truststoreBucket = new sst.aws.Bucket("TruststoreBucket", {
+			public: false,
+		});
+		new aws.s3.BucketVersioningV2("TruststoreBucketVersioning", {
+			bucket: truststoreBucket.name,
+			versioningConfiguration: {
+				status: "Enabled",
+			},
+		});
+
+		const manageApi = new sst.aws.ApiGatewayV2("ManageApi", {
+			domain: {
+				name: renderZoneDomain(zone, manageSubdomain),
+				dns: sst.cloudflare.dns(),
+			},
+			accessLog: {
+				retention: "1 week",
+			},
+			transform: {
+				domainName(args, opts, name) {
+					args.mutualTlsAuthentication = {
+						truststoreUri: "https://example.com",
+						truststoreVersion: "1.0",
+					};
+				},
+				api(args, opts, name) {
+					args.disableExecuteApiEndpoint = true;
+				},
+			},
+		});
+
 		const VITE_PROD_ORIGIN = `https://${renderZoneDomain(zone, webSubdomain)}`;
 		const env: { [K in keyof Env]: $util.Input<Env[K]> } = {
 			NODE_ENV: "production",
 			INTERNAL_SECRET: INTERNAL_SECRET.result,
 			DATABASE_URL: $interpolate`https://:${INTERNAL_SECRET.result}@${cloudHost}`,
-			MANAGE_URL: renderZoneDomain(zone, manageSubdomain),
+			MANAGE_URL: $interpolate`https://${renderZoneDomain(zone, manageSubdomain)}`,
 			FROM_ADDRESS: $interpolate`Mattrax <${sender}>`,
 			AWS_ACCESS_KEY_ID: webAccessKey.id,
 			AWS_SECRET_ACCESS_KEY: webAccessKey.secret,
@@ -201,6 +232,8 @@ export default $config({
 			DO_THE_THING_WEBHOOK_URL: DO_THE_THING_WEBHOOK_URL.value,
 			AXIOM_API_TOKEN: AXIOM_API_TOKEN.value,
 			AXIOM_DATASET: "mattrax",
+			API_GATEWAY_ARN: manageApi.nodes.api.arn,
+			TRUSTSTORE_BUCKET: truststoreBucket.name,
 		};
 
 		const web = CloudflarePages("web", {

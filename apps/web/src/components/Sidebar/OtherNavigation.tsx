@@ -5,9 +5,15 @@ import {
 	PopoverTrigger,
 	Textarea,
 } from "@mattrax/ui";
+import { makePersisted } from "@solid-primitives/storage";
 import { useCurrentMatches } from "@solidjs/router";
-import { type JSX, createSignal } from "solid-js";
+import { type JSX, Show, createSignal } from "solid-js";
 import { trpc } from "~/lib";
+import { SidebarLabel } from ".";
+
+const [debugMode, setDebugMode] = makePersisted(createSignal(false), {
+	name: "debugMode",
+});
 
 export function OtherNavigation() {
 	const item = (
@@ -43,69 +49,104 @@ export function OtherNavigation() {
 	};
 
 	return (
-		<ul class="grid gap-0.5">
-			{item("Documentation", "https://mattrax.app/docs/", IconPhFiles)}
-			<li>
-				<Popover
-					open={open()}
-					onOpenChange={(state) => {
-						if (!open() && state) setContent("");
+		<>
+			<SidebarLabel onDblClick={() => setDebugMode((p) => !p)}>
+				Other
+			</SidebarLabel>
+			<ul class="grid gap-0.5">
+				{item("Documentation", "https://mattrax.app/docs/", IconPhFiles)}
+				<li>
+					<Popover
+						open={open()}
+						onOpenChange={(state) => {
+							if (!open() && state) setContent("");
 
-						if (open() && !state && content() !== "") {
-							const result = confirm(
-								"Are you sure you want to discard your feedback?",
-							);
-							if (!result) return;
-						}
-						setOpen(state);
-					}}
-					placement="right-end"
-				>
-					<PopoverTrigger
-						as="button"
-						type="button"
-						class="flex h-7 items-center gap-2.5 overflow-hidden rounded-md px-1.5 text-xs ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 w-full text-start"
+							if (open() && !state && content() !== "") {
+								const result = confirm(
+									"Are you sure you want to discard your feedback?",
+								);
+								if (!result) return;
+							}
+							setOpen(state);
+						}}
+						placement="right-end"
 					>
-						<IconLucideSend class="h-4 w-4 shrink-0 translate-x-0.5 text-zinc-500 dark:text-zinc-400" />
-						<div class="line-clamp-1 grow overflow-hidden pr-6 font-medium text-zinc-500 dark:text-zinc-400">
-							Feedback
-						</div>
-					</PopoverTrigger>
-					<PopoverContent class="p-4 flex flex-col space-y-2">
-						<h1 class="text-lg font-semibold leading-none tracking-tight">
-							Submit Feedback
-						</h1>
-						<p class="text-muted-foreground text-sm">
-							We welcome feedback to help us improve Mattrax!
-						</p>
-
-						<Textarea
-							value={content()}
-							onInput={(e) => setContent(e.target.value)}
-							disabled={sendFeedback.isPending}
-						/>
-
-						<Button
+						<PopoverTrigger
+							as="button"
 							type="button"
-							class="w-full"
-							onClick={async () => {
-								sendFeedback.mutateAsync({
-									content: content(),
-									path: getPath(),
-								});
-								setOpen(false);
-							}}
-							disabled={sendFeedback.isPending}
-							size="sm"
+							class="flex h-7 items-center gap-2.5 overflow-hidden rounded-md px-1.5 text-xs ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 w-full text-start"
 						>
-							Submit
-						</Button>
-					</PopoverContent>
-				</Popover>
-			</li>
+							<IconLucideSend class="h-4 w-4 shrink-0 translate-x-0.5 text-zinc-500 dark:text-zinc-400" />
+							<div class="line-clamp-1 grow overflow-hidden pr-6 font-medium text-zinc-500 dark:text-zinc-400">
+								Feedback
+							</div>
+						</PopoverTrigger>
+						<PopoverContent class="p-4 flex flex-col space-y-2">
+							<h1 class="text-lg font-semibold leading-none tracking-tight">
+								Submit Feedback
+							</h1>
+							<p class="text-muted-foreground text-sm">
+								We welcome feedback to help us improve Mattrax!
+							</p>
 
-			{item("Support", "mailto:hello@mattrax.app", IconLucideLifeBuoy)}
-			{item("Roadmap", "/roadmap", IconPhMapTrifold, false)}
-		</ul>
+							<Textarea
+								value={content()}
+								onInput={(e) => setContent(e.target.value)}
+								disabled={sendFeedback.isPending}
+							/>
+
+							<Button
+								type="button"
+								class="w-full"
+								onClick={async () => {
+									sendFeedback.mutateAsync({
+										content: content(),
+										path: getPath(),
+									});
+									setOpen(false);
+								}}
+								disabled={sendFeedback.isPending}
+								size="sm"
+							>
+								Submit
+							</Button>
+						</PopoverContent>
+					</Popover>
+				</li>
+
+				{item("Support", "mailto:hello@mattrax.app", IconLucideLifeBuoy)}
+				{item("Roadmap", "/roadmap", IconPhMapTrifold, false)}
+				<Show when={debugMode()}>
+					<li>
+						<Popover placement="right-end">
+							<PopoverTrigger
+								as="button"
+								type="button"
+								class="flex h-7 items-center gap-2.5 overflow-hidden rounded-md px-1.5 text-xs ring-zinc-950 transition-all hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 dark:ring-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 w-full text-start"
+							>
+								<IconPhBug class="h-4 w-4 shrink-0 translate-x-0.5 text-zinc-500 dark:text-zinc-400" />
+								<div class="line-clamp-1 grow overflow-hidden pr-6 font-medium text-zinc-500 dark:text-zinc-400">
+									Debug
+								</div>
+							</PopoverTrigger>
+							<PopoverContent class="p-4 flex flex-col space-y-2 text-sm">
+								<DebugPopover />
+							</PopoverContent>
+						</Popover>
+					</li>
+				</Show>
+			</ul>
+		</>
+	);
+}
+
+function DebugPopover() {
+	return (
+		<>
+			<h1 class="font-bold">Debug</h1>
+			<p>
+				{import.meta.env.VITE_PUBLIC_GIT_SHA?.substring(0, 14) ?? "unknown"}
+			</p>
+		</>
 	);
 }
