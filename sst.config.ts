@@ -193,6 +193,14 @@ export default $config({
 				status: "Enabled",
 			},
 		});
+		// We create a default empty truststore file so API gateway is happy.
+		// This will be updated automatically by the Cloudflare Worker.
+		new aws.s3.BucketObject("DefaultTruststoreFile", {
+			bucket: truststoreBucket.name,
+			key: "pool.pem",
+			source: new $util.asset.StringAsset(""),
+			contentType: "application/x-pem-file",
+		});
 
 		const manageApi = new sst.aws.ApiGatewayV2("ManageApi", {
 			domain: {
@@ -213,8 +221,9 @@ export default $config({
 				},
 			},
 		});
-
 		const VITE_PROD_ORIGIN = `https://${renderZoneDomain(zone, webSubdomain)}`;
+		manageApi.route("$default", VITE_PROD_ORIGIN);
+
 		const env: { [K in keyof Env]: $util.Input<Env[K]> } = {
 			NODE_ENV: "production",
 			INTERNAL_SECRET: INTERNAL_SECRET.result,
@@ -232,7 +241,7 @@ export default $config({
 			AXIOM_API_TOKEN: AXIOM_API_TOKEN.value,
 			AXIOM_DATASET: "mattrax",
 			API_GATEWAY_ARN: manageApi.nodes.api.arn,
-			TRUSTSTORE_BUCKET: truststoreBucket.name,
+			TRUSTSTORE_BUCKET: truststoreBucket.domain,
 		};
 
 		const web = CloudflarePages("web", {
