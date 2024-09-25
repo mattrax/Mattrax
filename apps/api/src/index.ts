@@ -42,7 +42,7 @@ const app = new Hono()
 				hono: c,
 				request: c.req.raw,
 				waitUntil: c.executionCtx.waitUntil as any,
-				env: { ...process.env },
+				env: { ...(c.env as any), ...process.env },
 				// SS's stuff is still being injected via Vite.
 				locals: {},
 				response: c.res,
