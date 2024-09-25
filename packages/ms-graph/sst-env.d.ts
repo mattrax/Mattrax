@@ -5,7 +5,15 @@ import "sst"
 export {}
 declare module "sst" {
   export interface Resource {
+    "AxiomApiToken": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "DatabaseURL": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "DoTheThingWebhookURL": {
       "type": "sst.sst.Secret"
       "value": string
     }
@@ -20,6 +28,14 @@ declare module "sst" {
     "FeedbackDiscordWebhookURL": {
       "type": "sst.sst.Secret"
       "value": string
+    }
+    "ManageApi": {
+      "type": "sst.aws.ApiGatewayV2"
+      "url": string
+    }
+    "TruststoreBucket": {
+      "name": string
+      "type": "sst.aws.Bucket"
     }
     "WaitlistDiscordWebhookURL": {
       "type": "sst.sst.Secret"

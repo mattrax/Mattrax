@@ -46,10 +46,15 @@ export default $config({
 		const webSubdomain = $app.stage === "prod" ? "cloud" : `${$app.stage}-web`;
 		const manageSubdomain =
 			$app.stage === "prod" ? "manage" : `${$app.stage}-manage`;
+		const urlForApiGateway =
+			// TODO: Probs remove this and have some local config for it or something?
+			$app.stage === "oscar"
+				? "https://demo.otbeaumont.me"
+				: `https://${renderZoneDomain(zone, webSubdomain)}`;
 
 		// Automatic
 		const INTERNAL_SECRET = new random.RandomString("internalSecret", {
-			length: 16,
+			length: 42,
 			overrideSpecial: "$-_.+!*'()",
 		});
 
@@ -193,14 +198,6 @@ export default $config({
 				status: "Enabled",
 			},
 		});
-		// We create a default empty truststore file so API gateway is happy.
-		// This will be updated automatically by the Cloudflare Worker.
-		new aws.s3.BucketObject("DefaultTruststoreFile", {
-			bucket: truststoreBucket.name,
-			key: "pool.pem",
-			source: new $util.asset.StringAsset(""),
-			contentType: "application/x-pem-file",
-		});
 
 		const manageApi = new sst.aws.ApiGatewayV2("ManageApi", {
 			domain: {
@@ -211,19 +208,35 @@ export default $config({
 				retention: "1 week",
 			},
 			transform: {
-				domainName(args, opts, name) {
-					args.mutualTlsAuthentication = {
-						truststoreUri: $interpolate`s3://${truststoreBucket.name}/pool.pem`,
-					};
-				},
 				api(args, opts, name) {
 					args.disableExecuteApiEndpoint = true;
 				},
 			},
 		});
-		const VITE_PROD_ORIGIN = `https://${renderZoneDomain(zone, webSubdomain)}`;
-		manageApi.route("$default", VITE_PROD_ORIGIN);
+		const integration = new aws.apigatewayv2.Integration(
+			"ManageApiIntegration",
+			{
+				apiId: manageApi.nodes.api.id,
+				integrationType: "HTTP_PROXY",
+				integrationMethod: "ANY",
+				integrationUri: urlForApiGateway,
+				requestParameters: {
+					"overwrite:header.x-apigateway-auth": INTERNAL_SECRET.result,
+					"overwrite:path": "$request.path",
+					"overwrite:header.x-client-cert":
+						"$context.identity.clientCert.clientCertPem",
+					"overwrite:header.x-client-cert-cn":
+						"$context.identity.clientCert.subjectDN",
+				},
+			},
+		);
+		new aws.apigatewayv2.Route("ManageApiRoute", {
+			apiId: manageApi.nodes.api.id,
+			routeKey: "$default",
+			target: $interpolate`integrations/${integration.id}`,
+		});
 
+		const VITE_PROD_ORIGIN = `https://${renderZoneDomain(zone, webSubdomain)}`;
 		const env: { [K in keyof Env]: $util.Input<Env[K]> } = {
 			NODE_ENV: "production",
 			INTERNAL_SECRET: INTERNAL_SECRET.result,
@@ -241,7 +254,7 @@ export default $config({
 			AXIOM_API_TOKEN: AXIOM_API_TOKEN.value,
 			AXIOM_DATASET: "mattrax",
 			API_GATEWAY_ARN: manageApi.nodes.api.arn,
-			TRUSTSTORE_BUCKET: truststoreBucket.domain,
+			TRUSTSTORE_BUCKET: $interpolate`https://${truststoreBucket.domain}`,
 		};
 
 		const web = CloudflarePages("web", {

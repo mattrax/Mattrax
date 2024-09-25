@@ -3,6 +3,7 @@
 /* eslint-disable */
 import "sst"
 export {}
+import "sst"
 declare module "sst" {
   export interface Resource {
     "AxiomApiToken": {
