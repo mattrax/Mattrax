@@ -205,8 +205,7 @@ export default $config({
 			transform: {
 				domainName(args, opts, name) {
 					args.mutualTlsAuthentication = {
-						truststoreUri: "https://example.com",
-						truststoreVersion: "1.0",
+						truststoreUri: $interpolate`s3://${truststoreBucket.name}/pool.pem`,
 					};
 				},
 				api(args, opts, name) {
