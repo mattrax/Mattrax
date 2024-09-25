@@ -2,16 +2,15 @@ import { flushResponse, waitUntil } from "@mattrax/trpc-server-function/server";
 import { revalidate } from "@solidjs/router";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
-import { type User, generateId } from "lucia";
+import { generateId } from "lucia";
 import { alphabet, generateRandomString } from "oslo/crypto";
-import { appendResponseHeader, deleteCookie } from "vinxi/server";
 import { z } from "zod";
 
 import {
 	type DatabaseUserAttributes,
 	checkAuth,
-	lucia,
-	setIsLoggedInCookie,
+	createSession,
+	logout,
 } from "~/auth";
 import { accountLoginCodes, accounts, db, tenants } from "~/db";
 import { sendEmail } from "~/emails";
@@ -151,7 +150,7 @@ export const authRouter = createTRPCRouter({
 			// 	});
 			// }
 
-			await handleLoginSuccess(account.id);
+			await createSession(account.id);
 
 			flushResponse();
 			revalidate(checkAuth.key);
@@ -179,11 +178,7 @@ export const authRouter = createTRPCRouter({
 	logout: publicProcedure.mutation(async () => {
 		const data = await checkAuth();
 		if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
-
-		deleteCookie(lucia.sessionCookieName);
-		deleteCookie("isLoggedIn");
-
-		await lucia.invalidateSession(data.session.id);
+		await logout(data.session.id);
 	}),
 
 	// `authedProcedure` calls `flushResponse` before the handler so we can't use it here!
@@ -199,18 +194,6 @@ export const authRouter = createTRPCRouter({
 			env.DO_THE_THING_WEBHOOK_URL,
 		);
 
-		deleteCookie(lucia.sessionCookieName);
-		deleteCookie("isLoggedIn");
-		await lucia.invalidateSession(data.session.id);
+		await logout(data.session.id);
 	}),
 });
-
-export async function handleLoginSuccess(accountId: string) {
-	const session = await lucia.createSession(accountId, {});
-
-	appendResponseHeader(
-		"Set-Cookie",
-		lucia.createSessionCookie(session.id).serialize(),
-	);
-	setIsLoggedInCookie();
-}

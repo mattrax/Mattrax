@@ -67,12 +67,11 @@ export function withEnv<T extends object>(
 	return new Proxy({} as any, {
 		get(_, prop) {
 			const event = getRequestEvent();
-			if (!event && process.env?.DRIZZLE !== "1")
+			if (!event)
 				throw new Error(
 					"Attempted to access `withEnv` value outside of a request context",
 				);
-
-			const env = event?.nativeEvent?.context?.cloudflare?.env ?? process.env;
+			const env = event.env;
 
 			let result = cache.get(env);
 			if (!result) {

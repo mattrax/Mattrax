@@ -122,14 +122,14 @@ export function createForm<S extends z.AnyZodObject>(
 			}
 			this.isSubmitting = true;
 
-			Promise.resolve(props.onSubmit?.(this.data))
-				.then(async () => {
+			try {
+				Promise.resolve(props.onSubmit?.(this.data)).finally(() => {
 					this.isSubmitting = false;
-				})
-				.catch((err) => {
-					this.isSubmitting = false;
-					return err;
 				});
+			} catch (err) {
+				console.error("Error submitting form", err);
+				this.isSubmitting = false;
+			}
 		},
 		reset() {
 			for (const field in this.fields) {
