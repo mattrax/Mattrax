@@ -3,6 +3,7 @@ import path from "node:path";
 import contentCollections from "@content-collections/vite";
 import mattraxUI from "@mattrax/ui/vite";
 import { defineConfig } from "@solidjs/start/config";
+import tsconfigPaths from "vite-tsconfig-paths";
 import { monorepoRoot } from "./loadEnv";
 
 if (typeof process.env.VITE_MATTRAX_CLOUD_ORIGIN !== "string")
@@ -67,6 +68,7 @@ export default defineConfig({
 	vite: {
 		envDir: monorepoRoot,
 		plugins: [
+			tsconfigPaths(),
 			// We don't use the Solid Start adapter due to https://github.com/sdorra/content-collections/pull/269
 			contentCollections({
 				configPath: "src/content-collections.ts",

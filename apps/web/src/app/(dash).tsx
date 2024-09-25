@@ -1,4 +1,3 @@
-import { Kbd, getPlatformShortcut } from "@mattrax/ui";
 import { Navigate } from "@solidjs/router";
 import { parse } from "cookie-es";
 import { ErrorBoundary, type ParentProps, Suspense } from "solid-js";
@@ -9,7 +8,6 @@ import {
 	SidebarFooter,
 	SidebarHeader,
 	SidebarItem,
-	SidebarLabel,
 	SidebarLayout,
 } from "~/components/Sidebar";
 import { Footer } from "~/components/Sidebar/Footer";
@@ -62,7 +60,6 @@ export default function (props: ParentProps) {
 						/>
 					</SidebarItem>
 					<SidebarItem class="mt-auto">
-						<SidebarLabel>Other</SidebarLabel>
 						<OtherNavigation />
 					</SidebarItem>
 				</SidebarContent>

@@ -174,6 +174,9 @@ importers:
       vite:
         specifier: ^5.4.6
         version: 5.4.6(@types/node@22.5.5)(terser@5.33.0)
+      vite-tsconfig-paths:
+        specifier: ^5.0.1
+        version: 5.0.1(typescript@5.6.2)(vite@5.4.6(@types/node@22.5.5)(terser@5.33.0))
       zod:
         specifier: ^3.23.8
         version: 3.23.8
@@ -273,7 +276,7 @@ importers:
         version: 8.3.4
       '@solid-mediakit/trpc':
         specifier: ^3.0.3
-        version: 3.0.3(@solidjs/router@0.14.5(solid-js@1.8.22))(@solidjs/start@1.0.6(patch_hash=qyqwxlt4pf7pfndzmkpqvr6gne)(rollup@4.21.3)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))(vite@5.4.6(@types/node@22.5.5)(terser@5.33.0)))(@tanstack/solid-query@5.56.2(solid-js@1.8.22))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))
+        version: 3.0.3(@solidjs/router@0.14.5(solid-js@1.8.22))(@solidjs/start@1.0.6(patch_hash=qyqwxlt4pf7pfndzmkpqvr6gne)(rollup@4.21.3)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(drizzle-orm@0.33.0(@cloudflare/workers-types@4.20240924.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.19.0)(@types/react@18.3.7)(mysql2@3.11.3)(pg@8.13.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))(vite@5.4.6(@types/node@22.5.5)(terser@5.33.0)))(@tanstack/solid-query@5.56.2(solid-js@1.8.22))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(drizzle-orm@0.33.0(@cloudflare/workers-types@4.20240924.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.19.0)(@types/react@18.3.7)(mysql2@3.11.3)(pg@8.13.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))
       '@solid-primitives/autofocus':
         specifier: ^0.0.111
         version: 0.0.111(solid-js@1.8.22)
@@ -636,7 +639,7 @@ importers:
     dependencies:
       '@solid-mediakit/trpc':
         specifier: ^3.0.3
-        version: 3.0.3(@solidjs/router@0.14.5(solid-js@1.8.22))(@solidjs/start@1.0.6(patch_hash=qyqwxlt4pf7pfndzmkpqvr6gne)(rollup@4.21.3)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))(vite@5.4.6(@types/node@22.5.5)(terser@5.33.0)))(@tanstack/solid-query@5.56.2(solid-js@1.8.22))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))
+        version: 3.0.3(@solidjs/router@0.14.5(solid-js@1.8.22))(@solidjs/start@1.0.6(patch_hash=qyqwxlt4pf7pfndzmkpqvr6gne)(rollup@4.21.3)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(drizzle-orm@0.33.0(@cloudflare/workers-types@4.20240924.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.19.0)(@types/react@18.3.7)(mysql2@3.11.3)(pg@8.13.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))(vite@5.4.6(@types/node@22.5.5)(terser@5.33.0)))(@tanstack/solid-query@5.56.2(solid-js@1.8.22))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(drizzle-orm@0.33.0(@cloudflare/workers-types@4.20240924.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.19.0)(@types/react@18.3.7)(mysql2@3.11.3)(pg@8.13.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))
       '@solidjs/router':
         specifier: 0.14.5
         version: 0.14.5(solid-js@1.8.22)
@@ -9196,7 +9199,7 @@ snapshots:
       '@simplewebauthn/browser': 10.0.0
       '@simplewebauthn/server': 10.0.1(encoding@0.1.13)
       '@simplewebauthn/typescript-types': 8.3.4
-      '@solid-mediakit/trpc': 3.0.3(@solidjs/router@0.14.5(solid-js@1.8.22))(@solidjs/start@1.0.6(patch_hash=qyqwxlt4pf7pfndzmkpqvr6gne)(rollup@4.21.3)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))(vite@5.4.6(@types/node@22.5.5)(terser@5.33.0)))(@tanstack/solid-query@5.56.2(solid-js@1.8.22))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))
+      '@solid-mediakit/trpc': 3.0.3(@solidjs/router@0.14.5(solid-js@1.8.22))(@solidjs/start@1.0.6(patch_hash=qyqwxlt4pf7pfndzmkpqvr6gne)(rollup@4.21.3)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(drizzle-orm@0.33.0(@cloudflare/workers-types@4.20240924.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.19.0)(@types/react@18.3.7)(mysql2@3.11.3)(pg@8.13.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))(vite@5.4.6(@types/node@22.5.5)(terser@5.33.0)))(@tanstack/solid-query@5.56.2(solid-js@1.8.22))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(drizzle-orm@0.33.0(@cloudflare/workers-types@4.20240924.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.19.0)(@types/react@18.3.7)(mysql2@3.11.3)(pg@8.13.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))
       '@solid-primitives/autofocus': 0.0.111(solid-js@1.8.22)
       '@solid-primitives/context': 0.2.3(solid-js@1.8.22)
       '@solid-primitives/date': 2.0.23(solid-js@1.8.22)
@@ -10588,7 +10591,7 @@ snapshots:
       '@solid-primitives/utils': 6.2.3(solid-js@1.8.22)
       solid-js: 1.8.22
 
-  '@solid-mediakit/trpc@3.0.3(@solidjs/router@0.14.5(solid-js@1.8.22))(@solidjs/start@1.0.6(patch_hash=qyqwxlt4pf7pfndzmkpqvr6gne)(rollup@4.21.3)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))(vite@5.4.6(@types/node@22.5.5)(terser@5.33.0)))(@tanstack/solid-query@5.56.2(solid-js@1.8.22))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))':
+  '@solid-mediakit/trpc@3.0.3(@solidjs/router@0.14.5(solid-js@1.8.22))(@solidjs/start@1.0.6(patch_hash=qyqwxlt4pf7pfndzmkpqvr6gne)(rollup@4.21.3)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(drizzle-orm@0.33.0(@cloudflare/workers-types@4.20240924.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.19.0)(@types/react@18.3.7)(mysql2@3.11.3)(pg@8.13.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))(vite@5.4.6(@types/node@22.5.5)(terser@5.33.0)))(@tanstack/solid-query@5.56.2(solid-js@1.8.22))(@trpc/client@10.45.2(@trpc/server@10.45.2))(@trpc/server@10.45.2)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(drizzle-orm@0.33.0(@cloudflare/workers-types@4.20240924.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.19.0)(@types/react@18.3.7)(mysql2@3.11.3)(pg@8.13.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))':
     dependencies:
       '@solidjs/router': 0.14.5(solid-js@1.8.22)
       '@solidjs/start': 1.0.6(patch_hash=qyqwxlt4pf7pfndzmkpqvr6gne)(rollup@4.21.3)(solid-js@1.8.22)(vinxi@0.4.3(@planetscale/database@1.19.0)(@types/node@22.5.5)(drizzle-orm@0.33.0(@cloudflare/workers-types@4.20240924.0)(@opentelemetry/api@1.9.0)(@planetscale/database@1.19.0)(@types/react@18.3.7)(mysql2@3.11.3)(pg@8.13.0)(postgres@3.4.4)(react@18.3.1))(encoding@0.1.13)(ioredis@5.4.1)(terser@5.33.0)(webpack-sources@3.2.3)(xml2js@0.6.2))(vite@5.4.6(@types/node@22.5.5)(terser@5.33.0))

@@ -11,7 +11,7 @@ export const db = withEnv((env) => {
 	const client = new Client({
 		url: env.DATABASE_URL,
 		fetch: async (input, init) => {
-			if (import.meta.env.MODE === "development") {
+			if (import.meta.env.DEV) {
 				if (env.DATABASE_URL.startsWith("mysql://")) {
 					if (!fetchHandler)
 						fetchHandler = (

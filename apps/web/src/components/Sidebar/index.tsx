@@ -1,6 +1,6 @@
 import { createContextProvider } from "@solid-primitives/context";
 import clsx from "clsx";
-import { type ParentProps, createSignal } from "solid-js";
+import { type ComponentProps, type ParentProps, createSignal } from "solid-js";
 
 const [Provider, useCtx] = createContextProvider(
 	(props: { initial: number }) => {
@@ -74,8 +74,14 @@ export const SidebarItem = (props: ParentProps & { class?: string }) => (
 	<div class={clsx("grid gap-2 px-2.5", props.class)}>{props.children}</div>
 );
 
-export const SidebarLabel = (props: ParentProps) => (
-	<div class="px-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+export const SidebarLabel = (props: ComponentProps<"div">) => (
+	<div
+		class={clsx(
+			"px-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400",
+			props.class,
+		)}
+		{...props}
+	>
 		{props.children}
 	</div>
 );

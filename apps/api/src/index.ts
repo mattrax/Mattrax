@@ -8,10 +8,12 @@ import { instrument } from "@microlabs/otel-cf-workers";
 import { trace } from "@opentelemetry/api";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { logger } from "hono/logger";
 import type { BlankEnv, BlankInput } from "hono/types";
 import { provideRequestEvent } from "solid-js/web/storage";
 import { createTRPCContext, router } from "./trpc";
 import { waitlistRouter } from "./waitlist";
+import { enrollmentServerRouter, managementServerRouter } from "./win";
 
 declare module "solid-js/web" {
 	interface RequestEvent {
@@ -53,8 +55,8 @@ const app = new Hono()
 		c.status(200);
 		return c.body(toReadableStream(result));
 	})
-	// .route("/EnrollmentServer", trpcRouter) // TODO
-	// .route("/ManagementServer", trpcRouter) // TODO
+	.route("/EnrollmentServer", enrollmentServerRouter)
+	.route("/ManagementServer", managementServerRouter)
 	.all("*", (c) => {
 		c.status(404);
 		if (c.req.raw.headers.get("Accept")?.includes("application/json")) {
@@ -62,6 +64,8 @@ const app = new Hono()
 		}
 		return c.text("404: Not Found");
 	});
+
+if (import.meta.env.DEV) app.use(logger());
 
 // TODO: Codegen from `wrangler.toml`
 type Env = Record<string, any>;
