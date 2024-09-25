@@ -54,8 +54,12 @@ export default $config({
 
 		// Automatic
 		const INTERNAL_SECRET = new random.RandomString("internalSecret", {
-			length: 42,
+			length: 64,
 			overrideSpecial: "$-_.+!*'()",
+		});
+		const API_GATEWAY_SECRET = new random.RandomString("apiGatewaySecret", {
+			length: 40,
+			special: false,
 		});
 
 		// Defaults
@@ -221,7 +225,7 @@ export default $config({
 				integrationMethod: "ANY",
 				integrationUri: urlForApiGateway,
 				requestParameters: {
-					"overwrite:header.x-apigateway-auth": INTERNAL_SECRET.result,
+					"overwrite:header.x-apigateway-auth": API_GATEWAY_SECRET.result,
 					"overwrite:path": "$request.path",
 					"overwrite:header.x-client-cert":
 						"$context.identity.clientCert.clientCertPem",
@@ -255,6 +259,7 @@ export default $config({
 			AXIOM_DATASET: "mattrax",
 			API_GATEWAY_ARN: manageApi.nodes.api.arn,
 			TRUSTSTORE_BUCKET: $interpolate`https://${truststoreBucket.domain}`,
+			API_GATEWAY_SECRET: API_GATEWAY_SECRET.result,
 		};
 
 		const web = CloudflarePages("web", {
