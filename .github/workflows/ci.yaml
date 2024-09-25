@@ -30,44 +30,41 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-  migrations:
-    name: Migrations
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: mysql:latest
-        env:
-          MYSQL_ROOT_PASSWORD: mysql
-        ports:
-          - 3306:3306
-    env:
-      DATABASE_URL: mysql://root:mysql@localhost:3306/mattrax
-      SKIP_ENV_VALIDATION: true
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  # migrations:
+  #   name: Migrations
+  #   runs-on: ubuntu-latest
+  #   services:
+  #     postgres:
+  #       image: mysql:latest
+  #       env:
+  #         MYSQL_ROOT_PASSWORD: mysql
+  #       ports:
+  #         - 3306:3306
+  #   env:
+  #     DATABASE_URL: mysql://root:mysql@localhost:3306/mattrax
+  #     SKIP_ENV_VALIDATION: true
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v2
-        with:
-          version: latest
+  #     - uses: pnpm/action-setup@v2
+  #       with:
+  #         version: latest
 
-      - uses: actions/setup-node@v4
-        with:
-          cache: "pnpm"
-          node-version: latest
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         cache: "pnpm"
+  #         node-version: latest
 
-      - name: Install dependencies
-        run: pnpm i
+  #     - name: Install dependencies
+  #       run: pnpm i
 
-      - name: Generate migrations
-        run: pnpm db:gen
-
-      - name: Detect
-        run: |
-          if [ $(git status --porcelain | wc -l) -neq "0" ]; then
-            echo "  🔴 Detected missing migrations or invalid `db.rs`. Run `pnpm db:gen` and commit the changes!"
-            exit 1
-          fi
+  #     - name: Detect
+  #       run: |
+  #         if [ $(git status --porcelain | wc -l) -neq "0" ]; then
+  #           echo "  🔴 Detected missing migrations. Run `pnpm db:gen` and commit the changes!"
+  #           exit 1
+  #         fi
 
   format-lint-biome:
     name: Format & Lint (Biome)

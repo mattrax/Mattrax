@@ -10,6 +10,6 @@
 			"~/*": ["./src/*"]
 		}
 	},
-	"include": ["src/", "deploy.ts", "config.js"],
+	"include": ["src/", "build.ts", "config.js"],
 	"exclude": ["node_modules", "dist"]
 }

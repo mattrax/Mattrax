@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { getEvent } from "vinxi/http";
+import { getRequestEvent } from "solid-js/web";
 
 export const TRPC_LOCAL_STORAGE = new AsyncLocalStorage<() => void>();
 
@@ -12,12 +12,7 @@ export function flushResponse() {
 }
 
 export function waitUntil(promise: Promise<void> | (() => Promise<void>)) {
-	const waitUntil = getEvent().context?.waitUntil;
-	const p = typeof promise === "function" ? promise() : promise;
-	if (waitUntil) {
-		waitUntil(p);
-	} else {
-		// If we don't catch it will panic the node devserver.
-		p.catch((err) => console.error("Failed waitUntil:", err));
-	}
+	const e = getRequestEvent();
+	if (!e) throw new Error("Called `waitUtil` outside request context");
+	(e as any).waitUntil(promise);
 }

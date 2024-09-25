@@ -4,6 +4,7 @@
 	"scripts": {
 		"dev": "pnpm --filter @mattrax/web dev",
 		"web": "pnpm --filter @mattrax/web --",
+		"landing": "pnpm --filter @mattrax/landing --",
 		"api": "pnpm --filter @mattrax/api --",
 		"email": "pnpm --filter @mattrax/email --",
 		"ingest": "pnpm --filter @mattrax/ingest --",

@@ -2,13 +2,12 @@ import OtpField from "@corvu/otp-field";
 import { Button, CardDescription } from "@mattrax/ui";
 import { Form, InputField, createForm } from "@mattrax/ui/forms";
 import { autofocus } from "@solid-primitives/autofocus";
-import { Navigate, useNavigate, useSearchParams } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import { type Setter, Show, createSignal, startTransition } from "solid-js";
 import { z } from "zod";
 import { ModalPage } from "~/components/ModalPage";
 
 import { useQueryClient } from "@tanstack/solid-query";
-import { parse } from "cookie-es";
 import { toast } from "solid-sonner";
 import { trpc } from "~/lib";
 import { doLogin } from "~/lib/data";
@@ -18,10 +17,6 @@ autofocus;
 
 export default function () {
 	const [email, setEmail] = createSignal<string | undefined>(undefined);
-
-	// TODO: Should we do this cause it could probs end up in an infinite loop in a edge-case.
-	const cookies = parse(document.cookie);
-	if (cookies.isLoggedIn === "true") return <Navigate href="/" />;
 
 	return (
 		<ModalPage>
@@ -35,6 +30,11 @@ export default function () {
 function EmailPage(props: { setEmail: Setter<string | undefined> }) {
 	const login = trpc.auth.sendLoginCode.createMutation(() => ({
 		onSuccess: (_, { email }) => startTransition(() => props.setEmail(email)),
+		onError: () =>
+			// TODO: Form error, not a toast
+			toast.error("An internal error occurred!", {
+				description: "Please try again!",
+			}),
 	}));
 
 	const form = createForm({

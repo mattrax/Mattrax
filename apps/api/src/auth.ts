@@ -1,24 +1,24 @@
 import { DrizzleMySQLAdapter } from "@lucia-auth/adapter-drizzle";
 import { cache } from "@solidjs/router";
-import { Lucia } from "lucia";
-import { getRequestEvent } from "solid-js/web";
 import {
-	appendResponseHeader,
 	deleteCookie,
 	getCookie,
+	getSignedCookie,
 	setCookie,
-} from "vinxi/server";
+	setSignedCookie,
+} from "hono/cookie";
+import { Lucia } from "lucia";
 
+import { getRequestEvent } from "solid-js/web";
 import { accounts, db, sessions } from "~/db";
-import { withEnv } from "~/env";
+import { env, withEnv } from "~/env";
 
 export const lucia = withEnv(() => {
 	const adapter = new DrizzleMySQLAdapter(db, sessions, accounts);
 
 	return new Lucia(adapter, {
 		sessionCookie: {
-			// WARN: Ensure you update the Rust code if you change this
-			name: "auth_session",
+			name: "session",
 			attributes: {
 				// set to `true` when using HTTPS
 				secure: import.meta.env.PROD,
@@ -52,11 +52,18 @@ export interface DatabaseUserAttributes {
 type DatabaseSessionAttributes = Record<string, never>;
 
 export const checkAuth = cache(async () => {
-	const sessionId = getCookie(lucia.sessionCookieName) ?? null;
+	const req = getRequestEvent()!;
+	if (!req) throw new Error("No request event");
+	const sessionId = await getSignedCookie(
+		req.hono,
+		env.INTERNAL_SECRET,
+		lucia.sessionCookieName,
+	);
 
-	if (sessionId === null) {
-		if (getCookie("isLoggedIn") !== undefined)
-			deleteCookie(getRequestEvent()!.nativeEvent, "isLoggedIn", {
+	if (!sessionId) {
+		if (getCookie(req.hono, "isLoggedIn") !== undefined)
+			deleteCookie(req.hono, "isLoggedIn", {
+				...lucia.createBlankSessionCookie().attributes,
 				httpOnly: false,
 			});
 
@@ -66,23 +73,28 @@ export const checkAuth = cache(async () => {
 	const { session, user: account } = await lucia.validateSession(sessionId);
 
 	if (session) {
-		if (session.fresh)
-			appendResponseHeader(
-				"Set-Cookie",
-				lucia.createSessionCookie(session.id).serialize(),
+		const cookie = lucia.createSessionCookie(session.id);
+		if (session.fresh) {
+			await setSignedCookie(
+				req.hono,
+				cookie.name,
+				cookie.value,
+				env.INTERNAL_SECRET,
+				cookie.attributes,
 			);
+		}
 
-		if (getCookie("isLoggedIn") === undefined) {
-			setCookie("isLoggedIn", "true", {
+		if (getCookie(req.hono, "isLoggedIn") === undefined) {
+			setCookie(req.hono, "isLoggedIn", "true", {
+				...cookie.attributes,
 				httpOnly: false,
 			});
 		}
 	} else {
-		appendResponseHeader(
-			"Set-Cookie",
-			lucia.createBlankSessionCookie().serialize(),
-		);
-		deleteCookie(getRequestEvent()!.nativeEvent, "isLoggedIn", {
+		const cookie = lucia.createBlankSessionCookie();
+		deleteCookie(req.hono, cookie.name, cookie.attributes);
+		deleteCookie(req.hono, "isLoggedIn", {
+			...cookie.attributes,
 			httpOnly: false,
 		});
 	}
@@ -90,8 +102,34 @@ export const checkAuth = cache(async () => {
 	if (session && account) return { session, account };
 }, "checkAuth");
 
-export function setIsLoggedInCookie() {
-	setCookie("isLoggedIn", "true", {
+export async function createSession(accountId: string) {
+	const req = getRequestEvent();
+	if (!req) throw new Error("No request event");
+
+	const session = await lucia.createSession(accountId, {});
+	const cookie = lucia.createSessionCookie(session.id);
+	await setSignedCookie(
+		req.hono,
+		cookie.name,
+		cookie.value,
+		env.INTERNAL_SECRET,
+		cookie.attributes,
+	);
+	setCookie(req.hono, "isLoggedIn", "true", {
+		...cookie.attributes,
+		httpOnly: false,
+	});
+}
+
+export async function logout(sessionId: string) {
+	await lucia.invalidateSession(sessionId);
+
+	const req = getRequestEvent();
+	if (!req) throw new Error("No request event");
+	const cookie = lucia.createBlankSessionCookie();
+	deleteCookie(req.hono, lucia.sessionCookieName, cookie.attributes);
+	deleteCookie(req.hono, "isLoggedIn", {
+		...cookie.attributes,
 		httpOnly: false,
 	});
 }

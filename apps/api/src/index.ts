@@ -1,12 +1,58 @@
-import { Hono } from "hono";
-// import { waitlistRouter } from "./waitlist";
+import type { ExecutionContext } from "@cloudflare/workers-types";
+import {
+	type TrpcServerFunctionOpts,
+	trpcServerFunction,
+} from "@mattrax/trpc-server-function";
+import { toReadableStream } from "@mattrax/trpc-server-function/seroval";
+import { instrument } from "@microlabs/otel-cf-workers";
+import { trace } from "@opentelemetry/api";
+import { type Context, Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
+import type { BlankEnv, BlankInput } from "hono/types";
+import { provideRequestEvent } from "solid-js/web/storage";
+import { createTRPCContext, router } from "./trpc";
+import { waitlistRouter } from "./waitlist";
 
-import "~/db"; // TODO
+declare module "solid-js/web" {
+	interface RequestEvent {
+		hono: Context<BlankEnv, "/api/trpc", BlankInput>;
+		waitUntil(promise: Promise<void> | (() => Promise<void>)): void;
+		// TODO: Tie to `wrangler.toml`'s generated types?
+		env: Record<string, unknown>;
+	}
+}
+
+const GIT_SHA = (import.meta.env as any).GIT_SHA || "unknown";
 
 const app = new Hono()
-	.get("/api/__version", (c) => c.json({ message: "Mattrax Forge!" })) // TODO
-	// .route("/api/waitlist", waitlistRouter)
-	// .route("/api/trpc", trpcRouter) // TODO
+	.onError((err, c) => {
+		console.error(err);
+		if (err instanceof HTTPException) return err.getResponse();
+		trace.getActiveSpan()?.recordException(err);
+		return c.json({ error: "Internal Server Error" }, 500);
+	})
+	.get("/api/__version", (c) => c.json(GIT_SHA))
+	.route("/api/waitlist", waitlistRouter)
+	.all("/api/trpc", async (c) => {
+		const opts: TrpcServerFunctionOpts = await c.req.json();
+		const result = await provideRequestEvent(
+			{
+				hono: c,
+				request: c.req.raw,
+				waitUntil: c.executionCtx.waitUntil as any,
+				env: { ...process.env },
+				// SS's stuff is still being injected via Vite.
+				locals: {},
+				response: c.res,
+				nativeEvent: undefined as any,
+			},
+			() => trpcServerFunction({ router, ctx: createTRPCContext(), opts }),
+		);
+
+		c.header("Content-Type", "text/javascript");
+		c.status(200);
+		return c.body(toReadableStream(result));
+	})
 	// .route("/EnrollmentServer", trpcRouter) // TODO
 	// .route("/ManagementServer", trpcRouter) // TODO
 	.all("*", (c) => {
@@ -17,4 +63,73 @@ const app = new Hono()
 		return c.text("404: Not Found");
 	});
 
-export default app;
+// TODO: Codegen from `wrangler.toml`
+type Env = Record<string, any>;
+
+// We disable this in dev because it doesn't play nice with Vite's devserver (due it trying to instrument CF stuff that doesn't exist).
+const instrumented = import.meta.env.DEV
+	? undefined
+	: instrument(
+			{
+				fetch: async (request: Request, env: Env, ctx: ExecutionContext) => {
+					const resp = await app.fetch(request, env, ctx);
+					const spanCtx = trace.getActiveSpan();
+					if (spanCtx)
+						resp.headers.set("x-trace-id", spanCtx.spanContext().traceId);
+					return resp;
+				},
+			},
+			(env) => {
+				return {
+					service: { name: "web", version: GIT_SHA },
+					exporter: {
+						url: "https://api.axiom.co/v1/traces",
+						headers: {
+							Authorization: `Bearer ${env.AXIOM_API_TOKEN}`,
+							"X-Axiom-Dataset": `${env.AXIOM_DATASET}`,
+						},
+					},
+				};
+			},
+		);
+
+const _log = console.log;
+console.log = (...args) => {
+	_log(...args);
+	trace.getActiveSpan()?.addEvent("log", { args });
+};
+const _error = console.error;
+console.error = (...args) => {
+	_warn(...args);
+	trace.getActiveSpan()?.addEvent("error", { args });
+};
+const _warn = console.warn;
+console.warn = (...args) => {
+	_warn(...args);
+	trace.getActiveSpan()?.addEvent("warn", { args });
+};
+const _trace = console.trace;
+console.trace = (...args) => {
+	_trace(...args);
+	trace.getActiveSpan()?.addEvent("trace", { args });
+};
+
+export default {
+	fetch: async (request: Request, env: Env, ctx: ExecutionContext) => {
+		// biome-ignore lint/style/noParameterAssign:
+		if (!env) env = {};
+		if (!ctx)
+			// biome-ignore lint/style/noParameterAssign:
+			ctx = {
+				waitUntil: (p) =>
+					// If we don't catch it will panic the node devserver.
+					p.catch((err) => console.error("Failed waitUntil:", err)),
+				passThroughOnException: () => {},
+			};
+
+		const isAxiom = "AXIOM_API_TOKEN" in env && "AXIOM_DATASET" in env;
+		return await (isAxiom && !!instrumented
+			? instrumented.fetch(request, env, ctx)
+			: app.fetch(request, env, ctx));
+	},
+};

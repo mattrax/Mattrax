@@ -2,7 +2,7 @@
 
 import crypto from "node:crypto";
 import path from "node:path";
-import type { Env } from "./apps/web/src/env";
+import type { Env } from "./apps/api/src/env";
 
 if ("CLOUDFLARE_DEFAULT_ACCOUNT_ID" in process.env === false)
 	throw new Error("'CLOUDFLARE_DEFAULT_ACCOUNT_ID' is required");
@@ -33,6 +33,7 @@ export default $config({
 		const DATABASE_URL = new sst.Secret("DatabaseURL");
 		const ENTRA_CLIENT_ID = new sst.Secret("EntraClientID");
 		const ENTRA_CLIENT_SECRET = new sst.Secret("EntraClientSecret");
+		const AXIOM_API_TOKEN = new sst.Secret("AxiomApiToken");
 		const WAITLIST_DISCORD_WEBHOOK_URL = new sst.Secret(
 			"WaitlistDiscordWebhookURL",
 		);
@@ -189,17 +190,17 @@ export default $config({
 			INTERNAL_SECRET: INTERNAL_SECRET.result,
 			DATABASE_URL: $interpolate`https://:${INTERNAL_SECRET.result}@${cloudHost}`,
 			MANAGE_URL: renderZoneDomain(zone, manageSubdomain),
-			RUST_URL: cloud.url,
 			FROM_ADDRESS: $interpolate`Mattrax <${sender}>`,
 			AWS_ACCESS_KEY_ID: webAccessKey.id,
 			AWS_SECRET_ACCESS_KEY: webAccessKey.secret,
 			ENTRA_CLIENT_ID: ENTRA_CLIENT_ID.value,
 			ENTRA_CLIENT_SECRET: ENTRA_CLIENT_SECRET.value,
-			COOKIE_DOMAIN: renderZoneDomain(zone, "@"),
 			VITE_PROD_ORIGIN,
 			WAITLIST_DISCORD_WEBHOOK_URL: WAITLIST_DISCORD_WEBHOOK_URL.value,
 			FEEDBACK_DISCORD_WEBHOOK_URL: FEEDBACK_DISCORD_WEBHOOK_URL.value,
 			DO_THE_THING_WEBHOOK_URL: DO_THE_THING_WEBHOOK_URL.value,
+			AXIOM_API_TOKEN: AXIOM_API_TOKEN.value,
+			AXIOM_DATASET: "mattrax",
 		};
 
 		const web = CloudflarePages("web", {

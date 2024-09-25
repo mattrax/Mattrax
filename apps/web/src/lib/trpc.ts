@@ -1,9 +1,7 @@
-import type { AppRouter } from "@mattrax/api/client";
+import { type AppRouter, serverFunction } from "@mattrax/api/client";
 import {
-	type TrpcServerFunctionOpts,
 	createServerFunctionLink,
 	seroval,
-	trpcServerFunction,
 } from "@mattrax/trpc-server-function";
 import { createTRPCSolidStart } from "@solid-mediakit/trpc";
 import { useQueryClient } from "@tanstack/solid-query";
@@ -16,7 +14,7 @@ import { useQueryClient } from "@tanstack/solid-query";
 
 export const trpc = createTRPCSolidStart<AppRouter>({
 	config: () => ({
-		links: [], // TODO: createServerFunctionLink(serverFunction, useQueryClient())
+		links: [createServerFunctionLink(serverFunction, useQueryClient())],
 		transformer: seroval,
 	}),
 });

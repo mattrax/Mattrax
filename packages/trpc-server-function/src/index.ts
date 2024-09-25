@@ -17,7 +17,6 @@ import {
 import { getHTTPStatusCodeFromError } from "@trpc/server/http";
 import { observable } from "@trpc/server/observable";
 import { type TRPCResponse, TRPC_ERROR_CODES_BY_KEY } from "@trpc/server/rpc";
-import { getEvent } from "vinxi/http";
 import { TRPC_LOCAL_STORAGE } from "./server";
 
 export type TrpcServerFunctionOpts = StringifiedOpts;
@@ -29,19 +28,17 @@ interface TrpcServerFunctionOptsObject {
 
 export async function trpcServerFunction<TRouter extends AnyRouter>({
 	router,
-	createContext,
+	ctx,
 	opts: stringifiedOpts,
 }: {
 	router: TRouter;
-	createContext: any;
+	// TODO: Correctly tie to router
+	ctx: any;
 	opts: StringifiedOpts;
 }) {
 	"use server";
 
 	const opts = parseOpts(stringifiedOpts);
-
-	const event = getEvent();
-	const ctx = createContext(event);
 
 	const flushPromises: Promise<unknown>[] = [];
 	const responses = opts.operations.map(async (o) => {
@@ -61,10 +58,7 @@ export async function trpcServerFunction<TRouter extends AnyRouter>({
 					procedures: router._def.procedures,
 					path: o.path,
 					rawInput: o.input,
-					ctx: {
-						...ctx,
-						flushResponse: resolve,
-					},
+					ctx,
 					type: opts.type,
 				});
 
@@ -74,10 +68,7 @@ export async function trpcServerFunction<TRouter extends AnyRouter>({
 							procedures: router._def.procedures,
 							path: key[0],
 							rawInput: key[1],
-							ctx: {
-								...ctx,
-								flushResponse: () => {}, // TODO: resolve,
-							},
+							ctx,
 							type: "query",
 						});
 

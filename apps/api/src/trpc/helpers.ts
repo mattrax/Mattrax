@@ -3,16 +3,17 @@ import { flushResponse } from "@mattrax/trpc-server-function/server";
 import { cache } from "@solidjs/router";
 import { TRPCError, initTRPC } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
-import type { H3Event } from "vinxi/server";
 import { ZodError, z } from "zod";
 
+import { trace } from "@opentelemetry/api";
+import { getRequestEvent } from "solid-js/web";
 import { db, tenantMembers, tenants } from "~/db";
 import { checkAuth } from "../auth";
 
-export const createTRPCContext = (event: H3Event) => {
+export const createTRPCContext = () => {
 	return {
 		db,
-		event,
+		event: getRequestEvent(),
 	};
 };
 
@@ -66,6 +67,8 @@ export const authedProcedure = publicProcedure.use(async ({ next }) => {
 
 	if (!data) throw new TRPCError({ code: "UNAUTHORIZED" });
 
+	trace.getActiveSpan()?.setAttribute("account.pk", data.account.pk);
+
 	return next({
 		ctx: {
 			...data,
@@ -103,6 +106,9 @@ export const tenantProcedure = authedProcedure
 
 		const tenant = await getTenant(input.tenantId, ctx.account.pk);
 		if (!tenant) throw new TRPCError({ code: "FORBIDDEN", message: "tenant" });
+
+		// Technically the user could make a request for multiple tenants in a batch but the UI doesn't allow this so gonna ignore it for now.
+		trace.getActiveSpan()?.setAttribute("tenant.pk", tenant.pk);
 
 		return opts.next({ ctx: { ...ctx, tenant } });
 	});
