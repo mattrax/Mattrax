@@ -24,7 +24,6 @@
 		"@mattrax/policy-composer": "workspace:*",
 		"@mattrax/trpc-server-function": "workspace:^",
 		"@mattrax/ui": "workspace:*",
-		"@mattrax/web": "file:",
 		"@microsoft/microsoft-graph-client": "^3.0.7",
 		"@paralleldrive/cuid2": "^2.2.2",
 		"@planetscale/database": "^1.19.0",

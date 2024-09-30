@@ -1,19 +1,8 @@
-import { XMLBuilder, XMLParser, XMLValidator } from "fast-xml-parser";
-
-export const parser = new XMLParser({
-	ignoreAttributes: false,
-	allowBooleanAttributes: true,
-	attributeNamePrefix: "",
-	attributesGroupName: "@_",
-});
-export const builder = new XMLBuilder();
 export const e = new TextEncoder();
 export const d = new TextDecoder();
 
 // microsoftDeviceIDExtension contains the OID for the Microsoft certificate extension which includes the MDM DeviceID
 export const microsoftDeviceIDExtension = "1.3.6.1.4.1.311.66.1.0";
-
-// export const providerId = "";
 
 // TODO: Remove these
 export const identityCertificate = `-----BEGIN CERTIFICATE-----
