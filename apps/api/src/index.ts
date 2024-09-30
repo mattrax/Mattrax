@@ -33,11 +33,8 @@ const app = new Hono()
 		trace.getActiveSpan()?.recordException(err);
 		return c.json({ error: "Internal Server Error" }, 500);
 	})
-	.get("/api/__version", (c) => c.json(GIT_SHA))
-	.route("/api/waitlist", waitlistRouter)
-	.all("/api/trpc", async (c) => {
-		const opts: TrpcServerFunctionOpts = await c.req.json();
-		const result = await provideRequestEvent(
+	.use((c, next) =>
+		provideRequestEvent(
 			{
 				hono: c,
 				request: c.req.raw,
@@ -48,12 +45,29 @@ const app = new Hono()
 				response: c.res,
 				nativeEvent: undefined as any,
 			},
-			() => trpcServerFunction({ router, ctx: createTRPCContext(), opts }),
-		);
+			() => next(),
+		),
+	);
+
+if (import.meta.env.DEV) app.use(logger());
+
+app
+	.get("/api/__version", (c) => c.json(GIT_SHA))
+	.route("/api/waitlist", waitlistRouter)
+	.all("/api/trpc", async (c) => {
+		const opts: TrpcServerFunctionOpts = await c.req.json();
+		const result = await trpcServerFunction({
+			router,
+			ctx: createTRPCContext(),
+			opts,
+		});
 
 		c.header("Content-Type", "text/javascript");
 		c.status(200);
-		return c.body(toReadableStream(result));
+		const resp = c.body(toReadableStream(result));
+		// TODO: For some reason the `c.header` above isn't always respected.
+		resp.headers.set("Content-Type", "text/javascript");
+		return resp;
 	})
 	.route("/EnrollmentServer", enrollmentServerRouter)
 	.route("/ManagementServer", managementServerRouter)
@@ -64,8 +78,6 @@ const app = new Hono()
 		}
 		return c.text("404: Not Found");
 	});
-
-if (import.meta.env.DEV) app.use(logger());
 
 // TODO: Codegen from `wrangler.toml`
 type Env = Record<string, any>;
@@ -121,7 +133,7 @@ console.trace = (...args) => {
 export default {
 	fetch: async (request: Request, env: Env, ctx: ExecutionContext) => {
 		// biome-ignore lint/style/noParameterAssign:
-		if (!env) env = {};
+		if (!env) env = process.env;
 		if (!ctx)
 			// biome-ignore lint/style/noParameterAssign:
 			ctx = {
