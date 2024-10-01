@@ -16,6 +16,6 @@
 		"@mattrax/policy": "workspace:*",
 		"@mattrax/ui": "workspace:*",
 		"@tanstack/solid-virtual": "^3.10.8",
-		"solid-js": "^1.8.22"
+		"solid-js": "^1.9.1"
 	}
 }
