@@ -25,22 +25,22 @@
 		"@corvu/tailwind": "^0.1.5",
 		"@kobalte/core": "^0.13.6",
 		"@solid-primitives/refs": "^1.0.8",
-		"@solidjs/router": "0.14.5",
+		"@solidjs/router": "0.14.7",
 		"@tanstack/solid-virtual": "^3.10.8",
-		"@tanstack/zod-form-adapter": "^0.32.0",
+		"@tanstack/zod-form-adapter": "^0.33.0",
 		"chart.js": "^4.4.4",
 		"class-variance-authority": "^0.7.0",
 		"clsx": "^2.1.1",
 		"cmdk-solid": "^1.1.0",
-		"solid-js": "^1.8.22",
+		"solid-js": "^1.9.1",
 		"solid-presence": "^0.1.8",
 		"zod": "^3.23.8"
 	},
 	"devDependencies": {
-		"@iconify/json": "^2.2.249",
+		"@iconify/json": "^2.2.254",
 		"unplugin-auto-import": "^0.18.3",
 		"unplugin-icons": "^0.19.3",
-		"vite": "^5.4.6",
+		"vite": "^5.4.8",
 		"vite-plugin-solid": "^2.10.2"
 	}
 }
