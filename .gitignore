@@ -3,6 +3,7 @@
 stats.html
 stats-*.html
 dist
+distt
 .solid
 .output
 .vinxi
@@ -56,6 +57,7 @@ Thumbs.db
 /TODO
 /policy.yaml
 /out
+/dev.sh
 
 # Other
 .nx

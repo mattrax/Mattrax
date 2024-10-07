@@ -7,6 +7,7 @@ export function Menubar() {
 	return (
 		<div class="flex py-1 px-2 gap-1">
 			<TabsList>
+				<TabsTrigger value="overview">Overview</TabsTrigger>
 				<TabsTrigger value="windows">Windows</TabsTrigger>
 				<TabsTrigger value="apple">Apple</TabsTrigger>
 				<TabsTrigger value="android" disabled>

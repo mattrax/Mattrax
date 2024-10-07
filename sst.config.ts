@@ -2,7 +2,7 @@
 
 import crypto from "node:crypto";
 import path from "node:path";
-import type { Env } from "./apps/web/src/env";
+import type { Env } from "./apps/api/src/env";
 
 if ("CLOUDFLARE_DEFAULT_ACCOUNT_ID" in process.env === false)
 	throw new Error("'CLOUDFLARE_DEFAULT_ACCOUNT_ID' is required");
@@ -33,22 +33,33 @@ export default $config({
 		const DATABASE_URL = new sst.Secret("DatabaseURL");
 		const ENTRA_CLIENT_ID = new sst.Secret("EntraClientID");
 		const ENTRA_CLIENT_SECRET = new sst.Secret("EntraClientSecret");
+		const AXIOM_API_TOKEN = new sst.Secret("AxiomApiToken");
 		const WAITLIST_DISCORD_WEBHOOK_URL = new sst.Secret(
 			"WaitlistDiscordWebhookURL",
 		);
 		const FEEDBACK_DISCORD_WEBHOOK_URL = new sst.Secret(
 			"FeedbackDiscordWebhookURL",
 		);
+		const DO_THE_THING_WEBHOOK_URL = new sst.Secret("DoTheThingWebhookURL");
 
 		// Derived
 		const webSubdomain = $app.stage === "prod" ? "cloud" : `${$app.stage}-web`;
 		const manageSubdomain =
 			$app.stage === "prod" ? "manage" : `${$app.stage}-manage`;
+		const urlForApiGateway =
+			// TODO: Probs remove this and have some local config for it or something?
+			$app.stage === "oscar"
+				? "https://demo.otbeaumont.me"
+				: `https://${renderZoneDomain(zone, webSubdomain)}`;
 
 		// Automatic
 		const INTERNAL_SECRET = new random.RandomString("internalSecret", {
-			length: 16,
+			length: 64,
 			overrideSpecial: "$-_.+!*'()",
+		});
+		const API_GATEWAY_SECRET = new random.RandomString("apiGatewaySecret", {
+			length: 40,
+			special: false,
 		});
 
 		// Defaults
@@ -126,25 +137,7 @@ export default $config({
 			}
 		}
 
-		// MDM Identity Authority
-		const identityKey = new tls.PrivateKey("identityKey", {
-			algorithm: "ECDSA",
-			ecdsaCurve: "P256",
-		});
-
-		// TODO: Can we automate renewing this certificate???
-		const identityCert = new tls.SelfSignedCert("identityCert", {
-			allowedUses: ["cert_signing", "crl_signing"], // TODO: critical: true
-			validityPeriodHours: 365 * 24, // 1 year
-			privateKeyPem: identityKey.privateKeyPem,
-			isCaCertificate: true, // TODO: critical: true
-			subject: {
-				commonName: "Mattrax Device Authority",
-				organization: "Mattax Inc.",
-			},
-		});
-
-		// `apps/cloud`
+		// `apps/cloud` - SQL proxy
 		const cloudBuild = new command.local.Command("cloudBuild", {
 			create:
 				"./.github/cl.sh build --arm64 --release -p mx-cloud --bin lambda",
@@ -159,28 +152,17 @@ export default $config({
 		const cloud = new sst.aws.Function(
 			"cloud",
 			{
-				...($dev
-					? {
-							runtime: "nodejs20.x",
-							handler: "apps/cloud/live.handler",
-						}
-					: {
-							handler: "bootstrap",
-							architecture: "arm64",
-							runtime: "provided.al2023",
-							// SST/Pulumi is having problems with `dependsOn` so we force their hand.
-							bundle: cloudBuild.stdout.apply(() =>
-								path.join(process.cwd(), "target", "lambda", "lambda"),
-							),
-						}),
+				handler: "bootstrap",
+				architecture: "arm64",
+				runtime: "provided.al2023",
+				// SST/Pulumi is having problems with `dependsOn` so we force their hand.
+				bundle: cloudBuild.stdout.apply(() =>
+					path.join(process.cwd(), "target", "lambda", "lambda"),
+				),
 				memory: "128 MB",
 				environment: {
 					DATABASE_URL: DATABASE_URL.value,
 					INTERNAL_SECRET: INTERNAL_SECRET.result,
-					ENROLLMENT_DOMAIN: renderZoneDomain(zone, webSubdomain),
-					MANAGE_DOMAIN: renderZoneDomain(zone, manageSubdomain),
-					IDENTITY_CERT: identityCert.certPem,
-					IDENTITY_KEY: identityKey.privateKeyPemPkcs8,
 				},
 				// TODO: We should probs setup IAM on this???
 				url: true,
@@ -211,22 +193,73 @@ export default $config({
 			policy: webPolicy.then((p) => p.json),
 		});
 
+		const truststoreBucket = new sst.aws.Bucket("TruststoreBucket", {
+			public: false,
+		});
+		new aws.s3.BucketVersioningV2("TruststoreBucketVersioning", {
+			bucket: truststoreBucket.name,
+			versioningConfiguration: {
+				status: "Enabled",
+			},
+		});
+
+		const manageApi = new sst.aws.ApiGatewayV2("ManageApi", {
+			domain: {
+				name: renderZoneDomain(zone, manageSubdomain),
+				dns: sst.cloudflare.dns(),
+			},
+			accessLog: {
+				retention: "1 week",
+			},
+			transform: {
+				api(args, opts, name) {
+					args.disableExecuteApiEndpoint = true;
+				},
+			},
+		});
+		const integration = new aws.apigatewayv2.Integration(
+			"ManageApiIntegration",
+			{
+				apiId: manageApi.nodes.api.id,
+				integrationType: "HTTP_PROXY",
+				integrationMethod: "ANY",
+				integrationUri: urlForApiGateway,
+				requestParameters: {
+					"overwrite:header.x-apigateway-auth": API_GATEWAY_SECRET.result,
+					"overwrite:path": "$request.path",
+					"overwrite:header.x-client-cert":
+						"$context.identity.clientCert.clientCertPem",
+					"overwrite:header.x-client-cert-cn":
+						"$context.identity.clientCert.subjectDN",
+				},
+			},
+		);
+		new aws.apigatewayv2.Route("ManageApiRoute", {
+			apiId: manageApi.nodes.api.id,
+			routeKey: "$default",
+			target: $interpolate`integrations/${integration.id}`,
+		});
+
 		const VITE_PROD_ORIGIN = `https://${renderZoneDomain(zone, webSubdomain)}`;
 		const env: { [K in keyof Env]: $util.Input<Env[K]> } = {
 			NODE_ENV: "production",
 			INTERNAL_SECRET: INTERNAL_SECRET.result,
 			DATABASE_URL: $interpolate`https://:${INTERNAL_SECRET.result}@${cloudHost}`,
-			MANAGE_URL: renderZoneDomain(zone, manageSubdomain),
-			RUST_URL: cloud.url,
+			MANAGE_URL: $interpolate`https://${renderZoneDomain(zone, manageSubdomain)}`,
 			FROM_ADDRESS: $interpolate`Mattrax <${sender}>`,
 			AWS_ACCESS_KEY_ID: webAccessKey.id,
 			AWS_SECRET_ACCESS_KEY: webAccessKey.secret,
 			ENTRA_CLIENT_ID: ENTRA_CLIENT_ID.value,
 			ENTRA_CLIENT_SECRET: ENTRA_CLIENT_SECRET.value,
-			COOKIE_DOMAIN: renderZoneDomain(zone, "@"),
 			VITE_PROD_ORIGIN,
 			WAITLIST_DISCORD_WEBHOOK_URL: WAITLIST_DISCORD_WEBHOOK_URL.value,
 			FEEDBACK_DISCORD_WEBHOOK_URL: FEEDBACK_DISCORD_WEBHOOK_URL.value,
+			DO_THE_THING_WEBHOOK_URL: DO_THE_THING_WEBHOOK_URL.value,
+			AXIOM_API_TOKEN: AXIOM_API_TOKEN.value,
+			AXIOM_DATASET: "mattrax",
+			API_GATEWAY_ARN: manageApi.nodes.api.arn,
+			TRUSTSTORE_BUCKET: $interpolate`https://${truststoreBucket.domain}`,
+			API_GATEWAY_SECRET: API_GATEWAY_SECRET.result,
 		};
 
 		const web = CloudflarePages("web", {
@@ -235,8 +268,8 @@ export default $config({
 				sub: $app.stage === "prod" ? "cloud" : `${$app.stage}-web.dev`,
 			},
 			build: {
-				command: "pnpm web build",
-				output: path.join("apps", "web", "dist"),
+				command: "pnpm api build",
+				output: path.join("apps", "api", "dist"),
 				environment: {
 					NITRO_PRESET: "cloudflare_pages",
 					NODE_ENV: "production",
@@ -247,9 +280,15 @@ export default $config({
 				deploymentConfigs: {
 					preview: {
 						environmentVariables: env as any,
+						placement: {
+							mode: "smart",
+						},
 					},
 					production: {
 						environmentVariables: env as any,
+						placement: {
+							mode: "smart",
+						},
 					},
 				},
 			},

@@ -1,103 +1,105 @@
-import { type Params, useNavigate } from "@solidjs/router";
-import { FileRoutes } from "@solidjs/start/router";
+import { Navigate } from "@solidjs/router";
 import { parse } from "cookie-es";
-import { Show, onMount, startTransition } from "solid-js";
-import type { JSX } from "solid-js";
-import { isServer } from "solid-js/web";
-import { CommandPalette, useCommandGroup } from "~/components/CommandPalette";
+import { ErrorBoundary, type ParentProps, Suspense } from "solid-js";
+import { z } from "zod";
+import {
+	Sidebar,
+	SidebarContent,
+	SidebarFooter,
+	SidebarHeader,
+	SidebarItem,
+	SidebarLayout,
+} from "~/components/Sidebar";
+import { Footer } from "~/components/Sidebar/Footer";
+import { Navigation } from "~/components/Sidebar/Navigation";
+import { OtherNavigation } from "~/components/Sidebar/OtherNavigation";
+import { TenantSwitcher } from "~/components/Sidebar/TenantSwitcher";
+import { useTenants } from "~/lib/data";
+import { useZodParams } from "~/lib/useZodParams";
 
-import { trpc } from "~/lib";
-import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import Topbar from "./(dash)/@topbar";
-import { BreadcrumbsSlot, NavItemsSlot } from "./(dash)/@topbar/interop";
-
-export const route = {
-	load: () => {
-		trpc.useContext().auth.me.ensureData();
-	},
+export const useTenantId = () => {
+	const params = useZodParams({
+		tenantId: z.string(),
+	});
+	return () => params.tenantId;
 };
 
-// TODO: Copied from: https://github.com/solidjs/solid-router/pull/426
-// TODO: Replace with SolidJS import once it's available
-export interface RouteSectionProps<T = unknown, TSlots extends string = never> {
-	params: Params;
-	location: Location;
-	data: T;
-	children?: JSX.Element;
-	slots: Record<TSlots, JSX.Element>;
-}
+export const useTenant = () => {
+	const tenantId = useTenantId();
+	const tenants = useTenants();
+	console.log(tenants.data, tenantId());
+	return () => tenants.data?.find((tenant) => tenant.id === tenantId());
+};
 
-const TopbarAny = Topbar as any;
-
-export default function Layout(props: RouteSectionProps<never, "topbar">) {
-	const navigate = useNavigate();
-
-	onMount(async () => {
-		if (!import.meta.env.DEV) {
-			const routes = FileRoutes();
-
-			function preloadRoute(route: any) {
-				route.component.preload();
-				if (route.children) {
-					for (const childRoute of route.children) {
-						setTimeout(() => preloadRoute(childRoute), 100);
-					}
-				}
-			}
-
-			for (const route of routes) {
-				setTimeout(() => preloadRoute(route), 100);
-			}
-		}
+export default function (props: ParentProps) {
+	const params = useZodParams({
+		// This is optional as the sidebar should be available on `/account`, etc
+		tenantId: z.string().optional(),
 	});
 
-	if (!isServer) {
-		// isLoggedIn cookie trick for quick login navigation
-		const cookies = parse(document.cookie);
-		if (cookies.isLoggedIn !== "true") {
-			const params = new URLSearchParams({
-				next: location.pathname,
-			});
+	// If unauthenticated send to login
+	// It's *super important* this is in the layout, not the child because the children are lazy loaded.
+	if (parse(document.cookie).isLoggedIn !== "true")
+		return <Navigate href="/login" />;
 
-			startTransition(() => navigate(`/login?${params.toString()}`));
-		}
-	}
+	const tenants = useTenants();
 
 	return (
-		<MErrorBoundary>
-			<CommandPalette>
-				{/* // TODO: Replace this with `{props.slots.topbar}` */}
-				<TopbarAny
-					// TODO: We are faking the API of: https://github.com/solidjs/solid-router/pull/426
-					slots={{
-						breadcrumbs: <BreadcrumbsSlot />,
-						navItems: <NavItemsSlot />,
-					}}
-				/>
+		<SidebarLayout>
+			<Sidebar>
+				<SidebarHeader>
+					<TenantSwitcher />
+				</SidebarHeader>
+				<SidebarContent>
+					<SidebarItem>
+						<Navigation
+							tenantId={params.tenantId}
+							disabled={
+								params.tenantId === undefined || tenants.data === undefined
+							}
+						/>
+					</SidebarItem>
+					<SidebarItem class="mt-auto">
+						<OtherNavigation />
+					</SidebarItem>
+				</SidebarContent>
+				<SidebarFooter>
+					<Footer />
+				</SidebarFooter>
+			</Sidebar>
+			<div class="min-h-screen h-screen overflow-auto">
+				<ErrorBoundary fallback={ErrorScreen}>
+					<Suspense>{props.children}</Suspense>
+				</ErrorBoundary>
+			</div>
+		</SidebarLayout>
+	);
+}
 
-				{props.children}
-				<Show when>
-					{(_) => {
-						useCommandGroup("Account", [
-							{
-								title: "Organisations",
-								href: "/",
-							},
-							{
-								title: `Log out of ${"todo@example.com"}`,
-								onClick: () => alert(1), // TODO
-							},
-							{
-								title: "Settings",
-								href: "/account/general",
-							},
-							// TODO: Dark mode/light mode
-						]);
+function ErrorScreen(err: Error, reset: () => void) {
+	console.error(err);
 
-						return null;
-					}}
-				</Show>
-			</CommandPalette>
-		</MErrorBoundary>
+	return (
+		<div class="flex h-full items-center justify-center">
+			<div class="flex flex-col items-center justify-center">
+				<h1 class="mt-4 text-3xl font-bold tracking-tight text-gray-900 sm:text-5xl">
+					Error occurred
+				</h1>
+				<p class="text-muted-foreground opacity-70 pt-2 text-md text-center max-w-sm">
+					We are sorry but something has gone wrong!
+				</p>
+
+				<pre class="text-muted-foreground opacity-70 p-2">{err.toString()}</pre>
+
+				<p class="text-muted-foreground opacity-70 text-sm text-center max-w-sm">
+					<a
+						href={`mailto:hello@mattrax.app?subject=${encodeURIComponent("Something went wrong!")}&body=${encodeURIComponent(`I encountered the following error while using the Mattrax dashboard.\n\n${err.toString()}\n\nPlease include steps to reproduce this before sending the email!`)}`}
+						class="underline underline-offset-2 hover:text-black"
+					>
+						Need help?
+					</a>
+				</p>
+			</div>
+		</div>
 	);
 }

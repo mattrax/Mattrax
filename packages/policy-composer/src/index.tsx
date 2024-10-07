@@ -14,6 +14,7 @@ import {
 	type PolicyComposerController,
 	type PolicyPlatform,
 } from "./Context";
+import { Menubar } from "./Menubar";
 import { Windows } from "./Windows";
 
 export * from "./Context";
@@ -32,6 +33,18 @@ export function PolicyComposer(props: {
 					props.controller.setState("platform", value as PolicyPlatform)
 				}
 			>
+				<TabsContent
+					value="overview"
+					class="flex-1 flex flex-row divide-x divide-gray-200"
+				>
+					<div class="flex-1 max-w-xl flex sticky top-12 flex-col max-h-[calc(100vh-3rem)] overflow-hidden">
+						<Menubar />
+
+						<p>Overview</p>
+					</div>
+
+					{/* <Windows csps={props.windowsCSPs} /> */}
+				</TabsContent>
 				<TabsContent
 					value="windows"
 					class="flex-1 flex flex-row divide-x divide-gray-200"

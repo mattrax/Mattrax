@@ -9,15 +9,19 @@ import {
 	keepPreviousData,
 	onlineManager,
 } from "@tanstack/solid-query";
-import { Suspense, lazy, onCleanup, startTransition } from "solid-js";
+import {
+	ErrorBoundary,
+	Suspense,
+	lazy,
+	onCleanup,
+	startTransition,
+} from "solid-js";
 import { Toaster, toast } from "solid-sonner";
 
-import { MErrorBoundary } from "~c/MattraxErrorBoundary";
-import { isTRPCClientError, trpc } from "./lib";
+import { isTRPCClientError, trpc, urlWithSearchParams } from "./lib";
+import { parseJson } from "./lib/utils";
 
 import "@mattrax/ui/css";
-import { urlWithSearchParams } from "./api/utils";
-import { parseJson } from "./lib/utils";
 
 // TODO: Maybe PR this back to Solid DND???
 declare module "solid-js" {
@@ -107,9 +111,7 @@ export default function App() {
 										return;
 									} else if (error.data?.code === "FORBIDDEN") {
 										if (error.message === "tenant") navigate("/");
-										else
-											errorMsg =
-												"You are not allowed to access this resource!,";
+										errorMsg = `This ${error.message} does not exist or you are not allowed to access it!`;
 									} else if (error.data?.code === "NOT_FOUND") {
 										// not founds are handled at an app level with `.get` queries returning `null`
 										return;
@@ -144,12 +146,18 @@ export default function App() {
 							}),
 						);
 
+						// TODO: Style this error boundary
 						return (
-							<MErrorBoundary>
+							<ErrorBoundary
+								fallback={(err) => {
+									console.error(err);
+									return null;
+								}}
+							>
 								{import.meta.env.DEV && <SolidQueryDevtools />}
 								<Toaster />
 								<Suspense>{props.children}</Suspense>
-							</MErrorBoundary>
+							</ErrorBoundary>
 						);
 					}}
 				>

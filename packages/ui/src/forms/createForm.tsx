@@ -26,6 +26,8 @@ export type FormState<T> = {
 
 	// Should be called on the `onSubmit` event of the root `<form>` element.
 	onSubmit: () => Promise<void> | void;
+	// Reset all fields to their default values.
+	reset: () => void;
 };
 
 export type FieldState<T> = {
@@ -44,11 +46,14 @@ export type FieldState<T> = {
 	// Update the field but *don't* mark it as touched.
 	// This should be done for system input, for user input just assign directly to `value`.
 	updateNoMeta: (value: T) => void;
+	// Reset the field to its `defaultValue`.
+	reset: () => void;
 };
 
 export type CreateFormProps<S extends z.AnyZodObject> = {
 	schema: () => S;
-	onSubmit?: (data: z.infer<S>) => Promise<void> | void;
+	// TODO: I think this should be `void` but it means we can't just `() => form.mutateAsync()` cause `mutateAsync` returns a value.
+	onSubmit?: (data: z.infer<S>) => Promise<unknown> | unknown;
 };
 
 /**
@@ -107,20 +112,29 @@ export function createForm<S extends z.AnyZodObject>(
 
 		// Actions
 		onSubmit() {
-			if (this.isSubmitting || this.isDisabled || !this.isValid) {
+			if (!this.isValid) {
+				console.warn("Form is not valid!");
+				return;
+			}
+			if (this.isSubmitting || this.isDisabled) {
 				console.warn("Form is disabled or already submitting. Skipping...");
 				return;
 			}
 			this.isSubmitting = true;
 
-			Promise.resolve(props.onSubmit?.(this.data))
-				.then(async () => {
+			try {
+				Promise.resolve(props.onSubmit?.(this.data)).finally(() => {
 					this.isSubmitting = false;
-				})
-				.catch((err) => {
-					this.isSubmitting = false;
-					return err;
 				});
+			} catch (err) {
+				console.error("Error submitting form", err);
+				this.isSubmitting = false;
+			}
+		},
+		reset() {
+			for (const field in this.fields) {
+				this.fields[field].reset();
+			}
 		},
 	});
 
@@ -128,15 +142,7 @@ export function createForm<S extends z.AnyZodObject>(
 	createComputed(() =>
 		batch(() => {
 			for (const [key, def] of Object.entries(schema().shape)) {
-				let value =
-					def instanceof z.ZodDefault ? def._def.defaultValue() : undefined;
-				if (def instanceof z.ZodString) value = "";
-				if (def instanceof z.ZodNumber) value = 0;
-				if (def instanceof z.ZodBoolean) value = false;
-				// You *must* define a Zod default or use a type we can infer a default from.
-				// Maintaining this invariant also means `state.data = z.infer<S>` is safe as opposed to `state.data = Partial<z.infer<S>>` without it.
-				if (value === undefined)
-					throw new Error(`Unable to determine default for field '${key}'.`);
+				const value = determineDefault(key, def);
 
 				untrack(() => {
 					if (state.fields[key as keyof S] === undefined) {
@@ -163,6 +169,10 @@ export function createForm<S extends z.AnyZodObject>(
 								this.value = value;
 								this.meta.touched = touched;
 							},
+							reset() {
+								this.value = this.meta.defaultValue;
+								this.meta.touched = false;
+							},
 						};
 					} else {
 						if (state.fields[key]?.meta.dirty !== true) {
@@ -187,6 +197,19 @@ export function createForm<S extends z.AnyZodObject>(
 	});
 
 	return state;
+}
+
+// Get the Zod default if the user set it or guess it from common data types.
+function determineDefault(key: string, def: unknown) {
+	if (def instanceof z.ZodDefault) return def._def.defaultValue();
+	if (def instanceof z.ZodString) return "";
+	if (def instanceof z.ZodNumber) return 0;
+	if (def instanceof z.ZodBoolean) return false;
+	if (def instanceof z.ZodOptional) return undefined;
+
+	// You *must* define a Zod default or use a type we can infer a default from.
+	// Maintaining this invariant means `state.data = z.infer<S>` is safe as opposed to `state.data = Partial<z.infer<S>>` without it.
+	throw new Error(`Unable to determine default for field '${key}'.`);
 }
 
 export type KeysMatching<T, V> = {

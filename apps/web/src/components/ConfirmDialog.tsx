@@ -12,14 +12,15 @@ import {
 	DialogRoot,
 	DialogTitle,
 } from "@mattrax/ui";
-import { Form, InputField, createZodForm } from "@mattrax/ui/forms/legacy";
+import { Form, InputField, createForm } from "@mattrax/ui/forms";
 
 export type ConfirmDialogState = {
 	title: string;
 	action: string;
 	description?: () => JSX.Element;
 	inputText?: string;
-	onConfirm?: () => Promise<void>;
+	closeButton?: JSX.Element;
+	onConfirm?: () => Promise<void> | void;
 	open: boolean;
 };
 export interface ConfirmDialogProps {
@@ -45,8 +46,8 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 	);
 
 	let res: ((v: boolean) => void) | undefined;
-	const form = createZodForm(() => ({
-		get schema() {
+	const form = createForm({
+		schema() {
 			let schema = z.object({ input: z.string() });
 			if (state.inputText === undefined) schema = z.object({}) as any;
 
@@ -57,7 +58,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 			setState("open", false);
 			res?.(true);
 		},
-	}));
+	});
 
 	return (
 		<DialogRoot
@@ -97,23 +98,24 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 						)}
 
 						<DialogFooter>
-							<KDialog.CloseButton as={Button} variant="outline">
-								Cancel
-							</KDialog.CloseButton>
-							<form.Subscribe>
-								{(form) => (
-									<Button
-										type="submit"
-										variant="destructive"
-										disabled={
-											state.inputText !== undefined &&
-											form().values.input !== state.inputText
-										}
-									>
-										{state.action}
-									</Button>
-								)}
-							</form.Subscribe>
+							{state.closeButton === undefined ? (
+								<KDialog.CloseButton as={Button} variant="outline">
+									Cancel
+								</KDialog.CloseButton>
+							) : (
+								state.closeButton
+							)}
+
+							<Button
+								type="submit"
+								variant="destructive"
+								disabled={
+									state.inputText !== undefined &&
+									form.data.input !== state.inputText
+								}
+							>
+								{state.action}
+							</Button>
 						</DialogFooter>
 					</div>
 				</Form>

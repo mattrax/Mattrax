@@ -1,0 +1,18 @@
+{
+	"name": "@mattrax/ms-mde",
+	"description": "Types for MS-MDE and related protocols.",
+	"type": "module",
+	"private": true,
+	"sideEffects": false,
+	"exports": {
+		"./*": {
+			"import": "./src/*.ts",
+			"types": "./src/*.ts"
+		}
+	},
+	"dependencies": {
+		"deepmerge": "^4.3.1",
+		"fast-xml-parser": "^4.5.0",
+		"valibot": "^0.42.1"
+	}
+}

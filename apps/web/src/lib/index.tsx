@@ -1,5 +1,5 @@
+import type { AppRouter } from "@mattrax/api/client";
 import { TRPCClientError } from "@trpc/client";
-import type { AppRouter } from "~/api";
 
 export * from "./trpc";
 
@@ -26,4 +26,10 @@ export function getInitials(string: string) {
 		initials += names[names.length - 1].substring(0, 1).toUpperCase();
 	}
 	return initials;
+}
+
+export function urlWithSearchParams(url: string, query: URLSearchParams) {
+	const search = query.toString();
+	if (search) return `${url}?${search}`;
+	return url;
 }
