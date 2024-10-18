@@ -83,7 +83,7 @@ export const enrollmentRequest = envelope(
 export const enrollmentResponse = withEnvelope(
 	"http://schemas.microsoft.com/windows/pki/2009/01/enrollment/RSTRC/wstep",
 	(opts: {
-		wapProvisioningProfile: WapProvisioningProfile;
+		wapProvisioningProfile: object;
 	}) => ({
 		RequestSecurityTokenResponseCollection: {
 			"@_xmlns": "http://docs.oasis-open.org/ws-sx/ws-trust/200512",

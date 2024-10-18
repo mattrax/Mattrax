@@ -1,6 +1,6 @@
 {
-	"name": "@mattrax/ms-mde",
-	"description": "Types for MS-MDE and related protocols.",
+	"name": "@mattrax/ms-mdm",
+	"description": "Types for MS-MDM",
 	"type": "module",
 	"private": true,
 	"sideEffects": false,

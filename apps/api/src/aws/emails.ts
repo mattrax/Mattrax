@@ -1,19 +1,6 @@
 import type { RequestSchema } from "@mattrax/email";
-import { AwsClient } from "aws4fetch";
-import { env, withEnv } from "~/env";
-
-const aws = withEnv(() => {
-	let client: AwsClient | undefined;
-
-	if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY)
-		client = new AwsClient({
-			region: "us-east-1",
-			accessKeyId: env.AWS_ACCESS_KEY_ID,
-			secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
-		});
-
-	return { client };
-});
+import { env } from "~/env";
+import { aws } from ".";
 
 export async function sendEmail(args: RequestSchema) {
 	if (env.FROM_ADDRESS === "console") {

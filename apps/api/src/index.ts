@@ -11,6 +11,7 @@ import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import type { BlankEnv, BlankInput } from "hono/types";
 import { provideRequestEvent } from "solid-js/web/storage";
+import { getMDMAuthority } from "./authority";
 import { createTRPCContext, router } from "./trpc";
 import { waitlistRouter } from "./waitlist";
 import { enrollmentServerRouter, managementServerRouter } from "./win";
@@ -24,7 +25,7 @@ declare module "solid-js/web" {
 	}
 }
 
-const GIT_SHA = (import.meta.env as any).GIT_SHA || "unknown";
+const GIT_SHA = (import.meta.env as any)?.GIT_SHA || "unknown";
 
 const app = new Hono()
 	.onError((err, c) => {
@@ -39,7 +40,7 @@ const app = new Hono()
 				hono: c,
 				request: c.req.raw,
 				waitUntil: c.executionCtx.waitUntil as any,
-				env: { ...(c.env as any), ...process.env },
+				env: c.env as any,
 				// SS's stuff is still being injected via Vite.
 				locals: {},
 				response: c.res,
@@ -52,6 +53,12 @@ const app = new Hono()
 if (import.meta.env.DEV) app.use(logger());
 
 app
+	// TODO: Remove thi
+	.get("/api/todo", async (c) => {
+		console.log(await getMDMAuthority());
+
+		return c.json({ todo: "todo" });
+	})
 	.get("/api/__version", (c) => c.json(GIT_SHA))
 	.route("/api/waitlist", waitlistRouter)
 	.all("/api/trpc", async (c) => {
@@ -116,7 +123,7 @@ console.log = (...args) => {
 };
 const _error = console.error;
 console.error = (...args) => {
-	_warn(...args);
+	_error(...args);
 	trace.getActiveSpan()?.addEvent("error", { args });
 };
 const _warn = console.warn;
@@ -132,8 +139,8 @@ console.trace = (...args) => {
 
 export default {
 	fetch: async (request: Request, env: Env, ctx: ExecutionContext) => {
-		// biome-ignore lint/style/noParameterAssign:
-		if (!env) env = process.env;
+		// biome-ignore lint/style/noParameterAssign: In dev you get `ctx` as `env` type thing so we override.
+		if (import.meta.env.DEV) env = process.env;
 		if (!ctx)
 			// biome-ignore lint/style/noParameterAssign:
 			ctx = {

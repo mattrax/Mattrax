@@ -2,8 +2,8 @@ import { waitUntil } from "@mattrax/trpc-server-function/server";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { sendEmail } from "~/aws/emails";
 import { accounts, tenantInvites, tenantMembers, tenants } from "~/db";
-import { sendEmail } from "~/emails";
 import { env } from "~/env";
 import {
 	createTRPCRouter,

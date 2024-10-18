@@ -12,8 +12,8 @@ import {
 	createSession,
 	logout,
 } from "~/auth";
+import { sendEmail } from "~/aws/emails";
 import { accountLoginCodes, accounts, db, tenants } from "~/db";
-import { sendEmail } from "~/emails";
 import { env } from "~/env";
 import { authedProcedure, createTRPCRouter, publicProcedure } from "../helpers";
 import { sendDiscordMessage } from "./meta";

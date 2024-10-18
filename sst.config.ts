@@ -66,15 +66,19 @@ export default $config({
 		$transform(sst.aws.Function, (args) => {
 			args.architecture ??= "arm64";
 		});
+		$transform(cloudflare.WorkerScript, (args) => {
+			args.compatibilityDate ??= "2024-09-29";
+			args.compatibilityFlags ??= ["nodejs_compat_v2"];
+		});
 		$transform(cloudflare.PagesProject, (args) => {
 			if (!args.deploymentConfigs) args.deploymentConfigs = {};
 			args.deploymentConfigs = $resolve([args.deploymentConfigs]).apply(
 				([cfg]) => {
 					if (!cfg.preview) cfg.preview = {};
 					if (!cfg.production) cfg.production = {};
-					cfg.preview.compatibilityDate ??= "2024-09-12";
+					cfg.preview.compatibilityDate ??= "2024-09-29";
 					cfg.preview.compatibilityFlags ??= ["nodejs_compat_v2"];
-					cfg.production.compatibilityDate ??= "2024-09-12";
+					cfg.production.compatibilityDate ??= "2024-09-29";
 					cfg.production.compatibilityFlags ??= ["nodejs_compat_v2"];
 					return cfg;
 				},
@@ -174,35 +178,10 @@ export default $config({
 		const cloudHost = cloud.url.apply((url) => new URL(url).host);
 
 		// `apps/web`
-		const webUser = new aws.iam.User("web");
-		const webAccessKey = new aws.iam.AccessKey("webAccessKey", {
-			user: webUser.name,
-		});
-		const webPolicy = aws.iam.getPolicyDocument({
-			statements: [
-				{
-					effect: "Allow",
-					actions: ["ses:SendEmail*"],
-					resources: ["*"],
-				},
-			],
-		});
-		new aws.iam.UserPolicy("webUserPolicy", {
-			name: "webPolicy",
-			user: webUser.name,
-			policy: webPolicy.then((p) => p.json),
-		});
-
 		const truststoreBucket = new sst.aws.Bucket("TruststoreBucket", {
 			public: false,
+			versioning: true,
 		});
-		new aws.s3.BucketVersioningV2("TruststoreBucketVersioning", {
-			bucket: truststoreBucket.name,
-			versioningConfiguration: {
-				status: "Enabled",
-			},
-		});
-
 		const manageApi = new sst.aws.ApiGatewayV2("ManageApi", {
 			domain: {
 				name: renderZoneDomain(zone, manageSubdomain),
@@ -240,6 +219,57 @@ export default $config({
 			target: $interpolate`integrations/${integration.id}`,
 		});
 
+		const webUser = new aws.iam.User("web");
+		const webAccessKey = new aws.iam.AccessKey("webAccessKey", {
+			user: webUser.name,
+		});
+		const webPolicy = aws.iam.getPolicyDocument({
+			statements: [
+				{
+					effect: "Allow",
+					actions: ["ses:SendEmail*"],
+					resources: ["*"],
+				},
+				{
+					// https://stackoverflow.com/a/56027548/23071108
+					effect: "Allow",
+					actions: ["s3:ListBucket"],
+					resources: [
+						// @ts-expect-error // TODO: PR a fix to SST
+						truststoreBucket.arn,
+					],
+				},
+				{
+					effect: "Allow",
+					actions: ["s3:GetObject", "s3:PutObject"],
+					resources: [
+						// @ts-expect-error // TODO: PR a fix to SST
+						$interpolate`${truststoreBucket.arn}/*`,
+					],
+				},
+				{
+					effect: "Allow",
+					actions: [
+						"apigateway:GET",
+						"apigateway:PATCH",
+						"apigateway:POST",
+						"apigateway:PUT",
+						"apigateway:AddCertificateToDomain",
+						"apigateway:RemoveCertificateFromDomain",
+					],
+					resources: [
+						// @ts-expect-error // TODO: PR a fix to SST
+						manageApi.nodes.domainName.arn,
+					],
+				},
+			],
+		});
+		new aws.iam.UserPolicy("webUserPolicy", {
+			name: "webPolicy",
+			user: webUser.name,
+			policy: webPolicy.then((p) => p.json),
+		});
+
 		const VITE_PROD_ORIGIN = `https://${renderZoneDomain(zone, webSubdomain)}`;
 		const env: { [K in keyof Env]: $util.Input<Env[K]> } = {
 			NODE_ENV: "production",
@@ -257,9 +287,11 @@ export default $config({
 			DO_THE_THING_WEBHOOK_URL: DO_THE_THING_WEBHOOK_URL.value,
 			AXIOM_API_TOKEN: AXIOM_API_TOKEN.value,
 			AXIOM_DATASET: "mattrax",
-			API_GATEWAY_ARN: manageApi.nodes.api.arn,
-			TRUSTSTORE_BUCKET: $interpolate`https://${truststoreBucket.domain}`,
+			TRUSTSTORE_BUCKET: truststoreBucket.name,
 			API_GATEWAY_SECRET: API_GATEWAY_SECRET.result,
+			API_GATEWAY_DOMAIN: manageApi.nodes.domainName.domainName,
+			CERTIFICATE_ARN:
+				manageApi.nodes.domainName.domainNameConfiguration.certificateArn,
 		};
 
 		const web = CloudflarePages("web", {
