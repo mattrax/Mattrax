@@ -5,6 +5,7 @@ import {
 } from "@mattrax/ms-mde/enrollment";
 import { policyRequest, policyResponse } from "@mattrax/ms-mde/policy";
 import { deserializeXml, soapResponse } from "@mattrax/ms-mde/util";
+import { datatype, wapProvisioningProfile } from "@mattrax/ms-mde/wap";
 import { trace } from "@opentelemetry/api";
 import { Hono } from "hono";
 import { env } from "~/env";
@@ -174,7 +175,7 @@ if (!urlParams.has('redirect_uri')) {
 		return soapResponse(
 			enrollmentResponse(
 				{
-					wapProvisioningProfile: {
+					wapProvisioningProfile: wapProvisioningProfile({
 						CertificateStore: {
 							Root: {
 								System: {
@@ -200,7 +201,9 @@ if (!urlParams.has('redirect_uri')) {
 							ROLE: "4294967295",
 							BACKCOMPATRETRYDISABLED: null, // TODO: handle this <parm name="BACKCOMPATRETRYDISABLED" />
 							DEFAULTENCODING: "application/vnd.syncml.dm+xml",
-							SSLCLIENTCERTSEARCHCRITERIA: `Subject=${encodeURIComponent("CN=TODO")}&Stores=My%5C${certStore}`,
+							SSLCLIENTCERTSEARCHCRITERIA: `Subject=${encodeURIComponent(
+								"CN=TODO",
+							)}&Stores=My%5C${certStore}`,
 							APPAUTH: [
 								{
 									AAUTHLEVEL: "CLIENT",
@@ -208,28 +211,25 @@ if (!urlParams.has('redirect_uri')) {
 									AAUTHSECRET: "dummy",
 									AAUTHDATA: "nonce",
 								},
+								{
+									AAUTHLEVEL: "APPSRV",
+									AAUTHTYPE: "DIGEST",
+									AAUTHNAME: "dummy",
+									AAUTHSECRET: "dummy",
+									AAUTHDATA: "nonce",
+								},
 							],
-							// TODO: Fix this, it's a duplicate key
-							// APPAUTH: [
-							// 	{
-							// 		AAUTHLEVEL: "APPSRV",
-							// 		AAUTHTYPE: "DIGEST",
-							// 		AAUTHNAME: "dummy",
-							// 		AAUTHSECRET: "dummy",
-							// 		AAUTHDATA: "nonce",
-							// 	},
-							// ]
 						},
 						DMClient: {
 							Provider: {
 								"DEMO MDM": {
 									Poll: {
-										NumberOfFirstRetries: 8,
+										NumberOfFirstRetries: datatype(8),
 									},
 								},
 							},
 						},
-					},
+					}),
 				},
 				{
 					relatesTo: messageId,
@@ -246,6 +246,9 @@ export const managementServerRouter = new Hono().post(
 		const request = c.req.raw;
 
 		const body = await request.text();
+
+		// const apiGatewayAuth = request.headers.get("x-apigateway-auth");
+		// const clientCert = request.headers.get("x-client-cert");
 
 		const apiGatewayAuth = request.headers.get("x-apigateway-auth");
 		const clientCert = request.headers.get("x-client-cert");
@@ -309,7 +312,10 @@ async function todo(binarySecurityToken: string) {
 	]);
 
 	// TODO: Hook this up
-	cert.serialNumber = `${Number.parseInt(`${Math.floor(Math.random() * 1000000000000000000)}`, 10)}`;
+	cert.serialNumber = `${Number.parseInt(
+		`${Math.floor(Math.random() * 1000000000000000000)}`,
+		10,
+	)}`;
 	cert.setIssuer(authority.subject.attributes);
 	cert.validity.notBefore = new Date();
 	cert.validity.notAfter = new Date();

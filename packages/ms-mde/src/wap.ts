@@ -8,35 +8,96 @@ export type WapProvisioningProfile = {
 		| WapProvisioningProfile;
 };
 
-function mapCharacteristics(characteristic: WapProvisioningProfile): unknown[] {
-	return Object.entries(characteristic).map(([key, value]) => {
-		if (value && Array.isArray(value)) {
-			return value.map(mapCharacteristics);
-		} else if (value && typeof value === "object") {
-			return {
-				"@_type": key,
-				characteristic: mapCharacteristics(value),
-			};
+function transformCharacteristic(name: string, incoming: unknown): unknown {
+	if (incoming && Array.isArray(incoming)) {
+		return incoming.map((v) => transformCharacteristic(name, v));
+	} else if (incoming && typeof incoming === "object") {
+		// if ("!!datatype!!" in incoming) {
+		//   param.push({
+		//     "@_name": k,
+		//     "@_value": v.value,
+		//     "@_datatype": v["!!datatype!!"],
+		//   });
+		// }
+		console.log("A", "!!datatype!!" in incoming); // TODO
+
+		const param: {
+			"@_name": string;
+			"@_value": unknown;
+			"@_datatype"?: string;
+		}[] = [];
+		let characteristic: unknown[] = [];
+
+		for (const [k, v] of Object.entries(incoming)) {
+			if (typeof v === "object") {
+				console.log("B", "!!datatype!!" in v); // TODO
+				if ("!!datatype!!" in v) {
+					param.push({
+						"@_name": k,
+						"@_value": v.value,
+						"@_datatype": v["!!datatype!!"],
+					});
+					continue;
+				}
+
+				const result = transformCharacteristic(k, v);
+				if (Array.isArray(result))
+					characteristic = characteristic.concat(result);
+				else characteristic.push(result);
+				continue;
+			}
+
+			param.push({
+				"@_name": k,
+				"@_value": v,
+			});
 		}
 
 		return {
-			parm: {
-				"@_name": key,
-				"@_value": value,
-			},
+			"@_type": name,
+			param,
+			characteristic,
 		};
-	});
+	}
+
+	throw new Error(
+		`Found invalid child in wap provisioning doc: '${typeof incoming}'`,
+	);
 }
 
-export const wapProvisioningProfile = (
-	characteristic: WapProvisioningProfile,
-) => ({
-	"?xml": {
-		"@_version": "1.0",
-		"@_encoding": "UTF-8",
-	},
-	"wap-provisioningdoc": {
-		"@_version": "1.1",
-		characteristic: mapCharacteristics(characteristic),
-	},
-});
+// Wrap a value in `datatype` to ensure the `datatype` XML property is set.
+export function datatype(value: unknown) {
+	let datatype: string;
+	if (typeof value === "boolean") {
+		datatype = "boolean";
+	} else if (typeof value === "number") {
+		datatype = "integer";
+	} else {
+		throw new Error(
+			`Attempted to construct datatype of unsupported type '${typeof value}'`,
+		);
+	}
+
+	return {
+		"!!datatype!!": datatype,
+		value,
+	};
+}
+
+// Convert a JSON object into the low-level structure ready for XML serialization.
+export function wapProvisioningProfile(
+	incoming: Record<string, WapProvisioningProfile>,
+) {
+	return {
+		"?xml": {
+			"@_version": "1.0",
+			"@_encoding": "UTF-8",
+		},
+		"wap-provisioningdoc": {
+			characteristic: Object.entries(incoming).map(([k, v]) =>
+				transformCharacteristic(k, v),
+			),
+			"@_version": "1.1",
+		},
+	};
+}

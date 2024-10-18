@@ -22,7 +22,6 @@ export function deserializeXml<
 // Serialize an XML structure to a string.
 export function serializeXml<S extends object>(xml: S) {
 	const output = builder.build(xml);
-	console.log("OUTGOING", output); // TODO
 	return output;
 }
 
