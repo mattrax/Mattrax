@@ -12,10 +12,10 @@ import { logger } from "hono/logger";
 import type { BlankEnv, BlankInput } from "hono/types";
 import { provideRequestEvent } from "solid-js/web/storage";
 import { getActiveAuthority } from "./authority";
+import { env } from "./env";
 import { createTRPCContext, router } from "./trpc";
 import { waitlistRouter } from "./waitlist";
 import { enrollmentServerRouter, managementServerRouter } from "./win";
-import { env } from "./env";
 
 declare module "solid-js/web" {
 	interface RequestEvent {

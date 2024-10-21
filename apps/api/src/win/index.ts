@@ -8,9 +8,9 @@ import { deserializeXml, soapResponse } from "@mattrax/ms-mde/util";
 import { datatype, wapProvisioningProfile } from "@mattrax/ms-mde/wap";
 import { trace } from "@opentelemetry/api";
 import { Hono } from "hono";
+import { getActiveAuthority, getAuthorityTruststore } from "~/authority";
 import { env } from "~/env";
 import { microsoftDeviceIDExtension } from "../win/common";
-import { getActiveAuthority, getAuthorityTruststore } from "~/authority";
 
 export const enrollmentServerRouter = new Hono()
 	.get("/Authenticate.svc", async (c) => {

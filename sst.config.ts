@@ -46,20 +46,11 @@ export default $config({
 		const webSubdomain = $app.stage === "prod" ? "cloud" : `${$app.stage}-web`;
 		const manageSubdomain =
 			$app.stage === "prod" ? "manage" : `${$app.stage}-manage`;
-		const urlForApiGateway =
-			// TODO: Probs remove this and have some local config for it or something?
-			$app.stage === "oscar"
-				? "https://demo.otbeaumont.me"
-				: `https://${renderZoneDomain(zone, webSubdomain)}`;
 
 		// Automatic
 		const INTERNAL_SECRET = new random.RandomString("internalSecret", {
 			length: 64,
 			overrideSpecial: "$-_.+!*'()",
-		});
-		const API_GATEWAY_SECRET = new random.RandomString("apiGatewaySecret", {
-			length: 40,
-			special: false,
 		});
 
 		// Defaults
@@ -177,46 +168,18 @@ export default $config({
 		);
 		const cloudHost = cloud.url.apply((url) => new URL(url).host);
 
-		// `apps/web`
-		const truststoreBucket = new sst.aws.Bucket("TruststoreBucket", {
-			public: false,
-			versioning: true,
+		// Records for: https://mtls.mattrax.app
+		new cloudflare.Record("mtlsCname", {
+			zoneId: zone.id,
+			name: manageSubdomain,
+			type: "CNAME",
+			content: "mtls.mattrax.app",
 		});
-		const manageApi = new sst.aws.ApiGatewayV2("ManageApi", {
-			domain: {
-				name: renderZoneDomain(zone, manageSubdomain),
-				dns: sst.cloudflare.dns(),
-			},
-			accessLog: {
-				retention: "1 week",
-			},
-			transform: {
-				api(args, opts, name) {
-					args.disableExecuteApiEndpoint = true;
-				},
-			},
-		});
-		const integration = new aws.apigatewayv2.Integration(
-			"ManageApiIntegration",
-			{
-				apiId: manageApi.nodes.api.id,
-				integrationType: "HTTP_PROXY",
-				integrationMethod: "ANY",
-				integrationUri: urlForApiGateway,
-				requestParameters: {
-					"overwrite:header.x-apigateway-auth": API_GATEWAY_SECRET.result,
-					"overwrite:path": "$request.path",
-					"overwrite:header.x-client-cert":
-						"$context.identity.clientCert.clientCertPem",
-					"overwrite:header.x-client-cert-cn":
-						"$context.identity.clientCert.subjectDN",
-				},
-			},
-		);
-		new aws.apigatewayv2.Route("ManageApiRoute", {
-			apiId: manageApi.nodes.api.id,
-			routeKey: "$default",
-			target: $interpolate`integrations/${integration.id}`,
+		new cloudflare.Record("mtlsCname", {
+			zoneId: zone.id,
+			name: manageSubdomain,
+			type: "TXT",
+			content: "mtls:accept|https://mattrax.app",
 		});
 
 		const webUser = new aws.iam.User("web");
@@ -229,38 +192,6 @@ export default $config({
 					effect: "Allow",
 					actions: ["ses:SendEmail*"],
 					resources: ["*"],
-				},
-				{
-					// https://stackoverflow.com/a/56027548/23071108
-					effect: "Allow",
-					actions: ["s3:ListBucket"],
-					resources: [
-						// @ts-expect-error // TODO: PR a fix to SST
-						truststoreBucket.arn,
-					],
-				},
-				{
-					effect: "Allow",
-					actions: ["s3:GetObject", "s3:PutObject"],
-					resources: [
-						// @ts-expect-error // TODO: PR a fix to SST
-						$interpolate`${truststoreBucket.arn}/*`,
-					],
-				},
-				{
-					effect: "Allow",
-					actions: [
-						"apigateway:GET",
-						"apigateway:PATCH",
-						"apigateway:POST",
-						"apigateway:PUT",
-						"apigateway:AddCertificateToDomain",
-						"apigateway:RemoveCertificateFromDomain",
-					],
-					resources: [
-						// @ts-expect-error // TODO: PR a fix to SST
-						manageApi.nodes.domainName.arn,
-					],
 				},
 			],
 		});
@@ -275,7 +206,10 @@ export default $config({
 			NODE_ENV: "production",
 			INTERNAL_SECRET: INTERNAL_SECRET.result,
 			DATABASE_URL: $interpolate`https://:${INTERNAL_SECRET.result}@${cloudHost}`,
-			MANAGE_URL: $interpolate`https://${renderZoneDomain(zone, manageSubdomain)}`,
+			MANAGE_URL: $interpolate`https://${renderZoneDomain(
+				zone,
+				manageSubdomain,
+			)}`,
 			FROM_ADDRESS: $interpolate`Mattrax <${sender}>`,
 			AWS_ACCESS_KEY_ID: webAccessKey.id,
 			AWS_SECRET_ACCESS_KEY: webAccessKey.secret,
@@ -287,11 +221,6 @@ export default $config({
 			DO_THE_THING_WEBHOOK_URL: DO_THE_THING_WEBHOOK_URL.value,
 			AXIOM_API_TOKEN: AXIOM_API_TOKEN.value,
 			AXIOM_DATASET: "mattrax",
-			TRUSTSTORE_BUCKET: truststoreBucket.name,
-			API_GATEWAY_SECRET: API_GATEWAY_SECRET.result,
-			API_GATEWAY_DOMAIN: manageApi.nodes.domainName.domainName,
-			CERTIFICATE_ARN:
-				manageApi.nodes.domainName.domainNameConfiguration.certificateArn,
 		};
 
 		const web = CloudflarePages("web", {
@@ -405,7 +334,12 @@ function CloudflarePages(
 	new command.local.Command(
 		`${name}Deploy`,
 		{
-			create: $interpolate`pnpm wrangler pages deploy ${path.join(process.cwd(), opts.build.output)} ${$app.stage !== "prod" ? "--commit-dirty " : ""}--project-name ${site.id}`,
+			create: $interpolate`pnpm wrangler pages deploy ${path.join(
+				process.cwd(),
+				opts.build.output,
+			)} ${$app.stage !== "prod" ? "--commit-dirty " : ""}--project-name ${
+				site.id
+			}`,
 			environment: {
 				CLOUDFLARE_DEFAULT_ACCOUNT_ID: accountId,
 				CLOUDFLARE_ACCOUNT_ID: accountId,
