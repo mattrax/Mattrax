@@ -42,8 +42,8 @@ importers:
         specifier: 20.0.3
         version: 20.0.3(@swc/core@1.7.26(@swc/helpers@0.5.13))
       sst:
-        specifier: 3.2.38
-        version: 3.2.38(hono@4.6.5)
+        specifier: 3.1.49
+        version: 3.1.49(hono@4.6.5)
       wrangler:
         specifier: ^3.81.0
         version: 3.81.0(@cloudflare/workers-types@4.20241018.0)
@@ -7224,9 +7224,19 @@ packages:
     resolution: {integrity: sha512-qC9iz2FlN7DQl3+wjwn3802RTyjCx7sDvfQEXchwa6CWOx07/WVfh91gBmQ9fahw8snwGEWU3xGzOt4tFyHLxg==}
     engines: {node: '>= 0.6'}
 
+  sst-darwin-arm64@3.1.49:
+    resolution: {integrity: sha512-R9NKAzFXnQwyoc9OAV6sAEWQ5WhwOTt6u69q1+DS4sVdkUe0kK4LHkd1k5LAZy9rb5cGiKUFshKXGMQzC2kBJQ==}
+    cpu: [arm64]
+    os: [darwin]
+
   sst-darwin-arm64@3.2.38:
     resolution: {integrity: sha512-NaGT9JWwOznJ1jZkN77Izo9CknXI6Ffgjn1UuSWlt8sleDvUMCiH27zTq7NKb2AIEmbM8APWGWt7ZHSUuQX3RA==}
     cpu: [arm64]
+    os: [darwin]
+
+  sst-darwin-x64@3.1.49:
+    resolution: {integrity: sha512-bFhBCVeiYrDxmG7WhsUeoG6R+Jae/O9gNP992/0lmfYySIoAN5gHCJMog2LwekDv0NLGwJhY77td6fSuEVdzXw==}
+    cpu: [x64]
     os: [darwin]
 
   sst-darwin-x64@3.2.38:
@@ -7234,9 +7244,19 @@ packages:
     cpu: [x64]
     os: [darwin]
 
+  sst-linux-arm64@3.1.49:
+    resolution: {integrity: sha512-AeNarbV05u5IXrtuuhPl/5jusKTdYn3jpdhH7zkZw+VQrNc4lxQGJ2t90jMqtf/oygVxXM5hKzHaQq8Umhh0AQ==}
+    cpu: [arm64]
+    os: [linux]
+
   sst-linux-arm64@3.2.38:
     resolution: {integrity: sha512-gRsvxFzU7CdcUe57rsoySonNViDEUV/5kUEnpiVgKLLn3YMXENHt6Ec1Wzap9XUDOUvWQasl9nz6J079lE2cgg==}
     cpu: [arm64]
+    os: [linux]
+
+  sst-linux-x64@3.1.49:
+    resolution: {integrity: sha512-TPFboRfU0dnq5gSJ8fMMdM/nzlc4m0wY/FxEyoMhV+mR3zbjSfJtMgAQJpUjXIyhH4fsxZzC7wZWMa2nA5GTbw==}
+    cpu: [x64]
     os: [linux]
 
   sst-linux-x64@3.2.38:
@@ -7244,10 +7264,27 @@ packages:
     cpu: [x64]
     os: [linux]
 
+  sst-linux-x86@3.1.49:
+    resolution: {integrity: sha512-CZ3CmLxUK91umWIw9dtZpegAms0EibqspB8nncrbzeUTHHx2o3RpXGR7/giQSYQdXdwNC75wxOUEk6/4E2Alzw==}
+    cpu: [x86]
+    os: [linux]
+
   sst-linux-x86@3.2.38:
     resolution: {integrity: sha512-C8Qug9l83TjH7jDzenut3B8A5AMWqPd86fvbUEjtDhahMLnXvcKgfDFU3rFFSYaB6S5gARUdGO/MsZIKGsFFDg==}
     cpu: [x86]
     os: [linux]
+
+  sst@3.1.49:
+    resolution: {integrity: sha512-iwxgceCGzqzBThh6SgvigT6FoFH/Y+WVIGH/WbaVvB09+JvFZbuMbP2JU/PjxTBcupEN2KC9/cv7OJo4LDeTnw==}
+    hasBin: true
+    peerDependencies:
+      hono: 4.x
+      valibot: 0.30.x
+    peerDependenciesMeta:
+      hono:
+        optional: true
+      valibot:
+        optional: true
 
   sst@3.2.38:
     resolution: {integrity: sha512-tJhKb9y2+k2H5ojVIR201eRjZtnrEcShjTPj3vA63b0kMPTrA6a4bKzgVM11J4xVEjrgcuQ5NhrrRj48lX6iUg==}
@@ -14652,20 +14689,48 @@ snapshots:
 
   sqlstring@2.3.3: {}
 
+  sst-darwin-arm64@3.1.49:
+    optional: true
+
   sst-darwin-arm64@3.2.38:
+    optional: true
+
+  sst-darwin-x64@3.1.49:
     optional: true
 
   sst-darwin-x64@3.2.38:
     optional: true
 
+  sst-linux-arm64@3.1.49:
+    optional: true
+
   sst-linux-arm64@3.2.38:
+    optional: true
+
+  sst-linux-x64@3.1.49:
     optional: true
 
   sst-linux-x64@3.2.38:
     optional: true
 
+  sst-linux-x86@3.1.49:
+    optional: true
+
   sst-linux-x86@3.2.38:
     optional: true
+
+  sst@3.1.49(hono@4.6.5):
+    dependencies:
+      aws4fetch: 1.0.20
+      jose: 5.2.3
+      openid-client: 5.6.4
+    optionalDependencies:
+      hono: 4.6.5
+      sst-darwin-arm64: 3.1.49
+      sst-darwin-x64: 3.1.49
+      sst-linux-arm64: 3.1.49
+      sst-linux-x64: 3.1.49
+      sst-linux-x86: 3.1.49
 
   sst@3.2.38(hono@4.6.5):
     dependencies:
