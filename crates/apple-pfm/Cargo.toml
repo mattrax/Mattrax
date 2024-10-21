@@ -9,7 +9,7 @@ publish = false
 phf = { version = "0.11.2", features = ["macros"] }
 plist = "1.7.0"
 serde = { workspace = true }
-thiserror = "1.0.63"
+thiserror = "1.0.64"
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"

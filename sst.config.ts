@@ -169,13 +169,13 @@ export default $config({
 		const cloudHost = cloud.url.apply((url) => new URL(url).host);
 
 		// Records for: https://mtls.mattrax.app
-		new cloudflare.Record("mtlsCname", {
+		new cloudflare.Record("mtlsCNAME", {
 			zoneId: zone.id,
 			name: manageSubdomain,
 			type: "CNAME",
 			content: "mtls.mattrax.app",
 		});
-		new cloudflare.Record("mtlsCname", {
+		new cloudflare.Record("mtlsTXT", {
 			zoneId: zone.id,
 			name: manageSubdomain,
 			type: "TXT",

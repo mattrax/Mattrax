@@ -22,19 +22,19 @@
 		"pnpm": "^9"
 	},
 	"dependencies": {
-		"@biomejs/biome": "^1.9.2",
-		"@solidjs/start": "1.0.8",
+		"@biomejs/biome": "^1.9.4",
+		"@solidjs/start": "1.0.9",
 		"dotenv": "^16.4.5",
-		"drizzle-kit": "^0.24.2",
+		"drizzle-kit": "^0.26.2",
 		"pg": "^8.13.0",
 		"tsx": "^4.19.1",
-		"typescript": "^5.6.2"
+		"typescript": "^5.6.3"
 	},
 	"devDependencies": {
 		"husky": "^9.1.6",
-		"nx": "19.8.2",
-		"sst": "3.1.49",
-		"wrangler": "^3.78.12"
+		"nx": "20.0.3",
+		"sst": "3.2.38",
+		"wrangler": "^3.81.0"
 	},
 	"pnpm": {
 		"patchedDependencies": {

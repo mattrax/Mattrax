@@ -15,6 +15,6 @@
 	"devDependencies": {
 		"fake-indexeddb": "^6.0.0",
 		"idb": "^8.0.0",
-		"vitest": "^2.1.1"
+		"vitest": "^2.1.3"
 	}
 }
