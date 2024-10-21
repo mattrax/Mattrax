@@ -9,6 +9,7 @@ const parser = new XMLParser({
 const builder = new XMLBuilder({
 	ignoreAttributes: false,
 	suppressBooleanAttributes: false,
+	suppressEmptyNode: true,
 });
 
 // Deserialize and validation an XML string to a JavaScript object.

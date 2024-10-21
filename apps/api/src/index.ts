@@ -11,10 +11,11 @@ import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import type { BlankEnv, BlankInput } from "hono/types";
 import { provideRequestEvent } from "solid-js/web/storage";
-import { getMDMAuthority } from "./authority";
+import { getActiveAuthority } from "./authority";
 import { createTRPCContext, router } from "./trpc";
 import { waitlistRouter } from "./waitlist";
 import { enrollmentServerRouter, managementServerRouter } from "./win";
+import { env } from "./env";
 
 declare module "solid-js/web" {
 	interface RequestEvent {
@@ -53,14 +54,19 @@ const app = new Hono()
 if (import.meta.env.DEV) app.use(logger());
 
 app
-	// TODO: Remove thi
-	.get("/api/todo", async (c) => {
-		console.log(await getMDMAuthority());
-
-		return c.json({ todo: "todo" });
-	})
 	.get("/api/__version", (c) => c.json(GIT_SHA))
 	.route("/api/waitlist", waitlistRouter)
+	.get("/api/__cron", async (c) => {
+		if (c.req.query("secret") !== env.INTERNAL_SECRET) {
+			c.status(403);
+			return c.json({ error: "Forbidden" });
+		}
+
+		// TODO: Hook this up to a proper Cloudflare CRON
+		await getActiveAuthority(true);
+
+		return c.text("ok");
+	})
 	.all("/api/trpc", async (c) => {
 		const opts: TrpcServerFunctionOpts = await c.req.json();
 		const result = await trpcServerFunction({

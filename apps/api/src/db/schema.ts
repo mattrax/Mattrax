@@ -221,3 +221,12 @@ export const deviceActions = mysqlTable(
 		pk: primaryKey({ columns: [table.action, table.devicePk] }),
 	}),
 );
+
+// The certificate authorities are used to sign the device certificates.
+export const deviceAuthorities = mysqlTable("device_authority", {
+	id: serial("id").primaryKey(),
+	publicKey: varchar("public", { length: 5048 }).notNull(),
+	privateKey: varchar("private", { length: 5048 }).notNull(),
+	createdAt: timestamp("created_at").notNull(),
+	expiresAt: timestamp("expires_at").notNull(),
+});
