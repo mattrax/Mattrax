@@ -17,7 +17,7 @@ if (!process.env.DATABASE_URL?.startsWith("mysql://"))
 
 export default defineConfig({
 	out: "./crates/mx-db/migrations",
-	schema: "./apps/web/src/db/schema.ts",
+	schema: "./apps/api/src/db/schema.ts",
 	dialect: "mysql",
 	dbCredentials: {
 		url: process.env.DATABASE_URL!,

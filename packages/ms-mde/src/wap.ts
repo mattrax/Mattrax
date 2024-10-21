@@ -12,16 +12,7 @@ function transformCharacteristic(name: string, incoming: unknown): unknown {
 	if (incoming && Array.isArray(incoming)) {
 		return incoming.map((v) => transformCharacteristic(name, v));
 	} else if (incoming && typeof incoming === "object") {
-		// if ("!!datatype!!" in incoming) {
-		//   param.push({
-		//     "@_name": k,
-		//     "@_value": v.value,
-		//     "@_datatype": v["!!datatype!!"],
-		//   });
-		// }
-		console.log("A", "!!datatype!!" in incoming); // TODO
-
-		const param: {
+		const parm: {
 			"@_name": string;
 			"@_value": unknown;
 			"@_datatype"?: string;
@@ -29,10 +20,9 @@ function transformCharacteristic(name: string, incoming: unknown): unknown {
 		let characteristic: unknown[] = [];
 
 		for (const [k, v] of Object.entries(incoming)) {
-			if (typeof v === "object") {
-				console.log("B", "!!datatype!!" in v); // TODO
-				if ("!!datatype!!" in v) {
-					param.push({
+			if (v && typeof v === "object") {
+				if (!Array.isArray(v) && "!!datatype!!" in v) {
+					parm.push({
 						"@_name": k,
 						"@_value": v.value,
 						"@_datatype": v["!!datatype!!"],
@@ -47,7 +37,7 @@ function transformCharacteristic(name: string, incoming: unknown): unknown {
 				continue;
 			}
 
-			param.push({
+			parm.push({
 				"@_name": k,
 				"@_value": v,
 			});
@@ -55,7 +45,7 @@ function transformCharacteristic(name: string, incoming: unknown): unknown {
 
 		return {
 			"@_type": name,
-			param,
+			parm,
 			characteristic,
 		};
 	}
