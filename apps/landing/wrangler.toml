@@ -1,0 +1,15 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "landing-dev"              # TODO
+compatibility_date = "2024-10-22"
+workers_dev = true                # TODO: Auth for this
+
+# route = { pattern = "todo-landing.mattrax.app/*", zone_name = "mattrax.app" } # TODO: Domain
+
+main = "./.output/server/index.mjs"                              # TODO: ".output/server/index.mjs"
+assets = { directory = "./.output/public/", binding = "ASSETS" }
+
+[build]
+command = "NITRO_PRESET=cloudflare-module pnpm build"
+
+# [vars]
+# WAITLIST_URL = "https://web.mattrax.app/api/waitlist"
