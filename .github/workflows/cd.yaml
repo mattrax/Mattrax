@@ -22,7 +22,7 @@ jobs:
     concurrency:
       group: production
     env:
-      WAITLIST_URL: https://web.mattrax.app/api/waitlist
+      VITE_MATTRAX_CLOUD_ORIGIN: https://web.mattrax.app
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
