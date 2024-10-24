@@ -18,12 +18,11 @@ jobs:
   landing:
     name: Landing
     runs-on: ubuntu-latest
-    environment: production
-    concurrency:
-      group: production
+    environment:
+      name: landing
+      url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
     env:
       VITE_MATTRAX_CLOUD_ORIGIN: https://web.mattrax.app
-      NITRO_PRESET: cloudflare_pages
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
@@ -37,38 +36,82 @@ jobs:
       
       - name: Build
         working-directory: apps/landing
+        env:
+          NITRO_PRESET: cloudflare_pages
         run: pnpm build
       
       - name: Deploy
         working-directory: apps/landing
-        run: pnpm wrangler pages deploy
+        run: |
+          set -o pipefail
+          pnpm dlx wrangler pages deploy dist/ --project-name landing123 2>&1 | tee -a BUILD_OUTPUT
+      
+      - name: Export `DEPLOYMENT_URL`
+        id: result
+        run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
 
-  # sst:
-  #   name: SST
+  # web:
+  #   name: Web
   #   runs-on: ubuntu-latest
-  #   environment: production
-  #   concurrency:
-  #     group: production
+  #   environment:
+  #     name: web
+  #     url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
   #   steps:
   #     - name: Git clone the repository
   #       uses: actions/checkout@v4
-      
-  #     - name: Configure AWS credentials
-  #       uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: "arn:aws:iam::101829795063:role/mattrax-gh-actions"
-  #         aws-region: us-east-1
-  #         role-session-name: mattrax-sst-workflow
       
   #     - uses: pnpm/action-setup@v4
   #       with:
   #         version: latest
       
-  #     - name: Rust cache
-  #       uses: Swatinem/rust-cache@v2
+  #     - name: Install dependencies
+  #       run: pnpm i
+      
+  #     - name: Build
+  #       working-directory: apps/web
+  #       env:
+  #         NITRO_PRESET: cloudflare_pages
+  #       run: pnpm build
+      
+  #     - name: Deploy
+  #       working-directory: apps/web
+  #       run: |
+  #         set -o pipefail
+  #         pnpm dlx wrangler pages deploy 2>&1 | tee -a BUILD_OUTPUT
+      
+  #     - name: Export `DEPLOYMENT_URL`
+  #       id: result
+  #       run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
+
+  # api:
+  #   name: API
+  #   runs-on: ubuntu-latest
+  #   environment:
+  #     name: api
+  #     url: ${{ steps.result.outputs.DEPLOYMENT_URL }}
+  #   steps:
+  #     - name: Git clone the repository
+  #       uses: actions/checkout@v4
+      
+  #     - uses: pnpm/action-setup@v4
+  #       with:
+  #         version: latest
       
   #     - name: Install dependencies
   #       run: pnpm i
       
-  #     - name: SST
-  #       run: pnpm sst deploy --stage prod
+  #     - name: Build
+  #       working-directory: apps/api
+  #       env:
+  #         NITRO_PRESET: cloudflare_pages
+  #       run: pnpm build
+      
+  #     - name: Deploy
+  #       working-directory: apps/api
+  #       run: |
+  #         set -o pipefail
+  #         pnpm dlx wrangler deploy 2>&1 | tee -a BUILD_OUTPUT
+      
+  #     - name: Export `DEPLOYMENT_URL`
+  #       id: result
+  #       run: echo "DEPLOYMENT_URL=$(grep -Eo 'https://[^ >]+' BUILD_OUTPUT|head -1)" >> $GITHUB_OUTPUT
