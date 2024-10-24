@@ -23,6 +23,7 @@ jobs:
       group: production
     env:
       VITE_MATTRAX_CLOUD_ORIGIN: https://web.mattrax.app
+      NITRO_PRESET: cloudflare_pages
     steps:
       - name: Git clone the repository
         uses: actions/checkout@v4
