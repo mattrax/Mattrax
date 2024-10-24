@@ -1,0 +1,36 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "api"
+main = "src/index.ts"
+compatibility_date = "2024-10-01"
+compatibility_flags = ["nodejs_compat_v2"]
+
+# TODO: Require auth on preview deployments
+workers_dev = true
+
+# Basically we take over /api/* from the Cloudflare Pages project.
+# We can't serve assets through this deployment without loosing smart placement on the API code due to the lack of `_headers` and `_redirects` support.
+route = { pattern = "cloud.mattrax.app/api/*", zone_name = "mattrax.app" }
+
+[observability]
+enabled = true
+
+[placement]
+mode = "smart"
+
+[define]
+"import.meta.env.DEV" = "true"
+"import.meta.env.MODE" = "production"
+"import.meta.env.NODE_ENV" = "production"
+
+[vars]
+NODE_ENV = "production"
+VITE_PROD_ORIGIN = "https://cloud.mattrax.app"
+MANAGE_URL = "https://manage.mattrax.app"
+FROM_ADDRESS = "Mattrax <hello@mattrax.app>"
+INTERNAL_SECRET = ""
+DATABASE_URL = ""
+AWS_ACCESS_KEY_ID = ""
+AWS_SECRET_ACCESS_KEY = ""
+WAITLIST_DISCORD_WEBHOOK_URL = ""
+FEEDBACK_DISCORD_WEBHOOK_URL = ""
+DO_THE_THING_WEBHOOK_URL = ""
