@@ -1,9 +1,9 @@
-import type { RouterOutput } from "@mattrax/api/client";
 import { BreadcrumbItem, Button, buttonVariants } from "@mattrax/ui";
 import { createTimeAgo } from "@solid-primitives/date";
 import { A } from "@solidjs/router";
 import { Suspense } from "solid-js";
 import { stringSimilarity } from "string-similarity-js";
+import type { RouterOutput } from "~/api/client";
 import { useTenantId } from "~/app/(dash)";
 import { Page } from "~/components/Page";
 import { Table, defineTable } from "~/components/Table";

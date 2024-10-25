@@ -13,12 +13,8 @@
 			"auto-imports.d.ts",
 			"node_modules",
 			"dist",
-			"apps/android",
-			".sst",
 			"configuration-schemas/**/*.json",
-			"sst-env.d.ts",
 			"tsconfig.app.json",
-			"indexed-db-observers-polyfill.js",
 			"packages/ui/src/sonner.css"
 		]
 	},

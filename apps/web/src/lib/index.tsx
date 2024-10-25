@@ -1,5 +1,5 @@
-import type { AppRouter } from "@mattrax/api/client";
 import { TRPCClientError } from "@trpc/client";
+import type { AppRouter } from "~/api/client";
 
 export * from "./trpc";
 

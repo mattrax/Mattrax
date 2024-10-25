@@ -17,6 +17,7 @@
 		"@tanstack/query-core": "^5.59.13",
 		"@trpc/client": "^10.45.2",
 		"@trpc/server": "^10.45.2",
+		"@vercel/functions": "^1.4.2",
 		"seroval": "^1.1.1"
 	},
 	"peerDependencies": {

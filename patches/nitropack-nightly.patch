@@ -1,0 +1,18 @@
+diff --git a/dist/presets/cloudflare/preset.mjs b/dist/presets/cloudflare/preset.mjs
+index 14c004d7bd7ba664aecb20e39538d778ac62f7c3..4a6ba97a3e3e222a414be673ef9d808cf0a42e93 100644
+--- a/dist/presets/cloudflare/preset.mjs
++++ b/dist/presets/cloudflare/preset.mjs
+@@ -79,6 +79,13 @@ const cloudflare = defineNitroPreset(
+     wasm: {
+       lazy: true
+     },
++    rollupConfig: {
++      output: {
++        entryFileNames: "index.mjs",
++        format: "esm",
++        inlineDynamicImports: false
++      }
++    },
+     hooks: {
+       async compiled(nitro) {
+         await writeFile(

@@ -5,7 +5,6 @@
 		"dev": "pnpm --filter @mattrax/web dev",
 		"web": "pnpm --filter @mattrax/web --",
 		"landing": "pnpm --filter @mattrax/landing --",
-		"api": "pnpm --filter @mattrax/api --",
 		"email": "pnpm --filter @mattrax/email --",
 		"ingest": "pnpm --filter @mattrax/ingest --",
 		"db:push": "DRIZZLE=1 drizzle-kit push",
@@ -21,6 +20,9 @@
 		"node": ">=20.17",
 		"pnpm": "^9"
 	},
+	"resolutions": {
+		"nitropack": "npm:nitropack-nightly@latest"
+	},
 	"dependencies": {
 		"@biomejs/biome": "^1.9.4",
 		"@solidjs/start": "1.0.9",
@@ -32,13 +34,11 @@
 	},
 	"devDependencies": {
 		"husky": "^9.1.6",
-		"nx": "20.0.3",
-		"sst": "3.1.49",
 		"wrangler": "^3.81.0"
 	},
 	"pnpm": {
 		"patchedDependencies": {
-			"@solidjs/start": "patches/@solidjs__start.patch"
+			"nitropack-nightly": "patches/nitropack-nightly.patch"
 		}
 	}
 }

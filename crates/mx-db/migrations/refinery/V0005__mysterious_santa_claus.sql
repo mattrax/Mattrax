@@ -1,1 +1,0 @@
-ALTER TABLE `device_actions` DROP COLUMN `deployed_at`;
