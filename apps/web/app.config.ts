@@ -1,4 +1,4 @@
-import { plugin } from "@mattrax/api/plugin";
+import { execSync } from "node:child_process";
 import mattraxUI from "@mattrax/ui/vite";
 import { defineConfig } from "@solidjs/start/config";
 import { visualizer } from "rollup-plugin-visualizer";
@@ -13,6 +13,9 @@ import { monorepoRoot } from "./loadEnv";
 
 const nitroPreset = process.env.NITRO_PRESET ?? "node-server";
 const isCFPages = nitroPreset === "cloudflare_pages";
+
+// Get git SHA
+const gitSha = execSync("git rev-parse HEAD").toString().trim();
 
 export default defineConfig({
 	ssr: false,
@@ -41,8 +44,10 @@ export default defineConfig({
 				gzipSize: true,
 				filename: `stats${router === "client" ? "" : `-${router}`}.html`,
 			}),
-			plugin(),
 		],
+		define: {
+			"import.meta.env.GIT_SHA": JSON.stringify(gitSha),
+		},
 	}),
 	server: {
 		preset: nitroPreset,
@@ -66,5 +71,9 @@ export default defineConfig({
 				external: ["cloudflare:sockets"],
 			},
 		}),
+		vercel: {
+			// Gotta stay close to the DB
+			regions: ["iad1"],
+		},
 	},
 });

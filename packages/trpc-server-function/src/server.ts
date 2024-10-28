@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { getRequestEvent } from "solid-js/web";
+import { waitUntil as vercelWaitUntil } from "@vercel/functions";
 
 export const TRPC_LOCAL_STORAGE = new AsyncLocalStorage<() => void>();
 
@@ -12,7 +12,9 @@ export function flushResponse() {
 }
 
 export function waitUntil(promise: Promise<void> | (() => Promise<void>)) {
-	const e = getRequestEvent();
-	if (!e) throw new Error("Called `waitUtil` outside request context");
-	(e as any).waitUntil(promise);
+	// TODO: Vercel and Cloudflare do it differently
+	// const e = getRequestEvent();
+	// if (!e) throw new Error("Called `waitUntil` outside request context");
+	// (e as any).waitUntil(promise);
+	vercelWaitUntil(typeof promise === "function" ? promise() : promise);
 }

@@ -58,11 +58,14 @@ function createQueryClient(errorBus: EventBus<[string, unknown]>) {
 	});
 }
 
-const SolidQueryDevtools = lazy(() =>
-	import("@tanstack/solid-query-devtools").then((m) => ({
-		default: m.SolidQueryDevtools,
-	})),
-);
+// For some reason this is triggering a `document` access on the server
+const SolidQueryDevtools = import.meta.env.DEV
+	? lazy(() =>
+			import("@tanstack/solid-query-devtools").then((m) => ({
+				default: m.SolidQueryDevtools,
+			})),
+		)
+	: undefined;
 
 export default function App() {
 	const errorBus = createEventBus<[string, unknown]>();
@@ -154,7 +157,9 @@ export default function App() {
 									return null;
 								}}
 							>
-								{import.meta.env.DEV && <SolidQueryDevtools />}
+								{import.meta.env.DEV && SolidQueryDevtools ? (
+									<SolidQueryDevtools />
+								) : null}
 								<Toaster />
 								<Suspense>{props.children}</Suspense>
 							</ErrorBoundary>
