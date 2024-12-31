@@ -8,7 +8,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"))]
 #[command(bin_name = env!("CARGO_PKG_NAME"))]
-#[command(version = concat!(env!("CARGO_PKG_VERSION"), "-", env!("GIT_HASH")))]
+#[command(version = mx_core::VERSION)]
 #[command(about = env!("CARGO_PKG_DESCRIPTION"))]
 pub struct Arguments {
     #[arg(
