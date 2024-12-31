@@ -3,9 +3,10 @@ resolver = "2"
 members = ["apps/mattrax", "crates/*"]
 
 [workspace.dependencies]
-serde = { version = "1", default-features = false }
-serde_json = { version = "1", default-features = false }
-tracing = { version = "0.1", default-features = false }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+tracing = { version = "0.1" }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
