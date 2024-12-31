@@ -1,0 +1,10 @@
+[package]
+name = "mx-api"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
