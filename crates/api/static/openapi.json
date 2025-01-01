@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "description": "# Hello World",
+  "paths": {
+    "/health": {
+      "summary": "Check the health of the API",
+      "get": {
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Enrollment": {
+        "type": "object",
+        "description": "bruh",
+        "properties": {}
+      }
+    }
+  }
+}

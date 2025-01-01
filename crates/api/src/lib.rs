@@ -1,5 +1,7 @@
 //! The REST and MDM API for Mattrax.
 
+use std::{collections::HashMap, sync::Arc};
+
 use axum::{http::StatusCode, response::Html, routing::get, Json, Router};
 use serde::Serialize;
 use serde_json::json;
@@ -25,15 +27,20 @@ fn api() -> Router {
         )
         .route(
             "/openapi",
-            get(|| async {
-                Json(json!({
-                  "openapi": "3.1.0",
-                  "info": {
-                    "title": "Mattrax MDM",
-                    "version": mx_core::VERSION,
-                  },
-                  "paths": {}
-                }))
+            get({
+                let mut spec: HashMap<String, serde_json::Value> =
+                    serde_json::from_str(include_str!("../static/openapi.json")).unwrap();
+                spec.insert("openapi".into(), "3.1.0".into());
+                spec.insert(
+                    "info".into(),
+                    json!({
+                      "title": "Mattrax MDM",
+                      "version": mx_core::VERSION,
+                    }),
+                );
+                let spec = Arc::new(spec);
+
+                || async move { Json(spec.clone()) }
             }),
         )
         .fallback(|| async move {

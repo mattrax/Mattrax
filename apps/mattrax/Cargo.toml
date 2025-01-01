@@ -1,13 +1,27 @@
 [package]
 name = "mattrax"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2021"
+publish = false
+
+[lints]
+workspace = true
+
+[package.metadata.lambda.deploy]
+memory = 512
+timeout = 60
+arm64 = true
+# env_file = ".env.production"
+env = { "DATABASE_URL" = "todo" }
+tags = { "repo" = "mattrax/Mattrax" }
+enable_function_url = true
 
 [dependencies]
-axum = "0.7.9"
-clap = { version = "4.5.23", features = ["derive"] }
-mx-api = { version = "0.0.0", path = "../../crates/api" }
-mx-core = { version = "0.0.0", path = "../../crates/core" }
+mx-api = { path = "../../crates/api" }
+mx-core = { path = "../../crates/core" }
+axum.workspace = true
+clap = { version = "4.5.23", features = ["derive", "env"] }
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+lambda_http = "0.14.0"

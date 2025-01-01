@@ -4,7 +4,8 @@ members = ["apps/mattrax", "crates/*"]
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
+axum = { version = "0.7" }
 serde_json = { version = "1" }
 tracing = { version = "0.1" }
 
