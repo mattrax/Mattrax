@@ -9,7 +9,10 @@ workspace = true
 
 [dependencies]
 mx-core = { path = "../mx-core" }
+mx-apple = { path = "../mx-apple" }
+mx-windows = { path = "../mx-windows" }
 axum.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+cms = "0.2.3"

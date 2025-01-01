@@ -14,6 +14,7 @@ use mx_core::Api;
 use tracing::{field, info_span, Instrument, Span};
 
 mod api;
+mod dm;
 mod frontend;
 mod utils;
 
@@ -28,6 +29,7 @@ pub fn mount(api: Api) -> Router {
         )
         .nest("/api", api::mount())
         .merge(frontend::mount())
+        .merge(dm::mount())
         .route_layer(middleware::from_fn(headers))
         .fallback(|| async move { (StatusCode::NOT_FOUND, "404: Not Found") })
 }

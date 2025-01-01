@@ -1,0 +1,13 @@
+[package]
+name = "mx-apple"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+plist = "1.7.0"
+serde.workspace = true
+uuid.workspace = true
