@@ -16,6 +16,7 @@ pub(crate) use include_static;
 /// A static value included from the filesystem.
 /// In production this will be embedded into the binary and in development it will be read from the filesystem.
 #[derive(Clone, Copy)]
+#[allow(unused)]
 pub struct Static {
     path: &'static str,
     value: &'static str,

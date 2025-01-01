@@ -10,13 +10,14 @@ use axum::{
     routing::get,
     Router,
 };
+use mx_core::Api;
 use tracing::{field, info_span, Instrument, Span};
 
 mod api;
 mod frontend;
 mod utils;
 
-pub fn mount() -> Router {
+pub fn mount(api: Api) -> Router {
     Router::new()
         .route(
             "/health",
@@ -26,7 +27,7 @@ pub fn mount() -> Router {
             }),
         )
         .nest("/api", api::mount())
-        .nest("/", frontend::mount())
+        .merge(frontend::mount())
         .route_layer(middleware::from_fn(headers))
         .fallback(|| async move { (StatusCode::NOT_FOUND, "404: Not Found") })
 }

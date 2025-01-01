@@ -4,25 +4,34 @@ use tokio::{net::TcpListener, signal};
 use tracing::{error, info};
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), ()> {
     let args = mattrax::setup();
 
-    if let Ok(listener) = TcpListener::bind(args.listen_addr).await.map_err(|err| {
+    let listener = TcpListener::bind(args.listen_addr).await.map_err(|err| {
         error!(
             "Failed to bind to listen address {:?} with error: {err:?}",
             args.listen_addr
         )
-    }) {
-        info!(
-            "Listening at: http://{:?}",
-            listener.local_addr().unwrap_or(args.listen_addr)
-        );
-        axum::serve(listener, mx_api::mount())
-            .with_graceful_shutdown(shutdown_signal())
-            .await
-            // I checked and I think this is actually unreachable.
-            .expect("Error with Axum server");
-    }
+    })?;
+
+    let api = mx_core::Api::new(&args.database_url)
+        .map_err(|err| error!("Failed to initialise database: {err:?}"))?;
+
+    api.migrate()
+        .await
+        .map_err(|err| error!("Failed to connect or run migrations on database: {err:?}"))?;
+
+    info!(
+        "Listening at: http://{:?}",
+        listener.local_addr().unwrap_or(args.listen_addr)
+    );
+    axum::serve(listener, mx_api::mount(api))
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        // I checked and I think this is actually unreachable.
+        .expect("Error with Axum server");
+
+    Ok(())
 }
 
 async fn shutdown_signal() {

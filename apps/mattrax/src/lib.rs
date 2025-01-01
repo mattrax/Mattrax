@@ -42,22 +42,4 @@ pub fn setup() -> Arguments {
     std::panic::set_hook(Box::new(move |panic| tracing::error!("{panic}")));
 
     Arguments::parse()
-
-    // run(service_fn(function_handler)).await;
-
-    // if let Ok(listener) = TcpListener::bind(command.listen_addr).await.map_err(|err| {
-    //     error!(
-    //         "Failed to bind to listen address {:?} with error: {err:?}",
-    //         command.listen_addr
-    //     )
-    // }) {
-    //     info!(
-    //         "Listening at: {:?}",
-    //         listener.local_addr().unwrap_or(command.listen_addr)
-    //     );
-    //     axum::serve(listener, mx_api::mount())
-    //         .await
-    //         // I checked and I think this is actually unreachable.
-    //         .expect("Error with Axum server");
-    // }
 }

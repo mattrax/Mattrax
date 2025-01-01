@@ -1,0 +1,3 @@
+[env]
+# Default used by `cargo run` and Rust Analyzer
+DATABASE_URL="mysql://root:@localhost:3306/mattrax"

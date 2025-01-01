@@ -8,7 +8,7 @@ publish = false
 workspace = true
 
 [dependencies]
-mx-core = { path = "../core" }
+mx-core = { path = "../mx-core" }
 axum.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -18,8 +18,8 @@ tags = { "repo" = "mattrax/Mattrax" }
 enable_function_url = true
 
 [dependencies]
-mx-api = { path = "../../crates/api" }
-mx-core = { path = "../../crates/core" }
+mx-api = { path = "../../crates/mx-api" }
+mx-core = { path = "../../crates/mx-core" }
 axum.workspace = true
 clap = { version = "4.5.23", features = ["derive", "env"] }
 tokio.workspace = true

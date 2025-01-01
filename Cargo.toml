@@ -5,9 +5,10 @@ members = ["apps/mattrax", "crates/*"]
 [workspace.dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
 serde = { version = "1", features = ["derive", "rc"] }
-axum = { version = "0.7" }
+axum = { version = "0.8" }
 serde_json = { version = "1" }
 tracing = { version = "0.1" }
+sqlx = { version = "0.8", default-features = false, features = ["mysql", "runtime-tokio", "tls-rustls", "derive", "macros", "migrate", "json"] }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
