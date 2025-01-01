@@ -14,7 +14,7 @@ async fn main() {
         )
     }) {
         info!(
-            "Listening at: {:?}",
+            "Listening at: http://{:?}",
             listener.local_addr().unwrap_or(args.listen_addr)
         );
         axum::serve(listener, mx_api::mount())

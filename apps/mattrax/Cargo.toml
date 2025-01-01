@@ -3,6 +3,7 @@ name = "mattrax"
 version = "0.0.0"
 edition = "2021"
 publish = false
+default-run = "mattrax"
 
 [lints]
 workspace = true
