@@ -4,28 +4,32 @@ use axum::{http::StatusCode, response::Html, routing::get, Json, Router};
 use serde::Serialize;
 use serde_json::json;
 
+use crate::utils::{include_static, Static};
+
+static SCALAR_HTML: Static = include_static!("scalar.html");
+static OPENAPI_JSON: Static = include_static!("openapi.json");
+
 pub(crate) fn mount() -> Router {
     Router::new()
-        .route(
-            "/",
-            get(|| async { Html(include_str!("../static/scalar.html")) }),
-        )
+        .route("/", get(|| async { Html(SCALAR_HTML.get()) }))
         .route(
             "/openapi",
             get({
-                let mut spec: HashMap<String, serde_json::Value> =
-                    serde_json::from_str(include_str!("../static/openapi.json")).unwrap();
-                spec.insert("openapi".into(), "3.1.0".into());
-                spec.insert(
-                    "info".into(),
-                    json!({
-                      "title": "Mattrax MDM",
-                      "version": mx_core::VERSION,
-                    }),
-                );
-                let spec = Arc::new(spec);
+                let spec = OPENAPI_JSON.derive(|s| {
+                    let mut spec: HashMap<String, serde_json::Value> =
+                        serde_json::from_str(s).unwrap();
+                    spec.insert("openapi".into(), "3.1.0".into());
+                    spec.insert(
+                        "info".into(),
+                        json!({
+                          "title": "Mattrax MDM",
+                          "version": mx_core::VERSION,
+                        }),
+                    );
+                    Arc::new(spec)
+                });
 
-                || async move { Json(spec.clone()) }
+                || async move { Json(spec().clone()) }
             }),
         )
         .fallback(|| async move {

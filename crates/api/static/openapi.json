@@ -3,7 +3,7 @@
   "description": "# Hello World",
   "paths": {
     "/health": {
-      "summary": "Check the health of the API",
+      "description": "Check the health of the API",
       "get": {
         "responses": {
           "200": {

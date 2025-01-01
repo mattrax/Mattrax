@@ -13,10 +13,11 @@ use axum::{
 use tracing::{field, info_span, Instrument, Span};
 
 mod api;
+mod frontend;
+mod utils;
 
 pub fn mount() -> Router {
     Router::new()
-        .route("/", get(|| async { "Mattrax MDM!" }))
         .route(
             "/health",
             get(|| async {
@@ -25,6 +26,7 @@ pub fn mount() -> Router {
             }),
         )
         .nest("/api", api::mount())
+        .nest("/", frontend::mount())
         .route_layer(middleware::from_fn(headers))
         .fallback(|| async move { (StatusCode::NOT_FOUND, "404: Not Found") })
 }
