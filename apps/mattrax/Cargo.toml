@@ -12,8 +12,7 @@ workspace = true
 memory = 512
 timeout = 60
 arm64 = true
-# env_file = ".env.production"
-env = { "DATABASE_URL" = "todo" }
+env_file = ".env.production"
 tags = { "repo" = "mattrax/Mattrax" }
 enable_function_url = true
 

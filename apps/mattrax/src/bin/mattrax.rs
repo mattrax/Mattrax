@@ -1,10 +1,28 @@
 //! The standard entrypoint for Mattrax.
 
 use tokio::{net::TcpListener, signal};
-use tracing::{error, info};
+use tracing::{error, info, level_filters::LevelFilter};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[tokio::main]
 async fn main() -> Result<(), ()> {
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(
+                    if cfg!(debug_assertions) {
+                        LevelFilter::DEBUG
+                    } else {
+                        LevelFilter::INFO
+                    }
+                    .into(),
+                )
+                .from_env()
+                .unwrap(),
+        )
+        .init();
+
     let args = mattrax::setup();
 
     let listener = TcpListener::bind(args.listen_addr).await.map_err(|err| {

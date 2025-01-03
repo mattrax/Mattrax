@@ -17,3 +17,7 @@ node_modules
 .pnpm-debug.log*
 *.tsbuildinfo
 /packages/*/dist
+
+# Environment files
+.env
+.env.production

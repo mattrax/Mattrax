@@ -1,8 +1,6 @@
 use std::net::SocketAddr;
 
 use clap::Parser;
-use tracing::level_filters::LevelFilter;
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"))]
@@ -23,23 +21,6 @@ pub struct Arguments {
 }
 
 pub fn setup() -> Arguments {
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(
-            EnvFilter::builder()
-                .with_default_directive(
-                    if cfg!(debug_assertions) {
-                        LevelFilter::DEBUG
-                    } else {
-                        LevelFilter::INFO
-                    }
-                    .into(),
-                )
-                .from_env()
-                .unwrap(),
-        )
-        .init();
     std::panic::set_hook(Box::new(move |panic| tracing::error!("{panic}")));
-
     Arguments::parse()
 }
