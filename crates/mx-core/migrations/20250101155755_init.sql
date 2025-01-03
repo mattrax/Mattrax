@@ -1,1 +1,8 @@
--- Add migration script here
+-- TODO
+CREATE TABLE identity (
+    id INTEGER PRIMARY KEY AUTO_INCREMENT,
+    cert VARBINARY(1000) NOT NULL,
+    `key` VARBINARY(1000) NOT NULL,
+    not_before INT(11) UNSIGNED NOT NULL,
+    not_after INT(11) UNSIGNED NOT NULL
+);

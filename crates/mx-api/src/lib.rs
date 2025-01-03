@@ -7,7 +7,7 @@ use axum::{
     http::{HeaderValue, StatusCode},
     middleware::{self, Next},
     response::Response,
-    routing::get,
+    routing::{any, get},
     Router,
 };
 use mx_core::Api;
@@ -30,11 +30,16 @@ pub fn mount(api: Api) -> Router {
         .nest("/api", api::mount())
         .merge(frontend::mount())
         .merge(dm::mount())
-        .route_layer(middleware::from_fn(headers))
-        .fallback(|| async move { (StatusCode::NOT_FOUND, "404: Not Found") })
+        // This will match everything bar `/` and is used as the 404 fallback.
+        // We intentionally don't use `.fallback` as middleware don't apply to it.
+        .route(
+            "/{*fallback}",
+            any(|| async move { (StatusCode::NOT_FOUND, "404: Not Found") }),
+        )
+        .route_layer(middleware::from_fn(headers_and_tracing))
 }
 
-async fn headers(req: Request, next: Next) -> Response {
+async fn headers_and_tracing(req: Request, next: Next) -> Response {
     let span = info_span!("REQUEST", method = %req.method(), uri = %req.uri(), status = field::Empty, elapsed = field::Empty);
     let now = Instant::now();
     async move {
@@ -43,7 +48,7 @@ async fn headers(req: Request, next: Next) -> Response {
         Span::current()
             .record("status", response.status().as_u16())
             .record("elapsed", format!("{took:?}"));
-        tracing::debug!("request");
+        tracing::info!("request");
 
         let headers = response.headers_mut();
         headers.append("Server", HeaderValue::from_static("Mattrax"));

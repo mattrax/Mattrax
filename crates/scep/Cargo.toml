@@ -1,5 +1,5 @@
 [package]
-name = "mx-core"
+name = "scep"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -8,6 +8,3 @@ publish = false
 workspace = true
 
 [dependencies]
-chrono.workspace = true
-sqlx.workspace = true
-tracing.workspace = true

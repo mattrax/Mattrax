@@ -24,4 +24,4 @@ clap = { version = "4.5.23", features = ["derive", "env"] }
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-lambda_http = "0.14.0"
+lambda_http = { version = "0.14.0", features = ["pass_through"] }
