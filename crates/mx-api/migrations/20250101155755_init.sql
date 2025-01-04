@@ -1,8 +1,9 @@
 -- TODO
+-- TODO: Explain the ID
 CREATE TABLE identity (
-    id INTEGER PRIMARY KEY AUTO_INCREMENT,
+    id INT UNSIGNED PRIMARY KEY,
     cert VARBINARY(1000) NOT NULL,
     `key` VARBINARY(1000) NOT NULL,
-    not_before INT(11) UNSIGNED NOT NULL,
-    not_after INT(11) UNSIGNED NOT NULL
+    not_before TIMESTAMP NOT NULL,
+    not_after TIMESTAMP NOT NULL
 );

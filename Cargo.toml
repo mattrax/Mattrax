@@ -8,7 +8,7 @@ serde = { version = "1", features = ["derive", "rc"] }
 axum = { version = "0.8" }
 serde_json = { version = "1" }
 tracing = { version = "0.1" }
-sqlx = { version = "0.8", default-features = false, features = ["mysql", "runtime-tokio", "tls-rustls", "derive", "macros", "migrate", "json"] }
+sqlx = { version = "0.8", default-features = false, features = ["mysql", "runtime-tokio", "tls-rustls", "derive", "macros", "migrate", "json", "chrono"] }
 uuid = { version = "1", features = ["serde"] }
 cryptographic-message-syntax = { version = "0.27.0", default-features = false }
 thiserror = "2"

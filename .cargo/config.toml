@@ -1,3 +1,9 @@
 [env]
 # Default used by `cargo run` and Rust Analyzer
 DATABASE_URL="mysql://root:@localhost:3306/mattrax"
+
+# TODO: it's annoying we can just use the `DATABASE_URL` from above in these.
+# This also means if you override `DATABASE_URL` it won't be used here unlike for `cargo run`.
+[alias]
+migrate = "sqlx migrate run --source crates/mx-api/migrations --database-url mysql://root:@localhost:3306/mattrax"
+resetdb = "sqlx database reset --source crates/mx-api/migrations --database-url mysql://root:@localhost:3306/mattrax"

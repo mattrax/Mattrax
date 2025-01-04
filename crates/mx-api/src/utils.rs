@@ -1,4 +1,10 @@
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    future::Future,
+    ops::Deref,
+    sync::{atomic::AtomicUsize, Arc, PoisonError, RwLock},
+    time::Duration,
+};
 
 /// Statically bundles a file's content into the binary for production builds while loading it from the FS during development.
 /// Returns [`Static`]
@@ -12,6 +18,7 @@ macro_rules! include_static {
 }
 
 pub(crate) use include_static;
+use tokio::sync::{futures::Notified, Notify};
 
 /// A static value included from the filesystem.
 /// In production this will be embedded into the binary and in development it will be read from the filesystem.
@@ -59,5 +66,41 @@ impl Static {
 impl axum::response::IntoResponse for Static {
     fn into_response(self) -> axum::response::Response {
         self.get().into_response()
+    }
+}
+
+// A primitive for building a cached value.
+pub struct Cached<T> {
+    value: RwLock<T>,
+    updater: tokio::sync::RwLock<()>,
+}
+
+impl<T> Cached<T> {
+    pub fn new(value: T) -> Self {
+        Self {
+            value: RwLock::new(value),
+            updater: tokio::sync::RwLock::new(()),
+        }
+    }
+
+    /// Attempts to apply an update to the value.
+    /// This will bail out if an existing update is already in progress.
+    ///
+    /// This does *not* block reads while it is in progress.
+    pub async fn update<E, F: Future<Output = Result<T, E>>>(
+        &self,
+        fetch: impl Fn() -> F,
+    ) -> Result<(), E> {
+        // We bail out if the lock is already held
+        // We don't need to queue it, we know the value is being updated
+        if let Ok(mut _guard) = self.updater.try_write() {
+            *self.value.write().unwrap_or_else(PoisonError::into_inner) = fetch().await?;
+        }
+        Ok(())
+    }
+
+    /// Get the current value.
+    pub fn get(&self) -> impl Deref<Target = T> + use<'_, T> {
+        self.value.read().unwrap_or_else(PoisonError::into_inner)
     }
 }

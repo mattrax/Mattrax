@@ -18,3 +18,5 @@ reqwest.workspace = true
 chrono.workspace = true
 sqlx.workspace = true
 x509-certificate = "0.24.0"
+tokio.workspace = true
+zeroize = "1.8.1"

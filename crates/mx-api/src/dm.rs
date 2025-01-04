@@ -18,45 +18,10 @@ use crate::utils::{include_static, Static};
 static MDM_HTML: Static = include_static!("mdm.html");
 
 mod apple;
-mod identity;
+pub mod device_ca;
 mod windows;
 
 pub(crate) fn mount() -> Router {
-    // TODO: Storing this into the database w/ caching
-    // let mut cert = x509_certificate::X509CertificateBuilder::default();
-    // cert.subject()
-    //     .append_common_name_utf8_string("jamfnow.com")
-    //     .unwrap();
-    // // TODO: Rest of them
-    // // cert.subject()
-    // //     .append_country_utf8_string("jamfnow.com")
-    // //     .unwrap();
-    // let subject = cert.subject().iter().cloned().collect::<Vec<_>>();
-    // cert.issuer().extend(subject);
-    // // cert.serial_number(value);
-    // // cert.extensions()
-    // // cert.validity_duration
-    // // cert.key_usage
-    // // cert.add_csr_attribute
-
-    // // TODO: RSA or something else?
-    // let (cert, keypair) = cert
-    //     .create_with_random_keypair(x509_certificate::KeyAlgorithm::Ed25519)
-    //     .unwrap();
-
-    // // TODO: Database
-    // std::fs::write("./cert.der", cert.encode_der().unwrap()).unwrap();
-    // std::fs::write("./key.der", keypair.to_pkcs8_one_asymmetric_key_der()).unwrap();
-
-    // let cert =
-    //     x509_certificate::X509Certificate::from_der(&std::fs::read("./cert.der").unwrap()).unwrap();
-    // let keypair = x509_certificate::InMemorySigningKeyPair::from_pkcs8_der(
-    //     &std::fs::read("./key.der").unwrap(),
-    // )
-    // .unwrap();
-
-    // println!("{:?}", cert.issuer_common_name());
-
     Router::new()
         .route("/mdm", get(|| async { Html(MDM_HTML) }))
         .route("/windows/enroll", get(|| async { todo!() }))
