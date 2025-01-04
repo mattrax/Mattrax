@@ -5,7 +5,7 @@ use clap::Parser;
 #[derive(Parser)]
 #[command(name = env!("CARGO_PKG_NAME"))]
 #[command(bin_name = env!("CARGO_PKG_NAME"))]
-#[command(version = mx_core::VERSION)]
+#[command(version = mx_api::VERSION)]
 #[command(about = env!("CARGO_PKG_DESCRIPTION"))]
 pub struct Arguments {
     #[arg(

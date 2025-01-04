@@ -23,7 +23,7 @@ pub(crate) fn mount() -> Router {
                         "info".into(),
                         json!({
                           "title": "Mattrax MDM",
-                          "version": mx_core::VERSION,
+                          "version": crate::VERSION,
                         }),
                     );
                     Arc::new(spec)

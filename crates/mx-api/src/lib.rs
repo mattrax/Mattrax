@@ -1,75 +1,52 @@
 //! The REST and MDM API for Mattrax.
 
-use std::time::Instant;
-
-use axum::{
-    extract::Request,
-    http::{HeaderValue, StatusCode},
-    middleware::{self, Next},
-    response::Response,
-    routing::{any, get},
-    Router,
-};
-use mx_core::Api;
-use tracing::{field, info_span, Instrument, Span};
-
 mod api;
 mod dm;
-mod frontend;
+mod mount;
 mod utils;
 
-pub fn mount(api: Api) -> Router {
-    Router::new()
-        .route(
-            "/health",
-            get(|| async {
-                // TODO: Check with the database
-                StatusCode::NO_CONTENT
-            }),
-        )
-        .nest("/api", api::mount())
-        .merge(frontend::mount())
-        .merge(dm::mount())
-        // This will match everything bar `/` and is used as the 404 fallback.
-        // We intentionally don't use `.fallback` as middleware don't apply to it.
-        .route(
-            "/{*fallback}",
-            any(|| async move { (StatusCode::NOT_FOUND, "404: Not Found") }),
-        )
-        .route_layer(middleware::from_fn(headers_and_tracing))
+use sqlx::{
+    migrate::{MigrateError, Migrator},
+    mysql::MySqlPoolOptions,
+    MySqlPool,
+};
+
+use tracing::info;
+
+pub static VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-", env!("GIT_HASH"));
+
+/// The shared state for the API.
+#[derive(Clone)]
+pub struct Core {
+    db: MySqlPool,
 }
 
-async fn headers_and_tracing(req: Request, next: Next) -> Response {
-    let span = info_span!("REQUEST", method = %req.method(), uri = %req.uri(), status = field::Empty, elapsed = field::Empty);
-    let now = Instant::now();
-    async move {
-        let mut response = next.run(req).await;
-        let took = now.elapsed();
-        Span::current()
-            .record("status", response.status().as_u16())
-            .record("elapsed", format!("{took:?}"));
-        tracing::info!("request");
+impl Core {
+    pub fn new(database_url: &str) -> Result<Self, sqlx::Error> {
+        let db = MySqlPoolOptions::new()
+            // TODO: Tuning these parameters
+            .max_connections(30)
+            .min_connections(1)
+            .connect_lazy(database_url)?;
 
-        let headers = response.headers_mut();
-        headers.append("Server", HeaderValue::from_static("Mattrax"));
-        // if cgg!(debug_assertions) {
-        //     headers.append(
-        //         "Strict-Transport-Security",
-        //         HeaderValue::from_static("max-age=31536000; preload"),
-        //     );
-        // }
-        headers.append("X-Frame-Options", HeaderValue::from_static("DENY"));
-        headers.append(
-            "X-Content-Type-Options",
-            HeaderValue::from_static("nosniff"),
-        );
-        headers.append(
-            "Referrer-Policy",
-            HeaderValue::from_static("strict-origin-when-cross-origin"),
-        );
-
-        response
+        Ok(Self { db })
     }
-    .instrument(span)
-    .await
+
+    /// Run migrations and ensure the database is ready.
+    pub async fn migrate(&self) -> Result<(), MigrateError> {
+        static MIGRATOR: Migrator = sqlx::migrate!();
+        MIGRATOR.run(&self.db).await
+    }
+
+    pub fn mount(&self) -> axum::Router {
+        mount::mount(self.clone())
+    }
+
+    /// Run any scheduled tasks.
+    pub async fn cron(&self) {
+        info!("Running cron...");
+
+        // TODO: setup identity certificate and renew if required
+        // TODO: Configuration for development with very-very short renew times
+    }
 }

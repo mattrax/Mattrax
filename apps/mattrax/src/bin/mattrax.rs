@@ -32,7 +32,7 @@ async fn main() -> Result<(), ()> {
         )
     })?;
 
-    let api = mx_core::Api::new(&args.database_url)
+    let api = mx_api::Core::new(&args.database_url)
         .map_err(|err| error!("Failed to initialise database: {err:?}"))?;
 
     api.migrate()
@@ -50,7 +50,7 @@ async fn main() -> Result<(), ()> {
         }
     });
 
-    let router = mx_api::mount(api.clone());
+    let router = api.mount();
 
     // An endpoint to trigger cron tasks in development.
     #[cfg(debug_assertions)]

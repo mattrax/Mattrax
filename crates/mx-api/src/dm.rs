@@ -17,6 +17,10 @@ use crate::utils::{include_static, Static};
 
 static MDM_HTML: Static = include_static!("mdm.html");
 
+mod apple;
+mod identity;
+mod windows;
+
 pub(crate) fn mount() -> Router {
     // TODO: Storing this into the database w/ caching
     // let mut cert = x509_certificate::X509CertificateBuilder::default();

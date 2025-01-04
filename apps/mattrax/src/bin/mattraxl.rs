@@ -11,11 +11,11 @@ async fn main() -> Result<(), ()> {
 
     let args = mattrax::setup();
 
-    let api = mx_core::Api::new(&args.database_url)
+    let api = mx_api::Core::new(&args.database_url)
         .map_err(|err| error!("Failed to construct mx_core::Api: {err:?}"))?;
 
     std::env::set_var("AWS_LAMBDA_HTTP_IGNORE_STAGE_IN_PATH", "true");
-    run(mx_api::mount(api.clone()).route(
+    run(api.mount().route(
         // Any event that `lambda_http` fails to match will be sent here (`pass_through` feature).
         "/events",
         post(|req: Request| async move {
