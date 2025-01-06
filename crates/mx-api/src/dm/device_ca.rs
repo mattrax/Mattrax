@@ -5,7 +5,10 @@ use sqlx::{query, query_as};
 use tracing::info;
 use x509_certificate::{certificate::KeyUsage, rfc3280::Name};
 
-use crate::{utils::Cached, Core};
+use crate::{
+    utils::{encrypt, Cached},
+    Core,
+};
 
 #[derive(Clone, Debug)]
 struct IdentityRow {
@@ -105,6 +108,8 @@ pub async fn refresh_device_ca(core: &Core) -> sqlx::Result<()> {
         info!("Detected that the device CA needs to be refreshed...");
         let (cert, key, not_before, not_after) = issue_device_ca().unwrap();
 
+        let key = encrypt(&core.secret, &key[..]).unwrap();
+
         // Using the database we set the primary key of the table to the closest 5 minute interval in epoch.
         // We also configure the query to not update the row if it already exists.
         // This means if multiple clients attempt to refresh the device CA at once, only one of them will succeed.
@@ -113,7 +118,7 @@ pub async fn refresh_device_ca(core: &Core) -> sqlx::Result<()> {
         query!(
             "INSERT INTO identity(id, cert, `key`, not_before, not_after) VALUES (UNIX_TIMESTAMP() - (UNIX_TIMESTAMP() % 300), ?, ?, ?, ?) ON DUPLICATE KEY UPDATE id=id",
             cert,
-            key.to_vec(),
+            key,
             not_before,
             not_after
         )

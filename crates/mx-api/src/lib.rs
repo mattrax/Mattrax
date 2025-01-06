@@ -3,7 +3,10 @@
 mod api;
 mod dm;
 mod mount;
+mod token;
 mod utils;
+
+use std::sync::Arc;
 
 use dm::device_ca::DeviceCA;
 use sqlx::{
@@ -21,10 +24,11 @@ pub static VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-", env!("GIT_HAS
 pub struct Core {
     db: MySqlPool,
     device_ca: DeviceCA,
+    secret: Arc<Vec<u8>>,
 }
 
 impl Core {
-    pub fn new(database_url: &str) -> Result<Self, sqlx::Error> {
+    pub fn new(database_url: &str, secret: Vec<u8>) -> Result<Self, sqlx::Error> {
         let db = MySqlPoolOptions::new()
             // TODO: Tuning these parameters
             .max_connections(30)
@@ -34,6 +38,7 @@ impl Core {
         let this = Self {
             db,
             device_ca: DeviceCA::new(),
+            secret: Arc::new(secret),
         };
         DeviceCA::updater_task(this.clone());
 

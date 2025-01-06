@@ -17,7 +17,7 @@ use crate::{
 
 static INDEX_HTML: Static = include_static!("index.html");
 
-pub fn mount(api: Core) -> Router {
+pub fn mount(core: Core) -> Router {
     Router::new()
         .route("/", get(|| async { Html(INDEX_HTML.get()) }))
         .route(
@@ -28,7 +28,7 @@ pub fn mount(api: Core) -> Router {
             }),
         )
         .nest("/api", crate::api::mount())
-        .merge(crate::dm::mount())
+        .merge(crate::dm::mount(core))
         // This will match everything bar `/` and is used as the 404 fallback.
         // We intentionally don't use `.fallback` as middleware don't apply to it.
         .route(

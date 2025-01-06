@@ -32,7 +32,7 @@ async fn main() -> Result<(), ()> {
         )
     })?;
 
-    let api = mx_api::Core::new(&args.database_url)
+    let api = mx_api::Core::new(&args.database_url, args.secret.into_bytes())
         .map_err(|err| error!("Failed to initialise database: {err:?}"))?;
 
     api.migrate()

@@ -11,7 +11,7 @@ async fn main() -> Result<(), ()> {
 
     let args = mattrax::setup();
 
-    let api = mx_api::Core::new(&args.database_url)
+    let api = mx_api::Core::new(&args.database_url, args.secret.into_bytes())
         .map_err(|err| error!("Failed to construct mx_core::Api: {err:?}"))?;
 
     std::env::set_var("AWS_LAMBDA_HTTP_IGNORE_STAGE_IN_PATH", "true");

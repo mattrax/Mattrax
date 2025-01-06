@@ -2,8 +2,7 @@ use std::{
     borrow::Cow,
     future::Future,
     ops::Deref,
-    sync::{atomic::AtomicUsize, Arc, PoisonError, RwLock},
-    time::Duration,
+    sync::{PoisonError, RwLock},
 };
 
 /// Statically bundles a file's content into the binary for production builds while loading it from the FS during development.
@@ -18,7 +17,6 @@ macro_rules! include_static {
 }
 
 pub(crate) use include_static;
-use tokio::sync::{futures::Notified, Notify};
 
 /// A static value included from the filesystem.
 /// In production this will be embedded into the binary and in development it will be read from the filesystem.
@@ -103,4 +101,25 @@ impl<T> Cached<T> {
     pub fn get(&self) -> impl Deref<Target = T> + use<'_, T> {
         self.value.read().unwrap_or_else(PoisonError::into_inner)
     }
+}
+
+use chacha20poly1305::{
+    aead::{Aead, AeadCore, KeyInit, OsRng},
+    ChaCha20Poly1305, Error, Nonce,
+};
+
+/// Encrypts the data using symmetric encryption with the secret.
+pub fn encrypt(secret: &[u8], data: &[u8]) -> Result<Vec<u8>, Error> {
+    assert!(secret.len() > 32, "The secret must be bigger than 32 bytes");
+    ChaCha20Poly1305::new_from_slice(&secret[32..])
+        .expect("failed to create cipher from secret. We checked the length above.")
+        .encrypt(&ChaCha20Poly1305::generate_nonce(&mut OsRng), data)
+}
+
+/// Decrypt the data using symmetric encryption with the secret.
+pub fn decrypt(secret: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, Error> {
+    assert!(secret.len() > 32, "The secret must be bigger than 32 bytes");
+    ChaCha20Poly1305::new_from_slice(&secret[32..])
+        .expect("failed to create cipher from secret. We checked the length above.")
+        .decrypt(&ChaCha20Poly1305::generate_nonce(&mut OsRng), ciphertext)
 }

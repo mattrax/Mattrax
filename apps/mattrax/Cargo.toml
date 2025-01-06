@@ -19,8 +19,8 @@ enable_function_url = true
 [dependencies]
 mx-api = { path = "../../crates/mx-api" }
 axum.workspace = true
-clap = { version = "4.5.23", features = ["derive", "env"] }
 tokio.workspace = true
 tracing.workspace = true
+clap = { version = "4.5.23", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 lambda_http = { version = "0.14.0", features = ["pass_through"] }
