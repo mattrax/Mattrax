@@ -105,21 +105,29 @@ impl<T> Cached<T> {
 
 use chacha20poly1305::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
-    ChaCha20Poly1305, Error, Nonce,
+    ChaCha20Poly1305, Error,
 };
 
 /// Encrypts the data using symmetric encryption with the secret.
 pub fn encrypt(secret: &[u8], data: &[u8]) -> Result<Vec<u8>, Error> {
     assert!(secret.len() > 32, "The secret must be bigger than 32 bytes");
+    let nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng);
+    assert_eq!(nonce.len(), 12, "Expected nonce to be 12 bytes long"); // The decryption code relies on this.
     ChaCha20Poly1305::new_from_slice(&secret[32..])
         .expect("failed to create cipher from secret. We checked the length above.")
-        .encrypt(&ChaCha20Poly1305::generate_nonce(&mut OsRng), data)
+        .encrypt(&nonce, data)
+        .map(|mut v| {
+            let mut nonce = nonce.to_vec();
+            nonce.append(&mut v);
+            nonce
+        })
 }
 
 /// Decrypt the data using symmetric encryption with the secret.
 pub fn decrypt(secret: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, Error> {
     assert!(secret.len() > 32, "The secret must be bigger than 32 bytes");
+    let (nonce, ciphertext) = ciphertext.split_at(12);
     ChaCha20Poly1305::new_from_slice(&secret[32..])
         .expect("failed to create cipher from secret. We checked the length above.")
-        .decrypt(&ChaCha20Poly1305::generate_nonce(&mut OsRng), ciphertext)
+        .decrypt(nonce.into(), ciphertext)
 }

@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
+use axum::body::Bytes;
+use bcder::{ConstOid, OctetString, Oid};
 use chrono::Duration;
+use rsa::{pkcs8::EncodePrivateKey, RsaPrivateKey};
 use sqlx::{query, query_as};
 use tracing::info;
-use x509_certificate::{certificate::KeyUsage, rfc3280::Name};
+use x509_certificate::{rfc3280::Name, rfc5280, InMemorySigningKeyPair, X509Certificate};
 
 use crate::{
-    utils::{encrypt, Cached},
+    utils::{decrypt, encrypt, Cached},
     Core,
 };
 
@@ -42,15 +45,21 @@ impl DeviceCA {
         todo!();
     }
 
-    pub fn active_signer(&self) {
+    pub fn active_signer(&self, core: &Core) -> Option<(X509Certificate, InMemorySigningKeyPair)> {
         let value = self.0.get();
         if value.is_empty() {
             // Self::refresh(core);
             todo!();
         }
 
-        //     println!("GOT {:?}", self.value.get());
-        //     // todo!();
+        // TODO: We need to account for caching so this should be delayed unless it's the only one.
+        let first = value.last()?;
+        let cert = x509_certificate::X509Certificate::from_der(&first.cert).unwrap();
+        let keypair = x509_certificate::InMemorySigningKeyPair::from_pkcs8_der(
+            &decrypt(&*core.secret, &first.key[..]).unwrap(),
+        )
+        .unwrap();
+        Some((cert, keypair))
     }
 
     /// Setup a task to keep the device CA updated in the background.
@@ -91,6 +100,7 @@ impl DeviceCA {
 }
 
 pub async fn refresh_device_ca(core: &Core) -> sqlx::Result<()> {
+    // TODO: Refresh cache and use it instead of this query?
     let active_identities = query!(
         "SELECT id, not_after FROM identity WHERE CURRENT_TIMESTAMP() BETWEEN not_before AND not_after"
     )
@@ -100,7 +110,7 @@ pub async fn refresh_device_ca(core: &Core) -> sqlx::Result<()> {
     let must_refresh = active_identities.len() == 0
         || active_identities.iter().any(|identity| {
             let remaining = identity.not_after.signed_duration_since(chrono::Utc::now());
-            println!("A {:?}", remaining.num_seconds());
+            // println!("A {:?}", remaining.num_seconds());
             remaining.num_seconds() < 60 * 60 * 24 * 7 // TODO: Configure this for dev
         });
 
@@ -140,6 +150,16 @@ static DEVICE_CA_VALIDITY: Duration = if cfg!(debug_assertions) {
     Duration::days(365)
 };
 
+/// Basic Constraints X.509 extension.
+///
+/// 2.5.29.19
+const OID_EXTENSION_BASIC_CONSTRAINTS: ConstOid = Oid(&[85, 29, 19]);
+
+/// Key Usage extension.
+///
+/// 2.5.29.15
+const OID_EXTENSION_KEY_USAGE: ConstOid = Oid(&[85, 29, 15]);
+
 fn issue_device_ca() -> Result<
     (
         Vec<u8>,
@@ -160,11 +180,24 @@ fn issue_device_ca() -> Result<
     *cert.subject() = name.clone();
     *cert.issuer() = name;
     cert.validity_duration(DEVICE_CA_VALIDITY);
-    cert.key_usage(KeyUsage::KeyCertSign);
+    cert.extensions_mut().push(rfc5280::Extension {
+        id: Oid(OID_EXTENSION_KEY_USAGE.as_ref().into()),
+        critical: Some(true),
+        // CA=true
+        value: OctetString::new(Bytes::copy_from_slice(&[3, 2, 1, 6])),
+    });
+    cert.extensions_mut().push(rfc5280::Extension {
+        id: Oid(OID_EXTENSION_BASIC_CONSTRAINTS.as_ref().into()),
+        critical: Some(true),
+        value: OctetString::new(Bytes::copy_from_slice(&[48, 3, 1, 1, 255])),
+    });
 
-    let (cert, keypair) =
-        cert.create_with_random_keypair(x509_certificate::KeyAlgorithm::Ed25519)?;
+    let mut rng = rand::thread_rng();
+    let bits = 2048;
+    let key = RsaPrivateKey::new(&mut rng, bits).unwrap();
 
+    let keypair = InMemorySigningKeyPair::from_pkcs8_der(key.to_pkcs8_der().unwrap().as_bytes())?;
+    let cert = cert.create_with_key_pair(&keypair)?;
     Ok((
         cert.encode_der().unwrap(),
         keypair.to_pkcs8_one_asymmetric_key_der(),
