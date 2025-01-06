@@ -295,6 +295,8 @@ r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
                 // 4.3. > Note that when used with HTTP POST, the only OPERATION possible is "PKIOperation"
                 match &*query.operation {
                     "PKIOperation" => {
+                        let (cert, key) = core.device_ca.active_signer(&core).unwrap(); // TODO: What if the active signer changes between SCEP requests?
+
                        println!("{:?}",  req.headers.get("Content-Type")); // application/x-pki-message
 
                        let scep = scep::Scep::new(());
@@ -302,76 +304,11 @@ r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
                        let msg = scep.pki_operation(&body).unwrap();
                        println!("{:?}", msg);
 
-                       msg.decrypt_pki_envelope((), ());
-
-
-                       // std::fs::write("./blob", body).unwrap();
-
-                        // let d = SignedData::parse_ber(&body).unwrap();
-                        // TODO: Validate all of this stuff
-                        // d.certificates().for_each(|c| {
-                        //     println!("{:?}", c.subject_common_name());
-
-                        //     c.iter_extensions().for_each(|e| {
-                        //         println!("\t EXT: {:?}", e);
-                        //     });
-                        // });
-                        // d.signers().for_each(|s| {
-                        //     let content = s.signed_content(d.signed_content());
-                        //     // println!("MATCHED CONTENT {:?}", Some(&*content) == d.signed_content());
-
-                        //     println!("ATTRS: {:?} {:?}", s.signed_attributes(), s.unsigned_attributes());
-
-                        //     s.signed_attributes().unwrap().attributes().iter().for_each(|a| {
-                        //         println!("\tATTR2 {:?}", a);
-                        //     });
-
-
-
-                        //     // println!("\tC {:?}", SignedData::parse_ber(&content).unwrap());
-
-                        //     // println!("\tA {:?}", CertReq::from_der(&content));
-                        //     // let a: CertificateSigningRequestDer<'static> = content.into();
-                        //     // println!("\tB {:?}", CertificateSigningRequestParams::from_der(&a).unwrap().params);
-                        // });
-
-                       //  println!("{:?}", d.signed_content().unwrap());
-
-                       //  // std::fs::write("./blob2", d.signed_content().unwrap()).unwrap();
-
-                       //  let csr = CertReq::from_der(d.signed_content().unwrap()).unwrap();
-
-                       //  println!("{:?}", csr.info);
-
-                       //  println!("{:?}", csr.info.public_key.algorithm);
-                       // println!("TEST {:?}", x509_cert::Certificate::from_der(csr.info.public_key.subject_public_key.as_bytes().unwrap()).unwrap());
-
-                       //  let cert = rfc5280::Certificate {
-                       //      tbs_certificate: rfc5280::TbsCertificate {
-                       //          version: Some(match csr.info.version {
-                       //              x509_verify::x509_cert::request::Version::V1 => rfc5280::Version::V1,
-                       //          }),
-                       //          serial_number: todo!(),
-                       //          signature: todo!(),
-                       //          issuer: todo!(),
-                       //          validity: todo!(),
-                       //          subject: todo!(), // Name:: // csr.info.subject.0.into_iter().map(|v| todo!()).collect(),
-                       //          subject_public_key_info: todo!(),
-                       //          issuer_unique_id: None, // TODO
-                       //          subject_unique_id: None, // TODO
-                       //          extensions: None, // TODO
-                       //          raw_data: None, // TODO
-                       //      },
-                       //      signature_algorithm: rfc5280::AlgorithmIdentifier {
-                       //          algorithm: Oid(csr.algorithm.oid.as_bytes().to_vec().into()),
-                       //          parameters: csr.algorithm.parameters.map(|p| rfc5280::AlgorithmParameter::from_oid(Oid(p.value().to_vec().into()))),
-                       //      },
-                       //      signature: bcder::BitString::new(csr.signature.unused_bits(), csr.signature.as_bytes().unwrap().into()),
-                       //  };
+                       let result = msg.decrypt_pki_envelope(cert.encode_der().unwrap(), key.to_pkcs8_one_asymmetric_key_der().to_vec()).unwrap();
 
                        (
                          [(header::CONTENT_TYPE, "application/x-pki-message")],
-                         "todo"
+                         result
                        ).into_response()
                     },
                     // TODO: Does the SCEP spec have something for errors?

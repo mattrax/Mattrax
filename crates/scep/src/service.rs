@@ -1,3 +1,5 @@
+// TODO: It would be sick if we could stay sans-io and not have this to give the user full control.
+
 /// GetNextCACert(ctx context.Context) ([]byte, error)
 pub trait Service {
     //    // GetCACaps returns a list of options

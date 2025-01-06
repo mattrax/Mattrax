@@ -1,4 +1,3 @@
-use bcder::BitString;
 use cryptographic_message_syntax::{Oid, SignedData};
 
 use crate::{
@@ -76,7 +75,7 @@ impl<S: Service> Scep<S> {
                             //     )
                             // );
 
-                            // TODO: Is this incorrect or is the random data at the start intentional?
+                            // TODO: Is this incorrect or is the random data at the start intentional? - https://www.oss.com/asn1/resources/asn1-made-simple/asn1-quick-reference/printablestring.html
                             return Some(String::from_utf8(value).unwrap());
                         }
 

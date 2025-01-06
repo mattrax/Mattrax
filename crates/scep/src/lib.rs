@@ -12,6 +12,7 @@
 impl Service for () {}
 
 mod constants;
+pub(crate) mod crypto;
 mod pki_message;
 // mod fail_info;
 mod message_type;
