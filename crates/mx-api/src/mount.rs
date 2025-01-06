@@ -1,13 +1,15 @@
 use std::time::Instant;
 
 use axum::{
-    extract::Request,
+    extract::{Request, State},
     http::{HeaderValue, StatusCode},
     middleware::{self, Next},
     response::{Html, Response},
     routing::{any, get},
-    Router,
+    Json, Router,
 };
+use serde_json::json;
+use sqlx::Executor;
 use tracing::{field, info_span, Instrument, Span};
 
 use crate::{
@@ -17,18 +19,30 @@ use crate::{
 
 static INDEX_HTML: Static = include_static!("index.html");
 
-pub fn mount(core: Core) -> Router {
-    Router::new()
+pub fn mount() -> Router<Core> {
+    Router::<Core>::new()
         .route("/", get(|| async { Html(INDEX_HTML.get()) }))
         .route(
             "/health",
-            get(|| async {
-                // TODO: Check with the database
-                StatusCode::NO_CONTENT
+            get(|State(core): State<Core>| async move {
+                let result = core.db.execute("SELECT 1").await;
+
+                let status = if result.is_ok() {
+                    StatusCode::OK
+                } else {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                };
+
+                (
+                    status,
+                    Json(json!({
+                        "db": result.is_ok(),
+                    })),
+                )
             }),
         )
         .nest("/api", crate::api::mount())
-        .merge(crate::dm::mount(core))
+        .merge(crate::dm::mount())
         // This will match everything bar `/` and is used as the 404 fallback.
         // We intentionally don't use `.fallback` as middleware don't apply to it.
         .route(

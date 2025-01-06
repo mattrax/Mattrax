@@ -4,12 +4,15 @@ use axum::{http::StatusCode, response::Html, routing::get, Json, Router};
 use serde::Serialize;
 use serde_json::json;
 
-use crate::utils::{include_static, Static};
+use crate::{
+    utils::{include_static, Static},
+    Core,
+};
 
 static SCALAR_HTML: Static = include_static!("scalar.html");
 static OPENAPI_JSON: Static = include_static!("openapi.json");
 
-pub(crate) fn mount() -> Router {
+pub(crate) fn mount() -> Router<Core> {
     Router::new()
         .route("/", get(|| async { Html(SCALAR_HTML.get()) }))
         .route(

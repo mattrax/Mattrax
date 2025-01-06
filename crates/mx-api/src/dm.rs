@@ -13,7 +13,10 @@ use serde::Deserialize;
 use tracing::{error, warn};
 use x509_certificate::rfc3280::Name;
 
-use crate::utils::{include_static, Static};
+use crate::{
+    utils::{include_static, Static},
+    Core,
+};
 
 static MDM_HTML: Static = include_static!("mdm.html");
 
@@ -21,7 +24,7 @@ mod apple;
 pub mod device_ca;
 mod windows;
 
-pub(crate) fn mount() -> Router {
+pub(crate) fn mount() -> Router<Core> {
     Router::new()
         .route("/mdm", get(|| async { Html(MDM_HTML) }))
         .route("/windows/enroll", get(|| async { todo!() }))

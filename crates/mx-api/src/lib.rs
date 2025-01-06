@@ -6,7 +6,7 @@ mod mount;
 mod token;
 mod utils;
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use dm::device_ca::DeviceCA;
 use sqlx::{
@@ -15,7 +15,7 @@ use sqlx::{
     MySqlPool,
 };
 
-use tracing::info;
+use tracing::{error, info};
 
 pub static VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-", env!("GIT_HASH"));
 
@@ -30,9 +30,10 @@ pub struct Core {
 impl Core {
     pub fn new(database_url: &str, secret: Vec<u8>) -> Result<Self, sqlx::Error> {
         let db = MySqlPoolOptions::new()
-            // TODO: Tuning these parameters
             .max_connections(30)
             .min_connections(1)
+            .test_before_acquire(false)
+            .acquire_timeout(Duration::from_secs(7))
             .connect_lazy(database_url)?;
 
         let this = Self {
@@ -53,21 +54,18 @@ impl Core {
 
     /// Mount the Axum api
     pub fn mount(&self) -> axum::Router {
-        mount::mount(self.clone())
+        mount::mount().with_state(self.clone())
     }
 
     /// Run any scheduled tasks.
     pub async fn cron(&self) {
         info!("Running cron...");
 
-        let this = self.clone();
-        tokio::spawn(async move {
-            dm::device_ca::refresh_device_ca(&this).await.unwrap();
-        });
-
-        dm::device_ca::refresh_device_ca(self).await.unwrap();
-
-        // TODO: setup identity certificate and renew if required
-        // TODO: Configuration for development with very-very short renew times
+        let Ok(()) = dm::device_ca::refresh_device_ca(self)
+            .await
+            .map_err(|e| error!("Failed to refresh device CA: {}", e))
+        else {
+            return;
+        };
     }
 }
