@@ -78,7 +78,7 @@ pub enum PkcsVerificationError {
 pub fn parse_and_verify_pkcs7<'a>(
     data: &[u8],
     truststore: &[&'a Certificate],
-) -> Result<Vec<u8>, PkcsVerificationError> {
+) -> Result<(Vec<u8>, SignedData), PkcsVerificationError> {
     let d = SignedData::parse_ber(data)?;
     (d.signers().count() != 0)
         .then_some(())
@@ -116,7 +116,16 @@ pub fn parse_and_verify_pkcs7<'a>(
         for ca in truststore.iter() {
             let key = VerifyingKey::try_from(*ca)?;
             if let Err(err) = key.verify(&certificate2) {
-                todo!();
+                // todo!();
+                // TODO: This is wrong error but is temporary
+
+                println!(
+                    "ACTUAL ERROR: {err:?} {:?}",
+                    d.certificates()
+                        .map(|v| v.subject_common_name().unwrap())
+                        .collect::<Vec<_>>()
+                );
+                return Err(PkcsVerificationError::NoCertificateForSigner);
             }
             // TODO: verify time
             // TODO: Verify extended key usage
@@ -151,6 +160,12 @@ pub fn parse_and_verify_pkcs7<'a>(
     d.signed_content()
         .ok_or(PkcsVerificationError::MissingPayload)
         .map(|v| v.to_vec())
+        .map(|v| {
+            (
+                v, // TODO: Kinda hate this being in the return type
+                d,
+            )
+        })
 }
 
 #[cfg(test)]
