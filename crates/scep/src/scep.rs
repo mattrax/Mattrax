@@ -1,3 +1,4 @@
+use bcder::{OctetString, PrintableString};
 use cryptographic_message_syntax::{Oid, SignedData};
 
 use crate::{
@@ -76,7 +77,25 @@ impl<S: Service> Scep<S> {
                             // );
 
                             // TODO: Is this incorrect or is the random data at the start intentional? - https://www.oss.com/asn1/resources/asn1-made-simple/asn1-quick-reference/printablestring.html
-                            return Some(String::from_utf8(value).unwrap());
+
+                            // println!("GOT: {:?}", a.values);
+
+                            // let os = OctetString::new(value.into());
+
+                            // os.iter().for_each(|b| {
+                            //     println!("A: {:?} {:?}", b, char::from_digit(b[0] as u32, 10));
+                            // });
+                            // os.octets().for_each(|b| {
+                            //     println!("B: {:?} {:?}", b, char::from_digit(b as u32, 10));
+                            // });
+
+                            // println!("RAW: {:?}", os.as_slice());
+
+                            // let ps = PrintableString::new(os).unwrap();
+                            let s = String::from_utf8(value.to_vec()).unwrap();
+                            // println!("PRINTABLE STRING: {:?}", s);
+                            // todo!();
+                            return Some(s);
                         }
 
                         None
@@ -104,6 +123,7 @@ impl<S: Service> Scep<S> {
             // raw: vec![], // TODO
             p7,
             cert_resp_message: None,
+            sender_nonce: None,
         };
         msg.parse_message_type();
         Ok(msg)

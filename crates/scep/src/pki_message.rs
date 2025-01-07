@@ -11,9 +11,11 @@ use cryptographic_message_syntax::{
     SignedData,
 };
 use der_parser::asn1_rs::{Integer, ToDer};
+use foreign_types_shared::ForeignType;
 use openssl::{
     cipher::Cipher,
     hash::MessageDigest,
+    nid::Nid,
     pkcs7::{Pkcs7, Pkcs7Flags},
     pkey::PKey,
     stack::{Stack, StackRef},
@@ -35,7 +37,10 @@ use x509_certificate::{
 //     x509_cert::request::CertReq,
 // };
 
-use crate::{crypto, MessageType, PKIStatus, OID_SCEP_PKI_STATUS, OID_SCEP_RECIPIENT_NONCE};
+use crate::{
+    crypto, MessageType, PKIStatus, OID_SCEP_PKI_STATUS, OID_SCEP_RECIPIENT_NONCE,
+    OID_SCEP_SENDER_NONCE,
+};
 
 /// PKIMessage defines the possible SCEP message types
 #[derive(Debug, Clone)]
@@ -47,6 +52,7 @@ pub struct PkiMessage {
     pub p7: SignedData, // TODO: Making this public causes `cryptographic_message_syntax` to be a public dependency. Do we want that?
     // TODO: Enum for this or force the user to call `parse_message_type`???
     pub cert_resp_message: Option<CertRepMessage>,
+    pub sender_nonce: Option<Vec<u8>>,
 }
 
 impl PkiMessage {
@@ -107,6 +113,28 @@ impl PkiMessage {
             MessageType::PKCSReq | MessageType::UpdateReq | MessageType::RenewalReq => {
                 // https://github.com/smallstep/scep/blob/a37a330173bcdfa87c08f364a46eef8db65715be/scep.go#L321
 
+                let signer = self.p7.signers().into_iter().next().unwrap(); // TODO: The Go code doesn't do this how?
+
+                let sender_nonce = signer
+                    .signed_attributes()
+                    .unwrap()
+                    .attributes()
+                    .iter()
+                    .find_map(|a| {
+                        if a.typ == OID_SCEP_SENDER_NONCE {
+                            let value = (&**a.values.first().unwrap()).to_vec();
+                            return Some(value);
+                        }
+
+                        None
+                    })
+                    .unwrap();
+                if sender_nonce.len() == 0 {
+                    todo!();
+                    // return errors.New("scep: pkiMessage must include senderNonce attribute")
+                }
+                self.sender_nonce = Some(sender_nonce);
+
                 // todo!();
             }
             MessageType::GetCRL | MessageType::GetCert | MessageType::CertPoll => unimplemented!(),
@@ -142,6 +170,10 @@ impl PkiMessage {
         cert.set_version(csr.version()).unwrap();
         cert.set_subject_name(csr.subject_name()).unwrap();
         cert.set_pubkey(&*csr.public_key().unwrap()).unwrap();
+        cert.set_not_after(&openssl::asn1::Asn1Time::days_from_now(365).unwrap()) // TODO: Tune this value
+            .unwrap();
+        cert.set_not_before(&openssl::asn1::Asn1Time::days_from_now(0).unwrap()) // TODO: Tune this value
+            .unwrap();
         // TODO: Go through setting everything
 
         cert.sign(&key, MessageDigest::sha256()).unwrap(); // TODO: Which hash?
@@ -168,35 +200,74 @@ impl PkiMessage {
         key_der: Vec<u8>,
         csr: Vec<u8>,
     ) -> Result<Vec<u8>, ()> {
-        let cert = X509::from_der(&cert_der).unwrap();
-        let key = PKey::private_key_from_pkcs8(&key_der).unwrap();
+        let p7_certificates = self
+            .p7
+            .certificates()
+            .map(|c| c.encode_ber().unwrap())
+            .collect::<Vec<_>>();
 
-        let csr = crypto::degenerate_certificate(csr);
+        let result = mx_golang::scep_success(
+            cert_der,
+            key_der,
+            csr,
+            p7_certificates,
+            self.transaction_id.clone(),
+            self.sender_nonce.clone().unwrap(),
+        )
+        .unwrap();
+        println!("GO OUTPUT: {:?}", result);
+        // todo!();
+        return Ok(result);
+
+        // let cert = X509::from_der(&cert_der).unwrap();
+        // let key = PKey::private_key_from_pkcs8(&key_der).unwrap();
+
+        // let csr = crypto::degenerate_certificate(csr);
 
         // TODO: None of the Rust libraries have a `EncryptedDataBuilder`. Bruh.
 
-        let mut certs = Stack::new().unwrap();
-        certs.push(cert).unwrap();
+        // let mut certs = Stack::new().unwrap();
+        // certs.push(cert).unwrap();
 
-        let pkcs = Pkcs7::encrypt(
-            &certs,
-            &csr,
-            // TODO: Is this good?
-            symm::Cipher::aes_128_ecb(),
-            // TODO: Which flags do we want?
-            Pkcs7Flags::empty(),
-        )
-        .unwrap();
+        // let pkcs = Pkcs7::encrypt(
+        //     &certs,
+        //     &csr,
+        //     // TODO: Is this good?
+        //     symm::Cipher::aes_128_ecb(),
+        //     // TODO: Which flags do we want?
+        //     Pkcs7Flags::PARTIAL,
+        // )
+        // .unwrap();
+
+        // TODO: Reusing this?
+        // let nid = Nid::create("1.2.3.4.5", "OID_example", "Our example OID").unwrap();
+
+        // let data = openssl::asn1::Asn1OctetString::new_from_bytes(b"Testing").unwrap();
+
+        // unsafe {
+        //     let signer = openssl_sys::PKCS7_get_signer_info(pkcs.as_ptr()); // TODO: Do we need to drop this structure?
+
+        //     openssl_sys::PKCS7_add_signed_attribute(
+        //         signer,
+        //         nid.as_raw(),
+        //         openssl_sys::V_ASN1_OCTET_STRING,
+        //         data.as_ptr() as *mut _,
+        //     );
+
+        //     // let todo = openssl_sys::PKCS7_final(pkcs.as_ptr(), key.as_ptr(), cert.as_ptr(), 0);
+        // };
+
+        // The normal way to use PKCS7_add_signed_attribute() is to first create a SignedInfo object with PKCS7_sign(3) using the PKCS7_PARTIAL or PKCS7_STREAM flag, retrieve the PKCS7_SIGNER_INFO object with PKCS7_get_signer_info(3) or add an additional one with PKCS7_sign_add_signer(3), call PKCS7_add_signed_attribute() for each desired additional attribute, then do the signing with PKCS7_final(3) or with another finalizing function.
 
         // TODO: https://github.com/sfackler/rust-openssl/issues/1772
 
         // pkcs.signers(certs, flags)
 
-        return Ok(pkcs.to_der().unwrap());
+        // return Ok(pkcs.to_der().unwrap());
 
         // Encrypt::default();
 
-        todo!();
+        // todo!();
     }
 }
 

@@ -24,3 +24,5 @@ tracing.workspace = true
 clap = { version = "4.5.23", features = ["derive", "env"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 lambda_http = { version = "0.14.0", features = ["pass_through"] }
+
+mx-golang = { path = "../../crates/mx-golang" }

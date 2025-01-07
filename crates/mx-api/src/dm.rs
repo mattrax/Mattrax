@@ -306,6 +306,8 @@ r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 
                        let result = msg.decrypt_pki_envelope(cert.encode_der().unwrap(), key.to_pkcs8_one_asymmetric_key_der().to_vec()).unwrap();
 
+                       let result = msg.success(cert.encode_der().unwrap(), key.to_pkcs8_one_asymmetric_key_der().to_vec(), result).unwrap();
+
                        (
                          [(header::CONTENT_TYPE, "application/x-pki-message")],
                          result

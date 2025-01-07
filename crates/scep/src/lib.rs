@@ -1,7 +1,7 @@
 //! scep: Implementation of Simple Certificate Enrolment Protocol (RFC 8894) in Rust.
 //!
 //! // TODO: Example
-#![forbid(unsafe_code)]
+// #![forbid(unsafe_code)] // TODO
 
 // TODO: Error handling
 // TODO: Cleanup the signed attributes parsing code

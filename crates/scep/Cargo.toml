@@ -8,11 +8,14 @@ publish = false
 workspace = true
 
 [dependencies]
+mx-golang = { path = "../mx-golang" }
 bcder = "0.7.4" # used by `x509-certificate`
 bytes = "1.9.0"
 cms = "0.2.3"
 cryptographic-message-syntax = { workspace = true, default-features = false }
+foreign-types-shared = "0.1.1" # Must match `openssl`
 openssl = { version = "0.10.68", features = ["vendored"] } # TODO: Disable vendored cause this is a library
+openssl-sys = "0.9.104"
 # rsa = { version = "0.9.7", features = ["sha1"] }
 x509-certificate = "0.24.0" # used by `cryptographic-message-syntax`
 # rcgen = { version = "0.13.2", features = ["x509-parser"] }

@@ -1,0 +1,16 @@
+[package]
+name = "mx-golang"
+links = "mx-golang"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+hex = "0.4.3"
+serde_json.workspace = true
+
+[build-dependencies]
+bindgen = "0.71.1"
