@@ -36,3 +36,5 @@ cms = "0.2.3"
 base64 = "0.22.1"
 openssl = { version = "0.10.68", features = ["vendored"] }
 bytes = "1.9.0"
+nanoid = "0.4.0"
+futures = "0.3.31"

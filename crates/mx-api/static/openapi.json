@@ -11,6 +11,115 @@
           }
         }
       }
+    },
+    "/api/v1/tenant": {
+      "post": {
+        "summary": "Create tenant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Tenant name",
+                    "example": "Acme School Inc"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "Created tenant identifier"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get all tenants",
+        "description": "Get all tenants for the authenticated user",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenant/{tenantId}/apns": {
+      "get": {
+        "summary": "Get APNS CSR",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "g0kLTz0--BP6"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-plist": {
+                "schema": {
+                  "description": "The `Certificate Signing Request.plist` file. You should upload this file to the [Apple Push Cert Portal](https://identity.apple.com/pushcert) to create an APNS certificate and upload the PEM returned by Apple to Mattrax using `POST /api/v1/tenant/{tenantId}/apns`."
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Update APNS certificate",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "g0kLTz0--BP6"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successfully updated the APNS certificate"
+          }
+        }
+      }
     }
   },
   "components": {

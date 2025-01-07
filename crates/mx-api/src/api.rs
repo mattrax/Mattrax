@@ -9,6 +9,8 @@ use crate::{
     Core,
 };
 
+mod account;
+mod device;
 mod tenant;
 
 static SCALAR_HTML: Static = include_static!("scalar.html");

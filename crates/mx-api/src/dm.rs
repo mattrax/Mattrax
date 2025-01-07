@@ -530,79 +530,10 @@ r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
                 }
             }),
         )
-        .route(
-            "/apple/todo",
-            get(|State(core): State<Core>| async move {
-                // TODO: Create CSR
-
-                let mut todo = X509CertificateBuilder::default();
-                todo.subject().append_printable_string(Oid(OID_ORGANIZATION_NAME.as_ref().into()), "Testing").unwrap(); // TODO: Configure org name
-                todo.subject().append_utf8_string(
-                    // TODO: Make constant
-                    // emailAddressOID defined by https://oidref.com/1.2.840.113549.1.9.1
-                    Oid::from_str("1.2.840.113549.1.9.1").unwrap(),
-                    // TODO: Configurable
-                    "oscar@otbeaumont.me").unwrap();
-
-                // TODO: RSA is not supported by `x509-certificate`. Cringe
-               let csr_pem = {
-                   let mut rng = rand::thread_rng();
-                   let bits = 2048;
-                   let key = RsaPrivateKey::new(&mut rng, bits).unwrap();
-
-                   let keypair = InMemorySigningKeyPair::from_pkcs8_der(key.to_pkcs8_der().unwrap().as_bytes()).unwrap();
-                   let csr = todo.create_certificate_signing_request(&keypair).unwrap();
-                   csr.encode_pem().unwrap()
-               };
-
-                // TODO: Reuse client
-                let resp = reqwest::Client::new()
-                    .post("https://fleetdm.com/api/v1/deliver-apple-csr?deliveryMethod=json")
-                    .json(&GetSignedAPNSCSRRequest {
-                        unsigned_csr_data: BASE64_STANDARD.encode(csr_pem),
-                    })
-                    // .json(&todo)
-                    .send().await.unwrap();
-
-                if !resp.status().is_success() {
-                    // TODO: Between 400 and 499 probally means the email is invalid
-                    //
-                    let error = WebsiteError {
-                        status_code: resp.status().as_u16(),
-                        message: resp.text().await.unwrap_or_default(),
-                    };
-                    todo!("{:?}", error);
-                }
-
-                let resp: WebsiteSignCSRResponse = resp.json().await.unwrap();
-                println!("{:?}", resp.csr);
-
-                // Save as
-                BASE64_STANDARD.decode(resp.csr.as_bytes()).unwrap()
-            })
-        )
 }
 
 #[derive(Deserialize)]
 pub struct ScepQuery {
     operation: String,
     message: Option<String>,
-}
-
-#[derive(Serialize)]
-pub struct GetSignedAPNSCSRRequest {
-    #[serde(rename = "unsignedCsrData")]
-    unsigned_csr_data: String,
-}
-
-#[derive(Deserialize)]
-pub struct WebsiteSignCSRResponse {
-    #[serde(rename = "csr")]
-    csr: String,
-}
-
-#[derive(Debug)]
-pub struct WebsiteError {
-    status_code: u16,
-    message: String,
 }
