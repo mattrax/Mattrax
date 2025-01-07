@@ -1,5 +1,5 @@
 [package]
-name = "pkcs_7"
+name = "mx-crypto"
 version = "0.0.0"
 edition = "2021"
 publish = false
