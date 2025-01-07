@@ -35,3 +35,4 @@ rustls-pki-types = "1.10.1"
 cms = "0.2.3"
 base64 = "0.22.1"
 openssl = { version = "0.10.68", features = ["vendored"] }
+bytes = "1.9.0"

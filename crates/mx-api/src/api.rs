@@ -9,6 +9,8 @@ use crate::{
     Core,
 };
 
+mod tenant;
+
 static SCALAR_HTML: Static = include_static!("scalar.html");
 static OPENAPI_JSON: Static = include_static!("openapi.json");
 
@@ -35,6 +37,7 @@ pub(crate) fn mount() -> Router<Core> {
                 || async move { Json(spec().clone()) }
             }),
         )
+        .nest("/v1", Router::new().nest("/tenant", tenant::mount()))
         .fallback(|| async move {
             (
                 StatusCode::NOT_FOUND,
