@@ -1,9 +1,6 @@
-use bcder::{OctetString, PrintableString};
-use cryptographic_message_syntax::{Oid, SignedData};
+use cryptographic_message_syntax::SignedData;
 
-use crate::{
-    message_type, MessageType, PkiMessage, Service, OID_SCEP_MESSAGE_TYPE, OID_SCEP_TRANSACTION_ID,
-};
+use crate::{MessageType, PkiMessage, Service, OID_SCEP_MESSAGE_TYPE, OID_SCEP_TRANSACTION_ID};
 
 // TODO: rename
 pub struct Scep<S> {

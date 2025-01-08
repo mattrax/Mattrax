@@ -25,6 +25,7 @@ pub struct Core {
     db: MySqlPool,
     device_ca: DeviceCA,
     secret: Arc<Vec<u8>>,
+    client: reqwest::Client,
 }
 
 impl Core {
@@ -40,6 +41,15 @@ impl Core {
             db,
             device_ca: DeviceCA::new(),
             secret: Arc::new(secret),
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .user_agent(concat!(
+                    env!("CARGO_PKG_NAME"),
+                    "/",
+                    env!("CARGO_PKG_VERSION"),
+                ))
+                .build()
+                .unwrap(),
         };
         DeviceCA::updater_task(this.clone());
 

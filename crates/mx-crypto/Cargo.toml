@@ -9,15 +9,22 @@ workspace = true
 
 # TODO: `zeroize` feature to enable it on deps easily
 
+# TODO: Prune dependencies + drop `openssl`
 [dependencies]
-# cryptographic-message-syntax.workspace = true # TODO: Maybe remove this long term?
+cryptographic-message-syntax.workspace = true
 aes = "0.9.0-pre.2"
-# asn1 = "0.20.0"
+asn1 = "0.20.0"
 cbc = "0.2.0-pre.2"
 des = "0.9.0-pre.2"
-rand = "0.8.5" # TODO: Remove this and make user parse it.
+rand = "0.8.5" # TODO: Remove this and make user parse it?
 bytes = "1.9.0"
 bcder = "0.7.4"
 x509-certificate = "0.24.0"
 rasn = { version = "0.22.2", features = ["std"] }
 rasn-cms = "0.22.2"
+chrono.workspace = true
+rsa = "0.9.7"
+openssl = { version = "0.10.68", features = ["vendored"] } # TODO: Don't set `vendored` if we publish this library
+bitflags = "2.6.0"
+bitvec = "1.0.1"
+yasna = "0.5.2"

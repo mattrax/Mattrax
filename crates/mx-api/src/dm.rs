@@ -9,34 +9,12 @@ use axum::{
     Router,
 };
 use base64::{prelude::BASE64_STANDARD, Engine};
-use bcder::Oid;
-use cryptographic_message_syntax::{asn1::rfc5652::EncryptedData, SignedData};
 use mx_apple::{
     parse_and_verify_pkcs7, DeviceAttributes, EnrollMobileConfig, EnrollMobileConfigPayloadContent,
 };
-use openssl::{
-    cipher::Cipher,
-    pkcs7::{Pkcs7, Pkcs7Flags},
-    stack::Stack,
-    symm,
-    x509::X509,
-};
-use rcgen::CertificateSigningRequestParams;
-use rsa::{pkcs8::EncodePrivateKey, RsaPrivateKey};
-use rustls_pki_types::CertificateSigningRequestDer;
 use serde::{Deserialize, Serialize};
 use tokio::{fs, runtime::Handle};
 use tracing::{error, warn};
-use x509_certificate::{
-    rfc3280::{self, AttributeValue, Name, RdnSequence, RelativeDistinguishedName},
-    rfc4519::OID_ORGANIZATION_NAME,
-    rfc5280::{self, Certificate},
-    rfc5652, InMemorySigningKeyPair, KeyAlgorithm, X509CertificateBuilder,
-};
-use x509_verify::{
-    der::{oid::db::rfc5912::SHA_256_WITH_RSA_ENCRYPTION, Decode, DecodePem, Encode, EncodePem},
-    x509_cert::{self, request::CertReq},
-};
 
 use crate::{
     utils::{include_static, Static},
@@ -133,7 +111,7 @@ pub(crate) fn mount() -> Router<Core> {
 
             // if TODO.swap(true, std::sync::atomic::Ordering::SeqCst) {
             //     // println!("PROXY");
-            //     // let resp = reqwest::Client::new()
+            //     // let resp = core.client
             //     //     .post("https://mdm-na1.jamfcloud.com/mdm/enroll/fyc746/ota")
             //     //     .headers(req.headers.clone())
             //     //     .body(body)
@@ -164,7 +142,7 @@ pub(crate) fn mount() -> Router<Core> {
 
                 // TODO: This should verify again any of the trusted CAs
                 let (cert, _) = core.device_ca.active_signer(&core).unwrap();
-                let cert = x509_cert::Certificate::from_der(&cert.encode_der().unwrap()).unwrap();
+                let cert = todo!(); // x509_cert::Certificate::from_der(&cert.encode_der().unwrap()).unwrap();
                 if let Ok((payload, p7)) = parse_and_verify_pkcs7(&body, &[&cert]) {
                     println!("THE DEVICE CERT IS PRESENT");
 
@@ -516,9 +494,9 @@ r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
                        let msg = scep.pki_operation(&body).unwrap();
                        println!("{:?}", msg);
 
-                       let result = msg.decrypt_pki_envelope(cert.encode_der().unwrap(), key.to_pkcs8_one_asymmetric_key_der().to_vec()).unwrap();
+                       let result = msg.decrypt_pki_envelope(cert.encode_der().unwrap(), key.to_pkcs8_der().unwrap()).unwrap();
 
-                       let result = msg.success(cert.encode_der().unwrap(), key.to_pkcs8_one_asymmetric_key_der().to_vec(), result).unwrap();
+                       let result = msg.success(cert.encode_der().unwrap(), key.to_pkcs8_der().unwrap(), result).unwrap();
 
                        (
                          [(header::CONTENT_TYPE, "application/x-pki-message")],

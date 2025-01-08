@@ -1,45 +1,15 @@
-// use bcder::{
-//     decode::{Constructed, DecodeError, Source},
-//     Integer, Mode, Oid, Tag,
-// };
-// use chrono::{DateTime, Utc};
-use cryptographic_message_syntax::{
-    asn1::rfc5652::{
-        CmsVersion, ContentEncryptionAlgorithmIdentifier, EncryptedContentInfo, EncryptedData,
-        OID_ID_SIGNED_DATA,
-    },
-    SignedData,
-};
-use der_parser::asn1_rs::{Integer, ToDer};
-use foreign_types_shared::ForeignType;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use cryptographic_message_syntax::SignedData;
 use openssl::{
-    cipher::Cipher,
     hash::MessageDigest,
-    nid::Nid,
-    pkcs7::{Pkcs7, Pkcs7Flags},
+    pkcs7::Pkcs7Flags,
     pkey::PKey,
-    stack::{Stack, StackRef},
-    symm,
     x509::{X509Req, X509},
 };
-use x509_parser::prelude::*;
-// use rsa::pkcs1::DecodeRsaPublicKey;
-// use rustls_pki_types::CertificateSigningRequestDer;
-// use time::format_description::well_known::Rfc3339;
-use x509_certificate::{
-    asn1time::UtcTime,
-    rfc2986,
-    rfc5280::{self, TbsCertificate},
-    X509Certificate,
-};
-// use x509_verify::{
-//     der::{Decode, Reader, SliceReader},
-//     x509_cert::request::CertReq,
-// };
 
 use crate::{
-    crypto, MessageType, PKIStatus, OID_SCEP_PKI_STATUS, OID_SCEP_RECIPIENT_NONCE,
-    OID_SCEP_SENDER_NONCE,
+    MessageType, PKIStatus, OID_SCEP_PKI_STATUS, OID_SCEP_RECIPIENT_NONCE, OID_SCEP_SENDER_NONCE,
 };
 
 /// PKIMessage defines the possible SCEP message types
@@ -172,6 +142,19 @@ impl PkiMessage {
         cert.set_pubkey(&*csr.public_key().unwrap()).unwrap();
         cert.set_not_after(&openssl::asn1::Asn1Time::days_from_now(365).unwrap()) // TODO: Tune this value
             .unwrap();
+
+        cert.set_not_after(
+            &openssl::asn1::Asn1Time::from_unix(
+                (SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards")
+                    .as_secs()
+                // 1 minute theorically
+                    + 60) as i64,
+            )
+            .unwrap(),
+        ) // TODO: Tune this value
+        .unwrap();
         cert.set_not_before(&openssl::asn1::Asn1Time::days_from_now(0).unwrap()) // TODO: Tune this value
             .unwrap();
         // TODO: Go through setting everything

@@ -25,6 +25,8 @@ async fn main() -> Result<(), ()> {
 
     let args = mattrax::setup();
 
+    info!("Initializing Mattrax...");
+
     let listener = TcpListener::bind(args.listen_addr).await.map_err(|err| {
         error!(
             "Failed to bind to listen address {:?} with error: {err:?}",
