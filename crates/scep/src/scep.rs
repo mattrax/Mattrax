@@ -1,4 +1,4 @@
-use cryptographic_message_syntax::SignedData;
+use mx_crypto::cms::SignedData;
 
 use crate::{MessageType, PkiMessage, Service, OID_SCEP_MESSAGE_TYPE, OID_SCEP_TRANSACTION_ID};
 

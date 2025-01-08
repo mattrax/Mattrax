@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use cryptographic_message_syntax::Oid;
+use mx_crypto::cms::Oid;
 
 // 2.16.840.1.113733.1.9.2
 pub const OID_SCEP_MESSAGE_TYPE: Oid =

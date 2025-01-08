@@ -9,9 +9,8 @@ use axum::{
     Router,
 };
 use base64::{prelude::BASE64_STANDARD, Engine};
-use mx_apple::{
-    parse_and_verify_pkcs7, DeviceAttributes, EnrollMobileConfig, EnrollMobileConfigPayloadContent,
-};
+use mx_apple::{DeviceAttributes, EnrollMobileConfig, EnrollMobileConfigPayloadContent};
+use mx_crypto::cms::parse_and_verify_pkcs7;
 use serde::{Deserialize, Serialize};
 use tokio::{fs, runtime::Handle};
 use tracing::{error, warn};

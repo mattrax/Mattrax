@@ -8,12 +8,14 @@ publish = false
 workspace = true
 
 [dependencies]
+mx-crypto = { path = "../mx-crypto" }
 serde.workspace = true
 uuid.workspace = true
-cryptographic-message-syntax.workspace = true
 thiserror.workspace = true
 plist = "1.7.0"
-x509-verify.workspace = true
-rsa = { version = "0.9.7", features = ["sha1"] }
-sha1 = { version = "0.10.6", features = ["oid"] }
-x509-certificate = "0.24.0"
+
+# cryptographic-message-syntax.workspace = true
+# x509-verify.workspace = true
+# rsa = { version = "0.9.7", features = ["sha1"] }
+# sha1 = { version = "0.10.6", features = ["oid"] }
+# x509-certificate = "0.24.0"

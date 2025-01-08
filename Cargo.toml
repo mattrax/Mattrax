@@ -10,8 +10,6 @@ serde_json = { version = "1" }
 tracing = { version = "0.1" }
 sqlx = { version = "0.8", default-features = false, features = ["mysql", "runtime-tokio", "tls-rustls", "derive", "macros", "migrate", "json", "chrono"] }
 uuid = { version = "1", features = ["serde"] }
-cryptographic-message-syntax = { version = "0.27.0", default-features = false, features = ["http"] } # TODO: Why do we need `reqwest` for `SignedDataBuilder`. Remove `http` feature plz!
-x509-verify = { version = "0.4.6", features = ["pem", "sha1", "std", "x509"] }
 thiserror = "2"
 reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls", "charset", "http2", "macos-system-configuration", "json"] }
 chrono = { version = "0.4.39", features = ["serde"] }

@@ -1,11 +1,12 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use cryptographic_message_syntax::SignedData;
-use openssl::{
+use mx_crypto::cms::{
+    asn1,
     hash::MessageDigest,
-    pkcs7::Pkcs7Flags,
+    pkcs7::{self, Pkcs7Flags},
     pkey::PKey,
     x509::{X509Req, X509},
+    SignedData,
 };
 
 use crate::{
@@ -118,7 +119,7 @@ impl PkiMessage {
 
         // let content = signer.signed_content(self.p7.signed_content());
 
-        let p7 = openssl::pkcs7::Pkcs7::from_der(self.p7.signed_content().unwrap()).unwrap();
+        let p7 = pkcs7::Pkcs7::from_der(self.p7.signed_content().unwrap()).unwrap();
 
         let cert = X509::from_der(&cert_der).unwrap();
         let key = PKey::private_key_from_pkcs8(&key_der).unwrap();
@@ -140,11 +141,11 @@ impl PkiMessage {
         cert.set_version(csr.version()).unwrap();
         cert.set_subject_name(csr.subject_name()).unwrap();
         cert.set_pubkey(&*csr.public_key().unwrap()).unwrap();
-        cert.set_not_after(&openssl::asn1::Asn1Time::days_from_now(365).unwrap()) // TODO: Tune this value
+        cert.set_not_after(&asn1::Asn1Time::days_from_now(365).unwrap()) // TODO: Tune this value
             .unwrap();
 
         cert.set_not_after(
-            &openssl::asn1::Asn1Time::from_unix(
+            &asn1::Asn1Time::from_unix(
                 (SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .expect("Time went backwards")
@@ -155,7 +156,7 @@ impl PkiMessage {
             .unwrap(),
         ) // TODO: Tune this value
         .unwrap();
-        cert.set_not_before(&openssl::asn1::Asn1Time::days_from_now(0).unwrap()) // TODO: Tune this value
+        cert.set_not_before(&asn1::Asn1Time::days_from_now(0).unwrap()) // TODO: Tune this value
             .unwrap();
         // TODO: Go through setting everything
 
@@ -189,7 +190,7 @@ impl PkiMessage {
             .map(|c| c.encode_ber().unwrap())
             .collect::<Vec<_>>();
 
-        let result = mx_golang::scep_success(
+        let result = mx_crypto::cms::scep_success(
             cert_der,
             key_der,
             csr,
