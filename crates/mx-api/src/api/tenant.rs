@@ -190,7 +190,7 @@ pub(crate) fn mount() -> Router<Core> {
                 .await
                 .unwrap();
 
-            StatusCode::NO_CONTENT
+            StatusCode::ACCEPTED
         }
         )
     )

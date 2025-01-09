@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use axum::{http::StatusCode, response::Html, routing::get, Json, Router};
 use serde::Serialize;
 use serde_json::json;
+use tower_cookies::CookieManagerLayer;
 
 use crate::{
     utils::{include_static, Static},
@@ -10,7 +11,11 @@ use crate::{
 };
 
 mod account;
+mod application;
 mod device;
+mod group;
+mod internal;
+mod policy;
 mod tenant;
 
 static SCALAR_HTML: Static = include_static!("scalar.html");
@@ -39,7 +44,12 @@ pub(crate) fn mount() -> Router<Core> {
                 || async move { Json(spec().clone()) }
             }),
         )
-        .nest("/v1", Router::new().nest("/tenant", tenant::mount()))
+        .nest(
+            "/v1",
+            Router::new()
+                .merge(account::mount())
+                .nest("/tenant", tenant::mount()),
+        )
         .fallback(|| async move {
             (
                 StatusCode::NOT_FOUND,
@@ -48,6 +58,7 @@ pub(crate) fn mount() -> Router<Core> {
                 }),
             )
         })
+        .layer(CookieManagerLayer::new())
 }
 
 #[derive(Serialize)]

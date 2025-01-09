@@ -1,2 +1,3 @@
  - [ ] Clustering solution (crons only need to run on one node)
  - [ ] Built-in HTTPS
+ - [ ] Allow configuring who can register. Right now it's all open sign up.
