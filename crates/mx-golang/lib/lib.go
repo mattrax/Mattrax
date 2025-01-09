@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/json"
+	"math/big"
 	"os"
 
 	"github.com/smallstep/pkcs7"
@@ -133,13 +135,28 @@ func main() {
 			p7_certs = append(p7_certs, cert)
 		}
 
-		deg, err := DegenerateCertificates([]*x509.Certificate{crt})
-		if err != nil {
-			panic(err)
-		}
+		// deg, err := DegenerateCertificates([]*x509.Certificate{crt})
+		// if err != nil {
+		// 	panic(err)
+		// }
+
+		// Use value from Rust
+		// deg, err := os.ReadFile("pending_stage_1")
+		// if err != nil {
+		// 	panic(err)
+		// }
 
 		// encrypt degenerate data using the original messages recipients
-		e7, err := pkcs7.Encrypt(deg, p7_certs)
+		// pkcs7.ContentEncryptionAlgorithm = pkcs7.EncryptionAlgorithmAES128CBC
+		// e7, err := pkcs7.Encrypt(deg, p7_certs)
+		// if err != nil {
+		// 	panic(err)
+		// }
+
+		// os.WriteFile("stage_e7", e7, os.FileMode(0644))
+
+		// Use value from Rust
+		e7, err := os.ReadFile("pending_stage_2")
 		if err != nil {
 			panic(err)
 		}
@@ -209,9 +226,111 @@ func DegenerateCertificates(certs []*x509.Certificate) ([]byte, error) {
 	for _, cert := range certs {
 		buf.Write(cert.Raw)
 	}
-	degenerate, err := pkcs7.DegenerateCertificate(buf.Bytes())
+	// degenerate, err := pkcs7.DegenerateCertificate(buf.Bytes())
+	// if err != nil {
+	// 	return nil, err
+	// }
+	degenerate, err := DegenerateCertificate(buf.Bytes())
 	if err != nil {
 		return nil, err
 	}
-	return degenerate, nil
+	os.WriteFile("stage_d", degenerate, os.FileMode(0644))
+	// return degenerate, nil
+
+	// Use value from Rust
+	f, err := os.ReadFile("pending_stage_1")
+	if err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+// Even though, the tag & length are stripped out during marshalling the
+// RawContent, we have to encode it into the RawContent. If its missing,
+// then `asn1.Marshal()` will strip out the certificate wrapper instead.
+func marshalCertificateBytes(certs []byte) (rawCertificates, error) {
+	var val = asn1.RawValue{Bytes: certs, Class: 2, Tag: 0, IsCompound: true}
+	b, err := asn1.Marshal(val)
+	if err != nil {
+		return rawCertificates{}, err
+	}
+	return rawCertificates{Raw: b}, nil
+}
+
+// DegenerateCertificate creates a signed data structure containing only the
+// provided certificate or certificate chain.
+func DegenerateCertificate(cert []byte) ([]byte, error) {
+	os.WriteFile("stage_a", cert, os.FileMode(0644))
+
+	rawCert, err := marshalCertificateBytes(cert)
+	if err != nil {
+		return nil, err
+	}
+
+	os.WriteFile("stage_b", rawCert.Raw, os.FileMode(0644))
+
+	emptyContent := contentInfo{ContentType: pkcs7.OIDData}
+	sd := signedData{
+		Version:      1,
+		ContentInfo:  emptyContent,
+		Certificates: rawCert,
+		CRLs:         []pkix.CertificateList{},
+	}
+	content, err := asn1.Marshal(sd)
+	if err != nil {
+		return nil, err
+	}
+
+	os.WriteFile("stage_c", content, os.FileMode(0644))
+
+	// // Use value from Rust
+	// f, err := os.ReadFile("pending_stage_1")
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// content = f
+
+	signedContent := contentInfo{
+		ContentType: pkcs7.OIDSignedData,
+		Content:     asn1.RawValue{Class: 2, Tag: 0, Bytes: content, IsCompound: true},
+	}
+	return asn1.Marshal(signedContent)
+}
+
+type contentInfo struct {
+	ContentType asn1.ObjectIdentifier
+	Content     asn1.RawValue `asn1:"explicit,optional,tag:0"`
+}
+
+type signedData struct {
+	Version                    int                        `asn1:"default:1"`
+	DigestAlgorithmIdentifiers []pkix.AlgorithmIdentifier `asn1:"set"`
+	ContentInfo                contentInfo
+	Certificates               rawCertificates        `asn1:"optional,tag:0"`
+	CRLs                       []pkix.CertificateList `asn1:"optional,tag:1"`
+	SignerInfos                []signerInfo           `asn1:"set"`
+}
+
+type rawCertificates struct {
+	Raw asn1.RawContent
+}
+
+type signerInfo struct {
+	Version                   int `asn1:"default:1"`
+	IssuerAndSerialNumber     issuerAndSerial
+	DigestAlgorithm           pkix.AlgorithmIdentifier
+	AuthenticatedAttributes   []attribute `asn1:"optional,omitempty,tag:0"`
+	DigestEncryptionAlgorithm pkix.AlgorithmIdentifier
+	EncryptedDigest           []byte
+	UnauthenticatedAttributes []attribute `asn1:"optional,omitempty,tag:1"`
+}
+
+type attribute struct {
+	Type  asn1.ObjectIdentifier
+	Value asn1.RawValue `asn1:"set"`
+}
+
+type issuerAndSerial struct {
+	IssuerName   asn1.RawValue
+	SerialNumber *big.Int
 }
