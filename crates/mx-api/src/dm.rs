@@ -10,7 +10,7 @@ use axum::{
 };
 use base64::{prelude::BASE64_STANDARD, Engine};
 use mx_apple::{DeviceAttributes, EnrollMobileConfig, EnrollMobileConfigPayloadContent};
-use mx_crypto::cms::parse_and_verify_pkcs7;
+use mx_crypto::cms::Pkcs7B;
 use serde::{Deserialize, Serialize};
 use tokio::{fs, runtime::Handle};
 use tracing::{error, warn};
@@ -142,7 +142,7 @@ pub(crate) fn mount() -> Router<Core> {
                 // TODO: This should verify again any of the trusted CAs
                 let (cert, _) = core.device_ca.active_signer(&core).unwrap();
                 let cert = todo!(); // x509_cert::Certificate::from_der(&cert.encode_der().unwrap()).unwrap();
-                if let Ok((payload, p7)) = parse_and_verify_pkcs7(&body, &[&cert]) {
+                if let Ok(p7) = Pkcs7B::parse_and_verify_pkcs7(&body, &[&cert]) {
                     println!("THE DEVICE CERT IS PRESENT");
 
                     return Ok::<_, StatusCode>((
@@ -325,7 +325,7 @@ pub(crate) fn mount() -> Router<Core> {
 //                   ))
                 };
 
-                let payload = parse_and_verify_pkcs7(&body, &[&*mx_apple::APPLE_IPHONE_DEVICE_CA])
+                let p7 = Pkcs7B::parse_and_verify_pkcs7(&body, &[&*mx_apple::APPLE_IPHONE_DEVICE_CA])
                     .map_err(|err| {
                         warn!("Error verifiying the PKCS7 request: {err:?}");
 
@@ -334,15 +334,15 @@ pub(crate) fn mount() -> Router<Core> {
                         StatusCode::FORBIDDEN
                     })?;
 
-                // let device_attributes = DeviceAttributes::from_plist(&payload).map_err(|err| {
-                //     warn!("Failed to parse device attributes: {err:?}");
+                let device_attributes = DeviceAttributes::from_plist(p7.signed_content()).map_err(|err| {
+                    warn!("Failed to parse device attributes: {err:?}");
 
-                //     // The user will see "Could not obtain the final profile using the Encrypted Profile Service."
-                //     // but this specific status will be stored in the `mdmclient` logs.
-                //     StatusCode::BAD_REQUEST
-                // })?;
+                    // The user will see "Could not obtain the final profile using the Encrypted Profile Service."
+                    // but this specific status will be stored in the `mdmclient` logs.
+                    StatusCode::BAD_REQUEST
+                })?;
 
-                // println!("{:?}", device_attributes); // TODO
+                println!("{:?}", device_attributes); // TODO
 
                 // TODO: Verify the challenge token
                 // if device_attributes.challenge {}
@@ -493,9 +493,9 @@ r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
                        let msg = scep.pki_operation(&body).unwrap();
                        println!("{:?}", msg);
 
-                       let result = msg.decrypt_pki_envelope(cert.encode_der().unwrap(), key.to_pkcs8_der().unwrap()).unwrap();
+                       let result = msg.decrypt_pki_envelope(&cert, &key).unwrap();
 
-                       let result = msg.success(cert.encode_der().unwrap(), key.to_pkcs8_der().unwrap(), result).unwrap();
+                       let result = msg.success(&cert, &key, result).unwrap();
 
                        (
                          [(header::CONTENT_TYPE, "application/x-pki-message")],

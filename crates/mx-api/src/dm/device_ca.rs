@@ -190,7 +190,7 @@ async fn issue_device_ca() -> Result<
 
     Ok((
         cert.encode_der().unwrap(),
-        key.to_pkcs8_der().unwrap(),
+        key.encode_pkcs8_der().unwrap(),
         cert.not_before(),
         cert.not_after(),
     ))

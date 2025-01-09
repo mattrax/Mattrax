@@ -1,4 +1,4 @@
-use mx_crypto::cms::SignedData;
+use mx_crypto::cms::Pkcs7B;
 
 use crate::{MessageType, PkiMessage, Service, OID_SCEP_MESSAGE_TYPE, OID_SCEP_TRANSACTION_ID};
 
@@ -15,6 +15,7 @@ impl<S: Service> Scep<S> {
 
     /// `GetCACaps` operation. // TODO: Spec reference
     pub fn get_ca_caps(&self) -> String {
+        // TODO: Ensure we actually support all of this
         "Renewal\nSHA-1\nSHA-256\nAES\nDES3\nSCEPStandard\nPOSTPKIOperation".into()
     }
 
@@ -25,7 +26,7 @@ impl<S: Service> Scep<S> {
 
     /// `PKIOperation` operation. // TODO: Spec reference
     pub fn pki_operation(&self, body: &[u8]) -> Result<PkiMessage, ()> {
-        let p7 = SignedData::parse_ber(body).unwrap();
+        let p7 = Pkcs7B::from_der(body).unwrap();
 
         // TODO: Is this check wrong in the original Go code?
         // if cms.certificates().count() > 0 {

@@ -1,26 +1,24 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
-use mx_crypto::cms::{
-    asn1,
-    hash::MessageDigest,
-    pkcs7::{self, Pkcs7Flags},
-    pkey::PKey,
-    x509::{X509Req, X509},
-    SignedData,
+use mx_crypto::{
+    cms::{Pkcs7A, Pkcs7B},
+    x509::{Certificate, PrivateKey},
 };
 
 use crate::{
     MessageType, PKIStatus, OID_SCEP_PKI_STATUS, OID_SCEP_RECIPIENT_NONCE, OID_SCEP_SENDER_NONCE,
 };
 
+static DAY: u64 = 60 * 60 * 24;
+
 /// PKIMessage defines the possible SCEP message types
-#[derive(Debug, Clone)]
+#[derive(Debug)] // TODO: Clone
 #[non_exhaustive]
 pub struct PkiMessage {
     pub transaction_id: String,
     pub message_type: MessageType,
     // pub raw: Vec<u8>, // TODO
-    pub p7: SignedData, // TODO: Making this public causes `cryptographic_message_syntax` to be a public dependency. Do we want that?
+    pub p7: Pkcs7B, // TODO: Making this public causes `mx-crypto` to be a public dependency. Do we want that?
     // TODO: Enum for this or force the user to call `parse_message_type`???
     pub cert_resp_message: Option<CertRepMessage>,
     pub sender_nonce: Option<Vec<u8>>,
@@ -114,56 +112,32 @@ impl PkiMessage {
 
     // TODO: Taking pre-parsed identity? Maybe get from `Scep`/`Service`?
     // TODO: `smallstep/scep` parses the x509 cert back the user to let them sign it? We should do that to give way more control.
-    pub fn decrypt_pki_envelope(&self, cert_der: Vec<u8>, key_der: Vec<u8>) -> Result<Vec<u8>, ()> {
-        // let signer = self.p7.signers().into_iter().next().unwrap(); // TODO: The Go code doesn't do this how?
+    pub fn decrypt_pki_envelope(
+        &self,
+        cert: &Certificate,
+        key: &PrivateKey,
+    ) -> Result<Vec<u8>, ()> {
+        let p7 = Pkcs7A::from_der(self.p7.signed_content()).unwrap();
+        let csr = p7.decrypt(cert, key).unwrap();
 
-        // let content = signer.signed_content(self.p7.signed_content());
-
-        let p7 = pkcs7::Pkcs7::from_der(self.p7.signed_content().unwrap()).unwrap();
-
-        let cert = X509::from_der(&cert_der).unwrap();
-        let key = PKey::private_key_from_pkcs8(&key_der).unwrap();
-
-        let csr = p7
-            .decrypt(
-                &key,
-                &cert,
-                // TODO: Configure these
-                Pkcs7Flags::BINARY | Pkcs7Flags::NOCHAIN | Pkcs7Flags::NOINTERN,
-            )
-            .unwrap();
-        println!("RAW: {:?}", csr);
-
-        let csr = X509Req::from_der(&csr).unwrap();
+        let csr = mx_crypto::x509::CertificateSigningRequest::from_der(&csr).unwrap();
         // TODO: Validate the certificate. Eg. can't be CA, can't have certain key usages, etc.
 
-        let mut cert = X509::builder().unwrap();
-        cert.set_version(csr.version()).unwrap();
-        cert.set_subject_name(csr.subject_name()).unwrap();
-        cert.set_pubkey(&*csr.public_key().unwrap()).unwrap();
-        cert.set_not_after(&asn1::Asn1Time::days_from_now(365).unwrap()) // TODO: Tune this value
+        let cert = csr
+            .builder()
+            .validity(Duration::from_secs(365 * DAY))
+            .sign(cert, key)
             .unwrap();
 
-        cert.set_not_after(
-            &asn1::Asn1Time::from_unix(
-                (SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Time went backwards")
-                    .as_secs()
-                // 1 minute theorically
-                    + 60) as i64,
-            )
-            .unwrap(),
-        ) // TODO: Tune this value
-        .unwrap();
-        cert.set_not_before(&asn1::Asn1Time::days_from_now(0).unwrap()) // TODO: Tune this value
-            .unwrap();
-        // TODO: Go through setting everything
+        // TODO
+        // std::fs::write("./cert-out.pem", cert.encode_pem()).unwrap();
 
-        cert.sign(&key, MessageDigest::sha256()).unwrap(); // TODO: Which hash?
-        let cert = cert.build();
+        return Ok(cert.encode_der().unwrap());
 
-        return Ok(cert.to_der().unwrap());
+        // cert.sign(&key, MessageDigest::sha256()).unwrap(); // TODO: Which hash?
+        // let cert = cert.build();
+
+        // return Ok(cert.to_der().unwrap());
 
         // {
         //     let (_, csr) = X509CertificationRequest::from_der(&csr).unwrap();
@@ -180,26 +154,26 @@ impl PkiMessage {
 
     pub fn success(
         &self,
-        cert_der: Vec<u8>,
-        key_der: Vec<u8>,
+        cert: &Certificate,
+        key: &PrivateKey,
         csr: Vec<u8>,
     ) -> Result<Vec<u8>, ()> {
         let p7_certificates = self
             .p7
             .certificates()
-            .map(|c| c.encode_ber().unwrap())
+            .map(|c| c.encode_der().unwrap())
             .collect::<Vec<_>>();
 
         let result = mx_crypto::cms::scep_success(
-            cert_der,
-            key_der,
+            cert.encode_der().unwrap(),
+            key.encode_pkcs8_der().unwrap(),
             csr,
             p7_certificates,
             self.transaction_id.clone(),
             self.sender_nonce.clone().unwrap(),
         )
         .unwrap();
-        println!("GO OUTPUT: {:?}", result);
+        // println!("GO OUTPUT: {:?}", result);
         // todo!();
         return Ok(result);
 

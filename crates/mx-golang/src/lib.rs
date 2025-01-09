@@ -5,12 +5,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-// include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-
-use std::{
-    io::{Stdin, Write},
-    process::Stdio,
-};
+use std::{io::Write, process::Stdio};
 
 const BINARY: &[u8] = include_bytes!("../out/mxgolang");
 
@@ -18,7 +13,7 @@ fn run(args: &[&str], input: Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Err
     // TODO: Cache these calls
     {
         std::fs::write("./_mttx_golang", BINARY).unwrap();
-        let output = std::process::Command::new("chmod")
+        std::process::Command::new("chmod")
             .arg("+x")
             .arg("./_mttx_golang")
             .output()?;
@@ -50,12 +45,6 @@ pub fn scep_success(
     transaction_id: String,
     sender_nonce: Vec<u8>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    // println!(
-    //     "RUST OUT: {:?} {:?}",
-    //     hex::encode(&cert_der).len(),
-    //     hex::encode(&cert_der)
-    // );
-
     let out = run(
         &["pkcs_encrypt"],
         format!(
@@ -73,8 +62,5 @@ pub fn scep_success(
     .trim_ascii_end()
     .to_vec();
 
-    println!("RAW GO OUT: {:?}", String::from_utf8(out.to_vec()));
-
     Ok(out)
-    // Ok(serde_json::from_slice(&out.to_vec()).unwrap())
 }

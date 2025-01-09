@@ -1,5 +1,4 @@
 use std::env;
-use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
@@ -18,7 +17,7 @@ fn main() {
         panic!("Failed to build `mxgolang` binary");
     }
 
-    return;
+    // return;
 
     // let target = env::var("TARGET").unwrap();
 
@@ -30,55 +29,55 @@ fn main() {
 
     // CARGO_CFG_TARGET_ARCH
 
-    println!("{:?}", env::var("CARGO_MANIFEST_DIR"));
+    // println!("{:?}", env::var("CARGO_MANIFEST_DIR"));
 
-    Command::new("go")
-        .args(&[
-            "build",
-            "-buildmode=c-archive",
-            "-o",
-            "./out/libmxgolang2.a",
-            "./lib/lib.go",
-        ])
-        // TODOO: Configuration
-        // .env("CGO_ENABLED", "1")
-        // .env("GOOS", "linux")
-        // .env("GOARCH", "arm64")
-        .current_dir(env::var("CARGO_MANIFEST_DIR").expect("missing 'CARGO_MANIFEST_DIR'"))
-        .status()
-        .expect("Failed to build libmxgolang.a");
+    // Command::new("go")
+    //     .args(&[
+    //         "build",
+    //         "-buildmode=c-archive",
+    //         "-o",
+    //         "./out/libmxgolang2.a",
+    //         "./lib/lib.go",
+    //     ])
+    //     // TODOO: Configuration
+    //     // .env("CGO_ENABLED", "1")
+    //     // .env("GOOS", "linux")
+    //     // .env("GOARCH", "arm64")
+    //     .current_dir(env::var("CARGO_MANIFEST_DIR").expect("missing 'CARGO_MANIFEST_DIR'"))
+    //     .status()
+    //     .expect("Failed to build libmxgolang.a");
 
-    Command::new("go")
-        .args(&[
-            "build",
-            // "-tags=extended",
-            // "-buildmode=c-archive",
-            // "-o",
-            // "./out/libmxgolang.a",
-            "./lib/lib.go",
-        ])
-        // TODOO: Configuration
-        .env("CGO_ENABLED", "1")
-        .env("GOOS", "linux")
-        .env("GOARCH", "arm64")
-        .env("CC", "zig cc -target aarch64-linux")
-        .env("CXX", "zig c++ -target aarch64-linux")
-        .current_dir(env::var("CARGO_MANIFEST_DIR").expect("missing 'CARGO_MANIFEST_DIR'"))
-        .status()
-        .expect("Failed to build libmxgolang.a");
-    // todo!();
+    // Command::new("go")
+    //     .args(&[
+    //         "build",
+    //         // "-tags=extended",
+    //         // "-buildmode=c-archive",
+    //         // "-o",
+    //         // "./out/libmxgolang.a",
+    //         "./lib/lib.go",
+    //     ])
+    //     // TODOO: Configuration
+    //     .env("CGO_ENABLED", "1")
+    //     .env("GOOS", "linux")
+    //     .env("GOARCH", "arm64")
+    //     .env("CC", "zig cc -target aarch64-linux")
+    //     .env("CXX", "zig c++ -target aarch64-linux")
+    //     .current_dir(env::var("CARGO_MANIFEST_DIR").expect("missing 'CARGO_MANIFEST_DIR'"))
+    //     .status()
+    //     .expect("Failed to build libmxgolang.a");
+    // // todo!();
 
-    // println!("cargo:rustc-link-search=/Users/oscar/Desktop/Mattrax/crates/mx-golang/out");
-    // println!("cargo:rustc-link-lib=mxgolang");
+    // // println!("cargo:rustc-link-search=/Users/oscar/Desktop/Mattrax/crates/mx-golang/out");
+    // // println!("cargo:rustc-link-lib=mxgolang");
 
-    let bindings = bindgen::Builder::default()
-        .header("./out/libmxgolang2.h")
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-        .generate()
-        .expect("Unable to generate bindings");
+    // let bindings = bindgen::Builder::default()
+    //     .header("./out/libmxgolang2.h")
+    //     .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+    //     .generate()
+    //     .expect("Unable to generate bindings");
 
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-    bindings
-        .write_to_file(out_path.join("bindings.rs"))
-        .expect("Couldn't write bindings!");
+    // let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+    // bindings
+    //     .write_to_file(out_path.join("bindings.rs"))
+    //     .expect("Couldn't write bindings!");
 }

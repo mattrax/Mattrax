@@ -28,7 +28,7 @@ pub(crate) fn mount() -> Router<Core> {
 
                     let tenant_id = nanoid::nanoid!(12);
                     let apns_key = PrivateKey::generate_rsa(2048).unwrap();
-                    let apns_key = encrypt(&core.secret, &apns_key.to_pkcs8_der().unwrap()).unwrap();
+                    let apns_key = encrypt(&core.secret, &apns_key.encode_pkcs8_der().unwrap()).unwrap();
 
                     let mut tx = core.db.begin().await.unwrap();
 

@@ -19,7 +19,7 @@ impl PrivateKey {
             .map(Self)
     }
 
-    pub fn to_pkcs8_der(&self) -> Result<Vec<u8>, ()> {
+    pub fn encode_pkcs8_der(&self) -> Result<Vec<u8>, ()> {
         self.0
             .to_pkcs8_der()
             .map_err(|_| ())

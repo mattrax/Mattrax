@@ -26,3 +26,6 @@ panic_in_result_fn = { level = "warn", priority = -1 }
 # Makes a massive difference to RSA key generation in development
 [profile.dev.package.num-bigint-dig]
 opt-level = 3
+
+# [patch.crates-io]
+# x509-certificate = { path = "/Users/oscar/Desktop/cryptography-rs/x509-certificate" } # TODO: Pull from Git

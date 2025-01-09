@@ -27,7 +27,7 @@ impl Certificate {
     }
 
     pub fn encode_der(&self) -> Result<Vec<u8>, ()> {
-        self.0.encode_der().map_err(|_| ())
+        self.0.encode_ber().map_err(|_| ())
     }
 
     pub fn subject(&self) -> Subject {
