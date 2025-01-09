@@ -10,7 +10,6 @@
 //!  - Make cross-compiling easier by making the dependencies fully Rust
 //!
 //! Future development:
-//!  - Drop `mx-golang` for PKCS7 signing w/ signed attributes
 //!  - Unify the internal implementation of `CertificateBuilder`
 //!     - Currently `CertificateRequestBuilder` is based on OpenSSL and `CertificateBuilder` is `x509-certificate`. I could not get `x509-certificate` to properly sign CSR's but should be possible with some work.
 //!  - Merge `Pkcs7A` and `Pkcs7B` into a single implementation

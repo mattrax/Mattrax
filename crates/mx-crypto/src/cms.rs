@@ -15,8 +15,9 @@
 
 mod cms_a;
 mod cms_b;
+mod scep;
 
 pub use cms_a::Pkcs7A;
 pub use cms_b::Pkcs7B;
 pub use cryptographic_message_syntax::Oid;
-pub use mx_golang::scep_success;
+pub use scep::scep_success;

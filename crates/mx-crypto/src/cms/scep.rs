@@ -1,58 +1,20 @@
-//! Temporary bindings to Go due to Rust's lack of good crypto libraries.
-//!
-//! Long term we will remove this and replace it with Rust code.
-#![allow(non_upper_case_globals)]
-#![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
+//! TODO: Turn this into a generalised abstraction and move a bunch of the logic to the `scep` crate.
 
-use std::{io::Write, process::Stdio, str::FromStr};
+use std::str::FromStr;
 
-use bcder::{
-    encode::{self, Constructed, PrimitiveContent, Values},
-    Captured, Mode, OctetString, Oid, PrintableString, Tag, Utf8String,
-};
+use bcder::{encode::Values, Captured, Mode, OctetString, Oid, PrintableString, Utf8String};
 use bytes::Bytes;
 use cryptographic_message_syntax::{
     asn1::rfc5652::{
-        CertificateChoices, CertificateSet, CmsVersion, ContentInfo, DigestAlgorithmIdentifiers,
-        EncapsulatedContentInfo, SignedData, SignerInfos, OID_ID_DATA, OID_ID_SIGNED_DATA,
+        CertificateChoices, CertificateSet, CmsVersion, DigestAlgorithmIdentifiers,
+        EncapsulatedContentInfo, SignedData, SignerInfos, OID_ID_DATA,
     },
     SignedDataBuilder, SignerBuilder,
 };
-use openssl::{pkcs7::Pkcs7Flags, pkey::PKey, stack::Stack, symm, x509::X509};
+use openssl::{pkcs7::Pkcs7Flags, stack::Stack, symm, x509::X509};
 use x509_certificate::{
     rfc5652::AttributeValue, CapturedX509Certificate, InMemorySigningKeyPair, X509Certificate,
 };
-
-const BINARY: &[u8] = include_bytes!("../out/mxgolang");
-
-fn run(args: &[&str], input: Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    // TODO: Cache these calls
-    {
-        std::fs::write("./_mttx_golang", BINARY).unwrap();
-        std::process::Command::new("chmod")
-            .arg("+x")
-            .arg("./_mttx_golang")
-            .output()?;
-    }
-
-    // TODO: Checking process exit status
-
-    let mut child = std::process::Command::new("./_mttx_golang")
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()?;
-
-    let stdin = child.stdin.as_mut().unwrap();
-    stdin.write_all(&input)?;
-
-    let output = child.wait_with_output()?;
-
-    // TODO: Checking process exit status
-
-    Ok(output.stdout)
-}
 
 pub fn scep_success(
     cert_der: Vec<u8>,
@@ -66,10 +28,6 @@ pub fn scep_success(
         let mut certs = CertificateSet::default();
         let c = X509Certificate::from_der(&csr).unwrap();
         certs.push(CertificateChoices::Certificate(Box::new(c.into())));
-        // for cert in p7_certificates.iter() {
-        //     let c = X509Certificate::from_der(cert).unwrap();
-        //     certs.push(CertificateChoices::Certificate(Box::new(c.into())));
-        // }
         let sd = SignedData {
             version: CmsVersion::V1,
             digest_algorithms: DigestAlgorithmIdentifiers::default(),
@@ -84,7 +42,6 @@ pub fn scep_success(
 
         let mut buf = Vec::new();
         sd.encode_ref().write_encoded(Mode::Der, &mut buf).unwrap();
-        // std::fs::write("./pending_stage_1", &buf).unwrap();
         buf
     };
 
@@ -101,24 +58,6 @@ pub fn scep_success(
     )
     .unwrap();
     let encrypted = e7.to_der().unwrap();
-    std::fs::write("./pending_stage_2", &encrypted).unwrap(); // TODO
-
-    let out2 = run(
-        &["pkcs_encrypt"],
-        format!(
-            "{}\n{}\n{}\n{}\n{}\n{}\n",
-            serde_json::to_string(&cert_der).unwrap(),
-            serde_json::to_string(&key_der).unwrap(),
-            serde_json::to_string(&csr).unwrap(),
-            serde_json::to_string(&p7_certificates).unwrap(),
-            serde_json::to_string(&transaction_id).unwrap(),
-            serde_json::to_string(&sender_nonce).unwrap(),
-        )
-        .as_bytes()
-        .to_vec(),
-    )?
-    .trim_ascii_end()
-    .to_vec();
 
     let out = SignedDataBuilder::default()
         // add the certificate into the signed data type
@@ -168,20 +107,12 @@ pub fn scep_success(
                     Mode::Der,
                     OctetString::new(sender_nonce.clone().into()).encode_ref(),
                 ))],
-            ), //
-               // .signed_attribute_octet_string(OID_SCEP_TRANSACTION_ID, transaction_id.as_bytes())
-               // .signed_attribute_octet_string(OID_SCEP_PKI_STATUS, "0".as_bytes()) // PKIStatus::Success
-               // .signed_attribute_octet_string(OID_SCEP_MESSAGE_TYPE, "3".as_bytes()) // MessageType::CertRep
-               // .signed_attribute_octet_string(OID_SCEP_SENDER_NONCE, sender_nonce.as_slice())
-               // .signed_attribute_octet_string(OID_SCEP_RECIPIENT_NONCE, sender_nonce.as_slice()),
+            ),
         )
         .content_type(Oid(OID_ID_DATA.as_ref().into()))
         .content_inline(encrypted)
         .build_der()
         .unwrap();
-
-    std::fs::write("./end", &out2).unwrap();
-    std::fs::write("./end-rs", &out).unwrap();
 
     Ok(out)
 }

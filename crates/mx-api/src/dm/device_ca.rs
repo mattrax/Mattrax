@@ -168,6 +168,8 @@ async fn issue_device_ca() -> Result<
         .await
         .unwrap();
     let cert = Certificate::builder()
+        // TODO: I think the `version` parameter is absent. It should be default of `Certificate::builder`
+        .serial_number(1)
         .subject(SubjectBuilder::default().common_name("Mattrax Device CA"))
         .validity(DEVICE_CA_VALIDITY)
         .is_ca(true)

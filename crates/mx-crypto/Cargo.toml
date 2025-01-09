@@ -11,7 +11,6 @@ workspace = true
 
 # TODO: Prune dependencies + drop `openssl` & `mx-golang
 [dependencies]
-mx-golang = { version = "0.0.0", path = "../mx-golang" }
 openssl = { version = "0.10.68", features = ["vendored"] } # TODO: Don't set `vendored` if we publish this library
 cryptographic-message-syntax = { version = "0.27.0", default-features = false, features = ["http"] } # TODO: Why do we need `reqwest` for `SignedDataBuilder`. Remove `http` feature plz!
 rand = "0.8.5"
@@ -25,7 +24,6 @@ yasna = "0.5.2"
 thiserror.workspace = true
 x509-verify = { version = "0.4.6", features = ["pem", "sha1", "std", "x509"] }
 sha1 = "0.10.6"
-rcgen = "0.13.2"
 
 # aes = "0.9.0-pre.2"
 # asn1 = "0.20.0"
