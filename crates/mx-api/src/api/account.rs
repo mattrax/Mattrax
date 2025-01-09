@@ -194,9 +194,11 @@ pub(crate) fn mount() -> Router<Core> {
         )
         .route(
             "/me",
-            delete(|State(core): State<Core>| async move {
+            delete(|State(core): State<Core>, cookies: Cookies| async move {
+                 let token = Token::from_cookies(&core, &cookies).ok_or(StatusCode::UNAUTHORIZED)?;
+
                 // TODO: Implement it!
-                StatusCode::SERVICE_UNAVAILABLE
+                Ok::<_, StatusCode>(StatusCode::NOT_IMPLEMENTED)
             }),
         )
 }

@@ -2,7 +2,6 @@
 
 The following is a list of features that are expected to land prior to us going out of alpha.
 
- - [ ] Serve the frontend via a CDN
  - [ ] Proper licence key system
  - [ ] Input validation
  - [ ] Overhaul authentication sessions
@@ -15,6 +14,14 @@ The following is a list of features that are expected to land prior to us going 
  - [ ] Tenant user management
   - [ ] Invite/uninvite users
   - [ ] Permissions?
+ - [ ] Enrollment v2
+  - [ ] Restrict who can enroll, how many devices, the default group, etc.
+  - [ ] How does this tie inot Windows Autopilot/Apple DEP???
  - [ ] Public API
   - [ ] CORS without leaking out cookies
   - [ ] Linking docs publically
+ - [ ] Proper response body with error categories (Eg. DB, logic, etc)
+
+Technical debt:
+ - [ ] Automatic OpenAPI schema
+ - [ ] Serve the frontend via a CDN

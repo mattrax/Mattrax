@@ -1,4 +1,6 @@
+use bcder::{decode::Constructed, Mode};
 use openssl::x509::{X509Req, X509};
+use x509_certificate::rfc2986::CertificationRequest;
 
 use super::CertificateBuilder;
 
@@ -74,8 +76,12 @@ impl CertificateSigningRequest {
     }
 
     pub fn encode_pem(&self) -> Result<String, ()> {
-        // self.0.encode_pem().map_err(|_| ())
-        todo!();
+        Constructed::decode(self.der.as_slice(), Mode::Der, |cons| {
+            CertificationRequest::take_from(cons)
+        })
+        .map_err(|_| ())?
+        .encode_pem()
+        .map_err(|_| ())
     }
 
     pub fn encode_der(&self) -> Result<Vec<u8>, ()> {
