@@ -9,7 +9,7 @@ workspace = true
 
 # TODO: `zeroize` feature to enable it on deps easily
 
-# TODO: Prune dependencies + drop `openssl` & `mx-golang
+# TODO: Prune dependencies + drop `openssl`
 [dependencies]
 openssl = { version = "0.10.68", features = ["vendored"] } # TODO: Don't set `vendored` if we publish this library
 cryptographic-message-syntax = { version = "0.27.0", default-features = false, features = ["http"] } # TODO: Why do we need `reqwest` for `SignedDataBuilder`. Remove `http` feature plz!
@@ -24,10 +24,3 @@ yasna = "0.5.2"
 thiserror.workspace = true
 x509-verify = { version = "0.4.6", features = ["pem", "sha1", "std", "x509"] }
 sha1 = "0.10.6"
-
-# aes = "0.9.0-pre.2"
-# asn1 = "0.20.0"
-# cbc = "0.2.0-pre.2"
-# des = "0.9.0-pre.2"
-# rasn = { version = "0.22.2", features = ["std"] }
-# rasn-cms = "0.22.2"

@@ -7,7 +7,7 @@ use bytes::Bytes;
 use cryptographic_message_syntax::{
     asn1::rfc5652::{
         CertificateChoices, CertificateSet, CmsVersion, DigestAlgorithmIdentifiers,
-        EncapsulatedContentInfo, SignedData, SignerInfos, OID_ID_DATA,
+        EncapsulatedContentInfo, SignedData, SignerInfos,
     },
     SignedDataBuilder, SignerBuilder,
 };
@@ -15,6 +15,8 @@ use openssl::{pkcs7::Pkcs7Flags, stack::Stack, symm, x509::X509};
 use x509_certificate::{
     rfc5652::AttributeValue, CapturedX509Certificate, InMemorySigningKeyPair, X509Certificate,
 };
+
+use crate::x509::OID_ID_DATA;
 
 pub fn scep_success(
     cert_der: Vec<u8>,
@@ -32,7 +34,7 @@ pub fn scep_success(
             version: CmsVersion::V1,
             digest_algorithms: DigestAlgorithmIdentifiers::default(),
             content_info: EncapsulatedContentInfo {
-                content_type: Oid(OID_ID_DATA.as_ref().into()),
+                content_type: OID_ID_DATA,
                 content: None,
             },
             certificates: Some(certs),
@@ -109,7 +111,7 @@ pub fn scep_success(
                 ))],
             ),
         )
-        .content_type(Oid(OID_ID_DATA.as_ref().into()))
+        .content_type(OID_ID_DATA)
         .content_inline(encrypted)
         .build_der()
         .unwrap();

@@ -82,7 +82,7 @@ impl CertificateBuilder {
         match &mut self.0 {
             CertificateBuilderInner::New(b) => {
                 b.extensions_mut().push(rfc5280::Extension {
-                    id: Oid(OID_EXTENSION_BASIC_CONSTRAINTS.as_ref().into()),
+                    id: OID_EXTENSION_BASIC_CONSTRAINTS,
                     critical: Some(true),
                     value: OctetString::new(Bytes::copy_from_slice(if ca {
                         &[48, 3, 1, 1, 255]
@@ -101,7 +101,7 @@ impl CertificateBuilder {
         match &mut self.0 {
             CertificateBuilderInner::New(b) => {
                 b.extensions_mut().push(rfc5280::Extension {
-                    id: Oid(OID_KEY_USAGE.as_ref().into()),
+                    id: OID_KEY_USAGE,
                     // "When present, conforming CAs SHOULD mark this extension as critical."
                     critical: Some(true),
                     value: OctetString::new(key_usage.as_bytes()),
@@ -129,7 +129,7 @@ impl CertificateBuilder {
                 }));
 
                 b.extensions_mut().push(rfc5280::Extension {
-                    id: Oid(OID_EXT_KEY_USAGE.as_ref().into()),
+                    id: OID_EXT_KEY_USAGE,
                     critical: Some(false),
                     value: OctetString::new(bytes),
                 });

@@ -1,19 +1,15 @@
-use std::{ptr::write, str::FromStr, sync::atomic::AtomicBool};
-
 use axum::{
     body::Bytes,
     extract::{Query, State},
     http::{header, request::Parts, StatusCode},
-    response::{Html, IntoResponse, Redirect},
+    response::{Html, IntoResponse},
     routing::{get, post, put},
     Router,
 };
-use base64::{prelude::BASE64_STANDARD, Engine};
 use mx_apple::{DeviceAttributes, EnrollMobileConfig, EnrollMobileConfigPayloadContent};
 use mx_crypto::cms::Pkcs7B;
-use serde::{Deserialize, Serialize};
-use tokio::{fs, runtime::Handle};
-use tracing::{error, warn};
+use serde::Deserialize;
+use tracing::warn;
 
 use crate::{
     utils::{include_static, Static},
