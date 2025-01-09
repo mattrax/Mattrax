@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["apps/mattrax", "crates/*"]
+members = [ "apps/ingest","apps/mattrax", "crates/*"]
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
