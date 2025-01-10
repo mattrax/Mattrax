@@ -1,5 +1,6 @@
 [package]
-name = "mx-apple"
+name = "apple-pfm"
+description = "Parser for Apple's Preference Manifest Files"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -8,8 +9,9 @@ publish = false
 workspace = true
 
 [dependencies]
-mx-crypto = { path = "../mx-crypto" }
-serde.workspace = true
-uuid.workspace = true
-thiserror.workspace = true
 plist.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"

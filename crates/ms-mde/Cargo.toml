@@ -1,0 +1,17 @@
+[package]
+name = "ms-mde"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = "0.22.1"
+easy-xml = "0.1.4"
+easy-xml-derive = "0.1.4"
+xml = "0.8.20"
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"

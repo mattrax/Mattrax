@@ -1,0 +1,12 @@
+[package]
+name = "ms-ddf"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+easy-xml = "0.1.4"
+easy-xml-derive = "0.1.4"

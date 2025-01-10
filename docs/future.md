@@ -3,3 +3,4 @@ Future:
 
 Features:
  - Custom SCEP certificates. Eg. WiFi/VPN crendentials which Mattrax handles issuing.
+ - Gitops
