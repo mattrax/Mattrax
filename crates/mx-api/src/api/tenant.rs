@@ -18,6 +18,8 @@ use sqlx::error::ErrorKind;
 use tower_cookies::Cookies;
 use tracing::error;
 
+use super::policy;
+
 #[derive(Deserialize)]
 pub struct CreateTenantRequest {
     pub name: String,
@@ -72,7 +74,7 @@ pub(crate) fn mount() -> Router<Core> {
                     })?;
 
                     sqlx::query!(
-                        "INSERT INTO tenant_member(tenant_id, account_id) VALUES(?, ?)",
+                        "INSERT INTO tenant_member(tenant, account) VALUES(?, ?)",
                         tenant_id,
                         token.account_id()
                     )
@@ -99,7 +101,7 @@ pub(crate) fn mount() -> Router<Core> {
                     let token = Token::from_cookies(&core, &cookies).ok_or(StatusCode::UNAUTHORIZED)?;
 
                     let tenants = sqlx::query!(
-                        "SELECT tenant.id, tenant.name, tenant.email, tenant.apns_cert, tenant.apns_email, tenant.created FROM tenant INNER JOIN tenant_member ON tenant.id = tenant_member.tenant_id WHERE tenant_member.account_id = ?",
+                        "SELECT tenant.id, tenant.name, tenant.email, tenant.apns_cert, tenant.apns_email, tenant.created FROM tenant INNER JOIN tenant_member ON tenant.id = tenant_member.tenant WHERE tenant_member.account = ?",
                         token.account_id()
                     )
                     .fetch_all(&core.db)
@@ -131,7 +133,7 @@ pub(crate) fn mount() -> Router<Core> {
                     let token = Token::from_cookies(&core, &cookies).ok_or(StatusCode::UNAUTHORIZED)?;
 
                     let t = sqlx::query!(
-                        "SELECT tenant.id, tenant.name, tenant.email, tenant.apns_cert, tenant.apns_email, tenant.created FROM tenant INNER JOIN tenant_member ON tenant.id = tenant_member.tenant_id WHERE tenant_member.account_id = ? AND tenant.id = ?",
+                        "SELECT tenant.id, tenant.name, tenant.email, tenant.apns_cert, tenant.apns_email, tenant.created FROM tenant INNER JOIN tenant_member ON tenant.id = tenant_member.tenant WHERE tenant_member.account = ? AND tenant.id = ?",
                         token.account_id(),
                         tenant_id,
                     )
@@ -165,7 +167,7 @@ pub(crate) fn mount() -> Router<Core> {
                 let token = Token::from_cookies(&core, &cookies).ok_or(StatusCode::UNAUTHORIZED)?;
 
                 let tenant = sqlx::query!(
-                    "SELECT name, apns_key FROM tenant INNER JOIN tenant_member ON tenant.id = tenant_member.tenant_id WHERE tenant_member.account_id = ? AND tenant.id = ?",
+                    "SELECT name, apns_key FROM tenant INNER JOIN tenant_member ON tenant.id = tenant_member.tenant WHERE tenant_member.account = ? AND tenant.id = ?",
                     token.account_id(),
                     tenant_id,
                 )
@@ -252,8 +254,8 @@ pub(crate) fn mount() -> Router<Core> {
             |State(core): State<Core>, Path(tenant_id): Path<String>, cookies: Cookies, body: Bytes| async move {
                 let token = Token::from_cookies(&core, &cookies).ok_or(StatusCode::UNAUTHORIZED)?;
 
-                let tenant = sqlx::query!(
-                    "SELECT name, apns_key FROM tenant INNER JOIN tenant_member ON tenant.id = tenant_member.tenant_id WHERE tenant_member.account_id = ? AND tenant.id = ?",
+                sqlx::query!(
+                    "SELECT id FROM tenant INNER JOIN tenant_member ON tenant.id = tenant_member.tenant WHERE tenant_member.account = ? AND tenant.id = ?",
                     token.account_id(),
                     tenant_id,
                 )
@@ -307,7 +309,7 @@ pub(crate) fn mount() -> Router<Core> {
             let token = Token::from_cookies(&core, &cookies).ok_or(StatusCode::UNAUTHORIZED)?;
 
             sqlx::query!(
-                "SELECT id FROM tenant INNER JOIN tenant_member ON tenant.id = tenant_member.tenant_id WHERE tenant_member.account_id = ? AND tenant.id = ?",
+                "SELECT id FROM tenant INNER JOIN tenant_member ON tenant.id = tenant_member.tenant WHERE tenant_member.account = ? AND tenant.id = ?",
                 token.account_id(),
                 tenant_id,
             )
@@ -359,6 +361,7 @@ pub(crate) fn mount() -> Router<Core> {
         }
         )
     )
+    .nest("/{tenant_id}/policy", policy::mount())
 }
 
 #[derive(Serialize)]

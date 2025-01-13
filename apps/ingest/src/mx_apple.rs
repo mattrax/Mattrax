@@ -1,6 +1,7 @@
 use std::{fs::DirEntry, path::Path};
 
 use inflector::Inflector;
+use regex::{Captures, Regex};
 
 pub fn parse(
     dir: impl AsRef<Path>,
@@ -28,6 +29,8 @@ pub fn parse(
             .map_err(|err| println!("Error reading file {:?}: {err:?}", entry.path()))?;
         let schema: schemars::schema::SchemaObject = serde_yaml::from_str(&file)
             .map_err(|err| println!("Error parsing file {:?}: {err:?}", entry.path()))?;
+
+        let schema2: crate::apple_schema::DMClientSchema = serde_yaml::from_str(&file).unwrap();
 
         on_entry(entry, schema);
     }
@@ -66,5 +69,31 @@ pub fn generate_file(input: impl AsRef<Path>, out: impl AsRef<Path>) -> Result<(
     })?;
 
     std::fs::write(out, result.join("\n")).unwrap();
+    Ok(())
+}
+
+pub fn parse_dm_schema(path: impl AsRef<Path>) -> Result<(), ()> {
+    let path = path.as_ref();
+    let file = std::fs::read_to_string(path)
+        .map_err(|err| println!("Error reading file {:?}: {err:?}", path))?;
+
+    // The Apple schema definitions have a recursive type which Rust yaml libraries don't seem to support.
+    // When formatting a schema in JSON references are expressed as a `$ref` field so we convert Yaml reference into the `$ref` format.
+    // https://github.com/saphyr-rs/saphyr/issues/24
+    let file = Regex::new(r": \*(?<a>.*)")
+        .unwrap()
+        .replace_all(&file, |caps: &Captures| {
+            format!(
+                r##": {{ "$ref": "#/definitions/{}" }}"##,
+                caps.name("a").expect("is in hardcoded regex").as_str()
+            )
+        })
+        .to_string();
+
+    let schema: schemars::schema::SchemaObject = serde_yaml::from_str(&file)
+        .map_err(|err| println!("Error parsing file {:?}: {err:?}", path))?;
+
+    println!("{:#?}", schema);
+
     Ok(())
 }

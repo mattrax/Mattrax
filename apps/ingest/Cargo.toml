@@ -10,5 +10,11 @@ workspace = true
 
 [dependencies]
 Inflector = "0.11.4"
+regex = "1.11.1"
 schemars = { version = "0.8.21", default-features = false }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 serde_yaml = "0.9.34"
+serde_yaml2 = "0.1.2"
+serde_yml = "0.0.12"
+yaml-rust2 = "0.9.0"

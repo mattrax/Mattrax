@@ -48,7 +48,52 @@ CREATE TABLE tenant (
 
 -- TODO
 CREATE TABLE tenant_member (
-    tenant_id CHAR(12) NOT NULL,
-    account_id CHAR(12) NOT NULL,
-    PRIMARY KEY (tenant_id, account_id)
+    tenant CHAR(12) NOT NULL,
+    account CHAR(12) NOT NULL,
+    PRIMARY KEY (tenant, account)
+);
+
+-- TODO
+CREATE TABLE device (
+    id CHAR(12) PRIMARY KEY,
+    tenant CHAR(12) NOT NULL,
+    identity CHAR(12) NOT NULL,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- TODO
+CREATE TABLE policy (
+    id CHAR(12) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description VARCHAR(255),
+    tenant CHAR(12) NOT NULL,
+    version CHAR(12),
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- TODO
+CREATE TABLE policy_version (
+    policy CHAR(12) NOT NULL,
+    version CHAR(12) NOT NULL,
+    data JSON NOT NULL,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (policy, version)
+);
+
+-- TODO
+CREATE TABLE `group` (
+    id CHAR(12) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description VARCHAR(255),
+    tenant CHAR(12) NOT NULL,
+    created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- TODO
+CREATE TABLE group_assignment (
+    `group` CHAR(12) NOT NULL,
+    -- TODO: Support 'user', 'group' variants
+    type ENUM ('device') NOT NULL,
+    id CHAR(12) NOT NULL,
+    PRIMARY KEY (`group`, type, id)
 );

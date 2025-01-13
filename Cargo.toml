@@ -1,17 +1,37 @@
 [workspace]
 resolver = "3"
-members = [ "apps/ingest","apps/mattrax", "crates/*"]
+members = ["apps/ingest", "apps/mattrax", "crates/*"]
 
 [workspace.dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+tokio = { version = "1", features = [
+    "macros",
+    "rt-multi-thread",
+    "net",
+    "signal",
+] }
 serde = { version = "1", features = ["derive", "rc"] }
 axum = { version = "0.8" }
 serde_json = { version = "1" }
 tracing = { version = "0.1" }
-sqlx = { version = "0.8", default-features = false, features = ["mysql", "runtime-tokio", "tls-rustls", "derive", "macros", "migrate", "json", "chrono"] }
+sqlx = { version = "0.8", default-features = false, features = [
+    "mysql",
+    "runtime-tokio",
+    "tls-rustls",
+    "derive",
+    "macros",
+    "migrate",
+    "json",
+    "chrono",
+] }
 uuid = { version = "1", features = ["serde"] }
 thiserror = "2"
-reqwest = { version = "0.12.12", default-features = false, features = ["rustls-tls", "charset", "http2", "macos-system-configuration", "json"] }
+reqwest = { version = "0.12.12", default-features = false, features = [
+    "rustls-tls",
+    "charset",
+    "http2",
+    "macos-system-configuration",
+    "json",
+] }
 chrono = { version = "0.4.39", features = ["serde"] }
 zeroize = "1.8.1"
 plist = "1.7.0"

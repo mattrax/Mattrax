@@ -1,0 +1,12 @@
+[package]
+name = "apple-dm-schema"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+schemars = "0.8.21"
+typify = "0.3.0"

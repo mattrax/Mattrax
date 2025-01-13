@@ -7,7 +7,7 @@ use axum::{
     Router,
 };
 use mx_apple::{DeviceAttributes, EnrollMobileConfig, EnrollMobileConfigPayloadContent};
-use mx_crypto::cms::Pkcs7B;
+use mx_crypto::{cms::Pkcs7B, x509::Certificate};
 use serde::Deserialize;
 use tracing::warn;
 
@@ -137,7 +137,7 @@ pub(crate) fn mount() -> Router<Core> {
 
                 // TODO: This should verify again any of the trusted CAs
                 let (cert, _) = core.device_ca.active_signer(&core).unwrap();
-                let cert = todo!(); // x509_cert::Certificate::from_der(&cert.encode_der().unwrap()).unwrap();
+                let cert = Certificate::from_der(&cert.encode_der().unwrap()).unwrap();
                 if let Ok(p7) = Pkcs7B::parse_and_verify_pkcs7(&body, &[&cert]) {
                     println!("THE DEVICE CERT IS PRESENT");
 
