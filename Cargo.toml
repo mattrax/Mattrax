@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/ingest", "apps/mattrax", "crates/*"]
+members = ["apps/mattrax", "crates/*"]
 
 [workspace.dependencies]
 tokio = { version = "1", features = [
@@ -12,7 +12,7 @@ tokio = { version = "1", features = [
 serde = { version = "1", features = ["derive", "rc"] }
 axum = { version = "0.8" }
 serde_json = { version = "1" }
-serde_yaml = { version = "0.9.34+deprecated" }
+serde_yaml = { version = "0.9.34" } # TODO: This crate is deprecated, we should move off.
 tracing = { version = "0.1" }
 sqlx = { version = "0.8", default-features = false, features = [
     "mysql",
@@ -39,6 +39,7 @@ plist = "1.7.0"
 specta = "=2.0.0-rc.22"
 specta-rust = "0.0.1"
 specta-jsonschema = "0.0.1"
+specta-typescript = "0.0.9"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -57,7 +58,8 @@ opt-level = 3
 easy-xml = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }
 easy-xml-derive = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }
 
-typify = { path = "/Users/oscar/Desktop/typify/typify" }
-specta = { path = "/Users/oscar/Desktop/specta/specta" }
-specta-jsonschema = { path = "/Users/oscar/Desktop/specta/specta-jsonschema" }
-specta-rust = { path = "/Users/oscar/Desktop/specta/specta-rust" }
+# TODO: Awaiting next release
+specta = { path = "/Users/oscar/Desktop/specta-ref/specta" }
+specta-rust = { path = "/Users/oscar/Desktop/specta-ref/specta-rust" }
+specta-jsonschema = { path = "/Users/oscar/Desktop/specta-ref/specta-jsonschema" }
+specta-typescript = { path = "/Users/oscar/Desktop/specta-ref/specta-typescript" }

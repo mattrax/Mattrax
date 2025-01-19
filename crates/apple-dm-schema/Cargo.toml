@@ -7,6 +7,13 @@ publish = false
 [lints]
 workspace = true
 
+# TODO: most of these are really dev dependencies
 [dependencies]
 serde.workspace = true
 serde_yaml.workspace = true
+specta.workspace = true
+specta-rust.workspace = true
+specta-jsonschema.workspace = true
+specta-typescript.workspace = true
+Inflector = "0.11.4"
+schemars = "0.8.21"

@@ -1,3 +1,3 @@
-[submodule "apps/ingest/device-management"]
-	path = apps/ingest/device-management
+[submodule "vendor/device-management"]
+	path = vendor/device-management
 	url = https://github.com/apple/device-management
