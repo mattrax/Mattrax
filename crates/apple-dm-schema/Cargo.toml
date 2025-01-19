@@ -8,5 +8,5 @@ publish = false
 workspace = true
 
 [dependencies]
-schemars = "0.8.21"
-typify = "0.3.0"
+serde.workspace = true
+serde_yaml.workspace = true

@@ -12,6 +12,7 @@ tokio = { version = "1", features = [
 serde = { version = "1", features = ["derive", "rc"] }
 axum = { version = "0.8" }
 serde_json = { version = "1" }
+serde_yaml = { version = "0.9.34+deprecated" }
 tracing = { version = "0.1" }
 sqlx = { version = "0.8", default-features = false, features = [
     "mysql",
@@ -35,6 +36,9 @@ reqwest = { version = "0.12.12", default-features = false, features = [
 chrono = { version = "0.4.39", features = ["serde"] }
 zeroize = "1.8.1"
 plist = "1.7.0"
+specta = "=2.0.0-rc.22"
+specta-rust = "0.0.1"
+specta-jsonschema = "0.0.1"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -52,3 +56,8 @@ opt-level = 3
 # Some minor improvements
 easy-xml = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }
 easy-xml-derive = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f373c5bc85802e434274400865a9ba8dbc2313f1" }
+
+typify = { path = "/Users/oscar/Desktop/typify/typify" }
+specta = { path = "/Users/oscar/Desktop/specta/specta" }
+specta-jsonschema = { path = "/Users/oscar/Desktop/specta/specta-jsonschema" }
+specta-rust = { path = "/Users/oscar/Desktop/specta/specta-rust" }

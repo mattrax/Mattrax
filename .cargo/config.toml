@@ -9,3 +9,5 @@ LICENCE = "self-hosting-is-not-currently-supported"
 [alias]
 migrate = "sqlx migrate run --source crates/mx-api/migrations --database-url mysql://root:@localhost:3306/mattrax"
 resetdb = "sqlx database reset --source crates/mx-api/migrations --database-url mysql://root:@localhost:3306/mattrax"
+
+gen-apple = "run -p apple-dm-schema --bin gen-apple"

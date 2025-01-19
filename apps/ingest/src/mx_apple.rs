@@ -2,6 +2,8 @@ use std::{fs::DirEntry, path::Path};
 
 use inflector::Inflector;
 use regex::{Captures, Regex};
+use schemars::schema::Schema;
+use typify::{TypeSpace, TypeSpaceSettings};
 
 pub fn parse(
     dir: impl AsRef<Path>,
@@ -80,20 +82,46 @@ pub fn parse_dm_schema(path: impl AsRef<Path>) -> Result<(), ()> {
     // The Apple schema definitions have a recursive type which Rust yaml libraries don't seem to support.
     // When formatting a schema in JSON references are expressed as a `$ref` field so we convert Yaml reference into the `$ref` format.
     // https://github.com/saphyr-rs/saphyr/issues/24
-    let file = Regex::new(r": \*(?<a>.*)")
-        .unwrap()
-        .replace_all(&file, |caps: &Captures| {
-            format!(
-                r##": {{ "$ref": "#/definitions/{}" }}"##,
-                caps.name("a").expect("is in hardcoded regex").as_str()
-            )
-        })
-        .to_string();
+    // let file = Regex::new(r": \*(?<a>.*)")
+    //     .unwrap()
+    //     .replace_all(&file, |caps: &Captures| {
+    //         format!(
+    //             r##": {{ "$ref": "#/definitions/{}" }}"##,
+    //             caps.name("a").expect("is in hardcoded regex").as_str()
+    //         )
+    //     })
+    //     .to_string();
 
     let schema: schemars::schema::SchemaObject = serde_yaml::from_str(&file)
         .map_err(|err| println!("Error parsing file {:?}: {err:?}", path))?;
 
-    println!("{:#?}", schema);
+    // println!("{:#?}", schema);
+
+    let schema = specta_jsonschema::to_ast(&Schema::Object(schema)).unwrap();
+    let types = specta_rust::datatype(&schema).unwrap();
+    std::fs::write("types2.rs", types).unwrap();
+
+    // println!("{:#?}", schema);
+
+    // specta_rust::Rust::export(&self, types)
+    // specta_rust::export()
+
+
+    // let todo = specta::DataType::Any;
+
+
+    // println!("{:#?}", schema);
+
+    // let mut todo = TypeSpace::new(&TypeSpaceSettings::default());
+
+    // println!("A");
+    // todo.add_type(&schemars::schema::Schema::Object(schema)).unwrap();
+    // println!("B");
+    //  let result = prettyplease::unparse(&syntax_tree);
+
+    // std::fs::write("types.rs", todo.to_stream().to_string()).unwrap();
 
     Ok(())
 }
+
+// pub fn todo() {}
