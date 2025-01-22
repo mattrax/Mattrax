@@ -1,8 +1,9 @@
 //! TODO
+#![allow(non_snake_case)]
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Schema {
     pub title: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -21,7 +22,7 @@ pub struct Schema {
     pub notes: Option<Vec<Note>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Payload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payloadtype: Option<String>,
@@ -43,7 +44,7 @@ pub struct Payload {
     pub content: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SupportedOS {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iOS: Option<OSSupport>,
@@ -57,7 +58,7 @@ pub struct SupportedOS {
     pub watchOS: Option<OSSupport>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OSSupport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub introduced: Option<String>,
@@ -95,7 +96,7 @@ pub struct OSSupport {
     pub beta: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SharedIpad {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<SharedIpadMode>,
@@ -107,7 +108,7 @@ pub struct SharedIpad {
     pub allowed_scopes: Option<Vec<String>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SharedIpadMode {
     Allowed,
@@ -116,7 +117,7 @@ pub enum SharedIpadMode {
     Ignored,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserEnrollment {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<UserEnrollmentMode>,
@@ -124,7 +125,7 @@ pub struct UserEnrollment {
     pub behavior: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UserEnrollmentMode {
     Allowed,
@@ -133,7 +134,7 @@ pub enum UserEnrollmentMode {
     Ignored,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ApplyType {
     Single,
@@ -141,7 +142,7 @@ pub enum ApplyType {
     Combined,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PayloadKey {
     pub key: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -176,7 +177,7 @@ pub struct PayloadKey {
     pub subkeys: Option<Vec<PayloadKey>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PayloadKeyType {
     #[serde(rename = "<string>")]
@@ -199,7 +200,7 @@ pub enum PayloadKeyType {
     Any,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SubType {
     #[serde(rename = "<url>")]
@@ -210,14 +211,14 @@ pub enum SubType {
     Email,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Presence {
     Required,
     Optional,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RangeListItem {
     String(String),
@@ -225,7 +226,7 @@ pub enum RangeListItem {
     Number(f64),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Range {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min: Option<NumberValue>,
@@ -233,14 +234,14 @@ pub struct Range {
     pub max: Option<NumberValue>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum NumberValue {
     Integer(i64),
     Float(f64),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum DefaultValue {
     String(String),
@@ -249,13 +250,13 @@ pub enum DefaultValue {
     Boolean(bool),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Repetition {
     pub min: i64,
     pub max: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CombineType {
     BooleanOr,
@@ -270,7 +271,7 @@ pub enum CombineType {
     SetIntersection,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Reason {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
@@ -280,7 +281,7 @@ pub struct Reason {
     pub details: Option<Vec<ReasonDetail>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReasonDetail {
     pub key: String,
     pub description: String,
@@ -288,7 +289,7 @@ pub struct ReasonDetail {
     pub detail_type: PayloadKeyType,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelatedStatusItem {
     #[serde(rename = "status-items")]
     pub status_items: Vec<String>,
@@ -296,7 +297,7 @@ pub struct RelatedStatusItem {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Note {
     pub title: String,
     pub content: String,

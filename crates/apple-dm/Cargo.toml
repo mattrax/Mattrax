@@ -1,5 +1,6 @@
 [package]
 name = "apple-dm"
+description = "Generated Apple Device Management types"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -9,3 +10,4 @@ workspace = true
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
+serde_yaml.workspace = true

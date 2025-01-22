@@ -1,3 +1,7 @@
+# General
+
+ - [ ] Codegen `apple-dm-schema` using Specta
+
 # Certificate renewal
 
 TODO

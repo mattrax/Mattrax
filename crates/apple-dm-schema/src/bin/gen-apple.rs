@@ -7,10 +7,11 @@
 //!  - git submodule update --remote
 
 use std::{fs::DirEntry, path::{Path, PathBuf}};
-use apple_dm_schema::PayloadKeyType;
+use apple_dm_schema::{PayloadKeyType, Presence};
 use inflector::Inflector;
-use specta::{builder::{FieldBuilder, StructBuilder}, datatype::{DataType, PrimitiveType}, TypeCollection};
-use specta_typescript::Typescript;
+use specta::{builder::{EnumBuilder, FieldBuilder, NamedDataTypeBuilder, StructBuilder, VariantBuilder}, datatype::{reference::Reference, DataType, EnumRepr, PrimitiveType}, TypeCollection};
+use specta_rust::Rust;
+use quote::quote;
 
 fn main() -> Result<(), ()> {
     println!("Generating `apple-dm` crate...");
@@ -21,13 +22,44 @@ fn main() -> Result<(), ()> {
     {
         let mut types = TypeCollection::default();
 
-        parse(
+        let commands = parse(
             base.join("../../vendor/device-management/mdm/checkin"),
             |_, schema| export(&mut types, schema)
         )?;
 
-        // TODO: Switch to Rust exporter
-        Typescript::default().export_to("./checkin.ts", &types).unwrap();
+        let mut e = EnumBuilder::new("CheckinCommand").repr(EnumRepr::Internal { tag: "MessageType".into() });
+        for (schema, dt_reference) in commands {
+            let identifier = schema.payload.unwrap().requesttype.unwrap();
+            // let ndt = types.get(dt_reference.sid()).unwrap();
+            e.variant_mut(
+                // TODO: We should use `ndt.name()` here, but we need: https://github.com/specta-rs/specta/issues/332
+                // TODO: In practice we are lucky they match but that's coincidence.
+                identifier,
+                VariantBuilder::unnamed()
+                    .docs(schema.description.unwrap_or_default().into())
+                    .field(FieldBuilder::new(DataType::Reference(dt_reference))
+                    .build()
+            ).build());
+        }
+        types.declare(NamedDataTypeBuilder::new("CheckinCommand", e.build()).docs("A command sent by the device during MDM checkin.").build());
+
+        let impls = quote! {
+            impl CheckinCommand {
+                pub fn from_str(s: &str) -> Result<Self, serde_yaml::Error> {
+                    serde_yaml::from_str(s)
+                }
+
+                pub fn to_string(&self) -> Result<String, serde_yaml::Error> {
+                    serde_yaml::to_string(self)
+                }
+            }
+        };
+
+        Rust::default()
+            .with_any("serde_yaml::Value")
+            .append(&impls.to_string())
+            .export_to(base.join("../apple-dm/src/mdm/checkin.rs"), &types)
+            .map_err(|err| println!("Error generating Rust code: {}", err))?;
     }
 
     {
@@ -38,8 +70,15 @@ fn main() -> Result<(), ()> {
             |_, schema| export(&mut types, schema)
         )?;
 
-        // TODO: Switch to Rust exporter
-        Typescript::default().export_to("./commands.ts", &types).unwrap();
+        let impls = quote! {
+            // TODO
+        };
+
+        Rust::default()
+            .with_any("serde_yaml::Value")
+            .append(&impls.to_string())
+            .export_to(base.join("../apple-dm/src/mdm/commands.rs"), &types)
+            .map_err(|err| println!("Error generating Rust code: {}", err))?;
     }
 
     {
@@ -50,8 +89,15 @@ fn main() -> Result<(), ()> {
             |_, schema| export(&mut types, schema)
         )?;
 
-        // TODO: Switch to Rust exporter
-        Typescript::default().export_to("./errors.ts", &types).unwrap();
+        let impls = quote! {
+            // TODO
+        };
+
+        Rust::default()
+            .with_any("serde_yaml::Value")
+            .append(&impls.to_string())
+            .export_to(base.join("../apple-dm/src/mdm/errors.rs"), &types)
+            .map_err(|err| println!("Error generating Rust code: {}", err))?;
     }
 
     {
@@ -62,8 +108,15 @@ fn main() -> Result<(), ()> {
             |_, schema| export(&mut types, schema)
         )?;
 
-        // TODO: Switch to Rust exporter
-        Typescript::default().export_to("./profiles.ts", &types).unwrap();
+        let impls = quote! {
+            // TODO
+        };
+
+        Rust::default()
+            .with_any("serde_yaml::Value")
+            .append(&impls.to_string())
+            .export_to(base.join("../apple-dm/src/mdm/profiles.rs"), &types)
+            .map_err(|err| println!("Error generating Rust code: {}", err))?;
     }
 
     {
@@ -74,20 +127,28 @@ fn main() -> Result<(), ()> {
             |_, schema| export(&mut types, schema)
         )?;
 
-        // TODO: Switch to Rust exporter
-        Typescript::default().export_to("./other.ts", &types).unwrap();
+        let impls = quote! {
+            // TODO
+        };
+
+        Rust::default()
+            .with_any("serde_yaml::Value")
+            .append(&impls.to_string())
+            .export_to(base.join("../apple-dm/src/mdm/other.rs"), &types)
+            .map_err(|err| println!("Error generating Rust code: {}", err))?;
     }
 
     println!("Done!");
     Ok(())
 }
 
-pub fn parse(
+pub fn parse<T>(
     dir: impl AsRef<Path>,
-    mut on_entry: impl FnMut(DirEntry, apple_dm_schema::Schema),
-) -> Result<(), ()> {
+    mut on_entry: impl FnMut(DirEntry, apple_dm_schema::Schema) -> T,
+) -> Result<Vec<T>, ()> {
     let entries = std::fs::read_dir(&dir)
         .map_err(|err| println!("Error parsing directory {:?}: {err:?}", dir.as_ref()))?;
+    let mut results = vec![];
 
     for entry in entries {
         let entry = entry
@@ -108,13 +169,13 @@ pub fn parse(
             .map_err(|err| println!("Error reading file {:?}: {err:?}", entry.path()))?;
         let schema: apple_dm_schema::Schema = serde_yaml::from_str(&file)
             .map_err(|err| println!("Error parsing file {:?}: {err:?}", entry.path()))?;
-        on_entry(entry, schema);
+        results.push(on_entry(entry, schema));
     }
 
-    Ok(())
+    Ok(results)
 }
 
-pub fn export(types: &mut TypeCollection, schema: apple_dm_schema::Schema) {
+pub fn export(types: &mut TypeCollection, schema: apple_dm_schema::Schema) -> (apple_dm_schema::Schema, Reference) {
     let mut name = schema.title.to_class_case();
 
     // TODO: Don't do this?
@@ -122,9 +183,9 @@ pub fn export(types: &mut TypeCollection, schema: apple_dm_schema::Schema) {
         name = format!("TODO{name}");
     }
 
-    let mut s = StructBuilder::named(name.clone()); // TODO: Docs
-    for key in schema.payloadkeys.into_iter().flatten() {
-        let ty = match key.key_type {
+    let mut s = StructBuilder::named(name.clone());
+    for key in schema.payloadkeys.clone().into_iter().flatten() {
+        let mut ty = match key.key_type {
             PayloadKeyType::String => DataType::Primitive(PrimitiveType::String),
             // PayloadKeyType::Integer => todo!(),
             // PayloadKeyType::Real => todo!(),
@@ -137,7 +198,11 @@ pub fn export(types: &mut TypeCollection, schema: apple_dm_schema::Schema) {
             _ => DataType::Any, // TODO: Finish the conversion
         };
 
-        // key.presence // TODO
+        let presence = key.presence.unwrap_or(Presence::Required); // TODO: Is this the correct default?
+        if presence == Presence::Optional {
+            ty = DataType::Nullable(Box::new(ty))
+        };
+
         // key.rangelist // TODO
         // key.default // TODO
 
@@ -145,7 +210,6 @@ pub fn export(types: &mut TypeCollection, schema: apple_dm_schema::Schema) {
     }
 
     let dt = s.build();
-    types.declare(name, dt);
-
-    // TODO: Can we somehow add impls? Like to and from yaml type thing?
+    let reference = types.declare(NamedDataTypeBuilder::new(name, dt).docs(schema.description.clone().unwrap_or_default()).build());
+    (schema, reference)
 }

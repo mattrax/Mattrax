@@ -8,7 +8,7 @@ publish = false
 workspace = true
 
 [dependencies]
-mx-apple = { path = "../mx-apple" }
+apple-dm = { path = "../apple-dm" }
 mx-windows = { path = "../mx-windows" }
 mx-crypto = { path = "../mx-crypto" }
 scep = { path = "../scep" }

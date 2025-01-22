@@ -36,8 +36,9 @@ reqwest = { version = "0.12.12", default-features = false, features = [
 chrono = { version = "0.4.39", features = ["serde"] }
 zeroize = "1.8.1"
 plist = "1.7.0"
-specta = "=2.0.0-rc.22"
+specta = { version = "=2.0.0-rc.22", features = ["derive", "export"] }
 specta-rust = "0.0.1"
+specta-openapi = "0.0.1"
 specta-jsonschema = "0.0.1"
 specta-typescript = "0.0.9"
 
@@ -61,5 +62,6 @@ easy-xml-derive = { git = "https://github.com/oscartbeaumont/easy-xml", rev = "f
 # TODO: Awaiting next release
 specta = { path = "/Users/oscar/Desktop/specta-ref/specta" }
 specta-rust = { path = "/Users/oscar/Desktop/specta-ref/specta-rust" }
+specta-openapi = { path = "/Users/oscar/Desktop/specta-ref/specta-openapi" }
 specta-jsonschema = { path = "/Users/oscar/Desktop/specta-ref/specta-jsonschema" }
 specta-typescript = { path = "/Users/oscar/Desktop/specta-ref/specta-typescript" }
