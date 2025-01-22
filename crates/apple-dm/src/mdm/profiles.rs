@@ -26,7 +26,7 @@ pub struct JabberAccount {
     /// The server's port.
     #[serde(rename = "JabberPort")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub jabber_port: Option<serde_yaml::Value>,
+    pub jabber_port: Option<i64>,
     /// The authentication method for the account.
     #[serde(rename = "JabberAuthentication")]
     pub jabber_authentication: String,
@@ -134,7 +134,7 @@ pub struct GlobalPreference {
     /// The 'autologout' delay, in seconds. A value of '0' means 'autologout' is off. In some cases, this delay may be restricted to values between 5 minutes and 24 hours.
     #[serde(rename = "com.apple.autologout.AutoLogOutDelay")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub com_apple_autologout_auto_log_out_delay: Option<serde_yaml::Value>,
+    pub com_apple_autologout_auto_log_out_delay: Option<f64>,
 }
 
 /// Use this section to define settings for VPN access.
@@ -257,7 +257,7 @@ pub struct GlobalHTTPProxy {
     /// The proxy server's port number. This is required if the ProxyType is set to Manual, and is ignored if the ProxyType is set to Automatic.
     #[serde(rename = "ProxyServerPort")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proxy_server_port: Option<serde_yaml::Value>,
+    pub proxy_server_port: Option<i64>,
     /// The user name used to authenticate to the proxy server. This setting is only used if the ProxyType is set to Manual, and is ignored if the ProxyType is set to Automatic.
     #[serde(rename = "ProxyUsername")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -373,7 +373,7 @@ pub struct SmartCard {
     /// * '3': Turns on certificate trust check. A hard revocation check is also performed. Unless CRL/OCSP explicitly says “This certificate is OK,” it's considered invalid. This option is the most secure.
     #[serde(rename = "checkCertificateTrust")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub check_certificate_trust: Option<serde_yaml::Value>,
+    pub check_certificate_trust: Option<i64>,
     /// If 'true', a user can pair with only one SmartCard, although existing pairings are allowed if already set up.
     #[serde(rename = "oneCardPerUser")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -381,7 +381,7 @@ pub struct SmartCard {
     /// If '1', the system enables the screen saver when the SmartCard is removed. Available in macOS 10.13.4 and later.
     #[serde(rename = "tokenRemovalAction")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub token_removal_action: Option<serde_yaml::Value>,
+    pub token_removal_action: Option<i64>,
     /// If 'true', a user can only log in or authenticate with a SmartCard. Available in macOS 10.13.2 and later.
     #[serde(rename = "enforceSmartCard")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -425,7 +425,7 @@ pub struct Accessibility {
     /// The minimum zoom level in the Zoom options.
     #[serde(rename = "closeViewFarPoint")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub close_view_far_point: Option<serde_yaml::Value>,
+    pub close_view_far_point: Option<i64>,
     /// If 'true', enables 'Use keyboard shortcuts' in the Zoom options.
     #[serde(rename = "closeViewHotkeysEnabled")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -433,7 +433,7 @@ pub struct Accessibility {
     /// The maximum zoom level in the Zoom options.
     #[serde(rename = "closeViewNearPoint")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub close_view_near_point: Option<serde_yaml::Value>,
+    pub close_view_near_point: Option<i64>,
     /// If 'true', enables 'Use scroll gesture' in the Zoom options.
     #[serde(rename = "closeViewScrollWheelToggle")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -448,7 +448,7 @@ pub struct Accessibility {
     pub close_view_smooth_images: Option<bool>,
     /// The contrast value in the Display options.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub contrast: Option<serde_yaml::Value>,
+    pub contrast: Option<f64>,
     /// If 'true', enables 'Flash the screen' in the Audio options.
     #[serde(rename = "flashScreen")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -464,7 +464,7 @@ pub struct Accessibility {
     /// The size of the cursor.
     #[serde(rename = "mouseDriverCursorSize")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mouse_driver_cursor_size: Option<serde_yaml::Value>,
+    pub mouse_driver_cursor_size: Option<i64>,
     /// If 'true', ignores the built-in trackpad.
     #[serde(rename = "mouseDriverIgnoreTrackpad")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -472,11 +472,11 @@ pub struct Accessibility {
     /// The initial delay before moving the mouse with Mouse Keys.
     #[serde(rename = "mouseDriverInitialDelay")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mouse_driver_initial_delay: Option<serde_yaml::Value>,
+    pub mouse_driver_initial_delay: Option<i64>,
     /// The maximum speed for the cursor when using Mouse Keys.
     #[serde(rename = "mouseDriverMaxSpeed")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mouse_driver_max_speed: Option<serde_yaml::Value>,
+    pub mouse_driver_max_speed: Option<i64>,
     /// If 'true', enables 'Slow Keys' in the Keyboard options.
     #[serde(rename = "slowKey")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -488,7 +488,7 @@ pub struct Accessibility {
     /// The acceptance delay, in milliseconds, for Slow Keys.
     #[serde(rename = "slowKeyDelay")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub slow_key_delay: Option<serde_yaml::Value>,
+    pub slow_key_delay: Option<i64>,
     /// If 'true', plays stereo audio as mono.
     #[serde(rename = "stereoAsMono")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -608,11 +608,11 @@ pub struct Screensaver {
     /// The number of seconds to delay before the password will be required to unlock or stop the screen saver (the grace period). A value of '2147483647' (for example, '0x7FFFFFFF') disables this requirement. To use this option, you must set 'askForPassword' to 'true'. Available in macOS 10.13 and later.
     #[serde(rename = "askForPasswordDelay")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ask_for_password_delay: Option<serde_yaml::Value>,
+    pub ask_for_password_delay: Option<i64>,
     /// The number of seconds of inactivity before the screen saver activates (0 = Never activate).
     #[serde(rename = "loginWindowIdleTime")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub login_window_idle_time: Option<serde_yaml::Value>,
+    pub login_window_idle_time: Option<i64>,
     /// The full path to the screen-saver module to use.
     #[serde(rename = "loginWindowModulePath")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -827,7 +827,7 @@ pub struct DirectoryService {
     /// The number of days before requiring a change of the computer trust account password. Set to '0' to disable the feature.
     #[serde(rename = "ADTrustChangePassIntervalDays")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ad_trust_change_pass_interval_days: Option<serde_yaml::Value>,
+    pub ad_trust_change_pass_interval_days: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -887,7 +887,7 @@ pub struct AimAccount {
     /// The connection port for the server.
     #[serde(rename = "AIMPort")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub aim_port: Option<serde_yaml::Value>,
+    pub aim_port: Option<i64>,
     /// The authentication method for the account.
     #[serde(rename = "AIMAuthentication")]
     pub aim_authentication: String,
@@ -897,7 +897,7 @@ pub struct AimAccount {
 pub struct Dock {
     /// The tile size. Values must be in the range from 16 to 128.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tilesize: Option<serde_yaml::Value>,
+    pub tilesize: Option<i64>,
     /// If 'true', locks the size slider.
     #[serde(rename = "size-immutable")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -911,7 +911,7 @@ pub struct Dock {
     pub magnify_immutable: Option<bool>,
     /// The size of the largest magnification.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub largesize: Option<serde_yaml::Value>,
+    pub largesize: Option<i64>,
     /// If 'true', locks the magnification slider.
     #[serde(rename = "magsize-immutable")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1142,7 +1142,7 @@ pub struct CalDAV {
     /// The server's port.
     #[serde(rename = "CalDAVPort")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cal_dav_port: Option<serde_yaml::Value>,
+    pub cal_dav_port: Option<i64>,
     /// The VPNUUID of the per-app VPN the account uses for network communication. Available in iOS 14 and later.
     #[serde(rename = "VPNUUID")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1237,7 +1237,7 @@ pub struct ScreensaverUser {
     /// The number of seconds of inactivity before the screen saver activates ('0' = Never activate).
     #[serde(rename = "idleTime")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub idle_time: Option<serde_yaml::Value>,
+    pub idle_time: Option<i64>,
 }
 
 /// Software Update Managed Settings
@@ -1324,7 +1324,7 @@ pub struct ContentCaching {
     /// The maximum number of bytes of disk space to use for the content cache. Set to '0' for unlimited disk space.
     #[serde(rename = "CacheLimit")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cache_limit: Option<serde_yaml::Value>,
+    pub cache_limit: Option<i64>,
     /// The path to the directory used to store cached content. Changing this setting manually doesn't automatically move cached content from the old location to the new one. To move content automatically, use the Sharing preference's Content Caching pane. The value must be (or end with) '/Library/Application Support/Apple/AssetCache/Data'.
     /// The system creates a directory and its intermediates for the given data path if it doesn't already exist. The directory is owned by '_assetcache:_assetcache' and has mode 0750. Its immediate parent directory ('.../Library/Application Support/Apple/AssetCache') is owned by '_assetcache:_assetcache' and has mode '0755'.
     #[serde(rename = "DataPath")]
@@ -1391,7 +1391,7 @@ pub struct ContentCaching {
     /// The TCP port number on which the content cache accepts requests for uploads or downloads. Set to '0' to pick a random, available port.
     #[serde(rename = "Port")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub port: Option<serde_yaml::Value>,
+    pub port: Option<i64>,
     /// An array of dictionaries describing a range of public IP addresses that the cloud servers should use for matching clients to content caches.
     #[serde(rename = "PublicRanges")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1436,7 +1436,7 @@ pub struct AcmeCertificate {
     pub client_identifier: String,
     /// The valid values for 'KeySize' depend on the values of 'KeyType' and 'HardwareBound'. See those keys for specific requirements.
     #[serde(rename = "KeySize")]
-    pub key_size: serde_yaml::Value,
+    pub key_size: i64,
     /// The type of key pair to generate. Allowed values:
     /// 
     /// * 'RSA': Specifies an RSA key pair. RSA key pairs need to have a 'KeySize' that's a multiple of 8 in the range of 1024 through 4096 (inclusive), and 'HardwareBound' needs to be 'false'.
@@ -1466,7 +1466,7 @@ pub struct AcmeCertificate {
     /// The device requests this key for the certificate that the ACME server issues. The ACME server may override or ignore this field in the certificate it issues.
     #[serde(rename = "UsageFlags")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub usage_flags: Option<serde_yaml::Value>,
+    pub usage_flags: Option<i64>,
     /// The value is an array of strings. Each string is an OID in dotted notation. For instance, '[”1.3.6.1.5.5.7.3.2”, “1.3.6.1.5.5.7.3.4”]' indicates client authentication and email protection.
     /// The device requests this field for the certificate that the ACME server issues. The ACME server may override or ignore this field in the certificate it issues.
     #[serde(rename = "ExtendedKeyUsage")]
@@ -1571,7 +1571,7 @@ pub struct CommonPayloadKey {
     pub payload_type: String,
     /// The version of this specific payload.
     #[serde(rename = "PayloadVersion")]
-    pub payload_version: serde_yaml::Value,
+    pub payload_version: i64,
     /// The human-readable description of this payload. This description appears on the Detail screen.
     #[serde(rename = "PayloadDescription")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1761,7 +1761,7 @@ pub struct FdeFileVault {
     /// The maximum number of times users can bypass enabling FileVault before the system requires the user to enable it to log in. If the value is '0', the system requires the user to enable FileVault the next time they attempt to log in. Set this key to '–1' to disable this feature.
     #[serde(rename = "DeferForceAtUserLoginMaxBypassAttempts")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub defer_force_at_user_login_max_bypass_attempts: Option<serde_yaml::Value>,
+    pub defer_force_at_user_login_max_bypass_attempts: Option<i64>,
     /// If 'true', the system prevents requests to enable FileVault at user logout time.
     #[serde(rename = "DeferDontAskAtUserLogout")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1850,7 +1850,7 @@ pub struct Mdm {
     /// When updating the payload, the addition of any access right is an error, and the update rejected.
     #[serde(rename = "AccessRights")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub access_rights: Option<serde_yaml::Value>,
+    pub access_rights: Option<i64>,
     /// If 'true', the device uses the development APNS servers. Otherwise, the device uses the production servers.
     /// Set to 'false' if your Apple Push Notification Service certificate was issued by the Apple Push Certificate Portal ('https://identity.apple.com/pushcert'). That portal only issues certificates for the production push environment.
     #[serde(rename = "UseDevelopmentAPNS")]
@@ -1906,7 +1906,7 @@ pub struct Mdm {
     /// Available in iOS 15.1 and later.
     #[serde(rename = "RequiredAppIDForMDM")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub required_app_id_for_mdm: Option<serde_yaml::Value>,
+    pub required_app_id_for_mdm: Option<i64>,
     /// If 'true', the system warns the user that they need to reboot into RecoveryOS and allow the MDM to use the Bootstrap Token for authentication for certain sensitive operations such as enabling kernel extensions or installing some types of software updates. If the MDM doesn't need to perform these operations, it can leave this key set to 'false', and the user isn't notified.
     /// The SettingsCommand.Command.Settings.MDMOptions.MDMOptions command overrides this default value.
     /// This setting only applies to devices that have 'BootstrapTokenRequiredForSoftwareUpdate' or 'BootstrapTokenRequiredForKernelExtensionApproval' set to 'true' in their SecurityInfoResponse.SecurityInfo.
@@ -2029,7 +2029,7 @@ pub struct ExchangeActiveSync {
     /// For no limit, use the value '0'.
     #[serde(rename = "MailNumberOfPastDaysToSync")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mail_number_of_past_days_to_sync: Option<serde_yaml::Value>,
+    pub mail_number_of_past_days_to_sync: Option<i64>,
     /// The value of the 'X-Apple-Config-Magic' header in each EAS HTTP request.
     #[serde(rename = "HeaderMagic")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2296,7 +2296,7 @@ pub struct CardDAV {
     /// The server's port.
     #[serde(rename = "CardDAVPort")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub card_dav_port: Option<serde_yaml::Value>,
+    pub card_dav_port: Option<i64>,
     /// An array of communication service rules for this account.
     #[serde(rename = "CommunicationServiceRules")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2355,26 +2355,26 @@ pub struct Passcode {
     /// The number of allowed failed attempts to enter the passcode at the device's lock screen. After four failed attempts, the system imposes a time delay before a passcode can be entered again. The delay increases with each attempt. In macOS, set 'minutesUntilFailedLoginReset' to define a delay before the next passcode can be entered. When this number is exceeded in macOS, the system locks the device; in iOS, the system wipes the device.
     #[serde(rename = "maxFailedAttempts")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_failed_attempts: Option<serde_yaml::Value>,
+    pub max_failed_attempts: Option<i64>,
     /// The maximum number of minutes for which the device can be idle without the user unlocking it, before the system locks it. When this limit is reached, the system locks the device and the passcode is required to unlock it. The user can edit this setting, but the value can't exceed the 'maxInactivity' value.
     /// In macOS, the system translates this inactivity value to screen-saver settings. The maximum value for macOS is '60'.
     /// Setting this key removes the 'never' option in the Settings UI on user enrolled devices.
     #[serde(rename = "maxInactivity")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_inactivity: Option<serde_yaml::Value>,
+    pub max_inactivity: Option<i64>,
     /// The number of days for which the passcode can remain unchanged. After this number of days, the system forces the user to change the passcode before it unlocks the device.
     #[serde(rename = "maxPINAgeInDays")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_pin_age_in_days: Option<serde_yaml::Value>,
+    pub max_pin_age_in_days: Option<i64>,
     /// The minimum number of complex characters that a passcode needs to contain. A complex character is a character other than a number or a letter, such as '&', '%', '$', and '#'.
     /// The system ignores this property for User Enrollments.
     #[serde(rename = "minComplexChars")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub min_complex_chars: Option<serde_yaml::Value>,
+    pub min_complex_chars: Option<i64>,
     /// The minimum overall length of the passcode. This value is independent of the value for 'minComplexChars'.
     #[serde(rename = "minLength")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub min_length: Option<serde_yaml::Value>,
+    pub min_length: Option<i64>,
     /// If 'true', the system requires alphabetic characters instead of only numeric characters.
     #[serde(rename = "requireAlphanumeric")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2382,15 +2382,15 @@ pub struct Passcode {
     /// This value defines N, where the new passcode must be unique within the last N entries in the passcode history.
     #[serde(rename = "pinHistory")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pin_history: Option<serde_yaml::Value>,
+    pub pin_history: Option<i64>,
     /// The maximum grace period, in minutes, to unlock the phone without entering a passcode. The default is '0', which is no grace period and requires a passcode immediately. In macOS, the system translates this grace period value to screen-saver settings.
     #[serde(rename = "maxGracePeriod")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_grace_period: Option<serde_yaml::Value>,
+    pub max_grace_period: Option<i64>,
     /// The number of minutes before the system resets the login after the maximum number of unsuccessful login attempts is reached. This key requires setting 'maxFailedAttempts'. Available in macOS 10.10 and later.
     #[serde(rename = "minutesUntilFailedLoginReset")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub minutes_until_failed_login_reset: Option<serde_yaml::Value>,
+    pub minutes_until_failed_login_reset: Option<i64>,
     /// If 'true', the system causes a password reset to occur the next time the user tries to authenticate. If this key is set in a device profile, the setting takes effect for all users, and admin authentications may fail until the admin user password is also reset. Available in macOS 10.13 and later.
     #[serde(rename = "changeAtNextAuth")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2505,7 +2505,7 @@ pub struct Mail {
     /// The incoming mail server port number. If not set, the system uses the default port for a given protocol.
     #[serde(rename = "IncomingMailServerPortNumber")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub incoming_mail_server_port_number: Option<serde_yaml::Value>,
+    pub incoming_mail_server_port_number: Option<i64>,
     /// If 'true', the system enables SSL for authentication on the incoming mail server.
     #[serde(rename = "IncomingMailServerUseSSL")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2536,7 +2536,7 @@ pub struct Mail {
     /// The outgoing mail server port number. If not set, the system uses ports 25, 587, and 465, in that order.
     #[serde(rename = "OutgoingMailServerPortNumber")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub outgoing_mail_server_port_number: Option<serde_yaml::Value>,
+    pub outgoing_mail_server_port_number: Option<i64>,
     /// If 'true', the system enables SSL authentication on the outgoing mail server.
     #[serde(rename = "OutgoingMailServerUseSSL")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2745,7 +2745,7 @@ pub struct ExchangeWebService {
     /// The server port number.
     #[serde(rename = "Port")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub port: Option<serde_yaml::Value>,
+    pub port: Option<i64>,
     /// The external server address.
     #[serde(rename = "ExternalHost")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2761,7 +2761,7 @@ pub struct ExchangeWebService {
     /// The external server port number.
     #[serde(rename = "ExternalPort")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_port: Option<serde_yaml::Value>,
+    pub external_port: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -3398,23 +3398,23 @@ pub struct Restriction {
     /// The value, in seconds, after which the fingerprint unlock requires a password to authenticate. The default value is 48 hours. Available in macOS 12 and later.
     #[serde(rename = "enforcedFingerprintTimeout")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enforced_fingerprint_timeout: Option<serde_yaml::Value>,
+    pub enforced_fingerprint_timeout: Option<i64>,
     /// How many days to delay a software update on the device. With this restriction in place, the user doesn't see a software update until the specified number of days after the software update release date. The restrictions 'forceDelayedAppSoftwareUpdates' and 'forceDelayedSoftwareUpdates' use this value. Available in iOS 11.3 and later, macOS 10.13.4 and later, and tvOS 12.2 and later. Requires a supervised device in iOS and tvOS.
     #[serde(rename = "enforcedSoftwareUpdateDelay")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enforced_software_update_delay: Option<serde_yaml::Value>,
+    pub enforced_software_update_delay: Option<i64>,
     /// This restriction allows the administrator to set how many days to delay a major software upgrade on the device. When this restriction is in place, the user sees a software upgrade only after the specified delay after the release of the software upgrade. This value controls the delay for 'forceDelayedMajorSoftwareUpdates'. Available in macOS 11.3 and later.
     #[serde(rename = "enforcedSoftwareUpdateMajorOSDeferredInstallDelay")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enforced_software_update_major_os_deferred_install_delay: Option<serde_yaml::Value>,
+    pub enforced_software_update_major_os_deferred_install_delay: Option<i64>,
     /// This restriction allows the administrator to set how many days to delay a minor OS software update on the device. When this restriction is in place, the user see a software update only after the specified delay after the release of the software update. This value controls the delay for 'forceDelayedSoftwareUpdates'. Available in macOS 11.3 and later.
     #[serde(rename = "enforcedSoftwareUpdateMinorOSDeferredInstallDelay")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enforced_software_update_minor_os_deferred_install_delay: Option<serde_yaml::Value>,
+    pub enforced_software_update_minor_os_deferred_install_delay: Option<i64>,
     /// This restriction allows the administrator to set how many days to delay an app software update on the device. When this restriction is in place, the user sees a non-OS software update only after the specified delay after the release of the software. This value controls the delay for 'forceDelayedAppSoftwareUpdates'. Available in macOS 11.3 and later.
     #[serde(rename = "enforcedSoftwareUpdateNonOSDeferredInstallDelay")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enforced_software_update_non_os_deferred_install_delay: Option<serde_yaml::Value>,
+    pub enforced_software_update_non_os_deferred_install_delay: Option<i64>,
     /// If 'true', the system considers AirDrop to be an unmanaged drop target. Available in iOS 9 and later. Also available for user enrollment.
     #[serde(rename = "forceAirDropUnmanaged")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3527,7 +3527,7 @@ pub struct Restriction {
     /// * '0': None
     #[serde(rename = "ratingApps")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rating_apps: Option<serde_yaml::Value>,
+    pub rating_apps: Option<i64>,
     /// The maximum level of movie content allowed on the device. Available in iOS 4.0 and later, macOS 15 and later, and tvOS 11.3 and later.  Support for this restriction on unsupervised devices is deprecated.
     /// Possible values, with the US description of the rating level:
     /// 
@@ -3540,7 +3540,7 @@ pub struct Restriction {
     /// * '0': None
     #[serde(rename = "ratingMovies")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rating_movies: Option<serde_yaml::Value>,
+    pub rating_movies: Option<i64>,
     /// The two-letter key that profile tools use to display the proper ratings for the given region. The client doesn't recognize or report this data. Available in iOS 4.0 and later, macOS 10.7 and later, and tvOS 9 and later.
     #[serde(rename = "ratingRegion")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3558,7 +3558,7 @@ pub struct Restriction {
     /// * '0': None
     #[serde(rename = "ratingTVShows")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rating_tv_shows: Option<serde_yaml::Value>,
+    pub rating_tv_shows: Option<i64>,
     /// If 'true', copy and paste functionality is limited by the 'allowOpenFromManagedToUnmanaged' and 'allowOpenFromUnmanagedToManaged' restrictions. Also available for user enrollment.
     #[serde(rename = "requireManagedPasteboard")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3570,7 +3570,7 @@ pub struct Restriction {
     /// * '2': Enables Prevent Cross-Site Tracking but doesn't enable Block All Cookies. The user can toggle either setting.
     #[serde(rename = "safariAcceptCookies")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub safari_accept_cookies: Option<serde_yaml::Value>,
+    pub safari_accept_cookies: Option<f64>,
     /// If 'false', the system disables Safari AutoFill for passwords, contact info, and credit cards and also prevents using the Keychain for AutoFill. As of iOS 13, requires a supervised device. Available in iOS 4 and later, and macOS 10.13 and later.
     /// The system still allows third-party password managers, and apps can use AutoFill.
     #[serde(rename = "safariAllowAutoFill")]
@@ -3833,7 +3833,7 @@ pub struct TopLevel {
     pub payload_type: String,
     /// The version number of the profile format, which needs to be '1'. This number represents the version of the configuration profile as a whole, not of the individual profiles within it.
     #[serde(rename = "PayloadVersion")]
-    pub payload_version: serde_yaml::Value,
+    pub payload_version: i64,
     /// Set to 'true' if the profile is encrypted.
     #[serde(rename = "IsEncrypted")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3880,7 +3880,7 @@ pub struct TopLevel {
     /// The number of seconds until the profile is automatically removed. If the 'RemovalDate' key is present, the system uses whichever field yields the earliest date.
     #[serde(rename = "DurationUntilRemoval")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub duration_until_removal: Option<serde_yaml::Value>,
+    pub duration_until_removal: Option<f64>,
     /// The date when a profile is no longer valid and the system presents an update button to the user.
     #[serde(rename = "PayloadExpirationDate")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3898,7 +3898,7 @@ pub struct TopLevel {
     /// * '6': Vision Pro
     #[serde(rename = "TargetDeviceType")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_device_type: Option<serde_yaml::Value>,
+    pub target_device_type: Option<i64>,
     /// A dictionary that includes:
     /// * A key that contains the IETF BCP 47 identifier for a language, such as en or jp
     /// * A value that contains the agreement localized to language specified by the key
@@ -4044,7 +4044,7 @@ pub struct WiFi {
     /// The proxy server's port number.
     #[serde(rename = "ProxyServerPort")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub proxy_server_port: Option<serde_yaml::Value>,
+    pub proxy_server_port: Option<i64>,
     /// The user name used to authenticate to the proxy server.
     #[serde(rename = "ProxyUsername")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4109,11 +4109,11 @@ pub struct ManagedMenuExtra {
     /// The number of seconds to delay after login before adding or removing menu extras. If the delay is too short, the menu extras don't appear, or disappear from the menu bar.
     #[serde(rename = "delaySeconds")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub delay_seconds: Option<serde_yaml::Value>,
+    pub delay_seconds: Option<f64>,
     /// The maximum wait, in seconds, for all menu extras to be added or removed.
     #[serde(rename = "maxWaitSeconds")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_wait_seconds: Option<serde_yaml::Value>,
+    pub max_wait_seconds: Option<f64>,
     /// If 'true', enables the AirPort menu extra.
     #[serde(rename = "AirPort.menu")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4253,7 +4253,7 @@ pub struct MobileAccount {
     /// The minimum number of seconds a mobile account can exist before the system makes an automatic attempt to remove the mobile account. Set to '0' to attempt removing it at the next login or logout. Set to '-1' to never attempt removing the mobile account.
     #[serde(rename = "cachedaccounts.expiry.delete.disusedSeconds")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cachedaccounts_expiry_delete_disused_seconds: Option<serde_yaml::Value>,
+    pub cachedaccounts_expiry_delete_disused_seconds: Option<i64>,
     /// If 'true', the system bypasses the secure token authorization dialog. This dialog only appears on APFS volumes.
     #[serde(rename = "cachedaccounts.askForSecureTokenAuthBypass")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4284,7 +4284,7 @@ pub struct ActiveDirectoryCertificate {
     /// The number of days in advance of certificate expiration that the notification center notifies the user.
     #[serde(rename = "CertificateRenewalTimeInterval")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub certificate_renewal_time_interval: Option<serde_yaml::Value>,
+    pub certificate_renewal_time_interval: Option<i64>,
     /// The name of the certificate authority (CA), which is determined from the common name (CN) of the Active Directory entry. Available in macOS 10.8 and later. Valid values:
     /// * CN=<your CA Name>
     /// * CN='Certification Authorities'
@@ -4314,7 +4314,7 @@ pub struct ActiveDirectoryCertificate {
     /// The RSA key size for the certificate signing request (CSR). Available in macOS 10.11 and later.
     #[serde(rename = "Keysize")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub keysize: Option<serde_yaml::Value>,
+    pub keysize: Option<i64>,
     /// If 'true', the certificate obtained with this payload attempts auto-renewal. Auto-renewal can only be used with device Active Directory certificate payloads. Available in macOS 10.13.4 and later.
     #[serde(rename = "EnableAutoRenewal")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4350,7 +4350,7 @@ pub struct SystemPolicyRule {
     /// The rule's priority.
     #[serde(rename = "Priority")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub priority: Option<serde_yaml::Value>,
+    pub priority: Option<f64>,
     /// The expiration date for rules being processed.
     #[serde(rename = "Expiration")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -4657,7 +4657,7 @@ pub struct TimeMachine {
     /// The backup size limit, in megabytes. Set to 0 for unlimited.
     #[serde(rename = "BackupSizeMB")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub backup_size_mb: Option<serde_yaml::Value>,
+    pub backup_size_mb: Option<i64>,
     /// If 'true', skips system files and folders by default.
     #[serde(rename = "BackupSkipSys")]
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -204,7 +204,7 @@ pub struct EnrollmentSSODocument {
     /// The iTunes Store ID of the app to download prior to enrollment, to support Enrollment SSO during enrollment. Using developer mode ignores this key.
     #[serde(rename = "iTunesStoreID")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub i_tunes_store_id: Option<serde_yaml::Value>,
+    pub i_tunes_store_id: Option<i64>,
     /// An array of App IDs that specify apps that Enrollment SSO developer mode can use. In Enrollment SSO documents delivered through the developer endpoint, this key must be present and contain at least one value. In Enrollment SSO documents delivered by the standard Enrollment SSO endpoint, this key must not be present.
     #[serde(rename = "AppIDs")]
     #[serde(default, skip_serializing_if = "Option::is_none")]

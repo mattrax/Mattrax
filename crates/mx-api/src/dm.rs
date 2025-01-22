@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post, put},
     Router,
 };
-use mx_apple::{DeviceAttributes, EnrollMobileConfig, EnrollMobileConfigPayloadContent};
+use apple_dm::{enroll::{EnrollMobileConfig, EnrollMobileConfigPayloadContent}, ota::DeviceAttributes, mdm::profiles::CommonPayloadKey};
 use mx_crypto::{cms::Pkcs7B, x509::Certificate};
 use serde::Deserialize;
 use tracing::warn;
@@ -50,18 +50,20 @@ pub(crate) fn mount() -> Router<Core> {
                 let challenge = "83084c31-55c7-495b-9a6b-aec2094d2769".to_string();
 
                 let config = EnrollMobileConfig {
-                    payload_description: format!(
-                        "Automatic configuration of your {tenant_name} device."
-                    ),
-                    payload_display_name: tenant_name.clone(),
-                    // TODO: I think this should indicate the teanant
-                    payload_identifier: "00000000-0000-0000-A000-4A414D460009".to_string(),
-                    payload_organization: tenant_name.clone(),
+                    common: CommonPayloadKey {
+                        payload_description: Some(format!(
+                            "Automatic configuration of your {tenant_name} device."
+                        )),
+                        payload_display_name: Some(tenant_name.clone()),
+                        // TODO: I think this should indicate the teanant
+                        payload_identifier: "00000000-0000-0000-A000-4A414D460009".to_string(),
+                        payload_organization: Some(tenant_name.clone()),
+                        payload_type: "Profile Service".into(),
+                        payload_uuid: Default::default(),
+                        payload_version: 1,
+                    },
                     // payload_removal_disallowed: false, // TODO
                     // payload_scope: "System".to_string(), // TODO
-                    payload_type: "Profile Service".into(),
-                    payload_uuid: Default::default(),
-                    payload_version: 1,
                     payload_content: EnrollMobileConfigPayloadContent {
                         challenge: "73ede825-57f7-4cbc-bd08-97fb903e4bef".into(), // TODO
                         // TODO: Work this out properly // TODO: I think this might be the SCEP endpoint?
@@ -321,7 +323,7 @@ pub(crate) fn mount() -> Router<Core> {
 //                   ))
                 };
 
-                let p7 = Pkcs7B::parse_and_verify_pkcs7(&body, &[&*mx_apple::APPLE_IPHONE_DEVICE_CA])
+                let p7 = Pkcs7B::parse_and_verify_pkcs7(&body, &[&*apple_dm::APPLE_IPHONE_DEVICE_CA])
                     .map_err(|err| {
                         warn!("Error verifiying the PKCS7 request: {err:?}");
 

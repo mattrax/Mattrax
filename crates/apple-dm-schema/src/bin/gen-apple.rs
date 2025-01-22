@@ -187,8 +187,8 @@ pub fn export(types: &mut TypeCollection, schema: apple_dm_schema::Schema) -> (a
     for key in schema.payloadkeys.clone().into_iter().flatten() {
         let mut ty = match key.key_type {
             PayloadKeyType::String => DataType::Primitive(PrimitiveType::String),
-            // PayloadKeyType::Integer => todo!(),
-            // PayloadKeyType::Real => todo!(),
+            PayloadKeyType::Integer => DataType::Primitive(PrimitiveType::i64), // TODO: Which Rust type is correct?
+            PayloadKeyType::Real => DataType::Primitive(PrimitiveType::f64), // TODO: Which Rust type is correct?
             PayloadKeyType::Boolean => DataType::Primitive(PrimitiveType::bool),
             // PayloadKeyType::Date => todo!(),
             // PayloadKeyType::Data => todo!(),

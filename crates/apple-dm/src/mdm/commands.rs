@@ -63,7 +63,7 @@ pub struct InstallEnterpriseApplicationCommand {
     /// Available in macOS 11 and later.
     #[serde(rename = "ManagementFlags")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub management_flags: Option<serde_yaml::Value>,
+    pub management_flags: Option<i64>,
     /// A dictionary that contains the initial configuration of the app, if you choose to provide it. Available in macOS 11 and later.
     #[serde(rename = "Configuration")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -352,7 +352,7 @@ pub struct RequestMirroringCommand {
     /// The number of seconds, from '10' to '300', for the device to spend searching for the destination. The default value is '30'.
     #[serde(rename = "ScanTime")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub scan_time: Option<serde_yaml::Value>,
+    pub scan_time: Option<i64>,
     /// The screen-sharing password that the device uses when connecting to the destination.
     #[serde(rename = "Password")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -532,7 +532,7 @@ pub struct InstallApplicationCommand {
     /// The app's iTunes Store identifier.
     #[serde(rename = "iTunesStoreID")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub i_tunes_store_id: Option<serde_yaml::Value>,
+    pub i_tunes_store_id: Option<i64>,
     /// The app's bundle identifier.
     /// For a watchOS app, the identifier needs to be the watch's bundle identifier, which differs from the main bundle identifier for the iPhone to which the watch is paired. Obtain the watch's bundle identifier for an app with a watch bundle, in the 'watchBundleId' key that's part of the Content Metadata query. For more information on this query, see Getting App and Book Information (Legacy).
     #[serde(rename = "Identifier")]
@@ -555,7 +555,7 @@ pub struct InstallApplicationCommand {
     /// Available in iOS 5 and later, macOS 11 and later, and tvOS 10.2 and later.
     #[serde(rename = "ManagementFlags")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub management_flags: Option<serde_yaml::Value>,
+    pub management_flags: Option<i64>,
     /// A dictionary that contains the initial configuration of the app, if you choose to provide it. Available in iOS 7 and later, macOS 11 and later, and tvOS 10.2 and later.
     #[serde(rename = "Configuration")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -619,7 +619,7 @@ pub struct InstallMediaCommand {
     /// The book's iTunes Store identifier.
     #[serde(rename = "iTunesStoreID")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub i_tunes_store_id: Option<serde_yaml::Value>,
+    pub i_tunes_store_id: Option<i64>,
     /// The URL to retrieve the book. This value is available in iOS 8 and later.
     #[serde(rename = "MediaURL")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
