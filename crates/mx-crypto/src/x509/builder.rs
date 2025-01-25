@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use bcder::{OctetString, Oid};
+use bcder::OctetString;
 use bytes::Bytes;
 use openssl::{hash::MessageDigest, pkey::PKey, x509::X509Builder};
 use x509_certificate::{rfc5280, InMemorySigningKeyPair, X509CertificateBuilder};

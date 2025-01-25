@@ -1,3 +1,12 @@
+use apple_dm::{
+    enroll::{EnrollMobileConfig, EnrollMobileConfigPayloadContent},
+    mdm::{
+        checkin::CheckinCommand,
+        profiles::{CommonPayloadKey, MdmServerCapabilityServerCapabilitiesItem},
+    },
+    ota::DeviceAttributes,
+    FlatProfile, Profile,
+};
 use axum::{
     body::Bytes,
     extract::{Query, State},
@@ -6,7 +15,6 @@ use axum::{
     routing::{get, post, put},
     Router,
 };
-use apple_dm::{enroll::{EnrollMobileConfig, EnrollMobileConfigPayloadContent}, ota::DeviceAttributes, mdm::profiles::CommonPayloadKey};
 use mx_crypto::{cms::Pkcs7B, x509::Certificate};
 use serde::Deserialize;
 use tracing::warn;
@@ -22,7 +30,43 @@ mod apple;
 pub mod device_ca;
 mod windows;
 
+#[derive(serde::Serialize)]
+pub struct Demo {
+    a: Option<i32>,
+}
+
+#[derive(serde::Serialize)]
+pub struct Test {
+    #[serde(flatten)]
+    test: Demo,
+    // #[serde(rename = "Test")]
+    // #[serde(default, skip_serializing_if = "Option::is_none")]
+    // test: Option<i32>,
+}
+
 pub(crate) fn mount() -> Router<Core> {
+    let mut s = vec![];
+    plist::to_writer_xml(
+        &mut s,
+        &Test {
+            test: Demo { a: None },
+        },
+    )
+    .unwrap();
+    println!("{:?}", String::from_utf8_lossy(&s));
+
+    let mut s = vec![];
+    plist::to_writer_xml(
+        &mut s,
+        &Test {
+            test: Demo { a: Some(32) },
+        },
+    )
+    .unwrap();
+    println!("{:?}", String::from_utf8_lossy(&s));
+
+    // CheckinCommand::from_bytes(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n\t<key>BuildVersion</key>\n\t<string>24C101</string>\n\t<key>Challenge</key>\n\t<data>\n\tYXBwbGU=\n\t</data>\n\t<key>DeviceName</key>\n\t<string>Oscar\xe2\x80\x99s MacBook Pro</string>\n\t<key>MessageType</key>\n\t<string>Authenticate</string>\n\t<key>Model</key>\n\t<string>MacBookPro18,1</string>\n\t<key>ModelName</key>\n\t<string>MacBook Pro</string>\n\t<key>OSVersion</key>\n\t<string>15.2</string>\n\t<key>ProductName</key>\n\t<string>MacBookPro18,1</string>\n\t<key>SerialNumber</key>\n\t<string>NPV7D67J9Y</string>\n\t<key>Topic</key>\n\t<string>com.apple.mgmt.External.1f177712-f5de-4474-8ea6-3c87a33fa441</string>\n\t<key>UDID</key>\n\t<string>43704D49-87C6-5B75-8631-A7367A5FDA1B</string>\n</dict>\n</plist>\n").unwrap();
+
     Router::new()
         .route("/mdm", get(|| async { Html(MDM_HTML) }))
         .route("/windows/enroll", get(|| async { todo!() }))
@@ -99,37 +143,6 @@ pub(crate) fn mount() -> Router<Core> {
         .route(
             "/apple/connect",
             post(|State(core): State<Core>, req: Parts, body: Bytes| async move {
-                // println!("GOT {body:?}\n\n\n");
-
-                // println!("{:?}", req.headers);
-                // std::fs::write("./body", &body).unwrap();
-
-            // static TODO: AtomicBool = AtomicBool::new(false);
-
-            // if TODO.swap(true, std::sync::atomic::Ordering::SeqCst) {
-            //     // println!("PROXY");
-            //     // let resp = core.client
-            //     //     .post("https://mdm-na1.jamfcloud.com/mdm/enroll/fyc746/ota")
-            //     //     .headers(req.headers.clone())
-            //     //     .body(body)
-            //     //     .send()
-            //     //     .await
-            //     //     .unwrap();
-
-            //     // println!("{:?}", resp);
-
-            //     // let headers = resp.headers().clone();
-            //     // let body = resp.text().await.unwrap();
-            //     // println!("{:?} {:?}", headers, body);
-
-            //     // return (headers, body).into_response();
-            // } else {
-            //     println!("DONT PROXY");
-            // }
-
-                // todo.text().await.unwrap();
-                // println!("{todo:?}");
-
                 (req.headers.get("Content-Type").map(|v| v.as_bytes())
                     == Some(b"application/pkcs7-signature"))
                 .then_some(())
@@ -141,98 +154,190 @@ pub(crate) fn mount() -> Router<Core> {
                 let (cert, _) = core.device_ca.active_signer(&core).unwrap();
                 let cert = Certificate::from_der(&cert.encode_der().unwrap()).unwrap();
                 if let Ok(p7) = Pkcs7B::parse_and_verify_pkcs7(&body, &[&cert]) {
-                    println!("THE DEVICE CERT IS PRESENT");
+                    let tenant = "a_gRA3NNTIzt"; // TODO: Get from authentication
+
+                    let tenant = sqlx::query!("SELECT id, name, apns_topic FROM tenant WHERE id = ?", tenant)
+                        .fetch_one(&core.db)
+                        .await
+                        .unwrap(); // TODO: Error handling
+
+                    let Some(topic) = tenant.apns_topic else {
+                        // In practice this isn't possible as the API won't hand out an enrollment profile.
+                        todo!(); // TODO: Error handling
+                    };
+
+                    // TODO: PayloadRemovalDisallowed on this???
+                    let profile = Profile {
+                        common: CommonPayloadKey {
+                            payload_identifier: "Oscars-MacBook-Pro.85DC3617-10B4-4FFB-BFDE-DADD23E03EE5".into(),
+                            payload_uuid: "85DC3617-10B4-4FFB-BFDE-DADD23E03EE5".into(),
+                            payload_type: "Configuration".into(),
+                            payload_version: 1,
+                            payload_display_name: Some("Untitled".into()),
+                            payload_description: None,
+                            payload_organization: None,
+                        },
+                        content: (
+                            FlatProfile {
+                                common: CommonPayloadKey {
+                                    payload_identifier: "com.apple.mdm.03333ECE-42AB-4D19-B1A3-E4DA0CE19B17".into(),
+                                    payload_uuid: "03333ECE-42AB-4D19-B1A3-E4DA0CE19B17".into(),
+                                    payload_type: "com.apple.mdm".into(),
+                                    payload_version: 1,
+                                    payload_display_name: Some("MDM".into()),
+                                    payload_description: None,
+                                    payload_organization: None,
+                                },
+                                content: apple_dm::mdm::profiles::Mdm {
+                                    // TODO: Customise all of this
+                                    identity_certificate_uuid: "2CCAF8CF-47C1-4E9E-B79F-68AB9A6FE4D8".into(),
+                                    topic,
+                                    server_url: "http://localhost:9000/apple/checkin".into(),
+                                    check_in_url: Some("http://localhost:9000/apple/checkin".into()),
+                                    sign_message: Some(true),
+                                    access_rights: Some(8191),
+                                    use_development_apns: None,
+                                    managed_apple_id: None,
+                                    assigned_managed_apple_id: None,
+                                    enrollment_mode: None,
+                                    server_url_pinning_certificate_uui_ds: None,
+                                    check_in_url_pinning_certificate_uui_ds: None,
+                                    pinning_revocation_check_required: None,
+                                    server_capabilities: Some(vec![
+                                        MdmServerCapabilityServerCapabilitiesItem::ComAppleMdmBootstraptoken,
+                                        MdmServerCapabilityServerCapabilitiesItem::ComAppleMdmPerUserConnection,
+                                        // MdmServerCapabilitiesItem::ComAppleMdmToken, // TODO: Support this
+                                    ]),
+                                    check_out_when_removed: Some(true),
+                                    required_app_id_for_mdm: None,
+                                    prompt_user_to_allow_bootstrap_token_for_authentication: None,
+                                }
+                            },
+                            Profile {
+                                common: CommonPayloadKey {
+                                    payload_identifier: "3ECD4D25-089A-48F4-9408-759674F35DE8".into(),
+                                    payload_uuid: "2CCAF8CF-47C1-4E9E-B79F-68AB9A6FE4D8".into(),
+                                    payload_type: "com.apple.security.scep".into(),
+                                    payload_version: 1,
+                                    payload_display_name: Some("SCEP".into()),
+                                    payload_description: None,
+                                    payload_organization: Some("Oscar Technologies Inc".into()),
+                                },
+                                content: apple_dm::mdm::profiles::Scep {
+                                    url: Some("http://localhost:9000/apple/scep".into()),
+                                    name: Some("jamfnow".into()),
+                                    subject: Some(vec![
+                                        // TODO: Is this correct?
+                                        vec![vec!["CN".into(), "jamfnow.com".into()],]
+                                    ].into()),
+                                    challenge: Some("46F4324845EAB13089FB7049A12769D6".into()),
+                                    keysize: 2048,
+                                    key_type: None,
+                                    key_usage: Some(5),
+                                    ca_fingerprint: None, // TODO: Should probs add this
+                                    retries: None,
+                                    retry_delay: None,
+                                    subject_alt_name: None, // TODO: Add MDM entity identifier?
+                                    key_is_extractable: Some(false),
+                                    allow_all_apps_access: Some(false),
+                                }
+                            }
+                        )
+                    };
+
+                    std::fs::write("mdm-gen.mobileconfig", profile.to_bytes()).unwrap();
 
                     return Ok::<_, StatusCode>((
                         [(header::CONTENT_TYPE, "application/x-apple-aspen-config")],
                         // TODO: Generate the plist
                         // TODO: Sign the plist
-    format!(r#"<?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-	<key>PayloadContent</key>
-	<array>
-		<dict>
-			<key>IdentityCertificateUUID</key>
-			<string>2CCAF8CF-47C1-4E9E-B79F-68AB9A6FE4D8</string>
-			<key>PayloadDisplayName</key>
-			<string>MDM</string>
-			<key>PayloadIdentifier</key>
-			<string>com.apple.mdm.03333ECE-42AB-4D19-B1A3-E4DA0CE19B17</string>
-			<key>PayloadType</key>
-			<string>com.apple.mdm</string>
-			<key>PayloadUUID</key>
-			<string>03333ECE-42AB-4D19-B1A3-E4DA0CE19B17</string>
-			<key>PayloadVersion</key>
-			<integer>1</integer>
-			<key>CheckInURL</key>
-			<string>http://localhost:9000/apple/checkin</string>
-			<key>ServerURL</key>
-			<string>http://localhost:9000/apple/checkin</string>
-			<key>Topic</key>
-			<string>com.apple.mgmt.External.1f177712-f5de-4474-8ea6-3c87a33fa441</string>
-			<key>AccessRights</key>
-			<integer>8191</integer>
-			<key>CheckOutWhenRemoved</key>
-			<true/>
-			<key>SignMessage</key>
-			<false/>
-			<key>ServerCapabilities</key>
-			<array>
-				<string>com.apple.mdm.bootstraptoken</string>
-				<string>com.apple.mdm.per-user-connections</string>
-			</array>
-		</dict>
-		<dict>
-				<key>PayloadDisplayName</key>
-				<string>SCEP</string>
-				<key>PayloadIdentifier</key>
-				<string>3ECD4D25-089A-48F4-9408-759674F35DE8</string>
-				<key>PayloadOrganization</key>
-				<string>Oscar Technologies Inc</string>
-				<key>PayloadType</key>
-				<string>com.apple.security.scep</string>
-				<key>PayloadUUID</key>
-				<string>2CCAF8CF-47C1-4E9E-B79F-68AB9A6FE4D8</string>
-				<key>PayloadVersion</key>
-				<integer>1</integer>
-				<key>PayloadContent</key>
-				<dict>
-					<key>Challenge</key>
-					<string>46F4324845EAB13089FB7049A12769D6</string>
-					<key>Key Usage</key>
-					<integer>5</integer>
-					<key>Keysize</key>
-					<integer>2048</integer>
-					<key>Name</key>
-					<string>jamfnow</string>
-					<key>URL</key>
-					<string>http://localhost:9000/apple/scep</string>
-					<key>Subject</key>
-					<array>
-						<array>
-							<array>
-								<string>CN</string>
-								<string>jamfnow.com</string>
-							</array>
-						</array>
-					</array>
-				</dict>
-			</dict>
-	</array>
-	<key>PayloadDisplayName</key>
-	<string>Untitled</string>
-	<key>PayloadIdentifier</key>
-	<string>Oscars-MacBook-Pro.85DC3617-10B4-4FFB-BFDE-DADD23E03EE5</string>
-	<key>PayloadType</key>
-	<string>Configuration</string>
-	<key>PayloadUUID</key>
-	<string>85DC3617-10B4-4FFB-BFDE-DADD23E03EE5</string>
-	<key>PayloadVersion</key>
-	<integer>1</integer>
-        </dict>
-    </plist>"#)
+                        profile.to_bytes()
+ //    format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+ //        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+ //        <plist version="1.0">
+ //        <dict>
+	// <key>PayloadContent</key>
+	// <array>
+	// 	<dict>
+	// 		<key>IdentityCertificateUUID</key>
+	// 		<string>2CCAF8CF-47C1-4E9E-B79F-68AB9A6FE4D8</string>
+	// 		<key>PayloadDisplayName</key>
+	// 		<string>MDM</string>
+	// 		<key>PayloadIdentifier</key>
+	// 		<string>com.apple.mdm.03333ECE-42AB-4D19-B1A3-E4DA0CE19B17</string>
+	// 		<key>PayloadType</key>
+	// 		<string>com.apple.mdm</string>
+	// 		<key>PayloadUUID</key>
+	// 		<string>03333ECE-42AB-4D19-B1A3-E4DA0CE19B17</string>
+	// 		<key>PayloadVersion</key>
+	// 		<integer>1</integer>
+	// 		<key>CheckInURL</key>
+	// 		<string>http://localhost:9000/apple/checkin</string>
+	// 		<key>ServerURL</key>
+	// 		<string>http://localhost:9000/apple/checkin</string>
+	// 		<key>Topic</key>
+	// 		<string>com.apple.mgmt.External.1f177712-f5de-4474-8ea6-3c87a33fa441</string>
+	// 		<key>AccessRights</key>
+	// 		<integer>8191</integer>
+	// 		<key>CheckOutWhenRemoved</key>
+	// 		<true/>
+	// 		<key>SignMessage</key>
+	// 		<false/>
+	// 		<key>ServerCapabilities</key>
+	// 		<array>
+	// 			<string>com.apple.mdm.bootstraptoken</string>
+	// 			<string>com.apple.mdm.per-user-connections</string>
+	// 		</array>
+	// 	</dict>
+	// 	<dict>
+	// 			<key>PayloadDisplayName</key>
+	// 			<string>SCEP</string>
+	// 			<key>PayloadIdentifier</key>
+	// 			<string>3ECD4D25-089A-48F4-9408-759674F35DE8</string>
+	// 			<key>PayloadOrganization</key>
+	// 			<string>Oscar Technologies Inc</string>
+	// 			<key>PayloadType</key>
+	// 			<string>com.apple.security.scep</string>
+	// 			<key>PayloadUUID</key>
+	// 			<string>2CCAF8CF-47C1-4E9E-B79F-68AB9A6FE4D8</string>
+	// 			<key>PayloadVersion</key>
+	// 			<integer>1</integer>
+	// 			<key>PayloadContent</key>
+	// 			<dict>
+	// 				<key>Challenge</key>
+	// 				<string>46F4324845EAB13089FB7049A12769D6</string>
+	// 				<key>Key Usage</key>
+	// 				<integer>5</integer>
+	// 				<key>Keysize</key>
+	// 				<integer>2048</integer>
+	// 				<key>Name</key>
+	// 				<string>jamfnow</string>
+	// 				<key>URL</key>
+	// 				<string>http://localhost:9000/apple/scep</string>
+	// 				<key>Subject</key>
+	// 				<array>
+	// 					<array>
+	// 						<array>
+	// 							<string>CN</string>
+	// 							<string>jamfnow.com</string>
+	// 						</array>
+	// 					</array>
+	// 				</array>
+	// 			</dict>
+	// 		</dict>
+	// </array>
+	// <key>PayloadDisplayName</key>
+	// <string>Untitled</string>
+	// <key>PayloadIdentifier</key>
+	// <string>Oscars-MacBook-Pro.85DC3617-10B4-4FFB-BFDE-DADD23E03EE5</string>
+	// <key>PayloadType</key>
+	// <string>Configuration</string>
+	// <key>PayloadUUID</key>
+	// <string>85DC3617-10B4-4FFB-BFDE-DADD23E03EE5</string>
+	// <key>PayloadVersion</key>
+	// <integer>1</integer>
+ //        </dict>
+ //    </plist>"#)
                     ))
 
 //                     let payload = br#"<?xml version="1.0" encoding="UTF-8"?>
@@ -362,76 +467,172 @@ pub(crate) fn mount() -> Router<Core> {
 
                 // TODO: https://scep-proxy-na1.jamfcloud.com/scep/43704D49-87C6-5B75-8631-A7367A5FDA1B
 
+                /// TODO: Reuse the SCEP payload
+                let profile = Profile {
+                    common: CommonPayloadKey {
+                        payload_identifier: "Oscars-MacBook-Pro.85DC3617-10B4-4FFB-BFDE-DADD23E03EE5".into(),
+                        payload_uuid: "85DC3617-10B4-4FFB-BFDE-DADD23E03EE5".into(),
+                        payload_type: "Configuration".into(),
+                        payload_version: 1,
+                        payload_display_name: Some("Untitled".into()),
+                        payload_description: None,
+                        payload_organization: None,
+                    },
+                    content: vec![
+                        Profile {
+                            common: CommonPayloadKey {
+                                payload_identifier: "3ECD4D25-089A-48F4-9408-759674F35DE8".into(),
+                                payload_uuid: "2CCAF8CF-47C1-4E9E-B79F-68AB9A6FE4D8".into(),
+                                payload_type: "com.apple.security.scep".into(),
+                                payload_version: 1,
+                                payload_display_name: Some("SCEP".into()),
+                                payload_description: None,
+                                payload_organization: Some("Oscar Technologies Inc".into()),
+                            },
+                            content: apple_dm::mdm::profiles::Scep {
+                                url: Some("http://localhost:9000/apple/scep".into()),
+                                name: Some("jamfnow".into()),
+                                subject: Some(vec![
+                                    // TODO: Is this correct?
+                                    vec![vec!["CN".into(), "jamfnow.com".into()],]
+                                ].into()),
+                                challenge: Some("46F4324845EAB13089FB7049A12769D6".into()),
+                                keysize: 2048,
+                                key_type: None,
+                                key_usage: Some(5),
+                                ca_fingerprint: None, // TODO: Should probs add this
+                                retries: None,
+                                retry_delay: None,
+                                subject_alt_name: None, // TODO: Add MDM entity identifier?
+                                key_is_extractable: Some(false),
+                                allow_all_apps_access: Some(false),
+                            }
+                        }
+                    ]
+                };
+
+                std::fs::write("scep-gen.mobileconfig", profile.to_bytes()).unwrap();
+
                 Ok::<_, StatusCode>((
                     [(header::CONTENT_TYPE, "application/x-apple-aspen-config")],
                     // TODO: Generate the plist
                     // TODO: Sign the plist
-r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!DOCTYPE plist PUBLIC "-//Apple Inc//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-	<dict>
-		<key>PayloadDisplayName</key>
-		<string>Oscar Technologies Inc SCEP Profile</string>
-		<key>PayloadIdentifier</key>
-		<string>77b464d6-4f40-4c80-80ea-5ae81322f92e</string>
-		<key>PayloadOrganization</key>
-		<string>Oscar Technologies Inc</string>
-		<key>PayloadRemovalDisallowed</key>
-		<true/>
-		<key>PayloadType</key>
-		<string>Configuration</string>
-		<key>PayloadUUID</key>
-		<string>3ECD4D25-089A-48F4-9408-759674F35DE8</string>
-		<key>PayloadVersion</key>
-		<integer>1</integer>
-		<key>PayloadContent</key>
-		<array>
-			<dict>
-				<key>PayloadDisplayName</key>
-				<string>SCEP</string>
-				<key>PayloadIdentifier</key>
-				<string>3ECD4D25-089A-48F4-9408-759674F35DE8</string>
-				<key>PayloadOrganization</key>
-				<string>Oscar Technologies Inc</string>
-				<key>PayloadType</key>
-				<string>com.apple.security.scep</string>
-				<key>PayloadUUID</key>
-				<string>2CCAF8CF-47C1-4E9E-B79F-68AB9A6FE4D8</string>
-				<key>PayloadVersion</key>
-				<integer>1</integer>
-				<key>PayloadContent</key>
-				<dict>
-					<key>Challenge</key>
-					<string>46F4324845EAB13089FB7049A12769D6</string>
-					<key>Key Usage</key>
-					<integer>5</integer>
-					<key>Keysize</key>
-					<integer>2048</integer>
-					<key>Name</key>
-					<string>jamfnow</string>
-					<key>URL</key>
-					<string>http://localhost:9000/apple/scep</string>
-					<key>Subject</key>
-					<array>
-						<array>
-							<array>
-								<string>CN</string>
-								<string>jamfnow.com</string>
-							</array>
-						</array>
-					</array>
-				</dict>
-			</dict>
-		</array>
-	</dict>
-</plist>"#.to_string()
+                    profile.to_bytes()
+// r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+// <!DOCTYPE plist PUBLIC "-//Apple Inc//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+// <plist version="1.0">
+// 	<dict>
+// 		<key>PayloadDisplayName</key>
+// 		<string>Oscar Technologies Inc SCEP Profile</string>
+// 		<key>PayloadIdentifier</key>
+// 		<string>77b464d6-4f40-4c80-80ea-5ae81322f92e</string>
+// 		<key>PayloadOrganization</key>
+// 		<string>Oscar Technologies Inc</string>
+// 		<key>PayloadRemovalDisallowed</key>
+// 		<true/>
+// 		<key>PayloadType</key>
+// 		<string>Configuration</string>
+// 		<key>PayloadUUID</key>
+// 		<string>3ECD4D25-089A-48F4-9408-759674F35DE8</string>
+// 		<key>PayloadVersion</key>
+// 		<integer>1</integer>
+// 		<key>PayloadContent</key>
+// 		<array>
+// 			<dict>
+// 				<key>PayloadDisplayName</key>
+// 				<string>SCEP</string>
+// 				<key>PayloadIdentifier</key>
+// 				<string>3ECD4D25-089A-48F4-9408-759674F35DE8</string>
+// 				<key>PayloadOrganization</key>
+// 				<string>Oscar Technologies Inc</string>
+// 				<key>PayloadType</key>
+// 				<string>com.apple.security.scep</string>
+// 				<key>PayloadUUID</key>
+// 				<string>2CCAF8CF-47C1-4E9E-B79F-68AB9A6FE4D8</string>
+// 				<key>PayloadVersion</key>
+// 				<integer>1</integer>
+// 				<key>PayloadContent</key>
+// 				<dict>
+// 					<key>Challenge</key>
+// 					<string>46F4324845EAB13089FB7049A12769D6</string>
+// 					<key>Key Usage</key>
+// 					<integer>5</integer>
+// 					<key>Keysize</key>
+// 					<integer>2048</integer>
+// 					<key>Name</key>
+// 					<string>jamfnow</string>
+// 					<key>URL</key>
+// 					<string>http://localhost:9000/apple/scep</string>
+// 					<key>Subject</key>
+// 					<array>
+// 						<array>
+// 							<array>
+// 								<string>CN</string>
+// 								<string>jamfnow.com</string>
+// 							</array>
+// 						</array>
+// 					</array>
+// 				</dict>
+// 			</dict>
+// 		</array>
+// 	</dict>
+// </plist>"#.to_string()
                 ))
             }),
         )
         .route(
             "/apple/checkin",
             put(|State(core): State<Core>, req: Parts, body: Bytes| async move {
-                println!("GOT {body:?}");
+                println!("GOT {req:?} {body:?}");
+
+                // TODO: `application/x-apple-aspen-mdm-checkin`
+
+                // TODO: Validate client identity
+
+                let req = CheckinCommand::from_bytes(&body).unwrap();
+
+                println!("CHECKIN {req:?}");
+
+                match req {
+                    CheckinCommand::GetToken(req) => todo!(),
+                    CheckinCommand::Authenticate(req) => {
+                        // TODO: Should we create the device record here?
+
+                        // TODO: Link the certificate being used?
+
+                        // TODO: Can the device already exist at this point?
+
+                        let tenant = "todo"; // TODO: Hook this up to enrollment flow
+
+                        let id = nanoid::nanoid!(12);
+                        sqlx::query!("INSERT INTO device(id, tenant, name, model, serial, push_topic) VALUES (?, ?, ?, ?, ?, ?)", id, tenant, req.device_name, req.model_name, req.serial_number, req.topic)
+                            .execute(&core.db)
+                            .await
+                            .unwrap();
+
+
+                    }
+                    CheckinCommand::TokenUpdate(req) => {
+                        // TODO: We got to handle this
+                        // assert_eq!(req.awaiting_configuration.unwrap_or(true), true);
+
+                        // req.topic
+                        // req.token
+                        // req.push_magic
+                        // req.unlock_token
+                    }
+                    CheckinCommand::DeclarativeManagement(req) => todo!(),
+                    CheckinCommand::UserAuthenticate(req) => todo!(),
+                    CheckinCommand::CheckOut(req) => todo!(),
+                    CheckinCommand::SetBootstrapToken(req) => todo!(),
+                    CheckinCommand::GetBootstrapToken(req) => {
+                        // TODO: Handle this
+                        // assert_eq!(req.awaiting_configuration.unwrap_or(true));
+                    }
+
+                };
+
+
 
                 r#"<?xml version="1.0" encoding="UTF-8"?>
                 <!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN"
@@ -441,6 +642,28 @@ r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
                 </dict>
                 </plist>"#
             }),
+        )
+        // TODO: move into device API
+        .route(
+            "/apple/ping",
+            get(|State(core): State<Core>| async move {
+                let tenants = sqlx::query!("SELECT * FROM tenant")
+                    .fetch_all(&core.db)
+                    .await
+                    .unwrap();
+
+                let devices = sqlx::query!("SELECT * FROM device")
+                    .fetch_all(&core.db)
+                    .await
+                    .unwrap();
+
+                // TODO: Reusing the client
+                // let client = a2
+
+                println!("{devices:?}");
+
+                "ok"
+            })
         )
         // TODO: Break this all out into `scep` crate and make it sans-io
         .route(
@@ -484,7 +707,7 @@ r#"<?xml version="1.0" encoding="UTF-8" standalone="no"?>
                     "PKIOperation" => {
                         let (cert, key) = core.device_ca.active_signer(&core).unwrap(); // TODO: What if the active signer changes between SCEP requests?
 
-                       println!("{:?}",  req.headers.get("Content-Type")); // application/x-pki-message
+                        println!("{:?}",  req.headers.get("Content-Type")); // application/x-pki-message
 
                        let scep = scep::Scep::new(());
 

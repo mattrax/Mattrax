@@ -4,9 +4,7 @@
 pub enum Configuration {
     // TODO: Can we just embed the codegen output into here for now?
     CustomApple {},
-    CustomWindows {
-        uri: String,
-    }
+    CustomWindows { uri: String },
 }
 
 impl Configuration {

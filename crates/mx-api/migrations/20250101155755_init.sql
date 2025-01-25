@@ -57,7 +57,15 @@ CREATE TABLE tenant_member (
 CREATE TABLE device (
     id CHAR(12) PRIMARY KEY,
     tenant CHAR(12) NOT NULL,
-    identity CHAR(12) NOT NULL,
+    -- identity CHAR(12) NOT NULL,
+    name VARCHAR(255),
+    model VARCHAR(255),
+    serial VARCHAR(255),
+    push_topic VARCHAR(255), -- TODO: Is this useful? It's always gonna be the same per-tenant?
+    push_token VARCHAR(255),
+    push_magic VARCHAR(255),
+    -- unlock_token VARCHAR(255),
+    last_seen TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

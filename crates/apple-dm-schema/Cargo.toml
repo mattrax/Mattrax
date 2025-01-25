@@ -17,8 +17,4 @@ specta-jsonschema.workspace = true
 specta-typescript.workspace = true
 Inflector = "0.11.4"
 schemars = "0.8.21"
-
-
-# TODO: Remove
-specta-openapi.workspace = true
 quote = "1.0.38"

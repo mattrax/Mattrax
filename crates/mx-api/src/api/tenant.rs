@@ -31,6 +31,12 @@ pub struct UpdateTenantRequest {
     pub email: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct UpdateApnsRequest {
+    pub email: String,
+    pub cert: String,
+}
+
 pub(crate) fn mount() -> Router<Core> {
     Router::new()
         .route(
@@ -251,7 +257,7 @@ pub(crate) fn mount() -> Router<Core> {
     .route(
         "/{tenant_id}/apns",
         post(
-            |State(core): State<Core>, Path(tenant_id): Path<String>, cookies: Cookies, body: Bytes| async move {
+            |State(core): State<Core>, Path(tenant_id): Path<String>, cookies: Cookies, Json(req): Json<UpdateApnsRequest>| async move {
                 let token = Token::from_cookies(&core, &cookies).ok_or(StatusCode::UNAUTHORIZED)?;
 
                 sqlx::query!(
@@ -267,7 +273,7 @@ pub(crate) fn mount() -> Router<Core> {
                 })?
                 .ok_or(StatusCode::NOT_FOUND)?;
 
-                let cert = Certificate::from_pem(&body).unwrap();
+                let cert = Certificate::from_pem(req.cert.as_bytes()).unwrap();
                 let Some(apns_topic) = cert.subject().user_id().next() else {
                     error!("Recieved APNS certificate that is missing subject '0.9.2342.19200300.100.1.1'");
                     return Err(StatusCode::INTERNAL_SERVER_ERROR);
@@ -277,9 +283,10 @@ pub(crate) fn mount() -> Router<Core> {
                 // TODO: Check it's related to the `apns_private_key` in the database
 
                 sqlx::query!(
-                    "UPDATE tenant SET apns_cert = ?, apns_topic = ? WHERE id = ?",
+                    "UPDATE tenant SET apns_cert = ?, apns_topic = ?, apns_email = ? WHERE id = ?",
                     cert.encode_der().unwrap(),
                     apns_topic,
+                    req.email,
                     tenant_id,
                 )
                 .execute(&core.db)

@@ -16,7 +16,10 @@ pub struct Schema {
     pub responsekeys: Option<Vec<PayloadKey>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasons: Option<Vec<Reason>>,
-    #[serde(rename = "related-status-items", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "related-status-items",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub related_status_items: Option<Vec<RelatedStatusItem>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes: Option<Vec<Note>>,
@@ -82,7 +85,10 @@ pub struct OSSupport {
     pub userapprovedmdm: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allowmanualinstall: Option<bool>,
-    #[serde(rename = "allowed-enrollments", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "allowed-enrollments",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub allowed_enrollments: Option<Vec<String>>,
     #[serde(rename = "allowed-scopes", skip_serializing_if = "Option::is_none")]
     pub allowed_scopes: Option<Vec<String>>,
@@ -177,7 +183,7 @@ pub struct PayloadKey {
     pub subkeys: Option<Vec<PayloadKey>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum PayloadKeyType {
     #[serde(rename = "<string>")]

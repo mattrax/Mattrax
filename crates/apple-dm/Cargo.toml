@@ -12,5 +12,4 @@ workspace = true
 mx-crypto = { version = "0.0.0", path = "../mx-crypto" }
 plist.workspace = true
 serde.workspace = true
-serde_yaml.workspace = true
 uuid.workspace = true

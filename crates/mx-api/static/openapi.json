@@ -434,258 +434,138 @@
             "description": "Internal server error"
           }
         }
-      },
-      "/api/v1/tenant/{tenantId}/apns": {
-        "get": {
-          "summary": "Get APNS CSR",
-          "parameters": [
-            {
-              "name": "tenantId",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string",
-                "example": "g0kLTz0--BP6"
+      }
+    },
+    "/api/v1/tenant/{tenantId}/apns": {
+      "get": {
+        "summary": "Get APNS CSR",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "g0kLTz0--BP6"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-plist": {
+                "schema": {
+                  "description": "The `Certificate Signing Request.plist` file. You should upload this file to the [Apple Push Cert Portal](https://identity.apple.com/pushcert) to create an APNS certificate and upload the PEM returned by Apple to Mattrax using `POST /api/v1/tenant/{tenantId}/apns`."
+                }
               }
             }
-          ],
-          "responses": {
-            "200": {
-              "content": {
-                "application/x-plist": {
-                  "schema": {
-                    "description": "The `Certificate Signing Request.plist` file. You should upload this file to the [Apple Push Cert Portal](https://identity.apple.com/pushcert) to create an APNS certificate and upload the PEM returned by Apple to Mattrax using `POST /api/v1/tenant/{tenantId}/apns`."
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Tenant not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      },
+      "post": {
+        "summary": "Update APNS certificate",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "g0kLTz0--BP6"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "description": "Apple ID email used for APNS certificate"
+                  },
+                  "cert": {
+                    "type": "string",
+                    "description": "APNS certificate downloaded from Apple Push Cert Portal"
                   }
                 }
               }
-            },
-            "401": {
-              "description": "Unauthorized"
-            },
-            "404": {
-              "description": "Tenant not found"
-            },
-            "500": {
-              "description": "Internal server error"
             }
           }
         },
-        "post": {
-          "summary": "Update APNS certificate",
-          "parameters": [
-            {
-              "name": "tenantId",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string",
-                "example": "g0kLTz0--BP6"
-              }
-            }
-          ],
-          "requestBody": {
-            "content": {
-              "application/octet-stream": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
+        "responses": {
+          "202": {
+            "description": "Successfully updated the APNS certificate"
           },
-          "responses": {
-            "202": {
-              "description": "Successfully updated the APNS certificate"
-            },
-            "401": {
-              "description": "Unauthorized"
-            },
-            "404": {
-              "description": "Tenant not found"
-            },
-            "500": {
-              "description": "Internal server error"
-            }
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Tenant not found"
+          },
+          "500": {
+            "description": "Internal server error"
           }
         }
-      },
-      "/api/v1/tenant/{tenantId}/policy": {
-        "get": {
-          "summary": "Get policies",
-          "parameters": [
-            {
-              "name": "tenantId",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string",
-                "example": "g0kLTz0--BP6"
-              }
+      }
+    },
+    "/api/v1/tenant/{tenantId}/policy": {
+      "get": {
+        "summary": "Get policies",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "g0kLTz0--BP6"
             }
-          ],
-          "responses": {
-            "200": {
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "description": "Policy identifier"
-                        },
-                        "name": {
-                          "type": "string",
-                          "description": "Policy name"
-                        },
-                        "description": {
-                          "type": "string",
-                          "description": "Policy description"
-                        },
-                        "version": {
-                          "type": "object",
-                          "description": "Policy version",
-                          "optional": true,
-                          "properties": {
-                            "id": {
-                              "type": "string",
-                              "description": "Policy version identifier"
-                            },
-                            "data": {
-                              "type": "object",
-                              "description": "Policy version data"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              "401": {
-                "description": "Unauthorized"
-              },
-              "404": {
-                "description": "Tenant not found"
-              },
-              "500": {
-                "description": "Internal server error"
-              }
-            }
-          },
-          "post": {
-            "summary": "Create policy",
-            "parameters": [
-              {
-                "name": "tenantId",
-                "in": "path",
-                "required": true,
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
                 "schema": {
-                  "type": "string",
-                  "example": "g0kLTz0--BP6"
-                }
-              }
-            ],
-            "requestBody": {
-              "content": {
-                "application/json": {
-                  "schema": {
+                  "type": "array",
+                  "items": {
                     "type": "object",
                     "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Policy identifier"
+                      },
                       "name": {
                         "type": "string",
-                        "description": "Policy name",
-                        "example": "My Policy"
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            "responses": {
-              "201": {
-                "description": "Successfully created policy",
-                "content": {
-                  "application/json": {
-                    "schema": {
-                      "type": "string",
-                      "description": "Policy identifier"
-                    }
-                  }
-                }
-              },
-              "401": {
-                "description": "Unauthorized"
-              },
-              "404": {
-                "description": "Tenant not found"
-              },
-              "500": {
-                "description": "Internal server error"
-              }
-            }
-          }
-        }
-      },
-      "/api/v1/tenant/{tenantId}/policy/{policyId}": {
-        "get": {
-          "summary": "Get policy",
-          "parameters": [
-            {
-              "name": "tenantId",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string",
-                "example": "g0kLTz0--BP6"
-              }
-            },
-            {
-              "name": "policyId",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string",
-                "example": "aaaaaaaaaaaa"
-              }
-            }
-          ],
-          "responses": {
-            "200": {
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "description": "Policy identifier"
-                        },
-                        "name": {
-                          "type": "string",
-                          "description": "Policy name"
-                        },
-                        "description": {
-                          "type": "string",
-                          "description": "Policy description"
-                        },
-                        "version": {
-                          "type": "object",
-                          "description": "Policy version",
-                          "optional": true,
-                          "properties": {
-                            "id": {
-                              "type": "string",
-                              "description": "Policy version identifier"
-                            },
-                            "data": {
-                              "type": "object",
-                              "description": "Policy version data"
-                            }
+                        "description": "Policy name"
+                      },
+                      "description": {
+                        "type": "string",
+                        "description": "Policy description"
+                      },
+                      "version": {
+                        "type": "object",
+                        "description": "Policy version",
+                        "optional": true,
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Policy version identifier"
+                          },
+                          "data": {
+                            "type": "object",
+                            "description": "Policy version data"
                           }
                         }
                       }
@@ -755,6 +635,135 @@
             "500": {
               "description": "Internal server error"
             }
+          }
+        }
+      }
+    },
+    "/api/v1/tenant/{tenantId}/policy/{policyId}": {
+      "get": {
+        "summary": "Get policy",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "g0kLTz0--BP6"
+            }
+          },
+          {
+            "name": "policyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "aaaaaaaaaaaa"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Policy identifier"
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Policy name"
+                      },
+                      "description": {
+                        "type": "string",
+                        "description": "Policy description"
+                      },
+                      "version": {
+                        "type": "object",
+                        "description": "Policy version",
+                        "optional": true,
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Policy version identifier"
+                          },
+                          "data": {
+                            "type": "object",
+                            "description": "Policy version data"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Tenant not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create policy",
+        "parameters": [
+          {
+            "name": "tenantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "example": "g0kLTz0--BP6"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Policy name",
+                    "example": "My Policy"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successfully created policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "description": "Policy identifier"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "404": {
+            "description": "Tenant not found"
+          },
+          "500": {
+            "description": "Internal server error"
           }
         }
       }

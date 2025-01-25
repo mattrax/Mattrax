@@ -15,8 +15,9 @@ fn main() -> Result<(), ()> {
 
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-    let schema = std::fs::read_to_string(base.join("../../vendor/device-management/docs/schema.yaml"))
-        .map_err(|e| println!("Failed to read schema file: {:?}", e))?;
+    let schema =
+        std::fs::read_to_string(base.join("../../vendor/device-management/docs/schema.yaml"))
+            .map_err(|e| println!("Failed to read schema file: {:?}", e))?;
 
     // TODO: Solve the yaml recursion limit.
     let schema: schemars::schema::Schema = serde_yaml::from_str(&schema)

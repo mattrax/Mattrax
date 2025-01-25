@@ -1,5 +1,5 @@
-use std::cell::LazyCell;
 use mx_crypto::x509::Certificate;
+use std::cell::LazyCell;
 
 pub const APPLE_IPHONE_DEVICE_CA: LazyCell<Certificate> = LazyCell::new(|| {
     // CN=Apple iPhone Device CA, OU=Apple iPhone, O=Apple Inc., C=US
