@@ -9,6 +9,8 @@ pub enum JabberAccountJabberAuthentication {
 
 /// Use this section to define settings for configuration access to Jabber servers.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct JabberAccount {
     /// The description of the account.
     #[serde(rename = "JabberAccountDescription")]
@@ -39,6 +41,8 @@ pub struct JabberAccount {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TODO8021XSecondEthernet {
     /// Keys relevant to 802.1x configuration.  User enrollment payloads do not support the various proxy keys including ProxyType, ProxyServer, ProxyServerPort, ProxyUsername, ProxyPassword,, ProxyPACURL and ProxyPACFallbackAllowed.
     #[serde(rename = "ANY")]
@@ -48,6 +52,8 @@ pub struct TODO8021XSecondEthernet {
 
 /// Use this section to define settings for profile removal
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ProfileRemovalPassword {
     /// The password to allow removing the profile.
     #[serde(rename = "RemovalPassword")]
@@ -56,6 +62,8 @@ pub struct ProfileRemovalPassword {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ShareKit {
     /// The list of plugin IDs that show up in the user's Share menu. If this array exists, only these items are permitted.
     #[serde(rename = "SHKAllowedShareServices")]
@@ -68,6 +76,8 @@ pub struct ShareKit {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct WiFiManagedSetting {
     /// If 'true', requires administrator authorization to enable IBSS.
     #[serde(rename = "RequireAdminForIBSS")]
@@ -84,6 +94,8 @@ pub struct WiFiManagedSetting {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TODO8021XSecondActiveEthernet {
     /// Keys relevant to 802.1x configuration.  User enrollment payloads do not support the various proxy keys including ProxyType, ProxyServer, ProxyServerPort, ProxyUsername, ProxyPassword,, ProxyPACURL and ProxyPACFallbackAllowed.
     #[serde(rename = "ANY")]
@@ -92,6 +104,8 @@ pub struct TODO8021XSecondActiveEthernet {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemLoggingProcess {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -99,6 +113,8 @@ pub struct SystemLoggingProcess {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemLoggingSubsystem {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -106,6 +122,8 @@ pub struct SystemLoggingSubsystem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemLoggingSystem {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -113,6 +131,8 @@ pub struct SystemLoggingSystem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemLogging {
     /// Not to be used.
     #[serde(rename = "Processes")]
@@ -228,6 +248,8 @@ pub enum MediaManagementAllowedMedumlogoutEjectnetworkdiskActionStringItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct MediaManagementAllowedMedumlogoutEject {
     #[serde(rename = "all-media")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -359,6 +381,8 @@ pub enum MediaManagementAllowedMedummountControlnetworkdiskActionStringItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct MediaManagementAllowedMedummountControl {
     #[serde(rename = "all-media")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -490,6 +514,8 @@ pub enum MediaManagementAllowedMedumunmountControlnetworkdiskActionStringItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct MediaManagementAllowedMedumunmountControl {
     #[serde(rename = "all-media")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -522,6 +548,8 @@ pub struct MediaManagementAllowedMedumunmountControl {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct MediaManagementAllowedMedum {
     /// The media type dictionary that defines volumes to eject when the user logs out.
     #[serde(rename = "logout-eject")]
@@ -538,6 +566,8 @@ pub struct MediaManagementAllowedMedum {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct NotificationNotificationSettingNotificationSettingsItem {
     #[serde(rename = "BundleIdentifier")]
     pub bundle_identifier: String,
@@ -551,7 +581,8 @@ pub struct NotificationNotificationSettingNotificationSettingsItem {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub show_in_lock_screen: Option<bool>,
     #[serde(rename = "AlertType")]
-    pub alert_type: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub alert_type: Option<i64>,
     #[serde(rename = "BadgesEnabled")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub badges_enabled: Option<bool>,
@@ -565,13 +596,17 @@ pub struct NotificationNotificationSettingNotificationSettingsItem {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub critical_alert_enabled: Option<bool>,
     #[serde(rename = "GroupingType")]
-    pub grouping_type: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub grouping_type: Option<i64>,
     #[serde(rename = "PreviewType")]
-    pub preview_type: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub preview_type: Option<i64>,
 }
 
 /// Configures notifications settings for apps
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Notification {
     /// An array of notification settings dictionaries.
     #[serde(rename = "NotificationSettings")]
@@ -579,6 +614,8 @@ pub struct Notification {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct GlobalPreference {
     /// If 'false', disables fast user switching.
     #[serde(rename = "MultipleSessionEnabled")]
@@ -607,6 +644,8 @@ pub enum VpnVPNType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnVendorConfig {
     #[serde(rename = "Realm")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -663,6 +702,8 @@ pub enum VpnVPNOnDemandRuleOnDemandRulesElementActionParameterActionParameterDom
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnVPNOnDemandRuleOnDemandRulesElementActionParameterActionParameter {
     #[serde(rename = "Domains")]
     pub domains: Vec<String>,
@@ -687,6 +728,8 @@ pub enum VpnVPNOnDemandRuleOnDemandRulesElementInterfaceTypeMatch {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnVPNOnDemandRuleOnDemandRulesElement {
     #[serde(rename = "Action")]
     pub action: VpnVPNOnDemandRuleOnDemandRulesElementAction,
@@ -711,6 +754,8 @@ pub struct VpnVPNOnDemandRuleOnDemandRulesElement {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnVPN {
     #[serde(rename = "AuthenticationMethod")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -728,7 +773,8 @@ pub struct VpnVPN {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub provider_designated_requirement: Option<String>,
     #[serde(rename = "DisconnectOnIdle")]
-    pub disconnect_on_idle: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub disconnect_on_idle: Option<i64>,
     #[serde(rename = "DisconnectOnIdleTimer")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub disconnect_on_idle_timer: Option<i64>,
@@ -736,21 +782,29 @@ pub struct VpnVPN {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub provider_type: Option<VpnVPNProviderType>,
     #[serde(rename = "IncludeAllNetworks")]
-    pub include_all_networks: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub include_all_networks: Option<i64>,
     #[serde(rename = "EnforceRoutes")]
-    pub enforce_routes: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub enforce_routes: Option<i64>,
     #[serde(rename = "ExcludeLocalNetworks")]
-    pub exclude_local_networks: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub exclude_local_networks: Option<i64>,
     #[serde(rename = "ExcludeCellularServices")]
-    pub exclude_cellular_services: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub exclude_cellular_services: Option<i64>,
     #[serde(rename = "ExcludeAPNs")]
-    pub exclude_ap_ns: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub exclude_ap_ns: Option<i64>,
     #[serde(rename = "ExcludeDeviceCommunication")]
-    pub exclude_device_communication: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub exclude_device_communication: Option<i64>,
     #[serde(rename = "OnDemandEnabled")]
-    pub on_demand_enabled: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub on_demand_enabled: Option<i64>,
     #[serde(rename = "OnDemandUserOverrideDisabled")]
-    pub on_demand_user_override_disabled: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub on_demand_user_override_disabled: Option<i64>,
     #[serde(rename = "OnDemandMatchDomainsAlways")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub on_demand_match_domains_always: Option<Vec<String>>,
@@ -766,9 +820,12 @@ pub struct VpnVPN {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnIPv4 {
     #[serde(rename = "OverridePrimary")]
-    pub override_primary: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub override_primary: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -788,6 +845,8 @@ pub enum VpnPPPAuthProtocolAuthProtocolElement {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnPPP {
     #[serde(rename = "AuthName")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -796,7 +855,8 @@ pub struct VpnPPP {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub auth_password: Option<String>,
     #[serde(rename = "TokenCard")]
-    pub token_card: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub token_card: Option<i64>,
     #[serde(rename = "CommRemoteAddress")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub comm_remote_address: Option<String>,
@@ -807,13 +867,17 @@ pub struct VpnPPP {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub auth_protocol: Option<Vec<VpnPPPAuthProtocolAuthProtocolElement>>,
     #[serde(rename = "CCPMPPE40Enabled")]
-    pub ccpmppe40_enabled: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub ccpmppe40_enabled: Option<i64>,
     #[serde(rename = "CCPMPPE128Enabled")]
-    pub ccpmppe128_enabled: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub ccpmppe128_enabled: Option<i64>,
     #[serde(rename = "CCPEnabled")]
-    pub ccp_enabled: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub ccp_enabled: Option<i64>,
     #[serde(rename = "DisconnectOnIdle")]
-    pub disconnect_on_idle: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub disconnect_on_idle: Option<i64>,
     #[serde(rename = "DisconnectOnIdleTimer")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub disconnect_on_idle_timer: Option<i64>,
@@ -862,6 +926,8 @@ pub enum VpnIPSecOnDemandRuleOnDemandRulesElementActionParameterActionParameterD
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnIPSecOnDemandRuleOnDemandRulesElementActionParameterActionParameter {
     #[serde(rename = "Domains")]
     pub domains: Vec<String>,
@@ -886,6 +952,8 @@ pub enum VpnIPSecOnDemandRuleOnDemandRulesElementInterfaceTypeMatch {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnIPSecOnDemandRuleOnDemandRulesElement {
     #[serde(rename = "Action")]
     pub action: VpnIPSecOnDemandRuleOnDemandRulesElementAction,
@@ -910,6 +978,8 @@ pub struct VpnIPSecOnDemandRuleOnDemandRulesElement {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnIPSec {
     #[serde(rename = "RemoteAddress")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -924,7 +994,8 @@ pub struct VpnIPSec {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub x_auth_password: Option<String>,
     #[serde(rename = "XAuthEnabled")]
-    pub x_auth_enabled: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub x_auth_enabled: Option<i64>,
     #[serde(rename = "XAuthPasswordEncryption")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub x_auth_password_encryption: Option<VpnIPSecXAuthPasswordEncryption>,
@@ -944,12 +1015,14 @@ pub struct VpnIPSec {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub prompt_for_vpnpin: Option<bool>,
     #[serde(rename = "DisconnectOnIdle")]
-    pub disconnect_on_idle: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub disconnect_on_idle: Option<i64>,
     #[serde(rename = "DisconnectOnIdleTimer")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub disconnect_on_idle_timer: Option<i64>,
     #[serde(rename = "OnDemandEnabled")]
-    pub on_demand_enabled: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub on_demand_enabled: Option<i64>,
     #[serde(rename = "OnDemandMatchDomainsAlways")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub on_demand_match_domains_always: Option<Vec<String>>,
@@ -1011,6 +1084,8 @@ pub enum VpnIKEv2OnDemandRuleOnDemandRulesElementActionParameterActionParameterD
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnIKEv2OnDemandRuleOnDemandRulesElementActionParameterActionParameter {
     #[serde(rename = "Domains")]
     pub domains: Vec<String>,
@@ -1035,6 +1110,8 @@ pub enum VpnIKEv2OnDemandRuleOnDemandRulesElementInterfaceTypeMatch {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnIKEv2OnDemandRuleOnDemandRulesElement {
     #[serde(rename = "Action")]
     pub action: VpnIKEv2OnDemandRuleOnDemandRulesElementAction,
@@ -1131,6 +1208,8 @@ pub enum VpnIKEv2IKESecurityAssociationParameterIntegrityAlgorithm {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnIKEv2IKESecurityAssociationParameter {
     #[serde(rename = "EncryptionAlgorithm")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1139,7 +1218,8 @@ pub struct VpnIKEv2IKESecurityAssociationParameter {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub integrity_algorithm: Option<VpnIKEv2IKESecurityAssociationParameterIntegrityAlgorithm>,
     #[serde(rename = "DiffieHellmanGroup")]
-    pub diffie_hellman_group: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub diffie_hellman_group: Option<i64>,
     #[serde(rename = "LifeTimeInMinutes")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub life_time_in_minutes: Option<i64>,
@@ -1178,6 +1258,8 @@ pub enum VpnIKEv2ChildSecurityAssociationParameterIntegrityAlgorithm {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnIKEv2ChildSecurityAssociationParameter {
     #[serde(rename = "EncryptionAlgorithm")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1186,13 +1268,16 @@ pub struct VpnIKEv2ChildSecurityAssociationParameter {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub integrity_algorithm: Option<VpnIKEv2ChildSecurityAssociationParameterIntegrityAlgorithm>,
     #[serde(rename = "DiffieHellmanGroup")]
-    pub diffie_hellman_group: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub diffie_hellman_group: Option<i64>,
     #[serde(rename = "LifeTimeInMinutes")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub life_time_in_minutes: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnIKEv2 {
     #[serde(rename = "RemoteAddress")]
     pub remote_address: String,
@@ -1221,7 +1306,8 @@ pub struct VpnIKEv2 {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub shared_secret: Option<String>,
     #[serde(rename = "ExtendedAuthEnabled")]
-    pub extended_auth_enabled: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub extended_auth_enabled: Option<i64>,
     #[serde(rename = "AuthName")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub auth_name: Option<String>,
@@ -1229,9 +1315,11 @@ pub struct VpnIKEv2 {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub auth_password: Option<String>,
     #[serde(rename = "OnDemandEnabled")]
-    pub on_demand_enabled: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub on_demand_enabled: Option<i64>,
     #[serde(rename = "OnDemandUserOverrideDisabled")]
-    pub on_demand_user_override_disabled: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub on_demand_user_override_disabled: Option<i64>,
     #[serde(rename = "OnDemandRules")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub on_demand_rules: Option<Vec<VpnIKEv2OnDemandRuleOnDemandRulesElement>>,
@@ -1251,27 +1339,35 @@ pub struct VpnIKEv2 {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub tls_maximum_version: Option<VpnIKEv2TLSMaximumVersion>,
     #[serde(rename = "UseConfigurationAttributeInternalIPSubnet")]
-    pub use_configuration_attribute_internal_ip_subnet: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub use_configuration_attribute_internal_ip_subnet: Option<i64>,
     #[serde(rename = "DisableMOBIKE")]
-    pub disable_mobike: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub disable_mobike: Option<i64>,
     #[serde(rename = "DisableRedirect")]
-    pub disable_redirect: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub disable_redirect: Option<i64>,
     #[serde(rename = "DisconnectOnIdle")]
-    pub disconnect_on_idle: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub disconnect_on_idle: Option<i64>,
     #[serde(rename = "DisconnectOnIdleTimer")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub disconnect_on_idle_timer: Option<i64>,
     #[serde(rename = "NATKeepAliveOffloadEnable")]
-    pub nat_keep_alive_offload_enable: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub nat_keep_alive_offload_enable: Option<i64>,
     #[serde(rename = "NATKeepAliveInterval")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub nat_keep_alive_interval: Option<i64>,
     #[serde(rename = "EnablePFS")]
-    pub enable_pfs: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub enable_pfs: Option<i64>,
     #[serde(rename = "EnableCertificateRevocationCheck")]
-    pub enable_certificate_revocation_check: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub enable_certificate_revocation_check: Option<i64>,
     #[serde(rename = "EnableFallback")]
-    pub enable_fallback: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub enable_fallback: Option<i64>,
     #[serde(rename = "MTU")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub mtu: Option<i64>,
@@ -1279,17 +1375,23 @@ pub struct VpnIKEv2 {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub provider_type: Option<VpnIKEv2ProviderType>,
     #[serde(rename = "IncludeAllNetworks")]
-    pub include_all_networks: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub include_all_networks: Option<i64>,
     #[serde(rename = "EnforceRoutes")]
-    pub enforce_routes: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub enforce_routes: Option<i64>,
     #[serde(rename = "ExcludeLocalNetworks")]
-    pub exclude_local_networks: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub exclude_local_networks: Option<i64>,
     #[serde(rename = "ExcludeCellularServices")]
-    pub exclude_cellular_services: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub exclude_cellular_services: Option<i64>,
     #[serde(rename = "ExcludeAPNs")]
-    pub exclude_ap_ns: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub exclude_ap_ns: Option<i64>,
     #[serde(rename = "ExcludeDeviceCommunication")]
-    pub exclude_device_communication: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub exclude_device_communication: Option<i64>,
     #[serde(rename = "PPK")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub ppk: Option<Vec<u8>>,
@@ -1297,7 +1399,8 @@ pub struct VpnIKEv2 {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub ppk_identifier: Option<String>,
     #[serde(rename = "PPKMandatory")]
-    pub ppk_mandatory: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub ppk_mandatory: Option<i64>,
     #[serde(rename = "IKESecurityAssociationParameters")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub ike_security_association_parameters: Option<VpnIKEv2IKESecurityAssociationParameter>,
@@ -1317,6 +1420,8 @@ pub enum VpnDNSDNSProtocol {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnDNS {
     #[serde(rename = "DNSProtocol")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1340,18 +1445,23 @@ pub struct VpnDNS {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub supplemental_match_domains: Option<Vec<String>>,
     #[serde(rename = "SupplementalMatchDomainsNoSearch")]
-    pub supplemental_match_domains_no_search: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub supplemental_match_domains_no_search: Option<i64>,
     #[serde(rename = "PayloadCertificateUUID")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub payload_certificate_uuid: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnProxy {
     #[serde(rename = "ProxyAutoConfigEnable")]
-    pub proxy_auto_config_enable: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub proxy_auto_config_enable: Option<i64>,
     #[serde(rename = "ProxyAutoDiscoveryEnable")]
-    pub proxy_auto_discovery_enable: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub proxy_auto_discovery_enable: Option<i64>,
     #[serde(rename = "ProxyAutoConfigURLString")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub proxy_auto_config_url_string: Option<String>,
@@ -1359,7 +1469,8 @@ pub struct VpnProxy {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub supplemental_match_domains: Option<Vec<String>>,
     #[serde(rename = "HTTPEnable")]
-    pub http_enable: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub http_enable: Option<i64>,
     #[serde(rename = "HTTPProxy")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub http_proxy: Option<String>,
@@ -1373,7 +1484,8 @@ pub struct VpnProxy {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub http_proxy_password: Option<String>,
     #[serde(rename = "HTTPSEnable")]
-    pub https_enable: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub https_enable: Option<i64>,
     #[serde(rename = "HTTPSProxy")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub https_proxy: Option<String>,
@@ -1397,6 +1509,8 @@ pub enum VpnAlwaysOnTunnelConfigurationTunnelConfigurationElementInterfaceInterf
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnAlwaysOnTunnelConfigurationTunnelConfigurationElement {
     #[serde(rename = "ProtocolType")]
     pub protocol_type: VpnAlwaysOnTunnelConfigurationTunnelConfigurationElementProtocolType,
@@ -1426,6 +1540,8 @@ pub enum VpnAlwaysOnServiceExceptionServiceExceptionElementAction {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnAlwaysOnServiceExceptionServiceExceptionElement {
     #[serde(rename = "ServiceName")]
     pub service_name: VpnAlwaysOnServiceExceptionServiceExceptionElementServiceName,
@@ -1440,6 +1556,8 @@ pub enum VpnAlwaysOnApplicationExceptionApplicationExceptionElementLimitToProtoc
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnAlwaysOnApplicationExceptionApplicationExceptionElement {
     #[serde(rename = "BundleIdentifier")]
     pub bundle_identifier: String,
@@ -1449,15 +1567,20 @@ pub struct VpnAlwaysOnApplicationExceptionApplicationExceptionElement {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnAlwaysOnAllowedCaptiveNetworkPluginAllowedCaptiveNetworkPluginElement {
     #[serde(rename = "BundleIdentifier")]
     pub bundle_identifier: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnAlwaysOn {
     #[serde(rename = "UIToggleEnabled")]
-    pub ui_toggle_enabled: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub ui_toggle_enabled: Option<i64>,
     #[serde(rename = "TunnelConfigurations")]
     pub tunnel_configurations: Vec<VpnAlwaysOnTunnelConfigurationTunnelConfigurationElement>,
     #[serde(rename = "ServiceExceptions")]
@@ -1467,9 +1590,11 @@ pub struct VpnAlwaysOn {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub application_exceptions: Option<Vec<VpnAlwaysOnApplicationExceptionApplicationExceptionElement>>,
     #[serde(rename = "AllowCaptiveWebSheet")]
-    pub allow_captive_web_sheet: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub allow_captive_web_sheet: Option<i64>,
     #[serde(rename = "AllowAllCaptiveNetworkPlugins")]
-    pub allow_all_captive_network_plugins: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub allow_all_captive_network_plugins: Option<i64>,
     #[serde(rename = "AllowedCaptiveNetworkPlugins")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub allowed_captive_network_plugins: Option<Vec<VpnAlwaysOnAllowedCaptiveNetworkPluginAllowedCaptiveNetworkPluginElement>>,
@@ -1508,6 +1633,8 @@ pub enum VpnTransparentProxyOnDemandRuleOnDemandRulesElementActionParameterActio
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnTransparentProxyOnDemandRuleOnDemandRulesElementActionParameterActionParameter {
     #[serde(rename = "Domains")]
     pub domains: Vec<String>,
@@ -1532,6 +1659,8 @@ pub enum VpnTransparentProxyOnDemandRuleOnDemandRulesElementInterfaceTypeMatch {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnTransparentProxyOnDemandRuleOnDemandRulesElement {
     #[serde(rename = "Action")]
     pub action: VpnTransparentProxyOnDemandRuleOnDemandRulesElementAction,
@@ -1564,19 +1693,24 @@ pub enum VpnTransparentProxyProviderType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VpnTransparentProxy {
     #[serde(rename = "AuthenticationMethod")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub authentication_method: Option<VpnTransparentProxyAuthenticationMethod>,
     #[serde(rename = "DisconnectOnIdle")]
-    pub disconnect_on_idle: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub disconnect_on_idle: Option<i64>,
     #[serde(rename = "DisconnectOnIdleTimer")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub disconnect_on_idle_timer: Option<i64>,
     #[serde(rename = "EnforceRoutes")]
-    pub enforce_routes: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub enforce_routes: Option<i64>,
     #[serde(rename = "OnDemandEnabled")]
-    pub on_demand_enabled: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub on_demand_enabled: Option<i64>,
     #[serde(rename = "OnDemandRules")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub on_demand_rules: Option<Vec<VpnTransparentProxyOnDemandRuleOnDemandRulesElement>>,
@@ -1602,6 +1736,8 @@ pub struct VpnTransparentProxy {
 
 /// Use this section to define settings for VPN access.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Vpn {
     /// The type of the VPN, which defines which settings are appropriate for this VPN payload.
     /// If the type is 'VPN' or 'TransparentProxy', then the system requires a value for 'VPNSubType'.
@@ -1661,6 +1797,8 @@ pub struct Vpn {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemExtensionAllowedSystemExtensionType {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1668,6 +1806,8 @@ pub struct SystemExtensionAllowedSystemExtensionType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemExtensionAllowedSystemExtension {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1675,6 +1815,8 @@ pub struct SystemExtensionAllowedSystemExtension {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemExtensionRemovableSystemExtension {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1682,6 +1824,8 @@ pub struct SystemExtensionRemovableSystemExtension {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemExtensionNonRemovableSystemExtension {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1689,6 +1833,8 @@ pub struct SystemExtensionNonRemovableSystemExtension {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemExtensionNonRemovableFromUISystemExtension {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1696,6 +1842,8 @@ pub struct SystemExtensionNonRemovableFromUISystemExtension {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemExtension {
     /// If 'false', restricts users from approving additional system extensions that configuration profiles don't explicitly allow.
     #[serde(rename = "AllowUserOverrides")]
@@ -1734,6 +1882,8 @@ pub struct SystemExtension {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ScepSubjectAltName {
     #[serde(rename = "rfc822Name")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1751,6 +1901,8 @@ pub struct ScepSubjectAltName {
 
 /// Use this section to define settings for configuration access to SCEP servers.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Scep {
     /// The SCEP URL. See Over-the-Air Profile Delivery and Configuration for more information about SCEP.
     #[serde(rename = "URL")]
@@ -1772,7 +1924,8 @@ pub struct Scep {
     pub challenge: Option<String>,
     /// The key size, in bits.
     #[serde(rename = "Keysize")]
-    pub keysize: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub keysize: Option<i64>,
     /// Always 'RSA'.
     #[serde(rename = "Key Type")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1822,6 +1975,8 @@ pub enum GlobalHTTPProxyProxyType {
 
 /// Global HTTP Proxy (Supervised devices only)
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct GlobalHTTPProxy {
     /// The proxy type. For a manual proxy type, the profile contains the proxy server address, including its port, and optionally a user name and password. For an auto proxy type, you can enter a PAC URL.
     #[serde(rename = "ProxyType")]
@@ -1859,6 +2014,8 @@ pub struct GlobalHTTPProxy {
 
 /// Use this section to define Domains settings.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Domain {
     /// An array of domains. The system considers email addresses that lack a suffix matching any of these strings out of domain and marked in Mail.
     /// Available in iOS 8 and later and macOS 10.10 and later.
@@ -1888,6 +2045,8 @@ pub struct Domain {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlsContentFiltersiteWhitelistsiteWhitelistItem {
     pub address: String,
     #[serde(rename = "pageTitle")]
@@ -1896,6 +2055,8 @@ pub struct ParentalControlsContentFiltersiteWhitelistsiteWhitelistItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlsContentFilter {
     /// If 'true', enables web content filters.
     #[serde(rename = "restrictWeb")]
@@ -2195,6 +2356,8 @@ pub enum SystemPreferenceDisabledSystemSettingSettingsExtension {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemPreference {
     /// The list of enabled System Preferences panes.
     #[serde(rename = "EnabledPreferencePanes")]
@@ -2211,6 +2374,8 @@ pub struct SystemPreference {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SmartCard {
     /// If 'false', users don't get the pairing dialog, although existing pairings still work.
     #[serde(rename = "UserPairing")]
@@ -2227,14 +2392,16 @@ pub struct SmartCard {
     /// * '2': Turns on certificate trust check. A soft revocation check is also performed. Until the certificate is explicitly rejected by CRL/OCSP, it's considered valid. This setting means that unavailable or unreachable CRL/OCSP allow this check to succeed.
     /// * '3': Turns on certificate trust check. A hard revocation check is also performed. Unless CRL/OCSP explicitly says “This certificate is OK,” it's considered invalid. This option is the most secure.
     #[serde(rename = "checkCertificateTrust")]
-    pub check_certificate_trust: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub check_certificate_trust: Option<i64>,
     /// If 'true', a user can pair with only one SmartCard, although existing pairings are allowed if already set up.
     #[serde(rename = "oneCardPerUser")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub one_card_per_user: Option<bool>,
     /// If '1', the system enables the screen saver when the SmartCard is removed. Available in macOS 10.13.4 and later.
     #[serde(rename = "tokenRemovalAction")]
-    pub token_removal_action: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub token_removal_action: Option<i64>,
     /// If 'true', a user can only log in or authenticate with a SmartCard. Available in macOS 10.13.2 and later.
     #[serde(rename = "enforceSmartCard")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -2242,6 +2409,8 @@ pub struct SmartCard {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemMigrationCustomBehaviorCustomBehaviorItemPathPathsItem {
     #[serde(rename = "SourcePath")]
     pub source_path: String,
@@ -2254,6 +2423,8 @@ pub struct SystemMigrationCustomBehaviorCustomBehaviorItemPathPathsItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemMigrationCustomBehaviorCustomBehaviorItem {
     #[serde(rename = "Context")]
     pub context: String,
@@ -2262,6 +2433,8 @@ pub struct SystemMigrationCustomBehaviorCustomBehaviorItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemMigration {
     /// The list of custom behavior dictionaries.
     #[serde(rename = "CustomBehavior")]
@@ -2270,6 +2443,8 @@ pub struct SystemMigration {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct NetworkUsageRuleApplicationRuleApplicationRulesItem {
     #[serde(rename = "AppIdentifierMatches")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -2283,6 +2458,8 @@ pub struct NetworkUsageRuleApplicationRuleApplicationRulesItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct NetworkUsageRuleSIMRuleSIMRulesItem {
     #[serde(rename = "ICCIDs")]
     pub icci_ds: Vec<String>,
@@ -2291,6 +2468,8 @@ pub struct NetworkUsageRuleSIMRuleSIMRulesItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct NetworkUsageRule {
     /// An array of application rules, that apply to only managed apps.
     #[serde(rename = "ApplicationRules")]
@@ -2303,6 +2482,8 @@ pub struct NetworkUsageRule {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TimeServer {
     /// The NTP server to connect to. As of macOS 10.13 only one time server is supported.
     #[serde(rename = "timeServer")]
@@ -2315,6 +2496,8 @@ pub struct TimeServer {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Accessibility {
     /// The minimum zoom level in the Zoom options.
     #[serde(rename = "closeViewFarPoint")]
@@ -2411,6 +2594,8 @@ pub struct Accessibility {
 
 /// Declarations
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Declaration {
     /// The set of declarations to apply. The items in this array are Base64-encoded data representations of the declaration JSON data.
     #[serde(rename = "Declarations")]
@@ -2418,6 +2603,8 @@ pub struct Declaration {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct NetworkProxyConfigurationProxy {
     #[serde(rename = "FTPEnable")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -2494,6 +2681,8 @@ pub struct NetworkProxyConfigurationProxy {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct NetworkProxyConfiguration {
     /// The dictionary containing all the proxies for this device.
     #[serde(rename = "Proxies")]
@@ -2509,6 +2698,8 @@ pub enum IdentificationPayloadIdentificationAuthMethod {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct IdentificationPayloadIdentification {
     #[serde(rename = "UserName")]
     pub user_name: String,
@@ -2529,6 +2720,8 @@ pub struct IdentificationPayloadIdentification {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Identification {
     /// The dictionary that contains details about the user.
     #[serde(rename = "PayloadIdentification")]
@@ -2544,6 +2737,8 @@ pub enum ExtensibleSingleSignOnType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ExtensibleSingleSignOnExtensionDaum {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -2577,6 +2772,8 @@ pub enum ExtensibleSingleSignOnPlatformSSOAuthenticationMethod {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ExtensibleSingleSignOnPlatformSSOTokenToUserMapping {
     #[serde(rename = "AccountName")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -2607,6 +2804,8 @@ pub enum ExtensibleSingleSignOnPlatformSSOUserAuthorizationMode {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ExtensibleSingleSignOnPlatformSSOAuthorizationGroup {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -2652,6 +2851,8 @@ pub enum ExtensibleSingleSignOnPlatformSSOUnlockPolicypolicy {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ExtensibleSingleSignOnPlatformSSO {
     #[serde(rename = "AuthenticationMethod")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -2711,6 +2912,8 @@ pub struct ExtensibleSingleSignOnPlatformSSO {
 
 /// Configures an app extension to handle SSO.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ExtensibleSingleSignOn {
     /// The bundle identifier of the app extension that performs SSO for the specified URLs.
     #[serde(rename = "ExtensionIdentifier")]
@@ -2772,6 +2975,8 @@ pub struct ExtensibleSingleSignOn {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Screensaver {
     /// If 'true', the user is prompted for a password when the screen saver is unlocked or stopped. When you use this prompt, you must also provide 'askForPasswordDelay'. Available in macOS 10.13 and later.
     #[serde(rename = "askForPassword")]
@@ -2795,63 +3000,93 @@ pub struct Screensaver {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EnergySavercomAppleEnergySaverDesktopACPower {
     #[serde(rename = "Display Sleep Timer")]
-    pub display_sleep_timer: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub display_sleep_timer: Option<i64>,
     #[serde(rename = "Disk Sleep Timer")]
-    pub disk_sleep_timer: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub disk_sleep_timer: Option<i64>,
     #[serde(rename = "System Sleep Timer")]
-    pub system_sleep_timer: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub system_sleep_timer: Option<i64>,
     #[serde(rename = "Reduce Processor Speed")]
-    pub reduce_processor_speed: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub reduce_processor_speed: Option<i64>,
     #[serde(rename = "Dynamic Power Step")]
-    pub dynamic_power_step: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub dynamic_power_step: Option<i64>,
     #[serde(rename = "Wake on LAN")]
-    pub wake_on_lan: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub wake_on_lan: Option<i64>,
     #[serde(rename = "Wake On Modem Ring")]
-    pub wake_on_modem_ring: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub wake_on_modem_ring: Option<i64>,
     #[serde(rename = "Automatic Restart On Power Loss")]
-    pub automatic_restart_on_power_loss: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub automatic_restart_on_power_loss: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EnergySavercomAppleEnergySaverPortableACPower {
     #[serde(rename = "Display Sleep Timer")]
-    pub display_sleep_timer: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub display_sleep_timer: Option<i64>,
     #[serde(rename = "Disk Sleep Timer")]
-    pub disk_sleep_timer: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub disk_sleep_timer: Option<i64>,
     #[serde(rename = "System Sleep Timer")]
-    pub system_sleep_timer: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub system_sleep_timer: Option<i64>,
     #[serde(rename = "Reduce Processor Speed")]
-    pub reduce_processor_speed: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub reduce_processor_speed: Option<i64>,
     #[serde(rename = "Dynamic Power Step")]
-    pub dynamic_power_step: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub dynamic_power_step: Option<i64>,
     #[serde(rename = "Wake on LAN")]
-    pub wake_on_lan: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub wake_on_lan: Option<i64>,
     #[serde(rename = "Wake On Modem Ring")]
-    pub wake_on_modem_ring: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub wake_on_modem_ring: Option<i64>,
     #[serde(rename = "Automatic Restart On Power Loss")]
-    pub automatic_restart_on_power_loss: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub automatic_restart_on_power_loss: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EnergySavercomAppleEnergySaverPortableBatteryPower {
     #[serde(rename = "Display Sleep Timer")]
-    pub display_sleep_timer: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub display_sleep_timer: Option<i64>,
     #[serde(rename = "Disk Sleep Timer")]
-    pub disk_sleep_timer: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub disk_sleep_timer: Option<i64>,
     #[serde(rename = "System Sleep Timer")]
-    pub system_sleep_timer: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub system_sleep_timer: Option<i64>,
     #[serde(rename = "Reduce Processor Speed")]
-    pub reduce_processor_speed: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub reduce_processor_speed: Option<i64>,
     #[serde(rename = "Dynamic Power Step")]
-    pub dynamic_power_step: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub dynamic_power_step: Option<i64>,
     #[serde(rename = "Wake on LAN")]
-    pub wake_on_lan: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub wake_on_lan: Option<i64>,
     #[serde(rename = "Wake On Modem Ring")]
-    pub wake_on_modem_ring: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub wake_on_modem_ring: Option<i64>,
     #[serde(rename = "Automatic Restart On Power Loss")]
-    pub automatic_restart_on_power_loss: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub automatic_restart_on_power_loss: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -2865,6 +3100,8 @@ pub enum EnergySavercomAppleEnergySaverDesktopScheduleRepeatingPowerOneventtype 
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EnergySavercomAppleEnergySaverDesktopScheduleRepeatingPowerOn {
     pub eventtype: EnergySavercomAppleEnergySaverDesktopScheduleRepeatingPowerOneventtype,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -2884,6 +3121,8 @@ pub enum EnergySavercomAppleEnergySaverDesktopScheduleRepeatingPowerOffeventtype
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EnergySavercomAppleEnergySaverDesktopScheduleRepeatingPowerOff {
     pub eventtype: EnergySavercomAppleEnergySaverDesktopScheduleRepeatingPowerOffeventtype,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -2893,6 +3132,8 @@ pub struct EnergySavercomAppleEnergySaverDesktopScheduleRepeatingPowerOff {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EnergySavercomAppleEnergySaverDesktopSchedule {
     #[serde(rename = "RepeatingPowerOn")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -2903,6 +3144,8 @@ pub struct EnergySavercomAppleEnergySaverDesktopSchedule {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EnergySaver {
     /// The settings for a desktop computer.
     #[serde(rename = "com.apple.EnergySaver.desktop.ACPower")]
@@ -2939,6 +3182,8 @@ pub enum DnsSettingDNSSettingDNSProtocol {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DnsSettingDNSSetting {
     #[serde(rename = "DNSProtocol")]
     pub dns_protocol: DnsSettingDNSSettingDNSProtocol,
@@ -2975,6 +3220,8 @@ pub enum DnsSettingOnDemandRuleOnDemandRulesElementActionParameterActionParamete
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DnsSettingOnDemandRuleOnDemandRulesElementActionParameterActionParameter {
     #[serde(rename = "Domains")]
     pub domains: Vec<String>,
@@ -2993,6 +3240,8 @@ pub enum DnsSettingOnDemandRuleOnDemandRulesElementInterfaceTypeMatch {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DnsSettingOnDemandRuleOnDemandRulesElement {
     #[serde(rename = "Action")]
     pub action: DnsSettingOnDemandRuleOnDemandRulesElementAction,
@@ -3018,6 +3267,8 @@ pub struct DnsSettingOnDemandRuleOnDemandRulesElement {
 
 /// Use this section to configure DNS settings.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DnsSetting {
     /// A dictionary that defines a configuration for an encrypted DNS server.
     #[serde(rename = "DNSSettings")]
@@ -3038,6 +3289,8 @@ pub struct DnsSetting {
 
 /// Directory Service
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DirectoryService {
     /// The Active Directory domain to join.
     #[serde(rename = "HostName")]
@@ -3197,6 +3450,8 @@ pub struct DirectoryService {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct FileProvider {
     /// If 'true', enables file providers access to the path of the requesting process.
     #[serde(rename = "AllowManagedFileProvidersToRequestAttribution")]
@@ -3213,6 +3468,8 @@ pub struct FileProvider {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct FdeFileVaultOption {
     /// If 'true', the system won't disable FileVault.
     #[serde(rename = "dontAllowFDEDisable")]
@@ -3242,6 +3499,8 @@ pub enum AimAccountAIMAuthentication {
 
 /// Use this section to define settings for configuration access to AIM servers.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AimAccount {
     /// The description of the account.
     #[serde(rename = "AIMAccountDescription")]
@@ -3311,6 +3570,8 @@ pub enum DockMCXDockSpecialFolderMCXDockSpecialFoldersItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DockstaticOtherStaticItemtileDaumfileDaum {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -3318,6 +3579,8 @@ pub struct DockstaticOtherStaticItemtileDaumfileDaum {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DockstaticOtherStaticItemtileDaum {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -3340,6 +3603,8 @@ pub enum DockstaticOtherStaticItemtileType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DockstaticOtherStaticItem {
     #[serde(rename = "tile-data")]
     pub tile_data: DockstaticOtherStaticItemtileDaum,
@@ -3348,6 +3613,8 @@ pub struct DockstaticOtherStaticItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DockstaticAppStaticItemtileDaumfileDaum {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -3355,6 +3622,8 @@ pub struct DockstaticAppStaticItemtileDaumfileDaum {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DockstaticAppStaticItemtileDaum {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -3377,6 +3646,8 @@ pub enum DockstaticAppStaticItemtileType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DockstaticAppStaticItem {
     #[serde(rename = "tile-data")]
     pub tile_data: DockstaticAppStaticItemtileDaum,
@@ -3385,6 +3656,8 @@ pub struct DockstaticAppStaticItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DockpersistentAppStaticItemtileDaumfileDaum {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -3392,6 +3665,8 @@ pub struct DockpersistentAppStaticItemtileDaumfileDaum {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DockpersistentAppStaticItemtileDaum {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -3414,6 +3689,8 @@ pub enum DockpersistentAppStaticItemtileType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DockpersistentAppStaticItem {
     #[serde(rename = "tile-data")]
     pub tile_data: DockpersistentAppStaticItemtileDaum,
@@ -3422,6 +3699,8 @@ pub struct DockpersistentAppStaticItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DockpersistentOtherStaticItemtileDaumfileDaum {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -3429,6 +3708,8 @@ pub struct DockpersistentOtherStaticItemtileDaumfileDaum {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DockpersistentOtherStaticItemtileDaum {
     pub label: String,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -3451,6 +3732,8 @@ pub enum DockpersistentOtherStaticItemtileType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DockpersistentOtherStaticItem {
     #[serde(rename = "tile-data")]
     pub tile_data: DockpersistentOtherStaticItemtileDaum,
@@ -3459,6 +3742,8 @@ pub struct DockpersistentOtherStaticItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Dock {
     /// The tile size. Values must be in the range from 16 to 128.
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -3585,6 +3870,8 @@ pub struct Dock {
 
 /// Use this section to define settings for a root certificate.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CertificateRoot {
     /// The file name of the enclosed certificate.
     #[serde(rename = "PayloadCertificateFileName")]
@@ -3596,12 +3883,16 @@ pub struct CertificateRoot {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RelayRelayRelayAdditionalHTTPHeaderField {
     #[serde(rename = "ANY")]
     pub any: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RelayRelayRelay {
     #[serde(rename = "HTTP3RelayURL")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -3622,6 +3913,8 @@ pub struct RelayRelayRelay {
 
 /// Use this section to define settings for network relays.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Relay {
     /// An array of dictionaries that describe one or more relay servers that the system can chain together.
     #[serde(rename = "Relays")]
@@ -3643,6 +3936,8 @@ pub struct Relay {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SetupAssistant {
     /// If 'true', the system skips the Apple Account setup pane.
     #[serde(rename = "SkipCloudSetup")]
@@ -3696,6 +3991,8 @@ pub struct SetupAssistant {
 
 /// Use this section to place an Apple TV device into Conference Room Display mode.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ConferenceRoomDisplay {
     /// The custom message displayed on the screen in Conference Room Display mode.
     #[serde(rename = "Message")]
@@ -3705,6 +4002,8 @@ pub struct ConferenceRoomDisplay {
 
 /// Use this section to define settings for configuration access to CalDAV servers.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CalDAV {
     /// The description of the account.
     #[serde(rename = "CalDAVAccountDescription")]
@@ -3740,6 +4039,8 @@ pub struct CalDAV {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EducationConfigurationDepartmentDepartmentsItem {
     #[serde(rename = "Name")]
     pub name: String,
@@ -3748,6 +4049,8 @@ pub struct EducationConfigurationDepartmentDepartmentsItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EducationConfigurationGroupGroupsItem {
     #[serde(rename = "BeaconID")]
     pub beacon_id: i64,
@@ -3780,6 +4083,8 @@ pub enum EducationConfigurationUserUsersItemPasscodeType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EducationConfigurationUserUsersItem {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -3812,6 +4117,8 @@ pub struct EducationConfigurationUserUsersItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EducationConfigurationDeviceGroupDeviceGroupsItem {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -3822,6 +4129,8 @@ pub struct EducationConfigurationDeviceGroupDeviceGroupsItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EducationConfiguration {
     /// The organization's UUID identifier. This identifier can be any valid UUID. All teacher and student devices that need to communicate with one another must have the same organization UUID, particularly if they originated from different Device Enrollment Programs.
     #[serde(rename = "OrganizationUUID")]
@@ -3880,6 +4189,8 @@ pub struct EducationConfiguration {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemPolicyControl {
     /// If 'true', enables Gatekeeper. If 'false', disables Gatekeeper.
     #[serde(rename = "EnableAssessment")]
@@ -3898,6 +4209,8 @@ pub struct SystemPolicyControl {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ScreensaverUser {
     /// The name of the screen saver module.
     #[serde(rename = "moduleName")]
@@ -3914,6 +4227,8 @@ pub struct ScreensaverUser {
 
 /// Software Update Managed Settings
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SoftwareUpdate {
     /// The URL of the software update catalog. This property is not supported in macOS 11 and later.
     #[serde(rename = "CatalogURL")]
@@ -3954,6 +4269,8 @@ pub struct SoftwareUpdate {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AppToAppLayerVPNMappingAppLayerVPNMappingAppLayerVPNMappingItemMatchToolMatchToolsItem {
     #[serde(rename = "DesignatedRequirement")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -3967,6 +4284,8 @@ pub struct AppToAppLayerVPNMappingAppLayerVPNMappingAppLayerVPNMappingItemMatchT
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AppToAppLayerVPNMappingAppLayerVPNMappingAppLayerVPNMappingItem {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -3987,6 +4306,8 @@ pub struct AppToAppLayerVPNMappingAppLayerVPNMappingAppLayerVPNMappingItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AppToAppLayerVPNMapping {
     /// The array of VPN mapping dictionaries.
     #[serde(rename = "AppLayerVPNMapping")]
@@ -3994,6 +4315,8 @@ pub struct AppToAppLayerVPNMapping {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManagedPreferenceANYForcedSettingmcxPreferenceSetting {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -4001,11 +4324,15 @@ pub struct ManagedPreferenceANYForcedSettingmcxPreferenceSetting {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManagedPreferenceANYForcedSetting {
     pub mcx_preference_settings: ManagedPreferenceANYForcedSettingmcxPreferenceSetting,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManagedPreferenceANYSetOnceSettingmcxPreferenceSetting {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -4013,11 +4340,15 @@ pub struct ManagedPreferenceANYSetOnceSettingmcxPreferenceSetting {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManagedPreferenceANYSetOnceSetting {
     pub mcx_preference_settings: ManagedPreferenceANYSetOnceSettingmcxPreferenceSetting,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManagedPreferenceANY {
     #[serde(rename = "Forced")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -4028,6 +4359,8 @@ pub struct ManagedPreferenceANY {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManagedPreference {
     /// The dictionary containing app preference domains.
     #[serde(rename = "ANY")]
@@ -4043,6 +4376,8 @@ pub enum ContentCachingListenRangeRangesItemtype {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ContentCachingListenRangeRangesItem {
     #[serde(rename = "type")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -4075,6 +4410,8 @@ pub enum ContentCachingPeerFilterRangeRangesItemtype {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ContentCachingPeerFilterRangeRangesItem {
     #[serde(rename = "type")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -4094,6 +4431,8 @@ pub enum ContentCachingPeerListenRangeRangesItemtype {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ContentCachingPeerListenRangeRangesItem {
     #[serde(rename = "type")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -4113,6 +4452,8 @@ pub enum ContentCachingPublicRangeRangesItemtype {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ContentCachingPublicRangeRangesItem {
     #[serde(rename = "type")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -4124,6 +4465,8 @@ pub struct ContentCachingPublicRangeRangesItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ContentCaching {
     /// If true, the system purges content from the cache automatically when it needs disk space for other apps when free disk space runs low on the computer. Set to 'false' to maximize effectiveness of Content Caching. Available in macOS 10.15 and later.
     #[serde(rename = "AllowCacheDelete")]
@@ -4227,6 +4570,8 @@ pub struct ContentCaching {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AssociatedDomainConfigurationConfigurationItem {
     #[serde(rename = "ApplicationIdentifier")]
     pub application_identifier: String,
@@ -4239,6 +4584,8 @@ pub struct AssociatedDomainConfigurationConfigurationItem {
 
 /// Use this section to define settings for Associated Domains to be used with features such as Extensible AppSSO, universal links and Password AutoFill.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AssociatedDomain {
     /// A dictionary that maps apps to their associated domains.
     #[serde(rename = "Configuration")]
@@ -4253,6 +4600,8 @@ pub enum MediaManagementDiscBurningBurnSupport {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct MediaManagementDiscBurning {
     /// Configure disc-burn. Allowed values:
     /// 
@@ -4264,6 +4613,8 @@ pub struct MediaManagementDiscBurning {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TODO8021XGlobalEthernet {
     /// Keys relevant to 802.1X configuration. User enrollment payloads don't support the various proxy keys, including 'ProxyType', 'ProxyServer', 'ProxyServerPort', 'ProxyUsername', 'ProxyPassword', 'ProxyPACURL' and 'ProxyPACFallbackAllowed'.
     #[serde(rename = "ANY")]
@@ -4280,6 +4631,8 @@ pub enum AcmeCertificateKeyType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AcmeCertificateSubjectAltName {
     #[serde(rename = "rfc822Name")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -4297,6 +4650,8 @@ pub struct AcmeCertificateSubjectAltName {
 
 /// Use this section to define settings to have an ACME server issue a client certificate.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AcmeCertificate {
     /// The directory URL of the ACME server. The URL must use the https scheme.
     #[serde(rename = "DirectoryURL")]
@@ -4367,6 +4722,8 @@ pub enum FinderInterfaceLevel {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Finder {
     /// If 'true', the system disables the Finder's burn support.
     #[serde(rename = "ProhibitBurn")]
@@ -4411,6 +4768,8 @@ pub struct Finder {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Account {
     /// If 'true', the system enables the guest account.
     #[serde(rename = "EnableGuestAccount")]
@@ -4423,6 +4782,8 @@ pub struct Account {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Desktop {
     /// If 'true', locks the desktop picture. Replaced with allowWallpaperModification in macOS 10.13.
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -4435,6 +4796,8 @@ pub struct Desktop {
 
 /// Payload dictionary keys common to all payload types
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CommonPayloadKey {
     /// The reverse-DNS-style identifier for the payload. This identifier is usually the same as the TopLevel value, with an additional appended component. This string must be unique within the profile.
     /// During a profile replacement, the system updates payloads with the same 'PayloadIdentifier' and 'PayloadUUID' in the old and new profiles.
@@ -4475,6 +4838,8 @@ pub enum LdapLDAPSearchSettingLDAPSearchSettingsItemLDAPSearchSettingScope {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LdapLDAPSearchSettingLDAPSearchSettingsItem {
     #[serde(rename = "LDAPSearchSettingDescription")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -4488,6 +4853,8 @@ pub struct LdapLDAPSearchSettingLDAPSearchSettingsItem {
 
 /// Use this section to define settings for configuration access to LDAP servers.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Ldap {
     /// The description of the account.
     #[serde(rename = "LDAPAccountDescription")]
@@ -4519,6 +4886,8 @@ pub struct Ldap {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct FirewallApplicationApplicationsItem {
     #[serde(rename = "BundleID")]
     pub bundle_id: String,
@@ -4534,6 +4903,8 @@ pub enum FirewallLoggingOption {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Firewall {
     /// If 'true', the system enables the firewall.
     #[serde(rename = "EnableFirewall")]
@@ -4571,6 +4942,8 @@ pub struct Firewall {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct IdentityPreference {
     /// The email address (in RFC 822 format), DNS host name, or other name that uniquely identifies a service requiring this identity.
     #[serde(rename = "Name")]
@@ -4581,6 +4954,8 @@ pub struct IdentityPreference {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AutonomousSingleAppModeAllowedApplicationAllowedApplicationsItem {
     #[serde(rename = "BundleIdentifier")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -4591,6 +4966,8 @@ pub struct AutonomousSingleAppModeAllowedApplicationAllowedApplicationsItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AutonomousSingleAppMode {
     /// An array of dictionaries that specifies the apps that the system grants access to the Accessibility APIs.
     #[serde(rename = "AllowedApplications")]
@@ -4605,6 +4982,8 @@ pub enum CertificateRevocationEnabledForCertSubjectPublicKeyInfoHashDictAlgorith
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CertificateRevocationEnabledForCertSubjectPublicKeyInfoHashDict {
     #[serde(rename = "Algorithm")]
     pub algorithm: CertificateRevocationEnabledForCertSubjectPublicKeyInfoHashDictAlgorithm,
@@ -4614,6 +4993,8 @@ pub struct CertificateRevocationEnabledForCertSubjectPublicKeyInfoHashDict {
 
 /// Use this section to define settings for certificate revocation.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CertificateRevocation {
     /// An array of certificates that the system checks for revocation.
     /// Specifying a certificate authority (CA) enables revocation checking for all certificates chaining up to that CA.
@@ -4625,6 +5006,8 @@ pub struct CertificateRevocation {
 
 /// Configures a computer to send or receive "PowerON". "PowerOFF", "Reset" requests.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LightsOutManagementLOM {
     /// The UUID certificate for the device. This key indicates the device can receive 'PowerON', 'PowerOFF', and 'Reset' requests from a LOM controller. This certificate must contain the Key Usage attributes of Digital Signature, Key Encipherment and Data Encipherment. As well as the Extended Key Usage attributes of Server Authentication and Client Authentication.
     #[serde(rename = "DeviceCertificateUUID")]
@@ -4670,6 +5053,8 @@ pub enum PrivacyPreferencesPolicyControlServiceAddressBookIdentityDictAEReceiver
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceAddressBookIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -4724,6 +5109,8 @@ pub enum PrivacyPreferencesPolicyControlServiceCalendarIdentityDictAEReceiverIde
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceCalendarIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -4778,6 +5165,8 @@ pub enum PrivacyPreferencesPolicyControlServiceReminderIdentityDictAEReceiverIde
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceReminderIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -4832,6 +5221,8 @@ pub enum PrivacyPreferencesPolicyControlServicePhotoIdentityDictAEReceiverIdenti
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServicePhotoIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -4886,6 +5277,8 @@ pub enum PrivacyPreferencesPolicyControlServiceCameraIdentityDictAEReceiverIdent
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceCameraIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -4940,6 +5333,8 @@ pub enum PrivacyPreferencesPolicyControlServiceMicrophoneIdentityDictAEReceiverI
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceMicrophoneIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -4994,6 +5389,8 @@ pub enum PrivacyPreferencesPolicyControlServiceAccessibilityIdentityDictAEReceiv
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceAccessibilityIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5048,6 +5445,8 @@ pub enum PrivacyPreferencesPolicyControlServicePostEventIdentityDictAEReceiverId
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServicePostEventIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5102,6 +5501,8 @@ pub enum PrivacyPreferencesPolicyControlServiceSystemPolicyAllFileIdentityDictAE
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceSystemPolicyAllFileIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5156,6 +5557,8 @@ pub enum PrivacyPreferencesPolicyControlServiceSystemPolicySysAdminFileIdentityD
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceSystemPolicySysAdminFileIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5210,6 +5613,8 @@ pub enum PrivacyPreferencesPolicyControlServiceAppleEventIdentityDictAEReceiverI
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceAppleEventIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5264,6 +5669,8 @@ pub enum PrivacyPreferencesPolicyControlServiceMediaLibraryIdentityDictAEReceive
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceMediaLibraryIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5318,6 +5725,8 @@ pub enum PrivacyPreferencesPolicyControlServiceFileProviderPresenceIdentityDictA
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceFileProviderPresenceIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5372,6 +5781,8 @@ pub enum PrivacyPreferencesPolicyControlServiceListenEventIdentityDictAEReceiver
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceListenEventIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5426,6 +5837,8 @@ pub enum PrivacyPreferencesPolicyControlServiceScreenCaptureIdentityDictAEReceiv
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceScreenCaptureIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5480,6 +5893,8 @@ pub enum PrivacyPreferencesPolicyControlServiceSpeechRecognitionIdentityDictAERe
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceSpeechRecognitionIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5534,6 +5949,8 @@ pub enum PrivacyPreferencesPolicyControlServiceSystemPolicyDesktopFolderIdentity
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceSystemPolicyDesktopFolderIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5588,6 +6005,8 @@ pub enum PrivacyPreferencesPolicyControlServiceSystemPolicyDocumentsFolderIdenti
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceSystemPolicyDocumentsFolderIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5642,6 +6061,8 @@ pub enum PrivacyPreferencesPolicyControlServiceSystemPolicyDownloadsFolderIdenti
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceSystemPolicyDownloadsFolderIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5696,6 +6117,8 @@ pub enum PrivacyPreferencesPolicyControlServiceSystemPolicyNetworkVolumeIdentity
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceSystemPolicyNetworkVolumeIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5750,6 +6173,8 @@ pub enum PrivacyPreferencesPolicyControlServiceSystemPolicyRemovableVolumeIdenti
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceSystemPolicyRemovableVolumeIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5804,6 +6229,8 @@ pub enum PrivacyPreferencesPolicyControlServiceSystemPolicyAppBundleIdentityDict
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceSystemPolicyAppBundleIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5858,6 +6285,8 @@ pub enum PrivacyPreferencesPolicyControlServiceSystemPolicyAppDaumIdentityDictAE
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceSystemPolicyAppDaumIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5912,6 +6341,8 @@ pub enum PrivacyPreferencesPolicyControlServiceBluetoothAlwayIdentityDictAERecei
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlServiceBluetoothAlwayIdentityDict {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -5942,6 +6373,8 @@ pub struct PrivacyPreferencesPolicyControlServiceBluetoothAlwayIdentityDict {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControlService {
     #[serde(rename = "AddressBook")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6019,6 +6452,8 @@ pub struct PrivacyPreferencesPolicyControlService {
 
 /// Configures Security Preferences:Privacy settings
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrivacyPreferencesPolicyControl {
     /// A dictionary whose keys are limited to the privacy policy control services.  In the case of conflicting specifications, the most restrictive setting (deny) is used.
     #[serde(rename = "Services")]
@@ -6034,6 +6469,8 @@ pub enum FdeFileVaultEnable {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct FdeFileVault {
     /// Set to 'On' to enable FileVault and set to 'Off' to disable FileVault. Payloads set to 'On' sent through MDM need to either include full authentication information in the payload or have the 'Defer' option set to 'true'. When 'Defer' is 'true', the system prompts for the authentication information when the user enables FileVault.
     #[serde(rename = "Enable")]
@@ -6095,6 +6532,8 @@ pub struct FdeFileVault {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemPolicyManaged {
     /// If 'true', disables the Finder's contextual menu item.
     #[serde(rename = "DisableOverride")]
@@ -6104,6 +6543,8 @@ pub struct SystemPolicyManaged {
 
 /// Use this section to define settings for a pkcs12 certificate.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CertificatePKCS12 {
     /// The file name of the enclosed certificate.
     #[serde(rename = "PayloadCertificateFileName")]
@@ -6146,6 +6587,8 @@ pub enum MdmServerCapabilityServerCapabilitiesItem {
 
 /// Use this section to define settings for mobile device management.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Mdm {
     /// The UUID of the certificate payload for the device's identity. It may also point to a SCEP payload.
     #[serde(rename = "IdentityCertificateUUID")]
@@ -6262,6 +6705,8 @@ pub enum CertificateTransparencyDisabledForCertSubjectPublicKeyInfoHashDictAlgor
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CertificateTransparencyDisabledForCertSubjectPublicKeyInfoHashDict {
     #[serde(rename = "Algorithm")]
     pub algorithm: CertificateTransparencyDisabledForCertSubjectPublicKeyInfoHashDictAlgorithm,
@@ -6271,6 +6716,8 @@ pub struct CertificateTransparencyDisabledForCertSubjectPublicKeyInfoHashDict {
 
 /// Use this section to define settings for certificate transparency.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CertificateTransparency {
     /// An array of certificates for which certificate transparency is disabled. One of the following conditions needs to be met to disable certificate transparency enforcement when this policy is set:
     /// * The hash is of the server certificate's 'subjectPublicKeyInfo'.
@@ -6286,6 +6733,8 @@ pub struct CertificateTransparency {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CertificatePreference {
     /// An email address (in RFC 822 format) or other name for which a preferred certificate is requested.
     #[serde(rename = "Name")]
@@ -6296,6 +6745,8 @@ pub struct CertificatePreference {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ExchangeActiveSyncCommunicationServiceRuleDefaultServiceHandler {
     #[serde(rename = "AudioCall")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6303,6 +6754,8 @@ pub struct ExchangeActiveSyncCommunicationServiceRuleDefaultServiceHandler {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ExchangeActiveSyncCommunicationServiceRule {
     #[serde(rename = "DefaultServiceHandlers")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6311,6 +6764,8 @@ pub struct ExchangeActiveSyncCommunicationServiceRule {
 
 /// Use this section to define settings for the Exchange ActiveSync account.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ExchangeActiveSync {
     /// The full email address for the account. If not present in the payload, the device prompts for this string during profile installation.
     #[serde(rename = "EmailAddress")]
@@ -6394,7 +6849,8 @@ pub struct ExchangeActiveSync {
     /// The number of days in the past to sync mail on the device.
     /// For no limit, use the value '0'.
     #[serde(rename = "MailNumberOfPastDaysToSync")]
-    pub mail_number_of_past_days_to_sync: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub mail_number_of_past_days_to_sync: Option<i64>,
     /// The value of the 'X-Apple-Config-Magic' header in each EAS HTTP request.
     #[serde(rename = "HeaderMagic")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6496,6 +6952,8 @@ pub struct ExchangeActiveSync {
 
 /// Use this section to define settings for subscribed calendar account.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SubscribedCalendar {
     /// The description of the account.
     #[serde(rename = "SubCalAccountDescription")]
@@ -6523,6 +6981,8 @@ pub struct SubscribedCalendar {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AirPrintAirPrintAirPrintItem {
     #[serde(rename = "IPAddress")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6540,6 +7000,8 @@ pub struct AirPrintAirPrintAirPrintItem {
 
 /// Use this section to define settings for AirPrint.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AirPrint {
     /// An array of AirPrint printers that are presented to the user.
     #[serde(rename = "AirPrint")]
@@ -6547,6 +7009,8 @@ pub struct AirPrint {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct GoogleAccountCommunicationServiceRuleDefaultServiceHandler {
     #[serde(rename = "AudioCall")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6554,6 +7018,8 @@ pub struct GoogleAccountCommunicationServiceRuleDefaultServiceHandler {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct GoogleAccountCommunicationServiceRule {
     #[serde(rename = "DefaultServiceHandlers")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6562,6 +7028,8 @@ pub struct GoogleAccountCommunicationServiceRule {
 
 /// Use this section to configure Google accounts. The user will be prompted to sign in afterward.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct GoogleAccount {
     /// A user-visible description of the Google account, shown in the Mail and Settings apps.
     #[serde(rename = "AccountDescription")]
@@ -6586,6 +7054,8 @@ pub struct GoogleAccount {
 
 /// Use this section to define web clips
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct WebClip {
     /// If 'true', the system prevents SpringBoard from adding shine to the icon.
     #[serde(rename = "Precomposed")]
@@ -6625,6 +7095,8 @@ pub enum XsansanAuthMethod {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Xsan {
     /// The name of the SAN. This key is required for all Xsan SANs. The name must exactly match the name of the SAN defined in the metadata server.
     #[serde(rename = "sanName")]
@@ -6650,6 +7122,8 @@ pub struct Xsan {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TODO8021XFirstEthernet {
     /// Keys relevant to 802.1x configuration.  User enrollment payloads do not support the various proxy keys including ProxyType, ProxyServer, ProxyServerPort, ProxyUsername, ProxyPassword,, ProxyPACURL and ProxyPACFallbackAllowed.
     #[serde(rename = "ANY")]
@@ -6658,6 +7132,8 @@ pub struct TODO8021XFirstEthernet {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ApnDefaultsDaumapnapnsItem {
     pub apn: String,
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6672,6 +7148,8 @@ pub struct ApnDefaultsDaumapnapnsItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ApnDefaultsDaum {
     pub apns: Vec<ApnDefaultsDaumapnapnsItem>,
 }
@@ -6683,6 +7161,8 @@ pub enum ApnDefaultsDomainName {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Apn {
     /// The list of access point names (APNs).
     #[serde(rename = "DefaultsData")]
@@ -6693,6 +7173,8 @@ pub struct Apn {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CardDAVCommunicationServiceRuleDefaultServiceHandler {
     #[serde(rename = "AudioCall")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6700,6 +7182,8 @@ pub struct CardDAVCommunicationServiceRuleDefaultServiceHandler {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CardDAVCommunicationServiceRule {
     #[serde(rename = "DefaultServiceHandlers")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6708,6 +7192,8 @@ pub struct CardDAVCommunicationServiceRule {
 
 /// Use this section to define settings for configuration access to CardDAV servers.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CardDAV {
     /// The description of the account.
     #[serde(rename = "CardDAVAccountDescription")]
@@ -6748,6 +7234,8 @@ pub struct CardDAV {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct WapiIdentityCertificate {
     /// Certificate data in PEM format.
     #[serde(rename = "PEMData")]
@@ -6755,6 +7243,8 @@ pub struct WapiIdentityCertificate {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlsDictionary {
     /// If 'true', enables parental controls dictionary restrictions.
     #[serde(rename = "parentalControl")]
@@ -6762,6 +7252,8 @@ pub struct ParentalControlsDictionary {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DnsProxyProviderConfiguration {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6770,6 +7262,8 @@ pub struct DnsProxyProviderConfiguration {
 
 /// Use this section to configure a DNS proxy network extension
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DnsProxy {
     /// The bundle identifier of the app containing the DNS proxy network extension.
     #[serde(rename = "AppBundleIdentifier")]
@@ -6789,6 +7283,8 @@ pub struct DnsProxy {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PasscodecustomRegexpasswordContentDescription {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6796,6 +7292,8 @@ pub struct PasscodecustomRegexpasswordContentDescription {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PasscodecustomRegex {
     #[serde(rename = "passwordContentRegex")]
     pub password_content_regex: String,
@@ -6806,6 +7304,8 @@ pub struct PasscodecustomRegex {
 
 /// Use this section to define passcode policy settings
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Passcode {
     /// If 'false', the system prevents use of a simple passcode. A simple passcode contains repeated characters, or increasing or decreasing characters, such as '123' or 'CBA'.
     #[serde(rename = "allowSimple")]
@@ -6866,6 +7366,8 @@ pub struct Passcode {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlsDashboardWidgetRestrictionWhiteListWhiteListItem {
     #[serde(rename = "Type")]
     pub r#type: String,
@@ -6874,6 +7376,8 @@ pub struct ParentalControlsDashboardWidgetRestrictionWhiteListWhiteListItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlsDashboardWidgetRestriction {
     /// If 'true', enables the widget allow list.
     #[serde(rename = "whiteListEnabled")]
@@ -6884,12 +7388,16 @@ pub struct ParentalControlsDashboardWidgetRestriction {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TvRemoteAllowedRemoteAllowedRemotesItem {
     #[serde(rename = "RemoteDeviceID")]
     pub remote_device_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TvRemoteAllowedTVAllowedTVsItem {
     #[serde(rename = "TVDeviceID")]
     pub tv_device_id: String,
@@ -6899,6 +7407,8 @@ pub struct TvRemoteAllowedTVAllowedTVsItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TvRemote {
     /// The array of valid devices that Apple TV can connect to.
     #[serde(rename = "AllowedRemotes")]
@@ -6911,6 +7421,8 @@ pub struct TvRemote {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemPolicyKernelExtensionAllowedKernelExtension {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -6918,6 +7430,8 @@ pub struct SystemPolicyKernelExtensionAllowedKernelExtension {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemPolicyKernelExtension {
     /// If 'true', nonadministrative users can approve additional kernel extensions in the Security & Privacy preferences.
     /// Available in macOS 11 and later.
@@ -6958,6 +7472,8 @@ pub enum AirPlaySecurityAccessType {
 
 /// AirPlay Security settings
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AirPlaySecurity {
     /// The security policy for AirPlay. Allowed values:
     /// 
@@ -6980,6 +7496,8 @@ pub struct AirPlaySecurity {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct FdeRecoveryKeyRedirection {
     /// The URL to which FDE recovery keys should be sent instead of to Apple. The URL must begin with https://.
     #[serde(rename = "RedirectURL")]
@@ -7027,6 +7545,8 @@ pub enum MailOutgoingMailServerAuthentication {
 
 /// Use this section to define settings for access to Email servers.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Mail {
     /// A user-visible description of the email account, shown in the Mail and Settings applications.
     #[serde(rename = "EmailAccountDescription")]
@@ -7167,6 +7687,8 @@ pub struct Mail {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SecurityPreference {
     /// If 'true', disables user changes to the password.
     #[serde(rename = "dontAllowPasswordResetUI")]
@@ -7183,6 +7705,8 @@ pub struct SecurityPreference {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AppLockAppOption {
     #[serde(rename = "DisableTouch")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -7226,6 +7750,8 @@ pub struct AppLockAppOption {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AppLockAppUserEnabledOption {
     #[serde(rename = "VoiceControl")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -7245,6 +7771,8 @@ pub struct AppLockAppUserEnabledOption {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AppLockApp {
     #[serde(rename = "Identifier")]
     pub identifier: String,
@@ -7258,6 +7786,8 @@ pub struct AppLockApp {
 
 /// App Lock (Supervised Only)
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AppLock {
     /// A dictionary that contains information about the app.
     #[serde(rename = "App")]
@@ -7265,6 +7795,8 @@ pub struct AppLock {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CellularPrivateNetworkGeofenceGeofenceItem {
     #[serde(rename = "Longitude")]
     pub longitude: f64,
@@ -7278,6 +7810,8 @@ pub struct CellularPrivateNetworkGeofenceGeofenceItem {
 
 /// Cellular Private Network Settings and Device Configuration
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CellularPrivateNetwork {
     /// A list of up to 1000 geofences for private networks. Geofencing is only used on iPhone.
     #[serde(rename = "Geofences")]
@@ -7314,6 +7848,8 @@ pub enum MacOSServerAccountConfiguredAccountConfiguredAccountsItemType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct MacOSServerAccountConfiguredAccountConfiguredAccountsItem {
     #[serde(rename = "Type")]
     pub r#type: MacOSServerAccountConfiguredAccountConfiguredAccountsItemType,
@@ -7324,6 +7860,8 @@ pub struct MacOSServerAccountConfiguredAccountConfiguredAccountsItem {
 
 /// Use this section to define a macOS Server account
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct MacOSServerAccount {
     /// The server's address.
     #[serde(rename = "HostName")]
@@ -7345,6 +7883,8 @@ pub struct MacOSServerAccount {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ExchangeWebService {
     /// The full email address for the account. If the email address string isn't present in the payload, the device prompts for it during profile installation.
     #[serde(rename = "EmailAddress")]
@@ -7413,6 +7953,8 @@ pub struct ExchangeWebService {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TODO8021XThirdActiveEthernet {
     /// Keys relevant to 802.1x configuration.  User enrollment payloads do not support the various proxy keys including ProxyType, ProxyServer, ProxyServerPort, ProxyUsername, ProxyPassword,, ProxyPACURL and ProxyPACFallbackAllowed.
     #[serde(rename = "ANY")]
@@ -7435,6 +7977,8 @@ pub enum RestrictionratingRegion {
 
 /// Use this section to define restrictions settings
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Restriction {
     /// If 'false', the system disables modification of accounts such as Apple Accounts and Internet-based accounts such as Mail, Contacts, and Calendar. Available in iOS 7 and later, macOS 14 and later, and watchOS 10 and later. Requires a supervised device in iOS and watchOS.
     #[serde(rename = "allowAccountModification")]
@@ -8230,7 +8774,8 @@ pub struct Restriction {
     /// * '1' or '1.5': Enables Prevent Cross-Site Tracking, and the user canʼt disable it. Doesn't enable Block All Cookies, but the user can enable it.
     /// * '2': Enables Prevent Cross-Site Tracking but doesn't enable Block All Cookies. The user can toggle either setting.
     #[serde(rename = "safariAcceptCookies")]
-    pub safari_accept_cookies: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub safari_accept_cookies: Option<i64>,
     /// If 'false', the system disables Safari AutoFill for passwords, contact info, and credit cards and also prevents using the Keychain for AutoFill. As of iOS 13, requires a supervised device. Available in iOS 4 and later, and macOS 10.13 and later.
     /// The system still allows third-party password managers, and apps can use AutoFill.
     #[serde(rename = "safariAllowAutoFill")]
@@ -8255,6 +8800,8 @@ pub struct Restriction {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AppLayerVPN {
     /// A globally unique identifier for this VPN configuration.
     #[serde(rename = "VPNUUID")]
@@ -8318,6 +8865,8 @@ pub enum ServiceManagementManagedLoginItemRuleRuleRuleType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ServiceManagementManagedLoginItemRuleRule {
     #[serde(rename = "RuleType")]
     pub rule_type: ServiceManagementManagedLoginItemRuleRuleRuleType,
@@ -8333,6 +8882,8 @@ pub struct ServiceManagementManagedLoginItemRuleRule {
 
 /// Control the user experience for ServiceManagement login items (including launchd agents and daemons) in Login Items Settings.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ServiceManagementManagedLoginItem {
     /// An array of service management rules.
     #[serde(rename = "Rules")]
@@ -8348,6 +8899,8 @@ pub enum WebContentFilterFilterType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct WebContentFilterWhitelistedBookmarkWhitelistedBookmarksItem {
     #[serde(rename = "URL")]
     pub url: String,
@@ -8356,6 +8909,8 @@ pub struct WebContentFilterWhitelistedBookmarkWhitelistedBookmarksItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct WebContentFilterAllowListBookmarkAllowListBookmarksItem {
     #[serde(rename = "URL")]
     pub url: String,
@@ -8364,6 +8919,8 @@ pub struct WebContentFilterAllowListBookmarkAllowListBookmarksItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct WebContentFilterVendorConfig {
     #[serde(rename = "ANY")]
     pub any: plist::Value,
@@ -8377,6 +8934,8 @@ pub enum WebContentFilterFilterGrade {
 
 /// Use this section to define managed email and web domains.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct WebContentFilter {
     /// The type of filter, built-in or plug-in. In macOS, the system only supports the plug-in value.
     #[serde(rename = "FilterType")]
@@ -8484,6 +9043,8 @@ pub struct WebContentFilter {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct XsanPreference {
     /// An array of Xsan or StorNext volume names. The Xsan client attempts to automatically mount these volumes at startup. The system administrator can mount additional volumes manually by using the 'xsanctl(8)' mount command.
     #[serde(rename = "onlyMount")]
@@ -8508,6 +9069,8 @@ pub struct XsanPreference {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AppStore {
     /// If 'true', the system restricts app installations to admin users only. Deprecated in macOS 10.14. Use the 'com.apple.SoftwareUpdate' payload key 'restrict-software-update-require-admin-to-install' instead.
     #[serde(rename = "restrict-store-require-admin-to-install")]
@@ -8528,6 +9091,8 @@ pub struct AppStore {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AirPlayAllowListAllowListItem {
     #[serde(rename = "DeviceID")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -8538,6 +9103,8 @@ pub struct AirPlayAllowListAllowListItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AirPlayPasswordPasswordsItem {
     #[serde(rename = "DeviceName")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -8550,6 +9117,8 @@ pub struct AirPlayPasswordPasswordsItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AirPlayWhitelistAllowListItem {
     #[serde(rename = "DeviceID")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -8561,6 +9130,8 @@ pub struct AirPlayWhitelistAllowListItem {
 
 /// AirPlay settings
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AirPlay {
     /// If present, only AirPlay destinations in this list are available to the device. This allow list applies to supervised devices.
     #[serde(rename = "AllowList")]
@@ -8583,6 +9154,8 @@ pub enum TopLevelPayloadType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TopLevelPayloadContentPayloadContentItem {
     #[serde(rename = "ANY")]
     pub any: plist::Value,
@@ -8597,18 +9170,24 @@ pub enum TopLevelPayloadScope {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TopLevelConsentTextConsentTextItem {
     #[serde(rename = "ANY")]
     pub any: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TopLevelConsentText {
     #[serde(rename = "ConsentTextItem")]
     pub consent_text_item: TopLevelConsentTextConsentTextItem,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TopLevel {
     /// The reverse-DNS style identifier ('com.example.myprofile', for example) that identifies the profile. The system uses this string to determine whether to replace an existing profile or add it as a new profile.
     #[serde(rename = "PayloadIdentifier")]
@@ -8685,7 +9264,8 @@ pub struct TopLevel {
     /// * '5': Mac
     /// * '6': Vision Pro
     #[serde(rename = "TargetDeviceType")]
-    pub target_device_type: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub target_device_type: Option<i64>,
     /// A dictionary that includes:
     /// * A key that contains the IETF BCP 47 identifier for a language, such as en or jp
     /// * A value that contains the agreement localized to language specified by the key
@@ -8716,6 +9296,8 @@ pub enum ExtensibleSingleSignOnKerberoType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ExtensibleSingleSignOnKerberoExtensionDaumdomainRealmMapping {
     #[serde(rename = "Realm")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -8732,6 +9314,8 @@ pub enum ExtensibleSingleSignOnKerberoExtensionDaumcredentialUseMode {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ExtensibleSingleSignOnKerberoExtensionDaum {
     #[serde(rename = "cacheName")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -8851,6 +9435,8 @@ pub struct ExtensibleSingleSignOnKerberoExtensionDaum {
 
 /// Configures an app extension to handle Kerberos SSO.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ExtensibleSingleSignOnKerbero {
     /// Set this to 'com.apple.AppSSOKerberos.KerberosExtension' for this extension.
     #[serde(rename = "ExtensionIdentifier")]
@@ -8943,6 +9529,8 @@ pub enum WiFiEAPClientConfigurationTLSMaximumVersion {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct WiFiEAPClientConfiguration {
     #[serde(rename = "AcceptEAPTypes")]
     pub accept_eap_types: Vec<i64>,
@@ -8989,7 +9577,8 @@ pub struct WiFiEAPClientConfiguration {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub eapfast_provision_pac_anonymously: Option<bool>,
     #[serde(rename = "EAPSIMNumberOfRANDs")]
-    pub eapsim_number_of_ran_ds: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub eapsim_number_of_ran_ds: Option<i64>,
     #[serde(rename = "SystemModeCredentialsSource")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub system_mode_credentials_source: Option<String>,
@@ -9002,6 +9591,8 @@ pub struct WiFiEAPClientConfiguration {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct WiFiQoSMarkingPolicy {
     #[serde(rename = "QoSMarkingAllowListAppIdentifiers")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -9027,6 +9618,8 @@ pub enum WiFiSetupModeSetupModesItem {
 
 /// Use this section to define Wi-Fi settings
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct WiFi {
     /// If 'true', the device joins the network automatically.
     /// If 'false', the user must tap the network name to join it.
@@ -9156,6 +9749,8 @@ pub struct WiFi {
 
 /// Use this section to define Font settings.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Font {
     /// The user-visible name for the font. This field is replaced by the actual name of the font after installation. Each payload must contain exactly one font file in trueType (.ttf) or OpenType (.otf) format. Collection formats (.ttc or .otc) are not supported.
     /// 
@@ -9177,6 +9772,8 @@ pub enum CellularAttachAPNAuthenticationType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CellularAttachAPN {
     #[serde(rename = "Name")]
     pub name: String,
@@ -9190,7 +9787,8 @@ pub struct CellularAttachAPN {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub password: Option<String>,
     #[serde(rename = "AllowedProtocolMask")]
-    pub allowed_protocol_mask: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub allowed_protocol_mask: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -9202,6 +9800,8 @@ pub enum CellularAPNAPNsItemAuthenticationType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CellularAPNAPNsItem {
     #[serde(rename = "Name")]
     pub name: String,
@@ -9221,13 +9821,17 @@ pub struct CellularAPNAPNsItem {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub proxy_port: Option<i64>,
     #[serde(rename = "DefaultProtocolMask")]
-    pub default_protocol_mask: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub default_protocol_mask: Option<i64>,
     #[serde(rename = "AllowedProtocolMask")]
-    pub allowed_protocol_mask: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub allowed_protocol_mask: Option<i64>,
     #[serde(rename = "AllowedProtocolMaskInRoaming")]
-    pub allowed_protocol_mask_in_roaming: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub allowed_protocol_mask_in_roaming: Option<i64>,
     #[serde(rename = "AllowedProtocolMaskInDomesticRoaming")]
-    pub allowed_protocol_mask_in_domestic_roaming: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub allowed_protocol_mask_in_domestic_roaming: Option<i64>,
     #[serde(rename = "EnableXLAT464")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub enable_xlat464: Option<bool>,
@@ -9235,6 +9839,8 @@ pub struct CellularAPNAPNsItem {
 
 /// Use this section to define custom APNs for cellular data access.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Cellular {
     /// A configuration dictionary.
     #[serde(rename = "AttachAPN")]
@@ -9247,6 +9853,8 @@ pub struct Cellular {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TODO8021XThirdEthernet {
     /// Keys relevant to 802.1x configuration.  User enrollment payloads do not support the various proxy keys including ProxyType, ProxyServer, ProxyServerPort, ProxyUsername, ProxyPassword,, ProxyPACURL and ProxyPACFallbackAllowed.
     #[serde(rename = "ANY")]
@@ -9255,6 +9863,8 @@ pub struct TODO8021XThirdEthernet {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManagedMenuExtra {
     /// The number of seconds to delay after login before adding or removing menu extras. If the delay is too short, the menu extras don't appear, or disappear from the menu bar.
     #[serde(rename = "delaySeconds")]
@@ -9371,6 +9981,8 @@ pub struct ManagedMenuExtra {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LoginWindowLoginItem {
     /// If 'true', the system prevents the user from disabling login item launches by using the Shift key.
     #[serde(rename = "DisableLoginItemsSuppression")]
@@ -9379,6 +9991,8 @@ pub struct LoginWindowLoginItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct UserPreference {
     /// If 'true', disables the iCloud password for local accounts.
     #[serde(rename = "DisableUsingiCloudPassword")]
@@ -9387,6 +10001,8 @@ pub struct UserPreference {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct MobileAccount {
     /// If 'true', the system creates the mobile account at login time.
     #[serde(rename = "com.apple.cachedaccounts.CreateAtLogin")]
@@ -9411,6 +10027,8 @@ pub struct MobileAccount {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TODO8021XFirstActiveEthernet {
     /// Keys relevant to 802.1x configuration.  User enrollment payloads do not support the various proxy keys including ProxyType, ProxyServer, ProxyServerPort, ProxyUsername, ProxyPassword,, ProxyPACURL and ProxyPACFallbackAllowed.
     #[serde(rename = "ANY")]
@@ -9420,6 +10038,8 @@ pub struct TODO8021XFirstActiveEthernet {
 
 /// Active Directory Certificate
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ActiveDirectoryCertificate {
     /// The fully qualified host name of the CA.
     #[serde(rename = "CertServer")]
@@ -9472,6 +10092,8 @@ pub struct ActiveDirectoryCertificate {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct NsextensionManagement {
     /// An array of bundle identifiers for allowed extensions.
     #[serde(rename = "AllowedExtensions")]
@@ -9498,6 +10120,8 @@ pub enum SystemPolicyRuleOperationType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SystemPolicyRule {
     /// The policy requirement. This key must follow the syntax described in Code Signing Requirement Language <https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/RequirementLang/RequirementLang.html#//apple_ref/doc/uid/TP40005929-CH5>.
     #[serde(rename = "Requirement")]
@@ -9527,6 +10151,8 @@ pub struct SystemPolicyRule {
 
 /// Use this section to define text displayed by shared devices in the login window and lock screen.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LockScreenMessage {
     /// The asset tag information for the device, displayed in the login window and Lock screen.
     #[serde(rename = "AssetTagInformation")]
@@ -9544,6 +10170,8 @@ pub struct LockScreenMessage {
 
 /// Use this section to define settings for a pkcs1 certificate.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CertificatePKCS1 {
     /// The file name of the enclosed certificate.
     #[serde(rename = "PayloadCertificateFileName")]
@@ -9555,6 +10183,8 @@ pub struct CertificatePKCS1 {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlsTimeLimittimeLimitweekdayAllowance {
     pub enabled: bool,
     #[serde(rename = "rangeType")]
@@ -9569,6 +10199,8 @@ pub struct ParentalControlsTimeLimittimeLimitweekdayAllowance {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlsTimeLimittimeLimitweekdayCurfew {
     pub enabled: bool,
     #[serde(rename = "rangeType")]
@@ -9583,6 +10215,8 @@ pub struct ParentalControlsTimeLimittimeLimitweekdayCurfew {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlsTimeLimittimeLimitweekendAllowance {
     pub enabled: bool,
     #[serde(rename = "rangeType")]
@@ -9597,6 +10231,8 @@ pub struct ParentalControlsTimeLimittimeLimitweekendAllowance {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlsTimeLimittimeLimitweekendCurfew {
     pub enabled: bool,
     #[serde(rename = "rangeType")]
@@ -9611,6 +10247,8 @@ pub struct ParentalControlsTimeLimittimeLimitweekendCurfew {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlsTimeLimittimeLimit {
     #[serde(rename = "weekday-allowance")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -9627,6 +10265,8 @@ pub struct ParentalControlsTimeLimittimeLimit {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlsTimeLimit {
     /// If 'true', enables time limits.
     #[serde(rename = "familyControlsEnabled")]
@@ -9638,6 +10278,8 @@ pub struct ParentalControlsTimeLimit {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LoginItemsManagedItemAutoLaunchedApplicationDictionaryManagedLoginItem {
     #[serde(rename = "Path")]
     pub path: String,
@@ -9647,6 +10289,8 @@ pub struct LoginItemsManagedItemAutoLaunchedApplicationDictionaryManagedLoginIte
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LoginItemsManagedItem {
     /// An array of login item dictionaries.
     #[serde(rename = "AutoLaunchedApplicationDictionary-managed")]
@@ -9655,6 +10299,8 @@ pub struct LoginItemsManagedItem {
 
 /// Parental controls for restricting Siri, Dictation and Profanity
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlDictationAndProfanity {
     /// If 'false', suppresses profanity. Use 'forceAssistantProfanityFilter' in Restrictions instead.
     #[serde(rename = "Profanity Allowed")]
@@ -9667,6 +10313,8 @@ pub struct ParentalControlDictationAndProfanity {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct FdeRecoveryKeyEscrow {
     /// The description of the location where the system escrows the recovery key. The system inserts this text into the message the user sees when it enables FileVault.
     #[serde(rename = "Location")]
@@ -9682,6 +10330,8 @@ pub struct FdeRecoveryKeyEscrow {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrintingDefaultPrinter {
     #[serde(rename = "DeviceURI")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -9692,6 +10342,8 @@ pub struct PrintingDefaultPrinter {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrintingUserPrinterListPrinter {
     #[serde(rename = "DeviceURI")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -9714,6 +10366,8 @@ pub struct PrintingUserPrinterListPrinter {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PrintingUserPrinterList {
     #[serde(rename = "Printer")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -9721,6 +10375,8 @@ pub struct PrintingUserPrinterList {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Printing {
     /// If 'true', requires an administrator password to add printers.
     #[serde(rename = "RequireAdminToAddPrinters")]
@@ -9765,18 +10421,24 @@ pub struct Printing {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LoginWindowScriptloginscriptScriptsItem {
     pub filename: String,
     pub filedata: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LoginWindowScriptlogoutscriptScriptsItem {
     pub filename: String,
     pub filedata: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LoginWindowScript {
     /// An array of one or more dictionaries of scripts to run at user login time.
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -9795,6 +10457,8 @@ pub struct LoginWindowScript {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SingleSignOnKerbero {
     #[serde(rename = "PrincipalName")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -9813,6 +10477,8 @@ pub struct SingleSignOnKerbero {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SingleSignOn {
     /// The human-readable name for the account.
     #[serde(rename = "Name")]
@@ -9825,6 +10491,8 @@ pub struct SingleSignOn {
 
 /// Use this section to define settings for a pem certificate.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CertificatePEM {
     /// The file name of the enclosed certificate.
     #[serde(rename = "PayloadCertificateFileName")]
@@ -9846,6 +10514,8 @@ pub enum LoginWindowAdminHostInfo {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LoginWindow {
     /// If 'true', the system shows the name and password dialog. If 'false', the system displays a list of users.
     #[serde(rename = "SHOWFULLNAME")]
@@ -9942,6 +10612,8 @@ pub struct LoginWindow {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ParentalControlsGameCenter {
     /// If 'true', enables Game Center.
     #[serde(rename = "GKFeatureGameCenterAllowed")]
@@ -9962,6 +10634,8 @@ pub struct ParentalControlsGameCenter {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TimeMachine {
     /// If 'true', performs automatic backups at regular intervals.
     #[serde(rename = "AutoBackup")]

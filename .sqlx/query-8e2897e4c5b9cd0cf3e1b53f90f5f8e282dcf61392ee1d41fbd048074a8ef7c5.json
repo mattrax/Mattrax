@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO device(id, tenant, name, model, serial, push_topic) VALUES (?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "8e2897e4c5b9cd0cf3e1b53f90f5f8e282dcf61392ee1d41fbd048074a8ef7c5"
+}

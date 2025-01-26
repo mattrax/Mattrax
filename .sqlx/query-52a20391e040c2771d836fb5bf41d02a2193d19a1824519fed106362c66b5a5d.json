@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO identity(id, cert, `key`, not_before, not_after) VALUES (UNIX_TIMESTAMP() - (UNIX_TIMESTAMP() % 300), ?, ?, ?, ?) ON DUPLICATE KEY UPDATE id=id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "52a20391e040c2771d836fb5bf41d02a2193d19a1824519fed106362c66b5a5d"
+}

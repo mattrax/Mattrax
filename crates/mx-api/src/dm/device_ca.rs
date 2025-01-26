@@ -1,14 +1,8 @@
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{sync::Arc, time::Duration};
 
-use mx_crypto::x509::{Certificate, ExtendedKeyUsage, KeyUsage, PrivateKey, SubjectBuilder};
+use mx_crypto::x509::{Certificate, KeyUsage, PrivateKey, SubjectBuilder};
 use sqlx::{query, query_as};
-use tokio::{
-    runtime::{Handle, Runtime},
-    task::spawn_blocking,
-};
+use tokio::task::spawn_blocking;
 use tracing::info;
 
 use crate::{
@@ -34,33 +28,38 @@ impl DeviceCA {
         Self(Arc::new(Cached::new(Default::default())))
     }
 
-    pub async fn verify(&self) {
-        // let todo = loop {
-        //     let (version, identities) = self.value.read().unwrap();
-
-        //     if identities.len() == 0 {
-        //         break true;
-        //     }
-        // };
-
-        // println!("GOT {:?}", self.value.get());
-
-        todo!();
-    }
-
-    pub fn active_signer(&self, core: &Core) -> Option<(Certificate, PrivateKey)> {
+    pub async fn active_signer(
+        &self,
+        core: &Core,
+    ) -> Result<Option<(Certificate, PrivateKey)>, ()> {
         let value = self.0.get();
         if value.is_empty() {
-            // Self::refresh(core);
+            // Self::refresh(core).await.unwrap();
             todo!();
         }
 
         // TODO: We need to account for caching so this should be delayed unless it's the only one.
-        let first = value.last()?;
+        let Some(first) = value.last() else {
+            return Ok(None);
+        };
         let cert = Certificate::from_der(&first.cert).unwrap();
         let keypair =
             PrivateKey::from_pkcs8_der(&decrypt(&*core.secret, &first.key[..]).unwrap()).unwrap();
-        Some((cert, keypair))
+        Ok(Some((cert, keypair)))
+    }
+
+    pub async fn get_trusted_signers(&self, core: &Core) -> Result<Vec<Certificate>, ()> {
+        let value = self.0.get();
+        if value.is_empty() {
+            // Self::refresh(core).await.unwrap();
+            todo!();
+        }
+
+        // TODO: Check they are all valid as of the current exact time (not the time they were cached)
+        Ok(value
+            .iter()
+            .map(|identity| Certificate::from_der(&identity.cert).unwrap())
+            .collect())
     }
 
     /// Setup a task to keep the device CA updated in the background.

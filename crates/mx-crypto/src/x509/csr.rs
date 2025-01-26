@@ -1,6 +1,6 @@
-use bcder::{decode::Constructed, Mode};
+use bcder::{decode::Constructed, Mode, Oid};
 use openssl::x509::{X509Req, X509};
-use x509_certificate::rfc2986::CertificationRequest;
+use x509_certificate::{rfc2986::CertificationRequest, rfc5280, X509Certificate};
 
 use super::CertificateBuilder;
 
@@ -98,4 +98,20 @@ impl CertificateSigningRequest {
     }
 
     // TODO: Rest of accessors
+
+    // TODO: Remove this and do properly
+    pub fn get_oid(&self, oid: Oid) -> Option<rfc5280::Extension> {
+        X509Req::from_der(&self.der)
+            .unwrap()
+            .extensions()
+            .unwrap()
+            .into_iter()
+            .find_map(|ext| {
+                let ext = ext.to_der().unwrap();
+                Constructed::decode(ext.as_slice(), Mode::Der, |cons| {
+                    rfc5280::Extension::take_from(cons)
+                })
+                .ok()
+            })
+    }
 }

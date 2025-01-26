@@ -1,6 +1,11 @@
-use mx_crypto::cms::Pkcs7B;
+use std::str::FromStr;
 
-use crate::{MessageType, PkiMessage, Service, OID_SCEP_MESSAGE_TYPE, OID_SCEP_TRANSACTION_ID};
+use mx_crypto::cms::{Oid, Pkcs7B};
+
+use crate::{
+    MessageType, PkiMessage, Service, OID_SCEP_CHALLENGE, OID_SCEP_MESSAGE_TYPE,
+    OID_SCEP_TRANSACTION_ID,
+};
 
 // TODO: rename
 pub struct Scep<S> {

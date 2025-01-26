@@ -1,10 +1,11 @@
+use std::time::{Duration, SystemTime};
+
 use crate::{
     token::Token,
     utils::{decrypt, encrypt},
     Core,
 };
 use axum::{
-    body::Bytes,
     extract::{Path, State},
     http::{header, StatusCode},
     routing::{delete, get, patch, post},
@@ -302,11 +303,58 @@ pub(crate) fn mount() -> Router<Core> {
     )
     .route(
         "/{tenant_id}/enroll",
-        post(
-        |State(core): State<Core>, Path(tenant_id): Path<String>| async move {
+        get(
             // TODO: Configure how many devices, and the group they enroll into??
-            todo!();
-        }
+            |State(core): State<Core>, cookies: Cookies, Path(tenant_id): Path<String>| async move {
+                let token = Token::from_cookies(&core, &cookies).ok_or(StatusCode::UNAUTHORIZED)?;
+
+                let tenant = sqlx::query!(
+                    "SELECT id, name, apns_cert FROM tenant INNER JOIN tenant_member ON tenant.id = tenant_member.tenant WHERE tenant_member.account = ? AND tenant.id = ?",
+                    token.account_id(),
+                    tenant_id,
+                )
+                .fetch_optional(&core.db)
+                .await
+                .map_err(|err| {
+                    error!("Error fetching tenant from database: {err:?}");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?
+                .ok_or(StatusCode::NOT_FOUND)?;
+
+                if tenant.apns_cert.is_none() {
+                    return Err(StatusCode::CONFLICT);
+                }
+                // TODO: Error out if device identity CA isn't registered yet
+
+                let exp = SystemTime::now() + Duration::from_secs(15* 60); // 15m
+                let exp = exp.duration_since(SystemTime::UNIX_EPOCH).map_err(|err| {
+                    error!("System time is wrong: {err:?}");
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?.as_secs();
+
+                // TODO: It might be better to move this to a database token so we can control how many times it's redeemed.
+                let challenge = Token::Enrollment {
+                    sub: tenant.id,
+                    exp,
+                }.encode(&core);
+
+                let profile = mx_apple::profiles::enrollment_profile(
+                    tenant.name,
+                    challenge,
+                    format!("{}/apple/connect", core.origin),
+                );
+
+                Ok::<_, StatusCode>((
+                    [
+                        (header::CONTENT_TYPE, "application/x-apple-aspen-config"),
+                        (
+                            header::CONTENT_DISPOSITION,
+                            "attachment; filename=\"enroll.mobileconfig\"",
+                        ),
+                    ],
+                    profile.to_bytes(),
+                ))
+            }
         )
     )
     .route(

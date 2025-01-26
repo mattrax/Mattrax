@@ -9,7 +9,8 @@ publish = false
 workspace = true
 
 [dependencies]
-mx-crypto = { version = "0.0.0", path = "../mx-crypto" }
+mx-crypto = { path = "../mx-crypto" }
+bira = { path = "../bira" }
 plist.workspace = true
 serde.workspace = true
 uuid.workspace = true

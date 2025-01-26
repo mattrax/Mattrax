@@ -10,6 +10,8 @@ pub enum GetTokenTokenServiceType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct GetTokenTokenParameter {
     #[serde(rename = "SecurityToken")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -24,6 +26,8 @@ pub struct GetTokenTokenParameter {
 
 /// Check-in protocol get token data.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct GetToken {
     /// A string that specifies the service for the requested token.
     #[serde(rename = "TokenServiceType")]
@@ -60,6 +64,8 @@ pub struct GetToken {
 
 /// Check-in protocol authenticate request keys.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct Authenticate {
     /// The device's name.
     #[serde(rename = "DeviceName")]
@@ -113,6 +119,8 @@ pub struct Authenticate {
 
 /// Check-in protocol token update request keys.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct TokenUpdate {
     /// If 'true', the device is not on console.
     #[serde(rename = "NotOnConsole")]
@@ -166,6 +174,8 @@ pub struct TokenUpdate {
 
 /// Declarative Management request keys.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DeclarativeManagement {
     /// The type of operation the declaration is requesting. This key must be one of these values:
     /// * 'tokens': For fetching synchronization tokens from the server
@@ -206,6 +216,8 @@ pub struct DeclarativeManagement {
 
 /// Authenticate network or mobile users with MDM.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct UserAuthenticate {
     /// The device's UDID (Unique Device ID).
     #[serde(rename = "UDID")]
@@ -220,6 +232,8 @@ pub struct UserAuthenticate {
 
 /// Check-in protocol check out request keys.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CheckOut {
     /// The topic to which the device subscribed.
     #[serde(rename = "Topic")]
@@ -236,6 +250,8 @@ pub struct CheckOut {
 
 /// Check-in protocol set bootstrap token data.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SetBootstrapToken {
     /// The device's bootstrap token data. If this field is missing or zero length, the bootstrap token should be removed for this device.
     #[serde(rename = "BootstrapToken")]
@@ -249,6 +265,8 @@ pub struct SetBootstrapToken {
 
 /// Check-in protocol get bootstrap token data.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct GetBootstrapToken {
     /// If 'true', the device is awaiting a DeviceConfigured MDM command before proceeding through Setup Assistant.
     #[serde(rename = "AwaitingConfiguration")]

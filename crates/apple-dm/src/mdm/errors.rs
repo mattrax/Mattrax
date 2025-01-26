@@ -8,6 +8,8 @@ pub enum ErrorCodeSoftwareUpdateRequiredcode {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ErrorCodeSoftwareUpdateRequireddetailRequireBetaProgram {
     #[serde(rename = "Description")]
     pub description: String,
@@ -16,6 +18,8 @@ pub struct ErrorCodeSoftwareUpdateRequireddetailRequireBetaProgram {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ErrorCodeSoftwareUpdateRequireddetail {
     #[serde(rename = "OSVersion")]
     pub os_version: String,
@@ -29,6 +33,8 @@ pub struct ErrorCodeSoftwareUpdateRequireddetail {
 
 /// Error response for software update required.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ErrorCodeSoftwareUpdateRequired {
     /// Indicates that a software update is required before enrollment and setup can proceed.
     pub code: ErrorCodeSoftwareUpdateRequiredcode,
@@ -50,6 +56,8 @@ pub enum ErrorUnrecognizedDevicecode {
 
 /// Error response for unrecognized device.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ErrorUnrecognizedDevice {
     /// Indicates that the device is not recognized by the server, causing the device to unenroll from MDM.
     pub code: ErrorUnrecognizedDevicecode,
@@ -68,6 +76,8 @@ pub enum ErrorCodePairingTokenMissingcode {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ErrorCodePairingTokenMissingdetail {
     #[serde(rename = "security-token")]
     pub security_token: String,
@@ -75,6 +85,8 @@ pub struct ErrorCodePairingTokenMissingdetail {
 
 /// Error response for missing pairing token.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ErrorCodePairingTokenMissing {
     /// Indicates that pairing token required to enroll a watch is missing.
     pub code: ErrorCodePairingTokenMissingcode,
@@ -96,6 +108,8 @@ pub enum ErrorWellKnownFailedcode {
 
 /// Error response for well-known failed
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ErrorWellKnownFailed {
     /// Indicates that the well-known request has failed.
     pub code: ErrorWellKnownFailedcode,

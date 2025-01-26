@@ -37,3 +37,21 @@ impl<T> Profile<T> {
         buf
     }
 }
+
+impl crate::mdm::profiles::TopLevel {
+    // pub fn from_bytes(bytes: &[u8]) -> Result<Self, plist::Error>
+    // where
+    //     T: for<'de> Deserialize<'de>,
+    // {
+    //     plist::from_bytes(bytes)
+    // }
+
+    // pub fn to_bytes(&self) -> Vec<u8>
+    // where
+    //     T: Serialize,
+    // {
+    //     let mut buf = Vec::new();
+    //     plist::to_writer_xml(&mut buf, self).unwrap();
+    //     buf
+    // }
+}

@@ -75,9 +75,10 @@ fn main() -> Result<(), ()> {
             .append(&impls.to_string())
             // https://github.com/ebarnard/rust-plist/pull/55#issuecomment-771113306
             .append(PLIST_SERDE_PATCH)
-            .custom_attributes(
+            .custom_field_attributes(
                 r#"deserialize_with = "deserialize_some", serialize_with = "serialize_some","#,
             )
+            .custom_struct_attributes(r#"#[derive(bira::Builder)]"#)
             .export_to(base.join("../apple-dm/src/mdm/checkin.rs"), &types)
             .map_err(|err| println!("Error generating Rust code: {}", err))?;
     }
@@ -99,9 +100,10 @@ fn main() -> Result<(), ()> {
             .append(&impls.to_string())
             // https://github.com/ebarnard/rust-plist/pull/55#issuecomment-771113306
             .append(PLIST_SERDE_PATCH)
-            .custom_attributes(
+            .custom_field_attributes(
                 r#"deserialize_with = "deserialize_some", serialize_with = "serialize_some","#,
             )
+            .custom_struct_attributes(r#"#[derive(bira::Builder)]"#)
             .export_to(base.join("../apple-dm/src/mdm/commands.rs"), &types)
             .map_err(|err| println!("Error generating Rust code: {}", err))?;
     }
@@ -123,9 +125,10 @@ fn main() -> Result<(), ()> {
             .append(&impls.to_string())
             // https://github.com/ebarnard/rust-plist/pull/55#issuecomment-771113306
             .append(PLIST_SERDE_PATCH)
-            .custom_attributes(
+            .custom_field_attributes(
                 r#"deserialize_with = "deserialize_some", serialize_with = "serialize_some","#,
             )
+            .custom_struct_attributes(r#"#[derive(bira::Builder)]"#)
             .export_to(base.join("../apple-dm/src/mdm/errors.rs"), &types)
             .map_err(|err| println!("Error generating Rust code: {}", err))?;
     }
@@ -147,9 +150,10 @@ fn main() -> Result<(), ()> {
             .append(&impls.to_string())
             // https://github.com/ebarnard/rust-plist/pull/55#issuecomment-771113306
             .append(PLIST_SERDE_PATCH)
-            .custom_attributes(
+            .custom_field_attributes(
                 r#"deserialize_with = "deserialize_some", serialize_with = "serialize_some","#,
             )
+            .custom_struct_attributes(r#"#[derive(bira::Builder)]"#)
             .export_to(base.join("../apple-dm/src/mdm/profiles.rs"), &types)
             .map_err(|err| println!("Error generating Rust code: {}", err))?;
     }
@@ -171,9 +175,10 @@ fn main() -> Result<(), ()> {
             .append(&impls.to_string())
             // https://github.com/ebarnard/rust-plist/pull/55#issuecomment-771113306
             .append(PLIST_SERDE_PATCH)
-            .custom_attributes(
+            .custom_field_attributes(
                 r#"deserialize_with = "deserialize_some", serialize_with = "serialize_some","#,
             )
+            .custom_struct_attributes(r#"#[derive(bira::Builder)]"#)
             .export_to(base.join("../apple-dm/src/mdm/other.rs"), &types)
             .map_err(|err| println!("Error generating Rust code: {}", err))?;
     }
@@ -224,7 +229,11 @@ fn datatype(types: &mut TypeCollection, key: &PayloadKey, parent_name: String) -
                 RangeListItem::String(s) => s.to_string(),
                 // Apple's schema's don't given enough information for enum generation which is mega cringe
                 RangeListItem::Integer(..) | RangeListItem::Number(..) => {
-                    return DataType::Primitive(PrimitiveType::i64); // TODO: Which Rust type is correct?
+                    let mut dt = DataType::Primitive(PrimitiveType::i64); // TODO: Which Rust type is correct?
+                    if key.presence == Some(Presence::Optional) {
+                        dt = DataType::Nullable(Box::new(dt))
+                    }
+                    return dt;
                 }
             };
 
@@ -308,7 +317,7 @@ fn datatype(types: &mut TypeCollection, key: &PayloadKey, parent_name: String) -
                             .build(),
                     );
 
-                    let mut dt = DataType::List(List::new(DataType::Reference(reference.clone())));
+                    let dt = DataType::List(List::new(DataType::Reference(reference.clone())));
 
                     // For some reason Apple put the `repetition` on the inner field not the container.
                     // let mut repetition = key.repetition.clone();
@@ -339,7 +348,7 @@ fn datatype(types: &mut TypeCollection, key: &PayloadKey, parent_name: String) -
                     // }
 
                     // if let Some(rep) = &repetition {
-                    //     todo!();
+                    //     // todo!();
                     //     // TODO: We can't handle when they don't match yet.
                     //     // if rep.max == rep.min {
                     //     dt = DataType::List(List::new_with_len(
@@ -348,6 +357,7 @@ fn datatype(types: &mut TypeCollection, key: &PayloadKey, parent_name: String) -
                     //     ));
                     //     // }
                     // }
+
                     dt
                 }
             }

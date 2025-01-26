@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "\n                UPDATE tenant\n                SET\n                    name = COALESCE(?, name),\n                    email = COALESCE(?, email)\n                WHERE id = ?\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "ff5964c5988543cf08b8a9e8541912f04f940797adf83bb3d73d78f97aeb2fbd"
+}

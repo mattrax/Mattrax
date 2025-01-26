@@ -1,0 +1,34 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT name, apns_key FROM tenant INNER JOIN tenant_member ON tenant.id = tenant_member.tenant WHERE tenant_member.account = ? AND tenant.id = ?",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 1020
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "apns_key",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | BINARY | NO_DEFAULT_VALUE",
+          "max_size": 10000
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "44028efca341c5686537cfaa939d554964b1f6a7580a59c980f4ac6ef427c83a"
+}

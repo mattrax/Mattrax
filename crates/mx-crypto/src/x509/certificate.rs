@@ -3,6 +3,7 @@ use x509_certificate::{rfc5280, CapturedX509Certificate};
 
 use super::{CertificateBuilder, ExtendedKeyUsage, KeyUsage, Subject};
 
+#[derive(Debug, Clone)]
 pub struct Certificate(pub(crate) CapturedX509Certificate);
 
 impl Certificate {

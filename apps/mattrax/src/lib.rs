@@ -25,6 +25,14 @@ pub struct Arguments {
     )]
     pub secret: String,
 
+    #[arg(
+        short,
+        long,
+        env,
+        help = "The origin of the server. This must include the port if it's not the default. Eg. https://example.com"
+    )]
+    pub origin: String,
+
     // TODO: Document where to get one
     #[arg(short, long, env, help = "Your unique Mattrax licence key.")]
     pub licence: String,

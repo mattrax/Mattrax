@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO tenant_member(tenant, account) VALUES(?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "c4a5257905f56191cbc167e34d2ba7aa5e3118f6d212de660e983112b2c12f29"
+}

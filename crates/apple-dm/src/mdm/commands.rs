@@ -8,6 +8,8 @@ pub enum SettingsCommandSettingWallpaperItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingWallpaper {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingWallpaperItem,
@@ -24,6 +26,8 @@ pub enum SettingsCommandSettingDataRoamingItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingDataRoaming {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingDataRoamingItem,
@@ -38,6 +42,8 @@ pub enum SettingsCommandSettingVoiceRoamingItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingVoiceRoaming {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingVoiceRoamingItem,
@@ -52,6 +58,8 @@ pub enum SettingsCommandSettingPersonalHotspotItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingPersonalHotspot {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingPersonalHotspotItem,
@@ -66,6 +74,8 @@ pub enum SettingsCommandSettingBluetoothItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingBluetooth {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingBluetoothItem,
@@ -80,6 +90,8 @@ pub enum SettingsCommandSettingApplicationConfigurationItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingApplicationConfigurationConfiguration {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -87,6 +99,8 @@ pub struct SettingsCommandSettingApplicationConfigurationConfiguration {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingApplicationConfiguration {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingApplicationConfigurationItem,
@@ -104,6 +118,8 @@ pub enum SettingsCommandSettingApplicationAttributeItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingApplicationAttributeAttribute {
     #[serde(rename = "VPNUUID")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -141,6 +157,8 @@ pub struct SettingsCommandSettingApplicationAttributeAttribute {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingApplicationAttribute {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingApplicationAttributeItem,
@@ -158,6 +176,8 @@ pub enum SettingsCommandSettingDeviceNameItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingDeviceName {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingDeviceNameItem,
@@ -172,6 +192,8 @@ pub enum SettingsCommandSettingHostNameItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingHostName {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingHostNameItem,
@@ -186,6 +208,8 @@ pub enum SettingsCommandSettingOrganizationInfoItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingOrganizationInfoOrganizationInfo {
     #[serde(rename = "OrganizationName")]
     pub organization_name: String,
@@ -207,6 +231,8 @@ pub struct SettingsCommandSettingOrganizationInfoOrganizationInfo {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingOrganizationInfo {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingOrganizationInfoItem,
@@ -222,6 +248,8 @@ pub enum SettingsCommandSettingDefaultApplicationItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingDefaultApplication {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingDefaultApplicationItem,
@@ -237,6 +265,8 @@ pub enum SettingsCommandSettingMDMOptionItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingMDMOptionMDMOption {
     #[serde(rename = "ActivationLockAllowedWhileSupervised")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -250,6 +280,8 @@ pub struct SettingsCommandSettingMDMOptionMDMOption {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingMDMOption {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingMDMOptionItem,
@@ -264,6 +296,8 @@ pub enum SettingsCommandSettingMaximumResidentUserItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingMaximumResidentUser {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingMaximumResidentUserItem,
@@ -278,21 +312,28 @@ pub enum SettingsCommandSettingSharedDeviceConfigurationItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingSharedDeviceConfigurationAwaitUserConfiguration {
     #[serde(rename = "Enabled")]
     pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingSharedDeviceConfigurationPasscodePolicy {
     #[serde(rename = "PasscodeLockGracePeriod")]
-    pub passcode_lock_grace_period: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub passcode_lock_grace_period: Option<i64>,
     #[serde(rename = "AutoLockTime")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub auto_lock_time: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingSharedDeviceConfiguration {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingSharedDeviceConfigurationItem,
@@ -335,6 +376,8 @@ pub enum SettingsCommandSettingDiagnosticSubmissionItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingDiagnosticSubmission {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingDiagnosticSubmissionItem,
@@ -349,6 +392,8 @@ pub enum SettingsCommandSettingAppAnalyticItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingAppAnalytic {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingAppAnalyticItem,
@@ -363,6 +408,8 @@ pub enum SettingsCommandSettingPasscodeLockGracePeriodItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingPasscodeLockGracePeriod {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingPasscodeLockGracePeriodItem,
@@ -377,6 +424,8 @@ pub enum SettingsCommandSettingTimeZoneItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingTimeZone {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingTimeZoneItem,
@@ -391,6 +440,8 @@ pub enum SettingsCommandSettingSoftwareUpdateSettingItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingSoftwareUpdateSetting {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingSoftwareUpdateSettingItem,
@@ -405,6 +456,8 @@ pub enum SettingsCommandSettingAccessibilitySettingItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommandSettingAccessibilitySetting {
     #[serde(rename = "Item")]
     pub item: SettingsCommandSettingAccessibilitySettingItem,
@@ -421,7 +474,8 @@ pub struct SettingsCommandSettingAccessibilitySetting {
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub reduce_transparency_enabled: Option<bool>,
     #[serde(rename = "TextSize")]
-    pub text_size: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub text_size: Option<i64>,
     #[serde(rename = "TouchAccommodationsEnabled")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
     pub touch_accommodations_enabled: Option<bool>,
@@ -482,6 +536,8 @@ pub enum SettingsCommandSetting {
 
 /// This command allows the server to set settings on the device.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SettingsCommand {
     /// An array of dictionaries that contains the settings.
     #[serde(rename = "Settings")]
@@ -490,16 +546,22 @@ pub struct SettingsCommand {
 
 /// Clears the Activation Lock bypass code from the device.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ClearActivationLockBypassCodeCommand {
 }
 
 /// This command requests an UnlockToken from the device.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RequestUnlockTokenCommand {
 }
 
 /// Sets or clears the recovery lock password (AppleSilicon devices only)
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SetRecoveryLockCommand {
     /// If the device has a Recovery Lock password set, the system requires the current password.
     #[serde(rename = "CurrentPassword")]
@@ -511,6 +573,8 @@ pub struct SetRecoveryLockCommand {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct InstallEnterpriseApplicationCommandManifest {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -518,6 +582,8 @@ pub struct InstallEnterpriseApplicationCommandManifest {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct InstallEnterpriseApplicationCommandConfiguration {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -532,6 +598,8 @@ pub enum InstallEnterpriseApplicationCommandChangeManagementState {
 
 /// This command allows the server to install enterprise applications on a device. It provides a more secure version of 'InstallApplication' that specifies a 'ManifestURL'.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct InstallEnterpriseApplicationCommand {
     /// A dictionary that specifies where to download the app. This value is backward-compatible with the manifest for the InstallApplicationCommand; however, it also allows you to specify 'sha256s' and 'sha256-size' for SHA-256 hashes.
     #[serde(rename = "Manifest")]
@@ -561,7 +629,8 @@ pub struct InstallEnterpriseApplicationCommand {
     /// 
     /// Available in macOS 11 and later.
     #[serde(rename = "ManagementFlags")]
-    pub management_flags: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub management_flags: Option<i64>,
     /// A dictionary that contains the initial configuration of the app, if you choose to provide it. Available in macOS 11 and later.
     #[serde(rename = "Configuration")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -582,6 +651,8 @@ pub struct InstallEnterpriseApplicationCommand {
 
 /// Instructs the device to query for active cellular plan eSIM "profiles" at the designated carrier eSIM server URL.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RefreshCellularPlansCommand {
     /// The carrier's eSIM server URL to query. Obtain this URL from each carrier separately.
     #[serde(rename = "eSIMServerURL")]
@@ -590,6 +661,8 @@ pub struct RefreshCellularPlansCommand {
 
 /// This command allows the server to remove a profile. This command requires the Profile Installation and Removal Right. It's supported in the user channel.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RemoveProfileCommand {
     /// The identifier of the profile to remove.
     #[serde(rename = "Identifier")]
@@ -598,6 +671,8 @@ pub struct RemoveProfileCommand {
 
 /// Informs the device that it can continue past Setup Assistant and finish login. Only works on Shared iPads that have the AwaitUserConfiguration feature enabled.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct UserConfiguredCommand {
 }
 
@@ -612,6 +687,8 @@ pub enum LomDeviceRequestCommandRequestListRequestListItemDeviceRequestType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LomDeviceRequestCommandRequestListRequestListItem {
     #[serde(rename = "DeviceRequestType")]
     pub device_request_type: LomDeviceRequestCommandRequestListRequestListItemDeviceRequestType,
@@ -629,6 +706,8 @@ pub struct LomDeviceRequestCommandRequestListRequestListItem {
 
 /// Issues LOM requests to devices.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LomDeviceRequestCommand {
     /// An array of requests to perform.
     #[serde(rename = "RequestList")]
@@ -637,11 +716,15 @@ pub struct LomDeviceRequestCommand {
 
 /// This command allows the server to query for installed 3rd party applications.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManagedMediaListCommand {
 }
 
 /// This command allows the server to install a provisioning profile. No error occurs if the provisioning profile is already installed. This command requires the Provisioning Profile Installation and Removal right. On macOS, this command is for iOS and iPadOS style provisioning profiles only.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct InstallProvisioningProfileCommand {
     /// The provisioning profile.
     #[serde(rename = "ProvisioningProfile")]
@@ -650,6 +733,8 @@ pub struct InstallProvisioningProfileCommand {
 
 /// This command allows the server to retrieve the list of installed certificates on the device. The command requires that the server has the Inspect Profile Manifest privilege. For userenrollment, this request will limit to certificates pushed via MDM. Starting with iOS 15.4, the CertificateList command will return a Not Now response prior to the first time a passcode-protected device is unlocked after boot. Between iOS 15.0 and iOS 15.4, devices in that state did not respond with Not Now, but some identity certificates may not have been reported in the response.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct CertificateListCommand {
     /// If 'true', only include certificates that MDM installed or that are in the same profile as the MDM payload. User-enrolled devices ignore this value and always only include managed certificates. This value is available in iOS 13 and later, macOS 10.15 and later, and tvOS 13 and later.
     #[serde(rename = "ManagedOnly")]
@@ -659,6 +744,8 @@ pub struct CertificateListCommand {
 
 /// This command allows the server to turn on the Declarative Management engine on the device (the first time it is used), or to trigger a Declarative Management synchronization operation.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DeclarativeManagementCommand {
     /// The base64-encoded Declarative Management JSON request using a TokensResponse.
     #[serde(rename = "Data")]
@@ -668,6 +755,8 @@ pub struct DeclarativeManagementCommand {
 
 /// This command requires the Device Lock access right. The device will restart immediately.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RestartDeviceCommand {
     /// If 'true', the system rebuilds the kernel cache during a device restart. If 'BootstrapTokenAllowedForAuthentication' is 'true' in the SecurityInfoResponse.SecurityInfo response, the device requests the bootstrap token from the MDM server prior to executing this command. This value is available in macOS 11 and later.
     #[serde(rename = "RebuildKernelCache")]
@@ -686,11 +775,15 @@ pub struct RestartDeviceCommand {
 
 /// This command allows the server to ask for the device's location if it is in MDM lost mode.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DeviceLocationCommand {
 }
 
 /// This commands allows the server to force validation of the free developer and universal provisioning profiles associated with an enterprise app.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ValidateApplicationsCommand {
     /// The bundle identifiers of the enterprise apps to include for validation of associated provisioning profiles, if you choose to provide them. Otherwise, validation occurs for the provisioning profiles for the installed managed apps.
     #[serde(rename = "Identifiers")]
@@ -700,11 +793,15 @@ pub struct ValidateApplicationsCommand {
 
 /// Enable Remote Desktop on the device.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EnableRemoteDesktopCommand {
 }
 
 /// This command allows the server to retrieve the list of installed provisioning profiles on the device. This command requires the Inspect Provisioning Profiles right. On macOS, this command is for iOS and iPadOS style provisioning profiles only.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ProvisioningProfileListCommand {
     /// If 'true', only include profiles that MDM has installed. For user enrollments, the device ignores this key and always limits the results to managed profiles. This value is available in iOS 13 and later, and tvOS 13 and later.
     #[serde(rename = "ManagedOnly")]
@@ -714,6 +811,8 @@ pub struct ProvisioningProfileListCommand {
 
 /// This command allows the server to unlock a local user account.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct UnlockUserAccountCommand {
     /// The user name of the local account, which can be any local account on the system, not just a managed user account.
     #[serde(rename = "UserName")]
@@ -727,6 +826,8 @@ pub enum RotateFileVaultKeyCommandKeyType {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RotateFileVaultKeyCommandFileVaultUnlock {
     #[serde(rename = "Password")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -741,6 +842,8 @@ pub struct RotateFileVaultKeyCommandFileVaultUnlock {
 
 /// This command allows for changing a device's FileVaultMaster password.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RotateFileVaultKeyCommand {
     /// The type of FileVault key you want to change the password for. Set this value to 'personal' and set a value for 'Password' in the 'FileVaultUnlock' dictionary to enable unlocking a device with a password. Set this value to 'institutional' and set values for 'PrivateKeyExport' and 'PrivateKeyExportPassword' in the 'FileVaultUnlock' dictionary.
     #[serde(rename = "KeyType")]
@@ -760,6 +863,8 @@ pub struct RotateFileVaultKeyCommand {
 
 /// This command returns information about installed extensions for a user.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct NsextensionMappingsCommand {
 }
 
@@ -801,6 +906,8 @@ pub enum InstalledApplicationListCommandItemItemsItem {
 
 /// This command allows the server to query for installed 3rd party applications.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct InstalledApplicationListCommand {
     /// An array of app identifiers. Provide this value to limit the response to only include these apps. This value is available in iOS 7 and later, macOS 10.15 and later, and tvOS 10.2 and later. For a watchOS app, the identifier needs to be the watch's bundle identifier, which differs from the main bundle identifier for the iPhone to which the watch is paired. Obtain the watch's bundle identifier for an app with a watch bundle, in the 'watchBundleId' key that's part of the Content Metadata query. For more information on this query, see Getting App and Book Information (Legacy).
     #[serde(rename = "Identifiers")]
@@ -819,16 +926,22 @@ pub struct InstalledApplicationListCommand {
 
 /// This command requires the Device Lock access right. The device will shut down immediately.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ShutDownDeviceCommand {
 }
 
 /// Disable Remote Desktop on the device.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DisableRemoteDesktopCommand {
 }
 
 /// This command allows the server to determine what restrictions are being enforced on the device, and the total sum of all restrictions. This command requires the Restrictions Query access right.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RestrictionsCommand {
     /// If 'true', the device reports restrictions from each profile. This value is available in iOS 4 and later, and tvOS 6.1 and later.
     #[serde(rename = "ProfileRestrictions")]
@@ -838,6 +951,8 @@ pub struct RestrictionsCommand {
 
 /// This command allows the server to query for specific device information. It's supported in the user channel.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DeviceInformationCommand {
     /// An array of query dictionaries to get information about a device.
     #[serde(rename = "Queries")]
@@ -875,6 +990,8 @@ pub enum ScheduleOSUpdateCommandUpdateUpdatesItemPriority {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ScheduleOSUpdateCommandUpdateUpdatesItem {
     #[serde(rename = "ProductKey")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -894,6 +1011,8 @@ pub struct ScheduleOSUpdateCommandUpdateUpdatesItem {
 
 /// This command allows the server to schedule an OS update.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ScheduleOSUpdateCommand {
     /// An array of dictionaries specifying the updates to download or install. If this value is missing, the device applies the default behavior for handling updates. This command is ignored and an informational error is returned if a Software Update is actively managed via a Declarative Device Management 'Software Update Enforcement Policy' configuration, as the Declarative Device Management configuration takes precedence.
     #[serde(rename = "Updates")]
@@ -902,6 +1021,8 @@ pub struct ScheduleOSUpdateCommand {
 
 /// Changes or clears the firmware password for the device.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SetFirmwarePasswordCommand {
     /// The current password, which you must set if the device has a firmware password.
     #[serde(rename = "CurrentPassword")]
@@ -918,11 +1039,15 @@ pub struct SetFirmwarePasswordCommand {
 
 /// This command allows the server to tell the device to play a sound if it is in MDM Lost Mode. The sound will play until the device is either removed from Lost Mode or a user disables the sound from the device.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PlayLostModeSoundCommand {
 }
 
 /// This command allows the server to remove a provisioning profile. This command requires the Provisioning Profile Installation and Removal right. On macOS, this command is for iOS and iPadOS style provisioning profiles only.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RemoveProvisioningProfileCommand {
     /// The unique identifier of the provisioning profile to remove.
     #[serde(rename = "UUID")]
@@ -931,11 +1056,15 @@ pub struct RemoveProvisioningProfileCommand {
 
 /// Queries the device for a list of available OS updates. On OS X, a ScheduleOSUpdateScan must be performed to update the results returned by this query.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AvailableOSUpdatesCommand {
 }
 
 /// Returns information about the active NSExtensions for a particular user.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ActiveNSExtensionsCommand {
     /// An array of extension points. If you choose to provide this value, the response only includes the app extensions for the extension points you specify.
     #[serde(rename = "FilterExtensionPoints")]
@@ -945,6 +1074,8 @@ pub struct ActiveNSExtensionsCommand {
 
 /// This command allows the server to clear the passcode on the device. This command requires the Device Lock and Passcode Removal right.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ClearPasscodeCommand {
     /// The unlock token value that the device provides in its 'TokenUpdateMessage' check-in message.
     #[serde(rename = "UnlockToken")]
@@ -953,6 +1084,8 @@ pub struct ClearPasscodeCommand {
 
 /// Verifies the device's firmware password.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VerifyFirmwarePasswordCommand {
     /// The password to verify.
     #[serde(rename = "Password")]
@@ -961,6 +1094,8 @@ pub struct VerifyFirmwarePasswordCommand {
 
 /// This command prompts the user to share their screen using AirPlay mirroring.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RequestMirroringCommand {
     /// The name of the AirPlay Mirroring destination.
     #[serde(rename = "DestinationName")]
@@ -982,11 +1117,15 @@ pub struct RequestMirroringCommand {
 
 /// This command allows the server to force the current user to logout.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LogOutUserCommand {
 }
 
 /// This command queries the device for application feedback information. This command requires the App Management right.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManagedApplicationFeedbackCommand {
     /// The bundle identifiers of the managed apps.
     #[serde(rename = "Identifiers")]
@@ -999,6 +1138,8 @@ pub struct ManagedApplicationFeedbackCommand {
 
 /// This command allows the host to install a configuration profile. The profile may be encrypted using any installed identity certificate. The profile may also be signed. This command requires the Profile Installation and Removal right. It's supported in the user channel.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct InstallProfileCommand {
     /// The profile to install, which you can encrypt using any identity certificate installed on the device. You can also sign the profile.
     #[serde(rename = "Payload")]
@@ -1007,11 +1148,15 @@ pub struct InstallProfileCommand {
 
 /// Queries the device for LOM setup information such as IP addresses, protocol version, etc.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct LomSetupRequestCommand {
 }
 
 /// Allows changing the password of a local admin account that was created by Setup Assistant during DEP enrollment via the AccountConfiguration command.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SetAutoAdminPasswordCommand {
     /// The unique identifier of the local administrator account. If this value doesn't match the GUID of an administrator account that MDM created during Device Enrollment Program (DEP) enrollment, the command returns an error.
     #[serde(rename = "GUID")]
@@ -1028,6 +1173,8 @@ pub struct SetAutoAdminPasswordCommand {
 
 /// This command allows the server to delete a user that has an active account on the device.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DeleteUserCommand {
     /// The user name of the account to delete. This key is required when the value for 'DeleteAllUsers' is absent or 'false'.
     #[serde(rename = "UserName")]
@@ -1051,6 +1198,8 @@ pub enum RemoveMediaCommandMediaType {
 
 /// This command allows an MDM server to remove managed media. This command returns Acknowledged even if the item is not found.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RemoveMediaCommand {
     /// The media type, which can only be 'Book'.
     #[serde(rename = "MediaType")]
@@ -1066,6 +1215,8 @@ pub struct RemoveMediaCommand {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AccountConfigurationCommandAutoSetupAdminAccountAutoSetupAdminAccountItem {
     #[serde(rename = "shortName")]
     pub short_name: String,
@@ -1081,6 +1232,8 @@ pub struct AccountConfigurationCommandAutoSetupAdminAccountAutoSetupAdminAccount
 
 /// This command can be sent to the device to have it create the local administrator account (thereby skipping the page to create this account in Setup Assistant)
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct AccountConfigurationCommand {
     /// If 'true', Setup Assistant skips the user interface for setting up primary accounts and disables autologin. If 'true', you must specify a value for 'AutoSetupAdminAccounts'.
     #[serde(rename = "SkipPrimarySetupAccountCreation")]
@@ -1120,6 +1273,8 @@ pub struct AccountConfigurationCommand {
 
 /// Verifies the device's recovery lock password. (AppleSilicon devices only)
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct VerifyRecoveryLockCommand {
     /// The password to verify.
     #[serde(rename = "Password")]
@@ -1128,16 +1283,22 @@ pub struct VerifyRecoveryLockCommand {
 
 /// This command allows the server to take the device out of MDM lost mode.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DisableLostModeCommand {
 }
 
 /// Informs the device that it can continue past DEP enrollment. Only works on devices in DEP that have their cloud configuration set to await configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DeviceConfiguredCommand {
 }
 
 /// If a redemption code is needed during app installation, the server can use this command to complete the app installation.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ApplyRedemptionCodeCommand {
     /// The bundle identifier of the app.
     #[serde(rename = "Identifier")]
@@ -1149,6 +1310,8 @@ pub struct ApplyRedemptionCodeCommand {
 
 /// Requests that the device perform a background scan for OS updates.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ScheduleOSUpdateScanCommand {
     /// If 'true', force a scan to start immediately. Otherwise, the scan starts at a system-determined time.
     #[serde(rename = "Force")]
@@ -1164,6 +1327,8 @@ pub enum InviteToProgramCommandProgramID {
 
 /// This command allows a server to invite a user to join a program.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct InviteToProgramCommand {
     /// The program's identifier, which can only be 'com.apple.cloudvpp'.
     #[serde(rename = "ProgramID")]
@@ -1174,12 +1339,17 @@ pub struct InviteToProgramCommand {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct InstallApplicationCommandOption {
     #[serde(rename = "PurchaseMethod")]
-    pub purchase_method: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub purchase_method: Option<i64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct InstallApplicationCommandConfiguration {
     #[serde(rename = "ANY")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1187,6 +1357,8 @@ pub struct InstallApplicationCommandConfiguration {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct InstallApplicationCommandAttribute {
     #[serde(rename = "VPNUUID")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1231,6 +1403,8 @@ pub enum InstallApplicationCommandChangeManagementState {
 
 /// This command allows the server to install an application on a device. If the app is already being managed, this command will update the app. Prior to iOS 16.0 and tvOS 16.0, this command would return NotNow when Setup Assistant was running. Starting in iOS 16.0 and tvOS 16.0, the command may be sent to supervised devices during Setup Assistant. However, you should only attempt to install device-based VPP apps or enterprise apps while in the awaiting configuration state, as the device will likely not yet have an App Store account configured, and thus commands that depend on one will fail.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct InstallApplicationCommand {
     /// The app's iTunes Store identifier.
     #[serde(rename = "iTunesStoreID")]
@@ -1257,7 +1431,8 @@ pub struct InstallApplicationCommand {
     /// 
     /// Available in iOS 5 and later, macOS 11 and later, and tvOS 10.2 and later.
     #[serde(rename = "ManagementFlags")]
-    pub management_flags: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
+    pub management_flags: Option<i64>,
     /// A dictionary that contains the initial configuration of the app, if you choose to provide it. Available in iOS 7 and later, macOS 11 and later, and tvOS 10.2 and later.
     #[serde(rename = "Configuration")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -1288,26 +1463,36 @@ pub struct InstallApplicationCommand {
 
 /// Queries the device for the status of software updates.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct OsUpdateStatusCommand {
 }
 
 /// This command stops AirPlay mirroring.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct StopMirroringCommand {
 }
 
 /// This command allows the server to query for information about Content Caching.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ContentCachingInformationCommand {
 }
 
 /// This command allows the server to query for a list of users that have an active account on the device.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct UserListCommand {
 }
 
 /// This command allows a server to remove a managed app.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct RemoveApplicationCommand {
     /// The bundle identifier of the managed app.
     /// For a watchOS app, the identifier needs to be the watch's bundle identifier, which differs from the main bundle identifier for the iPhone to which the watch is paired. Obtain the watch's bundle identifier for an app with a watch bundle, in the 'watchBundleId' key that's part of the Content Metadata query. For more information on this query, see Getting App and Book Information (Legacy).
@@ -1330,6 +1515,8 @@ pub enum InstallMediaCommandKind {
 
 /// This command allows the server to install a book on a device. If the book is already being managed, this command will update the book.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct InstallMediaCommand {
     /// The book's iTunes Store identifier.
     #[serde(rename = "iTunesStoreID")]
@@ -1370,6 +1557,8 @@ pub struct InstallMediaCommand {
 
 /// Queries managed application attributes. Attributes can be set on managed apps. These attributes can be changed over time.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManagedApplicationAttributesCommand {
     /// The bundle identifiers of the managed apps.
     /// For a watchOS app, the identifier needs to be the watch's bundle identifier, which differs from the main bundle identifier for the iPhone to which the watch is paired. Obtain the watch's bundle identifier for an app with a watch bundle, in the 'watchBundleId' key that's part of the Content Metadata query. For more information on this query, see Getting App and Book Information (Legacy).
@@ -1379,11 +1568,15 @@ pub struct ManagedApplicationAttributesCommand {
 
 /// This command clears the restrictions passcode, either disabling parental controls or allowing you to edit them.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ClearRestrictionsPasswordCommand {
 }
 
 /// This command allows the MDM server to query for the profiles installed on the device. This command requires the Inspect Profile Manifest right. It's supported on the user channel.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ProfileListCommand {
     /// If 'true', only include profiles that MDM has installed. For user enrollments, the device ignores this key and always limits the results to managed profiles. This value is available in iOS 13 and later, macOS 10.5 and later, and tvOS 13 and later.
     #[serde(rename = "ManagedOnly")]
@@ -1393,11 +1586,15 @@ pub struct ProfileListCommand {
 
 /// Retrieves the Activation Lock bypass code from the device.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ActivationLockBypassCodeCommand {
 }
 
 /// This command allows the server to immediately lock the device. This command requires the Device Lock and Passcode Removal right.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct DeviceLockCommand {
     /// The message to display on the Lock screen of the device. This value doesn't apply to a shared iPad device. This value is available in iOS 4 and later, and macOS 10.14 and later.
     #[serde(rename = "Message")]
@@ -1415,6 +1612,8 @@ pub struct DeviceLockCommand {
 
 /// This command allows the server to put the device in MDM lost mode, with a message, phone number, and footnote text. A message or phone number must be provided.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EnableLostModeCommand {
     /// If present, display this text on the Lock screen. You must provide this value if you don't provide a value for 'PhoneNumber'.
     #[serde(rename = "Message")]
@@ -1432,6 +1631,8 @@ pub struct EnableLostModeCommand {
 
 /// This command queries the device for the current configuration of managed applications. This command requires the App Management right. macOS supports this command as of 10.15, on the device channel and for User Enrollments only, because Settings->ApplicationConfiguration is supported. Since macOS does not support Managed Applications, this command can be used for any bundle identifier.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManagedApplicationConfigurationCommand {
     /// The bundle identifiers of the managed apps.
     /// For a watchOS app, the identifier needs to be the watch's bundle identifier, which differs from the main bundle identifier for the iPhone to which the watch is paired. Obtain the watch's bundle identifier for an app with a watch bundle, in the 'watchBundleId' key that's part of the Content Metadata query. For more information on this query, see Getting App and Book Information (Legacy).
@@ -1452,6 +1653,8 @@ pub enum EraseDeviceCommandObliterationBehavior {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EraseDeviceCommandReturnToService {
     #[serde(rename = "Enabled")]
     pub enabled: bool,
@@ -1465,6 +1668,8 @@ pub struct EraseDeviceCommandReturnToService {
 
 /// This command allows the server to remotely erase the device. This command requires the Device Erase right.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EraseDeviceCommand {
     /// If 'true', preserve the data plan on an iPhone or iPad with eSIM functionality, if one exists. This value is available in iOS 11 and later.
     #[serde(rename = "PreserveDataPlan")]
@@ -1501,11 +1706,15 @@ pub struct EraseDeviceCommand {
 
 /// This command queries the device for security-related information. Queries are available if the MDM host has the Security Query right.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SecurityInfoCommand {
 }
 
 /// This command allows the server to query the status of managed apps. Certain statuses are transient. Once they are reported to the server, the entries for the apps are removed from the next query. macOS supports this command on the user channel starting with macOS 11.3.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManagedApplicationListCommand {
     /// The bundle identifiers of the managed apps to include in the response.
     /// For a watchOS app, the identifier needs to be the watch's bundle identifier, which differs from the main bundle identifier for the iPhone to which the watch is paired. Obtain the watch's bundle identifier for an app with a watch bundle, in the 'watchBundleId' key that's part of the Content Metadata query. For more information on this query, see Getting App and Book Information (Legacy).

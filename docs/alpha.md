@@ -22,6 +22,10 @@ The following is a list of features that are expected to land prior to us going 
   - [ ] Linking docs publically
  - [ ] Proper response body with error categories (Eg. DB, logic, etc)
 
+Apple management:
+ - [ ] Codesign profiles
+ - [ ] Encrypt enrollment profiles
+
 Technical debt:
  - [ ] Automatic OpenAPI schema
  - [ ] Serve the frontend via a CDN

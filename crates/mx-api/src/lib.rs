@@ -25,11 +25,12 @@ pub struct Core {
     db: MySqlPool,
     device_ca: DeviceCA,
     secret: Arc<Vec<u8>>,
+    origin: Arc<String>,
     client: reqwest::Client,
 }
 
 impl Core {
-    pub fn new(database_url: &str, secret: Vec<u8>) -> Result<Self, sqlx::Error> {
+    pub fn new(database_url: &str, secret: Vec<u8>, origin: String) -> Result<Self, sqlx::Error> {
         let db = MySqlPoolOptions::new()
             .max_connections(30)
             .min_connections(1)
@@ -41,6 +42,7 @@ impl Core {
             db,
             device_ca: DeviceCA::new(),
             secret: Arc::new(secret),
+            origin: Arc::new(origin),
             client: reqwest::Client::builder()
                 .timeout(Duration::from_secs(10))
                 .user_agent(concat!(

@@ -2,7 +2,9 @@
 # Default used by `cargo run` and Rust Analyzer
 DATABASE_URL="mysql://root:@localhost:3306/mattrax"
 SECRET = "1a5e7ce917928fec5e5642f3493f10979a97225c23f2102f2d9edfbf035b9fbe"
+ORIGIN = "http://localhost:9000"
 LICENCE = "self-hosting-is-not-currently-supported"
+# SQLX_OFFLINE = "true"
 
 # TODO: it's annoying we can just use the `DATABASE_URL` from above in these.
 # This also means if you override `DATABASE_URL` it won't be used here unlike for `cargo run`.

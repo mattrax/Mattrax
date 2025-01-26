@@ -29,3 +29,4 @@ argon2 = "0.5.3"
 tower-cookies = "0.11.0"
 a2 = "0.10.0"
 plist.workspace = true
+mx-apple = { version = "0.0.0", path = "../mx-apple" }

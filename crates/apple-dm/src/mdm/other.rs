@@ -12,6 +12,8 @@ pub enum ManifestURLitemitemsItemassetassetsItemkind {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManifestURLitemitemsItemassetassetsItem {
     pub kind: ManifestURLitemitemsItemassetassetsItemkind,
     #[serde(rename = "md5-size")]
@@ -38,6 +40,8 @@ pub enum ManifestURLitemitemsItemmetadaumkind {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManifestURLitemitemsItemmetadaumitemmetadataItemsItem {
     #[serde(rename = "bundle-identifier")]
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_some", serialize_with = "serialize_some",)]
@@ -48,6 +52,8 @@ pub struct ManifestURLitemitemsItemmetadaumitemmetadataItemsItem {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManifestURLitemitemsItemmetadaum {
     #[serde(rename = "bundle-identifier")]
     pub bundle_identifier: String,
@@ -66,6 +72,8 @@ pub struct ManifestURLitemitemsItemmetadaum {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManifestURLitemitemsItem {
     pub assets: Vec<ManifestURLitemitemsItemassetassetsItem>,
     pub metadata: ManifestURLitemitemsItemmetadaum,
@@ -73,6 +81,8 @@ pub struct ManifestURLitemitemsItem {
 
 /// The definition of the ManifestURL property list that specifies where a package is to be downloaded from, and provides hashes to verify the integrity of the package
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct ManifestURL {
     /// An array of dictionaries representing what the manifest will install
     pub items: Vec<ManifestURLitemitemsItem>,
@@ -80,6 +90,8 @@ pub struct ManifestURL {
 
 /// The definition of all the available skip keys
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct SkipKey {
     /// The key to skip the Accessibility pane, when creating additional users. This key is not available in macOS.
     #[serde(rename = "Accessibility")]
@@ -270,6 +282,8 @@ pub struct SkipKey {
 
 /// The JSON object returned from the MDM server's Enrollment SSO endpoint.
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct EnrollmentSSODocument {
     /// The iTunes Store ID of the app to download prior to enrollment, to support Enrollment SSO during enrollment. Using developer mode ignores this key.
     #[serde(rename = "iTunesStoreID")]
@@ -293,6 +307,8 @@ pub struct EnrollmentSSODocument {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PasswordHashSALTEDSHA512PBKDF2 {
     pub entropy: Vec<u8>,
     pub iterations: i64,
@@ -301,6 +317,8 @@ pub struct PasswordHashSALTEDSHA512PBKDF2 {
 
 /// The passwordHash object used in the AccountConfiguration and SetAutoAdminPassword commands
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct PasswordHash {
     /// A dictionary containing the entropy, iterations and salt
     #[serde(rename = "SALTED-SHA512-PBKDF2")]
@@ -309,6 +327,8 @@ pub struct PasswordHash {
 
 /// The definition of MachineInfo payload sent by a client when fetching an MDM enrollment profile
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(bira::Builder)]
+
 pub struct MachineInfo {
     /// The device's UDID.
     #[serde(rename = "UDID")]

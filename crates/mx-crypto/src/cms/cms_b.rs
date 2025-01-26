@@ -76,23 +76,20 @@ impl Pkcs7B {
 
             // If the truststore is empty we skip the verification of the signer.
             // In a perfect world this would be handled by ` // TODO
+            let mut ok = false;
             for ca in truststore.iter() {
                 let ca = x509_cert::Certificate::from_der(&ca.encode_der().unwrap()).unwrap();
                 let key = VerifyingKey::try_from(ca)?;
-                if let Err(err) = key.verify(&certificate2) {
-                    // todo!();
-                    // TODO: This is wrong error but is temporary
-
-                    println!(
-                        "ACTUAL ERROR: {err:?} {:?}",
-                        d.certificates()
-                            .map(|v| v.subject_common_name().unwrap())
-                            .collect::<Vec<_>>()
-                    );
-                    return Err(PkcsVerificationError::NoCertificateForSigner);
+                if let Ok(()) = key.verify(&certificate2) {
+                    ok = true;
+                    break;
                 }
                 // TODO: verify time
                 // TODO: Verify extended key usage
+            }
+
+            if !ok {
+                return Err(PkcsVerificationError::NoCertificateForSigner);
             }
 
             // In a perfect would we would just use `verify_message_digest_with_signed_data` but it's broken :(

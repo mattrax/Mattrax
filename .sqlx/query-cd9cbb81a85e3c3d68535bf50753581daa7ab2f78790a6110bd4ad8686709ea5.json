@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "UPDATE tenant SET apns_cert = ?, apns_topic = ?, apns_email = ? WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "cd9cbb81a85e3c3d68535bf50753581daa7ab2f78790a6110bd4ad8686709ea5"
+}

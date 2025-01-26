@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "INSERT INTO policy(id, name, description, tenant) VALUES(?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "d5262dee1aa2f5d5a9f69d8b3ac443f8c779a6e761c1b310b90981c8c141c646"
+}

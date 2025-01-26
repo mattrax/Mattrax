@@ -123,6 +123,18 @@ impl PkiMessage {
         let csr = mx_crypto::x509::CertificateSigningRequest::from_der(&csr).unwrap();
         // TODO: Validate the certificate. Eg. can't be CA, can't have certain key usages, etc.
 
+        // TODO
+        {
+            // TODO: Can we cache this into `msg` cause `success` does it too.
+            // let csr = mx_crypto::x509::CertificateSigningRequest::from_der(&csr).unwrap();
+            let challenge = csr.get_oid(crate::OID_SCEP_CHALLENGE).unwrap();
+
+            todo!(
+                "GOT CHALLENGE {:?}",
+                String::from_utf8(challenge.value.to_bytes().to_vec()).unwrap()
+            );
+        }
+
         let cert = csr
             .builder()
             .validity(Duration::from_secs(365 * DAY))
