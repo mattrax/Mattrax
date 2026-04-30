@@ -10,6 +10,7 @@ import { ManagementBackendMemory } from "./webhook/memory";
 import { createDb } from "./db";
 import { AppleMdmRepositoryLive } from "./mdm/apple/repository";
 import { AppleMdmServiceLive } from "./mdm/apple/service";
+import { ApnsServiceLive } from "./mdm/apple/apns";
 import { ScepServiceLive } from "./mdm/apple/scep/service";
 import { ScepRepositoryLive } from "./mdm/apple/scep/repository";
 import { extractTopicFromCertPem } from "./mdm/apple/cert";
@@ -47,12 +48,18 @@ export const createAppLayer = (db: D1Database, env: Env) => {
     HttpApiScalar.layerCdn(apiRoot, { path: "/" }),
   );
 
+  const apnsServiceResolved = ApnsServiceLive(
+    env.CLOUD_APPLE_VENDOR_CERT,
+    env.CLOUD_APPLE_VENDOR_KEY,
+  );
+
   const appleMdmServiceResolved = AppleMdmServiceLive({
     origin: env.ORIGIN,
     topic,
   }).pipe(
     Layer.provideMerge(ManagementBackendMemory),
     Layer.provideMerge(AppleMdmRepositoryLive(database)),
+    Layer.provideMerge(apnsServiceResolved),
   );
 
   const scepServiceResolved = ScepServiceLive.pipe(

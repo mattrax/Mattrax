@@ -9,6 +9,7 @@ import {
   MdmError,
 } from "./schema";
 import { AppleMdmRepository } from "./repository";
+import { ApnsService } from "./apns";
 import { type AppleDeclarationManifest, ManagementBackend } from "../../webhook/layer";
 
 function detectDdmSupport(osVersion: string | undefined): boolean {
@@ -88,8 +89,20 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
   Effect.gen(function* () {
     const repo = yield* AppleMdmRepository;
     const webhook = yield* ManagementBackend;
+    const apns = yield* ApnsService;
 
     const toMdmError = (message: string) => () => new MdmError({ message });
+
+    const pushToDevice = (deviceId: string): Effect.Effect<void, never> =>
+      Effect.gen(function* () {
+        const pushInfo = yield* repo.getDevicePushInfo(deviceId).pipe(
+          Effect.orElseSucceed(() => null),
+        );
+        if (!pushInfo) return;
+        yield* apns.push(pushInfo).pipe(
+          Effect.ignore({ log: true, message: `[APNS] Push failed for device ${deviceId}` }),
+        );
+      });
 
     const getManifest = (deviceId: string): Effect.Effect<AppleDeclarationManifest, MdmError> =>
       webhook.getAppleDeclarationManifest(deviceId).pipe(
@@ -112,14 +125,25 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
           Effect.mapError(toMdmError("Management backend cannot resolve Apple device")),
         );
         const supportsDdm = detectDdmSupport(undefined) || existing?.supportsDdm === true;
+        const pushToken = base64ToHex(update.Token);
+        const channel = update.UserID ? "user" : "device";
         const session = yield* webhook.updateAppleEnrollment({
           udid: update.UDID,
           pushMagic: update.PushMagic,
-          pushToken: base64ToHex(update.Token),
+          pushToken,
           topic: update.Topic,
-          channel: update.UserID ? "user" : "device",
+          channel,
           supportsDdm,
         }).pipe(Effect.mapError(toMdmError("Management backend rejected Apple enrollment")));
+
+        yield* repo.storePushInfo(
+          session.deviceId,
+          update.UDID,
+          pushToken,
+          update.PushMagic,
+          update.Topic,
+          channel,
+        );
 
         yield* webhook.reportDeviceEnrolled(session.deviceId, {
           udid: update.UDID,
@@ -284,36 +308,45 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
       });
 
     const queueInstallProfile = (deviceId: string, profilePayload: unknown): Effect.Effect<void, MdmError> =>
-      repo.insertCommand({
-        id: crypto.randomUUID(),
-        deviceId,
-        requestType: "InstallProfile",
-        payload: profilePayload,
-        status: "pending",
-        priority: 5,
-        createdAt: new Date(),
+      Effect.gen(function* () {
+        yield* repo.insertCommand({
+          id: crypto.randomUUID(),
+          deviceId,
+          requestType: "InstallProfile",
+          payload: profilePayload,
+          status: "pending",
+          priority: 5,
+          createdAt: new Date(),
+        });
+        yield* pushToDevice(deviceId);
       });
 
     const queueInstallApplication = (deviceId: string, appPayload: unknown): Effect.Effect<void, MdmError> =>
-      repo.insertCommand({
-        id: crypto.randomUUID(),
-        deviceId,
-        requestType: "InstallApplication",
-        payload: appPayload,
-        status: "pending",
-        priority: 5,
-        createdAt: new Date(),
+      Effect.gen(function* () {
+        yield* repo.insertCommand({
+          id: crypto.randomUUID(),
+          deviceId,
+          requestType: "InstallApplication",
+          payload: appPayload,
+          status: "pending",
+          priority: 5,
+          createdAt: new Date(),
+        });
+        yield* pushToDevice(deviceId);
       });
 
     const queueCollectInformation = (deviceId: string, queries: string[]): Effect.Effect<void, MdmError> =>
-      repo.insertCommand({
-        id: crypto.randomUUID(),
-        deviceId,
-        requestType: "DeviceInformation",
-        payload: { Queries: queries },
-        status: "pending",
-        priority: 5,
-        createdAt: new Date(),
+      Effect.gen(function* () {
+        yield* repo.insertCommand({
+          id: crypto.randomUUID(),
+          deviceId,
+          requestType: "DeviceInformation",
+          payload: { Queries: queries },
+          status: "pending",
+          priority: 5,
+          createdAt: new Date(),
+        });
+        yield* pushToDevice(deviceId);
       });
 
     const generateEnrollmentProfile = (): Effect.Effect<string, MdmError> =>

@@ -11,6 +11,19 @@ export class AppleMdmRepository extends Context.Service<
     readonly getPendingCommands: (deviceId: string) => Effect.Effect<MdmCommand[], MdmError>;
     readonly getNextPendingCommand: (deviceId: string) => Effect.Effect<MdmCommand | null, MdmError>;
     readonly updateCommandStatus: (id: string, status: MdmCommand["status"], detail?: string) => Effect.Effect<void, MdmError>;
+    readonly storePushInfo: (
+      deviceId: string,
+      udid: string,
+      pushToken: string,
+      pushMagic: string,
+      topic: string,
+      channel: "device" | "user",
+    ) => Effect.Effect<void, MdmError>;
+    readonly getDevicePushInfo: (deviceId: string) => Effect.Effect<{
+      pushToken: string;
+      pushMagic: string;
+      topic: string;
+    } | null, MdmError>;
   }
 >()("AppleMdmRepository") {}
 
@@ -69,6 +82,45 @@ export const AppleMdmRepositoryLive = (db: Database) =>
             }).where(eq(dbSchema.commands.id, id));
           },
           catch: (cause) => new MdmError({ message: "Failed to update command status", cause }),
+        }),
+
+      storePushInfo: (deviceId, udid, pushToken, pushMagic, topic, channel) =>
+        Effect.tryPromise({
+          try: async () => {
+            const now = new Date();
+            await db
+              .insert(dbSchema.devices)
+              .values({
+                id: deviceId,
+                udid,
+                pushToken,
+                pushMagic,
+                topic,
+                supportsDdm: false,
+                channel,
+                status: "active",
+                enrolledAt: now,
+                lastSeenAt: now,
+              })
+              .onConflictDoUpdate({
+                target: dbSchema.devices.id,
+                set: { pushToken, pushMagic, topic, lastSeenAt: now },
+              });
+          },
+          catch: (cause) => new MdmError({ message: "Failed to store device push info", cause }),
+        }),
+
+      getDevicePushInfo: (deviceId) =>
+        Effect.tryPromise({
+          try: async () => {
+            const row = await db.query.devices.findFirst({
+              where: eq(dbSchema.devices.id, deviceId),
+              columns: { pushToken: true, pushMagic: true, topic: true },
+            });
+            if (!row?.pushToken || !row.pushMagic || !row.topic) return null;
+            return { pushToken: row.pushToken, pushMagic: row.pushMagic, topic: row.topic };
+          },
+          catch: (cause) => new MdmError({ message: "Failed to get device push info", cause }),
         }),
     }),
   );
