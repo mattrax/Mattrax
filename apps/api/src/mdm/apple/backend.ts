@@ -1,7 +1,6 @@
 import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
-import { apiRoot } from "../../domain";
+import { appleMdmApi } from "./domain";
 
-export const appleMdmApiLayer = HttpApiBuilder.group(apiRoot, "MattraxAppleMDM", (handlers) =>
-  handlers.handle("checkin", () => Effect.void)
-);
+export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typeof appleMdmApi>) =>
+  handlers.handle("checkin", () => Effect.void);
