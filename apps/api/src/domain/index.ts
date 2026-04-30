@@ -1,17 +1,23 @@
-import { HttpApi, OpenApi } from "effect/unstable/httpapi";
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
+import { Schema } from "effect";
 import { version } from "../../package.json" with { type: "json" };
+import { appleMdmApi } from "../mdm/apple";
 
-// HTTP API for the Mattrax UI & public API access
-export const mattraxApi = HttpApi.make("MattraxApi")
-//   .add(accountEndpoints)
-//   .add(driveEndpoints)
-//   .add(shareEndpoints)
-  .prefix("/api")
+export const mattraxApi = HttpApiGroup.make("MattraxApi")
+  .add(
+    HttpApiEndpoint.get("health", "/health", {
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    })
+  );
+
+export const apiRoot = HttpApi.make("Mattrax")
+  .add(mattraxApi.prefix("/api"))
+  .add(appleMdmApi)
   .annotateMerge(
     OpenApi.annotations({
-      title: "OSDrive API",
+      title: "Mattrax API",
       version,
-      description: "OSDrive Web API",
+      description: "Mattrax Web API",
       servers: [{ url: "/" }],
     }),
   );
