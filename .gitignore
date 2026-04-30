@@ -33,3 +33,10 @@ Thumbs.db
 # Environment
 .env
 .env*.local
+
+# Generated mTLS certificates
+*.pem
+*.srl
+ca.cnf
+client.cnf
+client-ext.cnf

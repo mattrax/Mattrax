@@ -43,7 +43,7 @@ export const ScepServiceLive = Layer.effect(
         });
         if (caCert) {
           const privateKey = yield* importPrivateKeyJwk(existing.privateKeyJwk);
-          return { privateKey, caCert, certPem: existing.certPem };
+          return { privateKey, privateKeyJwk: existing.privateKeyJwk, caCert, certPem: existing.certPem };
         }
         // Stored cert is malformed (e.g. from old hand-written ASN.1 code) — regenerate
       }
@@ -57,7 +57,8 @@ export const ScepServiceLive = Layer.effect(
       const certPem = certToPem(caCert);
 
       yield* repo.saveCa(certPem, jwk);
-      return { privateKey: keyPair.privateKey, caCert, certPem };
+      const privateKey = yield* importPrivateKeyJwk(jwk);
+      return { privateKey, privateKeyJwk: jwk, caCert, certPem };
     });
 
     const getCaCaps = (): Effect.Effect<string, ScepError> => Effect.succeed(SCEP_CAPS);
@@ -74,7 +75,7 @@ export const ScepServiceLive = Layer.effect(
       Effect.gen(function* () {
         const ca = yield* ensureCa;
 
-        const req = yield* parseScepPkcsReq(message, ca.caCert, ca.privateKey);
+        const req = yield* parseScepPkcsReq(message, ca.caCert, ca.privateKeyJwk);
 
         const notBefore = new Date();
         const notAfter = new Date(notBefore.getTime() + 365 * 24 * 60 * 60 * 1000);

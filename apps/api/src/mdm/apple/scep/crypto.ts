@@ -36,6 +36,7 @@ export const importPrivateKeyJwk = (jwk: JsonWebKey): Effect.Effect<CryptoKey, S
     catch: (cause) => new ScepError({ message: "Failed to import private key", cause }),
   });
 
+
 export const exportPublicKeySpki = (key: CryptoKey): Effect.Effect<ArrayBuffer, ScepError> =>
   Effect.tryPromise({
     try: async () => {

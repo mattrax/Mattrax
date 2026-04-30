@@ -313,7 +313,7 @@ describe("SCEP PKCS#7", () => {
   });
 
   describe("parseScepPkcsReq", () => {
-    it("parses a valid SCEP PKCSReq with encrypted envelope", async () => {
+    it("parses a valid SCEP PKCSReq", async () => {
       // Build a CSR
       const csr = new pkijs.CertificationRequest();
       csr.version = 0;
@@ -330,7 +330,8 @@ describe("SCEP PKCS#7", () => {
 
       const reqDer = await buildTestScepPkcsReq(caCert, caKeyPair.publicKey, deviceKeyPair, csr);
 
-      const result = await parseScepPkcsReq(reqDer, caCert, caKeyPair.privateKey).pipe(
+      const caPrivateKeyJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey) as JsonWebKey;
+      const result = await parseScepPkcsReq(reqDer, caCert, caPrivateKeyJwk).pipe(
         Effect.runPromise,
       );
 
@@ -338,6 +339,40 @@ describe("SCEP PKCS#7", () => {
       expect(result.transactionId).toBe("test-txn-123");
       expect(result.senderNonce).toBeDefined();
       expect(result.senderNonce.byteLength).toBe(16);
+    });
+
+    it("parses the Fleet test PKCSReq.der outer structure", async () => {
+      // We don't have the CA key to decrypt the inner EnvelopedData,
+      // but we can at least verify our outer parser handles the real file.
+      // @ts-ignore — vitest runs in Node.js; fs is available at runtime
+      const { readFileSync } = await import("fs");
+      // @ts-ignore
+      const { join } = await import("path");
+      // @ts-ignore
+      const { fileURLToPath } = await import("url");
+      // @ts-ignore
+      const __dirname = join(fileURLToPath(import.meta.url), "..");
+      const filePath = join(__dirname, "testdata", "PKCSReq.der");
+      const data = readFileSync(filePath);
+
+      // Parse outer ContentInfo
+      const contentInfo = pkijs.ContentInfo.fromBER(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+      expect(contentInfo.contentType).toBe(pkijs.ContentInfo.SIGNED_DATA);
+
+      const signedData = new pkijs.SignedData({ schema: contentInfo.content });
+      expect(signedData.signerInfos.length).toBeGreaterThan(0);
+
+      // Verify we can extract eContent without crashing
+      const eContent = signedData.encapContentInfo.eContent;
+      expect(eContent).toBeDefined();
+
+      // eContent should be an OCTET STRING or constructed wrapper
+      expect(eContent!.idBlock).toBeDefined();
+
+      // The signerInfo should have signedAttrs with SCEP attributes
+      const signerInfo = signedData.signerInfos[0];
+      expect(signerInfo.signedAttrs).toBeDefined();
+      expect(signerInfo.signedAttrs!.attributes.length).toBeGreaterThan(0);
     });
   });
 });
