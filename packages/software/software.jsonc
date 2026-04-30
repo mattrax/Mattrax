@@ -1,0 +1,11 @@
+{
+  "$schema": "./schema4.json",
+
+  // TODO: Finish schema
+  // TODO: App Store identifiers, link back to official site, for every version download links, hashes.
+  // TODO: Slack, Claude, Chrome, Spotify, Discord, OpenCode
+
+  "software": {
+    "chrome": {},
+  },
+}

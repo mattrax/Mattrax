@@ -1,0 +1,20 @@
+{
+  "name": "@mattrax/api-backend",
+  "private": true,
+  "description": "API backend implementations",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@mattrax/api-domain": "workspace:*",
+    "@mattrax/appledm": "workspace:*",
+    "@mattrax/mdm-domain": "workspace:*",
+    "drizzle-orm": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

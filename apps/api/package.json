@@ -7,13 +7,16 @@
     "dev": "vp dev",
     "build": "wrangler types --cwd src && vp build",
     "preview": "vp preview",
-    "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit"
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
+    "@mattrax/api-backend": "workspace:*",
+    "@mattrax/api-domain": "workspace:*",
+    "@mattrax/appledm": "workspace:*",
+    "@mattrax/mdm-domain": "workspace:*",
     "asn1js": "catalog:",
     "drizzle-orm": "catalog:",
-    "effect": "4.0.0-beta.52",
+    "effect": "catalog:",
     "fast-plist": "catalog:",
     "pkijs": "catalog:"
   },

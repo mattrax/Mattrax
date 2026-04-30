@@ -3,17 +3,17 @@ import { HttpApi, HttpApiBuilder, HttpApiScalar, OpenApi } from "effect/unstable
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { waitUntil } from "cloudflare:workers";
 import { version } from "../package.json" with { type: "json" };
-import { mattraxApi, mattraxHandlers } from "./backend";
-import { appleMdmApi } from "./mdm/apple/domain";
-import { appleMdmHandlers, scepRoutes } from "./mdm/apple/backend";
-import { ManagementBackendMemory } from "./webhook/memory";
-import { createDb } from "./db";
-import { AppleMdmRepositoryLive } from "./mdm/apple/repository";
-import { AppleMdmServiceLive } from "./mdm/apple/service";
-import { ApnsServiceLive } from "./mdm/apple/apns";
-import { ScepServiceLive } from "./mdm/apple/scep/service";
-import { ScepRepositoryLive } from "./mdm/apple/scep/repository";
-import { extractTopicFromCertPem } from "./mdm/apple/cert";
+import { mattraxApi } from "@mattrax/api-domain";
+import { appleMdmApi } from "@mattrax/appledm";
+import { mattraxHandlers, appleMdmHandlers, scepRoutes } from "@mattrax/api-backend";
+import { AppleMdmServiceLive } from "@mattrax/appledm";
+import { ApnsServiceLive } from "@mattrax/appledm";
+import { ScepServiceLive } from "@mattrax/appledm";
+import { extractTopicFromCertPem } from "@mattrax/appledm";
+import { ManagementBackendMemory } from "./management/memory.js";
+import { createDb } from "./db/index.js";
+import { AppleMdmRepositoryLive } from "./repositories/appleMdmRepository.js";
+import { ScepRepositoryLive } from "./repositories/scepRepository.js";
 
 const apiRoot = HttpApi.make("Mattrax")
   .add(mattraxApi)

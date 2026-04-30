@@ -1,0 +1,16 @@
+{
+  "name": "@mattrax/mdm-domain",
+  "private": true,
+  "description": "MDM domain types and API definitions",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

@@ -4,6 +4,16 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "allowImportingTsExtensions": true,
-    "esModuleInterop": true
-  }
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "files": [],
+  "references": [
+    { "path": "./packages/mdm-domain" },
+    { "path": "./packages/appledm" },
+    { "path": "./packages/api-domain" },
+    { "path": "./packages/api-backend" },
+    { "path": "./apps/api" },
+    { "path": "./apps/web" }
+  ]
 }

@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "ready": "vp fmt && vp lint && vp run test -r && vp run build -r",
-    "dev": "vp run website#dev"
+    "dev": "vp run website#dev",
+    "typecheck": "tsc -b"
   },
   "devDependencies": {
+    "typescript": "~6.0.2",
     "vite-plus": "catalog:"
   },
   "engines": {

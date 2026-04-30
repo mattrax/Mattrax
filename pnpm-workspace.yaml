@@ -9,6 +9,7 @@ catalog:
   asn1js: ^3.0.10
   drizzle-kit: ^0.31.10
   drizzle-orm: ^0.45.2
+  effect: 4.0.0-beta.52
   fast-plist: ^0.1.3
   pkijs: ^3.4.0
   typescript: ^5

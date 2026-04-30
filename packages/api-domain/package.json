@@ -1,0 +1,16 @@
+{
+  "name": "@mattrax/api-domain",
+  "private": true,
+  "description": "API domain definitions",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}
