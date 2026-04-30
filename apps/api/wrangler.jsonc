@@ -12,13 +12,13 @@
     "enabled": true,
   },
   "vars": {
-    "ORIGIN": "https://mattraxe.otbeaumont.me"
+    "ORIGIN": "https://mattraxe.otbeaumont.me",
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "mattrax",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "310ef1ff-67fd-4952-861a-e4cab413ca78",
     },
   ],
 }
