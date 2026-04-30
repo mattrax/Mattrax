@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
-import { privateDecrypt, constants, createDecipheriv } from "node:crypto";
+import { privateDecrypt, publicEncrypt, constants, createDecipheriv } from "node:crypto";
 import { ScepError } from "../schema";
 import { pemEncode, pemDecode } from "./crypto";
 
@@ -25,12 +25,13 @@ const CMS_CONTENT_TYPE = "1.2.840.113549.1.9.3";
 const CMS_MESSAGE_DIGEST = "1.2.840.113549.1.9.4";
 const CMS_SIGNING_TIME = "1.2.840.113549.1.9.5";
 
-// SCEP attributes (VeriSign/iPlanet arc)
-const SCEP_TRANSACTION_ID = "2.16.840.1.113733.1.9.7";
-const SCEP_MESSAGE_TYPE = "2.16.840.1.113733.1.9.8";
-const SCEP_PKI_STATUS = "2.16.840.1.113733.1.9.2";
-const SCEP_SENDER_NONCE = "2.16.840.1.113733.1.9.5";
+// SCEP attributes (VeriSign/iPlanet arc) — OIDs per RFC 8894 / draft-gutmann-scep
+const SCEP_MESSAGE_TYPE    = "2.16.840.1.113733.1.9.2";
+const SCEP_PKI_STATUS      = "2.16.840.1.113733.1.9.3";
+// OID .4 = failInfo (unused in success path)
+const SCEP_SENDER_NONCE    = "2.16.840.1.113733.1.9.5";
 const SCEP_RECIPIENT_NONCE = "2.16.840.1.113733.1.9.6";
+const SCEP_TRANSACTION_ID  = "2.16.840.1.113733.1.9.7";
 
 // Content encryption algorithms
 const AES_128_CBC_OID = "2.16.840.1.101.3.4.1.2";
@@ -94,6 +95,63 @@ async function decryptEnvelopedData(
   throw new Error(`Unsupported content encryption algorithm: ${contentEncAlgId}`);
 }
 
+// Encrypt plaintext as a CMS EnvelopedData for a single RSA recipient.
+// Uses AES-128-CBC content encryption and PKCS#1 v1.5 RSA key transport —
+// the same pairing Apple uses in SCEP PKCSReq, so devices can decrypt it.
+async function encryptForDevice(
+  plaintext: ArrayBuffer,
+  recipientCert: pkijs.Certificate,
+): Promise<ArrayBuffer> {
+  // Generate session key and IV
+  const sessionKeyBytes = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(16));
+
+  const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, ["encrypt"]);
+  const encryptedContent = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, aesKey, plaintext);
+
+  // Encrypt session key with recipient's RSA public key using PKCS#1 v1.5.
+  // We pass the SPKI as PEM to avoid KeyObject instanceof issues in Vite context.
+  const spkiDer = recipientCert.subjectPublicKeyInfo.toSchema().toBER(false);
+  const spkiPem = pemEncode("PUBLIC KEY", spkiDer);
+  const encryptedSessionKey = publicEncrypt(
+    { key: spkiPem, padding: constants.RSA_PKCS1_PADDING },
+    Buffer.from(sessionKeyBytes),
+  );
+
+  const ktri = new pkijs.KeyTransRecipientInfo({
+    version: 0,
+    rid: new pkijs.IssuerAndSerialNumber({
+      issuer: recipientCert.issuer,
+      serialNumber: recipientCert.serialNumber,
+    }),
+    keyEncryptionAlgorithm: new pkijs.AlgorithmIdentifier({
+      algorithmId: "1.2.840.113549.1.1.1", // rsaEncryption (PKCS#1 v1.5 key transport)
+      algorithmParams: new asn1js.Null(),
+    }),
+    encryptedKey: new asn1js.OctetString({ valueHex: encryptedSessionKey.buffer.slice(encryptedSessionKey.byteOffset, encryptedSessionKey.byteOffset + encryptedSessionKey.byteLength) as ArrayBuffer }),
+  });
+
+  const envelopedData = new pkijs.EnvelopedData({
+    version: 0,
+    recipientInfos: [new pkijs.RecipientInfo({ variant: 1, value: ktri })],
+    encryptedContentInfo: new pkijs.EncryptedContentInfo({
+      contentType: pkijs.ContentInfo.DATA,
+      contentEncryptionAlgorithm: new pkijs.AlgorithmIdentifier({
+        algorithmId: AES_128_CBC_OID,
+        algorithmParams: new asn1js.OctetString({ valueHex: iv.buffer as ArrayBuffer }),
+      }),
+      encryptedContent: new asn1js.OctetString({ valueHex: encryptedContent }),
+    }),
+  });
+
+  const contentInfo = new pkijs.ContentInfo({
+    contentType: pkijs.ContentInfo.ENVELOPED_DATA,
+    content: envelopedData.toSchema(),
+  });
+
+  return contentInfo.toSchema().toBER(false);
+}
+
 // ─── Certificate Helpers ─────────────────────────────────────────
 
 export function certToPem(cert: pkijs.Certificate): string {
@@ -108,14 +166,14 @@ export function pemToCert(pem: string): pkijs.Certificate {
 
 // ─── PKCS#7 Builders ─────────────────────────────────────────────
 
-export function buildPkcs7Degenerate(caCert: pkijs.Certificate): ArrayBuffer {
+export function buildPkcs7Degenerate(cert: pkijs.Certificate): ArrayBuffer {
   const signedData = new pkijs.SignedData({
     version: 1,
     digestAlgorithms: [],
     encapContentInfo: new pkijs.EncapsulatedContentInfo({
       eContentType: pkijs.ContentInfo.DATA,
     }),
-    certificates: [caCert],
+    certificates: [cert],
     signerInfos: [],
   });
 
@@ -127,33 +185,64 @@ export function buildPkcs7Degenerate(caCert: pkijs.Certificate): ArrayBuffer {
   return contentInfo.toSchema().toBER(false);
 }
 
-// Build a proper SCEP CertRep response
+// Build a SCEP CertRep response (CMS SignedData wrapping EnvelopedData).
+//
+// Structure per RFC 8894:
+//   SignedData {
+//     eContent = EnvelopedData {            ← device cert encrypted for the device
+//       recipient = signer cert from PKCSReq
+//       content   = DegenerateCerts([deviceCert])
+//     }
+//     certificates = [deviceCert, caCert]
+//     SignerInfo signed by CA
+//   }
 export async function buildScepCertRep(
   deviceCert: pkijs.Certificate,
   caCert: pkijs.Certificate,
   caPrivateKey: CryptoKey,
   transactionId: string,
   senderNonce: ArrayBuffer,
+  // The signer certificates embedded in the PKCSReq — used as EnvelopedData recipients
+  pkcsReqSignerCerts: pkijs.Certificate[],
 ): Promise<ArrayBuffer> {
-  const cryptoEngine = pkijs.getCrypto(true);
+  // 1. Build degenerate PKCS#7 containing only the newly-issued device cert
+  const degenerateDer = buildPkcs7Degenerate(deviceCert);
 
-  // Device cert as eContent
-  const deviceCertDer = deviceCert.toSchema().toBER(false);
+  // 2. Encrypt the degenerate cert for the requesting device.
+  //    Use the first signer cert from the PKCSReq as the EnvelopedData recipient.
+  //    Fall back to the device cert itself if no signer certs are present.
+  const recipientCert = pkcsReqSignerCerts[0] ?? deviceCert;
+  const envelopedDataDer = await encryptForDevice(degenerateDer, recipientCert);
 
+  // 3. Build outer SignedData — eContent is the EnvelopedData bytes
   const encapContentInfo = new pkijs.EncapsulatedContentInfo({
     eContentType: pkijs.ContentInfo.DATA,
-    eContent: new asn1js.OctetString({ valueHex: deviceCertDer }),
+    eContent: new asn1js.OctetString({ valueHex: envelopedDataDer }),
   });
 
-  // Compute messageDigest = SHA-256 of raw cert bytes
-  const messageDigest = await cryptoEngine.digest({ name: "SHA-256" }, deviceCertDer);
+  const signedData = new pkijs.SignedData({
+    version: 1,
+    digestAlgorithms: [
+      new pkijs.AlgorithmIdentifier({ algorithmId: SHA256_OID, algorithmParams: new asn1js.Null() }),
+    ],
+    encapContentInfo,
+    // Device cert first (client expects it first), then CA cert
+    certificates: [deviceCert, caCert],
+    signerInfos: [],
+  });
 
-  // Compute recipientNonce = SHA-1 of senderNonce
-  const recipientNonce = await cryptoEngine.digest({ name: "SHA-1" }, senderNonce);
+  // 4. Add SignerInfo with SCEP attributes.
+  //    recipientNonce = senderNonce (copied verbatim per RFC 8894 §3.2.1.3)
+  //
+  // RFC 5652 §5.4: messageDigest is computed over the VALUE bytes of eContent
+  // (not the OCTET STRING TLV). pkijs stores eContent as a CONSTRUCTED OctetString
+  // (chunked BER), so getValue() reassembles the raw content bytes correctly.
+  const cryptoEngine = pkijs.getCrypto(true);
+  const eContentValue = (signedData.encapContentInfo.eContent! as asn1js.OctetString).getValue();
+  const messageDigest = await cryptoEngine.digest({ name: "SHA-256" }, eContentValue);
 
-  // Build signed attributes including SCEP-specific ones
   const signedAttrs = new pkijs.SignedAndUnsignedAttributes({
-    type: 0, // signed
+    type: 0,
     attributes: [
       new pkijs.Attribute({
         type: CMS_CONTENT_TYPE,
@@ -162,10 +251,6 @@ export async function buildScepCertRep(
       new pkijs.Attribute({
         type: CMS_MESSAGE_DIGEST,
         values: [new asn1js.OctetString({ valueHex: messageDigest })],
-      }),
-      new pkijs.Attribute({
-        type: CMS_SIGNING_TIME,
-        values: [new asn1js.UTCTime({ valueDate: new Date() })],
       }),
       new pkijs.Attribute({
         type: SCEP_TRANSACTION_ID,
@@ -181,7 +266,7 @@ export async function buildScepCertRep(
       }),
       new pkijs.Attribute({
         type: SCEP_RECIPIENT_NONCE,
-        values: [new asn1js.OctetString({ valueHex: recipientNonce })],
+        values: [new asn1js.OctetString({ valueHex: senderNonce })],
       }),
     ],
   });
@@ -204,27 +289,13 @@ export async function buildScepCertRep(
     signature: new asn1js.OctetString({ valueHex: new ArrayBuffer(0) }),
   });
 
-  const signedData = new pkijs.SignedData({
-    version: 1,
-    digestAlgorithms: [
-      new pkijs.AlgorithmIdentifier({
-        algorithmId: SHA256_OID,
-        algorithmParams: new asn1js.Null(),
-      }),
-    ],
-    encapContentInfo,
-    certificates: [deviceCert, caCert],
-    signerInfos: [signerInfo],
-  });
-
+  signedData.signerInfos.push(signerInfo);
   await signedData.sign(caPrivateKey, 0, "SHA-256");
 
-  const contentInfo = new pkijs.ContentInfo({
+  return new pkijs.ContentInfo({
     contentType: pkijs.ContentInfo.SIGNED_DATA,
     content: signedData.toSchema(),
-  });
-
-  return contentInfo.toSchema().toBER(false);
+  }).toSchema().toBER(false);
 }
 
 // ─── Robust eContent Extraction ──────────────────────────────────
@@ -352,6 +423,8 @@ interface ScepRequest {
   csr: pkijs.CertificationRequest;
   transactionId: string;
   senderNonce: ArrayBuffer;
+  // Certificates from the PKCSReq SignedData — used to encrypt the CertRep for the device
+  signerCerts: pkijs.Certificate[];
 }
 
 // ASN.1 universal tag numbers (avoid instanceof across bundle boundaries)
@@ -481,6 +554,11 @@ export function parseScepPkcsReq(
         throw new Error(`Unexpected SCEP message type: ${messageType}, expected ${MSG_TYPE_PKCSREQ}`);
       }
 
+      // Collect signer certificates for encrypting the CertRep response
+      const signerCerts: pkijs.Certificate[] = signedData.certificates
+        ? (signedData.certificates as pkijs.Certificate[]).filter((c) => c instanceof pkijs.Certificate)
+        : [];
+
       // Extract eContent
       const eContent = signedData.encapContentInfo.eContent;
       if (!eContent) {
@@ -510,7 +588,7 @@ export function parseScepPkcsReq(
 
       try {
         const csr = parseCsr(csrBytes);
-        return { csr, transactionId, senderNonce };
+        return { csr, transactionId, senderNonce, signerCerts };
       } catch (csrErr: any) {
         throw new Error(
           `Failed to parse CSR (isEnveloped=${isEnveloped}, csrBytes.length=${csrBytes.byteLength}): ${csrErr.message ?? String(csrErr)}`,

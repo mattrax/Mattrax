@@ -118,6 +118,7 @@ export const ScepServiceLive = Layer.effect(
               ca.privateKey,
               req.transactionId,
               req.senderNonce,
+              req.signerCerts,
             ),
           catch: (cause) => new ScepError({ message: "Failed to build SCEP CertRep", cause }),
         });
