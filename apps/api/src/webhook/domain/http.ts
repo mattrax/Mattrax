@@ -13,6 +13,36 @@ export const DeviceInfoPayload = Schema.Struct({
   osVersion: Schema.optional(Schema.String),
 });
 
+export const AppleEnrollmentUpdatePayload = Schema.Struct({
+  udid: Schema.String,
+  serialNumber: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  osVersion: Schema.optional(Schema.String),
+  pushMagic: Schema.String,
+  pushToken: Schema.String,
+  topic: Schema.String,
+  channel: Schema.Literals(["device", "user"]),
+  supportsDdm: Schema.Boolean,
+});
+
+export const AppleDeviceSessionPayload = Schema.Struct({
+  deviceId: Schema.String,
+  udid: Schema.String,
+  supportsDdm: Schema.Boolean,
+  dcmEnabled: Schema.Boolean,
+});
+
+export const AppleDeclarationItemPayload = Schema.Struct({
+  identifier: Schema.String,
+  type: Schema.Literals(["activation", "configuration", "asset", "management"]),
+  serverToken: Schema.String,
+});
+
+export const AppleDeclarationManifestPayload = Schema.Struct({
+  token: Schema.optional(Schema.String),
+  declarations: Schema.Array(AppleDeclarationItemPayload),
+});
+
 export const CommandResultPayload = Schema.Struct({
   commandUuid: Schema.String,
   deviceId: Schema.String,
@@ -36,6 +66,41 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
   .add(
     HttpApiEndpoint.post("appleCheckin", "/apple/checkin", {
       payload: Schema.Struct({ deviceId: Schema.String }),
+      error: ManagementNotSupportedError,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("authenticateAppleDevice", "/apple/authenticate", {
+      payload: DeviceInfoPayload,
+      success: AppleDeviceSessionPayload,
+      error: ManagementNotSupportedError,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("updateAppleEnrollment", "/apple/enrollment", {
+      payload: AppleEnrollmentUpdatePayload,
+      success: AppleDeviceSessionPayload,
+      error: ManagementNotSupportedError,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("getAppleDeviceByUdid", "/apple/device-by-udid", {
+      payload: Schema.Struct({ udid: Schema.String }),
+      success: Schema.NullOr(AppleDeviceSessionPayload),
+      error: ManagementNotSupportedError,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("getAppleDeclarationManifest", "/apple/declaration-manifest", {
+      payload: Schema.Struct({ deviceId: Schema.String }),
+      success: AppleDeclarationManifestPayload,
+      error: ManagementNotSupportedError,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("getAppleDeclaration", "/apple/declaration", {
+      payload: Schema.Struct({ deviceId: Schema.String, type: Schema.String, identifier: Schema.String }),
+      success: Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown)),
       error: ManagementNotSupportedError,
     }),
   )

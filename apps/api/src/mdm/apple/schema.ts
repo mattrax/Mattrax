@@ -106,6 +106,10 @@ export const CommandResultPlist = Schema.Struct({
   UDID: Schema.String,
   Status: Schema.String,
   CommandUUID: Schema.String,
+  Command: Schema.optional(Schema.Struct({
+    RequestType: Schema.String,
+  })),
+  QueryResponses: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   ErrorChain: Schema.optional(Schema.Array(Schema.Struct({
     ErrorCode: Schema.Number,
     ErrorDomain: Schema.optional(Schema.String),

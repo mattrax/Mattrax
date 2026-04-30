@@ -19,7 +19,7 @@ export const devices = sqliteTable("devices", {
 
 export const commands = sqliteTable("commands", {
   id: text("id").primaryKey(),
-  deviceId: text("device_id").notNull().references(() => devices.id),
+  deviceId: text("device_id").notNull(),
   requestType: text("request_type").notNull(),
   payload: text("payload", { mode: "json" }).notNull(),
   status: text("status", { enum: ["pending", "sent", "acknowledged", "error", "not_now"] }).notNull().default("pending"),

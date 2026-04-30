@@ -1,10 +1,5 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
-import {
-  AppleDevice,
-  Declaration,
-  CreateDeclarationInput,
-} from "./schema";
 
 export const appleMdmApi = HttpApiGroup.make("MattraxAppleMDM")
   // MDM Protocol endpoints
@@ -13,44 +8,10 @@ export const appleMdmApi = HttpApiGroup.make("MattraxAppleMDM")
       success: Schema.String,
     }),
   )
-  // Management API endpoints
-  .add(
-    HttpApiEndpoint.get("listDevices", "/devices", {
-      success: Schema.Array(AppleDevice),
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("getDevice", "/devices/get", {
-      payload: Schema.Struct({ id: Schema.String }),
-      success: AppleDevice,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("syncDevice", "/devices/sync", {
-      payload: Schema.Struct({ id: Schema.String }),
-      success: Schema.String,
-    }),
-  )
+  // Classic MDM command queue endpoints. DCM/DDM policy is sourced from ManagementBackend.
   .add(
     HttpApiEndpoint.post("collectDeviceInfo", "/devices/collect", {
       payload: Schema.Struct({ id: Schema.String, queries: Schema.Array(Schema.String) }),
-      success: Schema.String,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("createDeclaration", "/declarations", {
-      payload: CreateDeclarationInput,
-      success: Schema.String,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.get("listDeclarations", "/declarations", {
-      success: Schema.Array(Declaration),
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("deleteDeclaration", "/declarations/delete", {
-      payload: Schema.Struct({ id: Schema.String }),
       success: Schema.String,
     }),
   )
