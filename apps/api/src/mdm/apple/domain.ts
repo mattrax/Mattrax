@@ -14,17 +14,6 @@ export const appleMdmApi = HttpApiGroup.make("MattraxAppleMDM")
     }),
   )
   .add(
-    HttpApiEndpoint.get("scepGet", "/scep", {
-      success: Schema.Uint8Array,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("scepPost", "/scep", {
-      payload: Schema.Uint8Array,
-      success: Schema.Uint8Array,
-    }),
-  )
-  .add(
     HttpApiEndpoint.put("mdm", "/mdm", {
       payload: Schema.Uint8Array,
       success: Schema.Uint8Array,

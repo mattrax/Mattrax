@@ -1,6 +1,6 @@
-import { Effect, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
-import { HttpServerResponse } from "effect/unstable/http";
+import { HttpServerResponse, HttpRouter } from "effect/unstable/http";
 import { AppleMdmService } from "./service";
 import { ScepService } from "./scep/service";
 import { AppleMdmRepository } from "./repository";
@@ -34,66 +34,6 @@ export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typ
           onFailure: (err) => {
             console.error("enroll error:", err);
             return HttpServerResponse.text("", { status: 500 });
-          },
-        }),
-      ),
-    )
-    .handle("scepGet", ({ request }) =>
-      Effect.gen(function* () {
-        const scep = yield* ScepService;
-        const url = new URL(request.url, "http://localhost");
-        const operation = url.searchParams.get("operation") ?? "";
-
-        switch (operation) {
-          case "GetCACaps": {
-            const caps = yield* scep.getCaCaps();
-            return HttpServerResponse.text(caps, {
-              contentType: "text/plain",
-            });
-          }
-          case "GetCACert": {
-            const cert = yield* scep.getCaCert();
-            return HttpServerResponse.uint8Array(new Uint8Array(cert), {
-              contentType: "application/x-x509-ca-cert",
-            });
-          }
-          default: {
-            return HttpServerResponse.text("Invalid SCEP operation", { status: 400 });
-          }
-        }
-      }).pipe(
-        Effect.match({
-          onSuccess: (val) => val,
-          onFailure: (err) => {
-            console.error("scepGet error:", err);
-            return HttpServerResponse.text("Error", { status: 500 });
-          },
-        }),
-      ),
-    )
-    .handle("scepPost", ({ payload }) =>
-      Effect.gen(function* () {
-        const scep = yield* ScepService;
-        const message = new Uint8Array(payload);
-        const messageType = detectScepMessageType(message);
-
-        switch (messageType) {
-          case "PKIOperation": {
-            const response = yield* scep.pkiOperation(message.buffer as ArrayBuffer);
-            return HttpServerResponse.uint8Array(new Uint8Array(response), {
-              contentType: "application/x-pki-message",
-            });
-          }
-          default: {
-            return HttpServerResponse.text("Invalid message type", { status: 400 });
-          }
-        }
-      }).pipe(
-        Effect.match({
-          onSuccess: (val) => val,
-          onFailure: (err) => {
-            console.error("scepPost error:", err);
-            return HttpServerResponse.text("Error", { status: 500 });
           },
         }),
       ),
@@ -340,19 +280,58 @@ export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typ
       ),
     );
 
-function detectScepMessageType(message: Uint8Array): "GetCACaps" | "GetCACert" | "PKIOperation" | "Unknown" {
-  if (message.length > 0 && message[0] === 0x30) {
-    return "PKIOperation";
-  }
-  const text = new TextDecoder().decode(message).trim().toLowerCase();
-  if (text.includes("getcacaps")) return "GetCACaps";
-  if (text.includes("getcacert")) return "GetCACert";
-  if (text.includes("pkcsreq") || text.includes("pkioperation")) return "PKIOperation";
-  try {
-    const decoded = atob(text);
-    if (decoded.charCodeAt(0) === 0x30) return "PKIOperation";
-  } catch {
-    // ignore
-  }
-  return "Unknown";
-}
+export const scepRoutes = Layer.mergeAll(
+  HttpRouter.add("GET", "/mdm/apple/scep", (request) =>
+    Effect.gen(function* () {
+      const scep = yield* ScepService;
+      const url = new URL(request.url, "http://localhost");
+      const operation = url.searchParams.get("operation") ?? "";
+
+      switch (operation) {
+        case "GetCACaps": {
+          const caps = yield* scep.getCaCaps();
+          return HttpServerResponse.text(caps, {
+            contentType: "text/plain",
+          });
+        }
+        case "GetCACert": {
+          const cert = yield* scep.getCaCert();
+          return HttpServerResponse.uint8Array(new Uint8Array(cert.raw), {
+            contentType: cert.isPkcs7
+              ? "application/x-x509-ca-ra-cert"
+              : "application/x-x509-ca-cert",
+          });
+        }
+        default: {
+          return HttpServerResponse.text("Invalid SCEP operation", { status: 400 });
+        }
+      }
+    }).pipe(
+      Effect.match({
+        onSuccess: (val) => val,
+        onFailure: (err) => {
+          console.error("scepGet error:", err);
+          return HttpServerResponse.text("Error", { status: 500 });
+        },
+      }),
+    ),
+  ),
+  HttpRouter.add("POST", "/mdm/apple/scep", (request) =>
+    Effect.gen(function* () {
+      const scep = yield* ScepService;
+      const message = yield* request.arrayBuffer;
+      const response = yield* scep.pkiOperation(message);
+      return HttpServerResponse.uint8Array(new Uint8Array(response), {
+        contentType: "application/x-pki-message",
+      });
+    }).pipe(
+      Effect.match({
+        onSuccess: (val) => val,
+        onFailure: (err) => {
+          console.error("scepPost error:", err);
+          return HttpServerResponse.text("Error", { status: 500 });
+        },
+      }),
+    ),
+  ),
+);
