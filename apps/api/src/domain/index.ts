@@ -1,7 +1,7 @@
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
 import { Schema } from "effect";
 import { version } from "../../package.json" with { type: "json" };
-import { appleMdmApi } from "../mdm/apple";
+import { appleMdmApi } from "../mdm/apple/domain";
 
 export const mattraxApi = HttpApiGroup.make("MattraxApi")
   .add(

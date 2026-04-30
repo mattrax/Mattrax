@@ -2,13 +2,10 @@ import { Effect, Layer } from "effect";
 import { HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi";
 import { HttpServer } from "effect/unstable/http";
 import { apiRoot } from "../domain";
+import { appleMdmApiLayer } from "../mdm/apple/backend";
 
 const mattraxApiLayer = HttpApiBuilder.group(apiRoot, "MattraxApi", (handlers) =>
   handlers.handle("health", () => Effect.succeed({ status: "ok" as const }))
-);
-
-const appleMdmApiLayer = HttpApiBuilder.group(apiRoot, "MattraxAppleMDM", (handlers) =>
-  handlers.handle("checkin", () => Effect.void)
 );
 
 export const appLayerLive = Layer.mergeAll(
