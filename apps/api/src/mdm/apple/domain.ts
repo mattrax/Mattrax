@@ -13,12 +13,6 @@ export const appleMdmApi = HttpApiGroup.make("MattraxAppleMDM")
       success: Schema.String,
     }),
   )
-  .add(
-    HttpApiEndpoint.put("mdm", "/mdm", {
-      payload: Schema.Uint8Array,
-      success: Schema.Uint8Array,
-    }),
-  )
   // Management API endpoints
   .add(
     HttpApiEndpoint.get("listDevices", "/devices", {

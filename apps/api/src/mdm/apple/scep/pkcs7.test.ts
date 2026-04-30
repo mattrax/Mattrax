@@ -12,7 +12,7 @@ import {
   certToPem,
   pemToCert,
 } from "./pkcs7";
-import { pemEncode, pemDecode } from "./crypto";
+import { pemEncode } from "./crypto";
 
 // Ensure WebCrypto is available and pkijs is initialized
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {

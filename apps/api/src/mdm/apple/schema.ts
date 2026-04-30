@@ -89,8 +89,8 @@ export const TokenUpdatePlist = Schema.Struct({
   Topic: Schema.String,
   UDID: Schema.String,
   PushMagic: Schema.String,
-  Token: Schema.Uint8ArrayFromBase64,
-  UnlockToken: Schema.optional(Schema.Uint8ArrayFromBase64),
+  Token: Schema.String,
+  UnlockToken: Schema.optional(Schema.String),
   UserID: Schema.optional(Schema.String),
 });
 export type TokenUpdatePlist = typeof TokenUpdatePlist.Type;

@@ -26,9 +26,12 @@ function detectDdmSupport(osVersion: string | undefined): boolean {
   return false;
 }
 
-function arrayBufferToHex(buf: Uint8Array): string {
-  return Array.from(buf)
-    .map((b) => b.toString(16).padStart(2, "0"))
+function base64ToHex(base64: string): string {
+  const cleaned = base64.replace(/\s/g, "");
+  const padded = cleaned.padEnd(cleaned.length + ((4 - (cleaned.length % 4)) % 4), "=");
+  const binary = atob(padded);
+  return Array.from(binary)
+    .map((c) => c.charCodeAt(0).toString(16).padStart(2, "0"))
     .join("");
 }
 
@@ -153,7 +156,7 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
         const updated: AppleDevice = {
           ...device,
           pushMagic: update.PushMagic,
-          pushToken: arrayBufferToHex(update.Token),
+          pushToken: base64ToHex(update.Token),
           topic: update.Topic,
           channel: update.UserID ? "user" : "device",
           status: "active",

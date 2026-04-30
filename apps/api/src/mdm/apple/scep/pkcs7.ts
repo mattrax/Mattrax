@@ -23,8 +23,6 @@ const SHA256_WITH_RSA_OID = "1.2.840.113549.1.1.11";
 // CMS attributes
 const CMS_CONTENT_TYPE = "1.2.840.113549.1.9.3";
 const CMS_MESSAGE_DIGEST = "1.2.840.113549.1.9.4";
-const CMS_SIGNING_TIME = "1.2.840.113549.1.9.5";
-
 // SCEP attributes (VeriSign/iPlanet arc) — OIDs per RFC 8894 / draft-gutmann-scep
 const SCEP_MESSAGE_TYPE    = "2.16.840.1.113733.1.9.2";
 const SCEP_PKI_STATUS      = "2.16.840.1.113733.1.9.3";

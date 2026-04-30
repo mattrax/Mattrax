@@ -1,6 +1,6 @@
 import { Effect, Layer, Schema } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
-import { HttpServerResponse, HttpRouter } from "effect/unstable/http";
+import { HttpServerResponse, HttpRouter, HttpServerRequest } from "effect/unstable/http";
 import { AppleMdmService } from "./service";
 import { ScepService } from "./scep/service";
 import { AppleMdmRepository } from "./repository";
@@ -34,122 +34,6 @@ export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typ
           onFailure: (err) => {
             console.error("enroll error:", err);
             return HttpServerResponse.text("", { status: 500 });
-          },
-        }),
-      ),
-    )
-    .handle("mdm", ({ payload }) =>
-      Effect.gen(function* () {
-        const service = yield* AppleMdmService;
-        const text = new TextDecoder().decode(payload);
-        const plist = yield* parsePlist(text);
-
-        const messageType = (plist as any)?.MessageType;
-        const status = (plist as any)?.Status;
-
-        if (messageType) {
-          switch (messageType) {
-            case "Authenticate": {
-              const auth = yield* Schema.decodeUnknownEffect(AuthenticatePlist)(plist).pipe(
-                Effect.mapError((err) => new Error(String(err))),
-              );
-              yield* service.handleAuthenticate(auth);
-              return new Uint8Array(0);
-            }
-            case "TokenUpdate": {
-              const update = yield* Schema.decodeUnknownEffect(TokenUpdatePlist)(plist).pipe(
-                Effect.mapError((err) => new Error(String(err))),
-              );
-              yield* service.handleTokenUpdate(update);
-              return new Uint8Array(0);
-            }
-            case "CheckOut": {
-              const checkout = yield* Schema.decodeUnknownEffect(CheckOutPlist)(plist).pipe(
-                Effect.mapError((err) => new Error(String(err))),
-              );
-              yield* service.handleCheckOut(checkout);
-              return new Uint8Array(0);
-            }
-            case "DeclarativeManagement": {
-              const endpoint = (plist as any).Endpoint;
-              const udid = (plist as any).UDID;
-              const repo = yield* AppleMdmRepository;
-              const device = yield* repo.getDeviceByUdid(udid);
-              if (!device) return new Uint8Array(0);
-
-              switch (endpoint) {
-                case "tokens": {
-                  const tokens = yield* service.handleDeclarativeTokens(device.id);
-                  const response = yield* serializePlist(tokens);
-                  return new TextEncoder().encode(response);
-                }
-                case "declaration-items": {
-                  const items = yield* service.handleDeclarationItems(device.id);
-                  const response = yield* serializePlist(items);
-                  return new TextEncoder().encode(response);
-                }
-                case "status": {
-                  const report = (plist as any).Data;
-                  const decoded = yield* Schema.decodeUnknownEffect(DDMStatusReport)(report).pipe(
-                    Effect.mapError((err) => new Error(String(err))),
-                  );
-                  yield* service.handleStatusReport(device.id, decoded);
-                  return new Uint8Array(0);
-                }
-                default: {
-                  if (typeof endpoint === "string" && endpoint.startsWith("declaration/")) {
-                    const parts = endpoint.split("/");
-                    const type = parts[1] ?? "";
-                    const identifier = parts[2] ?? "";
-                    const decl = yield* service.handleDeclaration(device.id, type, identifier);
-                    const response = yield* serializePlist(decl);
-                    return new TextEncoder().encode(response);
-                  }
-                  return new Uint8Array(0);
-                }
-              }
-            }
-            default:
-              return new Uint8Array(0);
-          }
-        } else if (status !== undefined) {
-          const result = yield* Schema.decodeUnknownEffect(CommandResultPlist)(plist).pipe(
-            Effect.mapError((err) => new Error(String(err))),
-          );
-          yield* service.handleCommandResult(result);
-          return new Uint8Array(0);
-        } else {
-          const udid = (plist as any)?.UDID;
-          if (!udid) return new Uint8Array(0);
-
-          const repo = yield* AppleMdmRepository;
-          const device = yield* repo.getDeviceByUdid(udid);
-          if (!device) return new Uint8Array(0);
-
-          const command = yield* service.retrieveNextCommand(device.id);
-          if (!command) {
-            const empty = yield* serializePlist({});
-            return new TextEncoder().encode(empty);
-          }
-
-          yield* repo.updateCommandStatus(command.id, "sent");
-
-          const commandPlist = {
-            CommandUUID: command.id,
-            Command: {
-              RequestType: command.requestType,
-              ...(command.payload as object),
-            },
-          };
-          const response = yield* serializePlist(commandPlist);
-          return new TextEncoder().encode(response);
-        }
-      }).pipe(
-        Effect.match({
-          onSuccess: (val) => val,
-          onFailure: (err) => {
-            console.error("mdm error:", err);
-            return new Uint8Array(0);
           },
         }),
       ),
@@ -280,7 +164,129 @@ export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typ
       ),
     );
 
+// Raw MDM checkin/command handler — registered outside HttpApiBuilder so that
+// Apple's "application/x-apple-aspen-mdm-checkin" / "application/x-apple-aspen-mdm"
+// content types pass through without a 415 from the framework.
+function handleMdm(request: HttpServerRequest.HttpServerRequest) {
+  return Effect.gen(function* () {
+    const service = yield* AppleMdmService;
+    const buf = yield* request.arrayBuffer;
+    const text = new TextDecoder().decode(buf);
+    const plist = yield* parsePlist(text);
+
+    const messageType = (plist as any)?.MessageType;
+    const status = (plist as any)?.Status;
+
+    if (messageType) {
+      switch (messageType) {
+        case "Authenticate": {
+          const auth = yield* Schema.decodeUnknownEffect(AuthenticatePlist)(plist).pipe(
+            Effect.mapError((err) => new Error(String(err))),
+          );
+          yield* service.handleAuthenticate(auth);
+          return HttpServerResponse.empty({ status: 200 });
+        }
+        case "TokenUpdate": {
+          const update = yield* Schema.decodeUnknownEffect(TokenUpdatePlist)(plist).pipe(
+            Effect.mapError((err) => new Error(String(err))),
+          );
+          yield* service.handleTokenUpdate(update);
+          return HttpServerResponse.empty({ status: 200 });
+        }
+        case "CheckOut": {
+          const checkout = yield* Schema.decodeUnknownEffect(CheckOutPlist)(plist).pipe(
+            Effect.mapError((err) => new Error(String(err))),
+          );
+          yield* service.handleCheckOut(checkout);
+          return HttpServerResponse.empty({ status: 200 });
+        }
+        case "DeclarativeManagement": {
+          const endpoint = (plist as any).Endpoint;
+          const udid = (plist as any).UDID;
+          const repo = yield* AppleMdmRepository;
+          const device = yield* repo.getDeviceByUdid(udid);
+          if (!device) return HttpServerResponse.empty({ status: 200 });
+
+          switch (endpoint) {
+            case "tokens": {
+              const tokens = yield* service.handleDeclarativeTokens(device.id);
+              const response = yield* serializePlist(tokens);
+              return HttpServerResponse.text(response, { contentType: "application/xml" });
+            }
+            case "declaration-items": {
+              const items = yield* service.handleDeclarationItems(device.id);
+              const response = yield* serializePlist(items);
+              return HttpServerResponse.text(response, { contentType: "application/xml" });
+            }
+            case "status": {
+              const report = (plist as any).Data;
+              const decoded = yield* Schema.decodeUnknownEffect(DDMStatusReport)(report).pipe(
+                Effect.mapError((err) => new Error(String(err))),
+              );
+              yield* service.handleStatusReport(device.id, decoded);
+              return HttpServerResponse.empty({ status: 200 });
+            }
+            default: {
+              if (typeof endpoint === "string" && endpoint.startsWith("declaration/")) {
+                const parts = endpoint.split("/");
+                const type = parts[1] ?? "";
+                const identifier = parts[2] ?? "";
+                const decl = yield* service.handleDeclaration(device.id, type, identifier);
+                const response = yield* serializePlist(decl);
+                return HttpServerResponse.text(response, { contentType: "application/xml" });
+              }
+              return HttpServerResponse.empty({ status: 200 });
+            }
+          }
+        }
+        default:
+          return HttpServerResponse.empty({ status: 200 });
+      }
+    } else if (status !== undefined) {
+      const result = yield* Schema.decodeUnknownEffect(CommandResultPlist)(plist).pipe(
+        Effect.mapError((err) => new Error(String(err))),
+      );
+      yield* service.handleCommandResult(result);
+      return HttpServerResponse.empty({ status: 200 });
+    } else {
+      const udid = (plist as any)?.UDID;
+      if (!udid) return HttpServerResponse.empty({ status: 200 });
+
+      const repo = yield* AppleMdmRepository;
+      const device = yield* repo.getDeviceByUdid(udid);
+      if (!device) return HttpServerResponse.empty({ status: 200 });
+
+      const command = yield* service.retrieveNextCommand(device.id);
+      if (!command) {
+        const empty = yield* serializePlist({});
+        return HttpServerResponse.text(empty, { contentType: "application/xml" });
+      }
+
+      yield* repo.updateCommandStatus(command.id, "sent");
+
+      const commandPlist = {
+        CommandUUID: command.id,
+        Command: {
+          RequestType: command.requestType,
+          ...(command.payload as object),
+        },
+      };
+      const response = yield* serializePlist(commandPlist);
+      return HttpServerResponse.text(response, { contentType: "application/xml" });
+    }
+  }).pipe(
+    Effect.match({
+      onSuccess: (val) => val,
+      onFailure: (err) => {
+        console.error("mdm error:", err);
+        return HttpServerResponse.empty({ status: 200 });
+      },
+    }),
+  );
+}
+
 export const scepRoutes = Layer.mergeAll(
+  HttpRouter.add("PUT", "/mdm/apple/mdm", handleMdm),
   HttpRouter.add("GET", "/mdm/apple/scep", (request) =>
     Effect.gen(function* () {
       const scep = yield* ScepService;
