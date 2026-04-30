@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mattrax-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-10-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "route": {
+    "pattern": "mattraxe.otbeaumont.me",
+    "custom_domain": true,
+  },
+  "observability": {
+    "enabled": true,
+  },
+}

@@ -3,14 +3,19 @@ packages:
   - packages/*
   - tools/*
 
-catalogMode: prefer
-
 catalog:
-  "@types/node": ^24
+  "@types/node": ^24.12.2
   typescript: ^5
   vite: npm:@voidzero-dev/vite-plus-core@latest
-  vitest: npm:@voidzero-dev/vite-plus-test@latest
   vite-plus: latest
+  vitest: npm:@voidzero-dev/vite-plus-test@latest
+
+catalogMode: prefer
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - workerd
 overrides:
   vite: "catalog:"
   vitest: "catalog:"

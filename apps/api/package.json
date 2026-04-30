@@ -1,0 +1,23 @@
+{
+  "name": "@mattrax/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "wrangler types --cwd src && vp build",
+    "preview": "vp preview",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "effect": "4.0.0-beta.52"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.0.0",
+    "@types/node": "catalog:",
+    "typescript": "~6.0.2",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "wrangler": "^4.0.0"
+  }
+}
