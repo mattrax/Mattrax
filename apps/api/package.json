@@ -11,13 +11,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "asn1js": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "4.0.0-beta.52",
-    "fast-plist": "catalog:"
+    "fast-plist": "catalog:",
+    "pkijs": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.0.0",
     "@types/node": "catalog:",
+    "@types/pkijs": "catalog:",
     "drizzle-kit": "catalog:",
     "typescript": "~6.0.2",
     "vite": "catalog:",

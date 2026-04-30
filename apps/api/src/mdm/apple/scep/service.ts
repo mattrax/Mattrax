@@ -5,17 +5,16 @@ import {
   generateCaKeyPair,
   exportPrivateKeyJwk,
   importPrivateKeyJwk,
-  exportPublicKeySpki,
-  signData,
-  pemEncode,
-  pemDecode,
 } from "./crypto";
 import {
-  buildTBSCertificate,
-  buildCertificate,
   buildPkcs7Degenerate,
   parsePkcs7Content,
   parseCsr,
+  createDeviceCertificate,
+  createCaCertificate,
+  buildCertRep,
+  certToPem,
+  pemToCert,
 } from "./pkcs7";
 
 const SCEP_CAPS = "SHA-256\nSHA-1\nAES\nDES3\nPOSTPKIOperation";
@@ -37,32 +36,30 @@ export const ScepServiceLive = Layer.effect(
     const ensureCa = Effect.gen(function* () {
       const existing = yield* repo.getCa();
       if (existing) {
-        const privateKey = yield* importPrivateKeyJwk(existing.privateKeyJwk);
-        const certDer = pemDecode("CERTIFICATE", existing.certPem);
-        return { privateKey, certDer: new Uint8Array(certDer), certPem: existing.certPem };
+        const caCert = yield* Effect.sync(() => {
+          try {
+            return pemToCert(existing.certPem);
+          } catch {
+            return null;
+          }
+        });
+        if (caCert) {
+          const privateKey = yield* importPrivateKeyJwk(existing.privateKeyJwk);
+          return { privateKey, caCert, certPem: existing.certPem };
+        }
+        // Stored cert is malformed (e.g. from old hand-written ASN.1 code) — regenerate
       }
 
       const keyPair = yield* generateCaKeyPair();
       const jwk = yield* exportPrivateKeyJwk(keyPair.privateKey);
-      const spki = yield* exportPublicKeySpki(keyPair.publicKey);
-
-      const notBefore = new Date();
-      const notAfter = new Date(notBefore.getTime() + 10 * 365 * 24 * 60 * 60 * 1000);
-      const tbs = buildTBSCertificate(
-        1,
-        "Mattrax SCEP CA",
-        { notBefore, notAfter },
-        "Mattrax SCEP CA",
-        spki as ArrayBuffer,
-        true,
-      );
-      const tbsBytes = tbs.buffer.slice(tbs.byteOffset, tbs.byteOffset + tbs.byteLength) as ArrayBuffer;
-      const sig = yield* signData(keyPair.privateKey, tbsBytes);
-      const certDer = buildCertificate(tbs, sig as ArrayBuffer);
-      const certPem = pemEncode("CERTIFICATE", certDer.buffer as ArrayBuffer);
+      const caCert = yield* Effect.tryPromise({
+        try: () => createCaCertificate(keyPair, "Mattrax SCEP CA"),
+        catch: (cause) => new ScepError({ message: "Failed to create CA certificate", cause }),
+      });
+      const certPem = certToPem(caCert);
 
       yield* repo.saveCa(certPem, jwk);
-      return { privateKey: keyPair.privateKey, certDer: new Uint8Array(certDer), certPem };
+      return { privateKey: keyPair.privateKey, caCert, certPem };
     });
 
     const getCaCaps = (): Effect.Effect<string, ScepError> => Effect.succeed(SCEP_CAPS);
@@ -70,36 +67,39 @@ export const ScepServiceLive = Layer.effect(
     const getCaCert = (): Effect.Effect<ArrayBuffer, ScepError> =>
       Effect.gen(function* () {
         const ca = yield* ensureCa;
-        const pkcs7 = buildPkcs7Degenerate(ca.certDer);
-        return pkcs7.buffer.slice(pkcs7.byteOffset, pkcs7.byteOffset + pkcs7.byteLength) as ArrayBuffer;
+        return buildPkcs7Degenerate(ca.caCert);
       });
 
     const pkiOperation = (message: ArrayBuffer): Effect.Effect<ArrayBuffer, ScepError> =>
       Effect.gen(function* () {
         const ca = yield* ensureCa;
-        const pkcs7Data = new Uint8Array(message);
 
-        const innerContent = yield* parsePkcs7Content(pkcs7Data);
+        const innerContent = yield* parsePkcs7Content(message);
         const csrInfo = yield* parseCsr(innerContent);
 
         const notBefore = new Date();
         const notAfter = new Date(notBefore.getTime() + 365 * 24 * 60 * 60 * 1000);
         const serial = Math.floor(Math.random() * 0x7fffffff);
 
-        const tbs = buildTBSCertificate(
-          serial,
-          "Mattrax SCEP CA",
-          { notBefore, notAfter },
-          csrInfo.subject,
-          csrInfo.spki as ArrayBuffer,
-          false,
-        );
-        const tbsBytes = tbs.buffer.slice(tbs.byteOffset, tbs.byteOffset + tbs.byteLength) as ArrayBuffer;
-        const sig = yield* signData(ca.privateKey, tbsBytes);
-        const certDer = buildCertificate(tbs, sig as ArrayBuffer);
+        const deviceCert = yield* Effect.tryPromise({
+          try: () =>
+            createDeviceCertificate(
+              serial,
+              csrInfo.subject,
+              csrInfo.publicKey,
+              ca.caCert,
+              ca.privateKey,
+              { notBefore, notAfter },
+            ),
+          catch: (cause) => new ScepError({ message: "Failed to create device certificate", cause }),
+        });
 
-        const pkcs7Response = buildPkcs7Degenerate(new Uint8Array(certDer));
-        return pkcs7Response.buffer.slice(pkcs7Response.byteOffset, pkcs7Response.byteOffset + pkcs7Response.byteLength) as ArrayBuffer;
+        const response = yield* Effect.tryPromise({
+          try: () => buildCertRep(deviceCert, ca.caCert, ca.privateKey),
+          catch: (cause) => new ScepError({ message: "Failed to build CertRep", cause }),
+        });
+
+        return response;
       });
 
     return ScepService.of({

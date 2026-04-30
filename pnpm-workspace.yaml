@@ -5,9 +5,12 @@ packages:
 
 catalog:
   "@types/node": ^24.12.2
+  '@types/pkijs': ^3.0.1
+  asn1js: ^3.0.10
   drizzle-kit: ^0.31.10
   drizzle-orm: ^0.45.2
   fast-plist: ^0.1.3
+  pkijs: ^3.4.0
   typescript: ^5
   vite: npm:@voidzero-dev/vite-plus-core@latest
   vite-plus: latest
