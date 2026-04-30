@@ -14,7 +14,7 @@ import {
   buildTBSCertificate,
   buildCertificate,
   buildPkcs7Degenerate,
-  parsePkcs7SignedData,
+  parsePkcs7Content,
   parseCsr,
 } from "./pkcs7";
 
@@ -24,7 +24,7 @@ export class ScepService extends Context.Service<
   ScepService,
   {
     readonly getCaCaps: () => Effect.Effect<string, ScepError>;
-    readonly getCaCert: () => Effect.Effect<string, ScepError>;
+    readonly getCaCert: () => Effect.Effect<ArrayBuffer, ScepError>;
     readonly pkiOperation: (message: ArrayBuffer) => Effect.Effect<ArrayBuffer, ScepError>;
   }
 >()("ScepService") {}
@@ -67,10 +67,11 @@ export const ScepServiceLive = Layer.effect(
 
     const getCaCaps = (): Effect.Effect<string, ScepError> => Effect.succeed(SCEP_CAPS);
 
-    const getCaCert = (): Effect.Effect<string, ScepError> =>
+    const getCaCert = (): Effect.Effect<ArrayBuffer, ScepError> =>
       Effect.gen(function* () {
         const ca = yield* ensureCa;
-        return ca.certPem;
+        const pkcs7 = buildPkcs7Degenerate(ca.certDer);
+        return pkcs7.buffer.slice(pkcs7.byteOffset, pkcs7.byteOffset + pkcs7.byteLength) as ArrayBuffer;
       });
 
     const pkiOperation = (message: ArrayBuffer): Effect.Effect<ArrayBuffer, ScepError> =>
@@ -78,7 +79,7 @@ export const ScepServiceLive = Layer.effect(
         const ca = yield* ensureCa;
         const pkcs7Data = new Uint8Array(message);
 
-        const innerContent = yield* parsePkcs7SignedData(pkcs7Data);
+        const innerContent = yield* parsePkcs7Content(pkcs7Data);
         const csrInfo = yield* parseCsr(innerContent);
 
         const notBefore = new Date();

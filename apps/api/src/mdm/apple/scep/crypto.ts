@@ -2,12 +2,12 @@ import { Effect } from "effect";
 import { ScepError } from "../schema";
 
 const ALGORITHM: any = {
-  name: "RSA-OAEP",
+  name: "RSASSA-PKCS1-v1_5",
   hash: "SHA-256",
   modulusLength: 2048,
   publicExponent: new Uint8Array([1, 0, 1]),
 };
-const SIGN_ALGORITHM: any = { name: "RSA-PSS", saltLength: 32 };
+const SIGN_ALGORITHM: any = { name: "RSASSA-PKCS1-v1_5" };
 
 export const generateCaKeyPair = (): Effect.Effect<CryptoKeyPair, ScepError> =>
   Effect.tryPromise({
@@ -30,7 +30,7 @@ export const exportPrivateKeyJwk = (key: CryptoKey): Effect.Effect<JsonWebKey, S
 export const importPrivateKeyJwk = (jwk: JsonWebKey): Effect.Effect<CryptoKey, ScepError> =>
   Effect.tryPromise({
     try: async () => {
-      const key = await crypto.subtle.importKey("jwk", jwk, ALGORITHM, true, ["sign", "verify"]);
+      const key = await crypto.subtle.importKey("jwk", jwk, ALGORITHM, true, ["sign"]);
       return key as CryptoKey;
     },
     catch: (cause) => new ScepError({ message: "Failed to import private key", cause }),

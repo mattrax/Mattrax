@@ -23,5 +23,13 @@ dist-ssr
 *.sln
 *.sw?
 
+# System files
+.DS_Store
+Thumbs.db
+
 # Cloudflare
 .wrangler
+
+# Environment
+.env
+.env*.local

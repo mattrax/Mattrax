@@ -12,6 +12,7 @@ import { AppleMdmRepositoryLive } from "./mdm/apple/repository";
 import { AppleMdmServiceLive } from "./mdm/apple/service";
 import { ScepServiceLive } from "./mdm/apple/scep/service";
 import { ScepRepositoryLive } from "./mdm/apple/scep/repository";
+import { extractTopicFromCertPem } from "./mdm/apple/cert";
 
 const apiRoot = HttpApi.make("Mattrax")
   .add(mattraxApi)
@@ -25,8 +26,12 @@ const apiRoot = HttpApi.make("Mattrax")
     }),
   );
 
-export const createAppLayer = (db: D1Database) => {
+export const createAppLayer = (db: D1Database, env: Env) => {
   const database = createDb(db);
+
+  const topic = env.CLOUD_APPLE_VENDOR_CERT
+    ? (extractTopicFromCertPem(env.CLOUD_APPLE_VENDOR_CERT) ?? "com.apple.mgmt.External.placeholder")
+    : "com.apple.mgmt.External.placeholder";
 
   const handlersLayer = Layer.mergeAll(
     HttpApiBuilder.group(apiRoot, "MattraxApi", mattraxHandlers),
@@ -41,7 +46,10 @@ export const createAppLayer = (db: D1Database) => {
     HttpApiScalar.layerCdn(apiRoot, { path: "/" }),
   );
 
-  const appleMdmServiceResolved = AppleMdmServiceLive.pipe(
+  const appleMdmServiceResolved = AppleMdmServiceLive({
+    origin: env.ORIGIN,
+    topic,
+  }).pipe(
     Layer.provideMerge(ManagementBackendMemory),
     Layer.provideMerge(AppleMdmRepositoryLive(database)),
   );
@@ -64,7 +72,7 @@ export const createAppLayer = (db: D1Database) => {
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const db = env.DB;
-    const appLayer = createAppLayer(db);
+    const appLayer = createAppLayer(db, env);
     const { handler, dispose } = HttpRouter.toWebHandler(appLayer);
     const response = await handler(request);
     waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));

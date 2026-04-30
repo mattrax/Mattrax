@@ -11,6 +11,9 @@
   "observability": {
     "enabled": true,
   },
+  "vars": {
+    "ORIGIN": "https://mattraxe.otbeaumont.me"
+  },
   "d1_databases": [
     {
       "binding": "DB",

@@ -96,11 +96,11 @@ export class AppleMdmService extends Context.Service<
     readonly queueInstallProfile: (deviceId: string, profilePayload: unknown) => Effect.Effect<void, MdmError>;
     readonly queueInstallApplication: (deviceId: string, appPayload: unknown) => Effect.Effect<void, MdmError>;
     readonly queueCollectInformation: (deviceId: string, queries: string[]) => Effect.Effect<void, MdmError>;
-    readonly generateEnrollmentProfile: (serverUrl: string, topic: string) => Effect.Effect<string, MdmError>;
+    readonly generateEnrollmentProfile: () => Effect.Effect<string, MdmError>;
   }
 >()("AppleMdmService") {}
 
-export const AppleMdmServiceLive = Layer.effect(
+export const AppleMdmServiceLive = (config: { origin: string; topic: string }) => Layer.effect(
   AppleMdmService,
   Effect.gen(function* () {
     const repo = yield* AppleMdmRepository;
@@ -394,8 +394,11 @@ export const AppleMdmServiceLive = Layer.effect(
         yield* repo.insertCommand(cmd);
       });
 
-    const generateEnrollmentProfile = (serverUrl: string, topic: string): Effect.Effect<string, MdmError> =>
+    const generateEnrollmentProfile = (): Effect.Effect<string, MdmError> =>
       Effect.gen(function* () {
+        const scepUuid = crypto.randomUUID();
+        const mdmUuid = crypto.randomUUID();
+        const topUuid = crypto.randomUUID();
         const profile = {
           PayloadContent: [
             {
@@ -404,37 +407,40 @@ export const AppleMdmServiceLive = Layer.effect(
                 "Key Type": "RSA",
                 "Key Usage": 5,
                 Keysize: 2048,
-                Name: "Mattrax SCEP",
                 Subject: [
-                  [
-                    { Type: "CN", Value: "MDM Identity Certificate" },
-                  ],
+                  [["O", "Mattrax"]],
+                  [["CN", "Mattrax Identity"]],
                 ],
-                URL: `${serverUrl}/mdm/apple/scep`,
+                URL: `${config.origin}/mdm/apple/scep`,
               },
               PayloadIdentifier: "com.mattrax.scep",
               PayloadType: "com.apple.security.scep",
-              PayloadUUID: crypto.randomUUID(),
+              PayloadUUID: scepUuid,
               PayloadVersion: 1,
             },
             {
               AccessRights: 8191,
-              CheckInURL: `${serverUrl}/mdm/apple/mdm`,
+              CheckInURL: `${config.origin}/mdm/apple/mdm`,
               CheckOutWhenRemoved: true,
-              IdentityCertificateUUID: "com.mattrax.scep",
+              IdentityCertificateUUID: scepUuid,
               PayloadIdentifier: "com.mattrax.mdm",
               PayloadType: "com.apple.mdm",
-              PayloadUUID: crypto.randomUUID(),
+              PayloadUUID: mdmUuid,
               PayloadVersion: 1,
-              ServerCapabilities: ["com.apple.mdm.per-user-connections"],
-              ServerURL: `${serverUrl}/mdm/apple/mdm`,
-              Topic: topic,
+              ServerCapabilities: [
+                "com.apple.mdm.per-user-connections",
+                "com.apple.mdm.bootstraptoken",
+              ],
+              ServerURL: `${config.origin}/mdm/apple/mdm`,
+              SignMessage: true,
+              Topic: config.topic,
             },
           ],
           PayloadDisplayName: "Mattrax Enrollment",
           PayloadIdentifier: "com.mattrax.enrollment",
+          PayloadOrganization: "Mattrax",
           PayloadType: "Configuration",
-          PayloadUUID: crypto.randomUUID(),
+          PayloadUUID: topUuid,
           PayloadVersion: 1,
         };
         return JSON.stringify(profile);

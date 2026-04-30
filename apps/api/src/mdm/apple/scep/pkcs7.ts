@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import { ScepError } from "../schema";
 import { arrayBufferToBase64, base64ToArrayBuffer } from "./crypto";
 
-// Minimal DER/ASN.1 helpers for SCEP PKCS#7
+// ─── ASN.1 Writer ────────────────────────────────────────────────
 
 class ASN1Writer {
   private tag(tag: number, content: Uint8Array): Uint8Array {
@@ -229,49 +229,40 @@ export function buildCertificate(
   ]);
 }
 
+// Correct PKCS#7 degenerate SignedData (certs-only)
+// ContentInfo { contentType=signedData, content[0]=SignedData }
+// SignedData { version=1, digestAlgorithms={}, encapContentInfo={oid=data}, certificates[0]={cert}, signerInfos={} }
 export function buildPkcs7Degenerate(certDer: Uint8Array): Uint8Array {
-  const certSet = w.set([certDer]);
-  const contentInfo = w.sequence([
-    w.oid("1.2.840.113549.1.7.2"),
-    w.context(0, w.sequence([
-      w.integer(1),
-      w.set([sha256WithRsaAlgorithmIdentifier]),
-      w.sequence([]),
-      w.set([]),
-      certSet,
-    ])),
+  const encapContentInfo = w.sequence([
+    w.oid("1.2.840.113549.1.7.1"), // data
   ]);
+
+  const signedData = w.sequence([
+    w.integer(1), // version
+    w.set([]), // digestAlgorithms (empty)
+    encapContentInfo,
+    w.context(0, w.set([certDer])), // certificates [0]
+    w.set([]), // signerInfos (empty)
+  ]);
+
+  const contentInfo = w.sequence([
+    w.oid("1.2.840.113549.1.7.2"), // signedData
+    w.context(0, signedData),
+  ]);
+
   return contentInfo;
 }
 
-export function parsePkcs7SignedData(der: Uint8Array): Effect.Effect<Uint8Array, ScepError> {
-  return Effect.try({
-    try: () => {
-      let i = 0;
-      while (i < der.length - 1) {
-        if (der[i] === 0x30) {
-          const [seqLen, seqEnd] = readLength(der, i + 1);
-          if (seqEnd > der.length) break;
-          let j = seqEnd - seqLen;
-          while (j < seqEnd - 1) {
-            if (der[j] === 0x04) {
-              const [octetLen, octetEnd] = readLength(der, j + 1);
-              if (octetEnd <= seqEnd) {
-                return der.slice(j + 1 + (octetLen < 128 ? 1 : 1 + ((octetLen >> 7) & 0x7f)), octetEnd);
-              }
-            }
-            j++;
-          }
-        }
-        i++;
-      }
-      return der;
-    },
-    catch: (cause) => new ScepError({ message: "Failed to parse PKCS#7", cause }),
-  });
+// ─── ASN.1 Parser ────────────────────────────────────────────────
+
+interface Asn1Node {
+  tag: number;
+  bytes: Uint8Array;
+  content: Uint8Array;
+  children: Asn1Node[];
 }
 
-function readLength(der: Uint8Array, offset: number): [number, number] {
+function readAsn1Length(der: Uint8Array, offset: number): [number, number] {
   let length = der[offset]!;
   let headerLen = 1;
   if (length & 0x80) {
@@ -282,32 +273,157 @@ function readLength(der: Uint8Array, offset: number): [number, number] {
     }
     headerLen = 1 + numBytes;
   }
-  return [length, offset + headerLen + length];
+  return [length, headerLen];
 }
+
+function parseNode(der: Uint8Array, offset: number): { node: Asn1Node; nextOffset: number } {
+  const tag = der[offset]!;
+  const [length, headerLen] = readAsn1Length(der, offset + 1);
+  const contentStart = offset + 1 + headerLen;
+  const endOffset = contentStart + length;
+  const content = der.slice(contentStart, endOffset);
+
+  const children: Asn1Node[] = [];
+  if ((tag & 0x20) !== 0) {
+    let childOffset = contentStart;
+    while (childOffset < endOffset) {
+      const child = parseNode(der, childOffset);
+      children.push(child.node);
+      childOffset = child.nextOffset;
+    }
+  }
+
+  return {
+    node: { tag, bytes: der.slice(offset, endOffset), content, children },
+    nextOffset: endOffset,
+  };
+}
+
+function decodeOid(content: Uint8Array): string {
+  if (content.length === 0) return "";
+  const first = content[0]!;
+  const parts = [Math.floor(first / 40), first % 40];
+  let value = 0;
+  for (let i = 1; i < content.length; i++) {
+    value = (value << 7) | (content[i]! & 0x7f);
+    if ((content[i]! & 0x80) === 0) {
+      parts.push(value);
+      value = 0;
+    }
+  }
+  return parts.join(".");
+}
+
+// Parse a PKCS#7 SignedData and extract the eContent (the inner CSR bytes)
+export function parsePkcs7Content(der: Uint8Array): Effect.Effect<Uint8Array, ScepError> {
+  return Effect.try({
+    try: () => {
+      // Parse ContentInfo
+      const root = parseNode(der, 0).node;
+      if (root.tag !== 0x30 || root.children.length < 2) {
+        throw new Error("Invalid ContentInfo");
+      }
+
+      const contentTypeNode = root.children[0];
+      if (contentTypeNode.tag !== 0x06) throw new Error("Missing contentType OID");
+      const contentType = decodeOid(contentTypeNode.content);
+      if (contentType !== "1.2.840.113549.1.7.2") {
+        throw new Error(`Unexpected contentType: ${contentType}`);
+      }
+
+      // content [0] EXPLICIT SignedData
+      const contentNode = root.children[1];
+      if (contentNode.tag !== 0xa0 || contentNode.children.length < 1) {
+        throw new Error("Missing SignedData content");
+      }
+
+      const signedData = contentNode.children[0];
+      if (signedData.tag !== 0x30) throw new Error("Invalid SignedData");
+
+      // SignedData fields: version, digestAlgorithms, encapContentInfo, [certificates], [crls], signerInfos
+      if (signedData.children.length < 3) throw new Error("SignedData too short");
+
+      const encapContentInfo = signedData.children[2];
+      if (encapContentInfo.tag !== 0x30) throw new Error("Invalid encapContentInfo");
+
+      // encapContentInfo: eContentType, eContent [0]?
+      for (const child of encapContentInfo.children) {
+        if (child.tag === 0xa0) {
+          // eContent [0] EXPLICIT OCTET STRING
+          if (child.children.length < 1) throw new Error("Empty eContent");
+          const octet = child.children[0];
+          if (octet.tag === 0x04) {
+            return octet.content; // The CSR bytes
+          }
+          // Some implementations don't wrap in OCTET STRING
+          return child.content;
+        }
+      }
+
+      throw new Error("No eContent found in PKCS#7");
+    },
+    catch: (cause) => new ScepError({ message: "Failed to parse PKCS#7 content", cause }),
+  });
+}
+
+// ─── CSR Parser ──────────────────────────────────────────────────
 
 export function parseCsr(der: Uint8Array): Effect.Effect<{ subject: string; spki: ArrayBuffer }, ScepError> {
   return Effect.try({
     try: () => {
-      const text = new TextDecoder("utf-8").decode(der);
-      let subject = "device";
-      const cnMatch = text.match(/CN=([^,]+)/);
-      if (cnMatch) subject = cnMatch[1]!;
+      const root = parseNode(der, 0).node;
+      if (root.tag !== 0x30 || root.children.length < 3) {
+        throw new Error("Invalid CSR");
+      }
 
-      let spki: ArrayBuffer = der.buffer as ArrayBuffer;
-      for (let i = 0; i < der.length - 4; i++) {
-        if (der[i] === 0x30 && der[i + 1] === 0x82) {
-          const [len, end] = readLength(der, i + 1);
-          if (len > 200 && end < der.length) {
-            spki = der.slice(i, end).buffer as ArrayBuffer;
-            break;
+      // CertificationRequestInfo is the first child of PKCS#10
+      const certReqInfo = root.children[0];
+      if (certReqInfo.tag !== 0x30) throw new Error("Invalid CertificationRequestInfo");
+
+      // Fields: version, subject, subjectPKInfo, attributes
+      if (certReqInfo.children.length < 3) throw new Error("CertificationRequestInfo too short");
+
+      const subjectNode = certReqInfo.children[1];
+      const spkiNode = certReqInfo.children[2];
+
+      // Extract CN from subject
+      let subject = "device";
+      if (subjectNode.tag === 0x30) {
+        for (const rdn of subjectNode.children) {
+          if (rdn.tag !== 0x31) continue;
+          for (const atv of rdn.children) {
+            if (atv.tag !== 0x30 || atv.children.length < 2) continue;
+            const oidNode = atv.children[0];
+            const valNode = atv.children[1];
+            if (oidNode.tag !== 0x06) continue;
+            const oid = decodeOid(oidNode.content);
+            if (oid === "2.5.4.3") {
+              const val = decodeStringValue(valNode);
+              if (val) subject = val;
+            }
           }
         }
       }
+
+      // Extract SPKI
+      const spki = spkiNode.bytes.buffer as ArrayBuffer;
 
       return { subject, spki };
     },
     catch: (cause) => new ScepError({ message: "Failed to parse CSR", cause }),
   });
+}
+
+function decodeStringValue(node: Asn1Node): string {
+  switch (node.tag) {
+    case 0x0c: // UTF8String
+    case 0x13: // PrintableString
+    case 0x16: // IA5String
+    case 0x14: // T61String
+      return new TextDecoder().decode(node.content);
+    default:
+      return "";
+  }
 }
 
 export { arrayBufferToBase64, base64ToArrayBuffer };
