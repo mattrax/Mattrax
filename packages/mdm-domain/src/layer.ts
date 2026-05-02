@@ -1,9 +1,9 @@
-import { Schema, Context, Data, Effect } from "effect";
+import { Schema, Context, Effect } from "effect";
 
-export class ManagementNotSupported extends Data.TaggedError("ManagementNotSupported") {}
-export class UnknownDevice extends Data.TaggedError("UnknownDevice") {}
-export class ServerInitiatedUnenrollment extends Data.TaggedError("ServerInitiatedUnenrollment") {}
-export class InternalServerError extends Data.TaggedError("InternalServerError") {}
+export class ManagementNotSupported extends Schema.TaggedErrorClass<ManagementNotSupported>()("ManagementNotSupported", {}) {}
+export class UnknownDevice extends Schema.TaggedErrorClass<UnknownDevice>()("UnknownDevice", {}) {}
+export class ServerInitiatedUnenrollment extends Schema.TaggedErrorClass<ServerInitiatedUnenrollment>()("ServerInitiatedUnenrollment", {}) {}
+export class InternalServerError extends Schema.TaggedErrorClass<InternalServerError>()("InternalServerError", {}) {}
 
 export const AppleDeviceSession = Schema.Struct({
   deviceId: Schema.String,
@@ -12,29 +12,25 @@ export const AppleDeviceSession = Schema.Struct({
 export type AppleDeviceSession = typeof AppleDeviceSession.Type;
 
 export const AppleDeviceEvent = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("Authenticate"),
+  Schema.TaggedStruct("Authenticate", {
     serialNumber: Schema.optional(Schema.String),
     model: Schema.optional(Schema.String),
     osVersion: Schema.optional(Schema.String),
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("TokenUpdate"),
+  Schema.TaggedStruct("TokenUpdate", {
     pushToken: Schema.String,
     pushMagic: Schema.String,
     topic: Schema.String,
     channel: Schema.Literals(["user", "device"]),
   }),
-  Schema.Struct({ _tag: Schema.Literal("CheckOut") }),
-  Schema.Struct({
-    _tag: Schema.Literal("CommandResult"),
+  Schema.TaggedStruct("CheckOut", {}),
+  Schema.TaggedStruct("CommandResult", {
     commandUUID: Schema.String,
     status: Schema.String,
     errorDetail: Schema.optional(Schema.String),
     queryResponses: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("DeclarationStatus"),
+  Schema.TaggedStruct("DeclarationStatus", {
     statusItems: Schema.optional(Schema.Unknown),
     errors: Schema.optional(Schema.Array(Schema.Struct({
       identifier: Schema.String,
@@ -52,15 +48,13 @@ export type AppleDeviceEvent = typeof AppleDeviceEvent.Type;
 // Mutually exclusive: what the device should do after a checkin.
 // DdmSync and Command cannot both apply at once due to the underlying protocol.
 export const ManagementManifest = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("Idle") }),
-  Schema.Struct({
-    _tag: Schema.Literal("Command"),
+  Schema.TaggedStruct("Idle", {}),
+  Schema.TaggedStruct("Command", {
     commandUUID: Schema.String,
     requestType: Schema.String,
     payload: Schema.Unknown,
   }),
-  Schema.Struct({
-    _tag: Schema.Literal("DdmSync"),
+  Schema.TaggedStruct("DdmSync", {
     serverToken: Schema.String,
   }),
 ]);
