@@ -6,7 +6,8 @@ import { version } from "../package.json" with { type: "json" };
 import { mattraxApi } from "@mattrax/api-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
 import { mattraxHandlers } from "@mattrax/api-backend";
-import { appleMdmHandlers, scepRoutes } from "@mattrax/api-backend";
+import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
+import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmServiceLive } from "@mattrax/dm-apple";
 import { ApnsServiceLive } from "@mattrax/dm-apple";
 import { ScepServiceLive } from "@mattrax/scep";
@@ -43,6 +44,7 @@ export const createAppLayer = (db: D1Database, env: Env) => {
     HttpApiBuilder.layer(apiRoot, { openapiPath: "/api/openapi.json" }).pipe(
       Layer.provide(handlersLayer),
     ),
+    appleMdmRoutes,
     scepRoutes,
     HttpApiScalar.layerCdn(apiRoot, { path: "/api/docs" }),
     HttpApiScalar.layerCdn(apiRoot, { path: "/" }),

@@ -130,15 +130,9 @@ importers:
       '@mattrax/api-domain':
         specifier: workspace:*
         version: link:../api-domain
-      '@mattrax/dm-apple':
-        specifier: workspace:*
-        version: link:../dm-apple
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../management-backend
-      '@mattrax/scep':
-        specifier: workspace:*
-        version: link:../scep
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2
