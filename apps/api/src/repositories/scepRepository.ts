@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect";
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/index.js";
 import * as dbSchema from "../db/schema.js";
-import { ScepError, ScepRepository } from "@mattrax/dm-apple";
+import { ScepError, ScepRepository } from "@mattrax/scep";
 
 export const ScepRepositoryLive = (db: Database) =>
   Layer.succeed(ScepRepository)(
@@ -36,5 +36,6 @@ export const ScepRepositoryLive = (db: Database) =>
           },
           catch: (cause) => new ScepError({ message: "Failed to save CA", cause }),
         }),
+      authenticatePkcsReq: () => Effect.void,
     }),
   );

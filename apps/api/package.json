@@ -15,6 +15,7 @@
     "@mattrax/dm-apple": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
+    "@mattrax/scep": "workspace:*",
     "asn1js": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",

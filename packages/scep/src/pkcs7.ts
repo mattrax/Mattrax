@@ -2,7 +2,7 @@ import { Effect } from "effect";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { privateDecrypt, publicEncrypt, constants, createDecipheriv } from "node:crypto";
-import { ScepError } from "../schema.js";
+import { ScepError } from "./schema.js";
 import { pemEncode, pemDecode } from "./crypto.js";
 
 // ─── PKIjs Crypto Engine Setup ───────────────────────────────────

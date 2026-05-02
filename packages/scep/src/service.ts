@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect";
-import { ScepError } from "../schema.js";
+import { ScepError } from "./schema.js";
 import { ScepRepository } from "./repository.js";
 import {
   generateCaKeyPair,
@@ -76,6 +76,9 @@ export const ScepServiceLive = Layer.effect(
         const ca = yield* ensureCa;
 
         const req = yield* parseScepPkcsReq(message, ca.caCert, ca.privateKeyJwk);
+
+        // Allow repository to authenticate/validate the incoming request before issuance.
+        yield* repo.authenticatePkcsReq(req);
 
         const notBefore = new Date();
         const notAfter = new Date(notBefore.getTime() + 365 * 24 * 60 * 60 * 1000);

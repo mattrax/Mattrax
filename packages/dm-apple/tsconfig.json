@@ -20,7 +20,8 @@
     "composite": true
   },
   "references": [
-    { "path": "../management-backend" }
+    { "path": "../management-backend" },
+    { "path": "../scep" }
   ],
   "include": ["src"]
 }

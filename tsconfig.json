@@ -11,6 +11,7 @@
   "references": [
     { "path": "./packages/management-backend" },
     { "path": "./packages/management-backend-http" },
+    { "path": "./packages/scep" },
     { "path": "./packages/dm-apple" },
     { "path": "./packages/api-domain" },
     { "path": "./packages/api-backend" },

@@ -1,4 +1,4 @@
-import { pemDecode } from "./scep/crypto.js";
+import { pemDecode } from "@mattrax/scep";
 
 interface Asn1Node {
   tag: number;

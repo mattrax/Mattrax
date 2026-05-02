@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { ScepError } from "../schema.js";
+import { ScepError } from "./schema.js";
 
 const ALGORITHM: any = {
   name: "RSASSA-PKCS1-v1_5",

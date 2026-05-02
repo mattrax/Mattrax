@@ -66,6 +66,9 @@ importers:
       '@mattrax/management-backend-http':
         specifier: workspace:*
         version: link:../../packages/management-backend-http
+      '@mattrax/scep':
+        specifier: workspace:*
+        version: link:../../packages/scep
       asn1js:
         specifier: 'catalog:'
         version: 3.0.10
@@ -159,6 +162,9 @@ importers:
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../management-backend
+      '@mattrax/scep':
+        specifier: workspace:*
+        version: link:../scep
       asn1js:
         specifier: 'catalog:'
         version: 3.0.10
@@ -204,6 +210,28 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.12.2
+
+  packages/scep:
+    dependencies:
+      asn1js:
+        specifier: 'catalog:'
+        version: 3.0.10
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.52
+      pkijs:
+        specifier: 'catalog:'
+        version: 3.4.0
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.12.2
+      '@types/pkijs':
+        specifier: 'catalog:'
+        version: 3.0.1
+      vitest:
+        specifier: npm:@voidzero-dev/vite-plus-test@^0.1.20
+        version: '@voidzero-dev/vite-plus-test@0.1.20(@types/node@24.12.2)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(typescript@6.0.3)(vite@8.0.10(@types/node@24.12.2)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(yaml@2.8.3)'
 
   packages/software: {}
 

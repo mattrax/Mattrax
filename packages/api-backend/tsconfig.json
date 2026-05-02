@@ -22,7 +22,8 @@
   "references": [
     { "path": "../api-domain" },
     { "path": "../dm-apple" },
-    { "path": "../management-backend" }
+    { "path": "../management-backend" },
+    { "path": "../scep" }
   ],
   "include": ["src"]
 }

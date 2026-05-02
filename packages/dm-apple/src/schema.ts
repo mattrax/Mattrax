@@ -1,10 +1,12 @@
 import { Data, Schema } from "effect";
+import { ScepError } from "@mattrax/scep";
+
+export { ScepError };
 
 export class MdmError extends Data.TaggedError("MdmError")<{ message: string; cause?: unknown }> {}
 export class DeviceNotFound extends Data.TaggedError("DeviceNotFound")<{ deviceId: string }> {}
 export class PlistParseError extends Data.TaggedError("PlistParseError")<{ message: string; cause?: unknown }> {}
 export class PlistSerializeError extends Data.TaggedError("PlistSerializeError")<{ message: string; cause?: unknown }> {}
-export class ScepError extends Data.TaggedError("ScepError")<{ message: string; cause?: unknown }> {}
 export class DeclarationNotFound extends Data.TaggedError("DeclarationNotFound")<{ declarationId: string }> {}
 
 export const AuthenticatePlist = Schema.Struct({
