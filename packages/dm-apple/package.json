@@ -1,5 +1,5 @@
 {
-  "name": "@mattrax/appledm",
+  "name": "@mattrax/dm-apple",
   "private": true,
   "description": "Apple Device Management",
   "type": "module",

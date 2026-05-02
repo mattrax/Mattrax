@@ -21,7 +21,7 @@
   },
   "references": [
     { "path": "../api-domain" },
-    { "path": "../appledm" },
+    { "path": "../dm-apple" },
     { "path": "../management-backend" }
   ],
   "include": ["src"]

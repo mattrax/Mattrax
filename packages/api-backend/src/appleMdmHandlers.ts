@@ -1,17 +1,17 @@
 import { Effect, Layer, Schema } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { HttpServerResponse, HttpRouter, HttpServerRequest } from "effect/unstable/http";
-import { AppleMdmService } from "@mattrax/appledm";
-import { ScepService } from "@mattrax/appledm";
-import { parsePlist, serializePlist } from "@mattrax/appledm";
+import { AppleMdmService } from "@mattrax/dm-apple";
+import { ScepService } from "@mattrax/dm-apple";
+import { parsePlist, serializePlist } from "@mattrax/dm-apple";
 import {
   AuthenticatePlist,
   TokenUpdatePlist,
   CheckOutPlist,
   CommandResultPlist,
   DDMStatusReport,
-} from "@mattrax/appledm";
-import { appleMdmApi } from "@mattrax/appledm";
+} from "@mattrax/dm-apple";
+import { appleMdmApi } from "@mattrax/dm-apple";
 import type { CheckinScope } from "@mattrax/management-backend";
 
 export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typeof appleMdmApi>) =>

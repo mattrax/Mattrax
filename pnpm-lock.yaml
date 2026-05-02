@@ -57,15 +57,15 @@ importers:
       '@mattrax/api-domain':
         specifier: workspace:*
         version: link:../../packages/api-domain
-      '@mattrax/appledm':
+      '@mattrax/dm-apple':
         specifier: workspace:*
-        version: link:../../packages/appledm
+        version: link:../../packages/dm-apple
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../../packages/management-backend
       '@mattrax/management-backend-http':
         specifier: workspace:*
-        version: link:../../packages/management-server-http
+        version: link:../../packages/management-backend-http
       asn1js:
         specifier: 'catalog:'
         version: 3.0.10
@@ -127,9 +127,9 @@ importers:
       '@mattrax/api-domain':
         specifier: workspace:*
         version: link:../api-domain
-      '@mattrax/appledm':
+      '@mattrax/dm-apple':
         specifier: workspace:*
-        version: link:../appledm
+        version: link:../dm-apple
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../management-backend
@@ -154,7 +154,7 @@ importers:
         specifier: 'catalog:'
         version: 24.12.2
 
-  packages/appledm:
+  packages/dm-apple:
     dependencies:
       '@mattrax/management-backend':
         specifier: workspace:*
@@ -192,7 +192,7 @@ importers:
         specifier: 'catalog:'
         version: 24.12.2
 
-  packages/management-server-http:
+  packages/management-backend-http:
     dependencies:
       '@mattrax/management-backend':
         specifier: workspace:*
@@ -204,6 +204,8 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 24.12.2
+
+  packages/software: {}
 
 packages:
 

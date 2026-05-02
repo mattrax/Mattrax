@@ -12,7 +12,7 @@
   "dependencies": {
     "@mattrax/api-backend": "workspace:*",
     "@mattrax/api-domain": "workspace:*",
-    "@mattrax/appledm": "workspace:*",
+    "@mattrax/dm-apple": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
     "asn1js": "catalog:",

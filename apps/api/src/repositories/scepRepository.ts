@@ -2,7 +2,7 @@ import { Effect, Layer } from "effect";
 import { eq } from "drizzle-orm";
 import type { Database } from "../db/index.js";
 import * as dbSchema from "../db/schema.js";
-import { ScepError, ScepRepository } from "@mattrax/appledm";
+import { ScepError, ScepRepository } from "@mattrax/dm-apple";
 
 export const ScepRepositoryLive = (db: Database) =>
   Layer.succeed(ScepRepository)(

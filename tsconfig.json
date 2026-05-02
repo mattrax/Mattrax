@@ -11,7 +11,7 @@
   "references": [
     { "path": "./packages/management-backend" },
     { "path": "./packages/management-backend-http" },
-    { "path": "./packages/appledm" },
+    { "path": "./packages/dm-apple" },
     { "path": "./packages/api-domain" },
     { "path": "./packages/api-backend" },
     { "path": "./apps/api" },

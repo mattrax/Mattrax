@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@mattrax/api-domain": "workspace:*",
-    "@mattrax/appledm": "workspace:*",
+    "@mattrax/dm-apple": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"
