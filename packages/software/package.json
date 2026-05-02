@@ -1,0 +1,11 @@
+{
+  "name": "@mattrax/software",
+  "private": true,
+  "description": "Software repository and package management",
+  "type": "module",
+  "exports": {
+    "./schema.json": "./schema.json",
+    "./software.jsonc": "./software.jsonc",
+    "./package.json": "./package.json"
+  }
+}

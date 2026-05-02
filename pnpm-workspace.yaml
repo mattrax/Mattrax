@@ -1,11 +1,10 @@
 packages:
   - apps/*
   - packages/*
-  - tools/*
 
 catalog:
   "@types/node": ^24.12.2
-  '@types/pkijs': ^3.0.1
+  "@types/pkijs": ^3.0.1
   asn1js: ^3.0.10
   drizzle-kit: ^0.31.10
   drizzle-orm: ^0.45.2
@@ -23,13 +22,16 @@ onlyBuiltDependencies:
   - esbuild
   - sharp
   - workerd
+
 overrides:
   vite: "catalog:"
   vitest: "catalog:"
+
 peerDependencyRules:
   allowAny:
     - vite
     - vitest
+
   allowedVersions:
     vite: "*"
     vitest: "*"

@@ -5,11 +5,19 @@ export class UnknownDevice extends Schema.TaggedErrorClass<UnknownDevice>()("Unk
 export class ServerInitiatedUnenrollment extends Schema.TaggedErrorClass<ServerInitiatedUnenrollment>()("ServerInitiatedUnenrollment", {}) {}
 export class InternalServerError extends Schema.TaggedErrorClass<InternalServerError>()("InternalServerError", {}) {}
 
-export const AppleDeviceSession = Schema.Struct({
-  deviceId: Schema.String,
-  supportsDdm: Schema.Boolean,
-});
-export type AppleDeviceSession = typeof AppleDeviceSession.Type;
+export const CheckinScope = Schema.Union([
+  Schema.TaggedStruct("device", {
+    udid: Schema.String,
+    identityCertificate: Schema.optional(Schema.String),
+  }),
+  Schema.TaggedStruct("user", {
+    udid: Schema.String,
+    identityCertificate: Schema.optional(Schema.String),
+    userId: Schema.String,
+    userShortName: Schema.optional(Schema.String),
+  }),
+]);
+export type CheckinScope = typeof CheckinScope.Type;
 
 export const AppleDeviceEvent = Schema.Union([
   Schema.TaggedStruct("Authenticate", {
@@ -85,24 +93,21 @@ export type DdmDeclarationItems = typeof DdmDeclarationItems.Type;
 export class ManagementBackend extends Context.Service<
   ManagementBackend,
   {
-    // Called on every MDM request to verify the device is enrolled and get its session
-    readonly authenticateAppleDevice: (udid: string) => Effect.Effect<AppleDeviceSession, ManagementNotSupported | UnknownDevice | InternalServerError>;
-
-    // Device lifecycle and protocol events
-    readonly appleDeviceEvent: (deviceId: string, event: AppleDeviceEvent) => Effect.Effect<void, ManagementNotSupported | InternalServerError>;
+    // Device lifecycle and protocol events (device-initiated)
+    readonly appleDeviceEvent: (scope: CheckinScope, event: AppleDeviceEvent) => Effect.Effect<void, ManagementNotSupported | UnknownDevice | InternalServerError>;
 
     // Regular device checkin: returns what the device should do next (imperative)
-    readonly appleManagementCheckin: (deviceId: string) => Effect.Effect<ManagementManifest, ManagementNotSupported | ServerInitiatedUnenrollment | InternalServerError>;
+    readonly appleManagementCheckin: (scope: CheckinScope) => Effect.Effect<ManagementManifest, ManagementNotSupported | UnknownDevice | ServerInitiatedUnenrollment | InternalServerError>;
 
-    // DDM sub-endpoint handlers
-    readonly getAppleDeclarationTokens: (deviceId: string) => Effect.Effect<DdmTokens, ManagementNotSupported | InternalServerError>;
-    readonly getAppleDeclarationItems: (deviceId: string) => Effect.Effect<DdmDeclarationItems, ManagementNotSupported | InternalServerError>;
-    readonly getAppleDeclaration: (deviceId: string, type: string, identifier: string) => Effect.Effect<Record<string, unknown> | null, ManagementNotSupported | InternalServerError>;
+    // DDM sub-endpoint handlers (device-initiated)
+    readonly getAppleDeclarationTokens: (scope: CheckinScope) => Effect.Effect<DdmTokens, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    readonly getAppleDeclarationItems: (scope: CheckinScope) => Effect.Effect<DdmDeclarationItems, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    readonly getAppleDeclaration: (scope: CheckinScope, type: string, identifier: string) => Effect.Effect<Record<string, unknown> | null, ManagementNotSupported | UnknownDevice | InternalServerError>;
 
-    // Push info needed to wake the device via APNS
+    // Push info needed to wake the device via APNS (server-initiated)
     readonly getApplePushInfo: (deviceId: string) => Effect.Effect<{ pushToken: string; pushMagic: string; topic: string } | null, ManagementNotSupported | InternalServerError>;
 
-    // Queue a classic MDM command to be returned on next checkin
+    // Queue a classic MDM command to be returned on next checkin (server-initiated)
     readonly queueAppleCommand: (deviceId: string, requestType: string, payload: unknown) => Effect.Effect<void, ManagementNotSupported | InternalServerError>;
   }
 >()("ManagementBackend") {}

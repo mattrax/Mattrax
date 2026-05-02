@@ -2,11 +2,11 @@ import { Effect, Layer } from "effect";
 import {
   ManagementBackend,
   type AppleDeviceEvent,
+  type CheckinScope,
   type ManagementManifest,
 } from "@mattrax/management-backend";
 
 interface DeviceState {
-  deviceId: string;
   udid: string;
   supportsDdm: boolean;
   pushToken?: string;
@@ -15,7 +15,9 @@ interface DeviceState {
   commandQueue: Array<{ commandUUID: string; requestType: string; payload: unknown }>;
 }
 
-const devices = new Map<string, DeviceState>(); // udid → state
+// keyed by udid for device-initiated ops; keyed by deviceId for server-initiated ops
+const byUdid = new Map<string, DeviceState>();
+const byDeviceId = new Map<string, DeviceState>();
 
 const demoDeclarationItems = {
   activations: [{ identifier: "com.mattrax.demo.activation", serverToken: "demo-activation-v1" }],
@@ -40,34 +42,22 @@ const demoDeclarations: Record<string, Record<string, unknown>> = {
 };
 
 function getOrCreateDevice(udid: string, supportsDdm = true): DeviceState {
-  let state = devices.get(udid);
+  let state = byUdid.get(udid);
   if (!state) {
-    state = { deviceId: `apple-${udid}`, udid, supportsDdm, commandQueue: [] };
-    devices.set(udid, state);
+    state = { udid, supportsDdm, commandQueue: [] };
+    byUdid.set(udid, state);
+    byDeviceId.set(`apple-${udid}`, state);
   }
   return state;
-}
-
-function deviceById(deviceId: string): DeviceState | undefined {
-  for (const state of devices.values()) {
-    if (state.deviceId === deviceId) return state;
-  }
 }
 
 export const ManagementBackendMemory = Layer.succeed(
   ManagementBackend,
   ManagementBackend.of({
-    authenticateAppleDevice: (udid) =>
+    appleDeviceEvent: (scope: CheckinScope, event: AppleDeviceEvent) =>
       Effect.sync(() => {
-        const state = getOrCreateDevice(udid);
-        console.log("[ManagementBackend] authenticateAppleDevice", { udid, deviceId: state.deviceId });
-        return { deviceId: state.deviceId, supportsDdm: state.supportsDdm };
-      }),
-
-    appleDeviceEvent: (deviceId, event: AppleDeviceEvent) =>
-      Effect.sync(() => {
-        console.log("[ManagementBackend] appleDeviceEvent", { deviceId, event });
-        const state = deviceById(deviceId);
+        console.log("[ManagementBackend] appleDeviceEvent", { udid: scope.udid, event });
+        const state = byUdid.get(scope.udid);
         if (!state) return;
 
         if (event._tag === "TokenUpdate") {
@@ -77,11 +67,10 @@ export const ManagementBackendMemory = Layer.succeed(
         }
       }),
 
-    appleManagementCheckin: (deviceId) =>
+    appleManagementCheckin: (scope: CheckinScope) =>
       Effect.sync((): ManagementManifest => {
-        console.log("[ManagementBackend] appleManagementCheckin", { deviceId });
-        const state = deviceById(deviceId);
-        if (!state) return { _tag: "Idle" };
+        console.log("[ManagementBackend] appleManagementCheckin", { udid: scope.udid });
+        const state = getOrCreateDevice(scope.udid);
 
         const next = state.commandQueue.shift();
         if (next) return { _tag: "Command", ...next };
@@ -91,9 +80,9 @@ export const ManagementBackendMemory = Layer.succeed(
         return { _tag: "Idle" };
       }),
 
-    getAppleDeclarationTokens: (deviceId) =>
+    getAppleDeclarationTokens: (scope: CheckinScope) =>
       Effect.sync(() => {
-        console.log("[ManagementBackend] getAppleDeclarationTokens", { deviceId });
+        console.log("[ManagementBackend] getAppleDeclarationTokens", { udid: scope.udid });
         return {
           declarationsToken: "demo-declarations-v1",
           activationsToken: "demo-activation-v1",
@@ -103,22 +92,22 @@ export const ManagementBackendMemory = Layer.succeed(
         };
       }),
 
-    getAppleDeclarationItems: (deviceId) =>
+    getAppleDeclarationItems: (scope: CheckinScope) =>
       Effect.sync(() => {
-        console.log("[ManagementBackend] getAppleDeclarationItems", { deviceId });
+        console.log("[ManagementBackend] getAppleDeclarationItems", { udid: scope.udid });
         return demoDeclarationItems;
       }),
 
-    getAppleDeclaration: (deviceId, _type, identifier) =>
+    getAppleDeclaration: (scope: CheckinScope, _type, identifier) =>
       Effect.sync(() => {
         const decl = demoDeclarations[identifier] ?? null;
-        console.log("[ManagementBackend] getAppleDeclaration", { deviceId, identifier, found: !!decl });
+        console.log("[ManagementBackend] getAppleDeclaration", { udid: scope.udid, identifier, found: !!decl });
         return decl;
       }),
 
     getApplePushInfo: (deviceId) =>
       Effect.sync(() => {
-        const state = deviceById(deviceId);
+        const state = byDeviceId.get(deviceId);
         if (!state?.pushToken || !state.pushMagic || !state.topic) return null;
         return { pushToken: state.pushToken, pushMagic: state.pushMagic, topic: state.topic };
       }),
@@ -126,7 +115,7 @@ export const ManagementBackendMemory = Layer.succeed(
     queueAppleCommand: (deviceId, requestType, payload) =>
       Effect.sync(() => {
         console.log("[ManagementBackend] queueAppleCommand", { deviceId, requestType });
-        const state = deviceById(deviceId);
+        const state = byDeviceId.get(deviceId);
         if (!state) return;
         state.commandQueue.push({ commandUUID: crypto.randomUUID(), requestType, payload });
       }),

@@ -12,6 +12,7 @@ import {
   DDMStatusReport,
 } from "@mattrax/appledm";
 import { appleMdmApi } from "@mattrax/appledm";
+import type { CheckinScope } from "@mattrax/management-backend";
 
 export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typeof appleMdmApi>) =>
   handlers
@@ -92,6 +93,8 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
     const text = new TextDecoder().decode(buf);
     const plist = yield* parsePlist(text);
 
+    const identityCertificate = request.headers["x-device-identity-certificate"] as string | undefined;
+
     const messageType = (plist as any)?.MessageType;
     const status = (plist as any)?.Status;
 
@@ -101,37 +104,38 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
           const auth = yield* Schema.decodeUnknownEffect(AuthenticatePlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
-          yield* service.handleAuthenticate(auth);
+          yield* service.handleAuthenticate(auth, identityCertificate);
           return HttpServerResponse.empty({ status: 200 });
         }
         case "TokenUpdate": {
           const update = yield* Schema.decodeUnknownEffect(TokenUpdatePlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
-          yield* service.handleTokenUpdate(update);
+          yield* service.handleTokenUpdate(update, identityCertificate);
           return HttpServerResponse.empty({ status: 200 });
         }
         case "CheckOut": {
           const checkout = yield* Schema.decodeUnknownEffect(CheckOutPlist)(plist).pipe(
             Effect.mapError((err) => new Error(String(err))),
           );
-          yield* service.handleCheckOut(checkout);
+          yield* service.handleCheckOut(checkout, identityCertificate);
           return HttpServerResponse.empty({ status: 200 });
         }
         case "DeclarativeManagement": {
           const endpoint = (plist as any).Endpoint;
           const udid = (plist as any).UDID;
-          const device = yield* service.authenticateDevice(udid);
-          if (!device) return HttpServerResponse.empty({ status: 200 });
+          if (!udid) return HttpServerResponse.empty({ status: 200 });
+
+          const scope: CheckinScope = { _tag: "device", udid, identityCertificate };
 
           switch (endpoint) {
             case "tokens": {
-              const tokens = yield* service.handleDeclarativeTokens(device.deviceId);
+              const tokens = yield* service.handleDeclarativeTokens(scope);
               const response = yield* serializePlist(tokens);
               return HttpServerResponse.text(response, { contentType: "application/xml" });
             }
             case "declaration-items": {
-              const items = yield* service.handleDeclarationItems(device.deviceId);
+              const items = yield* service.handleDeclarationItems(scope);
               const response = yield* serializePlist(items);
               return HttpServerResponse.text(response, { contentType: "application/xml" });
             }
@@ -140,7 +144,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
               const decoded = yield* Schema.decodeUnknownEffect(DDMStatusReport)(report).pipe(
                 Effect.mapError((err) => new Error(String(err))),
               );
-              yield* service.handleStatusReport(device.deviceId, decoded);
+              yield* service.handleStatusReport(scope, decoded);
               return HttpServerResponse.empty({ status: 200 });
             }
             default: {
@@ -148,7 +152,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
                 const parts = endpoint.split("/");
                 const type = parts[1] ?? "";
                 const identifier = parts[2] ?? "";
-                const decl = yield* service.handleDeclaration(device.deviceId, type, identifier);
+                const decl = yield* service.handleDeclaration(scope, type, identifier);
                 const response = yield* serializePlist(decl);
                 return HttpServerResponse.text(response, { contentType: "application/xml" });
               }
@@ -163,16 +167,14 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
       const result = yield* Schema.decodeUnknownEffect(CommandResultPlist)(plist).pipe(
         Effect.mapError((err) => new Error(String(err))),
       );
-      yield* service.handleCommandResult(result);
+      yield* service.handleCommandResult(result, identityCertificate);
       return HttpServerResponse.empty({ status: 200 });
     } else {
       const udid = (plist as any)?.UDID;
       if (!udid) return HttpServerResponse.empty({ status: 200 });
 
-      const device = yield* service.authenticateDevice(udid);
-      if (!device) return HttpServerResponse.empty({ status: 200 });
-
-      const command = yield* service.handleCheckin(device.deviceId);
+      const scope: CheckinScope = { _tag: "device", udid, identityCertificate };
+      const command = yield* service.handleCheckin(scope);
       if (!command) {
         const empty = yield* serializePlist({});
         return HttpServerResponse.text(empty, { contentType: "application/xml" });

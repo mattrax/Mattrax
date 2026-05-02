@@ -1,54 +1,49 @@
 import { Schema } from "effect";
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
 import {
-  AppleDeviceSession,
+  CheckinScope,
   AppleDeviceEvent,
   ManagementManifest,
   DdmTokens,
   DdmDeclarationItems,
   ManagementNotSupported,
+  UnknownDevice,
+  ServerInitiatedUnenrollment,
 } from "@mattrax/management-backend";
 
 export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
   .add(
-    HttpApiEndpoint.post("authenticateAppleDevice", "/apple/authenticate", {
-      payload: Schema.Struct({ udid: Schema.String }),
-      success: AppleDeviceSession,
-      error: ManagementNotSupported,
-    }),
-  )
-  .add(
     HttpApiEndpoint.post("appleDeviceEvent", "/apple/event", {
-      payload: Schema.Struct({ deviceId: Schema.String, event: AppleDeviceEvent }),
-      error: ManagementNotSupported,
+      payload: Schema.Struct({ scope: CheckinScope, event: AppleDeviceEvent }),
+      error: Schema.Union([ManagementNotSupported, UnknownDevice]),
     }),
   )
   .add(
     HttpApiEndpoint.post("appleManagementCheckin", "/apple/checkin", {
-      payload: Schema.Struct({ deviceId: Schema.String }),
+      payload: Schema.Struct({ scope: CheckinScope }),
       success: ManagementManifest,
-      error: ManagementNotSupported,
+      error: Schema.Union([ManagementNotSupported, UnknownDevice, ServerInitiatedUnenrollment]),
     }),
   )
   .add(
     HttpApiEndpoint.post("getAppleDeclarationTokens", "/apple/declaration-tokens", {
-      payload: Schema.Struct({ deviceId: Schema.String }),
+      payload: Schema.Struct({ scope: CheckinScope }),
       success: DdmTokens,
-      error: ManagementNotSupported,
+      error: Schema.Union([ManagementNotSupported, UnknownDevice]),
     }),
   )
   .add(
     HttpApiEndpoint.post("getAppleDeclarationItems", "/apple/declaration-items", {
-      payload: Schema.Struct({ deviceId: Schema.String }),
+      payload: Schema.Struct({ scope: CheckinScope }),
       success: DdmDeclarationItems,
-      error: ManagementNotSupported,
+      error: Schema.Union([ManagementNotSupported, UnknownDevice]),
     }),
   )
   .add(
     HttpApiEndpoint.post("getAppleDeclaration", "/apple/declaration", {
-      payload: Schema.Struct({ deviceId: Schema.String, type: Schema.String, identifier: Schema.String }),
+      payload: Schema.Struct({ scope: CheckinScope, type: Schema.String, identifier: Schema.String }),
       success: Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown)),
-      error: ManagementNotSupported,
+      error: Schema.Union([ManagementNotSupported, UnknownDevice]),
     }),
   )
   .add(
