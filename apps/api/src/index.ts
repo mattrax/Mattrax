@@ -9,7 +9,6 @@ import { mattraxHandlers } from "@mattrax/api-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmServiceLive } from "@mattrax/dm-apple";
-import { ApnsServiceLive } from "@mattrax/dm-apple";
 import { ScepServiceLive } from "@mattrax/scep";
 import { extractTopicFromCertPem } from "@mattrax/dm-apple";
 import { ManagementBackendMemory } from "./management/memory.js";
@@ -50,17 +49,11 @@ export const createAppLayer = (db: D1Database, env: Env) => {
     HttpApiScalar.layerCdn(apiRoot, { path: "/" }),
   );
 
-  const apnsServiceResolved = ApnsServiceLive(
-    env.CLOUD_APPLE_VENDOR_CERT,
-    env.CLOUD_APPLE_VENDOR_KEY,
-  );
-
   const appleMdmServiceResolved = AppleMdmServiceLive({
     origin: env.ORIGIN,
     topic,
   }).pipe(
     Layer.provideMerge(ManagementBackendMemory),
-    Layer.provideMerge(apnsServiceResolved),
   );
 
   const scepServiceResolved = ScepServiceLive.pipe(

@@ -1,0 +1,16 @@
+{
+  "name": "@mattrax/apns",
+  "private": true,
+  "description": "Apple Push Notification Service (APNS) client for Effect",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

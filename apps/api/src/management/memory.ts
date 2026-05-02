@@ -9,14 +9,9 @@ import {
 interface DeviceState {
   udid: string;
   supportsDdm: boolean;
-  pushToken?: string;
-  pushMagic?: string;
-  topic?: string;
 }
 
-// keyed by udid for device-initiated ops; keyed by deviceId for server-initiated ops
 const byUdid = new Map<string, DeviceState>();
-const byDeviceId = new Map<string, DeviceState>();
 
 const demoDeclarationItems = {
   activations: [{ identifier: "com.mattrax.demo.activation", serverToken: "demo-activation-v1" }],
@@ -45,7 +40,6 @@ function getOrCreateDevice(udid: string, supportsDdm = true): DeviceState {
   if (!state) {
     state = { udid, supportsDdm };
     byUdid.set(udid, state);
-    byDeviceId.set(`apple-${udid}`, state);
   }
   return state;
 }
@@ -56,14 +50,6 @@ export const ManagementBackendMemory = Layer.succeed(
     appleDeviceEvent: (scope: CheckinScope, event: AppleDeviceEvent) =>
       Effect.sync(() => {
         console.log("[ManagementBackend] appleDeviceEvent", { udid: scope.udid, event });
-        const state = byUdid.get(scope.udid);
-        if (!state) return;
-
-        if (event._tag === "TokenUpdate") {
-          state.pushToken = event.pushToken;
-          state.pushMagic = event.pushMagic;
-          state.topic = event.topic;
-        }
       }),
 
     appleManagementCheckin: (scope: CheckinScope) =>
@@ -101,11 +87,5 @@ export const ManagementBackendMemory = Layer.succeed(
         return decl;
       }),
 
-    getApplePushInfo: (deviceId) =>
-      Effect.sync(() => {
-        const state = byDeviceId.get(deviceId);
-        if (!state?.pushToken || !state.pushMagic || !state.topic) return null;
-        return { pushToken: state.pushToken, pushMagic: state.pushMagic, topic: state.topic };
-      }),
   }),
 );

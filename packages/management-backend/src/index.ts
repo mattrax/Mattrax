@@ -69,7 +69,6 @@ export const ManagementManifest = Schema.Union([
 export type ManagementManifest = typeof ManagementManifest.Type;
 
 export const DdmTokens = Schema.Struct({
-  declarationsToken: Schema.String,
   activationsToken: Schema.String,
   configurationsToken: Schema.String,
   assetsToken: Schema.String,
@@ -77,10 +76,11 @@ export const DdmTokens = Schema.Struct({
 });
 export type DdmTokens = typeof DdmTokens.Type;
 
-const DdmDeclarationItem = Schema.Struct({
+export const DdmDeclarationItem = Schema.Struct({
   identifier: Schema.String,
   serverToken: Schema.String,
 });
+export type DdmDeclarationItem = typeof DdmDeclarationItem.Type;
 
 export const DdmDeclarationItems = Schema.Struct({
   activations: Schema.Array(DdmDeclarationItem),
@@ -103,8 +103,5 @@ export class ManagementBackend extends Context.Service<
     readonly getAppleDeclarationTokens: (scope: CheckinScope) => Effect.Effect<DdmTokens, ManagementNotSupported | UnknownDevice | InternalServerError>;
     readonly getAppleDeclarationItems: (scope: CheckinScope) => Effect.Effect<DdmDeclarationItems, ManagementNotSupported | UnknownDevice | InternalServerError>;
     readonly getAppleDeclaration: (scope: CheckinScope, type: string, identifier: string) => Effect.Effect<Record<string, unknown> | null, ManagementNotSupported | UnknownDevice | InternalServerError>;
-
-    // Push info needed to wake the device via APNS (server-initiated)
-    readonly getApplePushInfo: (deviceId: string) => Effect.Effect<{ pushToken: string; pushMagic: string; topic: string } | null, ManagementNotSupported | InternalServerError>;
   }
 >()("ManagementBackend") {}

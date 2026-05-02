@@ -151,6 +151,16 @@ importers:
         specifier: 'catalog:'
         version: 24.12.2
 
+  packages/apns:
+    dependencies:
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.52
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.12.2
+
   packages/crypto:
     dependencies:
       effect:

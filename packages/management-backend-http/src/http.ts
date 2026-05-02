@@ -46,17 +46,6 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
       error: Schema.Union([ManagementNotSupported, UnknownDevice]),
     }),
   )
-  .add(
-    HttpApiEndpoint.post("getApplePushInfo", "/apple/push-info", {
-      payload: Schema.Struct({ deviceId: Schema.String }),
-      success: Schema.NullOr(Schema.Struct({
-        pushToken: Schema.String,
-        pushMagic: Schema.String,
-        topic: Schema.String,
-      })),
-      error: ManagementNotSupported,
-    }),
-  )
   .prefix("/webhook")
   .annotateMerge(OpenApi.annotations({ exclude: true }));
 

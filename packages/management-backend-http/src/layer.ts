@@ -41,10 +41,6 @@ export const ManagementBackendHttp = (baseUrl: string) =>
             Effect.catchTag("UnknownDevice", () => Effect.fail(new UnknownDevice())),
           ),
 
-        getApplePushInfo: (deviceId) =>
-          client.ManagementWebhook.getApplePushInfo({ payload: { deviceId } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-          ),
       });
     }),
   );
