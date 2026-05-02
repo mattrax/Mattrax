@@ -20,7 +20,7 @@
     "composite": true
   },
   "references": [
-    { "path": "../mdm-domain" }
+    { "path": "../management-backend" }
   ],
   "include": ["src"]
 }

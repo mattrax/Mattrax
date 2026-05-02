@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect";
 import { HttpApiClient } from "effect/unstable/httpapi";
-import { ManagementBackend, ManagementNotSupported } from "@mattrax/mdm-domain";
-import { managementApi } from "@mattrax/mdm-domain";
+import { ManagementBackend, ManagementNotSupported } from "@mattrax/management-backend";
+import { managementApi } from "./http.ts";
 
 export const ManagementBackendHttp = (baseUrl: string) =>
   Layer.effect(

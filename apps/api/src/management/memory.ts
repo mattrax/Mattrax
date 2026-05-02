@@ -3,7 +3,7 @@ import {
   ManagementBackend,
   type AppleDeviceEvent,
   type ManagementManifest,
-} from "@mattrax/mdm-domain";
+} from "@mattrax/management-backend";
 
 interface DeviceState {
   deviceId: string;

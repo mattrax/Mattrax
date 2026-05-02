@@ -8,7 +8,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@mattrax/mdm-domain": "workspace:*",
+    "@mattrax/management-backend": "workspace:*",
     "asn1js": "catalog:",
     "effect": "catalog:",
     "fast-plist": "catalog:",

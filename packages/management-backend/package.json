@@ -1,0 +1,16 @@
+{
+  "name": "@mattrax/management-backend",
+  "private": true,
+  "description": "MDM management backend interface and domain types",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

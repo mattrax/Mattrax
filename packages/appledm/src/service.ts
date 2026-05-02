@@ -8,7 +8,7 @@ import {
   MdmError,
 } from "./schema.js";
 import { ApnsService } from "./apns.js";
-import { ManagementBackend } from "@mattrax/mdm-domain";
+import { ManagementBackend } from "@mattrax/management-backend";
 
 function base64ToHex(base64: string): string {
   const cleaned = base64.replace(/\s/g, "");

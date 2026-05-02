@@ -9,7 +9,8 @@
   },
   "files": [],
   "references": [
-    { "path": "./packages/mdm-domain" },
+    { "path": "./packages/management-backend" },
+    { "path": "./packages/management-server-http" },
     { "path": "./packages/appledm" },
     { "path": "./packages/api-domain" },
     { "path": "./packages/api-backend" },

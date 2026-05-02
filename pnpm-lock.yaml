@@ -60,9 +60,12 @@ importers:
       '@mattrax/appledm':
         specifier: workspace:*
         version: link:../../packages/appledm
-      '@mattrax/mdm-domain':
+      '@mattrax/management-backend':
         specifier: workspace:*
-        version: link:../../packages/mdm-domain
+        version: link:../../packages/management-backend
+      '@mattrax/management-server-http':
+        specifier: workspace:*
+        version: link:../../packages/management-server-http
       asn1js:
         specifier: 'catalog:'
         version: 3.0.10
@@ -127,9 +130,9 @@ importers:
       '@mattrax/appledm':
         specifier: workspace:*
         version: link:../appledm
-      '@mattrax/mdm-domain':
+      '@mattrax/management-backend':
         specifier: workspace:*
-        version: link:../mdm-domain
+        version: link:../management-backend
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2
@@ -153,9 +156,9 @@ importers:
 
   packages/appledm:
     dependencies:
-      '@mattrax/mdm-domain':
+      '@mattrax/management-backend':
         specifier: workspace:*
-        version: link:../mdm-domain
+        version: link:../management-backend
       asn1js:
         specifier: 'catalog:'
         version: 3.0.10
@@ -179,8 +182,21 @@ importers:
         specifier: npm:@voidzero-dev/vite-plus-test@^0.1.20
         version: '@voidzero-dev/vite-plus-test@0.1.20(@types/node@24.12.2)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(typescript@6.0.3)(vite@8.0.10(@types/node@24.12.2)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))(yaml@2.8.3)'
 
-  packages/mdm-domain:
+  packages/management-backend:
     dependencies:
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.52
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.12.2
+
+  packages/management-server-http:
+    dependencies:
+      '@mattrax/management-backend':
+        specifier: workspace:*
+        version: link:../management-backend
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.52

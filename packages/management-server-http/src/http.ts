@@ -7,7 +7,7 @@ import {
   DdmTokens,
   DdmDeclarationItems,
   ManagementNotSupported,
-} from "./layer.js";
+} from "@mattrax/management-backend";
 
 export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
   .add(

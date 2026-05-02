@@ -1,13 +1,14 @@
 {
-  "name": "@mattrax/mdm-domain",
+  "name": "@mattrax/management-server-http",
   "private": true,
-  "description": "MDM domain types and API definitions",
+  "description": "HTTP API definition and client layer for the management backend",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@mattrax/management-backend": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

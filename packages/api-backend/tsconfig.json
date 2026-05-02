@@ -22,7 +22,7 @@
   "references": [
     { "path": "../api-domain" },
     { "path": "../appledm" },
-    { "path": "../mdm-domain" }
+    { "path": "../management-backend" }
   ],
   "include": ["src"]
 }
