@@ -1,5 +1,5 @@
 {
-  "name": "@mattrax/management-server-http",
+  "name": "@mattrax/management-backend-http",
   "private": true,
   "description": "HTTP API definition and client layer for the management backend",
   "type": "module",

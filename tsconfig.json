@@ -10,7 +10,7 @@
   "files": [],
   "references": [
     { "path": "./packages/management-backend" },
-    { "path": "./packages/management-server-http" },
+    { "path": "./packages/management-backend-http" },
     { "path": "./packages/appledm" },
     { "path": "./packages/api-domain" },
     { "path": "./packages/api-backend" },

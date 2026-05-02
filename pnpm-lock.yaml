@@ -63,7 +63,7 @@ importers:
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../../packages/management-backend
-      '@mattrax/management-server-http':
+      '@mattrax/management-backend-http':
         specifier: workspace:*
         version: link:../../packages/management-server-http
       asn1js:

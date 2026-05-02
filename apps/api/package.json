@@ -14,7 +14,7 @@
     "@mattrax/api-domain": "workspace:*",
     "@mattrax/appledm": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
-    "@mattrax/management-server-http": "workspace:*",
+    "@mattrax/management-backend-http": "workspace:*",
     "asn1js": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",

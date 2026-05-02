@@ -23,7 +23,7 @@
     { "path": "../../packages/api-backend" },
     { "path": "../../packages/appledm" },
     { "path": "../../packages/management-backend" },
-    { "path": "../../packages/management-server-http" }
+    { "path": "../../packages/management-backend-http" }
   ],
   "include": ["src", "package.json"],
   "exclude": ["vite.config.ts", "node_modules"]
