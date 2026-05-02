@@ -1,7 +1,4 @@
 import { Data, Schema } from "effect";
-import { ScepError } from "@mattrax/scep";
-
-export { ScepError };
 
 export class MdmError extends Data.TaggedError("MdmError")<{ message: string; cause?: unknown }> {}
 export class DeviceNotFound extends Data.TaggedError("DeviceNotFound")<{ deviceId: string }> {}

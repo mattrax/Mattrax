@@ -21,7 +21,7 @@
   },
   "references": [
     { "path": "../management-backend" },
-    { "path": "../scep" }
+    { "path": "../crypto" }
   ],
   "include": ["src"]
 }

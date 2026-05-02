@@ -23,7 +23,8 @@
     { "path": "../api-domain" },
     { "path": "../dm-apple" },
     { "path": "../management-backend" },
-    { "path": "../scep" }
+    { "path": "../scep" },
+    { "path": "../crypto" }
   ],
   "include": ["src"]
 }

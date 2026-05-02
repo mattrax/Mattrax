@@ -136,6 +136,9 @@ importers:
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../management-backend
+      '@mattrax/scep':
+        specifier: workspace:*
+        version: link:../scep
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2
@@ -157,14 +160,24 @@ importers:
         specifier: 'catalog:'
         version: 24.12.2
 
+  packages/crypto:
+    dependencies:
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.52
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.12.2
+
   packages/dm-apple:
     dependencies:
+      '@mattrax/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../management-backend
-      '@mattrax/scep':
-        specifier: workspace:*
-        version: link:../scep
       asn1js:
         specifier: 'catalog:'
         version: 3.0.10
@@ -213,6 +226,9 @@ importers:
 
   packages/scep:
     dependencies:
+      '@mattrax/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       asn1js:
         specifier: 'catalog:'
         version: 3.0.10

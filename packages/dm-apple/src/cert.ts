@@ -1,4 +1,4 @@
-import { pemDecode } from "@mattrax/scep";
+import { pemDecode } from "@mattrax/crypto";
 
 interface Asn1Node {
   tag: number;

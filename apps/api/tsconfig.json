@@ -24,7 +24,8 @@
     { "path": "../../packages/dm-apple" },
     { "path": "../../packages/management-backend" },
     { "path": "../../packages/management-backend-http" },
-    { "path": "../../packages/scep" }
+    { "path": "../../packages/scep" },
+    { "path": "../../packages/crypto" }
   ],
   "include": ["src", "package.json"],
   "exclude": ["vite.config.ts", "node_modules"]

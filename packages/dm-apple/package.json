@@ -8,8 +8,8 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@mattrax/crypto": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
-    "@mattrax/scep": "workspace:*",
     "asn1js": "catalog:",
     "effect": "catalog:",
     "fast-plist": "catalog:",
