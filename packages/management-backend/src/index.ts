@@ -106,8 +106,5 @@ export class ManagementBackend extends Context.Service<
 
     // Push info needed to wake the device via APNS (server-initiated)
     readonly getApplePushInfo: (deviceId: string) => Effect.Effect<{ pushToken: string; pushMagic: string; topic: string } | null, ManagementNotSupported | InternalServerError>;
-
-    // Queue a classic MDM command to be returned on next checkin (server-initiated)
-    readonly queueAppleCommand: (deviceId: string, requestType: string, payload: unknown) => Effect.Effect<void, ManagementNotSupported | InternalServerError>;
   }
 >()("ManagementBackend") {}

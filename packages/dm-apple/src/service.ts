@@ -7,7 +7,6 @@ import {
   type TokenUpdatePlist,
   MdmError,
 } from "./schema.js";
-import { ApnsService } from "./apns.js";
 import { ManagementBackend, type CheckinScope } from "@mattrax/management-backend";
 
 function base64ToHex(base64: string): string {
@@ -52,9 +51,6 @@ export class AppleMdmService extends Context.Service<
       };
     }, MdmError>;
     readonly handleDeclaration: (scope: CheckinScope, type: string, identifier: string) => Effect.Effect<object, MdmError>;
-    readonly queueInstallProfile: (deviceId: string, profilePayload: unknown) => Effect.Effect<void, MdmError>;
-    readonly queueInstallApplication: (deviceId: string, appPayload: unknown) => Effect.Effect<void, MdmError>;
-    readonly queueCollectInformation: (deviceId: string, queries: string[]) => Effect.Effect<void, MdmError>;
     readonly generateEnrollmentProfile: () => Effect.Effect<string, MdmError>;
   }
 >()("AppleMdmService") {}
@@ -63,20 +59,8 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
   AppleMdmService,
   Effect.gen(function* () {
     const backend = yield* ManagementBackend;
-    const apns = yield* ApnsService;
 
     const toMdmError = (message: string) => () => new MdmError({ message });
-
-    const pushToDevice = (deviceId: string): Effect.Effect<void, never> =>
-      Effect.gen(function* () {
-        const pushInfo = yield* backend.getApplePushInfo(deviceId).pipe(
-          Effect.orElseSucceed(() => null),
-        );
-        if (!pushInfo) return;
-        yield* apns.push(pushInfo).pipe(
-          Effect.ignore({ log: true, message: `[APNS] Push failed for device ${deviceId}` }),
-        );
-      });
 
     const handleAuthenticate = (auth: AuthenticatePlist, identityCertificate?: string): Effect.Effect<void, MdmError> => {
       const scope: CheckinScope = { _tag: "device", udid: auth.UDID, identityCertificate };
@@ -217,30 +201,6 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
         Effect.mapError(toMdmError("Failed to send DeclarationStatus event")),
       );
 
-    const queueInstallProfile = (deviceId: string, profilePayload: unknown): Effect.Effect<void, MdmError> =>
-      Effect.gen(function* () {
-        yield* backend.queueAppleCommand(deviceId, "InstallProfile", profilePayload).pipe(
-          Effect.mapError(toMdmError("Failed to queue InstallProfile command")),
-        );
-        yield* pushToDevice(deviceId);
-      });
-
-    const queueInstallApplication = (deviceId: string, appPayload: unknown): Effect.Effect<void, MdmError> =>
-      Effect.gen(function* () {
-        yield* backend.queueAppleCommand(deviceId, "InstallApplication", appPayload).pipe(
-          Effect.mapError(toMdmError("Failed to queue InstallApplication command")),
-        );
-        yield* pushToDevice(deviceId);
-      });
-
-    const queueCollectInformation = (deviceId: string, queries: string[]): Effect.Effect<void, MdmError> =>
-      Effect.gen(function* () {
-        yield* backend.queueAppleCommand(deviceId, "DeviceInformation", { Queries: queries }).pipe(
-          Effect.mapError(toMdmError("Failed to queue DeviceInformation command")),
-        );
-        yield* pushToDevice(deviceId);
-      });
-
     const generateEnrollmentProfile = (): Effect.Effect<string, MdmError> =>
       Effect.gen(function* () {
         const scepUuid = crypto.randomUUID();
@@ -303,9 +263,6 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
       handleDeclarativeTokens,
       handleDeclarationItems,
       handleDeclaration,
-      queueInstallProfile,
-      queueInstallApplication,
-      queueCollectInformation,
       generateEnrollmentProfile,
     });
   }),

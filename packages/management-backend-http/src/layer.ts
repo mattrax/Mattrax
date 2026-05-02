@@ -45,11 +45,6 @@ export const ManagementBackendHttp = (baseUrl: string) =>
           client.ManagementWebhook.getApplePushInfo({ payload: { deviceId } }).pipe(
             Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
           ),
-
-        queueAppleCommand: (deviceId, requestType, payload) =>
-          client.ManagementWebhook.queueAppleCommand({ payload: { deviceId, requestType, payload } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-          ),
       });
     }),
   );

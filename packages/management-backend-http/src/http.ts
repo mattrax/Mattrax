@@ -57,16 +57,6 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
       error: ManagementNotSupported,
     }),
   )
-  .add(
-    HttpApiEndpoint.post("queueAppleCommand", "/apple/queue-command", {
-      payload: Schema.Struct({
-        deviceId: Schema.String,
-        requestType: Schema.String,
-        payload: Schema.Unknown,
-      }),
-      error: ManagementNotSupported,
-    }),
-  )
   .prefix("/webhook")
   .annotateMerge(OpenApi.annotations({ exclude: true }));
 

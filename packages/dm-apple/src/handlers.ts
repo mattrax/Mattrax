@@ -35,51 +35,6 @@ export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typ
           },
         }),
       ),
-    )
-    .handle("collectDeviceInfo", ({ payload }) =>
-      Effect.gen(function* () {
-        const service = yield* AppleMdmService;
-        yield* service.queueCollectInformation(payload.id, payload.queries as string[]);
-        return "ok";
-      }).pipe(
-        Effect.match({
-          onSuccess: (val) => val,
-          onFailure: (err) => {
-            console.error("collectDeviceInfo error:", err);
-            return "error";
-          },
-        }),
-      ),
-    )
-    .handle("queueInstallProfile", ({ payload }) =>
-      Effect.gen(function* () {
-        const service = yield* AppleMdmService;
-        yield* service.queueInstallProfile(payload.deviceId, payload.profile);
-        return "ok";
-      }).pipe(
-        Effect.match({
-          onSuccess: (val) => val,
-          onFailure: (err) => {
-            console.error("queueInstallProfile error:", err);
-            return "error";
-          },
-        }),
-      ),
-    )
-    .handle("queueInstallApplication", ({ payload }) =>
-      Effect.gen(function* () {
-        const service = yield* AppleMdmService;
-        yield* service.queueInstallApplication(payload.deviceId, payload.app);
-        return "ok";
-      }).pipe(
-        Effect.match({
-          onSuccess: (val) => val,
-          onFailure: (err) => {
-            console.error("queueInstallApplication error:", err);
-            return "error";
-          },
-        }),
-      ),
     );
 
 // Raw MDM checkin/command handler — registered outside HttpApiBuilder so that

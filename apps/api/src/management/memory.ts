@@ -12,7 +12,6 @@ interface DeviceState {
   pushToken?: string;
   pushMagic?: string;
   topic?: string;
-  commandQueue: Array<{ commandUUID: string; requestType: string; payload: unknown }>;
 }
 
 // keyed by udid for device-initiated ops; keyed by deviceId for server-initiated ops
@@ -44,7 +43,7 @@ const demoDeclarations: Record<string, Record<string, unknown>> = {
 function getOrCreateDevice(udid: string, supportsDdm = true): DeviceState {
   let state = byUdid.get(udid);
   if (!state) {
-    state = { udid, supportsDdm, commandQueue: [] };
+    state = { udid, supportsDdm };
     byUdid.set(udid, state);
     byDeviceId.set(`apple-${udid}`, state);
   }
@@ -71,9 +70,6 @@ export const ManagementBackendMemory = Layer.succeed(
       Effect.sync((): ManagementManifest => {
         console.log("[ManagementBackend] appleManagementCheckin", { udid: scope.udid });
         const state = getOrCreateDevice(scope.udid);
-
-        const next = state.commandQueue.shift();
-        if (next) return { _tag: "Command", ...next };
 
         if (state.supportsDdm) return { _tag: "DdmSync", serverToken: "demo-camera-disabled-v1" };
 
@@ -110,14 +106,6 @@ export const ManagementBackendMemory = Layer.succeed(
         const state = byDeviceId.get(deviceId);
         if (!state?.pushToken || !state.pushMagic || !state.topic) return null;
         return { pushToken: state.pushToken, pushMagic: state.pushMagic, topic: state.topic };
-      }),
-
-    queueAppleCommand: (deviceId, requestType, payload) =>
-      Effect.sync(() => {
-        console.log("[ManagementBackend] queueAppleCommand", { deviceId, requestType });
-        const state = byDeviceId.get(deviceId);
-        if (!state) return;
-        state.commandQueue.push({ commandUUID: crypto.randomUUID(), requestType, payload });
       }),
   }),
 );
