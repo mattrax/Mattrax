@@ -121,7 +121,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
         case "DeclarativeManagement": {
           const endpoint = (plist as any).Endpoint;
           const udid = (plist as any).UDID;
-          const device = yield* service.getDeviceSessionByUdid(udid);
+          const device = yield* service.authenticateDevice(udid);
           if (!device) return HttpServerResponse.empty({ status: 200 });
 
           switch (endpoint) {
@@ -169,24 +169,17 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
       const udid = (plist as any)?.UDID;
       if (!udid) return HttpServerResponse.empty({ status: 200 });
 
-      const device = yield* service.getDeviceSessionByUdid(udid);
+      const device = yield* service.authenticateDevice(udid);
       if (!device) return HttpServerResponse.empty({ status: 200 });
-      yield* service.handleAppleCheckin(device.deviceId);
 
-      const command = device.supportsDdm && device.dcmEnabled
-        ? yield* service.retrieveDcmCommand(device.deviceId)
-        : yield* service.retrieveNextCommand(device.deviceId);
+      const command = yield* service.handleCheckin(device.deviceId);
       if (!command) {
         const empty = yield* serializePlist({});
         return HttpServerResponse.text(empty, { contentType: "application/xml" });
       }
 
-      if (command.requestType !== "DeclarativeManagement") {
-        yield* service.markCommandSent(command.id);
-      }
-
       const commandPlist = {
-        CommandUUID: command.id,
+        CommandUUID: command.commandUUID,
         Command: {
           RequestType: command.requestType,
           ...(command.payload as object),

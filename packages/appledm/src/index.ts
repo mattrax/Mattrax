@@ -4,8 +4,6 @@ export * from "./plist.js";
 export * from "./cert.js";
 export * from "./apns.js";
 export * from "./service.js";
-export * from "./polyfill.js";
-export * from "./repository.js";
 export * from "./scep/crypto.js";
 export * from "./scep/pkcs7.js";
 export * from "./scep/service.js";

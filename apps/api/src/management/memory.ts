@@ -1,110 +1,134 @@
 import { Effect, Layer } from "effect";
-import { ManagementBackend, type AppleDeviceSession } from "@mattrax/mdm-domain";
+import {
+  ManagementBackend,
+  type AppleDeviceEvent,
+  type ManagementManifest,
+} from "@mattrax/mdm-domain";
 
-const devices = new Map<string, AppleDeviceSession>();
+interface DeviceState {
+  deviceId: string;
+  udid: string;
+  supportsDdm: boolean;
+  pushToken?: string;
+  pushMagic?: string;
+  topic?: string;
+  commandQueue: Array<{ commandUUID: string; requestType: string; payload: unknown }>;
+}
 
-const demoManifest = {
-  token: "demo-camera-disabled-v1",
-  declarations: [
-    {
-      identifier: "com.mattrax.demo.activation",
-      type: "activation" as const,
-      serverToken: "demo-activation-v1",
-    },
-    {
-      identifier: "com.mattrax.demo.disable-camera",
-      type: "configuration" as const,
-      serverToken: "demo-disable-camera-v1",
-    },
-  ],
+const devices = new Map<string, DeviceState>(); // udid → state
+
+const demoDeclarationItems = {
+  activations: [{ identifier: "com.mattrax.demo.activation", serverToken: "demo-activation-v1" }],
+  configurations: [{ identifier: "com.mattrax.demo.disable-camera", serverToken: "demo-disable-camera-v1" }],
+  assets: [],
+  management: [],
 };
 
-const declarations: Record<string, object> = {
+const demoDeclarations: Record<string, Record<string, unknown>> = {
   "com.mattrax.demo.activation": {
     Type: "com.apple.activation.simple",
     Identifier: "com.mattrax.demo.activation",
     ServerToken: "demo-activation-v1",
-    Payload: {
-      StandardConfigurations: ["com.mattrax.demo.disable-camera"],
-    },
+    Payload: { StandardConfigurations: ["com.mattrax.demo.disable-camera"] },
   },
   "com.mattrax.demo.disable-camera": {
     Type: "com.apple.configuration.restrictions",
     Identifier: "com.mattrax.demo.disable-camera",
     ServerToken: "demo-disable-camera-v1",
-    Payload: {
-      allowCamera: false,
-    },
+    Payload: { allowCamera: false },
   },
 };
 
-function sessionForUdid(udid: string, supportsDdm = true): AppleDeviceSession {
-  const existing = devices.get(udid);
-  if (existing) return { ...existing, supportsDdm: existing.supportsDdm || supportsDdm };
+function getOrCreateDevice(udid: string, supportsDdm = true): DeviceState {
+  let state = devices.get(udid);
+  if (!state) {
+    state = { deviceId: `apple-${udid}`, udid, supportsDdm, commandQueue: [] };
+    devices.set(udid, state);
+  }
+  return state;
+}
 
-  const session = {
-    deviceId: `apple-${udid}`,
-    udid,
-    supportsDdm,
-    dcmEnabled: true,
-  };
-  devices.set(udid, session);
-  return session;
+function deviceById(deviceId: string): DeviceState | undefined {
+  for (const state of devices.values()) {
+    if (state.deviceId === deviceId) return state;
+  }
 }
 
 export const ManagementBackendMemory = Layer.succeed(
   ManagementBackend,
   ManagementBackend.of({
-    appleCheckin: (deviceId: string) =>
+    authenticateAppleDevice: (udid) =>
       Effect.sync(() => {
-        console.log("[ManagementBackend] appleCheckin", { deviceId });
+        const state = getOrCreateDevice(udid);
+        console.log("[ManagementBackend] authenticateAppleDevice", { udid, deviceId: state.deviceId });
+        return { deviceId: state.deviceId, supportsDdm: state.supportsDdm };
       }),
-    authenticateAppleDevice: (info) =>
+
+    appleDeviceEvent: (deviceId, event: AppleDeviceEvent) =>
       Effect.sync(() => {
-        const session = sessionForUdid(info.udid);
-        console.log("[ManagementBackend] authenticateAppleDevice", { info, session });
-        return session;
+        console.log("[ManagementBackend] appleDeviceEvent", { deviceId, event });
+        const state = deviceById(deviceId);
+        if (!state) return;
+
+        if (event._tag === "TokenUpdate") {
+          state.pushToken = event.pushToken;
+          state.pushMagic = event.pushMagic;
+          state.topic = event.topic;
+        }
       }),
-    updateAppleEnrollment: (update) =>
-      Effect.sync(() => {
-        const session = sessionForUdid(update.udid, update.supportsDdm);
-        devices.set(update.udid, session);
-        console.log("[ManagementBackend] updateAppleEnrollment", { update, session });
-        return session;
+
+    appleManagementCheckin: (deviceId) =>
+      Effect.sync((): ManagementManifest => {
+        console.log("[ManagementBackend] appleManagementCheckin", { deviceId });
+        const state = deviceById(deviceId);
+        if (!state) return { _tag: "Idle" };
+
+        const next = state.commandQueue.shift();
+        if (next) return { _tag: "Command", ...next };
+
+        if (state.supportsDdm) return { _tag: "DdmSync", serverToken: "demo-camera-disabled-v1" };
+
+        return { _tag: "Idle" };
       }),
-    getAppleDeviceByUdid: (udid: string) =>
+
+    getAppleDeclarationTokens: (deviceId) =>
       Effect.sync(() => {
-        const session = devices.get(udid) ?? sessionForUdid(udid);
-        console.log("[ManagementBackend] getAppleDeviceByUdid", { udid, session });
-        return session;
+        console.log("[ManagementBackend] getAppleDeclarationTokens", { deviceId });
+        return {
+          declarationsToken: "demo-declarations-v1",
+          activationsToken: "demo-activation-v1",
+          configurationsToken: "demo-disable-camera-v1",
+          assetsToken: "empty",
+          managementToken: "empty",
+        };
       }),
-    getAppleDeclarationManifest: (deviceId: string) =>
+
+    getAppleDeclarationItems: (deviceId) =>
       Effect.sync(() => {
-        console.log("[ManagementBackend] getAppleDeclarationManifest", { deviceId, manifest: demoManifest });
-        return demoManifest;
+        console.log("[ManagementBackend] getAppleDeclarationItems", { deviceId });
+        return demoDeclarationItems;
       }),
-    getAppleDeclaration: (deviceId: string, type: string, identifier: string) =>
+
+    getAppleDeclaration: (deviceId, _type, identifier) =>
       Effect.sync(() => {
-        const declaration = declarations[identifier] ?? null;
-        console.log("[ManagementBackend] getAppleDeclaration", { deviceId, type, identifier, declaration });
-        return declaration;
+        const decl = demoDeclarations[identifier] ?? null;
+        console.log("[ManagementBackend] getAppleDeclaration", { deviceId, identifier, found: !!decl });
+        return decl;
       }),
-    reportDeviceEnrolled: (deviceId: string, info: any) =>
+
+    getApplePushInfo: (deviceId) =>
       Effect.sync(() => {
-        console.log("[ManagementBackend] reportDeviceEnrolled", { deviceId, info });
+        const state = deviceById(deviceId);
+        if (!state?.pushToken || !state.pushMagic || !state.topic) return null;
+        return { pushToken: state.pushToken, pushMagic: state.pushMagic, topic: state.topic };
       }),
-    reportCommandResult: (deviceId: string, result: any) =>
+
+    queueAppleCommand: (deviceId, requestType, payload) =>
       Effect.sync(() => {
-        console.log("[ManagementBackend] reportCommandResult", { deviceId, result });
-      }),
-    reportDeclarationStatus: (deviceId: string, status: any) =>
-      Effect.sync(() => {
-        console.log("[ManagementBackend] reportDeclarationStatus", { deviceId, status });
-      }),
-    reportDeviceInfo: (deviceId: string, info: any) =>
-      Effect.sync(() => {
-        console.log("[ManagementBackend] reportDeviceInfo", { deviceId, info });
-        console.log("[ManagementBackend] allDeviceInformation", JSON.stringify(info.queries, null, 2));
+        console.log("[ManagementBackend] queueAppleCommand", { deviceId, requestType });
+        const state = deviceById(deviceId);
+        if (!state) return;
+        state.commandQueue.push({ commandUUID: crypto.randomUUID(), requestType, payload });
       }),
   }),
 );

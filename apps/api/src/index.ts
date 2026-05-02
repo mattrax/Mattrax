@@ -12,7 +12,6 @@ import { ScepServiceLive } from "@mattrax/appledm";
 import { extractTopicFromCertPem } from "@mattrax/appledm";
 import { ManagementBackendMemory } from "./management/memory.js";
 import { createDb } from "./db/index.js";
-import { AppleMdmRepositoryLive } from "./repositories/appleMdmRepository.js";
 import { ScepRepositoryLive } from "./repositories/scepRepository.js";
 
 const apiRoot = HttpApi.make("Mattrax")
@@ -58,7 +57,6 @@ export const createAppLayer = (db: D1Database, env: Env) => {
     topic,
   }).pipe(
     Layer.provideMerge(ManagementBackendMemory),
-    Layer.provideMerge(AppleMdmRepositoryLive(database)),
     Layer.provideMerge(apnsServiceResolved),
   );
 

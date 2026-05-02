@@ -10,44 +10,43 @@ export const ManagementBackendHttp = (baseUrl: string) =>
       const client = yield* HttpApiClient.make(managementApi, { baseUrl });
 
       return ManagementBackend.of({
-        appleCheckin: (deviceId: string) =>
-          client.ManagementWebhook.appleCheckin({ payload: { deviceId } }).pipe(
+        authenticateAppleDevice: (udid) =>
+          client.ManagementWebhook.authenticateAppleDevice({ payload: { udid } }).pipe(
             Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
           ),
-        authenticateAppleDevice: (info: any) =>
-          client.ManagementWebhook.authenticateAppleDevice({ payload: info }).pipe(
+
+        appleDeviceEvent: (deviceId, event) =>
+          client.ManagementWebhook.appleDeviceEvent({ payload: { deviceId, event } }).pipe(
             Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
           ),
-        updateAppleEnrollment: (update: any) =>
-          client.ManagementWebhook.updateAppleEnrollment({ payload: update }).pipe(
+
+        appleManagementCheckin: (deviceId) =>
+          client.ManagementWebhook.appleManagementCheckin({ payload: { deviceId } }).pipe(
             Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
           ),
-        getAppleDeviceByUdid: (udid: string) =>
-          client.ManagementWebhook.getAppleDeviceByUdid({ payload: { udid } }).pipe(
+
+        getAppleDeclarationTokens: (deviceId) =>
+          client.ManagementWebhook.getAppleDeclarationTokens({ payload: { deviceId } }).pipe(
             Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
           ),
-        getAppleDeclarationManifest: (deviceId: string) =>
-          client.ManagementWebhook.getAppleDeclarationManifest({ payload: { deviceId } }).pipe(
+
+        getAppleDeclarationItems: (deviceId) =>
+          client.ManagementWebhook.getAppleDeclarationItems({ payload: { deviceId } }).pipe(
             Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
           ),
-        getAppleDeclaration: (deviceId: string, type: string, identifier: string) =>
+
+        getAppleDeclaration: (deviceId, type, identifier) =>
           client.ManagementWebhook.getAppleDeclaration({ payload: { deviceId, type, identifier } }).pipe(
             Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
           ),
-        reportDeviceEnrolled: (deviceId: string, info: any) =>
-          client.ManagementWebhook.reportDeviceEnrolled({ payload: { deviceId, info } }).pipe(
+
+        getApplePushInfo: (deviceId) =>
+          client.ManagementWebhook.getApplePushInfo({ payload: { deviceId } }).pipe(
             Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
           ),
-        reportCommandResult: (deviceId: string, result: any) =>
-          client.ManagementWebhook.reportCommandResult({ payload: { deviceId, result } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-          ),
-        reportDeclarationStatus: (deviceId: string, status: any) =>
-          client.ManagementWebhook.reportDeclarationStatus({ payload: { deviceId, status } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-          ),
-        reportDeviceInfo: (deviceId: string, info: any) =>
-          client.ManagementWebhook.reportDeviceInfo({ payload: { deviceId, info } }).pipe(
+
+        queueAppleCommand: (deviceId, requestType, payload) =>
+          client.ManagementWebhook.queueAppleCommand({ payload: { deviceId, requestType, payload } }).pipe(
             Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
           ),
       });

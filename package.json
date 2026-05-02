@@ -4,9 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "ready": "vp fmt && vp lint && vp run test -r && vp run build -r",
-    "dev": "vp run website#dev",
-    "typecheck": "tsc -b"
+    "dev": "vp run dev",
+    "test": "vp run test -r",
+    "format": "vp fmt && vp lint",
+    "typecheck": "tsc -b",
+    "api": "pnpm --filter @mattrax/api --",
+    "web": "pnpm --filter @mattrax/web --"
   },
   "devDependencies": {
     "typescript": "~6.0.2",

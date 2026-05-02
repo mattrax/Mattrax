@@ -4,23 +4,11 @@ import {
   type CheckOutPlist,
   type CommandResultPlist,
   type DDMStatusReport,
-  type MdmCommand,
   type TokenUpdatePlist,
   MdmError,
 } from "./schema.js";
-import { AppleMdmRepository } from "./repository.js";
 import { ApnsService } from "./apns.js";
-import { type AppleDeclarationManifest, ManagementBackend } from "@mattrax/mdm-domain";
-
-function detectDdmSupport(osVersion: string | undefined): boolean {
-  if (!osVersion) return false;
-  const parts = osVersion.split(".");
-  const major = parseInt(parts[0] ?? "0", 10);
-  const minor = parseInt(parts[1] ?? "0", 10);
-  if (major >= 14) return true;
-  if (major === 13 && minor >= 0) return true;
-  return false;
-}
+import { ManagementBackend } from "@mattrax/mdm-domain";
 
 function base64ToHex(base64: string): string {
   const cleaned = base64.replace(/\s/g, "");
@@ -29,15 +17,6 @@ function base64ToHex(base64: string): string {
   return Array.from(binary)
     .map((c) => c.charCodeAt(0).toString(16).padStart(2, "0"))
     .join("");
-}
-
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
-    return `{${entries.map(([key, val]) => `${JSON.stringify(key)}:${stableJson(val)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 function deterministicUuid(input: string): Effect.Effect<string, MdmError> {
@@ -50,7 +29,7 @@ function deterministicUuid(input: string): Effect.Effect<string, MdmError> {
       const hex = Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
       return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     },
-    catch: (cause) => new MdmError({ message: "Failed to create deterministic command UUID", cause }),
+    catch: (cause) => new MdmError({ message: "Failed to create deterministic UUID", cause }),
   });
 }
 
@@ -60,12 +39,12 @@ export class AppleMdmService extends Context.Service<
     readonly handleAuthenticate: (auth: AuthenticatePlist) => Effect.Effect<void, MdmError>;
     readonly handleTokenUpdate: (update: TokenUpdatePlist) => Effect.Effect<void, MdmError>;
     readonly handleCheckOut: (checkout: CheckOutPlist) => Effect.Effect<void, MdmError>;
-    readonly getDeviceSessionByUdid: (udid: string) => Effect.Effect<{ deviceId: string; supportsDdm: boolean; dcmEnabled: boolean } | null, MdmError>;
-    readonly handleAppleCheckin: (deviceId: string) => Effect.Effect<void, MdmError>;
-    readonly retrieveNextCommand: (deviceId: string) => Effect.Effect<MdmCommand | null, MdmError>;
-    readonly markCommandSent: (commandId: string) => Effect.Effect<void, MdmError>;
-    readonly retrieveDcmCommand: (deviceId: string) => Effect.Effect<MdmCommand, MdmError>;
     readonly handleCommandResult: (result: CommandResultPlist) => Effect.Effect<void, MdmError>;
+    readonly handleStatusReport: (deviceId: string, report: DDMStatusReport) => Effect.Effect<void, MdmError>;
+    // Authenticate a device by UDID; returns null if unknown
+    readonly authenticateDevice: (udid: string) => Effect.Effect<{ deviceId: string; supportsDdm: boolean } | null, MdmError>;
+    // Regular device checkin: returns the next command to send, or null if idle
+    readonly handleCheckin: (deviceId: string) => Effect.Effect<{ commandUUID: string; requestType: string; payload: unknown } | null, MdmError>;
     readonly handleDeclarativeTokens: (deviceId: string) => Effect.Effect<{ SyncTokens: { Tokens: Array<{ Token: string; Type: string }> } }, MdmError>;
     readonly handleDeclarationItems: (deviceId: string) => Effect.Effect<{
       Declarations: {
@@ -76,7 +55,6 @@ export class AppleMdmService extends Context.Service<
       };
     }, MdmError>;
     readonly handleDeclaration: (deviceId: string, type: string, identifier: string) => Effect.Effect<object, MdmError>;
-    readonly handleStatusReport: (deviceId: string, report: DDMStatusReport) => Effect.Effect<void, MdmError>;
     readonly queueInstallProfile: (deviceId: string, profilePayload: unknown) => Effect.Effect<void, MdmError>;
     readonly queueInstallApplication: (deviceId: string, appPayload: unknown) => Effect.Effect<void, MdmError>;
     readonly queueCollectInformation: (deviceId: string, queries: string[]) => Effect.Effect<void, MdmError>;
@@ -87,15 +65,14 @@ export class AppleMdmService extends Context.Service<
 export const AppleMdmServiceLive = (config: { origin: string; topic: string }) => Layer.effect(
   AppleMdmService,
   Effect.gen(function* () {
-    const repo = yield* AppleMdmRepository;
-    const webhook = yield* ManagementBackend;
+    const backend = yield* ManagementBackend;
     const apns = yield* ApnsService;
 
     const toMdmError = (message: string) => () => new MdmError({ message });
 
     const pushToDevice = (deviceId: string): Effect.Effect<void, never> =>
       Effect.gen(function* () {
-        const pushInfo = yield* repo.getDevicePushInfo(deviceId).pipe(
+        const pushInfo = yield* backend.getApplePushInfo(deviceId).pipe(
           Effect.orElseSucceed(() => null),
         );
         if (!pushInfo) return;
@@ -104,248 +81,175 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
         );
       });
 
-    const getManifest = (deviceId: string): Effect.Effect<AppleDeclarationManifest, MdmError> =>
-      webhook.getAppleDeclarationManifest(deviceId).pipe(
-        Effect.mapError(toMdmError("Management backend does not provide Apple declarations")),
-      );
-
     const handleAuthenticate = (auth: AuthenticatePlist): Effect.Effect<void, MdmError> =>
       Effect.gen(function* () {
-        yield* webhook.authenticateAppleDevice({
-          udid: auth.UDID,
+        const session = yield* backend.authenticateAppleDevice(auth.UDID).pipe(
+          Effect.mapError(toMdmError("Management backend rejected authentication")),
+        );
+        yield* backend.appleDeviceEvent(session.deviceId, {
+          _tag: "Authenticate",
           serialNumber: auth.SerialNumber,
           model: auth.Model ?? auth.ModelName,
           osVersion: auth.OSVersion,
-        }).pipe(Effect.mapError(toMdmError("Management backend rejected Apple authentication")));
+        }).pipe(
+          Effect.catchTag("ManagementNotSupported", () => Effect.void),
+          Effect.mapError(toMdmError("Failed to send Authenticate event")),
+        );
       });
 
     const handleTokenUpdate = (update: TokenUpdatePlist): Effect.Effect<void, MdmError> =>
       Effect.gen(function* () {
-        const existing = yield* webhook.getAppleDeviceByUdid(update.UDID).pipe(
-          Effect.mapError(toMdmError("Management backend cannot resolve Apple device")),
+        const session = yield* backend.authenticateAppleDevice(update.UDID).pipe(
+          Effect.mapError(toMdmError("Management backend rejected token update")),
         );
-        const supportsDdm = detectDdmSupport(undefined) || existing?.supportsDdm === true;
         const pushToken = base64ToHex(update.Token);
         const channel = update.UserID ? "user" : "device";
-        const session = yield* webhook.updateAppleEnrollment({
-          udid: update.UDID,
-          pushMagic: update.PushMagic,
+        yield* backend.appleDeviceEvent(session.deviceId, {
+          _tag: "TokenUpdate",
           pushToken,
+          pushMagic: update.PushMagic,
           topic: update.Topic,
           channel,
-          supportsDdm,
-        }).pipe(Effect.mapError(toMdmError("Management backend rejected Apple enrollment")));
-
-        yield* repo.storePushInfo(
-          session.deviceId,
-          update.UDID,
-          pushToken,
-          update.PushMagic,
-          update.Topic,
-          channel,
+        }).pipe(
+          Effect.mapError(toMdmError("Failed to send TokenUpdate event")),
         );
-
-        yield* webhook.reportDeviceEnrolled(session.deviceId, {
-          udid: update.UDID,
-        }).pipe(Effect.catchTag("ManagementNotSupported", () => Effect.void));
       });
 
     const handleCheckOut = (checkout: CheckOutPlist): Effect.Effect<void, MdmError> =>
       Effect.gen(function* () {
-        const session = yield* webhook.getAppleDeviceByUdid(checkout.UDID).pipe(
-          Effect.mapError(toMdmError("Management backend cannot resolve Apple checkout")),
+        const session = yield* backend.authenticateAppleDevice(checkout.UDID).pipe(
+          Effect.mapError(toMdmError("Management backend cannot resolve checkout")),
         );
-        if (session) yield* webhook.appleCheckin(session.deviceId).pipe(Effect.catchTag("ManagementNotSupported", () => Effect.void));
+        yield* backend.appleDeviceEvent(session.deviceId, { _tag: "CheckOut" }).pipe(
+          Effect.catchTag("ManagementNotSupported", () => Effect.void),
+          Effect.mapError(toMdmError("Failed to send CheckOut event")),
+        );
       });
 
-    const getDeviceSessionByUdid = (udid: string) =>
-      webhook.getAppleDeviceByUdid(udid).pipe(
-        Effect.map((session) => session ? {
-          deviceId: session.deviceId,
-          supportsDdm: session.supportsDdm,
-          dcmEnabled: session.dcmEnabled,
-        } : null),
-        Effect.mapError(toMdmError("Management backend cannot resolve Apple device")),
+    const authenticateDevice = (udid: string) =>
+      backend.authenticateAppleDevice(udid).pipe(
+        Effect.map((s) => ({ deviceId: s.deviceId, supportsDdm: s.supportsDdm })),
+        Effect.catchTag("UnknownDevice", () => Effect.succeed(null)),
+        Effect.mapError(toMdmError("Failed to authenticate device")),
       );
 
-    const retrieveNextCommand = (deviceId: string): Effect.Effect<MdmCommand | null, MdmError> =>
-      repo.getNextPendingCommand(deviceId);
-
-    const handleAppleCheckin = (deviceId: string): Effect.Effect<void, MdmError> =>
-      webhook.appleCheckin(deviceId).pipe(Effect.catchTag("ManagementNotSupported", () => Effect.void));
-
-    const markCommandSent = (commandId: string): Effect.Effect<void, MdmError> =>
-      repo.updateCommandStatus(commandId, "sent");
-
-    const retrieveDcmCommand = (deviceId: string): Effect.Effect<MdmCommand, MdmError> =>
+    const handleCheckin = (deviceId: string): Effect.Effect<{ commandUUID: string; requestType: string; payload: unknown } | null, MdmError> =>
       Effect.gen(function* () {
-        const manifest = yield* getManifest(deviceId);
-        const token = manifest.token ?? stableJson(manifest.declarations);
-        const id = yield* deterministicUuid(`dcm:${deviceId}:${token}`);
-        return {
-          id,
-          deviceId,
-          requestType: "DeclarativeManagement",
-          payload: {},
-          status: "pending",
-          priority: 10,
-          createdAt: new Date(),
-        };
+        const manifest = yield* backend.appleManagementCheckin(deviceId).pipe(
+          Effect.mapError(toMdmError("Management backend checkin failed")),
+        );
+        switch (manifest._tag) {
+          case "Idle":
+            return null;
+          case "Command":
+            return { commandUUID: manifest.commandUUID, requestType: manifest.requestType, payload: manifest.payload };
+          case "DdmSync": {
+            const uuid = yield* deterministicUuid(`dcm:${deviceId}:${manifest.serverToken}`);
+            return { commandUUID: uuid, requestType: "DeclarativeManagement", payload: {} };
+          }
+        }
       });
 
     const handleCommandResult = (result: CommandResultPlist): Effect.Effect<void, MdmError> =>
       Effect.gen(function* () {
-        const session = yield* webhook.getAppleDeviceByUdid(result.UDID).pipe(
-          Effect.mapError(toMdmError("Management backend cannot resolve Apple command result")),
+        const session = yield* backend.authenticateAppleDevice(result.UDID).pipe(
+          Effect.mapError(toMdmError("Management backend cannot resolve command result")),
         );
-        if (!session) return;
-
-        const status: MdmCommand["status"] =
-          result.Status === "Acknowledged"
-            ? "acknowledged"
-            : result.Status === "NotNow"
-              ? "not_now"
-              : "error";
-
         const detail = result.ErrorChain
           ? result.ErrorChain.map((e) => `${e.ErrorDomain ?? ""}:${e.ErrorCode}`).join(", ")
           : undefined;
-
-        yield* repo.updateCommandStatus(result.CommandUUID, status, detail);
-
-        if (result.Command?.RequestType === "DeviceInformation") {
-          const queries = { ...(result.QueryResponses ?? {}) };
-          console.log("[AppleMDM] DeviceInformation", { deviceId: session.deviceId, queries });
-          yield* webhook.reportDeviceInfo(session.deviceId, {
-            deviceId: session.deviceId,
-            queries,
-          }).pipe(Effect.catchTag("ManagementNotSupported", () => Effect.void));
-        }
-
-        yield* webhook.reportCommandResult(session.deviceId, {
-          commandUuid: result.CommandUUID,
-          deviceId: session.deviceId,
+        yield* backend.appleDeviceEvent(session.deviceId, {
+          _tag: "CommandResult",
+          commandUUID: result.CommandUUID,
           status: result.Status,
-          detail,
-        }).pipe(Effect.catchTag("ManagementNotSupported", () => Effect.void));
+          errorDetail: detail,
+          queryResponses: result.QueryResponses,
+        }).pipe(
+          Effect.catchTag("ManagementNotSupported", () => Effect.void),
+          Effect.mapError(toMdmError("Failed to send CommandResult event")),
+        );
       });
 
     const handleDeclarativeTokens = (deviceId: string): Effect.Effect<{ SyncTokens: { Tokens: Array<{ Token: string; Type: string }> } }, MdmError> =>
       Effect.gen(function* () {
-        const manifest = yield* getManifest(deviceId);
+        const tokens = yield* backend.getAppleDeclarationTokens(deviceId).pipe(
+          Effect.mapError(toMdmError("Management backend cannot provide declaration tokens")),
+        );
         return {
           SyncTokens: {
-            Tokens: manifest.declarations.map((decl) => ({ Token: decl.serverToken, Type: decl.identifier })),
+            Tokens: [
+              { Type: "configurations", Token: tokens.configurationsToken },
+              { Type: "activations", Token: tokens.activationsToken },
+              { Type: "assets", Token: tokens.assetsToken },
+              { Type: "management", Token: tokens.managementToken },
+            ],
           },
         };
       });
 
-    const handleDeclarationItems = (deviceId: string): Effect.Effect<{
-      Declarations: {
-        Activations: Array<{ Identifier: string; ServerToken: string }>;
-        Configurations: Array<{ Identifier: string; ServerToken: string }>;
-        Assets: Array<{ Identifier: string; ServerToken: string }>;
-        Management: Array<{ Identifier: string; ServerToken: string }>;
-      };
-    }, MdmError> =>
+    const handleDeclarationItems = (deviceId: string) =>
       Effect.gen(function* () {
-        const manifest = yield* getManifest(deviceId);
-        const activations: Array<{ Identifier: string; ServerToken: string }> = [];
-        const configurations: Array<{ Identifier: string; ServerToken: string }> = [];
-        const assets: Array<{ Identifier: string; ServerToken: string }> = [];
-        const management: Array<{ Identifier: string; ServerToken: string }> = [];
-
-        for (const decl of manifest.declarations) {
-          const item = { Identifier: decl.identifier, ServerToken: decl.serverToken };
-          switch (decl.type) {
-            case "activation":
-              activations.push(item);
-              break;
-            case "configuration":
-              configurations.push(item);
-              break;
-            case "asset":
-              assets.push(item);
-              break;
-            case "management":
-              management.push(item);
-              break;
-          }
-        }
-
+        const items = yield* backend.getAppleDeclarationItems(deviceId).pipe(
+          Effect.mapError(toMdmError("Management backend cannot provide declaration items")),
+        );
+        const toItems = (arr: typeof items.activations) =>
+          arr.map((d) => ({ Identifier: d.identifier, ServerToken: d.serverToken }));
         return {
           Declarations: {
-            Activations: activations,
-            Configurations: configurations,
-            Assets: assets,
-            Management: management,
+            Activations: toItems(items.activations),
+            Configurations: toItems(items.configurations),
+            Assets: toItems(items.assets),
+            Management: toItems(items.management),
           },
         };
       });
 
     const handleDeclaration = (deviceId: string, type: string, identifier: string): Effect.Effect<object, MdmError> =>
       Effect.gen(function* () {
-        const declaration = yield* webhook.getAppleDeclaration(deviceId, type, identifier).pipe(
-          Effect.mapError(toMdmError("Management backend cannot fetch Apple declaration")),
+        const decl = yield* backend.getAppleDeclaration(deviceId, type, identifier).pipe(
+          Effect.mapError(toMdmError("Management backend cannot fetch declaration")),
         );
-        if (!declaration) return yield* new MdmError({ message: `Declaration ${identifier} not found` });
-        return declaration;
+        if (!decl) return yield* Effect.fail(new MdmError({ message: `Declaration ${identifier} not found` }));
+        return decl;
       });
 
     const handleStatusReport = (deviceId: string, report: DDMStatusReport): Effect.Effect<void, MdmError> =>
-      Effect.gen(function* () {
-        const errors = report.Errors ?? [];
-        for (const error of errors) {
-          const status = error.Valid === "invalid" ? "failed" : error.Active ? "active" : "pending";
-          const detail = error.Reasons?.map((r) => r.Description).join(", ");
-          yield* webhook.reportDeclarationStatus(deviceId, {
-            deviceId,
-            declarationId: error.Identifier,
-            status,
-            detail,
-          }).pipe(Effect.catchTag("ManagementNotSupported", () => Effect.void));
-        }
-      });
+      backend.appleDeviceEvent(deviceId, {
+        _tag: "DeclarationStatus",
+        statusItems: report.StatusItems,
+        errors: report.Errors?.map((e) => ({
+          identifier: e.Identifier,
+          serverToken: e.ServerToken,
+          active: e.Active,
+          valid: e.Valid,
+          reasons: e.Reasons?.map((r) => ({ description: r.Description })),
+        })),
+      }).pipe(
+        Effect.catchTag("ManagementNotSupported", () => Effect.void),
+        Effect.mapError(toMdmError("Failed to send DeclarationStatus event")),
+      );
 
     const queueInstallProfile = (deviceId: string, profilePayload: unknown): Effect.Effect<void, MdmError> =>
       Effect.gen(function* () {
-        yield* repo.insertCommand({
-          id: crypto.randomUUID(),
-          deviceId,
-          requestType: "InstallProfile",
-          payload: profilePayload,
-          status: "pending",
-          priority: 5,
-          createdAt: new Date(),
-        });
+        yield* backend.queueAppleCommand(deviceId, "InstallProfile", profilePayload).pipe(
+          Effect.mapError(toMdmError("Failed to queue InstallProfile command")),
+        );
         yield* pushToDevice(deviceId);
       });
 
     const queueInstallApplication = (deviceId: string, appPayload: unknown): Effect.Effect<void, MdmError> =>
       Effect.gen(function* () {
-        yield* repo.insertCommand({
-          id: crypto.randomUUID(),
-          deviceId,
-          requestType: "InstallApplication",
-          payload: appPayload,
-          status: "pending",
-          priority: 5,
-          createdAt: new Date(),
-        });
+        yield* backend.queueAppleCommand(deviceId, "InstallApplication", appPayload).pipe(
+          Effect.mapError(toMdmError("Failed to queue InstallApplication command")),
+        );
         yield* pushToDevice(deviceId);
       });
 
     const queueCollectInformation = (deviceId: string, queries: string[]): Effect.Effect<void, MdmError> =>
       Effect.gen(function* () {
-        yield* repo.insertCommand({
-          id: crypto.randomUUID(),
-          deviceId,
-          requestType: "DeviceInformation",
-          payload: { Queries: queries },
-          status: "pending",
-          priority: 5,
-          createdAt: new Date(),
-        });
+        yield* backend.queueAppleCommand(deviceId, "DeviceInformation", { Queries: queries }).pipe(
+          Effect.mapError(toMdmError("Failed to queue DeviceInformation command")),
+        );
         yield* pushToDevice(deviceId);
       });
 
@@ -405,16 +309,13 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
       handleAuthenticate,
       handleTokenUpdate,
       handleCheckOut,
-      getDeviceSessionByUdid,
-      handleAppleCheckin,
-      retrieveNextCommand,
-      markCommandSent,
-      retrieveDcmCommand,
       handleCommandResult,
+      handleStatusReport,
+      authenticateDevice,
+      handleCheckin,
       handleDeclarativeTokens,
       handleDeclarationItems,
       handleDeclaration,
-      handleStatusReport,
       queueInstallProfile,
       queueInstallApplication,
       queueCollectInformation,
