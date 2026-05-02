@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "esnext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "emitDeclarationOnly": true,
+    "outDir": "./dist",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "composite": true
+  },
+  "references": [
+    { "path": "../../packages/management-backend" },
+    { "path": "../../packages/management-backend-http" }
+  ],
+  "include": ["src", "package.json"],
+  "exclude": ["vite.config.ts", "node_modules"]
+}

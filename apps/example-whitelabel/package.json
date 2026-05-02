@@ -1,0 +1,25 @@
+{
+  "name": "@mattrax/example-whitelabel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "wrangler types --cwd src && vp build",
+    "preview": "vp preview",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@mattrax/management-backend": "workspace:*",
+    "@mattrax/management-backend-http": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.0.0",
+    "@types/node": "catalog:",
+    "typescript": "~6.0.2",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "wrangler": "^4.0.0"
+  }
+}

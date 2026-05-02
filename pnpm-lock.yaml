@@ -113,6 +113,37 @@ importers:
         specifier: ^4.0.0
         version: 4.86.0
 
+  apps/example-whitelabel:
+    dependencies:
+      '@mattrax/management-backend':
+        specifier: workspace:*
+        version: link:../../packages/management-backend
+      '@mattrax/management-backend-http':
+        specifier: workspace:*
+        version: link:../../packages/management-backend-http
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.52
+    devDependencies:
+      '@cloudflare/vite-plugin':
+        specifier: ^1.0.0
+        version: 1.34.0(@voidzero-dev/vite-plus-core@0.1.20(@types/node@24.12.2)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(typescript@6.0.3)(yaml@2.8.3))(workerd@1.20260426.1)(wrangler@4.86.0)
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.12.2
+      typescript:
+        specifier: ~6.0.2
+        version: 6.0.3
+      vite:
+        specifier: npm:@voidzero-dev/vite-plus-core@latest
+        version: '@voidzero-dev/vite-plus-core@0.1.20(@types/node@24.12.2)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(typescript@6.0.3)(yaml@2.8.3)'
+      vite-plus:
+        specifier: 'catalog:'
+        version: 0.1.20(@types/node@24.12.2)(@voidzero-dev/vite-plus-core@0.1.20(@types/node@24.12.2)(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(typescript@6.0.3)(yaml@2.8.3))(esbuild@0.27.3)(jiti@2.6.1)(tsx@4.21.0)(typescript@6.0.3)(yaml@2.8.3)
+      wrangler:
+        specifier: ^4.0.0
+        version: 4.86.0
+
   apps/web:
     devDependencies:
       typescript:
