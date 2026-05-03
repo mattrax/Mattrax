@@ -7,8 +7,7 @@
     "dev": "vp dev",
     "build": "wrangler types --cwd src && vp build",
     "preview": "vp preview",
-    "deploy": "wrangler deploy",
-    "test": "vitest run --passWithNoTests"
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
     "@mattrax/api-backend": "workspace:*",
@@ -31,7 +30,6 @@
     "typescript": "~6.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:",
-    "vitest": "catalog:",
     "wrangler": "^4.0.0"
   }
 }

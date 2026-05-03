@@ -18,14 +18,15 @@ catalog:
 
 catalogMode: prefer
 
+overrides:
+  vite: "catalog:"
+
 onlyBuiltDependencies:
   - esbuild
   - sharp
   - workerd
 
-overrides:
-  vite: "catalog:"
-  vitest: "catalog:"
+
 
 peerDependencyRules:
   allowAny:

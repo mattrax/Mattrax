@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vp run dev",
-    "test": "pnpm -r test",
+    "test": "vitest run",
     "format": "vp fmt && vp lint",
     "typecheck": "tsc -b",
     "api": "pnpm --filter @mattrax/api --",

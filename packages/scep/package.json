@@ -15,10 +15,6 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "@types/pkijs": "catalog:",
-    "vitest": "catalog:"
-  },
-  "scripts": {
-    "test": "vitest run"
+    "@types/pkijs": "catalog:"
   }
 }
