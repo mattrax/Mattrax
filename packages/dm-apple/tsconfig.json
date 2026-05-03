@@ -21,7 +21,8 @@
   },
   "references": [
     { "path": "../management-backend" },
-    { "path": "../crypto" }
+    { "path": "../crypto" },
+    { "path": "../plist" }
   ],
   "include": ["src"]
 }

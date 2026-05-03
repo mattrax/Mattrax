@@ -5,7 +5,6 @@ import { AppleMdmService, AppleMdmServiceLive } from "../service.js";
 import { ManagementBackend, UnknownDevice } from "@mattrax/management-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "../handlers.js";
 import { appleMdmApi } from "../domain.js";
-import { parsePlist, serializePlist } from "../plist.js";
 import { mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };

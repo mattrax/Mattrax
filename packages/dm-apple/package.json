@@ -10,9 +10,9 @@
   "dependencies": {
     "@mattrax/crypto": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
+    "@mattrax/plist": "workspace:*",
     "asn1js": "catalog:",
     "effect": "catalog:",
-    "fast-plist": "catalog:",
     "pkijs": "catalog:"
   },
   "devDependencies": {

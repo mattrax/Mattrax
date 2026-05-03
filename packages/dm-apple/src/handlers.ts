@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { HttpServerResponse, HttpRouter, HttpServerRequest } from "effect/unstable/http";
 import { AppleMdmService } from "./service.js";
-import { parsePlist, serializePlist } from "./plist.js";
+import { parsePlist, serializePlist } from "@mattrax/plist";
 import {
   AuthenticatePlist,
   TokenUpdatePlist,

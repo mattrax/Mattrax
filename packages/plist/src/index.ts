@@ -1,12 +1,23 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { parse as fastPlistParse } from "fast-plist";
-import { PlistParseError, PlistSerializeError } from "./schema.js";
+import { PlistParseError, PlistSerializeError, PlistValue } from "./schema.js";
 
-export const parsePlist = (content: string): Effect.Effect<unknown, PlistParseError> =>
+export * from "./schema.js";
+
+export const parsePlist = (content: string): Effect.Effect<PlistValue, PlistParseError> =>
   Effect.try({
-    try: () => fastPlistParse(content),
+    try: () => Schema.decodeUnknownSync(PlistValue)(fastPlistParse(content)),
     catch: (cause) => new PlistParseError({ message: String(cause), cause }),
   });
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
 
 function serializeValue(value: unknown): string {
   if (value === null || value === undefined) {
@@ -22,13 +33,7 @@ function serializeValue(value: unknown): string {
     return `<real>${value}</real>`;
   }
   if (typeof value === "string") {
-    const escaped = value
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;");
-    return `<string>${escaped}</string>`;
+    return `<string>${escapeXml(value)}</string>`;
   }
   if (value instanceof Uint8Array || value instanceof ArrayBuffer) {
     const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : value;
@@ -44,11 +49,11 @@ function serializeValue(value: unknown): string {
   }
   if (typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>)
-      .map(([k, v]) => `<key>${k}</key>${serializeValue(v)}`)
+      .map(([k, v]) => `<key>${escapeXml(k)}</key>${serializeValue(v)}`)
       .join("");
     return `<dict>${entries}</dict>`;
   }
-  return `<string>${String(value)}</string>`;
+  return `<string>${escapeXml(String(value))}</string>`;
 }
 
 export const serializePlist = (value: unknown): Effect.Effect<string, PlistSerializeError> =>

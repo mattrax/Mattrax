@@ -4,7 +4,7 @@ import { HttpRouter } from "effect/unstable/http";
 import { AppleMdmService, AppleMdmServiceLive } from "../service.js";
 import { ManagementBackend, UnknownDevice } from "@mattrax/management-backend";
 import { appleMdmRoutes } from "../handlers.js";
-import { parsePlist } from "../plist.js";
+import { parsePlist } from "@mattrax/plist";
 import { mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };

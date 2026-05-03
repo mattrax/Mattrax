@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Effect } from "effect";
-import { parsePlist, serializePlist } from "../plist.js";
-import { PlistParseError, PlistSerializeError } from "../schema.js";
+import { parsePlist, serializePlist } from "@mattrax/plist";
 
 describe("plist", () => {
   describe("parsePlist", () => {
