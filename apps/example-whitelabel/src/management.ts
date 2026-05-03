@@ -1,91 +1,186 @@
 import { Effect, Layer } from "effect";
 import {
   ManagementBackend,
+  InternalServerError,
   type AppleDeviceEvent,
   type CheckinScope,
   type ManagementManifest,
+  type DdmTokens,
+  type DdmDeclarationItems,
 } from "@mattrax/management-backend";
+import { type CommandRow, type DeviceRow, sha256hex } from "./db.js";
 
-interface DeviceState {
-  udid: string;
-  supportsDdm: boolean;
-}
+export const ManagementBackendD1 = (db: D1Database, apps: R2Bucket) =>
+  Layer.succeed(
+    ManagementBackend,
+    ManagementBackend.of({
+      appleDeviceEvent: (scope: CheckinScope, event: AppleDeviceEvent) =>
+        Effect.tryPromise({
+          try: async () => {
+            const { udid } = scope;
+            if (event._tag === "Authenticate") {
+              await db
+                .prepare(
+                  `INSERT INTO devices (udid, serial_number, model, os_version)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT (udid) DO UPDATE SET
+                     serial_number = excluded.serial_number,
+                     model = excluded.model,
+                     os_version = excluded.os_version,
+                     unenrolled_at = NULL`,
+                )
+                .bind(udid, event.serialNumber ?? null, event.model ?? null, event.osVersion ?? null)
+                .run();
+            } else if (event._tag === "TokenUpdate" && event.channel === "device") {
+              await db
+                .prepare("UPDATE devices SET push_token = ?, push_magic = ?, apns_topic = ? WHERE udid = ?")
+                .bind(event.pushToken, event.pushMagic, event.topic, udid)
+                .run();
+            } else if (event._tag === "CheckOut") {
+              await db.prepare("UPDATE devices SET unenrolled_at = unixepoch() WHERE udid = ?").bind(udid).run();
+            } else if (event._tag === "CommandResult") {
+              await db
+                .prepare(
+                  "UPDATE pending_commands SET status = ?, completed_at = unixepoch() WHERE command_uuid = ?",
+                )
+                .bind(event.status, event.commandUUID)
+                .run();
+            }
+          },
+          catch: (cause) => (console.error("[management]", cause), new InternalServerError()),
+        }),
 
-const byUdid = new Map<string, DeviceState>();
+      appleManagementCheckin: (scope: CheckinScope) =>
+        Effect.gen(function* () {
+          const state = yield* Effect.tryPromise({
+            try: async () => {
+              const { udid } = scope;
+              const device = await db
+                .prepare("SELECT * FROM devices WHERE udid = ?")
+                .bind(udid)
+                .first<DeviceRow>();
+              if (!device || device.unenrolled_at !== null) return { tag: "idle" as const };
 
-const demoDeclarationItems = {
-  activations: [{ identifier: "com.mattrax.demo.activation", serverToken: "demo-activation-v1" }],
-  configurations: [{ identifier: "com.mattrax.demo.disable-camera", serverToken: "demo-disable-camera-v1" }],
-  assets: [],
-  management: [],
-};
+              const cmd = await db
+                .prepare(
+                  "SELECT * FROM pending_commands WHERE device_udid = ? AND completed_at IS NULL ORDER BY created_at ASC LIMIT 1",
+                )
+                .bind(udid)
+                .first<CommandRow>();
+              if (cmd) return { tag: "command" as const, cmd };
 
-const demoDeclarations: Record<string, Record<string, unknown>> = {
-  "com.mattrax.demo.activation": {
-    Type: "com.apple.activation.simple",
-    Identifier: "com.mattrax.demo.activation",
-    ServerToken: "demo-activation-v1",
-    Payload: { StandardConfigurations: ["com.mattrax.demo.disable-camera"] },
-  },
-  "com.mattrax.demo.disable-camera": {
-    Type: "com.apple.configuration.restrictions",
-    Identifier: "com.mattrax.demo.disable-camera",
-    ServerToken: "demo-disable-camera-v1",
-    Payload: { allowCamera: false },
-  },
-};
+              const { results } = await db
+                .prepare(
+                  "SELECT identifier, server_token FROM device_declarations WHERE device_udid = ? ORDER BY identifier",
+                )
+                .bind(udid)
+                .all<{ identifier: string; server_token: string }>();
+              if (results.length > 0) {
+                const token = await sha256hex(JSON.stringify(results));
+                return { tag: "ddm" as const, token };
+              }
 
-function getOrCreateDevice(udid: string, supportsDdm = true): DeviceState {
-  let state = byUdid.get(udid);
-  if (!state) {
-    state = { udid, supportsDdm };
-    byUdid.set(udid, state);
-  }
-  return state;
-}
+              return { tag: "idle" as const };
+            },
+            catch: (cause) => (console.error("[management]", cause), new InternalServerError()),
+          });
 
-export const ManagementBackendMemory = Layer.succeed(
-  ManagementBackend,
-  ManagementBackend.of({
-    appleDeviceEvent: (scope: CheckinScope, event: AppleDeviceEvent) =>
-      Effect.sync(() => {
-        console.log("[ManagementBackend] appleDeviceEvent", { udid: scope.udid, event });
-      }),
+          switch (state.tag) {
+            case "idle":
+              return { _tag: "Idle" } as ManagementManifest;
+            case "command":
+              return {
+                _tag: "Command",
+                commandUUID: state.cmd.command_uuid,
+                requestType: state.cmd.request_type,
+                payload: JSON.parse(state.cmd.payload) as unknown,
+              } as ManagementManifest;
+            case "ddm":
+              return { _tag: "DdmSync", serverToken: state.token } as ManagementManifest;
+          }
+        }),
 
-    appleManagementCheckin: (scope: CheckinScope) =>
-      Effect.sync((): ManagementManifest => {
-        console.log("[ManagementBackend] appleManagementCheckin", { udid: scope.udid });
-        const state = getOrCreateDevice(scope.udid);
+      getAppleDeclarationTokens: (scope: CheckinScope) =>
+        Effect.tryPromise({
+          try: async (): Promise<DdmTokens> => {
+            const { results } = await db
+              .prepare(
+                "SELECT category, identifier, server_token FROM device_declarations WHERE device_udid = ? ORDER BY identifier",
+              )
+              .bind(scope.udid)
+              .all<{ category: string; identifier: string; server_token: string }>();
 
-        if (state.supportsDdm) return { _tag: "DdmSync", serverToken: "demo-camera-disabled-v1" };
+            const byCategory: Record<string, typeof results> = {};
+            for (const row of results) {
+              (byCategory[row.category] ??= []).push(row);
+            }
 
-        return { _tag: "Idle" };
-      }),
+            const hashCat = async (cat: string): Promise<string> => {
+              const items = byCategory[cat] ?? [];
+              return items.length > 0 ? sha256hex(JSON.stringify(items)) : "empty";
+            };
 
-    getAppleDeclarationTokens: (scope: CheckinScope) =>
-      Effect.sync(() => {
-        console.log("[ManagementBackend] getAppleDeclarationTokens", { udid: scope.udid });
-        return {
-          declarationsToken: "demo-declarations-v1",
-          activationsToken: "demo-activation-v1",
-          configurationsToken: "demo-disable-camera-v1",
-          assetsToken: "empty",
-          managementToken: "empty",
-        };
-      }),
+            return {
+              activationsToken: await hashCat("activations"),
+              configurationsToken: await hashCat("configurations"),
+              assetsToken: await hashCat("assets"),
+              managementToken: await hashCat("management"),
+            };
+          },
+          catch: (cause) => (console.error("[management]", cause), new InternalServerError()),
+        }),
 
-    getAppleDeclarationItems: (scope: CheckinScope) =>
-      Effect.sync(() => {
-        console.log("[ManagementBackend] getAppleDeclarationItems", { udid: scope.udid });
-        return demoDeclarationItems;
-      }),
+      getAppleDeclarationItems: (scope: CheckinScope) =>
+        Effect.tryPromise({
+          try: async (): Promise<DdmDeclarationItems> => {
+            const { results } = await db
+              .prepare(
+                "SELECT identifier, server_token, category FROM device_declarations WHERE device_udid = ? ORDER BY identifier",
+              )
+              .bind(scope.udid)
+              .all<{ identifier: string; server_token: string; category: string }>();
 
-    getAppleDeclaration: (scope: CheckinScope, _type, identifier) =>
-      Effect.sync(() => {
-        const decl = demoDeclarations[identifier] ?? null;
-        console.log("[ManagementBackend] getAppleDeclaration", { udid: scope.udid, identifier, found: !!decl });
-        return decl;
-      }),
+            const items = {
+              activations: [] as { identifier: string; serverToken: string }[],
+              configurations: [] as { identifier: string; serverToken: string }[],
+              assets: [] as { identifier: string; serverToken: string }[],
+              management: [] as { identifier: string; serverToken: string }[],
+            };
+            for (const row of results) {
+              const cat = row.category as keyof typeof items;
+              if (cat in items) {
+                items[cat].push({ identifier: row.identifier, serverToken: row.server_token });
+              }
+            }
+            return items;
+          },
+          catch: (cause) => (console.error("[management]", cause), new InternalServerError()),
+        }),
 
-  }),
-);
+      getAppleDeclaration: (scope: CheckinScope, _type: string, identifier: string) =>
+        Effect.tryPromise({
+          try: async () => {
+            const row = await db
+              .prepare("SELECT payload FROM device_declarations WHERE device_udid = ? AND identifier = ?")
+              .bind(scope.udid, identifier)
+              .first<{ payload: string }>();
+            return row ? (JSON.parse(row.payload) as Record<string, unknown>) : null;
+          },
+          catch: (cause) => (console.error("[management]", cause), new InternalServerError()),
+        }),
+
+      getAppleAsset: (_cert: string | undefined, identifier: string) =>
+        Effect.tryPromise({
+          try: async () => {
+            const obj = await apps.get(identifier);
+            if (!obj) return null;
+            const buf = await obj.arrayBuffer();
+            return {
+              content: new Uint8Array(buf),
+              contentType: obj.httpMetadata?.contentType ?? "application/octet-stream",
+            };
+          },
+          catch: (cause) => (console.error("[management]", cause), new InternalServerError()),
+        }),
+    }),
+  );

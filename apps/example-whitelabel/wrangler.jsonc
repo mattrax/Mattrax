@@ -7,4 +7,25 @@
   "observability": {
     "enabled": true,
   },
+  "vars": {
+    "ORIGIN": "http://localhost:9051",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mattrax-whitelabel",
+      "database_id": "local",
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "APPS",
+      "bucket_name": "mattrax-whitelabel",
+    },
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true,
+  },
 }

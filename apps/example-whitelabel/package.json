@@ -10,15 +10,21 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
+    "@mattrax/apns": "workspace:*",
+    "@mattrax/dm-apple": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
-    "effect": "catalog:"
+    "@mattrax/scep": "workspace:*",
+    "@solidjs/router": "^0.15.3",
+    "effect": "catalog:",
+    "solid-js": "^1.9.7"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.0.0",
     "@types/node": "catalog:",
     "typescript": "~6.0.2",
     "vite": "catalog:",
+    "vite-plugin-solid": "^2.11.6",
     "vite-plus": "catalog:",
     "wrangler": "^4.0.0"
   }

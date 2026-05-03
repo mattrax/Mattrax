@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "es2023",
     "module": "esnext",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM"],
     "types": ["node"],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
@@ -16,11 +16,16 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "composite": true
+    "composite": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js"
   },
   "references": [
     { "path": "../../packages/management-backend" },
-    { "path": "../../packages/management-backend-http" }
+    { "path": "../../packages/management-backend-http" },
+    { "path": "../../packages/dm-apple" },
+    { "path": "../../packages/scep" },
+    { "path": "../../packages/apns" }
   ],
   "include": ["src", "package.json"],
   "exclude": ["vite.config.ts", "node_modules"]
