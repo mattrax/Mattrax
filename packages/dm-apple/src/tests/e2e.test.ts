@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/unstable/http";
-import { AppleMdmService, AppleMdmServiceLive } from "../service.js";
-import { ManagementBackend, UnknownDevice } from "@mattrax/management-backend";
+import { AppleMdmServiceLive } from "../service.js";
+import { ManagementBackend } from "@mattrax/management-backend";
 import { appleMdmRoutes } from "../handlers.js";
 import { parsePlist } from "@mattrax/plist";
 import { mockManagementBackend } from "./helpers.js";
@@ -21,7 +21,7 @@ describe("Apple MDM E2E", () => {
     const events: Array<{ type: string; payload: unknown }> = [];
 
     const backend = mockManagementBackend({
-      appleDeviceEvent: (scope, event) =>
+      appleDeviceEvent: (_scope: unknown, event: unknown) =>
         Effect.sync(() => {
           events.push({ type: (event as any)._tag, payload: event });
         }),

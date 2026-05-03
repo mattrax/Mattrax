@@ -5,7 +5,7 @@ import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
 import { privateDecrypt, constants } from "node:crypto";
 import { scepRoutes } from "../routes.js";
-import { ScepService, ScepServiceLive } from "../service.js";
+import { ScepServiceLive } from "../service.js";
 import { ScepRepository } from "../repository.js";
 import { pemEncode } from "../crypto.js";
 import {

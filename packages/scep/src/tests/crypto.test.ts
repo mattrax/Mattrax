@@ -52,7 +52,7 @@ describe("SCEP crypto wrappers", () => {
     it("produces a verifiable RSA signature", async () => {
       const keyPair = await generateCaKeyPair().pipe(Effect.runPromise);
       const data = new TextEncoder().encode("hello world");
-      const signature = await signData(keyPair.privateKey, data).pipe(Effect.runPromise);
+      const signature = await signData(keyPair.privateKey, data.buffer).pipe(Effect.runPromise);
       expect(signature).toBeInstanceOf(ArrayBuffer);
       expect(signature.byteLength).toBeGreaterThan(0);
 
@@ -69,15 +69,15 @@ describe("SCEP crypto wrappers", () => {
   describe("sha256", () => {
     it("produces a 32-byte hash", async () => {
       const data = new TextEncoder().encode("test");
-      const hash = await sha256(data).pipe(Effect.runPromise);
+      const hash = await sha256(data.buffer).pipe(Effect.runPromise);
       expect(hash).toBeInstanceOf(ArrayBuffer);
       expect(hash.byteLength).toBe(32);
     });
 
     it("produces deterministic output", async () => {
       const data = new TextEncoder().encode("deterministic");
-      const h1 = await sha256(data).pipe(Effect.runPromise);
-      const h2 = await sha256(data).pipe(Effect.runPromise);
+      const h1 = await sha256(data.buffer).pipe(Effect.runPromise);
+      const h2 = await sha256(data.buffer).pipe(Effect.runPromise);
       expect(new Uint8Array(h1)).toEqual(new Uint8Array(h2));
     });
   });

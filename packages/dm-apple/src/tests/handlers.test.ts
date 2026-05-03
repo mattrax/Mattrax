@@ -2,9 +2,8 @@ import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { AppleMdmService, AppleMdmServiceLive } from "../service.js";
-import { ManagementBackend, UnknownDevice } from "@mattrax/management-backend";
-import { appleMdmHandlers, appleMdmRoutes } from "../handlers.js";
-import { appleMdmApi } from "../domain.js";
+import { ManagementBackend } from "@mattrax/management-backend";
+import { appleMdmRoutes } from "../handlers.js";
 import { mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };

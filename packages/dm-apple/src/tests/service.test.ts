@@ -19,7 +19,7 @@ describe("AppleMdmService", () => {
     it("sends an Authenticate event to the backend", async () => {
       let receivedEvent: unknown;
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope, event) =>
+        appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -78,7 +78,7 @@ describe("AppleMdmService", () => {
     it("uses ModelName as fallback for Model", async () => {
       let receivedEvent: unknown;
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope, event) =>
+        appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -103,7 +103,7 @@ describe("AppleMdmService", () => {
     it("sends a device-scoped TokenUpdate", async () => {
       let receivedEvent: unknown;
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope, event) =>
+        appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -129,7 +129,7 @@ describe("AppleMdmService", () => {
     it("sends a user-scoped TokenUpdate when UserID is present", async () => {
       let receivedEvent: unknown;
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope, event) =>
+        appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -156,7 +156,7 @@ describe("AppleMdmService", () => {
     it("sends a CheckOut event", async () => {
       let receivedEvent: unknown;
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope, event) =>
+        appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -180,7 +180,7 @@ describe("AppleMdmService", () => {
     it("sends a CommandResult with status", async () => {
       let receivedEvent: unknown;
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope, event) =>
+        appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -203,7 +203,7 @@ describe("AppleMdmService", () => {
     it("includes errorDetail from ErrorChain", async () => {
       let receivedEvent: unknown;
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope, event) =>
+        appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -230,7 +230,7 @@ describe("AppleMdmService", () => {
     it("includes queryResponses when present", async () => {
       let receivedEvent: unknown;
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope, event) =>
+        appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -410,7 +410,7 @@ describe("AppleMdmService", () => {
     it("sends a DeclarationStatus event", async () => {
       let receivedEvent: unknown;
       const backend = mockManagementBackend({
-        appleDeviceEvent: (_scope, event) =>
+        appleDeviceEvent: (_scope: unknown, event: unknown) =>
           Effect.sync(() => {
             receivedEvent = event;
           }),
@@ -435,7 +435,7 @@ describe("AppleMdmService", () => {
         );
       }));
 
-      const ev = receivedEvent as { _tag: string; statusItems: unknown; errors: unknown[] };
+      const ev = receivedEvent as { _tag: string; statusItems: unknown; errors: any[] };
       expect(ev._tag).toBe("DeclarationStatus");
       expect(ev.errors).toHaveLength(1);
       expect(ev.errors[0].identifier).toBe("decl-1");

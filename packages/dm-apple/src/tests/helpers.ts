@@ -1,13 +1,15 @@
 import { Layer, Effect } from "effect";
 import { ManagementBackend } from "@mattrax/management-backend";
 
+type ManagementBackendType = InstanceType<typeof ManagementBackend>;
+
 export function mockManagementBackend(
   overrides?: Partial<{
-    appleDeviceEvent: ManagementBackend["Type"]["appleDeviceEvent"];
-    appleManagementCheckin: ManagementBackend["Type"]["appleManagementCheckin"];
-    getAppleDeclarationTokens: ManagementBackend["Type"]["getAppleDeclarationTokens"];
-    getAppleDeclarationItems: ManagementBackend["Type"]["getAppleDeclarationItems"];
-    getAppleDeclaration: ManagementBackend["Type"]["getAppleDeclaration"];
+    appleDeviceEvent: ManagementBackendType["appleDeviceEvent"];
+    appleManagementCheckin: ManagementBackendType["appleManagementCheckin"];
+    getAppleDeclarationTokens: ManagementBackendType["getAppleDeclarationTokens"];
+    getAppleDeclarationItems: ManagementBackendType["getAppleDeclarationItems"];
+    getAppleDeclaration: ManagementBackendType["getAppleDeclaration"];
   }>,
 ) {
   return Layer.succeed(
@@ -211,7 +213,7 @@ export function buildCheckinPlist(overrides?: Partial<{ UDID: string }>): string
 
 // ─── Certificate Helpers ───────────────────────────────────────────
 
-export function generateTestCertPem(topic: string, useUid = true): string {
+export async function generateTestCertPem(topic: string, useUid = true): Promise<string> {
   // This is a minimal self-signed RSA cert encoded as PEM for testing.
   // In a real test we'd generate it with WebCrypto, but for unit tests
   // we use a pre-baked minimal DER wrapped in PEM.
@@ -219,10 +221,10 @@ export function generateTestCertPem(topic: string, useUid = true): string {
   // Minimal self-signed cert with just the subject we need.
   // We'll generate a real one using WebCrypto for integration tests,
   // but for cert.ts unit tests a static PEM is fine.
-  return generateRealTestCertPem(topic, useUid);
+  return generateRealTestCertPem(topic, oidUid);
 }
 
-async function generateRealTestCertPem(topic: string, useUid: boolean): Promise<string> {
+async function generateRealTestCertPem(topic: string, oidUid: string): Promise<string> {
   const algorithm = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]) };
   const keyPair = await crypto.subtle.generateKey(algorithm as any, true, ["sign", "verify"]);
 

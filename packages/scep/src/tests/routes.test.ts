@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { scepRoutes } from "../routes.js";
-import { ScepService, ScepServiceLive } from "../service.js";
+import { ScepServiceLive } from "../service.js";
 import { ScepRepository } from "../repository.js";
 import { ScepError } from "../schema.js";
 import { certToPem } from "../pkcs7.js";

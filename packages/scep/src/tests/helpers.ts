@@ -1,7 +1,7 @@
 import { Layer, Effect } from "effect";
 import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
-import { publicEncrypt, privateDecrypt, constants } from "node:crypto";
+import { publicEncrypt, constants } from "node:crypto";
 import { ScepRepository, type ScepPkcsReq } from "../repository.js";
 import { ScepError } from "../schema.js";
 import { pemEncode } from "../crypto.js";
