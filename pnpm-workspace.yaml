@@ -5,6 +5,7 @@ packages:
 catalog:
   "@types/node": ^24.12.2
   "@types/pkijs": ^3.0.1
+  '@xmldom/xmldom': ^0.9.10
   asn1js: ^3.0.10
   drizzle-kit: ^0.31.10
   drizzle-orm: ^0.45.2
@@ -18,15 +19,13 @@ catalog:
 
 catalogMode: prefer
 
-overrides:
-  vite: "catalog:"
-
 onlyBuiltDependencies:
   - esbuild
   - sharp
   - workerd
 
-
+overrides:
+  vite: "catalog:"
 
 peerDependencyRules:
   allowAny:

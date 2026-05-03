@@ -1,0 +1,17 @@
+{
+  "name": "@mattrax/soap",
+  "private": true,
+  "description": "Effect Schema based SOAP serialization and deserialization",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

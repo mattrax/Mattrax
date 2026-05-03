@@ -14,6 +14,7 @@
     { "path": "./packages/apns" },
     { "path": "./packages/crypto" },
     { "path": "./packages/plist" },
+    { "path": "./packages/soap" },
     { "path": "./packages/scep" },
     { "path": "./packages/dm-apple" },
     { "path": "./packages/api-domain" },

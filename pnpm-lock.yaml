@@ -12,6 +12,9 @@ catalogs:
     '@types/pkijs':
       specifier: ^3.0.1
       version: 3.0.1
+    '@xmldom/xmldom':
+      specifier: ^0.9.10
+      version: 0.9.10
     asn1js:
       specifier: ^3.0.10
       version: 3.0.10
@@ -286,6 +289,19 @@ importers:
       '@types/pkijs':
         specifier: 'catalog:'
         version: 3.0.1
+
+  packages/soap:
+    dependencies:
+      '@xmldom/xmldom':
+        specifier: 'catalog:'
+        version: 0.9.10
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.52
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.12.2
 
   packages/software: {}
 
@@ -1605,6 +1621,10 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [win32]
+
+  '@xmldom/xmldom@0.9.10':
+    resolution: {integrity: sha512-A9gOqLdi6cV4ibazAjcQufGj0B1y/vDqYrcuP6d/6x8P27gRS8643Dj9o1dEKtB6O7fwxb2FgBmJS2mX7gpvdw==}
+    engines: {node: '>=14.6'}
 
   asn1js@3.0.10:
     resolution: {integrity: sha512-S2s3aOytiKdFRdulw2qPE51MzjzVOisppcVv7jVFR+Kw0kxwvFrDcYA0h7Ndqbmj0HkMIXYWaoj7fli8kgx1eg==}
@@ -3130,6 +3150,8 @@ snapshots:
 
   '@voidzero-dev/vite-plus-win32-x64-msvc@0.1.20':
     optional: true
+
+  '@xmldom/xmldom@0.9.10': {}
 
   asn1js@3.0.10:
     dependencies:
