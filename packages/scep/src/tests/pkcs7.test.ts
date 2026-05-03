@@ -11,8 +11,8 @@ import {
   parseScepPkcsReq,
   certToPem,
   pemToCert,
-} from "./pkcs7.js";
-import { pemEncode } from "./crypto.js";
+} from "../pkcs7.js";
+import { pemEncode } from "../crypto.js";
 
 // Ensure WebCrypto is available and pkijs is initialized
 if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
@@ -471,7 +471,7 @@ describe("SCEP PKCS#7", () => {
       // @ts-ignore
       const { fileURLToPath } = await import("url");
       // @ts-ignore
-      const __dirname = join(fileURLToPath(import.meta.url), "..");
+      const __dirname = join(fileURLToPath(import.meta.url), "..", "..");
       const filePath = join(__dirname, "testdata", "PKCSReq.der");
       const data = readFileSync(filePath);
 
