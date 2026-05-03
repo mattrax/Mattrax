@@ -47,6 +47,19 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
       error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
     }),
   )
+  .add(
+    HttpApiEndpoint.post("getAppleAsset", "/apple/asset", {
+      payload: Schema.Struct({
+        identityCertificate: Schema.optional(Schema.String),
+        identifier: Schema.String,
+      }),
+      success: Schema.NullOr(Schema.Struct({
+        content: Schema.Uint8ArrayFromBase64,
+        contentType: Schema.String,
+      })),
+      error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
+    }),
+  )
   .prefix("/webhook")
   .annotateMerge(OpenApi.annotations({ exclude: true }));
 

@@ -87,5 +87,11 @@ export const ManagementBackendMemory = Layer.succeed(
         return decl;
       }),
 
+    getAppleAsset: (_identityCertificate, identifier) =>
+      Effect.sync(() => {
+        console.log("[ManagementBackend] getAppleAsset", { identifier });
+        return null;
+      }),
+
   }),
 );

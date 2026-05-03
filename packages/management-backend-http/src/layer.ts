@@ -46,6 +46,13 @@ export const ManagementBackendHttp = (baseUrl: string) =>
             Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
           ),
 
+        getAppleAsset: (identityCertificate, identifier) =>
+          client.ManagementWebhook.getAppleAsset({ payload: { identityCertificate, identifier } }).pipe(
+            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
+            Effect.catchTag("UnknownDevice", () => Effect.fail(new UnknownDevice())),
+            Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
+          ),
+
       });
     }),
   );

@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { HttpServerResponse, HttpRouter, HttpServerRequest } from "effect/unstable/http";
 import { AppleMdmService } from "./service.js";
@@ -80,7 +80,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
           const udid = (plist as any).UDID;
           if (!udid) return HttpServerResponse.empty({ status: 200 });
 
-          const scope: CheckinScope = { _tag: "device", udid, identityCertificate };
+          const scope: CheckinScope = { _tag: "device", udid, identityCertificate, mdmOrigin: service.mdmOrigin };
 
           switch (endpoint) {
             case "tokens": {
@@ -127,7 +127,7 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
       const udid = (plist as any)?.UDID;
       if (!udid) return HttpServerResponse.empty({ status: 200 });
 
-      const scope: CheckinScope = { _tag: "device", udid, identityCertificate };
+      const scope: CheckinScope = { _tag: "device", udid, identityCertificate, mdmOrigin: service.mdmOrigin };
       const command = yield* service.handleCheckin(scope);
       if (!command) {
         const empty = yield* serializePlist({});
@@ -155,4 +155,30 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
   );
 }
 
-export const appleMdmRoutes = HttpRouter.add("PUT", "/mdm/apple/mdm", handleMdm);
+function handleAsset(request: HttpServerRequest.HttpServerRequest) {
+  return Effect.gen(function* () {
+    const service = yield* AppleMdmService;
+    const identityCertificate = request.headers["x-device-identity-certificate"] as string | undefined;
+    const url = new URL(request.url, "http://localhost");
+    const identifier = url.pathname.replace("/mdm/apple/assets/", "");
+    if (!identifier) return HttpServerResponse.empty({ status: 404 });
+
+    const asset = yield* service.handleAsset(identityCertificate, identifier);
+    if (!asset) return HttpServerResponse.empty({ status: 404 });
+
+    return HttpServerResponse.uint8Array(asset.content, { contentType: asset.contentType });
+  }).pipe(
+    Effect.match({
+      onSuccess: (val) => val,
+      onFailure: (err) => {
+        console.error("asset error:", err);
+        return HttpServerResponse.empty({ status: 500 });
+      },
+    }),
+  );
+}
+
+export const appleMdmRoutes = Layer.mergeAll(
+  HttpRouter.add("PUT", "/mdm/apple/mdm", handleMdm),
+  HttpRouter.add("GET", "/mdm/apple/assets/:identifier", handleAsset),
+);

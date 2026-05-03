@@ -5,16 +5,26 @@ export class UnknownDevice extends Schema.TaggedErrorClass<UnknownDevice>()("Unk
 export class ServerInitiatedUnenrollment extends Schema.TaggedErrorClass<ServerInitiatedUnenrollment>()("ServerInitiatedUnenrollment", {}) {}
 export class InternalServerError extends Schema.TaggedErrorClass<InternalServerError>()("InternalServerError", {}) {}
 
+export class MdmOrigin extends Schema.Class<MdmOrigin>("MdmOrigin")({
+  url: Schema.String,
+}) {
+  assetUrl(identifier: string): string {
+    return `${this.url}/mdm/apple/assets/${identifier}`;
+  }
+}
+
 export const CheckinScope = Schema.Union([
   Schema.TaggedStruct("device", {
     udid: Schema.String,
     identityCertificate: Schema.optional(Schema.String),
+    mdmOrigin: MdmOrigin,
   }),
   Schema.TaggedStruct("user", {
     udid: Schema.String,
     identityCertificate: Schema.optional(Schema.String),
     userId: Schema.String,
     userShortName: Schema.optional(Schema.String),
+    mdmOrigin: MdmOrigin,
   }),
 ]);
 export type CheckinScope = typeof CheckinScope.Type;
@@ -103,5 +113,6 @@ export class ManagementBackend extends Context.Service<
     readonly getAppleDeclarationTokens: (scope: CheckinScope) => Effect.Effect<DdmTokens, ManagementNotSupported | UnknownDevice | InternalServerError>;
     readonly getAppleDeclarationItems: (scope: CheckinScope) => Effect.Effect<DdmDeclarationItems, ManagementNotSupported | UnknownDevice | InternalServerError>;
     readonly getAppleDeclaration: (scope: CheckinScope, type: string, identifier: string) => Effect.Effect<Record<string, unknown> | null, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    readonly getAppleAsset: (identityCertificate: string | undefined, identifier: string) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, ManagementNotSupported | UnknownDevice | InternalServerError>;
   }
 >()("ManagementBackend") {}

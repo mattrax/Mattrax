@@ -17,6 +17,7 @@
     { "path": "./packages/soap" },
     { "path": "./packages/scep" },
     { "path": "./packages/dm-apple" },
+    { "path": "./packages/policy-apple" },
     { "path": "./packages/api-domain" },
     { "path": "./packages/api-backend" },
     { "path": "./apps/api" },

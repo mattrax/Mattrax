@@ -1,0 +1,20 @@
+{
+  "name": "@mattrax/policy-apple",
+  "private": true,
+  "description": "Apple Device Management policy schemas (declarations & legacy profiles) via Effect Schema",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./declarations": "./src/generated/declarations.ts",
+    "./profiles": "./src/generated/profiles.ts",
+    "./commands": "./src/generated/commands.ts",
+    "./checkin": "./src/generated/checkin.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}
