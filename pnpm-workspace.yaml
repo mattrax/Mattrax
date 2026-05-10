@@ -4,10 +4,12 @@ packages:
 
 catalog:
   '@effect/platform-node': 4.0.0-beta.52
+  '@types/better-sqlite3': ^7.6.13
   "@types/node": ^24.12.2
   "@types/pkijs": ^3.0.1
   '@xmldom/xmldom': ^0.9.10
   asn1js: ^3.0.10
+  better-sqlite3: ^12.9.0
   drizzle-kit: ^0.31.10
   drizzle-orm: ^0.45.2
   effect: 4.0.0-beta.52
@@ -21,6 +23,7 @@ catalog:
 catalogMode: prefer
 
 onlyBuiltDependencies:
+  - better-sqlite3
   - esbuild
   - sharp
   - workerd

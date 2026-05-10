@@ -19,7 +19,11 @@ await esbuild.build({
   target: "node22",
   outfile: join(distDir, "server.cjs"),
   format: "cjs",
-  external: [],
+  external: [
+    "better-sqlite3",
+    // better-sqlite3 loads its native binding dynamically
+    "*.node",
+  ],
 });
 
 // 2. Create the SEA configuration

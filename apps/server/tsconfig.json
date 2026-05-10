@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "es2023",
     "module": "esnext",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "dom"],
     "types": ["node"],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
@@ -18,6 +18,15 @@
     "noFallthroughCasesInSwitch": true,
     "composite": true
   },
+  "references": [
+    { "path": "../../packages/api-domain" },
+    { "path": "../../packages/api-backend" },
+    { "path": "../../packages/dm-apple" },
+    { "path": "../../packages/management-backend" },
+    { "path": "../../packages/management-backend-http" },
+    { "path": "../../packages/scep" },
+    { "path": "../../packages/crypto" }
+  ],
   "include": ["src", "package.json"],
   "exclude": ["node_modules"]
 }

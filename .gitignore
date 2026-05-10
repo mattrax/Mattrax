@@ -43,3 +43,6 @@ Thumbs.db
 ca.cnf
 client.cnf
 client-ext.cnf
+
+# SQLite
+*.db
