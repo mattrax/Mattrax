@@ -1,0 +1,21 @@
+{
+  "name": "@mattrax/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsx src/build.ts"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "esbuild": "^0.27.3",
+    "postject": "^1.0.0-alpha.6",
+    "tsx": "^4.19.0",
+    "typescript": "~6.0.2"
+  }
+}

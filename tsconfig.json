@@ -21,6 +21,7 @@
     { "path": "./packages/api-domain" },
     { "path": "./packages/api-backend" },
     { "path": "./apps/api" },
+    { "path": "./apps/server" },
     { "path": "./apps/web" },
     { "path": "./apps/example-whitelabel" }
   ]

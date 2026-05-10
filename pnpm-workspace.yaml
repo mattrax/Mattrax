@@ -3,6 +3,7 @@ packages:
   - packages/*
 
 catalog:
+  '@effect/platform-node': 4.0.0-beta.52
   "@types/node": ^24.12.2
   "@types/pkijs": ^3.0.1
   '@xmldom/xmldom': ^0.9.10
