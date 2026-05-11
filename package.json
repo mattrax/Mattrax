@@ -10,11 +10,14 @@
     "typecheck": "tsc -b",
     "api": "pnpm --filter @mattrax/api --",
     "server": "pnpm --filter @mattrax/server --",
-    "web": "pnpm --filter @mattrax/web --"
+    "web": "pnpm --filter @mattrax/web --",
+    "doc": "vitepress dev docs",
+    "doc:build": "vitepress build docs"
   },
   "devDependencies": {
     "typescript": "~6.0.2",
     "vite-plus": "catalog:",
+    "vitepress": "catalog:",
     "vitest": "^3.2.4"
   },
   "engines": {

@@ -15,12 +15,9 @@
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
     "@mattrax/scep": "workspace:*",
-    "better-sqlite3": "catalog:",
-    "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "catalog:",
     "@types/node": "catalog:",
     "esbuild": "^0.27.3",
     "postject": "^1.0.0-alpha.6",

@@ -10,18 +10,18 @@ import { AppleMdmServiceLive } from "@mattrax/dm-apple";
 import { ScepServiceLive } from "@mattrax/scep";
 import { extractTopicFromCertPem } from "@mattrax/dm-apple";
 import { ManagementBackendHttp } from "@mattrax/management-backend-http";
-import { createDb } from "./db/index.ts";
+import { FsDb } from "./db.ts";
 import { ScepRepositoryLive } from "./repositories/scepRepository.ts";
 
 export interface ServerConfig {
   readonly origin: string;
   readonly webhookUrl: string;
-  readonly dbPath: string;
+  readonly dataDir: string;
   readonly appleVendorCert?: string;
 }
 
 export const createAppLayer = (config: ServerConfig) => {
-  const db = createDb(config.dbPath);
+  const db = new FsDb(config.dataDir);
 
   const topic = config.appleVendorCert
     ? (extractTopicFromCertPem(config.appleVendorCert) ?? "com.apple.mgmt.External.placeholder")

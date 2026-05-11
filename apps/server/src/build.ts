@@ -19,11 +19,9 @@ await esbuild.build({
   target: "node22",
   outfile: join(distDir, "server.cjs"),
   format: "cjs",
-  external: [
-    "better-sqlite3",
-    // better-sqlite3 loads its native binding dynamically
-    "*.node",
-  ],
+  define: {
+    "process.env.MATTRAX_SERVER_BUNDLED": '"1"',
+  },
 });
 
 // 2. Create the SEA configuration

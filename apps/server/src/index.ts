@@ -9,6 +9,9 @@ import { createAppLayer } from "./app.ts";
 
 const { version } = pkg;
 
+const isProductionBuild = process.env.MATTRAX_SERVER_BUNDLED === "1";
+const defaultDataDir = isProductionBuild ? "/opt/mattrax-server" : "./.data";
+
 const versionCommand = Command.make("version").pipe(
   Command.withHandler(() => Console.log(version)),
 );
@@ -19,7 +22,10 @@ const serveCommand = Command.make("serve", {
   webhookUrl: Flag.string("webhook-url").pipe(
     Flag.withDescription("URL of the management webhook backend"),
   ),
-  dbPath: Flag.string("db-path").pipe(Flag.withDefault("./mattrax.db")),
+  dataDir: Flag.string("data-dir").pipe(
+    Flag.withDefault(defaultDataDir),
+    Flag.withDescription("Directory for filesystem data storage"),
+  ),
   appleVendorCert: Flag.string("apple-vendor-cert").pipe(
     Flag.withDescription("Path to Apple vendor certificate PEM file"),
     Flag.optional,
@@ -28,12 +34,12 @@ const serveCommand = Command.make("serve", {
   Effect.gen(function* () {
     yield* Console.log(`Starting Mattrax self-hosted server on port ${config.port}`);
     yield* Console.log(`Webhook backend: ${config.webhookUrl}`);
-    yield* Console.log(`Database: ${config.dbPath}`);
+    yield* Console.log(`Data directory: ${config.dataDir}`);
 
     const appLayer = createAppLayer({
       origin: config.origin,
       webhookUrl: config.webhookUrl,
-      dbPath: config.dbPath,
+      dataDir: config.dataDir,
       appleVendorCert: Option.getOrUndefined(config.appleVendorCert),
     });
 
