@@ -5,6 +5,10 @@ export default defineConfig({
   description: 'Mobile device management solution',
   base: "/docs",
 
+  vite: {
+    clearScreen: false
+  },
+
   themeConfig: {
     search: {
       provider: 'local'

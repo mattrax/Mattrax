@@ -12,11 +12,12 @@ catalog:
   drizzle-orm: ^0.45.2
   effect: 4.0.0-beta.52
   fast-plist: ^0.1.3
+  oxc-minify: ^0.129.0
   pkijs: ^3.4.0
   typescript: ^5
   vite: npm:@voidzero-dev/vite-plus-core@latest
-  vitepress: ^2.0.0-alpha.17
   vite-plus: latest
+  vitepress: ^2.0.0-alpha.17
   vitest: npm:@voidzero-dev/vite-plus-test@^0.1.20
 
 catalogMode: prefer

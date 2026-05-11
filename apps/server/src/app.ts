@@ -1,6 +1,6 @@
-import { Layer } from "effect";
+import { Effect, Layer } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiScalar, OpenApi } from "effect/unstable/httpapi";
-import { HttpServer } from "effect/unstable/http";
+import { HttpServer, HttpServerResponse, HttpRouter } from "effect/unstable/http";
 import { mattraxApi } from "@mattrax/api-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
 import { mattraxHandlers } from "@mattrax/api-backend";
@@ -50,8 +50,7 @@ export const createAppLayer = (config: ServerConfig) => {
     ),
     appleMdmRoutes,
     scepRoutes,
-    HttpApiScalar.layerCdn(apiRoot, { path: "/api/docs" }),
-    HttpApiScalar.layerCdn(apiRoot, { path: "/" }),
+    HttpRouter.add("GET", "/", () => Effect.succeed(HttpServerResponse.text("Mattrax Server"))),
   );
 
   const appleMdmServiceResolved = AppleMdmServiceLive({

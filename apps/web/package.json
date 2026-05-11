@@ -5,12 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vp dev",
-    "build": "tsc && vp build",
-    "preview": "vp preview"
+    "build": "node scripts/build.mjs",
+    "preview": "vp preview",
+    "deploy": "wrangler deploy"
   },
   "devDependencies": {
+    "oxc-minify": "catalog:",
     "typescript": "~6.0.2",
     "vite": "catalog:",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "vitepress": "catalog:",
+    "wrangler": "^4.0.0"
   }
 }
