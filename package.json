@@ -9,7 +9,7 @@
     "format": "vp fmt && vp lint",
     "typecheck": "tsc -b",
     "api": "pnpm --filter @mattrax/api --",
-    "server": "pnpm --filter @mattrax/server --",
+    "mserver": "pnpm --filter @mattrax/server --",
     "web": "pnpm --filter @mattrax/web --",
     "doc": "vitepress dev docs",
     "doc:build": "vitepress build docs"
