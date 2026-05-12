@@ -1,6 +1,6 @@
 import { Separator } from "~/components/ui/separator";
 
-const LAST_UPDATED = "January 1, 2025";
+const LAST_UPDATED = "12th May 2026";
 
 export default function Page() {
   return (
@@ -12,45 +12,51 @@ export default function Page() {
       </div>
 
       <div class="space-y-12">
-        <PolicySection title="Information we collect">
-          <PolicyParagraph text="**Account information.** When you create an account we collect your email address and, if you choose to provide it, your name. Passwords are hashed using bcrypt before storage — we never store them in plain text." />
-          <PolicyParagraph text="**Usage data.** We log the API calls your client makes (method, timestamp, response code) so we can debug issues and monitor reliability." />
-          <PolicyParagraph text="**Device metadata.** The managed device agents send OS version and app version on enrollment and update. This lets us ensure compatibility and security." />
-        </PolicySection>
-        <PolicySection title="How we use your information" withSeparator>
-          <PolicyParagraph text="To provide, maintain, and improve Mattrax." />
-          <PolicyParagraph text="To send transactional emails — account confirmation, password reset, subscription receipts. We do not send marketing email without your explicit opt-in." />
-          <PolicyParagraph text="To detect and prevent abuse, fraud, and security incidents." />
-          <PolicyParagraph text="To comply with legal obligations." />
-        </PolicySection>
-        <PolicySection title="Data storage and security" withSeparator>
-          <PolicyParagraph text="Your data is stored encrypted at rest (AES-256). In-transit data is protected by TLS 1.3." />
-          <PolicyParagraph text="Access to production systems is restricted to a small number of engineers, requires MFA, and is logged. We conduct periodic access reviews." />
-          <PolicyParagraph text="We retain account data for as long as your account is active, plus 90 days after deletion to allow recovery. Anonymised aggregate metrics are retained indefinitely." />
-        </PolicySection>
-        <PolicySection title="Third parties" withSeparator>
-          <PolicyParagraph text="**Cloudflare** — CDN, DNS, and DDoS mitigation. Traffic passes through Cloudflare's network." />
-          <PolicyParagraph text="We do not sell your personal data to any third party, ever." />
-        </PolicySection>
-        <PolicySection title="Your rights" withSeparator>
-          <PolicyParagraph text="You may request a copy of the personal data we hold about you, ask us to correct inaccuracies, or ask us to delete your account and associated data. To exercise any of these rights, email us at support@mattrax.io." />
-          <PolicyParagraph text="If you are in the EEA, UK, or Switzerland, you have additional rights under GDPR and equivalent legislation, including the right to lodge a complaint with your local supervisory authority." />
-        </PolicySection>
-        <PolicySection title="Cookies" withSeparator>
-          <PolicyParagraph text="The web dashboard uses a single session cookie to keep you logged in. We do not use third-party tracking cookies or analytics SDKs." />
-        </PolicySection>
-        <PolicySection title="Changes to this policy" withSeparator>
-          <PolicyParagraph text="We will post changes to this page and update the date at the top. For material changes we will notify you by email at least 30 days before they take effect." />
-        </PolicySection>
-        <PolicySection title="Contact" withSeparator>
-          <PolicyParagraph text="Questions or requests: hello@mattrax.io. We aim to respond within five business days." />
-        </PolicySection>
+        <PrivacySection title="Overview">
+          <PrivacyParagraph text="This Privacy Policy explains how we collect, use, and protect information when you use our service." />
+        </PrivacySection>
+        <PrivacySection title="Information We Collect" withSeparator>
+          <PrivacyParagraph text="Account and billing information" />
+          <PrivacyParagraph text="Information you provide directly to us" />
+          <PrivacyParagraph text="Technical information such as IP address, browser type, device information, and usage data" />
+          <PrivacyParagraph text="API data necessary to provide the service" />
+        </PrivacySection>
+        <PrivacySection title="How We Use Information" withSeparator>
+          <PrivacyParagraph text="Provide and maintain the service" />
+          <PrivacyParagraph text="Process payments and manage subscriptions" />
+          <PrivacyParagraph text="Improve reliability, security, and performance" />
+          <PrivacyParagraph text="Respond to support requests" />
+          <PrivacyParagraph text="Prevent abuse and unauthorized access" />
+        </PrivacySection>
+        <PrivacySection title="Data Storage" withSeparator>
+          <PrivacyParagraph text="We store data only for as long as necessary to operate the service and meet legal obligations." />
+        </PrivacySection>
+        <PrivacySection title="Third-Party Services" withSeparator>
+          <PrivacyParagraph text="We may use third-party providers for services such as payment processing, analytics, hosting and infrastructure, and error monitoring." />
+          <PrivacyParagraph text="These providers may process data on our behalf." />
+        </PrivacySection>
+        <PrivacySection title="Security" withSeparator>
+          <PrivacyParagraph text="We take reasonable measures to protect your information, but no method of transmission or storage is completely secure." />
+        </PrivacySection>
+        <PrivacySection title="Your Rights" withSeparator>
+          <PrivacyParagraph text="Depending on your location, you may have rights to access your data, request correction or deletion, object to certain processing, and request data export." />
+          <PrivacyParagraph text="To make a request, contact us using the information below." />
+        </PrivacySection>
+        <PrivacySection title="Children's Privacy" withSeparator>
+          <PrivacyParagraph text="The service is not intended for children under 13." />
+        </PrivacySection>
+        <PrivacySection title="Changes to This Policy" withSeparator>
+          <PrivacyParagraph text="We may update this Privacy Policy from time to time. Continued use of the service after changes become effective constitutes acceptance of the updated policy." />
+        </PrivacySection>
+        <PrivacySection title="Contact" withSeparator>
+          <PrivacyParagraph text="If you have questions about this Privacy Policy, contact us at hello@mattrax.app." />
+        </PrivacySection>
       </div>
     </main>
   );
 }
 
-function PolicySection(props: { title: string; withSeparator?: boolean; children: any }) {
+function PrivacySection(props: { title: string; withSeparator?: boolean; children: any }) {
   return (
     <div>
       {props.withSeparator && <Separator class="bg-stone-100 mb-12" />}
@@ -60,14 +66,6 @@ function PolicySection(props: { title: string; withSeparator?: boolean; children
   );
 }
 
-function PolicyParagraph(props: { text: string }) {
-  return (
-    <li class="text-stone-500 text-sm leading-relaxed">
-      {props.text
-        .split(/\*\*(.+?)\*\*/)
-        .map((part, index) =>
-          index % 2 === 1 ? <strong class="font-medium text-stone-700">{part}</strong> : part,
-        )}
-    </li>
-  );
+function PrivacyParagraph(props: { text: string }) {
+  return <li class="text-stone-500 text-sm leading-relaxed">{props.text}</li>;
 }

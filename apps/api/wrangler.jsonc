@@ -19,7 +19,7 @@
     "ORIGIN": "https://mattrax.cloud",
   },
   "secrets": {
-    "required": ["AUTH_SECRET", "CLOUD_APPLE_VENDOR_CERT"],
+    "required": ["AUTH_SECRET", "CLOUD_APPLE_VENDOR_CERT", "CLOUD_APPLE_VENDOR_KEY"],
   },
   "placement": {
     "mode": "smart",

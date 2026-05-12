@@ -1,6 +1,6 @@
 import { Separator } from "~/components/ui/separator";
 
-const LAST_UPDATED = "January 1, 2025";
+const LAST_UPDATED = "12th May 2026";
 
 export default function Page() {
   return (
@@ -12,47 +12,48 @@ export default function Page() {
       </div>
 
       <div class="space-y-12">
-        <TermsSection title="Acceptance">
-          <TermsParagraph text="By creating an account or using any part of the Mattrax service you agree to these Terms of Service. If you are using Mattrax on behalf of an organisation, you represent that you have authority to bind that organisation to these terms." />
+        <TermsSection title="Overview">
+          <TermsParagraph text="These Terms of Service govern your access to and use of our service. By using the service, you agree to these Terms." />
         </TermsSection>
-        <TermsSection title="The service" withSeparator>
-          <TermsParagraph text='Mattrax provides mobile device management, fleet enrollment, policy configuration, and compliance monitoring (the "Service"). We may update, extend, or remove features at any time. Where a change materially reduces the Service we will give you at least 30 days&apos; notice by email.' />
-          <TermsParagraph text="The Service is provided for lawful purposes only. You must not use it to manage devices without proper authorisation, or to distribute malicious software." />
+        <TermsSection title="Use of the Service" withSeparator>
+          <TermsParagraph text="You may use the service only in compliance with applicable laws and these Terms." />
+          <TermsParagraph text="You must not misuse or interfere with the service." />
+          <TermsParagraph text="You must not attempt unauthorized access to systems or data." />
+          <TermsParagraph text="You are responsible for activity conducted through your account or API credentials." />
         </TermsSection>
-        <TermsSection title="Accounts" withSeparator>
-          <TermsParagraph text="You are responsible for keeping your credentials secure and for all activity that occurs under your account. Notify us immediately at hello@mattrax.io if you believe your account has been compromised." />
-          <TermsParagraph text="You must be at least 16 years old to create an account. Accounts are non-transferable." />
+        <TermsSection title="Accounts and Billing" withSeparator>
+          <TermsParagraph text="Paid features may require a subscription or one-time payment. Billing is handled through third-party payment providers." />
         </TermsSection>
-        <TermsSection title="Your data" withSeparator>
-          <TermsParagraph text="You retain full ownership of the data and configurations you create with Mattrax. We claim no intellectual property rights over your content." />
-          <TermsParagraph text="You grant us a limited, non-exclusive licence to store, replicate, and transmit your data solely for the purpose of providing the Service." />
+        <TermsSection title="Acceptable Use" withSeparator>
+          <TermsParagraph text="You agree not to use the service to violate laws or regulations." />
+          <TermsParagraph text="You agree not to transmit malware or malicious code." />
+          <TermsParagraph text="You agree not to abuse, disrupt, or overload the service." />
+          <TermsParagraph text="You agree not to infringe intellectual property rights." />
+          <TermsParagraph text="You agree not to access data or systems without authorization." />
         </TermsSection>
-        <TermsSection title="Acceptable use" withSeparator>
-          <TermsParagraph text="You must not: attempt to gain unauthorised access to the Service or another user's data; use the Service to transmit spam or unsolicited bulk communications; engage in any activity that degrades the performance of the Service for other users; reverse-engineer or extract the source code of the Service." />
-          <TermsParagraph text="We reserve the right to suspend or terminate accounts that violate this policy without prior notice." />
+        <TermsSection title="Intellectual Property" withSeparator>
+          <TermsParagraph text="The service, including software, branding, and content, is owned by us or our licensors and is protected by applicable intellectual property laws." />
         </TermsSection>
-        <TermsSection title="Payment and billing" withSeparator>
-          <TermsParagraph text="Paid plans are billed in advance on a monthly or annual cycle. Prices are shown exclusive of VAT; applicable taxes will be added at checkout." />
-          <TermsParagraph text="Subscriptions renew automatically. You may cancel at any time from your account settings — your access continues until the end of the current billing period. We do not offer prorated refunds for partial periods unless required by law." />
-          <TermsParagraph text="If a payment fails we will notify you by email and retry. Access may be suspended after three failed attempts." />
+        <TermsSection title="Third-Party Services" withSeparator>
+          <TermsParagraph text="The service may integrate with or rely on third-party services. We are not responsible for third-party products, services, or content." />
         </TermsSection>
-        <TermsSection title="Disclaimers and liability" withSeparator>
-          <TermsParagraph text='The Service is provided "as is" without warranty of any kind. We do not warrant that it will be uninterrupted, error-free, or that data will never be lost.' />
-          <TermsParagraph text="To the maximum extent permitted by law, our total liability to you for any claim arising out of or related to these terms or the Service is limited to the greater of (a) the fees you paid in the 12 months preceding the claim or (b) £100." />
-          <TermsParagraph text="We are not liable for indirect, incidental, consequential, or punitive damages, loss of profits, or loss of data." />
+        <TermsSection title="Disclaimer" withSeparator>
+          <TermsParagraph text="The service is provided as is and as available without warranties of any kind, whether express or implied." />
+        </TermsSection>
+        <TermsSection title="Limitation of Liability" withSeparator>
+          <TermsParagraph text="To the maximum extent permitted by law, we are not liable for any indirect, incidental, special, consequential, or punitive damages, including loss of data, profits, or business opportunities." />
         </TermsSection>
         <TermsSection title="Termination" withSeparator>
-          <TermsParagraph text="You may delete your account at any time from account settings. We will delete your data within 90 days of account deletion." />
-          <TermsParagraph text="We may suspend or terminate your account for violations of these terms, non-payment, or inactivity exceeding 24 months. Where feasible we will give you advance notice and an opportunity to export your data." />
+          <TermsParagraph text="We may suspend or terminate access to the service at any time, including for violations of these Terms." />
         </TermsSection>
-        <TermsSection title="Governing law" withSeparator>
-          <TermsParagraph text="These terms are governed by the laws of England and Wales. Any dispute shall be subject to the exclusive jurisdiction of the courts of England and Wales, except where local mandatory consumer protection law requires otherwise." />
+        <TermsSection title="Changes to These Terms" withSeparator>
+          <TermsParagraph text="We may update these Terms from time to time. Continued use of the service after changes become effective constitutes acceptance of the updated Terms." />
         </TermsSection>
-        <TermsSection title="Changes" withSeparator>
-          <TermsParagraph text="We may update these terms at any time. For material changes we will notify you by email at least 30 days before they take effect. Continued use after that date constitutes acceptance of the revised terms." />
+        <TermsSection title="Governing Law" withSeparator>
+          <TermsParagraph text="These Terms are governed by the laws applicable in your jurisdiction, without regard to conflict of law principles." />
         </TermsSection>
         <TermsSection title="Contact" withSeparator>
-          <TermsParagraph text="Questions: hello@mattrax.io" />
+          <TermsParagraph text="If you have questions about these Terms, contact us at hello@mattrax.app." />
         </TermsSection>
       </div>
     </main>
