@@ -83,6 +83,9 @@ importers:
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../../packages/management-backend
+      '@mattrax/management-backend-enterprise':
+        specifier: workspace:*
+        version: link:../../packages/management-backend-enterprise
       '@mattrax/management-backend-http':
         specifier: workspace:*
         version: link:../../packages/management-backend-http
@@ -92,6 +95,9 @@ importers:
       '@mattrax/platform-backend':
         specifier: workspace:*
         version: link:../../packages/platform-backend
+      '@mattrax/plist':
+        specifier: workspace:*
+        version: link:../../packages/plist
       '@mattrax/scep':
         specifier: workspace:*
         version: link:../../packages/scep
@@ -357,6 +363,12 @@ importers:
       '@mattrax/enterprise-domain':
         specifier: workspace:*
         version: link:../enterprise-domain
+      '@mattrax/management-backend-enterprise':
+        specifier: workspace:*
+        version: link:../management-backend-enterprise
+      '@mattrax/plist':
+        specifier: workspace:*
+        version: link:../plist
       drizzle-orm:
         specifier: 'catalog:'
         version: 0.45.2(@types/better-sqlite3@7.6.13)(better-sqlite3@12.9.0)(kysely@0.28.17)
@@ -380,6 +392,22 @@ importers:
 
   packages/management-backend:
     dependencies:
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.52
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.12.2
+
+  packages/management-backend-enterprise:
+    dependencies:
+      '@mattrax/management-backend':
+        specifier: workspace:*
+        version: link:../management-backend
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/better-sqlite3@7.6.13)(better-sqlite3@12.9.0)(kysely@0.28.17)
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.52

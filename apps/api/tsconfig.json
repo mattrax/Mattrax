@@ -25,7 +25,9 @@
     { "path": "../../packages/platform-backend" },
     { "path": "../../packages/dm-apple" },
     { "path": "../../packages/management-backend" },
+    { "path": "../../packages/management-backend-enterprise" },
     { "path": "../../packages/management-backend-http" },
+    { "path": "../../packages/plist" },
     { "path": "../../packages/scep" },
     { "path": "../../packages/crypto" }
   ],

@@ -653,7 +653,7 @@ export async function createCaCertificate(
 
 export async function createDeviceCertificate(
   serial: number,
-  subjectName: string,
+  subject: string | Array<{ type: string; value: string }>,
   publicKey: CryptoKey,
   caCert: pkijs.Certificate,
   caPrivateKey: CryptoKey,
@@ -666,12 +666,10 @@ export async function createDeviceCertificate(
   cert.issuer = caCert.subject;
 
   cert.subject = new pkijs.RelativeDistinguishedNames({
-    typesAndValues: [
-      new pkijs.AttributeTypeAndValue({
-        type: "2.5.4.3",
-        value: new asn1js.Utf8String({ value: subjectName }),
-      }),
-    ],
+    typesAndValues: (typeof subject === "string" ? [{ type: "2.5.4.3", value: subject }] : subject).map((item) => new pkijs.AttributeTypeAndValue({
+      type: item.type,
+      value: new asn1js.Utf8String({ value: item.value }),
+    })),
   });
 
   cert.notBefore.value = validity.notBefore;

@@ -195,10 +195,14 @@ export const device = sqliteTable(
 
 export const deviceApple = sqliteTable("device_apple", {
   deviceId: text("device_id").primaryKey().references(() => device.id, { onDelete: "cascade" }),
+  enrollmentId: text("enrollment_id"),
   token: text("token"),
   pushMagic: text("push_magic"),
   topic: text("topic"),
   unlockToken: text("unlock_token"),
+  bootstrapToken: text("bootstrap_token"),
+  configured: integer("configured", { mode: "boolean" }).notNull().default(false),
+  deviceToken: text("device_token"),
   tokenUpdatedAt: integer("token_updated_at", { mode: "timestamp_ms" }),
 });
 

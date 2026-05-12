@@ -13,8 +13,9 @@ import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmServiceLive } from "@mattrax/dm-apple";
 import { ScepServiceLive } from "@mattrax/scep";
 import { extractTopicFromCertPem } from "@mattrax/dm-apple";
-import { ManagementBackendMemory } from "./management/memory.js";
+import { ManagementBackendEnterpriseLive } from "@mattrax/management-backend-enterprise";
 import { createDb } from "./db/index.js";
+import * as schema from "./db/schema.js";
 import { ScepRepositoryLive } from "./repositories/scepRepository.js";
 import { createAuth } from "./auth.js";
 import { EnterpriseServiceLive } from "./enterprise/live.js";
@@ -69,7 +70,7 @@ export const createAppLayer = (db: D1Database) => {
     origin: env.ORIGIN,
     topic,
   }).pipe(
-    Layer.provideMerge(ManagementBackendMemory),
+    Layer.provideMerge(ManagementBackendEnterpriseLive(database, { origin: env.ORIGIN, schema })),
   );
 
   const scepServiceResolved = ScepServiceLive.pipe(
@@ -77,7 +78,7 @@ export const createAppLayer = (db: D1Database) => {
   );
 
   const allServicesLayer = Layer.mergeAll(
-    EnterpriseServiceLive(database),
+    EnterpriseServiceLive(database, { origin: env.ORIGIN }),
     appleMdmServiceResolved,
     scepServiceResolved,
   );

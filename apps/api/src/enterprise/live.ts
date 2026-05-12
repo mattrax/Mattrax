@@ -5,6 +5,8 @@ import * as schema from "../db/schema.js";
 import { createAuth } from "../auth.js";
 import { and, count, eq, inArray } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
+import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
+import { serializePlist } from "@mattrax/plist";
 
 const now = () => new Date();
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
@@ -39,10 +41,10 @@ type OrgContext = {
   readonly member: typeof schema.member.$inferSelect;
 };
 
-export const EnterpriseServiceLive = (db: Database) =>
-  Layer.succeed(EnterpriseService, EnterpriseService.of(makeEnterpriseService(db)));
+export const EnterpriseServiceLive = (db: Database, config: { origin: string }) =>
+  Layer.succeed(EnterpriseService, EnterpriseService.of(makeEnterpriseService(db, config)));
 
-const makeEnterpriseService = (db: Database): EnterpriseServiceShape => {
+const makeEnterpriseService = (db: Database, config: { origin: string }): EnterpriseServiceShape => {
   const auth = createAuth();
 
   const requireOrg = async (request: HttpServerRequest): Promise<OrgContext> => {
@@ -169,7 +171,7 @@ const makeEnterpriseService = (db: Database): EnterpriseServiceShape => {
         apple: !enabled || !enrollment.enabledApple
           ? { error: "Apple enrollment is disabled! Contact your administrator." }
           : apns?.topic
-          ? { profile: "" }
+          ? { profile: await serializePlist(enterpriseEnrollmentProfile({ origin: config.origin, topic: apns.topic, organizationId: organization.id })) }
           : { error: "Apple management is not configured! Contact your administrator." },
         windows: !enabled || !enrollment.enabledWindows ? { error: "Windows enrollment is disabled! Contact your administrator." } : "available",
         android: !enabled || !enrollment.enabledAndroid ? { error: "Android enrollment is disabled! Contact your administrator." } : "available",

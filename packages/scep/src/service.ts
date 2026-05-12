@@ -89,16 +89,14 @@ export const ScepServiceLive = Layer.effect(
           catch: (cause) => new ScepError({ message: "Failed to extract public key from CSR", cause }),
         });
 
-        let subject = "device";
+        const subject: Array<{ type: string; value: string }> = [];
         for (const rdn of req.csr.subject.typesAndValues) {
-          if (rdn.type === "2.5.4.3") {
-            const val = rdn.value.valueBlock as any;
-            if (typeof val.value === "string") {
-              subject = val.value;
-            }
-            break;
+          const val = rdn.value.valueBlock as any;
+          if (typeof val.value === "string") {
+            subject.push({ type: rdn.type, value: val.value });
           }
         }
+        if (!subject.some((item) => item.type === "2.5.4.3")) subject.push({ type: "2.5.4.3", value: "device" });
 
         const deviceCert = yield* Effect.tryPromise({
           try: () =>

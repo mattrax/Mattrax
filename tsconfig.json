@@ -10,6 +10,7 @@
   "files": [],
   "references": [
     { "path": "./packages/management-backend" },
+    { "path": "./packages/management-backend-enterprise" },
     { "path": "./packages/management-backend-http" },
     { "path": "./packages/apns" },
     { "path": "./packages/crypto" },
