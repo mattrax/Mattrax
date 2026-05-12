@@ -7,6 +7,9 @@ export default defineConfig({
   description: 'Mobile device management solution',
   base: "/docs/",
   cleanUrls: true,
+  head: [
+    ['style', {}, 'html { scrollbar-gutter: stable; }']
+  ],
 
   sitemap: {
     hostname: origin,
