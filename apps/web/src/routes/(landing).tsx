@@ -14,20 +14,21 @@ export default function Layout(props: ParentProps) {
   );
 }
 
-function NavigationLink(props: { href: string; label: string; active: boolean }) {
+function NavigationLink(props: { href: string; label: string; target?: string; active: boolean }) {
   return (
     <a
       href={props.href}
       class={`transition-colors ${props.active ? "text-stone-900 font-medium" : "text-stone-500 hover:text-stone-900"}`}
+      target={props.target}
     >
       {props.label}
     </a>
   );
 }
 
-function FooterLink(props: { href: string; label: string }) {
+function FooterLink(props: { href: string; label: string; target?: string }) {
   return (
-    <a href={props.href} class="hover:text-stone-900 transition-colors">
+    <a href={props.href} class="hover:text-stone-900 transition-colors" target={props.target}>
       {props.label}
     </a>
   );
@@ -65,7 +66,7 @@ function TopNavigation() {
             active={isActive("/#enterprise")}
           />
           <NavigationLink href="/#pricing" label="Pricing" active={isActive("/#pricing")} />
-          <NavigationLink href="/docs" label="Docs" active={isActive("/docs")} />
+          <NavigationLink href="/docs" label="Docs" target="_self" active={isActive("/docs")} />
         </nav>
 
         <div class="flex items-center gap-3 shrink-0">
@@ -101,7 +102,7 @@ function Footer() {
           <span>© 2020 Mattrax Technologies Inc.</span>
         </div>
         <div class="flex flex-wrap justify-center gap-6">
-          <FooterLink href="/docs" label="Docs" />
+          <FooterLink href="/docs" label="Docs" target="_self" />
           <FooterLink href="/privacy" label="Privacy" />
           <FooterLink href="/terms" label="Terms" />
           <FooterLink href="mailto:hello@mattrax.app" label="Support" />
