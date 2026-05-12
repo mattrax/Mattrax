@@ -21,6 +21,7 @@ export type RowFor<E extends Entity> = E extends "device" ? DeviceRow : E extend
 export type TenantUser = { memberId: string; userId: string; name: string; email: string; role: string; createdAt: string };
 export type TenantInvitation = { id: string; email: string; role?: string | null; status: string; expiresAt: string; createdAt: string };
 export type ApnsInfo = { configured: boolean; email?: string | null; topic?: string | null };
+export type TenantEnrollmentInfo = { id: string; code?: string | null; enabledApple: boolean; enabledWindows: boolean; enabledAndroid: boolean; enabledAssetTag: boolean; maxDevices: number; createdAt: string; updatedAt: string };
 type RouteParam = string | undefined;
 
 export const enterpriseKeys = {
@@ -33,6 +34,7 @@ export const enterpriseKeys = {
   invitations: (tenantId: RouteParam) => ["enterprise", "tenant-invitations", tenantId ?? ""] as const,
   apns: (tenantId: RouteParam) => ["enterprise", "apns", tenantId ?? ""] as const,
   billing: (tenantId: RouteParam) => ["enterprise", "billing", tenantId ?? ""] as const,
+  enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", tenantId ?? ""] as const,
 };
 
 export class ApiError extends Error {
@@ -94,12 +96,17 @@ export const enterprise = {
   patchGroupMembers: (tenantId: RouteParam, id: RouteParam, payload: { assign?: { devices?: string[]; policies?: string[] }; unassign?: { devices?: string[]; policies?: string[] } }) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/groups/${required(id, "id")}/members`, { method: "PATCH", body: body(payload) }),
   deleteGroups: (tenantId: RouteParam, ids: string[]) => request<{ deleted: string[]; failed: Array<{ id: string; reason: string }> }>(`/tenants/${required(tenantId, "tenantId")}/groups`, { method: "DELETE", body: body(ids) }),
   duplicateGroup: (tenantId: RouteParam, id: RouteParam, name?: string) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/groups/${required(id, "id")}/duplicate`, { method: "POST", body: body({ name }) }),
+  syncGroups: (tenantId: RouteParam, ids: string[]) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/groups/sync`, { method: "POST", body: body(ids) }),
   createPolicy: (tenantId: RouteParam, payload: { name: string; notes?: string | null }) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/policies`, { method: "POST", body: body(payload) }),
   patchPolicy: (tenantId: RouteParam, id: RouteParam, payload: Partial<Pick<PolicyRow, "name" | "notes" | "configurations">>) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/policies/${required(id, "id")}`, { method: "PATCH", body: body(payload) }),
   deletePolicies: (tenantId: RouteParam, ids: string[]) => request<{ deleted: string[]; failed: Array<{ id: string; reason: string }> }>(`/tenants/${required(tenantId, "tenantId")}/policies`, { method: "DELETE", body: body(ids) }),
   duplicatePolicy: (tenantId: RouteParam, id: RouteParam, name?: string) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/policies/${required(id, "id")}/duplicate`, { method: "POST", body: body({ name }) }),
+  syncPolicies: (tenantId: RouteParam, ids: string[]) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/policies/sync`, { method: "POST", body: body(ids) }),
   previewMobileconfig: (mobileconfig: string) => request<Record<string, unknown>>("/policy/preview-mobileconfig", { method: "POST", body: body({ mobileconfig }) }),
   getApns: (tenantId: RouteParam) => request<ApnsInfo>(`/tenants/${required(tenantId, "tenantId")}/apns`),
+  getTenantEnrollment: (tenantId: RouteParam) => request<TenantEnrollmentInfo>(`/tenants/${required(tenantId, "tenantId")}/enrollment`),
+  patchTenantEnrollment: (tenantId: RouteParam, payload: Partial<Pick<TenantEnrollmentInfo, "code" | "enabledApple" | "enabledWindows" | "enabledAndroid" | "enabledAssetTag" | "maxDevices">>) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/enrollment`, { method: "PATCH", body: body(payload) }),
+  resetTenantEnrollment: (tenantId: RouteParam) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/enrollment/reset`, { method: "POST" }),
   uploadApns: (tenantId: RouteParam, payload: { email: string; cert: string }) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/apns`, { method: "POST", body: body(payload) }),
   listUsers: (tenantId: RouteParam) => request<{ users: TenantUser[] }>(`/tenants/${required(tenantId, "tenantId")}/users`),
   inviteUser: (tenantId: RouteParam, payload: { email: string; role?: string; resend?: boolean }) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/invitations`, { method: "POST", body: body(payload) }),

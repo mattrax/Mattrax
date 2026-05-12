@@ -163,6 +163,35 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
     return base;
   };
 
+  const rowEnrollment = (row: typeof schema.enterpriseEnrollment.$inferSelect) => ({
+    id: row.id,
+    code: row.code,
+    enabledApple: row.enabledApple,
+    enabledWindows: row.enabledWindows,
+    enabledAndroid: row.enabledAndroid,
+    enabledAssetTag: row.enabledAssetTag,
+    maxDevices: row.maxDevices,
+    createdAt: iso(row.createdAt),
+    updatedAt: iso(row.updatedAt),
+  });
+
+  const getOrCreateEnrollment = async (organizationId: string) => {
+    const existing = await db.query.enterpriseEnrollment.findFirst({ where: eq(schema.enterpriseEnrollment.organizationId, organizationId) });
+    if (existing) return existing;
+    const timestamp = now();
+    const enrollment = { id: id(), organizationId, createdAt: timestamp, updatedAt: timestamp };
+    await db.insert(schema.enterpriseEnrollment).values(enrollment).onConflictDoNothing();
+    return await db.query.enterpriseEnrollment.findFirst({ where: eq(schema.enterpriseEnrollment.organizationId, organizationId) }) ?? {
+      ...enrollment,
+      code: null,
+      enabledApple: true,
+      enabledWindows: true,
+      enabledAndroid: false,
+      enabledAssetTag: false,
+      maxDevices: 100,
+    };
+  };
+
   return {
     me: (request) => Effect.promise(async () => {
       const { session, user } = await requireUser(request);
@@ -290,6 +319,32 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
         android: !enabled || !enrollment.enabledAndroid ? { error: "Android enrollment is disabled! Contact your administrator." } : "available",
         assetTag: enabled && enrollment.enabledAssetTag,
       };
+    }),
+    getTenantEnrollment: (request, tenantId) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId);
+      return rowEnrollment(await getOrCreateEnrollment(ctx.organization.id));
+    }),
+    patchTenantEnrollment: (request, tenantId, payload) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
+      await getOrCreateEnrollment(ctx.organization.id);
+      const body = payload as { code?: string | null; enabledApple?: boolean; enabledWindows?: boolean; enabledAndroid?: boolean; enabledAssetTag?: boolean; maxDevices?: number };
+      await db.update(schema.enterpriseEnrollment).set({
+        ...(body.code !== undefined ? { code: body.code } : {}),
+        ...(body.enabledApple !== undefined ? { enabledApple: body.enabledApple } : {}),
+        ...(body.enabledWindows !== undefined ? { enabledWindows: body.enabledWindows } : {}),
+        ...(body.enabledAndroid !== undefined ? { enabledAndroid: body.enabledAndroid } : {}),
+        ...(body.enabledAssetTag !== undefined ? { enabledAssetTag: body.enabledAssetTag } : {}),
+        ...(body.maxDevices !== undefined ? { maxDevices: body.maxDevices } : {}),
+        updatedAt: now(),
+      }).where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
+      return ok;
+    }),
+    resetTenantEnrollment: (request, tenantId) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
+      await getOrCreateEnrollment(ctx.organization.id);
+      const newId = id();
+      await db.update(schema.enterpriseEnrollment).set({ id: newId, updatedAt: now() }).where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
+      return { id: newId };
     }),
     getApns: (request, tenantId) => Effect.promise(async () => {
       const ctx = await requireTenant(request, tenantId);

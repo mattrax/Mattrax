@@ -19,6 +19,9 @@ export interface EnterpriseServiceShape {
   readonly patchTenantUser: (request: HttpServerRequest, tenantId: string, memberId: string, payload: unknown) => ServiceEffect;
   readonly removeTenantUser: (request: HttpServerRequest, tenantId: string, memberId: string) => ServiceEffect;
   readonly getEnrollment: (id: string, code?: string) => ServiceEffect;
+  readonly getTenantEnrollment: (request: HttpServerRequest, tenantId: string) => ServiceEffect;
+  readonly patchTenantEnrollment: (request: HttpServerRequest, tenantId: string, payload: unknown) => ServiceEffect;
+  readonly resetTenantEnrollment: (request: HttpServerRequest, tenantId: string) => ServiceEffect;
   readonly getApns: (request: HttpServerRequest, tenantId: string) => ServiceEffect;
   readonly uploadApns: (request: HttpServerRequest, tenantId: string, payload: unknown) => ServiceEffect;
   readonly deleteDevices: (request: HttpServerRequest, tenantId: string, ids: ReadonlyArray<string>) => ServiceEffect;

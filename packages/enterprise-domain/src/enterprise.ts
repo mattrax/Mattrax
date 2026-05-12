@@ -246,6 +246,27 @@ export const EnrollmentResponse = Schema.Union([
 
 export const EnrollmentQuery = { code: Schema.optional(Schema.String) };
 
+export const TenantEnrollmentInfo = Schema.Struct({
+  id: Schema.String,
+  code: Schema.optional(NullableString),
+  enabledApple: Schema.Boolean,
+  enabledWindows: Schema.Boolean,
+  enabledAndroid: Schema.Boolean,
+  enabledAssetTag: Schema.Boolean,
+  maxDevices: Schema.Number,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+});
+
+export const PatchTenantEnrollmentRequest = Schema.Struct({
+  code: Schema.optional(NullableString),
+  enabledApple: Schema.optional(Schema.Boolean),
+  enabledWindows: Schema.optional(Schema.Boolean),
+  enabledAndroid: Schema.optional(Schema.Boolean),
+  enabledAssetTag: Schema.optional(Schema.Boolean),
+  maxDevices: Schema.optional(Schema.Number),
+});
+
 export const ApnsInfo = Schema.Struct({
   configured: Schema.Boolean,
   email: Schema.optional(NullableString),
@@ -272,6 +293,9 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   .add(HttpApiEndpoint.patch("patchTenantUser", "/v1/tenants/:tenantId/users/:memberId", { params: TenantMemberParam, payload: PatchTenantUserRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.delete("removeTenantUser", "/v1/tenants/:tenantId/users/:memberId", { params: TenantMemberParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.get("getEnrollment", "/v1/enrollment/:id", { params: IdParam, query: EnrollmentQuery, success: EnrollmentResponse }))
+  .add(HttpApiEndpoint.get("getTenantEnrollment", "/v1/tenants/:tenantId/enrollment", { params: TenantParam, success: TenantEnrollmentInfo }))
+  .add(HttpApiEndpoint.patch("patchTenantEnrollment", "/v1/tenants/:tenantId/enrollment", { params: TenantParam, payload: PatchTenantEnrollmentRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("resetTenantEnrollment", "/v1/tenants/:tenantId/enrollment/reset", { params: TenantParam, success: IdResponse }))
   .add(HttpApiEndpoint.get("getApns", "/v1/tenants/:tenantId/apns", { params: TenantParam, success: ApnsInfo }))
   .add(HttpApiEndpoint.post("uploadApns", "/v1/tenants/:tenantId/apns", { params: TenantParam, payload: UploadApnsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.delete("deleteDevices", "/v1/tenants/:tenantId/devices", { params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
