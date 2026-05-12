@@ -22,6 +22,10 @@ export type TenantUser = { memberId: string; userId: string; name: string; email
 export type TenantInvitation = { id: string; email: string; role?: string | null; status: string; expiresAt: string; createdAt: string };
 export type ApnsInfo = { configured: boolean; email?: string | null; topic?: string | null };
 export type TenantEnrollmentInfo = { id: string; code?: string | null; enabledApple: boolean; enabledWindows: boolean; enabledAndroid: boolean; enabledAssetTag: boolean; maxDevices: number; createdAt: string; updatedAt: string };
+export type PlatformEnrollment = { error: string } | { profile: string } | "available";
+export type EnrollmentResponse =
+  | { name: string; authenticated: false }
+  | { name: string; authenticated: true; apple: PlatformEnrollment; windows: PlatformEnrollment; android: PlatformEnrollment; assetTag: boolean };
 type RouteParam = string | undefined;
 
 export const enterpriseKeys = {
@@ -80,6 +84,7 @@ const q = (params: Record<string, string | undefined>) => {
 
 export const enterprise = {
   me: () => request<MeResponse>("/me"),
+  getEnrollment: (id: RouteParam, code?: string) => request<EnrollmentResponse>(`/enrollment/${required(id, "id")}${q({ code })}`),
   listTenants: () => request<{ tenants: TenantInfo[] }>("/tenants"),
   createTenant: (payload: { name: string; slug: string; logo?: string | null; metadata?: Record<string, unknown> }) => request<{ id: string }>("/tenants", { method: "POST", body: body(payload) }),
   getTenant: (tenantId: RouteParam) => request<TenantDetail>(`/tenants/${required(tenantId, "tenantId")}`),

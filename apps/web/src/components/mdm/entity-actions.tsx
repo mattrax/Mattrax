@@ -5,7 +5,7 @@ import { Button } from "~/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
-import { enterprise, enterpriseKeys, type DeviceRow, type Entity, type GroupNode, type GroupRow, type PolicyRow } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, type DeviceRow, type Entity, type GroupRow, type PolicyRow } from "~/lib/enterprise";
 
 type Named = { id: string; name: string };
 const selectedNamed = (rows: Named[]) => rows.map((row) => ({ id: row.id, name: row.name }));
@@ -20,7 +20,30 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
   const params = useParams(); const qc = useQueryClient(); const [open, setOpen] = createSignal(false); const [changes, setChanges] = createSignal<Record<string, "all" | "none">>({});
   const groups = useQuery(() => ({ queryKey: enterpriseKeys.search(params.tenantId, "group"), queryFn: () => enterprise.search(params.tenantId, "group") }));
   const patch = useMutation(() => ({ mutationFn: async () => Promise.all(Object.entries(changes()).map(([groupId, state]) => enterprise.patchGroupMembers(params.tenantId, groupId, state === "all" ? { assign: { [props.relation]: props.selected.map((row) => row.id) } } : { unassign: { [props.relation]: props.selected.map((row) => row.id) } }))), onSuccess: async () => { setChanges({}); setOpen(false); await qc.invalidateQueries({ queryKey: enterpriseKeys.search(params.tenantId, "group") }); } }));
-  return <DropdownMenu open={open()} onOpenChange={setOpen}><DropdownMenuTrigger as={Button} variant="outline" class="">Scope</DropdownMenuTrigger><DropdownMenuContent class="w-80 rounded-xl bg-white p-1"><For each={groups.data?.rows as GroupRow[] ?? []}>{(group) => <DropdownMenuItem closeOnSelect={false} onSelect={() => setChanges((v) => ({ ...v, [group.id]: v[group.id] === "all" ? "none" : "all" }))} class="flex justify-between"><span>{group.name}</span><span>{changes()[group.id] === "all" ? "Assign" : changes()[group.id] === "none" ? "Remove" : ""}</span></DropdownMenuItem>}</For><div class="border-t p-2 text-right"><Button size="sm" disabled={Object.keys(changes()).length === 0 || patch.isPending} onClick={() => patch.mutate()}>Apply</Button></div></DropdownMenuContent></DropdownMenu>;
+  const groupRows = () => (groups.data?.rows ?? []) as GroupRow[];
+
+  return (
+    <DropdownMenu open={open()} onOpenChange={setOpen}>
+      <DropdownMenuTrigger class="inline-flex">
+        <Button variant="outline">Scope</Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent class="w-80 rounded-xl bg-white p-1">
+        <For each={groupRows()}>{(group) => (
+          <DropdownMenuItem
+            closeOnSelect={false}
+            onSelect={() => setChanges((value) => ({ ...value, [group.id]: value[group.id] === "all" ? "none" : "all" }))}
+            class="flex justify-between"
+          >
+            <span>{group.name}</span>
+            <span>{changes()[group.id] === "all" ? "Assign" : changes()[group.id] === "none" ? "Remove" : ""}</span>
+          </DropdownMenuItem>
+        )}</For>
+        <div class="border-t p-2 text-right">
+          <Button size="sm" disabled={Object.keys(changes()).length === 0 || patch.isPending} onClick={() => patch.mutate()}>Apply</Button>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 export function EntityActions(props: { entity: Entity; selected: Array<DeviceRow | GroupRow | PolicyRow>; clear: () => void }) {

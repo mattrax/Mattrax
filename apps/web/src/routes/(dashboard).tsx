@@ -109,12 +109,6 @@ export default function DashboardLayout(props: ParentProps) {
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}</For>
-            <SidebarMenuItem>
-              <SidebarMenuButton as="a" href="/account" isActive={location.pathname === "/account"} tooltip="Account">
-                <User />
-                <span>Account</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarContent>
 

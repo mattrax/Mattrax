@@ -9,11 +9,197 @@ import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 
 export default function EnrollmentPage() {
-  const params = useParams(); const qc = useQueryClient(); const enrollment = useQuery(() => ({ queryKey: enterpriseKeys.enrollment(params.tenantId), queryFn: () => enterprise.getTenantEnrollment(params.tenantId) })); const apns = useQuery(() => ({ queryKey: enterpriseKeys.apns(params.tenantId), queryFn: () => enterprise.getApns(params.tenantId) }));
-  const [edit, setEdit] = createSignal(false); const [code, setCode] = createSignal(""); const [maxDevices, setMaxDevices] = createSignal(100); const [apple, setApple] = createSignal(false); const [windows, setWindows] = createSignal(false); const [android, setAndroid] = createSignal(false); const [assetTag, setAssetTag] = createSignal(false);
-  createEffect(() => { if (enrollment.data && !edit()) { setCode(enrollment.data.code ?? ""); setMaxDevices(enrollment.data.maxDevices); setApple(enrollment.data.enabledApple); setWindows(enrollment.data.enabledWindows); setAndroid(enrollment.data.enabledAndroid); setAssetTag(enrollment.data.enabledAssetTag); } });
-  const url = () => enrollment.data ? `${globalThis.location?.origin ?? ""}/enroll/${enrollment.data.id}` : "Loading..."; const enabled = () => apple() || windows() || android();
-  const save = useMutation(() => ({ mutationFn: () => enterprise.patchTenantEnrollment(params.tenantId, { code: code() || null, maxDevices: maxDevices(), enabledApple: apple(), enabledWindows: windows(), enabledAndroid: android(), enabledAssetTag: assetTag() }), onSuccess: async () => { setEdit(false); await qc.invalidateQueries({ queryKey: enterpriseKeys.enrollment(params.tenantId) }); } }));
-  const reset = useMutation(() => ({ mutationFn: () => enterprise.resetTenantEnrollment(params.tenantId), onSuccess: async () => { await qc.invalidateQueries({ queryKey: enterpriseKeys.enrollment(params.tenantId) }); } }));
-  return <div class="flex flex-1 flex-col gap-6 p-6"><PageHeader title="Enrollment" description="Configure tenant enrollment and share the enrollment URL." actions={<><Button variant="outline" onClick={() => edit() ? save.mutate() : setEdit(true)}>{edit() ? "Save" : "Edit"}</Button><Button variant="destructive" onClick={() => reset.mutate()} disabled={reset.isPending}>Reset URL</Button></>} /><div class="grid gap-6 lg:grid-cols-2"><Card><CardHeader><CardTitle>Enrollment URL</CardTitle></CardHeader><CardContent class="space-y-4"><p class="text-sm text-muted-foreground">Open this URL on a device to enroll it. Share the password separately if configured.</p><div class="flex gap-2"><Input readonly value={url()} onClick={(e) => { e.currentTarget.select(); navigator.clipboard.writeText(url()); }} /><Button as="a" href={url()} target="_blank" variant="outline">Open</Button></div><Show when={!enabled()}><p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Enrollment is currently disabled.</p></Show></CardContent></Card><Card><CardHeader><CardTitle>Platform readiness</CardTitle></CardHeader><CardContent class="space-y-3 text-sm"><div class="flex items-center justify-between"><span>Apple APNS</span><Badge variant={apns.data?.configured ? "default" : "secondary"}>{apns.data?.configured ? "Configured" : "Setup required"}</Badge></div><div class="flex items-center justify-between"><span>Windows</span><Badge variant={windows() ? "default" : "outline"}>{windows() ? "Enabled" : "Disabled"}</Badge></div><div class="flex items-center justify-between"><span>Android</span><Badge variant={android() ? "default" : "outline"}>{android() ? "Enabled" : "Disabled"}</Badge></div></CardContent></Card><Card class="lg:col-span-2"><CardHeader><CardTitle>Settings</CardTitle></CardHeader><CardContent><fieldset disabled={!edit()} class="grid gap-5 disabled:opacity-70"><label class="flex gap-3"><input type="checkbox" checked={enabled()} onChange={(e) => { setApple(e.currentTarget.checked); setWindows(e.currentTarget.checked); setAndroid(false); }} /><span><strong>Enable device enrollment</strong><br /><span class="text-sm text-muted-foreground">Disabling enrollment prevents new devices from enrolling.</span></span></label><label class="flex gap-3"><input type="checkbox" checked={apple()} onChange={(e) => setApple(e.currentTarget.checked)} /><span>Enable Apple management <Show when={!apns.data?.configured}><Badge variant="secondary" class="ml-2">APNS setup required</Badge></Show></span></label><label class="flex gap-3"><input type="checkbox" checked={windows()} onChange={(e) => setWindows(e.currentTarget.checked)} /><span>Enable Windows management</span></label><label class="flex gap-3"><input type="checkbox" checked={android()} onChange={(e) => setAndroid(e.currentTarget.checked)} /><span>Enable Android management</span></label><label class="flex gap-3"><input type="checkbox" checked={assetTag()} onChange={(e) => setAssetTag(e.currentTarget.checked)} /><span>Ask for asset tag during enrollment</span></label><div class="grid gap-4 md:grid-cols-2"><Field label="Enrollment password"><Input type="password" value={code()} onInput={(e) => setCode(e.currentTarget.value)} placeholder="Optional password" /></Field><Field label="Maximum devices"><Input type="number" min="0" value={String(maxDevices())} onInput={(e) => setMaxDevices(Number(e.currentTarget.value || 0))} /></Field></div></fieldset><ErrorText error={save.error || reset.error} /></CardContent></Card></div></div>;
+  const params = useParams();
+  const queryClient = useQueryClient();
+  const enrollment = useQuery(() => ({
+    queryKey: enterpriseKeys.enrollment(params.tenantId),
+    queryFn: () => enterprise.getTenantEnrollment(params.tenantId),
+  }));
+  const apns = useQuery(() => ({
+    queryKey: enterpriseKeys.apns(params.tenantId),
+    queryFn: () => enterprise.getApns(params.tenantId),
+  }));
+
+  const [edit, setEdit] = createSignal(false);
+  const [code, setCode] = createSignal("");
+  const [maxDevices, setMaxDevices] = createSignal(100);
+  const [apple, setApple] = createSignal(false);
+  const [windows, setWindows] = createSignal(false);
+  const [android, setAndroid] = createSignal(false);
+  const [assetTag, setAssetTag] = createSignal(false);
+
+  createEffect(() => {
+    if (!enrollment.data || edit()) return;
+    setCode(enrollment.data.code ?? "");
+    setMaxDevices(enrollment.data.maxDevices);
+    setApple(enrollment.data.enabledApple);
+    setWindows(enrollment.data.enabledWindows);
+    setAndroid(enrollment.data.enabledAndroid);
+    setAssetTag(enrollment.data.enabledAssetTag);
+  });
+
+  const enabled = () => apple() || windows() || android();
+  const enrollmentUrl = () => enrollment.data ? `${globalThis.location?.origin ?? ""}/enroll/${enrollment.data.id}` : "Loading...";
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: enterpriseKeys.enrollment(params.tenantId) });
+  const save = useMutation(() => ({
+    mutationFn: () => enterprise.patchTenantEnrollment(params.tenantId, {
+      code: code() || null,
+      maxDevices: maxDevices(),
+      enabledApple: apple(),
+      enabledWindows: windows(),
+      enabledAndroid: android(),
+      enabledAssetTag: assetTag(),
+    }),
+    onSuccess: async () => {
+      setEdit(false);
+      await invalidate();
+    },
+  }));
+  const reset = useMutation(() => ({
+    mutationFn: () => enterprise.resetTenantEnrollment(params.tenantId),
+    onSuccess: invalidate,
+  }));
+
+  return (
+    <div class="flex flex-1 flex-col gap-6 p-6">
+      <PageHeader
+        title="Enrollment"
+        description="Configure tenant enrollment and share the enrollment URL."
+        actions={<HeaderActions edit={edit()} saving={save.isPending} resetting={reset.isPending} onEdit={() => edit() ? save.mutate() : setEdit(true)} onReset={() => reset.mutate()} />}
+      />
+      <div class="grid gap-6 lg:grid-cols-2">
+        <EnrollmentUrlCard url={enrollmentUrl()} enabled={enabled()} />
+        <ReadinessCard apnsConfigured={!!apns.data?.configured} windows={windows()} android={android()} />
+        <SettingsCard
+          edit={edit()}
+          enabled={enabled()}
+          apple={apple()}
+          windows={windows()}
+          android={android()}
+          assetTag={assetTag()}
+          code={code()}
+          maxDevices={maxDevices()}
+          apnsConfigured={!!apns.data?.configured}
+          error={save.error || reset.error}
+          setEnabled={(value) => {
+            setApple(value);
+            setWindows(value);
+            if (!value) setAndroid(false);
+          }}
+          setApple={setApple}
+          setWindows={setWindows}
+          setAndroid={setAndroid}
+          setAssetTag={setAssetTag}
+          setCode={setCode}
+          setMaxDevices={setMaxDevices}
+        />
+      </div>
+    </div>
+  );
+}
+
+function HeaderActions(props: { edit: boolean; saving: boolean; resetting: boolean; onEdit: () => void; onReset: () => void }) {
+  return (
+    <>
+      <Button variant="outline" onClick={props.onEdit} disabled={props.saving}>{props.edit ? "Save" : "Edit"}</Button>
+      <Button variant="destructive" onClick={props.onReset} disabled={props.resetting}>Reset URL</Button>
+    </>
+  );
+}
+
+function EnrollmentUrlCard(props: { url: string; enabled: boolean }) {
+  const copy = (event: MouseEvent & { currentTarget: HTMLInputElement }) => {
+    event.currentTarget.select();
+    void navigator.clipboard.writeText(props.url);
+  };
+  return (
+    <Card>
+      <CardHeader><CardTitle>Enrollment URL</CardTitle></CardHeader>
+      <CardContent class="space-y-4">
+        <p class="text-sm text-muted-foreground">Open this URL on a device to enroll it. Share the password separately if configured.</p>
+        <div class="flex gap-2">
+          <Input readonly value={props.url} onClick={copy} />
+          <Button as="a" href={props.url} target="_blank" variant="outline">Open</Button>
+        </div>
+        <Show when={!props.enabled}>
+          <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Enrollment is currently disabled.</p>
+        </Show>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReadinessCard(props: { apnsConfigured: boolean; windows: boolean; android: boolean }) {
+  return (
+    <Card>
+      <CardHeader><CardTitle>Platform readiness</CardTitle></CardHeader>
+      <CardContent class="space-y-3 text-sm">
+        <ReadinessRow label="Apple APNS" value={props.apnsConfigured ? "Configured" : "Setup required"} active={props.apnsConfigured} />
+        <ReadinessRow label="Windows" value={props.windows ? "Enabled" : "Disabled"} active={props.windows} />
+        <ReadinessRow label="Android" value={props.android ? "Enabled" : "Disabled"} active={props.android} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReadinessRow(props: { label: string; value: string; active: boolean }) {
+  return (
+    <div class="flex items-center justify-between">
+      <span>{props.label}</span>
+      <Badge variant={props.active ? "default" : "secondary"}>{props.value}</Badge>
+    </div>
+  );
+}
+
+function SettingsCard(props: {
+  edit: boolean;
+  enabled: boolean;
+  apple: boolean;
+  windows: boolean;
+  android: boolean;
+  assetTag: boolean;
+  code: string;
+  maxDevices: number;
+  apnsConfigured: boolean;
+  error: unknown;
+  setEnabled: (value: boolean) => void;
+  setApple: (value: boolean) => void;
+  setWindows: (value: boolean) => void;
+  setAndroid: (value: boolean) => void;
+  setAssetTag: (value: boolean) => void;
+  setCode: (value: string) => void;
+  setMaxDevices: (value: number) => void;
+}) {
+  return (
+    <Card class="lg:col-span-2">
+      <CardHeader><CardTitle>Settings</CardTitle></CardHeader>
+      <CardContent>
+        <fieldset disabled={!props.edit} class="grid gap-5 disabled:opacity-70">
+          <ToggleRow checked={props.enabled} onChange={props.setEnabled} title="Enable device enrollment" description="Disabling enrollment prevents new devices from enrolling." />
+          <ToggleRow checked={props.apple} onChange={props.setApple} title="Enable Apple management" badge={!props.apnsConfigured ? "APNS setup required" : undefined} />
+          <ToggleRow checked={props.windows} onChange={props.setWindows} title="Enable Windows management" />
+          <ToggleRow checked={props.android} onChange={props.setAndroid} title="Enable Android management" />
+          <ToggleRow checked={props.assetTag} onChange={props.setAssetTag} title="Ask for asset tag during enrollment" />
+          <div class="grid gap-4 md:grid-cols-2">
+            <Field label="Enrollment password"><Input type="password" value={props.code} onInput={(event) => props.setCode(event.currentTarget.value)} placeholder="Optional password" /></Field>
+            <Field label="Maximum devices"><Input type="number" min="0" value={String(props.maxDevices)} onInput={(event) => props.setMaxDevices(Number(event.currentTarget.value || 0))} /></Field>
+          </div>
+        </fieldset>
+        <ErrorText error={props.error} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ToggleRow(props: { checked: boolean; onChange: (value: boolean) => void; title: string; description?: string; badge?: string }) {
+  return (
+    <label class="flex gap-3">
+      <input type="checkbox" checked={props.checked} onChange={(event) => props.onChange(event.currentTarget.checked)} />
+      <span>
+        <strong>{props.title}</strong>
+        <Show when={props.badge}><Badge variant="secondary" class="ml-2">{props.badge}</Badge></Show>
+        <Show when={props.description}><br /><span class="text-sm text-muted-foreground">{props.description}</span></Show>
+      </span>
+    </label>
+  );
 }

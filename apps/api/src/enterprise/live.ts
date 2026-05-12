@@ -3,6 +3,8 @@ import { EnterpriseService, type EnterpriseServiceShape } from "@mattrax/enterpr
 import type { Database } from "../db/index.js";
 import * as schema from "../db/schema.js";
 import { createAuth } from "../auth.js";
+import Stripe from "stripe";
+import { env } from "cloudflare:workers";
 import { and, count, eq, inArray } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
@@ -49,6 +51,9 @@ export const EnterpriseServiceLive = (db: Database, config: { origin: string }) 
 
 const makeEnterpriseService = (db: Database, config: { origin: string }): EnterpriseServiceShape => {
   const auth = createAuth();
+  const stripeClient = new Stripe((env as any).STRIPE_SECRET_KEY, {
+    apiVersion: "2026-04-22.dahlia",
+  });
 
   const requireUser = async (request: HttpServerRequest) => {
     const session = await auth.api.getSession({ headers: headersFromRequest(request) }) as any;
@@ -70,6 +75,33 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
     if (!organization) throw new Error("Tenant not found");
 
     return { user, organization, member };
+  };
+
+  const ensureStripeCustomer = async (organization: typeof schema.organization.$inferSelect) => {
+    if (organization.stripeCustomerId) return organization.stripeCustomerId;
+
+    let stripeCustomer: Stripe.Customer | undefined;
+    try {
+      stripeCustomer = (await stripeClient.customers.search({
+        query: `metadata["organizationId"]:"${organization.id}" AND metadata["customerType"]:"organization"`,
+        limit: 1,
+      })).data[0];
+    } catch {
+      for await (const customer of stripeClient.customers.list({ limit: 100 })) {
+        if (customer.metadata?.organizationId === organization.id && customer.metadata?.customerType === "organization") {
+          stripeCustomer = customer;
+          break;
+        }
+      }
+    }
+
+    stripeCustomer ??= await stripeClient.customers.create({
+      name: organization.name,
+      metadata: { organizationId: organization.id, customerType: "organization" },
+    });
+
+    await db.update(schema.organization).set({ stripeCustomerId: stripeCustomer.id }).where(eq(schema.organization.id, organization.id));
+    return stripeCustomer.id;
   };
 
   const listTenantInfo = async (userId: string) => {
@@ -527,6 +559,7 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
     billingPortal: (request, tenantId, payload) => Effect.promise(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { returnUrl: string };
+      await ensureStripeCustomer(ctx.organization);
       const result = await auth.api.createBillingPortal({
         headers: headersFromRequest(request),
         body: { referenceId: ctx.organization.id, customerType: "organization", returnUrl: body.returnUrl, disableRedirect: true },
