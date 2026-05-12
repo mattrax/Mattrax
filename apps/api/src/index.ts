@@ -1,5 +1,5 @@
-import { Layer } from "effect";
-import { HttpApi, HttpApiBuilder, HttpApiScalar, OpenApi } from "effect/unstable/httpapi";
+import { Effect, Layer, Schema } from "effect";
+import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, HttpApiScalar, OpenApi } from "effect/unstable/httpapi";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { waitUntil } from "cloudflare:workers";
 import { version } from "../package.json" with { type: "json" };
@@ -17,10 +17,17 @@ import { ManagementBackendMemory } from "./management/memory.js";
 import { createDb } from "./db/index.js";
 import { ScepRepositoryLive } from "./repositories/scepRepository.js";
 
+const healthApi = HttpApiGroup.make("HealthApi").add(
+  HttpApiEndpoint.get("health", "/health", {
+    success: Schema.Struct({ status: Schema.Literal("ok") }),
+  }),
+);
+
 const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseApi)
   .add(appleMdmApi)
   .add(platformApi)
+  .add(healthApi)
   .annotateMerge(
     OpenApi.annotations({
       title: "Mattrax Cloud API",
@@ -41,6 +48,9 @@ export const createAppLayer = (db: D1Database, env: Env) => {
     HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
     HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
     HttpApiBuilder.group(apiRoot, "PlatformApi", platformHandlers),
+    HttpApiBuilder.group(apiRoot, "HealthApi", (handlers) =>
+      handlers.handle("health", () => Effect.succeed({ status: "ok" as const })),
+    ),
   );
 
   const apiLayer = Layer.mergeAll(
