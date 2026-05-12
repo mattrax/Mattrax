@@ -16,6 +16,7 @@ import { extractTopicFromCertPem } from "@mattrax/dm-apple";
 import { ManagementBackendMemory } from "./management/memory.js";
 import { createDb } from "./db/index.js";
 import { ScepRepositoryLive } from "./repositories/scepRepository.js";
+import { createAuth } from "./auth.js";
 
 const healthApi = HttpApiGroup.make("HealthApi").add(
   HttpApiEndpoint.get("health", "/health", {
@@ -86,6 +87,10 @@ export const createAppLayer = (db: D1Database, env: Env) => {
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+    if (new URL(request.url).pathname.startsWith("/api/auth")) {
+      return createAuth(env as Env & { BETTER_AUTH_SECRET: string }).handler(request);
+    }
+
     const db = env.DB;
     const appLayer = createAppLayer(db, env);
     const { handler, dispose } = HttpRouter.toWebHandler(appLayer);

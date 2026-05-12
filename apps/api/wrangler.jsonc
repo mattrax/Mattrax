@@ -4,15 +4,15 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-10-11",
   "compatibility_flags": ["nodejs_compat"],
-  "route": {
-    "pattern": "mattrax.cloud",
-    "custom_domain": true,
-  },
   "observability": {
     "enabled": true,
   },
   "vars": {
     "ORIGIN": "https://mattrax.cloud",
+    "BETTER_AUTH_URL": "https://mattrax.cloud",
+  },
+  "placement": {
+    "mode": "smart",
   },
   "d1_databases": [
     {

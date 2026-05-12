@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => ({
     solidStart(),
     cloudflare({
       viteEnvironment: { name: "ssr" },
+      auxiliaryWorkers: [{ configPath: "../api/wrangler.jsonc" }],
       config:
         mode === "development"
           ? { vars: { ...process.env, ...loadEnv("development", "../../", "") } as any }

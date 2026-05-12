@@ -8,13 +8,9 @@
     "start": "vite start",
     "preview": "vite preview",
     "typecheck": "tsc",
-    "db:generate": "drizzle-kit generate",
-    "deploy:prod": "pnpm build && wrangler deploy",
-    "migrate:prod": "wrangler d1 migrations apply mattrax --remote",
-    "migrate:local": "wrangler d1 migrations apply mattrax --local"
+    "deploy:prod": "pnpm build && wrangler deploy"
   },
   "dependencies": {
-    "@better-auth/drizzle-adapter": "^1.6.2",
     "@fontsource-variable/geist": "^5.2.8",
     "@kobalte/core": "^0.13.11",
     "@paralleldrive/cuid2": "^3.3.0",
@@ -26,7 +22,6 @@
     "better-auth": "^1.6.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "drizzle-orm": "^0.45.2",
     "lucide-solid": "^1.8.0",
     "solid-js": "^1.9.12",
     "tailwind-merge": "^3.5.0",
@@ -37,7 +32,6 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.31.2",
     "@types/node": "^25.6.0",
-    "drizzle-kit": "^0.31.10",
     "shadcn": "^4.2.0",
     "vite": "^7.1.10",
     "wrangler": "^4.81.1"
