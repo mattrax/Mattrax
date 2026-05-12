@@ -65,6 +65,7 @@ function TopNavigation() {
             active={isActive("/#enterprise")}
           />
           <NavigationLink href="/#pricing" label="Pricing" active={isActive("/#pricing")} />
+          <NavigationLink href="/docs" label="Docs" active={isActive("/docs")} />
         </nav>
 
         <div class="flex items-center gap-3 shrink-0">
@@ -100,6 +101,7 @@ function Footer() {
           <span>© 2020 Mattrax Technologies Inc.</span>
         </div>
         <div class="flex flex-wrap justify-center gap-6">
+          <FooterLink href="/docs" label="Docs" />
           <FooterLink href="/privacy" label="Privacy" />
           <FooterLink href="/terms" label="Terms" />
           <FooterLink href="mailto:hello@mattrax.app" label="Support" />

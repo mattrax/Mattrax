@@ -11,6 +11,10 @@
       "pattern": "mattrax.cloud/api/*",
       "zone_name": "mattrax.cloud",
     },
+    {
+      "pattern": "mattrax.cloud/mdm/*",
+      "zone_name": "mattrax.cloud",
+    },
   ],
   "observability": {
     "enabled": true,
@@ -34,6 +38,7 @@
   "send_email": [
     {
       "name": "EMAIL",
+      "allowed_sender_addresses": ["hello@mattrax.cloud"],
     },
   ],
 }
