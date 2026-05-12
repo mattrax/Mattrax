@@ -3,7 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'Mattrax',
   description: 'Mobile device management solution',
-  base: "/docs",
+  base: "/docs/",
 
   vite: {
     clearScreen: false

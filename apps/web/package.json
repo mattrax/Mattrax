@@ -8,7 +8,7 @@
     "start": "vite start",
     "preview": "vite preview",
     "typecheck": "tsc",
-    "deploy:prod": "pnpm build && wrangler deploy"
+    "deploy:prod": "pnpm build && pnpm --dir ../.. doc:build && rm -rf dist/client/docs && mkdir -p dist/client/docs && cp -R ../../docs/.vitepress/dist/. dist/client/docs/ && wrangler deploy"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",
@@ -16,7 +16,7 @@
     "@paralleldrive/cuid2": "^3.3.0",
     "@solidjs/meta": "^0.29.4",
     "@solidjs/router": "^0.16.1",
-    "@solidjs/start": "2.0.0-alpha.2",
+    "@solidjs/start": "https://pkg.pr.new/solidjs/solid-start/@solidjs/start@2080",
     "@t3-oss/env-core": "^0.13.11",
     "@tailwindcss/vite": "^4.2.2",
     "better-auth": "^1.6.2",
