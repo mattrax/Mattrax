@@ -1,9 +1,7 @@
 import { Effect, Layer, Schema } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
 import { HttpServer } from "effect/unstable/http";
-import { enterpriseApi } from "@mattrax/enterprise-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
-import { enterpriseHandlers } from "@mattrax/enterprise-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmServiceLive } from "@mattrax/dm-apple";
@@ -34,7 +32,6 @@ export const createAppLayer = (config: ServerConfig) => {
   ).annotateMerge(OpenApi.annotations({ exclude: true }));
 
   const apiRoot = HttpApi.make("Mattrax")
-    .add(enterpriseApi)
     .add(appleMdmApi)
     .add(healthApi)
     .annotateMerge(
@@ -47,7 +44,6 @@ export const createAppLayer = (config: ServerConfig) => {
     );
 
   const handlersLayer = Layer.mergeAll(
-    HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
     HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
     HttpApiBuilder.group(apiRoot, "HealthApi", (handlers) =>
       handlers.handle("health", () => Effect.succeed({ status: "ok" as const })),

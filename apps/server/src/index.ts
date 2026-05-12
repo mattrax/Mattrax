@@ -65,7 +65,7 @@ const serveCommand = Command.make("serve", {
         body: chunks.length > 0 ? Buffer.concat(chunks) : undefined,
       });
 
-      const response = await handler(request, Context.empty());
+      const response = await (handler as (request: Request, context?: unknown) => Promise<Response>)(request, Context.empty());
 
       res.statusCode = response.status;
       response.headers.forEach((value, key) => {

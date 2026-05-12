@@ -17,6 +17,7 @@ import { ManagementBackendMemory } from "./management/memory.js";
 import { createDb } from "./db/index.js";
 import { ScepRepositoryLive } from "./repositories/scepRepository.js";
 import { createAuth } from "./auth.js";
+import { EnterpriseServiceLive } from "./enterprise/live.js";
 import "./env.js";
 
 const healthApi = HttpApiGroup.make("HealthApi").add(
@@ -76,6 +77,7 @@ export const createAppLayer = (db: D1Database) => {
   );
 
   const allServicesLayer = Layer.mergeAll(
+    EnterpriseServiceLive(database),
     appleMdmServiceResolved,
     scepServiceResolved,
   );
@@ -94,7 +96,7 @@ export default {
 
     const appLayer = createAppLayer(env.DB);
     const { handler, dispose } = HttpRouter.toWebHandler(appLayer);
-    const response = await handler(request);
+    const response = await (handler as (request: Request) => Promise<Response>)(request);
     waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));
     return response;
   },
