@@ -10,8 +10,8 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@mattrax/api-backend": "workspace:*",
-    "@mattrax/api-domain": "workspace:*",
+    "@mattrax/enterprise-backend": "workspace:*",
+    "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/platform-api": "workspace:*",
     "@mattrax/platform-backend": "workspace:*",
     "@mattrax/dm-apple": "workspace:*",

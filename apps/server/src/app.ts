@@ -1,9 +1,9 @@
 import { Effect, Layer, Schema } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
 import { HttpServer } from "effect/unstable/http";
-import { enterpriseApi } from "@mattrax/api-domain";
+import { enterpriseApi } from "@mattrax/enterprise-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
-import { enterpriseHandlers } from "@mattrax/api-backend";
+import { enterpriseHandlers } from "@mattrax/enterprise-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmServiceLive } from "@mattrax/dm-apple";

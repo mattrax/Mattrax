@@ -19,8 +19,8 @@
     "composite": true
   },
   "references": [
-    { "path": "../../packages/api-domain" },
-    { "path": "../../packages/api-backend" },
+    { "path": "../../packages/enterprise-domain" },
+    { "path": "../../packages/enterprise-backend" },
     { "path": "../../packages/platform-api" },
     { "path": "../../packages/platform-backend" },
     { "path": "../../packages/dm-apple" },

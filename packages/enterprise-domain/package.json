@@ -1,7 +1,7 @@
 {
-  "name": "@mattrax/api-domain",
+  "name": "@mattrax/enterprise-domain",
   "private": true,
-  "description": "API domain definitions",
+  "description": "Enterprise domain definitions",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

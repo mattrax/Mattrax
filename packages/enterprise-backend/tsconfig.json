@@ -20,7 +20,7 @@
     "composite": true
   },
   "references": [
-    { "path": "../api-domain" },
+    { "path": "../enterprise-domain" },
     { "path": "../management-backend" },
     { "path": "../crypto" }
   ],

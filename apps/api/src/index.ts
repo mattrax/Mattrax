@@ -3,9 +3,9 @@ import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, HttpApiScalar, 
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { waitUntil } from "cloudflare:workers";
 import { version } from "../package.json" with { type: "json" };
-import { enterpriseApi } from "@mattrax/api-domain";
+import { enterpriseApi } from "@mattrax/enterprise-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
-import { enterpriseHandlers } from "@mattrax/api-backend";
+import { enterpriseHandlers } from "@mattrax/enterprise-backend";
 import { platformApi } from "@mattrax/platform-api";
 import { platformHandlers } from "@mattrax/platform-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";

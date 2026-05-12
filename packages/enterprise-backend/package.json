@@ -1,14 +1,14 @@
 {
-  "name": "@mattrax/api-backend",
+  "name": "@mattrax/enterprise-backend",
   "private": true,
-  "description": "API backend implementations",
+  "description": "Enterprise backend implementations",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@mattrax/api-domain": "workspace:*",
+    "@mattrax/enterprise-domain": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },
