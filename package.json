@@ -12,7 +12,8 @@
     "mserver": "pnpm --filter @mattrax/server --",
     "web": "pnpm --filter @mattrax/web --",
     "doc": "vitepress dev docs",
-    "doc:build": "vitepress build docs"
+    "doc:build": "vitepress build docs",
+    "deploy:prod:all": "pnpm api deploy:prod && pnpm web deploy:prod"
   },
   "devDependencies": {
     "typescript": "~6.0.2",
