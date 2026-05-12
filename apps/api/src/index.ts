@@ -90,9 +90,9 @@ export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     // TODO: Move this into Effect API
     if (new URL(request.url).pathname.startsWith("/api/auth"))
-      return createAuth(env).handler(request);
+      return createAuth().handler(request);
 
-    const appLayer = createAppLayer(env.DB, apiEnv);
+    const appLayer = createAppLayer(env.DB);
     const { handler, dispose } = HttpRouter.toWebHandler(appLayer);
     const response = await handler(request);
     waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));

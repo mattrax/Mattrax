@@ -2,9 +2,9 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createDb } from "./db/index.js";
 import * as schema from "./db/schema.js";
-import type { ApiEnv } from "./env.js";
+import { env } from "cloudflare:workers";
 
-export const createAuth = (env: ApiEnv) =>
+export const createAuth = () =>
   betterAuth({
     database: drizzleAdapter(createDb(env.DB), {
       provider: "sqlite",
