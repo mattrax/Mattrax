@@ -31,7 +31,7 @@ export const createAppLayer = (config: ServerConfig) => {
     HttpApiEndpoint.get("health", "/health", {
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
-  );
+  ).annotateMerge(OpenApi.annotations({ exclude: true }));
 
   const apiRoot = HttpApi.make("Mattrax")
     .add(enterpriseApi)
