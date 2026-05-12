@@ -5,20 +5,25 @@
   "compatibility_date": "2025-10-11",
   "compatibility_flags": ["nodejs_compat"],
   "route": {
-    "pattern": "mattraxe.otbeaumont.me",
+    "pattern": "mattrax.cloud",
     "custom_domain": true,
   },
   "observability": {
     "enabled": true,
   },
   "vars": {
-    "ORIGIN": "https://mattraxe.otbeaumont.me",
+    "ORIGIN": "https://mattrax.cloud",
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "mattrax",
       "database_id": "310ef1ff-67fd-4952-861a-e4cab413ca78",
+    },
+  ],
+  "send_email": [
+    {
+      "name": "EMAIL",
     },
   ],
 }

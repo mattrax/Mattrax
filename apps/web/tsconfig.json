@@ -1,22 +1,30 @@
 {
   "compilerOptions": {
-    "target": "es2023",
-    "module": "esnext",
-    "lib": ["ES2023", "DOM"],
+    "target": "ESNext",
+    "module": "ESNext",
     "types": ["vite/client"],
     "skipLibCheck": true,
+
     "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
     "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "allowJs": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
-    "emitDeclarationOnly": true,
-    "outDir": "./dist",
-    "noUnusedLocals": true,
+    "isolatedModules": true,
+    "noEmit": true,
+
+    "strict": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "skipLibCheck": true,
-    "composite": true
+
+    "paths": {
+      "~/*": ["./src/*"]
+    }
   },
   "include": ["src"]
 }

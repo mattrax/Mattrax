@@ -60,7 +60,6 @@ export const createAppLayer = (db: D1Database, env: Env) => {
     appleMdmRoutes,
     scepRoutes,
     HttpApiScalar.layerCdn(apiRoot, { path: "/api/docs" }),
-    HttpApiScalar.layerCdn(apiRoot, { path: "/" }),
   );
 
   const appleMdmServiceResolved = AppleMdmServiceLive({

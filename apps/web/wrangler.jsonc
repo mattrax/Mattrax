@@ -1,13 +1,24 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "mattrax-web",
-  "compatibility_date": "2025-10-11",
+  "main": "@solidjs/start/server/entry",
+  "compatibility_date": "2026-04-01",
   "compatibility_flags": ["nodejs_compat"],
+  "keep_vars": true,
   "observability": {
     "enabled": true
   },
-  "assets": {
-    "directory": "./dist",
-    "not_found_handling": "404-page"
-  }
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mattrax",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ]
 }
