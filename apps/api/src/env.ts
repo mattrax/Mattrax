@@ -8,11 +8,13 @@ export const env = createEnv({
     ORIGIN: v.pipe(v.string(), v.url()),
     AUTH_SECRET: v.pipe(v.string(), v.minLength(1)),
     CLOUD_APPLE_VENDOR_CERT: v.optional(v.string()),
+    CLOUD_APPLE_VENDOR_KEY: v.optional(v.string()),
   },
   runtimeEnvStrict: {
     ORIGIN: cfEnv.ORIGIN,
     AUTH_SECRET: cfEnv.AUTH_SECRET,
     CLOUD_APPLE_VENDOR_CERT: cfEnv.CLOUD_APPLE_VENDOR_CERT,
+    CLOUD_APPLE_VENDOR_KEY: cfEnv.CLOUD_APPLE_VENDOR_KEY,
   },
   emptyStringAsUndefined: true,
 });

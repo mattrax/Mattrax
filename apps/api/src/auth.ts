@@ -17,6 +17,11 @@ export const createAuth = () =>
     }),
     secret: env.AUTH_SECRET,
     baseURL: env.ORIGIN,
+    advanced: {
+      ipAddress: {
+        ipAddressHeaders: ["cf-connecting-ip"],
+      },
+    },
     emailAndPassword: {
       enabled: true,
       sendResetPassword: async ({ user, url }) => {

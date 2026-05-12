@@ -1,9 +1,16 @@
 import { defineConfig } from 'vitepress'
 
+const origin = 'https://mattrax.cloud';
+
 export default defineConfig({
   title: 'Mattrax',
   description: 'Mobile device management solution',
   base: "/docs/",
+  cleanUrls: true,
+
+  sitemap: {
+    hostname: origin,
+  },
 
   vite: {
     clearScreen: false
@@ -15,7 +22,7 @@ export default defineConfig({
     },
 
     nav: [
-      { text: 'Home', link: '/' }
+      { text: 'Landing', link: `${origin}`, target: "_self" }
     ],
 
     sidebar: [
@@ -26,7 +33,8 @@ export default defineConfig({
         items: [
           { text: 'Whitelabel', link: '/whitelabel' }
         ]
-      }
+      },
+      { text: 'OpenAPI', link: `${origin}/api/docs`, target: "_self" }
     ]
   }
 })

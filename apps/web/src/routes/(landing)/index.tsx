@@ -224,7 +224,7 @@ export default function Page() {
                   Start free
                 </Button>
               </a>
-              <a href="mailto:hello@mattrax.io">
+              <a href="mailto:hello@mattrax.app">
                 <Button
                   variant="outline"
                   size="lg"
@@ -314,7 +314,7 @@ export default function Page() {
               <p class="text-xs text-stone-400 mb-8">
                 For large organizations with advanced requirements.
               </p>
-              <a href="mailto:hello@mattrax.io">
+              <a href="mailto:hello@mattrax.app">
                 <Button
                   variant="outline"
                   class="w-full rounded-full border-stone-300 text-stone-600 hover:bg-stone-100 mb-8"

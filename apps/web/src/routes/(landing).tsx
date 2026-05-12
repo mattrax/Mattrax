@@ -102,7 +102,7 @@ function Footer() {
         <div class="flex flex-wrap justify-center gap-6">
           <FooterLink href="/privacy" label="Privacy" />
           <FooterLink href="/terms" label="Terms" />
-          <FooterLink href="mailto:hello@mattrax.io" label="Support" />
+          <FooterLink href="mailto:hello@mattrax.app" label="Support" />
         </div>
       </div>
     </footer>
