@@ -1,4 +1,5 @@
 import type { Accessor } from "solid-js";
+import { getRequestEvent, isServer } from "solid-js/web";
 
 export type TenantInfo = { id: string; name: string; slug: string; role: string; logo?: string | null };
 export type UserInfo = { id: string; name: string; email: string; emailVerified: boolean; image?: string | null };
@@ -45,10 +46,18 @@ const required = (value: RouteParam, name: string) => {
 };
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
-    credentials: "include",
-    headers: init.body ? { "content-type": "application/json", ...init.headers } : init.headers,
+  const url = `/api/v1${path}`;
+  const event = isServer ? getRequestEvent() : undefined;
+  const headers = new Headers(init.headers);
+  if (init.body) headers.set("content-type", "application/json");
+  if (event) {
+    const cookie = event.request.headers.get("cookie");
+    if (cookie) headers.set("cookie", cookie);
+  }
+  const response = await fetch(event ? new URL(url, event.request.url) : url, {
     ...init,
+    credentials: "include",
+    headers,
   });
   if (!response.ok) {
     const text = await response.text();

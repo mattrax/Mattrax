@@ -1,0 +1,6 @@
+import { A, useParams } from "@solidjs/router";
+import { useQuery } from "@tanstack/solid-query";
+import { DataTable, EmptyState, formatDate, LinkButton, PageHeader } from "~/components/mdm/common";
+import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
+
+export default function PoliciesPage() { const params = useParams(); const policies = useQuery(() => ({ queryKey: enterpriseKeys.search(params.tenantId, "policy"), queryFn: () => enterprise.search(params.tenantId, "policy") })); return <div class="flex flex-1 flex-col gap-6 p-6"><PageHeader title="Policies" description="Configure device restrictions, payloads, and deployment behavior." actions={<LinkButton href={`/t/${params.tenantId}/policies/new`}>Create policy</LinkButton>} /><DataTable<PolicyRow> rows={policies.data?.rows} empty={<EmptyState title="No policies" description="Create a policy to start configuring managed devices." action={<LinkButton href={`/t/${params.tenantId}/policies/new`}>Create policy</LinkButton>} />} columns={[{ header: "Name", cell: (row) => <A class="font-medium hover:underline" href={`/t/${params.tenantId}/policies/${row.id}`}>{row.name}</A> }, { header: "Created", cell: (row) => formatDate(row.createdAt) }, { header: "Updated", cell: (row) => formatDate(row.updatedAt) }]} /></div>; }
