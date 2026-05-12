@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from "@solidjs/router";
-import { LogOut, Settings, User, LayoutDashboard } from "lucide-solid";
-import { createEffect, type ParentProps, Show } from "solid-js";
+import { Boxes, Laptop, LogOut, Settings, User, LayoutDashboard, ShieldCheck, UsersRound, Link as LinkIcon } from "lucide-solid";
+import { createEffect, createMemo, For, type ParentProps, Show } from "solid-js";
+import { TenantSwitcher } from "~/components/mdm/tenant-switcher";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -34,6 +35,11 @@ function breadcrumbForPath(path: string) {
   if (path === "/dashboard") return "Dashboard";
   if (path === "/account") return "Account";
   if (path === "/settings") return "Settings";
+  if (path.includes("/devices")) return "Devices";
+  if (path.includes("/groups")) return "Groups";
+  if (path.includes("/policies")) return "Policies";
+  if (path.includes("/enrollment")) return "Enrollment";
+  if (path.includes("/tenants/new")) return "Create tenant";
   return "Dashboard";
 }
 
@@ -42,6 +48,16 @@ export default function DashboardLayout(props: ParentProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const user = () => session().data?.user;
+  const tenantId = createMemo(() => location.pathname.match(/^\/t\/([^/]+)/)?.[1]);
+  const tenantBase = () => tenantId() ? `/t/${tenantId()}` : "/dashboard";
+  const navItems = () => [
+    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, active: location.pathname === "/dashboard" },
+    { href: `${tenantBase()}/devices`, label: "Devices", icon: Laptop, active: location.pathname.includes("/devices"), disabled: !tenantId() },
+    { href: `${tenantBase()}/groups`, label: "Groups", icon: UsersRound, active: location.pathname.includes("/groups"), disabled: !tenantId() },
+    { href: `${tenantBase()}/policies`, label: "Policies", icon: ShieldCheck, active: location.pathname.includes("/policies"), disabled: !tenantId() },
+    { href: `${tenantBase()}/enrollment`, label: "Enrollment", icon: LinkIcon, active: location.pathname.includes("/enrollment"), disabled: !tenantId() },
+    { href: `${tenantBase()}/settings`, label: "Tenant settings", icon: Settings, active: location.pathname.includes("/settings") && Boolean(tenantId()), disabled: !tenantId() },
+  ];
 
   createEffect(() => {
     if (!session().isPending && !user()) {
@@ -73,45 +89,30 @@ export default function DashboardLayout(props: ParentProps) {
                 class="gap-2.5 px-2 hover:bg-sidebar-accent"
                 tooltip="Mattrax"
               >
+                <Boxes class="size-5" />
                 <span class="font-semibold tracking-tight">Mattrax</span>
               </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <TenantSwitcher />
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarHeader>
 
         <SidebarContent>
           <SidebarMenu>
+            <For each={navItems()}>{(item) => (
+              <SidebarMenuItem>
+                <SidebarMenuButton as="a" href={item.disabled ? "/tenants/new" : item.href} isActive={item.active} tooltip={item.label}>
+                  <item.icon />
+                  <span>{item.label}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}</For>
             <SidebarMenuItem>
-              <SidebarMenuButton
-                as="a"
-                href="/dashboard"
-                isActive={location.pathname === "/dashboard"}
-                tooltip="Dashboard"
-              >
-                <LayoutDashboard />
-                <span>Dashboard</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                as="a"
-                href="/account"
-                isActive={location.pathname === "/account"}
-                tooltip="Account"
-              >
+              <SidebarMenuButton as="a" href="/account" isActive={location.pathname === "/account"} tooltip="Account">
                 <User />
                 <span>Account</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                as="a"
-                href="/settings"
-                isActive={location.pathname === "/settings"}
-                tooltip="Settings"
-              >
-                <Settings />
-                <span>Settings</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

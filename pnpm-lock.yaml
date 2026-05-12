@@ -9,6 +9,9 @@ catalogs:
     '@effect/platform-node':
       specifier: 4.0.0-beta.52
       version: 4.0.0-beta.52
+    '@tanstack/solid-query':
+      specifier: ^5.100.10
+      version: 5.100.10
     '@types/node':
       specifier: ^24.12.2
       version: 24.12.2
@@ -262,10 +265,13 @@ importers:
         version: https://pkg.pr.new/solidjs/solid-start/@solidjs/start@2080(@voidzero-dev/vite-plus-core@0.1.20(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(typescript@6.0.3)(yaml@2.8.3))
       '@t3-oss/env-core':
         specifier: ^0.13.11
-        version: 0.13.11(typescript@6.0.3)(valibot@1.4.0(typescript@6.0.3))(zod@3.25.76)
+        version: 0.13.11(typescript@6.0.3)(valibot@1.4.0(typescript@6.0.3))(zod@4.4.3)
       '@tailwindcss/vite':
         specifier: ^4.2.2
         version: 4.3.0(@voidzero-dev/vite-plus-core@0.1.20(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(typescript@6.0.3)(yaml@2.8.3))
+      '@tanstack/solid-query':
+        specifier: 'catalog:'
+        version: 5.100.10(solid-js@1.9.12)
       better-auth:
         specifier: ^1.6.2
         version: 1.6.10(better-sqlite3@12.9.0)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@types/better-sqlite3@7.6.13)(better-sqlite3@12.9.0)(kysely@0.28.17))(solid-js@1.9.12)(vitest@3.2.4(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(msw@2.14.6(@types/node@25.6.0)(typescript@6.0.3))(tsx@4.21.0)(typescript@6.0.3)(yaml@2.8.3))(vue@3.5.34(typescript@6.0.3))
@@ -2570,6 +2576,14 @@ packages:
     resolution: {integrity: sha512-t6J3OrB5Fc0ExuhohouH0fWUGMYL6PTLhW+E7zIk/pdbnJARZDCwjBznFnkh5ynRnIRSI4YjtTH0t6USjJISrw==}
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
+
+  '@tanstack/query-core@5.100.10':
+    resolution: {integrity: sha512-8UR0yJR+GiQ40m3lPhUr0xbfAupe6GSQiksSBSa9SM2NjezFyxXCIA69/lz8cSoNKZLrw1/PktIyQBJcVeMi3w==}
+
+  '@tanstack/solid-query@5.100.10':
+    resolution: {integrity: sha512-4uUqc+l9f7wNfL9/fxU9P+/RyA0wXh67jrl8EeNYsXHo5Xcy31uiSBq5wZ80NHBCbyw+eLtrkZZMW2ZXNe1ViQ==}
+    peerDependencies:
+      solid-js: ^1.6.0
 
   '@ts-morph/common@0.27.0':
     resolution: {integrity: sha512-Wf29UqxWDpc+i61k3oIOzcUfQt79PIT9y/MWfAGlrkjg6lBC1hwDECLXPVJAhWjiGbfBCxZd65F/LIZF3+jeJQ==}
@@ -6697,12 +6711,6 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@t3-oss/env-core@0.13.11(typescript@6.0.3)(valibot@1.4.0(typescript@6.0.3))(zod@3.25.76)':
-    optionalDependencies:
-      typescript: 6.0.3
-      valibot: 1.4.0(typescript@6.0.3)
-      zod: 3.25.76
-
   '@t3-oss/env-core@0.13.11(typescript@6.0.3)(valibot@1.4.0(typescript@6.0.3))(zod@4.4.3)':
     optionalDependencies:
       typescript: 6.0.3
@@ -6776,6 +6784,13 @@ snapshots:
       '@tailwindcss/oxide': 4.3.0
       tailwindcss: 4.3.0
       vite: '@voidzero-dev/vite-plus-core@0.1.20(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(typescript@6.0.3)(yaml@2.8.3)'
+
+  '@tanstack/query-core@5.100.10': {}
+
+  '@tanstack/solid-query@5.100.10(solid-js@1.9.12)':
+    dependencies:
+      '@tanstack/query-core': 5.100.10
+      solid-js: 1.9.12
 
   '@ts-morph/common@0.27.0':
     dependencies:
