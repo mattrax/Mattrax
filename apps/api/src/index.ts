@@ -3,9 +3,11 @@ import { HttpApi, HttpApiBuilder, HttpApiScalar, OpenApi } from "effect/unstable
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { waitUntil } from "cloudflare:workers";
 import { version } from "../package.json" with { type: "json" };
-import { mattraxApi } from "@mattrax/api-domain";
+import { enterpriseApi } from "@mattrax/api-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
-import { mattraxHandlers } from "@mattrax/api-backend";
+import { enterpriseHandlers } from "@mattrax/api-backend";
+import { platformApi } from "@mattrax/platform-api";
+import { platformHandlers } from "@mattrax/platform-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmServiceLive } from "@mattrax/dm-apple";
@@ -16,13 +18,14 @@ import { createDb } from "./db/index.js";
 import { ScepRepositoryLive } from "./repositories/scepRepository.js";
 
 const apiRoot = HttpApi.make("Mattrax")
-  .add(mattraxApi)
+  .add(enterpriseApi)
   .add(appleMdmApi)
+  .add(platformApi)
   .annotateMerge(
     OpenApi.annotations({
       title: "Mattrax Cloud API",
       version,
-      description: "The API for the Mattrax Cloud. Used by the dashboard, CLI and custom integrations.",
+      description: "The Mattrax Cloud API",
       servers: [{ url: "/" }],
     }),
   );
@@ -35,8 +38,9 @@ export const createAppLayer = (db: D1Database, env: Env) => {
     : "com.apple.mgmt.External.placeholder";
 
   const handlersLayer = Layer.mergeAll(
-    HttpApiBuilder.group(apiRoot, "MattraxApi", mattraxHandlers),
-    HttpApiBuilder.group(apiRoot, "MattraxAppleMDM", appleMdmHandlers),
+    HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
+    HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
+    HttpApiBuilder.group(apiRoot, "PlatformApi", platformHandlers),
   );
 
   const apiLayer = Layer.mergeAll(

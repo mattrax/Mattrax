@@ -1,7 +1,7 @@
 import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
 
-export const appleMdmApi = HttpApiGroup.make("MattraxAppleMDM")
+export const appleMdmApi = HttpApiGroup.make("AppleDM")
   // MDM Protocol endpoints
   .add(
     HttpApiEndpoint.get("enroll", "/enroll", {

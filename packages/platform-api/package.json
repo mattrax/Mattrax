@@ -1,0 +1,16 @@
+{
+  "name": "@mattrax/platform-api",
+  "private": true,
+  "description": "Platform API domain definitions",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

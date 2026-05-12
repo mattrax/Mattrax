@@ -10,6 +10,7 @@ export function mockManagementBackend(
     getAppleDeclarationTokens: ManagementBackendType["getAppleDeclarationTokens"];
     getAppleDeclarationItems: ManagementBackendType["getAppleDeclarationItems"];
     getAppleDeclaration: ManagementBackendType["getAppleDeclaration"];
+    getAppleAsset: ManagementBackendType["getAppleAsset"];
   }>,
 ) {
   return Layer.succeed(
@@ -37,8 +38,10 @@ export function mockManagementBackend(
             assets: [],
             management: [],
           })),
-      getAppleDeclaration:
-        overrides?.getAppleDeclaration ?? (() => Effect.succeed(null)),
-    }),
+    getAppleDeclaration:
+      overrides?.getAppleDeclaration ?? (() => Effect.succeed(null)),
+    getAppleAsset:
+      overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
+  }),
   );
 }

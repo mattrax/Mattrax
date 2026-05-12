@@ -83,6 +83,12 @@ importers:
       '@mattrax/management-backend-http':
         specifier: workspace:*
         version: link:../../packages/management-backend-http
+      '@mattrax/platform-api':
+        specifier: workspace:*
+        version: link:../../packages/platform-api
+      '@mattrax/platform-backend':
+        specifier: workspace:*
+        version: link:../../packages/platform-backend
       '@mattrax/scep':
         specifier: workspace:*
         version: link:../../packages/scep
@@ -329,6 +335,29 @@ importers:
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../management-backend
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.52
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.12.2
+
+  packages/platform-api:
+    dependencies:
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.52
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.12.2
+
+  packages/platform-backend:
+    dependencies:
+      '@mattrax/platform-api':
+        specifier: workspace:*
+        version: link:../platform-api
       effect:
         specifier: 'catalog:'
         version: 4.0.0-beta.52

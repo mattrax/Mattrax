@@ -36,7 +36,7 @@ describe("Management Backend HTTP E2E", () => {
   it("handles apple device event", async () => {
     let receivedEvent: unknown;
     const backend = mockManagementBackend({
-      appleDeviceEvent: (_scope, event) =>
+      appleDeviceEvent: (_scope: any, event: any) =>
         Effect.sync(() => {
           receivedEvent = event;
         }),
@@ -86,7 +86,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await res.json() as any;
     expect(body._tag).toBe("Command");
     expect(body.commandUUID).toBe("cmd-001");
     await dispose();
@@ -114,7 +114,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await res.json() as any;
     expect(body.activationsToken).toBe("act-001");
     expect(body.configurationsToken).toBe("cfg-001");
     expect(body.assetsToken).toBe("asset-001");
@@ -144,7 +144,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await res.json() as any;
     expect(body.activations).toHaveLength(1);
     expect(body.configurations).toHaveLength(1);
     expect(body.assets).toHaveLength(1);
@@ -154,7 +154,7 @@ describe("Management Backend HTTP E2E", () => {
 
   it("handles get apple declaration", async () => {
     const backend = mockManagementBackend({
-      getAppleDeclaration: (_scope, type, identifier) =>
+      getAppleDeclaration: (_scope: any, type: any, identifier: any) =>
         Effect.succeed({
           Identifier: identifier,
           Type: type,
@@ -177,7 +177,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = await res.json() as any;
     expect(body.Identifier).toBe("decl-001");
     expect(body.Type).toBe("com.apple.configuration");
     await dispose();
@@ -200,7 +200,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = await res.json();
+    const body = await res.json() as any;
     expect(body._tag).toBe("ManagementNotSupported");
     await dispose();
   });
@@ -221,7 +221,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = await res.json();
+    const body = await res.json() as any;
     expect(body._tag).toBe("UnknownDevice");
     await dispose();
   });
@@ -242,7 +242,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = await res.json();
+    const body = await res.json() as any;
     expect(body._tag).toBe("InternalServerError");
     await dispose();
   });

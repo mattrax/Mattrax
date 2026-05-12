@@ -1,9 +1,9 @@
 import { Effect, Layer } from "effect";
-import { HttpApi, HttpApiBuilder, HttpApiScalar, OpenApi } from "effect/unstable/httpapi";
+import { HttpApi, HttpApiBuilder, OpenApi } from "effect/unstable/httpapi";
 import { HttpServer, HttpServerResponse, HttpRouter } from "effect/unstable/http";
-import { mattraxApi } from "@mattrax/api-domain";
+import { enterpriseApi } from "@mattrax/api-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
-import { mattraxHandlers } from "@mattrax/api-backend";
+import { enterpriseHandlers } from "@mattrax/api-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmServiceLive } from "@mattrax/dm-apple";
@@ -28,7 +28,7 @@ export const createAppLayer = (config: ServerConfig) => {
     : "com.apple.mgmt.External.placeholder";
 
   const apiRoot = HttpApi.make("Mattrax")
-    .add(mattraxApi)
+    .add(enterpriseApi)
     .add(appleMdmApi)
     .annotateMerge(
       OpenApi.annotations({
@@ -40,8 +40,8 @@ export const createAppLayer = (config: ServerConfig) => {
     );
 
   const handlersLayer = Layer.mergeAll(
-    HttpApiBuilder.group(apiRoot, "MattraxApi", mattraxHandlers),
-    HttpApiBuilder.group(apiRoot, "MattraxAppleMDM", appleMdmHandlers),
+    HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
+    HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
   );
 
   const apiLayer = Layer.mergeAll(

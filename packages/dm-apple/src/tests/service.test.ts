@@ -1,10 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { AppleMdmService, AppleMdmServiceLive } from "../service.js";
-import { ManagementBackend, ManagementNotSupported, UnknownDevice } from "@mattrax/management-backend";
+import { ManagementBackend, ManagementNotSupported, UnknownDevice, MdmOrigin } from "@mattrax/management-backend";
 import { mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
+const TEST_MDM_ORIGIN = new MdmOrigin({ url: TEST_CONFIG.origin });
 
 function runWithService<A, E>(
   backendLayer: Layer.Layer<ManagementBackend>,
@@ -265,7 +266,7 @@ describe("AppleMdmService", () => {
 
       const result = await runWithService(backend, Effect.gen(function* () {
         const service = yield* AppleMdmService;
-        return yield* service.handleCheckin({ _tag: "device", udid: "udid-123" });
+        return yield* service.handleCheckin({ _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN });
       }));
       expect(result).not.toBeNull();
       expect(result!.commandUUID).toBe("cmd-001");
@@ -279,7 +280,7 @@ describe("AppleMdmService", () => {
 
       const result = await runWithService(backend, Effect.gen(function* () {
         const service = yield* AppleMdmService;
-        return yield* service.handleCheckin({ _tag: "device", udid: "udid-123" });
+        return yield* service.handleCheckin({ _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN });
       }));
       expect(result).toBeNull();
     });
@@ -295,7 +296,7 @@ describe("AppleMdmService", () => {
 
       const result = await runWithService(backend, Effect.gen(function* () {
         const service = yield* AppleMdmService;
-        return yield* service.handleCheckin({ _tag: "device", udid: "udid-123" });
+        return yield* service.handleCheckin({ _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN });
       }));
       expect(result).not.toBeNull();
       expect(result!.requestType).toBe("DeclarativeManagement");
@@ -309,7 +310,7 @@ describe("AppleMdmService", () => {
 
       const result = await runWithService(backend, Effect.gen(function* () {
         const service = yield* AppleMdmService;
-        return yield* service.handleCheckin({ _tag: "device", udid: "unknown" });
+        return yield* service.handleCheckin({ _tag: "device", udid: "unknown", mdmOrigin: TEST_MDM_ORIGIN });
       }));
       expect(result).toBeNull();
     });
@@ -329,7 +330,7 @@ describe("AppleMdmService", () => {
 
       const result = await runWithService(backend, Effect.gen(function* () {
         const service = yield* AppleMdmService;
-        return yield* service.handleDeclarativeTokens({ _tag: "device", udid: "udid-123" });
+        return yield* service.handleDeclarativeTokens({ _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN });
       }));
       expect(result.SyncTokens.Tokens).toHaveLength(4);
       const cfg = result.SyncTokens.Tokens.find((t) => t.Type === "configurations");
@@ -343,7 +344,7 @@ describe("AppleMdmService", () => {
 
       const result = await runWithService(backend, Effect.gen(function* () {
         const service = yield* AppleMdmService;
-        return yield* service.handleDeclarativeTokens({ _tag: "device", udid: "unknown" });
+        return yield* service.handleDeclarativeTokens({ _tag: "device", udid: "unknown", mdmOrigin: TEST_MDM_ORIGIN });
       })).then(() => "Success").catch(() => "Failure");
       expect(result).toBe("Failure");
     });
@@ -363,7 +364,7 @@ describe("AppleMdmService", () => {
 
       const result = await runWithService(backend, Effect.gen(function* () {
         const service = yield* AppleMdmService;
-        return yield* service.handleDeclarationItems({ _tag: "device", udid: "udid-123" });
+        return yield* service.handleDeclarationItems({ _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN });
       }));
       expect(result.Declarations.Activations).toHaveLength(1);
       expect(result.Declarations.Activations[0].Identifier).toBe("act-1");
@@ -381,7 +382,7 @@ describe("AppleMdmService", () => {
       const result = await runWithService(backend, Effect.gen(function* () {
         const service = yield* AppleMdmService;
         return yield* service.handleDeclaration(
-          { _tag: "device", udid: "udid-123" },
+          { _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN },
           "configurations",
           "decl-1",
         );
@@ -397,7 +398,7 @@ describe("AppleMdmService", () => {
       const result = await runWithService(backend, Effect.gen(function* () {
         const service = yield* AppleMdmService;
         return yield* service.handleDeclaration(
-          { _tag: "device", udid: "udid-123" },
+          { _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN },
           "configurations",
           "missing",
         );
@@ -419,7 +420,7 @@ describe("AppleMdmService", () => {
       await runWithService(backend, Effect.gen(function* () {
         const service = yield* AppleMdmService;
         return yield* service.handleStatusReport(
-          { _tag: "device", udid: "udid-123" },
+          { _tag: "device", udid: "udid-123", mdmOrigin: TEST_MDM_ORIGIN },
           {
             StatusItems: { test: true },
             Errors: [

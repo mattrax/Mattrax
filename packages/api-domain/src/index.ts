@@ -1,1 +1,1 @@
-export { mattraxApi } from "./mattrax.js";
+export { enterpriseApi } from "./enterprise.ts";

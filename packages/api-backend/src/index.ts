@@ -1,1 +1,1 @@
-export { mattraxHandlers } from "./mattraxHandlers.js";
+export { enterpriseHandlers } from "./enterpriseHandlers.js";

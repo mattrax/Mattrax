@@ -1,0 +1,17 @@
+{
+  "name": "@mattrax/platform-backend",
+  "private": true,
+  "description": "Platform API backend implementations",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@mattrax/platform-api": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

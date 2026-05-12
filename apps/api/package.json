@@ -12,6 +12,8 @@
   "dependencies": {
     "@mattrax/api-backend": "workspace:*",
     "@mattrax/api-domain": "workspace:*",
+    "@mattrax/platform-api": "workspace:*",
+    "@mattrax/platform-backend": "workspace:*",
     "@mattrax/dm-apple": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",

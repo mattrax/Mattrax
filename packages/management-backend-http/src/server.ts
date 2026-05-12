@@ -34,4 +34,10 @@ export const managementWebhookHandlers = (handlers: HttpApiBuilder.Handlers.From
         const backend = yield* ManagementBackend;
         return yield* backend.getAppleDeclaration(payload.scope, payload.type, payload.identifier);
       }),
+    )
+    .handle("getAppleAsset", ({ payload }) =>
+      Effect.gen(function* () {
+        const backend = yield* ManagementBackend;
+        return yield* backend.getAppleAsset(payload.identityCertificate, payload.identifier);
+      }),
     );

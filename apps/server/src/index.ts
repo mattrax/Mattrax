@@ -1,4 +1,4 @@
-import { Console, Effect, Layer, Option } from "effect";
+import { Console, Context, Effect, Layer, Option } from "effect";
 import { Command, Flag } from "effect/unstable/cli";
 import { FetchHttpClient } from "effect/unstable/http";
 import { HttpRouter } from "effect/unstable/http";
@@ -65,7 +65,7 @@ const serveCommand = Command.make("serve", {
         body: chunks.length > 0 ? Buffer.concat(chunks) : undefined,
       });
 
-      const response = await handler(request);
+      const response = await handler(request, Context.empty());
 
       res.statusCode = response.status;
       response.headers.forEach((value, key) => {

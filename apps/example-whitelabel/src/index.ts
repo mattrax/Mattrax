@@ -1,10 +1,9 @@
-import { Effect, Layer } from "effect";
+import { Context, Layer } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { AppleMdmServiceLive, appleMdmApi, appleMdmHandlers, appleMdmRoutes, extractTopicFromCertPem } from "@mattrax/dm-apple";
 import { ScepServiceLive, scepRoutes } from "@mattrax/scep";
 import { managementWebhookGroup, managementWebhookHandlers } from "@mattrax/management-backend-http";
-import { ManagementBackend } from "@mattrax/management-backend";
 import { ManagementBackendD1 } from "./management.js";
 import { ScepRepositoryD1 } from "./scep-repo.js";
 import { handleApi } from "./api.js";
@@ -12,15 +11,6 @@ import { handleApi } from "./api.js";
 const whitelabelApi = HttpApi.make("WhitelabelMDM")
   .add(managementWebhookGroup)
   .add(appleMdmApi);
-
-// Extend the shared webhook handlers to also handle getAppleAsset
-const fullManagementWebhookHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typeof managementWebhookGroup>) =>
-  managementWebhookHandlers(handlers).handle("getAppleAsset", ({ payload }) =>
-    Effect.gen(function* () {
-      const backend = yield* ManagementBackend;
-      return yield* backend.getAppleAsset(payload.identityCertificate, payload.identifier);
-    }),
-  );
 
 function createMdmLayer(env: Env) {
   const topic = env.APNS_CERT
@@ -33,8 +23,8 @@ function createMdmLayer(env: Env) {
     HttpApiBuilder.layer(whitelabelApi, { openapiPath: "/openapi.json" }).pipe(
       Layer.provide(
         Layer.mergeAll(
-          HttpApiBuilder.group(whitelabelApi, "ManagementWebhook", fullManagementWebhookHandlers),
-          HttpApiBuilder.group(whitelabelApi, "MattraxAppleMDM", appleMdmHandlers),
+          HttpApiBuilder.group(whitelabelApi, "ManagementWebhook", managementWebhookHandlers),
+          HttpApiBuilder.group(whitelabelApi, "AppleDM", appleMdmHandlers),
         ),
       ),
     ),
@@ -71,7 +61,7 @@ export default {
     ) {
       const mdmLayer = createMdmLayer(env);
       const { handler, dispose } = HttpRouter.toWebHandler(mdmLayer);
-      const response = await handler(request);
+      const response = await handler(request, Context.empty());
       ctx.waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));
       return response;
     }
