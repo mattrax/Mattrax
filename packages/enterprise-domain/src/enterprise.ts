@@ -2,7 +2,11 @@ import { Schema } from "effect";
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
 
 const IdParam = { id: Schema.String };
-const EntityParam = { entity: Schema.Literals(["device", "group", "policy"]), id: Schema.String };
+const TenantParam = { tenantId: Schema.String };
+const TenantIdParam = { tenantId: Schema.String, id: Schema.String };
+const TenantEntityParam = { tenantId: Schema.String, entity: Schema.Literals(["device", "group", "policy"]), id: Schema.String };
+const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.String };
+const TenantMemberParam = { tenantId: Schema.String, memberId: Schema.String };
 
 export const NullableString = Schema.NullOr(Schema.String);
 export const JsonRecord = Schema.Record(Schema.String, Schema.Unknown);
@@ -22,6 +26,24 @@ export const OrganizationInfo = Schema.Struct({
   role: Schema.String,
 });
 
+export const TenantInfo = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  slug: Schema.String,
+  role: Schema.String,
+  logo: Schema.optional(NullableString),
+});
+
+export const TenantDetail = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  slug: Schema.String,
+  role: Schema.String,
+  logo: Schema.optional(NullableString),
+  metadata: Schema.optional(NullableString),
+  createdAt: Schema.String,
+});
+
 export const BillingSummary = Schema.Struct({
   plan: Schema.optional(Schema.String),
   status: Schema.optional(Schema.String),
@@ -31,9 +53,56 @@ export const BillingSummary = Schema.Struct({
 
 export const MeResponse = Schema.Struct({
   user: UserInfo,
-  organization: Schema.optional(OrganizationInfo),
+  activeTenant: Schema.optional(TenantInfo),
+  tenants: Schema.Array(TenantInfo),
   billing: Schema.optional(BillingSummary),
 });
+
+export const CreateTenantRequest = Schema.Struct({
+  name: Schema.String,
+  slug: Schema.String,
+  logo: Schema.optional(NullableString),
+  metadata: Schema.optional(JsonRecord),
+});
+
+export const PatchTenantRequest = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  slug: Schema.optional(Schema.String),
+  logo: Schema.optional(NullableString),
+  metadata: Schema.optional(Schema.NullOr(JsonRecord)),
+});
+
+export const TenantListResponse = Schema.Struct({ tenants: Schema.Array(TenantInfo) });
+
+export const TenantUser = Schema.Struct({
+  memberId: Schema.String,
+  userId: Schema.String,
+  name: Schema.String,
+  email: Schema.String,
+  role: Schema.String,
+  createdAt: Schema.String,
+});
+
+export const TenantUsersResponse = Schema.Struct({ users: Schema.Array(TenantUser) });
+
+export const InviteTenantUserRequest = Schema.Struct({
+  email: Schema.String,
+  role: Schema.optional(Schema.String),
+  resend: Schema.optional(Schema.Boolean),
+});
+
+export const TenantInvitation = Schema.Struct({
+  id: Schema.String,
+  email: Schema.String,
+  role: Schema.optional(NullableString),
+  status: Schema.String,
+  expiresAt: Schema.String,
+  createdAt: Schema.String,
+});
+
+export const TenantInvitationsResponse = Schema.Struct({ invitations: Schema.Array(TenantInvitation) });
+
+export const PatchTenantUserRequest = Schema.Struct({ role: Schema.String });
 
 export const UpdateMeRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
@@ -188,33 +257,42 @@ export const BillingPortalRequest = Schema.Struct({ returnUrl: Schema.String });
 export const BillingPortalResponse = Schema.Struct({ url: Schema.String });
 
 export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
-  .add(HttpApiEndpoint.get("status", "/status", { success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.get("me", "/v1/me", { success: MeResponse }))
   .add(HttpApiEndpoint.patch("updateMe", "/v1/me", { payload: UpdateMeRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.delete("deleteMe", "/v1/me", { success: Schema.Struct({ error: Schema.String }) }))
+  .add(HttpApiEndpoint.get("listTenants", "/v1/tenants", { success: TenantListResponse }))
+  .add(HttpApiEndpoint.post("createTenant", "/v1/tenants", { payload: CreateTenantRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.get("getTenant", "/v1/tenants/:tenantId", { params: TenantParam, success: TenantDetail }))
+  .add(HttpApiEndpoint.patch("patchTenant", "/v1/tenants/:tenantId", { params: TenantParam, payload: PatchTenantRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.delete("deleteTenant", "/v1/tenants/:tenantId", { params: TenantParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.get("listTenantUsers", "/v1/tenants/:tenantId/users", { params: TenantParam, success: TenantUsersResponse }))
+  .add(HttpApiEndpoint.post("inviteTenantUser", "/v1/tenants/:tenantId/invitations", { params: TenantParam, payload: InviteTenantUserRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.get("listTenantInvitations", "/v1/tenants/:tenantId/invitations", { params: TenantParam, success: TenantInvitationsResponse }))
+  .add(HttpApiEndpoint.delete("cancelTenantInvitation", "/v1/tenants/:tenantId/invitations/:invitationId", { params: TenantInvitationParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.patch("patchTenantUser", "/v1/tenants/:tenantId/users/:memberId", { params: TenantMemberParam, payload: PatchTenantUserRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.delete("removeTenantUser", "/v1/tenants/:tenantId/users/:memberId", { params: TenantMemberParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.get("getEnrollment", "/v1/enrollment/:id", { params: IdParam, query: EnrollmentQuery, success: EnrollmentResponse }))
-  .add(HttpApiEndpoint.delete("deleteTenant", "/v1/tenant", { success: Schema.Struct({ error: Schema.String }) }))
-  .add(HttpApiEndpoint.get("getApns", "/v1/apns", { success: ApnsInfo }))
-  .add(HttpApiEndpoint.post("uploadApns", "/v1/apns", { payload: UploadApnsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.delete("deleteDevices", "/v1/devices", { payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.patch("patchDevice", "/v1/device/:id", { params: IdParam, payload: PatchDeviceRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("deviceAction", "/v1/device/:id/action", { params: IdParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("deviceUnenroll", "/v1/device/:id/unenroll", { params: IdParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("createGroup", "/v1/groups", { payload: CreateGroupRequest, success: IdResponse }))
-  .add(HttpApiEndpoint.delete("deleteGroups", "/v1/groups", { payload: IdsRequest, success: BulkOperationResult }))
-  .add(HttpApiEndpoint.patch("patchGroup", "/v1/group/:id", { params: IdParam, payload: PatchGroupRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.patch("patchGroupMembers", "/v1/group/:id/members", { params: IdParam, payload: PatchGroupMembersRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("syncGroups", "/v1/groups/sync", { payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("duplicateGroup", "/v1/group/:id/duplicate", { params: IdParam, payload: DuplicateRequest, success: IdResponse }))
-  .add(HttpApiEndpoint.post("createPolicy", "/v1/policies", { payload: CreatePolicyRequest, success: IdResponse }))
-  .add(HttpApiEndpoint.delete("deletePolicies", "/v1/policies", { payload: IdsRequest, success: BulkOperationResult }))
-  .add(HttpApiEndpoint.patch("patchPolicy", "/v1/policy/:id", { params: IdParam, payload: PatchPolicyRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("syncPolicies", "/v1/policies/sync", { payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("duplicatePolicy", "/v1/policy/:id/duplicate", { params: IdParam, payload: DuplicateRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.get("getApns", "/v1/tenants/:tenantId/apns", { params: TenantParam, success: ApnsInfo }))
+  .add(HttpApiEndpoint.post("uploadApns", "/v1/tenants/:tenantId/apns", { params: TenantParam, payload: UploadApnsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.delete("deleteDevices", "/v1/tenants/:tenantId/devices", { params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.patch("patchDevice", "/v1/tenants/:tenantId/devices/:id", { params: TenantIdParam, payload: PatchDeviceRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("deviceAction", "/v1/tenants/:tenantId/devices/:id/action", { params: TenantIdParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("deviceUnenroll", "/v1/tenants/:tenantId/devices/:id/unenroll", { params: TenantIdParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("createGroup", "/v1/tenants/:tenantId/groups", { params: TenantParam, payload: CreateGroupRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.delete("deleteGroups", "/v1/tenants/:tenantId/groups", { params: TenantParam, payload: IdsRequest, success: BulkOperationResult }))
+  .add(HttpApiEndpoint.patch("patchGroup", "/v1/tenants/:tenantId/groups/:id", { params: TenantIdParam, payload: PatchGroupRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.patch("patchGroupMembers", "/v1/tenants/:tenantId/groups/:id/members", { params: TenantIdParam, payload: PatchGroupMembersRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("syncGroups", "/v1/tenants/:tenantId/groups/sync", { params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("duplicateGroup", "/v1/tenants/:tenantId/groups/:id/duplicate", { params: TenantIdParam, payload: DuplicateRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.post("createPolicy", "/v1/tenants/:tenantId/policies", { params: TenantParam, payload: CreatePolicyRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.delete("deletePolicies", "/v1/tenants/:tenantId/policies", { params: TenantParam, payload: IdsRequest, success: BulkOperationResult }))
+  .add(HttpApiEndpoint.patch("patchPolicy", "/v1/tenants/:tenantId/policies/:id", { params: TenantIdParam, payload: PatchPolicyRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("syncPolicies", "/v1/tenants/:tenantId/policies/sync", { params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("duplicatePolicy", "/v1/tenants/:tenantId/policies/:id/duplicate", { params: TenantIdParam, payload: DuplicateRequest, success: IdResponse }))
   .add(HttpApiEndpoint.post("previewMobileconfig", "/v1/policy/preview-mobileconfig", { payload: Schema.Struct({ mobileconfig: Schema.String }), success: JsonRecord }))
-  .add(HttpApiEndpoint.get("search", "/v1/search", { query: SearchQuery, success: SearchResult }))
-  .add(HttpApiEndpoint.get("node", "/v1/node/:entity/:id", { params: EntityParam, success: NodeResponse }))
-  .add(HttpApiEndpoint.get("billing", "/v1/billing", { success: BillingSummary }))
-  .add(HttpApiEndpoint.post("billingPortal", "/v1/billing/portal", { payload: BillingPortalRequest, success: BillingPortalResponse }))
+  .add(HttpApiEndpoint.get("search", "/v1/tenants/:tenantId/search", { params: TenantParam, query: SearchQuery, success: SearchResult }))
+  .add(HttpApiEndpoint.get("node", "/v1/tenants/:tenantId/node/:entity/:id", { params: TenantEntityParam, success: NodeResponse }))
+  .add(HttpApiEndpoint.get("billing", "/v1/tenants/:tenantId/billing", { params: TenantParam, success: BillingSummary }))
+  .add(HttpApiEndpoint.post("billingPortal", "/v1/tenants/:tenantId/billing/portal", { params: TenantParam, payload: BillingPortalRequest, success: BillingPortalResponse }))
   .prefix("/api")
   .annotateMerge(OpenApi.annotations({ title: "Mattrax Enterprise API", description: "Organization-scoped Mattrax management API." }));

@@ -41,29 +41,69 @@ type OrgContext = {
   readonly member: typeof schema.member.$inferSelect;
 };
 
+const canWriteTenant = (role: string) => role.split(",").some((item) => item === "owner" || item === "admin");
+const canDeleteTenant = (role: string) => role.split(",").includes("owner");
+
 export const EnterpriseServiceLive = (db: Database, config: { origin: string }) =>
   Layer.succeed(EnterpriseService, EnterpriseService.of(makeEnterpriseService(db, config)));
 
 const makeEnterpriseService = (db: Database, config: { origin: string }): EnterpriseServiceShape => {
   const auth = createAuth();
 
-  const requireOrg = async (request: HttpServerRequest): Promise<OrgContext> => {
+  const requireUser = async (request: HttpServerRequest) => {
     const session = await auth.api.getSession({ headers: headersFromRequest(request) }) as any;
     if (!session?.user?.id) throw new Error("Unauthenticated");
 
     const user = await db.query.user.findFirst({ where: eq(schema.user.id, session.user.id) });
     if (!user) throw new Error("Unauthenticated");
+    return { session, user };
+  };
 
-    const activeOrganizationId = session.session?.activeOrganizationId as string | undefined;
-    const member = activeOrganizationId
-      ? await db.query.member.findFirst({ where: and(eq(schema.member.userId, user.id), eq(schema.member.organizationId, activeOrganizationId)) })
-      : await db.query.member.findFirst({ where: eq(schema.member.userId, user.id) });
-    if (!member) throw new Error("No active organization");
+  const requireTenant = async (request: HttpServerRequest, tenantId: string, access: "read" | "write" | "delete" = "read"): Promise<OrgContext> => {
+    const { user } = await requireUser(request);
+    const member = await db.query.member.findFirst({ where: and(eq(schema.member.userId, user.id), eq(schema.member.organizationId, tenantId)) });
+    if (!member) throw new Error("Tenant not found");
+    if (access === "write" && !canWriteTenant(member.role)) throw new Error("Forbidden");
+    if (access === "delete" && !canDeleteTenant(member.role)) throw new Error("Forbidden");
 
     const organization = await db.query.organization.findFirst({ where: eq(schema.organization.id, member.organizationId) });
-    if (!organization) throw new Error("No active organization");
+    if (!organization) throw new Error("Tenant not found");
 
     return { user, organization, member };
+  };
+
+  const listTenantInfo = async (userId: string) => {
+    const rows = await db.select({
+      id: schema.organization.id,
+      name: schema.organization.name,
+      slug: schema.organization.slug,
+      logo: schema.organization.logo,
+      role: schema.member.role,
+    }).from(schema.member).innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId)).where(eq(schema.member.userId, userId));
+    return rows;
+  };
+
+  const memberCount = async (tenantId: string) => {
+    const [members] = await db.select({ value: count() }).from(schema.member).where(eq(schema.member.organizationId, tenantId));
+    return members?.value ?? 0;
+  };
+
+  const assertTenantDevices = async (tenantId: string, ids: ReadonlyArray<string>) => {
+    if (ids.length === 0) return;
+    const rows = await db.select({ id: schema.device.id }).from(schema.device).where(and(eq(schema.device.organizationId, tenantId), inArray(schema.device.id, [...ids])));
+    if (rows.length !== new Set(ids).size) throw new Error("Device not found");
+  };
+
+  const assertTenantPolicies = async (tenantId: string, ids: ReadonlyArray<string>) => {
+    if (ids.length === 0) return;
+    const rows = await db.select({ id: schema.policy.id }).from(schema.policy).where(and(eq(schema.policy.organizationId, tenantId), inArray(schema.policy.id, [...ids])));
+    if (rows.length !== new Set(ids).size) throw new Error("Policy not found");
+  };
+
+  const assertTenantGroup = async (tenantId: string, groupId: string) => {
+    const group = await db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, tenantId)) });
+    if (!group) throw new Error("Group not found");
+    return group;
   };
 
   const billingSummary = async (organizationId: string) => {
@@ -124,37 +164,110 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
   };
 
   return {
-    status: () => Effect.succeed(ok),
     me: (request) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+      const { session, user } = await requireUser(request);
+      const tenants = await listTenantInfo(user.id);
+      const activeTenant = tenants.find((tenant) => tenant.id === session.session?.activeOrganizationId) ?? tenants[0];
       return {
         user: {
-          id: ctx.user.id,
-          name: ctx.user.name,
-          email: ctx.user.email,
-          emailVerified: ctx.user.emailVerified,
-          image: ctx.user.image,
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          emailVerified: user.emailVerified,
+          image: user.image,
         },
-        organization: {
-          id: ctx.organization.id,
-          name: ctx.organization.name,
-          slug: ctx.organization.slug,
-          role: ctx.member.role,
-        },
-        billing: await billingSummary(ctx.organization.id),
+        activeTenant,
+        tenants,
+        billing: activeTenant ? await billingSummary(activeTenant.id) : undefined,
       };
     }),
     updateMe: (request, payload) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+      const { user } = await requireUser(request);
       const body = payload as { name?: string; image?: string | null };
       await db.update(schema.user).set({
-        name: body.name ?? ctx.user.name,
-        image: body.image === undefined ? ctx.user.image : body.image,
+        name: body.name ?? user.name,
+        image: body.image === undefined ? user.image : body.image,
         updatedAt: now(),
-      }).where(eq(schema.user.id, ctx.user.id));
+      }).where(eq(schema.user.id, user.id));
       return ok;
     }),
     deleteMe: () => Effect.succeed({ error: "Delete user is currently not supported while organizations and billing are managed by Mattrax." }),
+    listTenants: (request) => Effect.promise(async () => {
+      const { user } = await requireUser(request);
+      return { tenants: await listTenantInfo(user.id) };
+    }),
+    createTenant: (request, payload) => Effect.promise(async () => {
+      const body = payload as { name: string; slug: string; logo?: string | null; metadata?: Record<string, unknown> };
+      const result = await auth.api.createOrganization({ headers: headersFromRequest(request), body }) as any;
+      const tenantId = result?.id ?? result?.data?.id ?? result?.organization?.id ?? result?.data?.organization?.id;
+      if (!tenantId) throw new Error("Tenant creation failed");
+      return { id: tenantId };
+    }),
+    getTenant: (request, tenantId) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId);
+      return { ...ctx.organization, role: ctx.member.role, createdAt: iso(ctx.organization.createdAt) };
+    }),
+    patchTenant: (request, tenantId, payload) => Effect.promise(async () => {
+      await requireTenant(request, tenantId, "write");
+      await auth.api.updateOrganization({ headers: headersFromRequest(request), body: { organizationId: tenantId, data: payload } });
+      return ok;
+    }),
+    deleteTenant: (request, tenantId) => Effect.promise(async () => {
+      await requireTenant(request, tenantId, "delete");
+      if (await memberCount(tenantId) > 1) throw new Error("Cannot delete a tenant with more than one user");
+      await auth.api.deleteOrganization({ headers: headersFromRequest(request), body: { organizationId: tenantId } });
+      return ok;
+    }),
+    listTenantUsers: (request, tenantId) => Effect.promise(async () => {
+      await requireTenant(request, tenantId);
+      const users = await db.select({
+        memberId: schema.member.id,
+        userId: schema.user.id,
+        name: schema.user.name,
+        email: schema.user.email,
+        role: schema.member.role,
+        createdAt: schema.member.createdAt,
+      }).from(schema.member).innerJoin(schema.user, eq(schema.user.id, schema.member.userId)).where(eq(schema.member.organizationId, tenantId));
+      return { users: users.map((user) => ({ ...user, createdAt: iso(user.createdAt) })) };
+    }),
+    inviteTenantUser: (request, tenantId, payload) => Effect.promise(async () => {
+      await requireTenant(request, tenantId, "write");
+      const body = payload as { email: string; role?: string; resend?: boolean };
+      const result = await auth.api.createInvitation({ headers: headersFromRequest(request), body: { organizationId: tenantId, email: body.email, role: body.role ?? "member", resend: body.resend } }) as any;
+      const invitationId = result?.id ?? result?.data?.id ?? result?.invitation?.id ?? result?.data?.invitation?.id;
+      if (!invitationId) throw new Error("Invitation creation failed");
+      return { id: invitationId };
+    }),
+    listTenantInvitations: (request, tenantId) => Effect.promise(async () => {
+      await requireTenant(request, tenantId, "write");
+      const invitations = await db.select().from(schema.invitation).where(eq(schema.invitation.organizationId, tenantId));
+      return { invitations: invitations.map((item) => ({ id: item.id, email: item.email, role: item.role, status: item.status, expiresAt: iso(item.expiresAt), createdAt: iso(item.createdAt) })) };
+    }),
+    cancelTenantInvitation: (request, tenantId, invitationId) => Effect.promise(async () => {
+      await requireTenant(request, tenantId, "write");
+      const invitation = await db.query.invitation.findFirst({ where: and(eq(schema.invitation.id, invitationId), eq(schema.invitation.organizationId, tenantId)) });
+      if (!invitation) throw new Error("Invitation not found");
+      await auth.api.cancelInvitation({ headers: headersFromRequest(request), body: { invitationId } });
+      return ok;
+    }),
+    patchTenantUser: (request, tenantId, memberId, payload) => Effect.promise(async () => {
+      await requireTenant(request, tenantId, "write");
+      const member = await db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) });
+      if (!member) throw new Error("Tenant user not found");
+      const body = payload as { role: string };
+      await auth.api.updateMemberRole({ headers: headersFromRequest(request), body: { organizationId: tenantId, memberId, role: body.role } });
+      return ok;
+    }),
+    removeTenantUser: (request, tenantId, memberId) => Effect.promise(async () => {
+      await requireTenant(request, tenantId, "write");
+      if (await memberCount(tenantId) <= 1) throw new Error("Cannot remove the last tenant user; delete the tenant instead");
+      const member = await db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) });
+      if (!member) throw new Error("Tenant user not found");
+      const user = await db.query.user.findFirst({ where: eq(schema.user.id, member.userId) });
+      if (!user) throw new Error("Tenant user not found");
+      await auth.api.removeMember({ headers: headersFromRequest(request), body: { organizationId: tenantId, memberIdOrEmail: user.email } });
+      return ok;
+    }),
     getEnrollment: (enrollmentId, code) => Effect.promise(async () => {
       const enrollment = await db.query.enterpriseEnrollment.findFirst({ where: eq(schema.enterpriseEnrollment.id, enrollmentId) });
       if (!enrollment) throw new Error("Enrollment not found");
@@ -178,14 +291,13 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
         assetTag: enabled && enrollment.enabledAssetTag,
       };
     }),
-    deleteTenant: () => Effect.succeed({ error: "Delete tenant's is currently not supported as they are tied to your account!" }),
-    getApns: (request) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    getApns: (request, tenantId) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId);
       const apns = await db.query.applePushCertificate.findFirst({ where: eq(schema.applePushCertificate.organizationId, ctx.organization.id) });
       return { configured: apns !== undefined, email: apns?.email ?? null, topic: apns?.topic ?? null };
     }),
-    uploadApns: (request, payload) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    uploadApns: (request, tenantId, payload) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { email: string; cert: string };
       const topic = body.cert.match(/UID=([^,\n]+)/)?.[1] ?? `com.apple.mgmt.External.${ctx.organization.id}`;
       await db.insert(schema.applePushCertificate).values({
@@ -200,37 +312,39 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
       });
       return ok;
     }),
-    deleteDevices: (request, ids) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    deleteDevices: (request, tenantId, ids) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
       if (ids.length > 0) await db.delete(schema.device).where(and(eq(schema.device.organizationId, ctx.organization.id), inArray(schema.device.id, [...ids])));
       return ok;
     }),
-    patchDevice: (request, deviceId, payload) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    patchDevice: (request, tenantId, deviceId, payload) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { name?: string; notes?: string | null; assetTag?: string | null };
       await db.update(schema.device).set({ name: body.name, notes: body.notes, assetTag: body.assetTag }).where(and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id)));
       return ok;
     }),
-    deviceAction: (request) => Effect.promise(async () => {
-      await requireOrg(request);
+    deviceAction: (request, tenantId) => Effect.promise(async () => {
+      await requireTenant(request, tenantId, "write");
       return ok;
     }),
-    deviceUnenroll: (request, deviceId) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    deviceUnenroll: (request, tenantId, deviceId) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
       await db.update(schema.device).set({ status: "unenrolling" }).where(and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id), eq(schema.device.status, "enrolled")));
       return ok;
     }),
-    createGroup: (request, payload) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    createGroup: (request, tenantId, payload) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { name: string; notes?: string | null; devices?: Array<string>; policies?: Array<string> };
+      await assertTenantDevices(ctx.organization.id, body.devices ?? []);
+      await assertTenantPolicies(ctx.organization.id, body.policies ?? []);
       const groupId = id();
       await db.insert(schema.enterpriseGroup).values({ id: groupId, organizationId: ctx.organization.id, name: body.name, notes: body.notes ?? null, createdAt: now(), updatedAt: now() });
       if (body.devices?.length) await db.insert(schema.groupDevice).values(body.devices.map((deviceId) => ({ groupId, deviceId }))).onConflictDoNothing();
       if (body.policies?.length) await db.insert(schema.groupPolicy).values(body.policies.map((policyId) => ({ groupId, policyId }))).onConflictDoNothing();
       return { id: groupId };
     }),
-    deleteGroups: (request, ids) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    deleteGroups: (request, tenantId, ids) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
       const deleted: Array<string> = [];
       const failed: Array<{ id: string; reason: string }> = [];
       for (const groupId of ids) {
@@ -239,29 +353,31 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
       }
       return { deleted, failed };
     }),
-    patchGroup: (request, groupId, payload) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    patchGroup: (request, tenantId, groupId, payload) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { name?: string; notes?: string | null };
       await db.update(schema.enterpriseGroup).set({ name: body.name, notes: body.notes, updatedAt: now() }).where(and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id)));
       return ok;
     }),
-    patchGroupMembers: (request, groupId, payload) => Effect.promise(async () => {
-      await requireOrg(request);
+    patchGroupMembers: (request, tenantId, groupId, payload) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
+      await assertTenantGroup(ctx.organization.id, groupId);
       const body = payload as { assign?: { devices?: Array<string>; policies?: Array<string> }; unassign?: { devices?: Array<string>; policies?: Array<string> } };
+      await assertTenantDevices(ctx.organization.id, [...(body.assign?.devices ?? []), ...(body.unassign?.devices ?? [])]);
+      await assertTenantPolicies(ctx.organization.id, [...(body.assign?.policies ?? []), ...(body.unassign?.policies ?? [])]);
       if (body.assign?.devices?.length) await db.insert(schema.groupDevice).values(body.assign.devices.map((deviceId) => ({ groupId, deviceId }))).onConflictDoNothing();
       if (body.assign?.policies?.length) await db.insert(schema.groupPolicy).values(body.assign.policies.map((policyId) => ({ groupId, policyId }))).onConflictDoNothing();
       if (body.unassign?.devices?.length) await db.delete(schema.groupDevice).where(and(eq(schema.groupDevice.groupId, groupId), inArray(schema.groupDevice.deviceId, body.unassign.devices)));
       if (body.unassign?.policies?.length) await db.delete(schema.groupPolicy).where(and(eq(schema.groupPolicy.groupId, groupId), inArray(schema.groupPolicy.policyId, body.unassign.policies)));
       return ok;
     }),
-    syncGroups: (request) => Effect.promise(async () => {
-      await requireOrg(request);
+    syncGroups: (request, tenantId) => Effect.promise(async () => {
+      await requireTenant(request, tenantId, "write");
       return ok;
     }),
-    duplicateGroup: (request, groupId, payload) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
-      const source = await db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id)) });
-      if (!source) throw new Error("Group not found");
+    duplicateGroup: (request, tenantId, groupId, payload) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
+      const source = await assertTenantGroup(ctx.organization.id, groupId);
       const body = payload as { name?: string };
       const newId = id();
       await db.insert(schema.enterpriseGroup).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
@@ -271,15 +387,15 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
       if (policies.length) await db.insert(schema.groupPolicy).values(policies.map((p) => ({ groupId: newId, policyId: p.policyId })));
       return { id: newId };
     }),
-    createPolicy: (request, payload) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    createPolicy: (request, tenantId, payload) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { name: string; notes?: string | null };
       const policyId = id();
       await db.insert(schema.policy).values({ id: policyId, organizationId: ctx.organization.id, name: body.name, notes: body.notes ?? null, createdAt: now(), updatedAt: now() });
       return { id: policyId };
     }),
-    deletePolicies: (request, ids) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    deletePolicies: (request, tenantId, ids) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
       const deleted: Array<string> = [];
       const failed: Array<{ id: string; reason: string }> = [];
       for (const policyId of ids) {
@@ -288,10 +404,12 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
       }
       return { deleted, failed };
     }),
-    patchPolicy: (request, policyId, payload) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    patchPolicy: (request, tenantId, policyId, payload) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { name?: string; notes?: string | null; configurations?: Record<string, unknown> };
-      await db.update(schema.policy).set({ name: body.name, notes: body.notes, updatedAt: now() }).where(and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)));
+      const policy = await db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) });
+      if (!policy) throw new Error("Policy not found");
+      await db.update(schema.policy).set({ name: body.name, notes: body.notes, updatedAt: now() }).where(eq(schema.policy.id, policyId));
       for (const [kind, data] of Object.entries(body.configurations ?? {})) {
         if (data === null) {
           await db.delete(schema.configuration).where(and(eq(schema.configuration.policyId, policyId), eq(schema.configuration.kind, kind)));
@@ -302,12 +420,12 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
       }
       return ok;
     }),
-    syncPolicies: (request) => Effect.promise(async () => {
-      await requireOrg(request);
+    syncPolicies: (request, tenantId) => Effect.promise(async () => {
+      await requireTenant(request, tenantId, "write");
       return ok;
     }),
-    duplicatePolicy: (request, policyId, payload) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    duplicatePolicy: (request, tenantId, policyId, payload) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
       const source = await db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) });
       if (!source) throw new Error("Policy not found");
       const body = payload as { name?: string };
@@ -318,8 +436,8 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
       return { id: newId };
     }),
     previewMobileconfig: (payload) => Effect.succeed({ payload }),
-    search: (request, query) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    search: (request, tenantId, query) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId);
       if (query.type === "device") {
         const rows = await db.select().from(schema.device).where(eq(schema.device.organizationId, ctx.organization.id));
         return { rows: rows.map(rowDevice) };
@@ -331,8 +449,8 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
       const rows = await db.select().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id));
       return { rows: await Promise.all(rows.map((row) => rowPolicy(row))) };
     }),
-    node: (request, entity, nodeId) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    node: (request, tenantId, entity, nodeId) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId);
       if (entity === "device") {
         const row = await db.query.device.findFirst({ where: and(eq(schema.device.id, nodeId), eq(schema.device.organizationId, ctx.organization.id)) });
         if (!row) throw new Error("Device not found");
@@ -347,12 +465,12 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
       if (!row) throw new Error("Policy not found");
       return rowPolicy(row, true);
     }),
-    billing: (request) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    billing: (request, tenantId) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId);
       return billingSummary(ctx.organization.id);
     }),
-    billingPortal: (request, payload) => Effect.promise(async () => {
-      const ctx = await requireOrg(request);
+    billingPortal: (request, tenantId, payload) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { returnUrl: string };
       const result = await auth.api.createBillingPortal({
         headers: headersFromRequest(request),

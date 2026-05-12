@@ -3,7 +3,7 @@ import { organization } from "better-auth/plugins";
 import { stripe } from "@better-auth/stripe";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import Stripe from "stripe";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { createDb } from "./db/index.js";
 import * as schema from "./db/schema.js";
 import { env } from "cloudflare:workers";
@@ -56,8 +56,11 @@ export const createAuth = (): any => {
     },
     plugins: [
       organization({
-        disableOrganizationDeletion: true,
         organizationHooks: {
+          beforeDeleteOrganization: async ({ organization }) => {
+            const [members] = await db.select({ value: count() }).from(schema.member).where(eq(schema.member.organizationId, organization.id));
+            if ((members?.value ?? 0) > 1) throw new Error("Cannot delete a tenant with more than one user");
+          },
           afterCreateOrganization: async ({ organization }) => {
             const now = new Date();
             await db.insert(schema.enterpriseEnrollment).values({
