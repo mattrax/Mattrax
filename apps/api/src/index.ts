@@ -1,7 +1,7 @@
 import { Effect, Layer, Schema } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, HttpApiScalar, OpenApi } from "effect/unstable/httpapi";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
-import { waitUntil } from "cloudflare:workers";
+import { env, waitUntil } from "cloudflare:workers";
 import { version } from "../package.json" with { type: "json" };
 import { enterpriseApi } from "@mattrax/enterprise-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
@@ -17,6 +17,7 @@ import { ManagementBackendMemory } from "./management/memory.js";
 import { createDb } from "./db/index.js";
 import { ScepRepositoryLive } from "./repositories/scepRepository.js";
 import { createAuth } from "./auth.js";
+import "./env.js";
 
 const healthApi = HttpApiGroup.make("HealthApi").add(
   HttpApiEndpoint.get("health", "/health", {
@@ -38,7 +39,7 @@ const apiRoot = HttpApi.make("Mattrax")
     }),
   );
 
-export const createAppLayer = (db: D1Database, env: Env) => {
+export const createAppLayer = (db: D1Database) => {
   const database = createDb(db);
 
   const topic = env.CLOUD_APPLE_VENDOR_CERT
@@ -87,12 +88,11 @@ export const createAppLayer = (db: D1Database, env: Env) => {
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-    if (new URL(request.url).pathname.startsWith("/api/auth")) {
-      return createAuth(env as Env & { BETTER_AUTH_SECRET: string }).handler(request);
-    }
+    // TODO: Move this into Effect API
+    if (new URL(request.url).pathname.startsWith("/api/auth"))
+      return createAuth(env).handler(request);
 
-    const db = env.DB;
-    const appLayer = createAppLayer(db, env);
+    const appLayer = createAppLayer(env.DB, apiEnv);
     const { handler, dispose } = HttpRouter.toWebHandler(appLayer);
     const response = await handler(request);
     waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));

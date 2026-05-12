@@ -22,12 +22,14 @@
     "@mattrax/platform-api": "workspace:*",
     "@mattrax/platform-backend": "workspace:*",
     "@mattrax/scep": "workspace:*",
+    "@t3-oss/env-core": "^0.13.11",
     "asn1js": "catalog:",
     "better-auth": "^1.6.2",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "fast-plist": "catalog:",
-    "pkijs": "catalog:"
+    "pkijs": "catalog:",
+    "valibot": "^1.3.1"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.0.0",

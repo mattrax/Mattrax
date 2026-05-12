@@ -3,20 +3,27 @@ import { solidStart } from "@solidjs/start/config";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
 
-export default defineConfig(({ mode }) => ({
-  resolve: {
-    tsconfigPaths: true,
-  },
-  plugins: [
-    tailwindcss(),
-    solidStart(),
-    cloudflare({
-      viteEnvironment: { name: "ssr" },
-      auxiliaryWorkers: [{ configPath: "../api/wrangler.jsonc" }],
-      config:
-        mode === "development"
-          ? { vars: { ...process.env, ...loadEnv("development", "../../", "") } as any }
-          : undefined,
-    }),
-  ],
-}));
+export default defineConfig(({ mode }) => {
+  const config = mode === "development"
+    ? { vars: { ...process.env, ...loadEnv("development", "../../", "") } as any }
+    : undefined;
+
+  return {
+    server: {
+      port: 9050,
+      allowedHosts: ["dev.otbeaumont.me"]
+    },
+    resolve: {
+      tsconfigPaths: true,
+    },
+    plugins: [
+      tailwindcss(),
+      solidStart(),
+      cloudflare({
+        viteEnvironment: { name: "ssr" },
+        auxiliaryWorkers: [{ configPath: "../api/wrangler.jsonc", config }],
+        config,
+      }),
+    ],
+  };
+});

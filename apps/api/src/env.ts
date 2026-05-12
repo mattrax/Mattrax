@@ -1,0 +1,18 @@
+import { createEnv } from "@t3-oss/env-core";
+import * as v from "valibot";
+import { env as cfEnv } from "cloudflare:workers"
+
+// For now this is only used for runtime validation, so transformations aren't safe.
+export const env = createEnv({
+  server: {
+    ORIGIN: v.pipe(v.string(), v.url()),
+    AUTH_SECRET: v.pipe(v.string(), v.minLength(1)),
+    CLOUD_APPLE_VENDOR_CERT: v.optional(v.string()),
+  },
+  runtimeEnvStrict: {
+    ORIGIN: cfEnv.ORIGIN,
+    AUTH_SECRET: cfEnv.AUTH_SECRET,
+    CLOUD_APPLE_VENDOR_CERT: cfEnv.CLOUD_APPLE_VENDOR_CERT,
+  },
+  emptyStringAsUndefined: true,
+});

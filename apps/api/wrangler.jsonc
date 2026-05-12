@@ -17,7 +17,9 @@
   },
   "vars": {
     "ORIGIN": "https://mattrax.cloud",
-    "BETTER_AUTH_URL": "https://mattrax.cloud",
+  },
+  "secrets": {
+    "required": ["AUTH_SECRET", "CLOUD_APPLE_VENDOR_CERT"],
   },
   "placement": {
     "mode": "smart",
