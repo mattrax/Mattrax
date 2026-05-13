@@ -1,9 +1,9 @@
-import { Context, Effect } from "effect";
+import { Effect } from "effect";
 import type { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 
 type ServiceEffect<A = any> = Effect.Effect<A>;
 
-export interface EnterpriseServiceShape {
+export interface EnterpriseBackend {
   readonly me: (request: HttpServerRequest) => ServiceEffect;
   readonly updateMe: (request: HttpServerRequest, payload: unknown) => ServiceEffect;
   readonly deleteMe: (request: HttpServerRequest) => ServiceEffect;
@@ -49,5 +49,3 @@ export interface EnterpriseServiceShape {
   readonly billing: (request: HttpServerRequest, tenantId: string) => ServiceEffect;
   readonly billingPortal: (request: HttpServerRequest, tenantId: string, payload: unknown) => ServiceEffect;
 }
-
-export class EnterpriseService extends Context.Service<EnterpriseService, EnterpriseServiceShape>()("@mattrax/EnterpriseService") {}

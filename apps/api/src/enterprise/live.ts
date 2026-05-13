@@ -1,5 +1,5 @@
-import { Effect, Layer } from "effect";
-import { EnterpriseService, type EnterpriseServiceShape } from "@mattrax/enterprise-backend";
+import { Effect } from "effect";
+import type { EnterpriseBackend } from "@mattrax/enterprise-backend";
 import type { Database } from "../db/index.js";
 import * as schema from "../db/schema.js";
 import { createAuth } from "../auth.js";
@@ -46,10 +46,7 @@ type OrgContext = {
 const canWriteTenant = (role: string) => role.split(",").some((item) => item === "owner" || item === "admin");
 const canDeleteTenant = (role: string) => role.split(",").includes("owner");
 
-export const EnterpriseServiceLive = (db: Database, config: { origin: string }) =>
-  Layer.succeed(EnterpriseService, EnterpriseService.of(makeEnterpriseService(db, config)));
-
-const makeEnterpriseService = (db: Database, config: { origin: string }): EnterpriseServiceShape => {
+export const createEnterpriseBackend = (db: Database, config: { origin: string }): EnterpriseBackend => {
   const auth = createAuth();
   const stripeClient = new Stripe((env as any).STRIPE_SECRET_KEY, {
     apiVersion: "2026-04-22.dahlia",

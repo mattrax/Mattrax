@@ -18,7 +18,7 @@ import { createDb } from "./db/index.js";
 import * as schema from "./db/schema.js";
 import { ScepRepositoryLive } from "./repositories/scepRepository.js";
 import { createAuth } from "./auth.js";
-import { EnterpriseServiceLive } from "./enterprise/live.js";
+import { createEnterpriseBackend } from "./enterprise/live.js";
 import "./env.js";
 
 const healthApi = HttpApiGroup.make("HealthApi").add(
@@ -48,8 +48,10 @@ export const createAppLayer = (db: D1Database) => {
     ? (extractTopicFromCertPem(env.CLOUD_APPLE_VENDOR_CERT) ?? "com.apple.mgmt.External.placeholder")
     : "com.apple.mgmt.External.placeholder";
 
+  const enterpriseBackend = createEnterpriseBackend(database, { origin: env.ORIGIN });
+
   const handlersLayer = Layer.mergeAll(
-    HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
+    HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers(enterpriseBackend)),
     HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
     HttpApiBuilder.group(apiRoot, "PlatformApi", platformHandlers),
     HttpApiBuilder.group(apiRoot, "HealthApi", (handlers) =>
@@ -78,7 +80,6 @@ export const createAppLayer = (db: D1Database) => {
   );
 
   const allServicesLayer = Layer.mergeAll(
-    EnterpriseServiceLive(database, { origin: env.ORIGIN }),
     appleMdmServiceResolved,
     scepServiceResolved,
   );
