@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import {
   EnterpriseAuthError,
+  EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseDbError,
   EnterpriseForbidden,
@@ -18,7 +19,7 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
-import { createEnterpriseAuth, hashPassword, userInfo, verifyPassword } from "./auth.ts";
+import { createEnterpriseAuth } from "./auth.ts";
 import { base64ToBytes, bytesToBase64, policyApplicationKey, sha256Hex, toR2Error } from "./policyApplicationStorage.ts";
 
 type EnterpriseHandlersConfig = {
@@ -69,6 +70,7 @@ const canDeleteTenant = (role: string) => role.split(",").includes("owner");
 
 type EnterpriseApiError =
   | EnterpriseUnauthorized
+  | EnterpriseBadRequest
   | EnterpriseForbidden
   | EnterpriseNotFound
   | EnterpriseConflict
@@ -111,6 +113,8 @@ const toEnterpriseError = (error: unknown): EnterpriseApiError => {
 
   const message = errorMessage(error);
   if (message === "Unauthenticated") return new EnterpriseUnauthorized({ message });
+  if (message === "Invalid email or password") return new EnterpriseUnauthorized({ message });
+  if (message === "Invalid or expired token" || message === "Current password is incorrect") return new EnterpriseBadRequest({ message });
   if (message === "Forbidden") return new EnterpriseForbidden({ message });
   if (message.endsWith("not found")) return new EnterpriseNotFound({ message });
   if (message.startsWith("Cannot ")) return new EnterpriseConflict({ message });
@@ -670,18 +674,15 @@ export const enterpriseHandlers = ({ db, schema, origin, stripeClient, storage }
       const result = await stripeClient.billingPortal.sessions.create({ customer, return_url: body.returnUrl });
       return { url: result.url ?? body.returnUrl };
     }),
-    authSession: (request) => effectTry(async () => {
-      const resolved = await auth.requireUser({ headers: request.headers }).catch(() => undefined);
-      return { user: resolved?.user ? userInfo(resolved.user) : undefined };
-    }),
-    authRegister: (_request, _payload) => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/register" })),
-    authLogin: (_request, _payload) => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/login" })),
-    authLogout: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/logout" })),
-    authForgotPassword: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/forgot-password" })),
-    authResetPassword: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/reset-password" })),
-    authChangePassword: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/change-password" })),
-    authChangeEmail: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/change-email" })),
-    authVerifyEmailChange: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/verify-email-change" })),
+    authSession: (request) => effectTry(() => auth.authSession(webRequestFromRequest(request, origin))),
+    authRegister: (request, payload) => effectTry(() => auth.authRegister(webRequestFromRequest(request, origin), payload)),
+    authLogin: (request, payload) => effectTry(() => auth.authLogin(webRequestFromRequest(request, origin), payload)),
+    authLogout: (request) => effectTry(() => auth.authLogout(webRequestFromRequest(request, origin))),
+    authForgotPassword: (_request, payload) => effectTry(() => auth.authForgotPassword(payload)),
+    authResetPassword: (_request, payload) => effectTry(() => auth.authResetPassword(payload)),
+    authChangePassword: (request, payload) => effectTry(() => auth.authChangePassword(webRequestFromRequest(request, origin), payload)),
+    authChangeEmail: (request, payload) => effectTry(() => auth.authChangeEmail(webRequestFromRequest(request, origin), payload)),
+    authVerifyEmailChange: (_request, payload) => effectTry(() => auth.authVerifyEmailChange(payload)),
     listApiTokens: (request) => effectTry(() => auth.listApiTokens(webRequestFromRequest(request, origin))),
     createApiToken: (request, payload) => effectTry(() => auth.createApiToken(webRequestFromRequest(request, origin), payload)),
     revokeApiToken: (request, tokenId) => effectTry(() => auth.revokeApiToken(webRequestFromRequest(request, origin), tokenId)),

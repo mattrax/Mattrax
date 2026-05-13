@@ -14,6 +14,9 @@ export const JsonRecord = Schema.Record(Schema.String, Schema.Unknown);
 export class EnterpriseUnauthorized extends Schema.TaggedErrorClass<EnterpriseUnauthorized>()("EnterpriseUnauthorized", {
   message: Schema.String,
 }) {}
+export class EnterpriseBadRequest extends Schema.TaggedErrorClass<EnterpriseBadRequest>()("EnterpriseBadRequest", {
+  message: Schema.String,
+}) {}
 export class EnterpriseForbidden extends Schema.TaggedErrorClass<EnterpriseForbidden>()("EnterpriseForbidden", {
   message: Schema.String,
 }) {}
@@ -44,6 +47,7 @@ export class EnterpriseR2InternalError extends Schema.TaggedErrorClass<Enterpris
 
 const EnterpriseApiErrors = [
   EnterpriseUnauthorized.pipe(HttpApiSchema.status(401)),
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
   EnterpriseConflict.pipe(HttpApiSchema.status(409)),

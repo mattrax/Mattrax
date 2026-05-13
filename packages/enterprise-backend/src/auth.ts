@@ -1,4 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
+import { HttpServerResponse } from "effect/unstable/http";
 
 export type EnterpriseAuthConfig = {
   readonly db: any;
@@ -55,11 +56,6 @@ const cookieHeader = (token: string) => {
 };
 
 const clearCookieHeader = () => `${sessionCookie}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
-
-const json = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), {
-  ...init,
-  headers: { "content-type": "application/json", ...(init.headers as Record<string, string> | undefined) },
-});
 
 export const userInfo = (user: any) => ({ id: user.id, name: user.name, email: user.email, emailVerified: user.emailVerified, image: user.image });
 
@@ -137,84 +133,76 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
     return ok;
   };
 
-  const handle = async (request: Request) => {
-    try {
-      const url = new URL(request.url);
-      const path = url.pathname.replace(/^\/api\/v1/, "");
-      const body: any = request.method === "GET" ? undefined : await request.json().catch(() => ({}));
-
-      if (request.method === "GET" && path === "/auth/session") {
-        const resolved = await resolveSession(request);
-        return json({ user: resolved?.user ? userInfo(resolved.user) : undefined });
-      }
-      if (request.method === "POST" && path === "/auth/register") {
-        const email = normalizeEmail(body.email);
-        const createdAt = now();
-        const user = { id: id(), name: body.name, email, emailVerified: false, createdAt, updatedAt: createdAt };
-        await db.insert(schema.user).values(user);
-        await db.insert(schema.account).values({ id: id(), accountId: email, providerId: "credential", userId: user.id, password: await hashPassword(body.password), createdAt, updatedAt: createdAt });
-        const sessionToken = await createSession(request, user.id);
-        return json({ user: userInfo(user) }, { headers: { "set-cookie": cookieHeader(sessionToken) } });
-      }
-      if (request.method === "POST" && path === "/auth/login") {
-        const email = normalizeEmail(body.email);
-        const account = await db.query.account.findFirst({ where: and(eq(schema.account.providerId, "credential"), eq(schema.account.accountId, email)) });
-        if (!account || !await verifyPassword(body.password, account.password)) return json({ message: "Invalid email or password" }, { status: 401 });
-        const user = await db.query.user.findFirst({ where: eq(schema.user.id, account.userId) });
-        const sessionToken = await createSession(request, user.id);
-        return json({ user: userInfo(user) }, { headers: { "set-cookie": cookieHeader(sessionToken) } });
-      }
-      if (request.method === "POST" && path === "/auth/logout") {
-        const token = parseCookies(request.headers.get("cookie"))[sessionCookie];
-        if (token) await db.delete(schema.session).where(eq(schema.session.tokenHash, await sha256(token)));
-        return json(ok, { headers: { "set-cookie": clearCookieHeader() } });
-      }
-      if (request.method === "POST" && path === "/auth/forgot-password") {
-        const email = normalizeEmail(body.email);
-        const user = await db.query.user.findFirst({ where: eq(schema.user.email, email) });
-        if (user) console.log("RESET EMAIL", email, `${origin}${body.redirectTo ?? "/reset-password"}?token=${await issueVerification(email, "password-reset")}`);
-        return json(ok);
-      }
-      if (request.method === "POST" && path === "/auth/reset-password") {
-        const verification = await db.query.verification.findFirst({ where: and(eq(schema.verification.kind, "password-reset"), eq(schema.verification.valueHash, await sha256(body.token))) });
-        if (!verification || verification.expiresAt <= now()) return json({ message: "Invalid or expired token" }, { status: 400 });
-        await db.update(schema.account).set({ password: await hashPassword(body.newPassword), updatedAt: now() }).where(and(eq(schema.account.providerId, "credential"), eq(schema.account.accountId, verification.identifier)));
-        await db.delete(schema.verification).where(eq(schema.verification.id, verification.id));
-        return json(ok);
-      }
-      if (request.method === "POST" && path === "/auth/change-password") {
-        const { user } = await requireUser(request);
-        const account = await db.query.account.findFirst({ where: and(eq(schema.account.providerId, "credential"), eq(schema.account.userId, user.id)) });
-        if (!account || !await verifyPassword(body.currentPassword, account.password)) return json({ message: "Current password is incorrect" }, { status: 400 });
-        await db.update(schema.account).set({ password: await hashPassword(body.newPassword), updatedAt: now() }).where(eq(schema.account.id, account.id));
-        if (body.revokeOtherSessions) await db.delete(schema.session).where(eq(schema.session.userId, user.id));
-        return json(ok);
-      }
-      if (request.method === "POST" && path === "/auth/change-email") {
-        const { user } = await requireUser(request);
-        const newEmail = normalizeEmail(body.newEmail);
-        console.log("CHANGE EMAIL VERIFICATION", user.email, "->", newEmail, `${origin}${body.callbackURL ?? "/account"}?token=${await issueVerification(user.id, "email-change", { newEmail })}`);
-        return json(ok);
-      }
-      if (request.method === "POST" && path === "/auth/verify-email-change") {
-        const verification = await db.query.verification.findFirst({ where: and(eq(schema.verification.kind, "email-change"), eq(schema.verification.valueHash, await sha256(body.token))) });
-        if (!verification || verification.expiresAt <= now()) return json({ message: "Invalid or expired token" }, { status: 400 });
-        const newEmail = (verification.metadata as any)?.newEmail;
-        await db.update(schema.user).set({ email: newEmail, emailVerified: true, updatedAt: now() }).where(eq(schema.user.id, verification.identifier));
-        await db.update(schema.account).set({ accountId: newEmail, updatedAt: now() }).where(and(eq(schema.account.providerId, "credential"), eq(schema.account.userId, verification.identifier)));
-        await db.delete(schema.verification).where(eq(schema.verification.id, verification.id));
-        return json(ok);
-      }
-      if (request.method === "GET" && path === "/account/api-tokens") return json(await listApiTokens(request));
-      if (request.method === "POST" && path === "/account/api-tokens") return json(await createApiToken(request, body));
-      const revoke = path.match(/^\/account\/api-tokens\/([^/]+)$/);
-      if (request.method === "DELETE" && revoke) return json(await revokeApiToken(request, revoke[1]));
-      return undefined;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Internal server error";
-      return json({ message }, { status: message === "Unauthenticated" ? 401 : 500 });
-    }
+  const authSession = async (request: Request) => {
+    const resolved = await resolveSession(request);
+    return { user: resolved?.user ? userInfo(resolved.user) : undefined };
   };
 
-  return { requireUser, handle, listApiTokens, createApiToken, revokeApiToken };
+  const authRegister = async (request: Request, body: any) => {
+    const email = normalizeEmail(body.email);
+    const createdAt = now();
+    const user = { id: id(), name: body.name, email, emailVerified: false, createdAt, updatedAt: createdAt };
+    await db.insert(schema.user).values(user);
+    await db.insert(schema.account).values({ id: id(), accountId: email, providerId: "credential", userId: user.id, password: await hashPassword(body.password), createdAt, updatedAt: createdAt });
+    const sessionToken = await createSession(request, user.id);
+    return HttpServerResponse.json({ user: userInfo(user) }, { headers: { "set-cookie": cookieHeader(sessionToken) } });
+  };
+
+  const authLogin = async (request: Request, body: any) => {
+    const email = normalizeEmail(body.email);
+    const account = await db.query.account.findFirst({ where: and(eq(schema.account.providerId, "credential"), eq(schema.account.accountId, email)) });
+    if (!account || !await verifyPassword(body.password, account.password)) throw new Error("Invalid email or password");
+    const user = await db.query.user.findFirst({ where: eq(schema.user.id, account.userId) });
+    const sessionToken = await createSession(request, user.id);
+    return HttpServerResponse.json({ user: userInfo(user) }, { headers: { "set-cookie": cookieHeader(sessionToken) } });
+  };
+
+  const authLogout = async (request: Request) => {
+    const token = parseCookies(request.headers.get("cookie"))[sessionCookie];
+    if (token) await db.delete(schema.session).where(eq(schema.session.tokenHash, await sha256(token)));
+    return HttpServerResponse.json(ok, { headers: { "set-cookie": clearCookieHeader() } });
+  };
+
+  const authForgotPassword = async (body: any) => {
+    const email = normalizeEmail(body.email);
+    const user = await db.query.user.findFirst({ where: eq(schema.user.email, email) });
+    if (user) console.log("RESET EMAIL", email, `${origin}${body.redirectTo ?? "/reset-password"}?token=${await issueVerification(email, "password-reset")}`);
+    return ok;
+  };
+
+  const authResetPassword = async (body: any) => {
+    const verification = await db.query.verification.findFirst({ where: and(eq(schema.verification.kind, "password-reset"), eq(schema.verification.valueHash, await sha256(body.token))) });
+    if (!verification || verification.expiresAt <= now()) throw new Error("Invalid or expired token");
+    await db.update(schema.account).set({ password: await hashPassword(body.newPassword), updatedAt: now() }).where(and(eq(schema.account.providerId, "credential"), eq(schema.account.accountId, verification.identifier)));
+    await db.delete(schema.verification).where(eq(schema.verification.id, verification.id));
+    return ok;
+  };
+
+  const authChangePassword = async (request: Request, body: any) => {
+    const { user } = await requireUser(request);
+    const account = await db.query.account.findFirst({ where: and(eq(schema.account.providerId, "credential"), eq(schema.account.userId, user.id)) });
+    if (!account || !await verifyPassword(body.currentPassword, account.password)) throw new Error("Current password is incorrect");
+    await db.update(schema.account).set({ password: await hashPassword(body.newPassword), updatedAt: now() }).where(eq(schema.account.id, account.id));
+    if (body.revokeOtherSessions) await db.delete(schema.session).where(eq(schema.session.userId, user.id));
+    return ok;
+  };
+
+  const authChangeEmail = async (request: Request, body: any) => {
+    const { user } = await requireUser(request);
+    const newEmail = normalizeEmail(body.newEmail);
+    console.log("CHANGE EMAIL VERIFICATION", user.email, "->", newEmail, `${origin}${body.callbackURL ?? "/account"}?token=${await issueVerification(user.id, "email-change", { newEmail })}`);
+    return ok;
+  };
+
+  const authVerifyEmailChange = async (body: any) => {
+    const verification = await db.query.verification.findFirst({ where: and(eq(schema.verification.kind, "email-change"), eq(schema.verification.valueHash, await sha256(body.token))) });
+    if (!verification || verification.expiresAt <= now()) throw new Error("Invalid or expired token");
+    const newEmail = (verification.metadata as any)?.newEmail;
+    await db.update(schema.user).set({ email: newEmail, emailVerified: true, updatedAt: now() }).where(eq(schema.user.id, verification.identifier));
+    await db.update(schema.account).set({ accountId: newEmail, updatedAt: now() }).where(and(eq(schema.account.providerId, "credential"), eq(schema.account.userId, verification.identifier)));
+    await db.delete(schema.verification).where(eq(schema.verification.id, verification.id));
+    return ok;
+  };
+
+  return { requireUser, authSession, authRegister, authLogin, authLogout, authForgotPassword, authResetPassword, authChangePassword, authChangeEmail, authVerifyEmailChange, listApiTokens, createApiToken, revokeApiToken };
 };

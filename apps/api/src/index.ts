@@ -6,7 +6,7 @@ import Stripe from "stripe";
 import { version } from "../package.json" with { type: "json" };
 import { enterpriseApi } from "@mattrax/enterprise-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
-import { createEnterpriseAuth, enterpriseHandlers } from "@mattrax/enterprise-backend";
+import { enterpriseHandlers } from "@mattrax/enterprise-backend";
 import { platformApi } from "@mattrax/platform-api";
 import { platformHandlers } from "@mattrax/platform-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
@@ -95,9 +95,6 @@ export const createAppLayer = (hyperdrive: Hyperdrive) => {
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-    const authResponse = await createEnterpriseAuth({ db: createDb(env.HYPERDRIVE), schema, origin: env.ORIGIN }).handle(request);
-    if (authResponse) return authResponse;
-
     const appLayer = createAppLayer(env.HYPERDRIVE);
     const { handler, dispose } = HttpRouter.toWebHandler(appLayer);
     const response = await (handler as (request: Request) => Promise<Response>)(request);
