@@ -1,7 +1,17 @@
 // @ts-nocheck
 import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
-import { enterpriseApi } from "@mattrax/enterprise-domain";
+import {
+  EnterpriseAuthError,
+  EnterpriseConflict,
+  EnterpriseDbError,
+  EnterpriseForbidden,
+  EnterpriseInternalError,
+  EnterpriseNotFound,
+  EnterpriseStripeError,
+  EnterpriseUnauthorized,
+  enterpriseApi,
+} from "@mattrax/enterprise-domain";
 import { and, count, eq, inArray } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
@@ -50,6 +60,59 @@ type OrgContext = {
 
 const canWriteTenant = (role: string) => role.split(",").some((item) => item === "owner" || item === "admin");
 const canDeleteTenant = (role: string) => role.split(",").includes("owner");
+
+type EnterpriseApiError =
+  | EnterpriseUnauthorized
+  | EnterpriseForbidden
+  | EnterpriseNotFound
+  | EnterpriseConflict
+  | EnterpriseDbError
+  | EnterpriseAuthError
+  | EnterpriseStripeError
+  | EnterpriseInternalError;
+
+const isTaggedEnterpriseError = (error: unknown): error is EnterpriseApiError =>
+  typeof error === "object" && error !== null && typeof (error as { _tag?: unknown })._tag === "string" && (error as { _tag: string })._tag.startsWith("Enterprise");
+
+const isDbError = (error: unknown) => {
+  if (typeof error !== "object" || error === null) return false;
+  const value = error as Record<string, unknown>;
+  const name = typeof value.name === "string" ? value.name : "";
+  return name.includes("Postgres") || name.includes("Database") || typeof value.code === "string" && /^(?:[0-9A-Z]{5}|SQLITE_|ER_)/.test(value.code) || "constraint" in value || "table" in value || "schema" in value;
+};
+
+const isStripeError = (error: unknown) => {
+  if (typeof error !== "object" || error === null) return false;
+  const value = error as Record<string, unknown>;
+  const type = typeof value.type === "string" ? value.type : "";
+  return type.startsWith("Stripe") || "requestId" in value || "raw" in value && typeof value.statusCode === "number";
+};
+
+const isAuthError = (error: unknown) => {
+  if (typeof error !== "object" || error === null) return false;
+  const value = error as Record<string, unknown>;
+  const name = typeof value.name === "string" ? value.name : "";
+  const tag = typeof value._tag === "string" ? value._tag : "";
+  return name.includes("BetterAuth") || tag.includes("BetterAuth") || "statusCode" in value && ("body" in value || "status" in value);
+};
+
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : typeof error === "string" ? error : "";
+
+const toEnterpriseError = (error: unknown): EnterpriseApiError => {
+  if (isTaggedEnterpriseError(error)) return error;
+
+  const message = errorMessage(error);
+  if (message === "Unauthenticated") return new EnterpriseUnauthorized({ message });
+  if (message === "Forbidden") return new EnterpriseForbidden({ message });
+  if (message.endsWith("not found")) return new EnterpriseNotFound({ message });
+  if (message.startsWith("Cannot ")) return new EnterpriseConflict({ message });
+  if (isDbError(error)) return new EnterpriseDbError({ message: "Database operation failed" });
+  if (isStripeError(error)) return new EnterpriseStripeError({ message: message || "Stripe operation failed" });
+  if (isAuthError(error)) return new EnterpriseAuthError({ message: message || "Authentication service operation failed" });
+  return new EnterpriseInternalError({ message: message || "Internal server error" });
+};
+
+const effectTry = <A>(try_: () => Promise<A>) => Effect.tryPromise({ try: try_, catch: toEnterpriseError });
 
 export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: EnterpriseHandlersConfig) => {
 
@@ -223,7 +286,7 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
   };
 
   const service: any = {
-    me: (request) => Effect.promise(async () => {
+    me: (request) => effectTry(async () => {
       const { session, user } = await requireUser(request);
       const tenants = await listTenantInfo(user.id);
       const activeTenant = tenants.find((tenant: any) => tenant.id === session.session?.activeOrganizationId) ?? tenants[0];
@@ -240,7 +303,7 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
         billing: activeTenant ? await billingSummary(activeTenant.id) : undefined,
       };
     }),
-    updateMe: (request, payload) => Effect.promise(async () => {
+    updateMe: (request, payload) => effectTry(async () => {
       const { user } = await requireUser(request);
       const body = payload as { name?: string; image?: string | null };
       await db.update(schema.user).set({
@@ -251,33 +314,33 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       return ok;
     }),
     deleteMe: () => Effect.succeed({ error: "Delete user is currently not supported while organizations and billing are managed by Mattrax." }),
-    listTenants: (request) => Effect.promise(async () => {
+    listTenants: (request) => effectTry(async () => {
       const { user } = await requireUser(request);
       return { tenants: await listTenantInfo(user.id) };
     }),
-    createTenant: (request, payload) => Effect.promise(async () => {
+    createTenant: (request, payload) => effectTry(async () => {
       const body = payload as { name: string; slug: string; logo?: string | null; metadata?: Record<string, unknown> };
       const result = await auth.api.createOrganization({ headers: headersFromRequest(request), body }) as any;
       const tenantId = result?.id ?? result?.data?.id ?? result?.organization?.id ?? result?.data?.organization?.id;
       if (!tenantId) throw new Error("Tenant creation failed");
       return { id: tenantId };
     }),
-    getTenant: (request, tenantId) => Effect.promise(async () => {
+    getTenant: (request, tenantId) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId);
       return { ...ctx.organization, role: ctx.member.role, createdAt: iso(ctx.organization.createdAt) };
     }),
-    patchTenant: (request, tenantId, payload) => Effect.promise(async () => {
+    patchTenant: (request, tenantId, payload) => effectTry(async () => {
       await requireTenant(request, tenantId, "write");
       await auth.api.updateOrganization({ headers: headersFromRequest(request), body: { organizationId: tenantId, data: payload } });
       return ok;
     }),
-    deleteTenant: (request, tenantId) => Effect.promise(async () => {
+    deleteTenant: (request, tenantId) => effectTry(async () => {
       await requireTenant(request, tenantId, "delete");
       if (await memberCount(tenantId) > 1) throw new Error("Cannot delete a tenant with more than one user");
       await auth.api.deleteOrganization({ headers: headersFromRequest(request), body: { organizationId: tenantId } });
       return ok;
     }),
-    listTenantUsers: (request, tenantId) => Effect.promise(async () => {
+    listTenantUsers: (request, tenantId) => effectTry(async () => {
       await requireTenant(request, tenantId);
       const users = await db.select({
         memberId: schema.member.id,
@@ -289,7 +352,7 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       }).from(schema.member).innerJoin(schema.user, eq(schema.user.id, schema.member.userId)).where(eq(schema.member.organizationId, tenantId));
       return { users: users.map((user: any) => ({ ...user, createdAt: iso(user.createdAt) })) };
     }),
-    inviteTenantUser: (request, tenantId, payload) => Effect.promise(async () => {
+    inviteTenantUser: (request, tenantId, payload) => effectTry(async () => {
       await requireTenant(request, tenantId, "write");
       const body = payload as { email: string; role?: string; resend?: boolean };
       const result = await auth.api.createInvitation({ headers: headersFromRequest(request), body: { organizationId: tenantId, email: body.email, role: body.role ?? "member", resend: body.resend } }) as any;
@@ -297,19 +360,19 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       if (!invitationId) throw new Error("Invitation creation failed");
       return { id: invitationId };
     }),
-    listTenantInvitations: (request, tenantId) => Effect.promise(async () => {
+    listTenantInvitations: (request, tenantId) => effectTry(async () => {
       await requireTenant(request, tenantId, "write");
       const invitations = await db.select().from(schema.invitation).where(eq(schema.invitation.organizationId, tenantId));
       return { invitations: invitations.map((item: any) => ({ id: item.id, email: item.email, role: item.role, status: item.status, expiresAt: iso(item.expiresAt), createdAt: iso(item.createdAt) })) };
     }),
-    cancelTenantInvitation: (request, tenantId, invitationId) => Effect.promise(async () => {
+    cancelTenantInvitation: (request, tenantId, invitationId) => effectTry(async () => {
       await requireTenant(request, tenantId, "write");
       const invitation = await db.query.invitation.findFirst({ where: and(eq(schema.invitation.id, invitationId), eq(schema.invitation.organizationId, tenantId)) });
       if (!invitation) throw new Error("Invitation not found");
       await auth.api.cancelInvitation({ headers: headersFromRequest(request), body: { invitationId } });
       return ok;
     }),
-    patchTenantUser: (request, tenantId, memberId, payload) => Effect.promise(async () => {
+    patchTenantUser: (request, tenantId, memberId, payload) => effectTry(async () => {
       await requireTenant(request, tenantId, "write");
       const member = await db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) });
       if (!member) throw new Error("Tenant user not found");
@@ -317,7 +380,7 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       await auth.api.updateMemberRole({ headers: headersFromRequest(request), body: { organizationId: tenantId, memberId, role: body.role } });
       return ok;
     }),
-    removeTenantUser: (request, tenantId, memberId) => Effect.promise(async () => {
+    removeTenantUser: (request, tenantId, memberId) => effectTry(async () => {
       await requireTenant(request, tenantId, "write");
       if (await memberCount(tenantId) <= 1) throw new Error("Cannot remove the last tenant user; delete the tenant instead");
       const member = await db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) });
@@ -327,7 +390,7 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       await auth.api.removeMember({ headers: headersFromRequest(request), body: { organizationId: tenantId, memberIdOrEmail: user.email } });
       return ok;
     }),
-    getEnrollment: (enrollmentId, code) => Effect.promise(async () => {
+    getEnrollment: (enrollmentId, code) => effectTry(async () => {
       const enrollment = await db.query.enterpriseEnrollment.findFirst({ where: eq(schema.enterpriseEnrollment.id, enrollmentId) });
       if (!enrollment) throw new Error("Enrollment not found");
       const organization = await db.query.organization.findFirst({ where: eq(schema.organization.id, enrollment.organizationId) });
@@ -350,11 +413,11 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
         assetTag: enabled && enrollment.enabledAssetTag,
       };
     }),
-    getTenantEnrollment: (request, tenantId) => Effect.promise(async () => {
+    getTenantEnrollment: (request, tenantId) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId);
       return rowEnrollment(await getOrCreateEnrollment(ctx.organization.id));
     }),
-    patchTenantEnrollment: (request, tenantId, payload) => Effect.promise(async () => {
+    patchTenantEnrollment: (request, tenantId, payload) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       await getOrCreateEnrollment(ctx.organization.id);
       const body = payload as { code?: string | null; enabledApple?: boolean; enabledWindows?: boolean; enabledAndroid?: boolean; enabledAssetTag?: boolean; maxDevices?: number };
@@ -369,19 +432,19 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       }).where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
       return ok;
     }),
-    resetTenantEnrollment: (request, tenantId) => Effect.promise(async () => {
+    resetTenantEnrollment: (request, tenantId) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       await getOrCreateEnrollment(ctx.organization.id);
       const newId = id();
       await db.update(schema.enterpriseEnrollment).set({ id: newId, updatedAt: now() }).where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
       return { id: newId };
     }),
-    getApns: (request, tenantId) => Effect.promise(async () => {
+    getApns: (request, tenantId) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId);
       const apns = await db.query.applePushCertificate.findFirst({ where: eq(schema.applePushCertificate.organizationId, ctx.organization.id) });
       return { configured: apns !== undefined, email: apns?.email ?? null, topic: apns?.topic ?? null };
     }),
-    uploadApns: (request, tenantId, payload) => Effect.promise(async () => {
+    uploadApns: (request, tenantId, payload) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { email: string; cert: string };
       const topic = body.cert.match(/UID=([^,\n]+)/)?.[1] ?? `com.apple.mgmt.External.${ctx.organization.id}`;
@@ -397,27 +460,27 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       });
       return ok;
     }),
-    deleteDevices: (request, tenantId, ids) => Effect.promise(async () => {
+    deleteDevices: (request, tenantId, ids) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       if (ids.length > 0) await db.delete(schema.device).where(and(eq(schema.device.organizationId, ctx.organization.id), inArray(schema.device.id, [...ids])));
       return ok;
     }),
-    patchDevice: (request, tenantId, deviceId, payload) => Effect.promise(async () => {
+    patchDevice: (request, tenantId, deviceId, payload) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { name?: string; notes?: string | null; assetTag?: string | null };
       await db.update(schema.device).set({ name: body.name, notes: body.notes, assetTag: body.assetTag }).where(and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id)));
       return ok;
     }),
-    deviceAction: (request, tenantId) => Effect.promise(async () => {
+    deviceAction: (request, tenantId) => effectTry(async () => {
       await requireTenant(request, tenantId, "write");
       return ok;
     }),
-    deviceUnenroll: (request, tenantId, deviceId) => Effect.promise(async () => {
+    deviceUnenroll: (request, tenantId, deviceId) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       await db.update(schema.device).set({ status: "unenrolling" }).where(and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id), eq(schema.device.status, "enrolled")));
       return ok;
     }),
-    createGroup: (request, tenantId, payload) => Effect.promise(async () => {
+    createGroup: (request, tenantId, payload) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { name: string; notes?: string | null; devices?: Array<string>; policies?: Array<string> };
       await assertTenantDevices(ctx.organization.id, body.devices ?? []);
@@ -428,7 +491,7 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       if (body.policies?.length) await db.insert(schema.groupPolicy).values(body.policies.map((policyId) => ({ groupId, policyId }))).onConflictDoNothing();
       return { id: groupId };
     }),
-    deleteGroups: (request, tenantId, ids) => Effect.promise(async () => {
+    deleteGroups: (request, tenantId, ids) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       const deleted: Array<string> = [];
       const failed: Array<{ id: string; reason: string }> = [];
@@ -438,13 +501,13 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       }
       return { deleted, failed };
     }),
-    patchGroup: (request, tenantId, groupId, payload) => Effect.promise(async () => {
+    patchGroup: (request, tenantId, groupId, payload) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { name?: string; notes?: string | null };
       await db.update(schema.enterpriseGroup).set({ name: body.name, notes: body.notes, updatedAt: now() }).where(and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id)));
       return ok;
     }),
-    patchGroupMembers: (request, tenantId, groupId, payload) => Effect.promise(async () => {
+    patchGroupMembers: (request, tenantId, groupId, payload) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       await assertTenantGroup(ctx.organization.id, groupId);
       const body = payload as { assign?: { devices?: Array<string>; policies?: Array<string> }; unassign?: { devices?: Array<string>; policies?: Array<string> } };
@@ -456,11 +519,11 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       if (body.unassign?.policies?.length) await db.delete(schema.groupPolicy).where(and(eq(schema.groupPolicy.groupId, groupId), inArray(schema.groupPolicy.policyId, body.unassign.policies)));
       return ok;
     }),
-    syncGroups: (request, tenantId) => Effect.promise(async () => {
+    syncGroups: (request, tenantId) => effectTry(async () => {
       await requireTenant(request, tenantId, "write");
       return ok;
     }),
-    duplicateGroup: (request, tenantId, groupId, payload) => Effect.promise(async () => {
+    duplicateGroup: (request, tenantId, groupId, payload) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       const source = await assertTenantGroup(ctx.organization.id, groupId);
       const body = payload as { name?: string };
@@ -472,14 +535,14 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       if (policies.length) await db.insert(schema.groupPolicy).values(policies.map((p: any) => ({ groupId: newId, policyId: p.policyId })));
       return { id: newId };
     }),
-    createPolicy: (request, tenantId, payload) => Effect.promise(async () => {
+    createPolicy: (request, tenantId, payload) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { name: string; notes?: string | null };
       const policyId = id();
       await db.insert(schema.policy).values({ id: policyId, organizationId: ctx.organization.id, name: body.name, notes: body.notes ?? null, createdAt: now(), updatedAt: now() });
       return { id: policyId };
     }),
-    deletePolicies: (request, tenantId, ids) => Effect.promise(async () => {
+    deletePolicies: (request, tenantId, ids) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       const deleted: Array<string> = [];
       const failed: Array<{ id: string; reason: string }> = [];
@@ -489,7 +552,7 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       }
       return { deleted, failed };
     }),
-    patchPolicy: (request, tenantId, policyId, payload) => Effect.promise(async () => {
+    patchPolicy: (request, tenantId, policyId, payload) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { name?: string; notes?: string | null; configurations?: Record<string, unknown> };
       const policy = await db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) });
@@ -505,11 +568,11 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       }
       return ok;
     }),
-    syncPolicies: (request, tenantId) => Effect.promise(async () => {
+    syncPolicies: (request, tenantId) => effectTry(async () => {
       await requireTenant(request, tenantId, "write");
       return ok;
     }),
-    duplicatePolicy: (request, tenantId, policyId, payload) => Effect.promise(async () => {
+    duplicatePolicy: (request, tenantId, policyId, payload) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       const source = await db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) });
       if (!source) throw new Error("Policy not found");
@@ -521,44 +584,44 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       return { id: newId };
     }),
     previewMobileconfig: (payload) => Effect.succeed({ payload }),
-    listDevices: (request, tenantId) => Effect.promise(async () => {
+    listDevices: (request, tenantId) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId);
       const rows = await db.select().from(schema.device).where(eq(schema.device.organizationId, ctx.organization.id));
       return { rows: rows.map(rowDevice) };
     }),
-    getDevice: (request, tenantId, deviceId) => Effect.promise(async () => {
+    getDevice: (request, tenantId, deviceId) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId);
       const row = await db.query.device.findFirst({ where: and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id)) });
       if (!row) throw new Error("Device not found");
       return rowDevice(row);
     }),
-    listGroups: (request, tenantId) => Effect.promise(async () => {
+    listGroups: (request, tenantId) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId);
       const rows = await db.select().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
       return { rows: rows.map((row: any) => rowGroup(row)) };
     }),
-    getGroup: (request, tenantId, groupId) => Effect.promise(async () => {
+    getGroup: (request, tenantId, groupId) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId);
       const row = await db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id)) });
       if (!row) throw new Error("Group not found");
       return rowGroup(row);
     }),
-    listPolicies: (request, tenantId) => Effect.promise(async () => {
+    listPolicies: (request, tenantId) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId);
       const rows = await db.select().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id));
       return { rows: await Promise.all(rows.map((row: any) => rowPolicy(row))) };
     }),
-    getPolicy: (request, tenantId, policyId) => Effect.promise(async () => {
+    getPolicy: (request, tenantId, policyId) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId);
       const row = await db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) });
       if (!row) throw new Error("Policy not found");
       return rowPolicy(row, true);
     }),
-    billing: (request, tenantId) => Effect.promise(async () => {
+    billing: (request, tenantId) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId);
       return billingSummary(ctx.organization.id);
     }),
-    billingPortal: (request, tenantId, payload) => Effect.promise(async () => {
+    billingPortal: (request, tenantId, payload) => effectTry(async () => {
       const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { returnUrl: string };
       await ensureStripeCustomer(ctx.organization);
