@@ -41,8 +41,8 @@ const apiRoot = HttpApi.make("Mattrax")
     }),
   );
 
-export const createAppLayer = (db: D1Database) => {
-  const database = createDb(db);
+export const createAppLayer = (hyperdrive: Hyperdrive) => {
+  const database = createDb(hyperdrive);
 
   const topic = env.CLOUD_APPLE_VENDOR_CERT
     ? (extractTopicFromCertPem(env.CLOUD_APPLE_VENDOR_CERT) ?? "com.apple.mgmt.External.placeholder")
@@ -96,7 +96,7 @@ export default {
     if (new URL(request.url).pathname.startsWith("/api/auth"))
       return createAuth().handler(request);
 
-    const appLayer = createAppLayer(env.DB);
+    const appLayer = createAppLayer(env.HYPERDRIVE);
     const { handler, dispose } = HttpRouter.toWebHandler(appLayer);
     const response = await (handler as (request: Request) => Promise<Response>)(request);
     waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));

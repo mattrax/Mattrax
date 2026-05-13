@@ -187,7 +187,7 @@ export const createEnterpriseBackend = (db: Database, config: { origin: string }
     };
     if (withConfigurations) {
       const configurations = await db.select().from(schema.configuration).where(eq(schema.configuration.policyId, row.id));
-      base.configurations = Object.fromEntries(configurations.map((item) => [item.kind, item.data]));
+      base.configurations = Object.fromEntries(configurations.map((item: any) => [item.kind, item.data]));
     }
     return base;
   };
@@ -225,7 +225,7 @@ export const createEnterpriseBackend = (db: Database, config: { origin: string }
     me: (request) => Effect.promise(async () => {
       const { session, user } = await requireUser(request);
       const tenants = await listTenantInfo(user.id);
-      const activeTenant = tenants.find((tenant) => tenant.id === session.session?.activeOrganizationId) ?? tenants[0];
+      const activeTenant = tenants.find((tenant: any) => tenant.id === session.session?.activeOrganizationId) ?? tenants[0];
       return {
         user: {
           id: user.id,
@@ -286,7 +286,7 @@ export const createEnterpriseBackend = (db: Database, config: { origin: string }
         role: schema.member.role,
         createdAt: schema.member.createdAt,
       }).from(schema.member).innerJoin(schema.user, eq(schema.user.id, schema.member.userId)).where(eq(schema.member.organizationId, tenantId));
-      return { users: users.map((user) => ({ ...user, createdAt: iso(user.createdAt) })) };
+      return { users: users.map((user: any) => ({ ...user, createdAt: iso(user.createdAt) })) };
     }),
     inviteTenantUser: (request, tenantId, payload) => Effect.promise(async () => {
       await requireTenant(request, tenantId, "write");
@@ -299,7 +299,7 @@ export const createEnterpriseBackend = (db: Database, config: { origin: string }
     listTenantInvitations: (request, tenantId) => Effect.promise(async () => {
       await requireTenant(request, tenantId, "write");
       const invitations = await db.select().from(schema.invitation).where(eq(schema.invitation.organizationId, tenantId));
-      return { invitations: invitations.map((item) => ({ id: item.id, email: item.email, role: item.role, status: item.status, expiresAt: iso(item.expiresAt), createdAt: iso(item.createdAt) })) };
+      return { invitations: invitations.map((item: any) => ({ id: item.id, email: item.email, role: item.role, status: item.status, expiresAt: iso(item.expiresAt), createdAt: iso(item.createdAt) })) };
     }),
     cancelTenantInvitation: (request, tenantId, invitationId) => Effect.promise(async () => {
       await requireTenant(request, tenantId, "write");
@@ -467,8 +467,8 @@ export const createEnterpriseBackend = (db: Database, config: { origin: string }
       await db.insert(schema.enterpriseGroup).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
       const devices = await db.select().from(schema.groupDevice).where(eq(schema.groupDevice.groupId, groupId));
       const policies = await db.select().from(schema.groupPolicy).where(eq(schema.groupPolicy.groupId, groupId));
-      if (devices.length) await db.insert(schema.groupDevice).values(devices.map((d) => ({ groupId: newId, deviceId: d.deviceId })));
-      if (policies.length) await db.insert(schema.groupPolicy).values(policies.map((p) => ({ groupId: newId, policyId: p.policyId })));
+      if (devices.length) await db.insert(schema.groupDevice).values(devices.map((d: any) => ({ groupId: newId, deviceId: d.deviceId })));
+      if (policies.length) await db.insert(schema.groupPolicy).values(policies.map((p: any) => ({ groupId: newId, policyId: p.policyId })));
       return { id: newId };
     }),
     createPolicy: (request, tenantId, payload) => Effect.promise(async () => {
@@ -516,7 +516,7 @@ export const createEnterpriseBackend = (db: Database, config: { origin: string }
       const newId = id();
       await db.insert(schema.policy).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
       const configurations = await db.select().from(schema.configuration).where(eq(schema.configuration.policyId, policyId));
-      if (configurations.length) await db.insert(schema.configuration).values(configurations.map((c) => ({ kind: c.kind, policyId: newId, data: c.data, hash: c.hash })));
+      if (configurations.length) await db.insert(schema.configuration).values(configurations.map((c: any) => ({ kind: c.kind, policyId: newId, data: c.data, hash: c.hash })));
       return { id: newId };
     }),
     previewMobileconfig: (payload) => Effect.succeed({ payload }),
@@ -534,7 +534,7 @@ export const createEnterpriseBackend = (db: Database, config: { origin: string }
     listGroups: (request, tenantId) => Effect.promise(async () => {
       const ctx = await requireTenant(request, tenantId);
       const rows = await db.select().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
-      return { rows: rows.map((row) => rowGroup(row)) };
+      return { rows: rows.map((row: any) => rowGroup(row)) };
     }),
     getGroup: (request, tenantId, groupId) => Effect.promise(async () => {
       const ctx = await requireTenant(request, tenantId);
@@ -545,7 +545,7 @@ export const createEnterpriseBackend = (db: Database, config: { origin: string }
     listPolicies: (request, tenantId) => Effect.promise(async () => {
       const ctx = await requireTenant(request, tenantId);
       const rows = await db.select().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id));
-      return { rows: await Promise.all(rows.map((row) => rowPolicy(row))) };
+      return { rows: await Promise.all(rows.map((row: any) => rowPolicy(row))) };
     }),
     getPolicy: (request, tenantId, policyId) => Effect.promise(async () => {
       const ctx = await requireTenant(request, tenantId);

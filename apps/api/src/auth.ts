@@ -9,14 +9,14 @@ import * as schema from "./db/schema.js";
 import { env } from "cloudflare:workers";
 
 export const createAuth = (): any => {
-  const db = createDb(env.DB);
+  const db = createDb(env.HYPERDRIVE);
   const stripeClient = new Stripe((env as any).STRIPE_SECRET_KEY, {
     apiVersion: "2026-04-22.dahlia",
   });
 
   return betterAuth({
-    database: drizzleAdapter(createDb(env.DB), {
-      provider: "sqlite",
+    database: drizzleAdapter(db, {
+      provider: "pg",
       schema: {
         user: schema.user,
         session: schema.session,

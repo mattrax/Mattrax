@@ -1,24 +1,24 @@
-import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 type CoreSchema = {
   readonly organization: { readonly id: any };
 };
 
 export const createEnterpriseSchema = (core: CoreSchema) => {
-  const enterpriseEnrollment = sqliteTable("enterprise_enrollment", {
+  const enterpriseEnrollment = pgTable("enterprise_enrollment", {
     id: text("id").primaryKey(),
     organizationId: text("organization_id").notNull().references(() => core.organization.id, { onDelete: "cascade" }),
     code: text("code"),
-    enabledApple: integer("enabled_apple", { mode: "boolean" }).notNull().default(true),
-    enabledWindows: integer("enabled_windows", { mode: "boolean" }).notNull().default(true),
-    enabledAndroid: integer("enabled_android", { mode: "boolean" }).notNull().default(false),
-    enabledAssetTag: integer("enabled_asset_tag", { mode: "boolean" }).notNull().default(false),
+    enabledApple: boolean("enabled_apple").notNull().default(true),
+    enabledWindows: boolean("enabled_windows").notNull().default(true),
+    enabledAndroid: boolean("enabled_android").notNull().default(false),
+    enabledAssetTag: boolean("enabled_asset_tag").notNull().default(false),
     maxDevices: integer("max_devices").notNull().default(100),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull(),
   });
 
-  const device = sqliteTable(
+  const device = pgTable(
     "device",
     {
       id: text("id").primaryKey(),
@@ -29,8 +29,8 @@ export const createEnterpriseSchema = (core: CoreSchema) => {
       model: text("model"),
       modelIdentifier: text("model_identifier"),
       serial: text("serial"),
-      enrolledAt: integer("enrolled_at", { mode: "timestamp_ms" }).notNull(),
-      lastSeenAt: integer("last_seen_at", { mode: "timestamp_ms" }).notNull(),
+      enrolledAt: timestamp("enrolled_at", { mode: "date" }).notNull(),
+      lastSeenAt: timestamp("last_seen_at", { mode: "date" }).notNull(),
       notes: text("notes"),
       assetTag: text("asset_tag"),
       physicalName: text("physical_name"),
@@ -49,7 +49,7 @@ export const createEnterpriseSchema = (core: CoreSchema) => {
     ],
   );
 
-  const deviceApple = sqliteTable("device_apple", {
+  const deviceApple = pgTable("device_apple", {
     deviceId: text("device_id").primaryKey().references(() => device.id, { onDelete: "cascade" }),
     enrollmentId: text("enrollment_id"),
     token: text("token"),
@@ -57,58 +57,58 @@ export const createEnterpriseSchema = (core: CoreSchema) => {
     topic: text("topic"),
     unlockToken: text("unlock_token"),
     bootstrapToken: text("bootstrap_token"),
-    configured: integer("configured", { mode: "boolean" }).notNull().default(false),
+    configured: boolean("configured").notNull().default(false),
     deviceToken: text("device_token"),
-    tokenUpdatedAt: integer("token_updated_at", { mode: "timestamp_ms" }),
+    tokenUpdatedAt: timestamp("token_updated_at", { mode: "date" }),
   });
 
-  const applePushCertificate = sqliteTable("apple_push_certificate", {
+  const applePushCertificate = pgTable("apple_push_certificate", {
     organizationId: text("organization_id").primaryKey().references(() => core.organization.id, { onDelete: "cascade" }),
     email: text("email").notNull(),
     topic: text("topic").notNull(),
     certPem: text("cert_pem").notNull(),
     encryptedKey: text("encrypted_key"),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull(),
   });
 
-  const enterpriseGroup = sqliteTable(
+  const enterpriseGroup = pgTable(
     "enterprise_group",
     {
       id: text("id").primaryKey(),
       organizationId: text("organization_id").notNull().references(() => core.organization.id, { onDelete: "cascade" }),
       name: text("name").notNull(),
       notes: text("notes"),
-      createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-      updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+      createdAt: timestamp("created_at", { mode: "date" }).notNull(),
+      updatedAt: timestamp("updated_at", { mode: "date" }).notNull(),
     },
     (table) => [index("enterprise_group_organization_id_idx").on(table.organizationId)],
   );
 
-  const policy = sqliteTable(
+  const policy = pgTable(
     "policy",
     {
       id: text("id").primaryKey(),
       organizationId: text("organization_id").notNull().references(() => core.organization.id, { onDelete: "cascade" }),
       name: text("name").notNull(),
       notes: text("notes"),
-      createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-      updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+      createdAt: timestamp("created_at", { mode: "date" }).notNull(),
+      updatedAt: timestamp("updated_at", { mode: "date" }).notNull(),
     },
     (table) => [index("policy_organization_id_idx").on(table.organizationId)],
   );
 
-  const configuration = sqliteTable(
+  const configuration = pgTable(
     "configuration",
     {
       kind: text("kind").notNull(),
       policyId: text("policy_id").notNull().references(() => policy.id, { onDelete: "cascade" }),
-      data: text("data", { mode: "json" }).notNull(),
+      data: jsonb("data").notNull(),
       hash: text("hash").notNull(),
     },
     (table) => [primaryKey({ columns: [table.kind, table.policyId] })],
   );
 
-  const groupDevice = sqliteTable(
+  const groupDevice = pgTable(
     "group_device",
     {
       groupId: text("group_id").notNull().references(() => enterpriseGroup.id, { onDelete: "cascade" }),
@@ -117,7 +117,7 @@ export const createEnterpriseSchema = (core: CoreSchema) => {
     (table) => [primaryKey({ columns: [table.groupId, table.deviceId] })],
   );
 
-  const groupPolicy = sqliteTable(
+  const groupPolicy = pgTable(
     "group_policy",
     {
       groupId: text("group_id").notNull().references(() => enterpriseGroup.id, { onDelete: "cascade" }),
@@ -126,16 +126,16 @@ export const createEnterpriseSchema = (core: CoreSchema) => {
     (table) => [primaryKey({ columns: [table.groupId, table.policyId] })],
   );
 
-  const organizationDeviceUsage = sqliteTable(
+  const organizationDeviceUsage = pgTable(
     "organization_device_usage",
     {
       organizationId: text("organization_id").notNull().references(() => core.organization.id, { onDelete: "cascade" }),
       period: text("period").notNull(),
       billableDevices: integer("billable_devices").notNull(),
       stripeSubscriptionItemId: text("stripe_subscription_item_id"),
-      lastReportedAt: integer("last_reported_at", { mode: "timestamp_ms" }),
-      createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-      updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+      lastReportedAt: timestamp("last_reported_at", { mode: "date" }),
+      createdAt: timestamp("created_at", { mode: "date" }).notNull(),
+      updatedAt: timestamp("updated_at", { mode: "date" }).notNull(),
     },
     (table) => [primaryKey({ columns: [table.organizationId, table.period] })],
   );
