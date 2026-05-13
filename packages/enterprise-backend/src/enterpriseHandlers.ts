@@ -3,9 +3,10 @@ import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import {
   EnterpriseBadRequest,
-  EnterpriseConflict,
   EnterpriseForbidden,
+  EnterpriseLastTenantUser,
   EnterpriseNotFound,
+  EnterpriseTenantHasMembers,
   EnterpriseUnauthorized,
   enterpriseApi,
   policyApplicationKey,
@@ -279,7 +280,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     deleteTenant: (request, tenantId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "delete");
       const count = yield* memberCount(tenantId);
-      if (count > 1) return yield* Effect.fail(new EnterpriseConflict({ message: "Cannot delete a tenant with more than one user" }));
+      if (count > 1) return yield* Effect.fail(new EnterpriseTenantHasMembers({ message: "Cannot delete a tenant with more than one user" }));
       yield* db.delete(schema.organization).where(eq(schema.organization.id, tenantId));
       return ok;
     }),
@@ -320,7 +321,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     removeTenantUser: (request, tenantId, memberId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
       const count = yield* memberCount(tenantId);
-      if (count <= 1) return yield* Effect.fail(new EnterpriseConflict({ message: "Cannot remove the last tenant user; delete the tenant instead" }));
+      if (count <= 1) return yield* Effect.fail(new EnterpriseLastTenantUser({ message: "Cannot remove the last tenant user; delete the tenant instead" }));
       const member = yield* db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) });
       if (!member) return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
       yield* db.delete(schema.member).where(eq(schema.member.id, memberId));

@@ -23,7 +23,10 @@ export class EnterpriseForbidden extends Schema.TaggedErrorClass<EnterpriseForbi
 export class EnterpriseNotFound extends Schema.TaggedErrorClass<EnterpriseNotFound>()("EnterpriseNotFound", {
   message: Schema.String,
 }) {}
-export class EnterpriseConflict extends Schema.TaggedErrorClass<EnterpriseConflict>()("EnterpriseConflict", {
+export class EnterpriseTenantHasMembers extends Schema.TaggedErrorClass<EnterpriseTenantHasMembers>()("EnterpriseTenantHasMembers", {
+  message: Schema.String,
+}) {}
+export class EnterpriseLastTenantUser extends Schema.TaggedErrorClass<EnterpriseLastTenantUser>()("EnterpriseLastTenantUser", {
   message: Schema.String,
 }) {}
 export class EnterpriseDbError extends Schema.TaggedErrorClass<EnterpriseDbError>()("EnterpriseDbError", {
@@ -39,16 +42,48 @@ export class EnterpriseR2InternalError extends Schema.TaggedErrorClass<Enterpris
   message: Schema.String,
 }) {}
 
-const EnterpriseApiErrors = [
+const EnterpriseAuthRequiredErrors = [
   EnterpriseUnauthorized.pipe(HttpApiSchema.status(401)),
+] as const;
+const EnterpriseBadRequestErrors = [
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
-  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+] as const;
+const EnterpriseAuthBadRequestErrors = [
+  ...EnterpriseAuthRequiredErrors,
+  ...EnterpriseBadRequestErrors,
+] as const;
+const EnterpriseTenantReadErrors = [
+  ...EnterpriseAuthRequiredErrors,
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
-  EnterpriseConflict.pipe(HttpApiSchema.status(409)),
-  EnterpriseDbError.pipe(HttpApiSchema.status(500)),
-  EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
+] as const;
+const EnterpriseTenantWriteErrors = [
+  ...EnterpriseTenantReadErrors,
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+] as const;
+const EnterpriseTenantDeleteErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseTenantHasMembers.pipe(HttpApiSchema.status(409)),
+] as const;
+const EnterpriseTenantUserRemoveErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseLastTenantUser.pipe(HttpApiSchema.status(409)),
+] as const;
+const EnterprisePolicyApplicationUploadErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
+] as const;
+const EnterprisePolicyApplicationDownloadErrors = [
+  ...EnterpriseTenantReadErrors,
   EnterpriseR2FileNotFound.pipe(HttpApiSchema.status(404)),
   EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
+] as const;
+const EnterpriseBillingPortalErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
+] as const;
+const EnterpriseNoDomainErrors = [] as const;
+const EnterprisePublicNotFoundErrors = [
+  EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
 ] as const;
 
 export const UserInfo = Schema.Struct({
@@ -384,64 +419,64 @@ export const CreateApiTokenRequest = Schema.Struct({ name: Schema.String, expire
 export const CreateApiTokenResponse = Schema.Struct({ token: Schema.String, item: ApiTokenInfo });
 
 export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
-  .add(HttpApiEndpoint.get("authSession", "/v1/auth/session", { error: EnterpriseApiErrors, success: SessionResponse }))
-  .add(HttpApiEndpoint.post("authRegister", "/v1/auth/register", { error: EnterpriseApiErrors, payload: RegisterRequest, success: AuthResponse }))
-  .add(HttpApiEndpoint.post("authLogin", "/v1/auth/login", { error: EnterpriseApiErrors, payload: LoginRequest, success: AuthResponse }))
-  .add(HttpApiEndpoint.post("authLogout", "/v1/auth/logout", { error: EnterpriseApiErrors, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("authForgotPassword", "/v1/auth/forgot-password", { error: EnterpriseApiErrors, payload: ForgotPasswordRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("authResetPassword", "/v1/auth/reset-password", { error: EnterpriseApiErrors, payload: ResetPasswordRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("authChangePassword", "/v1/auth/change-password", { error: EnterpriseApiErrors, payload: ChangePasswordRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("authChangeEmail", "/v1/auth/change-email", { error: EnterpriseApiErrors, payload: ChangeEmailRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("authVerifyEmailChange", "/v1/auth/verify-email-change", { error: EnterpriseApiErrors, payload: VerifyEmailChangeRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.get("listApiTokens", "/v1/account/api-tokens", { error: EnterpriseApiErrors, success: ApiTokensResponse }))
-  .add(HttpApiEndpoint.post("createApiToken", "/v1/account/api-tokens", { error: EnterpriseApiErrors, payload: CreateApiTokenRequest, success: CreateApiTokenResponse }))
-  .add(HttpApiEndpoint.delete("revokeApiToken", "/v1/account/api-tokens/:tokenId", { error: EnterpriseApiErrors, params: ApiTokenParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.get("me", "/v1/me", { error: EnterpriseApiErrors, success: MeResponse }))
-  .add(HttpApiEndpoint.patch("updateMe", "/v1/me", { error: EnterpriseApiErrors, payload: UpdateMeRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.delete("deleteMe", "/v1/me", { error: EnterpriseApiErrors, success: Schema.Struct({ error: Schema.String }) }))
-  .add(HttpApiEndpoint.get("listTenants", "/v1/tenants", { error: EnterpriseApiErrors, success: TenantListResponse }))
-  .add(HttpApiEndpoint.post("createTenant", "/v1/tenants", { error: EnterpriseApiErrors, payload: CreateTenantRequest, success: IdResponse }))
-  .add(HttpApiEndpoint.get("getTenant", "/v1/tenants/:tenantId", { error: EnterpriseApiErrors, params: TenantParam, success: TenantDetail }))
-  .add(HttpApiEndpoint.patch("patchTenant", "/v1/tenants/:tenantId", { error: EnterpriseApiErrors, params: TenantParam, payload: PatchTenantRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.delete("deleteTenant", "/v1/tenants/:tenantId", { error: EnterpriseApiErrors, params: TenantParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.get("listTenantUsers", "/v1/tenants/:tenantId/users", { error: EnterpriseApiErrors, params: TenantParam, success: TenantUsersResponse }))
-  .add(HttpApiEndpoint.post("inviteTenantUser", "/v1/tenants/:tenantId/invitations", { error: EnterpriseApiErrors, params: TenantParam, payload: InviteTenantUserRequest, success: IdResponse }))
-  .add(HttpApiEndpoint.get("listTenantInvitations", "/v1/tenants/:tenantId/invitations", { error: EnterpriseApiErrors, params: TenantParam, success: TenantInvitationsResponse }))
-  .add(HttpApiEndpoint.delete("cancelTenantInvitation", "/v1/tenants/:tenantId/invitations/:invitationId", { error: EnterpriseApiErrors, params: TenantInvitationParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.patch("patchTenantUser", "/v1/tenants/:tenantId/users/:memberId", { error: EnterpriseApiErrors, params: TenantMemberParam, payload: PatchTenantUserRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.delete("removeTenantUser", "/v1/tenants/:tenantId/users/:memberId", { error: EnterpriseApiErrors, params: TenantMemberParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.get("getEnrollment", "/v1/enrollment/:id", { error: EnterpriseApiErrors, params: IdParam, query: EnrollmentQuery, success: EnrollmentResponse }))
-  .add(HttpApiEndpoint.get("getTenantEnrollment", "/v1/tenants/:tenantId/enrollment", { error: EnterpriseApiErrors, params: TenantParam, success: TenantEnrollmentInfo }))
-  .add(HttpApiEndpoint.patch("patchTenantEnrollment", "/v1/tenants/:tenantId/enrollment", { error: EnterpriseApiErrors, params: TenantParam, payload: PatchTenantEnrollmentRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("resetTenantEnrollment", "/v1/tenants/:tenantId/enrollment/reset", { error: EnterpriseApiErrors, params: TenantParam, success: IdResponse }))
-  .add(HttpApiEndpoint.get("getApns", "/v1/tenants/:tenantId/apns", { error: EnterpriseApiErrors, params: TenantParam, success: ApnsInfo }))
-  .add(HttpApiEndpoint.post("uploadApns", "/v1/tenants/:tenantId/apns", { error: EnterpriseApiErrors, params: TenantParam, payload: UploadApnsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.get("listDevices", "/v1/tenants/:tenantId/devices", { error: EnterpriseApiErrors, params: TenantParam, success: DeviceListResponse }))
-  .add(HttpApiEndpoint.get("getDevice", "/v1/tenants/:tenantId/devices/:id", { error: EnterpriseApiErrors, params: TenantIdParam, success: DeviceRow }))
-  .add(HttpApiEndpoint.delete("deleteDevices", "/v1/tenants/:tenantId/devices", { error: EnterpriseApiErrors, params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.patch("patchDevice", "/v1/tenants/:tenantId/devices/:id", { error: EnterpriseApiErrors, params: TenantIdParam, payload: PatchDeviceRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("deviceAction", "/v1/tenants/:tenantId/devices/:id/action", { error: EnterpriseApiErrors, params: TenantIdParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("deviceUnenroll", "/v1/tenants/:tenantId/devices/:id/unenroll", { error: EnterpriseApiErrors, params: TenantIdParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.get("listGroups", "/v1/tenants/:tenantId/groups", { error: EnterpriseApiErrors, params: TenantParam, success: GroupListResponse }))
-  .add(HttpApiEndpoint.get("getGroup", "/v1/tenants/:tenantId/groups/:id", { error: EnterpriseApiErrors, params: TenantIdParam, success: GroupNode }))
-  .add(HttpApiEndpoint.post("createGroup", "/v1/tenants/:tenantId/groups", { error: EnterpriseApiErrors, params: TenantParam, payload: CreateGroupRequest, success: IdResponse }))
-  .add(HttpApiEndpoint.delete("deleteGroups", "/v1/tenants/:tenantId/groups", { error: EnterpriseApiErrors, params: TenantParam, payload: IdsRequest, success: BulkOperationResult }))
-  .add(HttpApiEndpoint.patch("patchGroup", "/v1/tenants/:tenantId/groups/:id", { error: EnterpriseApiErrors, params: TenantIdParam, payload: PatchGroupRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.patch("patchGroupMembers", "/v1/tenants/:tenantId/groups/:id/members", { error: EnterpriseApiErrors, params: TenantIdParam, payload: PatchGroupMembersRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("syncGroups", "/v1/tenants/:tenantId/groups/sync", { error: EnterpriseApiErrors, params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("duplicateGroup", "/v1/tenants/:tenantId/groups/:id/duplicate", { error: EnterpriseApiErrors, params: TenantIdParam, payload: DuplicateRequest, success: IdResponse }))
-  .add(HttpApiEndpoint.get("listPolicies", "/v1/tenants/:tenantId/policies", { error: EnterpriseApiErrors, params: TenantParam, success: PolicyListResponse }))
-  .add(HttpApiEndpoint.get("getPolicy", "/v1/tenants/:tenantId/policies/:id", { error: EnterpriseApiErrors, params: TenantIdParam, success: PolicyRow }))
-  .add(HttpApiEndpoint.post("createPolicy", "/v1/tenants/:tenantId/policies", { error: EnterpriseApiErrors, params: TenantParam, payload: CreatePolicyRequest, success: IdResponse }))
-  .add(HttpApiEndpoint.delete("deletePolicies", "/v1/tenants/:tenantId/policies", { error: EnterpriseApiErrors, params: TenantParam, payload: IdsRequest, success: BulkOperationResult }))
-  .add(HttpApiEndpoint.patch("patchPolicy", "/v1/tenants/:tenantId/policies/:id", { error: EnterpriseApiErrors, params: TenantIdParam, payload: PatchPolicyRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("uploadPolicyApplication", "/v1/tenants/:tenantId/policies/:id/applications", { error: EnterpriseApiErrors, params: TenantIdParam, payload: UploadPolicyApplicationRequest, success: PolicyApplicationObject }))
-  .add(HttpApiEndpoint.get("downloadPolicyApplication", "/v1/tenants/:tenantId/policies/:id/applications/:sha256", { error: EnterpriseApiErrors, params: { tenantId: Schema.String, id: Schema.String, sha256: Schema.String }, success: DownloadPolicyApplicationResponse }))
-  .add(HttpApiEndpoint.post("syncPolicies", "/v1/tenants/:tenantId/policies/sync", { error: EnterpriseApiErrors, params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("duplicatePolicy", "/v1/tenants/:tenantId/policies/:id/duplicate", { error: EnterpriseApiErrors, params: TenantIdParam, payload: DuplicateRequest, success: IdResponse }))
-  .add(HttpApiEndpoint.post("previewMobileconfig", "/v1/policy/preview-mobileconfig", { error: EnterpriseApiErrors, payload: Schema.Struct({ mobileconfig: Schema.String }), success: JsonRecord }))
-  .add(HttpApiEndpoint.get("billing", "/v1/tenants/:tenantId/billing", { error: EnterpriseApiErrors, params: TenantParam, success: BillingSummary }))
-  .add(HttpApiEndpoint.post("billingPortal", "/v1/tenants/:tenantId/billing/portal", { error: EnterpriseApiErrors, params: TenantParam, payload: BillingPortalRequest, success: BillingPortalResponse }))
+  .add(HttpApiEndpoint.get("authSession", "/v1/auth/session", { error: EnterpriseNoDomainErrors, success: SessionResponse }))
+  .add(HttpApiEndpoint.post("authRegister", "/v1/auth/register", { error: EnterpriseNoDomainErrors, payload: RegisterRequest, success: AuthResponse }))
+  .add(HttpApiEndpoint.post("authLogin", "/v1/auth/login", { error: EnterpriseAuthRequiredErrors, payload: LoginRequest, success: AuthResponse }))
+  .add(HttpApiEndpoint.post("authLogout", "/v1/auth/logout", { error: EnterpriseNoDomainErrors, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("authForgotPassword", "/v1/auth/forgot-password", { error: EnterpriseNoDomainErrors, payload: ForgotPasswordRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("authResetPassword", "/v1/auth/reset-password", { error: EnterpriseBadRequestErrors, payload: ResetPasswordRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("authChangePassword", "/v1/auth/change-password", { error: EnterpriseAuthBadRequestErrors, payload: ChangePasswordRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("authChangeEmail", "/v1/auth/change-email", { error: EnterpriseAuthRequiredErrors, payload: ChangeEmailRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("authVerifyEmailChange", "/v1/auth/verify-email-change", { error: EnterpriseBadRequestErrors, payload: VerifyEmailChangeRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.get("listApiTokens", "/v1/account/api-tokens", { error: EnterpriseAuthRequiredErrors, success: ApiTokensResponse }))
+  .add(HttpApiEndpoint.post("createApiToken", "/v1/account/api-tokens", { error: EnterpriseAuthRequiredErrors, payload: CreateApiTokenRequest, success: CreateApiTokenResponse }))
+  .add(HttpApiEndpoint.delete("revokeApiToken", "/v1/account/api-tokens/:tokenId", { error: EnterpriseAuthRequiredErrors, params: ApiTokenParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.get("me", "/v1/me", { error: EnterpriseAuthRequiredErrors, success: MeResponse }))
+  .add(HttpApiEndpoint.patch("updateMe", "/v1/me", { error: EnterpriseAuthRequiredErrors, payload: UpdateMeRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.delete("deleteMe", "/v1/me", { error: EnterpriseNoDomainErrors, success: Schema.Struct({ error: Schema.String }) }))
+  .add(HttpApiEndpoint.get("listTenants", "/v1/tenants", { error: EnterpriseAuthRequiredErrors, success: TenantListResponse }))
+  .add(HttpApiEndpoint.post("createTenant", "/v1/tenants", { error: EnterpriseAuthRequiredErrors, payload: CreateTenantRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.get("getTenant", "/v1/tenants/:tenantId", { error: EnterpriseTenantReadErrors, params: TenantParam, success: TenantDetail }))
+  .add(HttpApiEndpoint.patch("patchTenant", "/v1/tenants/:tenantId", { error: EnterpriseTenantWriteErrors, params: TenantParam, payload: PatchTenantRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.delete("deleteTenant", "/v1/tenants/:tenantId", { error: EnterpriseTenantDeleteErrors, params: TenantParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.get("listTenantUsers", "/v1/tenants/:tenantId/users", { error: EnterpriseTenantReadErrors, params: TenantParam, success: TenantUsersResponse }))
+  .add(HttpApiEndpoint.post("inviteTenantUser", "/v1/tenants/:tenantId/invitations", { error: EnterpriseTenantWriteErrors, params: TenantParam, payload: InviteTenantUserRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.get("listTenantInvitations", "/v1/tenants/:tenantId/invitations", { error: EnterpriseTenantWriteErrors, params: TenantParam, success: TenantInvitationsResponse }))
+  .add(HttpApiEndpoint.delete("cancelTenantInvitation", "/v1/tenants/:tenantId/invitations/:invitationId", { error: EnterpriseTenantWriteErrors, params: TenantInvitationParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.patch("patchTenantUser", "/v1/tenants/:tenantId/users/:memberId", { error: EnterpriseTenantWriteErrors, params: TenantMemberParam, payload: PatchTenantUserRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.delete("removeTenantUser", "/v1/tenants/:tenantId/users/:memberId", { error: EnterpriseTenantUserRemoveErrors, params: TenantMemberParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.get("getEnrollment", "/v1/enrollment/:id", { error: EnterprisePublicNotFoundErrors, params: IdParam, query: EnrollmentQuery, success: EnrollmentResponse }))
+  .add(HttpApiEndpoint.get("getTenantEnrollment", "/v1/tenants/:tenantId/enrollment", { error: EnterpriseTenantReadErrors, params: TenantParam, success: TenantEnrollmentInfo }))
+  .add(HttpApiEndpoint.patch("patchTenantEnrollment", "/v1/tenants/:tenantId/enrollment", { error: EnterpriseTenantWriteErrors, params: TenantParam, payload: PatchTenantEnrollmentRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("resetTenantEnrollment", "/v1/tenants/:tenantId/enrollment/reset", { error: EnterpriseTenantWriteErrors, params: TenantParam, success: IdResponse }))
+  .add(HttpApiEndpoint.get("getApns", "/v1/tenants/:tenantId/apns", { error: EnterpriseTenantReadErrors, params: TenantParam, success: ApnsInfo }))
+  .add(HttpApiEndpoint.post("uploadApns", "/v1/tenants/:tenantId/apns", { error: EnterpriseTenantWriteErrors, params: TenantParam, payload: UploadApnsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.get("listDevices", "/v1/tenants/:tenantId/devices", { error: EnterpriseTenantReadErrors, params: TenantParam, success: DeviceListResponse }))
+  .add(HttpApiEndpoint.get("getDevice", "/v1/tenants/:tenantId/devices/:id", { error: EnterpriseTenantReadErrors, params: TenantIdParam, success: DeviceRow }))
+  .add(HttpApiEndpoint.delete("deleteDevices", "/v1/tenants/:tenantId/devices", { error: EnterpriseTenantWriteErrors, params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.patch("patchDevice", "/v1/tenants/:tenantId/devices/:id", { error: EnterpriseTenantWriteErrors, params: TenantIdParam, payload: PatchDeviceRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("deviceAction", "/v1/tenants/:tenantId/devices/:id/action", { error: EnterpriseTenantWriteErrors, params: TenantIdParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("deviceUnenroll", "/v1/tenants/:tenantId/devices/:id/unenroll", { error: EnterpriseTenantWriteErrors, params: TenantIdParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.get("listGroups", "/v1/tenants/:tenantId/groups", { error: EnterpriseTenantReadErrors, params: TenantParam, success: GroupListResponse }))
+  .add(HttpApiEndpoint.get("getGroup", "/v1/tenants/:tenantId/groups/:id", { error: EnterpriseTenantReadErrors, params: TenantIdParam, success: GroupNode }))
+  .add(HttpApiEndpoint.post("createGroup", "/v1/tenants/:tenantId/groups", { error: EnterpriseTenantWriteErrors, params: TenantParam, payload: CreateGroupRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.delete("deleteGroups", "/v1/tenants/:tenantId/groups", { error: EnterpriseTenantWriteErrors, params: TenantParam, payload: IdsRequest, success: BulkOperationResult }))
+  .add(HttpApiEndpoint.patch("patchGroup", "/v1/tenants/:tenantId/groups/:id", { error: EnterpriseTenantWriteErrors, params: TenantIdParam, payload: PatchGroupRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.patch("patchGroupMembers", "/v1/tenants/:tenantId/groups/:id/members", { error: EnterpriseTenantWriteErrors, params: TenantIdParam, payload: PatchGroupMembersRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("syncGroups", "/v1/tenants/:tenantId/groups/sync", { error: EnterpriseTenantWriteErrors, params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("duplicateGroup", "/v1/tenants/:tenantId/groups/:id/duplicate", { error: EnterpriseTenantWriteErrors, params: TenantIdParam, payload: DuplicateRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.get("listPolicies", "/v1/tenants/:tenantId/policies", { error: EnterpriseTenantReadErrors, params: TenantParam, success: PolicyListResponse }))
+  .add(HttpApiEndpoint.get("getPolicy", "/v1/tenants/:tenantId/policies/:id", { error: EnterpriseTenantReadErrors, params: TenantIdParam, success: PolicyRow }))
+  .add(HttpApiEndpoint.post("createPolicy", "/v1/tenants/:tenantId/policies", { error: EnterpriseTenantWriteErrors, params: TenantParam, payload: CreatePolicyRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.delete("deletePolicies", "/v1/tenants/:tenantId/policies", { error: EnterpriseTenantWriteErrors, params: TenantParam, payload: IdsRequest, success: BulkOperationResult }))
+  .add(HttpApiEndpoint.patch("patchPolicy", "/v1/tenants/:tenantId/policies/:id", { error: EnterpriseTenantWriteErrors, params: TenantIdParam, payload: PatchPolicyRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("uploadPolicyApplication", "/v1/tenants/:tenantId/policies/:id/applications", { error: EnterprisePolicyApplicationUploadErrors, params: TenantIdParam, payload: UploadPolicyApplicationRequest, success: PolicyApplicationObject }))
+  .add(HttpApiEndpoint.get("downloadPolicyApplication", "/v1/tenants/:tenantId/policies/:id/applications/:sha256", { error: EnterprisePolicyApplicationDownloadErrors, params: { tenantId: Schema.String, id: Schema.String, sha256: Schema.String }, success: DownloadPolicyApplicationResponse }))
+  .add(HttpApiEndpoint.post("syncPolicies", "/v1/tenants/:tenantId/policies/sync", { error: EnterpriseTenantWriteErrors, params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("duplicatePolicy", "/v1/tenants/:tenantId/policies/:id/duplicate", { error: EnterpriseTenantWriteErrors, params: TenantIdParam, payload: DuplicateRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.post("previewMobileconfig", "/v1/policy/preview-mobileconfig", { error: EnterpriseNoDomainErrors, payload: Schema.Struct({ mobileconfig: Schema.String }), success: JsonRecord }))
+  .add(HttpApiEndpoint.get("billing", "/v1/tenants/:tenantId/billing", { error: EnterpriseTenantReadErrors, params: TenantParam, success: BillingSummary }))
+  .add(HttpApiEndpoint.post("billingPortal", "/v1/tenants/:tenantId/billing/portal", { error: EnterpriseBillingPortalErrors, params: TenantParam, payload: BillingPortalRequest, success: BillingPortalResponse }))
   .prefix("/api")
   .annotateMerge(OpenApi.annotations({ title: "Mattrax Enterprise API", description: "Organization-scoped Mattrax management API." }));
 

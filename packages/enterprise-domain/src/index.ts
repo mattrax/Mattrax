@@ -1,12 +1,13 @@
 export {
   EnterpriseBadRequest,
-  EnterpriseConflict,
   EnterpriseDbError,
   EnterpriseForbidden,
+  EnterpriseLastTenantUser,
   EnterpriseNotFound,
   EnterpriseR2FileNotFound,
   EnterpriseR2InternalError,
   EnterpriseStripeError,
+  EnterpriseTenantHasMembers,
   EnterpriseUnauthorized,
   enterpriseApi,
 } from "./enterprise.ts";

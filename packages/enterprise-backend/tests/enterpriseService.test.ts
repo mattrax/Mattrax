@@ -59,7 +59,7 @@ describe("enterprise service tenant flow", () => {
     db.store.user.push({ id: "user-2", name: "Member", email: "member@example.com", emailVerified: false, createdAt: now, updatedAt: now });
     db.store.member.push({ id: "member-2", organizationId: tenant.id, userId: "user-2", role: "member", createdAt: now, updatedAt: now });
 
-    await expect(runEffect(service.deleteTenant(request(headers), tenant.id))).rejects.toMatchObject({ _tag: "EnterpriseConflict" });
+    await expect(runEffect(service.deleteTenant(request(headers), tenant.id))).rejects.toMatchObject({ _tag: "EnterpriseTenantHasMembers" });
   });
 
   it("supports invitation lifecycle", async () => {
@@ -86,7 +86,7 @@ describe("enterprise service tenant flow", () => {
     expect(db.store.member.find((member: any) => member.id === "member-2")?.role).toBe("admin");
 
     await runEffect(service.removeTenantUser(request(headers), tenant.id, "member-2"));
-    await expect(runEffect(service.removeTenantUser(request(headers), tenant.id, db.store.member[0].id))).rejects.toMatchObject({ _tag: "EnterpriseConflict" });
+    await expect(runEffect(service.removeTenantUser(request(headers), tenant.id, db.store.member[0].id))).rejects.toMatchObject({ _tag: "EnterpriseLastTenantUser" });
   });
 });
 
