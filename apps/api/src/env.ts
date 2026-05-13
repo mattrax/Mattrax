@@ -1,26 +1,37 @@
-import { createEnv } from "@t3-oss/env-core";
-import * as v from "valibot";
+import { Schema } from "effect";
 import { env as cfEnv } from "cloudflare:workers"
 
+const nonEmptyString = Schema.String.check(Schema.isMinLength(1));
+const urlString = Schema.String.check(
+  Schema.makeFilter<string>((value) => {
+    try {
+      new URL(value);
+      return true;
+    } catch {
+      return "a valid URL";
+    }
+  }),
+);
+
+const Env = Schema.Struct({
+  ORIGIN: urlString,
+  AUTH_SECRET: nonEmptyString,
+  STRIPE_SECRET_KEY: nonEmptyString,
+  STRIPE_WEBHOOK_SECRET: nonEmptyString,
+  STRIPE_DEVICE_MONTHLY_PRICE_ID: nonEmptyString,
+  CLOUD_APPLE_VENDOR_CERT: Schema.optional(Schema.String),
+  CLOUD_APPLE_VENDOR_KEY: Schema.optional(Schema.String),
+});
+
+const emptyStringAsUndefined = (value: unknown) => value === "" ? undefined : value;
+
 // For now this is only used for runtime validation, so transformations aren't safe.
-export const env = createEnv({
-  server: {
-    ORIGIN: v.pipe(v.string(), v.url()),
-    AUTH_SECRET: v.pipe(v.string(), v.minLength(1)),
-    STRIPE_SECRET_KEY: v.pipe(v.string(), v.minLength(1)),
-    STRIPE_WEBHOOK_SECRET: v.pipe(v.string(), v.minLength(1)),
-    STRIPE_DEVICE_MONTHLY_PRICE_ID: v.pipe(v.string(), v.minLength(1)),
-    CLOUD_APPLE_VENDOR_CERT: v.optional(v.string()),
-    CLOUD_APPLE_VENDOR_KEY: v.optional(v.string()),
-  },
-  runtimeEnvStrict: {
-    ORIGIN: cfEnv.ORIGIN,
-    AUTH_SECRET: cfEnv.AUTH_SECRET,
-    STRIPE_SECRET_KEY: (cfEnv as any).STRIPE_SECRET_KEY,
-    STRIPE_WEBHOOK_SECRET: (cfEnv as any).STRIPE_WEBHOOK_SECRET,
-    STRIPE_DEVICE_MONTHLY_PRICE_ID: (cfEnv as any).STRIPE_DEVICE_MONTHLY_PRICE_ID,
-    CLOUD_APPLE_VENDOR_CERT: cfEnv.CLOUD_APPLE_VENDOR_CERT,
-    CLOUD_APPLE_VENDOR_KEY: cfEnv.CLOUD_APPLE_VENDOR_KEY,
-  },
-  emptyStringAsUndefined: true,
+export const env = Schema.decodeUnknownSync(Env)({
+  ORIGIN: emptyStringAsUndefined(cfEnv.ORIGIN),
+  AUTH_SECRET: emptyStringAsUndefined(cfEnv.AUTH_SECRET),
+  STRIPE_SECRET_KEY: emptyStringAsUndefined((cfEnv as any).STRIPE_SECRET_KEY),
+  STRIPE_WEBHOOK_SECRET: emptyStringAsUndefined((cfEnv as any).STRIPE_WEBHOOK_SECRET),
+  STRIPE_DEVICE_MONTHLY_PRICE_ID: emptyStringAsUndefined((cfEnv as any).STRIPE_DEVICE_MONTHLY_PRICE_ID),
+  CLOUD_APPLE_VENDOR_CERT: emptyStringAsUndefined(cfEnv.CLOUD_APPLE_VENDOR_CERT),
+  CLOUD_APPLE_VENDOR_KEY: emptyStringAsUndefined(cfEnv.CLOUD_APPLE_VENDOR_KEY),
 });
