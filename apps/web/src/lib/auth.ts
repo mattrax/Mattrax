@@ -49,7 +49,6 @@ export const authClient = {
   changePassword: (payload: { currentPassword: string; newPassword: string; revokeOtherSessions?: boolean }) => result(() => request<{ status: "ok" }>("/auth/change-password", { method: "POST", body: body(payload) })),
   requestPasswordReset: (payload: { email: string; redirectTo?: string }) => result(() => request<{ status: "ok" }>("/auth/forgot-password", { method: "POST", body: body(payload) })),
   resetPassword: (payload: { token: string; newPassword: string }) => result(() => request<{ status: "ok" }>("/auth/reset-password", { method: "POST", body: body(payload) })),
-  setActiveTenant: (tenantId: string) => result(() => request<{ status: "ok" }>("/auth/set-active-tenant", { method: "POST", body: body({ tenantId }) })),
   listApiTokens: () => request<{ tokens: Array<{ id: string; name: string; tokenPrefix: string; createdAt: string; updatedAt: string; lastUsedAt?: string | null; expiresAt?: string | null; revokedAt?: string | null }> }>("/account/api-tokens"),
   createApiToken: (payload: { name: string; expiresAt?: string | null }) => request<{ token: string; item: { id: string; name: string; tokenPrefix: string; createdAt: string; updatedAt: string; lastUsedAt?: string | null; expiresAt?: string | null; revokedAt?: string | null } }>("/account/api-tokens", { method: "POST", body: body(payload) }),
   revokeApiToken: (tokenId: string) => request<{ status: "ok" }>(`/account/api-tokens/${tokenId}`, { method: "DELETE" }),

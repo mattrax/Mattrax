@@ -1,22 +1,18 @@
 import { useNavigate, useParams } from "@solidjs/router";
-import { useQuery, useQueryClient } from "@tanstack/solid-query";
+import { useQuery } from "@tanstack/solid-query";
 import { Building2, ChevronsUpDown, Plus } from "lucide-solid";
 import { For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "~/components/ui/dropdown-menu";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
-import { authClient } from "~/lib/auth";
 
 export function TenantSwitcher() {
   const params = useParams();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
   const active = () => me.data?.tenants.find((tenant) => tenant.id === params.tenantId) ?? me.data?.activeTenant ?? me.data?.tenants[0];
 
   const switchTenant = async (tenantId: string) => {
-    await authClient.setActiveTenant(tenantId);
-    await queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
     navigate(`/t/${tenantId}/devices`);
   };
 

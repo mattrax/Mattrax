@@ -10,7 +10,7 @@ export default function DashboardPage() {
 
   createEffect(() => {
     if (me.isSuccess) {
-      const tenant = me.data.activeTenant ?? me.data.tenants[0];
+      const tenant = me.data.tenants[0];
       navigate(tenant ? `/t/${tenant.id}/devices` : "/tenants/new", { replace: true });
     }
   });

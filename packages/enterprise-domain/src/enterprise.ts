@@ -350,7 +350,6 @@ export const ResetPasswordRequest = Schema.Struct({ token: Schema.String, newPas
 export const ChangePasswordRequest = Schema.Struct({ currentPassword: Schema.String, newPassword: Schema.String, revokeOtherSessions: Schema.optional(Schema.Boolean) });
 export const ChangeEmailRequest = Schema.Struct({ newEmail: Schema.String, callbackURL: Schema.optional(Schema.String) });
 export const VerifyEmailChangeRequest = Schema.Struct({ token: Schema.String });
-export const SetActiveTenantRequest = Schema.Struct({ tenantId: Schema.String });
 export const AuthResponse = Schema.Struct({ user: AuthUser });
 
 export const ApiTokenInfo = Schema.Struct({
@@ -377,7 +376,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   .add(HttpApiEndpoint.post("authChangePassword", "/v1/auth/change-password", { error: EnterpriseApiErrors, payload: ChangePasswordRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.post("authChangeEmail", "/v1/auth/change-email", { error: EnterpriseApiErrors, payload: ChangeEmailRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.post("authVerifyEmailChange", "/v1/auth/verify-email-change", { error: EnterpriseApiErrors, payload: VerifyEmailChangeRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
-  .add(HttpApiEndpoint.post("authSetActiveTenant", "/v1/auth/set-active-tenant", { error: EnterpriseApiErrors, payload: SetActiveTenantRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.get("listApiTokens", "/v1/account/api-tokens", { error: EnterpriseApiErrors, success: ApiTokensResponse }))
   .add(HttpApiEndpoint.post("createApiToken", "/v1/account/api-tokens", { error: EnterpriseApiErrors, payload: CreateApiTokenRequest, success: CreateApiTokenResponse }))
   .add(HttpApiEndpoint.delete("revokeApiToken", "/v1/account/api-tokens/:tokenId", { error: EnterpriseApiErrors, params: ApiTokenParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))

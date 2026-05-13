@@ -682,7 +682,6 @@ export const enterpriseHandlers = ({ db, schema, origin, stripeClient, storage }
     authChangePassword: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/change-password" })),
     authChangeEmail: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/change-email" })),
     authVerifyEmailChange: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/verify-email-change" })),
-    authSetActiveTenant: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/set-active-tenant" })),
     listApiTokens: (request) => effectTry(() => auth.listApiTokens(webRequestFromRequest(request, origin))),
     createApiToken: (request, payload) => effectTry(() => auth.createApiToken(webRequestFromRequest(request, origin), payload)),
     revokeApiToken: (request, tokenId) => effectTry(() => auth.revokeApiToken(webRequestFromRequest(request, origin), tokenId)),
@@ -699,7 +698,6 @@ export const enterpriseHandlers = ({ db, schema, origin, stripeClient, storage }
       .handle("authChangePassword", ({ request, payload }) => service.authChangePassword(request, payload))
       .handle("authChangeEmail", ({ request, payload }) => service.authChangeEmail(request, payload))
       .handle("authVerifyEmailChange", ({ request, payload }) => service.authVerifyEmailChange(request, payload))
-      .handle("authSetActiveTenant", ({ request, payload }) => service.authSetActiveTenant(request, payload))
       .handle("listApiTokens", ({ request }) => service.listApiTokens(request))
       .handle("createApiToken", ({ request, payload }) => service.createApiToken(request, payload))
       .handle("revokeApiToken", ({ request, params }) => service.revokeApiToken(request, params.tokenId))

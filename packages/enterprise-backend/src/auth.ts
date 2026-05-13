@@ -205,15 +205,6 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
         await db.delete(schema.verification).where(eq(schema.verification.id, verification.id));
         return json(ok);
       }
-      if (request.method === "POST" && path === "/auth/set-active-tenant") {
-        const resolved = await requireUser(request) as any;
-        const session = resolved.session;
-        if (!session) return json({ message: "Session required" }, { status: 401 });
-        const member = await db.query.member.findFirst({ where: and(eq(schema.member.userId, resolved.user.id), eq(schema.member.organizationId, body.tenantId)) });
-        if (!member) return json({ message: "Tenant not found" }, { status: 404 });
-        await db.update(schema.session).set({ activeOrganizationId: body.tenantId, updatedAt: now() }).where(eq(schema.session.id, session.id));
-        return json(ok);
-      }
       if (request.method === "GET" && path === "/account/api-tokens") return json(await listApiTokens(request));
       if (request.method === "POST" && path === "/account/api-tokens") return json(await createApiToken(request, body));
       const revoke = path.match(/^\/account\/api-tokens\/([^/]+)$/);
