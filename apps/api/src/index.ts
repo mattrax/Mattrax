@@ -2,6 +2,7 @@ import { Effect, Layer, Schema } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, HttpApiScalar, OpenApi } from "effect/unstable/httpapi";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { env, waitUntil } from "cloudflare:workers";
+import Stripe from "stripe";
 import { version } from "../package.json" with { type: "json" };
 import { enterpriseApi } from "@mattrax/enterprise-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
@@ -18,7 +19,6 @@ import { createDb } from "./db/index.js";
 import * as schema from "./db/schema.js";
 import { ScepRepositoryLive } from "./repositories/scepRepository.js";
 import { createAuth } from "./auth.js";
-import { createEnterpriseBackend } from "./enterprise/live.js";
 import "./env.js";
 
 const healthApi = HttpApiGroup.make("HealthApi").add(
@@ -48,10 +48,14 @@ export const createAppLayer = (hyperdrive: Hyperdrive) => {
     ? (extractTopicFromCertPem(env.CLOUD_APPLE_VENDOR_CERT) ?? "com.apple.mgmt.External.placeholder")
     : "com.apple.mgmt.External.placeholder";
 
-  const enterpriseBackend = createEnterpriseBackend(database, { origin: env.ORIGIN });
-
   const handlersLayer = Layer.mergeAll(
-    HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers(enterpriseBackend)),
+    HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers({
+      db: database,
+      schema,
+      auth: createAuth(),
+      origin: env.ORIGIN,
+      stripeClient: new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: "2026-04-22.dahlia" }),
+    })),
     HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
     HttpApiBuilder.group(apiRoot, "PlatformApi", platformHandlers),
     HttpApiBuilder.group(apiRoot, "HealthApi", (handlers) =>
