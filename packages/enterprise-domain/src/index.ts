@@ -10,4 +10,5 @@ export {
   EnterpriseUnauthorized,
   enterpriseApi,
 } from "./enterprise.ts";
+export * from "./enterprise.ts";
 export { policyApplicationKey, policyApplicationPrefix } from "./storage.ts";

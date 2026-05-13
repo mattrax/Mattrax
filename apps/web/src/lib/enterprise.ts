@@ -1,34 +1,49 @@
+import { queryOptions } from "@tanstack/solid-query";
+import { Effect } from "effect";
+import { FetchHttpClient } from "effect/unstable/http";
+import { HttpApiClient } from "effect/unstable/httpapi";
 import type { Accessor } from "solid-js";
 import { getRequestEvent, isServer } from "solid-js/web";
+import {
+  EnterpriseBadRequest,
+  enterpriseHttpApi,
+  type DeviceRow,
+  type Entity,
+  type GroupNode,
+  type GroupRow,
+  type PolicyRow,
+  type RowFor,
+  type TenantEnrollmentInfo,
+} from "@mattrax/enterprise-domain";
 
-export type TenantInfo = { id: string; name: string; slug: string; role: string; logo?: string | null };
-export type UserInfo = { id: string; name: string; email: string; emailVerified: boolean; image?: string | null };
-export type BillingSummary = { plan?: string; status?: string; billableDevices: number; subscriptionId?: string | null };
-export type MeResponse = { user: UserInfo; activeTenant?: TenantInfo; tenants: TenantInfo[]; billing?: BillingSummary };
-export type TenantDetail = TenantInfo & { metadata?: string | null; createdAt: string };
-export type Entity = "device" | "group" | "policy";
-export type DeviceRow = {
-  id: string; proto: "apple" | "win" | "android"; name: string; model?: string | null; modelIdentifier?: string | null;
-  serial?: string | null; status: "enrolling" | "enrolled" | "unenrolling" | "unenrolled"; enrolledAt: string; lastSeenAt: string;
-  assetTag?: string | null; notes?: string | null; physicalName?: string | null; vendor?: string | null; osEdition?: string | null;
-  osVersion?: string | null; osBuild?: string | null; diskTotal?: string | null; diskUsed?: string | null;
-};
-export type GroupRow = { id: string; name: string; notes?: string | null; devicesCount?: number; policiesCount?: number; createdAt: string; updatedAt: string };
-export type PolicyRow = { id: string; name: string; notes?: string | null; configurations?: Record<string, unknown>; createdAt: string; updatedAt: string };
-export type GroupNode = GroupRow & { devices?: Array<{ id: string; name: string }>; policies?: Array<{ id: string; name: string }> };
-export type NodeResponse = DeviceRow | GroupNode | PolicyRow;
-export type RowFor<E extends Entity> = E extends "device" ? DeviceRow : E extends "group" ? GroupRow : PolicyRow;
-export type TenantUser = { memberId: string; userId: string; name: string; email: string; role: string; createdAt: string };
-export type TenantInvitation = { id: string; email: string; role?: string | null; status: string; expiresAt: string; createdAt: string };
-export type ApnsInfo = { configured: boolean; email?: string | null; topic?: string | null };
-export type TenantEnrollmentInfo = { id: string; code?: string | null; enabledApple: boolean; enabledWindows: boolean; enabledAndroid: boolean; enabledAssetTag: boolean; maxDevices: number; createdAt: string; updatedAt: string };
-export type PlatformEnrollment = { error: string } | { profile: string } | "available";
-export type EnrollmentResponse =
-  | { name: string; authenticated: false }
-  | { name: string; authenticated: true; apple: PlatformEnrollment; windows: PlatformEnrollment; android: PlatformEnrollment; assetTag: boolean };
-export type PolicyApplicationObject = { sha256: string; fileName: string; contentType?: string | null; size: number };
-export type PolicyApplicationDownload = PolicyApplicationObject & { content: string };
+export type {
+  ApnsInfo,
+  BillingSummary,
+  DeviceRow,
+  DownloadPolicyApplicationResponse as PolicyApplicationDownload,
+  EnrollmentResponse,
+  Entity,
+  GroupNode,
+  GroupRow,
+  MeResponse,
+  NodeResponse,
+  PlatformEnrollment,
+  PolicyApplicationObject,
+  PolicyRow,
+  RowFor,
+  TenantDetail,
+  TenantEnrollmentInfo,
+  TenantInfo,
+  TenantInvitation,
+  TenantUser,
+  UserInfo,
+} from "@mattrax/enterprise-domain";
+
 type RouteParam = string | undefined;
+type EndpointPromise<A, E> = Promise<A> & { readonly __error?: E };
+type EndpointData<T> = T extends EndpointPromise<infer A, unknown> ? A : never;
+type EndpointError<T> = T extends EndpointPromise<unknown, infer E> ? E : never;
+type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["client"]["EnterpriseApi"];
 
 export const enterpriseKeys = {
   me: () => ["enterprise", "me"] as const,
@@ -43,90 +58,110 @@ export const enterpriseKeys = {
   enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", tenantId ?? ""] as const,
 };
 
-export class ApiError extends Error {
-  readonly status: number;
-  constructor(message: string, status: number) { super(message); this.status = status; }
-}
-
 const required = (value: RouteParam, name: string) => {
-  if (!value) throw new ApiError(`Missing ${name}`, 400);
+  if (!value) throw new EnterpriseBadRequest({ message: `Missing ${name}` });
   return value;
 };
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const url = `/api/v1${path}`;
+const clientEffect = () => {
   const event = isServer ? getRequestEvent() : undefined;
-  const headers = new Headers(init.headers);
-  if (init.body) headers.set("content-type", "application/json");
-  if (event) {
-    const cookie = event.request.headers.get("cookie");
-    if (cookie) headers.set("cookie", cookie);
-  }
-  const response = await fetch(event ? new URL(url, event.request.url) : url, {
-    ...init,
-    credentials: "include",
-    headers,
-  });
-  if (!response.ok) {
-    const text = await response.text();
-    throw new ApiError(text || `Request failed with ${response.status}`, response.status);
-  }
-  if (response.status === 204) return undefined as T;
-  const text = await response.text();
-  return text ? JSON.parse(text) as T : undefined as T;
-}
-
-const body = (value: unknown) => JSON.stringify(value);
-const q = (params: Record<string, string | undefined>) => {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) if (value) search.set(key, value);
-  const value = search.toString();
-  return value ? `?${value}` : "";
+  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+  return HttpApiClient.make(enterpriseHttpApi, { baseUrl }).pipe(Effect.map((client) => ({ client, event })));
 };
 
-const resource = (entity: Entity) => `${entity}s`;
+function endpoint<A, E>(call: (api: EnterpriseApiClient) => Effect.Effect<A, E, never>): EndpointPromise<A, E | EnterpriseBadRequest> {
+  const effect = clientEffect().pipe(
+    Effect.flatMap(({ client, event }) => {
+      const cookie = event?.request.headers.get("cookie");
+      const api = client.EnterpriseApi;
+      if (!cookie) return call(api);
+      return call(new Proxy(api, {
+        get(target, property, receiver) {
+          const value = Reflect.get(target, property, receiver);
+          if (typeof value !== "function") return value;
+          return (options: Record<string, unknown> = {}) => value({ ...options, headers: { ...(options.headers as object | undefined), cookie } });
+        },
+      }) as EnterpriseApiClient);
+    }),
+  );
+  return Effect.runPromise(effect.pipe(Effect.provide(FetchHttpClient.layer))) as EndpointPromise<A, E | EnterpriseBadRequest>;
+}
+
+const enterpriseQueryOptions = <A, E, T extends EndpointPromise<A, E>, TQueryKey extends readonly unknown[]>(options: {
+  queryKey: TQueryKey;
+  queryFn: () => T;
+  enabled?: boolean;
+}) => queryOptions<EndpointData<T>, EndpointError<T>, EndpointData<T>, TQueryKey>(options as {
+  queryKey: TQueryKey;
+  queryFn: () => Promise<EndpointData<T>>;
+  enabled?: boolean;
+});
 
 export const enterprise = {
-  me: () => request<MeResponse>("/me"),
-  getEnrollment: (id: RouteParam, code?: string) => request<EnrollmentResponse>(`/enrollment/${required(id, "id")}${q({ code })}`),
-  listTenants: () => request<{ tenants: TenantInfo[] }>("/tenants"),
-  createTenant: (payload: { name: string; slug: string; logo?: string | null; metadata?: Record<string, unknown> }) => request<{ id: string }>("/tenants", { method: "POST", body: body(payload) }),
-  getTenant: (tenantId: RouteParam) => request<TenantDetail>(`/tenants/${required(tenantId, "tenantId")}`),
-  patchTenant: (tenantId: RouteParam, payload: Partial<{ name: string; slug: string; logo: string | null; metadata: Record<string, unknown> | null }>) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}`, { method: "PATCH", body: body(payload) }),
-  deleteTenant: (tenantId: RouteParam) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}`, { method: "DELETE" }),
-  list: <E extends Entity>(tenantId: RouteParam, entity: E, group?: string) => request<{ rows: RowFor<E>[] }>(`/tenants/${required(tenantId, "tenantId")}/${resource(entity)}${q({ "in[group]": group })}`),
-  get: <E extends Entity>(tenantId: RouteParam, entity: E, id: RouteParam) => request<RowFor<E> | GroupNode>(`/tenants/${required(tenantId, "tenantId")}/${resource(entity)}/${required(id, "id")}`),
-  patchDevice: (tenantId: RouteParam, id: RouteParam, payload: Partial<Pick<DeviceRow, "name" | "notes" | "assetTag">>) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/devices/${required(id, "id")}`, { method: "PATCH", body: body(payload) }),
-  deleteDevices: (tenantId: RouteParam, ids: string[]) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/devices`, { method: "DELETE", body: body(ids) }),
-  deviceAction: (tenantId: RouteParam, id: RouteParam) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/devices/${required(id, "id")}/action`, { method: "POST" }),
-  deviceUnenroll: (tenantId: RouteParam, id: RouteParam) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/devices/${required(id, "id")}/unenroll`, { method: "POST" }),
-  createGroup: (tenantId: RouteParam, payload: { name: string; notes?: string | null; devices?: string[]; policies?: string[] }) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/groups`, { method: "POST", body: body(payload) }),
-  patchGroup: (tenantId: RouteParam, id: RouteParam, payload: Partial<Pick<GroupRow, "name" | "notes">>) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/groups/${required(id, "id")}`, { method: "PATCH", body: body(payload) }),
-  patchGroupMembers: (tenantId: RouteParam, id: RouteParam, payload: { assign?: { devices?: string[]; policies?: string[] }; unassign?: { devices?: string[]; policies?: string[] } }) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/groups/${required(id, "id")}/members`, { method: "PATCH", body: body(payload) }),
-  deleteGroups: (tenantId: RouteParam, ids: string[]) => request<{ deleted: string[]; failed: Array<{ id: string; reason: string }> }>(`/tenants/${required(tenantId, "tenantId")}/groups`, { method: "DELETE", body: body(ids) }),
-  duplicateGroup: (tenantId: RouteParam, id: RouteParam, name?: string) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/groups/${required(id, "id")}/duplicate`, { method: "POST", body: body({ name }) }),
-  syncGroups: (tenantId: RouteParam, ids: string[]) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/groups/sync`, { method: "POST", body: body(ids) }),
-  createPolicy: (tenantId: RouteParam, payload: { name: string; notes?: string | null }) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/policies`, { method: "POST", body: body(payload) }),
-  patchPolicy: (tenantId: RouteParam, id: RouteParam, payload: Partial<Pick<PolicyRow, "name" | "notes" | "configurations">>) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/policies/${required(id, "id")}`, { method: "PATCH", body: body(payload) }),
-  uploadPolicyApplication: (tenantId: RouteParam, id: RouteParam, payload: { fileName: string; contentType?: string; content: string }) => request<PolicyApplicationObject>(`/tenants/${required(tenantId, "tenantId")}/policies/${required(id, "id")}/applications`, { method: "POST", body: body(payload) }),
-  downloadPolicyApplication: (tenantId: RouteParam, id: RouteParam, sha256: string) => request<PolicyApplicationDownload>(`/tenants/${required(tenantId, "tenantId")}/policies/${required(id, "id")}/applications/${required(sha256, "sha256")}`),
-  deletePolicies: (tenantId: RouteParam, ids: string[]) => request<{ deleted: string[]; failed: Array<{ id: string; reason: string }> }>(`/tenants/${required(tenantId, "tenantId")}/policies`, { method: "DELETE", body: body(ids) }),
-  duplicatePolicy: (tenantId: RouteParam, id: RouteParam, name?: string) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/policies/${required(id, "id")}/duplicate`, { method: "POST", body: body({ name }) }),
-  syncPolicies: (tenantId: RouteParam, ids: string[]) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/policies/sync`, { method: "POST", body: body(ids) }),
-  previewMobileconfig: (mobileconfig: string) => request<Record<string, unknown>>("/policy/preview-mobileconfig", { method: "POST", body: body({ mobileconfig }) }),
-  getApns: (tenantId: RouteParam) => request<ApnsInfo>(`/tenants/${required(tenantId, "tenantId")}/apns`),
-  getTenantEnrollment: (tenantId: RouteParam) => request<TenantEnrollmentInfo>(`/tenants/${required(tenantId, "tenantId")}/enrollment`),
-  patchTenantEnrollment: (tenantId: RouteParam, payload: Partial<Pick<TenantEnrollmentInfo, "code" | "enabledApple" | "enabledWindows" | "enabledAndroid" | "enabledAssetTag" | "maxDevices">>) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/enrollment`, { method: "PATCH", body: body(payload) }),
-  resetTenantEnrollment: (tenantId: RouteParam) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/enrollment/reset`, { method: "POST" }),
-  uploadApns: (tenantId: RouteParam, payload: { email: string; cert: string }) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/apns`, { method: "POST", body: body(payload) }),
-  listUsers: (tenantId: RouteParam) => request<{ users: TenantUser[] }>(`/tenants/${required(tenantId, "tenantId")}/users`),
-  inviteUser: (tenantId: RouteParam, payload: { email: string; role?: string; resend?: boolean }) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/invitations`, { method: "POST", body: body(payload) }),
-  listInvitations: (tenantId: RouteParam) => request<{ invitations: TenantInvitation[] }>(`/tenants/${required(tenantId, "tenantId")}/invitations`),
-  cancelInvitation: (tenantId: RouteParam, invitationId: RouteParam) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/invitations/${required(invitationId, "invitationId")}`, { method: "DELETE" }),
-  patchUser: (tenantId: RouteParam, memberId: RouteParam, role: string) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/users/${required(memberId, "memberId")}`, { method: "PATCH", body: body({ role }) }),
-  removeUser: (tenantId: RouteParam, memberId: RouteParam) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/users/${required(memberId, "memberId")}`, { method: "DELETE" }),
-  billing: (tenantId: RouteParam) => request<BillingSummary>(`/tenants/${required(tenantId, "tenantId")}/billing`),
-  billingPortal: (tenantId: RouteParam, returnUrl: string) => request<{ url: string }>(`/tenants/${required(tenantId, "tenantId")}/billing/portal`, { method: "POST", body: body({ returnUrl }) }),
+  me: () => endpoint((api) => api.me({})),
+  getEnrollment: (id: RouteParam, code?: string) => endpoint((api) => api.getEnrollment({ params: { id: required(id, "id") }, query: { code } })),
+  listTenants: () => endpoint((api) => api.listTenants({})),
+  createTenant: (payload: { name: string; slug: string; logo?: string | null; metadata?: Record<string, unknown> }) => endpoint((api) => api.createTenant({ payload })),
+  getTenant: (tenantId: RouteParam) => endpoint((api) => api.getTenant({ params: { tenantId: required(tenantId, "tenantId") } })),
+  patchTenant: (tenantId: RouteParam, payload: Partial<{ name: string; slug: string; logo: string | null; metadata: Record<string, unknown> | null }>) => endpoint((api) => api.patchTenant({ params: { tenantId: required(tenantId, "tenantId") }, payload })),
+  deleteTenant: (tenantId: RouteParam) => endpoint((api) => api.deleteTenant({ params: { tenantId: required(tenantId, "tenantId") } })),
+  list: <E extends Entity>(tenantId: RouteParam, entity: E, _group?: string) => endpoint((api) => {
+    const params = { tenantId: required(tenantId, "tenantId") };
+    if (entity === "device") return api.listDevices({ params }) as Effect.Effect<{ rows: RowFor<E>[] }, Effect.Error<ReturnType<typeof api.listDevices>>, never>;
+    if (entity === "group") return api.listGroups({ params }) as Effect.Effect<{ rows: RowFor<E>[] }, Effect.Error<ReturnType<typeof api.listGroups>>, never>;
+    return api.listPolicies({ params }) as Effect.Effect<{ rows: RowFor<E>[] }, Effect.Error<ReturnType<typeof api.listPolicies>>, never>;
+  }),
+  get: <E extends Entity>(tenantId: RouteParam, entity: E, id: RouteParam) => endpoint((api) => {
+    const params = { tenantId: required(tenantId, "tenantId"), id: required(id, "id") };
+    if (entity === "device") return api.getDevice({ params }) as Effect.Effect<RowFor<E> | GroupNode, Effect.Error<ReturnType<typeof api.getDevice>>, never>;
+    if (entity === "group") return api.getGroup({ params }) as Effect.Effect<RowFor<E> | GroupNode, Effect.Error<ReturnType<typeof api.getGroup>>, never>;
+    return api.getPolicy({ params }) as Effect.Effect<RowFor<E> | GroupNode, Effect.Error<ReturnType<typeof api.getPolicy>>, never>;
+  }),
+  patchDevice: (tenantId: RouteParam, id: RouteParam, payload: Partial<Pick<DeviceRow, "name" | "notes" | "assetTag">>) => endpoint((api) => api.patchDevice({ params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") }, payload })),
+  deleteDevices: (tenantId: RouteParam, ids: string[]) => endpoint((api) => api.deleteDevices({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids })),
+  deviceAction: (tenantId: RouteParam, id: RouteParam) => endpoint((api) => api.deviceAction({ params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") } })),
+  deviceUnenroll: (tenantId: RouteParam, id: RouteParam) => endpoint((api) => api.deviceUnenroll({ params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") } })),
+  createGroup: (tenantId: RouteParam, payload: { name: string; notes?: string | null; devices?: string[]; policies?: string[] }) => endpoint((api) => api.createGroup({ params: { tenantId: required(tenantId, "tenantId") }, payload })),
+  patchGroup: (tenantId: RouteParam, id: RouteParam, payload: Partial<Pick<GroupRow, "name" | "notes">>) => endpoint((api) => api.patchGroup({ params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") }, payload })),
+  patchGroupMembers: (tenantId: RouteParam, id: RouteParam, payload: { assign?: { devices?: string[]; policies?: string[] }; unassign?: { devices?: string[]; policies?: string[] } }) => endpoint((api) => api.patchGroupMembers({ params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") }, payload })),
+  deleteGroups: (tenantId: RouteParam, ids: string[]) => endpoint((api) => api.deleteGroups({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids })),
+  duplicateGroup: (tenantId: RouteParam, id: RouteParam, name?: string) => endpoint((api) => api.duplicateGroup({ params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") }, payload: { name } })),
+  syncGroups: (tenantId: RouteParam, ids: string[]) => endpoint((api) => api.syncGroups({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids })),
+  createPolicy: (tenantId: RouteParam, payload: { name: string; notes?: string | null }) => endpoint((api) => api.createPolicy({ params: { tenantId: required(tenantId, "tenantId") }, payload })),
+  patchPolicy: (tenantId: RouteParam, id: RouteParam, payload: Partial<Pick<PolicyRow, "name" | "notes" | "configurations">>) => endpoint((api) => api.patchPolicy({ params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") }, payload })),
+  uploadPolicyApplication: (tenantId: RouteParam, id: RouteParam, payload: { fileName: string; contentType?: string; content: string }) => endpoint((api) => api.uploadPolicyApplication({ params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") }, payload })),
+  downloadPolicyApplication: (tenantId: RouteParam, id: RouteParam, sha256: string) => endpoint((api) => api.downloadPolicyApplication({ params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id"), sha256: required(sha256, "sha256") } })),
+  deletePolicies: (tenantId: RouteParam, ids: string[]) => endpoint((api) => api.deletePolicies({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids })),
+  duplicatePolicy: (tenantId: RouteParam, id: RouteParam, name?: string) => endpoint((api) => api.duplicatePolicy({ params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") }, payload: { name } })),
+  syncPolicies: (tenantId: RouteParam, ids: string[]) => endpoint((api) => api.syncPolicies({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids })),
+  previewMobileconfig: (mobileconfig: string) => endpoint((api) => api.previewMobileconfig({ payload: { mobileconfig } })),
+  getApns: (tenantId: RouteParam) => endpoint((api) => api.getApns({ params: { tenantId: required(tenantId, "tenantId") } })),
+  getTenantEnrollment: (tenantId: RouteParam) => endpoint((api) => api.getTenantEnrollment({ params: { tenantId: required(tenantId, "tenantId") } })),
+  patchTenantEnrollment: (tenantId: RouteParam, payload: Partial<Pick<TenantEnrollmentInfo, "code" | "enabledApple" | "enabledWindows" | "enabledAndroid" | "enabledAssetTag" | "maxDevices">>) => endpoint((api) => api.patchTenantEnrollment({ params: { tenantId: required(tenantId, "tenantId") }, payload })),
+  resetTenantEnrollment: (tenantId: RouteParam) => endpoint((api) => api.resetTenantEnrollment({ params: { tenantId: required(tenantId, "tenantId") } })),
+  uploadApns: (tenantId: RouteParam, payload: { email: string; cert: string }) => endpoint((api) => api.uploadApns({ params: { tenantId: required(tenantId, "tenantId") }, payload })),
+  listUsers: (tenantId: RouteParam) => endpoint((api) => api.listTenantUsers({ params: { tenantId: required(tenantId, "tenantId") } })),
+  inviteUser: (tenantId: RouteParam, payload: { email: string; role?: string; resend?: boolean }) => endpoint((api) => api.inviteTenantUser({ params: { tenantId: required(tenantId, "tenantId") }, payload })),
+  listInvitations: (tenantId: RouteParam) => endpoint((api) => api.listTenantInvitations({ params: { tenantId: required(tenantId, "tenantId") } })),
+  cancelInvitation: (tenantId: RouteParam, invitationId: RouteParam) => endpoint((api) => api.cancelTenantInvitation({ params: { tenantId: required(tenantId, "tenantId"), invitationId: required(invitationId, "invitationId") } })),
+  patchUser: (tenantId: RouteParam, memberId: RouteParam, role: string) => endpoint((api) => api.patchTenantUser({ params: { tenantId: required(tenantId, "tenantId"), memberId: required(memberId, "memberId") }, payload: { role } })),
+  removeUser: (tenantId: RouteParam, memberId: RouteParam) => endpoint((api) => api.removeTenantUser({ params: { tenantId: required(tenantId, "tenantId"), memberId: required(memberId, "memberId") } })),
+  billing: (tenantId: RouteParam) => endpoint((api) => api.billing({ params: { tenantId: required(tenantId, "tenantId") } })),
+  billingPortal: (tenantId: RouteParam, returnUrl: string) => endpoint((api) => api.billingPortal({ params: { tenantId: required(tenantId, "tenantId") }, payload: { returnUrl } })),
+};
+
+export const enterpriseQueries = {
+  me: () => enterpriseQueryOptions({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }),
+  tenants: () => enterpriseQueryOptions({ queryKey: enterpriseKeys.tenants(), queryFn: enterprise.listTenants }),
+  tenant: (tenantId: RouteParam) => enterpriseQueryOptions({ queryKey: enterpriseKeys.tenant(tenantId), queryFn: () => enterprise.getTenant(tenantId), enabled: Boolean(tenantId) }),
+  list: <E extends Entity>(tenantId: RouteParam, entity: E, group?: string) => enterpriseQueryOptions({ queryKey: enterpriseKeys.list(tenantId, entity, group), queryFn: () => enterprise.list(tenantId, entity, group), enabled: Boolean(tenantId) }),
+  item: <E extends Entity>(tenantId: RouteParam, entity: E, id: RouteParam) => enterpriseQueryOptions({ queryKey: enterpriseKeys.item(tenantId, entity, id), queryFn: () => enterprise.get(tenantId, entity, id), enabled: Boolean(tenantId && id) }),
+  users: (tenantId: RouteParam) => enterpriseQueryOptions({ queryKey: enterpriseKeys.users(tenantId), queryFn: () => enterprise.listUsers(tenantId), enabled: Boolean(tenantId) }),
+  invitations: (tenantId: RouteParam) => enterpriseQueryOptions({ queryKey: enterpriseKeys.invitations(tenantId), queryFn: () => enterprise.listInvitations(tenantId), enabled: Boolean(tenantId) }),
+  apns: (tenantId: RouteParam) => enterpriseQueryOptions({ queryKey: enterpriseKeys.apns(tenantId), queryFn: () => enterprise.getApns(tenantId), enabled: Boolean(tenantId) }),
+  billing: (tenantId: RouteParam) => enterpriseQueryOptions({ queryKey: enterpriseKeys.billing(tenantId), queryFn: () => enterprise.billing(tenantId), enabled: Boolean(tenantId) }),
+  enrollment: (tenantId: RouteParam) => enterpriseQueryOptions({ queryKey: enterpriseKeys.enrollment(tenantId), queryFn: () => enterprise.getTenantEnrollment(tenantId), enabled: Boolean(tenantId) }),
+  publicEnrollment: (id: RouteParam, code?: string) => enterpriseQueryOptions({ queryKey: ["enterprise", "public-enrollment", id ?? "", code ?? ""] as const, queryFn: () => enterprise.getEnrollment(id, code), enabled: Boolean(id) }),
 };
 
 export const enabledTenant = (tenantId: Accessor<string | undefined>) => () => Boolean(tenantId());

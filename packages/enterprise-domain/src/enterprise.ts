@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi";
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi";
 
 const IdParam = { id: Schema.String };
 const TenantParam = { tenantId: Schema.String };
@@ -58,6 +58,7 @@ export const UserInfo = Schema.Struct({
   emailVerified: Schema.Boolean,
   image: Schema.optional(NullableString),
 });
+export type UserInfo = typeof UserInfo.Type;
 
 export const OrganizationInfo = Schema.Struct({
   id: Schema.String,
@@ -73,6 +74,7 @@ export const TenantInfo = Schema.Struct({
   role: Schema.String,
   logo: Schema.optional(NullableString),
 });
+export type TenantInfo = typeof TenantInfo.Type;
 
 export const TenantDetail = Schema.Struct({
   id: Schema.String,
@@ -83,6 +85,7 @@ export const TenantDetail = Schema.Struct({
   metadata: Schema.optional(NullableString),
   createdAt: Schema.String,
 });
+export type TenantDetail = typeof TenantDetail.Type;
 
 export const BillingSummary = Schema.Struct({
   plan: Schema.optional(Schema.String),
@@ -90,6 +93,7 @@ export const BillingSummary = Schema.Struct({
   billableDevices: Schema.Number,
   subscriptionId: Schema.optional(NullableString),
 });
+export type BillingSummary = typeof BillingSummary.Type;
 
 export const MeResponse = Schema.Struct({
   user: UserInfo,
@@ -97,6 +101,7 @@ export const MeResponse = Schema.Struct({
   tenants: Schema.Array(TenantInfo),
   billing: Schema.optional(BillingSummary),
 });
+export type MeResponse = typeof MeResponse.Type;
 
 export const CreateTenantRequest = Schema.Struct({
   name: Schema.String,
@@ -122,6 +127,7 @@ export const TenantUser = Schema.Struct({
   role: Schema.String,
   createdAt: Schema.String,
 });
+export type TenantUser = typeof TenantUser.Type;
 
 export const TenantUsersResponse = Schema.Struct({ users: Schema.Array(TenantUser) });
 
@@ -139,6 +145,7 @@ export const TenantInvitation = Schema.Struct({
   expiresAt: Schema.String,
   createdAt: Schema.String,
 });
+export type TenantInvitation = typeof TenantInvitation.Type;
 
 export const TenantInvitationsResponse = Schema.Struct({ invitations: Schema.Array(TenantInvitation) });
 
@@ -172,6 +179,7 @@ export const DeviceRow = Schema.Struct({
   diskTotal: Schema.optional(NullableString),
   diskUsed: Schema.optional(NullableString),
 });
+export type DeviceRow = typeof DeviceRow.Type;
 
 export const PatchDeviceRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
@@ -188,6 +196,7 @@ export const GroupRow = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+export type GroupRow = typeof GroupRow.Type;
 
 export const GroupRelation = Schema.Struct({ id: Schema.String, name: Schema.String });
 export const GroupNode = Schema.Struct({
@@ -201,6 +210,7 @@ export const GroupNode = Schema.Struct({
   devices: Schema.optional(Schema.Array(GroupRelation)),
   policies: Schema.optional(Schema.Array(GroupRelation)),
 });
+export type GroupNode = typeof GroupNode.Type;
 
 export const CreateGroupRequest = Schema.Struct({
   name: Schema.String,
@@ -233,6 +243,10 @@ export const PolicyRow = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+export type PolicyRow = typeof PolicyRow.Type;
+
+export type Entity = "device" | "group" | "policy";
+export type RowFor<E extends Entity> = E extends "device" ? DeviceRow : E extends "group" ? GroupRow : PolicyRow;
 
 export const CreatePolicyRequest = Schema.Struct({
   name: Schema.String,
@@ -257,6 +271,7 @@ export const PolicyApplicationObject = Schema.Struct({
   contentType: Schema.optional(NullableString),
   size: Schema.Number,
 });
+export type PolicyApplicationObject = typeof PolicyApplicationObject.Type;
 
 export const DownloadPolicyApplicationResponse = Schema.Struct({
   sha256: Schema.String,
@@ -265,6 +280,7 @@ export const DownloadPolicyApplicationResponse = Schema.Struct({
   size: Schema.Number,
   content: Schema.String,
 });
+export type DownloadPolicyApplicationResponse = typeof DownloadPolicyApplicationResponse.Type;
 
 export const DuplicateRequest = Schema.Struct({ name: Schema.optional(Schema.String) });
 export const IdsRequest = Schema.Array(Schema.String);
@@ -285,12 +301,14 @@ export const GroupListResponse = Schema.Struct({ rows: Schema.Array(GroupRow) })
 export const PolicyListResponse = Schema.Struct({ rows: Schema.Array(PolicyRow) });
 
 export const NodeResponse = Schema.Union([DeviceRow, GroupNode, PolicyRow]);
+export type NodeResponse = typeof NodeResponse.Type;
 
 export const PlatformEnrollment = Schema.Union([
   Schema.Struct({ error: Schema.String }),
   Schema.Struct({ profile: Schema.String }),
   Schema.Literal("available"),
 ]);
+export type PlatformEnrollment = typeof PlatformEnrollment.Type;
 
 export const EnrollmentResponse = Schema.Union([
   Schema.Struct({ name: Schema.String, authenticated: Schema.Literal(false) }),
@@ -303,6 +321,7 @@ export const EnrollmentResponse = Schema.Union([
     assetTag: Schema.Boolean,
   }),
 ]);
+export type EnrollmentResponse = typeof EnrollmentResponse.Type;
 
 export const EnrollmentQuery = { code: Schema.optional(Schema.String) };
 
@@ -317,6 +336,7 @@ export const TenantEnrollmentInfo = Schema.Struct({
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
+export type TenantEnrollmentInfo = typeof TenantEnrollmentInfo.Type;
 
 export const PatchTenantEnrollmentRequest = Schema.Struct({
   code: Schema.optional(NullableString),
@@ -332,6 +352,7 @@ export const ApnsInfo = Schema.Struct({
   email: Schema.optional(NullableString),
   topic: Schema.optional(NullableString),
 });
+export type ApnsInfo = typeof ApnsInfo.Type;
 
 export const UploadApnsRequest = Schema.Struct({ email: Schema.String, cert: Schema.String });
 export const BillingPortalRequest = Schema.Struct({ returnUrl: Schema.String });
@@ -423,3 +444,5 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   .add(HttpApiEndpoint.post("billingPortal", "/v1/tenants/:tenantId/billing/portal", { error: EnterpriseApiErrors, params: TenantParam, payload: BillingPortalRequest, success: BillingPortalResponse }))
   .prefix("/api")
   .annotateMerge(OpenApi.annotations({ title: "Mattrax Enterprise API", description: "Organization-scoped Mattrax management API." }));
+
+export const enterpriseHttpApi = HttpApi.make("MattraxEnterprise").add(enterpriseApi);
