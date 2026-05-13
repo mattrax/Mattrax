@@ -1,9 +1,9 @@
 export {
   EnterpriseAuthError,
+  EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseDbError,
   EnterpriseForbidden,
-  EnterpriseInternalError,
   EnterpriseNotFound,
   EnterpriseR2FileNotFound,
   EnterpriseR2InternalError,

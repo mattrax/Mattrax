@@ -7,7 +7,6 @@ import {
   EnterpriseConflict,
   EnterpriseDbError,
   EnterpriseForbidden,
-  EnterpriseInternalError,
   EnterpriseNotFound,
   EnterpriseR2FileNotFound,
   EnterpriseR2InternalError,
@@ -78,8 +77,7 @@ type EnterpriseApiError =
   | EnterpriseAuthError
   | EnterpriseStripeError
   | EnterpriseR2FileNotFound
-  | EnterpriseR2InternalError
-  | EnterpriseInternalError;
+  | EnterpriseR2InternalError;
 
 const isTaggedEnterpriseError = (error: unknown): error is EnterpriseApiError =>
   typeof error === "object" && error !== null && typeof (error as { _tag?: unknown })._tag === "string" && (error as { _tag: string })._tag.startsWith("Enterprise");
@@ -88,7 +86,8 @@ const isDbError = (error: unknown) => {
   if (typeof error !== "object" || error === null) return false;
   const value = error as Record<string, unknown>;
   const name = typeof value.name === "string" ? value.name : "";
-  return name.includes("Postgres") || name.includes("Database") || typeof value.code === "string" && /^(?:[0-9A-Z]{5}|SQLITE_|ER_)/.test(value.code) || "constraint" in value || "table" in value || "schema" in value;
+  const message = typeof value.message === "string" ? value.message : "";
+  return name.includes("Postgres") || name.includes("Database") || message.startsWith("Failed query:") || typeof value.code === "string" && /^(?:[0-9A-Z]{5}|SQLITE_|ER_)/.test(value.code) || "constraint" in value || "table" in value || "schema" in value;
 };
 
 const isStripeError = (error: unknown) => {
@@ -121,7 +120,7 @@ const toEnterpriseError = (error: unknown): EnterpriseApiError => {
   if (isDbError(error)) return new EnterpriseDbError({ message: "Database operation failed" });
   if (isStripeError(error)) return new EnterpriseStripeError({ message: message || "Stripe operation failed" });
   if (isAuthError(error)) return new EnterpriseAuthError({ message: message || "Authentication service operation failed" });
-  return new EnterpriseInternalError({ message: message || "Internal server error" });
+  return new EnterpriseDbError({ message: "Internal server error" });
 };
 
 const effectTry = <A>(try_: () => Promise<A>) => Effect.tryPromise({ try: try_, catch: toEnterpriseError });
