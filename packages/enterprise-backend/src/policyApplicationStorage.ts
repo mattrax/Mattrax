@@ -1,17 +1,13 @@
-import { Effect } from "effect";
+import { Context, Effect, Layer } from "effect";
 import {
   EnterpriseR2FileNotFound,
   EnterpriseR2InternalError,
 } from "@mattrax/enterprise-domain";
 
-export const policyApplicationPrefix = (tenantId: string, policyId: string) => `p/${tenantId}/${policyId}`;
-
-export const policyApplicationKey = (tenantId: string, policyId: string, sha256: string) => `${policyApplicationPrefix(tenantId, policyId)}/${sha256}`;
-
-export const sha256Hex = async (bytes: ArrayBuffer) => {
+export const sha256Hex = (bytes: ArrayBuffer) => Effect.promise(async () => {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-};
+});
 
 export const base64ToBytes = (base64: string) => {
   const binary = atob(base64);
@@ -26,11 +22,13 @@ export const bytesToBase64 = (bytes: Uint8Array) => {
   return btoa(binary);
 };
 
-export type R2Storage = {
+export type R2StorageShape = {
   readonly put: (key: string, bytes: Uint8Array, options?: unknown) => Effect.Effect<void, EnterpriseR2InternalError>;
   readonly get: (key: string) => Effect.Effect<any, EnterpriseR2FileNotFound | EnterpriseR2InternalError>;
   readonly arrayBuffer: (object: any) => Effect.Effect<ArrayBuffer, EnterpriseR2InternalError>;
 };
+
+export class R2Storage extends Context.Service<R2Storage, R2StorageShape>()("R2Storage") {}
 
 const stringField = (value: unknown, field: string) => typeof value === "object" && value !== null && typeof (value as Record<string, unknown>)[field] === "string"
   ? (value as Record<string, string>)[field]
@@ -49,7 +47,7 @@ export const toR2Error = (cause: unknown) => {
   return new EnterpriseR2InternalError({ message: "R2 operation failed" });
 };
 
-export const createR2Storage = (bucket: any): R2Storage => ({
+export const makeR2Storage = (bucket: any): R2StorageShape => ({
   put: (key, bytes, options) => Effect.tryPromise({
     try: async () => {
       await bucket.put(key, bytes, options);
@@ -75,3 +73,5 @@ export const createR2Storage = (bucket: any): R2Storage => ({
     },
   }),
 });
+
+export const R2StorageLive = (bucket: any) => Layer.succeed(R2Storage, makeR2Storage(bucket));

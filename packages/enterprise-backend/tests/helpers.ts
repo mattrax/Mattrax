@@ -120,20 +120,28 @@ class SelectBuilder {
     return this;
   }
 
+  private execute() {
+    let rows: Row[];
+    if (this.fields && "value" in this.fields && Object.keys(this.fields).length === 1) {
+      rows = [{ value: (this.store[this.table] ?? []).filter((row) => matches(this.condition, row)).length }];
+    } else if (this.joined) {
+      rows = this.joinRows().filter((row) => matches(this.condition, row)).map((row) => project(this.fields, row));
+    } else {
+      rows = (this.store[this.table] ?? []).filter((row) => matches(this.condition, row)).map((row) => project(this.fields, row));
+    }
+    return this.limitCount === undefined ? rows : rows.slice(0, this.limitCount);
+  }
+
   then(resolve: (value: Row[]) => void, reject: (reason?: unknown) => void) {
     try {
-      let rows: Row[];
-      if (this.fields && "value" in this.fields && Object.keys(this.fields).length === 1) {
-        rows = [{ value: (this.store[this.table] ?? []).filter((row) => matches(this.condition, row)).length }];
-      } else if (this.joined) {
-        rows = this.joinRows().filter((row) => matches(this.condition, row)).map((row) => project(this.fields, row));
-      } else {
-        rows = (this.store[this.table] ?? []).filter((row) => matches(this.condition, row)).map((row) => project(this.fields, row));
-      }
-      resolve(this.limitCount === undefined ? rows : rows.slice(0, this.limitCount));
+      resolve(this.execute());
     } catch (error) {
       reject(error);
     }
+  }
+
+  [Symbol.iterator]() {
+    return Effect.sync(() => this.execute())[Symbol.iterator]();
   }
 
   private joinRows() {
@@ -177,6 +185,10 @@ class InsertBuilder {
   then(resolve: (value: Row[]) => void) {
     resolve(this.rows);
   }
+
+  [Symbol.iterator]() {
+    return Effect.succeed(this.rows)[Symbol.iterator]();
+  }
 }
 
 class UpdateBuilder {
@@ -206,6 +218,10 @@ class UpdateBuilder {
   then(resolve: (value: Row[]) => void) {
     resolve([]);
   }
+
+  [Symbol.iterator]() {
+    return Effect.succeed([])[Symbol.iterator]();
+  }
 }
 
 class DeleteBuilder {
@@ -234,6 +250,10 @@ class DeleteBuilder {
   then(resolve: (value: Row[]) => void) {
     resolve(this.removed);
   }
+
+  [Symbol.iterator]() {
+    return Effect.succeed(this.removed)[Symbol.iterator]();
+  }
 }
 
 export const makeDb = (initial: Partial<Store> = {}) => {
@@ -242,7 +262,7 @@ export const makeDb = (initial: Partial<Store> = {}) => {
 
   const query = Object.fromEntries(Object.keys(schema).map((key) => {
     const table = tableName((schema as any)[key]);
-    return [key, { findFirst: async ({ where }: { where?: any } = {}) => store[table].find((row) => matches(where, row)) }];
+    return [key, { findFirst: ({ where }: { where?: any } = {}) => Effect.sync(() => store[table].find((row) => matches(where, row))) }];
   }));
 
   return {

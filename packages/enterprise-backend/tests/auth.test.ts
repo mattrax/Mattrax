@@ -10,10 +10,10 @@ const makeAuth = () => {
 
 describe("enterprise auth", () => {
   it("hashes and verifies passwords", async () => {
-    const stored = await hashPassword("secret-password");
+    const stored = await runEffect(hashPassword("secret-password"));
     expect(stored).toMatch(/^pbkdf2-sha256\$/);
-    expect(await verifyPassword("secret-password", stored)).toBe(true);
-    expect(await verifyPassword("wrong", stored)).toBe(false);
+    expect(await runEffect(verifyPassword("secret-password", stored))).toBe(true);
+    expect(await runEffect(verifyPassword("wrong", stored))).toBe(false);
   });
 
   it("registers a user, normalizes email, and creates a secure session cookie", async () => {
@@ -26,7 +26,7 @@ describe("enterprise auth", () => {
 
     expect(db.store.user).toMatchObject([{ name: "Test User", email: "test@example.com", emailVerified: false }]);
     expect(db.store.account[0]).toMatchObject({ accountId: "test@example.com", providerId: "credential", userId: db.store.user[0].id });
-    expect(await verifyPassword("password-1", db.store.account[0].password)).toBe(true);
+    expect(await runEffect(verifyPassword("password-1", db.store.account[0].password))).toBe(true);
     expect(db.store.session).toHaveLength(1);
     expect(header(response, "set-cookie")).toContain("mattrax_session=");
     expect(header(response, "set-cookie")).toContain("HttpOnly; Secure; SameSite=Lax");
@@ -68,14 +68,14 @@ describe("enterprise auth", () => {
     const { db, auth } = makeAuth();
     const createdAt = new Date("2025-01-01T00:00:00.000Z");
     db.store.user.push({ id: "user-1", name: "Test", email: "test@example.com", emailVerified: false, createdAt, updatedAt: createdAt });
-    db.store.account.push({ id: "account-1", providerId: "credential", accountId: "test@example.com", userId: "user-1", password: await hashPassword("old"), createdAt, updatedAt: createdAt });
-    db.store.verification.push({ id: "verification-1", identifier: "test@example.com", kind: "password-reset", valueHash: await sha256("reset-token"), expiresAt: new Date("2025-01-01T01:00:00.000Z"), createdAt, updatedAt: createdAt });
+    db.store.account.push({ id: "account-1", providerId: "credential", accountId: "test@example.com", userId: "user-1", password: await runEffect(hashPassword("old")), createdAt, updatedAt: createdAt });
+    db.store.verification.push({ id: "verification-1", identifier: "test@example.com", kind: "password-reset", valueHash: await runEffect(sha256("reset-token")), expiresAt: new Date("2025-01-01T01:00:00.000Z"), createdAt, updatedAt: createdAt });
 
     vi.useFakeTimers();
     vi.setSystemTime(createdAt);
     await expect(runEffect(auth.authResetPassword({ token: "wrong", newPassword: "new" }))).rejects.toThrow("Invalid or expired token");
     await runEffect(auth.authResetPassword({ token: "reset-token", newPassword: "new" }));
-    expect(await verifyPassword("new", db.store.account[0].password)).toBe(true);
+    expect(await runEffect(verifyPassword("new", db.store.account[0].password))).toBe(true);
     expect(db.store.verification).toHaveLength(0);
     vi.useRealTimers();
   });
@@ -89,7 +89,7 @@ describe("enterprise auth", () => {
     await expect(runEffect(auth.authChangePassword(new Request(origin, { headers: { cookie: cookieFrom(response) } }), { currentPassword: "bad", newPassword: "new" }))).rejects.toThrow("Current password is incorrect");
     await runEffect(auth.authChangePassword(new Request(origin, { headers: { cookie: cookieFrom(response) } }), { currentPassword: "old", newPassword: "new", revokeOtherSessions: true }));
 
-    expect(await verifyPassword("new", db.store.account[0].password)).toBe(true);
+    expect(await runEffect(verifyPassword("new", db.store.account[0].password))).toBe(true);
     expect(db.store.session).toHaveLength(0);
   });
 
@@ -97,8 +97,8 @@ describe("enterprise auth", () => {
     const { db, auth } = makeAuth();
     const createdAt = new Date("2025-01-01T00:00:00.000Z");
     db.store.user.push({ id: "user-1", name: "Test", email: "old@example.com", emailVerified: false, createdAt, updatedAt: createdAt });
-    db.store.account.push({ id: "account-1", providerId: "credential", accountId: "old@example.com", userId: "user-1", password: await hashPassword("password"), createdAt, updatedAt: createdAt });
-    db.store.verification.push({ id: "verification-1", identifier: "user-1", kind: "email-change", valueHash: await sha256("email-token"), metadata: { newEmail: "new@example.com" }, expiresAt: new Date("2025-01-01T01:00:00.000Z"), createdAt, updatedAt: createdAt });
+    db.store.account.push({ id: "account-1", providerId: "credential", accountId: "old@example.com", userId: "user-1", password: await runEffect(hashPassword("password")), createdAt, updatedAt: createdAt });
+    db.store.verification.push({ id: "verification-1", identifier: "user-1", kind: "email-change", valueHash: await runEffect(sha256("email-token")), metadata: { newEmail: "new@example.com" }, expiresAt: new Date("2025-01-01T01:00:00.000Z"), createdAt, updatedAt: createdAt });
 
     vi.useFakeTimers();
     vi.setSystemTime(createdAt);

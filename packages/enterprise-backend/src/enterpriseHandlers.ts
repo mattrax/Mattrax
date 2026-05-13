@@ -8,6 +8,7 @@ import {
   EnterpriseNotFound,
   EnterpriseUnauthorized,
   enterpriseApi,
+  policyApplicationKey,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import { and, count, eq, inArray } from "drizzle-orm";
@@ -15,7 +16,7 @@ import type { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
 import { createEnterpriseAuth } from "./auth.ts";
-import { base64ToBytes, bytesToBase64, createR2Storage, policyApplicationKey, sha256Hex } from "./policyApplicationStorage.ts";
+import { R2Storage, R2StorageLive, base64ToBytes, bytesToBase64, sha256Hex } from "./policyApplicationStorage.ts";
 
 export type EnterpriseHandlersConfig = {
   readonly db: any;
@@ -48,11 +49,11 @@ const iso = (date: Date | number | null | undefined) => {
   return (date instanceof Date ? date : new Date(date)).toISOString();
 };
 
-const hashJson = async (value: unknown) => {
+const hashJson = (value: unknown) => Effect.promise(async () => {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-};
+});
 
 type OrgContext = {
   readonly user: any;
@@ -63,21 +64,19 @@ type OrgContext = {
 const canWriteTenant = (role: string) => role.split(",").some((item) => item === "owner" || item === "admin");
 const canDeleteTenant = (role: string) => role.split(",").includes("owner");
 
-const fromPromise = <A>(value: PromiseLike<A> | Effect.Effect<A, unknown, never>) => Effect.isEffect(value) ? value : Effect.promise(() => value);
-
 export const createEnterpriseService = ({ db, schema, origin, stripeClient, storage }: EnterpriseHandlersConfig) => {
   const auth = createEnterpriseAuth({ db, schema, origin });
   const stripe = stripeClient?.effect ? stripeClient : makeEffectStripeClient(stripeClient);
-  const r2 = storage?.arrayBuffer && storage?.get && storage?.put ? storage : createR2Storage(storage);
+  const r2Layer = R2StorageLive(storage);
 
   const requireTenant = (request: HttpServerRequest, tenantId: string, access: "read" | "write" | "delete" = "read") => Effect.gen(function* () {
     const { user } = yield* auth.requireUser({ headers: request.headers });
-    const member = yield* fromPromise(db.query.member.findFirst({ where: and(eq(schema.member.userId, user.id), eq(schema.member.organizationId, tenantId)) }));
+    const member = yield* db.query.member.findFirst({ where: and(eq(schema.member.userId, user.id), eq(schema.member.organizationId, tenantId)) });
     if (!member) return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
     if (access === "write" && !canWriteTenant(member.role)) return yield* Effect.fail(new EnterpriseForbidden({ message: "Forbidden" }));
     if (access === "delete" && !canDeleteTenant(member.role)) return yield* Effect.fail(new EnterpriseForbidden({ message: "Forbidden" }));
 
-    const organization = yield* fromPromise(db.query.organization.findFirst({ where: eq(schema.organization.id, member.organizationId) }));
+    const organization = yield* db.query.organization.findFirst({ where: eq(schema.organization.id, member.organizationId) });
     if (!organization) return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
 
     return { user, organization, member };
@@ -103,12 +102,12 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       metadata: { organizationId: organization.id, customerType: "organization" },
     });
 
-    yield* fromPromise(db.update(schema.organization).set({ stripeCustomerId: stripeCustomer.id }).where(eq(schema.organization.id, organization.id)));
+    yield* db.update(schema.organization).set({ stripeCustomerId: stripeCustomer.id }).where(eq(schema.organization.id, organization.id));
     return stripeCustomer.id;
   });
 
-  const listTenantInfo = async (userId: string) => {
-    const rows = await db.select({
+  const listTenantInfo = (userId: string) => Effect.gen(function* () {
+    const rows = yield* db.select({
       id: schema.organization.id,
       name: schema.organization.name,
       slug: schema.organization.slug,
@@ -116,41 +115,41 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       role: schema.member.role,
     }).from(schema.member).innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId)).where(eq(schema.member.userId, userId));
     return rows;
-  };
+  });
 
-  const memberCount = async (tenantId: string) => {
-    const [members] = await db.select({ value: count() }).from(schema.member).where(eq(schema.member.organizationId, tenantId));
+  const memberCount = (tenantId: string) => Effect.gen(function* () {
+    const [members] = yield* db.select({ value: count() }).from(schema.member).where(eq(schema.member.organizationId, tenantId));
     return members?.value ?? 0;
-  };
+  });
 
   const assertTenantDevices = (tenantId: string, ids: ReadonlyArray<string>) => Effect.gen(function* () {
     if (ids.length === 0) return;
-    const rows = yield* fromPromise(db.select({ id: schema.device.id }).from(schema.device).where(and(eq(schema.device.organizationId, tenantId), inArray(schema.device.id, [...ids]))));
+    const rows = yield* db.select({ id: schema.device.id }).from(schema.device).where(and(eq(schema.device.organizationId, tenantId), inArray(schema.device.id, [...ids])));
     if (rows.length !== new Set(ids).size) return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
   });
 
   const assertTenantPolicies = (tenantId: string, ids: ReadonlyArray<string>) => Effect.gen(function* () {
     if (ids.length === 0) return;
-    const rows = yield* fromPromise(db.select({ id: schema.policy.id }).from(schema.policy).where(and(eq(schema.policy.organizationId, tenantId), inArray(schema.policy.id, [...ids]))));
+    const rows = yield* db.select({ id: schema.policy.id }).from(schema.policy).where(and(eq(schema.policy.organizationId, tenantId), inArray(schema.policy.id, [...ids])));
     if (rows.length !== new Set(ids).size) return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
   });
 
   const assertTenantGroup = (tenantId: string, groupId: string) => Effect.gen(function* () {
-    const group = yield* fromPromise(db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, tenantId)) }));
+    const group = yield* db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, tenantId)) });
     if (!group) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
     return group;
   });
 
-  const billingSummary = async (organizationId: string) => {
-    const [subscription] = await db.select().from(schema.subscription).where(eq(schema.subscription.referenceId, organizationId)).limit(1);
-    const [devices] = await db.select({ value: count() }).from(schema.device).where(and(eq(schema.device.organizationId, organizationId), eq(schema.device.status, "enrolled")));
+  const billingSummary = (organizationId: string) => Effect.gen(function* () {
+    const [subscription] = yield* db.select().from(schema.subscription).where(eq(schema.subscription.referenceId, organizationId)).limit(1);
+    const [devices] = yield* db.select({ value: count() }).from(schema.device).where(and(eq(schema.device.organizationId, organizationId), eq(schema.device.status, "enrolled")));
     return {
       plan: subscription?.plan,
       status: subscription?.status,
       billableDevices: devices?.value ?? 0,
       subscriptionId: subscription?.stripeSubscriptionId ?? null,
     };
-  };
+  });
 
   const rowDevice = (row: any) => ({
     id: row.id,
@@ -183,7 +182,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     updatedAt: iso(row.updatedAt),
   });
 
-  const rowPolicy = async (row: any, withConfigurations = false) => {
+  const rowPolicy = (row: any, withConfigurations = false) => Effect.gen(function* () {
     const base: Record<string, unknown> = {
       id: row.id,
       name: row.name,
@@ -192,11 +191,11 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       updatedAt: iso(row.updatedAt),
     };
     if (withConfigurations) {
-      const configurations = await db.select().from(schema.configuration).where(eq(schema.configuration.policyId, row.id));
+      const configurations = yield* db.select().from(schema.configuration).where(eq(schema.configuration.policyId, row.id));
       base.configurations = Object.fromEntries(configurations.map((item: any) => [item.kind, item.data]));
     }
     return base;
-  };
+  });
 
   const rowEnrollment = (row: any) => ({
     id: row.id,
@@ -210,13 +209,13 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     updatedAt: iso(row.updatedAt),
   });
 
-  const getOrCreateEnrollment = async (organizationId: string) => {
-    const existing = await db.query.enterpriseEnrollment.findFirst({ where: eq(schema.enterpriseEnrollment.organizationId, organizationId) });
+  const getOrCreateEnrollment = (organizationId: string) => Effect.gen(function* () {
+    const existing = yield* db.query.enterpriseEnrollment.findFirst({ where: eq(schema.enterpriseEnrollment.organizationId, organizationId) });
     if (existing) return existing;
     const timestamp = now();
     const enrollment = { id: id(), organizationId, createdAt: timestamp, updatedAt: timestamp };
-    await db.insert(schema.enterpriseEnrollment).values(enrollment).onConflictDoNothing();
-    return await db.query.enterpriseEnrollment.findFirst({ where: eq(schema.enterpriseEnrollment.organizationId, organizationId) }) ?? {
+    yield* db.insert(schema.enterpriseEnrollment).values(enrollment).onConflictDoNothing();
+    return (yield* db.query.enterpriseEnrollment.findFirst({ where: eq(schema.enterpriseEnrollment.organizationId, organizationId) })) ?? {
       ...enrollment,
       code: null,
       enabledApple: true,
@@ -225,12 +224,12 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       enabledAssetTag: false,
       maxDevices: 100,
     };
-  };
+  });
 
   return {
     me: (request) => Effect.gen(function* () {
       const { session, user } = yield* auth.requireUser({ headers: request.headers });
-      const tenants = yield* fromPromise(listTenantInfo(user.id));
+      const tenants = yield* listTenantInfo(user.id);
       const activeTenant = tenants.find((tenant: any) => tenant.id === session.session?.activeOrganizationId) ?? tenants[0];
       return {
         user: {
@@ -242,19 +241,19 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
         },
         activeTenant,
         tenants,
-        billing: activeTenant ? yield* fromPromise(billingSummary(activeTenant.id)) : undefined,
+        billing: activeTenant ? yield* billingSummary(activeTenant.id) : undefined,
       };
     }),
     updateMe: (request, payload) => Effect.gen(function* () {
       const { user } = yield* auth.requireUser({ headers: request.headers });
       const body = payload as { name?: string; image?: string | null };
-      yield* fromPromise(db.update(schema.user).set({ name: body.name ?? user.name, image: body.image === undefined ? user.image : body.image, updatedAt: now() }).where(eq(schema.user.id, user.id)));
+      yield* db.update(schema.user).set({ name: body.name ?? user.name, image: body.image === undefined ? user.image : body.image, updatedAt: now() }).where(eq(schema.user.id, user.id));
       return ok;
     }),
     deleteMe: () => Effect.succeed({ error: "Delete user is currently not supported while organizations and billing are managed by Mattrax." }),
     listTenants: (request) => Effect.gen(function* () {
       const { user } = yield* auth.requireUser({ headers: request.headers });
-      const tenants = yield* fromPromise(listTenantInfo(user.id));
+      const tenants = yield* listTenantInfo(user.id);
       return { tenants };
     }),
     createTenant: (request, payload) => Effect.gen(function* () {
@@ -262,9 +261,9 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       const body = payload as { name: string; slug: string; logo?: string | null; metadata?: Record<string, unknown> };
       const tenantId = id();
       const timestamp = now();
-      yield* fromPromise(db.insert(schema.organization).values({ id: tenantId, name: body.name, slug: body.slug, logo: body.logo ?? null, metadata: body.metadata ? JSON.stringify(body.metadata) : null, createdAt: timestamp, updatedAt: timestamp }));
-      yield* fromPromise(db.insert(schema.member).values({ id: id(), organizationId: tenantId, userId: user.id, role: "owner", createdAt: timestamp, updatedAt: timestamp }));
-      yield* fromPromise(db.insert(schema.enterpriseEnrollment).values({ id: tenantId, organizationId: tenantId, createdAt: timestamp, updatedAt: timestamp }).onConflictDoNothing());
+      yield* db.insert(schema.organization).values({ id: tenantId, name: body.name, slug: body.slug, logo: body.logo ?? null, metadata: body.metadata ? JSON.stringify(body.metadata) : null, createdAt: timestamp, updatedAt: timestamp });
+      yield* db.insert(schema.member).values({ id: id(), organizationId: tenantId, userId: user.id, role: "owner", createdAt: timestamp, updatedAt: timestamp });
+      yield* db.insert(schema.enterpriseEnrollment).values({ id: tenantId, organizationId: tenantId, createdAt: timestamp, updatedAt: timestamp }).onConflictDoNothing();
       return { id: tenantId };
     }),
     getTenant: (request, tenantId) => Effect.gen(function* () {
@@ -274,19 +273,19 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     patchTenant: (request, tenantId, payload) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
       const body = payload as any;
-      yield* fromPromise(db.update(schema.organization).set({ ...body, metadata: body.metadata === undefined ? undefined : body.metadata === null ? null : JSON.stringify(body.metadata), updatedAt: now() }).where(eq(schema.organization.id, tenantId)));
+      yield* db.update(schema.organization).set({ ...body, metadata: body.metadata === undefined ? undefined : body.metadata === null ? null : JSON.stringify(body.metadata), updatedAt: now() }).where(eq(schema.organization.id, tenantId));
       return ok;
     }),
     deleteTenant: (request, tenantId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "delete");
-      const count = yield* fromPromise(memberCount(tenantId));
+      const count = yield* memberCount(tenantId);
       if (count > 1) return yield* Effect.fail(new EnterpriseConflict({ message: "Cannot delete a tenant with more than one user" }));
-      yield* fromPromise(db.delete(schema.organization).where(eq(schema.organization.id, tenantId)));
+      yield* db.delete(schema.organization).where(eq(schema.organization.id, tenantId));
       return ok;
     }),
     listTenantUsers: (request, tenantId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId);
-      const users = yield* fromPromise(db.select({ memberId: schema.member.id, userId: schema.user.id, name: schema.user.name, email: schema.user.email, role: schema.member.role, createdAt: schema.member.createdAt }).from(schema.member).innerJoin(schema.user, eq(schema.user.id, schema.member.userId)).where(eq(schema.member.organizationId, tenantId)));
+      const users = yield* db.select({ memberId: schema.member.id, userId: schema.user.id, name: schema.user.name, email: schema.user.email, role: schema.member.role, createdAt: schema.member.createdAt }).from(schema.member).innerJoin(schema.user, eq(schema.user.id, schema.member.userId)).where(eq(schema.member.organizationId, tenantId));
       return { users: users.map((user: any) => ({ ...user, createdAt: iso(user.createdAt) })) };
     }),
     inviteTenantUser: (request, tenantId, payload) => Effect.gen(function* () {
@@ -295,47 +294,47 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       const body = payload as { email: string; role?: string; resend?: boolean };
       const invitationId = id();
       const timestamp = now();
-      yield* fromPromise(db.insert(schema.invitation).values({ id: invitationId, organizationId: tenantId, inviterId: user.id, email: body.email, role: body.role ?? "member", status: "pending", expiresAt: new Date(timestamp.getTime() + 7 * 24 * 60 * 60 * 1000), createdAt: timestamp, updatedAt: timestamp }));
+      yield* db.insert(schema.invitation).values({ id: invitationId, organizationId: tenantId, inviterId: user.id, email: body.email, role: body.role ?? "member", status: "pending", expiresAt: new Date(timestamp.getTime() + 7 * 24 * 60 * 60 * 1000), createdAt: timestamp, updatedAt: timestamp });
       return { id: invitationId };
     }),
     listTenantInvitations: (request, tenantId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
-      const invitations = yield* fromPromise(db.select().from(schema.invitation).where(eq(schema.invitation.organizationId, tenantId)));
+      const invitations = yield* db.select().from(schema.invitation).where(eq(schema.invitation.organizationId, tenantId));
       return { invitations: invitations.map((item: any) => ({ id: item.id, email: item.email, role: item.role, status: item.status, expiresAt: iso(item.expiresAt), createdAt: iso(item.createdAt) })) };
     }),
     cancelTenantInvitation: (request, tenantId, invitationId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
-      const invitation = yield* fromPromise(db.query.invitation.findFirst({ where: and(eq(schema.invitation.id, invitationId), eq(schema.invitation.organizationId, tenantId)) }));
+      const invitation = yield* db.query.invitation.findFirst({ where: and(eq(schema.invitation.id, invitationId), eq(schema.invitation.organizationId, tenantId)) });
       if (!invitation) return yield* Effect.fail(new EnterpriseNotFound({ message: "Invitation not found" }));
-      yield* fromPromise(db.update(schema.invitation).set({ status: "canceled", updatedAt: now() }).where(eq(schema.invitation.id, invitationId)));
+      yield* db.update(schema.invitation).set({ status: "canceled", updatedAt: now() }).where(eq(schema.invitation.id, invitationId));
       return ok;
     }),
     patchTenantUser: (request, tenantId, memberId, payload) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
-      const member = yield* fromPromise(db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) }));
+      const member = yield* db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) });
       if (!member) return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
       const body = payload as { role: string };
-      yield* fromPromise(db.update(schema.member).set({ role: body.role, updatedAt: now() }).where(eq(schema.member.id, memberId)));
+      yield* db.update(schema.member).set({ role: body.role, updatedAt: now() }).where(eq(schema.member.id, memberId));
       return ok;
     }),
     removeTenantUser: (request, tenantId, memberId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
-      const count = yield* fromPromise(memberCount(tenantId));
+      const count = yield* memberCount(tenantId);
       if (count <= 1) return yield* Effect.fail(new EnterpriseConflict({ message: "Cannot remove the last tenant user; delete the tenant instead" }));
-      const member = yield* fromPromise(db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) }));
+      const member = yield* db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) });
       if (!member) return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
-      yield* fromPromise(db.delete(schema.member).where(eq(schema.member.id, memberId)));
+      yield* db.delete(schema.member).where(eq(schema.member.id, memberId));
       return ok;
     }),
     getEnrollment: (enrollmentId, code) => Effect.gen(function* () {
-      const enrollment = yield* fromPromise(db.query.enterpriseEnrollment.findFirst({ where: eq(schema.enterpriseEnrollment.id, enrollmentId) }));
+      const enrollment = yield* db.query.enterpriseEnrollment.findFirst({ where: eq(schema.enterpriseEnrollment.id, enrollmentId) });
       if (!enrollment) return yield* Effect.fail(new EnterpriseNotFound({ message: "Enrollment not found" }));
-      const organization = yield* fromPromise(db.query.organization.findFirst({ where: eq(schema.organization.id, enrollment.organizationId) }));
+      const organization = yield* db.query.organization.findFirst({ where: eq(schema.organization.id, enrollment.organizationId) });
       if (!organization) return yield* Effect.fail(new EnterpriseNotFound({ message: "Enrollment not found" }));
       if (enrollment.code && enrollment.code !== code) return { name: organization.name, authenticated: false as const };
 
-      const apns = yield* fromPromise(db.query.applePushCertificate.findFirst({ where: eq(schema.applePushCertificate.organizationId, organization.id) }));
-      const [deviceCount] = yield* fromPromise(db.select({ value: count() }).from(schema.device).where(eq(schema.device.organizationId, organization.id)));
+      const apns = yield* db.query.applePushCertificate.findFirst({ where: eq(schema.applePushCertificate.organizationId, organization.id) });
+      const [deviceCount] = yield* db.select({ value: count() }).from(schema.device).where(eq(schema.device.organizationId, organization.id));
       const enabled = (deviceCount?.value ?? 0) <= enrollment.maxDevices;
       return {
         name: organization.name,
@@ -343,7 +342,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
         apple: !enabled || !enrollment.enabledApple
           ? { error: "Apple enrollment is disabled! Contact your administrator." }
           : apns?.topic
-          ? { profile: yield* fromPromise(Effect.runPromise(serializePlist(enterpriseEnrollmentProfile({ origin, topic: apns.topic, organizationId: organization.id })))) }
+          ? { profile: yield* serializePlist(enterpriseEnrollmentProfile({ origin, topic: apns.topic, organizationId: organization.id })) }
           : { error: "Apple management is not configured! Contact your administrator." },
         windows: !enabled || !enrollment.enabledWindows ? { error: "Windows enrollment is disabled! Contact your administrator." } : "available",
         android: !enabled || !enrollment.enabledAndroid ? { error: "Android enrollment is disabled! Contact your administrator." } : "available",
@@ -352,14 +351,14 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     }),
     getTenantEnrollment: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const enrollment = yield* fromPromise(getOrCreateEnrollment(ctx.organization.id));
+      const enrollment = yield* getOrCreateEnrollment(ctx.organization.id);
       return rowEnrollment(enrollment);
     }),
     patchTenantEnrollment: (request, tenantId, payload) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId, "write");
-      yield* fromPromise(getOrCreateEnrollment(ctx.organization.id));
+      yield* getOrCreateEnrollment(ctx.organization.id);
       const body = payload as { code?: string | null; enabledApple?: boolean; enabledWindows?: boolean; enabledAndroid?: boolean; enabledAssetTag?: boolean; maxDevices?: number };
-      yield* fromPromise(db.update(schema.enterpriseEnrollment).set({
+      yield* db.update(schema.enterpriseEnrollment).set({
         ...(body.code !== undefined ? { code: body.code } : {}),
         ...(body.enabledApple !== undefined ? { enabledApple: body.enabledApple } : {}),
         ...(body.enabledWindows !== undefined ? { enabledWindows: body.enabledWindows } : {}),
@@ -367,37 +366,37 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
         ...(body.enabledAssetTag !== undefined ? { enabledAssetTag: body.enabledAssetTag } : {}),
         ...(body.maxDevices !== undefined ? { maxDevices: body.maxDevices } : {}),
         updatedAt: now(),
-      }).where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id)));
+      }).where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
       return ok;
     }),
     resetTenantEnrollment: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId, "write");
-      yield* fromPromise(getOrCreateEnrollment(ctx.organization.id));
+      yield* getOrCreateEnrollment(ctx.organization.id);
       const newId = id();
-      yield* fromPromise(db.update(schema.enterpriseEnrollment).set({ id: newId, updatedAt: now() }).where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id)));
+      yield* db.update(schema.enterpriseEnrollment).set({ id: newId, updatedAt: now() }).where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
       return { id: newId };
     }),
     getApns: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const apns = yield* fromPromise(db.query.applePushCertificate.findFirst({ where: eq(schema.applePushCertificate.organizationId, ctx.organization.id) }));
+      const apns = yield* db.query.applePushCertificate.findFirst({ where: eq(schema.applePushCertificate.organizationId, ctx.organization.id) });
       return { configured: apns !== undefined, email: apns?.email ?? null, topic: apns?.topic ?? null };
     }),
     uploadApns: (request, tenantId, payload) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId, "write");
       const body = payload as { email: string; cert: string };
       const topic = body.cert.match(/UID=([^,\n]+)/)?.[1] ?? `com.apple.mgmt.External.${ctx.organization.id}`;
-      yield* fromPromise(db.insert(schema.applePushCertificate).values({ organizationId: ctx.organization.id, email: body.email, certPem: body.cert, topic, updatedAt: now() }).onConflictDoUpdate({ target: schema.applePushCertificate.organizationId, set: { email: body.email, certPem: body.cert, topic, updatedAt: now() } }));
+      yield* db.insert(schema.applePushCertificate).values({ organizationId: ctx.organization.id, email: body.email, certPem: body.cert, topic, updatedAt: now() }).onConflictDoUpdate({ target: schema.applePushCertificate.organizationId, set: { email: body.email, certPem: body.cert, topic, updatedAt: now() } });
       return ok;
     }),
     deleteDevices: (request, tenantId, ids) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId, "write");
-      if (ids.length > 0) yield* fromPromise(db.delete(schema.device).where(and(eq(schema.device.organizationId, ctx.organization.id), inArray(schema.device.id, [...ids]))));
+      if (ids.length > 0) yield* db.delete(schema.device).where(and(eq(schema.device.organizationId, ctx.organization.id), inArray(schema.device.id, [...ids])));
       return ok;
     }),
     patchDevice: (request, tenantId, deviceId, payload) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId, "write");
       const body = payload as { name?: string; notes?: string | null; assetTag?: string | null };
-      yield* fromPromise(db.update(schema.device).set({ name: body.name, notes: body.notes, assetTag: body.assetTag }).where(and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id))));
+      yield* db.update(schema.device).set({ name: body.name, notes: body.notes, assetTag: body.assetTag }).where(and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id)));
       return ok;
     }),
     deviceAction: (request, tenantId) => Effect.gen(function* () {
@@ -406,7 +405,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     }),
     deviceUnenroll: (request, tenantId, deviceId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId, "write");
-      yield* fromPromise(db.update(schema.device).set({ status: "unenrolling" }).where(and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id), eq(schema.device.status, "enrolled"))));
+      yield* db.update(schema.device).set({ status: "unenrolling" }).where(and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id), eq(schema.device.status, "enrolled")));
       return ok;
     }),
     createGroup: (request, tenantId, payload) => Effect.gen(function* () {
@@ -415,9 +414,9 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       yield* assertTenantDevices(ctx.organization.id, body.devices ?? []);
       yield* assertTenantPolicies(ctx.organization.id, body.policies ?? []);
       const groupId = id();
-      yield* fromPromise(db.insert(schema.enterpriseGroup).values({ id: groupId, organizationId: ctx.organization.id, name: body.name, notes: body.notes ?? null, createdAt: now(), updatedAt: now() }));
-      if (body.devices?.length) yield* fromPromise(db.insert(schema.groupDevice).values(body.devices.map((deviceId) => ({ groupId, deviceId }))).onConflictDoNothing());
-      if (body.policies?.length) yield* fromPromise(db.insert(schema.groupPolicy).values(body.policies.map((policyId) => ({ groupId, policyId }))).onConflictDoNothing());
+      yield* db.insert(schema.enterpriseGroup).values({ id: groupId, organizationId: ctx.organization.id, name: body.name, notes: body.notes ?? null, createdAt: now(), updatedAt: now() });
+      if (body.devices?.length) yield* db.insert(schema.groupDevice).values(body.devices.map((deviceId) => ({ groupId, deviceId }))).onConflictDoNothing();
+      if (body.policies?.length) yield* db.insert(schema.groupPolicy).values(body.policies.map((policyId) => ({ groupId, policyId }))).onConflictDoNothing();
       return { id: groupId };
     }),
     deleteGroups: (request, tenantId, ids) => Effect.gen(function* () {
@@ -425,7 +424,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       const deleted: Array<string> = [];
       const failed: Array<{ id: string; reason: string }> = [];
       for (const groupId of ids) {
-        const result = yield* fromPromise(db.delete(schema.enterpriseGroup).where(and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id))).returning({ id: schema.enterpriseGroup.id }));
+        const result = yield* db.delete(schema.enterpriseGroup).where(and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id))).returning({ id: schema.enterpriseGroup.id });
         if (result.length) deleted.push(groupId); else failed.push({ id: groupId, reason: "notFound" });
       }
       return { deleted, failed };
@@ -433,7 +432,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     patchGroup: (request, tenantId, groupId, payload) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId, "write");
       const body = payload as { name?: string; notes?: string | null };
-      yield* fromPromise(db.update(schema.enterpriseGroup).set({ name: body.name, notes: body.notes, updatedAt: now() }).where(and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id))));
+      yield* db.update(schema.enterpriseGroup).set({ name: body.name, notes: body.notes, updatedAt: now() }).where(and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id)));
       return ok;
     }),
     patchGroupMembers: (request, tenantId, groupId, payload) => Effect.gen(function* () {
@@ -442,10 +441,10 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       const body = payload as { assign?: { devices?: Array<string>; policies?: Array<string> }; unassign?: { devices?: Array<string>; policies?: Array<string> } };
       yield* assertTenantDevices(ctx.organization.id, [...(body.assign?.devices ?? []), ...(body.unassign?.devices ?? [])]);
       yield* assertTenantPolicies(ctx.organization.id, [...(body.assign?.policies ?? []), ...(body.unassign?.policies ?? [])]);
-      if (body.assign?.devices?.length) yield* fromPromise(db.insert(schema.groupDevice).values(body.assign.devices.map((deviceId) => ({ groupId, deviceId }))).onConflictDoNothing());
-      if (body.assign?.policies?.length) yield* fromPromise(db.insert(schema.groupPolicy).values(body.assign.policies.map((policyId) => ({ groupId, policyId }))).onConflictDoNothing());
-      if (body.unassign?.devices?.length) yield* fromPromise(db.delete(schema.groupDevice).where(and(eq(schema.groupDevice.groupId, groupId), inArray(schema.groupDevice.deviceId, body.unassign.devices))));
-      if (body.unassign?.policies?.length) yield* fromPromise(db.delete(schema.groupPolicy).where(and(eq(schema.groupPolicy.groupId, groupId), inArray(schema.groupPolicy.policyId, body.unassign.policies))));
+      if (body.assign?.devices?.length) yield* db.insert(schema.groupDevice).values(body.assign.devices.map((deviceId) => ({ groupId, deviceId }))).onConflictDoNothing();
+      if (body.assign?.policies?.length) yield* db.insert(schema.groupPolicy).values(body.assign.policies.map((policyId) => ({ groupId, policyId }))).onConflictDoNothing();
+      if (body.unassign?.devices?.length) yield* db.delete(schema.groupDevice).where(and(eq(schema.groupDevice.groupId, groupId), inArray(schema.groupDevice.deviceId, body.unassign.devices)));
+      if (body.unassign?.policies?.length) yield* db.delete(schema.groupPolicy).where(and(eq(schema.groupPolicy.groupId, groupId), inArray(schema.groupPolicy.policyId, body.unassign.policies)));
       return ok;
     }),
     syncGroups: (request, tenantId) => Effect.gen(function* () {
@@ -457,18 +456,18 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       const source = yield* assertTenantGroup(ctx.organization.id, groupId);
       const body = payload as { name?: string };
       const newId = id();
-      yield* fromPromise(db.insert(schema.enterpriseGroup).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() }));
-      const devices = yield* fromPromise(db.select().from(schema.groupDevice).where(eq(schema.groupDevice.groupId, groupId)));
-      const policies = yield* fromPromise(db.select().from(schema.groupPolicy).where(eq(schema.groupPolicy.groupId, groupId)));
-      if (devices.length) yield* fromPromise(db.insert(schema.groupDevice).values(devices.map((d: any) => ({ groupId: newId, deviceId: d.deviceId }))));
-      if (policies.length) yield* fromPromise(db.insert(schema.groupPolicy).values(policies.map((p: any) => ({ groupId: newId, policyId: p.policyId }))));
+      yield* db.insert(schema.enterpriseGroup).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
+      const devices = yield* db.select().from(schema.groupDevice).where(eq(schema.groupDevice.groupId, groupId));
+      const policies = yield* db.select().from(schema.groupPolicy).where(eq(schema.groupPolicy.groupId, groupId));
+      if (devices.length) yield* db.insert(schema.groupDevice).values(devices.map((d: any) => ({ groupId: newId, deviceId: d.deviceId })));
+      if (policies.length) yield* db.insert(schema.groupPolicy).values(policies.map((p: any) => ({ groupId: newId, policyId: p.policyId })));
       return { id: newId };
     }),
     createPolicy: (request, tenantId, payload) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId, "write");
       const body = payload as { name: string; notes?: string | null };
       const policyId = id();
-      yield* fromPromise(db.insert(schema.policy).values({ id: policyId, organizationId: ctx.organization.id, name: body.name, notes: body.notes ?? null, createdAt: now(), updatedAt: now() }));
+      yield* db.insert(schema.policy).values({ id: policyId, organizationId: ctx.organization.id, name: body.name, notes: body.notes ?? null, createdAt: now(), updatedAt: now() });
       return { id: policyId };
     }),
     deletePolicies: (request, tenantId, ids) => Effect.gen(function* () {
@@ -476,7 +475,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       const deleted: Array<string> = [];
       const failed: Array<{ id: string; reason: string }> = [];
       for (const policyId of ids) {
-        const result = yield* fromPromise(db.delete(schema.policy).where(and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id))).returning({ id: schema.policy.id }));
+        const result = yield* db.delete(schema.policy).where(and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id))).returning({ id: schema.policy.id });
         if (result.length) deleted.push(policyId); else failed.push({ id: policyId, reason: "notFound" });
       }
       return { deleted, failed };
@@ -484,30 +483,32 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     patchPolicy: (request, tenantId, policyId, payload) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId, "write");
       const body = payload as { name?: string; notes?: string | null; configurations?: Record<string, unknown> };
-      const policy = yield* fromPromise(db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) }));
+      const policy = yield* db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) });
       if (!policy) return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
-      yield* fromPromise(db.update(schema.policy).set({ name: body.name, notes: body.notes, updatedAt: now() }).where(eq(schema.policy.id, policyId)));
+      yield* db.update(schema.policy).set({ name: body.name, notes: body.notes, updatedAt: now() }).where(eq(schema.policy.id, policyId));
       for (const [kind, data] of Object.entries(body.configurations ?? {})) {
         if (data === null) {
-          yield* fromPromise(db.delete(schema.configuration).where(and(eq(schema.configuration.policyId, policyId), eq(schema.configuration.kind, kind))));
+          yield* db.delete(schema.configuration).where(and(eq(schema.configuration.policyId, policyId), eq(schema.configuration.kind, kind)));
         } else {
-          const hash = yield* fromPromise(hashJson(data));
-          yield* fromPromise(db.insert(schema.configuration).values({ policyId, kind, data, hash }).onConflictDoUpdate({ target: [schema.configuration.kind, schema.configuration.policyId], set: { data, hash } }));
+          const hash = yield* hashJson(data);
+          yield* db.insert(schema.configuration).values({ policyId, kind, data, hash }).onConflictDoUpdate({ target: [schema.configuration.kind, schema.configuration.policyId], set: { data, hash } });
         }
       }
       return ok;
     }),
     uploadPolicyApplication: (request, tenantId, policyId, payload) => Effect.gen(function* () {
+      const r2 = yield* R2Storage;
       const ctx = yield* requireTenant(request, tenantId, "write");
       yield* assertTenantPolicies(ctx.organization.id, [policyId]);
       const body = payload as { fileName: string; contentType?: string; content: string };
       const bytes = base64ToBytes(body.content);
-      const sha256 = yield* fromPromise(sha256Hex(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)));
+      const sha256 = yield* sha256Hex(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
       const key = policyApplicationKey(ctx.organization.id, policyId, sha256);
       yield* r2.put(key, bytes, { httpMetadata: body.contentType ? { contentType: body.contentType } : undefined, customMetadata: { fileName: body.fileName } });
       return { sha256, fileName: body.fileName, contentType: body.contentType ?? null, size: bytes.byteLength };
-    }),
+    }).pipe(Effect.provide(r2Layer)),
     downloadPolicyApplication: (request, tenantId, policyId, sha256) => Effect.gen(function* () {
+      const r2 = yield* R2Storage;
       const ctx = yield* requireTenant(request, tenantId);
       yield* assertTenantPolicies(ctx.organization.id, [policyId]);
       const key = policyApplicationKey(ctx.organization.id, policyId, sha256);
@@ -520,59 +521,59 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
         size: object.size ?? bytes.byteLength,
         content: bytesToBase64(new Uint8Array(bytes)),
       };
-    }),
+    }).pipe(Effect.provide(r2Layer)),
     syncPolicies: (request, tenantId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
       return ok;
     }),
     duplicatePolicy: (request, tenantId, policyId, payload) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId, "write");
-      const source = yield* fromPromise(db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) }));
+      const source = yield* db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) });
       if (!source) return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
       const body = payload as { name?: string };
       const newId = id();
-      yield* fromPromise(db.insert(schema.policy).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() }));
-      const configurations = yield* fromPromise(db.select().from(schema.configuration).where(eq(schema.configuration.policyId, policyId)));
-      if (configurations.length) yield* fromPromise(Promise.resolve(db.insert(schema.configuration).values(configurations.map((c: any) => ({ kind: c.kind, policyId: newId, data: c.data, hash: c.hash })))));
+      yield* db.insert(schema.policy).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
+      const configurations = yield* db.select().from(schema.configuration).where(eq(schema.configuration.policyId, policyId));
+      if (configurations.length) yield* db.insert(schema.configuration).values(configurations.map((c: any) => ({ kind: c.kind, policyId: newId, data: c.data, hash: c.hash })));
       return { id: newId };
     }),
     previewMobileconfig: (payload) => Effect.succeed({ payload }),
     listDevices: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const rows = yield* fromPromise(db.select().from(schema.device).where(eq(schema.device.organizationId, ctx.organization.id)));
+      const rows = yield* db.select().from(schema.device).where(eq(schema.device.organizationId, ctx.organization.id));
       return { rows: rows.map(rowDevice) };
     }),
     getDevice: (request, tenantId, deviceId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const row = yield* fromPromise(db.query.device.findFirst({ where: and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id)) }));
+      const row = yield* db.query.device.findFirst({ where: and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id)) });
       if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
       return rowDevice(row);
     }),
     listGroups: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const rows = yield* fromPromise(db.select().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id)));
+      const rows = yield* db.select().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
       return { rows: rows.map((row: any) => rowGroup(row)) };
     }),
     getGroup: (request, tenantId, groupId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const row = yield* fromPromise(db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id)) }));
+      const row = yield* db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id)) });
       if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
       return rowGroup(row);
     }),
     listPolicies: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const rows = yield* fromPromise(db.select().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id)));
-      return { rows: yield* Effect.all(rows.map((row: any) => fromPromise(rowPolicy(row)))) };
+      const rows = yield* db.select().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id));
+      return { rows: yield* Effect.all(rows.map((row: any) => rowPolicy(row))) };
     }),
     getPolicy: (request, tenantId, policyId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const row = yield* fromPromise(db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) }));
+      const row = yield* db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) });
       if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
-      return yield* fromPromise(rowPolicy(row, true));
+      return yield* rowPolicy(row, true);
     }),
     billing: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      return yield* fromPromise(billingSummary(ctx.organization.id));
+      return yield* billingSummary(ctx.organization.id);
     }),
     billingPortal: (request, tenantId, payload) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId, "write");

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createR2Storage, toR2Error } from "../src/policyApplicationStorage.js";
+import { makeR2Storage, toR2Error } from "../src/policyApplicationStorage.js";
 import { EnterpriseR2FileNotFound, EnterpriseR2InternalError } from "@mattrax/enterprise-domain";
 import { runEffect } from "./helpers.js";
 
 describe("R2 storage", () => {
   it("maps missing objects to a structured not found error", async () => {
-    const storage = createR2Storage({ get: async () => null });
+    const storage = makeR2Storage({ get: async () => null });
 
     await expect(runEffect(storage.get("missing"))).rejects.toMatchObject({ _tag: "EnterpriseR2FileNotFound" });
   });
