@@ -22,7 +22,7 @@ import { serializePlist } from "@mattrax/plist";
 import { createEnterpriseAuth } from "./auth.ts";
 import { base64ToBytes, bytesToBase64, policyApplicationKey, sha256Hex, toR2Error } from "./policyApplicationStorage.ts";
 
-type EnterpriseHandlersConfig = {
+export type EnterpriseHandlersConfig = {
   readonly db: any;
   readonly schema: any;
   readonly origin: string;
@@ -126,7 +126,7 @@ const toEnterpriseError = (error: unknown): EnterpriseApiError => {
 
 const effectTry = <A>(try_: () => Promise<A>) => Effect.tryPromise({ try: try_, catch: toEnterpriseError });
 
-export const enterpriseHandlers = ({ db, schema, origin, stripeClient, storage }: EnterpriseHandlersConfig) => {
+export const createEnterpriseService = ({ db, schema, origin, stripeClient, storage }: EnterpriseHandlersConfig) => {
   const auth = createEnterpriseAuth({ db, schema, origin });
 
   const requireUser = async (request: HttpServerRequest) => {
@@ -293,7 +293,7 @@ export const enterpriseHandlers = ({ db, schema, origin, stripeClient, storage }
     };
   };
 
-  const service: any = {
+  return {
     me: (request) => effectTry(async () => {
       const { session, user } = await requireUser(request);
       const tenants = await listTenantInfo(user.id);
@@ -687,6 +687,10 @@ export const enterpriseHandlers = ({ db, schema, origin, stripeClient, storage }
     createApiToken: (request, payload) => effectTry(() => auth.createApiToken(webRequestFromRequest(request, origin), payload)),
     revokeApiToken: (request, tokenId) => effectTry(() => auth.revokeApiToken(webRequestFromRequest(request, origin), tokenId)),
   };
+};
+
+export const enterpriseHandlers = (config: EnterpriseHandlersConfig) => {
+  const service: any = createEnterpriseService(config);
 
   return (handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseApi>) =>
     handlers
