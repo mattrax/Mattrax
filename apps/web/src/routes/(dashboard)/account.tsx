@@ -1,4 +1,4 @@
-import { createEffect, createSignal, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
 
 export default function AccountPage() {
@@ -62,6 +62,29 @@ export default function AccountPage() {
   const [passwordPending, setPasswordPending] = createSignal(false);
   const [passwordError, setPasswordError] = createSignal<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = createSignal(false);
+  const [tokens, { refetch: refetchTokens }] = createResource(() => authClient.listApiTokens());
+  const [tokenName, setTokenName] = createSignal("");
+  const [newToken, setNewToken] = createSignal<string | null>(null);
+  const [tokenError, setTokenError] = createSignal<string | null>(null);
+
+  const handleTokenCreate = async (e: SubmitEvent) => {
+    e.preventDefault();
+    setTokenError(null);
+    setNewToken(null);
+    try {
+      const result = await authClient.createApiToken({ name: tokenName() });
+      setNewToken(result.token);
+      setTokenName("");
+      await refetchTokens();
+    } catch (error) {
+      setTokenError(error instanceof Error ? error.message : "Failed to create token");
+    }
+  };
+
+  const revokeToken = async (tokenId: string) => {
+    await authClient.revokeApiToken(tokenId);
+    await refetchTokens();
+  };
 
   const handlePasswordChange = async (e: SubmitEvent) => {
     e.preventDefault();
@@ -264,6 +287,42 @@ export default function AccountPage() {
             </button>
           </div>
         </form>
+      </section>
+
+      <section class="rounded-xl border border-border bg-card p-6">
+        <h2 class="text-sm font-semibold mb-1">API tokens</h2>
+        <p class="text-sm text-muted-foreground mb-4">
+          Create account-based tokens for CLI and API access. Tokens inherit your tenant memberships.
+        </p>
+        <form onSubmit={handleTokenCreate} class="flex gap-3 items-end mb-4">
+          <div class="flex-1 space-y-1.5">
+            <label for="token-name" class="text-xs font-medium text-stone-700">Token name</label>
+            <input id="token-name" required value={tokenName()} onInput={(e) => setTokenName(e.currentTarget.value)} class={inputClass} placeholder="Work laptop CLI" />
+          </div>
+          <button type="submit" class="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 transition-colors whitespace-nowrap">Create token</button>
+        </form>
+        <Show when={newToken()}>{(token) => (
+          <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <p class="font-medium">Copy this token now. It will not be shown again.</p>
+            <code class="mt-2 block break-all rounded bg-white p-2 text-xs">{token()}</code>
+          </div>
+        )}</Show>
+        <Show when={tokenError()}>{(msg) => <p class="mb-3 text-sm text-red-600">{msg()}</p>}</Show>
+        <div class="space-y-2">
+          <For each={tokens()?.tokens ?? []}>{(token) => (
+            <div class="flex items-center justify-between rounded-lg border border-stone-200 p-3 text-sm">
+              <div>
+                <p class="font-medium text-stone-900">{token.name}</p>
+                <p class="text-xs text-muted-foreground">{token.tokenPrefix}... · Created {new Date(token.createdAt).toLocaleDateString()} · Last used {token.lastUsedAt ? new Date(token.lastUsedAt).toLocaleDateString() : "never"}</p>
+                <Show when={token.revokedAt}><p class="text-xs text-red-600">Revoked</p></Show>
+              </div>
+              <button type="button" disabled={Boolean(token.revokedAt)} onClick={() => revokeToken(token.id)} class="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100 disabled:opacity-50">Revoke</button>
+            </div>
+          )}</For>
+          <Show when={!tokens.loading && (tokens()?.tokens.length ?? 0) === 0}>
+            <p class="text-sm text-muted-foreground">No API tokens yet.</p>
+          </Show>
+        </div>
       </section>
     </div>
   );

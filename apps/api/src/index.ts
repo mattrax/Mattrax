@@ -6,7 +6,7 @@ import Stripe from "stripe";
 import { version } from "../package.json" with { type: "json" };
 import { enterpriseApi } from "@mattrax/enterprise-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
-import { enterpriseHandlers } from "@mattrax/enterprise-backend";
+import { createEnterpriseAuth, enterpriseHandlers } from "@mattrax/enterprise-backend";
 import { platformApi } from "@mattrax/platform-api";
 import { platformHandlers } from "@mattrax/platform-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
@@ -18,7 +18,6 @@ import { ManagementBackendEnterpriseLive } from "@mattrax/management-backend-ent
 import { createDb } from "./db/index.js";
 import * as schema from "./db/schema.js";
 import { ScepRepositoryLive } from "./repositories/scepRepository.js";
-import { createAuth } from "./auth.js";
 import "./env.js";
 
 const healthApi = HttpApiGroup.make("HealthApi").add(
@@ -52,7 +51,6 @@ export const createAppLayer = (hyperdrive: Hyperdrive) => {
     HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers({
       db: database,
       schema,
-      auth: createAuth(),
       origin: env.ORIGIN,
       stripeClient: new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: "2026-04-22.dahlia" }),
       storage: env.STORAGE,
@@ -97,9 +95,8 @@ export const createAppLayer = (hyperdrive: Hyperdrive) => {
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-    // TODO: Move this into Effect API
-    if (new URL(request.url).pathname.startsWith("/api/auth"))
-      return createAuth().handler(request);
+    const authResponse = await createEnterpriseAuth({ db: createDb(env.HYPERDRIVE), schema, origin: env.ORIGIN }).handle(request);
+    if (authResponse) return authResponse;
 
     const appLayer = createAppLayer(env.HYPERDRIVE);
     const { handler, dispose } = HttpRouter.toWebHandler(appLayer);

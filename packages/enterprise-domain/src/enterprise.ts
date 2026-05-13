@@ -6,6 +6,7 @@ const TenantParam = { tenantId: Schema.String };
 const TenantIdParam = { tenantId: Schema.String, id: Schema.String };
 const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.String };
 const TenantMemberParam = { tenantId: Schema.String, memberId: Schema.String };
+const ApiTokenParam = { tokenId: Schema.String };
 
 export const NullableString = Schema.NullOr(Schema.String);
 export const JsonRecord = Schema.Record(Schema.String, Schema.Unknown);
@@ -340,7 +341,46 @@ export const UploadApnsRequest = Schema.Struct({ email: Schema.String, cert: Sch
 export const BillingPortalRequest = Schema.Struct({ returnUrl: Schema.String });
 export const BillingPortalResponse = Schema.Struct({ url: Schema.String });
 
+export const AuthUser = UserInfo;
+export const SessionResponse = Schema.Struct({ user: Schema.optional(AuthUser) });
+export const RegisterRequest = Schema.Struct({ name: Schema.String, email: Schema.String, password: Schema.String });
+export const LoginRequest = Schema.Struct({ email: Schema.String, password: Schema.String });
+export const ForgotPasswordRequest = Schema.Struct({ email: Schema.String, redirectTo: Schema.optional(Schema.String) });
+export const ResetPasswordRequest = Schema.Struct({ token: Schema.String, newPassword: Schema.String });
+export const ChangePasswordRequest = Schema.Struct({ currentPassword: Schema.String, newPassword: Schema.String, revokeOtherSessions: Schema.optional(Schema.Boolean) });
+export const ChangeEmailRequest = Schema.Struct({ newEmail: Schema.String, callbackURL: Schema.optional(Schema.String) });
+export const VerifyEmailChangeRequest = Schema.Struct({ token: Schema.String });
+export const SetActiveTenantRequest = Schema.Struct({ tenantId: Schema.String });
+export const AuthResponse = Schema.Struct({ user: AuthUser });
+
+export const ApiTokenInfo = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  tokenPrefix: Schema.String,
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  lastUsedAt: Schema.optional(NullableString),
+  expiresAt: Schema.optional(NullableString),
+  revokedAt: Schema.optional(NullableString),
+});
+export const ApiTokensResponse = Schema.Struct({ tokens: Schema.Array(ApiTokenInfo) });
+export const CreateApiTokenRequest = Schema.Struct({ name: Schema.String, expiresAt: Schema.optional(NullableString) });
+export const CreateApiTokenResponse = Schema.Struct({ token: Schema.String, item: ApiTokenInfo });
+
 export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
+  .add(HttpApiEndpoint.get("authSession", "/v1/auth/session", { error: EnterpriseApiErrors, success: SessionResponse }))
+  .add(HttpApiEndpoint.post("authRegister", "/v1/auth/register", { error: EnterpriseApiErrors, payload: RegisterRequest, success: AuthResponse }))
+  .add(HttpApiEndpoint.post("authLogin", "/v1/auth/login", { error: EnterpriseApiErrors, payload: LoginRequest, success: AuthResponse }))
+  .add(HttpApiEndpoint.post("authLogout", "/v1/auth/logout", { error: EnterpriseApiErrors, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("authForgotPassword", "/v1/auth/forgot-password", { error: EnterpriseApiErrors, payload: ForgotPasswordRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("authResetPassword", "/v1/auth/reset-password", { error: EnterpriseApiErrors, payload: ResetPasswordRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("authChangePassword", "/v1/auth/change-password", { error: EnterpriseApiErrors, payload: ChangePasswordRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("authChangeEmail", "/v1/auth/change-email", { error: EnterpriseApiErrors, payload: ChangeEmailRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("authVerifyEmailChange", "/v1/auth/verify-email-change", { error: EnterpriseApiErrors, payload: VerifyEmailChangeRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("authSetActiveTenant", "/v1/auth/set-active-tenant", { error: EnterpriseApiErrors, payload: SetActiveTenantRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.get("listApiTokens", "/v1/account/api-tokens", { error: EnterpriseApiErrors, success: ApiTokensResponse }))
+  .add(HttpApiEndpoint.post("createApiToken", "/v1/account/api-tokens", { error: EnterpriseApiErrors, payload: CreateApiTokenRequest, success: CreateApiTokenResponse }))
+  .add(HttpApiEndpoint.delete("revokeApiToken", "/v1/account/api-tokens/:tokenId", { error: EnterpriseApiErrors, params: ApiTokenParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.get("me", "/v1/me", { error: EnterpriseApiErrors, success: MeResponse }))
   .add(HttpApiEndpoint.patch("updateMe", "/v1/me", { error: EnterpriseApiErrors, payload: UpdateMeRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.delete("deleteMe", "/v1/me", { error: EnterpriseApiErrors, success: Schema.Struct({ error: Schema.String }) }))

@@ -42,13 +42,8 @@ function TopNavigation() {
     href.startsWith("/") && !href.startsWith("/#") && location.pathname === href;
 
   const handleLogout = async () => {
-    await authClient.signOut({
-      fetchOptions: {
-        onSuccess: () => {
-          window.location.href = "/";
-        },
-      },
-    });
+    await authClient.signOut();
+    window.location.href = "/";
   };
 
   return (

@@ -82,7 +82,7 @@ export default function TenantSettingsPage() {
 
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">
-      <PageHeader title="Tenant settings" description="Manage this Better Auth organization-backed tenant." />
+      <PageHeader title="Tenant settings" description="Manage this organization-backed tenant." />
       <div class="grid gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
@@ -134,7 +134,7 @@ export default function TenantSettingsPage() {
                   </span>
                   <span class="flex items-center gap-2">
                     <Badge variant="outline">{user.role}</Badge>
-                    <Show when={user.userId !== session().data?.user.id} fallback={<Badge variant="secondary">You</Badge>}>
+                    <Show when={user.userId !== session().data?.user?.id} fallback={<Badge variant="secondary">You</Badge>}>
                       <Button type="button" size="sm" variant="destructive" onClick={() => removeUser.mutate(user.memberId)} disabled={removeUser.isPending}>
                         Delete
                       </Button>

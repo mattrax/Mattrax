@@ -23,7 +23,7 @@ export default function NewTenantPage() {
   }));
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">
-      <PageHeader title="Create tenant" description="Tenants map directly to Better Auth organizations and scope all MDM resources." />
+      <PageHeader title="Create tenant" description="Tenants scope all MDM resources and team access." />
       <Card class="max-w-xl"><CardContent>
         <form class="space-y-4" onSubmit={(event) => { event.preventDefault(); createTenant.mutate(); }}>
           <Field label="Tenant name"><Input required value={name()} onInput={(event) => { setName(event.currentTarget.value); if (!slug()) setSlug(slugify(event.currentTarget.value)); }} placeholder="Acme Operations" /></Field>

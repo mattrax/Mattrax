@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@mattrax/enterprise-domain": "workspace:*",
+    "@mattrax/effect-stripe": "workspace:*",
     "@mattrax/management-backend-enterprise": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "@effect/sql-pg": "catalog:",

@@ -20,7 +20,6 @@
     "@t3-oss/env-core": "^0.13.11",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/solid-query": "catalog:",
-    "better-auth": "^1.6.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-solid": "^1.8.0",

@@ -18,12 +18,12 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
+import { createEnterpriseAuth, hashPassword, userInfo, verifyPassword } from "./auth.ts";
 import { base64ToBytes, bytesToBase64, policyApplicationKey, sha256Hex, toR2Error } from "./policyApplicationStorage.ts";
 
 type EnterpriseHandlersConfig = {
   readonly db: any;
   readonly schema: any;
-  readonly auth: any;
   readonly origin: string;
   readonly stripeClient: any;
   readonly storage: any;
@@ -44,6 +44,8 @@ const headersFromRequest = (request: HttpServerRequest) => {
   }
   return headers;
 };
+
+const webRequestFromRequest = (request: HttpServerRequest, origin: string) => new Request(origin, { headers: headersFromRequest(request) });
 
 const iso = (date: Date | number | null | undefined) => {
   if (date == null) return new Date(0).toISOString();
@@ -99,7 +101,7 @@ const isAuthError = (error: unknown) => {
   const value = error as Record<string, unknown>;
   const name = typeof value.name === "string" ? value.name : "";
   const tag = typeof value._tag === "string" ? value._tag : "";
-  return name.includes("BetterAuth") || tag.includes("BetterAuth") || "statusCode" in value && ("body" in value || "status" in value);
+  return tag.includes("Auth") || "statusCode" in value && ("body" in value || "status" in value);
 };
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : typeof error === "string" ? error : "";
@@ -120,15 +122,11 @@ const toEnterpriseError = (error: unknown): EnterpriseApiError => {
 
 const effectTry = <A>(try_: () => Promise<A>) => Effect.tryPromise({ try: try_, catch: toEnterpriseError });
 
-export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient, storage }: EnterpriseHandlersConfig) => {
+export const enterpriseHandlers = ({ db, schema, origin, stripeClient, storage }: EnterpriseHandlersConfig) => {
+  const auth = createEnterpriseAuth({ db, schema, origin });
 
   const requireUser = async (request: HttpServerRequest) => {
-    const session = await auth.api.getSession({ headers: headersFromRequest(request) }) as any;
-    if (!session?.user?.id) throw new Error("Unauthenticated");
-
-    const user = await db.query.user.findFirst({ where: eq(schema.user.id, session.user.id) });
-    if (!user) throw new Error("Unauthenticated");
-    return { session, user };
+    return await auth.requireUser({ headers: request.headers });
   };
 
   const requireTenant = async (request: HttpServerRequest, tenantId: string, access: "read" | "write" | "delete" = "read"): Promise<OrgContext> => {
@@ -325,10 +323,13 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient, sto
       return { tenants: await listTenantInfo(user.id) };
     }),
     createTenant: (request, payload) => effectTry(async () => {
+      const { user } = await requireUser(request);
       const body = payload as { name: string; slug: string; logo?: string | null; metadata?: Record<string, unknown> };
-      const result = await auth.api.createOrganization({ headers: headersFromRequest(request), body }) as any;
-      const tenantId = result?.id ?? result?.data?.id ?? result?.organization?.id ?? result?.data?.organization?.id;
-      if (!tenantId) throw new Error("Tenant creation failed");
+      const tenantId = id();
+      const timestamp = now();
+      await db.insert(schema.organization).values({ id: tenantId, name: body.name, slug: body.slug, logo: body.logo ?? null, metadata: body.metadata ? JSON.stringify(body.metadata) : null, createdAt: timestamp, updatedAt: timestamp });
+      await db.insert(schema.member).values({ id: id(), organizationId: tenantId, userId: user.id, role: "owner", createdAt: timestamp, updatedAt: timestamp });
+      await db.insert(schema.enterpriseEnrollment).values({ id: tenantId, organizationId: tenantId, createdAt: timestamp, updatedAt: timestamp }).onConflictDoNothing();
       return { id: tenantId };
     }),
     getTenant: (request, tenantId) => effectTry(async () => {
@@ -337,13 +338,14 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient, sto
     }),
     patchTenant: (request, tenantId, payload) => effectTry(async () => {
       await requireTenant(request, tenantId, "write");
-      await auth.api.updateOrganization({ headers: headersFromRequest(request), body: { organizationId: tenantId, data: payload } });
+      const body = payload as any;
+      await db.update(schema.organization).set({ ...body, metadata: body.metadata === undefined ? undefined : body.metadata === null ? null : JSON.stringify(body.metadata), updatedAt: now() }).where(eq(schema.organization.id, tenantId));
       return ok;
     }),
     deleteTenant: (request, tenantId) => effectTry(async () => {
       await requireTenant(request, tenantId, "delete");
       if (await memberCount(tenantId) > 1) throw new Error("Cannot delete a tenant with more than one user");
-      await auth.api.deleteOrganization({ headers: headersFromRequest(request), body: { organizationId: tenantId } });
+      await db.delete(schema.organization).where(eq(schema.organization.id, tenantId));
       return ok;
     }),
     listTenantUsers: (request, tenantId) => effectTry(async () => {
@@ -360,10 +362,11 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient, sto
     }),
     inviteTenantUser: (request, tenantId, payload) => effectTry(async () => {
       await requireTenant(request, tenantId, "write");
+      const { user } = await requireUser(request);
       const body = payload as { email: string; role?: string; resend?: boolean };
-      const result = await auth.api.createInvitation({ headers: headersFromRequest(request), body: { organizationId: tenantId, email: body.email, role: body.role ?? "member", resend: body.resend } }) as any;
-      const invitationId = result?.id ?? result?.data?.id ?? result?.invitation?.id ?? result?.data?.invitation?.id;
-      if (!invitationId) throw new Error("Invitation creation failed");
+      const invitationId = id();
+      const timestamp = now();
+      await db.insert(schema.invitation).values({ id: invitationId, organizationId: tenantId, inviterId: user.id, email: body.email, role: body.role ?? "member", status: "pending", expiresAt: new Date(timestamp.getTime() + 7 * 24 * 60 * 60 * 1000), createdAt: timestamp, updatedAt: timestamp });
       return { id: invitationId };
     }),
     listTenantInvitations: (request, tenantId) => effectTry(async () => {
@@ -375,7 +378,7 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient, sto
       await requireTenant(request, tenantId, "write");
       const invitation = await db.query.invitation.findFirst({ where: and(eq(schema.invitation.id, invitationId), eq(schema.invitation.organizationId, tenantId)) });
       if (!invitation) throw new Error("Invitation not found");
-      await auth.api.cancelInvitation({ headers: headersFromRequest(request), body: { invitationId } });
+      await db.update(schema.invitation).set({ status: "canceled", updatedAt: now() }).where(eq(schema.invitation.id, invitationId));
       return ok;
     }),
     patchTenantUser: (request, tenantId, memberId, payload) => effectTry(async () => {
@@ -383,7 +386,7 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient, sto
       const member = await db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) });
       if (!member) throw new Error("Tenant user not found");
       const body = payload as { role: string };
-      await auth.api.updateMemberRole({ headers: headersFromRequest(request), body: { organizationId: tenantId, memberId, role: body.role } });
+      await db.update(schema.member).set({ role: body.role, updatedAt: now() }).where(eq(schema.member.id, memberId));
       return ok;
     }),
     removeTenantUser: (request, tenantId, memberId) => effectTry(async () => {
@@ -391,9 +394,7 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient, sto
       if (await memberCount(tenantId) <= 1) throw new Error("Cannot remove the last tenant user; delete the tenant instead");
       const member = await db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) });
       if (!member) throw new Error("Tenant user not found");
-      const user = await db.query.user.findFirst({ where: eq(schema.user.id, member.userId) });
-      if (!user) throw new Error("Tenant user not found");
-      await auth.api.removeMember({ headers: headersFromRequest(request), body: { organizationId: tenantId, memberIdOrEmail: user.email } });
+      await db.delete(schema.member).where(eq(schema.member.id, memberId));
       return ok;
     }),
     getEnrollment: (enrollmentId, code) => effectTry(async () => {
@@ -665,16 +666,43 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient, sto
       const ctx = await requireTenant(request, tenantId, "write");
       const body = payload as { returnUrl: string };
       await ensureStripeCustomer(ctx.organization);
-      const result = await auth.api.createBillingPortal({
-        headers: headersFromRequest(request),
-        body: { referenceId: ctx.organization.id, customerType: "organization", returnUrl: body.returnUrl, disableRedirect: true },
-      }) as any;
-      return { url: result?.url ?? result?.data?.url ?? body.returnUrl };
+      const customer = await ensureStripeCustomer(ctx.organization);
+      const result = await stripeClient.billingPortal.sessions.create({ customer, return_url: body.returnUrl });
+      return { url: result.url ?? body.returnUrl };
     }),
+    authSession: (request) => effectTry(async () => {
+      const resolved = await auth.requireUser({ headers: request.headers }).catch(() => undefined);
+      return { user: resolved?.user ? userInfo(resolved.user) : undefined };
+    }),
+    authRegister: (_request, _payload) => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/register" })),
+    authLogin: (_request, _payload) => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/login" })),
+    authLogout: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/logout" })),
+    authForgotPassword: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/forgot-password" })),
+    authResetPassword: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/reset-password" })),
+    authChangePassword: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/change-password" })),
+    authChangeEmail: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/change-email" })),
+    authVerifyEmailChange: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/verify-email-change" })),
+    authSetActiveTenant: () => Effect.fail(new EnterpriseAuthError({ message: "Use /api/v1/auth/set-active-tenant" })),
+    listApiTokens: (request) => effectTry(() => auth.listApiTokens(webRequestFromRequest(request, origin))),
+    createApiToken: (request, payload) => effectTry(() => auth.createApiToken(webRequestFromRequest(request, origin), payload)),
+    revokeApiToken: (request, tokenId) => effectTry(() => auth.revokeApiToken(webRequestFromRequest(request, origin), tokenId)),
   };
 
   return (handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseApi>) =>
     handlers
+      .handle("authSession", ({ request }) => service.authSession(request))
+      .handle("authRegister", ({ request, payload }) => service.authRegister(request, payload))
+      .handle("authLogin", ({ request, payload }) => service.authLogin(request, payload))
+      .handle("authLogout", ({ request }) => service.authLogout(request))
+      .handle("authForgotPassword", ({ request, payload }) => service.authForgotPassword(request, payload))
+      .handle("authResetPassword", ({ request, payload }) => service.authResetPassword(request, payload))
+      .handle("authChangePassword", ({ request, payload }) => service.authChangePassword(request, payload))
+      .handle("authChangeEmail", ({ request, payload }) => service.authChangeEmail(request, payload))
+      .handle("authVerifyEmailChange", ({ request, payload }) => service.authVerifyEmailChange(request, payload))
+      .handle("authSetActiveTenant", ({ request, payload }) => service.authSetActiveTenant(request, payload))
+      .handle("listApiTokens", ({ request }) => service.listApiTokens(request))
+      .handle("createApiToken", ({ request, payload }) => service.createApiToken(request, payload))
+      .handle("revokeApiToken", ({ request, params }) => service.revokeApiToken(request, params.tokenId))
       .handle("me", ({ request }) => service.me(request))
       .handle("updateMe", ({ request, payload }) => service.updateMe(request, payload))
       .handle("deleteMe", ({ request }) => service.deleteMe(request))

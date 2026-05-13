@@ -12,9 +12,7 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "@better-auth/stripe": "^1.6.2",
     "@effect/sql-pg": "catalog:",
-    "@better-auth/drizzle-adapter": "^1.6.2",
     "@mattrax/dm-apple": "workspace:*",
     "@mattrax/enterprise-backend": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
@@ -27,7 +25,6 @@
     "@mattrax/scep": "workspace:*",
     "@t3-oss/env-core": "^0.13.11",
     "asn1js": "catalog:",
-    "better-auth": "^1.6.2",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "fast-plist": "catalog:",

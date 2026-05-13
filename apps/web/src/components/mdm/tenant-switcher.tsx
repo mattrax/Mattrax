@@ -5,6 +5,7 @@ import { For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "~/components/ui/dropdown-menu";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import { authClient } from "~/lib/auth";
 
 export function TenantSwitcher() {
   const params = useParams();
@@ -14,7 +15,7 @@ export function TenantSwitcher() {
   const active = () => me.data?.tenants.find((tenant) => tenant.id === params.tenantId) ?? me.data?.activeTenant ?? me.data?.tenants[0];
 
   const switchTenant = async (tenantId: string) => {
-    await fetch("/api/auth/organization/set-active", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ organizationId: tenantId }) }).catch(() => undefined);
+    await authClient.setActiveTenant(tenantId);
     await queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
     navigate(`/t/${tenantId}/devices`);
   };
