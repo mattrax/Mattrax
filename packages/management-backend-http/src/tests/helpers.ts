@@ -11,6 +11,11 @@ export function mockManagementBackend(
     getAppleDeclarationItems: ManagementBackendType["getAppleDeclarationItems"];
     getAppleDeclaration: ManagementBackendType["getAppleDeclaration"];
     getAppleAsset: ManagementBackendType["getAppleAsset"];
+    windowsDiscovery: ManagementBackendType["windowsDiscovery"];
+    getWindowsEnrollmentPolicy: ManagementBackendType["getWindowsEnrollmentPolicy"];
+    windowsEnroll: ManagementBackendType["windowsEnroll"];
+    windowsManagementCheckin: ManagementBackendType["windowsManagementCheckin"];
+    windowsDeviceEvent: ManagementBackendType["windowsDeviceEvent"];
   }>,
 ) {
   return Layer.succeed(
@@ -42,6 +47,16 @@ export function mockManagementBackend(
       overrides?.getAppleDeclaration ?? (() => Effect.succeed(null)),
     getAppleAsset:
       overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
+    windowsDiscovery:
+      overrides?.windowsDiscovery ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
+    getWindowsEnrollmentPolicy:
+      overrides?.getWindowsEnrollmentPolicy ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
+    windowsEnroll:
+      overrides?.windowsEnroll ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
+    windowsManagementCheckin:
+      overrides?.windowsManagementCheckin ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
+    windowsDeviceEvent:
+      overrides?.windowsDeviceEvent ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
   }),
   );
 }

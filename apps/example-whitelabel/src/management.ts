@@ -2,6 +2,7 @@ import { Effect, Layer } from "effect";
 import {
   ManagementBackend,
   InternalServerError,
+  ManagementNotSupported,
   type AppleDeviceEvent,
   type CheckinScope,
   type ManagementManifest,
@@ -182,5 +183,10 @@ export const ManagementBackendD1 = (db: D1Database, apps: R2Bucket) =>
           },
           catch: (cause) => (console.error("[management]", cause), new InternalServerError()),
         }),
+      windowsDiscovery: () => Effect.fail(new ManagementNotSupported()),
+      getWindowsEnrollmentPolicy: () => Effect.fail(new ManagementNotSupported()),
+      windowsEnroll: () => Effect.fail(new ManagementNotSupported()),
+      windowsManagementCheckin: () => Effect.fail(new ManagementNotSupported()),
+      windowsDeviceEvent: () => Effect.fail(new ManagementNotSupported()),
     }),
   );

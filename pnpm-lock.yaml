@@ -355,6 +355,25 @@ importers:
         specifier: 'catalog:'
         version: 3.0.1
 
+  packages/dm-windows:
+    dependencies:
+      '@mattrax/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      '@mattrax/management-backend':
+        specifier: workspace:*
+        version: link:../management-backend
+      '@mattrax/soap':
+        specifier: workspace:*
+        version: link:../soap
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.66
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.12.2
+
   packages/effect-stripe:
     dependencies:
       effect:

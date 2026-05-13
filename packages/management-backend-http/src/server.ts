@@ -40,4 +40,34 @@ export const managementWebhookHandlers = (handlers: HttpApiBuilder.Handlers.From
         const backend = yield* ManagementBackend;
         return yield* backend.getAppleAsset(payload.identityCertificate, payload.identifier);
       }),
+    )
+    .handle("windowsDiscovery", ({ payload }) =>
+      Effect.gen(function* () {
+        const backend = yield* ManagementBackend;
+        return yield* backend.windowsDiscovery(payload);
+      }),
+    )
+    .handle("getWindowsEnrollmentPolicy", ({ payload }) =>
+      Effect.gen(function* () {
+        const backend = yield* ManagementBackend;
+        return yield* backend.getWindowsEnrollmentPolicy(payload.authToken);
+      }),
+    )
+    .handle("windowsEnroll", ({ payload }) =>
+      Effect.gen(function* () {
+        const backend = yield* ManagementBackend;
+        return yield* backend.windowsEnroll(payload);
+      }),
+    )
+    .handle("windowsManagementCheckin", ({ payload }) =>
+      Effect.gen(function* () {
+        const backend = yield* ManagementBackend;
+        return yield* backend.windowsManagementCheckin(payload.scope, payload.request);
+      }),
+    )
+    .handle("windowsDeviceEvent", ({ payload }) =>
+      Effect.gen(function* () {
+        const backend = yield* ManagementBackend;
+        yield* backend.windowsDeviceEvent(payload.scope, payload.event);
+      }),
     );

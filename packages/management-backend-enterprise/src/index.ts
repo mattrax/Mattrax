@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import {
   InternalServerError,
   ManagementBackend,
+  ManagementNotSupported,
   ServerInitiatedUnenrollment,
   UnknownDevice,
   type AppleDeviceEvent,
@@ -343,6 +344,12 @@ export const ManagementBackendEnterpriseLive = (db: EnterpriseManagementDb, conf
     }),
 
     getAppleAsset: (_identityCertificate, _identifier) => Effect.succeed(null),
+
+    windowsDiscovery: () => Effect.fail(new ManagementNotSupported()),
+    getWindowsEnrollmentPolicy: () => Effect.fail(new ManagementNotSupported()),
+    windowsEnroll: () => Effect.fail(new ManagementNotSupported()),
+    windowsManagementCheckin: () => Effect.fail(new ManagementNotSupported()),
+    windowsDeviceEvent: () => Effect.fail(new ManagementNotSupported()),
   }));
 };
 

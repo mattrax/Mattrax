@@ -100,6 +100,93 @@ export const DdmDeclarationItems = Schema.Struct({
 });
 export type DdmDeclarationItems = typeof DdmDeclarationItems.Type;
 
+export const WindowsDiscoveryRequest = Schema.Struct({
+  emailAddress: Schema.optional(Schema.String),
+  requestVersion: Schema.String,
+  deviceType: Schema.String,
+  applicationVersion: Schema.String,
+  osEdition: Schema.Number,
+  authPolicies: Schema.Array(Schema.String),
+  mdmOrigin: MdmOrigin,
+});
+export type WindowsDiscoveryRequest = typeof WindowsDiscoveryRequest.Type;
+
+export const WindowsDiscoveryResponse = Schema.Struct({
+  authPolicy: Schema.String,
+  enrollmentVersion: Schema.String,
+  enrollmentPolicyServiceUrl: Schema.String,
+  enrollmentServiceUrl: Schema.String,
+  authServiceUrl: Schema.optional(Schema.String),
+});
+export type WindowsDiscoveryResponse = typeof WindowsDiscoveryResponse.Type;
+
+export const WindowsManagementScope = Schema.Struct({
+  deviceId: Schema.String,
+  identityCertificate: Schema.optional(Schema.String),
+  mdmOrigin: MdmOrigin,
+});
+export type WindowsManagementScope = typeof WindowsManagementScope.Type;
+
+export const WindowsEnrollmentPolicy = Schema.Struct({
+  minimalKeyLength: Schema.String,
+  certificateValidityPeriodSeconds: Schema.String,
+  renewalPeriodSeconds: Schema.String,
+  authToken: Schema.String,
+});
+export type WindowsEnrollmentPolicy = typeof WindowsEnrollmentPolicy.Type;
+
+export const WindowsEnrollmentRequest = Schema.Struct({
+  authToken: Schema.String,
+  csr: Schema.String,
+  deviceId: Schema.optional(Schema.String),
+  deviceName: Schema.optional(Schema.String),
+  enrollmentType: Schema.optional(Schema.String),
+  context: Schema.Record(Schema.String, Schema.String),
+  mdmOrigin: MdmOrigin,
+});
+export type WindowsEnrollmentRequest = typeof WindowsEnrollmentRequest.Type;
+
+export const WindowsEnrollmentResult = Schema.Struct({
+  deviceId: Schema.String,
+  signedCertificate: Schema.String,
+  identityCertificate: Schema.String,
+  username: Schema.String,
+  secret: Schema.String,
+  providerId: Schema.String,
+});
+export type WindowsEnrollmentResult = typeof WindowsEnrollmentResult.Type;
+
+export const WindowsSyncMLCommand = Schema.Struct({
+  kind: Schema.String,
+  cmdID: Schema.String,
+  locURI: Schema.optional(Schema.String),
+  data: Schema.optional(Schema.String),
+  format: Schema.optional(Schema.String),
+});
+export type WindowsSyncMLCommand = typeof WindowsSyncMLCommand.Type;
+
+export const WindowsManagementRequest = Schema.Struct({
+  sessionID: Schema.String,
+  msgID: Schema.String,
+  source: Schema.String,
+  target: Schema.String,
+  statuses: Schema.Array(Schema.Unknown),
+  alerts: Schema.Array(Schema.Unknown),
+});
+export type WindowsManagementRequest = typeof WindowsManagementRequest.Type;
+
+export const WindowsManagementResponse = Schema.Struct({
+  commands: Schema.Array(WindowsSyncMLCommand),
+});
+export type WindowsManagementResponse = typeof WindowsManagementResponse.Type;
+
+export const WindowsDeviceEvent = Schema.Union([
+  Schema.TaggedStruct("Enrolled", { deviceId: Schema.String }),
+  Schema.TaggedStruct("ManagementCheckin", { deviceId: Schema.String }),
+  Schema.TaggedStruct("CommandResult", { deviceId: Schema.String, status: Schema.String, commandRef: Schema.optional(Schema.String) }),
+]);
+export type WindowsDeviceEvent = typeof WindowsDeviceEvent.Type;
+
 export class ManagementBackend extends Context.Service<
   ManagementBackend,
   {
@@ -114,5 +201,11 @@ export class ManagementBackend extends Context.Service<
     readonly getAppleDeclarationItems: (scope: CheckinScope) => Effect.Effect<DdmDeclarationItems, ManagementNotSupported | UnknownDevice | InternalServerError>;
     readonly getAppleDeclaration: (scope: CheckinScope, type: string, identifier: string) => Effect.Effect<Record<string, unknown> | null, ManagementNotSupported | UnknownDevice | InternalServerError>;
     readonly getAppleAsset: (identityCertificate: string | undefined, identifier: string) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, ManagementNotSupported | UnknownDevice | InternalServerError>;
+
+    readonly windowsDiscovery: (request: WindowsDiscoveryRequest) => Effect.Effect<WindowsDiscoveryResponse, ManagementNotSupported | InternalServerError>;
+    readonly getWindowsEnrollmentPolicy: (authToken: string) => Effect.Effect<WindowsEnrollmentPolicy, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    readonly windowsEnroll: (request: WindowsEnrollmentRequest) => Effect.Effect<WindowsEnrollmentResult, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    readonly windowsManagementCheckin: (scope: WindowsManagementScope, request: WindowsManagementRequest) => Effect.Effect<WindowsManagementResponse, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    readonly windowsDeviceEvent: (scope: WindowsManagementScope, event: WindowsDeviceEvent) => Effect.Effect<void, ManagementNotSupported | UnknownDevice | InternalServerError>;
   }
 >()("ManagementBackend") {}

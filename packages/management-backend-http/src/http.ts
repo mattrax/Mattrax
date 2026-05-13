@@ -10,6 +10,15 @@ import {
   UnknownDevice,
   ServerInitiatedUnenrollment,
   InternalServerError,
+  WindowsDeviceEvent,
+  WindowsDiscoveryRequest,
+  WindowsDiscoveryResponse,
+  WindowsEnrollmentPolicy,
+  WindowsEnrollmentRequest,
+  WindowsEnrollmentResult,
+  WindowsManagementRequest,
+  WindowsManagementResponse,
+  WindowsManagementScope,
 } from "@mattrax/management-backend";
 
 export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
@@ -57,6 +66,40 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
         content: Schema.Uint8ArrayFromBase64,
         contentType: Schema.String,
       })),
+      error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("windowsDiscovery", "/windows/discovery", {
+      payload: WindowsDiscoveryRequest,
+      success: WindowsDiscoveryResponse,
+      error: Schema.Union([ManagementNotSupported, InternalServerError]),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("getWindowsEnrollmentPolicy", "/windows/policy", {
+      payload: Schema.Struct({ authToken: Schema.String }),
+      success: WindowsEnrollmentPolicy,
+      error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("windowsEnroll", "/windows/enroll", {
+      payload: WindowsEnrollmentRequest,
+      success: WindowsEnrollmentResult,
+      error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("windowsManagementCheckin", "/windows/checkin", {
+      payload: Schema.Struct({ scope: WindowsManagementScope, request: WindowsManagementRequest }),
+      success: WindowsManagementResponse,
+      error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("windowsDeviceEvent", "/windows/event", {
+      payload: Schema.Struct({ scope: WindowsManagementScope, event: WindowsDeviceEvent }),
       error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
     }),
   )

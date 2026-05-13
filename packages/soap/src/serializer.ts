@@ -196,6 +196,9 @@ function serializeAst(ast: AST.AST, value: unknown, options: SerializeOptions, f
       }
 
       const tag = buildTag(name, [], ns, prefix);
+      if (name === itemName) {
+        return children.join(options.pretty ? "\n" : "");
+      }
       if (children.length === 0) {
         return indentLine(options.depth, tag.selfClose, options);
       }

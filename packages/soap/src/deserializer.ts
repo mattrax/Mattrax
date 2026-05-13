@@ -104,7 +104,7 @@ function deserializeToUnknown(ast: AST.AST, element: Element): unknown {
             result[propName] = deserializePrimitive(ps.type, attrValue);
           }
         } else if (propAnnotations?.soapTextContent === true) {
-          result[propName] = deserializePrimitive(ps.type, getTextContent(element));
+          result[propName] = deserializePrimitive(ps.type, getTextContent(element).trim());
         } else {
           const child = findChild(element, elName);
           if (!child) {
@@ -131,7 +131,7 @@ function deserializeToUnknown(ast: AST.AST, element: Element): unknown {
         // Array<T> - all children are items
         const itemAst = ast.rest[0];
         const itemName = getSoapElementName(itemAst, "item");
-        const children = findChildren(element, itemName);
+        const children = element.localName === itemName ? [element] : findChildren(element, itemName);
         for (const child of children) {
           if (isPrimitiveAst(itemAst)) {
             result.push(deserializePrimitiveValue(itemAst, getTextContent(child)));

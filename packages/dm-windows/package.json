@@ -1,0 +1,19 @@
+{
+  "name": "@mattrax/dm-windows",
+  "private": true,
+  "description": "Windows Device Management",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@mattrax/crypto": "workspace:*",
+    "@mattrax/management-backend": "workspace:*",
+    "@mattrax/soap": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}
