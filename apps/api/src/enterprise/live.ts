@@ -523,32 +523,36 @@ const makeEnterpriseService = (db: Database, config: { origin: string }): Enterp
       return { id: newId };
     }),
     previewMobileconfig: (payload) => Effect.succeed({ payload }),
-    search: (request, tenantId, query) => Effect.promise(async () => {
+    listDevices: (request, tenantId) => Effect.promise(async () => {
       const ctx = await requireTenant(request, tenantId);
-      if (query.type === "device") {
-        const rows = await db.select().from(schema.device).where(eq(schema.device.organizationId, ctx.organization.id));
-        return { rows: rows.map(rowDevice) };
-      }
-      if (query.type === "group") {
-        const rows = await db.select().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
-        return { rows: rows.map((row) => rowGroup(row)) };
-      }
+      const rows = await db.select().from(schema.device).where(eq(schema.device.organizationId, ctx.organization.id));
+      return { rows: rows.map(rowDevice) };
+    }),
+    getDevice: (request, tenantId, deviceId) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId);
+      const row = await db.query.device.findFirst({ where: and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id)) });
+      if (!row) throw new Error("Device not found");
+      return rowDevice(row);
+    }),
+    listGroups: (request, tenantId) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId);
+      const rows = await db.select().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
+      return { rows: rows.map((row) => rowGroup(row)) };
+    }),
+    getGroup: (request, tenantId, groupId) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId);
+      const row = await db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id)) });
+      if (!row) throw new Error("Group not found");
+      return rowGroup(row);
+    }),
+    listPolicies: (request, tenantId) => Effect.promise(async () => {
+      const ctx = await requireTenant(request, tenantId);
       const rows = await db.select().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id));
       return { rows: await Promise.all(rows.map((row) => rowPolicy(row))) };
     }),
-    node: (request, tenantId, entity, nodeId) => Effect.promise(async () => {
+    getPolicy: (request, tenantId, policyId) => Effect.promise(async () => {
       const ctx = await requireTenant(request, tenantId);
-      if (entity === "device") {
-        const row = await db.query.device.findFirst({ where: and(eq(schema.device.id, nodeId), eq(schema.device.organizationId, ctx.organization.id)) });
-        if (!row) throw new Error("Device not found");
-        return rowDevice(row);
-      }
-      if (entity === "group") {
-        const row = await db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, nodeId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id)) });
-        if (!row) throw new Error("Group not found");
-        return rowGroup(row);
-      }
-      const row = await db.query.policy.findFirst({ where: and(eq(schema.policy.id, nodeId), eq(schema.policy.organizationId, ctx.organization.id)) });
+      const row = await db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) });
       if (!row) throw new Error("Policy not found");
       return rowPolicy(row, true);
     }),

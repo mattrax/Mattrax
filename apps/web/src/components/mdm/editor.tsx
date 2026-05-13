@@ -21,8 +21,8 @@ export function PolicyConfigurationEditor() {
   const params = useParams();
   const queryClient = useQueryClient();
   const policy = useQuery(() => ({
-    queryKey: enterpriseKeys.node(params.tenantId, "policy", params.policyId),
-    queryFn: () => enterprise.node(params.tenantId, "policy", params.policyId),
+    queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
+    queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
   const row = () => policy.data as PolicyRow | undefined;
   const [canEdit, setCanEdit] = createSignal(false);
@@ -42,7 +42,7 @@ export function PolicyConfigurationEditor() {
   const save = useMutation(() => ({
     mutationFn: () => enterprise.patchPolicy(params.tenantId, params.policyId, { configurations: config() }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: enterpriseKeys.node(params.tenantId, "policy", params.policyId) });
+      await queryClient.invalidateQueries({ queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId) });
       setCanEdit(false);
       setInitial(JSON.stringify(config()));
     },

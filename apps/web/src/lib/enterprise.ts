@@ -32,8 +32,8 @@ export const enterpriseKeys = {
   me: () => ["enterprise", "me"] as const,
   tenants: () => ["enterprise", "tenants"] as const,
   tenant: (tenantId: RouteParam) => ["enterprise", "tenant", tenantId ?? ""] as const,
-  search: (tenantId: RouteParam, entity: Entity, group?: string) => ["enterprise", "search", tenantId ?? "", entity, group ?? ""] as const,
-  node: (tenantId: RouteParam, entity: Entity, id: RouteParam) => ["enterprise", "node", tenantId ?? "", entity, id ?? ""] as const,
+  list: (tenantId: RouteParam, entity: Entity, group?: string) => ["enterprise", "list", tenantId ?? "", entity, group ?? ""] as const,
+  item: (tenantId: RouteParam, entity: Entity, id: RouteParam) => ["enterprise", "item", tenantId ?? "", entity, id ?? ""] as const,
   users: (tenantId: RouteParam) => ["enterprise", "tenant-users", tenantId ?? ""] as const,
   invitations: (tenantId: RouteParam) => ["enterprise", "tenant-invitations", tenantId ?? ""] as const,
   apns: (tenantId: RouteParam) => ["enterprise", "apns", tenantId ?? ""] as const,
@@ -82,6 +82,8 @@ const q = (params: Record<string, string | undefined>) => {
   return value ? `?${value}` : "";
 };
 
+const resource = (entity: Entity) => `${entity}s`;
+
 export const enterprise = {
   me: () => request<MeResponse>("/me"),
   getEnrollment: (id: RouteParam, code?: string) => request<EnrollmentResponse>(`/enrollment/${required(id, "id")}${q({ code })}`),
@@ -90,8 +92,8 @@ export const enterprise = {
   getTenant: (tenantId: RouteParam) => request<TenantDetail>(`/tenants/${required(tenantId, "tenantId")}`),
   patchTenant: (tenantId: RouteParam, payload: Partial<{ name: string; slug: string; logo: string | null; metadata: Record<string, unknown> | null }>) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}`, { method: "PATCH", body: body(payload) }),
   deleteTenant: (tenantId: RouteParam) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}`, { method: "DELETE" }),
-  search: <E extends Entity>(tenantId: RouteParam, entity: E, group?: string) => request<{ rows: RowFor<E>[] }>(`/tenants/${required(tenantId, "tenantId")}/search${q({ type: entity, "in[group]": group })}`),
-  node: <E extends Entity>(tenantId: RouteParam, entity: E, id: RouteParam) => request<RowFor<E> | GroupNode>(`/tenants/${required(tenantId, "tenantId")}/node/${entity}/${required(id, "id")}`),
+  list: <E extends Entity>(tenantId: RouteParam, entity: E, group?: string) => request<{ rows: RowFor<E>[] }>(`/tenants/${required(tenantId, "tenantId")}/${resource(entity)}${q({ "in[group]": group })}`),
+  get: <E extends Entity>(tenantId: RouteParam, entity: E, id: RouteParam) => request<RowFor<E> | GroupNode>(`/tenants/${required(tenantId, "tenantId")}/${resource(entity)}/${required(id, "id")}`),
   patchDevice: (tenantId: RouteParam, id: RouteParam, payload: Partial<Pick<DeviceRow, "name" | "notes" | "assetTag">>) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/devices/${required(id, "id")}`, { method: "PATCH", body: body(payload) }),
   deleteDevices: (tenantId: RouteParam, ids: string[]) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/devices`, { method: "DELETE", body: body(ids) }),
   deviceAction: (tenantId: RouteParam, id: RouteParam) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/devices/${required(id, "id")}/action`, { method: "POST" }),

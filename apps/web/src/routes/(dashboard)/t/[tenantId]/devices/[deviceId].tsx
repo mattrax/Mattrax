@@ -11,13 +11,13 @@ export default function DeviceDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const device = useQuery(() => ({ queryKey: enterpriseKeys.node(params.tenantId, "device", params.deviceId), queryFn: () => enterprise.node(params.tenantId, "device", params.deviceId) }));
+  const device = useQuery(() => ({ queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId), queryFn: () => enterprise.get(params.tenantId, "device", params.deviceId) }));
   const row = () => device.data as DeviceRow | undefined;
   const [name, setName] = createSignal("");
   const [assetTag, setAssetTag] = createSignal("");
   const [notes, setNotes] = createSignal("");
   createEffect(() => { if (row()) { setName(row()!.name); setAssetTag(row()!.assetTag ?? ""); setNotes(row()!.notes ?? ""); } });
-  const invalidate = async () => { await queryClient.invalidateQueries({ queryKey: enterpriseKeys.node(params.tenantId, "device", params.deviceId) }); await queryClient.invalidateQueries({ queryKey: enterpriseKeys.search(params.tenantId, "device") }); };
+  const invalidate = async () => { await queryClient.invalidateQueries({ queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId) }); await queryClient.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "device") }); };
   const save = useMutation(() => ({ mutationFn: () => enterprise.patchDevice(params.tenantId, params.deviceId, { name: name(), assetTag: assetTag() || null, notes: notes() || null }), onSuccess: invalidate }));
   const sync = useMutation(() => ({ mutationFn: () => enterprise.deviceAction(params.tenantId, params.deviceId), onSuccess: invalidate }));
   const unenroll = useMutation(() => ({ mutationFn: () => enterprise.deviceUnenroll(params.tenantId, params.deviceId), onSuccess: invalidate }));

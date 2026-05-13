@@ -7,7 +7,7 @@ import { enterprise, enterpriseKeys, type DeviceRow } from "~/lib/enterprise";
 
 export default function DevicesPage() {
   const params = useParams();
-  const devices = useQuery(() => ({ queryKey: enterpriseKeys.search(params.tenantId, "device"), queryFn: () => enterprise.search(params.tenantId, "device") }));
+  const devices = useQuery(() => ({ queryKey: enterpriseKeys.list(params.tenantId, "device"), queryFn: () => enterprise.list(params.tenantId, "device") }));
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">
       <PageHeader title="Devices" description="Inventory, sync, and retire enrolled Apple, Windows, and Android devices." />

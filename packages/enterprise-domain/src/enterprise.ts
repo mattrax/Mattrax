@@ -4,7 +4,6 @@ import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 const IdParam = { id: Schema.String };
 const TenantParam = { tenantId: Schema.String };
 const TenantIdParam = { tenantId: Schema.String, id: Schema.String };
-const TenantEntityParam = { tenantId: Schema.String, entity: Schema.Literals(["device", "group", "policy"]), id: Schema.String };
 const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.String };
 const TenantMemberParam = { tenantId: Schema.String, memberId: Schema.String };
 
@@ -215,14 +214,13 @@ export const BulkOperationResult = Schema.Struct({
   failed: Schema.Array(Schema.Struct({ id: Schema.String, reason: Schema.String })),
 });
 
-export const SearchQuery = {
-  type: Schema.Literals(["device", "group", "policy"]),
-  "in[group]": Schema.optional(Schema.String),
-};
-
 export const SearchResult = Schema.Struct({
   rows: Schema.Array(Schema.Union([DeviceRow, GroupRow, PolicyRow])),
 });
+
+export const DeviceListResponse = Schema.Struct({ rows: Schema.Array(DeviceRow) });
+export const GroupListResponse = Schema.Struct({ rows: Schema.Array(GroupRow) });
+export const PolicyListResponse = Schema.Struct({ rows: Schema.Array(PolicyRow) });
 
 export const NodeResponse = Schema.Union([DeviceRow, GroupNode, PolicyRow]);
 
@@ -298,24 +296,28 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   .add(HttpApiEndpoint.post("resetTenantEnrollment", "/v1/tenants/:tenantId/enrollment/reset", { params: TenantParam, success: IdResponse }))
   .add(HttpApiEndpoint.get("getApns", "/v1/tenants/:tenantId/apns", { params: TenantParam, success: ApnsInfo }))
   .add(HttpApiEndpoint.post("uploadApns", "/v1/tenants/:tenantId/apns", { params: TenantParam, payload: UploadApnsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.get("listDevices", "/v1/tenants/:tenantId/devices", { params: TenantParam, success: DeviceListResponse }))
+  .add(HttpApiEndpoint.get("getDevice", "/v1/tenants/:tenantId/devices/:id", { params: TenantIdParam, success: DeviceRow }))
   .add(HttpApiEndpoint.delete("deleteDevices", "/v1/tenants/:tenantId/devices", { params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.patch("patchDevice", "/v1/tenants/:tenantId/devices/:id", { params: TenantIdParam, payload: PatchDeviceRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.post("deviceAction", "/v1/tenants/:tenantId/devices/:id/action", { params: TenantIdParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.post("deviceUnenroll", "/v1/tenants/:tenantId/devices/:id/unenroll", { params: TenantIdParam, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.get("listGroups", "/v1/tenants/:tenantId/groups", { params: TenantParam, success: GroupListResponse }))
+  .add(HttpApiEndpoint.get("getGroup", "/v1/tenants/:tenantId/groups/:id", { params: TenantIdParam, success: GroupNode }))
   .add(HttpApiEndpoint.post("createGroup", "/v1/tenants/:tenantId/groups", { params: TenantParam, payload: CreateGroupRequest, success: IdResponse }))
   .add(HttpApiEndpoint.delete("deleteGroups", "/v1/tenants/:tenantId/groups", { params: TenantParam, payload: IdsRequest, success: BulkOperationResult }))
   .add(HttpApiEndpoint.patch("patchGroup", "/v1/tenants/:tenantId/groups/:id", { params: TenantIdParam, payload: PatchGroupRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.patch("patchGroupMembers", "/v1/tenants/:tenantId/groups/:id/members", { params: TenantIdParam, payload: PatchGroupMembersRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.post("syncGroups", "/v1/tenants/:tenantId/groups/sync", { params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.post("duplicateGroup", "/v1/tenants/:tenantId/groups/:id/duplicate", { params: TenantIdParam, payload: DuplicateRequest, success: IdResponse }))
+  .add(HttpApiEndpoint.get("listPolicies", "/v1/tenants/:tenantId/policies", { params: TenantParam, success: PolicyListResponse }))
+  .add(HttpApiEndpoint.get("getPolicy", "/v1/tenants/:tenantId/policies/:id", { params: TenantIdParam, success: PolicyRow }))
   .add(HttpApiEndpoint.post("createPolicy", "/v1/tenants/:tenantId/policies", { params: TenantParam, payload: CreatePolicyRequest, success: IdResponse }))
   .add(HttpApiEndpoint.delete("deletePolicies", "/v1/tenants/:tenantId/policies", { params: TenantParam, payload: IdsRequest, success: BulkOperationResult }))
   .add(HttpApiEndpoint.patch("patchPolicy", "/v1/tenants/:tenantId/policies/:id", { params: TenantIdParam, payload: PatchPolicyRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.post("syncPolicies", "/v1/tenants/:tenantId/policies/sync", { params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.post("duplicatePolicy", "/v1/tenants/:tenantId/policies/:id/duplicate", { params: TenantIdParam, payload: DuplicateRequest, success: IdResponse }))
   .add(HttpApiEndpoint.post("previewMobileconfig", "/v1/policy/preview-mobileconfig", { payload: Schema.Struct({ mobileconfig: Schema.String }), success: JsonRecord }))
-  .add(HttpApiEndpoint.get("search", "/v1/tenants/:tenantId/search", { params: TenantParam, query: SearchQuery, success: SearchResult }))
-  .add(HttpApiEndpoint.get("node", "/v1/tenants/:tenantId/node/:entity/:id", { params: TenantEntityParam, success: NodeResponse }))
   .add(HttpApiEndpoint.get("billing", "/v1/tenants/:tenantId/billing", { params: TenantParam, success: BillingSummary }))
   .add(HttpApiEndpoint.post("billingPortal", "/v1/tenants/:tenantId/billing/portal", { params: TenantParam, payload: BillingPortalRequest, success: BillingPortalResponse }))
   .prefix("/api")

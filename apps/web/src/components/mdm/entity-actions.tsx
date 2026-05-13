@@ -18,8 +18,8 @@ function ConfirmAction(props: { title: string; description: string; target: stri
 
 function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "policies" }) {
   const params = useParams(); const qc = useQueryClient(); const [open, setOpen] = createSignal(false); const [changes, setChanges] = createSignal<Record<string, "all" | "none">>({});
-  const groups = useQuery(() => ({ queryKey: enterpriseKeys.search(params.tenantId, "group"), queryFn: () => enterprise.search(params.tenantId, "group") }));
-  const patch = useMutation(() => ({ mutationFn: async () => Promise.all(Object.entries(changes()).map(([groupId, state]) => enterprise.patchGroupMembers(params.tenantId, groupId, state === "all" ? { assign: { [props.relation]: props.selected.map((row) => row.id) } } : { unassign: { [props.relation]: props.selected.map((row) => row.id) } }))), onSuccess: async () => { setChanges({}); setOpen(false); await qc.invalidateQueries({ queryKey: enterpriseKeys.search(params.tenantId, "group") }); } }));
+  const groups = useQuery(() => ({ queryKey: enterpriseKeys.list(params.tenantId, "group"), queryFn: () => enterprise.list(params.tenantId, "group") }));
+  const patch = useMutation(() => ({ mutationFn: async () => Promise.all(Object.entries(changes()).map(([groupId, state]) => enterprise.patchGroupMembers(params.tenantId, groupId, state === "all" ? { assign: { [props.relation]: props.selected.map((row) => row.id) } } : { unassign: { [props.relation]: props.selected.map((row) => row.id) } }))), onSuccess: async () => { setChanges({}); setOpen(false); await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") }); } }));
   const groupRows = () => (groups.data?.rows ?? []) as GroupRow[];
 
   return (
@@ -47,7 +47,7 @@ function ScopeGroupsAction(props: { selected: Named[]; relation: "devices" | "po
 }
 
 export function EntityActions(props: { entity: Entity; selected: Array<DeviceRow | GroupRow | PolicyRow>; clear: () => void }) {
-  const params = useParams(); const qc = useQueryClient(); const rows = () => selectedNamed(props.selected as Named[]); const ids = () => rows().map((row) => row.id); const invalidate = async () => { await qc.invalidateQueries({ queryKey: enterpriseKeys.search(params.tenantId, props.entity) }); props.clear(); };
+  const params = useParams(); const qc = useQueryClient(); const rows = () => selectedNamed(props.selected as Named[]); const ids = () => rows().map((row) => row.id); const invalidate = async () => { await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, props.entity) }); props.clear(); };
   const sync = useMutation(() => ({ mutationFn: async () => props.entity === "device" ? Promise.all(ids().map((id) => enterprise.deviceAction(params.tenantId, id))) : props.entity === "group" ? enterprise.syncGroups(params.tenantId, ids()) : enterprise.syncPolicies(params.tenantId, ids()), onSuccess: invalidate }));
   return <><Show when={props.entity === "device"}><ScopeGroupsAction selected={rows()} relation="devices" /></Show><Show when={props.entity === "policy"}><ScopeGroupsAction selected={rows()} relation="policies" /></Show><Button variant="outline" disabled={sync.isPending} onClick={() => sync.mutate()}>Sync</Button><Show when={props.entity === "device"}><ConfirmAction title="Unenroll" description="Unenroll selected devices." target={rows().map((r) => r.name).join(", ")} destructive onConfirm={async () => { await Promise.all(ids().map((id) => enterprise.deviceUnenroll(params.tenantId, id))); await invalidate(); }} /></Show><Show when={props.entity !== "device"}><ConfirmAction title="Delete" description={`Delete selected ${props.entity}s.`} target={confirmTarget(rows(), props.entity)} destructive onConfirm={async () => { if (props.entity === "group") await enterprise.deleteGroups(params.tenantId, ids()); else await enterprise.deletePolicies(params.tenantId, ids()); await invalidate(); }} /></Show></>;
 }
