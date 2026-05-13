@@ -1,4 +1,4 @@
-import { Settings2 } from "lucide-solid";
+import { Settings } from "~/components/ui/icons";
 
 export default function SettingsPage() {
   return (
@@ -10,7 +10,7 @@ export default function SettingsPage() {
 
       <div class="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/30 py-20 text-center gap-4">
         <div class="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-          <Settings2 class="size-6 text-muted-foreground" />
+          <Settings class="size-6 text-muted-foreground" />
         </div>
         <div>
           <p class="text-sm font-medium text-stone-700">Coming soon</p>

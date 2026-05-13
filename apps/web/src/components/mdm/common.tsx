@@ -1,8 +1,8 @@
 import { A } from "@solidjs/router";
-import { CheckCircle2, CircleAlert, Laptop, MonitorSmartphone, Smartphone, TabletSmartphone } from "lucide-solid";
 import { For, Show, type JSX } from "solid-js";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { CheckCircle2, CircleAlert, Laptop, MonitorSmartphone, Smartphone, TabletSmartphone } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";
 
 export function PageHeader(props: { title: string; description?: string; actions?: JSX.Element }) {

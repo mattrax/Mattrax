@@ -1,8 +1,8 @@
 import * as DropdownMenuPrimitive from "@kobalte/core/dropdown-menu";
 import type { PolymorphicProps } from "@kobalte/core/polymorphic";
-import { Check, ChevronRight } from "lucide-solid";
 import type { ComponentProps, ValidComponent } from "solid-js";
 import { mergeProps, splitProps } from "solid-js";
+import { Check, ChevronRight } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";
 
 type DropdownMenuProps = DropdownMenuPrimitive.DropdownMenuRootProps;

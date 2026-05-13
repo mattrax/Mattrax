@@ -7,10 +7,10 @@ import {
   Separator,
 } from "@kobalte/core/breadcrumbs";
 import type { PolymorphicProps } from "@kobalte/core/polymorphic";
-import { Ellipsis } from "lucide-solid";
 import type { ComponentProps, ValidComponent } from "solid-js";
 import { splitProps } from "solid-js";
 
+import { Ellipsis } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";
 
 type BreadcrumbProps<T extends ValidComponent = "nav"> = PolymorphicProps<

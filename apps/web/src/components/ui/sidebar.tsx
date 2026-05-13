@@ -2,7 +2,6 @@ import type { PolymorphicProps } from "@kobalte/core";
 import { Polymorphic } from "@kobalte/core";
 import type { VariantProps } from "class-variance-authority";
 import { cva } from "class-variance-authority";
-import { Menu } from "lucide-solid";
 import type { Accessor, Component, ComponentProps, JSX, ValidComponent } from "solid-js";
 import {
   createContext,
@@ -32,6 +31,7 @@ import {
 } from "~/components/ui/sheet";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { Menu } from "~/components/ui/icons";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;

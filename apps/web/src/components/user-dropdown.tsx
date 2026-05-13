@@ -1,4 +1,3 @@
-import { LogOut } from "lucide-solid";
 import { Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import {
@@ -7,6 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { LogOut } from "~/components/ui/icons";
 
 type DropdownUser = {
   name?: string | null;

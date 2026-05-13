@@ -3,6 +3,6 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   lint: { options: { typeAware: true, typeCheck: true } },
   test: {
-    projects: ["apps/*", "packages/*"],
+    projects: ["apps/*/vitest.config.ts", "packages/*/vitest.config.ts"],
   },
 });

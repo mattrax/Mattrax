@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from "@solidjs/router";
-import { Boxes, Laptop, LogOut, Settings, User, LayoutDashboard, ShieldCheck, UsersRound, Link as LinkIcon } from "lucide-solid";
 import { createEffect, createMemo, For, type ParentProps, Show } from "solid-js";
 import { TenantSwitcher } from "~/components/mdm/tenant-switcher";
+import { Boxes, Laptop, LayoutDashboard, LinkIcon, LogOut, Settings, ShieldCheck, User, UsersRound } from "~/components/ui/icons";
 import {
   Breadcrumb,
   BreadcrumbItem,

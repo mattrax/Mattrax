@@ -1,9 +1,9 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
-import { Building2, ChevronsUpDown, Plus } from "lucide-solid";
 import { For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "~/components/ui/dropdown-menu";
+import { Building2, ChevronsUpDown, Plus } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 
 export function TenantSwitcher() {

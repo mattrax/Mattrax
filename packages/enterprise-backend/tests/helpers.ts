@@ -50,15 +50,19 @@ const camel = (value: string) => value.replace(/_([a-z])/g, (_, letter: string) 
 const matchesQuery = (condition: any, row: Row) => {
   const query = queryFor(condition);
   if (!query) return true;
-  if (process.env.DEBUG_FAKE_DB) console.log(query.sql, query.params, row);
   let index = 0;
-  const regex = /"(?:(.*?)"\.)?"(.*?)"\s*(=|is null)/gi;
+  const regex = /"(?:(.*?)"\.)?"(.*?)"\s*(=|in|is null)(?:\s*\((.*?)\))?/gi;
   for (const match of query.sql.matchAll(regex)) {
     const column = camel(match[2]);
     const key = match[1] ? `${match[1]}.${column}` : column;
     const actual = key in row ? row[key] : row[column] ?? row[match[2]];
     if (match[3].toLowerCase() === "is null") {
       if (actual != null) return false;
+    } else if (match[3].toLowerCase() === "in") {
+      const count = match[4]?.match(/\$\d+/g)?.length ?? 0;
+      const values = query.params.slice(index, index + count);
+      index += count;
+      if (!values.includes(actual)) return false;
     } else if (actual !== query.params[index++]) {
       return false;
     }
