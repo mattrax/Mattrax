@@ -13,6 +13,7 @@
     { "path": "./packages/management-backend-enterprise" },
     { "path": "./packages/management-backend-http" },
     { "path": "./packages/apns" },
+    { "path": "./packages/effect-stripe" },
     { "path": "./packages/crypto" },
     { "path": "./packages/plist" },
     { "path": "./packages/soap" },

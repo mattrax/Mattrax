@@ -1,0 +1,14 @@
+{
+  "name": "@mattrax/effect-stripe",
+  "private": true,
+  "description": "Effect wrapper for the Stripe SDK with typed errors",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "effect": "catalog:",
+    "stripe": "^22.0.0"
+  }
+}
