@@ -1,13 +1,10 @@
-// @ts-nocheck
 import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import {
-  EnterpriseBadRequest,
   EnterpriseForbidden,
   EnterpriseLastTenantUser,
   EnterpriseNotFound,
   EnterpriseTenantHasMembers,
-  EnterpriseUnauthorized,
   enterpriseApi,
   policyApplicationKey,
 } from "@mattrax/enterprise-domain";
@@ -50,17 +47,9 @@ const iso = (date: Date | number | null | undefined) => {
   return (date instanceof Date ? date : new Date(date)).toISOString();
 };
 
-const hashJson = (value: unknown) => Effect.promise(async () => {
-  const bytes = new TextEncoder().encode(JSON.stringify(value));
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-});
-
-type OrgContext = {
-  readonly user: any;
-  readonly organization: any;
-  readonly member: any;
-};
+const hashJson = (value: unknown) => Effect.promise(() => crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)))).pipe(
+  Effect.map((digest) => Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")),
+);
 
 const canWriteTenant = (role: string) => role.split(",").some((item) => item === "owner" || item === "admin");
 const canDeleteTenant = (role: string) => role.split(",").includes("owner");
@@ -87,7 +76,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     if (organization.stripeCustomerId) return organization.stripeCustomerId;
 
     let stripeCustomer: any;
-    const search = yield* Effect.catch(stripe.customers.search({
+    const search: any = yield* Effect.catch(stripe.customers.search({
         query: `metadata["organizationId"]:"${organization.id}" AND metadata["customerType"]:"organization"`,
         limit: 1,
       }), () => stripe.effect(async (client: any) => {
@@ -227,9 +216,10 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     };
   });
 
-  return {
+  const service: Record<string, (...args: Array<any>) => Effect.Effect<any, any, any>> = {
     me: (request) => Effect.gen(function* () {
-      const { session, user } = yield* auth.requireUser({ headers: request.headers });
+      const resolved: any = yield* auth.requireUser({ headers: request.headers });
+      const { session, user } = resolved;
       const tenants = yield* listTenantInfo(user.id);
       const activeTenant = tenants.find((tenant: any) => tenant.id === session.session?.activeOrganizationId) ?? tenants[0];
       return {
@@ -596,6 +586,8 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     createApiToken: (request, payload) => auth.createApiToken(webRequestFromRequest(request, origin), payload),
     revokeApiToken: (request, tokenId) => auth.revokeApiToken(webRequestFromRequest(request, origin), tokenId),
   };
+
+  return service;
 };
 
 export const enterpriseHandlers = (config: EnterpriseHandlersConfig) => {

@@ -26,26 +26,25 @@ const bytesToBase64Url = (bytes: Uint8Array) => btoa(String.fromCharCode(...byte
 const base64UrlToBytes = (value: string) => Uint8Array.from(atob(value.replaceAll("-", "+").replaceAll("_", "/")), (char) => char.charCodeAt(0));
 const randomToken = (prefix = "") => `${prefix}${bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)))}`;
 
-export const sha256 = (value: string) => Effect.promise(async () => {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-});
+export const sha256 = (value: string) => Effect.promise(() => crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))).pipe(
+  Effect.map((digest) => Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")),
+);
 
 const importPasswordKey = (password: string) => crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
 
-export const hashPassword = (password: string) => Effect.promise(async () => {
+export const hashPassword = (password: string) => Effect.gen(function* () {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await importPasswordKey(password);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: passwordIterations }, key, 256);
+  const key = yield* Effect.promise(() => importPasswordKey(password));
+  const bits = yield* Effect.promise(() => crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: passwordIterations }, key, 256));
   return `pbkdf2-sha256$${passwordIterations}$${bytesToBase64Url(salt)}$${bytesToBase64Url(new Uint8Array(bits))}`;
 });
 
-export const verifyPassword = (password: string, stored: string | null | undefined) => Effect.promise(async () => {
+export const verifyPassword = (password: string, stored: string | null | undefined) => Effect.gen(function* () {
   if (!stored) return false;
   const [kind, iterations, saltValue, hashValue] = stored.split("$");
   if (kind !== "pbkdf2-sha256" || !iterations || !saltValue || !hashValue) return false;
-  const key = await importPasswordKey(password);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: base64UrlToBytes(saltValue), iterations: Number(iterations) }, key, 256);
+  const key = yield* Effect.promise(() => importPasswordKey(password));
+  const bits = yield* Effect.promise(() => crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: base64UrlToBytes(saltValue), iterations: Number(iterations) }, key, 256));
   const actual = bytesToBase64Url(new Uint8Array(bits));
   return actual === hashValue;
 });

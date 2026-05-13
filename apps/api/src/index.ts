@@ -15,7 +15,7 @@ import { AppleMdmServiceLive } from "@mattrax/dm-apple";
 import { ScepServiceLive } from "@mattrax/scep";
 import { extractTopicFromCertPem } from "@mattrax/dm-apple";
 import { ManagementBackendEnterpriseLive } from "@mattrax/management-backend-enterprise";
-import { createDb } from "./db/index.js";
+import { createEffectDbLayer, Database } from "./db/index.js";
 import * as schema from "./db/schema.js";
 import { ScepRepositoryLive } from "./repositories/scepRepository.js";
 import "./env.js";
@@ -41,54 +41,60 @@ const apiRoot = HttpApi.make("Mattrax")
   );
 
 export const createAppLayer = (hyperdrive: Hyperdrive) => {
-  const database = createDb(hyperdrive);
-
   const topic = env.CLOUD_APPLE_VENDOR_CERT
     ? (extractTopicFromCertPem(env.CLOUD_APPLE_VENDOR_CERT) ?? "com.apple.mgmt.External.placeholder")
     : "com.apple.mgmt.External.placeholder";
 
-  const handlersLayer = Layer.mergeAll(
-    HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers({
-      db: database,
-      schema,
+  const appLayer = Layer.unwrap(Effect.gen(function* () {
+    const database = yield* Database;
+
+    const handlersLayer = Layer.mergeAll(
+      HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers({
+        db: database,
+        schema,
+        origin: env.ORIGIN,
+        stripeClient: new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: "2026-04-22.dahlia" }),
+        storage: env.STORAGE,
+      })),
+      HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
+      HttpApiBuilder.group(apiRoot, "PlatformApi", platformHandlers),
+      HttpApiBuilder.group(apiRoot, "HealthApi", (handlers) =>
+        handlers.handle("health", () => Effect.succeed({ status: "ok" as const })),
+      ),
+    );
+
+    const apiLayer = Layer.mergeAll(
+      HttpApiBuilder.layer(apiRoot, { openapiPath: "/api/openapi.json" }).pipe(
+        Layer.provide(handlersLayer),
+      ),
+      appleMdmRoutes,
+      scepRoutes,
+      HttpApiScalar.layerCdn(apiRoot, { path: "/api/docs" }),
+    );
+
+    const appleMdmServiceResolved = AppleMdmServiceLive({
       origin: env.ORIGIN,
-      stripeClient: new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: "2026-04-22.dahlia" }),
-      storage: env.STORAGE,
-    })),
-    HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
-    HttpApiBuilder.group(apiRoot, "PlatformApi", platformHandlers),
-    HttpApiBuilder.group(apiRoot, "HealthApi", (handlers) =>
-      handlers.handle("health", () => Effect.succeed({ status: "ok" as const })),
-    ),
-  );
+      topic,
+    }).pipe(
+      Layer.provideMerge(ManagementBackendEnterpriseLive(database, { origin: env.ORIGIN, schema })),
+    );
 
-  const apiLayer = Layer.mergeAll(
-    HttpApiBuilder.layer(apiRoot, { openapiPath: "/api/openapi.json" }).pipe(
-      Layer.provide(handlersLayer),
-    ),
-    appleMdmRoutes,
-    scepRoutes,
-    HttpApiScalar.layerCdn(apiRoot, { path: "/api/docs" }),
-  );
+    const scepServiceResolved = ScepServiceLive.pipe(
+      Layer.provideMerge(ScepRepositoryLive(database)),
+    );
 
-  const appleMdmServiceResolved = AppleMdmServiceLive({
-    origin: env.ORIGIN,
-    topic,
-  }).pipe(
-    Layer.provideMerge(ManagementBackendEnterpriseLive(database, { origin: env.ORIGIN, schema })),
-  );
+    const allServicesLayer = Layer.mergeAll(
+      appleMdmServiceResolved,
+      scepServiceResolved,
+    );
 
-  const scepServiceResolved = ScepServiceLive.pipe(
-    Layer.provideMerge(ScepRepositoryLive(database)),
-  );
+    return apiLayer.pipe(
+      Layer.provideMerge(allServicesLayer),
+    );
+  }));
 
-  const allServicesLayer = Layer.mergeAll(
-    appleMdmServiceResolved,
-    scepServiceResolved,
-  );
-
-  return apiLayer.pipe(
-    Layer.provideMerge(allServicesLayer),
+  return appLayer.pipe(
+    Layer.provide(createEffectDbLayer(hyperdrive)),
     Layer.provide(HttpServer.layerServices),
   );
 };

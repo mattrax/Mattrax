@@ -67,6 +67,7 @@ const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 const now = () => new Date();
 
 const internal = (_cause: unknown) => new InternalServerError();
+const runDb = (effect: Effect.Effect<unknown, unknown, never>): Promise<any> => Effect.runPromise(effect);
 
 const decodeHeader = (value: string) => {
   try {
@@ -106,13 +107,13 @@ const splitDeclarationIdentifier = (identifier: string) => {
 const declarationType = (kind: string) => kind.startsWith("com.apple.") ? kind : `com.apple.configuration.${kind}`;
 
 const findDeviceByScope = async (db: EnterpriseManagementDb, s: EnterpriseManagementSchema, scope: CheckinScope) => {
-  const byUdid = await db.query.device.findFirst({ where: eq(s.device.dmIdentifier, scope.udid) });
+  const byUdid = await runDb(db.query.device.findFirst({ where: eq(s.device.dmIdentifier, scope.udid) }));
   if (byUdid) return byUdid;
   return null;
 };
 
 const scopedConfigurations = async (db: EnterpriseManagementDb, s: EnterpriseManagementSchema, deviceId: string) =>
-  db.select({
+  runDb(db.select({
     kind: s.configuration.kind,
     policyId: s.configuration.policyId,
     data: s.configuration.data,
@@ -122,7 +123,7 @@ const scopedConfigurations = async (db: EnterpriseManagementDb, s: EnterpriseMan
     .from(s.configuration)
     .innerJoin(s.groupPolicy, eq(s.groupPolicy.policyId, s.configuration.policyId))
     .innerJoin(s.groupDevice, eq(s.groupDevice.groupId, s.groupPolicy.groupId))
-    .where(eq(s.groupDevice.deviceId, deviceId));
+    .where(eq(s.groupDevice.deviceId, deviceId)));
 
 const declarationItemsForDevice = async (db: EnterpriseManagementDb, s: EnterpriseManagementSchema, deviceId: string): Promise<DdmDeclarationItems> => {
   const rows = await scopedConfigurations(db, s, deviceId) as Array<{ kind: string; policyId: string; hash: string; groupId: string }>;
@@ -166,7 +167,7 @@ const updateInventoryFromStatus = async (db: EnterpriseManagementDb, s: Enterpri
   if (device?.["operating-system"]?.["marketing-name"]) update.osEdition = device["operating-system"]["marketing-name"];
   if (device?.["operating-system"]?.version) update.osVersion = device["operating-system"].version;
   if (device?.["operating-system"]?.["build-version"]) update.osBuild = device["operating-system"]["build-version"];
-  await db.update(s.device).set(update).where(eq(s.device.id, deviceId));
+  await runDb(db.update(s.device).set(update).where(eq(s.device.id, deviceId)));
 };
 
 export const ManagementBackendEnterpriseLive = (db: EnterpriseManagementDb, config: EnterpriseManagementBackendConfig) => {
@@ -187,10 +188,10 @@ export const ManagementBackendEnterpriseLive = (db: EnterpriseManagementDb, conf
         if (event._tag === "Authenticate") {
           const organizationId = certificateOu(scope.identityCertificate);
           if (!organizationId) throw new UnknownDevice();
-          const organization = await db.query.organization.findFirst({ where: eq(s.organization.id, organizationId) });
+          const organization = await runDb(db.query.organization.findFirst({ where: eq(s.organization.id, organizationId) }));
           if (!organization) throw new UnknownDevice();
 
-          const existing = await db.query.device.findFirst({ where: and(eq(s.device.organizationId, organizationId), eq(s.device.dmIdentifier, scope.udid)) });
+          const existing = await runDb(db.query.device.findFirst({ where: and(eq(s.device.organizationId, organizationId), eq(s.device.dmIdentifier, scope.udid)) }));
           const deviceId = existing?.id ?? id();
           const common = {
             organizationId,
@@ -207,11 +208,11 @@ export const ManagementBackendEnterpriseLive = (db: EnterpriseManagementDb, conf
             lastSeenAt: now(),
           };
           if (existing) {
-            await db.update(s.device).set(common).where(eq(s.device.id, deviceId));
+            await runDb(db.update(s.device).set(common).where(eq(s.device.id, deviceId)));
           } else {
-            await db.insert(s.device).values({ id: deviceId, enrolledAt: now(), ...common });
+            await runDb(db.insert(s.device).values({ id: deviceId, enrolledAt: now(), ...common }));
           }
-          await db.insert(s.deviceApple).values({
+          await runDb(db.insert(s.deviceApple).values({
             deviceId,
             token: null,
             pushMagic: null,
@@ -222,7 +223,7 @@ export const ManagementBackendEnterpriseLive = (db: EnterpriseManagementDb, conf
           }).onConflictDoUpdate({
             target: s.deviceApple.deviceId,
             set: { token: null, pushMagic: null, topic: null, unlockToken: null, deviceToken: id() + id(), tokenUpdatedAt: null },
-          });
+          }));
           return;
         }
 
@@ -230,21 +231,21 @@ export const ManagementBackendEnterpriseLive = (db: EnterpriseManagementDb, conf
         if (!device) throw new UnknownDevice();
 
         if (event._tag === "TokenUpdate") {
-          await db.update(s.deviceApple).set({
+          await runDb(db.update(s.deviceApple).set({
             token: event.pushToken,
             pushMagic: event.pushMagic,
             topic: event.topic,
             tokenUpdatedAt: now(),
-          }).where(eq(s.deviceApple.deviceId, device.id));
+          }).where(eq(s.deviceApple.deviceId, device.id)));
           if (event.channel === "device" && device.status === "enrolling") {
-            await db.update(s.device).set({ status: "enrolled", lastSeenAt: now() }).where(eq(s.device.id, device.id));
+            await runDb(db.update(s.device).set({ status: "enrolled", lastSeenAt: now() }).where(eq(s.device.id, device.id)));
           }
           return;
         }
 
         if (event._tag === "CheckOut") {
-          await db.update(s.device).set({ status: "unenrolled", lastSeenAt: now() }).where(eq(s.device.id, device.id));
-          await db.update(s.deviceApple).set({ token: null, pushMagic: null, topic: null, unlockToken: null, tokenUpdatedAt: null }).where(eq(s.deviceApple.deviceId, device.id));
+          await runDb(db.update(s.device).set({ status: "unenrolled", lastSeenAt: now() }).where(eq(s.device.id, device.id)));
+          await runDb(db.update(s.deviceApple).set({ token: null, pushMagic: null, topic: null, unlockToken: null, tokenUpdatedAt: null }).where(eq(s.deviceApple.deviceId, device.id)));
           return;
         }
 
@@ -253,7 +254,7 @@ export const ManagementBackendEnterpriseLive = (db: EnterpriseManagementDb, conf
           return;
         }
 
-        await db.update(s.device).set({ lastSeenAt: now() }).where(eq(s.device.id, device.id));
+        await runDb(db.update(s.device).set({ lastSeenAt: now() }).where(eq(s.device.id, device.id)));
       },
       catch: (cause) => cause instanceof UnknownDevice ? cause : internal(cause),
     }),
@@ -329,7 +330,7 @@ export const ManagementBackendEnterpriseLive = (db: EnterpriseManagementDb, conf
             return { Type: declarationType(row.kind), Identifier: identifier, ServerToken: row.hash, Payload: row.data };
           }
           if (type === "management" && identifier === MANAGEMENT_DECLARATION_ID) {
-            const organization = await db.query.organization.findFirst({ where: eq(s.organization.id, device.organizationId) });
+            const organization = await runDb(db.query.organization.findFirst({ where: eq(s.organization.id, device.organizationId) }));
             return {
               Type: "com.apple.management.organization-info",
               Identifier: MANAGEMENT_DECLARATION_ID,

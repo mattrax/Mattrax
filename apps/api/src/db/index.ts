@@ -1,20 +1,17 @@
-import { drizzle } from "drizzle-orm/node-postgres";
 import * as PgDrizzle from "drizzle-orm/effect-postgres";
 import { PgClient } from "@effect/sql-pg";
-import { Effect, Layer, Redacted } from "effect";
-import { Pool } from "pg";
+import { Context, Effect, Layer, Redacted } from "effect";
 import * as schema from "./schema";
 
-export type Database = ReturnType<typeof createDb>;
-
-export const createDb = (hyperdrive: Hyperdrive): any => {
-  const db = drizzle({
-    client: new Pool({ connectionString: hyperdrive.connectionString }),
-    schema: schema.dbSchema,
-  });
-  db.query = db._query;
-  return db;
+export type DatabaseClient = PgDrizzle.EffectPgDatabase<any> & {
+  readonly query: any;
+  readonly select: (...args: Array<any>) => any;
+  readonly insert: (table: any) => any;
+  readonly update: (table: any) => any;
+  readonly delete: (table: any) => any;
 };
+
+export class Database extends Context.Service<Database, DatabaseClient>()("Database") {}
 
 export const createEffectDbLayer = (hyperdrive: Hyperdrive) => {
   const PgClientLive = PgClient.layer({
@@ -22,8 +19,11 @@ export const createEffectDbLayer = (hyperdrive: Hyperdrive) => {
   });
 
   const dbEffect = PgDrizzle.make({ schema: schema.dbSchema }).pipe(
+    Effect.map((db) => db as DatabaseClient),
     Effect.provide(PgDrizzle.DefaultServices),
   );
 
-  return Layer.provideMerge(Layer.effect("EnterpriseDb" as any, dbEffect as any), PgClientLive);
+  return Layer.effect(Database, dbEffect).pipe(
+    Layer.provide(PgClientLive),
+  );
 };

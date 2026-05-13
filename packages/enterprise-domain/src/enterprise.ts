@@ -45,15 +45,20 @@ export class EnterpriseR2InternalError extends Schema.TaggedErrorClass<Enterpris
 const EnterpriseAuthRequiredErrors = [
   EnterpriseUnauthorized.pipe(HttpApiSchema.status(401)),
 ] as const;
+const EnterpriseDbErrors = [
+  EnterpriseDbError.pipe(HttpApiSchema.status(500)),
+] as const;
 const EnterpriseBadRequestErrors = [
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
 ] as const;
 const EnterpriseAuthBadRequestErrors = [
   ...EnterpriseAuthRequiredErrors,
+  ...EnterpriseDbErrors,
   ...EnterpriseBadRequestErrors,
 ] as const;
 const EnterpriseTenantReadErrors = [
   ...EnterpriseAuthRequiredErrors,
+  ...EnterpriseDbErrors,
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
 ] as const;
 const EnterpriseTenantWriteErrors = [
@@ -81,8 +86,11 @@ const EnterpriseBillingPortalErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
 ] as const;
-const EnterpriseNoDomainErrors = [] as const;
+const EnterpriseNoDomainErrors = [
+  ...EnterpriseDbErrors,
+] as const;
 const EnterprisePublicNotFoundErrors = [
+  ...EnterpriseDbErrors,
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
 ] as const;
 

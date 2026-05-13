@@ -4,10 +4,9 @@ import {
   EnterpriseR2InternalError,
 } from "@mattrax/enterprise-domain";
 
-export const sha256Hex = (bytes: ArrayBuffer) => Effect.promise(async () => {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-});
+export const sha256Hex = (bytes: ArrayBuffer) => Effect.promise(() => crypto.subtle.digest("SHA-256", bytes)).pipe(
+  Effect.map((digest) => Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")),
+);
 
 export const base64ToBytes = (base64: string) => {
   const binary = atob(base64);
@@ -49,22 +48,17 @@ export const toR2Error = (cause: unknown) => {
 
 export const makeR2Storage = (bucket: any): R2StorageShape => ({
   put: (key, bytes, options) => Effect.tryPromise({
-    try: async () => {
-      await bucket.put(key, bytes, options);
-    },
+    try: () => bucket.put(key, bytes, options),
     catch: (cause) => {
       const error = toR2Error(cause);
       return error instanceof EnterpriseR2FileNotFound ? new EnterpriseR2InternalError({ message: error.message }) : error;
     },
   }),
-  get: (key) => Effect.tryPromise({
-    try: async () => {
-      const object = await bucket.get(key);
-      if (!object) throw new EnterpriseR2FileNotFound({ message: "Policy application file not found" });
+  get: (key) => Effect.gen(function* () {
+      const object = yield* Effect.tryPromise({ try: () => bucket.get(key), catch: toR2Error });
+      if (!object) return yield* Effect.fail(new EnterpriseR2FileNotFound({ message: "Policy application file not found" }));
       return object;
-    },
-    catch: toR2Error,
-  }),
+    }).pipe(Effect.mapError(toR2Error)),
   arrayBuffer: (object) => Effect.tryPromise({
     try: () => object.arrayBuffer(),
     catch: (cause) => {
