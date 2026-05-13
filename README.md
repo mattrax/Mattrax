@@ -1,4 +1,6 @@
 <p align="center">
+  <img width="150" height="150" src="apps/web/public/assets/brand/logo-rounded.png" alt="Mattrax Logo">
+  <br />
   <strong>Mattrax</strong>
   <br />
   Open device management infrastructure for Apple, Windows, Android, and Linux fleets.
