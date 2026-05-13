@@ -5,7 +5,6 @@ import { ErrorText, Field, PageHeader } from "~/components/mdm/common";
 import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
 import { arrayBufferToBase64, base64ToArrayBuffer, selectFile } from "~/lib/upload-file";
 
@@ -77,7 +76,7 @@ export function PolicyConfigurationEditor() {
             <fieldset disabled={!canEdit()} class="space-y-5 disabled:opacity-70">
               <Switch>
                 <Match when={active() === "security"}><SecuritySection config={config()} setKey={setKey} /></Match>
-                <Match when={active() === "applications"}><ApplicationSection config={config()} setKey={setKey} /></Match>
+                <Match when={active() === "applications"}><ApplicationSection config={config()} setKey={setKey} tenantId={params.tenantId} policyId={params.policyId} /></Match>
                 <Match when={active() === "custom"}><CustomSection config={config()} setKey={setKey} policyId={params.policyId ?? "policy"} /></Match>
               </Switch>
             </fieldset>
@@ -123,13 +122,41 @@ function SecuritySection(props: { config: Config; setKey: (key: string, value: u
   );
 }
 
-function ApplicationSection(props: { config: Config; setKey: (key: string, value: unknown) => void }) {
-  const value = () => props.config[keys.app]?.url ?? "";
+function ApplicationSection(props: { config: Config; setKey: (key: string, value: unknown) => void; tenantId?: string; policyId?: string }) {
+  const app = () => props.config[keys.app] as { sha256?: string; fileName?: string; contentType?: string | null; size?: number } | null | undefined;
+  const upload = async () => {
+    const file = await selectFile(".pkg,.dmg,.zip,application/octet-stream,application/x-apple-diskimage,application/zip");
+    const uploaded = await enterprise.uploadPolicyApplication(props.tenantId, props.policyId, {
+      fileName: file.name,
+      contentType: file.type || undefined,
+      content: arrayBufferToBase64(await file.arrayBuffer()),
+    });
+    props.setKey(keys.app, uploaded);
+  };
+  const download = async () => {
+    const sha256 = app()?.sha256;
+    if (!sha256) return;
+    const file = await enterprise.downloadPolicyApplication(props.tenantId, props.policyId, sha256);
+    const url = URL.createObjectURL(new Blob([base64ToArrayBuffer(file.content)], { type: file.contentType ?? "application/octet-stream" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = file.fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
   return (
-    <div class="space-y-4">
-      <Field label="Package URL"><Input value={value()} onInput={(event) => props.setKey(keys.app, event.currentTarget.value.trim() ? { url: event.currentTarget.value.trim() } : null)} placeholder="https://cdn.example.com/apps/myapp.pkg" /></Field>
-      <p class="text-sm text-muted-foreground">Public HTTPS URL to a .pkg installer. Delivered to macOS devices.</p>
-    </div>
+    <Show when={app()} fallback={<div class="space-y-3"><p class="text-sm text-muted-foreground">Upload an application installer for this policy. Delivery is not connected to MDM yet.</p><Button onClick={upload}>Upload application</Button></div>}>
+      {(value) => (
+        <div class="space-y-4">
+          <div class="rounded-lg border p-3 text-sm">
+            <p class="font-medium">{value().fileName}</p>
+            <p class="text-muted-foreground">SHA-256: {value().sha256}</p>
+            <Show when={value().size !== undefined}><p class="text-muted-foreground">Size: {value().size} bytes</p></Show>
+          </div>
+          <div class="flex gap-2"><Button onClick={download}>Download</Button><Button onClick={upload}>Replace</Button><Button variant="outline" onClick={() => props.setKey(keys.app, null)}>Remove</Button></div>
+        </div>
+      )}
+    </Show>
   );
 }
 

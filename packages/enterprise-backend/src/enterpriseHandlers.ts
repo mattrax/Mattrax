@@ -8,6 +8,8 @@ import {
   EnterpriseForbidden,
   EnterpriseInternalError,
   EnterpriseNotFound,
+  EnterpriseR2FileNotFound,
+  EnterpriseR2InternalError,
   EnterpriseStripeError,
   EnterpriseUnauthorized,
   enterpriseApi,
@@ -16,6 +18,7 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
+import { base64ToBytes, bytesToBase64, policyApplicationKey, sha256Hex, toR2Error } from "./policyApplicationStorage.ts";
 
 type EnterpriseHandlersConfig = {
   readonly db: any;
@@ -23,6 +26,7 @@ type EnterpriseHandlersConfig = {
   readonly auth: any;
   readonly origin: string;
   readonly stripeClient: any;
+  readonly storage: any;
 };
 
 const now = () => new Date();
@@ -69,6 +73,8 @@ type EnterpriseApiError =
   | EnterpriseDbError
   | EnterpriseAuthError
   | EnterpriseStripeError
+  | EnterpriseR2FileNotFound
+  | EnterpriseR2InternalError
   | EnterpriseInternalError;
 
 const isTaggedEnterpriseError = (error: unknown): error is EnterpriseApiError =>
@@ -114,7 +120,7 @@ const toEnterpriseError = (error: unknown): EnterpriseApiError => {
 
 const effectTry = <A>(try_: () => Promise<A>) => Effect.tryPromise({ try: try_, catch: toEnterpriseError });
 
-export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: EnterpriseHandlersConfig) => {
+export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient, storage }: EnterpriseHandlersConfig) => {
 
   const requireUser = async (request: HttpServerRequest) => {
     const session = await auth.api.getSession({ headers: headersFromRequest(request) }) as any;
@@ -568,6 +574,40 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       }
       return ok;
     }),
+    uploadPolicyApplication: (request, tenantId, policyId, payload) => Effect.tryPromise({
+      try: async () => {
+        const ctx = await requireTenant(request, tenantId, "write");
+        await assertTenantPolicies(ctx.organization.id, [policyId]);
+        const body = payload as { fileName: string; contentType?: string; content: string };
+        const bytes = base64ToBytes(body.content);
+        const sha256 = await sha256Hex(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+        const key = policyApplicationKey(ctx.organization.id, policyId, sha256);
+        await storage.put(key, bytes, {
+          httpMetadata: body.contentType ? { contentType: body.contentType } : undefined,
+          customMetadata: { fileName: body.fileName },
+        });
+        return { sha256, fileName: body.fileName, contentType: body.contentType ?? null, size: bytes.byteLength };
+      },
+      catch: toR2Error,
+    }),
+    downloadPolicyApplication: (request, tenantId, policyId, sha256) => Effect.tryPromise({
+      try: async () => {
+        const ctx = await requireTenant(request, tenantId);
+        await assertTenantPolicies(ctx.organization.id, [policyId]);
+        const key = policyApplicationKey(ctx.organization.id, policyId, sha256);
+        const object = await storage.get(key);
+        if (!object) throw new EnterpriseR2FileNotFound({ message: "Policy application file not found" });
+        const bytes = await object.arrayBuffer();
+        return {
+          sha256,
+          fileName: object.customMetadata?.fileName ?? sha256,
+          contentType: object.httpMetadata?.contentType ?? null,
+          size: object.size ?? bytes.byteLength,
+          content: bytesToBase64(new Uint8Array(bytes)),
+        };
+      },
+      catch: toR2Error,
+    }),
     syncPolicies: (request, tenantId) => effectTry(async () => {
       await requireTenant(request, tenantId, "write");
       return ok;
@@ -674,6 +714,8 @@ export const enterpriseHandlers = ({ db, schema, auth, origin, stripeClient }: E
       .handle("createPolicy", ({ request, params, payload }) => service.createPolicy(request, params.tenantId, payload))
       .handle("deletePolicies", ({ request, params, payload }) => service.deletePolicies(request, params.tenantId, payload))
       .handle("patchPolicy", ({ request, params, payload }) => service.patchPolicy(request, params.tenantId, params.id, payload))
+      .handle("uploadPolicyApplication", ({ request, params, payload }) => service.uploadPolicyApplication(request, params.tenantId, params.id, payload))
+      .handle("downloadPolicyApplication", ({ request, params }) => service.downloadPolicyApplication(request, params.tenantId, params.id, params.sha256))
       .handle("syncPolicies", ({ request, params, payload }) => service.syncPolicies(request, params.tenantId, payload))
       .handle("duplicatePolicy", ({ request, params, payload }) => service.duplicatePolicy(request, params.tenantId, params.id, payload))
       .handle("previewMobileconfig", ({ payload }) => service.previewMobileconfig(payload))

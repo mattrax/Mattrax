@@ -55,6 +55,7 @@ export const createAppLayer = (hyperdrive: Hyperdrive) => {
       auth: createAuth(),
       origin: env.ORIGIN,
       stripeClient: new Stripe(env.STRIPE_SECRET_KEY, { apiVersion: "2026-04-22.dahlia" }),
+      storage: env.STORAGE,
     })),
     HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
     HttpApiBuilder.group(apiRoot, "PlatformApi", platformHandlers),

@@ -5,6 +5,8 @@ export {
   EnterpriseForbidden,
   EnterpriseInternalError,
   EnterpriseNotFound,
+  EnterpriseR2FileNotFound,
+  EnterpriseR2InternalError,
   EnterpriseStripeError,
   EnterpriseUnauthorized,
   enterpriseApi,

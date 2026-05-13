@@ -34,6 +34,12 @@ export class EnterpriseStripeError extends Schema.TaggedErrorClass<EnterpriseStr
 export class EnterpriseInternalError extends Schema.TaggedErrorClass<EnterpriseInternalError>()("EnterpriseInternalError", {
   message: Schema.String,
 }) {}
+export class EnterpriseR2FileNotFound extends Schema.TaggedErrorClass<EnterpriseR2FileNotFound>()("EnterpriseR2FileNotFound", {
+  message: Schema.String,
+}) {}
+export class EnterpriseR2InternalError extends Schema.TaggedErrorClass<EnterpriseR2InternalError>()("EnterpriseR2InternalError", {
+  message: Schema.String,
+}) {}
 
 const EnterpriseApiErrors = [
   EnterpriseUnauthorized.pipe(HttpApiSchema.status(401)),
@@ -44,6 +50,8 @@ const EnterpriseApiErrors = [
   EnterpriseAuthError.pipe(HttpApiSchema.status(502)),
   EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
   EnterpriseInternalError.pipe(HttpApiSchema.status(500)),
+  EnterpriseR2FileNotFound.pipe(HttpApiSchema.status(404)),
+  EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),
 ] as const;
 
 export const UserInfo = Schema.Struct({
@@ -240,6 +248,27 @@ export const PatchPolicyRequest = Schema.Struct({
   configurations: Schema.optional(JsonRecord),
 });
 
+export const UploadPolicyApplicationRequest = Schema.Struct({
+  fileName: Schema.String,
+  contentType: Schema.optional(Schema.String),
+  content: Schema.String,
+});
+
+export const PolicyApplicationObject = Schema.Struct({
+  sha256: Schema.String,
+  fileName: Schema.String,
+  contentType: Schema.optional(NullableString),
+  size: Schema.Number,
+});
+
+export const DownloadPolicyApplicationResponse = Schema.Struct({
+  sha256: Schema.String,
+  fileName: Schema.String,
+  contentType: Schema.optional(NullableString),
+  size: Schema.Number,
+  content: Schema.String,
+});
+
 export const DuplicateRequest = Schema.Struct({ name: Schema.optional(Schema.String) });
 export const IdsRequest = Schema.Array(Schema.String);
 export const IdResponse = Schema.Struct({ id: Schema.String });
@@ -351,6 +380,8 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   .add(HttpApiEndpoint.post("createPolicy", "/v1/tenants/:tenantId/policies", { error: EnterpriseApiErrors, params: TenantParam, payload: CreatePolicyRequest, success: IdResponse }))
   .add(HttpApiEndpoint.delete("deletePolicies", "/v1/tenants/:tenantId/policies", { error: EnterpriseApiErrors, params: TenantParam, payload: IdsRequest, success: BulkOperationResult }))
   .add(HttpApiEndpoint.patch("patchPolicy", "/v1/tenants/:tenantId/policies/:id", { error: EnterpriseApiErrors, params: TenantIdParam, payload: PatchPolicyRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
+  .add(HttpApiEndpoint.post("uploadPolicyApplication", "/v1/tenants/:tenantId/policies/:id/applications", { error: EnterpriseApiErrors, params: TenantIdParam, payload: UploadPolicyApplicationRequest, success: PolicyApplicationObject }))
+  .add(HttpApiEndpoint.get("downloadPolicyApplication", "/v1/tenants/:tenantId/policies/:id/applications/:sha256", { error: EnterpriseApiErrors, params: { tenantId: Schema.String, id: Schema.String, sha256: Schema.String }, success: DownloadPolicyApplicationResponse }))
   .add(HttpApiEndpoint.post("syncPolicies", "/v1/tenants/:tenantId/policies/sync", { error: EnterpriseApiErrors, params: TenantParam, payload: IdsRequest, success: Schema.Struct({ status: Schema.Literal("ok") }) }))
   .add(HttpApiEndpoint.post("duplicatePolicy", "/v1/tenants/:tenantId/policies/:id/duplicate", { error: EnterpriseApiErrors, params: TenantIdParam, payload: DuplicateRequest, success: IdResponse }))
   .add(HttpApiEndpoint.post("previewMobileconfig", "/v1/policy/preview-mobileconfig", { error: EnterpriseApiErrors, payload: Schema.Struct({ mobileconfig: Schema.String }), success: JsonRecord }))

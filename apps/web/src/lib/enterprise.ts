@@ -26,6 +26,8 @@ export type PlatformEnrollment = { error: string } | { profile: string } | "avai
 export type EnrollmentResponse =
   | { name: string; authenticated: false }
   | { name: string; authenticated: true; apple: PlatformEnrollment; windows: PlatformEnrollment; android: PlatformEnrollment; assetTag: boolean };
+export type PolicyApplicationObject = { sha256: string; fileName: string; contentType?: string | null; size: number };
+export type PolicyApplicationDownload = PolicyApplicationObject & { content: string };
 type RouteParam = string | undefined;
 
 export const enterpriseKeys = {
@@ -106,6 +108,8 @@ export const enterprise = {
   syncGroups: (tenantId: RouteParam, ids: string[]) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/groups/sync`, { method: "POST", body: body(ids) }),
   createPolicy: (tenantId: RouteParam, payload: { name: string; notes?: string | null }) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/policies`, { method: "POST", body: body(payload) }),
   patchPolicy: (tenantId: RouteParam, id: RouteParam, payload: Partial<Pick<PolicyRow, "name" | "notes" | "configurations">>) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/policies/${required(id, "id")}`, { method: "PATCH", body: body(payload) }),
+  uploadPolicyApplication: (tenantId: RouteParam, id: RouteParam, payload: { fileName: string; contentType?: string; content: string }) => request<PolicyApplicationObject>(`/tenants/${required(tenantId, "tenantId")}/policies/${required(id, "id")}/applications`, { method: "POST", body: body(payload) }),
+  downloadPolicyApplication: (tenantId: RouteParam, id: RouteParam, sha256: string) => request<PolicyApplicationDownload>(`/tenants/${required(tenantId, "tenantId")}/policies/${required(id, "id")}/applications/${required(sha256, "sha256")}`),
   deletePolicies: (tenantId: RouteParam, ids: string[]) => request<{ deleted: string[]; failed: Array<{ id: string; reason: string }> }>(`/tenants/${required(tenantId, "tenantId")}/policies`, { method: "DELETE", body: body(ids) }),
   duplicatePolicy: (tenantId: RouteParam, id: RouteParam, name?: string) => request<{ id: string }>(`/tenants/${required(tenantId, "tenantId")}/policies/${required(id, "id")}/duplicate`, { method: "POST", body: body({ name }) }),
   syncPolicies: (tenantId: RouteParam, ids: string[]) => request<{ status: "ok" }>(`/tenants/${required(tenantId, "tenantId")}/policies/sync`, { method: "POST", body: body(ids) }),
