@@ -23,8 +23,20 @@ export const bytesToBase64 = (bytes: Uint8Array) => {
 
 export type R2StorageShape = {
   readonly put: (key: string, bytes: Uint8Array, options?: unknown) => Effect.Effect<void, EnterpriseR2InternalError>;
-  readonly get: (key: string) => Effect.Effect<any, EnterpriseR2FileNotFound | EnterpriseR2InternalError>;
-  readonly arrayBuffer: (object: any) => Effect.Effect<ArrayBuffer, EnterpriseR2InternalError>;
+  readonly get: (key: string) => Effect.Effect<R2ObjectBody, EnterpriseR2FileNotFound | EnterpriseR2InternalError>;
+  readonly arrayBuffer: (object: R2ObjectBody) => Effect.Effect<ArrayBuffer, EnterpriseR2InternalError>;
+};
+
+export type R2ObjectBody = {
+  readonly size?: number;
+  readonly customMetadata?: Record<string, string>;
+  readonly httpMetadata?: { readonly contentType?: string };
+  readonly arrayBuffer: () => Promise<ArrayBuffer>;
+};
+
+export type R2Bucket = {
+  readonly put: (key: string, bytes: Uint8Array, options?: never) => Promise<unknown>;
+  readonly get: (key: string) => Promise<R2ObjectBody | null>;
 };
 
 export class R2Storage extends Context.Service<R2Storage, R2StorageShape>()("R2Storage") {}
@@ -46,9 +58,9 @@ export const toR2Error = (cause: unknown) => {
   return new EnterpriseR2InternalError({ message: "R2 operation failed" });
 };
 
-export const makeR2Storage = (bucket: any): R2StorageShape => ({
+export const makeR2Storage = (bucket: R2Bucket): R2StorageShape => ({
   put: (key, bytes, options) => Effect.tryPromise({
-    try: () => bucket.put(key, bytes, options),
+    try: () => bucket.put(key, bytes, options as never),
     catch: (cause) => {
       const error = toR2Error(cause);
       return error instanceof EnterpriseR2FileNotFound ? new EnterpriseR2InternalError({ message: error.message }) : error;
@@ -68,4 +80,4 @@ export const makeR2Storage = (bucket: any): R2StorageShape => ({
   }),
 });
 
-export const R2StorageLive = (bucket: any) => Layer.succeed(R2Storage, makeR2Storage(bucket));
+export const R2StorageLive = (bucket: R2Bucket) => Layer.succeed(R2Storage, makeR2Storage(bucket));

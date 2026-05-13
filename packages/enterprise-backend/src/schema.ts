@@ -1,4 +1,5 @@
 import { boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import type { InferSelectModel } from "drizzle-orm";
 
 export const createEnterpriseSchema = () => {
   const user = pgTable("user", {
@@ -261,3 +262,15 @@ export const createEnterpriseSchema = () => {
     organizationDeviceUsage,
   };
 };
+
+export type EnterpriseSchema = ReturnType<typeof createEnterpriseSchema>;
+export type EnterpriseUser = InferSelectModel<EnterpriseSchema["user"]>;
+export type EnterpriseOrganization = InferSelectModel<EnterpriseSchema["organization"]>;
+export type EnterpriseApiToken = InferSelectModel<EnterpriseSchema["accountApiToken"]>;
+export type EnterpriseDevice = InferSelectModel<EnterpriseSchema["device"]>;
+export type EnterpriseGroup = InferSelectModel<EnterpriseSchema["enterpriseGroup"]>;
+export type EnterprisePolicy = InferSelectModel<EnterpriseSchema["policy"]>;
+export type EnterpriseEnrollment = InferSelectModel<EnterpriseSchema["enterpriseEnrollment"]>;
+export type EnterpriseConfiguration = InferSelectModel<EnterpriseSchema["configuration"]>;
+export type EnterpriseGroupDevice = InferSelectModel<EnterpriseSchema["groupDevice"]>;
+export type EnterpriseGroupPolicy = InferSelectModel<EnterpriseSchema["groupPolicy"]>;

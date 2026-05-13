@@ -5,10 +5,11 @@ import {
   EnterpriseBadRequest,
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
+import type { EnterpriseApiToken, EnterpriseSchema, EnterpriseUser } from "./schema.ts";
 
 export type EnterpriseAuthConfig = {
   readonly db: any;
-  readonly schema: any;
+  readonly schema: EnterpriseSchema;
   readonly origin: string;
 };
 
@@ -61,7 +62,19 @@ const cookieHeader = (token: string) => {
 
 const clearCookieHeader = () => `${sessionCookie}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 
-export const userInfo = (user: any) => ({ id: user.id, name: user.name, email: user.email, emailVerified: user.emailVerified, image: user.image });
+const headersFromRecord = (record: Record<string, string | string[] | undefined>) => {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(record)) {
+    if (Array.isArray(value)) {
+      for (const item of value) headers.append(key, item);
+    } else if (value !== undefined) {
+      headers.set(key, value);
+    }
+  }
+  return headers;
+};
+
+export const userInfo = (user: EnterpriseUser) => ({ id: user.id, name: user.name, email: user.email, emailVerified: user.emailVerified, image: user.image });
 
 export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfig) => {
   const createSession = (request: Request, userId: string) => Effect.gen(function* () {
@@ -104,7 +117,7 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
   });
 
   const requireUser = (requestLike: Request | { headers: Record<string, string | string[] | undefined> }) => Effect.gen(function* () {
-    const request = requestLike instanceof Request ? requestLike : new Request(origin, { headers: requestLike.headers as any });
+    const request = requestLike instanceof Request ? requestLike : new Request(origin, { headers: headersFromRecord(requestLike.headers) });
     const session = yield* resolveSession(request);
     const resolved = session ?? (yield* resolveApiToken(request));
     if (!resolved?.user) return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
@@ -119,7 +132,7 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
     return token;
   });
 
-  const tokenInfo = (item: any) => ({ id: item.id, name: item.name, tokenPrefix: item.tokenPrefix, createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString(), lastUsedAt: iso(item.lastUsedAt), expiresAt: iso(item.expiresAt), revokedAt: iso(item.revokedAt) });
+  const tokenInfo = (item: EnterpriseApiToken) => ({ id: item.id, name: item.name, tokenPrefix: item.tokenPrefix, createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString(), lastUsedAt: iso(item.lastUsedAt), expiresAt: iso(item.expiresAt), revokedAt: iso(item.revokedAt) });
 
   const listApiTokens = (request: Request) => Effect.gen(function* () {
     const { user } = yield* requireUser(request);
@@ -127,12 +140,12 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
     return { tokens: rows.map(tokenInfo) };
   });
 
-  const createApiToken = (request: Request, body: any) => Effect.gen(function* () {
+  const createApiToken = (request: Request, body: { name: string; expiresAt?: string | null }) => Effect.gen(function* () {
     const { user } = yield* requireUser(request);
     const raw = randomToken("mtx_");
     const createdAt = now();
     const tokenHash = yield* sha256(raw);
-    const item = { id: id(), userId: user.id, name: body.name, tokenPrefix: raw.slice(0, 12), tokenHash, expiresAt: body.expiresAt ? new Date(body.expiresAt) : null, createdAt, updatedAt: createdAt };
+    const item = { id: id(), userId: user.id, name: body.name, tokenPrefix: raw.slice(0, 12), tokenHash, lastUsedAt: null, expiresAt: body.expiresAt ? new Date(body.expiresAt) : null, revokedAt: null, createdAt, updatedAt: createdAt };
     yield* db.insert(schema.accountApiToken).values(item);
     return { token: raw, item: tokenInfo(item) };
   });
@@ -148,10 +161,10 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
     return { user: resolved?.user ? userInfo(resolved.user) : undefined };
   });
 
-  const authRegister = (request: Request, body: any) => Effect.gen(function* () {
+  const authRegister = (request: Request, body: { name: string; email: string; password: string }) => Effect.gen(function* () {
     const email = normalizeEmail(body.email);
     const createdAt = now();
-    const user = { id: id(), name: body.name, email, emailVerified: false, createdAt, updatedAt: createdAt };
+    const user = { id: id(), name: body.name, email, emailVerified: false, image: null, stripeCustomerId: null, createdAt, updatedAt: createdAt };
     yield* db.insert(schema.user).values(user);
     const password = yield* hashPassword(body.password);
     yield* db.insert(schema.account).values({ id: id(), accountId: email, providerId: "credential", userId: user.id, password, createdAt, updatedAt: createdAt });
@@ -159,7 +172,7 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
     return yield* HttpServerResponse.json({ user: userInfo(user) }, { headers: { "set-cookie": cookieHeader(sessionToken) } });
   });
 
-  const authLogin = (request: Request, body: any) => Effect.gen(function* () {
+  const authLogin = (request: Request, body: { email: string; password: string }) => Effect.gen(function* () {
     const email = normalizeEmail(body.email);
     const account = yield* db.query.account.findFirst({ where: and(eq(schema.account.providerId, "credential"), eq(schema.account.accountId, email)) });
     const valid = account ? yield* verifyPassword(body.password, account.password) : false;
@@ -180,7 +193,7 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
     return yield* HttpServerResponse.json(ok, { headers: { "set-cookie": clearCookieHeader() } });
   });
 
-  const authForgotPassword = (body: any) => Effect.gen(function* () {
+  const authForgotPassword = (body: { email: string; redirectTo?: string }) => Effect.gen(function* () {
     const email = normalizeEmail(body.email);
     const user = yield* db.query.user.findFirst({ where: eq(schema.user.email, email) });
     if (user) {
@@ -190,7 +203,7 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
     return ok;
   });
 
-  const authResetPassword = (body: any) => Effect.gen(function* () {
+  const authResetPassword = (body: { token: string; newPassword: string }) => Effect.gen(function* () {
     const tokenHash = yield* sha256(body.token);
     const verification = yield* db.query.verification.findFirst({ where: and(eq(schema.verification.kind, "password-reset"), eq(schema.verification.valueHash, tokenHash)) });
     if (!verification || verification.expiresAt <= now()) {
@@ -202,7 +215,7 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
     return ok;
   });
 
-  const authChangePassword = (request: Request, body: any) => Effect.gen(function* () {
+  const authChangePassword = (request: Request, body: { currentPassword: string; newPassword: string; revokeOtherSessions?: boolean }) => Effect.gen(function* () {
     const { user } = yield* requireUser(request);
     const account = yield* db.query.account.findFirst({ where: and(eq(schema.account.providerId, "credential"), eq(schema.account.userId, user.id)) });
     const valid = account ? yield* verifyPassword(body.currentPassword, account.password) : false;
@@ -215,7 +228,7 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
     return ok;
   });
 
-  const authChangeEmail = (request: Request, body: any) => Effect.gen(function* () {
+  const authChangeEmail = (request: Request, body: { newEmail: string; callbackURL?: string }) => Effect.gen(function* () {
     const { user } = yield* requireUser(request);
     const newEmail = normalizeEmail(body.newEmail);
     const token = yield* issueVerification(user.id, "email-change", { newEmail });
@@ -223,13 +236,17 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
     return ok;
   });
 
-  const authVerifyEmailChange = (body: any) => Effect.gen(function* () {
+  const authVerifyEmailChange = (body: { token: string }) => Effect.gen(function* () {
     const tokenHash = yield* sha256(body.token);
     const verification = yield* db.query.verification.findFirst({ where: and(eq(schema.verification.kind, "email-change"), eq(schema.verification.valueHash, tokenHash)) });
     if (!verification || verification.expiresAt <= now()) {
       return yield* Effect.fail(new EnterpriseBadRequest({ message: "Invalid or expired token" }));
     }
-    const newEmail = (verification.metadata as any)?.newEmail;
+    const metadata = verification.metadata;
+    const newEmail = typeof metadata === "object" && metadata !== null && typeof (metadata as Record<string, unknown>).newEmail === "string"
+      ? (metadata as Record<string, string>).newEmail
+      : undefined;
+    if (!newEmail) return yield* Effect.fail(new EnterpriseBadRequest({ message: "Invalid email change metadata" }));
     yield* db.update(schema.user).set({ email: newEmail, emailVerified: true, updatedAt: now() }).where(eq(schema.user.id, verification.identifier));
     yield* db.update(schema.account).set({ accountId: newEmail, updatedAt: now() }).where(and(eq(schema.account.providerId, "credential"), eq(schema.account.userId, verification.identifier)));
     yield* db.delete(schema.verification).where(eq(schema.verification.id, verification.id));

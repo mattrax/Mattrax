@@ -9,19 +9,22 @@ import {
   policyApplicationKey,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
+import type { Stripe } from "@mattrax/effect-stripe";
 import { and, count, eq, inArray } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
 import { createEnterpriseAuth } from "./auth.ts";
 import { R2Storage, R2StorageLive, base64ToBytes, bytesToBase64, sha256Hex } from "./policyApplicationStorage.ts";
+import type { R2Bucket } from "./policyApplicationStorage.ts";
+import type { EnterpriseConfiguration, EnterpriseDevice, EnterpriseEnrollment, EnterpriseGroup, EnterpriseGroupDevice, EnterpriseGroupPolicy, EnterpriseOrganization, EnterprisePolicy, EnterpriseSchema } from "./schema.ts";
 
 export type EnterpriseHandlersConfig = {
   readonly db: any;
-  readonly schema: any;
+  readonly schema: EnterpriseSchema;
   readonly origin: string;
   readonly stripeClient: any;
-  readonly storage: any;
+  readonly storage: R2Bucket;
 };
 
 const now = () => new Date();
@@ -72,25 +75,27 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     return { user, organization, member };
   });
 
-  const ensureStripeCustomer = (organization: any) => Effect.gen(function* () {
+  const ensureStripeCustomer = (organization: EnterpriseOrganization) => Effect.gen(function* () {
     if (organization.stripeCustomerId) return organization.stripeCustomerId;
 
-    let stripeCustomer: any;
-    const search: any = yield* Effect.catch(stripe.customers.search({
+    let stripeCustomer: Stripe.Customer | undefined;
+    const search = yield* Effect.catch(stripe.customers.search({
         query: `metadata["organizationId"]:"${organization.id}" AND metadata["customerType"]:"organization"`,
         limit: 1,
-      }), () => stripe.effect(async (client: any) => {
+      }) as Effect.Effect<{ data: Array<Stripe.Customer> }, unknown>, () => stripe.effect(async (client: Stripe) => {
         for await (const customer of client.customers.list({ limit: 100 })) {
           if (customer.metadata?.organizationId === organization.id && customer.metadata?.customerType === "organization") return customer;
         }
         return undefined;
-      }));
-    stripeCustomer = Array.isArray(search?.data) ? search.data[0] : search;
+      }) as Effect.Effect<Stripe.Customer | undefined, unknown>);
+    stripeCustomer = search && "data" in search ? search.data[0] : search;
 
     stripeCustomer ??= yield* stripe.customers.create({
       name: organization.name,
       metadata: { organizationId: organization.id, customerType: "organization" },
-    });
+    }) as Effect.Effect<Stripe.Customer, unknown>;
+
+    if (!stripeCustomer) return yield* Effect.fail(new EnterpriseNotFound({ message: "Stripe customer not found" }));
 
     yield* db.update(schema.organization).set({ stripeCustomerId: stripeCustomer.id }).where(eq(schema.organization.id, organization.id));
     return stripeCustomer.id;
@@ -141,7 +146,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     };
   });
 
-  const rowDevice = (row: any) => ({
+  const rowDevice = (row: EnterpriseDevice) => ({
     id: row.id,
     proto: row.proto,
     name: row.name,
@@ -162,7 +167,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     diskUsed: row.diskUsed,
   });
 
-  const rowGroup = (row: any, devicesCount = 0, policiesCount = 0) => ({
+  const rowGroup = (row: EnterpriseGroup, devicesCount = 0, policiesCount = 0) => ({
     id: row.id,
     name: row.name,
     notes: row.notes,
@@ -172,7 +177,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     updatedAt: iso(row.updatedAt),
   });
 
-  const rowPolicy = (row: any, withConfigurations = false) => Effect.gen(function* () {
+  const rowPolicy = (row: EnterprisePolicy, withConfigurations = false) => Effect.gen(function* () {
     const base: Record<string, unknown> = {
       id: row.id,
       name: row.name,
@@ -182,12 +187,12 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     };
     if (withConfigurations) {
       const configurations = yield* db.select().from(schema.configuration).where(eq(schema.configuration.policyId, row.id));
-      base.configurations = Object.fromEntries(configurations.map((item: any) => [item.kind, item.data]));
+      base.configurations = Object.fromEntries(configurations.map((item: EnterpriseConfiguration) => [item.kind, item.data]));
     }
     return base;
   });
 
-  const rowEnrollment = (row: any) => ({
+  const rowEnrollment = (row: EnterpriseEnrollment) => ({
     id: row.id,
     code: row.code,
     enabledApple: row.enabledApple,
@@ -218,10 +223,11 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
 
   const service: Record<string, (...args: Array<any>) => Effect.Effect<any, any, any>> = {
     me: (request) => Effect.gen(function* () {
-      const resolved: any = yield* auth.requireUser({ headers: request.headers });
-      const { session, user } = resolved;
+      const resolved = yield* auth.requireUser({ headers: request.headers });
+      const { user } = resolved;
       const tenants = yield* listTenantInfo(user.id);
-      const activeTenant = tenants.find((tenant: any) => tenant.id === session.session?.activeOrganizationId) ?? tenants[0];
+      const activeOrganizationId = "session" in resolved ? resolved.session.activeOrganizationId : undefined;
+      const activeTenant = tenants.find((tenant: { id: string }) => tenant.id === activeOrganizationId) ?? tenants[0];
       return {
         user: {
           id: user.id,
@@ -263,7 +269,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     }),
     patchTenant: (request, tenantId, payload) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
-      const body = payload as any;
+      const body = payload as { name?: string; slug?: string; logo?: string | null; metadata?: Record<string, unknown> | null };
       yield* db.update(schema.organization).set({ ...body, metadata: body.metadata === undefined ? undefined : body.metadata === null ? null : JSON.stringify(body.metadata), updatedAt: now() }).where(eq(schema.organization.id, tenantId));
       return ok;
     }),
@@ -277,7 +283,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     listTenantUsers: (request, tenantId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId);
       const users = yield* db.select({ memberId: schema.member.id, userId: schema.user.id, name: schema.user.name, email: schema.user.email, role: schema.member.role, createdAt: schema.member.createdAt }).from(schema.member).innerJoin(schema.user, eq(schema.user.id, schema.member.userId)).where(eq(schema.member.organizationId, tenantId));
-      return { users: users.map((user: any) => ({ ...user, createdAt: iso(user.createdAt) })) };
+      return { users: users.map((user: { createdAt: Date }) => ({ ...user, createdAt: iso(user.createdAt) })) };
     }),
     inviteTenantUser: (request, tenantId, payload) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
@@ -291,7 +297,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     listTenantInvitations: (request, tenantId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
       const invitations = yield* db.select().from(schema.invitation).where(eq(schema.invitation.organizationId, tenantId));
-      return { invitations: invitations.map((item: any) => ({ id: item.id, email: item.email, role: item.role, status: item.status, expiresAt: iso(item.expiresAt), createdAt: iso(item.createdAt) })) };
+      return { invitations: invitations.map((item: { id: string; email: string; role: string | null; status: string; expiresAt: Date; createdAt: Date }) => ({ id: item.id, email: item.email, role: item.role, status: item.status, expiresAt: iso(item.expiresAt), createdAt: iso(item.createdAt) })) };
     }),
     cancelTenantInvitation: (request, tenantId, invitationId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
@@ -450,8 +456,8 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       yield* db.insert(schema.enterpriseGroup).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
       const devices = yield* db.select().from(schema.groupDevice).where(eq(schema.groupDevice.groupId, groupId));
       const policies = yield* db.select().from(schema.groupPolicy).where(eq(schema.groupPolicy.groupId, groupId));
-      if (devices.length) yield* db.insert(schema.groupDevice).values(devices.map((d: any) => ({ groupId: newId, deviceId: d.deviceId })));
-      if (policies.length) yield* db.insert(schema.groupPolicy).values(policies.map((p: any) => ({ groupId: newId, policyId: p.policyId })));
+      if (devices.length) yield* db.insert(schema.groupDevice).values(devices.map((d: EnterpriseGroupDevice) => ({ groupId: newId, deviceId: d.deviceId })));
+      if (policies.length) yield* db.insert(schema.groupPolicy).values(policies.map((p: EnterpriseGroupPolicy) => ({ groupId: newId, policyId: p.policyId })));
       return { id: newId };
     }),
     createPolicy: (request, tenantId, payload) => Effect.gen(function* () {
@@ -525,7 +531,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       const newId = id();
       yield* db.insert(schema.policy).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
       const configurations = yield* db.select().from(schema.configuration).where(eq(schema.configuration.policyId, policyId));
-      if (configurations.length) yield* db.insert(schema.configuration).values(configurations.map((c: any) => ({ kind: c.kind, policyId: newId, data: c.data, hash: c.hash })));
+      if (configurations.length) yield* db.insert(schema.configuration).values(configurations.map((c: EnterpriseConfiguration) => ({ kind: c.kind, policyId: newId, data: c.data, hash: c.hash })));
       return { id: newId };
     }),
     previewMobileconfig: (payload) => Effect.succeed({ payload }),
@@ -543,7 +549,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     listGroups: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
       const rows = yield* db.select().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
-      return { rows: rows.map((row: any) => rowGroup(row)) };
+      return { rows: rows.map(rowGroup) };
     }),
     getGroup: (request, tenantId, groupId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
@@ -554,7 +560,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     listPolicies: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
       const rows = yield* db.select().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id));
-      return { rows: yield* Effect.all(rows.map((row: any) => rowPolicy(row))) };
+      return { rows: yield* Effect.all(rows.map(rowPolicy)) };
     }),
     getPolicy: (request, tenantId, policyId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
