@@ -30,7 +30,7 @@ async function makeHandler(backendLayer: Layer.Layer<any>) {
   return { handler, dispose };
 }
 
-const deviceScope = { _tag: "device" as const, udid: "test-udid-001" };
+const deviceScope = { _tag: "device" as const, udid: "test-udid-001", mdmOrigin: { url: "https://mdm.test" } };
 
 describe("Management Backend HTTP E2E", () => {
   it("handles apple device event", async () => {
