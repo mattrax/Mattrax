@@ -24,6 +24,15 @@ export default defineConfig(({ mode }) => {
         auxiliaryWorkers: [{ configPath: "../api/wrangler.jsonc", config }],
         config,
       }),
+      // TODO: Remove this AI slop
+      {
+          name: "solid-start-runtime-extension",
+          resolveId(source) {
+            if (source.endsWith("/@solidjs/start/dist/server/server-runtime.ts") || source.endsWith("/@solidjs/start/dist/server/server-fns-runtime.ts")) {
+              return source.slice(0, -3) + ".js";
+            }
+          },
+        },
     ],
   };
 });

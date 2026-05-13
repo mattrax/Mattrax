@@ -1,6 +1,6 @@
 import { createResource } from "solid-js";
 import { getRequestEvent, isServer } from "solid-js/web";
-import { env } from "cloudflare:workers";
+import { apiFetch } from "~/lib/auth-api.server";
 
 type AuthUser = { id: string; name: string; email: string; emailVerified: boolean; image?: string | null };
 type AuthResult<T = unknown> = Promise<{ data?: T; error?: { message?: string } }>;
@@ -17,7 +17,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (event) {
     const cookie = event.request.headers.get("cookie");
     if (cookie) headers.set("cookie", cookie);
-    response = await env.API.fetch(new Request(new URL(url, event.request.url), { ...init, headers }));
+    response = await apiFetch(new Request(new URL(url, event.request.url), { ...init, headers }));
   } else {
     response = await fetch(url, { ...init, credentials: "include", headers });
   }
