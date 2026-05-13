@@ -1,5 +1,4 @@
 import { createEnterpriseSchema } from "@mattrax/enterprise-backend/schema";
-import { defineRelations } from "drizzle-orm/relations";
 import { boolean, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const user = pgTable(
@@ -185,5 +184,3 @@ export const dbSchema = {
   groupPolicy,
   organizationDeviceUsage,
 };
-
-export const dbRelations = defineRelations(dbSchema);

@@ -26,7 +26,7 @@
     {
       "binding": "HYPERDRIVE",
       "id": "3045b1ca406549288f7b65e97308b959",
-      "localConnectionString": "postgres://postgres:@localhost:5432/mattraxe",
+      "localConnectionString": "postgres://postgres:postgres@localhost:5432/mattraxe",
     },
   ],
   "r2_buckets": [
