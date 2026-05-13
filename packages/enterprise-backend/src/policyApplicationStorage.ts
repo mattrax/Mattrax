@@ -1,3 +1,9 @@
+import { Effect } from "effect";
+import {
+  EnterpriseR2FileNotFound,
+  EnterpriseR2InternalError,
+} from "@mattrax/enterprise-domain";
+
 export const policyApplicationPrefix = (tenantId: string, policyId: string) => `p/${tenantId}/${policyId}`;
 
 export const policyApplicationKey = (tenantId: string, policyId: string, sha256: string) => `${policyApplicationPrefix(tenantId, policyId)}/${sha256}`;
@@ -19,3 +25,53 @@ export const bytesToBase64 = (bytes: Uint8Array) => {
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
 };
+
+export type R2Storage = {
+  readonly put: (key: string, bytes: Uint8Array, options?: unknown) => Effect.Effect<void, EnterpriseR2InternalError>;
+  readonly get: (key: string) => Effect.Effect<any, EnterpriseR2FileNotFound | EnterpriseR2InternalError>;
+  readonly arrayBuffer: (object: any) => Effect.Effect<ArrayBuffer, EnterpriseR2InternalError>;
+};
+
+const stringField = (value: unknown, field: string) => typeof value === "object" && value !== null && typeof (value as Record<string, unknown>)[field] === "string"
+  ? (value as Record<string, string>)[field]
+  : undefined;
+
+export const toR2Error = (cause: unknown) => {
+  if (cause instanceof EnterpriseR2FileNotFound || cause instanceof EnterpriseR2InternalError) return cause;
+
+  const message = cause instanceof Error ? cause.message : stringField(cause, "message") ?? "R2 operation failed";
+  const code = stringField(cause, "code") ?? stringField(cause, "name");
+
+  if (code === "NoSuchKey" || code === "NotFound" || code === "404" || /not found/i.test(message)) {
+    return new EnterpriseR2FileNotFound({ message });
+  }
+
+  return new EnterpriseR2InternalError({ message: "R2 operation failed" });
+};
+
+export const createR2Storage = (bucket: any): R2Storage => ({
+  put: (key, bytes, options) => Effect.tryPromise({
+    try: async () => {
+      await bucket.put(key, bytes, options);
+    },
+    catch: (cause) => {
+      const error = toR2Error(cause);
+      return error instanceof EnterpriseR2FileNotFound ? new EnterpriseR2InternalError({ message: error.message }) : error;
+    },
+  }),
+  get: (key) => Effect.tryPromise({
+    try: async () => {
+      const object = await bucket.get(key);
+      if (!object) throw new EnterpriseR2FileNotFound({ message: "Policy application file not found" });
+      return object;
+    },
+    catch: toR2Error,
+  }),
+  arrayBuffer: (object) => Effect.tryPromise({
+    try: () => object.arrayBuffer(),
+    catch: (cause) => {
+      const error = toR2Error(cause);
+      return error instanceof EnterpriseR2FileNotFound ? new EnterpriseR2InternalError({ message: error.message }) : error;
+    },
+  }),
+});

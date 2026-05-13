@@ -40,6 +40,7 @@ type StripeConfig = ConstructorParameters<typeof Stripe>[1];
 type CustomerCreate = StripeClient["customers"]["create"];
 type CustomerSearch = StripeClient["customers"]["search"];
 type CustomerList = StripeClient["customers"]["list"];
+type BillingPortalSessionCreate = StripeClient["billingPortal"]["sessions"]["create"];
 
 export interface EffectStripeClient {
   readonly client: StripeClient;
@@ -48,6 +49,11 @@ export interface EffectStripeClient {
     readonly create: (...args: Parameters<CustomerCreate>) => Effect.Effect<Awaited<ReturnType<CustomerCreate>>, StripeError>;
     readonly search: (...args: Parameters<CustomerSearch>) => Effect.Effect<Awaited<ReturnType<CustomerSearch>>, StripeError>;
     readonly list: (...args: Parameters<CustomerList>) => Effect.Effect<Awaited<ReturnType<CustomerList>>, StripeError>;
+  };
+  readonly billingPortal: {
+    readonly sessions: {
+      readonly create: (...args: Parameters<BillingPortalSessionCreate>) => Effect.Effect<Awaited<ReturnType<BillingPortalSessionCreate>>, StripeError>;
+    };
   };
 }
 
@@ -124,6 +130,11 @@ export const makeEffectStripeClient = (client: StripeClient): EffectStripeClient
       create: (...args) => effect((stripe) => stripe.customers.create(...args)),
       search: (...args) => effect((stripe) => stripe.customers.search(...args)),
       list: (...args) => effect((stripe) => stripe.customers.list(...args)),
+    },
+    billingPortal: {
+      sessions: {
+        create: (...args) => effect((stripe) => stripe.billingPortal.sessions.create(...args)),
+      },
     },
   };
 };
