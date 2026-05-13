@@ -6,5 +6,6 @@ export type Database = ReturnType<typeof createDb>;
 
 export const createDb = (hyperdrive: Hyperdrive): any => drizzle({
   client: new Pool({ connectionString: hyperdrive.connectionString }),
-  schema,
+  schema: schema.dbSchema,
+  relations: schema.dbRelations,
 });

@@ -1,4 +1,5 @@
 import { createEnterpriseSchema } from "@mattrax/enterprise-backend/schema";
+import { defineRelations } from "drizzle-orm/relations";
 import { boolean, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const user = pgTable(
@@ -162,3 +163,27 @@ export const configuration: any = enterpriseSchema.configuration;
 export const groupDevice: any = enterpriseSchema.groupDevice;
 export const groupPolicy: any = enterpriseSchema.groupPolicy;
 export const organizationDeviceUsage: any = enterpriseSchema.organizationDeviceUsage;
+
+export const dbSchema = {
+  user,
+  session,
+  account,
+  verification,
+  organization,
+  member,
+  invitation,
+  subscription,
+  scepCa,
+  enterpriseEnrollment,
+  device,
+  deviceApple,
+  applePushCertificate,
+  enterpriseGroup,
+  policy,
+  configuration,
+  groupDevice,
+  groupPolicy,
+  organizationDeviceUsage,
+};
+
+export const dbRelations = defineRelations(dbSchema);
