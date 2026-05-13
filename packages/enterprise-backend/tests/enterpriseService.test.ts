@@ -135,7 +135,7 @@ describe("enterprise service billing flow", () => {
     expect(db.store.organization[0].stripeCustomerId).toBe("cus_new");
     expect(portalSessions).toEqual([{ customer: "cus_new", return_url: "https://app.test/settings" }]);
 
-    await expect(auth.requireUser(new Request(origin, { headers: { cookie: headers.cookie } }))).resolves.toBeDefined();
+    await expect(runEffect(auth.requireUser(new Request(origin, { headers: { cookie: headers.cookie } })))).resolves.toBeDefined();
   });
 
   it("uses an existing Stripe customer and requires write access", async () => {

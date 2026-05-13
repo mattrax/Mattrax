@@ -2,7 +2,6 @@
 import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 import {
-  EnterpriseAuthError,
   EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseDbError,
@@ -19,7 +18,7 @@ import type { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
 import { createEnterpriseAuth } from "./auth.ts";
-import { base64ToBytes, bytesToBase64, policyApplicationKey, sha256Hex, toR2Error } from "./policyApplicationStorage.ts";
+import { base64ToBytes, bytesToBase64, policyApplicationKey, sha256Hex } from "./policyApplicationStorage.ts";
 
 export type EnterpriseHandlersConfig = {
   readonly db: any;
@@ -67,83 +66,37 @@ type OrgContext = {
 const canWriteTenant = (role: string) => role.split(",").some((item) => item === "owner" || item === "admin");
 const canDeleteTenant = (role: string) => role.split(",").includes("owner");
 
-type EnterpriseApiError =
-  | EnterpriseUnauthorized
-  | EnterpriseBadRequest
-  | EnterpriseForbidden
-  | EnterpriseNotFound
-  | EnterpriseConflict
-  | EnterpriseDbError
-  | EnterpriseAuthError
-  | EnterpriseStripeError
-  | EnterpriseR2FileNotFound
-  | EnterpriseR2InternalError;
-
-const isTaggedEnterpriseError = (error: unknown): error is EnterpriseApiError =>
-  typeof error === "object" && error !== null && typeof (error as { _tag?: unknown })._tag === "string" && (error as { _tag: string })._tag.startsWith("Enterprise");
-
-const isDbError = (error: unknown) => {
-  if (typeof error !== "object" || error === null) return false;
-  const value = error as Record<string, unknown>;
-  const name = typeof value.name === "string" ? value.name : "";
-  const message = typeof value.message === "string" ? value.message : "";
-  return name.includes("Postgres") || name.includes("Database") || message.startsWith("Failed query:") || typeof value.code === "string" && /^(?:[0-9A-Z]{5}|SQLITE_|ER_)/.test(value.code) || "constraint" in value || "table" in value || "schema" in value;
+const catchDb = (cause: unknown) => {
+  console.error("Database error:", cause);
+  return new EnterpriseDbError({ message: "Database operation failed" });
 };
 
-const isStripeError = (error: unknown) => {
-  if (typeof error !== "object" || error === null) return false;
-  const value = error as Record<string, unknown>;
-  const type = typeof value.type === "string" ? value.type : "";
-  return type.startsWith("Stripe") || "requestId" in value || "raw" in value && typeof value.statusCode === "number";
+const catchStripe = (cause: unknown) => {
+  console.error("Stripe error:", cause);
+  return new EnterpriseStripeError({ message: "Stripe operation failed" });
 };
 
-const isAuthError = (error: unknown) => {
-  if (typeof error !== "object" || error === null) return false;
-  const value = error as Record<string, unknown>;
-  const name = typeof value.name === "string" ? value.name : "";
-  const tag = typeof value._tag === "string" ? value._tag : "";
-  return tag.includes("Auth") || "statusCode" in value && ("body" in value || "status" in value);
+const catchR2 = (cause: unknown) => {
+  if (cause instanceof EnterpriseR2FileNotFound || cause instanceof EnterpriseR2InternalError) return cause;
+  console.error("R2 error:", cause);
+  return new EnterpriseR2InternalError({ message: "R2 operation failed" });
 };
-
-const errorMessage = (error: unknown) => error instanceof Error ? error.message : typeof error === "string" ? error : "";
-
-const toEnterpriseError = (error: unknown): EnterpriseApiError => {
-  if (isTaggedEnterpriseError(error)) return error;
-
-  const message = errorMessage(error);
-  if (message === "Unauthenticated") return new EnterpriseUnauthorized({ message });
-  if (message === "Invalid email or password") return new EnterpriseUnauthorized({ message });
-  if (message === "Invalid or expired token" || message === "Current password is incorrect") return new EnterpriseBadRequest({ message });
-  if (message === "Forbidden") return new EnterpriseForbidden({ message });
-  if (message.endsWith("not found")) return new EnterpriseNotFound({ message });
-  if (message.startsWith("Cannot ")) return new EnterpriseConflict({ message });
-  if (isDbError(error)) return new EnterpriseDbError({ message: "Database operation failed" });
-  if (isStripeError(error)) return new EnterpriseStripeError({ message: message || "Stripe operation failed" });
-  if (isAuthError(error)) return new EnterpriseAuthError({ message: message || "Authentication service operation failed" });
-  return new EnterpriseDbError({ message: "Internal server error" });
-};
-
-const effectTry = <A>(try_: () => Promise<A>) => Effect.tryPromise({ try: try_, catch: toEnterpriseError });
 
 export const createEnterpriseService = ({ db, schema, origin, stripeClient, storage }: EnterpriseHandlersConfig) => {
   const auth = createEnterpriseAuth({ db, schema, origin });
 
-  const requireUser = async (request: HttpServerRequest) => {
-    return await auth.requireUser({ headers: request.headers });
-  };
+  const requireTenant = (request: HttpServerRequest, tenantId: string, access: "read" | "write" | "delete" = "read") => Effect.gen(function* () {
+    const { user } = yield* auth.requireUser({ headers: request.headers });
+    const member = yield* Effect.tryPromise({ try: () => db.query.member.findFirst({ where: and(eq(schema.member.userId, user.id), eq(schema.member.organizationId, tenantId)) }), catch: catchDb });
+    if (!member) return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
+    if (access === "write" && !canWriteTenant(member.role)) return yield* Effect.fail(new EnterpriseForbidden({ message: "Forbidden" }));
+    if (access === "delete" && !canDeleteTenant(member.role)) return yield* Effect.fail(new EnterpriseForbidden({ message: "Forbidden" }));
 
-  const requireTenant = async (request: HttpServerRequest, tenantId: string, access: "read" | "write" | "delete" = "read"): Promise<OrgContext> => {
-    const { user } = await requireUser(request);
-    const member = await db.query.member.findFirst({ where: and(eq(schema.member.userId, user.id), eq(schema.member.organizationId, tenantId)) });
-    if (!member) throw new Error("Tenant not found");
-    if (access === "write" && !canWriteTenant(member.role)) throw new Error("Forbidden");
-    if (access === "delete" && !canDeleteTenant(member.role)) throw new Error("Forbidden");
-
-    const organization = await db.query.organization.findFirst({ where: eq(schema.organization.id, member.organizationId) });
-    if (!organization) throw new Error("Tenant not found");
+    const organization = yield* Effect.tryPromise({ try: () => db.query.organization.findFirst({ where: eq(schema.organization.id, member.organizationId) }), catch: catchDb });
+    if (!organization) return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
 
     return { user, organization, member };
-  };
+  });
 
   const ensureStripeCustomer = async (organization: any) => {
     if (organization.stripeCustomerId) return organization.stripeCustomerId;
@@ -188,23 +141,23 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     return members?.value ?? 0;
   };
 
-  const assertTenantDevices = async (tenantId: string, ids: ReadonlyArray<string>) => {
+  const assertTenantDevices = (tenantId: string, ids: ReadonlyArray<string>) => Effect.gen(function* () {
     if (ids.length === 0) return;
-    const rows = await db.select({ id: schema.device.id }).from(schema.device).where(and(eq(schema.device.organizationId, tenantId), inArray(schema.device.id, [...ids])));
-    if (rows.length !== new Set(ids).size) throw new Error("Device not found");
-  };
+    const rows = yield* Effect.tryPromise({ try: () => db.select({ id: schema.device.id }).from(schema.device).where(and(eq(schema.device.organizationId, tenantId), inArray(schema.device.id, [...ids]))), catch: catchDb });
+    if (rows.length !== new Set(ids).size) return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+  });
 
-  const assertTenantPolicies = async (tenantId: string, ids: ReadonlyArray<string>) => {
+  const assertTenantPolicies = (tenantId: string, ids: ReadonlyArray<string>) => Effect.gen(function* () {
     if (ids.length === 0) return;
-    const rows = await db.select({ id: schema.policy.id }).from(schema.policy).where(and(eq(schema.policy.organizationId, tenantId), inArray(schema.policy.id, [...ids])));
-    if (rows.length !== new Set(ids).size) throw new Error("Policy not found");
-  };
+    const rows = yield* Effect.tryPromise({ try: () => db.select({ id: schema.policy.id }).from(schema.policy).where(and(eq(schema.policy.organizationId, tenantId), inArray(schema.policy.id, [...ids]))), catch: catchDb });
+    if (rows.length !== new Set(ids).size) return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
+  });
 
-  const assertTenantGroup = async (tenantId: string, groupId: string) => {
-    const group = await db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, tenantId)) });
-    if (!group) throw new Error("Group not found");
+  const assertTenantGroup = (tenantId: string, groupId: string) => Effect.gen(function* () {
+    const group = yield* Effect.tryPromise({ try: () => db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, tenantId)) }), catch: catchDb });
+    if (!group) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
     return group;
-  };
+  });
 
   const billingSummary = async (organizationId: string) => {
     const [subscription] = await db.select().from(schema.subscription).where(eq(schema.subscription.referenceId, organizationId)).limit(1);
@@ -293,9 +246,9 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
   };
 
   return {
-    me: (request) => effectTry(async () => {
-      const { session, user } = await requireUser(request);
-      const tenants = await listTenantInfo(user.id);
+    me: (request) => Effect.gen(function* () {
+      const { session, user } = yield* auth.requireUser({ headers: request.headers });
+      const tenants = yield* Effect.tryPromise({ try: () => listTenantInfo(user.id), catch: catchDb });
       const activeTenant = tenants.find((tenant: any) => tenant.id === session.session?.activeOrganizationId) ?? tenants[0];
       return {
         user: {
@@ -307,108 +260,100 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
         },
         activeTenant,
         tenants,
-        billing: activeTenant ? await billingSummary(activeTenant.id) : undefined,
+        billing: activeTenant ? yield* Effect.tryPromise({ try: () => billingSummary(activeTenant.id), catch: catchDb }) : undefined,
       };
     }),
-    updateMe: (request, payload) => effectTry(async () => {
-      const { user } = await requireUser(request);
+    updateMe: (request, payload) => Effect.gen(function* () {
+      const { user } = yield* auth.requireUser({ headers: request.headers });
       const body = payload as { name?: string; image?: string | null };
-      await db.update(schema.user).set({
-        name: body.name ?? user.name,
-        image: body.image === undefined ? user.image : body.image,
-        updatedAt: now(),
-      }).where(eq(schema.user.id, user.id));
+      yield* Effect.tryPromise({ try: () => db.update(schema.user).set({ name: body.name ?? user.name, image: body.image === undefined ? user.image : body.image, updatedAt: now() }).where(eq(schema.user.id, user.id)), catch: catchDb });
       return ok;
     }),
     deleteMe: () => Effect.succeed({ error: "Delete user is currently not supported while organizations and billing are managed by Mattrax." }),
-    listTenants: (request) => effectTry(async () => {
-      const { user } = await requireUser(request);
-      return { tenants: await listTenantInfo(user.id) };
+    listTenants: (request) => Effect.gen(function* () {
+      const { user } = yield* auth.requireUser({ headers: request.headers });
+      const tenants = yield* Effect.tryPromise({ try: () => listTenantInfo(user.id), catch: catchDb });
+      return { tenants };
     }),
-    createTenant: (request, payload) => effectTry(async () => {
-      const { user } = await requireUser(request);
+    createTenant: (request, payload) => Effect.gen(function* () {
+      const { user } = yield* auth.requireUser({ headers: request.headers });
       const body = payload as { name: string; slug: string; logo?: string | null; metadata?: Record<string, unknown> };
       const tenantId = id();
       const timestamp = now();
-      await db.insert(schema.organization).values({ id: tenantId, name: body.name, slug: body.slug, logo: body.logo ?? null, metadata: body.metadata ? JSON.stringify(body.metadata) : null, createdAt: timestamp, updatedAt: timestamp });
-      await db.insert(schema.member).values({ id: id(), organizationId: tenantId, userId: user.id, role: "owner", createdAt: timestamp, updatedAt: timestamp });
-      await db.insert(schema.enterpriseEnrollment).values({ id: tenantId, organizationId: tenantId, createdAt: timestamp, updatedAt: timestamp }).onConflictDoNothing();
+      yield* Effect.tryPromise({ try: () => db.insert(schema.organization).values({ id: tenantId, name: body.name, slug: body.slug, logo: body.logo ?? null, metadata: body.metadata ? JSON.stringify(body.metadata) : null, createdAt: timestamp, updatedAt: timestamp }), catch: catchDb });
+      yield* Effect.tryPromise({ try: () => db.insert(schema.member).values({ id: id(), organizationId: tenantId, userId: user.id, role: "owner", createdAt: timestamp, updatedAt: timestamp }), catch: catchDb });
+      yield* Effect.tryPromise({ try: () => db.insert(schema.enterpriseEnrollment).values({ id: tenantId, organizationId: tenantId, createdAt: timestamp, updatedAt: timestamp }).onConflictDoNothing(), catch: catchDb });
       return { id: tenantId };
     }),
-    getTenant: (request, tenantId) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId);
+    getTenant: (request, tenantId) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId);
       return { ...ctx.organization, role: ctx.member.role, createdAt: iso(ctx.organization.createdAt) };
     }),
-    patchTenant: (request, tenantId, payload) => effectTry(async () => {
-      await requireTenant(request, tenantId, "write");
+    patchTenant: (request, tenantId, payload) => Effect.gen(function* () {
+      yield* requireTenant(request, tenantId, "write");
       const body = payload as any;
-      await db.update(schema.organization).set({ ...body, metadata: body.metadata === undefined ? undefined : body.metadata === null ? null : JSON.stringify(body.metadata), updatedAt: now() }).where(eq(schema.organization.id, tenantId));
+      yield* Effect.tryPromise({ try: () => db.update(schema.organization).set({ ...body, metadata: body.metadata === undefined ? undefined : body.metadata === null ? null : JSON.stringify(body.metadata), updatedAt: now() }).where(eq(schema.organization.id, tenantId)), catch: catchDb });
       return ok;
     }),
-    deleteTenant: (request, tenantId) => effectTry(async () => {
-      await requireTenant(request, tenantId, "delete");
-      if (await memberCount(tenantId) > 1) throw new Error("Cannot delete a tenant with more than one user");
-      await db.delete(schema.organization).where(eq(schema.organization.id, tenantId));
+    deleteTenant: (request, tenantId) => Effect.gen(function* () {
+      yield* requireTenant(request, tenantId, "delete");
+      const count = yield* Effect.tryPromise({ try: () => memberCount(tenantId), catch: catchDb });
+      if (count > 1) return yield* Effect.fail(new EnterpriseConflict({ message: "Cannot delete a tenant with more than one user" }));
+      yield* Effect.tryPromise({ try: () => db.delete(schema.organization).where(eq(schema.organization.id, tenantId)), catch: catchDb });
       return ok;
     }),
-    listTenantUsers: (request, tenantId) => effectTry(async () => {
-      await requireTenant(request, tenantId);
-      const users = await db.select({
-        memberId: schema.member.id,
-        userId: schema.user.id,
-        name: schema.user.name,
-        email: schema.user.email,
-        role: schema.member.role,
-        createdAt: schema.member.createdAt,
-      }).from(schema.member).innerJoin(schema.user, eq(schema.user.id, schema.member.userId)).where(eq(schema.member.organizationId, tenantId));
+    listTenantUsers: (request, tenantId) => Effect.gen(function* () {
+      yield* requireTenant(request, tenantId);
+      const users = yield* Effect.tryPromise({ try: () => db.select({ memberId: schema.member.id, userId: schema.user.id, name: schema.user.name, email: schema.user.email, role: schema.member.role, createdAt: schema.member.createdAt }).from(schema.member).innerJoin(schema.user, eq(schema.user.id, schema.member.userId)).where(eq(schema.member.organizationId, tenantId)), catch: catchDb });
       return { users: users.map((user: any) => ({ ...user, createdAt: iso(user.createdAt) })) };
     }),
-    inviteTenantUser: (request, tenantId, payload) => effectTry(async () => {
-      await requireTenant(request, tenantId, "write");
-      const { user } = await requireUser(request);
+    inviteTenantUser: (request, tenantId, payload) => Effect.gen(function* () {
+      yield* requireTenant(request, tenantId, "write");
+      const { user } = yield* auth.requireUser({ headers: request.headers });
       const body = payload as { email: string; role?: string; resend?: boolean };
       const invitationId = id();
       const timestamp = now();
-      await db.insert(schema.invitation).values({ id: invitationId, organizationId: tenantId, inviterId: user.id, email: body.email, role: body.role ?? "member", status: "pending", expiresAt: new Date(timestamp.getTime() + 7 * 24 * 60 * 60 * 1000), createdAt: timestamp, updatedAt: timestamp });
+      yield* Effect.tryPromise({ try: () => db.insert(schema.invitation).values({ id: invitationId, organizationId: tenantId, inviterId: user.id, email: body.email, role: body.role ?? "member", status: "pending", expiresAt: new Date(timestamp.getTime() + 7 * 24 * 60 * 60 * 1000), createdAt: timestamp, updatedAt: timestamp }), catch: catchDb });
       return { id: invitationId };
     }),
-    listTenantInvitations: (request, tenantId) => effectTry(async () => {
-      await requireTenant(request, tenantId, "write");
-      const invitations = await db.select().from(schema.invitation).where(eq(schema.invitation.organizationId, tenantId));
+    listTenantInvitations: (request, tenantId) => Effect.gen(function* () {
+      yield* requireTenant(request, tenantId, "write");
+      const invitations = yield* Effect.tryPromise({ try: () => db.select().from(schema.invitation).where(eq(schema.invitation.organizationId, tenantId)), catch: catchDb });
       return { invitations: invitations.map((item: any) => ({ id: item.id, email: item.email, role: item.role, status: item.status, expiresAt: iso(item.expiresAt), createdAt: iso(item.createdAt) })) };
     }),
-    cancelTenantInvitation: (request, tenantId, invitationId) => effectTry(async () => {
-      await requireTenant(request, tenantId, "write");
-      const invitation = await db.query.invitation.findFirst({ where: and(eq(schema.invitation.id, invitationId), eq(schema.invitation.organizationId, tenantId)) });
-      if (!invitation) throw new Error("Invitation not found");
-      await db.update(schema.invitation).set({ status: "canceled", updatedAt: now() }).where(eq(schema.invitation.id, invitationId));
+    cancelTenantInvitation: (request, tenantId, invitationId) => Effect.gen(function* () {
+      yield* requireTenant(request, tenantId, "write");
+      const invitation = yield* Effect.tryPromise({ try: () => db.query.invitation.findFirst({ where: and(eq(schema.invitation.id, invitationId), eq(schema.invitation.organizationId, tenantId)) }), catch: catchDb });
+      if (!invitation) return yield* Effect.fail(new EnterpriseNotFound({ message: "Invitation not found" }));
+      yield* Effect.tryPromise({ try: () => db.update(schema.invitation).set({ status: "canceled", updatedAt: now() }).where(eq(schema.invitation.id, invitationId)), catch: catchDb });
       return ok;
     }),
-    patchTenantUser: (request, tenantId, memberId, payload) => effectTry(async () => {
-      await requireTenant(request, tenantId, "write");
-      const member = await db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) });
-      if (!member) throw new Error("Tenant user not found");
+    patchTenantUser: (request, tenantId, memberId, payload) => Effect.gen(function* () {
+      yield* requireTenant(request, tenantId, "write");
+      const member = yield* Effect.tryPromise({ try: () => db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) }), catch: catchDb });
+      if (!member) return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
       const body = payload as { role: string };
-      await db.update(schema.member).set({ role: body.role, updatedAt: now() }).where(eq(schema.member.id, memberId));
+      yield* Effect.tryPromise({ try: () => db.update(schema.member).set({ role: body.role, updatedAt: now() }).where(eq(schema.member.id, memberId)), catch: catchDb });
       return ok;
     }),
-    removeTenantUser: (request, tenantId, memberId) => effectTry(async () => {
-      await requireTenant(request, tenantId, "write");
-      if (await memberCount(tenantId) <= 1) throw new Error("Cannot remove the last tenant user; delete the tenant instead");
-      const member = await db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) });
-      if (!member) throw new Error("Tenant user not found");
-      await db.delete(schema.member).where(eq(schema.member.id, memberId));
+    removeTenantUser: (request, tenantId, memberId) => Effect.gen(function* () {
+      yield* requireTenant(request, tenantId, "write");
+      const count = yield* Effect.tryPromise({ try: () => memberCount(tenantId), catch: catchDb });
+      if (count <= 1) return yield* Effect.fail(new EnterpriseConflict({ message: "Cannot remove the last tenant user; delete the tenant instead" }));
+      const member = yield* Effect.tryPromise({ try: () => db.query.member.findFirst({ where: and(eq(schema.member.id, memberId), eq(schema.member.organizationId, tenantId)) }), catch: catchDb });
+      if (!member) return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
+      yield* Effect.tryPromise({ try: () => db.delete(schema.member).where(eq(schema.member.id, memberId)), catch: catchDb });
       return ok;
     }),
-    getEnrollment: (enrollmentId, code) => effectTry(async () => {
-      const enrollment = await db.query.enterpriseEnrollment.findFirst({ where: eq(schema.enterpriseEnrollment.id, enrollmentId) });
-      if (!enrollment) throw new Error("Enrollment not found");
-      const organization = await db.query.organization.findFirst({ where: eq(schema.organization.id, enrollment.organizationId) });
-      if (!organization) throw new Error("Enrollment not found");
+    getEnrollment: (enrollmentId, code) => Effect.gen(function* () {
+      const enrollment = yield* Effect.tryPromise({ try: () => db.query.enterpriseEnrollment.findFirst({ where: eq(schema.enterpriseEnrollment.id, enrollmentId) }), catch: catchDb });
+      if (!enrollment) return yield* Effect.fail(new EnterpriseNotFound({ message: "Enrollment not found" }));
+      const organization = yield* Effect.tryPromise({ try: () => db.query.organization.findFirst({ where: eq(schema.organization.id, enrollment.organizationId) }), catch: catchDb });
+      if (!organization) return yield* Effect.fail(new EnterpriseNotFound({ message: "Enrollment not found" }));
       if (enrollment.code && enrollment.code !== code) return { name: organization.name, authenticated: false as const };
 
-      const apns = await db.query.applePushCertificate.findFirst({ where: eq(schema.applePushCertificate.organizationId, organization.id) });
-      const [deviceCount] = await db.select({ value: count() }).from(schema.device).where(eq(schema.device.organizationId, organization.id));
+      const apns = yield* Effect.tryPromise({ try: () => db.query.applePushCertificate.findFirst({ where: eq(schema.applePushCertificate.organizationId, organization.id) }), catch: catchDb });
+      const [deviceCount] = yield* Effect.tryPromise({ try: () => db.select({ value: count() }).from(schema.device).where(eq(schema.device.organizationId, organization.id)), catch: catchDb });
       const enabled = (deviceCount?.value ?? 0) <= enrollment.maxDevices;
       return {
         name: organization.name,
@@ -416,22 +361,23 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
         apple: !enabled || !enrollment.enabledApple
           ? { error: "Apple enrollment is disabled! Contact your administrator." }
           : apns?.topic
-          ? { profile: await Effect.runPromise(serializePlist(enterpriseEnrollmentProfile({ origin, topic: apns.topic, organizationId: organization.id }))) }
+          ? { profile: yield* Effect.tryPromise({ try: () => Effect.runPromise(serializePlist(enterpriseEnrollmentProfile({ origin, topic: apns.topic, organizationId: organization.id }))), catch: catchDb }) }
           : { error: "Apple management is not configured! Contact your administrator." },
         windows: !enabled || !enrollment.enabledWindows ? { error: "Windows enrollment is disabled! Contact your administrator." } : "available",
         android: !enabled || !enrollment.enabledAndroid ? { error: "Android enrollment is disabled! Contact your administrator." } : "available",
         assetTag: enabled && enrollment.enabledAssetTag,
       };
     }),
-    getTenantEnrollment: (request, tenantId) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId);
-      return rowEnrollment(await getOrCreateEnrollment(ctx.organization.id));
+    getTenantEnrollment: (request, tenantId) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId);
+      const enrollment = yield* Effect.tryPromise({ try: () => getOrCreateEnrollment(ctx.organization.id), catch: catchDb });
+      return rowEnrollment(enrollment);
     }),
-    patchTenantEnrollment: (request, tenantId, payload) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
-      await getOrCreateEnrollment(ctx.organization.id);
+    patchTenantEnrollment: (request, tenantId, payload) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
+      yield* Effect.tryPromise({ try: () => getOrCreateEnrollment(ctx.organization.id), catch: catchDb });
       const body = payload as { code?: string | null; enabledApple?: boolean; enabledWindows?: boolean; enabledAndroid?: boolean; enabledAssetTag?: boolean; maxDevices?: number };
-      await db.update(schema.enterpriseEnrollment).set({
+      yield* Effect.tryPromise({ try: () => db.update(schema.enterpriseEnrollment).set({
         ...(body.code !== undefined ? { code: body.code } : {}),
         ...(body.enabledApple !== undefined ? { enabledApple: body.enabledApple } : {}),
         ...(body.enabledWindows !== undefined ? { enabledWindows: body.enabledWindows } : {}),
@@ -439,252 +385,234 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
         ...(body.enabledAssetTag !== undefined ? { enabledAssetTag: body.enabledAssetTag } : {}),
         ...(body.maxDevices !== undefined ? { maxDevices: body.maxDevices } : {}),
         updatedAt: now(),
-      }).where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
+      }).where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id)), catch: catchDb });
       return ok;
     }),
-    resetTenantEnrollment: (request, tenantId) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
-      await getOrCreateEnrollment(ctx.organization.id);
+    resetTenantEnrollment: (request, tenantId) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
+      yield* Effect.tryPromise({ try: () => getOrCreateEnrollment(ctx.organization.id), catch: catchDb });
       const newId = id();
-      await db.update(schema.enterpriseEnrollment).set({ id: newId, updatedAt: now() }).where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id));
+      yield* Effect.tryPromise({ try: () => db.update(schema.enterpriseEnrollment).set({ id: newId, updatedAt: now() }).where(eq(schema.enterpriseEnrollment.organizationId, ctx.organization.id)), catch: catchDb });
       return { id: newId };
     }),
-    getApns: (request, tenantId) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId);
-      const apns = await db.query.applePushCertificate.findFirst({ where: eq(schema.applePushCertificate.organizationId, ctx.organization.id) });
+    getApns: (request, tenantId) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId);
+      const apns = yield* Effect.tryPromise({ try: () => db.query.applePushCertificate.findFirst({ where: eq(schema.applePushCertificate.organizationId, ctx.organization.id) }), catch: catchDb });
       return { configured: apns !== undefined, email: apns?.email ?? null, topic: apns?.topic ?? null };
     }),
-    uploadApns: (request, tenantId, payload) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
+    uploadApns: (request, tenantId, payload) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
       const body = payload as { email: string; cert: string };
       const topic = body.cert.match(/UID=([^,\n]+)/)?.[1] ?? `com.apple.mgmt.External.${ctx.organization.id}`;
-      await db.insert(schema.applePushCertificate).values({
-        organizationId: ctx.organization.id,
-        email: body.email,
-        certPem: body.cert,
-        topic,
-        updatedAt: now(),
-      }).onConflictDoUpdate({
-        target: schema.applePushCertificate.organizationId,
-        set: { email: body.email, certPem: body.cert, topic, updatedAt: now() },
-      });
+      yield* Effect.tryPromise({ try: () => db.insert(schema.applePushCertificate).values({ organizationId: ctx.organization.id, email: body.email, certPem: body.cert, topic, updatedAt: now() }).onConflictDoUpdate({ target: schema.applePushCertificate.organizationId, set: { email: body.email, certPem: body.cert, topic, updatedAt: now() } }), catch: catchDb });
       return ok;
     }),
-    deleteDevices: (request, tenantId, ids) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
-      if (ids.length > 0) await db.delete(schema.device).where(and(eq(schema.device.organizationId, ctx.organization.id), inArray(schema.device.id, [...ids])));
+    deleteDevices: (request, tenantId, ids) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
+      if (ids.length > 0) yield* Effect.tryPromise({ try: () => db.delete(schema.device).where(and(eq(schema.device.organizationId, ctx.organization.id), inArray(schema.device.id, [...ids]))), catch: catchDb });
       return ok;
     }),
-    patchDevice: (request, tenantId, deviceId, payload) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
+    patchDevice: (request, tenantId, deviceId, payload) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
       const body = payload as { name?: string; notes?: string | null; assetTag?: string | null };
-      await db.update(schema.device).set({ name: body.name, notes: body.notes, assetTag: body.assetTag }).where(and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id)));
+      yield* Effect.tryPromise({ try: () => db.update(schema.device).set({ name: body.name, notes: body.notes, assetTag: body.assetTag }).where(and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id))), catch: catchDb });
       return ok;
     }),
-    deviceAction: (request, tenantId) => effectTry(async () => {
-      await requireTenant(request, tenantId, "write");
+    deviceAction: (request, tenantId) => Effect.gen(function* () {
+      yield* requireTenant(request, tenantId, "write");
       return ok;
     }),
-    deviceUnenroll: (request, tenantId, deviceId) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
-      await db.update(schema.device).set({ status: "unenrolling" }).where(and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id), eq(schema.device.status, "enrolled")));
+    deviceUnenroll: (request, tenantId, deviceId) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
+      yield* Effect.tryPromise({ try: () => db.update(schema.device).set({ status: "unenrolling" }).where(and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id), eq(schema.device.status, "enrolled"))), catch: catchDb });
       return ok;
     }),
-    createGroup: (request, tenantId, payload) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
+    createGroup: (request, tenantId, payload) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
       const body = payload as { name: string; notes?: string | null; devices?: Array<string>; policies?: Array<string> };
-      await assertTenantDevices(ctx.organization.id, body.devices ?? []);
-      await assertTenantPolicies(ctx.organization.id, body.policies ?? []);
+      yield* assertTenantDevices(ctx.organization.id, body.devices ?? []);
+      yield* assertTenantPolicies(ctx.organization.id, body.policies ?? []);
       const groupId = id();
-      await db.insert(schema.enterpriseGroup).values({ id: groupId, organizationId: ctx.organization.id, name: body.name, notes: body.notes ?? null, createdAt: now(), updatedAt: now() });
-      if (body.devices?.length) await db.insert(schema.groupDevice).values(body.devices.map((deviceId) => ({ groupId, deviceId }))).onConflictDoNothing();
-      if (body.policies?.length) await db.insert(schema.groupPolicy).values(body.policies.map((policyId) => ({ groupId, policyId }))).onConflictDoNothing();
+      yield* Effect.tryPromise({ try: () => db.insert(schema.enterpriseGroup).values({ id: groupId, organizationId: ctx.organization.id, name: body.name, notes: body.notes ?? null, createdAt: now(), updatedAt: now() }), catch: catchDb });
+      if (body.devices?.length) yield* Effect.tryPromise({ try: () => db.insert(schema.groupDevice).values(body.devices.map((deviceId) => ({ groupId, deviceId }))).onConflictDoNothing(), catch: catchDb });
+      if (body.policies?.length) yield* Effect.tryPromise({ try: () => db.insert(schema.groupPolicy).values(body.policies.map((policyId) => ({ groupId, policyId }))).onConflictDoNothing(), catch: catchDb });
       return { id: groupId };
     }),
-    deleteGroups: (request, tenantId, ids) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
+    deleteGroups: (request, tenantId, ids) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
       const deleted: Array<string> = [];
       const failed: Array<{ id: string; reason: string }> = [];
       for (const groupId of ids) {
-        const result = await db.delete(schema.enterpriseGroup).where(and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id))).returning({ id: schema.enterpriseGroup.id });
+        const result = yield* Effect.tryPromise({ try: () => db.delete(schema.enterpriseGroup).where(and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id))).returning({ id: schema.enterpriseGroup.id }), catch: catchDb });
         if (result.length) deleted.push(groupId); else failed.push({ id: groupId, reason: "notFound" });
       }
       return { deleted, failed };
     }),
-    patchGroup: (request, tenantId, groupId, payload) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
+    patchGroup: (request, tenantId, groupId, payload) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
       const body = payload as { name?: string; notes?: string | null };
-      await db.update(schema.enterpriseGroup).set({ name: body.name, notes: body.notes, updatedAt: now() }).where(and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id)));
+      yield* Effect.tryPromise({ try: () => db.update(schema.enterpriseGroup).set({ name: body.name, notes: body.notes, updatedAt: now() }).where(and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id))), catch: catchDb });
       return ok;
     }),
-    patchGroupMembers: (request, tenantId, groupId, payload) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
-      await assertTenantGroup(ctx.organization.id, groupId);
+    patchGroupMembers: (request, tenantId, groupId, payload) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
+      yield* assertTenantGroup(ctx.organization.id, groupId);
       const body = payload as { assign?: { devices?: Array<string>; policies?: Array<string> }; unassign?: { devices?: Array<string>; policies?: Array<string> } };
-      await assertTenantDevices(ctx.organization.id, [...(body.assign?.devices ?? []), ...(body.unassign?.devices ?? [])]);
-      await assertTenantPolicies(ctx.organization.id, [...(body.assign?.policies ?? []), ...(body.unassign?.policies ?? [])]);
-      if (body.assign?.devices?.length) await db.insert(schema.groupDevice).values(body.assign.devices.map((deviceId) => ({ groupId, deviceId }))).onConflictDoNothing();
-      if (body.assign?.policies?.length) await db.insert(schema.groupPolicy).values(body.assign.policies.map((policyId) => ({ groupId, policyId }))).onConflictDoNothing();
-      if (body.unassign?.devices?.length) await db.delete(schema.groupDevice).where(and(eq(schema.groupDevice.groupId, groupId), inArray(schema.groupDevice.deviceId, body.unassign.devices)));
-      if (body.unassign?.policies?.length) await db.delete(schema.groupPolicy).where(and(eq(schema.groupPolicy.groupId, groupId), inArray(schema.groupPolicy.policyId, body.unassign.policies)));
+      yield* assertTenantDevices(ctx.organization.id, [...(body.assign?.devices ?? []), ...(body.unassign?.devices ?? [])]);
+      yield* assertTenantPolicies(ctx.organization.id, [...(body.assign?.policies ?? []), ...(body.unassign?.policies ?? [])]);
+      if (body.assign?.devices?.length) yield* Effect.tryPromise({ try: () => db.insert(schema.groupDevice).values(body.assign.devices.map((deviceId) => ({ groupId, deviceId }))).onConflictDoNothing(), catch: catchDb });
+      if (body.assign?.policies?.length) yield* Effect.tryPromise({ try: () => db.insert(schema.groupPolicy).values(body.assign.policies.map((policyId) => ({ groupId, policyId }))).onConflictDoNothing(), catch: catchDb });
+      if (body.unassign?.devices?.length) yield* Effect.tryPromise({ try: () => db.delete(schema.groupDevice).where(and(eq(schema.groupDevice.groupId, groupId), inArray(schema.groupDevice.deviceId, body.unassign.devices))), catch: catchDb });
+      if (body.unassign?.policies?.length) yield* Effect.tryPromise({ try: () => db.delete(schema.groupPolicy).where(and(eq(schema.groupPolicy.groupId, groupId), inArray(schema.groupPolicy.policyId, body.unassign.policies))), catch: catchDb });
       return ok;
     }),
-    syncGroups: (request, tenantId) => effectTry(async () => {
-      await requireTenant(request, tenantId, "write");
+    syncGroups: (request, tenantId) => Effect.gen(function* () {
+      yield* requireTenant(request, tenantId, "write");
       return ok;
     }),
-    duplicateGroup: (request, tenantId, groupId, payload) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
-      const source = await assertTenantGroup(ctx.organization.id, groupId);
+    duplicateGroup: (request, tenantId, groupId, payload) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
+      const source = yield* assertTenantGroup(ctx.organization.id, groupId);
       const body = payload as { name?: string };
       const newId = id();
-      await db.insert(schema.enterpriseGroup).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
-      const devices = await db.select().from(schema.groupDevice).where(eq(schema.groupDevice.groupId, groupId));
-      const policies = await db.select().from(schema.groupPolicy).where(eq(schema.groupPolicy.groupId, groupId));
-      if (devices.length) await db.insert(schema.groupDevice).values(devices.map((d: any) => ({ groupId: newId, deviceId: d.deviceId })));
-      if (policies.length) await db.insert(schema.groupPolicy).values(policies.map((p: any) => ({ groupId: newId, policyId: p.policyId })));
+      yield* Effect.tryPromise({ try: () => db.insert(schema.enterpriseGroup).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() }), catch: catchDb });
+      const devices = yield* Effect.tryPromise({ try: () => db.select().from(schema.groupDevice).where(eq(schema.groupDevice.groupId, groupId)), catch: catchDb });
+      const policies = yield* Effect.tryPromise({ try: () => db.select().from(schema.groupPolicy).where(eq(schema.groupPolicy.groupId, groupId)), catch: catchDb });
+      if (devices.length) yield* Effect.tryPromise({ try: () => db.insert(schema.groupDevice).values(devices.map((d: any) => ({ groupId: newId, deviceId: d.deviceId }))), catch: catchDb });
+      if (policies.length) yield* Effect.tryPromise({ try: () => db.insert(schema.groupPolicy).values(policies.map((p: any) => ({ groupId: newId, policyId: p.policyId }))), catch: catchDb });
       return { id: newId };
     }),
-    createPolicy: (request, tenantId, payload) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
+    createPolicy: (request, tenantId, payload) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
       const body = payload as { name: string; notes?: string | null };
       const policyId = id();
-      await db.insert(schema.policy).values({ id: policyId, organizationId: ctx.organization.id, name: body.name, notes: body.notes ?? null, createdAt: now(), updatedAt: now() });
+      yield* Effect.tryPromise({ try: () => db.insert(schema.policy).values({ id: policyId, organizationId: ctx.organization.id, name: body.name, notes: body.notes ?? null, createdAt: now(), updatedAt: now() }), catch: catchDb });
       return { id: policyId };
     }),
-    deletePolicies: (request, tenantId, ids) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
+    deletePolicies: (request, tenantId, ids) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
       const deleted: Array<string> = [];
       const failed: Array<{ id: string; reason: string }> = [];
       for (const policyId of ids) {
-        const result = await db.delete(schema.policy).where(and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id))).returning({ id: schema.policy.id });
+        const result = yield* Effect.tryPromise({ try: () => db.delete(schema.policy).where(and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id))).returning({ id: schema.policy.id }), catch: catchDb });
         if (result.length) deleted.push(policyId); else failed.push({ id: policyId, reason: "notFound" });
       }
       return { deleted, failed };
     }),
-    patchPolicy: (request, tenantId, policyId, payload) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
+    patchPolicy: (request, tenantId, policyId, payload) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
       const body = payload as { name?: string; notes?: string | null; configurations?: Record<string, unknown> };
-      const policy = await db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) });
-      if (!policy) throw new Error("Policy not found");
-      await db.update(schema.policy).set({ name: body.name, notes: body.notes, updatedAt: now() }).where(eq(schema.policy.id, policyId));
+      const policy = yield* Effect.tryPromise({ try: () => db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) }), catch: catchDb });
+      if (!policy) return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
+      yield* Effect.tryPromise({ try: () => db.update(schema.policy).set({ name: body.name, notes: body.notes, updatedAt: now() }).where(eq(schema.policy.id, policyId)), catch: catchDb });
       for (const [kind, data] of Object.entries(body.configurations ?? {})) {
         if (data === null) {
-          await db.delete(schema.configuration).where(and(eq(schema.configuration.policyId, policyId), eq(schema.configuration.kind, kind)));
+          yield* Effect.tryPromise({ try: () => db.delete(schema.configuration).where(and(eq(schema.configuration.policyId, policyId), eq(schema.configuration.kind, kind))), catch: catchDb });
         } else {
-          const hash = await hashJson(data);
-          await db.insert(schema.configuration).values({ policyId, kind, data, hash }).onConflictDoUpdate({ target: [schema.configuration.kind, schema.configuration.policyId], set: { data, hash } });
+          const hash = yield* Effect.tryPromise({ try: () => hashJson(data), catch: catchDb });
+          yield* Effect.tryPromise({ try: () => db.insert(schema.configuration).values({ policyId, kind, data, hash }).onConflictDoUpdate({ target: [schema.configuration.kind, schema.configuration.policyId], set: { data, hash } }), catch: catchDb });
         }
       }
       return ok;
     }),
-    uploadPolicyApplication: (request, tenantId, policyId, payload) => Effect.tryPromise({
-      try: async () => {
-        const ctx = await requireTenant(request, tenantId, "write");
-        await assertTenantPolicies(ctx.organization.id, [policyId]);
-        const body = payload as { fileName: string; contentType?: string; content: string };
-        const bytes = base64ToBytes(body.content);
-        const sha256 = await sha256Hex(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-        const key = policyApplicationKey(ctx.organization.id, policyId, sha256);
-        await storage.put(key, bytes, {
-          httpMetadata: body.contentType ? { contentType: body.contentType } : undefined,
-          customMetadata: { fileName: body.fileName },
-        });
-        return { sha256, fileName: body.fileName, contentType: body.contentType ?? null, size: bytes.byteLength };
-      },
-      catch: toR2Error,
+    uploadPolicyApplication: (request, tenantId, policyId, payload) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
+      yield* assertTenantPolicies(ctx.organization.id, [policyId]);
+      const body = payload as { fileName: string; contentType?: string; content: string };
+      const bytes = base64ToBytes(body.content);
+      const sha256 = yield* Effect.tryPromise({ try: () => sha256Hex(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)), catch: catchR2 });
+      const key = policyApplicationKey(ctx.organization.id, policyId, sha256);
+      yield* Effect.tryPromise({ try: () => storage.put(key, bytes, { httpMetadata: body.contentType ? { contentType: body.contentType } : undefined, customMetadata: { fileName: body.fileName } }), catch: catchR2 });
+      return { sha256, fileName: body.fileName, contentType: body.contentType ?? null, size: bytes.byteLength };
     }),
-    downloadPolicyApplication: (request, tenantId, policyId, sha256) => Effect.tryPromise({
-      try: async () => {
-        const ctx = await requireTenant(request, tenantId);
-        await assertTenantPolicies(ctx.organization.id, [policyId]);
-        const key = policyApplicationKey(ctx.organization.id, policyId, sha256);
-        const object = await storage.get(key);
-        if (!object) throw new EnterpriseR2FileNotFound({ message: "Policy application file not found" });
-        const bytes = await object.arrayBuffer();
-        return {
-          sha256,
-          fileName: object.customMetadata?.fileName ?? sha256,
-          contentType: object.httpMetadata?.contentType ?? null,
-          size: object.size ?? bytes.byteLength,
-          content: bytesToBase64(new Uint8Array(bytes)),
-        };
-      },
-      catch: toR2Error,
+    downloadPolicyApplication: (request, tenantId, policyId, sha256) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId);
+      yield* assertTenantPolicies(ctx.organization.id, [policyId]);
+      const key = policyApplicationKey(ctx.organization.id, policyId, sha256);
+      const object = yield* Effect.tryPromise({ try: () => storage.get(key), catch: catchR2 });
+      if (!object) return yield* Effect.fail(new EnterpriseR2FileNotFound({ message: "Policy application file not found" }));
+      const bytes = yield* Effect.tryPromise({ try: () => object.arrayBuffer(), catch: catchR2 });
+      return {
+        sha256,
+        fileName: object.customMetadata?.fileName ?? sha256,
+        contentType: object.httpMetadata?.contentType ?? null,
+        size: object.size ?? bytes.byteLength,
+        content: bytesToBase64(new Uint8Array(bytes)),
+      };
     }),
-    syncPolicies: (request, tenantId) => effectTry(async () => {
-      await requireTenant(request, tenantId, "write");
+    syncPolicies: (request, tenantId) => Effect.gen(function* () {
+      yield* requireTenant(request, tenantId, "write");
       return ok;
     }),
-    duplicatePolicy: (request, tenantId, policyId, payload) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
-      const source = await db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) });
-      if (!source) throw new Error("Policy not found");
+    duplicatePolicy: (request, tenantId, policyId, payload) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
+      const source = yield* Effect.tryPromise({ try: () => db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) }), catch: catchDb });
+      if (!source) return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
       const body = payload as { name?: string };
       const newId = id();
-      await db.insert(schema.policy).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
-      const configurations = await db.select().from(schema.configuration).where(eq(schema.configuration.policyId, policyId));
-      if (configurations.length) await db.insert(schema.configuration).values(configurations.map((c: any) => ({ kind: c.kind, policyId: newId, data: c.data, hash: c.hash })));
+      yield* Effect.tryPromise({ try: () => db.insert(schema.policy).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() }), catch: catchDb });
+      const configurations = yield* Effect.tryPromise({ try: () => db.select().from(schema.configuration).where(eq(schema.configuration.policyId, policyId)), catch: catchDb });
+      if (configurations.length) yield* Effect.tryPromise({ try: () => Promise.resolve(db.insert(schema.configuration).values(configurations.map((c: any) => ({ kind: c.kind, policyId: newId, data: c.data, hash: c.hash })))), catch: catchDb });
       return { id: newId };
     }),
     previewMobileconfig: (payload) => Effect.succeed({ payload }),
-    listDevices: (request, tenantId) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId);
-      const rows = await db.select().from(schema.device).where(eq(schema.device.organizationId, ctx.organization.id));
+    listDevices: (request, tenantId) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId);
+      const rows = yield* Effect.tryPromise({ try: () => db.select().from(schema.device).where(eq(schema.device.organizationId, ctx.organization.id)), catch: catchDb });
       return { rows: rows.map(rowDevice) };
     }),
-    getDevice: (request, tenantId, deviceId) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId);
-      const row = await db.query.device.findFirst({ where: and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id)) });
-      if (!row) throw new Error("Device not found");
+    getDevice: (request, tenantId, deviceId) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId);
+      const row = yield* Effect.tryPromise({ try: () => db.query.device.findFirst({ where: and(eq(schema.device.id, deviceId), eq(schema.device.organizationId, ctx.organization.id)) }), catch: catchDb });
+      if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
       return rowDevice(row);
     }),
-    listGroups: (request, tenantId) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId);
-      const rows = await db.select().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
+    listGroups: (request, tenantId) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId);
+      const rows = yield* Effect.tryPromise({ try: () => db.select().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id)), catch: catchDb });
       return { rows: rows.map((row: any) => rowGroup(row)) };
     }),
-    getGroup: (request, tenantId, groupId) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId);
-      const row = await db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id)) });
-      if (!row) throw new Error("Group not found");
+    getGroup: (request, tenantId, groupId) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId);
+      const row = yield* Effect.tryPromise({ try: () => db.query.enterpriseGroup.findFirst({ where: and(eq(schema.enterpriseGroup.id, groupId), eq(schema.enterpriseGroup.organizationId, ctx.organization.id)) }), catch: catchDb });
+      if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "Group not found" }));
       return rowGroup(row);
     }),
-    listPolicies: (request, tenantId) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId);
-      const rows = await db.select().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id));
-      return { rows: await Promise.all(rows.map((row: any) => rowPolicy(row))) };
+    listPolicies: (request, tenantId) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId);
+      const rows = yield* Effect.tryPromise({ try: () => db.select().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id)), catch: catchDb });
+      return { rows: yield* Effect.all(rows.map((row: any) => Effect.tryPromise({ try: () => rowPolicy(row), catch: catchDb }))) };
     }),
-    getPolicy: (request, tenantId, policyId) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId);
-      const row = await db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) });
-      if (!row) throw new Error("Policy not found");
-      return rowPolicy(row, true);
+    getPolicy: (request, tenantId, policyId) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId);
+      const row = yield* Effect.tryPromise({ try: () => db.query.policy.findFirst({ where: and(eq(schema.policy.id, policyId), eq(schema.policy.organizationId, ctx.organization.id)) }), catch: catchDb });
+      if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
+      return yield* Effect.tryPromise({ try: () => rowPolicy(row, true), catch: catchDb });
     }),
-    billing: (request, tenantId) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId);
-      return billingSummary(ctx.organization.id);
+    billing: (request, tenantId) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId);
+      return yield* Effect.tryPromise({ try: () => billingSummary(ctx.organization.id), catch: catchDb });
     }),
-    billingPortal: (request, tenantId, payload) => effectTry(async () => {
-      const ctx = await requireTenant(request, tenantId, "write");
+    billingPortal: (request, tenantId, payload) => Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
       const body = payload as { returnUrl: string };
-      await ensureStripeCustomer(ctx.organization);
-      const customer = await ensureStripeCustomer(ctx.organization);
-      const result = await stripeClient.billingPortal.sessions.create({ customer, return_url: body.returnUrl });
+      yield* Effect.tryPromise({ try: () => ensureStripeCustomer(ctx.organization), catch: catchStripe });
+      const customer = yield* Effect.tryPromise({ try: () => ensureStripeCustomer(ctx.organization), catch: catchStripe });
+      const result = yield* Effect.tryPromise({ try: () => stripeClient.billingPortal.sessions.create({ customer, return_url: body.returnUrl }), catch: catchStripe });
       return { url: result.url ?? body.returnUrl };
     }),
-    authSession: (request) => effectTry(() => auth.authSession(webRequestFromRequest(request, origin))),
-    authRegister: (request, payload) => effectTry(() => auth.authRegister(webRequestFromRequest(request, origin), payload)),
-    authLogin: (request, payload) => effectTry(() => auth.authLogin(webRequestFromRequest(request, origin), payload)),
-    authLogout: (request) => effectTry(() => auth.authLogout(webRequestFromRequest(request, origin))),
-    authForgotPassword: (_request, payload) => effectTry(() => auth.authForgotPassword(payload)),
-    authResetPassword: (_request, payload) => effectTry(() => auth.authResetPassword(payload)),
-    authChangePassword: (request, payload) => effectTry(() => auth.authChangePassword(webRequestFromRequest(request, origin), payload)),
-    authChangeEmail: (request, payload) => effectTry(() => auth.authChangeEmail(webRequestFromRequest(request, origin), payload)),
-    authVerifyEmailChange: (_request, payload) => effectTry(() => auth.authVerifyEmailChange(payload)),
-    listApiTokens: (request) => effectTry(() => auth.listApiTokens(webRequestFromRequest(request, origin))),
-    createApiToken: (request, payload) => effectTry(() => auth.createApiToken(webRequestFromRequest(request, origin), payload)),
-    revokeApiToken: (request, tokenId) => effectTry(() => auth.revokeApiToken(webRequestFromRequest(request, origin), tokenId)),
+    authSession: (request) => auth.authSession(webRequestFromRequest(request, origin)),
+    authRegister: (request, payload) => auth.authRegister(webRequestFromRequest(request, origin), payload),
+    authLogin: (request, payload) => auth.authLogin(webRequestFromRequest(request, origin), payload),
+    authLogout: (request) => auth.authLogout(webRequestFromRequest(request, origin)),
+    authForgotPassword: (_request, payload) => auth.authForgotPassword(payload),
+    authResetPassword: (_request, payload) => auth.authResetPassword(payload),
+    authChangePassword: (request, payload) => auth.authChangePassword(webRequestFromRequest(request, origin), payload),
+    authChangeEmail: (request, payload) => auth.authChangeEmail(webRequestFromRequest(request, origin), payload),
+    authVerifyEmailChange: (_request, payload) => auth.authVerifyEmailChange(payload),
+    listApiTokens: (request) => auth.listApiTokens(webRequestFromRequest(request, origin)),
+    createApiToken: (request, payload) => auth.createApiToken(webRequestFromRequest(request, origin), payload),
+    revokeApiToken: (request, tokenId) => auth.revokeApiToken(webRequestFromRequest(request, origin), tokenId),
   };
 };
 

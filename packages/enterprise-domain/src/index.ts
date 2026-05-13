@@ -1,5 +1,4 @@
 export {
-  EnterpriseAuthError,
   EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseDbError,

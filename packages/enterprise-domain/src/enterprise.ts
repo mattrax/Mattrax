@@ -29,9 +29,6 @@ export class EnterpriseConflict extends Schema.TaggedErrorClass<EnterpriseConfli
 export class EnterpriseDbError extends Schema.TaggedErrorClass<EnterpriseDbError>()("EnterpriseDbError", {
   message: Schema.String,
 }) {}
-export class EnterpriseAuthError extends Schema.TaggedErrorClass<EnterpriseAuthError>()("EnterpriseAuthError", {
-  message: Schema.String,
-}) {}
 export class EnterpriseStripeError extends Schema.TaggedErrorClass<EnterpriseStripeError>()("EnterpriseStripeError", {
   message: Schema.String,
 }) {}
@@ -49,7 +46,6 @@ const EnterpriseApiErrors = [
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
   EnterpriseConflict.pipe(HttpApiSchema.status(409)),
   EnterpriseDbError.pipe(HttpApiSchema.status(500)),
-  EnterpriseAuthError.pipe(HttpApiSchema.status(502)),
   EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
   EnterpriseR2FileNotFound.pipe(HttpApiSchema.status(404)),
   EnterpriseR2InternalError.pipe(HttpApiSchema.status(500)),

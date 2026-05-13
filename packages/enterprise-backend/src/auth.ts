@@ -1,5 +1,11 @@
 import { and, eq, isNull } from "drizzle-orm";
+import { Effect } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
+import {
+  EnterpriseBadRequest,
+  EnterpriseDbError,
+  EnterpriseUnauthorized,
+} from "@mattrax/enterprise-domain";
 
 export type EnterpriseAuthConfig = {
   readonly db: any;
@@ -59,7 +65,12 @@ const clearCookieHeader = () => `${sessionCookie}=; Path=/; HttpOnly; Secure; Sa
 
 export const userInfo = (user: any) => ({ id: user.id, name: user.name, email: user.email, emailVerified: user.emailVerified, image: user.image });
 
-export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfig): any => {
+const catchDb = (cause: unknown) => {
+  console.error("Database error:", cause);
+  return new EnterpriseDbError({ message: "Database operation failed" });
+};
+
+export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfig) => {
   const createSession = async (request: Request, userId: string) => {
     const token = randomToken();
     const createdAt = now();
@@ -96,12 +107,13 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
     return user ? { apiToken: item, user } : undefined;
   };
 
-  const requireUser = async (requestLike: Request | { headers: Record<string, string | string[] | undefined> }) => {
+  const requireUser = (requestLike: Request | { headers: Record<string, string | string[] | undefined> }) => Effect.gen(function* () {
     const request = requestLike instanceof Request ? requestLike : new Request(origin, { headers: requestLike.headers as any });
-    const resolved = await resolveSession(request) ?? await resolveApiToken(request);
-    if (!resolved?.user) throw new Error("Unauthenticated");
+    const session = yield* Effect.tryPromise({ try: () => resolveSession(request), catch: catchDb });
+    const resolved = session ?? (yield* Effect.tryPromise({ try: () => resolveApiToken(request), catch: catchDb }));
+    if (!resolved?.user) return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     return resolved;
-  };
+  });
 
   const issueVerification = async (identifier: string, kind: string, metadata?: unknown) => {
     const token = randomToken("vrf_");
@@ -110,99 +122,122 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
     return token;
   };
 
-  const listApiTokens = async (request: Request) => {
-    const { user } = await requireUser(request);
-    const rows = await db.select().from(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id));
-    return { tokens: rows.map(tokenInfo) };
-  };
-
   const tokenInfo = (item: any) => ({ id: item.id, name: item.name, tokenPrefix: item.tokenPrefix, createdAt: item.createdAt.toISOString(), updatedAt: item.updatedAt.toISOString(), lastUsedAt: iso(item.lastUsedAt), expiresAt: iso(item.expiresAt), revokedAt: iso(item.revokedAt) });
 
-  const createApiToken = async (request: Request, body: any) => {
-    const { user } = await requireUser(request);
+  const listApiTokens = (request: Request) => Effect.gen(function* () {
+    const { user } = yield* requireUser(request);
+    const rows = yield* Effect.tryPromise({ try: () => db.select().from(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id)), catch: catchDb });
+    return { tokens: rows.map(tokenInfo) };
+  });
+
+  const createApiToken = (request: Request, body: any) => Effect.gen(function* () {
+    const { user } = yield* requireUser(request);
     const raw = randomToken("mtx_");
     const createdAt = now();
-    const item = { id: id(), userId: user.id, name: body.name, tokenPrefix: raw.slice(0, 12), tokenHash: await sha256(raw), expiresAt: body.expiresAt ? new Date(body.expiresAt) : null, createdAt, updatedAt: createdAt };
-    await db.insert(schema.accountApiToken).values(item);
+    const tokenHash = yield* Effect.tryPromise({ try: () => sha256(raw), catch: catchDb });
+    const item = { id: id(), userId: user.id, name: body.name, tokenPrefix: raw.slice(0, 12), tokenHash, expiresAt: body.expiresAt ? new Date(body.expiresAt) : null, createdAt, updatedAt: createdAt };
+    yield* Effect.tryPromise({ try: () => db.insert(schema.accountApiToken).values(item), catch: catchDb });
     return { token: raw, item: tokenInfo(item) };
-  };
+  });
 
-  const revokeApiToken = async (request: Request, tokenId: string) => {
-    const { user } = await requireUser(request);
-    await db.update(schema.accountApiToken).set({ revokedAt: now(), updatedAt: now() }).where(and(eq(schema.accountApiToken.id, tokenId), eq(schema.accountApiToken.userId, user.id)));
+  const revokeApiToken = (request: Request, tokenId: string) => Effect.gen(function* () {
+    const { user } = yield* requireUser(request);
+    yield* Effect.tryPromise({ try: () => db.update(schema.accountApiToken).set({ revokedAt: now(), updatedAt: now() }).where(and(eq(schema.accountApiToken.id, tokenId), eq(schema.accountApiToken.userId, user.id))), catch: catchDb });
     return ok;
-  };
+  });
 
-  const authSession = async (request: Request) => {
-    const resolved = await resolveSession(request);
+  const authSession = (request: Request) => Effect.gen(function* () {
+    const resolved = yield* Effect.tryPromise({ try: () => resolveSession(request), catch: catchDb });
     return { user: resolved?.user ? userInfo(resolved.user) : undefined };
-  };
+  });
 
-  const authRegister = async (request: Request, body: any) => {
+  const authRegister = (request: Request, body: any) => Effect.gen(function* () {
     const email = normalizeEmail(body.email);
     const createdAt = now();
     const user = { id: id(), name: body.name, email, emailVerified: false, createdAt, updatedAt: createdAt };
-    await db.insert(schema.user).values(user);
-    await db.insert(schema.account).values({ id: id(), accountId: email, providerId: "credential", userId: user.id, password: await hashPassword(body.password), createdAt, updatedAt: createdAt });
-    const sessionToken = await createSession(request, user.id);
-    return HttpServerResponse.json({ user: userInfo(user) }, { headers: { "set-cookie": cookieHeader(sessionToken) } });
-  };
+    yield* Effect.tryPromise({ try: () => db.insert(schema.user).values(user), catch: catchDb });
+    const password = yield* Effect.tryPromise({ try: () => hashPassword(body.password), catch: catchDb });
+    yield* Effect.tryPromise({ try: () => db.insert(schema.account).values({ id: id(), accountId: email, providerId: "credential", userId: user.id, password, createdAt, updatedAt: createdAt }), catch: catchDb });
+    const sessionToken = yield* Effect.tryPromise({ try: () => createSession(request, user.id), catch: catchDb });
+    return yield* HttpServerResponse.json({ user: userInfo(user) }, { headers: { "set-cookie": cookieHeader(sessionToken) } });
+  });
 
-  const authLogin = async (request: Request, body: any) => {
+  const authLogin = (request: Request, body: any) => Effect.gen(function* () {
     const email = normalizeEmail(body.email);
-    const account = await db.query.account.findFirst({ where: and(eq(schema.account.providerId, "credential"), eq(schema.account.accountId, email)) });
-    if (!account || !await verifyPassword(body.password, account.password)) throw new Error("Invalid email or password");
-    const user = await db.query.user.findFirst({ where: eq(schema.user.id, account.userId) });
-    const sessionToken = await createSession(request, user.id);
-    return HttpServerResponse.json({ user: userInfo(user) }, { headers: { "set-cookie": cookieHeader(sessionToken) } });
-  };
+    const account = yield* Effect.tryPromise({ try: () => db.query.account.findFirst({ where: and(eq(schema.account.providerId, "credential"), eq(schema.account.accountId, email)) }), catch: catchDb });
+    const valid = account ? yield* Effect.tryPromise({ try: () => verifyPassword(body.password, account.password), catch: catchDb }) : false;
+    if (!account || !valid) {
+      return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Invalid email or password" }));
+    }
+    const user = yield* Effect.tryPromise({ try: () => db.query.user.findFirst({ where: eq(schema.user.id, account.userId) }), catch: catchDb });
+    const sessionToken = yield* Effect.tryPromise({ try: () => createSession(request, user.id), catch: catchDb });
+    return yield* HttpServerResponse.json({ user: userInfo(user) }, { headers: { "set-cookie": cookieHeader(sessionToken) } });
+  });
 
-  const authLogout = async (request: Request) => {
+  const authLogout = (request: Request) => Effect.gen(function* () {
     const token = parseCookies(request.headers.get("cookie"))[sessionCookie];
-    if (token) await db.delete(schema.session).where(eq(schema.session.tokenHash, await sha256(token)));
-    return HttpServerResponse.json(ok, { headers: { "set-cookie": clearCookieHeader() } });
-  };
+    if (token) {
+      const tokenHash = yield* Effect.tryPromise({ try: () => sha256(token), catch: catchDb });
+      yield* Effect.tryPromise({ try: () => db.delete(schema.session).where(eq(schema.session.tokenHash, tokenHash)), catch: catchDb });
+    }
+    return yield* HttpServerResponse.json(ok, { headers: { "set-cookie": clearCookieHeader() } });
+  });
 
-  const authForgotPassword = async (body: any) => {
+  const authForgotPassword = (body: any) => Effect.gen(function* () {
     const email = normalizeEmail(body.email);
-    const user = await db.query.user.findFirst({ where: eq(schema.user.email, email) });
-    if (user) console.log("RESET EMAIL", email, `${origin}${body.redirectTo ?? "/reset-password"}?token=${await issueVerification(email, "password-reset")}`);
+    const user = yield* Effect.tryPromise({ try: () => db.query.user.findFirst({ where: eq(schema.user.email, email) }), catch: catchDb });
+    if (user) {
+      const token = yield* Effect.tryPromise({ try: () => issueVerification(email, "password-reset"), catch: catchDb });
+      console.log("RESET EMAIL", email, `${origin}${body.redirectTo ?? "/reset-password"}?token=${token}`);
+    }
     return ok;
-  };
+  });
 
-  const authResetPassword = async (body: any) => {
-    const verification = await db.query.verification.findFirst({ where: and(eq(schema.verification.kind, "password-reset"), eq(schema.verification.valueHash, await sha256(body.token))) });
-    if (!verification || verification.expiresAt <= now()) throw new Error("Invalid or expired token");
-    await db.update(schema.account).set({ password: await hashPassword(body.newPassword), updatedAt: now() }).where(and(eq(schema.account.providerId, "credential"), eq(schema.account.accountId, verification.identifier)));
-    await db.delete(schema.verification).where(eq(schema.verification.id, verification.id));
+  const authResetPassword = (body: any) => Effect.gen(function* () {
+    const tokenHash = yield* Effect.tryPromise({ try: () => sha256(body.token), catch: catchDb });
+    const verification = yield* Effect.tryPromise({ try: () => db.query.verification.findFirst({ where: and(eq(schema.verification.kind, "password-reset"), eq(schema.verification.valueHash, tokenHash)) }), catch: catchDb });
+    if (!verification || verification.expiresAt <= now()) {
+      return yield* Effect.fail(new EnterpriseBadRequest({ message: "Invalid or expired token" }));
+    }
+    const password = yield* Effect.tryPromise({ try: () => hashPassword(body.newPassword), catch: catchDb });
+    yield* Effect.tryPromise({ try: () => db.update(schema.account).set({ password, updatedAt: now() }).where(and(eq(schema.account.providerId, "credential"), eq(schema.account.accountId, verification.identifier))), catch: catchDb });
+    yield* Effect.tryPromise({ try: () => db.delete(schema.verification).where(eq(schema.verification.id, verification.id)), catch: catchDb });
     return ok;
-  };
+  });
 
-  const authChangePassword = async (request: Request, body: any) => {
-    const { user } = await requireUser(request);
-    const account = await db.query.account.findFirst({ where: and(eq(schema.account.providerId, "credential"), eq(schema.account.userId, user.id)) });
-    if (!account || !await verifyPassword(body.currentPassword, account.password)) throw new Error("Current password is incorrect");
-    await db.update(schema.account).set({ password: await hashPassword(body.newPassword), updatedAt: now() }).where(eq(schema.account.id, account.id));
-    if (body.revokeOtherSessions) await db.delete(schema.session).where(eq(schema.session.userId, user.id));
+  const authChangePassword = (request: Request, body: any) => Effect.gen(function* () {
+    const { user } = yield* requireUser(request);
+    const account = yield* Effect.tryPromise({ try: () => db.query.account.findFirst({ where: and(eq(schema.account.providerId, "credential"), eq(schema.account.userId, user.id)) }), catch: catchDb });
+    const valid = account ? yield* Effect.tryPromise({ try: () => verifyPassword(body.currentPassword, account.password), catch: catchDb }) : false;
+    if (!account || !valid) {
+      return yield* Effect.fail(new EnterpriseBadRequest({ message: "Current password is incorrect" }));
+    }
+    const password = yield* Effect.tryPromise({ try: () => hashPassword(body.newPassword), catch: catchDb });
+    yield* Effect.tryPromise({ try: () => db.update(schema.account).set({ password, updatedAt: now() }).where(eq(schema.account.id, account.id)), catch: catchDb });
+    if (body.revokeOtherSessions) yield* Effect.tryPromise({ try: () => db.delete(schema.session).where(eq(schema.session.userId, user.id)), catch: catchDb });
     return ok;
-  };
+  });
 
-  const authChangeEmail = async (request: Request, body: any) => {
-    const { user } = await requireUser(request);
+  const authChangeEmail = (request: Request, body: any) => Effect.gen(function* () {
+    const { user } = yield* requireUser(request);
     const newEmail = normalizeEmail(body.newEmail);
-    console.log("CHANGE EMAIL VERIFICATION", user.email, "->", newEmail, `${origin}${body.callbackURL ?? "/account"}?token=${await issueVerification(user.id, "email-change", { newEmail })}`);
+    const token = yield* Effect.tryPromise({ try: () => issueVerification(user.id, "email-change", { newEmail }), catch: catchDb });
+    console.log("CHANGE EMAIL VERIFICATION", user.email, "->", newEmail, `${origin}${body.callbackURL ?? "/account"}?token=${token}`);
     return ok;
-  };
+  });
 
-  const authVerifyEmailChange = async (body: any) => {
-    const verification = await db.query.verification.findFirst({ where: and(eq(schema.verification.kind, "email-change"), eq(schema.verification.valueHash, await sha256(body.token))) });
-    if (!verification || verification.expiresAt <= now()) throw new Error("Invalid or expired token");
+  const authVerifyEmailChange = (body: any) => Effect.gen(function* () {
+    const tokenHash = yield* Effect.tryPromise({ try: () => sha256(body.token), catch: catchDb });
+    const verification = yield* Effect.tryPromise({ try: () => db.query.verification.findFirst({ where: and(eq(schema.verification.kind, "email-change"), eq(schema.verification.valueHash, tokenHash)) }), catch: catchDb });
+    if (!verification || verification.expiresAt <= now()) {
+      return yield* Effect.fail(new EnterpriseBadRequest({ message: "Invalid or expired token" }));
+    }
     const newEmail = (verification.metadata as any)?.newEmail;
-    await db.update(schema.user).set({ email: newEmail, emailVerified: true, updatedAt: now() }).where(eq(schema.user.id, verification.identifier));
-    await db.update(schema.account).set({ accountId: newEmail, updatedAt: now() }).where(and(eq(schema.account.providerId, "credential"), eq(schema.account.userId, verification.identifier)));
-    await db.delete(schema.verification).where(eq(schema.verification.id, verification.id));
+    yield* Effect.tryPromise({ try: () => db.update(schema.user).set({ email: newEmail, emailVerified: true, updatedAt: now() }).where(eq(schema.user.id, verification.identifier)), catch: catchDb });
+    yield* Effect.tryPromise({ try: () => db.update(schema.account).set({ accountId: newEmail, updatedAt: now() }).where(and(eq(schema.account.providerId, "credential"), eq(schema.account.userId, verification.identifier))), catch: catchDb });
+    yield* Effect.tryPromise({ try: () => db.delete(schema.verification).where(eq(schema.verification.id, verification.id)), catch: catchDb });
     return ok;
-  };
+  });
 
   return { requireUser, authSession, authRegister, authLogin, authLogout, authForgotPassword, authResetPassword, authChangePassword, authChangeEmail, authVerifyEmailChange, listApiTokens, createApiToken, revokeApiToken };
 };

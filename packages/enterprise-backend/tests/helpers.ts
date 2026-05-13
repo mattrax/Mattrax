@@ -228,7 +228,7 @@ class DeleteBuilder {
   }
 
   returning() {
-    return this.removed;
+    return this;
   }
 
   then(resolve: (value: Row[]) => void) {

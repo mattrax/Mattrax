@@ -1,8 +1,3 @@
-import {
-  EnterpriseR2FileNotFound,
-  EnterpriseR2InternalError,
-} from "@mattrax/enterprise-domain";
-
 export const policyApplicationPrefix = (tenantId: string, policyId: string) => `p/${tenantId}/${policyId}`;
 
 export const policyApplicationKey = (tenantId: string, policyId: string, sha256: string) => `${policyApplicationPrefix(tenantId, policyId)}/${sha256}`;
@@ -23,10 +18,4 @@ export const bytesToBase64 = (bytes: Uint8Array) => {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary);
-};
-
-export const toR2Error = (error: unknown) => {
-  if (typeof error === "object" && error !== null && ((error as { _tag?: unknown })._tag === "EnterpriseR2FileNotFound" || (error as { _tag?: unknown })._tag === "EnterpriseR2InternalError")) return error as EnterpriseR2FileNotFound | EnterpriseR2InternalError;
-  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "R2 operation failed";
-  return new EnterpriseR2InternalError({ message });
 };

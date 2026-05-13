@@ -39,10 +39,10 @@ describe("enterprise auth", () => {
     const response = await runEffect(auth.authRegister(new Request(origin), { name: "Test", email: "t@example.com", password: "password" }));
     const cookie = cookieFrom(response);
 
-    await expect(auth.requireUser(new Request(origin, { headers: { cookie } }))).resolves.toMatchObject({ user: { email: "t@example.com" } });
+    await expect(runEffect(auth.requireUser(new Request(origin, { headers: { cookie } })))).resolves.toMatchObject({ user: { email: "t@example.com" } });
 
     vi.setSystemTime(new Date("2025-02-01T00:00:00.000Z"));
-    await expect(auth.requireUser(new Request(origin, { headers: { cookie } }))).rejects.toThrow("Unauthenticated");
+    await expect(runEffect(auth.requireUser(new Request(origin, { headers: { cookie } })))).rejects.toThrow("Unauthenticated");
     vi.useRealTimers();
   });
 
@@ -52,7 +52,7 @@ describe("enterprise auth", () => {
 
     const response = await runEffect(auth.authLogin(new Request(origin), { email: " TEST@example.com ", password: "password" }));
     expect(header(response, "set-cookie")).toContain("mattrax_session=");
-    await expect(auth.authLogin(new Request(origin), { email: "test@example.com", password: "bad" })).rejects.toThrow("Invalid email or password");
+    await expect(runEffect(auth.authLogin(new Request(origin), { email: "test@example.com", password: "bad" }))).rejects.toThrow("Invalid email or password");
   });
 
   it("logs out by deleting the session and clearing the cookie", async () => {
@@ -73,8 +73,8 @@ describe("enterprise auth", () => {
 
     vi.useFakeTimers();
     vi.setSystemTime(createdAt);
-    await expect(auth.authResetPassword({ token: "wrong", newPassword: "new" })).rejects.toThrow("Invalid or expired token");
-    await auth.authResetPassword({ token: "reset-token", newPassword: "new" });
+    await expect(runEffect(auth.authResetPassword({ token: "wrong", newPassword: "new" }))).rejects.toThrow("Invalid or expired token");
+    await runEffect(auth.authResetPassword({ token: "reset-token", newPassword: "new" }));
     expect(await verifyPassword("new", db.store.account[0].password)).toBe(true);
     expect(db.store.verification).toHaveLength(0);
     vi.useRealTimers();
@@ -86,8 +86,8 @@ describe("enterprise auth", () => {
     await runEffect(auth.authLogin(new Request(origin), { email: "test@example.com", password: "old" }));
     expect(db.store.session).toHaveLength(2);
 
-    await expect(auth.authChangePassword(new Request(origin, { headers: { cookie: cookieFrom(response) } }), { currentPassword: "bad", newPassword: "new" })).rejects.toThrow("Current password is incorrect");
-    await auth.authChangePassword(new Request(origin, { headers: { cookie: cookieFrom(response) } }), { currentPassword: "old", newPassword: "new", revokeOtherSessions: true });
+    await expect(runEffect(auth.authChangePassword(new Request(origin, { headers: { cookie: cookieFrom(response) } }), { currentPassword: "bad", newPassword: "new" }))).rejects.toThrow("Current password is incorrect");
+    await runEffect(auth.authChangePassword(new Request(origin, { headers: { cookie: cookieFrom(response) } }), { currentPassword: "old", newPassword: "new", revokeOtherSessions: true }));
 
     expect(await verifyPassword("new", db.store.account[0].password)).toBe(true);
     expect(db.store.session).toHaveLength(0);
@@ -102,7 +102,7 @@ describe("enterprise auth", () => {
 
     vi.useFakeTimers();
     vi.setSystemTime(createdAt);
-    await auth.authVerifyEmailChange({ token: "email-token" });
+    await runEffect(auth.authVerifyEmailChange({ token: "email-token" }));
     expect(db.store.user[0]).toMatchObject({ email: "new@example.com", emailVerified: true });
     expect(db.store.account[0]).toMatchObject({ accountId: "new@example.com" });
     expect(db.store.verification).toHaveLength(0);
@@ -112,13 +112,13 @@ describe("enterprise auth", () => {
   it("supports API tokens with expiry and revocation", async () => {
     const { db, auth } = makeAuth();
     const response = await runEffect(auth.authRegister(new Request(origin), { name: "Test", email: "test@example.com", password: "password" }));
-    const { token, item } = await auth.createApiToken(new Request(origin, { headers: { cookie: cookieFrom(response) } }), { name: "CI" });
+    const { token, item } = await runEffect(auth.createApiToken(new Request(origin, { headers: { cookie: cookieFrom(response) } }), { name: "CI" }));
 
     expect(item.tokenPrefix).toBe(token.slice(0, 12));
-    await expect(auth.requireUser(new Request(origin, { headers: { authorization: `Bearer ${token}` } }))).resolves.toMatchObject({ user: { email: "test@example.com" } });
+    await expect(runEffect(auth.requireUser(new Request(origin, { headers: { authorization: `Bearer ${token}` } })))).resolves.toMatchObject({ user: { email: "test@example.com" } });
     expect(db.store.account_api_token[0].lastUsedAt).toBeInstanceOf(Date);
 
-    await auth.revokeApiToken(new Request(origin, { headers: { cookie: cookieFrom(response) } }), item.id);
-    await expect(auth.requireUser(new Request(origin, { headers: { authorization: `Bearer ${token}` } }))).rejects.toThrow("Unauthenticated");
+    await runEffect(auth.revokeApiToken(new Request(origin, { headers: { cookie: cookieFrom(response) } }), item.id));
+    await expect(runEffect(auth.requireUser(new Request(origin, { headers: { authorization: `Bearer ${token}` } })))).rejects.toThrow("Unauthenticated");
   });
 });
