@@ -1,0 +1,16 @@
+{
+  "name": "@mattrax/azure-oidc",
+  "private": true,
+  "description": "Azure OIDC discovery, JWKS caching, and JWT validation",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}
