@@ -1,5 +1,6 @@
 import { createResource } from "solid-js";
 import { getRequestEvent, isServer } from "solid-js/web";
+import { env } from "cloudflare:workers";
 
 type AuthUser = { id: string; name: string; email: string; emailVerified: boolean; image?: string | null };
 type AuthResult<T = unknown> = Promise<{ data?: T; error?: { message?: string } }>;
@@ -11,11 +12,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const event = isServer ? getRequestEvent() : undefined;
   const headers = new Headers(init.headers);
   if (init.body) headers.set("content-type", "application/json");
+
+  let response: Response;
   if (event) {
     const cookie = event.request.headers.get("cookie");
     if (cookie) headers.set("cookie", cookie);
+    response = await env.API.fetch(new Request(new URL(url, event.request.url), { ...init, headers }));
+  } else {
+    response = await fetch(url, { ...init, credentials: "include", headers });
   }
-  const response = await fetch(event ? new URL(url, event.request.url) : url, { ...init, credentials: "include", headers });
+
   if (!response.ok) {
     const data = await response.json().catch(() => undefined) as { message?: string } | undefined;
     throw new Error(data?.message ?? `Request failed with ${response.status}`);
