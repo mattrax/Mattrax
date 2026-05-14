@@ -1,8 +1,9 @@
 import { Context, Layer } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
-import { AppleMdmServiceLive, appleMdmApi, appleMdmHandlers, appleMdmRoutes, extractTopicFromCertPem } from "@mattrax/dm-apple";
+import { AppleMdmService, AppleMdmTopic, appleMdmApi, appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { ScepServiceLive, scepRoutes } from "@mattrax/scep";
+import { Env as CoreEnv } from "@mattrax/enterprise-core";
 import { managementWebhookGroup, managementWebhookHandlers } from "@mattrax/management-backend-http";
 import { ManagementBackendD1 } from "./management.js";
 import { ScepRepositoryD1 } from "./scep-repo.js";
@@ -13,10 +14,6 @@ const whitelabelApi = HttpApi.make("WhitelabelMDM")
   .add(appleMdmApi);
 
 function createMdmLayer(env: Env) {
-  const topic = env.APNS_CERT
-    ? (extractTopicFromCertPem(env.APNS_CERT) ?? "com.apple.mgmt.External.placeholder")
-    : "com.apple.mgmt.External.placeholder";
-
   const managementBackend = ManagementBackendD1(env.DB, env.APPS);
 
   const apiLayer = Layer.mergeAll(
@@ -33,7 +30,9 @@ function createMdmLayer(env: Env) {
     scepRoutes,
   );
 
-  const appleMdmService = AppleMdmServiceLive({ origin: env.ORIGIN, topic }).pipe(
+  const appleMdmService = AppleMdmService.layer.pipe(
+    Layer.provideMerge(AppleMdmTopic.layer),
+    Layer.provideMerge(CoreEnv.layer({ origin: env.ORIGIN, cloudAppleVendorCert: env.APNS_CERT })),
     Layer.provideMerge(managementBackend),
   );
 
@@ -61,7 +60,7 @@ export default {
     ) {
       const mdmLayer = createMdmLayer(env);
       const { handler, dispose } = HttpRouter.toWebHandler(mdmLayer);
-      const response = await handler(request, Context.empty());
+      const response = await handler(request, Context.empty() as any);
       ctx.waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));
       return response;
     }

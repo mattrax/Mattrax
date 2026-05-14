@@ -12,6 +12,7 @@
   "dependencies": {
     "@mattrax/apns": "workspace:*",
     "@mattrax/dm-apple": "workspace:*",
+    "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
     "@mattrax/scep": "workspace:*",

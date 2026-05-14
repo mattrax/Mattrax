@@ -13,7 +13,7 @@ const urlString = Schema.String.check(
   }),
 );
 
-const Env = Schema.Struct({
+const ApiEnvSchema = Schema.Struct({
   ORIGIN: urlString,
   AUTH_SECRET: nonEmptyString,
   STRIPE_SECRET_KEY: nonEmptyString,
@@ -26,7 +26,7 @@ const Env = Schema.Struct({
 const emptyStringAsUndefined = (value: unknown) => value === "" ? undefined : value;
 
 // For now this is only used for runtime validation, so transformations aren't safe.
-export const env = Schema.decodeUnknownSync(Env)({
+export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   ORIGIN: emptyStringAsUndefined(cfEnv.ORIGIN),
   AUTH_SECRET: emptyStringAsUndefined(cfEnv.AUTH_SECRET),
   STRIPE_SECRET_KEY: emptyStringAsUndefined((cfEnv as any).STRIPE_SECRET_KEY),

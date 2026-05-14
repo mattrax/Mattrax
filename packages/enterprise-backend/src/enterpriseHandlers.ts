@@ -5,11 +5,14 @@ import {
   EnterpriseLastTenantUser,
   EnterpriseNotFound,
   EnterpriseTenantHasMembers,
+  EnterpriseService,
   enterpriseApi,
+  type EnterpriseAuth,
   policyApplicationKey,
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import type { Stripe } from "@mattrax/effect-stripe";
+import { schema } from "@mattrax/enterprise-core";
 import { and, count, eq, inArray } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
@@ -19,23 +22,21 @@ import { R2Storage, R2StorageLive, base64ToBytes, bytesToBase64, sha256Hex } fro
 import type { R2Bucket } from "./policyApplicationStorage.ts";
 import type { EnterpriseConfiguration, EnterpriseDb, EnterpriseDevice, EnterpriseEnrollment, EnterpriseGroup, EnterpriseGroupDevice, EnterpriseGroupPolicy, EnterpriseOrganization, EnterprisePolicy, EnterpriseSchema } from "./schema.ts";
 
-type TenantInfo = { readonly id: string; readonly name: string; readonly slug: string; readonly logo: string | null; readonly role: string };
-type CountRow = { readonly value: number };
-type BillingSubscription = { readonly plan: string; readonly status: string; readonly stripeSubscriptionId: string | null };
-type TenantUserRow = { readonly memberId: string; readonly userId: string; readonly name: string; readonly email: string; readonly role: string; readonly createdAt: Date };
-type InvitationRow = { readonly id: string; readonly email: string; readonly role: string | null; readonly status: string; readonly expiresAt: Date; readonly createdAt: Date };
-type Dynamic = ReturnType<typeof JSON.parse>;
-
 export type EnterpriseHandlersConfig = {
-  readonly db: EnterpriseDb;
-  readonly schema: EnterpriseSchema;
   readonly origin: string;
   readonly stripeClient: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>;
   readonly storage: R2Bucket;
 };
 
+type EnterpriseServiceConfig = EnterpriseHandlersConfig & {
+  readonly db: EnterpriseDb;
+  readonly schema: EnterpriseSchema;
+  readonly auth?: EnterpriseAuth["Service"];
+};
+
 type StripeClientLike = Parameters<typeof makeEffectStripeClient>[0];
 type RawStripeClientLike = object;
+type Dynamic = ReturnType<typeof JSON.parse>;
 
 const isEffectStripeClient = (client: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>): client is ReturnType<typeof makeEffectStripeClient> =>
   typeof (client as { readonly effect?: unknown }).effect === "function";
@@ -70,8 +71,8 @@ const hashJson = (value: unknown) => Effect.promise(() => crypto.subtle.digest("
 const canWriteTenant = (role: string) => role.split(",").some((item) => item === "owner" || item === "admin");
 const canDeleteTenant = (role: string) => role.split(",").includes("owner");
 
-export const createEnterpriseService = ({ db, schema, origin, stripeClient, storage }: EnterpriseHandlersConfig) => {
-  const auth = createEnterpriseAuth({ db, schema, origin });
+export const createEnterpriseService = ({ db, schema, origin, stripeClient, storage, auth: authService }: EnterpriseServiceConfig) => {
+  const auth = authService ?? createEnterpriseAuth({ db, schema, origin });
   const stripe = isEffectStripeClient(stripeClient) ? stripeClient : makeEffectStripeClient(stripeClient as StripeClientLike);
   const r2Layer = R2StorageLive(storage);
 
@@ -115,7 +116,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
   });
 
   const listTenantInfo = (userId: string) => Effect.gen(function* () {
-    const rows = yield* db.select<ReadonlyArray<TenantInfo>>({
+    const rows = yield* db.select({
       id: schema.organization.id,
       name: schema.organization.name,
       slug: schema.organization.slug,
@@ -126,19 +127,19 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
   });
 
   const memberCount = (tenantId: string) => Effect.gen(function* () {
-    const [members] = yield* db.select<ReadonlyArray<CountRow>>({ value: count() }).from(schema.member).where(eq(schema.member.organizationId, tenantId));
+    const [members] = yield* db.select({ value: count() }).from(schema.member).where(eq(schema.member.organizationId, tenantId));
     return members?.value ?? 0;
   });
 
   const assertTenantDevices = (tenantId: string, ids: ReadonlyArray<string>) => Effect.gen(function* () {
     if (ids.length === 0) return;
-    const rows = yield* db.select<ReadonlyArray<{ readonly id: string }>>({ id: schema.device.id }).from(schema.device).where(and(eq(schema.device.organizationId, tenantId), inArray(schema.device.id, [...ids])));
+    const rows = yield* db.select({ id: schema.device.id }).from(schema.device).where(and(eq(schema.device.organizationId, tenantId), inArray(schema.device.id, [...ids])));
     if (rows.length !== new Set(ids).size) return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
   });
 
   const assertTenantPolicies = (tenantId: string, ids: ReadonlyArray<string>) => Effect.gen(function* () {
     if (ids.length === 0) return;
-    const rows = yield* db.select<ReadonlyArray<{ readonly id: string }>>({ id: schema.policy.id }).from(schema.policy).where(and(eq(schema.policy.organizationId, tenantId), inArray(schema.policy.id, [...ids])));
+    const rows = yield* db.select({ id: schema.policy.id }).from(schema.policy).where(and(eq(schema.policy.organizationId, tenantId), inArray(schema.policy.id, [...ids])));
     if (rows.length !== new Set(ids).size) return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
   });
 
@@ -149,8 +150,8 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
   });
 
   const billingSummary = (organizationId: string) => Effect.gen(function* () {
-    const [subscription] = yield* db.select<ReadonlyArray<BillingSubscription>>().from(schema.subscription).where(eq(schema.subscription.referenceId, organizationId)).limit(1);
-    const [devices] = yield* db.select<ReadonlyArray<CountRow>>({ value: count() }).from(schema.device).where(and(eq(schema.device.organizationId, organizationId), eq(schema.device.status, "enrolled")));
+    const [subscription] = yield* db.select().from(schema.subscription).where(eq(schema.subscription.referenceId, organizationId)).limit(1);
+    const [devices] = yield* db.select({ value: count() }).from(schema.device).where(and(eq(schema.device.organizationId, organizationId), eq(schema.device.status, "enrolled")));
     return {
       plan: subscription?.plan,
       status: subscription?.status,
@@ -199,7 +200,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       updatedAt: iso(row.updatedAt),
     };
     if (withConfigurations) {
-      const configurations = yield* db.select<ReadonlyArray<EnterpriseConfiguration>>().from(schema.configuration).where(eq(schema.configuration.policyId, row.id));
+      const configurations = yield* db.select().from(schema.configuration).where(eq(schema.configuration.policyId, row.id));
       base.configurations = Object.fromEntries(configurations.map((item: EnterpriseConfiguration) => [item.kind, item.data]));
     }
     return base;
@@ -295,7 +296,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     }),
     listTenantUsers: (request, tenantId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId);
-      const users = yield* db.select<ReadonlyArray<TenantUserRow>>({ memberId: schema.member.id, userId: schema.user.id, name: schema.user.name, email: schema.user.email, role: schema.member.role, createdAt: schema.member.createdAt }).from(schema.member).innerJoin(schema.user, eq(schema.user.id, schema.member.userId)).where(eq(schema.member.organizationId, tenantId));
+      const users = yield* db.select({ memberId: schema.member.id, userId: schema.user.id, name: schema.user.name, email: schema.user.email, role: schema.member.role, createdAt: schema.member.createdAt }).from(schema.member).innerJoin(schema.user, eq(schema.user.id, schema.member.userId)).where(eq(schema.member.organizationId, tenantId));
       return { users: users.map((user: { createdAt: Date }) => ({ ...user, createdAt: iso(user.createdAt) })) };
     }),
     inviteTenantUser: (request, tenantId, payload) => Effect.gen(function* () {
@@ -309,7 +310,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     }),
     listTenantInvitations: (request, tenantId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
-      const invitations = yield* db.select<ReadonlyArray<InvitationRow>>().from(schema.invitation).where(eq(schema.invitation.organizationId, tenantId));
+      const invitations = yield* db.select().from(schema.invitation).where(eq(schema.invitation.organizationId, tenantId));
       return { invitations: invitations.map((item: { id: string; email: string; role: string | null; status: string; expiresAt: Date; createdAt: Date }) => ({ id: item.id, email: item.email, role: item.role, status: item.status, expiresAt: iso(item.expiresAt), createdAt: iso(item.createdAt) })) };
     }),
     cancelTenantInvitation: (request, tenantId, invitationId) => Effect.gen(function* () {
@@ -344,7 +345,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       if (enrollment.code && enrollment.code !== code) return { name: organization.name, authenticated: false as const };
 
       const apns = yield* db.query.applePushCertificate.findFirst({ where: eq(schema.applePushCertificate.organizationId, organization.id) });
-      const [deviceCount] = yield* db.select<ReadonlyArray<CountRow>>({ value: count() }).from(schema.device).where(eq(schema.device.organizationId, organization.id));
+      const [deviceCount] = yield* db.select({ value: count() }).from(schema.device).where(eq(schema.device.organizationId, organization.id));
       const enabled = (deviceCount?.value ?? 0) <= enrollment.maxDevices;
       return {
         name: organization.name,
@@ -467,8 +468,8 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       const body = payload as { name?: string };
       const newId = id();
       yield* db.insert(schema.enterpriseGroup).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
-      const devices = yield* db.select<ReadonlyArray<EnterpriseGroupDevice>>().from(schema.groupDevice).where(eq(schema.groupDevice.groupId, groupId));
-      const policies = yield* db.select<ReadonlyArray<EnterpriseGroupPolicy>>().from(schema.groupPolicy).where(eq(schema.groupPolicy.groupId, groupId));
+      const devices = yield* db.select().from(schema.groupDevice).where(eq(schema.groupDevice.groupId, groupId));
+      const policies = yield* db.select().from(schema.groupPolicy).where(eq(schema.groupPolicy.groupId, groupId));
       if (devices.length) yield* db.insert(schema.groupDevice).values(devices.map((d: EnterpriseGroupDevice) => ({ groupId: newId, deviceId: d.deviceId })));
       if (policies.length) yield* db.insert(schema.groupPolicy).values(policies.map((p: EnterpriseGroupPolicy) => ({ groupId: newId, policyId: p.policyId })));
       return { id: newId };
@@ -543,14 +544,14 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       const body = payload as { name?: string };
       const newId = id();
       yield* db.insert(schema.policy).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
-      const configurations = yield* db.select<ReadonlyArray<EnterpriseConfiguration>>().from(schema.configuration).where(eq(schema.configuration.policyId, policyId));
+      const configurations = yield* db.select().from(schema.configuration).where(eq(schema.configuration.policyId, policyId));
       if (configurations.length) yield* db.insert(schema.configuration).values(configurations.map((c: EnterpriseConfiguration) => ({ kind: c.kind, policyId: newId, data: c.data, hash: c.hash })));
       return { id: newId };
     }),
     previewMobileconfig: (payload) => Effect.succeed({ payload }),
     listDevices: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const rows = yield* db.select<ReadonlyArray<EnterpriseDevice>>().from(schema.device).where(eq(schema.device.organizationId, ctx.organization.id));
+      const rows = yield* db.select().from(schema.device).where(eq(schema.device.organizationId, ctx.organization.id));
       return { rows: rows.map(rowDevice) };
     }),
     getDevice: (request, tenantId, deviceId) => Effect.gen(function* () {
@@ -561,7 +562,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     }),
     listGroups: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const rows = yield* db.select<ReadonlyArray<EnterpriseGroup>>().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
+      const rows = yield* db.select().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
       return { rows: rows.map((row) => rowGroup(row)) };
     }),
     getGroup: (request, tenantId, groupId) => Effect.gen(function* () {
@@ -572,7 +573,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     }),
     listPolicies: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const rows = yield* db.select<ReadonlyArray<EnterprisePolicy>>().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id));
+      const rows = yield* db.select().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id));
       return { rows: yield* Effect.all(rows.map((row) => rowPolicy(row))) };
     }),
     getPolicy: (request, tenantId, policyId) => Effect.gen(function* () {
@@ -609,67 +610,63 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
   return service;
 };
 
-export const enterpriseHandlers = (config: EnterpriseHandlersConfig) => {
-  const service: Dynamic = createEnterpriseService(config);
-
-  return (handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseApi>) =>
+export const enterpriseHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseApi>) =>
     handlers
-      .handle("authSession", ({ request }) => service.authSession(request))
-      .handle("authRegister", ({ request, payload }) => service.authRegister(request, payload))
-      .handle("authLogin", ({ request, payload }) => service.authLogin(request, payload))
-      .handle("authLogout", ({ request }) => service.authLogout(request))
-      .handle("authForgotPassword", ({ request, payload }) => service.authForgotPassword(request, payload))
-      .handle("authResetPassword", ({ request, payload }) => service.authResetPassword(request, payload))
-      .handle("authChangePassword", ({ request, payload }) => service.authChangePassword(request, payload))
-      .handle("authChangeEmail", ({ request, payload }) => service.authChangeEmail(request, payload))
-      .handle("authVerifyEmailChange", ({ request, payload }) => service.authVerifyEmailChange(request, payload))
-      .handle("listApiTokens", ({ request }) => service.listApiTokens(request))
-      .handle("createApiToken", ({ request, payload }) => service.createApiToken(request, payload))
-      .handle("revokeApiToken", ({ request, params }) => service.revokeApiToken(request, params.tokenId))
-      .handle("me", ({ request }) => service.me(request))
-      .handle("updateMe", ({ request, payload }) => service.updateMe(request, payload))
-      .handle("deleteMe", ({ request }) => service.deleteMe(request))
-      .handle("listTenants", ({ request }) => service.listTenants(request))
-      .handle("createTenant", ({ request, payload }) => service.createTenant(request, payload))
-      .handle("getTenant", ({ request, params }) => service.getTenant(request, params.tenantId))
-      .handle("patchTenant", ({ request, params, payload }) => service.patchTenant(request, params.tenantId, payload))
-      .handle("deleteTenant", ({ request, params }) => service.deleteTenant(request, params.tenantId))
-      .handle("listTenantUsers", ({ request, params }) => service.listTenantUsers(request, params.tenantId))
-      .handle("inviteTenantUser", ({ request, params, payload }) => service.inviteTenantUser(request, params.tenantId, payload))
-      .handle("listTenantInvitations", ({ request, params }) => service.listTenantInvitations(request, params.tenantId))
-      .handle("cancelTenantInvitation", ({ request, params }) => service.cancelTenantInvitation(request, params.tenantId, params.invitationId))
-      .handle("patchTenantUser", ({ request, params, payload }) => service.patchTenantUser(request, params.tenantId, params.memberId, payload))
-      .handle("removeTenantUser", ({ request, params }) => service.removeTenantUser(request, params.tenantId, params.memberId))
-      .handle("getEnrollment", ({ params, query }) => service.getEnrollment(params.id, query.code))
-      .handle("getTenantEnrollment", ({ request, params }) => service.getTenantEnrollment(request, params.tenantId))
-      .handle("patchTenantEnrollment", ({ request, params, payload }) => service.patchTenantEnrollment(request, params.tenantId, payload))
-      .handle("resetTenantEnrollment", ({ request, params }) => service.resetTenantEnrollment(request, params.tenantId))
-      .handle("getApns", ({ request, params }) => service.getApns(request, params.tenantId))
-      .handle("uploadApns", ({ request, params, payload }) => service.uploadApns(request, params.tenantId, payload))
-      .handle("listDevices", ({ request, params }) => service.listDevices(request, params.tenantId))
-      .handle("getDevice", ({ request, params }) => service.getDevice(request, params.tenantId, params.id))
-      .handle("deleteDevices", ({ request, params, payload }) => service.deleteDevices(request, params.tenantId, payload))
-      .handle("patchDevice", ({ request, params, payload }) => service.patchDevice(request, params.tenantId, params.id, payload))
-      .handle("deviceAction", ({ request, params }) => service.deviceAction(request, params.tenantId, params.id))
-      .handle("deviceUnenroll", ({ request, params }) => service.deviceUnenroll(request, params.tenantId, params.id))
-      .handle("listGroups", ({ request, params }) => service.listGroups(request, params.tenantId))
-      .handle("getGroup", ({ request, params }) => service.getGroup(request, params.tenantId, params.id))
-      .handle("createGroup", ({ request, params, payload }) => service.createGroup(request, params.tenantId, payload))
-      .handle("deleteGroups", ({ request, params, payload }) => service.deleteGroups(request, params.tenantId, payload))
-      .handle("patchGroup", ({ request, params, payload }) => service.patchGroup(request, params.tenantId, params.id, payload))
-      .handle("patchGroupMembers", ({ request, params, payload }) => service.patchGroupMembers(request, params.tenantId, params.id, payload))
-      .handle("syncGroups", ({ request, params, payload }) => service.syncGroups(request, params.tenantId, payload))
-      .handle("duplicateGroup", ({ request, params, payload }) => service.duplicateGroup(request, params.tenantId, params.id, payload))
-      .handle("listPolicies", ({ request, params }) => service.listPolicies(request, params.tenantId))
-      .handle("getPolicy", ({ request, params }) => service.getPolicy(request, params.tenantId, params.id))
-      .handle("createPolicy", ({ request, params, payload }) => service.createPolicy(request, params.tenantId, payload))
-      .handle("deletePolicies", ({ request, params, payload }) => service.deletePolicies(request, params.tenantId, payload))
-      .handle("patchPolicy", ({ request, params, payload }) => service.patchPolicy(request, params.tenantId, params.id, payload))
-      .handle("uploadPolicyApplication", ({ request, params, payload }) => service.uploadPolicyApplication(request, params.tenantId, params.id, payload))
-      .handle("downloadPolicyApplication", ({ request, params }) => service.downloadPolicyApplication(request, params.tenantId, params.id, params.sha256))
-      .handle("syncPolicies", ({ request, params, payload }) => service.syncPolicies(request, params.tenantId, payload))
-      .handle("duplicatePolicy", ({ request, params, payload }) => service.duplicatePolicy(request, params.tenantId, params.id, payload))
-      .handle("previewMobileconfig", ({ payload }) => service.previewMobileconfig(payload))
-      .handle("billing", ({ request, params }) => service.billing(request, params.tenantId))
-      .handle("billingPortal", ({ request, params, payload }) => service.billingPortal(request, params.tenantId, payload));
-};
+      .handle("authSession", ({ request }) => Effect.flatMap(EnterpriseService, (service) => service.authSession(request)))
+      .handle("authRegister", ({ request, payload }) => Effect.flatMap(EnterpriseService, (service) => service.authRegister(request, payload)))
+      .handle("authLogin", ({ request, payload }) => Effect.flatMap(EnterpriseService, (service) => service.authLogin(request, payload)))
+      .handle("authLogout", ({ request }) => Effect.flatMap(EnterpriseService, (service) => service.authLogout(request)))
+      .handle("authForgotPassword", ({ request, payload }) => Effect.flatMap(EnterpriseService, (service) => service.authForgotPassword(request, payload)))
+      .handle("authResetPassword", ({ request, payload }) => Effect.flatMap(EnterpriseService, (service) => service.authResetPassword(request, payload)))
+      .handle("authChangePassword", ({ request, payload }) => Effect.flatMap(EnterpriseService, (service) => service.authChangePassword(request, payload)))
+      .handle("authChangeEmail", ({ request, payload }) => Effect.flatMap(EnterpriseService, (service) => service.authChangeEmail(request, payload)))
+      .handle("authVerifyEmailChange", ({ request, payload }) => Effect.flatMap(EnterpriseService, (service) => service.authVerifyEmailChange(request, payload)))
+      .handle("listApiTokens", ({ request }) => Effect.flatMap(EnterpriseService, (service) => service.listApiTokens(request)))
+      .handle("createApiToken", ({ request, payload }) => Effect.flatMap(EnterpriseService, (service) => service.createApiToken(request, payload)))
+      .handle("revokeApiToken", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.revokeApiToken(request, params.tokenId)))
+      .handle("me", ({ request }) => Effect.flatMap(EnterpriseService, (service) => service.me(request)))
+      .handle("updateMe", ({ request, payload }) => Effect.flatMap(EnterpriseService, (service) => service.updateMe(request, payload)))
+      .handle("deleteMe", ({ request }) => Effect.flatMap(EnterpriseService, (service) => service.deleteMe(request)))
+      .handle("listTenants", ({ request }) => Effect.flatMap(EnterpriseService, (service) => service.listTenants(request)))
+      .handle("createTenant", ({ request, payload }) => Effect.flatMap(EnterpriseService, (service) => service.createTenant(request, payload)))
+      .handle("getTenant", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.getTenant(request, params.tenantId)))
+      .handle("patchTenant", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.patchTenant(request, params.tenantId, payload)))
+      .handle("deleteTenant", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.deleteTenant(request, params.tenantId)))
+      .handle("listTenantUsers", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.listTenantUsers(request, params.tenantId)))
+      .handle("inviteTenantUser", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.inviteTenantUser(request, params.tenantId, payload)))
+      .handle("listTenantInvitations", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.listTenantInvitations(request, params.tenantId)))
+      .handle("cancelTenantInvitation", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.cancelTenantInvitation(request, params.tenantId, params.invitationId)))
+      .handle("patchTenantUser", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.patchTenantUser(request, params.tenantId, params.memberId, payload)))
+      .handle("removeTenantUser", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.removeTenantUser(request, params.tenantId, params.memberId)))
+      .handle("getEnrollment", ({ params, query }) => Effect.flatMap(EnterpriseService, (service) => service.getEnrollment(params.id, query.code)))
+      .handle("getTenantEnrollment", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.getTenantEnrollment(request, params.tenantId)))
+      .handle("patchTenantEnrollment", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.patchTenantEnrollment(request, params.tenantId, payload)))
+      .handle("resetTenantEnrollment", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.resetTenantEnrollment(request, params.tenantId)))
+      .handle("getApns", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.getApns(request, params.tenantId)))
+      .handle("uploadApns", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.uploadApns(request, params.tenantId, payload)))
+      .handle("listDevices", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.listDevices(request, params.tenantId)))
+      .handle("getDevice", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.getDevice(request, params.tenantId, params.id)))
+      .handle("deleteDevices", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.deleteDevices(request, params.tenantId, payload)))
+      .handle("patchDevice", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.patchDevice(request, params.tenantId, params.id, payload)))
+      .handle("deviceAction", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.deviceAction(request, params.tenantId, params.id)))
+      .handle("deviceUnenroll", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.deviceUnenroll(request, params.tenantId, params.id)))
+      .handle("listGroups", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.listGroups(request, params.tenantId)))
+      .handle("getGroup", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.getGroup(request, params.tenantId, params.id)))
+      .handle("createGroup", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.createGroup(request, params.tenantId, payload)))
+      .handle("deleteGroups", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.deleteGroups(request, params.tenantId, payload)))
+      .handle("patchGroup", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.patchGroup(request, params.tenantId, params.id, payload)))
+      .handle("patchGroupMembers", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.patchGroupMembers(request, params.tenantId, params.id, payload)))
+      .handle("syncGroups", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.syncGroups(request, params.tenantId, payload)))
+      .handle("duplicateGroup", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.duplicateGroup(request, params.tenantId, params.id, payload)))
+      .handle("listPolicies", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.listPolicies(request, params.tenantId)))
+      .handle("getPolicy", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.getPolicy(request, params.tenantId, params.id)))
+      .handle("createPolicy", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.createPolicy(request, params.tenantId, payload)))
+      .handle("deletePolicies", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.deletePolicies(request, params.tenantId, payload)))
+      .handle("patchPolicy", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.patchPolicy(request, params.tenantId, params.id, payload)))
+      .handle("uploadPolicyApplication", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.uploadPolicyApplication(request, params.tenantId, params.id, payload)))
+      .handle("downloadPolicyApplication", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.downloadPolicyApplication(request, params.tenantId, params.id, params.sha256)))
+      .handle("syncPolicies", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.syncPolicies(request, params.tenantId, payload)))
+      .handle("duplicatePolicy", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.duplicatePolicy(request, params.tenantId, params.id, payload)))
+      .handle("previewMobileconfig", ({ payload }) => Effect.flatMap(EnterpriseService, (service) => service.previewMobileconfig(payload)))
+      .handle("billing", ({ request, params }) => Effect.flatMap(EnterpriseService, (service) => service.billing(request, params.tenantId)))
+      .handle("billingPortal", ({ request, params, payload }) => Effect.flatMap(EnterpriseService, (service) => service.billingPortal(request, params.tenantId, payload)));

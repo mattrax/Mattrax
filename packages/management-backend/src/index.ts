@@ -187,9 +187,8 @@ export const WindowsDeviceEvent = Schema.Union([
 ]);
 export type WindowsDeviceEvent = typeof WindowsDeviceEvent.Type;
 
-export class ManagementBackend extends Context.Service<
-  ManagementBackend,
-  {
+export declare namespace ManagementBackend {
+  export type Service = {
     // Device lifecycle and protocol events (device-initiated)
     readonly appleDeviceEvent: (scope: CheckinScope, event: AppleDeviceEvent) => Effect.Effect<void, ManagementNotSupported | UnknownDevice | InternalServerError>;
 
@@ -207,5 +206,7 @@ export class ManagementBackend extends Context.Service<
     readonly windowsEnroll: (request: WindowsEnrollmentRequest) => Effect.Effect<WindowsEnrollmentResult, ManagementNotSupported | UnknownDevice | InternalServerError>;
     readonly windowsManagementCheckin: (scope: WindowsManagementScope, request: WindowsManagementRequest) => Effect.Effect<WindowsManagementResponse, ManagementNotSupported | UnknownDevice | InternalServerError>;
     readonly windowsDeviceEvent: (scope: WindowsManagementScope, event: WindowsDeviceEvent) => Effect.Effect<void, ManagementNotSupported | UnknownDevice | InternalServerError>;
-  }
->()("ManagementBackend") {}
+  };
+}
+
+export class ManagementBackend extends Context.Service<ManagementBackend, ManagementBackend.Service>()("ManagementBackend") {}

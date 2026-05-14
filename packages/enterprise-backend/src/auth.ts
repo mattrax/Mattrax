@@ -1,10 +1,12 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 import {
+  EnterpriseAuth,
   EnterpriseBadRequest,
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
+import { Db, Env, schema } from "@mattrax/enterprise-core";
 import type { EnterpriseApiToken, EnterpriseDb, EnterpriseSchema, EnterpriseUser } from "./schema.ts";
 
 export type EnterpriseAuthConfig = {
@@ -136,7 +138,7 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
 
   const listApiTokens = (request: Request) => Effect.gen(function* () {
     const { user } = yield* requireUser(request);
-    const rows = yield* db.select<ReadonlyArray<EnterpriseApiToken>>().from(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id));
+    const rows = yield* db.select().from(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id));
     return { tokens: rows.map(tokenInfo) };
   });
 
@@ -256,3 +258,12 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
 
   return { requireUser, authSession, authRegister, authLogin, authLogout, authForgotPassword, authResetPassword, authChangePassword, authChangeEmail, authVerifyEmailChange, listApiTokens, createApiToken, revokeApiToken };
 };
+
+export const EnterpriseAuthLive = Layer.effect(
+  EnterpriseAuth,
+  Effect.gen(function* () {
+    const db = yield* Db;
+    const env = yield* Env;
+    return EnterpriseAuth.of(createEnterpriseAuth({ db, schema, origin: env.origin }));
+  }),
+);

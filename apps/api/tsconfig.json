@@ -21,6 +21,8 @@
   "references": [
     { "path": "../../packages/enterprise-domain" },
     { "path": "../../packages/enterprise-backend" },
+    { "path": "../../packages/enterprise-core" },
+    { "path": "../../packages/effect-stripe" },
     { "path": "../../packages/platform-api" },
     { "path": "../../packages/platform-backend" },
     { "path": "../../packages/dm-apple" },

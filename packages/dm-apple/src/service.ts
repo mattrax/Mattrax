@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect";
+import { Env as CoreEnv } from "@mattrax/enterprise-core";
 import {
   type AuthenticatePlist,
   type CheckOutPlist,
@@ -8,6 +9,7 @@ import {
   MdmError,
 } from "./schema.js";
 import { ManagementBackend, MdmOrigin, type CheckinScope } from "@mattrax/management-backend";
+import { extractTopicFromCertPem } from "./cert.js";
 
 function base64ToHex(base64: string): string {
   const cleaned = base64.replace(/\s/g, "");
@@ -34,7 +36,24 @@ function deterministicUuid(input: string): Effect.Effect<string, MdmError> {
 
 export class AppleMdmService extends Context.Service<
   AppleMdmService,
-  {
+  AppleMdmService.Service
+>()("AppleMdmService") {
+  static readonly make = (options: { readonly backend: ManagementBackend.Service; readonly env: CoreEnv.Service; readonly topic: string }): AppleMdmService.Service =>
+    makeAppleMdmService(options.backend, options.env, options.topic);
+
+  static readonly layer = Layer.effect(
+    AppleMdmService,
+    Effect.gen(function* () {
+      const backend = yield* ManagementBackend;
+      const env = yield* CoreEnv;
+      const topic = yield* AppleMdmTopic;
+      return AppleMdmService.make({ backend, env, topic: yield* topic.get });
+    }),
+  );
+}
+
+export declare namespace AppleMdmService {
+  export type Service = {
     readonly mdmOrigin: MdmOrigin;
     readonly handleAuthenticate: (auth: AuthenticatePlist, identityCertificate?: string) => Effect.Effect<void, MdmError>;
     readonly handleTokenUpdate: (update: TokenUpdatePlist, identityCertificate?: string) => Effect.Effect<void, MdmError>;
@@ -54,17 +73,47 @@ export class AppleMdmService extends Context.Service<
     readonly handleDeclaration: (scope: CheckinScope, type: string, identifier: string) => Effect.Effect<object, MdmError>;
     readonly handleAsset: (identityCertificate: string | undefined, identifier: string) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError>;
     readonly generateEnrollmentProfile: () => Effect.Effect<string, MdmError>;
-  }
->()("AppleMdmService") {}
+  };
+}
 
-export const AppleMdmServiceLive = (config: { origin: string; topic: string }) => Layer.effect(
-  AppleMdmService,
-  Effect.gen(function* () {
-    const backend = yield* ManagementBackend;
+const placeholderTopic = "com.apple.mgmt.External.placeholder";
+
+export class AppleMdmTopic extends Context.Service<
+  AppleMdmTopic,
+  AppleMdmTopic.Service
+>()("AppleMdmTopic") {
+  static readonly make = (env: CoreEnv.Service): AppleMdmTopic.Service => {
+    let cached: string | undefined;
+    return AppleMdmTopic.of({
+      get: Effect.sync(() => {
+        cached ??= env.cloudAppleVendorCert
+          ? (extractTopicFromCertPem(env.cloudAppleVendorCert) ?? placeholderTopic)
+          : placeholderTopic;
+        return cached;
+      }),
+    });
+  };
+
+  static readonly layer = Layer.effect(
+    AppleMdmTopic,
+    Effect.gen(function* () {
+      const env = yield* CoreEnv;
+      return AppleMdmTopic.make(env);
+    }),
+  );
+}
+
+export declare namespace AppleMdmTopic {
+  export type Service = {
+    readonly get: Effect.Effect<string>;
+  };
+}
+
+const makeAppleMdmService = (backend: ManagementBackend.Service, env: CoreEnv.Service, topic: string): AppleMdmService.Service => {
 
     const toMdmError = (message: string) => () => new MdmError({ message });
 
-    const mdmOrigin = new MdmOrigin({ url: config.origin });
+    const mdmOrigin = new MdmOrigin({ url: env.origin });
 
     const handleAuthenticate = (auth: AuthenticatePlist, identityCertificate?: string): Effect.Effect<void, MdmError> => {
       const scope: CheckinScope = { _tag: "device", udid: auth.UDID, identityCertificate, mdmOrigin };
@@ -229,7 +278,7 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
                   [["O", "Mattrax"]],
                   [["CN", "Mattrax Identity"]],
                 ],
-                URL: `${config.origin}/mdm/apple/scep`,
+                URL: `${env.origin}/mdm/apple/scep`,
               },
               PayloadIdentifier: "com.mattrax.scep",
               PayloadType: "com.apple.security.scep",
@@ -238,7 +287,7 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
             },
             {
               AccessRights: 8191,
-              CheckInURL: `${config.origin}/mdm/apple/mdm`,
+              CheckInURL: `${env.origin}/mdm/apple/mdm`,
               CheckOutWhenRemoved: true,
               IdentityCertificateUUID: scepUuid,
               PayloadIdentifier: "com.mattrax.mdm",
@@ -249,9 +298,9 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
                 "com.apple.mdm.per-user-connections",
                 "com.apple.mdm.bootstraptoken",
               ],
-              ServerURL: `${config.origin}/mdm/apple/mdm`,
+              ServerURL: `${env.origin}/mdm/apple/mdm`,
               SignMessage: true,
-              Topic: config.topic,
+              Topic: topic,
             },
           ],
           PayloadDisplayName: "Mattrax Enrollment",
@@ -278,5 +327,6 @@ export const AppleMdmServiceLive = (config: { origin: string; topic: string }) =
       handleAsset,
       generateEnrollmentProfile,
     });
-  }),
-);
+};
+
+export const AppleMdmServiceLive = AppleMdmService.layer;

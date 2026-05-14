@@ -1,15 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/unstable/http";
-import { AppleMdmService, AppleMdmServiceLive } from "../service.js";
+import { AppleMdmService, AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
 import { ManagementBackend } from "@mattrax/management-backend";
+import { Env } from "@mattrax/enterprise-core";
 import { appleMdmRoutes } from "../handlers.js";
 import { mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
 
 async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
-  const serviceLayer = AppleMdmServiceLive(TEST_CONFIG).pipe(Layer.provideMerge(backendLayer));
+  const serviceLayer = AppleMdmServiceLive.pipe(
+    Layer.provideMerge(backendLayer),
+    Layer.provideMerge(Env.layer({ origin: TEST_CONFIG.origin })),
+    Layer.provideMerge(Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) }))),
+  );
   const appLayer = appleMdmRoutes.pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer);
   return handler;
@@ -22,7 +27,11 @@ describe("Apple MDM handlers", () => {
       const profile = await Effect.runPromise(Effect.gen(function* () {
         const service = yield* AppleMdmService;
         return yield* service.generateEnrollmentProfile();
-      }).pipe(Effect.provide(AppleMdmServiceLive(TEST_CONFIG).pipe(Layer.provide(backend)))));
+      }).pipe(Effect.provide(AppleMdmServiceLive.pipe(
+        Layer.provideMerge(backend),
+        Layer.provideMerge(Env.layer({ origin: TEST_CONFIG.origin })),
+        Layer.provideMerge(Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) }))),
+      ))));
       expect(profile).toContain("com.mattrax.enrollment");
     });
   });

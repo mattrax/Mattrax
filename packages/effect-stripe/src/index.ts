@@ -139,10 +139,16 @@ export const makeEffectStripeClient = (client: StripeClient): EffectStripeClient
   };
 };
 
-export class StripeService extends Context.Service<StripeService, EffectStripeClient>()("StripeService") {}
+export class StripeService extends Context.Service<StripeService, EffectStripeClient>()("StripeService") {
+  static readonly make = (apiKey: string, config?: StripeConfig): EffectStripeClient =>
+    makeEffectStripeClient(new Stripe(apiKey, config));
+
+  static readonly layer = (apiKey: string, config?: StripeConfig): Layer.Layer<StripeService> =>
+    Layer.succeed(StripeService, StripeService.make(apiKey, config));
+}
 
 export const StripeServiceLive = (apiKey: string, config?: StripeConfig) =>
-  Layer.succeed(StripeService, makeEffectStripeClient(new Stripe(apiKey, config)));
+  StripeService.layer(apiKey, config);
 
 export const StripeServiceFromClient = (client: StripeClient) =>
   Layer.succeed(StripeService, makeEffectStripeClient(client));

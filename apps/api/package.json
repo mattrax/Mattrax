@@ -14,7 +14,9 @@
   "dependencies": {
     "@effect/sql-pg": "catalog:",
     "@mattrax/dm-apple": "workspace:*",
+    "@mattrax/effect-stripe": "workspace:*",
     "@mattrax/enterprise-backend": "workspace:*",
+    "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-enterprise": "workspace:*",
@@ -27,8 +29,8 @@
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "fast-plist": "catalog:",
-    "pkijs": "catalog:",
     "pg": "catalog:",
+    "pkijs": "catalog:",
     "stripe": "^22.0.0"
   },
   "devDependencies": {

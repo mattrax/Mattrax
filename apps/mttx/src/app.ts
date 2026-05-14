@@ -4,9 +4,9 @@ import { HttpServer } from "effect/unstable/http";
 import { appleMdmApi } from "@mattrax/dm-apple";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { scepRoutes } from "@mattrax/scep";
-import { AppleMdmServiceLive } from "@mattrax/dm-apple";
+import { AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
 import { ScepServiceLive } from "@mattrax/scep";
-import { extractTopicFromCertPem } from "@mattrax/dm-apple";
+import { Env as CoreEnv } from "@mattrax/enterprise-core";
 import { ManagementBackendHttp } from "@mattrax/management-backend-http";
 import { FsDb } from "./db.ts";
 import { ScepRepositoryLive } from "./repositories/scepRepository.ts";
@@ -20,10 +20,6 @@ export interface ServerConfig {
 
 export const createAppLayer = (config: ServerConfig) => {
   const db = new FsDb(config.dataDir);
-
-  const topic = config.appleVendorCert
-    ? (extractTopicFromCertPem(config.appleVendorCert) ?? "com.apple.mgmt.External.placeholder")
-    : "com.apple.mgmt.External.placeholder";
 
   const healthApi = HttpApiGroup.make("HealthApi").add(
     HttpApiEndpoint.get("health", "/health", {
@@ -58,10 +54,11 @@ export const createAppLayer = (config: ServerConfig) => {
     scepRoutes,
   );
 
-  const appleMdmServiceResolved = AppleMdmServiceLive({
-    origin: config.origin,
-    topic,
-  }).pipe(
+  const coreEnvLayer = CoreEnv.layer({ origin: config.origin, cloudAppleVendorCert: config.appleVendorCert });
+
+  const appleMdmServiceResolved = AppleMdmService.layer.pipe(
+    Layer.provideMerge(AppleMdmTopic.layer),
+    Layer.provideMerge(coreEnvLayer),
     Layer.provide(ManagementBackendHttp(config.webhookUrl)),
   );
 

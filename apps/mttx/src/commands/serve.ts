@@ -8,6 +8,8 @@ import { createAppLayer } from "../app.ts";
 
 const isProductionBuild = process.env.MATTRAX_SERVER_BUNDLED === "1";
 const defaultDataDir = isProductionBuild ? "/opt/mattrax" : "./.data";
+const maxRequestsPerSecond = 5;
+const maxRuntimeMs = 24 * 60 * 60 * 1000;
 
 export const serveCommand = Command.make("serve", {
   port: Flag.integer("port").pipe(Flag.withDefault(3000)),
@@ -43,7 +45,26 @@ export const serveCommand = Command.make("serve", {
 
     const { handler, dispose } = HttpRouter.toWebHandler(fullLayer);
 
+    let requestWindowStartedAt = Date.now();
+    let requestsInWindow = 0;
+
     const server = createServer(async (req, res) => {
+      const now = Date.now();
+      if (now - requestWindowStartedAt >= 1000) {
+        requestWindowStartedAt = now;
+        requestsInWindow = 0;
+      }
+
+      requestsInWindow += 1;
+      if (requestsInWindow > maxRequestsPerSecond) {
+        res.statusCode = 429;
+        res.setHeader("content-type", "text/plain; charset=utf-8");
+        res.setHeader("retry-after", "1");
+        res.end("Too Many Requests\n");
+        req.resume();
+        return;
+      }
+
       const chunks: Buffer[] = [];
       req.on("data", (chunk) => chunks.push(chunk));
       await new Promise<void>((resolve) => req.on("end", resolve));
@@ -83,12 +104,26 @@ export const serveCommand = Command.make("serve", {
 
     yield* Effect.promise<void>(() =>
       new Promise((resolve) => {
-        process.on("SIGINT", () => {
-          console.log("Shutting down...");
+        let shuttingDown = false;
+
+        const shutdown = (message: string) => {
+          if (shuttingDown) return;
+          shuttingDown = true;
+
+          console.warn(message);
           server.close(async () => {
+            clearTimeout(maxRuntimeTimer);
             await dispose();
             resolve();
           });
+        };
+
+        const maxRuntimeTimer = setTimeout(() => {
+          shutdown("WARNING: Server reached the 24 hour runtime limit and is shutting down.");
+        }, maxRuntimeMs);
+
+        process.on("SIGINT", () => {
+          shutdown("Shutting down...");
         });
       })
     );

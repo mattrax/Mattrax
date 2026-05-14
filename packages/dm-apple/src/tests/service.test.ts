@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
-import { AppleMdmService, AppleMdmServiceLive } from "../service.js";
+import { AppleMdmService, AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
 import { ManagementBackend, ManagementNotSupported, UnknownDevice, MdmOrigin } from "@mattrax/management-backend";
+import { Env } from "@mattrax/enterprise-core";
 import { mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
@@ -11,7 +12,11 @@ function runWithService<A, E>(
   backendLayer: Layer.Layer<ManagementBackend>,
   effect: Effect.Effect<A, E, AppleMdmService>,
 ) {
-  const layer = AppleMdmServiceLive(TEST_CONFIG).pipe(Layer.provide(backendLayer));
+  const layer = AppleMdmServiceLive.pipe(
+    Layer.provideMerge(backendLayer),
+    Layer.provideMerge(Env.layer({ origin: TEST_CONFIG.origin })),
+    Layer.provideMerge(Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) }))),
+  );
   return effect.pipe(Effect.provide(layer), Effect.runPromise);
 }
 

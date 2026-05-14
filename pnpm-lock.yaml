@@ -83,9 +83,15 @@ importers:
       '@mattrax/dm-apple':
         specifier: workspace:*
         version: link:../../packages/dm-apple
+      '@mattrax/effect-stripe':
+        specifier: workspace:*
+        version: link:../../packages/effect-stripe
       '@mattrax/enterprise-backend':
         specifier: workspace:*
         version: link:../../packages/enterprise-backend
+      '@mattrax/enterprise-core':
+        specifier: workspace:*
+        version: link:../../packages/enterprise-core
       '@mattrax/enterprise-domain':
         specifier: workspace:*
         version: link:../../packages/enterprise-domain
@@ -168,6 +174,9 @@ importers:
       '@mattrax/dm-apple':
         specifier: workspace:*
         version: link:../../packages/dm-apple
+      '@mattrax/enterprise-core':
+        specifier: workspace:*
+        version: link:../../packages/enterprise-core
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../../packages/management-backend
@@ -217,6 +226,9 @@ importers:
       '@mattrax/dm-apple':
         specifier: workspace:*
         version: link:../../packages/dm-apple
+      '@mattrax/enterprise-core':
+        specifier: workspace:*
+        version: link:../../packages/enterprise-core
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../../packages/management-backend
@@ -348,6 +360,9 @@ importers:
       '@mattrax/crypto':
         specifier: workspace:*
         version: link:../crypto
+      '@mattrax/enterprise-core':
+        specifier: workspace:*
+        version: link:../enterprise-core
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../management-backend
@@ -407,12 +422,12 @@ importers:
       '@mattrax/effect-stripe':
         specifier: workspace:*
         version: link:../effect-stripe
+      '@mattrax/enterprise-core':
+        specifier: workspace:*
+        version: link:../enterprise-core
       '@mattrax/enterprise-domain':
         specifier: workspace:*
         version: link:../enterprise-domain
-      '@mattrax/management-backend-enterprise':
-        specifier: workspace:*
-        version: link:../management-backend-enterprise
       '@mattrax/plist':
         specifier: workspace:*
         version: link:../plist
@@ -425,6 +440,22 @@ importers:
       pg:
         specifier: 'catalog:'
         version: 8.20.0
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.12.2
+
+  packages/enterprise-core:
+    dependencies:
+      '@effect/sql-pg':
+        specifier: 'catalog:'
+        version: 4.0.0-beta.66(effect@4.0.0-beta.66)
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 1.0.0-beta.22(@effect/sql-pg@4.0.0-beta.66(effect@4.0.0-beta.66))(@types/better-sqlite3@7.6.13)(@types/pg@8.20.0)(better-sqlite3@12.9.0)(pg@8.20.0)(valibot@1.4.0(typescript@6.0.3))(zod@4.4.3)
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.66
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -452,9 +483,15 @@ importers:
 
   packages/management-backend-enterprise:
     dependencies:
+      '@mattrax/enterprise-core':
+        specifier: workspace:*
+        version: link:../enterprise-core
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../management-backend
+      '@mattrax/scep':
+        specifier: workspace:*
+        version: link:../scep
       drizzle-orm:
         specifier: 'catalog:'
         version: 1.0.0-beta.22(@effect/sql-pg@4.0.0-beta.66(effect@4.0.0-beta.66))(@types/better-sqlite3@7.6.13)(@types/pg@8.20.0)(better-sqlite3@12.9.0)(pg@8.20.0)(valibot@1.4.0(typescript@6.0.3))(zod@4.4.3)

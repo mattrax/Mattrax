@@ -19,5 +19,6 @@
     "skipLibCheck": true,
     "composite": true
   },
+  "references": [{ "path": "../enterprise-domain" }, { "path": "../enterprise-core" }],
   "include": ["src"]
 }

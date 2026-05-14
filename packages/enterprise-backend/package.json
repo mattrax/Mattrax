@@ -9,11 +9,11 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@mattrax/enterprise-domain": "workspace:*",
-    "@mattrax/effect-stripe": "workspace:*",
-    "@mattrax/management-backend-enterprise": "workspace:*",
-    "@mattrax/plist": "workspace:*",
     "@effect/sql-pg": "catalog:",
+    "@mattrax/effect-stripe": "workspace:*",
+    "@mattrax/enterprise-core": "workspace:*",
+    "@mattrax/enterprise-domain": "workspace:*",
+    "@mattrax/plist": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "pg": "catalog:"

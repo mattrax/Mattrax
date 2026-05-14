@@ -21,7 +21,7 @@
   },
   "references": [
     { "path": "../enterprise-domain" },
-    { "path": "../management-backend-enterprise" },
+    { "path": "../enterprise-core" },
     { "path": "../management-backend" },
     { "path": "../plist" },
     { "path": "../crypto" }
