@@ -39,6 +39,7 @@ export default defineConfig({
         items: [
           { text: 'Overview', link: '/enterprise/overview' },
           { text: 'Self-hosting', link: '/enterprise/self-hosting' },
+          { text: 'Git-ops', link: '/enterprise/git-ops' },
           { text: 'OpenAPI', link: `${origin}/api/docs#tag/mattrax-enterprise-api`, target: "_self" }
         ]
       },

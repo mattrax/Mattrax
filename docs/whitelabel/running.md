@@ -28,6 +28,7 @@ The CLI command is `mattrax-server` and supports these subcommands:
 | ------- | ------- |
 | `version` | Prints the package version. |
 | `serve` | Starts the HTTP server. |
+| `update` | Placeholder for future self-update support. |
 
 `serve` accepts:
 
