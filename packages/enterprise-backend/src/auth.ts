@@ -5,10 +5,10 @@ import {
   EnterpriseBadRequest,
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
-import type { EnterpriseApiToken, EnterpriseSchema, EnterpriseUser } from "./schema.ts";
+import type { EnterpriseApiToken, EnterpriseDb, EnterpriseSchema, EnterpriseUser } from "./schema.ts";
 
 export type EnterpriseAuthConfig = {
-  readonly db: any;
+  readonly db: EnterpriseDb;
   readonly schema: EnterpriseSchema;
   readonly origin: string;
 };
@@ -136,7 +136,7 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
 
   const listApiTokens = (request: Request) => Effect.gen(function* () {
     const { user } = yield* requireUser(request);
-    const rows = yield* db.select().from(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id));
+    const rows = yield* db.select<ReadonlyArray<EnterpriseApiToken>>().from(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id));
     return { tokens: rows.map(tokenInfo) };
   });
 
@@ -180,6 +180,7 @@ export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfi
       return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Invalid email or password" }));
     }
     const user = yield* db.query.user.findFirst({ where: eq(schema.user.id, account.userId) });
+    if (!user) return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Invalid email or password" }));
     const sessionToken = yield* createSession(request, user.id);
     return yield* HttpServerResponse.json({ user: userInfo(user) }, { headers: { "set-cookie": cookieHeader(sessionToken) } });
   });

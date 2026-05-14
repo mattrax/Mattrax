@@ -31,7 +31,7 @@ export const scepCa = pgTable("scep_ca", {
   createdAt: timestamp("created_at", { mode: "date" }).notNull(),
 });
 
-export const dbSchema: Record<string, unknown> = {
+export const dbSchema: EnterpriseSchema & { readonly scepCa: typeof scepCa } = {
   ...enterpriseSchema,
   scepCa,
 };

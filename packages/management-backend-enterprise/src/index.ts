@@ -13,24 +13,39 @@ import {
   type ManagementManifest,
 } from "@mattrax/management-backend";
 
+type Dynamic = ReturnType<typeof JSON.parse>;
+
 type EnterpriseManagementSchema = {
-  readonly organization: any;
-  readonly device: any;
-  readonly deviceApple: any;
-  readonly enterpriseGroup: any;
-  readonly groupDevice: any;
-  readonly groupPolicy: any;
-  readonly policy: any;
-  readonly configuration: any;
+  readonly organization: Dynamic;
+  readonly device: Dynamic;
+  readonly deviceApple: Dynamic;
+  readonly enterpriseGroup: Dynamic;
+  readonly groupDevice: Dynamic;
+  readonly groupPolicy: Dynamic;
+  readonly policy: Dynamic;
+  readonly configuration: Dynamic;
+};
+
+type DbEffect<A = unknown> = Effect.Effect<A, unknown>;
+type DbBuilder<A = unknown> = DbEffect<A> & {
+  readonly from: (table: unknown) => DbBuilder<A>;
+  readonly innerJoin: (table: unknown, condition: unknown) => DbBuilder<A>;
+  readonly where: (condition: unknown) => DbBuilder<A>;
+  readonly values: (values: unknown) => DbBuilder<A>;
+  readonly set: (values: unknown) => DbBuilder<A>;
+  readonly onConflictDoUpdate: (config: unknown) => DbBuilder<A>;
 };
 
 type EnterpriseManagementDb = {
-  readonly query: any;
-  readonly select: (...args: Array<any>) => any;
-  readonly insert: (table: any) => any;
-  readonly update: (table: any) => any;
-  readonly delete: (table: any) => any;
+  readonly query: Dynamic;
+  readonly select: <A = Dynamic>(fields?: unknown) => DbBuilder<A>;
+  readonly insert: (table: unknown) => DbBuilder;
+  readonly update: (table: unknown) => DbBuilder;
+  readonly delete: (table: unknown) => DbBuilder;
 };
+
+type DeviceRow = { readonly id: string; readonly status: string; readonly organizationId: string };
+type OrganizationRow = { readonly name: string };
 
 export type EnterpriseManagementBackendConfig = {
   readonly origin: string;
@@ -67,7 +82,12 @@ const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 const now = () => new Date();
 
 const internal = (_cause: unknown) => new InternalServerError();
-const runDb = (effect: Effect.Effect<unknown, unknown, never>): Promise<any> => Effect.runPromise(effect);
+const runDb = <A>(effect: Effect.Effect<A, unknown, never>): Promise<A> => Effect.runPromise(effect);
+const record = (value: unknown) => typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
+const stringField = (value: unknown, key: string) => {
+  const field = record(value)?.[key];
+  return typeof field === "string" ? field : undefined;
+};
 
 const decodeHeader = (value: string) => {
   try {
@@ -106,9 +126,9 @@ const splitDeclarationIdentifier = (identifier: string) => {
 
 const declarationType = (kind: string) => kind.startsWith("com.apple.") ? kind : `com.apple.configuration.${kind}`;
 
-const findDeviceByScope = async (db: EnterpriseManagementDb, s: EnterpriseManagementSchema, scope: CheckinScope) => {
+const findDeviceByScope = async (db: EnterpriseManagementDb, s: EnterpriseManagementSchema, scope: CheckinScope): Promise<DeviceRow | null> => {
   const byUdid = await runDb(db.query.device.findFirst({ where: eq(s.device.dmIdentifier, scope.udid) }));
-  if (byUdid) return byUdid;
+  if (byUdid) return byUdid as DeviceRow;
   return null;
 };
 
@@ -158,15 +178,18 @@ const declarationItemsForDevice = async (db: EnterpriseManagementDb, s: Enterpri
 
 const updateInventoryFromStatus = async (db: EnterpriseManagementDb, s: EnterpriseManagementSchema, deviceId: string, statusItems: unknown) => {
   if (!statusItems || typeof statusItems !== "object") return;
-  const root = statusItems as Record<string, any>;
-  const device = root.device;
+  const root = statusItems as Record<string, unknown>;
+  const device = record(root.device);
+  const identifier = record(device?.identifier);
+  const model = record(device?.model);
+  const operatingSystem = record(device?.["operating-system"]);
   const update: Record<string, unknown> = { lastSeenAt: now() };
-  if (device?.identifier?.["serial-number"]) update.serial = device.identifier["serial-number"];
-  if (device?.model?.["marketing-name"]) update.model = device.model["marketing-name"];
-  if (device?.model?.identifier) update.modelIdentifier = device.model.identifier;
-  if (device?.["operating-system"]?.["marketing-name"]) update.osEdition = device["operating-system"]["marketing-name"];
-  if (device?.["operating-system"]?.version) update.osVersion = device["operating-system"].version;
-  if (device?.["operating-system"]?.["build-version"]) update.osBuild = device["operating-system"]["build-version"];
+  if (stringField(identifier, "serial-number")) update.serial = stringField(identifier, "serial-number");
+  if (stringField(model, "marketing-name")) update.model = stringField(model, "marketing-name");
+  if (stringField(model, "identifier")) update.modelIdentifier = stringField(model, "identifier");
+  if (stringField(operatingSystem, "marketing-name")) update.osEdition = stringField(operatingSystem, "marketing-name");
+  if (stringField(operatingSystem, "version")) update.osVersion = stringField(operatingSystem, "version");
+  if (stringField(operatingSystem, "build-version")) update.osBuild = stringField(operatingSystem, "build-version");
   await runDb(db.update(s.device).set(update).where(eq(s.device.id, deviceId)));
 };
 
@@ -191,7 +214,7 @@ export const ManagementBackendEnterpriseLive = (db: EnterpriseManagementDb, conf
           const organization = await runDb(db.query.organization.findFirst({ where: eq(s.organization.id, organizationId) }));
           if (!organization) throw new UnknownDevice();
 
-          const existing = await runDb(db.query.device.findFirst({ where: and(eq(s.device.organizationId, organizationId), eq(s.device.dmIdentifier, scope.udid)) }));
+          const existing = await runDb(db.query.device.findFirst({ where: and(eq(s.device.organizationId, organizationId), eq(s.device.dmIdentifier, scope.udid)) })) as DeviceRow | undefined;
           const deviceId = existing?.id ?? id();
           const common = {
             organizationId,
@@ -330,7 +353,7 @@ export const ManagementBackendEnterpriseLive = (db: EnterpriseManagementDb, conf
             return { Type: declarationType(row.kind), Identifier: identifier, ServerToken: row.hash, Payload: row.data };
           }
           if (type === "management" && identifier === MANAGEMENT_DECLARATION_ID) {
-            const organization = await runDb(db.query.organization.findFirst({ where: eq(s.organization.id, device.organizationId) }));
+            const organization = await runDb(db.query.organization.findFirst({ where: eq(s.organization.id, device.organizationId) })) as OrganizationRow | undefined;
             return {
               Type: "com.apple.management.organization-info",
               Identifier: MANAGEMENT_DECLARATION_ID,

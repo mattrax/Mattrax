@@ -17,15 +17,28 @@ import { serializePlist } from "@mattrax/plist";
 import { createEnterpriseAuth } from "./auth.ts";
 import { R2Storage, R2StorageLive, base64ToBytes, bytesToBase64, sha256Hex } from "./policyApplicationStorage.ts";
 import type { R2Bucket } from "./policyApplicationStorage.ts";
-import type { EnterpriseConfiguration, EnterpriseDevice, EnterpriseEnrollment, EnterpriseGroup, EnterpriseGroupDevice, EnterpriseGroupPolicy, EnterpriseOrganization, EnterprisePolicy, EnterpriseSchema } from "./schema.ts";
+import type { EnterpriseConfiguration, EnterpriseDb, EnterpriseDevice, EnterpriseEnrollment, EnterpriseGroup, EnterpriseGroupDevice, EnterpriseGroupPolicy, EnterpriseOrganization, EnterprisePolicy, EnterpriseSchema } from "./schema.ts";
+
+type TenantInfo = { readonly id: string; readonly name: string; readonly slug: string; readonly logo: string | null; readonly role: string };
+type CountRow = { readonly value: number };
+type BillingSubscription = { readonly plan: string; readonly status: string; readonly stripeSubscriptionId: string | null };
+type TenantUserRow = { readonly memberId: string; readonly userId: string; readonly name: string; readonly email: string; readonly role: string; readonly createdAt: Date };
+type InvitationRow = { readonly id: string; readonly email: string; readonly role: string | null; readonly status: string; readonly expiresAt: Date; readonly createdAt: Date };
+type Dynamic = ReturnType<typeof JSON.parse>;
 
 export type EnterpriseHandlersConfig = {
-  readonly db: any;
+  readonly db: EnterpriseDb;
   readonly schema: EnterpriseSchema;
   readonly origin: string;
-  readonly stripeClient: any;
+  readonly stripeClient: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>;
   readonly storage: R2Bucket;
 };
+
+type StripeClientLike = Parameters<typeof makeEffectStripeClient>[0];
+type RawStripeClientLike = object;
+
+const isEffectStripeClient = (client: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>): client is ReturnType<typeof makeEffectStripeClient> =>
+  typeof (client as { readonly effect?: unknown }).effect === "function";
 
 const now = () => new Date();
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
@@ -59,7 +72,7 @@ const canDeleteTenant = (role: string) => role.split(",").includes("owner");
 
 export const createEnterpriseService = ({ db, schema, origin, stripeClient, storage }: EnterpriseHandlersConfig) => {
   const auth = createEnterpriseAuth({ db, schema, origin });
-  const stripe = stripeClient?.effect ? stripeClient : makeEffectStripeClient(stripeClient);
+  const stripe = isEffectStripeClient(stripeClient) ? stripeClient : makeEffectStripeClient(stripeClient as StripeClientLike);
   const r2Layer = R2StorageLive(storage);
 
   const requireTenant = (request: HttpServerRequest, tenantId: string, access: "read" | "write" | "delete" = "read") => Effect.gen(function* () {
@@ -102,7 +115,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
   });
 
   const listTenantInfo = (userId: string) => Effect.gen(function* () {
-    const rows = yield* db.select({
+    const rows = yield* db.select<ReadonlyArray<TenantInfo>>({
       id: schema.organization.id,
       name: schema.organization.name,
       slug: schema.organization.slug,
@@ -113,19 +126,19 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
   });
 
   const memberCount = (tenantId: string) => Effect.gen(function* () {
-    const [members] = yield* db.select({ value: count() }).from(schema.member).where(eq(schema.member.organizationId, tenantId));
+    const [members] = yield* db.select<ReadonlyArray<CountRow>>({ value: count() }).from(schema.member).where(eq(schema.member.organizationId, tenantId));
     return members?.value ?? 0;
   });
 
   const assertTenantDevices = (tenantId: string, ids: ReadonlyArray<string>) => Effect.gen(function* () {
     if (ids.length === 0) return;
-    const rows = yield* db.select({ id: schema.device.id }).from(schema.device).where(and(eq(schema.device.organizationId, tenantId), inArray(schema.device.id, [...ids])));
+    const rows = yield* db.select<ReadonlyArray<{ readonly id: string }>>({ id: schema.device.id }).from(schema.device).where(and(eq(schema.device.organizationId, tenantId), inArray(schema.device.id, [...ids])));
     if (rows.length !== new Set(ids).size) return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
   });
 
   const assertTenantPolicies = (tenantId: string, ids: ReadonlyArray<string>) => Effect.gen(function* () {
     if (ids.length === 0) return;
-    const rows = yield* db.select({ id: schema.policy.id }).from(schema.policy).where(and(eq(schema.policy.organizationId, tenantId), inArray(schema.policy.id, [...ids])));
+    const rows = yield* db.select<ReadonlyArray<{ readonly id: string }>>({ id: schema.policy.id }).from(schema.policy).where(and(eq(schema.policy.organizationId, tenantId), inArray(schema.policy.id, [...ids])));
     if (rows.length !== new Set(ids).size) return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
   });
 
@@ -136,8 +149,8 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
   });
 
   const billingSummary = (organizationId: string) => Effect.gen(function* () {
-    const [subscription] = yield* db.select().from(schema.subscription).where(eq(schema.subscription.referenceId, organizationId)).limit(1);
-    const [devices] = yield* db.select({ value: count() }).from(schema.device).where(and(eq(schema.device.organizationId, organizationId), eq(schema.device.status, "enrolled")));
+    const [subscription] = yield* db.select<ReadonlyArray<BillingSubscription>>().from(schema.subscription).where(eq(schema.subscription.referenceId, organizationId)).limit(1);
+    const [devices] = yield* db.select<ReadonlyArray<CountRow>>({ value: count() }).from(schema.device).where(and(eq(schema.device.organizationId, organizationId), eq(schema.device.status, "enrolled")));
     return {
       plan: subscription?.plan,
       status: subscription?.status,
@@ -186,7 +199,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       updatedAt: iso(row.updatedAt),
     };
     if (withConfigurations) {
-      const configurations = yield* db.select().from(schema.configuration).where(eq(schema.configuration.policyId, row.id));
+      const configurations = yield* db.select<ReadonlyArray<EnterpriseConfiguration>>().from(schema.configuration).where(eq(schema.configuration.policyId, row.id));
       base.configurations = Object.fromEntries(configurations.map((item: EnterpriseConfiguration) => [item.kind, item.data]));
     }
     return base;
@@ -221,7 +234,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     };
   });
 
-  const service: Record<string, (...args: Array<any>) => Effect.Effect<any, any, any>> = {
+  const service: Record<string, (...args: Array<Dynamic>) => Effect.Effect<Dynamic, Dynamic, Dynamic>> = {
     me: (request) => Effect.gen(function* () {
       const resolved = yield* auth.requireUser({ headers: request.headers });
       const { user } = resolved;
@@ -282,7 +295,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     }),
     listTenantUsers: (request, tenantId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId);
-      const users = yield* db.select({ memberId: schema.member.id, userId: schema.user.id, name: schema.user.name, email: schema.user.email, role: schema.member.role, createdAt: schema.member.createdAt }).from(schema.member).innerJoin(schema.user, eq(schema.user.id, schema.member.userId)).where(eq(schema.member.organizationId, tenantId));
+      const users = yield* db.select<ReadonlyArray<TenantUserRow>>({ memberId: schema.member.id, userId: schema.user.id, name: schema.user.name, email: schema.user.email, role: schema.member.role, createdAt: schema.member.createdAt }).from(schema.member).innerJoin(schema.user, eq(schema.user.id, schema.member.userId)).where(eq(schema.member.organizationId, tenantId));
       return { users: users.map((user: { createdAt: Date }) => ({ ...user, createdAt: iso(user.createdAt) })) };
     }),
     inviteTenantUser: (request, tenantId, payload) => Effect.gen(function* () {
@@ -296,7 +309,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     }),
     listTenantInvitations: (request, tenantId) => Effect.gen(function* () {
       yield* requireTenant(request, tenantId, "write");
-      const invitations = yield* db.select().from(schema.invitation).where(eq(schema.invitation.organizationId, tenantId));
+      const invitations = yield* db.select<ReadonlyArray<InvitationRow>>().from(schema.invitation).where(eq(schema.invitation.organizationId, tenantId));
       return { invitations: invitations.map((item: { id: string; email: string; role: string | null; status: string; expiresAt: Date; createdAt: Date }) => ({ id: item.id, email: item.email, role: item.role, status: item.status, expiresAt: iso(item.expiresAt), createdAt: iso(item.createdAt) })) };
     }),
     cancelTenantInvitation: (request, tenantId, invitationId) => Effect.gen(function* () {
@@ -331,7 +344,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       if (enrollment.code && enrollment.code !== code) return { name: organization.name, authenticated: false as const };
 
       const apns = yield* db.query.applePushCertificate.findFirst({ where: eq(schema.applePushCertificate.organizationId, organization.id) });
-      const [deviceCount] = yield* db.select({ value: count() }).from(schema.device).where(eq(schema.device.organizationId, organization.id));
+      const [deviceCount] = yield* db.select<ReadonlyArray<CountRow>>({ value: count() }).from(schema.device).where(eq(schema.device.organizationId, organization.id));
       const enabled = (deviceCount?.value ?? 0) <= enrollment.maxDevices;
       return {
         name: organization.name,
@@ -454,8 +467,8 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       const body = payload as { name?: string };
       const newId = id();
       yield* db.insert(schema.enterpriseGroup).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
-      const devices = yield* db.select().from(schema.groupDevice).where(eq(schema.groupDevice.groupId, groupId));
-      const policies = yield* db.select().from(schema.groupPolicy).where(eq(schema.groupPolicy.groupId, groupId));
+      const devices = yield* db.select<ReadonlyArray<EnterpriseGroupDevice>>().from(schema.groupDevice).where(eq(schema.groupDevice.groupId, groupId));
+      const policies = yield* db.select<ReadonlyArray<EnterpriseGroupPolicy>>().from(schema.groupPolicy).where(eq(schema.groupPolicy.groupId, groupId));
       if (devices.length) yield* db.insert(schema.groupDevice).values(devices.map((d: EnterpriseGroupDevice) => ({ groupId: newId, deviceId: d.deviceId })));
       if (policies.length) yield* db.insert(schema.groupPolicy).values(policies.map((p: EnterpriseGroupPolicy) => ({ groupId: newId, policyId: p.policyId })));
       return { id: newId };
@@ -530,14 +543,14 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
       const body = payload as { name?: string };
       const newId = id();
       yield* db.insert(schema.policy).values({ id: newId, organizationId: ctx.organization.id, name: body.name ?? `${source.name} [duplicated]`, notes: source.notes, createdAt: now(), updatedAt: now() });
-      const configurations = yield* db.select().from(schema.configuration).where(eq(schema.configuration.policyId, policyId));
+      const configurations = yield* db.select<ReadonlyArray<EnterpriseConfiguration>>().from(schema.configuration).where(eq(schema.configuration.policyId, policyId));
       if (configurations.length) yield* db.insert(schema.configuration).values(configurations.map((c: EnterpriseConfiguration) => ({ kind: c.kind, policyId: newId, data: c.data, hash: c.hash })));
       return { id: newId };
     }),
     previewMobileconfig: (payload) => Effect.succeed({ payload }),
     listDevices: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const rows = yield* db.select().from(schema.device).where(eq(schema.device.organizationId, ctx.organization.id));
+      const rows = yield* db.select<ReadonlyArray<EnterpriseDevice>>().from(schema.device).where(eq(schema.device.organizationId, ctx.organization.id));
       return { rows: rows.map(rowDevice) };
     }),
     getDevice: (request, tenantId, deviceId) => Effect.gen(function* () {
@@ -548,8 +561,8 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     }),
     listGroups: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const rows = yield* db.select().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
-      return { rows: rows.map(rowGroup) };
+      const rows = yield* db.select<ReadonlyArray<EnterpriseGroup>>().from(schema.enterpriseGroup).where(eq(schema.enterpriseGroup.organizationId, ctx.organization.id));
+      return { rows: rows.map((row) => rowGroup(row)) };
     }),
     getGroup: (request, tenantId, groupId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
@@ -559,8 +572,8 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
     }),
     listPolicies: (request, tenantId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
-      const rows = yield* db.select().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id));
-      return { rows: yield* Effect.all(rows.map(rowPolicy)) };
+      const rows = yield* db.select<ReadonlyArray<EnterprisePolicy>>().from(schema.policy).where(eq(schema.policy.organizationId, ctx.organization.id));
+      return { rows: yield* Effect.all(rows.map((row) => rowPolicy(row))) };
     }),
     getPolicy: (request, tenantId, policyId) => Effect.gen(function* () {
       const ctx = yield* requireTenant(request, tenantId);
@@ -597,7 +610,7 @@ export const createEnterpriseService = ({ db, schema, origin, stripeClient, stor
 };
 
 export const enterpriseHandlers = (config: EnterpriseHandlersConfig) => {
-  const service: any = createEnterpriseService(config);
+  const service: Dynamic = createEnterpriseService(config);
 
   return (handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseApi>) =>
     handlers

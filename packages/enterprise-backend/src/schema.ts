@@ -1,5 +1,6 @@
 import { boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import type { InferSelectModel } from "drizzle-orm";
+import type { Effect } from "effect";
 
 export const createEnterpriseSchema = () => {
   const user = pgTable("user", {
@@ -274,3 +275,40 @@ export type EnterpriseEnrollment = InferSelectModel<EnterpriseSchema["enterprise
 export type EnterpriseConfiguration = InferSelectModel<EnterpriseSchema["configuration"]>;
 export type EnterpriseGroupDevice = InferSelectModel<EnterpriseSchema["groupDevice"]>;
 export type EnterpriseGroupPolicy = InferSelectModel<EnterpriseSchema["groupPolicy"]>;
+
+type DbEffect<A> = Effect.Effect<A, unknown>;
+type DbBuilder<A> = DbEffect<A> & {
+  readonly from: (table: unknown) => DbBuilder<A>;
+  readonly innerJoin: (table: unknown, condition: unknown) => DbBuilder<A>;
+  readonly where: (condition: unknown) => DbBuilder<A>;
+  readonly limit: (count: number) => DbBuilder<A>;
+  readonly values: (values: unknown) => DbBuilder<A>;
+  readonly set: (values: unknown) => DbBuilder<A>;
+  readonly returning: (fields?: unknown) => DbBuilder<A>;
+  readonly onConflictDoNothing: () => DbBuilder<A>;
+  readonly onConflictDoUpdate: (config: unknown) => DbBuilder<A>;
+};
+
+type FindFirst<A> = (query?: unknown) => DbEffect<A | undefined>;
+
+export type EnterpriseDb = {
+  readonly query: {
+    readonly user: { readonly findFirst: FindFirst<EnterpriseUser> };
+    readonly session: { readonly findFirst: FindFirst<InferSelectModel<EnterpriseSchema["session"]>> };
+    readonly account: { readonly findFirst: FindFirst<InferSelectModel<EnterpriseSchema["account"]>> };
+    readonly verification: { readonly findFirst: FindFirst<InferSelectModel<EnterpriseSchema["verification"]>> };
+    readonly organization: { readonly findFirst: FindFirst<EnterpriseOrganization> };
+    readonly member: { readonly findFirst: FindFirst<InferSelectModel<EnterpriseSchema["member"]>> };
+    readonly invitation: { readonly findFirst: FindFirst<InferSelectModel<EnterpriseSchema["invitation"]>> };
+    readonly accountApiToken: { readonly findFirst: FindFirst<EnterpriseApiToken> };
+    readonly enterpriseEnrollment: { readonly findFirst: FindFirst<EnterpriseEnrollment> };
+    readonly device: { readonly findFirst: FindFirst<EnterpriseDevice> };
+    readonly applePushCertificate: { readonly findFirst: FindFirst<InferSelectModel<EnterpriseSchema["applePushCertificate"]>> };
+    readonly enterpriseGroup: { readonly findFirst: FindFirst<EnterpriseGroup> };
+    readonly policy: { readonly findFirst: FindFirst<EnterprisePolicy> };
+  };
+  readonly select: <A = ReadonlyArray<unknown>>(fields?: unknown) => DbBuilder<A>;
+  readonly insert: (table: unknown) => DbBuilder<unknown>;
+  readonly update: (table: unknown) => DbBuilder<unknown>;
+  readonly delete: (table: unknown) => DbBuilder<ReadonlyArray<unknown>>;
+};
