@@ -8,7 +8,7 @@ import { versionCommand } from "./commands/version.ts";
 
 const { version } = pkg;
 
-const cli = Command.make("mattrax-server").pipe(
+const cli = Command.make("mttx").pipe(
   Command.withSubcommands([versionCommand, serveCommand, updateCommand]),
 );
 

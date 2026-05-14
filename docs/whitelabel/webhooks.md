@@ -6,14 +6,14 @@ All webhook endpoints are under the `/webhook` prefix relative to the configured
 
 ## Endpoints
 
-| Method | Path | Purpose |
-| ------ | ---- | ------- |
-| `POST` | `/webhook/apple/event` | Receives Apple device lifecycle and status events. |
-| `POST` | `/webhook/apple/checkin` | Returns the next management action for a device check-in. |
-| `POST` | `/webhook/apple/declaration-tokens` | Returns declarative management tokens. |
-| `POST` | `/webhook/apple/declaration-items` | Returns declarative management item identifiers and server tokens. |
-| `POST` | `/webhook/apple/declaration` | Returns one declarative management declaration. |
-| `POST` | `/webhook/apple/asset` | Returns one asset by identifier. |
+| Method | Path                                | Purpose                                                            |
+| ------ | ----------------------------------- | ------------------------------------------------------------------ |
+| `POST` | `/webhook/apple/event`              | Receives Apple device lifecycle and status events.                 |
+| `POST` | `/webhook/apple/checkin`            | Returns the next management action for a device check-in.          |
+| `POST` | `/webhook/apple/declaration-tokens` | Returns declarative management tokens.                             |
+| `POST` | `/webhook/apple/declaration-items`  | Returns declarative management item identifiers and server tokens. |
+| `POST` | `/webhook/apple/declaration`        | Returns one declarative management declaration.                    |
+| `POST` | `/webhook/apple/asset`              | Returns one asset by identifier.                                   |
 
 ## Scope
 
@@ -57,20 +57,29 @@ Request body:
 
 ```json
 {
-  "scope": { "_tag": "device", "udid": "DEVICE-UDID", "mdmOrigin": { "url": "https://mdm.example.com" } },
-  "event": { "_tag": "Authenticate", "serialNumber": "C02...", "model": "MacBookPro", "osVersion": "15.0" }
+  "scope": {
+    "_tag": "device",
+    "udid": "DEVICE-UDID",
+    "mdmOrigin": { "url": "https://mdm.example.com" }
+  },
+  "event": {
+    "_tag": "Authenticate",
+    "serialNumber": "C02...",
+    "model": "MacBookPro",
+    "osVersion": "15.0"
+  }
 }
 ```
 
 Supported event tags are:
 
-| Tag | Description |
-| --- | ----------- |
-| `Authenticate` | Enrollment authentication data such as serial number, model, and OS version. |
-| `TokenUpdate` | Push token, push magic, MDM topic, and channel. |
-| `CheckOut` | Device unenrolled. |
-| `CommandResult` | Result for a previously issued imperative MDM command. |
-| `DeclarationStatus` | Declarative device management status report. |
+| Tag                 | Description                                                                  |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `Authenticate`      | Enrollment authentication data such as serial number, model, and OS version. |
+| `TokenUpdate`       | Push token, push magic, MDM topic, and channel.                              |
+| `CheckOut`          | Device unenrolled.                                                           |
+| `CommandResult`     | Result for a previously issued imperative MDM command.                       |
+| `DeclarationStatus` | Declarative device management status report.                                 |
 
 ## Check-In Decisions
 
@@ -162,11 +171,11 @@ The whitelabel server decodes `content` and serves the bytes from `/mdm/apple/as
 
 Webhook endpoints may return typed errors understood by the server:
 
-| Error | Meaning |
-| ----- | ------- |
-| `ManagementNotSupported` | The requested management feature is not supported. |
-| `UnknownDevice` | The device or user is unknown to your backend. |
+| Error                         | Meaning                                                   |
+| ----------------------------- | --------------------------------------------------------- |
+| `ManagementNotSupported`      | The requested management feature is not supported.        |
+| `UnknownDevice`               | The device or user is unknown to your backend.            |
 | `ServerInitiatedUnenrollment` | Your backend wants the device unenrolled during check-in. |
-| `InternalServerError` | Generic backend failure. |
+| `InternalServerError`         | Generic backend failure.                                  |
 
 The HTTP client layer maps these typed responses into server-side protocol behavior.

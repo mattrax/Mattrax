@@ -7,7 +7,7 @@ import { createServer } from "node:http";
 import { createAppLayer } from "../app.ts";
 
 const isProductionBuild = process.env.MATTRAX_SERVER_BUNDLED === "1";
-const defaultDataDir = isProductionBuild ? "/opt/mattrax-server" : "./.data";
+const defaultDataDir = isProductionBuild ? "/opt/mattrax" : "./.data";
 
 export const serveCommand = Command.make("serve", {
   port: Flag.integer("port").pipe(Flag.withDefault(3000)),

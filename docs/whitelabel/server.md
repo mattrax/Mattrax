@@ -6,18 +6,18 @@ The whitelabel server is a Node-based HTTP service that terminates Apple MDM and
 
 The server handles:
 
-| Area | Responsibility |
-| ---- | -------------- |
-| Enrollment | Generates an Apple enrollment profile at `/mdm/apple/enroll`. |
-| Apple MDM | Receives check-in, command, declarative management, and checkout messages at `/mdm/apple/mdm`. |
-| SCEP | Serves SCEP CA capabilities, CA certificate, and PKIOperation requests at `/mdm/apple/scep`. |
-| Assets | Proxies asset downloads from your management backend through `/mdm/apple/assets/:identifier`. |
-| Webhook bridge | Calls your backend for events, commands, declarations, and assets. |
-| Health | Exposes `/health` for runtime checks. |
+| Area           | Responsibility                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| Enrollment     | Generates an Apple enrollment profile at `/mdm/apple/enroll`.                                  |
+| Apple MDM      | Receives check-in, command, declarative management, and checkout messages at `/mdm/apple/mdm`. |
+| SCEP           | Serves SCEP CA capabilities, CA certificate, and PKIOperation requests at `/mdm/apple/scep`.   |
+| Assets         | Proxies asset downloads from your management backend through `/mdm/apple/assets/:identifier`.  |
+| Webhook bridge | Calls your backend for events, commands, declarations, and assets.                             |
+| Health         | Exposes `/health` for runtime checks.                                                          |
 
 ## Architecture
 
-`apps/server/src/index.ts` defines the CLI and starts the HTTP server. `apps/server/src/app.ts` composes the Effect layers for Apple MDM, SCEP, filesystem persistence, and the management webhook client.
+The CLI and starts the HTTP server, composes the Effect layers for Apple MDM, SCEP, filesystem persistence, and the management webhook client.
 
 At runtime the flow is:
 
@@ -33,8 +33,8 @@ The server currently persists SCEP CA state in the configured data directory. Th
 
 Treat the data directory as sensitive production state:
 
-| File | Purpose |
-| ---- | ------- |
+| File           | Purpose                                                         |
+| -------------- | --------------------------------------------------------------- |
 | `scep-ca.json` | SCEP CA certificate and private key used for device enrollment. |
 
 Back up this directory before replacing hosts or redeploying to a new persistent volume. Losing the SCEP CA can break future enrollment flows that depend on the existing CA identity.

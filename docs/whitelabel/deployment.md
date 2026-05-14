@@ -7,23 +7,23 @@ Deploy the whitelabel server anywhere it can receive public HTTPS traffic from A
 For the standalone binary:
 
 ```sh
-./mattrax-server serve \
+./mttx serve \
   --port 3000 \
   --origin https://mdm.example.com \
   --webhook-url https://api.example.com/webhook \
-  --data-dir /opt/mattrax-server \
+  --data-dir /opt/mattrax \
   --apple-vendor-cert /etc/mattrax/apple-vendor.pem
 ```
 
 ## Configuration Checklist
 
-| Setting | Production guidance |
-| ------- | ------------------- |
-| `--origin` | Use the public HTTPS origin devices can reach. Do not leave this as localhost. |
-| `--webhook-url` | Use the base URL for your management backend webhook API. |
-| `--data-dir` | Use a persistent, backed-up directory or volume. |
+| Setting               | Production guidance                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------ |
+| `--origin`            | Use the public HTTPS origin devices can reach. Do not leave this as localhost.             |
+| `--webhook-url`       | Use the base URL for your management backend webhook API.                                  |
+| `--data-dir`          | Use a persistent, backed-up directory or volume.                                           |
 | `--apple-vendor-cert` | Provide the Apple MDM vendor certificate PEM so enrollment profiles use the correct topic. |
-| TLS | Terminate HTTPS at a load balancer, reverse proxy, or the hosting platform. |
+| TLS                   | Terminate HTTPS at a load balancer, reverse proxy, or the hosting platform.                |
 
 ## Persistent Data
 
@@ -31,12 +31,12 @@ The server stores SCEP CA material in `scep-ca.json` under `--data-dir`. This fi
 
 Recommended handling:
 
-| Requirement | Reason |
-| ----------- | ------ |
+| Requirement                     | Reason                                                    |
+| ------------------------------- | --------------------------------------------------------- |
 | Restrict filesystem permissions | Prevent unauthorized access to SCEP private key material. |
-| Back up the data directory | Preserve enrollment continuity across host replacement. |
-| Mount persistent storage | Avoid regenerating CA state on every deploy. |
-| Exclude from source control | Prevent accidental key disclosure. |
+| Back up the data directory      | Preserve enrollment continuity across host replacement.   |
+| Mount persistent storage        | Avoid regenerating CA state on every deploy.              |
+| Exclude from source control     | Prevent accidental key disclosure.                        |
 
 ## Health Checks
 

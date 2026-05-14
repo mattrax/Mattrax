@@ -4,19 +4,19 @@ Mattrax Enterprise is the organization-scoped management product for enrolling d
 
 ## Core Concepts
 
-| Concept | Meaning |
-| ------- | ------- |
-| Tenant | An organization boundary. Devices, groups, policies, APNs configuration, users, billing, and enrollments belong to a tenant. |
-| User | A signed-in person using Mattrax Enterprise. A user can belong to one or more tenants. |
-| Tenant member | The relationship between a user and a tenant. The member role controls what the user can do. |
-| Invitation | A pending tenant membership invite sent to an email address. |
-| Enrollment | A tenant-owned enrollment entry that controls which platforms can enroll and whether a code is required. |
-| Device | A managed endpoint enrolled into a tenant. Devices can be Apple, Windows, or Android. |
-| Group | A collection that links devices and policies. Groups are how policies are assigned to devices. |
-| Policy | A named management intent containing one or more configurations. |
-| Configuration | A typed payload inside a policy. Each configuration is stored by `kind` and contains platform-specific management data. |
-| APNs | The Apple Push Notification service certificate and topic for a tenant. Required for Apple device management. |
-| Billing | The tenant billing summary, including plan, subscription status, and billable enrolled device count. |
+| Concept       | Meaning                                                                                                                      |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Tenant        | An organization boundary. Devices, groups, policies, APNs configuration, users, billing, and enrollments belong to a tenant. |
+| User          | A signed-in person using Mattrax Enterprise. A user can belong to one or more tenants.                                       |
+| Tenant member | The relationship between a user and a tenant. The member role controls what the user can do.                                 |
+| Invitation    | A pending tenant membership invite sent to an email address.                                                                 |
+| Enrollment    | A tenant-owned enrollment entry that controls which platforms can enroll and whether a code is required.                     |
+| Device        | A managed endpoint enrolled into a tenant. Devices can be Apple, Windows, or Android.                                        |
+| Group         | A collection that links devices and policies. Groups are how policies are assigned to devices.                               |
+| Policy        | A named management intent containing one or more configurations.                                                             |
+| Configuration | A typed payload inside a policy. Each configuration is stored by `kind` and contains platform-specific management data.      |
+| APNs          | The Apple Push Notification service certificate and topic for a tenant. Required for Apple device management.                |
+| Billing       | The tenant billing summary, including plan, subscription status, and billable enrolled device count.                         |
 
 ## Tenants
 
@@ -24,14 +24,14 @@ A tenant is the top-level Enterprise boundary. Most API routes are scoped by `te
 
 Tenant records include:
 
-| Field | Purpose |
-| ----- | ------- |
-| `id` | Stable tenant identifier used in API paths. |
-| `name` | Display name. |
-| `slug` | URL-friendly tenant name. |
-| `logo` | Optional tenant logo. |
-| `metadata` | Optional tenant metadata. |
-| `role` | Current user's role in the tenant. |
+| Field      | Purpose                                     |
+| ---------- | ------------------------------------------- |
+| `id`       | Stable tenant identifier used in API paths. |
+| `name`     | Display name.                               |
+| `slug`     | URL-friendly tenant name.                   |
+| `logo`     | Optional tenant logo.                       |
+| `metadata` | Optional tenant metadata.                   |
+| `role`     | Current user's role in the tenant.          |
 
 Write operations require an `owner` or `admin` role. Tenant deletion requires `owner` and is blocked when the tenant still has more than one user.
 
@@ -41,14 +41,14 @@ Users authenticate with the platform, then access tenants through memberships. A
 
 Tenant admins can:
 
-| Action | Description |
-| ------ | ----------- |
-| List users | View tenant members. |
-| Invite users | Create invitations for email addresses. |
-| List invitations | View pending or historical invitations. |
-| Cancel invitations | Revoke an invitation before it is accepted. |
-| Change roles | Update a member role. |
-| Remove users | Remove a member, as long as they are not the last tenant user. |
+| Action             | Description                                                    |
+| ------------------ | -------------------------------------------------------------- |
+| List users         | View tenant members.                                           |
+| Invite users       | Create invitations for email addresses.                        |
+| List invitations   | View pending or historical invitations.                        |
+| Cancel invitations | Revoke an invitation before it is accepted.                    |
+| Change roles       | Update a member role.                                          |
+| Remove users       | Remove a member, as long as they are not the last tenant user. |
 
 ## Enrollments
 
@@ -56,14 +56,14 @@ An enrollment controls how new devices join a tenant. It can require a code, lim
 
 Enrollment settings include:
 
-| Setting | Meaning |
-| ------- | ------- |
-| `code` | Optional code required before returning authenticated enrollment options. |
-| `enabledApple` | Allows Apple enrollment when true. |
-| `enabledWindows` | Allows Windows enrollment when true. |
-| `enabledAndroid` | Allows Android enrollment when true. |
-| `enabledAssetTag` | Allows asset tag collection during enrollment when true. |
-| `maxDevices` | Maximum devices allowed for the enrollment. |
+| Setting           | Meaning                                                                   |
+| ----------------- | ------------------------------------------------------------------------- |
+| `code`            | Optional code required before returning authenticated enrollment options. |
+| `enabledApple`    | Allows Apple enrollment when true.                                        |
+| `enabledWindows`  | Allows Windows enrollment when true.                                      |
+| `enabledAndroid`  | Allows Android enrollment when true.                                      |
+| `enabledAssetTag` | Allows asset tag collection during enrollment when true.                  |
+| `maxDevices`      | Maximum devices allowed for the enrollment.                               |
 
 For Apple enrollment, the tenant must also have APNs configured. If APNs is missing, the enrollment response returns an Apple-specific error instead of a profile.
 
@@ -73,20 +73,20 @@ A device is an enrolled endpoint in a tenant. Devices have a protocol, lifecycle
 
 Supported device protocols are:
 
-| Protocol | Meaning |
-| -------- | ------- |
-| `apple` | Apple MDM device. |
-| `win` | Windows device. |
-| `android` | Android device. |
+| Protocol  | Meaning           |
+| --------- | ----------------- |
+| `apple`   | Apple MDM device. |
+| `win`     | Windows device.   |
+| `android` | Android device.   |
 
 Device statuses are:
 
-| Status | Meaning |
-| ------ | ------- |
-| `enrolling` | Device has started enrollment. |
-| `enrolled` | Device is actively managed. |
-| `unenrolling` | Tenant has requested unenrollment. |
-| `unenrolled` | Device is no longer actively managed. |
+| Status        | Meaning                               |
+| ------------- | ------------------------------------- |
+| `enrolling`   | Device has started enrollment.        |
+| `enrolled`    | Device is actively managed.           |
+| `unenrolling` | Tenant has requested unenrollment.    |
+| `unenrolled`  | Device is no longer actively managed. |
 
 Operators can update device `name`, `notes`, and `assetTag`. Unenrolling a device sets enrolled devices to `unenrolling`, allowing the device management layer to complete the protocol-specific unenrollment flow.
 
@@ -96,14 +96,14 @@ Groups connect devices and policies. A group can contain many devices and many p
 
 Group records include:
 
-| Field | Purpose |
-| ----- | ------- |
-| `id` | Stable group identifier. |
-| `name` | Display name. |
-| `notes` | Optional operator notes. |
-| `devicesCount` | Count of assigned devices when returned by list views. |
-| `policiesCount` | Count of assigned policies when returned by list views. |
-| `createdAt` / `updatedAt` | Audit timestamps. |
+| Field                     | Purpose                                                 |
+| ------------------------- | ------------------------------------------------------- |
+| `id`                      | Stable group identifier.                                |
+| `name`                    | Display name.                                           |
+| `notes`                   | Optional operator notes.                                |
+| `devicesCount`            | Count of assigned devices when returned by list views.  |
+| `policiesCount`           | Count of assigned policies when returned by list views. |
+| `createdAt` / `updatedAt` | Audit timestamps.                                       |
 
 Group membership updates use explicit `assign` and `unassign` lists for devices and policies. The backend validates that referenced devices and policies belong to the same tenant before changing membership.
 
@@ -113,13 +113,13 @@ A policy is a named management intent. Policies do not target devices directly; 
 
 Policy records include:
 
-| Field | Purpose |
-| ----- | ------- |
-| `id` | Stable policy identifier. |
-| `name` | Display name. |
-| `notes` | Optional operator notes. |
-| `configurations` | Optional map of configuration kind to configuration data. |
-| `createdAt` / `updatedAt` | Audit timestamps. |
+| Field                     | Purpose                                                   |
+| ------------------------- | --------------------------------------------------------- |
+| `id`                      | Stable policy identifier.                                 |
+| `name`                    | Display name.                                             |
+| `notes`                   | Optional operator notes.                                  |
+| `configurations`          | Optional map of configuration kind to configuration data. |
+| `createdAt` / `updatedAt` | Audit timestamps.                                         |
 
 Policies can be created, patched, duplicated, deleted, and synced. Duplicating a policy copies its configurations to a new policy.
 
@@ -129,10 +129,10 @@ A configuration is stored inside a policy by `kind`. The backend persists each c
 
 Patch behavior:
 
-| Input | Result |
-| ----- | ------ |
+| Input                     | Result                                            |
+| ------------------------- | ------------------------------------------------- |
 | `{ "someKind": { ... } }` | Creates or replaces the `someKind` configuration. |
-| `{ "someKind": null }` | Deletes the `someKind` configuration. |
+| `{ "someKind": null }`    | Deletes the `someKind` configuration.             |
 
 This lets a policy contain multiple independent configuration payloads while still updating or removing each configuration type independently.
 
@@ -146,10 +146,10 @@ When a certificate is uploaded, the backend extracts the topic from the certific
 
 Enterprise exposes two generic lookup patterns:
 
-| Feature | Description |
-| ------- | ----------- |
-| Search | Lists rows for `device`, `group`, or `policy` within a tenant. |
-| Node lookup | Fetches a single `device`, `group`, or `policy` by ID. |
+| Feature     | Description                                                    |
+| ----------- | -------------------------------------------------------------- |
+| Search      | Lists rows for `device`, `group`, or `policy` within a tenant. |
+| Node lookup | Fetches a single `device`, `group`, or `policy` by ID.         |
 
 Node lookup is used when the UI needs the detail representation for one entity. Policy node responses include configurations.
 

@@ -2,7 +2,7 @@
 
 Mattrax Whitelabel is the self-hosted MDM gateway for teams building their own device management product on top of Mattrax. It exposes Apple enrollment, MDM, SCEP, and asset endpoints, then delegates product-specific decisions to your management backend over HTTP webhooks.
 
-The server implementation lives in `apps/server/` and is packaged as `@mattrax/server`.
+The server implementation lives in the `mttx` CLI and is packaged as `@mattrax/server`.
 
 ## Contents
 

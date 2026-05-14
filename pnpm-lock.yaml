@@ -209,7 +209,7 @@ importers:
         specifier: ^4.0.0
         version: 4.86.0
 
-  apps/server:
+  apps/mttx:
     dependencies:
       '@effect/platform-node':
         specifier: 'catalog:'

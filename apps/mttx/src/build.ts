@@ -41,7 +41,7 @@ execSync(`node --experimental-sea-config "${seaConfigPath}"`, {
 
 // 4. Copy the Node binary
 const nodePath = execSync("command -v node", { encoding: "utf-8" }).trim();
-const binaryPath = join(distDir, "mattrax-server");
+const binaryPath = join(distDir, "mttx");
 console.log(`Copying Node binary from ${nodePath}...`);
 copyFileSync(nodePath, binaryPath);
 
