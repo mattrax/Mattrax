@@ -1,13 +1,13 @@
 import { Effect, Layer } from "effect";
 import { Db, Env, R2, schema } from "@mattrax/enterprise-core";
-import { EnterpriseAuth, EnterpriseService } from "@mattrax/enterprise-domain";
+import { EnterpriseAuth, EnterpriseService as EnterpriseServiceTag } from "@mattrax/enterprise-domain";
 import { StripeService } from "@mattrax/effect-stripe";
 import { createEnterpriseService } from "./enterpriseHandlers.ts";
 
 type R2Bucket = Parameters<typeof R2.layer>[0];
 
-export const EnterpriseServiceLive = Layer.effect(
-  EnterpriseService,
+export const EnterpriseService = Layer.effect(
+  EnterpriseServiceTag,
   Effect.gen(function* () {
     const db = yield* Db;
     const env = yield* Env;
@@ -23,7 +23,7 @@ export const EnterpriseServiceLive = Layer.effect(
       list: (options) => Effect.runPromise(r2.list(options)),
     };
 
-    return EnterpriseService.of(createEnterpriseService({
+    return EnterpriseServiceTag.of(createEnterpriseService({
       db,
       schema,
       origin: env.origin,

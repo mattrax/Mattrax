@@ -1,11 +1,11 @@
 import { Effect, Layer } from "effect";
 import { HttpServerResponse, HttpRouter } from "effect/unstable/http";
-import { ScepService } from "./service.js";
+import { ScepServiceTag } from "./service.js";
 
 export const scepRoutes = Layer.mergeAll(
   HttpRouter.add("GET", "/mdm/apple/scep", (request) =>
     Effect.gen(function* () {
-      const scep = yield* ScepService;
+      const scep = yield* ScepServiceTag;
       const url = new URL(request.url, "http://localhost");
       const operation = url.searchParams.get("operation") ?? "";
 
@@ -40,7 +40,7 @@ export const scepRoutes = Layer.mergeAll(
   ),
   HttpRouter.add("POST", "/mdm/apple/scep", (request) =>
     Effect.gen(function* () {
-      const scep = yield* ScepService;
+      const scep = yield* ScepServiceTag;
       const message = yield* request.arrayBuffer;
       const response = yield* scep.pkiOperation(message);
       return HttpServerResponse.uint8Array(new Uint8Array(response), {

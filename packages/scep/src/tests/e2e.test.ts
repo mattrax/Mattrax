@@ -5,7 +5,7 @@ import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
 import { privateDecrypt, constants } from "node:crypto";
 import { scepRoutes } from "../routes.js";
-import { ScepServiceLive } from "../service.js";
+import { ScepService } from "../service.js";
 import { ScepRepository } from "../repository.js";
 import { pemEncode } from "../crypto.js";
 import {
@@ -26,7 +26,7 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
 }
 
 async function makeScepHandler(repoLayer: Layer.Layer<ScepRepository>) {
-  const serviceLayer = ScepServiceLive.pipe(Layer.provideMerge(repoLayer));
+  const serviceLayer = ScepService.pipe(Layer.provideMerge(repoLayer));
   const appLayer = scepRoutes.pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer);
   return handler;

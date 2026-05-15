@@ -5,7 +5,7 @@ import { appleMdmApi } from "@mattrax/dm-apple";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
-import { ScepServiceLive } from "@mattrax/scep";
+import { ScepService } from "@mattrax/scep";
 import { Env as CoreEnv } from "@mattrax/enterprise-core";
 import { ManagementBackendHttp } from "@mattrax/management-backend-http";
 import { FsDb } from "./db.ts";
@@ -62,7 +62,7 @@ export const createAppLayer = (config: ServerConfig) => {
     Layer.provide(ManagementBackendHttp(config.webhookUrl)),
   );
 
-  const scepServiceResolved = ScepServiceLive.pipe(
+  const scepServiceResolved = ScepService.pipe(
     Layer.provide(ScepRepositoryLive(db)),
   );
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/unstable/http";
 import { scepRoutes } from "../routes.js";
-import { ScepServiceLive } from "../service.js";
+import { ScepService } from "../service.js";
 import { ScepRepository } from "../repository.js";
 import { ScepError } from "../schema.js";
 import { certToPem } from "../pkcs7.js";
@@ -16,7 +16,7 @@ import {
 } from "./helpers.js";
 
 async function makeScepHandler(repoLayer: Layer.Layer<ScepRepository>) {
-  const serviceLayer = ScepServiceLive.pipe(Layer.provideMerge(repoLayer));
+  const serviceLayer = ScepService.pipe(Layer.provideMerge(repoLayer));
   const appLayer = scepRoutes.pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer);
   return handler;

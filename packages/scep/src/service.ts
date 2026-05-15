@@ -17,8 +17,8 @@ import {
 
 const SCEP_CAPS = "SHA-256\nSHA-1\nAES\nDES3\nPOSTPKIOperation";
 
-export class ScepService extends Context.Service<
-  ScepService,
+export class ScepServiceTag extends Context.Service<
+  ScepServiceTag,
   {
     readonly getCaCaps: () => Effect.Effect<string, ScepError>;
     readonly getCaCert: () => Effect.Effect<{ raw: ArrayBuffer; isPkcs7: boolean }, ScepError>;
@@ -26,8 +26,8 @@ export class ScepService extends Context.Service<
   }
 >()("ScepService") {}
 
-export const ScepServiceLive = Layer.effect(
-  ScepService,
+export const ScepService = Layer.effect(
+  ScepServiceTag,
   Effect.gen(function* () {
     const repo = yield* ScepRepository;
 
@@ -127,7 +127,7 @@ export const ScepServiceLive = Layer.effect(
         return response;
       });
 
-    return ScepService.of({
+    return ScepServiceTag.of({
       getCaCaps,
       getCaCert,
       pkiOperation,

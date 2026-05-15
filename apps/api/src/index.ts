@@ -1,17 +1,17 @@
 import { Context, Layer, Redacted } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiScalar, OpenApi } from "effect/unstable/httpapi";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http";
-import { waitUntil } from "cloudflare:workers";
+import { env, waitUntil } from "cloudflare:workers";
 import { version } from "../package.json" with { type: "json" };
 import { enterpriseApi } from "@mattrax/enterprise-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
-import { EnterpriseAuthLive, EnterpriseServiceLive, enterpriseHandlers } from "@mattrax/enterprise-backend";
+import { EnterpriseAuthLive, EnterpriseService, enterpriseHandlers } from "@mattrax/enterprise-backend";
 import { platformApi } from "@mattrax/platform-api";
 import { platformHandlers } from "@mattrax/platform-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
-import { ScepServiceLive } from "@mattrax/scep";
+import { ScepService } from "@mattrax/scep";
 import { ManagementBackendEnterpriseLive, ScepRepositoryLive } from "@mattrax/management-backend-enterprise";
 import { Db, Env as CoreEnv, R2 } from "@mattrax/enterprise-core";
 import { PgClient } from "@effect/sql-pg";
@@ -36,10 +36,10 @@ const handlersLayer = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
   HttpApiBuilder.group(apiRoot, "PlatformApi", platformHandlers),
   HttpRouter.add(
-   "GET",
-   "/health",
-   HttpServerResponse.text("ok")
- ),
+    "GET",
+    "/health",
+    HttpServerResponse.text("ok"),
+  ),
 );
 
 const apiLayer = Layer.mergeAll(
@@ -53,7 +53,6 @@ const apiLayer = Layer.mergeAll(
 
 const appLayer = apiLayer.pipe(
   Layer.provide(HttpServer.layerServices),
-  Layer.provide(Db.layer),
 );
 
 const staticEnvLayer = CoreEnv.layer({
@@ -61,25 +60,38 @@ const staticEnvLayer = CoreEnv.layer({
   cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
 });
 
+const storageBucket: Parameters<typeof R2.layer>[0] = {
+  head: (key) => env.STORAGE.head(key),
+  get: (key) => env.STORAGE.get(key),
+  put: (key, value, options) => env.STORAGE.put(key, value, options),
+  delete: (keys) => env.STORAGE.delete(typeof keys === "string" ? keys : [...keys]),
+  list: () => env.STORAGE.list(),
+};
+
 const servicesLayer = Layer.mergeAll(
-  EnterpriseServiceLive.pipe(
-    Layer.provideMerge(EnterpriseAuthLive),
-    Layer.provideMerge(staticEnvLayer),
-    Layer.provideMerge(StripeService.layer(env.STRIPE_SECRET_KEY)),
+  EnterpriseService.pipe(
+    Layer.provide(EnterpriseAuthLive),
+    Layer.provide(staticEnvLayer),
+    Layer.provide(StripeService.layer(env.STRIPE_SECRET_KEY)),
+    Layer.provide(R2.layer(storageBucket)),
+    Layer.provide(Db.layer),
   ),
   AppleMdmService.layer.pipe(
-    Layer.provideMerge(AppleMdmTopic.layer),
-    Layer.provideMerge(ManagementBackendEnterpriseLive.layer(env.ORIGIN)),
-    Layer.provideMerge(staticEnvLayer),
+    Layer.provide(AppleMdmTopic.layer),
+    Layer.provide(ManagementBackendEnterpriseLive.layer(env.ORIGIN).pipe(
+      Layer.provide(Db.layer),
+    )),
+    Layer.provide(staticEnvLayer),
   ),
-  ScepServiceLive.pipe(
-    Layer.provideMerge(ScepRepositoryLive.layer),
+  ScepService.pipe(
+    Layer.provide(ScepRepositoryLive.layer.pipe(
+      Layer.provide(Db.layer),
+    )),
   ),
-  R2.layer(env.STORAGE),
 );
 
 const appLayer2 = appLayer.pipe(
-  Layer.provideMerge(servicesLayer),
+  Layer.provide(servicesLayer),
   Layer.provide(PgClient.layer({
     url: Redacted.make(env.HYPERDRIVE.connectionString),
   })),
@@ -88,7 +100,8 @@ const appLayer2 = appLayer.pipe(
 export default {
   async fetch(request: Request, _: Env, _ctx: ExecutionContext): Promise<Response> {
     const { handler, dispose } = HttpRouter.toWebHandler(appLayer2);
-    const response = await handler(request, Context.empty());
+    const context = Context.makeUnsafe<any>(new Map());
+    const response = await handler(request, context);
     waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));
     return response;
   },

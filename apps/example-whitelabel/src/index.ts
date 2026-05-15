@@ -2,7 +2,7 @@ import { Context, Layer } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi";
 import { HttpRouter, HttpServer } from "effect/unstable/http";
 import { AppleMdmService, AppleMdmTopic, appleMdmApi, appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
-import { ScepServiceLive, scepRoutes } from "@mattrax/scep";
+import { ScepService, scepRoutes } from "@mattrax/scep";
 import { Env as CoreEnv } from "@mattrax/enterprise-core";
 import { managementWebhookGroup, managementWebhookHandlers } from "@mattrax/management-backend-http";
 import { ManagementBackendD1 } from "./management.js";
@@ -36,7 +36,7 @@ function createMdmLayer(env: Env) {
     Layer.provideMerge(managementBackend),
   );
 
-  const scepService = ScepServiceLive.pipe(Layer.provideMerge(ScepRepositoryD1(env.DB)));
+  const scepService = ScepService.pipe(Layer.provideMerge(ScepRepositoryD1(env.DB)));
 
   return apiLayer.pipe(
     Layer.provideMerge(Layer.mergeAll(appleMdmService, scepService, managementBackend)),

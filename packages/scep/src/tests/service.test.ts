@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import * as pkijs from "pkijs";
-import { ScepService, ScepServiceLive } from "../service.js";
+import { ScepService, ScepServiceTag } from "../service.js";
 import { ScepRepository } from "../repository.js";
 import { ScepError } from "../schema.js";
 import { certToPem } from "../pkcs7.js";
@@ -24,9 +24,9 @@ if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
 
 function runWithService<A, E>(
   repoLayer: Layer.Layer<ScepRepository>,
-  effect: Effect.Effect<A, E, ScepService>,
+  effect: Effect.Effect<A, E, ScepServiceTag>,
 ) {
-  const layer = ScepServiceLive.pipe(Layer.provide(repoLayer));
+  const layer = ScepService.pipe(Layer.provide(repoLayer));
   return effect.pipe(Effect.provide(layer), Effect.runPromise);
 }
 
@@ -35,7 +35,7 @@ describe("ScepService", () => {
     it("returns the expected capability string", async () => {
       const repo = mockScepRepository();
       const caps = await runWithService(repo, Effect.gen(function* () {
-        const scep = yield* ScepService;
+        const scep = yield* ScepServiceTag;
         return yield* scep.getCaCaps();
       }));
       expect(caps).toContain("SHA-256");
@@ -57,7 +57,7 @@ describe("ScepService", () => {
       });
 
       const result = await runWithService(repo, Effect.gen(function* () {
-        const scep = yield* ScepService;
+        const scep = yield* ScepServiceTag;
         return yield* scep.getCaCert();
       }));
 
@@ -83,7 +83,7 @@ describe("ScepService", () => {
       });
 
       const result = await runWithService(repo, Effect.gen(function* () {
-        const scep = yield* ScepService;
+        const scep = yield* ScepServiceTag;
         return yield* scep.getCaCert();
       }));
 
@@ -103,7 +103,7 @@ describe("ScepService", () => {
       });
 
       const result = await runWithService(repo, Effect.gen(function* () {
-        const scep = yield* ScepService;
+        const scep = yield* ScepServiceTag;
         return yield* scep.getCaCert();
       }));
 
@@ -136,7 +136,7 @@ describe("ScepService", () => {
       });
 
       const response = await runWithService(repo, Effect.gen(function* () {
-        const scep = yield* ScepService;
+        const scep = yield* ScepServiceTag;
         return yield* scep.pkiOperation(pkcsReq);
       }));
 
@@ -171,7 +171,7 @@ describe("ScepService", () => {
       });
 
       const result = await runWithService(repo, Effect.gen(function* () {
-        const scep = yield* ScepService;
+        const scep = yield* ScepServiceTag;
         return yield* scep.pkiOperation(pkcsReq);
       })).then(() => "Success").catch(() => "Failure");
       expect(result).toBe("Failure");
@@ -196,7 +196,7 @@ describe("ScepService", () => {
       });
 
       const response = await runWithService(repo, Effect.gen(function* () {
-        const scep = yield* ScepService;
+        const scep = yield* ScepServiceTag;
         return yield* scep.pkiOperation(pkcsReq);
       }));
 
