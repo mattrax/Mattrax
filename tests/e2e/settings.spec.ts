@@ -25,7 +25,9 @@ test.describe("tenant settings", () => {
     await expect(name).toHaveValue("Renamed Tenant");
 
     await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { name: /Renamed Tenant/ })).toBeVisible();
+    await expect(
+      page.getByRole("main").getByRole("button", { name: /Renamed Tenant/ }),
+    ).toBeVisible();
   });
 
   test("shows the APNs setup wizard and downloads a CSR", async ({ page }) => {

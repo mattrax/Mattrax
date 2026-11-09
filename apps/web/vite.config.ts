@@ -35,6 +35,25 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
+  // Pre-bundle the client's critical dependencies once. SSR dependency
+  // discovery is disabled by the `mattraxe:stable-ssr-deps` plugin below.
+  optimizeDeps: {
+    holdUntilCrawlEnd: true,
+    include: [
+      "solid-js",
+      "@solidjs/web",
+      "@solidjs/router",
+      "@solidjs/meta",
+      "@tanstack/solid-query",
+      "@kobalte/core/dropdown-menu",
+      "@kobalte/core/dialog",
+      "@kobalte/core/tooltip",
+      "@kobalte/core/polymorphic",
+      "effect",
+      "@yielded/auth",
+      "@yielded/auth/EmailDelivery",
+    ],
+  },
   plugins: [
     // Start mode with SSR: the plugin owns the client entry, the document shell
     // and the server render. `externalServer` hands the Worker entry to us so
@@ -69,5 +88,34 @@ export default defineConfig({
       auxiliaryWorkers: [{ config: apiWorker }],
     }),
     tailwindcss(),
+    {
+      // The Cloudflare plugin enables SSR dependency discovery for its worker
+      // environment. On a cold CI checkout that optimizer can rewrite its
+      // manifest mid-request, which breaks the first page load. This post hook
+      // runs after the plugin and turns discovery off; SSR deps are ESM and can
+      // be loaded directly.
+      name: "mattraxe:stable-ssr-deps",
+      enforce: "post",
+      config: () => ({
+        ssr: { optimizeDeps: { noDiscovery: true, include: [] } },
+        environments: {
+          ssr: {
+            optimizeDeps: {
+              noDiscovery: true,
+              include: [],
+              exclude: [
+                "effect",
+                "@yielded/auth",
+                "@yielded/auth/EmailDelivery",
+                "@mattrax/enterprise-domain",
+                "@mattrax/plist",
+                "@mattrax/dm-apple",
+                "@mattrax/management-backend-enterprise",
+              ],
+            },
+          },
+        },
+      }),
+    },
   ],
 });

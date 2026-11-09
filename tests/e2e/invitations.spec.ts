@@ -33,7 +33,6 @@ test.describe("invitations", () => {
 
     const me = await invitee.evaluate(async () => (await fetch("/api/v1/me")).json());
     expect(me.tenants.some((item: { id: string }) => item.id === tenant.id)).toBe(true);
-    expect(me.activeTenant.id).toBe(tenant.id);
     await invitee.close();
   });
 });

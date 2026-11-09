@@ -28,9 +28,9 @@ export default defineConfig({
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {
-        command: "pnpm web dev",
+        command: "node scripts/e2e-server.mjs",
         url: "http://localhost:9050",
         reuseExistingServer: true,
-        timeout: 120_000,
+        timeout: 180_000,
       },
 });

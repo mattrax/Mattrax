@@ -117,10 +117,10 @@ export default function DashboardLayout(props: ParentProps) {
 
   const navItems = () => [
     {
-      href: "/dashboard",
+      href: hasTenant() ? tenantBase() : "/dashboard",
       label: "Dashboard",
       icon: LayoutDashboard,
-      active: location.pathname === "/dashboard",
+      active: location.pathname === "/dashboard" || /^\/t\/[^/]+$/.test(location.pathname),
       disabled: false,
     },
     {

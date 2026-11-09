@@ -42,8 +42,8 @@ Additional rules enforced by the backend:
   member. Remove other members first.
 - Removing a member is rejected when it would remove the last tenant user.
 - Invitations default to the `member` role when no role is supplied.
-- The active tenant is persisted on the user (`user.active_tenant_id`) and returned by
-  `GET /api/v1/me`.
+- Tenant-scoped API routes always carry the tenant in the path (`/api/v1/tenants/:tenantId/...`);
+  there is no server-side "active tenant" state. The dashboard stores the chosen tenant in the URL.
 
 ## Billing
 

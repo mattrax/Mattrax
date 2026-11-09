@@ -11,7 +11,14 @@ test.describe("account", () => {
     const name = page.locator("#name");
     await name.fill("Renamed User");
     await page.getByRole("button", { name: /^Save$/ }).click();
-    await expect(page.getByText("Name updated successfully.")).toBeVisible();
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const body = (await (await fetch("/api/v1/me")).json()) as { user: { name: string } };
+          return body.user.name;
+        }),
+      )
+      .toBe("Renamed User");
 
     await page.locator("#token-name").fill("E2E token");
     await page.getByRole("button", { name: /create token/i }).click();

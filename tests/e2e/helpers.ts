@@ -60,16 +60,6 @@ export async function createTenant(page: Page, name: string) {
     },
     { name, slug },
   );
-  await page.evaluate(
-    async ({ id }) => {
-      await fetch("/api/v1/me", {
-        method: "PATCH",
-        headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
-        body: JSON.stringify({ activeTenantId: id }),
-      });
-    },
-    { id },
-  );
   return { id, slug };
 }
 

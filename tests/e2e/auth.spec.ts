@@ -5,7 +5,7 @@ test.describe("authentication and onboarding", () => {
   test("registers, lands on the dashboard, and creates a tenant", async ({ page }) => {
     const { email } = await register(page, { name: "Onboard User" });
     await expect(page).toHaveURL(/\/dashboard/);
-    await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Workspaces" })).toBeVisible();
     await expect(page.getByText("No tenant yet")).toBeVisible();
 
     await page
@@ -23,7 +23,9 @@ test.describe("authentication and onboarding", () => {
     await expect(page).toHaveURL(/\/t\/[^/]+\/devices/);
 
     await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { name: /Onboard Tenant/ })).toBeVisible();
+    await expect(
+      page.getByRole("main").getByRole("button", { name: /Onboard Tenant/ }),
+    ).toBeVisible();
     await expect(page.getByText(email)).toBeVisible();
   });
 

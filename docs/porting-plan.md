@@ -35,8 +35,9 @@ apps                       api (Cloud), web (dashboard), mttx (self-hosted)
 
 - Local dev: `.dev.vars` template, `scripts/dev-cert.mjs`, configurable
   `ORIGIN`/`AUTH_RESET_URL`/`TRUSTED_ORIGINS`.
-- Persist the active tenant (`user.active_tenant_id`) and honour it in `/me`.
-- Fix tenant switcher (Kobalte portal/context, persisted selection).
+- Tenant ids are carried in the URL for every tenant-scoped route and API call
+  (no server-side active tenant); the switcher and workspace picker navigate.
+- Fix tenant switcher (Kobalte portal/context) and sidebar collapse.
 - Fix collapsed sidebar (label hiding, cookie persistence, tooltips).
 - Real dashboard overview instead of a redirect.
 - Error boundary, docs route, dropdown context fixes.
@@ -102,8 +103,8 @@ whitelabel gateway never pushes; its management backend owns delivery.
 Completed in this branch:
 
 - [x] Configurable origins, local dev secrets and HTTPS dev certificates.
-- [x] Persisted active tenant, working tenant switcher, collapsed sidebar and
-      mobile drawer, real dashboard and route error boundary.
+- [x] Tenant ids in the URL, working tenant switcher/workspace picker, collapsed
+      sidebar and mobile drawer, route error boundary.
 - [x] Playwright CDP suite for auth, navigation, tenant switching, settings,
       CRUD, enrollment and the command palette.
 - [x] APNs CSR generation, certificate validation, sealed private keys and

@@ -162,9 +162,7 @@ export type BillingSummary = typeof BillingSummary.Type;
 
 export const MeResponse = Schema.Struct({
   user: UserInfo,
-  activeTenant: Schema.optional(TenantInfo),
   tenants: Schema.Array(TenantInfo),
-  billing: Schema.optional(BillingSummary),
 });
 export type MeResponse = typeof MeResponse.Type;
 
@@ -229,8 +227,6 @@ export const AcceptInvitationResponse = Schema.Struct({ tenantId: Schema.String 
 export const UpdateMeRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   image: Schema.optional(NullableString),
-  /** Persist the tenant selected in the tenant switcher. */
-  activeTenantId: Schema.optional(NullableString),
 });
 
 export const DeviceProtocol = Schema.Literals(["apple", "win", "android"]);

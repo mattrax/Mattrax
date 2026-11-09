@@ -7,7 +7,7 @@ test.describe("sidebar navigation", () => {
     const base = `/t/${tenant.id}`;
 
     for (const [label, path, heading] of [
-      ["Dashboard", "/dashboard", tenant.id ? /Nav Tenant/ : /Dashboard/],
+      ["Dashboard", base, /Nav Tenant/],
       ["Devices", `${base}/devices`, "Devices"],
       ["Groups", `${base}/groups`, "Groups"],
       ["Policies", `${base}/policies`, "Policies"],
@@ -54,14 +54,11 @@ test.describe("sidebar navigation", () => {
     await page.getByRole("menuitem", { name: /Second Tenant/i }).click();
     await expect(page).toHaveURL(new RegExp(`/t/${second.id}/devices`));
 
-    await page.goto("/dashboard");
-    await expect(page.getByRole("heading", { name: /Second Tenant/ })).toBeVisible();
-
+    // The tenant is carried by the URL; reloading the same URL stays there.
     await page.reload();
-    await expect(page.getByRole("heading", { name: /Second Tenant/ })).toBeVisible();
-
+    await expect(page).toHaveURL(new RegExp(`/t/${second.id}/devices`));
     const me = await page.evaluate(async () => (await fetch("/api/v1/me")).json());
-    expect(me.activeTenant.id).toBe(second.id);
+    expect(me.tenants.some((item: { id: string }) => item.id === second.id)).toBe(true);
   });
 });
 

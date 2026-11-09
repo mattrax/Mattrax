@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "@solidjs/router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { useQuery } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
 import {
   DropdownMenu,
@@ -18,19 +18,12 @@ import { cn } from "~/lib/utils";
 export function TenantSwitcher() {
   const params = useParams();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const { state } = useSidebar();
   const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
 
   const active = () => resolveActiveTenant(me.data, params.tenantId);
 
-  const switchTenant = useMutation(() => ({
-    mutationFn: (tenantId: string) => enterprise.updateMe({ activeTenantId: tenantId }),
-    onSuccess: async (_result, tenantId) => {
-      await queryClient.invalidateQueries({ queryKey: enterpriseKeys.me() });
-      navigate(`/t/${tenantId}/devices`);
-    },
-  }));
+  const switchTenant = (tenantId: string) => navigate(`/t/${tenantId}/devices`);
 
   return (
     <DropdownMenu placement="bottom-start">
@@ -56,9 +49,6 @@ export function TenantSwitcher() {
         <DropdownMenuGroup>
           <DropdownMenuLabel class="flex items-center justify-between px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Tenants
-            <Show when={switchTenant.isPending}>
-              <span class="text-[10px] font-normal normal-case">Switching…</span>
-            </Show>
           </DropdownMenuLabel>
           <Show
             when={(me.data?.tenants.length ?? 0) > 0}
@@ -71,8 +61,7 @@ export function TenantSwitcher() {
             <For each={me.data?.tenants ?? []}>
               {(tenant) => (
                 <DropdownMenuItem
-                  onSelect={() => switchTenant.mutate(tenant.id)}
-                  disabled={switchTenant.isPending}
+                  onSelect={() => switchTenant(tenant.id)}
                   class="rounded-lg px-3 py-2 text-sm"
                 >
                   <span class="flex size-7 shrink-0 items-center justify-center rounded-md bg-stone-100 text-stone-600">
@@ -101,13 +90,6 @@ export function TenantSwitcher() {
           <Plus class="mr-2 size-4" />
           Create tenant
         </DropdownMenuItem>
-        <Show when={switchTenant.error}>
-          <p class="px-3 py-2 text-xs text-red-600">
-            {switchTenant.error instanceof Error
-              ? switchTenant.error.message
-              : "Could not switch tenant"}
-          </p>
-        </Show>
         <Show when={state() === "collapsed"}>
           <DropdownMenuSeparator class="my-1" />
           <p class="px-3 py-1 text-[11px] text-muted-foreground">

@@ -465,8 +465,6 @@ export const createEnterpriseService = ({
         const resolved = yield* auth.requireUser({ headers: request.headers });
         const { user } = resolved;
         const tenants = yield* listTenantInfo(user.id);
-        const activeTenant =
-          tenants.find((tenant) => tenant.id === user.activeTenantId) ?? tenants[0];
         return {
           user: {
             id: user.id,
@@ -475,33 +473,18 @@ export const createEnterpriseService = ({
             emailVerified: user.emailVerified,
             image: user.image,
           },
-          activeTenant,
           tenants,
-          billing: activeTenant ? yield* billingSummary(activeTenant.id) : undefined,
         };
       }),
     updateMe: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
-        const body = payload as {
-          name?: string;
-          image?: string | null;
-          activeTenantId?: string | null;
-        };
-        if (body.activeTenantId) {
-          const membership = yield* db.query.member.findFirst({
-            where: { userId: user.id, organizationId: body.activeTenantId },
-          });
-          if (!membership)
-            return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
-        }
+        const body = payload as { name?: string; image?: string | null };
         yield* db
           .update(schema.user)
           .set({
             name: body.name ?? user.name,
             image: body.image === undefined ? user.image : body.image,
-            activeTenantId:
-              body.activeTenantId === undefined ? user.activeTenantId : body.activeTenantId,
             updatedAt: now(),
           })
           .where(eq(schema.user.id, user.id));
@@ -611,12 +594,6 @@ export const createEnterpriseService = ({
           createdAt: timestamp,
           updatedAt: timestamp,
         });
-        // Make the newly created tenant the creator's active tenant so the
-        // dashboard and sidebar immediately point at it.
-        yield* db
-          .update(schema.user)
-          .set({ activeTenantId: tenantId, updatedAt: timestamp })
-          .where(eq(schema.user.id, user.id));
         yield* db.insert(schema.enterpriseEnrollment).ignore().values({
           id: tenantId,
           organizationId: tenantId,
@@ -763,10 +740,6 @@ export const createEnterpriseService = ({
           .update(schema.invitation)
           .set({ status: "accepted", updatedAt: now() })
           .where(eq(schema.invitation.id, invitation.id));
-        yield* db
-          .update(schema.user)
-          .set({ activeTenantId: invitation.organizationId, updatedAt: now() })
-          .where(eq(schema.user.id, user.id));
         return { tenantId: invitation.organizationId };
       }),
     listTenantInvitations: (request, tenantId) =>
