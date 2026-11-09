@@ -36,17 +36,17 @@ export async function register(page: Page, options: { name?: string; email?: str
   await page.locator("#confirm-password").fill(PASSWORD);
   await expect(page.locator("#email")).toHaveValue(email);
   await expect(page.locator("#password")).toHaveValue(PASSWORD);
+  const registration = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" && response.url().includes("/api/v1/register"),
+    { timeout: 20_000 },
+  );
   await page.getByRole("button", { name: /create account/i }).click();
-  await page.waitForTimeout(1_000);
-  if (page.url().includes("/register")) {
-    const message = await page
-      .locator("p.text-red-600")
-      .first()
-      .innerText()
-      .catch(() => "");
-    if (message) throw new Error(`Registration failed: ${message}`);
-  }
-  await page.waitForURL(/\/dashboard/);
+  const response = await registration.catch(() => undefined);
+  if (!response) throw new Error("Registration request was never sent");
+  if (!response.ok())
+    throw new Error(`Registration API failed (${response.status()}): ${await response.text()}`);
+  await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
   return { email, password: PASSWORD };
 }
 
