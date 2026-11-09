@@ -22,6 +22,7 @@ export function mockManagementBackend(
   return Layer.succeed(
     ManagementBackend,
     ManagementBackend.of({
+      getAppleBootstrapToken: () => Effect.succeed(null),
       appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),
       appleManagementCheckin:
         overrides?.appleManagementCheckin ?? (() => Effect.succeed({ _tag: "Idle" } as const)),

@@ -150,6 +150,10 @@ class SelectBuilder {
     return this;
   }
 
+  orderBy() {
+    return this;
+  }
+
   limit(count: number) {
     this.limitCount = count;
     return this;

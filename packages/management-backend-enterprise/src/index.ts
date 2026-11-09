@@ -514,6 +514,18 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 return;
               }
 
+              if (event._tag === "BootstrapToken") {
+                yield* db
+                  .update(s.deviceApple)
+                  .set({ bootstrapToken: event.token })
+                  .where(eq(s.deviceApple.deviceId, device.id));
+                yield* db
+                  .update(s.device)
+                  .set({ lastSeenAt: now() })
+                  .where(eq(s.device.id, device.id));
+                return;
+              }
+
               if (event._tag === "CheckOut") {
                 if (event.userId) {
                   yield* db
@@ -665,6 +677,21 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 ? cause
                 : internal(cause),
             ),
+          ),
+        ),
+
+      getAppleBootstrapToken: (scope) =>
+        provideDb(
+          Effect.gen(function* () {
+            const device = yield* requireDevice(scope);
+            const [apple] = yield* db
+              .select({ bootstrapToken: s.deviceApple.bootstrapToken })
+              .from(s.deviceApple)
+              .where(eq(s.deviceApple.deviceId, device.id))
+              .limit(1);
+            return apple?.bootstrapToken ?? null;
+          }).pipe(
+            Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal(cause))),
           ),
         ),
 

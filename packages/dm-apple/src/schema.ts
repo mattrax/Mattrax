@@ -66,6 +66,19 @@ export const CommandResultPlist = Schema.Struct({
 });
 export type CommandResultPlist = typeof CommandResultPlist.Type;
 
+export const SetBootstrapTokenPlist = Schema.Struct({
+  MessageType: Schema.Literal("SetBootstrapToken"),
+  UDID: Schema.String,
+  BootstrapToken: Schema.optional(Schema.String),
+  EnrollmentID: Schema.optional(Schema.String),
+});
+
+export const GetBootstrapTokenPlist = Schema.Struct({
+  MessageType: Schema.Literal("GetBootstrapToken"),
+  UDID: Schema.String,
+  EnrollmentID: Schema.optional(Schema.String),
+});
+
 export const DDMStatusReport = Schema.Struct({
   /** Flat map of Apple status item paths to their values. */
   StatusItems: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),

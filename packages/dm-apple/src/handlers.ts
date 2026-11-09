@@ -9,6 +9,8 @@ import {
   CheckOutPlist,
   CommandResultPlist,
   DDMStatusReport,
+  GetBootstrapTokenPlist,
+  SetBootstrapTokenPlist,
 } from "./schema.js";
 import { appleMdmApi } from "./domain.js";
 import type { CheckinScope } from "@mattrax/management-backend";
@@ -125,8 +127,31 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
           }
           return HttpServerResponse.empty({ status: 404 });
         }
-        case "SetBootstrapToken":
-        case "GetBootstrapToken":
+        case "SetBootstrapToken": {
+          const token = yield* Schema.decodeUnknownEffect(SetBootstrapTokenPlist)(plist).pipe(
+            Effect.mapError((err) => new Error(String(err))),
+          );
+          yield* service.handleSetBootstrapToken(
+            token.BootstrapToken ?? "",
+            identityCertificate,
+            token.UDID ?? token.EnrollmentID,
+          );
+          return HttpServerResponse.empty({ status: 200 });
+        }
+        case "GetBootstrapToken": {
+          const request = yield* Schema.decodeUnknownEffect(GetBootstrapTokenPlist)(plist).pipe(
+            Effect.mapError((err) => new Error(String(err))),
+          );
+          const value = yield* service.handleGetBootstrapToken(
+            identityCertificate,
+            request.UDID ?? request.EnrollmentID,
+          );
+          if (!value) return HttpServerResponse.empty({ status: 200 });
+          const binary = Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+          return HttpServerResponse.text(yield* serializePlist({ BootstrapToken: binary }), {
+            contentType: "application/xml",
+          });
+        }
         case "GetToken":
           return HttpServerResponse.empty({ status: 400 });
         case "UserAuthenticate":

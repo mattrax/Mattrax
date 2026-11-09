@@ -87,6 +87,15 @@ export function PolicyConfigurationEditor() {
         description={dirty() ? "Policy has local changes" : "Policy has no local changes"}
         actions={
           <>
+            <Button
+              as="a"
+              href="https://configure.mattrax.app"
+              target="_blank"
+              rel="noreferrer"
+              variant="outline"
+            >
+              Browse settings
+            </Button>
             <Button variant="outline" onClick={toggleEdit}>
               {!canEdit() ? "Edit" : dirty() ? "Save" : "Done"}
             </Button>

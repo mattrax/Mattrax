@@ -493,6 +493,28 @@ export const configuration = mysqlTable(
   (table) => [primaryKey({ columns: [table.kind, table.policyId] })],
 );
 
+/** Immutable policy configuration snapshots for history and rollback. */
+export const policyDeployment = mysqlTable(
+  "policy_deployment",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    policyId: id("policy_id")
+      .notNull()
+      .references(() => policy.id, { onDelete: "cascade" }),
+    version: int("version").notNull(),
+    snapshot: json("snapshot").notNull(),
+    createdByUserId: id("created_by_user_id"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("policy_deployment_version_unique").on(table.policyId, table.version),
+    index("policy_deployment_policy_idx").on(table.policyId, table.version),
+  ],
+);
+
 export const groupDevice = mysqlTable(
   "group_device",
   {
@@ -609,6 +631,7 @@ export const relations = defineRelations(
     applePushKey,
     enterpriseGroup,
     policy,
+    policyDeployment,
     configuration,
     groupDevice,
     groupPolicy,

@@ -41,6 +41,13 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
     }),
   )
   .add(
+    HttpApiEndpoint.post("getAppleBootstrapToken", "/apple/bootstrap-token", {
+      payload: Schema.Struct({ scope: CheckinScope }),
+      success: Schema.NullOr(Schema.String),
+      error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
+    }),
+  )
+  .add(
     HttpApiEndpoint.post("getAppleDeclarationTokens", "/apple/declaration-tokens", {
       payload: Schema.Struct({ scope: CheckinScope }),
       success: DdmTokens,

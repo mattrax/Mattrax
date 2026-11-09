@@ -13,7 +13,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import { makeEffectStripeClient } from "@mattrax/effect-stripe";
 import type { Stripe } from "@mattrax/effect-stripe";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, like, or } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
 import { createScepChallenge, validateConfiguration } from "@mattrax/management-backend-enterprise";
@@ -176,6 +176,35 @@ export const createEnterpriseService = ({
       return { user, organization, member };
     });
 
+  const snapshotPolicy = (
+    ctx: { readonly user: { readonly id: string }; readonly organization: { readonly id: string } },
+    policyId: string,
+  ) =>
+    Effect.gen(function* () {
+      const configurations = yield* db
+        .select()
+        .from(schema.configuration)
+        .where(eq(schema.configuration.policyId, policyId));
+      const snapshot = Object.fromEntries(
+        configurations.map((configuration: any) => [configuration.kind, configuration.data]),
+      );
+      const [current] = yield* db
+        .select({ version: schema.policyDeployment.version })
+        .from(schema.policyDeployment)
+        .where(eq(schema.policyDeployment.policyId, policyId))
+        .orderBy(desc(schema.policyDeployment.version))
+        .limit(1);
+      yield* db.insert(schema.policyDeployment).values({
+        id: id(),
+        organizationId: ctx.organization.id,
+        policyId,
+        version: (current?.version ?? 0) + 1,
+        snapshot,
+        createdByUserId: ctx.user.id,
+        createdAt: now(),
+      });
+    });
+
   const audit = (
     ctx: {
       readonly user: { readonly id: string; readonly email: string };
@@ -260,6 +289,15 @@ export const createEnterpriseService = ({
         .from(schema.member)
         .where(eq(schema.member.organizationId, tenantId));
       return members?.value ?? 0;
+    });
+
+  const ownerCount = (tenantId: string) =>
+    Effect.gen(function* () {
+      const members = yield* db
+        .select({ role: schema.member.role })
+        .from(schema.member)
+        .where(eq(schema.member.organizationId, tenantId));
+      return members.filter((member) => member.role.split(",").includes("owner")).length;
     });
 
   const assertTenantDevices = (tenantId: string, ids: ReadonlyArray<string>) =>
@@ -1007,6 +1045,12 @@ export const createEnterpriseService = ({
         if (!member)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
         const body = payload as { role: string };
+        const removingOwner =
+          member.role.split(",").includes("owner") && !body.role.split(",").includes("owner");
+        if (removingOwner && (yield* ownerCount(tenantId)) <= 1)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "Cannot remove the last tenant owner" }),
+          );
         yield* db
           .update(schema.member)
           .set({ role: body.role, updatedAt: now() })
@@ -1032,6 +1076,10 @@ export const createEnterpriseService = ({
         });
         if (!member)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant user not found" }));
+        if (member.role.split(",").includes("owner") && (yield* ownerCount(tenantId)) <= 1)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({ message: "Cannot remove the last tenant owner" }),
+          );
         yield* db.delete(schema.member).where(eq(schema.member.id, memberId));
         yield* audit(ctx, "member.removed", "user", member.userId, { memberId });
         return ok;
@@ -1450,6 +1498,56 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "device.action", "device", deviceId, { action });
         return lockPin ? { ...ok, pin: lockPin } : ok;
       }),
+    listDeviceCommands: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        const commands = yield* db
+          .select()
+          .from(schema.deviceCommand)
+          .where(eq(schema.deviceCommand.deviceId, device.id))
+          .orderBy(desc(schema.deviceCommand.createdAt))
+          .limit(200);
+        return {
+          commands: commands.map((command: any) => ({
+            id: command.id,
+            requestType: command.requestType,
+            status: command.status,
+            resultStatus: command.resultStatus,
+            resultDetail: command.resultDetail,
+            createdAt: iso(command.createdAt),
+            updatedAt: iso(command.updatedAt),
+          })),
+        };
+      }),
+    listDeviceDeclarations: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        const declarations = yield* db
+          .select()
+          .from(schema.deviceDeclaration)
+          .where(eq(schema.deviceDeclaration.deviceId, device.id));
+        return {
+          declarations: declarations.map((declaration: any) => ({
+            identifier: declaration.identifier,
+            declarationType: declaration.declarationType,
+            active: declaration.active,
+            valid: declaration.valid,
+            serverToken: declaration.serverToken,
+            reasons: declaration.reasons,
+            updatedAt: iso(declaration.updatedAt),
+          })),
+        };
+      }),
     deviceUnenroll: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -1671,6 +1769,7 @@ export const createEnterpriseService = ({
               policyId: p.policyId,
             })),
           );
+        yield* audit(ctx, "group.duplicated", "group", newId, { sourceId: groupId });
         return { id: newId };
       }),
     createPolicy: (request, tenantId, payload) =>
@@ -1686,6 +1785,8 @@ export const createEnterpriseService = ({
           createdAt: now(),
           updatedAt: now(),
         });
+        yield* audit(ctx, "policy.created", "policy", policyId, { name: body.name });
+        yield* snapshotPolicy(ctx, policyId);
         return { id: policyId };
       }),
     deletePolicies: (request, tenantId, ids) =>
@@ -1769,6 +1870,58 @@ export const createEnterpriseService = ({
           fields: Object.keys(body),
           configurations: Object.keys(body.configurations ?? {}),
         });
+        yield* snapshotPolicy(ctx, policyId);
+        return ok;
+      }),
+    listPolicyDeployments: (request, tenantId, policyId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        yield* assertTenantPolicies(ctx.organization.id, [policyId]);
+        const deployments = yield* db
+          .select()
+          .from(schema.policyDeployment)
+          .where(eq(schema.policyDeployment.policyId, policyId))
+          .orderBy(desc(schema.policyDeployment.version))
+          .limit(100);
+        return {
+          deployments: deployments.map((deployment: any) => ({
+            id: deployment.id,
+            version: deployment.version,
+            createdAt: iso(deployment.createdAt),
+            createdByUserId: deployment.createdByUserId,
+          })),
+        };
+      }),
+    rollbackPolicy: (request, tenantId, policyId, deploymentId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* assertTenantPolicies(ctx.organization.id, [policyId]);
+        const deployment = yield* db.query.policyDeployment.findFirst({
+          where: {
+            id: deploymentId,
+            policyId,
+            organizationId: ctx.organization.id,
+          },
+        });
+        if (!deployment)
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Policy deployment not found" }),
+          );
+        yield* db.delete(schema.configuration).where(eq(schema.configuration.policyId, policyId));
+        const snapshot = deployment.snapshot as Record<string, unknown>;
+        const entries = Object.entries(snapshot ?? {});
+        if (entries.length > 0)
+          yield* db
+            .insert(schema.configuration)
+            .values(
+              yield* Effect.all(
+                entries.map(([kind, data]) =>
+                  Effect.map(hashJson(data), (hash) => ({ policyId, kind, data, hash })),
+                ),
+              ),
+            );
+        yield* snapshotPolicy(ctx, policyId);
+        yield* audit(ctx, "policy.rolled_back", "policy", policyId, { deploymentId });
         return ok;
       }),
     uploadPolicyApplication: (request, tenantId, policyId, payload) =>
@@ -1785,6 +1938,10 @@ export const createEnterpriseService = ({
         yield* r2.put(key, bytes, {
           httpMetadata: body.contentType ? { contentType: body.contentType } : undefined,
           customMetadata: { fileName: body.fileName },
+        });
+        yield* audit(ctx, "policy.application_uploaded", "policy", policyId, {
+          fileName: body.fileName,
+          sha256,
         });
         return {
           sha256,
@@ -1853,6 +2010,8 @@ export const createEnterpriseService = ({
               hash: c.hash,
             })),
           );
+        yield* audit(ctx, "policy.duplicated", "policy", newId, { sourceId: policyId });
+        yield* snapshotPolicy(ctx, newId);
         return { id: newId };
       }),
     previewMobileconfig: (payload) =>
@@ -1865,6 +2024,56 @@ export const createEnterpriseService = ({
               message: cause instanceof Error ? cause.message : "Invalid mobileconfig",
             }),
         });
+      }),
+    search: (request, tenantId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const term = (query.q ?? "").trim();
+        const limit = Math.min(Math.max(query.limit ?? 20, 1), 100);
+        if (!term) return { rows: [] };
+        const pattern = `%${term.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`;
+        const devices = yield* db
+          .select()
+          .from(schema.device)
+          .where(
+            and(
+              eq(schema.device.organizationId, ctx.organization.id),
+              or(
+                like(schema.device.name, pattern),
+                like(schema.device.serial, pattern),
+                like(schema.device.model, pattern),
+                like(schema.device.dmIdentifier, pattern),
+              ),
+            ),
+          )
+          .limit(limit);
+        const groups = yield* db
+          .select()
+          .from(schema.enterpriseGroup)
+          .where(
+            and(
+              eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
+              like(schema.enterpriseGroup.name, pattern),
+            ),
+          )
+          .limit(limit);
+        const policies = yield* db
+          .select()
+          .from(schema.policy)
+          .where(
+            and(
+              eq(schema.policy.organizationId, ctx.organization.id),
+              like(schema.policy.name, pattern),
+            ),
+          )
+          .limit(limit);
+        return {
+          rows: [
+            ...devices.map(rowDevice),
+            ...groups.map((row: EnterpriseGroup) => rowGroup(row)),
+            ...(yield* Effect.all(policies.map((row) => rowPolicy(row)))),
+          ],
+        };
       }),
     listDevices: (request, tenantId) =>
       Effect.gen(function* () {
@@ -2109,6 +2318,11 @@ export const enterpriseHandlers = (
         service.uploadApns(request, params.tenantId, payload),
       ),
     )
+    .handle("search", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.search(request, params.tenantId, query),
+      ),
+    )
     .handle("listDevices", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) => service.listDevices(request, params.tenantId)),
     )
@@ -2130,6 +2344,16 @@ export const enterpriseHandlers = (
     .handle("deviceAction", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.deviceAction(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("listDeviceCommands", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listDeviceCommands(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("listDeviceDeclarations", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listDeviceDeclarations(request, params.tenantId, params.id),
       ),
     )
     .handle("deviceUnenroll", ({ request, params }) =>
@@ -2208,6 +2432,16 @@ export const enterpriseHandlers = (
     .handle("downloadPolicyApplication", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.downloadPolicyApplication(request, params.tenantId, params.id, params.sha256),
+      ),
+    )
+    .handle("listPolicyDeployments", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listPolicyDeployments(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("rollbackPolicy", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.rollbackPolicy(request, params.tenantId, params.id, params.deploymentId),
       ),
     )
     .handle("syncPolicies", ({ request, params, payload }) =>

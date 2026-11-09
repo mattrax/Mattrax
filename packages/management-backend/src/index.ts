@@ -57,6 +57,7 @@ export const AppleDeviceEvent = Schema.Union([
     userLongName: Schema.optional(Schema.String),
   }),
   Schema.TaggedStruct("CheckOut", { userId: Schema.optional(Schema.String) }),
+  Schema.TaggedStruct("BootstrapToken", { token: Schema.String }),
   Schema.TaggedStruct("CommandResult", {
     commandUUID: Schema.String,
     status: Schema.String,
@@ -222,6 +223,9 @@ export declare namespace ManagementBackend {
       scope: CheckinScope,
       event: AppleDeviceEvent,
     ) => Effect.Effect<void, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    readonly getAppleBootstrapToken: (
+      scope: CheckinScope,
+    ) => Effect.Effect<string | null, ManagementNotSupported | UnknownDevice | InternalServerError>;
 
     // Regular device checkin: returns what the device should do next (imperative)
     readonly appleManagementCheckin: (

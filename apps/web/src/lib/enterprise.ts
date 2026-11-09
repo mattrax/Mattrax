@@ -214,6 +214,18 @@ export const enterprise = {
     endpoint((api) =>
       api.deleteDevices({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids }),
     ),
+  listDeviceCommands: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.listDeviceCommands({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  listDeviceDeclarations: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.listDeviceDeclarations({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
   deviceAction: (
     tenantId: RouteParam,
     id: RouteParam,
@@ -327,6 +339,22 @@ export const enterprise = {
       api.duplicatePolicy({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
         payload: { name },
+      }),
+    ),
+  listPolicyDeployments: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.listPolicyDeployments({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  rollbackPolicy: (tenantId: RouteParam, id: RouteParam, deploymentId: string) =>
+    endpoint((api) =>
+      api.rollbackPolicy({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          id: required(id, "id"),
+          deploymentId,
+        },
       }),
     ),
   syncPolicies: (tenantId: RouteParam, ids: string[]) =>

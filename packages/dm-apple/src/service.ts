@@ -84,6 +84,15 @@ export declare namespace AppleMdmService {
       result: CommandResultPlist,
       identityCertificate?: string,
     ) => Effect.Effect<void, MdmError>;
+    readonly handleSetBootstrapToken: (
+      token: string,
+      identityCertificate?: string,
+      udid?: string,
+    ) => Effect.Effect<void, MdmError>;
+    readonly handleGetBootstrapToken: (
+      identityCertificate?: string,
+      udid?: string,
+    ) => Effect.Effect<string | null, MdmError>;
     readonly handleStatusReport: (
       scope: CheckinScope,
       report: DDMStatusReport,
@@ -414,6 +423,35 @@ const makeAppleMdmService = (
       );
     });
 
+  const handleSetBootstrapToken = (
+    token: string,
+    identityCertificate?: string,
+    udid?: string,
+  ): Effect.Effect<void, MdmError> =>
+    Effect.gen(function* () {
+      if (!udid) return yield* new MdmError({ message: "Bootstrap token has no UDID" });
+      const scope: CheckinScope = { _tag: "device", udid, identityCertificate, mdmOrigin };
+      yield* backend.appleDeviceEvent(scope, { _tag: "BootstrapToken", token }).pipe(
+        Effect.catchTag("ManagementNotSupported", () => Effect.void),
+        Effect.catchTag("UnknownDevice", () => Effect.void),
+        Effect.mapError(toMdmError("Failed to set bootstrap token")),
+      );
+    });
+
+  const handleGetBootstrapToken = (
+    identityCertificate?: string,
+    udid?: string,
+  ): Effect.Effect<string | null, MdmError> =>
+    Effect.gen(function* () {
+      if (!udid) return null;
+      const scope: CheckinScope = { _tag: "device", udid, identityCertificate, mdmOrigin };
+      return yield* backend.getAppleBootstrapToken(scope).pipe(
+        Effect.catchTag("ManagementNotSupported", () => Effect.succeed(null)),
+        Effect.catchTag("UnknownDevice", () => Effect.succeed(null)),
+        Effect.mapError(toMdmError("Failed to get bootstrap token")),
+      );
+    });
+
   const handleStatusReport = (
     scope: CheckinScope,
     report: DDMStatusReport,
@@ -464,6 +502,8 @@ const makeAppleMdmService = (
     handleTokenUpdate,
     handleCheckOut,
     handleCommandResult,
+    handleSetBootstrapToken,
+    handleGetBootstrapToken,
     handleStatusReport,
     handleCheckin,
     handleDeclarativeTokens,

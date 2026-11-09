@@ -295,9 +295,15 @@ importers:
       '@mattrax/scep':
         specifier: workspace:*
         version: link:../../packages/scep
+      asn1js:
+        specifier: 'catalog:'
+        version: 4.0.0
       effect:
         specifier: 'catalog:'
         version: 4.1.2
+      pkijs:
+        specifier: 'catalog:'
+        version: 4.0.1(asn1js@4.0.0)
     devDependencies:
       '@types/node':
         specifier: 'catalog:'

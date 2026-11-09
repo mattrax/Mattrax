@@ -5,6 +5,7 @@ import { FetchHttpClient } from "effect/http";
 import { HttpRouter } from "effect/http";
 import { createServer } from "node:http";
 import { createAppLayer } from "../app.ts";
+import { clientCertificateSubject } from "../mtls.ts";
 
 const isProductionBuild = process.env.MATTRAX_SERVER_BUNDLED === "1";
 const defaultDataDir = isProductionBuild ? "/opt/mattrax" : "./.data";
@@ -42,6 +43,14 @@ export const serveCommand = Command.make(
         "Shared secret used to verify per-enrollment SCEP challenges and signed profile URLs",
       ),
     ),
+    productKey: Flag.String("product-key").pipe(
+      Flag.withDefault(process.env.MATTRAX_PRODUCT_KEY ?? ""),
+      Flag.withDescription("Cloud platform product key used to verify this instance"),
+    ),
+    platformUrl: Flag.String("platform-url").pipe(
+      Flag.withDefault(process.env.MATTRAX_PLATFORM_URL ?? ""),
+      Flag.withDescription("Cloud Platform API base URL for licence verification"),
+    ),
     rateLimit: Flag.Int("rate-limit").pipe(
       Flag.withDefault(Number(process.env.MATTRAX_RATE_LIMIT ?? 0)),
       Flag.withDescription(
@@ -55,6 +64,70 @@ export const serveCommand = Command.make(
       yield* Console.log(`Public origin: ${config.origin}`);
       yield* Console.log(`Webhook backend: ${config.webhookUrl}`);
       yield* Console.log(`Data directory: ${config.dataDir}`);
+
+      const verifyLicence = async () => {
+        if (!config.productKey) return;
+        if (!config.platformUrl) {
+          console.error("MATTRAX_PRODUCT_KEY is set but MATTRAX_PLATFORM_URL is missing");
+          process.exit(1);
+        }
+        const timestamp = Math.floor(Date.now() / 1000).toString();
+        const payload = { userCount: 0, deviceCount: 0 };
+        const key = await crypto.subtle.importKey(
+          "raw",
+          new TextEncoder().encode(config.productKey),
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["sign"],
+        );
+        const signatureBytes = await crypto.subtle.sign(
+          "HMAC",
+          key,
+          new TextEncoder().encode(`${timestamp}.${payload.userCount}:${payload.deviceCount}`),
+        );
+        const signature = Buffer.from(signatureBytes)
+          .toString("base64")
+          .replaceAll("+", "-")
+          .replaceAll("/", "_")
+          .replace(/=+$/, "");
+        const response = await fetch(
+          `${config.platformUrl.replace(/\/$/, "")}/api/platform/instances/verify`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-mattrax-key": config.productKey,
+              "x-mattrax-timestamp": timestamp,
+              "x-mattrax-signature": signature,
+            },
+            body: JSON.stringify(payload),
+          },
+        );
+        const body = (await response.json().catch(() => ({}))) as {
+          valid?: boolean;
+          revoked?: boolean;
+        };
+        if (!response.ok || !body.valid) {
+          console.error(
+            body.revoked
+              ? "This instance's product key has been revoked"
+              : "This instance's product key is invalid",
+          );
+          process.exit(1);
+        }
+      };
+
+      yield* Effect.promise(() => verifyLicence());
+      if (config.productKey) {
+        setInterval(
+          () => {
+            void verifyLicence().catch((error) => {
+              console.error("Licence check failed", error);
+            });
+          },
+          45 * 60 * 1000,
+        ).unref();
+      }
 
       const appLayer = createAppLayer({
         origin: config.origin,
@@ -100,17 +173,23 @@ export const serveCommand = Command.make(
           await new Promise<void>((resolve) => req.on("end", resolve));
 
           const host = req.headers.host ?? `localhost:${config.port}`;
+          const headers = new Headers(
+            Object.entries(req.headers).flatMap(([k, v]) =>
+              Array.isArray(v)
+                ? v.map((val) => [k, val] as [string, string])
+                : v === undefined
+                  ? []
+                  : [[k, v] as [string, string]],
+            ),
+          );
+          // Never trust a caller-supplied identity header. mtls-proxy forwards
+          // the DER certificate; derive the subject from it instead.
+          headers.delete("x-device-identity-certificate");
+          const subject = clientCertificateSubject(req.headers["x-client-cert"]);
+          if (subject) headers.set("x-device-identity-certificate", subject);
           const request = new Request(`http://${host}${req.url}`, {
             method: req.method,
-            headers: new Headers(
-              Object.entries(req.headers).flatMap(([k, v]) =>
-                Array.isArray(v)
-                  ? v.map((val) => [k, val] as [string, string])
-                  : v === undefined
-                    ? []
-                    : [[k, v] as [string, string]],
-              ),
-            ),
+            headers,
             body: chunks.length > 0 ? Buffer.concat(chunks) : undefined,
           });
 

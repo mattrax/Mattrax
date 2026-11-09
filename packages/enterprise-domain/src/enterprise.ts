@@ -306,6 +306,31 @@ export const DeviceRow = Schema.Struct({
 });
 export type DeviceRow = typeof DeviceRow.Type;
 
+export const DeviceCommandInfo = Schema.Struct({
+  id: Schema.String,
+  requestType: Schema.String,
+  status: Schema.String,
+  resultStatus: Schema.optional(NullableString),
+  resultDetail: Schema.optional(NullableString),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+});
+export const DeviceCommandsResponse = Schema.Struct({
+  commands: Schema.Array(DeviceCommandInfo),
+});
+export const DeviceDeclarationInfo = Schema.Struct({
+  identifier: Schema.String,
+  declarationType: Schema.String,
+  active: Schema.Boolean,
+  valid: Schema.String,
+  serverToken: Schema.optional(NullableString),
+  reasons: Schema.optional(Schema.NullOr(Schema.Unknown)),
+  updatedAt: Schema.String,
+});
+export const DeviceDeclarationsResponse = Schema.Struct({
+  declarations: Schema.Array(DeviceDeclarationInfo),
+});
+
 export const DeviceActionResponse = Schema.Struct({
   status: Schema.Literal("ok"),
   /** Present for a lock command so the administrator can unlock the device. */
@@ -470,6 +495,16 @@ export const NoContent = Schema.Void;
 export const BulkOperationResult = Schema.Struct({
   deleted: Schema.Array(Schema.String),
   failed: Schema.Array(Schema.Struct({ id: Schema.String, reason: Schema.String })),
+});
+
+export const PolicyDeploymentInfo = Schema.Struct({
+  id: Schema.String,
+  version: Schema.Number,
+  createdAt: Schema.String,
+  createdByUserId: Schema.optional(NullableString),
+});
+export const PolicyDeploymentsResponse = Schema.Struct({
+  deployments: Schema.Array(PolicyDeploymentInfo),
 });
 
 export const SearchResult = Schema.Struct({
@@ -850,6 +885,17 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("search", "/v1/tenants/:tenantId/search", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      query: Schema.Struct({
+        q: Schema.optional(Schema.String),
+        limit: Schema.optional(Schema.Number),
+      }),
+      success: SearchResult,
+    }),
+  )
+  .add(
     HttpApiEndpoint.get("listDevices", "/v1/tenants/:tenantId/devices", {
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
@@ -886,6 +932,24 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       payload: DeviceActionRequest,
       success: DeviceActionResponse,
     }),
+  )
+  .add(
+    HttpApiEndpoint.get("listDeviceCommands", "/v1/tenants/:tenantId/devices/:id/commands", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      success: DeviceCommandsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "listDeviceDeclarations",
+      "/v1/tenants/:tenantId/devices/:id/declarations",
+      {
+        error: EnterpriseTenantReadErrors,
+        params: TenantIdParam,
+        success: DeviceDeclarationsResponse,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.post("deviceUnenroll", "/v1/tenants/:tenantId/devices/:id/unenroll", {
@@ -1014,6 +1078,28 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         error: EnterprisePolicyApplicationDownloadErrors,
         params: { tenantId: Schema.String, id: Schema.String, sha256: Schema.String },
         success: DownloadPolicyApplicationResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("listPolicyDeployments", "/v1/tenants/:tenantId/policies/:id/deployments", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantIdParam,
+      success: PolicyDeploymentsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "rollbackPolicy",
+      "/v1/tenants/:tenantId/policies/:id/deployments/:deploymentId/rollback",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: {
+          tenantId: Schema.String,
+          id: Schema.String,
+          deploymentId: Schema.String,
+        },
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
       },
     ),
   )

@@ -15,7 +15,9 @@
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
     "@mattrax/scep": "workspace:*",
-    "effect": "catalog:"
+    "asn1js": "catalog:",
+    "effect": "catalog:",
+    "pkijs": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

@@ -15,6 +15,7 @@ export const ManagementBackendD1 = (db: D1Database, apps: R2Bucket) =>
   Layer.succeed(
     ManagementBackend,
     ManagementBackend.of({
+      getAppleBootstrapToken: () => Effect.succeed(null),
       appleDeviceEvent: (scope: CheckinScope, event: AppleDeviceEvent) =>
         Effect.tryPromise({
           try: async () => {

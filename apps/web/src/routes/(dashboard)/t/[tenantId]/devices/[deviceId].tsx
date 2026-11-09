@@ -67,6 +67,14 @@ export default function DeviceDetailPage() {
     mutationFn: () => enterprise.deviceAction(params.tenantId, params.deviceId),
     onSuccess: invalidate,
   }));
+  const commands = useQuery(() => ({
+    queryKey: [...enterpriseKeys.item(params.tenantId, "device", params.deviceId), "commands"],
+    queryFn: () => enterprise.listDeviceCommands(params.tenantId, params.deviceId),
+  }));
+  const declarations = useQuery(() => ({
+    queryKey: [...enterpriseKeys.item(params.tenantId, "device", params.deviceId), "declarations"],
+    queryFn: () => enterprise.listDeviceDeclarations(params.tenantId, params.deviceId),
+  }));
   const [manifestUrl, setManifestUrl] = createSignal("");
   const [lockPin, setLockPin] = createSignal<string | null>(null);
   const command = useMutation(() => ({
@@ -257,6 +265,53 @@ export default function DeviceDetailPage() {
                   )}
                 </Show>
                 <ErrorText error={command.error} />
+              </CardContent>
+            </Card>
+          </Show>
+          <Show when={(commands.data?.commands.length ?? 0) > 0}>
+            <Card>
+              <CardHeader>
+                <CardTitle>Command history</CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-2">
+                <For each={commands.data?.commands ?? []}>
+                  {(command) => (
+                    <div class="rounded-lg border p-2 text-xs">
+                      <div class="flex items-center justify-between gap-2">
+                        <strong>{command.requestType}</strong>
+                        <span class="capitalize text-muted-foreground">{command.status}</span>
+                      </div>
+                      <Show when={command.resultStatus || command.resultDetail}>
+                        <p class="mt-1 text-muted-foreground">
+                          {command.resultStatus ?? ""} {command.resultDetail ?? ""}
+                        </p>
+                      </Show>
+                      <p class="mt-1 text-muted-foreground">{formatDate(command.createdAt)}</p>
+                    </div>
+                  )}
+                </For>
+              </CardContent>
+            </Card>
+          </Show>
+          <Show when={(declarations.data?.declarations.length ?? 0) > 0}>
+            <Card>
+              <CardHeader>
+                <CardTitle>Declarations</CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-2">
+                <For each={declarations.data?.declarations ?? []}>
+                  {(declaration) => (
+                    <div class="flex items-center justify-between gap-2 rounded-lg border p-2 text-xs">
+                      <span class="min-w-0 truncate">
+                        <strong class="block truncate">{declaration.identifier}</strong>
+                        <span class="text-muted-foreground">{declaration.declarationType}</span>
+                      </span>
+                      <span class="shrink-0 capitalize">
+                        {declaration.valid} · {declaration.active ? "active" : "inactive"}
+                      </span>
+                    </div>
+                  )}
+                </For>
               </CardContent>
             </Card>
           </Show>

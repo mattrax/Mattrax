@@ -76,6 +76,23 @@ export default function PolicyDetailPage() {
       navigate(`/t/${params.tenantId}/policies`);
     },
   }));
+  const deployments = useQuery(() => ({
+    queryKey: [...enterpriseKeys.item(params.tenantId, "policy", params.policyId), "deployments"],
+    queryFn: () => enterprise.listPolicyDeployments(params.tenantId, params.policyId),
+  }));
+  const rollback = useMutation(() => ({
+    mutationFn: (deploymentId: string) =>
+      enterprise.rollbackPolicy(params.tenantId, params.policyId, deploymentId),
+    onSuccess: async () => {
+      await invalidate();
+      await qc.invalidateQueries({
+        queryKey: [
+          ...enterpriseKeys.item(params.tenantId, "policy", params.policyId),
+          "deployments",
+        ],
+      });
+    },
+  }));
   const sync = useMutation(() => ({
     mutationFn: () => enterprise.syncPolicies(params.tenantId, [params.policyId!]),
   }));

@@ -120,6 +120,10 @@ export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptio
       const client = options.secret ? signingClient(raw, options.secret) : raw;
 
       return ManagementBackend.of({
+        getAppleBootstrapToken: (scope) =>
+          client.ManagementWebhook.getAppleBootstrapToken({ payload: { scope } }).pipe(
+            Effect.mapError(toManagementError),
+          ),
         appleDeviceEvent: (scope, event) =>
           normalize(client.ManagementWebhook.appleDeviceEvent({ payload: { scope, event } })),
 
