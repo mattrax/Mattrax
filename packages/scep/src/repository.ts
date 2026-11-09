@@ -9,6 +9,8 @@ export interface ScepPkcsReq {
   readonly signerCerts: pkijs.Certificate[];
   /** PKCS#9 challengePassword attribute from the CSR, if present. */
   readonly challengePassword?: string;
+  /** True for an SCEP RenewalReq carrying an already-issued identity cert. */
+  readonly renewal: boolean;
 }
 
 /**

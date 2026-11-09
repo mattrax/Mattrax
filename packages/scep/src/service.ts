@@ -11,7 +11,7 @@ import {
   pemToCert,
 } from "./pkcs7.js";
 
-const SCEP_CAPS = "SHA-256\nSHA-1\nAES\nDES3\nPOSTPKIOperation";
+const SCEP_CAPS = "Renewal\nSCEPStandard\nSHA-256\nSHA-1\nAES\nDES3\nPOSTPKIOperation";
 
 export class ScepServiceTag extends Context.Service<
   ScepServiceTag,
@@ -85,8 +85,30 @@ export const ScepService = Layer.effect(
         if (!csrValid)
           return yield* Effect.fail(new ScepError({ message: "Invalid CSR signature" }));
 
-        // Allow repository to authenticate/validate the incoming request before issuance.
-        const authentication = yield* repo.authenticatePkcsReq(req);
+        // Renewals carry a currently-valid identity certificate signed by this
+        // CA instead of the original enrollment challenge.
+        let authentication: { organizationalUnit?: string } | void = undefined;
+        if (req.renewal) {
+          const signer = req.signerCerts[0];
+          if (!signer)
+            return yield* Effect.fail(new ScepError({ message: "SCEP renewal has no signer" }));
+          const valid = yield* Effect.tryPromise({
+            try: () => signer.verify(ca.caCert),
+            catch: (cause) => new ScepError({ message: "Failed to verify renewal signer", cause }),
+          });
+          if (!valid)
+            return yield* Effect.fail(
+              new ScepError({ message: "SCEP renewal signer is not issued by this CA" }),
+            );
+          const ou = signer.subject.typesAndValues.find((item) => item.type === "2.5.4.11");
+          const value = ou
+            ? ((ou.value.valueBlock as { value?: string }).value ?? undefined)
+            : undefined;
+          authentication = value ? { organizationalUnit: value } : undefined;
+        } else {
+          // Allow repository to authenticate/validate the incoming request before issuance.
+          authentication = yield* repo.authenticatePkcsReq(req);
+        }
 
         // Allow ten minutes of clock skew between the CA and device, matching
         // Fleet and common SCEP clients.

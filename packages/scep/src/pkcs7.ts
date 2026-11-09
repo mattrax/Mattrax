@@ -41,6 +41,7 @@ const DES3_CBC_OID = "1.2.840.113549.3.7";
 
 // SCEP message types
 const MSG_TYPE_PKCSREQ = "19";
+const MSG_TYPE_RENEWAL = "17";
 const MSG_TYPE_CERTREP = "3";
 const PKI_STATUS_SUCCESS = "0";
 
@@ -598,9 +599,9 @@ export function parseScepPkcsReq(
         messageType = MSG_TYPE_PKCSREQ;
       }
 
-      if (messageType !== MSG_TYPE_PKCSREQ) {
+      if (messageType !== MSG_TYPE_PKCSREQ && messageType !== MSG_TYPE_RENEWAL) {
         throw new Error(
-          `Unexpected SCEP message type: ${messageType}, expected ${MSG_TYPE_PKCSREQ}`,
+          `Unexpected SCEP message type: ${messageType}, expected ${MSG_TYPE_PKCSREQ} or ${MSG_TYPE_RENEWAL}`,
         );
       }
 
@@ -648,6 +649,7 @@ export function parseScepPkcsReq(
           senderNonce,
           signerCerts,
           challengePassword: extractChallengePassword(csr),
+          renewal: messageType === MSG_TYPE_RENEWAL,
         };
       } catch (csrErr: any) {
         throw new Error(
