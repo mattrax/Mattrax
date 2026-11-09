@@ -59,6 +59,15 @@ export const VerifyInstanceResponse = Schema.Struct({
   revoked: Schema.Boolean,
 });
 
+/** Cloud signing of a self-hosted instance's APNs CSR. */
+export const SignInstanceCsrRequest = Schema.Struct({ csrDer: Schema.String });
+export const SignInstanceCsrResponse = Schema.Struct({
+  /** PEM certificate chain, one entry per certificate. */
+  pushCertCertificateChain: Schema.Array(Schema.String),
+  /** Base64 DER PKCS#1 v1.5 signature. */
+  pushCertSignature: Schema.String,
+});
+
 export const platformApi = HttpApiGroup.make("PlatformApi")
   .add(
     HttpApiEndpoint.get("status", "/status", {
@@ -98,6 +107,13 @@ export const platformApi = HttpApiGroup.make("PlatformApi")
       error: writeErrors,
       payload: VerifyInstanceRequest,
       success: VerifyInstanceResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("signInstanceCsr", "/instances/apns/sign", {
+      error: writeErrors,
+      payload: SignInstanceCsrRequest,
+      success: SignInstanceCsrResponse,
     }),
   )
   .prefix("/api/platform")

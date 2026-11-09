@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import { eq } from "drizzle-orm";
+import { signApnsCsr } from "@mattrax/apns";
 import { Db, schema } from "@mattrax/enterprise-core";
 import { EnterpriseAuth } from "@mattrax/enterprise-domain";
 import {
@@ -91,122 +92,177 @@ export type PlatformServiceShape = {
     request: PlatformRequest,
     payload: { userCount?: number; deviceCount?: number },
   ) => PlatformResult<{ valid: boolean; revoked: boolean }>;
+  readonly signInstanceCsr: (
+    request: PlatformRequest,
+    payload: { csrDer: string },
+  ) => PlatformResult<{ pushCertCertificateChain: Array<string>; pushCertSignature: string }>;
 };
 
 export class PlatformService extends Context.Service<PlatformService, PlatformServiceShape>()(
   "PlatformService",
 ) {}
 
-export const PlatformServiceLive = Layer.effect(
-  PlatformService,
-  Effect.gen(function* () {
-    const db = yield* Db;
-    const auth = yield* EnterpriseAuth;
+export type PlatformServiceOptions = {
+  readonly cloudAppleVendorCert?: string;
+  readonly cloudAppleVendorKey?: string;
+};
 
-    const requireUser = (request: PlatformRequest) =>
-      auth
-        .requireUser({ headers: request.headers })
-        .pipe(Effect.mapError(() => new PlatformUnauthorized({ message: "Unauthenticated" })));
+export const PlatformServiceLive = (options: PlatformServiceOptions = {}) =>
+  Layer.effect(
+    PlatformService,
+    Effect.gen(function* () {
+      const db = yield* Db;
+      const auth = yield* EnterpriseAuth;
 
-    const findOwned = (userId: string, instanceId: string) =>
-      Effect.gen(function* () {
-        const row = yield* db.query.platformInstance.findFirst({
-          where: { id: instanceId, issuedByUserId: userId },
-        });
-        if (!row)
-          return yield* Effect.fail(new PlatformNotFound({ message: "Instance not found" }));
-        return row;
-      });
+      const requireUser = (request: PlatformRequest) =>
+        auth
+          .requireUser({ headers: request.headers })
+          .pipe(Effect.mapError(() => new PlatformUnauthorized({ message: "Unauthenticated" })));
 
-    return PlatformService.of({
-      list: (request) =>
+      const findOwned = (userId: string, instanceId: string) =>
         Effect.gen(function* () {
-          const { user } = yield* requireUser(request);
-          const rows = yield* db.query.platformInstance.findMany({
-            where: { issuedByUserId: user.id },
+          const row = yield* db.query.platformInstance.findFirst({
+            where: { id: instanceId, issuedByUserId: userId },
           });
-          return { instances: rows.map(toInfo) };
-        }),
-      create: (request, payload) =>
-        Effect.gen(function* () {
-          const { user } = yield* requireUser(request);
-          const key = randomKey();
-          const keyHash = yield* sha256(key);
-          const timestamp = now();
-          const row = {
-            id: id(),
-            keyPrefix: key.slice(0, 13),
-            keyHash,
-            description: payload.description ?? null,
-            issuedByUserId: user.id,
-            userCount: 0,
-            deviceCount: 0,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-            lastSeenAt: null,
-            revokedAt: null,
-          };
-          yield* db.insert(schema.platformInstance).values(row);
-          return { instance: toInfo(row as typeof schema.platformInstance.$inferSelect), key };
-        }),
-      update: (request, instanceId, payload) =>
-        Effect.gen(function* () {
-          const { user } = yield* requireUser(request);
-          yield* findOwned(user.id, instanceId);
-          yield* db
-            .update(schema.platformInstance)
-            .set({ description: payload.description ?? null, updatedAt: now() })
-            .where(eq(schema.platformInstance.id, instanceId));
-          return { status: "ok" as const };
-        }),
-      revoke: (request, instanceId) =>
-        Effect.gen(function* () {
-          const { user } = yield* requireUser(request);
-          yield* findOwned(user.id, instanceId);
-          yield* db
-            .update(schema.platformInstance)
-            .set({ revokedAt: now(), updatedAt: now() })
-            .where(eq(schema.platformInstance.id, instanceId));
-          return { status: "ok" as const };
-        }),
-      verify: (request, payload) =>
-        Effect.gen(function* () {
-          const key = request.headers["x-mattrax-key"];
-          const timestamp = Number(request.headers["x-mattrax-timestamp"]);
-          const signature = request.headers["x-mattrax-signature"];
-          if (!key || !signature || !Number.isFinite(timestamp))
-            return yield* Effect.fail(
-              new PlatformBadRequest({ message: "Missing instance authentication headers" }),
+          if (!row)
+            return yield* Effect.fail(new PlatformNotFound({ message: "Instance not found" }));
+          return row;
+        });
+
+      return PlatformService.of({
+        list: (request) =>
+          Effect.gen(function* () {
+            const { user } = yield* requireUser(request);
+            const rows = yield* db.query.platformInstance.findMany({
+              where: { issuedByUserId: user.id },
+            });
+            return { instances: rows.map(toInfo) };
+          }),
+        create: (request, payload) =>
+          Effect.gen(function* () {
+            const { user } = yield* requireUser(request);
+            const key = randomKey();
+            const keyHash = yield* sha256(key);
+            const timestamp = now();
+            const row = {
+              id: id(),
+              keyPrefix: key.slice(0, 13),
+              keyHash,
+              description: payload.description ?? null,
+              issuedByUserId: user.id,
+              userCount: 0,
+              deviceCount: 0,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+              lastSeenAt: null,
+              revokedAt: null,
+            };
+            yield* db.insert(schema.platformInstance).values(row);
+            return { instance: toInfo(row as typeof schema.platformInstance.$inferSelect), key };
+          }),
+        update: (request, instanceId, payload) =>
+          Effect.gen(function* () {
+            const { user } = yield* requireUser(request);
+            yield* findOwned(user.id, instanceId);
+            yield* db
+              .update(schema.platformInstance)
+              .set({ description: payload.description ?? null, updatedAt: now() })
+              .where(eq(schema.platformInstance.id, instanceId));
+            return { status: "ok" as const };
+          }),
+        revoke: (request, instanceId) =>
+          Effect.gen(function* () {
+            const { user } = yield* requireUser(request);
+            yield* findOwned(user.id, instanceId);
+            yield* db
+              .update(schema.platformInstance)
+              .set({ revokedAt: now(), updatedAt: now() })
+              .where(eq(schema.platformInstance.id, instanceId));
+            return { status: "ok" as const };
+          }),
+        verify: (request, payload) =>
+          Effect.gen(function* () {
+            const key = request.headers["x-mattrax-key"];
+            const timestamp = Number(request.headers["x-mattrax-timestamp"]);
+            const signature = request.headers["x-mattrax-signature"];
+            if (!key || !signature || !Number.isFinite(timestamp))
+              return yield* Effect.fail(
+                new PlatformBadRequest({ message: "Missing instance authentication headers" }),
+              );
+            if (Math.abs(Date.now() / 1000 - timestamp) > 300)
+              return yield* Effect.fail(
+                new PlatformBadRequest({ message: "Stale request timestamp" }),
+              );
+
+            const keyHash = yield* sha256(key);
+            const row = yield* db.query.platformInstance.findFirst({ where: { keyHash } });
+            if (!row) return { valid: false, revoked: false };
+
+            const expected = yield* hmac(
+              key,
+              `${timestamp}.${payload.userCount ?? 0}:${payload.deviceCount ?? 0}`,
             );
-          if (Math.abs(Date.now() / 1000 - timestamp) > 300)
-            return yield* Effect.fail(
-              new PlatformBadRequest({ message: "Stale request timestamp" }),
-            );
+            if (expected !== signature)
+              return yield* Effect.fail(new PlatformBadRequest({ message: "Invalid signature" }));
 
-          const keyHash = yield* sha256(key);
-          const row = yield* db.query.platformInstance.findFirst({ where: { keyHash } });
-          if (!row) return { valid: false, revoked: false };
+            if (row.revokedAt) return { valid: false, revoked: true };
 
-          const expected = yield* hmac(
-            key,
-            `${timestamp}.${payload.userCount ?? 0}:${payload.deviceCount ?? 0}`,
-          );
-          if (expected !== signature)
-            return yield* Effect.fail(new PlatformBadRequest({ message: "Invalid signature" }));
+            yield* db
+              .update(schema.platformInstance)
+              .set({
+                userCount: payload.userCount ?? row.userCount,
+                deviceCount: payload.deviceCount ?? row.deviceCount,
+                lastSeenAt: now(),
+                updatedAt: now(),
+              })
+              .where(eq(schema.platformInstance.id, row.id));
+            return { valid: true, revoked: false };
+          }),
+        signInstanceCsr: (request, payload) =>
+          Effect.gen(function* () {
+            const key = request.headers["x-mattrax-key"];
+            const timestamp = Number(request.headers["x-mattrax-timestamp"]);
+            const signature = request.headers["x-mattrax-signature"];
+            if (!key || !signature || !Number.isFinite(timestamp))
+              return yield* Effect.fail(
+                new PlatformBadRequest({ message: "Missing instance authentication headers" }),
+              );
+            if (Math.abs(Date.now() / 1000 - timestamp) > 300)
+              return yield* Effect.fail(
+                new PlatformBadRequest({ message: "Stale request timestamp" }),
+              );
 
-          if (row.revokedAt) return { valid: false, revoked: true };
+            const keyHash = yield* sha256(key);
+            const instance = yield* db.query.platformInstance.findFirst({ where: { keyHash } });
+            if (!instance || instance.revokedAt)
+              return yield* Effect.fail(
+                new PlatformUnauthorized({ message: "Unknown or revoked instance key" }),
+              );
 
-          yield* db
-            .update(schema.platformInstance)
-            .set({
-              userCount: payload.userCount ?? row.userCount,
-              deviceCount: payload.deviceCount ?? row.deviceCount,
-              lastSeenAt: now(),
-              updatedAt: now(),
-            })
-            .where(eq(schema.platformInstance.id, row.id));
-          return { valid: true, revoked: false };
-        }),
-    });
-  }),
-);
+            const expected = yield* hmac(key, `${timestamp}.${payload.csrDer}`);
+            if (expected !== signature)
+              return yield* Effect.fail(new PlatformBadRequest({ message: "Invalid signature" }));
+
+            if (!options.cloudAppleVendorKey || !options.cloudAppleVendorCert)
+              return yield* Effect.fail(
+                new PlatformBadRequest({ message: "APNs vendor signing is not configured" }),
+              );
+
+            const der = Uint8Array.from(atob(payload.csrDer), (char) => char.charCodeAt(0));
+            const signed = yield* Effect.tryPromise({
+              try: () =>
+                signApnsCsr(
+                  der.buffer.slice(der.byteOffset, der.byteOffset + der.byteLength) as ArrayBuffer,
+                  options.cloudAppleVendorKey!,
+                ),
+              catch: () => new PlatformBadRequest({ message: "Could not sign the CSR" }),
+            });
+            const signatureBase64 = btoa(String.fromCharCode(...new Uint8Array(signed)));
+            const chain = options.cloudAppleVendorCert.match(
+              /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g,
+            ) ?? [options.cloudAppleVendorCert];
+            return { pushCertCertificateChain: chain, pushCertSignature: signatureBase64 };
+          }),
+      });
+    }),
+  );

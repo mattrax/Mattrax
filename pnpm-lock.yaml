@@ -626,6 +626,9 @@ importers:
 
   packages/platform-backend:
     dependencies:
+      '@mattrax/apns':
+        specifier: workspace:*
+        version: link:../apns
       '@mattrax/enterprise-core':
         specifier: workspace:*
         version: link:../enterprise-core

@@ -171,7 +171,10 @@ const makeAppLayer = (env: Env, request: Request) => {
     ),
     WindowsMdmServiceLive({ origin: env.ORIGIN }).pipe(Layer.provide(managementBackendLayer)),
     ScepService.pipe(Layer.provide(ScepRepositoryLive.layer.pipe(Layer.provide(Db.layer)))),
-    PlatformServiceLive.pipe(Layer.provide(enterpriseAuthLive), Layer.provide(Db.layer)),
+    PlatformServiceLive({
+      cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
+      cloudAppleVendorKey: env.CLOUD_APPLE_VENDOR_KEY,
+    }).pipe(Layer.provide(enterpriseAuthLive), Layer.provide(Db.layer)),
   );
 
   return appLayer.pipe(

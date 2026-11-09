@@ -22,6 +22,9 @@ export const platformHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typ
     )
     .handle("verifyInstance", ({ request, payload }) =>
       Effect.flatMap(PlatformService, (service) => service.verify(request, payload)),
+    )
+    .handle("signInstanceCsr", ({ request, payload }) =>
+      Effect.flatMap(PlatformService, (service) => service.signInstanceCsr(request, payload)),
     );
 
 export { PlatformService, PlatformServiceLive } from "./service.js";
