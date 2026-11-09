@@ -6,6 +6,7 @@ catalog:
   "@cloudflare/vite-plugin": 2.0.0-beta.v.12
   "@effect/platform-node": ^4.1.2
   "@effect/sql-mysql2": ^4.1.2
+  '@playwright/test': ^1.65.0
   "@tanstack/solid-query": ^5.107.1
   "@types/node": ^26.6.6
   "@xmldom/xmldom": ^0.9.12

@@ -112,11 +112,12 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
 });
 
 /**
- * The auth definition used by server Layers. The reset URL is the only
- * origin-specific value; persistence only reads the strategy metadata from this
- * definition, so the placeholder origin is safe for schema generation.
+ * The auth definition used by server Layers. `resetUrl` is the HTTPS landing
+ * page for password-reset links; it defaults to the canonical origin. Keeping
+ * it separate lets local HTTP development run with the production reset URL
+ * (the proof library refuses non-HTTPS landing pages).
  */
-export const makeAppAuth = (origin: string): any =>
+export const makeAppAuth = (origin: string, resetUrl?: string): any =>
   Auth.make(AuthApi, {
     sessions: Sessions.stateful({
       maxAge: "30 days",
@@ -126,7 +127,7 @@ export const makeAppAuth = (origin: string): any =>
     strategies: {
       password: Password.make({
         registration: Registration,
-        reset: Password.resetLink({ url: `${origin}/reset-password` }),
+        reset: Password.resetLink({ url: resetUrl ?? `${origin}/reset-password` }),
       }),
     },
     defaultStrategy: "password",

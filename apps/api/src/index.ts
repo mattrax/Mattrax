@@ -30,11 +30,14 @@ import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
 import { env as apiEnv } from "./env.js";
 
-const appAuth = makeAppAuth(apiEnv.ORIGIN);
+const appAuth = makeAppAuth(apiEnv.ORIGIN, apiEnv.AUTH_RESET_URL);
 const authHttp = AuthContract.httpGroup(AuthApi);
 const authHttps = Http.make(appAuth, {
   origin: apiEnv.ORIGIN,
   cookie: { name: sessionCookie },
+  trustedOrigins: apiEnv.TRUSTED_ORIGINS?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
 });
 
 // Proof delivery (password reset email) is queued by Auth with no remaining

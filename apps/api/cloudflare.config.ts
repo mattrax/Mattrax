@@ -15,7 +15,11 @@ export const apiWorker = {
   observability: { enabled: true },
   placement: { mode: "smart" as const },
   env: {
-    ORIGIN: bindings.text("https://e.mattrax.app"),
+    // `ORIGIN` is a secret so local dev and whitelabel deployments can set
+    // their own canonical origin. Production sets the hosted Mattrax domain.
+    ORIGIN: bindings.secret(),
+    TRUSTED_ORIGINS: bindings.secret(),
+    AUTH_RESET_URL: bindings.secret(),
     AUTH_SECRET: bindings.secret(),
     STRIPE_SECRET_KEY: bindings.secret(),
     STRIPE_WEBHOOK_SECRET: bindings.secret(),

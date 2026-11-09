@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vp run dev",
+    "dev:cert": "node scripts/dev-cert.mjs",
     "test": "vitest run",
     "format": "vp fmt && vp lint",
     "typecheck": "pnpm -r --if-present run cf:types && tsc -b",
@@ -16,6 +17,7 @@
     "deploy:prod:all": "pnpm api deploy:prod && pnpm web deploy:prod"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:",
     "vitepress": "catalog:",
