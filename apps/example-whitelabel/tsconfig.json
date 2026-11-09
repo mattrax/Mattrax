@@ -35,6 +35,18 @@
     },
     {
       "path": "../../packages/apns"
+    },
+    {
+      "path": "../../packages/dm-windows"
+    },
+    {
+      "path": "../../packages/soap"
+    },
+    {
+      "path": "../../packages/plist"
+    },
+    {
+      "path": "../../packages/crypto"
     }
   ],
   "include": ["src", "package.json", "cloudflare.config.ts", ".cloudflare/types"],

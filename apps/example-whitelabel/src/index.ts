@@ -9,6 +9,7 @@ import {
   appleMdmHandlers,
   appleMdmRoutes,
 } from "@mattrax/dm-apple";
+import { WindowsMdmServiceLive, windowsMdmRoutes } from "@mattrax/dm-windows";
 import { ScepService, scepRoutes } from "@mattrax/scep";
 import {
   managementWebhookGroup,
@@ -38,6 +39,7 @@ function createMdmLayer(env: Env) {
     ),
     HttpApiScalar.layerCdn(whitelabelApi, { path: "/docs" }),
     appleMdmRoutes,
+    windowsMdmRoutes,
     scepRoutes,
   );
 
@@ -53,6 +55,10 @@ function createMdmLayer(env: Env) {
     Layer.provideMerge(managementBackend),
   );
 
+  const windowsMdmService = WindowsMdmServiceLive({ origin: env.ORIGIN }).pipe(
+    Layer.provideMerge(managementBackend),
+  );
+
   const scepService = ScepService.pipe(
     Layer.provideMerge(
       ScepRepositoryD1(env.DB, {
@@ -62,7 +68,9 @@ function createMdmLayer(env: Env) {
   );
 
   return apiLayer.pipe(
-    Layer.provideMerge(Layer.mergeAll(appleMdmService, scepService, managementBackend)),
+    Layer.provideMerge(
+      Layer.mergeAll(appleMdmService, windowsMdmService, scepService, managementBackend),
+    ),
     Layer.provide(HttpServer.layerServices),
   );
 }

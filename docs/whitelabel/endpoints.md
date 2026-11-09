@@ -39,12 +39,12 @@ and `declaration/<type>/<identifier>`.
 
 Invalid operations return `400`; internal SCEP failures return `500`.
 
-## Windows endpoints (contract only)
+## Windows endpoints
 
 The management webhook contract defines Windows discovery, policy, WSTEP enrollment and
-SyncML management (`/webhook/windows/*`), and `packages/dm-windows` defines matching
-device routes under `/mdm/windows/*`. Those device routes are mounted in
-`apps/mttx` or `apps/api` in this tree. Do not point Windows devices at the gateway yet.
+SyncML management (`/webhook/windows/*`), and `packages/dm-windows` provides matching
+device routes under `/mdm/windows/*`. The whitelabel gateway, `apps/mttx` and `apps/api`
+mount them.
 
 ## Public origin
 

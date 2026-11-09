@@ -96,15 +96,16 @@ tenant's device CA. Windows enrollment carries no tenant identity, so set
 `WINDOWS_ORGANIZATION_ID` on the API Worker; otherwise the earliest tenant is used
 deterministically. Policy/command delivery is the next phase.
 
-Intended WSTEP flow once mounted:
+Windows enrollment flow:
 
 1. Windows discovers the enrollment service and receives an auth policy.
 2. The device requests the enrollment policy and submits a PKCS#10 CSR.
 3. The backend signs the identity certificate and returns an enrollment result.
 4. The gateway builds the WAP provisioning document and the device checks in over SyncML.
+5. Assigned `mttx.windows.custom.<id>` policies are delivered as OMA-URI Replace commands;
+   erase and restart are queued as SyncML Exec commands.
 
-Do not promise Windows policy management yet. The webhook contract has Windows methods,
-but the Cloud management backend currently answers `ManagementNotSupported`.
+Windows remote lock, shutdown and app install are not exposed; use erase or restart.
 
 ## 5. Android
 

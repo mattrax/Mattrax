@@ -48,15 +48,15 @@ Also:
 | `POST` | `/webhook/apple/declaration-items`  | Declarative item identifiers and server tokens. |
 | `POST` | `/webhook/apple/declaration`        | One declarative declaration.                    |
 | `POST` | `/webhook/apple/asset`              | One asset by identifier.                        |
-| `POST` | `/webhook/windows/discovery`        | Windows discovery response (preview contract).  |
-| `POST` | `/webhook/windows/policy`           | Windows enrollment policy (preview contract).   |
-| `POST` | `/webhook/windows/enroll`           | Windows WSTEP enrollment (preview contract).    |
-| `POST` | `/webhook/windows/checkin`          | Windows SyncML management (preview contract).   |
-| `POST` | `/webhook/windows/event`            | Windows lifecycle events (preview contract).    |
+| `POST` | `/webhook/windows/discovery`        | Windows discovery response.                     |
+| `POST` | `/webhook/windows/policy`           | Windows enrollment policy.                      |
+| `POST` | `/webhook/windows/enroll`           | Windows WSTEP enrollment.                       |
+| `POST` | `/webhook/windows/checkin`          | Windows SyncML management.                      |
+| `POST` | `/webhook/windows/event`            | Windows lifecycle events.                       |
 
-The Windows methods are defined and typed, but the gateway does not expose Windows device
-routes yet. Implementing them in your backend is not enough to enrol a Windows device in
-this tree.
+The gateway exposes `/mdm/windows/*` routes for discovery, policy, enrollment and SyncML
+management. The number of Windows devices a single gateway can serve depends on your
+backend's enrollment-token and tenant routing rules.
 
 ## Scope
 

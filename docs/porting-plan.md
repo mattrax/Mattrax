@@ -93,10 +93,10 @@ certificate. Therefore `@mattrax/apns` exposes a transport interface:
 - `RelayPushTransport` — HMAC-signed requests to a push relay for hosted
   multi-tenant Cloud.
 
-The Cloud Worker is intended to use the relay when `APNS_RELAY_URL` is configured.
-In the current tree the Cloud API does not instantiate a push transport, so push is
-reported as unavailable while devices still poll (DDM) and policy still converges. The
-whitelabel gateway never pushes; its management backend owns delivery.
+The Cloud Worker uses `RelayPushTransport` when `APNS_RELAY_URL` and
+`APNS_RELAY_SECRET` are set. `apps/apns-relay` is the matching Node service; without
+it, push is reported as unavailable while devices still poll (DDM) and policy still
+converges. The whitelabel gateway never pushes; its management backend owns delivery.
 
 ## Status
 
@@ -119,10 +119,20 @@ Completed in this branch:
 
 Remaining after this branch:
 
-- [ ] Windows routes mounted in the Cloud and self-hosted apps (the protocol
-      package exists, enrollment certificate issuance is next).
-- [ ] Invitation delivery email (links are generated and can be shared).
-- [ ] Passwordless email-code sign-in.
+- [ ] Tenant-level SAML/OIDC SSO login. The auth stack can issue sessions for its
+      own strategies but does not expose per-tenant OAuth provider binding or
+      session issuance to a host-defined flow. SCIM provisioning works today.
+- [ ] Fleet-derived Apple suite expanded to real device fixtures in CI. Protocol
+      tests cover enrollment, authentication, token update, DDM, SCEP and profile
+      delivery, but no physical macOS/iOS fixture is attached.
+
+Completed:
+
+- [x] Windows routes mounted in the Cloud and self-hosted apps, including WSTEP
+      enrollment, SyncML policy delivery and erase/restart commands.
+- [x] Invitation delivery email and registration email verification.
+- [x] Passwordless email-code sign-in.
 - [x] Self-hosted instance product keys, listing, revocation and HMAC verify.
-- [ ] Hosted push relay deployment and whitelabel webhook HMAC signing.
-- [ ] Fleet-derived Apple suite expanded to real device fixtures in CI.
+- [x] Hosted push relay (`apps/apns-relay`) and whitelabel webhook HMAC signing.
+- [x] Remote Apple lock/erase/restart/shutdown/clear-passcode/app install.
+- [x] Tenant audit logs and SCIM 2.0 user/group provisioning.

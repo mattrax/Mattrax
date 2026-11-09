@@ -222,6 +222,9 @@ importers:
       '@mattrax/dm-apple':
         specifier: workspace:*
         version: link:../../packages/dm-apple
+      '@mattrax/dm-windows':
+        specifier: workspace:*
+        version: link:../../packages/dm-windows
       '@mattrax/enterprise-core':
         specifier: workspace:*
         version: link:../../packages/enterprise-core
