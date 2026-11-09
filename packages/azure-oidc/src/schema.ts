@@ -44,5 +44,7 @@ export const AzureJwtClaims = Schema.Struct({
   preferred_username: Schema.optional(Schema.String),
   name: Schema.optional(Schema.String),
   email: Schema.optional(Schema.String),
+  nonce: Schema.optional(Schema.String),
+  xms_edov: Schema.optional(Schema.Boolean),
 });
 export type AzureJwtClaims = typeof AzureJwtClaims.Type;

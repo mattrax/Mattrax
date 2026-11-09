@@ -255,6 +255,22 @@ export const userGroupMember = mysqlTable(
   (table) => [primaryKey({ columns: [table.groupId, table.userId] })],
 );
 
+/** Links an external IdP object to a Mattrax user within a tenant. */
+export const ssoIdentity = mysqlTable(
+  "sso_identity",
+  {
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    objectId: shortText("object_id").notNull(),
+    userId: id("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.organizationId, table.objectId] })],
+);
+
 /** Tenant SSO configuration. One Azure Entra ID tenant per Mattrax tenant. */
 export const ssoConfig = mysqlTable("sso_config", {
   organizationId: id("organization_id")
@@ -563,6 +579,7 @@ export const relations = defineRelations(
     accountApiToken,
     auditLog,
     ssoConfig,
+    ssoIdentity,
     scimToken,
     userGroup,
     userGroupMember,
@@ -625,6 +642,13 @@ export const relations = defineRelations(
         to: r.organization.id,
       }),
       inviter: r.one.user({ from: r.invitation.inviterId, to: r.user.id }),
+    },
+    ssoIdentity: {
+      organization: r.one.organization({
+        from: r.ssoIdentity.organizationId,
+        to: r.organization.id,
+      }),
+      user: r.one.user({ from: r.ssoIdentity.userId, to: r.user.id }),
     },
     accountApiToken: {
       user: r.one.user({ from: r.accountApiToken.userId, to: r.user.id }),

@@ -139,6 +139,7 @@ export const makeAuthLive = ({
                     sub: user.id,
                     email: user.email,
                     exp: Date.now() + 24 * 60 * 60 * 1000,
+                    purpose: "email-verify",
                   }).pipe(Effect.catch(() => Effect.succeed("")));
                   const link = token
                     ? `${origin}/verify-email?token=${encodeURIComponent(token)}`

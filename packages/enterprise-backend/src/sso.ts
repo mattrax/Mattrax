@@ -60,7 +60,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
             const payload = yield* verifyToken(services.secret, input.token).pipe(
               Effect.mapError(() => new SsoRejected({ message: "Invalid SSO assertion" })),
             );
-            if (payload.exp <= Date.now())
+            if (payload.exp <= Date.now() || payload.purpose !== "sso-assertion")
               return yield* Effect.fail(new SsoRejected({ message: "SSO assertion expired" }));
             const tenantId = (payload as { tenantId?: string }).tenantId;
             if (!tenantId)

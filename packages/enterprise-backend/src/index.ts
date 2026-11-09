@@ -6,6 +6,7 @@ export { EnterpriseService } from "./service.js";
 export { scimRoutes } from "./scim.js";
 export { makeSsoStrategy } from "./sso.js";
 export { signToken, verifyToken } from "./tokens.js";
+export { provisionEmailCredential } from "./emailCredential.js";
 export { makeAuthLive, sessionCookie } from "./auth.js";
 export { makeAppAuth } from "@mattrax/enterprise-domain";
 export type { AppAuthService, AuthLiveOptions } from "./auth.js";

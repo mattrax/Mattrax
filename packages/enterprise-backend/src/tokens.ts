@@ -25,7 +25,14 @@ export const signToken = (secret: string, payload: Record<string, unknown>) =>
     return `${body}.${bytesToBase64Url(new Uint8Array(signature))}`;
   });
 
-export type TokenPayload = { sub: string; email: string; exp: number };
+export type TokenPayload = {
+  sub: string;
+  email: string;
+  exp: number;
+  purpose?: string;
+  tenantId?: string;
+  nonce?: string;
+};
 
 export const verifyToken = (secret: string, token: string) =>
   Effect.promise(async () => {

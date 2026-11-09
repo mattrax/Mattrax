@@ -198,6 +198,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             sub: user.id,
             email: newEmail,
             exp: Date.now() + 60 * 60 * 1000,
+            purpose: "email-change",
           });
           const link = `${origin}/account?emailToken=${encodeURIComponent(token)}`;
           if (email) {
@@ -227,6 +228,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             sub: user.id,
             email: user.email,
             exp: Date.now() + 24 * 60 * 60 * 1000,
+            purpose: "email-verify",
           });
           const link = `${origin}/verify-email?token=${encodeURIComponent(token)}`;
           if (email) {
@@ -255,7 +257,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               Effect.fail(new EnterpriseBadRequest({ message: "Invalid or expired token" })),
             ),
           );
-          if (payload.exp <= Date.now())
+          if (payload.exp <= Date.now() || payload.purpose !== "email-verify")
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Invalid or expired token" }),
             );
@@ -292,7 +294,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               Effect.fail(new EnterpriseBadRequest({ message: "Invalid or expired token" })),
             ),
           );
-          if (payload.exp <= Date.now())
+          if (payload.exp <= Date.now() || payload.purpose !== "email-change")
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Invalid or expired token" }),
             );

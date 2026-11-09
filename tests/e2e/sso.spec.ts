@@ -37,6 +37,7 @@ test.describe("single sign-on", () => {
       sub: me.user.id,
       email: me.user.email,
       exp: Date.now() + 60_000,
+      purpose: "sso-assertion",
       tenantId: tenant.id,
     });
     const response = await page.request.post(`${origin}/api/v1/ssoSignIn`, {
