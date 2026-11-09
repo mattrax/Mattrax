@@ -36,6 +36,10 @@ export class EnterpriseAuth extends Context.Service<
       request: Request,
       payload: Dynamic,
     ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    readonly requestEmailVerification: (
+      request: Request,
+    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    readonly verifyEmail: (payload: Dynamic) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
     readonly verifyEmailChange: (payload: Dynamic) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
   }
 >()("@mattrax/enterprise-domain/EnterpriseAuth") {}

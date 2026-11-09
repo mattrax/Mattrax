@@ -202,6 +202,20 @@ export const authClient = {
     }),
   updateUser: (payload: { name?: string; image?: string | null }) =>
     result(() => request<{ status: "ok" }>("/v1/me", { method: "PATCH", body: body(payload) })),
+  requestEmailVerification: () =>
+    result(() =>
+      request<{ status: "ok" }>("/v1/account/email-verification", {
+        method: "POST",
+        body: "{}",
+      }),
+    ),
+  verifyEmail: (payload: { token: string }) =>
+    result(() =>
+      request<{ status: "ok" }>("/v1/verify-email", {
+        method: "POST",
+        body: body(payload),
+      }),
+    ),
   changeEmail: (payload: { newEmail: string; callbackURL?: string }) =>
     result(() =>
       request<{ status: "ok" }>("/v1/account/email-change", {

@@ -146,6 +146,7 @@ const makeAppLayer = (env: Env, request: Request) => {
     proofSchedulerLayer,
     email,
     authSecret: env.AUTH_SECRET,
+    origin: env.ORIGIN,
   }).pipe(Layer.provide(Db.layer));
 
   const enterpriseAuthLive = makeEnterpriseAuthLive({

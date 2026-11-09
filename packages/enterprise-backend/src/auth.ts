@@ -1,18 +1,11 @@
 import { Auth, Email, EmailDelivery, Hooks, Password, Proofs, Sessions } from "@yielded/auth";
 import { makeAppAuth, type AuthClaims } from "@mattrax/enterprise-domain";
-import {
-  Db,
-  authCredentials,
-  authEmailCredentials,
-  authRequirement,
-  authStorage,
-  AuthPersistenceConfig,
-  schema,
-} from "@mattrax/enterprise-core";
-import { and, eq } from "drizzle-orm";
+import { Db, authRequirement, authStorage, AuthPersistenceConfig } from "@mattrax/enterprise-core";
 import { DateTime } from "effect";
 import { Effect, Layer, Redacted } from "effect";
 import { SecureRandom } from "effect/crypto";
+import { provisionEmailCredential } from "./emailCredential.ts";
+import { signToken } from "./tokens.ts";
 
 export const sessionCookie = "__Host-mattrax_session";
 type EmailBinding = {
@@ -33,8 +26,10 @@ export type AuthLiveOptions = {
   readonly proofSchedulerLayer?: Layer.Layer<any, any, any>;
   readonly email?: EmailBinding;
   readonly emailFrom?: string;
-  /** Application secret used to sign passwordless request bindings. */
+  /** Application secret used to sign passwordless request bindings and email proofs. */
   readonly authSecret?: string;
+  /** Canonical public origin used in verification links. */
+  readonly origin?: string;
 };
 
 export const makeAuthLive = ({
@@ -44,6 +39,7 @@ export const makeAuthLive = ({
   email,
   emailFrom,
   authSecret,
+  origin,
 }: AuthLiveOptions) => {
   const ClaimsLive = Layer.effect(
     appAuth.strategies.password.SessionClaims,
@@ -83,7 +79,7 @@ export const makeAuthLive = ({
                 id,
                 name: registration.name,
                 email: identifier.value,
-                emailVerified: true,
+                emailVerified: false,
                 image: null,
                 stripeCustomerId: null,
                 disabled: false,
@@ -117,46 +113,6 @@ export const makeAuthLive = ({
       }),
   });
 
-  const ensureEmailCredential = (db: any, subjectId: string) =>
-    Effect.gen(function* () {
-      const user = yield* db.query.user
-        .findFirst({ where: { id: subjectId } })
-        .pipe(Effect.catch(() => Effect.succeed(undefined)));
-      if (!user) return;
-      const moduleId = appAuth.strategies.email.persistence.moduleId as string;
-      const [existing] = yield* db
-        .select({ credentialId: authCredentials.credentialId })
-        .from(authCredentials)
-        .innerJoin(
-          authEmailCredentials as any,
-          eq((authEmailCredentials as any).credentialId, authCredentials.credentialId),
-        )
-        .where(
-          and(
-            eq(authCredentials.subjectId, subjectId),
-            eq((authEmailCredentials as any).moduleId, moduleId),
-          ),
-        )
-        .limit(1);
-      if (existing) return;
-
-      const credentialId = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
-      const revision = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
-      yield* db
-        .insert(authCredentials)
-        .ignore()
-        .values({ credentialId, subjectId, revision, active: true });
-      yield* db.insert(schema.authEmailCredentials).ignore().values({
-        moduleId,
-        subjectId,
-        credentialId,
-        identifierNamespace: "email",
-        identifierValue: user.email,
-        credentialRevision: revision,
-        active: true,
-      });
-    }).pipe(Effect.catch(() => Effect.void)) as Effect.Effect<void, never, never>;
-
   const LifecycleHooksLive = Layer.effect(
     Hooks.LifecycleHooks,
     Effect.gen(function* () {
@@ -169,17 +125,44 @@ export const makeAuthLive = ({
               (event.snapshot.action === "registration" || event.snapshot.action === "sign-in") &&
               event.snapshot.subjectId
             ) {
-              yield* db
-                .update((schema as any).authIdentifiers)
-                .set({ verifiedAt: Date.now() })
-                .where(
-                  and(
-                    eq((schema as any).authIdentifiers.subjectId, event.snapshot.subjectId),
-                    eq((schema as any).authIdentifiers.namespace, "email"),
-                  ),
-                )
-                .pipe(Effect.catch(() => Effect.void));
-              yield* ensureEmailCredential(db, event.snapshot.subjectId);
+              yield* provisionEmailCredential(
+                db,
+                appAuth.strategies.email.persistence.moduleId as string,
+                event.snapshot.subjectId,
+              );
+              if (event.snapshot.action === "registration" && authSecret && origin) {
+                const user = yield* db.query.user
+                  .findFirst({ where: { id: event.snapshot.subjectId } })
+                  .pipe(Effect.catch(() => Effect.succeed(undefined)));
+                if (user) {
+                  const token = yield* signToken(authSecret, {
+                    sub: user.id,
+                    email: user.email,
+                    exp: Date.now() + 24 * 60 * 60 * 1000,
+                  }).pipe(Effect.catch(() => Effect.succeed("")));
+                  const link = token
+                    ? `${origin}/verify-email?token=${encodeURIComponent(token)}`
+                    : "";
+                  if (token && email) {
+                    yield* Effect.tryPromise({
+                      try: () =>
+                        email.send({
+                          to: user.email,
+                          from: {
+                            name: "Mattrax",
+                            email: emailFrom ?? "hello@mattrax.cloud",
+                          },
+                          subject: "Verify your Mattrax email address",
+                          text: `Welcome to Mattrax. Verify your email address by opening this link:\n\n${link}\n\nThis link expires in 24 hours.`,
+                          html: `<p>Welcome to Mattrax.</p><p><a href="${link}">Verify your email address</a></p><p>This link expires in 24 hours.</p>`,
+                        }),
+                      catch: () => EmailDelivery.EmailNotAccepted.make({}),
+                    }).pipe(Effect.catch(() => Effect.void));
+                  } else if (token) {
+                    console.log("VERIFY EMAIL", user.email, link);
+                  }
+                }
+              }
             }
             return [];
           }),

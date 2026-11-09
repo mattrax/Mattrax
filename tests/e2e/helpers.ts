@@ -47,7 +47,32 @@ export async function register(page: Page, options: { name?: string; email?: str
   if (!response.ok())
     throw new Error(`Registration API failed (${response.status()}): ${await response.text()}`);
   await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+  await verifyEmail(page, email);
   return { email, password: PASSWORD };
+}
+
+/** Confirm the registration email through the dev mailbox used by browser tests. */
+export async function verifyEmail(page: Page, email: string) {
+  let token = "";
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get("/api/debug/emails");
+        if (!response.ok()) return "";
+        const messages = (await response.json()) as Array<{ to: string; text: string }>;
+        const message = messages.find((item) => item.to === email);
+        token = message?.text.match(/verify-email\?token=([^\s]+)/)?.[1] ?? "";
+        return token;
+      },
+      { timeout: 20_000 },
+    )
+    .not.toBe("");
+  const response = await page.request.post("/api/v1/verify-email", {
+    data: { token: decodeURIComponent(token) },
+    headers: { origin: "http://localhost:9050", "x-effect-auth-csrf": "1" },
+  });
+  if (!response.ok())
+    throw new Error(`Email verification failed (${response.status()}): ${await response.text()}`);
 }
 
 export async function signIn(page: Page, email: string, password = PASSWORD) {

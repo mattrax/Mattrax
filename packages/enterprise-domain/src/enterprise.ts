@@ -111,6 +111,16 @@ const EnterpriseApnsErrors = [
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
 ] as const;
 const EnterpriseNoDomainErrors = [...EnterpriseDbErrors] as const;
+const EnterpriseAccountErrors = [
+  ...EnterpriseAuthRequiredErrors,
+  ...EnterpriseDbErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
+const EnterprisePublicEmailErrors = [
+  ...EnterpriseDbErrors,
+  EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
 const EnterprisePublicNotFoundErrors = [
   ...EnterpriseDbErrors,
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
@@ -236,6 +246,9 @@ export const CreateInvitationResponse = Schema.Struct({
 });
 export const AcceptInvitationRequest = Schema.Struct({ token: Schema.String });
 export const AcceptInvitationResponse = Schema.Struct({ tenantId: Schema.String });
+
+export const VerifyEmailRequest = Schema.Struct({ token: Schema.String });
+export const EmailVerificationResponse = Schema.Struct({ status: Schema.Literal("ok") });
 
 export const UpdateMeRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
@@ -515,6 +528,19 @@ export const AccountSessionsResponse = Schema.Struct({
 });
 
 export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
+  .add(
+    HttpApiEndpoint.post("requestEmailVerification", "/v1/account/email-verification", {
+      error: EnterpriseAccountErrors,
+      success: EmailVerificationResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("verifyEmail", "/v1/verify-email", {
+      error: EnterprisePublicEmailErrors,
+      payload: VerifyEmailRequest,
+      success: EmailVerificationResponse,
+    }),
+  )
   .add(
     HttpApiEndpoint.post("requestEmailChange", "/v1/account/email-change", {
       error: EnterpriseAuthRequiredErrors,

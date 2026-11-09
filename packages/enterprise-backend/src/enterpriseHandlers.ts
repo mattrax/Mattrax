@@ -1703,6 +1703,9 @@ export const createEnterpriseService = ({
         });
         return { url: result.url ?? body.returnUrl };
       }),
+    requestEmailVerification: (request) =>
+      auth.requestEmailVerification(webRequestFromRequest(request, origin)),
+    verifyEmail: (_request, payload) => auth.verifyEmail(payload),
     requestEmailChange: (request, payload) =>
       auth.requestEmailChange(webRequestFromRequest(request, origin), payload),
     verifyEmailChange: (_request, payload) => auth.verifyEmailChange(payload),
@@ -1720,6 +1723,12 @@ export const enterpriseHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseApi>,
 ) =>
   handlers
+    .handle("requestEmailVerification", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.requestEmailVerification(request)),
+    )
+    .handle("verifyEmail", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.verifyEmail(request, payload)),
+    )
     .handle("requestEmailChange", ({ request, payload }) =>
       Effect.flatMap(EnterpriseService, (service) => service.requestEmailChange(request, payload)),
     )

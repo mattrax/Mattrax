@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
-import { createEffect, createMemo, For, type ParentProps, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, type ParentProps, Show } from "solid-js";
 import { CommandPalette } from "~/components/command-palette";
 import { TenantSwitcher } from "~/components/mdm/tenant-switcher";
 import {
@@ -104,6 +104,14 @@ function CloseMobileSidebarOnNavigate() {
 
 export default function DashboardLayout(props: ParentProps) {
   const session = authClient.useSession();
+  const [verificationSent, setVerificationSent] = createSignal(false);
+  const [sendingVerification, setSendingVerification] = createSignal(false);
+  const resendVerification = async () => {
+    setSendingVerification(true);
+    await authClient.requestEmailVerification();
+    setSendingVerification(false);
+    setVerificationSent(true);
+  };
   const navigate = useNavigate();
   const location = useLocation();
   const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
@@ -338,6 +346,26 @@ export default function DashboardLayout(props: ParentProps) {
             <kbd class="hidden rounded border px-1.5 py-0.5 text-[10px] sm:inline">⌘K</kbd>
           </button>
         </header>
+        <Show when={user() && !user()!.emailVerified}>
+          <div class="flex flex-wrap items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+            <span>
+              Verify your email address to enable passwordless sign-in and account recovery.
+            </span>
+            <Show
+              when={!verificationSent()}
+              fallback={<span class="text-amber-700">Verification email sent.</span>}
+            >
+              <button
+                type="button"
+                class="font-medium underline underline-offset-2 disabled:opacity-60"
+                disabled={sendingVerification()}
+                onClick={resendVerification}
+              >
+                {sendingVerification() ? "Sending…" : "Resend email"}
+              </button>
+            </Show>
+          </div>
+        </Show>
         {props.children}
       </SidebarInset>
       <CommandPalette />

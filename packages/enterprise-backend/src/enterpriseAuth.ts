@@ -7,6 +7,8 @@ import {
 } from "@mattrax/enterprise-domain";
 import { Db, schema } from "@mattrax/enterprise-core";
 import { sessionCookie, type AppAuthService } from "./auth.ts";
+import { provisionEmailCredential } from "./emailCredential.ts";
+import { signToken, verifyToken } from "./tokens.ts";
 
 type HeadersRecord = Record<string, string | string[] | undefined>;
 
@@ -64,61 +66,6 @@ const sha256 = (value: string) =>
       Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""),
     ),
   );
-
-const bytesToBase64Url = (bytes: Uint8Array) =>
-  btoa(String.fromCharCode(...bytes))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replaceAll("=", "");
-
-const base64UrlToBytes = (value: string) =>
-  Uint8Array.from(atob(value.replaceAll("-", "+").replaceAll("_", "/")), (char) =>
-    char.charCodeAt(0),
-  );
-
-const signToken = (secret: string, payload: Record<string, unknown>) =>
-  Effect.promise(async () => {
-    const body = bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
-    const key = await crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"],
-    );
-    const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
-    return `${body}.${bytesToBase64Url(new Uint8Array(signature))}`;
-  });
-
-const verifyToken = (secret: string, token: string) =>
-  Effect.promise(async () => {
-    const [body, signature] = token.split(".");
-    if (!body || !signature) throw new Error("Malformed token");
-    const key = await crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["verify"],
-    );
-    const valid = await crypto.subtle.verify(
-      "HMAC",
-      key,
-      base64UrlToBytes(signature),
-      new TextEncoder().encode(body),
-    );
-    if (!valid) throw new Error("Invalid token");
-    const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(body))) as unknown;
-    if (
-      typeof payload !== "object" ||
-      payload === null ||
-      typeof (payload as Record<string, unknown>).sub !== "string" ||
-      typeof (payload as Record<string, unknown>).email !== "string" ||
-      typeof (payload as Record<string, unknown>).exp !== "number"
-    )
-      throw new Error("Invalid token");
-    return payload as { sub: string; email: string; exp: number };
-  });
 
 export type EnterpriseAuthOptions = {
   readonly appAuth: AppAuthService;
@@ -272,6 +219,72 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           return { status: "ok" as const };
         });
 
+      const requestEmailVerification = (request: Request) =>
+        Effect.gen(function* () {
+          const { user } = yield* requireUser(request);
+          if (user.emailVerified) return { status: "ok" as const };
+          const token = yield* signToken(authSecret, {
+            sub: user.id,
+            email: user.email,
+            exp: Date.now() + 24 * 60 * 60 * 1000,
+          });
+          const link = `${origin}/verify-email?token=${encodeURIComponent(token)}`;
+          if (email) {
+            yield* Effect.tryPromise({
+              try: () =>
+                email.send({
+                  to: user.email,
+                  from: { name: "Mattrax", email: "hello@mattrax.cloud" },
+                  subject: "Verify your Mattrax email address",
+                  text: `Verify your Mattrax email address by opening this link:\n\n${link}\n\nThis link expires in 24 hours.`,
+                  html: `<p>Verify your Mattrax email address by opening this link:</p><p><a href="${link}">${link}</a></p><p>This link expires in 24 hours.</p>`,
+                }),
+              catch: () =>
+                new EnterpriseBadRequest({ message: "Could not send the verification email" }),
+            });
+          } else {
+            console.log("VERIFY EMAIL", user.email, link);
+          }
+          return { status: "ok" as const };
+        });
+
+      const verifyEmail = (body: { token: string }) =>
+        Effect.gen(function* () {
+          const payload = yield* verifyToken(authSecret, body.token).pipe(
+            Effect.catch(() =>
+              Effect.fail(new EnterpriseBadRequest({ message: "Invalid or expired token" })),
+            ),
+          );
+          if (payload.exp <= Date.now())
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "Invalid or expired token" }),
+            );
+          const user = yield* db.query.user.findFirst({ where: { id: payload.sub } });
+          if (!user || user.email.toLowerCase() !== payload.email.toLowerCase())
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({ message: "Invalid or expired token" }),
+            );
+          yield* db
+            .update(schema.user)
+            .set({ emailVerified: true, updatedAt: new Date() })
+            .where(eq(schema.user.id, user.id));
+          yield* db
+            .update((schema as any).authIdentifiers)
+            .set({ verifiedAt: Date.now() })
+            .where(
+              and(
+                eq((schema as any).authIdentifiers.subjectId, user.id),
+                eq((schema as any).authIdentifiers.namespace, "email"),
+              ),
+            );
+          yield* provisionEmailCredential(
+            db,
+            options.appAuth.strategies.email.persistence.moduleId as string,
+            user.id,
+          );
+          return { status: "ok" as const };
+        });
+
       const verifyEmailChange = (body: { token: string }) =>
         Effect.gen(function* () {
           const payload = yield* verifyToken(authSecret, body.token).pipe(
@@ -303,6 +316,10 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 eq((schema as any).authIdentifiers.namespace, "email"),
               ),
             );
+          yield* db
+            .update(schema.authEmailCredentials)
+            .set({ identifierValue: payload.email })
+            .where(eq(schema.authEmailCredentials.subjectId, user.id));
           return { status: "ok" as const };
         });
 
@@ -312,6 +329,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         createApiToken,
         revokeApiToken,
         requestEmailChange,
+        requestEmailVerification,
+        verifyEmail,
         verifyEmailChange,
       });
     }),
