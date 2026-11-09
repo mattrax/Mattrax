@@ -1,6 +1,6 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import { ErrorText } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -32,6 +32,41 @@ export default function IdentitySettingsPage() {
     },
   }));
   const baseUrl = () => `${globalThis.location?.origin ?? ""}/scim/v2/${params.tenantId}`;
+
+  const sso = useQuery(() => ({
+    queryKey: enterpriseKeys.sso(params.tenantId),
+    queryFn: () => enterprise.getSsoConfig(params.tenantId),
+  }));
+  const [azureTenantId, setAzureTenantId] = createSignal("");
+  const [ssoEnabled, setSsoEnabled] = createSignal(false);
+  const [autoProvision, setAutoProvision] = createSignal(true);
+  createEffect(
+    () => sso.data,
+    (config) => {
+      if (!config) return;
+      setAzureTenantId(config.azureTenantId ?? "");
+      setSsoEnabled(config.enabled);
+      setAutoProvision(config.autoProvision);
+    },
+  );
+  const saveSso = useMutation(() => ({
+    mutationFn: () =>
+      enterprise.patchSsoConfig(params.tenantId, {
+        enabled: ssoEnabled(),
+        azureTenantId: azureTenantId().trim() || null,
+        autoProvision: autoProvision(),
+      }),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: enterpriseKeys.sso(params.tenantId) });
+    },
+  }));
+  const startSso = async () => {
+    const response = await fetch(
+      `/api/v1/sso/azure/start?tenantId=${encodeURIComponent(params.tenantId ?? "")}`,
+    );
+    const body = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+    if (body.url) window.location.href = body.url;
+  };
 
   return (
     <div class="grid gap-6 xl:grid-cols-2">
@@ -129,22 +164,75 @@ export default function IdentitySettingsPage() {
         <CardHeader>
           <CardTitle>Single sign-on</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent class="space-y-4">
           <div class="flex items-start gap-3">
             <span class="rounded-lg bg-stone-100 p-2 text-stone-600">
               <ShieldCheck class="size-5" />
             </span>
             <div>
-              <p class="flex items-center gap-2 text-sm font-medium">
-                SAML and OpenID Connect
-                <Badge variant="secondary">Coming soon</Badge>
-              </p>
+              <p class="text-sm font-medium">Microsoft Entra ID</p>
               <p class="mt-1 text-sm text-muted-foreground">
-                SSO login is not wired to tenant-level identity providers yet. SCIM provisioning
-                works independently and can be enabled today.
+                Let members sign in with your Entra tenant. SCIM provisioning above can keep the
+                member list in sync.
               </p>
             </div>
           </div>
+          <form
+            class="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveSso.mutate();
+            }}
+          >
+            <label class="flex items-center justify-between gap-4 rounded-lg border p-3 text-sm">
+              <span>
+                <strong class="block">Enable single sign-on</strong>
+                <span class="text-muted-foreground">
+                  Shows an Entra sign-in option for this tenant.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={ssoEnabled()}
+                onChange={(event) => setSsoEnabled(event.currentTarget.checked)}
+              />
+            </label>
+            <label class="space-y-1.5 text-sm">
+              <span class="font-medium">Microsoft Entra tenant ID</span>
+              <Input
+                placeholder="00000000-0000-0000-0000-000000000000"
+                value={azureTenantId()}
+                onInput={(event) => setAzureTenantId(event.currentTarget.value)}
+              />
+            </label>
+            <label class="flex items-center justify-between gap-4 rounded-lg border p-3 text-sm">
+              <span>
+                <strong class="block">Create members on first sign-in</strong>
+                <span class="text-muted-foreground">
+                  Users with an account in this Entra tenant join as members.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={autoProvision()}
+                onChange={(event) => setAutoProvision(event.currentTarget.checked)}
+              />
+            </label>
+            <div class="flex flex-wrap gap-2">
+              <Button type="submit" disabled={saveSso.isPending}>
+                Save SSO settings
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!sso.data?.enabled || !sso.data?.azureTenantId}
+                onClick={startSso}
+              >
+                Test sign-in
+              </Button>
+            </div>
+            <ErrorText error={saveSso.error || sso.error} />
+          </form>
         </CardContent>
       </Card>
     </div>

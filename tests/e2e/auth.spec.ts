@@ -40,8 +40,8 @@ test.describe("authentication and onboarding", () => {
     await page.getByRole("menuitem", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login/);
 
-    await page.locator('input[type="email"]').fill(email);
-    await page.locator('input[type="password"]').fill("Correct-Horse-Battery-Staple-123!");
+    await page.locator("#email").fill(email);
+    await page.locator("#password").fill("Correct-Horse-Battery-Staple-123!");
     await page.getByRole("button", { name: /^sign in$/i }).click();
     await expect(page).toHaveURL(/\/dashboard|\/t\//);
   });

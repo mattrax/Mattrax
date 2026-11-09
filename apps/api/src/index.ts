@@ -13,6 +13,7 @@ import {
   scimRoutes,
   makeAppAuth,
   makeAuthLive,
+  makeSsoStrategy,
   makeEnterpriseAuthLive,
   sessionCookie,
 } from "@mattrax/enterprise-backend";
@@ -32,9 +33,14 @@ import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } f
 import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
 import { env as apiEnv } from "./env.js";
+import { ssoRoutes } from "./sso.js";
+import { AzureOidcLive } from "@mattrax/azure-oidc";
+import { FetchHttpClient } from "effect/http";
 import { listDevEmails, recordDevEmail } from "./devMailbox.js";
 
-const appAuth = makeAppAuth(apiEnv.ORIGIN, apiEnv.AUTH_RESET_URL);
+const appAuth = makeAppAuth(apiEnv.ORIGIN, apiEnv.AUTH_RESET_URL, {
+  sso: makeSsoStrategy(),
+});
 const authHttp = AuthContract.httpGroup(AuthApi);
 const authHttps = Http.make(appAuth, {
   origin: apiEnv.ORIGIN,
@@ -209,16 +215,25 @@ const makeAppLayer = (env: Env, request: Request) => {
       cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
       cloudAppleVendorKey: env.CLOUD_APPLE_VENDOR_KEY,
     }).pipe(Layer.provide(enterpriseAuthLive), Layer.provide(Db.layer)),
+    AzureOidcLive().pipe(Layer.provide(FetchHttpClient.layer)),
   );
 
-  const appWithDevRoutes = devMailbox
-    ? Layer.mergeAll(
-        appLayer,
-        HttpRouter.add("GET", "/api/debug/emails", HttpServerResponse.json(listDevEmails())).pipe(
-          Layer.provide(HttpServer.layerServices),
-        ),
-      )
-    : appLayer;
+  const appWithDevRoutes = Layer.mergeAll(
+    appLayer,
+    ssoRoutes({
+      origin: env.ORIGIN,
+      clientId: env.AZURE_CLIENT_ID,
+      clientSecret: env.AZURE_CLIENT_SECRET,
+      authSecret: env.AUTH_SECRET,
+    }).pipe(Layer.provide(HttpServer.layerServices)),
+    ...(devMailbox
+      ? [
+          HttpRouter.add("GET", "/api/debug/emails", HttpServerResponse.json(listDevEmails())).pipe(
+            Layer.provide(HttpServer.layerServices),
+          ),
+        ]
+      : []),
+  );
 
   return appWithDevRoutes.pipe(
     Layer.provide(servicesLayer),

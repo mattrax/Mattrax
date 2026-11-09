@@ -34,6 +34,7 @@ export type {
   PolicyRow,
   RowFor,
   ScimTokenInfo,
+  SsoConfigResponse,
   TenantDetail,
   TenantEnrollmentInfo,
   TenantInfo,
@@ -66,6 +67,7 @@ export const enterpriseKeys = {
   enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", tenantId ?? ""] as const,
   auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", tenantId ?? ""] as const,
   scim: (tenantId: RouteParam) => ["enterprise", "scim", tenantId ?? ""] as const,
+  sso: (tenantId: RouteParam) => ["enterprise", "sso", tenantId ?? ""] as const,
 };
 
 const required = (value: RouteParam, name: string) => {
@@ -364,6 +366,15 @@ export const enterprise = {
     endpoint((api) =>
       api.uploadApns({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
+  getSsoConfig: (tenantId: RouteParam) =>
+    endpoint((api) => api.getSsoConfig({ params: { tenantId: required(tenantId, "tenantId") } })),
+  patchSsoConfig: (
+    tenantId: RouteParam,
+    payload: { enabled?: boolean; azureTenantId?: string | null; autoProvision?: boolean },
+  ) =>
+    endpoint((api) =>
+      api.patchSsoConfig({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+    ),
   listScimTokens: (tenantId: RouteParam) =>
     endpoint((api) => api.listScimTokens({ params: { tenantId: required(tenantId, "tenantId") } })),
   createScimToken: (tenantId: RouteParam, payload: { name: string }) =>
@@ -450,6 +461,12 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.item(tenantId, entity, id),
       queryFn: () => enterprise.get(tenantId, entity, id),
       enabled: Boolean(tenantId && id),
+    }),
+  sso: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.sso(tenantId),
+      queryFn: () => enterprise.getSsoConfig(tenantId),
+      enabled: Boolean(tenantId),
     }),
   scim: (tenantId: RouteParam) =>
     enterpriseQueryOptions({

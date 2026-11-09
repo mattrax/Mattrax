@@ -106,6 +106,9 @@ importers:
       '@mattrax/apns':
         specifier: workspace:*
         version: link:../../packages/apns
+      '@mattrax/azure-oidc':
+        specifier: workspace:*
+        version: link:../../packages/azure-oidc
       '@mattrax/dm-apple':
         specifier: workspace:*
         version: link:../../packages/dm-apple

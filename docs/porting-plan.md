@@ -119,9 +119,8 @@ Completed in this branch:
 
 Remaining after this branch:
 
-- [ ] Tenant-level SAML/OIDC SSO login. The auth stack can issue sessions for its
-      own strategies but does not expose per-tenant OAuth provider binding or
-      session issuance to a host-defined flow. SCIM provisioning works today.
+- [ ] SAML SSO. Entra ID (Microsoft OIDC) tenant SSO is implemented; a generic
+      SAML provider is not.
 - [ ] Fleet-derived Apple suite expanded to real device fixtures in CI. Protocol
       tests cover enrollment, authentication, token update, DDM, SCEP and profile
       delivery, but no physical macOS/iOS fixture is attached.
@@ -135,4 +134,4 @@ Completed:
 - [x] Self-hosted instance product keys, listing, revocation and HMAC verify.
 - [x] Hosted push relay (`apps/apns-relay`) and whitelabel webhook HMAC signing.
 - [x] Remote Apple lock/erase/restart/shutdown/clear-passcode/app install.
-- [x] Tenant audit logs and SCIM 2.0 user/group provisioning.
+- [x] Tenant audit logs, SCIM 2.0 user/group provisioning and Entra ID SSO.

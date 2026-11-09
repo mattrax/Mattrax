@@ -31,6 +31,10 @@ const email = Schema.String.check(Schema.isMaxLength(320)).pipe(Schema.decodeTo(
 const password = Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(4096)));
 const secret = Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(4096)));
 
+export class SsoRejected extends Schema.TaggedError<SsoRejected>()("SsoRejected", {
+  message: Schema.String,
+}) {}
+
 export const EmailCodeFailure = Schema.Union([
   Email.EmailRejected,
   Email.EmailUnavailable,
@@ -167,6 +171,17 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
       },
     }),
 
+    ssoSignIn: AuthContract.action({
+      payload: Schema.Struct({ token: Schema.String }),
+      success: sessions.CompletionResult,
+      error: SsoRejected,
+      mode: "mutation",
+      credentials: true,
+      replay: "single-use",
+      method: "signIn",
+      strategy: "sso",
+    }),
+
     changePassword: AuthContract.action({
       payload: Schema.Struct({
         commandId: Password.PasswordCommandId,
@@ -189,7 +204,11 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
  * it separate lets local HTTP development run with the production reset URL
  * (the proof library refuses non-HTTPS landing pages).
  */
-export const makeAppAuth = (origin: string, resetUrl?: string): any =>
+export const makeAppAuth = (
+  origin: string,
+  resetUrl?: string,
+  extraStrategies: Record<string, any> = {},
+): any =>
   Auth.make(AuthApi, {
     sessions: Sessions.stateful({
       maxAge: "30 days",
@@ -202,6 +221,7 @@ export const makeAppAuth = (origin: string, resetUrl?: string): any =>
         reset: Password.resetLink({ url: resetUrl ?? `${origin}/reset-password` }),
       }),
       email: Email.makeCode({ digits: 6 }),
+      ...extraStrategies,
     },
     defaultStrategy: "password",
   });

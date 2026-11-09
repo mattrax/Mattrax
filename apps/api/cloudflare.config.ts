@@ -28,6 +28,8 @@ export const apiWorker = {
     CLOUD_APPLE_VENDOR_KEY: bindings.secret(),
     APNS_RELAY_URL: bindings.secret(),
     APNS_RELAY_SECRET: bindings.secret(),
+    AZURE_CLIENT_ID: bindings.secret(),
+    AZURE_CLIENT_SECRET: bindings.secret(),
     /** Local-only mailbox flag. Never set in production. */
     DEV_MAILBOX: bindings.secret(),
     HYPERDRIVE: bindings.hyperdrive({

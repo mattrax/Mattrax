@@ -696,6 +696,62 @@ export const createEnterpriseService = ({
         yield* db.delete(schema.organization).where(eq(schema.organization.id, tenantId));
         return ok;
       }),
+    getSsoConfig: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const config = yield* db.query.ssoConfig.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+        return {
+          enabled: config?.enabled ?? false,
+          azureTenantId: config?.azureTenantId ?? null,
+          autoProvision: config?.autoProvision ?? true,
+        };
+      }),
+    patchSsoConfig: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as {
+          enabled?: boolean;
+          azureTenantId?: string | null;
+          autoProvision?: boolean;
+        };
+        const existing = yield* db.query.ssoConfig.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+        const timestamp = now();
+        if (existing) {
+          yield* db
+            .update(schema.ssoConfig)
+            .set({
+              ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+              ...(body.azureTenantId !== undefined ? { azureTenantId: body.azureTenantId } : {}),
+              ...(body.autoProvision !== undefined ? { autoProvision: body.autoProvision } : {}),
+              updatedAt: timestamp,
+            })
+            .where(eq(schema.ssoConfig.organizationId, ctx.organization.id));
+        } else {
+          yield* db.insert(schema.ssoConfig).values({
+            organizationId: ctx.organization.id,
+            enabled: body.enabled ?? false,
+            azureTenantId: body.azureTenantId ?? null,
+            autoProvision: body.autoProvision ?? true,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          });
+        }
+        yield* audit(ctx, "sso.updated", "sso", ctx.organization.id, {
+          fields: Object.keys(body),
+        });
+        const config = yield* db.query.ssoConfig.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+        return {
+          enabled: config?.enabled ?? false,
+          azureTenantId: config?.azureTenantId ?? null,
+          autoProvision: config?.autoProvision ?? true,
+        };
+      }),
     listScimTokens: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -1957,6 +2013,16 @@ export const enterpriseHandlers = (
     .handle("deleteTenant", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.deleteTenant(request, params.tenantId),
+      ),
+    )
+    .handle("getSsoConfig", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getSsoConfig(request, params.tenantId),
+      ),
+    )
+    .handle("patchSsoConfig", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchSsoConfig(request, params.tenantId, payload),
       ),
     )
     .handle("listScimTokens", ({ request, params }) =>

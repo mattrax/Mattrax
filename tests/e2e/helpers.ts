@@ -77,8 +77,8 @@ export async function verifyEmail(page: Page, email: string) {
 
 export async function signIn(page: Page, email: string, password = PASSWORD) {
   await page.goto("/login", { waitUntil: "networkidle" });
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(password);
+  await page.locator("#email").fill(email);
+  await page.locator("#password").fill(password);
   await page.getByRole("button", { name: /^sign in$/i }).click();
   await page.waitForURL(/\/dashboard|\/t\//);
 }

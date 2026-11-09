@@ -195,6 +195,16 @@ export const authClient = {
         return { user };
       }),
   },
+  ssoSignIn: (token: string) =>
+    result(async () => {
+      const completion = await request<unknown>("/ssoSignIn", {
+        method: "POST",
+        body: authBody({ token }),
+      });
+      const user = completionUser(completion);
+      if (!user) throw new Error("Additional authentication is required");
+      return { user };
+    }),
   signOut: (_options?: unknown) =>
     result(async () => {
       await request("/signOut", { method: "POST", body: "{}" });

@@ -18,6 +18,7 @@ export default function LoginPage() {
     reference: { proofId: string; purpose: string; keyId: string };
   } | null>(null);
   const [code, setCode] = createSignal("");
+  const [ssoEmail, setSsoEmail] = createSignal("");
 
   const returnTo = () =>
     searchParams.returnTo && Array.isArray(searchParams.returnTo)
@@ -57,6 +58,18 @@ export default function LoginPage() {
       return;
     }
     navigate(returnTo() ?? "/dashboard", { replace: true });
+  };
+
+  const startSso = async (e: SubmitEvent) => {
+    e.preventDefault();
+    setError(null);
+    const response = await fetch(`/api/v1/sso/azure/start?email=${encodeURIComponent(ssoEmail())}`);
+    const body = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+    if (body.url) {
+      window.location.href = body.url;
+      return;
+    }
+    setError(body.error ?? "Single sign-on is not available for that email");
   };
 
   const handleSubmit = async (e: SubmitEvent) => {
@@ -246,6 +259,30 @@ export default function LoginPage() {
             </button>
           </form>
         </Show>
+
+        <form onSubmit={startSso} class="mt-5 space-y-2 border-t pt-5">
+          <label for="sso-email" class="text-sm font-medium text-stone-700">
+            Work email single sign-on
+          </label>
+          <div class="flex gap-2">
+            <input
+              id="sso-email"
+              type="email"
+              required
+              autocomplete="email"
+              placeholder="you@company.com"
+              value={ssoEmail()}
+              onInput={(e) => setSsoEmail(e.currentTarget.value)}
+              class="min-w-0 flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
+            />
+            <button
+              type="submit"
+              class="rounded-lg border border-stone-300 px-3 py-2 text-sm font-medium text-stone-800 hover:bg-stone-100"
+            >
+              SSO
+            </button>
+          </div>
+        </form>
 
         <p class="mt-6 text-center text-sm text-stone-500">
           Don't have an account?{" "}

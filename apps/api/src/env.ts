@@ -24,6 +24,9 @@ const ApiEnvSchema = Schema.Struct({
   /** Hosted Cloud push relay. When set, APNs pushes go through the relay. */
   APNS_RELAY_URL: Schema.optional(urlString),
   APNS_RELAY_SECRET: Schema.optional(nonEmptyString),
+  /** Microsoft Entra ID app used for tenant SSO. */
+  AZURE_CLIENT_ID: Schema.optional(nonEmptyString),
+  AZURE_CLIENT_SECRET: Schema.optional(nonEmptyString),
   /**
    * Extra browser origins allowed to call the auth API, comma separated. The
    * canonical `ORIGIN` is always trusted; this is for local development and
@@ -57,6 +60,8 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   CLOUD_APPLE_VENDOR_KEY: emptyStringAsUndefined(cfEnv.CLOUD_APPLE_VENDOR_KEY),
   APNS_RELAY_URL: emptyStringAsUndefined((cfEnv as any).APNS_RELAY_URL),
   APNS_RELAY_SECRET: emptyStringAsUndefined((cfEnv as any).APNS_RELAY_SECRET),
+  AZURE_CLIENT_ID: emptyStringAsUndefined((cfEnv as any).AZURE_CLIENT_ID),
+  AZURE_CLIENT_SECRET: emptyStringAsUndefined((cfEnv as any).AZURE_CLIENT_SECRET),
   TRUSTED_ORIGINS: emptyStringAsUndefined((cfEnv as any).TRUSTED_ORIGINS),
   AUTH_RESET_URL: emptyStringAsUndefined((cfEnv as any).AUTH_RESET_URL),
   WINDOWS_ORGANIZATION_ID: emptyStringAsUndefined((cfEnv as any).WINDOWS_ORGANIZATION_ID),

@@ -73,6 +73,8 @@ Cloud validates these at startup. `ORIGIN` must be the public dashboard origin.
 | `STRIPE_DEVICE_MONTHLY_PRICE_ID` | Yes      | Stripe price used for per-device billing.                       |
 | `CLOUD_APPLE_VENDOR_CERT`        | No       | Apple MDM vendor certificate used to sign APNs CSRs.            |
 | `CLOUD_APPLE_VENDOR_KEY`         | No       | Vendor private key paired with the certificate.                 |
+| `AZURE_CLIENT_ID`                | No       | Entra ID app client ID for tenant SSO.                          |
+| `AZURE_CLIENT_SECRET`            | No       | Entra ID app client secret for tenant SSO.                      |
 
 ```bash
 cf auth login
@@ -98,6 +100,18 @@ openssl rand -base64 32
 If `CLOUD_APPLE_VENDOR_CERT` and `CLOUD_APPLE_VENDOR_KEY` are omitted, tenants can still
 upload a manually signed APNs certificate. They cannot use the one-click vendor-signed
 CSR flow.
+
+### Microsoft Entra ID single sign-on
+
+Create a Microsoft Entra ID app registration with a web redirect URI of
+`<ORIGIN>/api/v1/sso/azure/callback`. Set `AZURE_CLIENT_ID` and
+`AZURE_CLIENT_SECRET` on the API Worker. Each tenant then enters its Entra
+tenant ID under **Settings → Identity**, enables SSO, and can test the flow
+there or from the login page's work-email SSO form.
+
+SCIM provisioning uses the same identity provider independently. Users can be
+auto-provisioned on first SSO sign-in; disable **Create members on first
+sign-in** if membership must come from invitations only.
 
 ### 4. Apply migrations
 

@@ -285,6 +285,7 @@ export const makeAuthLive = ({
       : layer.pipe(
           Layer.provide(
             Layer.mergeAll(
+              Auth.AuthConfig.layer({ secret: Redacted.make(authSecret!) }),
               Auth.RequestBindingConfig.layer({
                 lifetimeMillis: 10 * 60 * 1000,
                 generation: 1,

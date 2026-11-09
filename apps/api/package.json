@@ -17,6 +17,7 @@
   "dependencies": {
     "@effect/sql-mysql2": "catalog:",
     "@mattrax/apns": "workspace:*",
+    "@mattrax/azure-oidc": "workspace:*",
     "@mattrax/dm-apple": "workspace:*",
     "@mattrax/dm-windows": "workspace:*",
     "@mattrax/effect-stripe": "workspace:*",

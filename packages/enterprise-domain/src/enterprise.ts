@@ -226,6 +226,17 @@ export const TenantInvitationsResponse = Schema.Struct({
 
 export const PatchTenantUserRequest = Schema.Struct({ role: Schema.String });
 
+export const SsoConfigResponse = Schema.Struct({
+  enabled: Schema.Boolean,
+  azureTenantId: Schema.optional(NullableString),
+  autoProvision: Schema.Boolean,
+});
+export const PatchSsoConfigRequest = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean),
+  azureTenantId: Schema.optional(NullableString),
+  autoProvision: Schema.optional(Schema.Boolean),
+});
+
 export const ScimTokenInfo = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -674,6 +685,21 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantDeleteErrors,
       params: TenantParam,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("getSsoConfig", "/v1/tenants/:tenantId/sso", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      success: SsoConfigResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchSsoConfig", "/v1/tenants/:tenantId/sso", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: PatchSsoConfigRequest,
+      success: SsoConfigResponse,
     }),
   )
   .add(
