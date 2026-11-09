@@ -163,7 +163,11 @@ export default function DeviceDetailPage() {
               </dl>
             </CardContent>
           </Card>
-          <Show when={row()?.proto === "apple" && row()?.status === "enrolled"}>
+          <Show
+            when={
+              (row()?.proto === "apple" || row()?.proto === "win") && row()?.status === "enrolled"
+            }
+          >
             <Card>
               <CardHeader>
                 <CardTitle>Remote actions</CardTitle>
@@ -173,13 +177,15 @@ export default function DeviceDetailPage() {
                   Commands are queued and delivered on the device's next check-in.
                 </p>
                 <div class="grid grid-cols-2 gap-2">
-                  <Button
-                    variant="outline"
-                    disabled={command.isPending}
-                    onClick={() => command.mutate({ action: "lock" })}
-                  >
-                    Lock
-                  </Button>
+                  <Show when={row()?.proto === "apple"}>
+                    <Button
+                      variant="outline"
+                      disabled={command.isPending}
+                      onClick={() => command.mutate({ action: "lock" })}
+                    >
+                      Lock
+                    </Button>
+                  </Show>
                   <Button
                     variant="outline"
                     disabled={command.isPending}
@@ -187,20 +193,22 @@ export default function DeviceDetailPage() {
                   >
                     Restart
                   </Button>
-                  <Button
-                    variant="outline"
-                    disabled={command.isPending}
-                    onClick={() => command.mutate({ action: "shutdown" })}
-                  >
-                    Shut down
-                  </Button>
-                  <Button
-                    variant="outline"
-                    disabled={command.isPending}
-                    onClick={() => command.mutate({ action: "clear-passcode" })}
-                  >
-                    Clear passcode
-                  </Button>
+                  <Show when={row()?.proto === "apple"}>
+                    <Button
+                      variant="outline"
+                      disabled={command.isPending}
+                      onClick={() => command.mutate({ action: "shutdown" })}
+                    >
+                      Shut down
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={command.isPending}
+                      onClick={() => command.mutate({ action: "clear-passcode" })}
+                    >
+                      Clear passcode
+                    </Button>
+                  </Show>
                   <Button
                     variant="destructive"
                     class="col-span-2"
@@ -217,24 +225,26 @@ export default function DeviceDetailPage() {
                     Erase device
                   </Button>
                 </div>
-                <Field label="Install app from manifest URL">
-                  <div class="flex gap-2">
-                    <Input
-                      value={manifestUrl()}
-                      placeholder="https://example.com/manifest.plist"
-                      onInput={(event) => setManifestUrl(event.currentTarget.value)}
-                    />
-                    <Button
-                      variant="outline"
-                      disabled={command.isPending || !manifestUrl()}
-                      onClick={() =>
-                        command.mutate({ action: "install-app", manifestUrl: manifestUrl() })
-                      }
-                    >
-                      Install
-                    </Button>
-                  </div>
-                </Field>
+                <Show when={row()?.proto === "apple"}>
+                  <Field label="Install app from manifest URL">
+                    <div class="flex gap-2">
+                      <Input
+                        value={manifestUrl()}
+                        placeholder="https://example.com/manifest.plist"
+                        onInput={(event) => setManifestUrl(event.currentTarget.value)}
+                      />
+                      <Button
+                        variant="outline"
+                        disabled={command.isPending || !manifestUrl()}
+                        onClick={() =>
+                          command.mutate({ action: "install-app", manifestUrl: manifestUrl() })
+                        }
+                      >
+                        Install
+                      </Button>
+                    </div>
+                  </Field>
+                </Show>
                 <ErrorText error={command.error} />
               </CardContent>
             </Card>

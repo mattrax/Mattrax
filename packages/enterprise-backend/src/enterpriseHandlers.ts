@@ -1219,15 +1219,33 @@ export const createEnterpriseService = ({
         const action = body.action ?? "sync";
         if (device.status === "enrolled") {
           if (action !== "sync") {
-            if (device.proto !== "apple")
+            const windowsCommand =
+              device.proto === "win" && (action === "wipe" || action === "restart");
+            if (device.proto !== "apple" && !windowsCommand)
               return yield* Effect.fail(
                 new EnterpriseBadRequest({
-                  message: "Remote commands are only supported for Apple devices",
+                  message:
+                    device.proto === "win"
+                      ? "Windows supports remote erase and restart"
+                      : "Remote commands are only supported for Apple and Windows devices",
                 }),
               );
             const commandId = crypto.randomUUID();
             const timestamp = now();
             const request = (() => {
+              if (device.proto === "win") {
+                if (action === "wipe")
+                  return {
+                    requestType: "WindowsWipe",
+                    payload: { locURI: "./Vendor/MSFT/RemoteWipe/1/doWipe" },
+                  };
+                if (action === "restart")
+                  return {
+                    requestType: "WindowsReboot",
+                    payload: { locURI: "./Vendor/MSFT/Reboot/1/RebootNow" },
+                  };
+                return null;
+              }
               switch (action) {
                 case "lock":
                   return { requestType: "DeviceLock", payload: {} };

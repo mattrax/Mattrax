@@ -5,6 +5,7 @@ import { ErrorText, PageHeader } from "~/components/mdm/common";
 import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
 import { arrayBufferToBase64, base64ToArrayBuffer, selectFile } from "~/lib/upload-file";
 
@@ -13,6 +14,7 @@ const keys = {
   app: "mttx.apple.application.default",
   custom: "mttx.apple.custom.default",
   device: "mttx.apple.device",
+  windows: "mttx.windows.custom.default",
 } as const;
 
 type Config = Record<string, any>;
@@ -119,6 +121,9 @@ export function PolicyConfigurationEditor() {
                 <Match when={active() === "device"}>
                   <DeviceSection config={config()} setKey={setKey} />
                 </Match>
+                <Match when={active() === "windows"}>
+                  <WindowsSection config={config()} setKey={setKey} />
+                </Match>
                 <Match when={active() === "custom"}>
                   <CustomSection
                     config={config()}
@@ -161,6 +166,7 @@ function activeTitle(active: string) {
   if (active === "applications") return "Applications";
   if (active === "custom") return "Custom profile";
   if (active === "device") return "Device restrictions";
+  if (active === "windows") return "Windows configuration";
   if (active === "raw") return "Advanced JSON";
   return "Security";
 }
@@ -276,6 +282,52 @@ function DeviceSection(props: { config: Config; setKey: (key: string, value: unk
           }
         />
       </label>
+    </div>
+  );
+}
+
+function WindowsSection(props: { config: Config; setKey: (key: string, value: unknown) => void }) {
+  const current = () =>
+    props.config[keys.windows] as { omaUri?: string; value?: string; format?: string } | undefined;
+  return (
+    <div class="space-y-4">
+      <p class="text-sm text-muted-foreground">
+        Deploy a Windows MDM OMA-URI. The value is delivered on the device's next SyncML check-in.
+        Use Advanced JSON to configure multiple nodes.
+      </p>
+      <label class="space-y-1.5 text-sm">
+        <span class="font-medium">OMA-URI</span>
+        <Input
+          placeholder="./Vendor/MSFT/Policy/Config/..."
+          value={current()?.omaUri ?? ""}
+          onInput={(event) =>
+            props.setKey(keys.windows, {
+              ...current(),
+              omaUri: event.currentTarget.value,
+            })
+          }
+        />
+      </label>
+      <label class="space-y-1.5 text-sm">
+        <span class="font-medium">Value</span>
+        <Input
+          placeholder="1"
+          value={current()?.value ?? ""}
+          onInput={(event) =>
+            props.setKey(keys.windows, {
+              ...current(),
+              value: event.currentTarget.value,
+            })
+          }
+        />
+      </label>
+      <Button
+        variant="outline"
+        onClick={() => props.setKey(keys.windows, null)}
+        disabled={!current()}
+      >
+        Remove Windows configuration
+      </Button>
     </div>
   );
 }

@@ -94,6 +94,12 @@ class SelectBuilder {
     return this;
   }
 
+  // The fake store has no relational join engine. Tests only assert behaviour
+  // with empty related tables, so joins are a no-op here.
+  innerJoin(_table: any, _condition?: any) {
+    return this;
+  }
+
   orderBy(...columns: any[]) {
     this.order = columns
       .map(

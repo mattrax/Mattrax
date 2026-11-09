@@ -21,6 +21,7 @@ const kindLabel = (kind: string) => {
   if (kind.startsWith("mttx.apple.custom")) return "Custom profile";
   if (kind.startsWith("mttx.apple.application")) return "Application";
   if (kind.startsWith("mttx.apple.declaration")) return "Declaration";
+  if (kind.startsWith("mttx.windows.custom")) return "Windows configuration";
   return kind;
 };
 

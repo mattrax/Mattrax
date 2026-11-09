@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { and, asc, eq } from "drizzle-orm";
+import { windowsPolicyNodes } from "./policy.ts";
 import { schema as s, type Db } from "@mattrax/enterprise-core";
 import { signScepCsr } from "@mattrax/scep";
 import {
@@ -299,9 +300,70 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         const device = yield* findDevice(organizationId, scope.deviceId);
         if (!device) return yield* Effect.fail(new UnknownDevice());
         yield* touchDevice(device.id, new Date());
-        // Policy delivery is a later phase. Never fake commands: an empty list
-        // is the correct answer for an enrolled device with no assignments.
-        return { commands: [] };
+
+        const configurations = yield* db
+          .select({
+            kind: s.configuration.kind,
+            data: s.configuration.data,
+          })
+          .from(s.configuration)
+          .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
+          .innerJoin(s.groupPolicy, eq(s.groupPolicy.policyId, s.configuration.policyId))
+          .innerJoin(s.groupDevice, eq(s.groupDevice.groupId, s.groupPolicy.groupId))
+          .where(eq(s.groupDevice.deviceId, device.id))
+          .limit(1000);
+
+        const commands: Array<{
+          kind: string;
+          cmdID: string;
+          locURI?: string;
+          data?: string;
+          format?: string;
+        }> = [];
+        let index = 1;
+        for (const configuration of configurations) {
+          for (const node of windowsPolicyNodes({
+            policyId: "",
+            kind: configuration.kind,
+            data: configuration.data,
+            hash: "",
+          })) {
+            commands.push({
+              kind: "Replace",
+              cmdID: String(index++),
+              locURI: node.omaUri,
+              data:
+                typeof node.value === "string"
+                  ? node.value
+                  : typeof node.value === "object"
+                    ? JSON.stringify(node.value)
+                    : String(node.value),
+              ...(node.format ? { format: node.format } : {}),
+            });
+          }
+        }
+
+        const queued = yield* db
+          .select()
+          .from(s.deviceCommand)
+          .where(and(eq(s.deviceCommand.deviceId, device.id), eq(s.deviceCommand.status, "queued")))
+          .orderBy(asc(s.deviceCommand.createdAt))
+          .limit(1000);
+        for (const command of queued) {
+          const payload = (command.payload ?? {}) as { locURI?: string; data?: string };
+          commands.push({
+            kind: "Exec",
+            cmdID: String(index++),
+            locURI: payload.locURI ?? "./Vendor/MSFT/RemoteWipe/1/doWipe",
+            data: payload.data ?? "",
+          });
+          yield* db
+            .update(s.deviceCommand)
+            .set({ status: "sent", updatedAt: new Date() })
+            .where(eq(s.deviceCommand.id, command.id));
+        }
+
+        return { commands };
       }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal()))),
 
     windowsDeviceEvent: (

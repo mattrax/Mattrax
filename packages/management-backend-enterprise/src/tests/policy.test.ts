@@ -12,6 +12,7 @@ import {
   splitConfigurationAssetIdentifier,
   splitConfigurationDeclarationIdentifier,
   validateConfiguration,
+  windowsPolicyNodes,
   type DeclarationContext,
   type PolicyConfigurationRow,
 } from "../policy.js";
@@ -217,6 +218,42 @@ describe("policy configuration validation", () => {
     await expect(
       validate("mttx.apple.custom.mdm", { content: mobileconfig(["com.apple.mdm"]) }),
     ).resolves.toContain("com.apple.mdm");
+  });
+
+  it("validates and extracts Windows OMA-URI nodes", async () => {
+    await expect(
+      validateConfiguration("mttx.windows.custom.policy", {
+        nodes: [
+          { omaUri: "./Vendor/MSFT/Policy/Config/DeviceLock/AllowSimpleDevicePassword", value: 1 },
+          {
+            omaUri: "./Vendor/MSFT/Policy/Config/Connectivity/AllowBluetooth",
+            value: "2",
+            format: "chr",
+          },
+        ],
+      }).pipe(Effect.runPromise),
+    ).resolves.toBeUndefined();
+    expect(
+      windowsPolicyNodes({
+        policyId: "policy-1",
+        kind: "mttx.windows.custom.policy",
+        data: { nodes: [{ omaUri: "./Vendor/MSFT/Reboot/1/RebootNow", value: "" }] },
+        hash: "hash",
+      }),
+    ).toEqual([{ omaUri: "./Vendor/MSFT/Reboot/1/RebootNow", value: "" }]);
+  });
+
+  it("rejects malformed Windows OMA-URI nodes", async () => {
+    await expect(
+      validate("mttx.windows.custom.policy", { omaUri: "Vendor/MSFT/missing-prefix", value: 1 }),
+    ).resolves.toContain('starting with "./"');
+    await expect(
+      validate("mttx.windows.custom.policy", {
+        omaUri: "./Vendor/MSFT/x",
+        value: 1,
+        format: "nope",
+      }),
+    ).resolves.toContain("format");
   });
 
   it("rejects malformed certificates", async () => {

@@ -47,6 +47,7 @@ export type ConfigurationKind =
   | { readonly type: "certificate"; readonly id: string }
   | { readonly type: "declaration"; readonly id: string }
   | { readonly type: "application"; readonly id: string }
+  | { readonly type: "windows"; readonly id: string }
   | { readonly type: "unknown" };
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9]{1,20}$/;
@@ -56,6 +57,9 @@ const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 
 export const parseConfigurationKind = (kind: string): ConfigurationKind => {
   if (kind === "mttx.apple.device") return { type: "device" };
+  const windows = /^mttx\.windows\.custom\.(.+)$/.exec(kind);
+  if (windows?.[1] && IDENTIFIER_PATTERN.test(windows[1]))
+    return { type: "windows", id: windows[1] };
   const match = /^mttx\.apple\.(custom|certificate|declaration|application)\.(.+)$/.exec(kind);
   if (!match) return { type: "unknown" };
   const [, group, id] = match;
@@ -145,7 +149,7 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
     switch (parsed.type) {
       case "unknown":
         return yield* Effect.fail(
-          `Unknown configuration kind "${kind}". Supported kinds are mttx.apple.device, mttx.apple.custom.<id>, mttx.apple.certificate.<id> and mttx.apple.declaration.<id>.`,
+          `Unknown configuration kind "${kind}". Supported kinds are mttx.apple.device, mttx.apple.custom.<id>, mttx.apple.certificate.<id>, mttx.apple.declaration.<id> and mttx.windows.custom.<id>.`,
         );
       case "application":
         return yield* Effect.fail(
@@ -184,6 +188,28 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
           return yield* Effect.fail(
             `"${kind}.content" contains a com.apple.mdm payload, which cannot be deployed as a managed profile`,
           );
+        return;
+      }
+      case "windows": {
+        const record = asRecord(data);
+        if (!record) return yield* Effect.fail(`"${kind}" must be an object`);
+        const nodes = Array.isArray(record.nodes) ? record.nodes : [record];
+        if (nodes.length === 0)
+          return yield* Effect.fail(`"${kind}" must contain at least one OMA-URI node`);
+        for (const node of nodes) {
+          if (!isRecord(node)) return yield* Effect.fail(`Every "${kind}" node must be an object`);
+          if (typeof node.omaUri !== "string" || !node.omaUri.startsWith("./"))
+            return yield* Effect.fail(
+              `"${kind}.omaUri" must be a Windows OMA-URI starting with "./"`,
+            );
+          if (node.value === undefined || node.value === null)
+            return yield* Effect.fail(`"${kind}.value" is required`);
+          if (
+            node.format !== undefined &&
+            !["int", "chr", "bool", "xml", "b64", "node"].includes(node.format as string)
+          )
+            return yield* Effect.fail(`"${kind}.format" must be int, chr, bool, xml, b64 or node`);
+        }
         return;
       }
       case "certificate": {
@@ -428,3 +454,28 @@ export const verifyAssetRequestToken = (
   row: Pick<PolicyConfigurationRow, "policyId" | "kind">,
 ): Promise<boolean> =>
   token ? verifyAppleAssetToken(authSecret, token, row.policyId, row.kind) : Promise.resolve(false);
+
+export type WindowsPolicyNode = {
+  readonly omaUri: string;
+  readonly value: unknown;
+  readonly format?: string;
+};
+
+/** Extract OMA-URI nodes from a Windows custom policy configuration. */
+export const windowsPolicyNodes = (row: PolicyConfigurationRow): Array<WindowsPolicyNode> => {
+  if (parseConfigurationKind(row.kind).type !== "windows") return [];
+  const data = row.data as Record<string, unknown>;
+  const nodes = Array.isArray(data.nodes) ? data.nodes : [data];
+  return nodes.flatMap((node) => {
+    if (!node || typeof node !== "object") return [];
+    const record = node as Record<string, unknown>;
+    if (typeof record.omaUri !== "string") return [];
+    return [
+      {
+        omaUri: record.omaUri,
+        value: record.value,
+        ...(typeof record.format === "string" ? { format: record.format } : {}),
+      },
+    ];
+  });
+};
