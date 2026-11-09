@@ -40,12 +40,15 @@ export default function TenantSettingsPage() {
   const [apnsEmail, setApnsEmail] = createSignal("");
   const [cert, setCert] = createSignal("");
 
-  createEffect(() => {
-    if (tenant.data) {
-      setName(tenant.data.name);
-      setSlug(tenant.data.slug);
-    }
-  });
+  createEffect(
+    () => tenant.data,
+    (data) => {
+      if (data) {
+        setName(data.name);
+        setSlug(data.slug);
+      }
+    },
+  );
 
   const save = useMutation(() => ({
     mutationFn: () => enterprise.patchTenant(params.tenantId, { name: name(), slug: slug() }),

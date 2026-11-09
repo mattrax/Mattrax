@@ -1,7 +1,8 @@
 import { type BadgeRootProps, Root } from "@kobalte/core/badge";
 import type { PolymorphicProps } from "@kobalte/core/polymorphic";
 import { cva, type VariantProps } from "class-variance-authority";
-import { splitProps, type ValidComponent } from "solid-js";
+import type { ValidComponent } from "@solidjs/web";
+import { splitProps } from "~/lib/solid";
 import { cn } from "~/lib/utils";
 
 const badgeVariants = cva(

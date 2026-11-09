@@ -18,12 +18,15 @@ export default function PolicyDetailPage() {
   const row = () => policy.data as PolicyRow | undefined;
   const [name, setName] = createSignal("");
   const [notes, setNotes] = createSignal("");
-  createEffect(() => {
-    if (row()) {
-      setName(row()!.name);
-      setNotes(row()!.notes ?? "");
-    }
-  });
+  createEffect(
+    () => row(),
+    (row) => {
+      if (row) {
+        setName(row.name);
+        setNotes(row.notes ?? "");
+      }
+    },
+  );
   const invalidate = async () => {
     await qc.invalidateQueries({
       queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),

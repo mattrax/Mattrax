@@ -1,7 +1,9 @@
 import * as DialogPrimitive from "@kobalte/core/dialog";
 import type { PolymorphicProps } from "@kobalte/core/polymorphic";
-import type { Component, ComponentProps, ValidComponent } from "solid-js";
-import { mergeProps, Show, splitProps } from "solid-js";
+import type { Component } from "solid-js";
+import { Show } from "solid-js";
+import type { ComponentProps, ValidComponent } from "@solidjs/web";
+import { mergeProps, splitProps } from "~/lib/solid";
 
 import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
@@ -121,7 +123,7 @@ const DialogFooter = <T extends ValidComponent = "div">(props: DialogFooterProps
         "z-dialog-footer flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
         local.class,
       )}
-      {...others}
+      {...(others as any)}
     >
       {local.children}
       <Show when={local.showCloseButton}>

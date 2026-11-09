@@ -29,12 +29,14 @@ export function PolicyConfigurationEditor() {
   const [config, setConfig] = createSignal<Config>({});
   const [initial, setInitial] = createSignal("{}");
 
-  createEffect(() => {
-    if (!row()?.configurations) return;
-    const next = row()!.configurations ?? {};
-    setConfig(next);
-    setInitial(JSON.stringify(next));
-  });
+  createEffect(
+    () => row()?.configurations,
+    (configurations) => {
+      if (!configurations) return;
+      setConfig(configurations);
+      setInitial(JSON.stringify(configurations));
+    },
+  );
 
   const dirty = createMemo(() => JSON.stringify(config()) !== initial());
   const setKey = (key: string, value: unknown) =>

@@ -1,4 +1,4 @@
-import { A, useNavigate, useParams } from "@solidjs/router";
+import { useNavigate, useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { ErrorText, Field, PageHeader } from "~/components/mdm/common";
@@ -36,14 +36,17 @@ export default function GroupDetailPage() {
   const [notes, setNotes] = createSignal("");
   const [deviceIds, setDeviceIds] = createSignal<Set<string>>(new Set());
   const [policyIds, setPolicyIds] = createSignal<Set<string>>(new Set());
-  createEffect(() => {
-    if (row() && !edit()) {
-      setName(row()!.name);
-      setNotes(row()!.notes ?? "");
-      setDeviceIds(new Set(row()!.devices?.map((d) => d.id) ?? []));
-      setPolicyIds(new Set(row()!.policies?.map((p) => p.id) ?? []));
-    }
-  });
+  createEffect(
+    () => ({ row: row(), edit: edit() }),
+    ({ row, edit }) => {
+      if (row && !edit) {
+        setName(row.name);
+        setNotes(row.notes ?? "");
+        setDeviceIds(new Set(row.devices?.map((d) => d.id) ?? []));
+        setPolicyIds(new Set(row.policies?.map((p) => p.id) ?? []));
+      }
+    },
+  );
   const dirty = createMemo(
     () =>
       row() &&
@@ -229,9 +232,9 @@ function AssignmentTable<T extends DeviceRow | PolicyRow>(props: {
                   />
                 </td>
                 <td class="px-4 py-3">
-                  <A class="font-medium hover:underline" href={props.href(row.id)}>
+                  <a class="font-medium hover:underline" href={props.href(row.id)}>
                     {row.name}
-                  </A>
+                  </a>
                 </td>
                 <td class="px-4 py-3">
                   {"updatedAt" in row

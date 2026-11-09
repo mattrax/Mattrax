@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { HttpApiClient } from "effect/http-api";
 import type { Accessor } from "solid-js";
-import { getRequestEvent, isServer } from "solid-js/web";
+import { getRequestEvent, isServer } from "@solidjs/web";
 import {
   EnterpriseBadRequest,
   enterpriseHttpApi,

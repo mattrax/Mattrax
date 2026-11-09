@@ -1,5 +1,5 @@
-import { A } from "@solidjs/router";
-import { For, Show, type JSX } from "solid-js";
+import { For, Show } from "solid-js";
+import type { JSX } from "@solidjs/web";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import {
@@ -106,7 +106,7 @@ export function LinkButton(props: {
   variant?: "default" | "outline" | "ghost" | "secondary";
 }) {
   return (
-    <Button as={A} href={props.href} variant={props.variant ?? "default"}>
+    <Button as="a" href={props.href} variant={props.variant ?? "default"}>
       {props.children}
     </Button>
   );

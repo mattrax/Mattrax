@@ -1,6 +1,6 @@
 import { useNavigate } from "@solidjs/router";
 import { Effect, Redacted } from "effect";
-import { onMount, createSignal, Show } from "solid-js";
+import { createSignal, onSettled, Show } from "solid-js";
 import { parseLinkFragment } from "@yielded/auth/EmailDelivery";
 import { authClient } from "~/lib/auth";
 
@@ -19,7 +19,8 @@ export default function ResetPasswordPage() {
   const [pending, setPending] = createSignal(false);
   const [link, setLink] = createSignal<ResetLink | null>(null);
 
-  onMount(async () => {
+  onSettled(() => {
+    void (async () => {
     const flow = authClient.resetFlow();
     const fragment = window.location.hash.replace(/^#/, "");
     if (!flow || !fragment) {
@@ -39,6 +40,7 @@ export default function ResetPasswordPage() {
     } catch {
       setError("Invalid or expired reset link. Please request a new one.");
     }
+    })();
   });
 
   const handleSubmit = async (e: SubmitEvent) => {
@@ -110,7 +112,7 @@ export default function ResetPasswordPage() {
                 id="password"
                 type="password"
                 required
-                minLength={8}
+                minlength={8}
                 autocomplete="new-password"
                 placeholder="••••••••"
                 value={password()}

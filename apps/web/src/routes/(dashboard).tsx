@@ -104,11 +104,14 @@ export default function DashboardLayout(props: ParentProps) {
     },
   ];
 
-  createEffect(() => {
-    if (!session().isPending && !user()) {
-      navigate(`/login?returnTo=${encodeURIComponent(location.pathname)}`, { replace: true });
-    }
-  });
+  createEffect(
+    () => ({ pending: session().isPending, user: user(), path: location.pathname }),
+    ({ pending, user, path }) => {
+      if (!pending && !user) {
+        navigate(`/login?returnTo=${encodeURIComponent(path)}`, { replace: true });
+      }
+    },
+  );
 
   const handleSignOut = async () => {
     await authClient.signOut();

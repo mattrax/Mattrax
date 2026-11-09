@@ -7,8 +7,8 @@ import {
   Separator,
 } from "@kobalte/core/breadcrumbs";
 import type { PolymorphicProps } from "@kobalte/core/polymorphic";
-import type { ComponentProps, ValidComponent } from "solid-js";
-import { splitProps } from "solid-js";
+import type { ComponentProps, ValidComponent } from "@solidjs/web";
+import { splitProps } from "~/lib/solid";
 
 import { Ellipsis } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";

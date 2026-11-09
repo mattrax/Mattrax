@@ -19,9 +19,12 @@ export function MobileconfigPreview(props: { content: string }) {
   const preview = useMutation(() => ({
     mutationFn: () => enterprise.previewMobileconfig(props.content) as Promise<Preview>,
   }));
-  createEffect(() => {
-    if (props.content) preview.mutate();
-  });
+  createEffect(
+    () => props.content,
+    (content) => {
+      if (content) preview.mutate();
+    },
+  );
   return (
     <div class="space-y-4">
       <Show when={preview.isPending}>

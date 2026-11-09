@@ -1,21 +1,20 @@
-import type { PolymorphicProps } from "@kobalte/core";
-import { Polymorphic } from "@kobalte/core";
+import type { PolymorphicProps } from "@kobalte/core/polymorphic";
+import { Polymorphic } from "@kobalte/core/polymorphic";
 import type { VariantProps } from "class-variance-authority";
 import { cva } from "class-variance-authority";
-import type { Accessor, Component, ComponentProps, JSX, ValidComponent } from "solid-js";
+import type { Accessor, Component } from "solid-js";
+import type { ComponentProps, JSX, ValidComponent } from "@solidjs/web";
 import {
   createContext,
-  createEffect,
   createMemo,
   createSignal,
   Match,
-  mergeProps,
-  onCleanup,
+  onSettled,
   Show,
   Switch,
-  splitProps,
   useContext,
 } from "solid-js";
+import { mergeProps, splitProps } from "~/lib/solid";
 import { cn } from "~/lib/utils";
 import { useIsMobile } from "~/hooks/use-mobile";
 import type { ButtonProps } from "~/components/ui/button";
@@ -102,7 +101,7 @@ const SidebarProvider = (props: SidebarProviderProps) => {
   };
 
   // Adds a keyboard shortcut to toggle the sidebar.
-  createEffect(() => {
+  onSettled(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
@@ -111,7 +110,7 @@ const SidebarProvider = (props: SidebarProviderProps) => {
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    onCleanup(() => window.removeEventListener("keydown", handleKeyDown));
+    return () => window.removeEventListener("keydown", handleKeyDown);
   });
 
   // We add a state so that we can do data-state="expanded" or "collapsed".
@@ -129,7 +128,7 @@ const SidebarProvider = (props: SidebarProviderProps) => {
   };
 
   return (
-    <SidebarContext.Provider value={contextValue}>
+    <SidebarContext value={contextValue}>
       <div
         data-slot="sidebar-wrapper"
         style={{
@@ -145,7 +144,7 @@ const SidebarProvider = (props: SidebarProviderProps) => {
       >
         {local.children}
       </div>
-    </SidebarContext.Provider>
+    </SidebarContext>
   );
 };
 
@@ -156,7 +155,7 @@ type SidebarProps = ComponentProps<"div"> & {
 };
 
 const Sidebar: Component<SidebarProps> = (props) => {
-  const mergedProps = mergeProps<SidebarProps[]>(
+  const mergedProps = mergeProps(
     {
       side: "left",
       variant: "sidebar",
@@ -189,13 +188,13 @@ const Sidebar: Component<SidebarProps> = (props) => {
         </div>
       </Match>
       <Match when={isMobile()}>
-        <Sheet onOpenChange={setOpenMobile} open={openMobile()} {...others}>
+        <Sheet onOpenChange={setOpenMobile} open={openMobile()} {...(others as any)}>
           <SheetContent
             class="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
             data-mobile="true"
             data-sidebar="sidebar"
             data-slot="sidebar"
-            side={local.side}
+            side={local.side as "left" | "right" | undefined}
             style={{
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
             }}
@@ -293,7 +292,7 @@ const SidebarRail = (props: ComponentProps<"button">) => {
       data-sidebar="rail"
       data-slot="sidebar-rail"
       aria-label="Toggle Sidebar"
-      tabIndex={-1}
+      tabindex={-1}
       onClick={toggleSidebar}
       title="Toggle Sidebar"
       class={cn(

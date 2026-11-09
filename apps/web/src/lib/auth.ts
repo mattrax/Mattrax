@@ -1,6 +1,7 @@
-import { createResource } from "solid-js";
-import { getRequestEvent, isServer } from "solid-js/web";
+import { createSignal, onSettled } from "solid-js";
+import { getRequestEvent, isServer } from "@solidjs/web";
 import { apiFetch } from "~/lib/auth-api.server";
+import { getPreloadedSession, type PreloadedSession } from "~/lib/session-store";
 
 type AuthUser = {
   id: string;
@@ -37,7 +38,7 @@ const userFromSession = (session: Session | null | undefined): AuthUser | undefi
     : undefined;
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const url = path.startsWith("/v1/") ? `/api${path}` : `/api/v1/auth${path}`;
+  const url = path.startsWith("/v1/") ? `/api${path}` : `/api/v1${path}`;
   const event = isServer ? getRequestEvent() : undefined;
   const headers = new Headers(init.headers);
   if (init.body) headers.set("content-type", "application/json");
@@ -81,13 +82,35 @@ const completionUser = (completion: unknown): AuthUser | undefined => {
 
 export const authClient = {
   useSession: () => {
-    const [data, { refetch }] = createResource(() =>
-      request<Session | null>("/getSession", { method: "POST", body: "{}" }),
-    );
+    // The page middleware preloads the session on the server so the first
+    // render already knows the user; hydration adopts that value. Without a
+    // preload (for example a failed API call) the client asks after hydration.
+    const event = isServer ? getRequestEvent() : undefined;
+    const initial = event
+      ? (getPreloadedSession(event.request) as Session | null | undefined)
+      : undefined;
+    const [data, setData] = createSignal<Session | null | undefined>(initial);
+    const [pending, setPending] = createSignal(initial === undefined);
+
+    const load = async () => {
+      setPending(true);
+      try {
+        setData(await request<Session | null>("/getSession", { method: "POST", body: "{}" }));
+      } catch {
+        setData(null);
+      } finally {
+        setPending(false);
+      }
+    };
+
+    onSettled(() => {
+      if (!isServer && data() === undefined) void load();
+    });
+
     const accessor = () => ({
-      data: { user: userFromSession(data()) },
-      isPending: data.loading,
-      refetch,
+      data: { user: userFromSession(data() ?? undefined) },
+      isPending: pending(),
+      refetch: load,
     });
     return accessor;
   },

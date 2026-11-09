@@ -5,9 +5,12 @@ export default function TenantIndexPage() {
   const params = useParams();
   const navigate = useNavigate();
 
-  createEffect(() => {
-    navigate(`/t/${params.tenantId}/devices`, { replace: true });
-  });
+  createEffect(
+    () => params.tenantId,
+    (tenantId) => {
+      navigate(`/t/${tenantId}/devices`, { replace: true });
+    },
+  );
 
   return null;
 }

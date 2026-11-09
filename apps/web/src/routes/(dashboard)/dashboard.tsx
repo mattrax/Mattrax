@@ -8,12 +8,14 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
 
-  createEffect(() => {
-    if (me.isSuccess) {
-      const tenant = me.data.tenants[0];
-      navigate(tenant ? `/t/${tenant.id}/devices` : "/tenants/new", { replace: true });
-    }
-  });
+  createEffect(
+    () => ({ success: me.isSuccess, tenant: me.data?.tenants[0] }),
+    ({ success, tenant }) => {
+      if (success) {
+        navigate(tenant ? `/t/${tenant.id}/devices` : "/tenants/new", { replace: true });
+      }
+    },
+  );
 
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">

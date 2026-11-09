@@ -5,7 +5,7 @@ export const webWorker = {
   name: "mattrax",
   compatibilityDate: "2026-10-06",
   compatibilityFlags: ["nodejs_compat"],
-  entrypoint: "@solidjs/start/server/entry",
+  entrypoint: new URL("./src/server/index.ts", import.meta.url).pathname,
   domains: ["e.mattrax.app"],
   previewUrls: true,
   observability: { enabled: true },

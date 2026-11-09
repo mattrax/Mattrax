@@ -1,4 +1,5 @@
-import { type ComponentProps, mergeProps, splitProps } from "solid-js";
+import type { ComponentProps } from "@solidjs/web";
+import { mergeProps, splitProps } from "~/lib/solid";
 import { cn } from "~/lib/utils";
 
 type CardProps = ComponentProps<"div"> & { size?: "default" | "sm" };

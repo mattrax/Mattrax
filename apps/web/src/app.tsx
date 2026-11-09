@@ -1,25 +1,32 @@
-import { MetaProvider, Title } from "@solidjs/meta";
-import { Router } from "@solidjs/router";
-import { FileRoutes } from "@solidjs/start/router";
+import { Head, Title } from "@solidjs/meta";
+import { createRouter } from "@solidjs/router";
+import { fileRoutes } from "@solidjs/router/fs";
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
-import { Suspense } from "solid-js";
+import { isServer } from "@solidjs/web";
+import { Loading } from "solid-js";
+import { pageRoutes } from "virtual:file-routes";
 import "./app.css";
 
-const queryClient = new QueryClient();
+// Data lives behind the API Worker's auth and only the browser has the session
+// it expects. Keeping queries idle during SSR avoids holding the document open
+// (and serializing transport errors) while the client fetches after hydration.
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { enabled: !isServer } },
+});
+
+const Router = createRouter({ routes: fileRoutes(pageRoutes) });
 
 export default function App() {
   return (
-    <Router
-      root={(props) => (
-        <MetaProvider>
+    <Router>
+      {(props) => (
+        <Head>
           <Title>Mattrax</Title>
           <QueryClientProvider client={queryClient}>
-            <Suspense fallback="Loading...">{props.children}</Suspense>
+            <Loading fallback="Loading...">{props.children}</Loading>
           </QueryClientProvider>
-        </MetaProvider>
+        </Head>
       )}
-    >
-      <FileRoutes />
     </Router>
   );
 }

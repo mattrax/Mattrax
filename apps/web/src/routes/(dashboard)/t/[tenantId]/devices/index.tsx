@@ -1,4 +1,4 @@
-import { A, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import {
   DeviceStatusBadge,
@@ -41,12 +41,12 @@ export default function DevicesPage() {
             sort: (row) => row.name,
             search: (row) => row.name,
             cell: (row) => (
-              <A
+              <a
                 class="font-medium text-stone-950 hover:underline"
                 href={`/t/${params.tenantId}/devices/${row.id}`}
               >
                 {row.name}
-              </A>
+              </a>
             ),
           },
           {

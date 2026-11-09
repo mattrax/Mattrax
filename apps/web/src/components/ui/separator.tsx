@@ -1,6 +1,7 @@
 import type { PolymorphicProps } from "@kobalte/core/polymorphic";
 import { Separator as SeparatorPrimitive, type SeparatorRootProps } from "@kobalte/core/separator";
-import { type ComponentProps, mergeProps, splitProps, type ValidComponent } from "solid-js";
+import type { ComponentProps, ValidComponent } from "@solidjs/web";
+import { mergeProps, splitProps } from "~/lib/solid";
 import { cn } from "~/lib/utils";
 
 type SeparatorProps<T extends ValidComponent = "hr"> = PolymorphicProps<T, SeparatorRootProps<T>> &

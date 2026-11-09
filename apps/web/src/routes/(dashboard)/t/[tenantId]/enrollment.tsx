@@ -28,15 +28,18 @@ export default function EnrollmentPage() {
   const [android, setAndroid] = createSignal(false);
   const [assetTag, setAssetTag] = createSignal(false);
 
-  createEffect(() => {
-    if (!enrollment.data || edit()) return;
-    setCode(enrollment.data.code ?? "");
-    setMaxDevices(enrollment.data.maxDevices);
-    setApple(enrollment.data.enabledApple);
-    setWindows(enrollment.data.enabledWindows);
-    setAndroid(enrollment.data.enabledAndroid);
-    setAssetTag(enrollment.data.enabledAssetTag);
-  });
+  createEffect(
+    () => ({ data: enrollment.data, edit: edit() }),
+    ({ data, edit }) => {
+      if (!data || edit) return;
+      setCode(data.code ?? "");
+      setMaxDevices(data.maxDevices);
+      setApple(data.enabledApple);
+      setWindows(data.enabledWindows);
+      setAndroid(data.enabledAndroid);
+      setAssetTag(data.enabledAssetTag);
+    },
+  );
 
   const enabled = () => apple() || windows() || android();
   const enrollmentUrl = () =>

@@ -1,5 +1,6 @@
 import { useSearchParams } from "@solidjs/router";
-import { createEffect, createResource, createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
+import { isServer } from "@solidjs/web";
 import { authClient } from "~/lib/auth";
 
 export default function AccountPage() {
@@ -7,12 +8,14 @@ export default function AccountPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = () => session().data?.user;
 
-  onMount(async () => {
-    const token = searchParams.emailToken;
-    if (!token || Array.isArray(token)) return;
-    const result = await authClient.verifyEmailChange({ token });
-    setSearchParams({ emailToken: undefined }, { replace: true });
-    if (!result.error) await session().refetch();
+  onSettled(() => {
+    void (async () => {
+      const token = searchParams.emailToken;
+      if (!token || Array.isArray(token)) return;
+      const result = await authClient.verifyEmailChange({ token });
+      setSearchParams({ emailToken: undefined }, { replace: true });
+      if (!result.error) await session().refetch();
+    })();
   });
 
   const [name, setName] = createSignal("");
@@ -20,9 +23,12 @@ export default function AccountPage() {
   const [nameError, setNameError] = createSignal<string | null>(null);
   const [nameSuccess, setNameSuccess] = createSignal(false);
 
-  createEffect(() => {
-    if (user()?.name) setName(user()!.name);
-  });
+  createEffect(
+    () => user()?.name,
+    (name) => {
+      if (name) setName(name);
+    },
+  );
 
   const handleNameSave = async (e: SubmitEvent) => {
     e.preventDefault();
@@ -72,7 +78,22 @@ export default function AccountPage() {
   const [passwordPending, setPasswordPending] = createSignal(false);
   const [passwordError, setPasswordError] = createSignal<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = createSignal(false);
-  const [tokens, { refetch: refetchTokens }] = createResource(() => authClient.listApiTokens());
+  type ApiTokens = Awaited<ReturnType<typeof authClient.listApiTokens>>;
+  const [tokens, setTokens] = createSignal<ApiTokens>();
+  const [tokensPending, setTokensPending] = createSignal(false);
+  const refetchTokens = async () => {
+    setTokensPending(true);
+    try {
+      setTokens(await authClient.listApiTokens());
+    } catch {
+      setTokens(undefined);
+    } finally {
+      setTokensPending(false);
+    }
+  };
+  onSettled(() => {
+    if (!isServer) void refetchTokens();
+  });
   const [tokenName, setTokenName] = createSignal("");
   const [newToken, setNewToken] = createSignal<string | null>(null);
   const [tokenError, setTokenError] = createSignal<string | null>(null);
@@ -259,7 +280,7 @@ export default function AccountPage() {
               id="new-password"
               type="password"
               required
-              minLength={8}
+              minlength={8}
               value={newPassword()}
               onInput={(e) => setNewPassword(e.currentTarget.value)}
               class={inputClass}
@@ -275,7 +296,7 @@ export default function AccountPage() {
               id="confirm-password"
               type="password"
               required
-              minLength={8}
+              minlength={8}
               value={confirmPassword()}
               onInput={(e) => setConfirmPassword(e.currentTarget.value)}
               class={inputClass}
@@ -361,7 +382,7 @@ export default function AccountPage() {
               </div>
             )}
           </For>
-          <Show when={!tokens.loading && (tokens()?.tokens.length ?? 0) === 0}>
+          <Show when={!tokensPending() && (tokens()?.tokens.length ?? 0) === 0}>
             <p class="text-sm text-muted-foreground">No API tokens yet.</p>
           </Show>
         </div>

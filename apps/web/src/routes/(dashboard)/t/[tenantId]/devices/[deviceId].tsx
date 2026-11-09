@@ -26,13 +26,16 @@ export default function DeviceDetailPage() {
   const [name, setName] = createSignal("");
   const [assetTag, setAssetTag] = createSignal("");
   const [notes, setNotes] = createSignal("");
-  createEffect(() => {
-    if (row()) {
-      setName(row()!.name);
-      setAssetTag(row()!.assetTag ?? "");
-      setNotes(row()!.notes ?? "");
-    }
-  });
+  createEffect(
+    () => row(),
+    (row) => {
+      if (row) {
+        setName(row.name);
+        setAssetTag(row.assetTag ?? "");
+        setNotes(row.notes ?? "");
+      }
+    },
+  );
   const invalidate = async () => {
     await queryClient.invalidateQueries({
       queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),

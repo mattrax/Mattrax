@@ -46,3 +46,7 @@ peerDependencyRules:
   allowedVersions:
     vite: "*"
     vitest: "*"
+    # @kobalte/core 2.0.0-alpha.4 pins the Solid 2 RC it was built against
+    # (rc.16); the app runs the latest rc, which is API-compatible.
+    solid-js: "2.0.0-rc.21"
+    "@solidjs/web": "2.0.0-rc.21"

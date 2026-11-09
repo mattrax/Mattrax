@@ -1,4 +1,4 @@
-import { A, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { EmptyState, formatDate, LinkButton, PageHeader } from "~/components/mdm/common";
 import { EntityActions } from "~/components/mdm/entity-actions";
@@ -37,12 +37,12 @@ export default function GroupsPage() {
             sort: (row) => row.name,
             search: (row) => row.name,
             cell: (row) => (
-              <A
+              <a
                 class="font-medium hover:underline"
                 href={`/t/${params.tenantId}/groups/${row.id}`}
               >
                 {row.name}
-              </A>
+              </a>
             ),
           },
           {

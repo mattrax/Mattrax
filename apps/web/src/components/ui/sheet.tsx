@@ -1,7 +1,9 @@
 import * as SheetPrimitive from "@kobalte/core/dialog";
 import type { PolymorphicProps } from "@kobalte/core/polymorphic";
-import type { Component, ComponentProps, ValidComponent } from "solid-js";
-import { mergeProps, Show, splitProps } from "solid-js";
+import type { Component } from "solid-js";
+import { Show } from "solid-js";
+import type { ComponentProps, ValidComponent } from "@solidjs/web";
+import { mergeProps, splitProps } from "~/lib/solid";
 import { cn } from "~/lib/utils";
 import { Button } from "./button";
 import { X } from "./icons";
