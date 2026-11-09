@@ -23,7 +23,7 @@ export const apiWorker = {
     CLOUD_APPLE_VENDOR_CERT: bindings.secret(),
     CLOUD_APPLE_VENDOR_KEY: bindings.secret(),
     HYPERDRIVE: bindings.hyperdrive({
-      id: "08d26aaf29c7409e8d211c03ee66ca6e",
+      id: "239e6b5c776b47a2bcdd180e8798ce7a",
       // Local dev only. The Worker reads the individual host/port/user/password/
       // database fields; Hyperdrive's production binding supplies them.
       dev: { connectionString: "mysql://mattrax:mattrax@localhost:3306/mattraxe" },
