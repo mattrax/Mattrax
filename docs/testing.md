@@ -98,8 +98,9 @@ and a Windows VM:
 5. Queue lock/erase/restart/shutdown/clear-passcode and an app install; confirm
    each command result updates `device_command`.
 6. On Windows, enroll, verify policy `Replace` commands and run erase/restart.
-7. Renew or re-enroll the SCEP identity and confirm the new certificate keeps
-   the tenant OU.
+7. Re-enroll the device and confirm the new SCEP identity keeps the tenant OU.
+   (Automatic SCEP renewal is not implemented; devices must re-enroll before the
+   identity certificate expires.)
 
 ## CI
 
