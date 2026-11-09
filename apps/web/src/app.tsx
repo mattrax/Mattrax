@@ -3,7 +3,7 @@ import { createRouter } from "@solidjs/router";
 import { fileRoutes } from "@solidjs/router/fs";
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
-import { Errored, Loading } from "solid-js";
+import { Errored, Loading, onSettled } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
 import "./app.css";
 
@@ -61,6 +61,12 @@ function ErrorFallback(props: { error: unknown; reset: () => void }) {
 }
 
 export default function App() {
+  // Browser tests (and the first user interaction) need a deterministic signal
+  // that hydration completed; SSR markup alone does not attach event handlers.
+  onSettled(() => {
+    if (typeof document !== "undefined") document.documentElement.dataset.hydrated = "true";
+  });
+
   return (
     <Router>
       {(props) => (

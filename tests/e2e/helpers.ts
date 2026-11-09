@@ -10,7 +10,23 @@ export async function register(page: Page, options: { name?: string; email?: str
   const email = options.email ?? uniqueEmail();
   const health = await page.request.get("/api/health");
   if (!health.ok()) throw new Error(`API health check failed (${health.status()})`);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(`pageerror: ${error.message}`));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(`console: ${message.text()}`);
+  });
   await page.goto("/register", { waitUntil: "networkidle" });
+  try {
+    await page.waitForFunction(
+      () => document.documentElement.dataset.hydrated === "true",
+      undefined,
+      { timeout: 20_000 },
+    );
+  } catch {
+    throw new Error(
+      `Register page did not hydrate in time${errors.length ? `\n${errors.join("\n")}` : ""}`,
+    );
+  }
   // Solid hydration can reset controlled inputs; wait for the form to be
   // interactive and verify the values before submitting.
   await expect(page.locator("#name")).toBeVisible();
