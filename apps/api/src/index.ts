@@ -10,6 +10,7 @@ import { appleMdmApi } from "@mattrax/dm-apple";
 import {
   EnterpriseService,
   enterpriseHandlers,
+  scimRoutes,
   makeAppAuth,
   makeAuthLive,
   makeEnterpriseAuthLive,
@@ -93,6 +94,7 @@ const apiLayer = Layer.mergeAll(
   appleMdmRoutes,
   windowsMdmRoutes,
   scepRoutes,
+  scimRoutes,
 );
 
 const appLayer = apiLayer.pipe(Layer.provide(HttpServer.layerServices));
@@ -214,7 +216,7 @@ const makeAppLayer = (env: Env, request: Request) => {
     Layer.provide(servicesLayer),
     Layer.provide(authLive),
     Layer.provide(proofContextLayer),
-    Layer.provide(Db.layer),
+    Layer.provideMerge(Db.layer),
     Layer.provide(
       MysqlClient.layer({
         // Hyperdrive exposes individual connection fields for MySQL. Do not

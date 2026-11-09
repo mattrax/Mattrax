@@ -192,6 +192,55 @@ export const accountApiToken = mysqlTable(
  * Tenant-scoped audit trail. Entries are append-only from the application's
  * perspective; deleting a tenant removes its history with it.
  */
+/** Groups provisioned by SCIM for future role/access assignment. */
+export const userGroup = mysqlTable(
+  "user_group",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [index("user_group_organization_idx").on(table.organizationId)],
+);
+
+export const userGroupMember = mysqlTable(
+  "user_group_member",
+  {
+    groupId: id("group_id")
+      .notNull()
+      .references(() => userGroup.id, { onDelete: "cascade" }),
+    userId: id("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+  },
+  (table) => [primaryKey({ columns: [table.groupId, table.userId] })],
+);
+
+/** Bearer tokens used by SCIM 2.0 provisioning clients. */
+export const scimToken = mysqlTable(
+  "scim_token",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    tokenHash: varchar("token_hash", { length: 255 }).notNull(),
+    lastUsedAt: timestamp("last_used_at"),
+    revokedAt: timestamp("revoked_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("scim_token_hash_unique").on(table.tokenHash),
+    index("scim_token_organization_idx").on(table.organizationId),
+  ],
+);
+
 export const auditLog = mysqlTable(
   "audit_log",
   {
@@ -464,6 +513,9 @@ export const relations = defineRelations(
     subscription,
     accountApiToken,
     auditLog,
+    scimToken,
+    userGroup,
+    userGroupMember,
     enterpriseEnrollment,
     device,
     deviceCommand,

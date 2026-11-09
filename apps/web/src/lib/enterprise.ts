@@ -33,6 +33,7 @@ export type {
   PolicyApplicationObject,
   PolicyRow,
   RowFor,
+  ScimTokenInfo,
   TenantDetail,
   TenantEnrollmentInfo,
   TenantInfo,
@@ -64,6 +65,7 @@ export const enterpriseKeys = {
   billing: (tenantId: RouteParam) => ["enterprise", "billing", tenantId ?? ""] as const,
   enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", tenantId ?? ""] as const,
   auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", tenantId ?? ""] as const,
+  scim: (tenantId: RouteParam) => ["enterprise", "scim", tenantId ?? ""] as const,
 };
 
 const required = (value: RouteParam, name: string) => {
@@ -362,6 +364,18 @@ export const enterprise = {
     endpoint((api) =>
       api.uploadApns({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
+  listScimTokens: (tenantId: RouteParam) =>
+    endpoint((api) => api.listScimTokens({ params: { tenantId: required(tenantId, "tenantId") } })),
+  createScimToken: (tenantId: RouteParam, payload: { name: string }) =>
+    endpoint((api) =>
+      api.createScimToken({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
+    ),
+  revokeScimToken: (tenantId: RouteParam, tokenId: string) =>
+    endpoint((api) =>
+      api.revokeScimToken({
+        params: { tenantId: required(tenantId, "tenantId"), tokenId },
+      }),
+    ),
   listAuditLog: (tenantId: RouteParam) =>
     endpoint((api) => api.listAuditLog({ params: { tenantId: required(tenantId, "tenantId") } })),
   listUsers: (tenantId: RouteParam) =>
@@ -436,6 +450,12 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.item(tenantId, entity, id),
       queryFn: () => enterprise.get(tenantId, entity, id),
       enabled: Boolean(tenantId && id),
+    }),
+  scim: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.scim(tenantId),
+      queryFn: () => enterprise.listScimTokens(tenantId),
+      enabled: Boolean(tenantId),
     }),
   auditLog: (tenantId: RouteParam) =>
     enterpriseQueryOptions({

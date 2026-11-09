@@ -3,6 +3,7 @@ export type { EnterpriseHandlersConfig } from "./enterpriseHandlers.js";
 export { makeApplePush } from "./push.js";
 export type { ApplePush, ApplePushOptions } from "./push.js";
 export { EnterpriseService } from "./service.js";
+export { scimRoutes } from "./scim.js";
 export { makeAuthLive, sessionCookie } from "./auth.js";
 export { makeAppAuth } from "@mattrax/enterprise-domain";
 export type { AppAuthService, AuthLiveOptions } from "./auth.js";

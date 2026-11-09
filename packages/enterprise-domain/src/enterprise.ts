@@ -226,6 +226,21 @@ export const TenantInvitationsResponse = Schema.Struct({
 
 export const PatchTenantUserRequest = Schema.Struct({ role: Schema.String });
 
+export const ScimTokenInfo = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  createdAt: Schema.String,
+  lastUsedAt: Schema.optional(NullableString),
+});
+export const ScimTokensResponse = Schema.Struct({ tokens: Schema.Array(ScimTokenInfo) });
+export const CreateScimTokenRequest = Schema.Struct({ name: Schema.String });
+export const CreateScimTokenResponse = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  token: Schema.String,
+  baseUrl: Schema.String,
+});
+
 export const AuditLogEntry = Schema.Struct({
   id: Schema.String,
   action: Schema.String,
@@ -658,6 +673,28 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.delete("deleteTenant", "/v1/tenants/:tenantId", {
       error: EnterpriseTenantDeleteErrors,
       params: TenantParam,
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listScimTokens", "/v1/tenants/:tenantId/scim-tokens", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      success: ScimTokensResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("createScimToken", "/v1/tenants/:tenantId/scim-tokens", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: CreateScimTokenRequest,
+      success: CreateScimTokenResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("revokeScimToken", "/v1/tenants/:tenantId/scim-tokens/:tokenId", {
+      error: EnterpriseTenantWriteErrors,
+      params: { tenantId: Schema.String, tokenId: Schema.String },
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )

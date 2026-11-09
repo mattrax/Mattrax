@@ -692,6 +692,66 @@ export const createEnterpriseService = ({
         yield* db.delete(schema.organization).where(eq(schema.organization.id, tenantId));
         return ok;
       }),
+    listScimTokens: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const rows = yield* db
+          .select()
+          .from(schema.scimToken)
+          .where(eq(schema.scimToken.organizationId, ctx.organization.id));
+        return {
+          tokens: rows.map((row: any) => ({
+            id: row.id,
+            name: row.name,
+            createdAt: iso(row.createdAt),
+            lastUsedAt: row.lastUsedAt ? iso(row.lastUsedAt) : null,
+          })),
+        };
+      }),
+    createScimToken: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const body = payload as { name: string };
+        const raw = `scim_${bytesToBase64(crypto.getRandomValues(new Uint8Array(32)))
+          .replaceAll("+", "-")
+          .replaceAll("/", "_")
+          .replace(/=+$/, "")}`;
+        const tokenHash = yield* sha256Hex(new TextEncoder().encode(raw).buffer as ArrayBuffer);
+        const scimId = id();
+        const timestamp = now();
+        yield* db.insert(schema.scimToken).values({
+          id: scimId,
+          organizationId: ctx.organization.id,
+          name: body.name,
+          tokenHash,
+          lastUsedAt: null,
+          revokedAt: null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+        yield* audit(ctx, "scim.token_created", "scim_token", scimId, { name: body.name });
+        return {
+          id: scimId,
+          name: body.name,
+          token: raw,
+          baseUrl: `${origin}/scim/v2/${ctx.organization.id}`,
+        };
+      }),
+    revokeScimToken: (request, tenantId, tokenId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* db
+          .update(schema.scimToken)
+          .set({ revokedAt: now(), updatedAt: now() })
+          .where(
+            and(
+              eq(schema.scimToken.id, tokenId),
+              eq(schema.scimToken.organizationId, ctx.organization.id),
+            ),
+          );
+        yield* audit(ctx, "scim.token_revoked", "scim_token", tokenId);
+        return ok;
+      }),
     listAuditLog: (request, tenantId) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId);
@@ -1865,6 +1925,21 @@ export const enterpriseHandlers = (
     .handle("deleteTenant", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.deleteTenant(request, params.tenantId),
+      ),
+    )
+    .handle("listScimTokens", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listScimTokens(request, params.tenantId),
+      ),
+    )
+    .handle("createScimToken", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createScimToken(request, params.tenantId, payload),
+      ),
+    )
+    .handle("revokeScimToken", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.revokeScimToken(request, params.tenantId, params.tokenId),
       ),
     )
     .handle("listAuditLog", ({ request, params }) =>
