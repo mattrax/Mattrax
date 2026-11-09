@@ -38,6 +38,35 @@ import { AzureOidcLive } from "@mattrax/azure-oidc";
 import { FetchHttpClient } from "effect/http";
 import { listDevEmails, recordDevEmail } from "./devMailbox.js";
 
+const rateLimitWindow = new Map<string, { count: number; resetAt: number }>();
+const sensitiveAuthPaths = new Set([
+  "/api/v1/signIn",
+  "/api/v1/register",
+  "/api/v1/requestReset",
+  "/api/v1/requestEmailCode",
+  "/api/v1/beginEmailSignIn",
+  "/api/v1/completeEmailCode",
+  "/api/v1/ssoSignIn",
+  "/api/v1/verifyEmail",
+]);
+
+const tooManyRequests = (request: Request) => {
+  const url = new URL(request.url);
+  if (request.method !== "POST" || !sensitiveAuthPaths.has(url.pathname)) return false;
+  const ip =
+    request.headers.get("cf-connecting-ip") ??
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    "local";
+  const now = Date.now();
+  const entry = rateLimitWindow.get(ip);
+  if (!entry || entry.resetAt <= now) {
+    rateLimitWindow.set(ip, { count: 1, resetAt: now + 60_000 });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > 120;
+};
+
 const appAuth = makeAppAuth(apiEnv.ORIGIN, apiEnv.AUTH_RESET_URL, {
   sso: makeSsoStrategy(),
 });
@@ -263,6 +292,12 @@ const makeAppLayer = (env: Env, request: Request) => {
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+    if (tooManyRequests(request))
+      return new Response("Too Many Requests", {
+        status: 429,
+        headers: { "retry-after": "60", "content-type": "text/plain" },
+      });
+
     // Device identity must come from the verified mTLS handshake, never from a
     // caller-supplied header. Cloudflare exposes the certificate subject here.
     const headers = new Headers(request.headers);

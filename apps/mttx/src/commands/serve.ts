@@ -52,7 +52,7 @@ export const serveCommand = Command.make(
       Flag.withDescription("Cloud Platform API base URL for licence verification"),
     ),
     rateLimit: Flag.Int("rate-limit").pipe(
-      Flag.withDefault(Number(process.env.MATTRAX_RATE_LIMIT ?? 0)),
+      Flag.withDefault(Number(process.env.MATTRAX_RATE_LIMIT ?? 5)),
       Flag.withDescription(
         "Maximum requests per second per process (0 disables the limiter; deploy behind a real rate limiter)",
       ),

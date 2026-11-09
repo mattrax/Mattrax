@@ -188,6 +188,39 @@ export default function PolicyDetailPage() {
             </Show>
           </CardContent>
         </Card>
+        <Card class="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Deployment history</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-2">
+            <Show
+              when={(deployments.data?.deployments.length ?? 0) > 0}
+              fallback={<p class="text-sm text-muted-foreground">No deployments yet.</p>}
+            >
+              <For each={deployments.data?.deployments ?? []}>
+                {(deployment) => (
+                  <div class="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+                    <span>
+                      <strong>Version {deployment.version}</strong>
+                      <span class="ml-2 text-xs text-muted-foreground">
+                        {new Date(deployment.createdAt).toLocaleString()}
+                      </span>
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={rollback.isPending}
+                      onClick={() => rollback.mutate(deployment.id)}
+                    >
+                      Restore
+                    </Button>
+                  </div>
+                )}
+              </For>
+            </Show>
+            <ErrorText error={deployments.error || rollback.error} />
+          </CardContent>
+        </Card>
       </div>
 
       <Dialog open={deleteOpen()} onOpenChange={setDeleteOpen}>

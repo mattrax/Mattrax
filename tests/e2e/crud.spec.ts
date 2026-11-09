@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant } from "./helpers";
+import { bootstrapTenant, gotoHydrated } from "./helpers";
 
 test.describe("groups and policies", () => {
   test("creates, edits, duplicates, and deletes a group", async ({ page }) => {
@@ -49,6 +49,10 @@ test.describe("groups and policies", () => {
     await page.getByRole("button", { name: /^device$/i }).click();
     await page.getByRole("checkbox").first().uncheck();
     await page.getByRole("button", { name: /^save$/i }).click();
+    const detailUrl = page.url().replace(/\/editor$/, "");
+    await gotoHydrated(page, detailUrl);
+    await expect(page.getByText("Deployment history")).toBeVisible();
+    await expect(page.getByText(/Version 2/)).toBeVisible();
 
     await page.goto(`/t/${tenant.id}/policies`);
     await expect(page.getByRole("link", { name: "Camera Policy" })).toBeVisible();

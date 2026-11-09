@@ -349,6 +349,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
 
         const configurations = yield* db
           .select({
+            policyId: s.configuration.policyId,
             kind: s.configuration.kind,
             data: s.configuration.data,
           })
@@ -368,17 +369,26 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         }> = [];
         // 1 is reserved for the SyncHdr status; server commands start at 2.
         let index = 2;
-        for (const configuration of configurations) {
+        // Resolve duplicate OMA-URIs deterministically. A policy with a
+        // lexicographically smaller id wins, so check-ins are stable across
+        // group ordering and devices.
+        const desired = new Map<
+          string,
+          { readonly policyId: string; readonly data: string; readonly format?: string }
+        >();
+        const sorted = [...configurations].sort((left, right) =>
+          String(left.policyId).localeCompare(String(right.policyId)),
+        );
+        for (const configuration of sorted) {
           for (const node of windowsPolicyNodes({
-            policyId: "",
+            policyId: configuration.policyId,
             kind: configuration.kind,
             data: configuration.data,
             hash: "",
           })) {
-            commands.push({
-              kind: "Replace",
-              cmdID: String(index++),
-              locURI: node.omaUri,
+            if (desired.has(node.omaUri)) continue;
+            desired.set(node.omaUri, {
+              policyId: configuration.policyId,
               data:
                 typeof node.value === "string"
                   ? node.value
@@ -388,6 +398,15 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
               ...(node.format ? { format: node.format } : {}),
             });
           }
+        }
+        for (const [locURI, node] of desired) {
+          commands.push({
+            kind: "Replace",
+            cmdID: String(index++),
+            locURI,
+            data: node.data,
+            ...(node.format ? { format: node.format } : {}),
+          });
         }
 
         const queued = yield* db
