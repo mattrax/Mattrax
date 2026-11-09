@@ -140,13 +140,14 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
     EnterpriseAuth,
     Effect.gen(function* () {
       const db = yield* Db;
-      const { appAuth, origin, authSecret, email } = options;
+      const auth = yield* options.appAuth;
+      const { origin, authSecret, email } = options;
 
       const resolveSession = (request: Request) =>
         Effect.gen(function* () {
           const cookie = parseCookies(request.headers.get("cookie"))[sessionCookie];
           if (!cookie) return undefined;
-          return yield* appAuth
+          return yield* auth
             .verifySession(Redacted.make(cookie))
             .pipe(Effect.catch(() => Effect.succeed(undefined)));
         });

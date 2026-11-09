@@ -5,10 +5,9 @@ packages:
 catalog:
   "@cloudflare/vite-plugin": 2.0.0-beta.v.12
   "@effect/platform-node": ^4.1.2
-  "@effect/sql-pg": ^4.1.2
+  "@effect/sql-mysql2": ^4.1.2
   "@tanstack/solid-query": ^5.107.1
   "@types/node": ^26.6.6
-  "@types/pg": ^8.23.1
   "@xmldom/xmldom": ^0.9.12
   "@yielded/auth": 0.1.0-beta.47
   "@yielded/auth-persistence-drizzle": 0.1.0-beta.47
@@ -19,8 +18,8 @@ catalog:
   drizzle-orm: 1.0.0-rc.5
   effect: ^4.1.2
   fast-plist: ^0.1.3
+  mysql2: ^3.24.6
   oxc-minify: ^0.157.0
-  pg: ^8.23.1
   pkijs: ^4.0.1
   typescript: ~7.0.2
   vite: npm:@voidzero-dev/vite-plus-core@^1.5.0
@@ -37,6 +36,9 @@ onlyBuiltDependencies:
 
 overrides:
   vite: "catalog:"
+patchedDependencies:
+  '@yielded/auth-persistence-drizzle@0.1.0-beta.47': patches/@yielded__auth-persistence-drizzle@0.1.0-beta.47.patch
+  '@yielded/auth-persistence@0.1.0-beta.47': patches/@yielded__auth-persistence@0.1.0-beta.47.patch
 
 peerDependencyRules:
   allowAny:
@@ -44,9 +46,9 @@ peerDependencyRules:
     - vitest
 
   allowedVersions:
-    vite: "*"
-    vitest: "*"
+    "@solidjs/web": "2.0.0-rc.21"
     # @kobalte/core 2.0.0-alpha.4 pins the Solid 2 RC it was built against
     # (rc.16); the app runs the latest rc, which is API-compatible.
     solid-js: "2.0.0-rc.21"
-    "@solidjs/web": "2.0.0-rc.21"
+    vite: "*"
+    vitest: "*"

@@ -1,0 +1,247 @@
+diff --git a/dist/Mysql2.d.mts b/dist/Mysql2.d.mts
+index a150ba32f595f6c492480dc8e999060476404475..b12abb2406a1bc235bc54ec61e47884a4dd003ab 100644
+--- a/dist/Mysql2.d.mts
++++ b/dist/Mysql2.d.mts
+@@ -731,6 +731,12 @@ export declare const makeTotpPersistenceServices: <S extends import("drizzle-orm
+     readonly transaction: SuppliedService<TxId, NoInfer<NativeDriverTransaction<DB>>, TxShape>;
+   }, body: import("effect/Effect").Effect<A, E, R>): import("effect/Effect").Effect<A, DE | E | import("@yielded/auth-persistence/Adapter").PersistenceMappingError | import("@yielded/auth/Totp").TotpConfigurationError | import("@yielded/auth/Totp").TotpUnavailable, DR | RS | import("effect/crypto/Digest").Digest | import("@yielded/auth/Hooks").LifecycleHooks | import("effect/crypto/SecureRandom").SecureRandom | Exclude<R, TxId | D1BatchStatements | import("@yielded/auth/Totp").TotpPersistence>>;
+ };
++/** Composed persistence for MySQL. Mirrors the PostgreSQL adapter surface:
++* schema generation (`managed`/`map`), configuration and the service layer. */
++export declare const AuthPersistence: {
++  make: <C extends import("@yielded/auth-persistence/Adapter").ClaimsCodec, const Id extends string, const A extends import("@yielded/auth-persistence/Adapter").Definition<C, Id>>(auth: A & import("@yielded/auth-persistence/Adapter").Definition<C, Id>) => import("@yielded/auth-persistence/Adapter").BoundPersistence<import("drizzle-orm/mysql-core").MySqlTable<import("drizzle-orm/mysql-core").TableConfig>, import("@effect/sql-mysql2/MysqlClient").MysqlClient, C, Id, A>;
++  migrationsLayer: (options: import("drizzle-orm/migrator").MigrationConfig) => Layer.Layer<never, import("drizzle-orm/effect-core").EffectDrizzleQueryError | import("drizzle-orm/effect-core").MigratorInitError | import("@yielded/auth-persistence/Adapter").PersistenceConfigurationError | import("@yielded/auth-persistence/Adapter").PersistenceMappingError | import("effect/sql/SqlError").SqlError, import("@effect/sql-mysql2/MysqlClient").MysqlClient>;
++};
+ //#endregion
+ export { Database };
+ //# sourceMappingURL=Mysql2.d.mts.map
+\ No newline at end of file
+diff --git a/dist/Mysql2.mjs b/dist/Mysql2.mjs
+index bdc40a8e1b5da23e0e0ab02050c6bcd0896dc8ba..166fcb4d333805a08acea18e483350f20bab0f84 100644
+--- a/dist/Mysql2.mjs
++++ b/dist/Mysql2.mjs
+@@ -10,6 +10,9 @@ import { Database } from "./drizzle/mysql-database.mjs";
+ import { makeMysqlExternalIdentityServices, makeMysqlIdentityServices, makeMysqlSubjectProvisioningServices } from "./drizzle/mysql-identity.mjs";
+ import * as Layer from "effect/Layer";
+ import { makeWithDefaults } from "drizzle-orm/effect-mysql2";
++import { drizzleMigrationsLayer } from "./internal/drizzle-migrations.mjs";
++import { mysqlPersistence } from "./internal/drizzle-mysql.mjs";
++import * as Effect from "effect/Effect";
+ //#region src/Mysql2.ts
+ const { coordinateProofPersistence, makeProofPersistenceServices } = makeProofTarget(Database, {
+ 	mode: "native",
+@@ -38,6 +41,12 @@ const { makePhonePersistenceServices, coordinatePhonePersistence } = makePhoneTa
+ 	mode: "native",
+ 	dialect: "mysql"
+ });
++/** Composed persistence for MySQL. Mirrors the PostgreSQL adapter surface:
++* schema generation (`managed`/`map`), configuration and the service layer. */
++const AuthPersistence = {
++	...mysqlPersistence(makeWithDefaults({})),
++	migrationsLayer: drizzleMigrationsLayer(makeWithDefaults({}), Effect.promise(() => import("drizzle-orm/effect-mysql2/migrator")).pipe(Effect.map((module) => module.migrate)))
++};
+ /** Construct Drizzle from the driver's SQL-client Layer. */
+ const databaseLayer = Layer.effect(Database, makeWithDefaults({}));
+ const { coordinateAuthenticationAuthority, coordinatePendingAuthentication, coordinateSignedSessionValidity, coordinateStatefulSessions, makeAuthenticationAuthorityServices, makePendingAuthenticationServices, makeSignedSessionValidityServices, makeStatefulSessionServices, makeSessionStepUpServices, coordinateSessionStepUp, makeSessionCleanupServices } = makeSessionTarget(Database, {
+@@ -49,6 +58,6 @@ const { makeTotpPersistenceServices, coordinateTotpPersistence } = makeTotpTarge
+ 	dialect: "mysql"
+ });
+ //#endregion
+-export { Database, coordinateAuthenticationAuthority, coordinateEmailAddress, coordinateEmailRegistration, coordinateOAuthAccounts, coordinateOAuthConnected, coordinateOAuthConnectedRevocations, coordinateOAuthRegistration, coordinateOAuthRegistrationIntents, coordinateOAuthSignIn, coordinatePasskeyManagement, coordinatePasskeyPersistence, coordinatePasskeyRegistration, coordinatePasskeyRegistrationCeremony, coordinatePasswordPersistence, coordinatePasswordRegistration, coordinatePendingAuthentication, coordinatePhonePersistence, coordinateProofPersistence, coordinateSessionStepUp, coordinateSignedSessionValidity, coordinateStatefulSessions, coordinateTotpPersistence, databaseLayer, makeAuthenticationAuthorityServices, makeEmailAddressServices, makeEmailRegistrationServices, makeEmailSignInServices, makeExternalIdentityServices, makeIdentityServices, makeOAuthAccountsServices, makeOAuthConnectedRevocationServices, makeOAuthConnectedServices, makeOAuthRegistrationIntentServices, makeOAuthRegistrationServices, makeOAuthSignInServices, makePasskeyCredentialServices, makePasskeyManagementServices, makePasskeyPersistenceServices, makePasskeyRegistrationCeremonyServices, makePasskeyRegistrationServices, makePasswordPersistenceServices, makePasswordRegistrationServices, makePendingAuthenticationServices, makePhonePersistenceServices, makeProofPersistenceServices, makeSessionCleanupServices, makeSessionStepUpServices, makeSignedSessionValidityServices, makeStatefulSessionServices, makeSubjectProvisioningServices, makeTotpPersistenceServices };
++export { AuthPersistence, Database, coordinateAuthenticationAuthority, coordinateEmailAddress, coordinateEmailRegistration, coordinateOAuthAccounts, coordinateOAuthConnected, coordinateOAuthConnectedRevocations, coordinateOAuthRegistration, coordinateOAuthRegistrationIntents, coordinateOAuthSignIn, coordinatePasskeyManagement, coordinatePasskeyPersistence, coordinatePasskeyRegistration, coordinatePasskeyRegistrationCeremony, coordinatePasswordPersistence, coordinatePasswordRegistration, coordinatePendingAuthentication, coordinatePhonePersistence, coordinateProofPersistence, coordinateSessionStepUp, coordinateSignedSessionValidity, coordinateStatefulSessions, coordinateTotpPersistence, databaseLayer, makeAuthenticationAuthorityServices, makeEmailAddressServices, makeEmailRegistrationServices, makeEmailSignInServices, makeExternalIdentityServices, makeIdentityServices, makeOAuthAccountsServices, makeOAuthConnectedRevocationServices, makeOAuthConnectedServices, makeOAuthRegistrationIntentServices, makeOAuthRegistrationServices, makeOAuthSignInServices, makePasskeyCredentialServices, makePasskeyManagementServices, makePasskeyPersistenceServices, makePasskeyRegistrationCeremonyServices, makePasskeyRegistrationServices, makePasswordPersistenceServices, makePasswordRegistrationServices, makePendingAuthenticationServices, makePhonePersistenceServices, makeProofPersistenceServices, makeSessionCleanupServices, makeSessionStepUpServices, makeSignedSessionValidityServices, makeStatefulSessionServices, makeSubjectProvisioningServices, makeTotpPersistenceServices };
+ 
+ //# sourceMappingURL=Mysql2.mjs.map
+\ No newline at end of file
+diff --git a/dist/internal/drizzle-mysql.mjs b/dist/internal/drizzle-mysql.mjs
+new file mode 100644
+index 0000000000000000000000000000000000000000..3cd905fbdeab0d8578f7361a9fc0fa6ef784e187
+--- /dev/null
++++ b/dist/internal/drizzle-mysql.mjs
+@@ -0,0 +1,47 @@
++import { PersistenceConfigurationError, createPersistence } from "@yielded/auth-persistence/Adapter";
++import { getTableColumns } from "drizzle-orm";
++import { bigint, boolean, getTableConfig, index, int, mysqlTable, text, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
++import { nativeDatabase } from "../drizzle/native-database.mjs";
++import { makeDrizzleSqlTables } from "../drizzle/native-sql-table.mjs";
++//#region src/internal/drizzle-mysql.ts
++/** MySQL cannot index TEXT/BLOB without a prefix length. Generated storage
++* columns reuse short opaque ids, so bounded VARCHAR keys are safe. */
++const keyedText = (name) => name === "value" ? 320 : 191;
++const makeTable = (definition) => {
++	const keys = new Set([...definition.unique.flat(), ...(definition.indexes ?? []).flat()]);
++	return mysqlTable(definition.name, Object.fromEntries(Object.entries(definition.columns).map(([key, column]) => {
++		const builder = column.type === "text" ? keys.has(key) ? varchar(column.name, { length: keyedText(column.name) }) : text(column.name) : column.type === "boolean" ? boolean(column.name) : bigint(column.name, { mode: "number" });
++		return [key, column.nullable ? builder : builder.notNull()];
++	})), (columns) => [...definition.unique.map((keys, i) => {
++		const [first, ...rest] = keys;
++		if (first === undefined) throw PersistenceConfigurationError.make({ reason: "An empty unique key is invalid" });
++		return uniqueIndex(`${definition.name}_key_${i}`).on(columns[first], ...rest.map((key) => columns[key]));
++	}), ...(definition.indexes ?? []).map((keys, i) => {
++		const [first, ...rest] = keys;
++		if (first === undefined) throw PersistenceConfigurationError.make({ reason: "An empty index is invalid" });
++		return index(`${definition.name}_index_${i}`).on(columns[first], ...rest.map((key) => columns[key]));
++	})]);
++};
++const describe = (table) => {
++	const config = getTableConfig(table);
++	return {
++		name: config.name,
++		...config.schema === void 0 ? {} : { schema: config.schema },
++		columns: Object.fromEntries(Object.entries(getTableColumns(table)).map(([key, column]) => [key, {
++			name: column.name,
++			type: column.dataType === "boolean" ? "boolean" : column.dataType.includes("number") ? "integer" : "text",
++			nullable: !column.notNull
++		}])),
++		unique: []
++	};
++};
++const mysqlPersistence = (acquire) => createPersistence({
++	nativeTables: (database) => makeDrizzleSqlTables(database.$client, database),
++	makeTable,
++	describe,
++	acquire: nativeDatabase(acquire)
++});
++//#endregion
++export { mysqlPersistence };
++
++//# sourceMappingURL=drizzle-mysql.mjs.map
+diff --git a/src/Mysql2.ts b/src/Mysql2.ts
+index 673a61475b5e52bd5839b8f3bed64f05b08f5276..4b2c1dac65833fd860e3433a6ce1d812555e86e6 100644
+--- a/src/Mysql2.ts
++++ b/src/Mysql2.ts
+@@ -126,6 +126,22 @@ export const { makePhonePersistenceServices, coordinatePhonePersistence } = make
+   { mode: "native", dialect: "mysql" },
+ );
+ 
++import { drizzleMigrationsLayer } from "./internal/drizzle-migrations";
++import { mysqlPersistence } from "./internal/drizzle-mysql";
++import * as Effect from "effect/Effect";
++
++/** Composed persistence for MySQL. Mirrors the PostgreSQL adapter surface:
++ * schema generation (`managed`/`map`), configuration and the service layer. */
++export const AuthPersistence = {
++  ...mysqlPersistence(makeWithDefaults({})),
++  migrationsLayer: drizzleMigrationsLayer(
++    makeWithDefaults({}),
++    Effect.promise(() => import("drizzle-orm/effect-mysql2/migrator")).pipe(
++      Effect.map((module) => module.migrate),
++    ),
++  ),
++};
++
+ /** Construct Drizzle from the driver's SQL-client Layer. */
+ export const databaseLayer = Layer.effect(Database, makeWithDefaults({}));
+ 
+diff --git a/src/internal/drizzle-mysql.ts b/src/internal/drizzle-mysql.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3de22129554c3d51ed31af3be53fd8f4cff3acc3
+--- /dev/null
++++ b/src/internal/drizzle-mysql.ts
+@@ -0,0 +1,107 @@
++import {
++  PersistenceConfigurationError,
++  createPersistence,
++} from "@yielded/auth-persistence/Adapter";
++import type { StorageTable } from "@yielded/auth-persistence/Adapter";
++import { getTableColumns } from "drizzle-orm";
++import {
++  bigint,
++  boolean,
++  getTableConfig,
++  index,
++  int,
++  mysqlTable,
++  text,
++  uniqueIndex,
++  varchar,
++  type MySqlTable,
++} from "drizzle-orm/mysql-core";
++import type * as Effect from "effect/Effect";
++import type * as SqlClient from "effect/sql/SqlClient";
++
++import { nativeDatabase, type NativeDatabaseHandle } from "../drizzle/native-database";
++import { makeDrizzleSqlTables } from "../drizzle/native-sql-table";
++
++/** MySQL cannot index TEXT/BLOB without a prefix length. Generated storage
++ * columns reuse short opaque ids, so bounded VARCHAR keys are safe. */
++const keyedText = (name: string) => (name === "value" ? 320 : 191);
++
++const makeTable = (definition: StorageTable) => {
++  const keys = new Set([...definition.unique.flat(), ...(definition.indexes ?? []).flat()]);
++
++  return mysqlTable(
++    definition.name,
++    Object.fromEntries(
++      Object.entries(definition.columns).map(([key, column]) => {
++        const builder =
++          column.type === "text"
++            ? keys.has(key)
++              ? varchar(column.name, { length: keyedText(column.name) })
++              : text(column.name)
++            : column.type === "boolean"
++              ? boolean(column.name)
++              : // Managed integer storage includes epoch milliseconds, which do
++                // not fit MySQL's 32-bit INT.
++                bigint(column.name, { mode: "number" });
++
++        return [key, column.nullable ? builder : builder.notNull()];
++      }),
++    ),
++    (columns) => [
++      ...definition.unique.map((keys, i) => {
++        const [first, ...rest] = keys;
++
++        if (first === undefined)
++          // oxlint-disable-next-line effect/no-untyped-throw -- Drizzle table declaration callbacks must synchronously return constraints for schema generation.
++          throw PersistenceConfigurationError.make({ reason: "An empty unique key is invalid" });
++
++        return uniqueIndex(`${definition.name}_key_${i}`).on(
++          columns[first],
++          ...rest.map((key) => columns[key]),
++        );
++      }),
++      ...(definition.indexes ?? []).map((keys, i) => {
++        const [first, ...rest] = keys;
++
++        if (first === undefined)
++          // oxlint-disable-next-line effect/no-untyped-throw -- Drizzle table declaration callbacks must synchronously return constraints for schema generation.
++          throw PersistenceConfigurationError.make({ reason: "An empty index is invalid" });
++
++        return index(`${definition.name}_index_${i}`).on(
++          columns[first],
++          ...rest.map((key) => columns[key]),
++        );
++      }),
++    ],
++  );
++};
++
++const describe = (table: MySqlTable): StorageTable => {
++  const config = getTableConfig(table);
++
++  return {
++    name: config.name,
++    ...(config.schema === undefined ? {} : { schema: config.schema }),
++    columns: Object.fromEntries(
++      Object.entries(getTableColumns(table)).map(([key, column]) => [
++        key,
++        {
++          name: column.name,
++          type: column.dataType === "boolean" ? "boolean" : column.dataType.includes("number") ? "integer" : "text",
++          nullable: !column.notNull,
++        },
++      ]),
++    ),
++    unique: [],
++  };
++};
++
++export const mysqlPersistence = <R>(
++  acquire: Effect.Effect<object, never, R | SqlClient.SqlClient>,
++) =>
++  createPersistence<MySqlTable, R, NativeDatabaseHandle>({
++    nativeTables: (database) => makeDrizzleSqlTables(database.$client, database),
++    makeTable,
++    describe,
++    acquire: nativeDatabase(acquire),
++  });

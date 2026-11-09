@@ -1,8 +1,8 @@
 import { Context, Effect, Layer } from "effect";
-import * as PgDrizzle from "drizzle-orm/effect-postgres";
+import * as MysqlDrizzle from "drizzle-orm/effect-mysql2";
 import { relations } from "./schema.ts";
 
-const dbEffect = PgDrizzle.make({ relations }).pipe(Effect.provide(PgDrizzle.DefaultServices));
+const dbEffect = MysqlDrizzle.makeWithDefaults({ relations });
 
 export type EnterpriseDb = Effect.Success<typeof dbEffect>;
 

@@ -1,0 +1,24 @@
+diff --git a/dist/internal/persistence.mjs b/dist/internal/persistence.mjs
+index c87cbe2d35b7c57452097d570694931e1f2352cc..94a512d3e2fbab0ef84962eb60851d8881798dbe 100644
+--- a/dist/internal/persistence.mjs
++++ b/dist/internal/persistence.mjs
+@@ -157,6 +157,7 @@ const createPersistence = (backend) => {
+ 			const storage = yield* ConfigKey;
+ 			const dialect = (yield* SqlClient.SqlClient).onDialectOrElse({
+ 				pg: () => "pg",
++				mysql: () => "mysql",
+ 				sqlite: () => "sqlite",
+ 				orElse: () => void 0
+ 			});
+diff --git a/src/internal/persistence.ts b/src/internal/persistence.ts
+index aa60bbb1d6e1bb74fb763b2ebf33dea1ba3da018..d73840e465dae2d88645755cefe3273c6c1cd14c 100644
+--- a/src/internal/persistence.ts
++++ b/src/internal/persistence.ts
+@@ -332,6 +332,7 @@ export const createPersistence = <T extends object, R, Database extends object =
+ 
+           const dialect = client.onDialectOrElse({
+             pg: () => "pg" as const,
++            mysql: () => "mysql" as const,
+             sqlite: () => "sqlite" as const,
+             orElse: () => undefined,
+           });

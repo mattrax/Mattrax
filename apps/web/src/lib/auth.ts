@@ -25,6 +25,7 @@ type AuthResult<T = unknown> = Promise<{ data?: T; error?: { message?: string } 
 
 const resetFlowKey = "mattrax:password-reset";
 const body = (value: unknown) => JSON.stringify(value);
+const authBody = (value: unknown) => body({ payload: value });
 
 const userFromSession = (session: Session | null | undefined): AuthUser | undefined =>
   session
@@ -119,7 +120,7 @@ export const authClient = {
       result(async () => {
         const completion = await request<unknown>("/signIn", {
           method: "POST",
-          body: body(payload),
+          body: authBody(payload),
         });
         const user = completionUser(completion);
         if (!user) throw new Error("Additional authentication is required");
@@ -131,7 +132,7 @@ export const authClient = {
       result(async () => {
         await request("/register", {
           method: "POST",
-          body: body({
+          body: authBody({
             requestId: crypto.randomUUID(),
             email: payload.email,
             newPassword: payload.password,
@@ -140,7 +141,7 @@ export const authClient = {
         });
         const completion = await request<unknown>("/signIn", {
           method: "POST",
-          body: body({ email: payload.email, password: payload.password }),
+          body: authBody({ email: payload.email, password: payload.password }),
         });
         const user = completionUser(completion);
         if (!user) throw new Error("Additional authentication is required");
@@ -176,7 +177,7 @@ export const authClient = {
     result(() =>
       request<{ status: "ok" }>("/changePassword", {
         method: "POST",
-        body: body({
+        body: authBody({
           commandId: crypto.randomUUID(),
           currentPassword: payload.currentPassword,
           newPassword: payload.newPassword,
@@ -188,7 +189,7 @@ export const authClient = {
       const flowId = crypto.randomUUID();
       await request("/requestReset", {
         method: "POST",
-        body: body({
+        body: authBody({
           flowId,
           email: payload.email,
           requestId: crypto.randomUUID(),
@@ -209,7 +210,7 @@ export const authClient = {
     result(() =>
       request<{ status: "ok" }>("/completeReset", {
         method: "POST",
-        body: body({
+        body: authBody({
           flowId: payload.flowId,
           email: payload.email,
           commandId: crypto.randomUUID(),

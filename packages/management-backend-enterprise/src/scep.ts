@@ -38,8 +38,7 @@ export class ScepRepositoryLive extends ScepRepository {
               privateKeyJwk,
               createdAt: new Date(),
             })
-            .onConflictDoUpdate({
-              target: schema.scepCa.id,
+            .onDuplicateKeyUpdate({
               set: { certPem, privateKeyJwk },
             });
         }).pipe(Effect.mapError((cause) => new ScepError({ message: "Failed to save CA", cause }))),

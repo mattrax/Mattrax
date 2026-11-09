@@ -279,8 +279,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     deviceToken: id() + id(),
                     tokenUpdatedAt: null,
                   })
-                  .onConflictDoUpdate({
-                    target: s.deviceApple.deviceId,
+                  .onDuplicateKeyUpdate({
                     set: {
                       token: null,
                       pushMagic: null,
