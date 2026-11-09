@@ -78,6 +78,7 @@ jobs:
           DEV_MAILBOX=true
           VARS
           cp apps/api/.dev.vars apps/web/.dev.vars
+          cp apps/api/.dev.vars .dev.vars
       - run: pnpm api db:migrate
       - run: pnpm test:e2e
       - uses: actions/upload-artifact@v4
