@@ -20,7 +20,16 @@ export interface ScepPkcsReq {
  */
 export interface ScepAuthentication {
   readonly organizationalUnit?: string;
+  readonly enrollmentId?: string;
 }
+
+export type ScepIssuedCertificate = {
+  readonly serial: string;
+  readonly organizationId: string;
+  readonly enrollmentId?: string;
+  readonly deviceId?: string;
+  readonly notAfter: Date;
+};
 
 export class ScepRepository extends Context.Service<
   ScepRepository,
@@ -34,5 +43,12 @@ export class ScepRepository extends Context.Service<
     readonly authenticatePkcsReq: (
       req: ScepPkcsReq,
     ) => Effect.Effect<ScepAuthentication | void, ScepError>;
+    /** Optional persistence for renewal authentication. */
+    readonly recordIssuedCertificate?: (
+      certificate: ScepIssuedCertificate,
+    ) => Effect.Effect<void, ScepError>;
+    readonly findIssuedCertificate?: (
+      serial: string,
+    ) => Effect.Effect<ScepIssuedCertificate | null, ScepError>;
   }
 >()("ScepRepository") {}

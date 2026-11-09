@@ -31,7 +31,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     );
     await expect(
       Effect.runPromise(repository.authenticatePkcsReq(request(challenge))),
-    ).resolves.toEqual({ organizationalUnit: "tenant-1" });
+    ).resolves.toEqual({ organizationalUnit: "tenant-1", enrollmentId: "enrollment-1" });
   });
 
   it("rejects missing, wrong and expired challenges", async () => {

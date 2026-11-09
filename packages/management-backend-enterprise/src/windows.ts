@@ -262,6 +262,24 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           organizationalUnit: organizationId,
         }).pipe(Effect.mapError(internal));
 
+        const serial = Array.from(
+          signed.certificate.serialNumber.valueBlock.valueHexView ??
+            new Uint8Array(
+              signed.certificate.serialNumber.valueBlock.valueHex ?? new ArrayBuffer(0),
+            ),
+          (byte) => byte.toString(16).padStart(2, "0"),
+        )
+          .join("")
+          .replace(/^0+(?=.)/, "");
+        yield* db.insert(s.scepIssuedCertificate).values({
+          serial,
+          organizationId,
+          enrollmentId: null,
+          deviceId: deviceIdentifier,
+          notAfter: new Date(timestamp.getTime() + 365 * 24 * 60 * 60 * 1000),
+          createdAt: timestamp,
+        });
+
         const name = request.deviceName?.trim() || deviceIdentifier;
         const existing = yield* findDevice(organizationId, deviceIdentifier);
         if (existing) {

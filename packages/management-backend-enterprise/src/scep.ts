@@ -63,7 +63,10 @@ export class ScepRepositoryLive extends ScepRepository {
 
         // Authenticated tenant id becomes the issued certificate's OU. It is
         // never derived from attacker-controlled CSR content.
-        return { organizationalUnit: enrollment.organizationId };
+        return {
+          organizationalUnit: enrollment.organizationId,
+          enrollmentId: enrollment.id,
+        };
       });
 
     return ScepRepository.of({
@@ -102,6 +105,51 @@ export class ScepRepositoryLive extends ScepRepository {
         }).pipe(Effect.mapError((cause) => new ScepError({ message: "Failed to save CA", cause }))),
 
       authenticatePkcsReq,
+      recordIssuedCertificate: (certificate) =>
+        db
+          .insert(schema.scepIssuedCertificate)
+          .values({
+            serial: certificate.serial,
+            organizationId: certificate.organizationId,
+            enrollmentId: certificate.enrollmentId ?? null,
+            deviceId: certificate.deviceId ?? null,
+            notAfter: certificate.notAfter,
+            createdAt: new Date(),
+          })
+          .onDuplicateKeyUpdate({
+            set: {
+              organizationId: certificate.organizationId,
+              enrollmentId: certificate.enrollmentId ?? null,
+              deviceId: certificate.deviceId ?? null,
+              notAfter: certificate.notAfter,
+            },
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) => new ScepError({ message: "Failed to record certificate", cause }),
+            ),
+          ),
+      findIssuedCertificate: (serial) =>
+        Effect.gen(function* () {
+          const [row] = yield* db
+            .select()
+            .from(schema.scepIssuedCertificate)
+            .where(eq(schema.scepIssuedCertificate.serial, serial))
+            .limit(1);
+          return row
+            ? {
+                serial: row.serial,
+                organizationId: row.organizationId,
+                enrollmentId: row.enrollmentId ?? undefined,
+                deviceId: row.deviceId ?? undefined,
+                notAfter: row.notAfter,
+              }
+            : null;
+        }).pipe(
+          Effect.mapError(
+            (cause) => new ScepError({ message: "Failed to read certificate", cause }),
+          ),
+        ),
     });
   };
 

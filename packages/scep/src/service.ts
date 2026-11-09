@@ -12,6 +12,17 @@ import {
   pemToCert,
 } from "./pkcs7.js";
 
+const certificateSerialHex = (certificate: {
+  serialNumber: { valueBlock: { valueHexView?: Uint8Array; valueHex?: ArrayBuffer } };
+}): string => {
+  const view = certificate.serialNumber.valueBlock.valueHexView;
+  const buffer =
+    view ?? new Uint8Array(certificate.serialNumber.valueBlock.valueHex ?? new ArrayBuffer(0));
+  return Array.from(buffer, (byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .replace(/^0+(?=.)/, "");
+};
+
 const SCEP_CAPS = "Renewal\nSCEPStandard\nSHA-256\nSHA-1\nAES\nDES3\nPOSTPKIOperation";
 
 export class ScepServiceTag extends Context.Service<
@@ -94,7 +105,8 @@ export const ScepService = Layer.effect(
 
         // Renewals carry a currently-valid identity certificate signed by this
         // CA instead of the original enrollment challenge.
-        let authentication: { organizationalUnit?: string } | void = undefined;
+        let authentication: { organizationalUnit?: string; enrollmentId?: string } | void =
+          undefined;
         if (req.renewal) {
           const signer = req.signerCerts[0];
           if (!signer)
@@ -107,11 +119,24 @@ export const ScepService = Layer.effect(
             return yield* Effect.fail(
               new ScepError({ message: "SCEP renewal signer is not issued by this CA" }),
             );
+          const serial = certificateSerialHex(signer);
+          const issued = repo.findIssuedCertificate
+            ? yield* repo.findIssuedCertificate(serial)
+            : null;
+          if (repo.findIssuedCertificate && (!issued || issued.notAfter <= new Date())) {
+            return yield* Effect.fail(
+              new ScepError({ message: "SCEP renewal certificate is unknown or expired" }),
+            );
+          }
           const ou = signer.subject.typesAndValues.find((item) => item.type === "2.5.4.11");
-          const value = ou
-            ? ((ou.value.valueBlock as { value?: string }).value ?? undefined)
+          const value = issued?.organizationId
+            ? issued.organizationId
+            : ou
+              ? ((ou.value.valueBlock as { value?: string }).value ?? undefined)
+              : undefined;
+          authentication = value
+            ? { organizationalUnit: value, enrollmentId: issued?.enrollmentId }
             : undefined;
-          authentication = value ? { organizationalUnit: value } : undefined;
         } else {
           // Allow repository to authenticate/validate the incoming request before issuance.
           const authenticated = yield* repo
@@ -172,6 +197,14 @@ export const ScepService = Layer.effect(
           catch: (cause) =>
             new ScepError({ message: "Failed to create device certificate", cause }),
         });
+        if (repo.recordIssuedCertificate && authentication?.organizationalUnit) {
+          yield* repo.recordIssuedCertificate({
+            serial: certificateSerialHex(deviceCert),
+            organizationId: authentication.organizationalUnit,
+            enrollmentId: authentication.enrollmentId,
+            notAfter,
+          });
+        }
 
         const response = yield* Effect.tryPromise({
           try: () =>

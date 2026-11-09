@@ -562,6 +562,22 @@ export const platformInstance = mysqlTable(
   ],
 );
 
+/** Identities issued by the SCEP CA, used to authenticate renewals. */
+export const scepIssuedCertificate = mysqlTable(
+  "scep_issued_certificate",
+  {
+    serial: shortText("serial").primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enrollmentId: shortText("enrollment_id"),
+    deviceId: shortText("device_id"),
+    notAfter: timestamp("not_after").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [index("scep_issued_certificate_org_idx").on(table.organizationId)],
+);
+
 export const scepCa = mysqlTable("scep_ca", {
   id: int("id").autoincrement().primaryKey(),
   certPem: text("cert_pem").notNull(),
@@ -599,6 +615,7 @@ export const relations = defineRelations(
     organizationDeviceUsage,
     platformInstance,
     scepCa,
+    scepIssuedCertificate,
   },
   (r) => ({
     user: {
