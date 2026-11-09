@@ -286,12 +286,25 @@ enable it; without them the transport reports unavailable and Apple devices fall
 polling at check-in. The gateway itself never pushes; your whitelabel management backend
 owns push delivery.
 
+This repository ships the relay as `apps/apns-relay`. Run it somewhere with outbound
+HTTP/2 access to Apple:
+
+```bash
+APNS_RELAY_SECRET="<at-least-32-characters>" PORT=8788 pnpm --filter @mattrax/apns-relay start
+```
+
+Then set `APNS_RELAY_URL=https://relay.example.com` and the same
+`APNS_RELAY_SECRET` on the Cloud API Worker.
+
 When wiring the relay, treat the relay secret as production key material:
 
 ```text
 signature = hex(HMAC-SHA256(secret, "<unix-timestamp>.<json-body>"))
 headers: x-apns-timestamp, x-apns-signature
 ```
+
+The relay verifies the timestamp (±5 minutes), the HMAC and the required APNs
+fields before opening the HTTP/2 connection.
 
 ## Upgrades
 
