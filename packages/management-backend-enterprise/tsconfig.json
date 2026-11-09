@@ -19,6 +19,11 @@
     "skipLibCheck": true,
     "composite": true
   },
-  "references": [{ "path": "../enterprise-domain" }, { "path": "../enterprise-core" }],
+  "references": [
+    { "path": "../enterprise-domain" },
+    { "path": "../enterprise-core" },
+    { "path": "../apns" },
+    { "path": "../crypto" }
+  ],
   "include": ["src"]
 }

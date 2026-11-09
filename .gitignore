@@ -54,3 +54,8 @@ client-ext.cnf
 
 # Local dev TLS certificates
 apps/web/.certs
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/

@@ -94,6 +94,29 @@ export default function AccountPage() {
   onSettled(() => {
     if (!isServer) void refetchTokens();
   });
+  type Sessions = { sessions: Array<{ id: string; current: boolean; createdAt: string; expiresAt: string; method?: string }> };
+  const [sessions, setSessions] = createSignal<Sessions>();
+  const refetchSessions = async () => {
+    try {
+      const response = await fetch("/api/v1/account/sessions", { credentials: "include" });
+      if (!response.ok) return;
+      setSessions((await response.json()) as Sessions);
+    } catch {
+      // Session management is optional for older deployments.
+    }
+  };
+  onSettled(() => {
+    if (!isServer) void refetchSessions();
+  });
+  const revokeSession = async (id: string) => {
+    await fetch(`/api/v1/account/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: { "x-effect-auth-csrf": "1" },
+    });
+    await refetchSessions();
+  };
+
   const [tokenName, setTokenName] = createSignal("");
   const [newToken, setNewToken] = createSignal<string | null>(null);
   const [tokenError, setTokenError] = createSignal<string | null>(null);
@@ -319,6 +342,44 @@ export default function AccountPage() {
           </div>
         </form>
       </section>
+
+      <Show when={(sessions()?.sessions.length ?? 0) > 0}>
+        <section class="rounded-xl border border-border bg-card p-6">
+          <h2 class="text-sm font-semibold mb-1">Active sessions</h2>
+          <p class="text-sm text-muted-foreground mb-4">
+            Devices and browsers currently signed in to your account.
+          </p>
+          <div class="space-y-2">
+            <For each={sessions()?.sessions ?? []}>
+              {(item) => (
+                <div class="flex items-center justify-between rounded-lg border border-stone-200 p-3 text-sm">
+                  <div>
+                    <p class="font-medium text-stone-900">
+                      {item.method ?? "Password"}{" "}
+                      <Show when={item.current}>
+                        <span class="ml-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                          This session
+                        </span>
+                      </Show>
+                    </p>
+                    <p class="text-xs text-muted-foreground">
+                      Signed in {new Date(item.createdAt).toLocaleString()} · expires{" "}
+                      {new Date(item.expiresAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
+                    onClick={() => revokeSession(item.id)}
+                  >
+                    {item.current ? "Sign out" : "Revoke"}
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+        </section>
+      </Show>
 
       <section class="rounded-xl border border-border bg-card p-6">
         <h2 class="text-sm font-semibold mb-1">API tokens</h2>

@@ -22,6 +22,7 @@
   "references": [
     { "path": "../enterprise-domain" },
     { "path": "../enterprise-core" },
+    { "path": "../apns" },
     { "path": "../management-backend" },
     { "path": "../management-backend-enterprise" },
     { "path": "../plist" },

@@ -19,5 +19,6 @@
     "skipLibCheck": true,
     "composite": true
   },
+  "references": [{ "path": "../crypto" }, { "path": "../plist" }],
   "include": ["src"]
 }

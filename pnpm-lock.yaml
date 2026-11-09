@@ -103,6 +103,9 @@ importers:
       '@effect/sql-mysql2':
         specifier: 'catalog:'
         version: 4.1.2(@types/node@26.6.6)(effect@4.1.2)
+      '@mattrax/apns':
+        specifier: workspace:*
+        version: link:../../packages/apns
       '@mattrax/dm-apple':
         specifier: workspace:*
         version: link:../../packages/dm-apple
@@ -359,9 +362,21 @@ importers:
 
   packages/apns:
     dependencies:
+      '@mattrax/crypto':
+        specifier: workspace:*
+        version: link:../crypto
+      '@mattrax/plist':
+        specifier: workspace:*
+        version: link:../plist
+      asn1js:
+        specifier: 'catalog:'
+        version: 4.0.0
       effect:
         specifier: 'catalog:'
         version: 4.1.2
+      pkijs:
+        specifier: 'catalog:'
+        version: 4.0.1(asn1js@4.0.0)
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -448,6 +463,12 @@ importers:
       '@effect/sql-mysql2':
         specifier: 'catalog:'
         version: 4.1.2(@types/node@26.6.6)(effect@4.1.2)
+      '@mattrax/apns':
+        specifier: workspace:*
+        version: link:../apns
+      '@mattrax/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       '@mattrax/effect-stripe':
         specifier: workspace:*
         version: link:../effect-stripe
@@ -482,6 +503,12 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.6
+      asn1js:
+        specifier: 'catalog:'
+        version: 4.0.0
+      pkijs:
+        specifier: 'catalog:'
+        version: 4.0.1(asn1js@4.0.0)
 
   packages/enterprise-core:
     dependencies:
@@ -533,6 +560,12 @@ importers:
 
   packages/management-backend-enterprise:
     dependencies:
+      '@mattrax/apns':
+        specifier: workspace:*
+        version: link:../apns
+      '@mattrax/crypto':
+        specifier: workspace:*
+        version: link:../crypto
       '@mattrax/enterprise-core':
         specifier: workspace:*
         version: link:../enterprise-core

@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, For, type ParentProps, Show } from "solid-js";
+import { CommandPalette } from "~/components/command-palette";
 import { TenantSwitcher } from "~/components/mdm/tenant-switcher";
 import {
   Boxes,
@@ -68,8 +69,16 @@ function breadcrumbForPath(path: string, tenantName?: string): Crumb[] {
       settings: "Settings",
     };
     if (section) {
-      crumbs.push({ label: labels[section] ?? section, href: id ? undefined : undefined });
-      if (id) crumbs.push({ label: id === "new" ? "New" : id, href: sub ? undefined : undefined });
+      crumbs.push({ label: labels[section] ?? section });
+      if (id)
+        crumbs.push({
+          label:
+            id === "new"
+              ? "New"
+              : section === "settings"
+                ? id.charAt(0).toUpperCase() + id.slice(1)
+                : "Detail",
+        });
       if (sub) crumbs.push({ label: sub === "editor" ? "Editor" : sub });
     }
   }
@@ -120,10 +129,10 @@ export default function DashboardLayout(props: ParentProps) {
       disabled: !hasTenant(),
     },
     {
-      href: `${tenantBase()}/enrollment`,
+      href: `${tenantBase()}/settings/enrollment`,
       label: "Enrollment",
       icon: LinkIcon,
-      active: location.pathname.includes("/enrollment"),
+      active: location.pathname.includes("/settings/enrollment"),
       disabled: !hasTenant(),
     },
     {
@@ -132,6 +141,13 @@ export default function DashboardLayout(props: ParentProps) {
       icon: Settings,
       active: location.pathname.includes("/settings") && Boolean(routeTenantId()),
       disabled: !hasTenant(),
+    },
+    {
+      href: "/docs",
+      label: "Documentation",
+      icon: LinkIcon,
+      active: false,
+      disabled: false,
     },
   ];
 
@@ -283,6 +299,7 @@ export default function DashboardLayout(props: ParentProps) {
         </header>
         {props.children}
       </SidebarInset>
+      <CommandPalette />
     </SidebarProvider>
   );
 }

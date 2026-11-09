@@ -100,7 +100,7 @@ function DashboardContent(props: { tenantId: string; tenantName: string; tenantS
         title={props.tenantName}
         description={`Overview for the ${props.tenantSlug} tenant.`}
         actions={
-          <Button variant="outline" onClick={() => navigate(`/t/${props.tenantId}/enrollment`)}>
+          <Button variant="outline" onClick={() => navigate(`/t/${props.tenantId}/settings/enrollment`)}>
             <LinkIcon class="size-4" />
             Enroll a device
           </Button>
@@ -141,7 +141,7 @@ function DashboardContent(props: { tenantId: string; tenantName: string; tenantS
             Share the enrollment link with users, or configure the tenant in settings.
           </p>
           <div class="mt-4 flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => navigate(`/t/${props.tenantId}/enrollment`)}>
+            <Button size="sm" onClick={() => navigate(`/t/${props.tenantId}/settings/enrollment`)}>
               <LinkIcon class="size-4" />
               Enrollment settings
             </Button>

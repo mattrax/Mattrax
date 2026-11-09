@@ -1,3 +1,0 @@
-# Self-hosting
-
-Coming soon...

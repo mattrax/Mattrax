@@ -25,20 +25,36 @@ export default defineConfig({
       provider: "local",
     },
 
-    nav: [{ text: "Landing", link: `${origin}`, target: "_self" }],
+    nav: [
+      { text: "Overview", link: "/" },
+      { text: "Quick start", link: "/quick-start" },
+      { text: "Self-hosting", link: "/self-hosting" },
+      { text: "Enterprise", link: "/enterprise/overview" },
+      { text: "Whitelabel", link: "/whitelabel/" },
+      { text: "Landing", link: `${origin}`, target: "_self" },
+    ],
 
     sidebar: [
-      { text: "Overview", link: "/" },
-      { text: "Pricing", link: "/pricing" },
+      {
+        text: "Getting started",
+        items: [
+          { text: "Overview", link: "/" },
+          { text: "Quick start", link: "/quick-start" },
+          { text: "Pricing", link: "/pricing" },
+        ],
+      },
+      {
+        text: "Deployment",
+        items: [{ text: "Self-hosting", link: "/self-hosting" }],
+      },
       {
         text: "Enterprise",
         items: [
           { text: "Overview", link: "/enterprise/overview" },
-          { text: "Self-hosting", link: "/enterprise/self-hosting" },
-          { text: "Git-ops", link: "/enterprise/git-ops" },
+          { text: "API and OpenAPI", link: "/enterprise/api" },
           {
-            text: "OpenAPI",
-            link: `${origin}/api/docs#tag/mattrax-enterprise-api`,
+            text: "OpenAPI reference",
+            link: `${origin}/api/docs`,
             target: "_self",
           },
         ],
@@ -46,12 +62,18 @@ export default defineConfig({
       {
         text: "Whitelabel",
         items: [
-          { text: "Overview", link: "/whitelabel" },
-          { text: "Server Overview", link: "/whitelabel/server" },
-          { text: "Running Locally", link: "/whitelabel/running" },
-          { text: "HTTP Surface", link: "/whitelabel/endpoints" },
-          { text: "Management Webhooks", link: "/whitelabel/webhooks" },
+          { text: "Overview", link: "/whitelabel/" },
+          { text: "Server overview", link: "/whitelabel/server" },
+          { text: "Running locally", link: "/whitelabel/running" },
+          { text: "HTTP surface", link: "/whitelabel/endpoints" },
+          { text: "Management webhooks", link: "/whitelabel/webhooks" },
           { text: "Deployment", link: "/whitelabel/deployment" },
+        ],
+      },
+      {
+        text: "Project",
+        items: [
+          { text: "Architecture and porting", link: "/porting-plan" },
         ],
       },
     ],

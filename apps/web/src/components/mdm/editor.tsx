@@ -1,6 +1,6 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createEffect, createMemo, createSignal, Match, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, Match, onSettled, Show, Switch } from "solid-js";
 import { ErrorText, PageHeader } from "~/components/mdm/common";
 import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
 import { Button } from "~/components/ui/button";
@@ -10,8 +10,9 @@ import { arrayBufferToBase64, base64ToArrayBuffer, selectFile } from "~/lib/uplo
 
 const keys = {
   cert: "mttx.apple.certificate.default",
-  app: "mttx.apple.application",
-  custom: "mttx.apple.custom.og",
+  app: "mttx.apple.application.default",
+  custom: "mttx.apple.custom.default",
+  device: "mttx.apple.device",
 } as const;
 
 type Config = Record<string, any>;
@@ -28,6 +29,7 @@ export function PolicyConfigurationEditor() {
   const [active, setActive] = createSignal("security");
   const [config, setConfig] = createSignal<Config>({});
   const [initial, setInitial] = createSignal("{}");
+  const [raw, setRaw] = createSignal("{}");
 
   createEffect(
     () => row()?.configurations,
@@ -35,6 +37,7 @@ export function PolicyConfigurationEditor() {
       if (!configurations) return;
       setConfig(configurations);
       setInitial(JSON.stringify(configurations));
+      setRaw(JSON.stringify(configurations, null, 2));
     },
   );
 
@@ -59,8 +62,21 @@ export function PolicyConfigurationEditor() {
   };
   const cancel = () => {
     setConfig(JSON.parse(initial()));
+    setRaw(JSON.stringify(JSON.parse(initial()), null, 2));
     setCanEdit(false);
   };
+
+  onSettled(() => {
+    const handler = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (canEdit() && dirty()) save.mutate();
+      }
+      if (event.key === "Escape" && canEdit()) cancel();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  });
 
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">
@@ -100,12 +116,36 @@ export function PolicyConfigurationEditor() {
                     policyId={params.policyId}
                   />
                 </Match>
+                <Match when={active() === "device"}>
+                  <DeviceSection config={config()} setKey={setKey} />
+                </Match>
                 <Match when={active() === "custom"}>
                   <CustomSection
                     config={config()}
                     setKey={setKey}
                     policyId={params.policyId ?? "policy"}
                   />
+                </Match>
+                <Match when={active() === "raw"}>
+                  <div class="space-y-3">
+                    <p class="text-sm text-muted-foreground">
+                      Edit the raw configuration map. Values use Mattrax configuration kinds.
+                    </p>
+                    <textarea
+                      class="min-h-80 w-full rounded-lg border bg-white p-3 font-mono text-xs"
+                      value={raw()}
+                      onInput={(event) => setRaw(event.currentTarget.value)}
+                      onChange={(event) => {
+                        try {
+                          const parsed = JSON.parse(event.currentTarget.value);
+                          setConfig(parsed);
+                          setRaw(JSON.stringify(parsed, null, 2));
+                        } catch {
+                          // Keep the raw text; the save button will stay disabled.
+                        }
+                      }}
+                    />
+                  </div>
                 </Match>
               </Switch>
             </fieldset>
@@ -119,7 +159,9 @@ export function PolicyConfigurationEditor() {
 
 function activeTitle(active: string) {
   if (active === "applications") return "Applications";
-  if (active === "custom") return "Custom Policy";
+  if (active === "custom") return "Custom profile";
+  if (active === "device") return "Device restrictions";
+  if (active === "raw") return "Advanced JSON";
   return "Security";
 }
 
@@ -140,10 +182,22 @@ function EditorNav(props: { active: string; setActive: (value: string) => void }
           Applications
         </Button>
         <Button
+          variant={props.active === "device" ? "secondary" : "ghost"}
+          onClick={() => props.setActive("device")}
+        >
+          Device
+        </Button>
+        <Button
           variant={props.active === "custom" ? "secondary" : "ghost"}
           onClick={() => props.setActive("custom")}
         >
-          Custom Policy
+          Custom profile
+        </Button>
+        <Button
+          variant={props.active === "raw" ? "secondary" : "ghost"}
+          onClick={() => props.setActive("raw")}
+        >
+          Advanced JSON
         </Button>
       </CardContent>
     </Card>
@@ -252,6 +306,30 @@ function ApplicationSection(props: {
         </div>
       )}
     </Show>
+  );
+}
+
+function DeviceSection(props: { config: Config; setKey: (key: string, value: unknown) => void }) {
+  const device = () => (props.config[keys.device] ?? { camera: true }) as { camera?: boolean };
+  return (
+    <div class="space-y-4">
+      <p class="text-sm text-muted-foreground">
+        Basic restrictions applied to every device in this policy's scope.
+      </p>
+      <label class="flex items-center justify-between gap-4 rounded-lg border p-3 text-sm">
+        <span>
+          <strong class="block">Allow camera</strong>
+          <span class="text-muted-foreground">Disable the camera on managed devices.</span>
+        </span>
+        <input
+          type="checkbox"
+          checked={device().camera !== false}
+          onChange={(event) =>
+            props.setKey(keys.device, { ...device(), camera: event.currentTarget.checked })
+          }
+        />
+      </label>
+    </div>
   );
 }
 

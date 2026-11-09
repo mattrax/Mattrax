@@ -1,11 +1,86 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
+import * as asn1js from "asn1js";
+import * as pkijs from "pkijs";
+import {
+  exportPrivateKeyJwk,
+  generateCaKeyPair,
+  pemEncode,
+  sealSecret,
+} from "@mattrax/crypto";
+import {
+  generateApnsKeyPair,
+  makeApnsService,
+} from "@mattrax/apns";
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
-const origin = "https://enterprise.test";
+if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+  try {
+    pkijs.getEngine();
+  } catch {
+    pkijs.setEngine("WebCrypto", crypto as unknown as Crypto, crypto.subtle);
+  }
+}
 
-const makeContext = async () => {
+const origin = "https://enterprise.test";
+const authSecret = "enterprise-test-secret";
+
+const makeFakeApns = () => {
+  const pushes: Array<{
+    pushToken: string;
+    pushMagic: string;
+    topic: string;
+    certPem?: string;
+    privateKeyPem?: string;
+  }> = [];
+  const apns = makeApnsService({
+    name: "fake",
+    available: true,
+    push: (input) =>
+      Effect.sync(() => {
+        pushes.push(input);
+      }),
+  });
+  return { apns, pushes };
+};
+
+const testCertificate = async (options: {
+  keyPair: CryptoKeyPair;
+  topic?: string;
+  notBefore?: Date;
+  notAfter?: Date;
+}) => {
+  const attribute = (type: string, value: string) =>
+    new pkijs.AttributeTypeAndValue({ type, value: new asn1js.Utf8String({ value }) });
+  const certificate = new pkijs.Certificate();
+  certificate.version = 2;
+  certificate.serialNumber = new asn1js.Integer({ value: 1 });
+  const name = new pkijs.RelativeDistinguishedNames({
+    typesAndValues: [
+      attribute("2.5.4.10", "Acme"),
+      attribute("2.5.4.11", "tenant-1"),
+      attribute("2.5.4.3", "Acme APNs"),
+      attribute("0.9.2342.19200300.100.1.1", options.topic ?? "com.apple.mgmt.External.acme"),
+    ],
+  });
+  certificate.issuer = name;
+  certificate.subject = name;
+  const now = Date.now();
+  certificate.notBefore.value = options.notBefore ?? new Date(now - 60_000);
+  certificate.notAfter.value = options.notAfter ?? new Date(now + 86_400_000);
+  await certificate.subjectPublicKeyInfo.importKey(options.keyPair.publicKey);
+  await certificate.sign(options.keyPair.privateKey, "SHA-256");
+  return pemEncode("CERTIFICATE", certificate.toSchema(true).toBER(false));
+};
+
+const sealedJwk = async (secret = authSecret) => {
+  const keys = await generateCaKeyPair();
+  const jwk = await exportPrivateKeyJwk(keys.privateKey);
+  return { keyPair: keys, jwk, encrypted: await sealSecret(secret, JSON.stringify(jwk)) };
+};
+
+const makeContext = async (overrides: { apns?: any; pushes?: Array<any> } = {}) => {
   const db = makeDb();
   const now = new Date();
   const user = {
@@ -40,6 +115,8 @@ const makeContext = async () => {
     stripeClient: makeStripeClient(),
     storage: {} as any,
     auth: auth as any,
+    authSecret,
+    apns: overrides.apns,
   });
 
   return { db, service, auth, headers: { cookie: "mattrax_session=test" } };
@@ -568,5 +645,265 @@ describe("enterprise service policy flow", () => {
       deleted: [policy.id],
       failed: [{ id: "missing-policy", reason: "notFound" }],
     });
+  });
+});
+
+describe("enterprise service APNs", () => {
+  const seedCertificate = async (db: any, tenantId: string) => {
+    const { encrypted } = await sealedJwk();
+    db.store.apple_push_certificate.push({
+      organizationId: tenantId,
+      email: "admin@example.com",
+      topic: "com.apple.mgmt.External.acme",
+      certPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+      encryptedKey: encrypted,
+      updatedAt: new Date(),
+    });
+  };
+
+  const seedDevice = async (
+    db: any,
+    tenantId: string,
+    id: string,
+    options: { status?: string; proto?: string; token?: string } = {},
+  ) => {
+    const now = new Date();
+    db.store.device.push({
+      id,
+      organizationId: tenantId,
+      proto: options.proto ?? "apple",
+      status: options.status ?? "enrolled",
+      name: id,
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    db.store.device_apple.push({
+      deviceId: id,
+      token: options.token ?? `${id}-token`,
+      pushMagic: `${id}-magic`,
+      topic: "com.apple.mgmt.External.acme",
+    });
+  };
+
+  it("generates a CSR plist and stores a pending key", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const result = await runEffect(service.getApnsCsr(request(headers), tenant.id));
+    const xml = atob(result.plist);
+    expect(xml).toContain("PushCertRequestCSR");
+    expect(xml).toContain("PushCertCertificateChain");
+
+    expect(db.store.apple_push_key).toHaveLength(1);
+    expect(db.store.apple_push_key[0].organizationId).toBe(tenant.id);
+    expect(db.store.apple_push_key[0].encryptedPrivateKeyJwk).not.toContain('"d"');
+  });
+
+  it("validates an uploaded certificate against the pending key", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const keys = await generateApnsKeyPair();
+    const jwk = await exportPrivateKeyJwk(keys.privateKey);
+    db.store.apple_push_key.push({
+      organizationId: tenant.id,
+      encryptedPrivateKeyJwk: await sealSecret(authSecret, JSON.stringify(jwk)),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const pem = await testCertificate({ keyPair: keys });
+
+    await runEffect(
+      service.uploadApns(request(headers), tenant.id, {
+        email: "admin@example.com",
+        cert: pem,
+      }),
+    );
+
+    expect(db.store.apple_push_certificate).toMatchObject([
+      {
+        organizationId: tenant.id,
+        email: "admin@example.com",
+        topic: "com.apple.mgmt.External.acme",
+      },
+    ]);
+    expect(db.store.apple_push_certificate[0].encryptedKey).toBeTruthy();
+    expect(db.store.apple_push_key).toHaveLength(0);
+
+    const info = await runEffect(service.getApns(request(headers), tenant.id));
+    expect(info).toMatchObject({
+      configured: true,
+      topic: "com.apple.mgmt.External.acme",
+      commonName: "Acme APNs",
+    });
+    expect(info.expiresAt).toBeTruthy();
+  });
+
+  it("rejects invalid and mismatched certificates", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await expect(
+      runEffect(
+        service.uploadApns(request(headers), tenant.id, {
+          email: "admin@example.com",
+          cert: "not a certificate",
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+
+    const expired = await generateApnsKeyPair();
+    const expiredPem = await testCertificate({
+      keyPair: expired,
+      notBefore: new Date(Date.now() - 10 * 86_400_000),
+      notAfter: new Date(Date.now() - 86_400_000),
+    });
+    await expect(
+      runEffect(
+        service.uploadApns(request(headers), tenant.id, {
+          email: "admin@example.com",
+          cert: expiredPem,
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+
+    // A pending key exists, so a certificate for a different key is rejected.
+    const pending = await sealedJwk();
+    db.store.apple_push_key.push({
+      organizationId: tenant.id,
+      encryptedPrivateKeyJwk: pending.encrypted,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const other = await generateApnsKeyPair();
+    const otherPem = await testCertificate({ keyPair: other });
+    await expect(
+      runEffect(
+        service.uploadApns(request(headers), tenant.id, {
+          email: "admin@example.com",
+          cert: otherPem,
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+  });
+
+  it("pushes on device action and unenroll", async () => {
+    const { apns, pushes } = makeFakeApns();
+    const { db, service, headers } = await makeContext({ apns });
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    await seedCertificate(db, tenant.id);
+    await seedDevice(db, tenant.id, "device-1");
+
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-1"));
+    expect(pushes).toHaveLength(1);
+    expect(pushes[0]).toMatchObject({
+      pushToken: "device-1-token",
+      pushMagic: "device-1-magic",
+      topic: "com.apple.mgmt.External.acme",
+    });
+
+    // A device that is not enrolled must not be pushed.
+    await seedDevice(db, tenant.id, "device-2", { status: "unenrolled" });
+    await runEffect(service.deviceAction(request(headers), tenant.id, "device-2"));
+    expect(pushes).toHaveLength(1);
+
+    await runEffect(service.deviceUnenroll(request(headers), tenant.id, "device-1"));
+    expect(db.store.device.find((item: any) => item.id === "device-1").status).toBe("unenrolling");
+    expect(pushes).toHaveLength(2);
+  });
+
+  it("pushes enrolled Apple devices when groups sync", async () => {
+    const { apns, pushes } = makeFakeApns();
+    const { db, service, headers } = await makeContext({ apns });
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    await seedCertificate(db, tenant.id);
+    await seedDevice(db, tenant.id, "device-1");
+    await seedDevice(db, tenant.id, "device-2", { proto: "win" });
+
+    const group = await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Engineering",
+        devices: ["device-1", "device-2"],
+      }),
+    );
+
+    await runEffect(service.syncGroups(request(headers), tenant.id, [group.id, group.id]));
+    expect(pushes.map((push) => push.pushToken)).toEqual(["device-1-token"]);
+  });
+
+  it("pushes enrolled Apple devices when policies sync or change", async () => {
+    const { apns, pushes } = makeFakeApns();
+    const { db, service, headers } = await makeContext({ apns });
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    await seedCertificate(db, tenant.id);
+    await seedDevice(db, tenant.id, "device-1");
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Baseline" }),
+    );
+    await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Engineering",
+        devices: ["device-1"],
+        policies: [policy.id],
+      }),
+    );
+
+    await runEffect(service.syncPolicies(request(headers), tenant.id, [policy.id, policy.id]));
+    expect(pushes).toHaveLength(1);
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: { passcode: { minLength: 12 } },
+      }),
+    );
+    expect(pushes).toHaveLength(2);
+
+    await runEffect(service.deletePolicies(request(headers), tenant.id, [policy.id]));
+    expect(pushes).toHaveLength(3);
+  });
+
+  it("pushes devices affected by group membership and group deletion", async () => {
+    const { apns, pushes } = makeFakeApns();
+    const { db, service, headers } = await makeContext({ apns });
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    await seedCertificate(db, tenant.id);
+    await seedDevice(db, tenant.id, "device-1");
+    await seedDevice(db, tenant.id, "device-2");
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Baseline" }),
+    );
+    const group = await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Engineering",
+        devices: ["device-1"],
+      }),
+    );
+
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, group.id, {
+        assign: { devices: ["device-2"], policies: [policy.id] },
+      }),
+    );
+    expect(pushes.map((push) => push.pushToken).sort()).toEqual([
+      "device-1-token",
+      "device-2-token",
+    ]);
+
+    const beforeDelete = pushes.length;
+    await runEffect(service.deleteGroups(request(headers), tenant.id, [group.id]));
+    expect(pushes.length).toBe(beforeDelete + 2);
   });
 });

@@ -76,3 +76,55 @@ export function pemDecode(label: string, pem: string): ArrayBuffer {
   const base64 = pem.slice(start + header.length, end).replace(/\s/g, "");
   return base64ToArrayBuffer(base64);
 }
+
+// ─── At-rest secret sealing ──────────────────────────────────────
+//
+// Secrets (APNs private keys) are sealed with AES-256-GCM using a key derived
+// from an application secret (the API `AUTH_SECRET`). The output is a single
+// base64 string containing `iv || ciphertext`, so it can be stored in a text
+// column without any additional encoding.
+
+const sealKey = async (secret: string): Promise<CryptoKey> => {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, [
+    "encrypt",
+    "decrypt",
+  ]);
+};
+
+const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+  return btoa(binary);
+};
+
+const base64ToBytes = (value: string): Uint8Array => {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+};
+
+/** Encrypt a UTF-8 string at rest, returning a base64 `iv || ciphertext` payload. */
+export async function sealSecret(secret: string, plaintext: string): Promise<string> {
+  const key = await sealKey(secret);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plaintext)),
+  );
+  const combined = new Uint8Array(iv.byteLength + ciphertext.byteLength);
+  combined.set(iv, 0);
+  combined.set(ciphertext, iv.byteLength);
+  return bytesToBase64(combined);
+}
+
+/** Decrypt a payload produced by {@link sealSecret}. */
+export async function openSecret(secret: string, sealed: string): Promise<string> {
+  const combined = base64ToBytes(sealed);
+  if (combined.byteLength <= 12) throw new Error("Sealed secret is malformed");
+  const iv = combined.slice(0, 12);
+  const ciphertext = combined.slice(12);
+  const key = await sealKey(secret);
+  const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+  return new TextDecoder().decode(plaintext);
+}

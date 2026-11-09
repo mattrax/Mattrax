@@ -1,6 +1,8 @@
 import { Effect, Layer } from "effect";
 import { and, eq } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
+import { ApnsService } from "@mattrax/apns";
+import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
 import {
   InternalServerError,
   ManagementBackend,
@@ -211,10 +213,63 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
   static readonly make = (options: {
     readonly db: Db["Service"];
     readonly origin: string;
+    /** Push transport for the immediate post-enrollment check-in. */
+    readonly apns?: ApnsService.Service;
+    /** Application secret used to unseal the tenant APNs private key. */
+    readonly authSecret?: string;
   }): ManagementBackend.Service => {
-    const { db, origin } = options;
+    const { db, origin, apns, authSecret } = options;
     const provideDb = <A, E>(effect: Effect.Effect<A, E, Db>) =>
       effect.pipe(Effect.provideService(Db, db));
+
+    /**
+     * mttx pushes a check-in immediately after a device first reports its push
+     * token, so the freshly enrolled device receives its configuration without
+     * waiting for the next poll. Failures are logged and ignored.
+     */
+    const pushEnrolledDevice = (deviceId: string, organizationId: string) =>
+      Effect.gen(function* () {
+        if (!apns || !authSecret) return;
+        const [apple] = yield* db
+          .select()
+          .from(s.deviceApple)
+          .where(eq(s.deviceApple.deviceId, deviceId))
+          .limit(1);
+        if (!apple?.token || !apple.pushMagic) return;
+        const [certificate] = yield* db
+          .select()
+          .from(s.applePushCertificate)
+          .where(eq(s.applePushCertificate.organizationId, organizationId))
+          .limit(1);
+        if (!certificate?.encryptedKey) return;
+
+        const jwk = JSON.parse(
+          yield* Effect.tryPromise({
+            try: () => openSecret(authSecret, certificate.encryptedKey!),
+            catch: () => new Error("Failed to decrypt the APNs private key"),
+          }),
+        ) as JsonWebKey;
+        const key = yield* Effect.tryPromise({
+          try: () => importPrivateKeyJwk(jwk),
+          catch: () => new Error("Failed to import the APNs private key"),
+        });
+        const pkcs8 = yield* Effect.tryPromise({
+          try: () => crypto.subtle.exportKey("pkcs8", key),
+          catch: () => new Error("Failed to export the APNs private key"),
+        });
+        yield* apns.push({
+          pushToken: apple.token,
+          pushMagic: apple.pushMagic,
+          topic: apple.topic ?? certificate.topic,
+          certPem: certificate.certPem,
+          privateKeyPem: pemEncode("PRIVATE KEY", pkcs8),
+        });
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(`Failed to send post-enrollment APNs push: ${String(error)}`),
+        ),
+      );
+
     const requireDevice = (scope: CheckinScope) =>
       findDeviceByScope(scope).pipe(
         Effect.flatMap((device) =>
@@ -310,6 +365,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     .update(s.device)
                     .set({ status: "enrolled", lastSeenAt: now() })
                     .where(eq(s.device.id, device.id));
+                  yield* pushEnrolledDevice(device.id, device.organizationId);
                 }
                 return;
               }
@@ -507,12 +563,15 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     });
   };
 
-  static readonly layer = (origin: string) =>
+  static readonly layer = (
+    origin: string,
+    options?: { readonly apns?: ApnsService.Service; readonly authSecret?: string },
+  ) =>
     Layer.effect(
       ManagementBackend,
       Effect.gen(function* () {
         const db = yield* Db;
-        return ManagementBackendEnterpriseLive.make({ db, origin });
+        return ManagementBackendEnterpriseLive.make({ db, origin, ...options });
       }),
     );
 }

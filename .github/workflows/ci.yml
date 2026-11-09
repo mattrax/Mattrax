@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "oscar/o/**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Unit tests, typecheck and docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm typecheck
+      - run: pnpm doc:build
+
+  e2e:
+    name: Browser tests (CDP)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: mattraxe
+          MYSQL_USER: mattrax
+          MYSQL_PASSWORD: mattrax
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -umattrax -pmattrax"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      E2E_CHANNEL: bundled
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: mattrax
+      DATABASE_PASSWORD: mattrax
+      DATABASE_NAME: mattraxe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: npx playwright install --with-deps chromium
+      - name: Write local dev environment
+        run: |
+          cat > apps/api/.dev.vars <<'VARS'
+          ORIGIN=http://localhost:9050
+          AUTH_RESET_URL=https://e.mattrax.app/reset-password
+          AUTH_SECRET=ci-auth-secret-0123456789abcdef0123456789abcdef
+          STRIPE_SECRET_KEY=sk_test_ci
+          STRIPE_WEBHOOK_SECRET=whsec_ci
+          STRIPE_DEVICE_MONTHLY_PRICE_ID=price_ci
+          VARS
+          cp apps/api/.dev.vars apps/web/.dev.vars
+      - run: pnpm api db:migrate
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: test-results/
+          retention-days: 7

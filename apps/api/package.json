@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@effect/sql-mysql2": "catalog:",
+    "@mattrax/apns": "workspace:*",
     "@mattrax/dm-apple": "workspace:*",
     "@mattrax/effect-stripe": "workspace:*",
     "@mattrax/enterprise-backend": "workspace:*",

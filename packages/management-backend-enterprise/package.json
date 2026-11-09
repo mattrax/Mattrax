@@ -8,6 +8,8 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@mattrax/apns": "workspace:*",
+    "@mattrax/crypto": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/scep": "workspace:*",

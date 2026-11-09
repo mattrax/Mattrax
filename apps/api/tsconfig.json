@@ -26,6 +26,9 @@
       "path": "../../packages/enterprise-backend"
     },
     {
+      "path": "../../packages/apns"
+    },
+    {
       "path": "../../packages/enterprise-core"
     },
     {

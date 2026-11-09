@@ -26,6 +26,12 @@ import {
   ScepRepositoryLive,
 } from "@mattrax/management-backend-enterprise";
 import { Db, Env as CoreEnv, R2 } from "@mattrax/enterprise-core";
+import {
+  ApnsService,
+  NoopPushTransport,
+  RelayPushTransport,
+  makeApnsService,
+} from "@mattrax/apns";
 import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
 import { env as apiEnv } from "./env.js";
@@ -92,7 +98,21 @@ const makeAppLayer = (env: Env, request: Request) => {
   const staticEnvLayer = CoreEnv.layer({
     origin: env.ORIGIN,
     cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
+    cloudAppleVendorKey: env.CLOUD_APPLE_VENDOR_KEY,
+    authSecret: env.AUTH_SECRET,
   });
+
+  // Hosted Cloud cannot attach a per-tenant client certificate to `fetch`, so
+  // pushes go through the HMAC-signed relay. Without a relay the service is a
+  // no-op: devices still poll for DDM changes, so policy still converges.
+  const apns = makeApnsService(
+    env.APNS_RELAY_URL && env.APNS_RELAY_SECRET
+      ? RelayPushTransport({ url: env.APNS_RELAY_URL, secret: env.APNS_RELAY_SECRET })
+      : NoopPushTransport(
+          "APNs push relay is not configured; devices will poll for changes instead",
+        ),
+  );
+  const apnsLayer = Layer.succeed(ApnsService, apns);
 
   const authLive = makeAuthLive({
     appAuth,
@@ -129,12 +149,16 @@ const makeAppLayer = (env: Env, request: Request) => {
       Layer.provide(staticEnvLayer),
       Layer.provide(StripeService.layer(env.STRIPE_SECRET_KEY)),
       Layer.provide(R2.layer(storageBucket)),
+      Layer.provide(apnsLayer),
       Layer.provide(Db.layer),
     ),
     AppleMdmService.layer.pipe(
       Layer.provide(AppleMdmTopic.layer),
       Layer.provide(
-        ManagementBackendEnterpriseLive.layer(env.ORIGIN).pipe(Layer.provide(Db.layer)),
+        ManagementBackendEnterpriseLive.layer(env.ORIGIN, {
+          apns,
+          authSecret: env.AUTH_SECRET,
+        }).pipe(Layer.provide(Db.layer)),
       ),
       Layer.provide(staticEnvLayer),
     ),

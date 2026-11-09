@@ -106,6 +106,10 @@ const EnterpriseBillingPortalErrors = [
   ...EnterpriseTenantWriteErrors,
   EnterpriseStripeError.pipe(HttpApiSchema.status(502)),
 ] as const;
+const EnterpriseApnsErrors = [
+  ...EnterpriseTenantWriteErrors,
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
 const EnterpriseNoDomainErrors = [...EnterpriseDbErrors] as const;
 const EnterprisePublicNotFoundErrors = [
   ...EnterpriseDbErrors,
@@ -424,8 +428,13 @@ export const ApnsInfo = Schema.Struct({
   configured: Schema.Boolean,
   email: Schema.optional(NullableString),
   topic: Schema.optional(NullableString),
+  commonName: Schema.optional(NullableString),
+  expiresAt: Schema.optional(NullableString),
 });
 export type ApnsInfo = typeof ApnsInfo.Type;
+
+export const ApnsCsrResponse = Schema.Struct({ plist: Schema.String });
+export type ApnsCsrResponse = typeof ApnsCsrResponse.Type;
 
 export const UploadApnsRequest = Schema.Struct({ email: Schema.String, cert: Schema.String });
 export const BillingPortalRequest = Schema.Struct({ returnUrl: Schema.String });
@@ -514,7 +523,10 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.post("createTenant", "/v1/tenants", {
-      error: EnterpriseAuthRequiredErrors,
+      error: [
+        ...EnterpriseAuthRequiredErrors,
+        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+      ],
       payload: CreateTenantRequest,
       success: IdResponse,
     }),
@@ -627,8 +639,15 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("getApnsCsr", "/v1/tenants/:tenantId/apns/csr", {
+      error: EnterpriseApnsErrors,
+      params: TenantParam,
+      success: ApnsCsrResponse,
+    }),
+  )
+  .add(
     HttpApiEndpoint.post("uploadApns", "/v1/tenants/:tenantId/apns", {
-      error: EnterpriseTenantWriteErrors,
+      error: EnterpriseApnsErrors,
       params: TenantParam,
       payload: UploadApnsRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),

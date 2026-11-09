@@ -261,6 +261,21 @@ export const applePushCertificate = mysqlTable("apple_push_certificate", {
   updatedAt: timestamp("updated_at").notNull(),
 });
 
+/**
+ * A pending APNs CSR key pair. The CSR endpoint generates an RSA key pair and
+ * stores it here while the administrator uploads Apple's signed certificate.
+ * The private key is encrypted with the application secret; plaintext keys are
+ * never persisted.
+ */
+export const applePushKey = mysqlTable("apple_push_key", {
+  organizationId: id("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  encryptedPrivateKeyJwk: text("encrypted_private_key_jwk").notNull(),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
 export const enterpriseGroup = mysqlTable(
   "enterprise_group",
   {
@@ -365,6 +380,7 @@ export const relations = defineRelations(
     device,
     deviceApple,
     applePushCertificate,
+    applePushKey,
     enterpriseGroup,
     policy,
     configuration,
@@ -390,6 +406,10 @@ export const relations = defineRelations(
       applePushCertificate: r.one.applePushCertificate({
         from: r.organization.id,
         to: r.applePushCertificate.organizationId,
+      }),
+      applePushKey: r.one.applePushKey({
+        from: r.organization.id,
+        to: r.applePushKey.organizationId,
       }),
       groups: r.many.enterpriseGroup({
         from: r.organization.id,
@@ -432,6 +452,12 @@ export const relations = defineRelations(
     applePushCertificate: {
       organization: r.one.organization({
         from: r.applePushCertificate.organizationId,
+        to: r.organization.id,
+      }),
+    },
+    applePushKey: {
+      organization: r.one.organization({
+        from: r.applePushKey.organizationId,
         to: r.organization.id,
       }),
     },
