@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { SidebarMenuButton, sidebarMenuButtonVariants, useSidebar } from "~/components/ui/sidebar";
-import { Building2, Check, ChevronsUpDown, Plus } from "~/components/ui/icons";
+import { Building2, Check, ChevronsUpDown, LayoutDashboard, Plus } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, resolveActiveTenant } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
 
@@ -83,6 +83,13 @@ export function TenantSwitcher() {
           </Show>
         </DropdownMenuGroup>
         <DropdownMenuSeparator class="my-1" />
+        <DropdownMenuItem
+          onSelect={() => navigate("/dashboard")}
+          class="rounded-lg px-3 py-2 text-sm"
+        >
+          <LayoutDashboard class="mr-2 size-4" />
+          All workspaces
+        </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => navigate("/tenants/new")}
           class="rounded-lg px-3 py-2 text-sm"
