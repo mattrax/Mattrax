@@ -113,7 +113,11 @@ export const makeAuthLive = ({ appAuth, cryptoLayer, email, emailFrom }: AuthLiv
         before: () => Effect.void,
         after: (event) =>
           Effect.gen(function* () {
-            if (event.snapshot.action === "registration" && event.snapshot.subjectId) {
+            if (
+              (event.snapshot.action === "registration" ||
+                event.snapshot.action === "sign-in") &&
+              event.snapshot.subjectId
+            ) {
               yield* db
                 .update((schema as any).authIdentifiers)
                 .set({ verifiedAt: Date.now() })
