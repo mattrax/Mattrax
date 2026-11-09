@@ -26,7 +26,7 @@ export const apiWorker = {
       id: "08d26aaf29c7409e8d211c03ee66ca6e",
       // Local dev only. The Worker reads the individual host/port/user/password/
       // database fields; Hyperdrive's production binding supplies them.
-      dev: { connectionString: "mysql://mattrax:mattrax@localhost:3306/mattrax" },
+      dev: { connectionString: "mysql://mattrax:mattrax@localhost:3306/mattraxe" },
     }),
     STORAGE: bindings.r2({ name: "mattrax" }),
     EMAIL: bindings.sendEmail({ allowedSenderAddresses: ["hello@mattrax.cloud"] }),

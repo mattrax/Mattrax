@@ -78,7 +78,7 @@ pnpm api db:generate
 
 # Apply pending migrations (MySQL connection fields)
 DATABASE_HOST=localhost DATABASE_PORT=3306 DATABASE_USER=mattrax \
-  DATABASE_PASSWORD=mattrax DATABASE_NAME=mattrax pnpm api db:migrate
+  DATABASE_PASSWORD=mattrax DATABASE_NAME=mattraxe pnpm api db:migrate
 ```
 
 ## Technologies
