@@ -546,6 +546,14 @@ export const createEnterpriseService = ({
           }
         }
 
+        yield* db
+          .update(schema.auditLog)
+          .set({ actorUserId: null })
+          .where(eq(schema.auditLog.actorUserId, user.id));
+        yield* db
+          .update(schema.platformInstance)
+          .set({ issuedByUserId: null })
+          .where(eq(schema.platformInstance.issuedByUserId, user.id));
         yield* db.delete(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id));
         yield* db.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
         yield* db.delete(schema.member).where(eq(schema.member.userId, user.id));
@@ -557,6 +565,7 @@ export const createEnterpriseService = ({
           (schema as any).authPending,
           (schema as any).authSessions,
           (schema as any).authPasswords,
+          (schema as any).authEmailCredentials,
           (schema as any).authCredentials,
           (schema as any).authIdentifiers,
         ];
@@ -566,7 +575,7 @@ export const createEnterpriseService = ({
 
         yield* db.delete(schema.user).where(eq(schema.user.id, user.id));
         return ok;
-      }),
+      }).pipe(Effect.tapCause((cause) => Effect.logError(`deleteMe failed: ${String(cause)}`))),
     listAccountSessions: (request) =>
       Effect.gen(function* () {
         const resolved = yield* auth.requireUser({ headers: request.headers });
