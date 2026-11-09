@@ -17,7 +17,6 @@
     "pkijs": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "catalog:",
-    "@types/pkijs": "catalog:"
+    "@types/node": "catalog:"
   }
 }

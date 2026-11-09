@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "es2023",
     "module": "esnext",
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM"],
     "types": ["node"],
     "skipLibCheck": true,
     "moduleResolution": "bundler",
@@ -19,20 +19,46 @@
     "composite": true
   },
   "references": [
-    { "path": "../../packages/enterprise-domain" },
-    { "path": "../../packages/enterprise-backend" },
-    { "path": "../../packages/enterprise-core" },
-    { "path": "../../packages/effect-stripe" },
-    { "path": "../../packages/platform-api" },
-    { "path": "../../packages/platform-backend" },
-    { "path": "../../packages/dm-apple" },
-    { "path": "../../packages/management-backend" },
-    { "path": "../../packages/management-backend-enterprise" },
-    { "path": "../../packages/management-backend-http" },
-    { "path": "../../packages/plist" },
-    { "path": "../../packages/scep" },
-    { "path": "../../packages/crypto" }
+    {
+      "path": "../../packages/enterprise-domain"
+    },
+    {
+      "path": "../../packages/enterprise-backend"
+    },
+    {
+      "path": "../../packages/enterprise-core"
+    },
+    {
+      "path": "../../packages/effect-stripe"
+    },
+    {
+      "path": "../../packages/platform-api"
+    },
+    {
+      "path": "../../packages/platform-backend"
+    },
+    {
+      "path": "../../packages/dm-apple"
+    },
+    {
+      "path": "../../packages/management-backend"
+    },
+    {
+      "path": "../../packages/management-backend-enterprise"
+    },
+    {
+      "path": "../../packages/management-backend-http"
+    },
+    {
+      "path": "../../packages/plist"
+    },
+    {
+      "path": "../../packages/scep"
+    },
+    {
+      "path": "../../packages/crypto"
+    }
   ],
-  "include": ["src", "package.json"],
+  "include": ["src", "package.json", "cloudflare.config.ts", ".cloudflare/types"],
   "exclude": ["vite.config.ts", "node_modules"]
 }

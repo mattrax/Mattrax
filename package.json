@@ -7,7 +7,7 @@
     "dev": "vp run dev",
     "test": "vitest run",
     "format": "vp fmt && vp lint",
-    "typecheck": "tsc -b",
+    "typecheck": "pnpm -r --if-present run cf:types && tsc -b",
     "api": "pnpm --filter @mattrax/api --",
     "mserver": "pnpm --filter @mattrax/server --",
     "web": "pnpm --filter @mattrax/web --",
@@ -16,10 +16,10 @@
     "deploy:prod:all": "pnpm api deploy:prod && pnpm web deploy:prod"
   },
   "devDependencies": {
-    "typescript": "~6.0.2",
+    "typescript": "catalog:",
     "vite-plus": "catalog:",
     "vitepress": "catalog:",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.7"
   },
   "engines": {
     "node": ">=22.12.0"

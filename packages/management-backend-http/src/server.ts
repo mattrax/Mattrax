@@ -1,9 +1,11 @@
 import { Effect } from "effect";
-import { HttpApiBuilder } from "effect/unstable/httpapi";
+import { HttpApiBuilder } from "effect/http-api";
 import { ManagementBackend } from "@mattrax/management-backend";
 import { managementWebhookGroup } from "./http.ts";
 
-export const managementWebhookHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typeof managementWebhookGroup>) =>
+export const managementWebhookHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof managementWebhookGroup>,
+) =>
   handlers
     .handle("appleDeviceEvent", ({ payload }) =>
       Effect.gen(function* () {

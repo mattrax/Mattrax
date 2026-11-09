@@ -44,7 +44,9 @@ export function serializeSoapEnvelope(options: SerializeSoapEnvelopeOptions): st
       parts.push(`<a:RelatesTo>${escapeXml(h.relatesTo)}</a:RelatesTo>`);
     }
     if (h.activityId) {
-      parts.push(`<ActivityId CorrelationId="${escapeAttr(h.activityId)}">${escapeXml(h.activityId)}</ActivityId>`);
+      parts.push(
+        `<ActivityId CorrelationId="${escapeAttr(h.activityId)}">${escapeXml(h.activityId)}</ActivityId>`,
+      );
     }
     if (h.securityXml) {
       parts.push(h.securityXml);

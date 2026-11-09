@@ -83,15 +83,27 @@ export default function Applications() {
         <div class="input-row">
           <div class="col">
             <label>Display Name</label>
-            <input value={name()} onInput={(e) => setName(e.currentTarget.value)} placeholder="My App" />
+            <input
+              value={name()}
+              onInput={(e) => setName(e.currentTarget.value)}
+              placeholder="My App"
+            />
           </div>
           <div class="col">
             <label>Version</label>
-            <input value={version()} onInput={(e) => setVersion(e.currentTarget.value)} placeholder="1.0.0" />
+            <input
+              value={version()}
+              onInput={(e) => setVersion(e.currentTarget.value)}
+              placeholder="1.0.0"
+            />
           </div>
           <div class="col">
             <label>Bundle ID</label>
-            <input value={bundleId()} onInput={(e) => setBundleId(e.currentTarget.value)} placeholder="com.example.myapp" />
+            <input
+              value={bundleId()}
+              onInput={(e) => setBundleId(e.currentTarget.value)}
+              placeholder="com.example.myapp"
+            />
           </div>
           <div>
             <label style="visibility:hidden">.</label>
@@ -105,18 +117,26 @@ export default function Applications() {
           </div>
         </div>
         <Show when={msg()}>
-          <p class={msg()!.ok ? "success" : "error"} style="margin-top:8px">{msg()!.text}</p>
+          <p class={msg()!.ok ? "success" : "error"} style="margin-top:8px">
+            {msg()!.text}
+          </p>
         </Show>
       </div>
 
       <div class="card">
         <div class="section-header">
           <h2>Uploaded Applications ({apps()?.length ?? 0})</h2>
-          <button class="btn btn-secondary btn-sm" onClick={() => refetch()}>Refresh</button>
+          <button class="btn btn-secondary btn-sm" onClick={() => refetch()}>
+            Refresh
+          </button>
         </div>
 
-        <Show when={apps.loading}><p class="empty">Loading…</p></Show>
-        <Show when={apps.error}><p class="error">Failed to load: {String(apps.error)}</p></Show>
+        <Show when={apps.loading}>
+          <p class="empty">Loading…</p>
+        </Show>
+        <Show when={apps.error}>
+          <p class="error">Failed to load: {String(apps.error)}</p>
+        </Show>
 
         <Show when={apps() && !apps.loading}>
           <Show when={apps()!.length === 0}>
@@ -140,7 +160,9 @@ export default function Applications() {
                     <tr>
                       <td style="font-weight:500">{app.name}</td>
                       <td>{app.version}</td>
-                      <td class="mono" style="font-size:11px">{app.bundle_id}</td>
+                      <td class="mono" style="font-size:11px">
+                        {app.bundle_id}
+                      </td>
                       <td style="color:#555">{fmtSize(app.file_size)}</td>
                       <td style="font-size:12px;color:#555">{fmtDate(app.created_at)}</td>
                       <td>

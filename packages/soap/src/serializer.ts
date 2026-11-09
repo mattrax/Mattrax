@@ -5,7 +5,7 @@ export class SoapSerializeError {
   readonly _tag = "SoapSerializeError";
   constructor(
     readonly message: string,
-    readonly cause?: unknown
+    readonly cause?: unknown,
   ) {}
 }
 
@@ -16,10 +16,7 @@ interface SerializeOptions {
 }
 
 export function escapeXml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export function escapeAttr(value: string): string {
@@ -45,7 +42,7 @@ function buildTag(
   name: string,
   attributes: ReadonlyArray<{ readonly name: string; readonly value: string }>,
   ns?: string,
-  prefix?: string
+  prefix?: string,
 ): { open: string; close: string; selfClose: string } {
   const tagName = prefix ? `${prefix}:${name}` : name;
   let attrs = attributes.map((a) => ` ${a.name}="${escapeAttr(a.value)}"`).join("");
@@ -59,7 +56,12 @@ function buildTag(
   };
 }
 
-function serializeAst(ast: AST.AST, value: unknown, options: SerializeOptions, fallbackName: string = "root"): string {
+function serializeAst(
+  ast: AST.AST,
+  value: unknown,
+  options: SerializeOptions,
+  fallbackName: string = "root",
+): string {
   switch (ast._tag) {
     case "String":
     case "Number":
@@ -93,7 +95,12 @@ function serializeAst(ast: AST.AST, value: unknown, options: SerializeOptions, f
     }
 
     case "Objects": {
-      if (value === null || value === undefined || typeof value !== "object" || Array.isArray(value)) {
+      if (
+        value === null ||
+        value === undefined ||
+        typeof value !== "object" ||
+        Array.isArray(value)
+      ) {
         throw new Error(`Expected object for ${ast._tag}, got ${typeof value}`);
       }
       const obj = value as Record<string, unknown>;
@@ -114,9 +121,11 @@ function serializeAst(ast: AST.AST, value: unknown, options: SerializeOptions, f
 
         if (propValue === undefined || propValue === null) {
           // Allow null/undefined for Null, Void, Undefined AST types
-          const allowsNull = ps.type._tag === "Null" || ps.type._tag === "Void" || ps.type._tag === "Undefined";
+          const allowsNull =
+            ps.type._tag === "Null" || ps.type._tag === "Void" || ps.type._tag === "Undefined";
           if (allowsNull) {
-            const elName = (propAnnotations?.soapElementName as string | undefined) ?? String(ps.name);
+            const elName =
+              (propAnnotations?.soapElementName as string | undefined) ?? String(ps.name);
             const ns = propAnnotations?.soapNamespace as string | undefined;
             const prefix = propAnnotations?.soapNamespacePrefix as string | undefined;
             const tag = buildTag(elName, [], ns, prefix);
@@ -125,7 +134,8 @@ function serializeAst(ast: AST.AST, value: unknown, options: SerializeOptions, f
           }
           if (isOptional) {
             if (isNil) {
-              const elName = (propAnnotations?.soapElementName as string | undefined) ?? String(ps.name);
+              const elName =
+                (propAnnotations?.soapElementName as string | undefined) ?? String(ps.name);
               children.push(indentLine(options.depth + 1, `<${elName} xsi:nil="true"/>`, options));
             }
             continue;
@@ -134,12 +144,18 @@ function serializeAst(ast: AST.AST, value: unknown, options: SerializeOptions, f
         }
 
         if (propAnnotations?.soapAttribute === true) {
-          const attrName = (propAnnotations?.soapAttributeName as string | undefined) ?? String(ps.name);
+          const attrName =
+            (propAnnotations?.soapAttributeName as string | undefined) ?? String(ps.name);
           attributes.push({ name: attrName, value: serializePrimitiveValue(propValue) });
         } else if (propAnnotations?.soapTextContent === true) {
           textContent = serializePrimitiveValue(propValue);
         } else {
-          const child = serializeAst(ps.type, propValue, { ...options, depth: options.depth + 1 }, String(ps.name));
+          const child = serializeAst(
+            ps.type,
+            propValue,
+            { ...options, depth: options.depth + 1 },
+            String(ps.name),
+          );
           children.push(indentLine(options.depth + 1, child, options));
         }
       }
@@ -154,7 +170,11 @@ function serializeAst(ast: AST.AST, value: unknown, options: SerializeOptions, f
         return tag.open + textContent + children.join("") + tag.close;
       }
 
-      const lines = [indentLine(options.depth, tag.open + textContent, options), ...children, indentLine(options.depth, tag.close, options)];
+      const lines = [
+        indentLine(options.depth, tag.open + textContent, options),
+        ...children,
+        indentLine(options.depth, tag.close, options),
+      ];
       return lines.join("\n");
     }
 
@@ -185,13 +205,30 @@ function serializeAst(ast: AST.AST, value: unknown, options: SerializeOptions, f
       for (const item of arr) {
         if (itemAst && isPrimitiveAst(itemAst)) {
           const tag = buildTag(itemName, [], itemNs, itemPrefix);
-          children.push(indentLine(options.depth + 1, tag.open + escapeXml(serializePrimitiveValue(item)) + tag.close, options));
+          children.push(
+            indentLine(
+              options.depth + 1,
+              tag.open + escapeXml(serializePrimitiveValue(item)) + tag.close,
+              options,
+            ),
+          );
         } else if (itemAst) {
-          const child = serializeAst(itemAst, item, { ...options, depth: options.depth + 1 }, itemName);
+          const child = serializeAst(
+            itemAst,
+            item,
+            { ...options, depth: options.depth + 1 },
+            itemName,
+          );
           children.push(child);
         } else {
           const tag = buildTag(itemName, [], undefined, undefined);
-          children.push(indentLine(options.depth + 1, tag.open + escapeXml(serializePrimitiveValue(item)) + tag.close, options));
+          children.push(
+            indentLine(
+              options.depth + 1,
+              tag.open + escapeXml(serializePrimitiveValue(item)) + tag.close,
+              options,
+            ),
+          );
         }
       }
 
@@ -207,7 +244,11 @@ function serializeAst(ast: AST.AST, value: unknown, options: SerializeOptions, f
         return tag.open + children.join("") + tag.close;
       }
 
-      const lines = [indentLine(options.depth, tag.open, options), ...children, indentLine(options.depth, tag.close, options)];
+      const lines = [
+        indentLine(options.depth, tag.open, options),
+        ...children,
+        indentLine(options.depth, tag.close, options),
+      ];
       return lines.join("\n");
     }
 
@@ -255,7 +296,7 @@ function serializeAst(ast: AST.AST, value: unknown, options: SerializeOptions, f
 export function serializeSoapElement<T>(
   schema: Schema.Schema<T>,
   value: T,
-  options?: { readonly pretty?: boolean; readonly indent?: string }
+  options?: { readonly pretty?: boolean; readonly indent?: string },
 ): Effect.Effect<string, SoapSerializeError> {
   return Effect.try({
     try: () =>

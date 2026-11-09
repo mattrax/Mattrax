@@ -10,8 +10,12 @@ function Nav() {
   return (
     <nav>
       <span class="brand">Mattrax MDM</span>
-      <A href="/" class={location.pathname === "/" ? "active" : ""}>Devices</A>
-      <A href="/applications" class={location.pathname === "/applications" ? "active" : ""}>Applications</A>
+      <A href="/" class={location.pathname === "/" ? "active" : ""}>
+        Devices
+      </A>
+      <A href="/applications" class={location.pathname === "/applications" ? "active" : ""}>
+        Applications
+      </A>
     </nav>
   );
 }

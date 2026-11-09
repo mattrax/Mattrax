@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  serializeSoapEnvelope,
-  extractSoapBody,
-  extractSoapHeader,
-} from "../src/index.js";
+import { serializeSoapEnvelope, extractSoapBody, extractSoapHeader } from "../src/index.js";
 
 describe("SOAP Envelope", () => {
   it("should serialize and extract a full envelope", () => {
@@ -16,7 +12,8 @@ describe("SOAP Envelope", () => {
 
     const envelope = serializeSoapEnvelope({
       header: {
-        action: "http://schemas.microsoft.com/windows/management/2012/01/enrollment/IDiscoveryService/Discover",
+        action:
+          "http://schemas.microsoft.com/windows/management/2012/01/enrollment/IDiscoveryService/Discover",
         messageId: "urn:uuid:748132ec-a575-4329-b01b-6171a9cf8478",
         replyTo: "http://www.w3.org/2005/08/addressing/anonymous",
         to: "https://fleetserver.example.com/api/mdm/microsoft/discovery",
@@ -26,7 +23,7 @@ describe("SOAP Envelope", () => {
 
     expect(envelope).toContain('<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"');
     expect(envelope).toContain("<s:Header>");
-    expect(envelope).toContain("<a:Action s:mustUnderstand=\"1\">");
+    expect(envelope).toContain('<a:Action s:mustUnderstand="1">');
     expect(envelope).toContain("<s:Body>");
     expect(envelope).toContain("<Discover");
 
@@ -51,7 +48,7 @@ describe("SOAP Envelope", () => {
 
     expect(envelope).toContain('xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512"');
     expect(envelope).toContain(
-      'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"'
+      'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"',
     );
   });
 });

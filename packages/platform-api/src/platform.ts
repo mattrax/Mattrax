@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
 
 export const platformApi = HttpApiGroup.make("PlatformApi")
   .add(
@@ -8,4 +8,9 @@ export const platformApi = HttpApiGroup.make("PlatformApi")
     }),
   )
   .prefix("/api/platform")
-  .annotateMerge(OpenApi.annotations({ title: "Mattrax Platform API", description: "The services offered by Mattrax for licencing, MDM root certificates and more." }));
+  .annotateMerge(
+    OpenApi.annotations({
+      title: "Mattrax Platform API",
+      description: "The services offered by Mattrax for licencing, MDM root certificates and more.",
+    }),
+  );

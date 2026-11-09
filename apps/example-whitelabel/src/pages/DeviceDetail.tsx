@@ -71,11 +71,14 @@ export default function DeviceDetail() {
   const params = useParams<{ udid: string }>();
   const udid = decodeURIComponent(params.udid);
 
-  const [data, { refetch }] = createResource(() => udid, async (id) => {
-    const res = await fetch(`/api/devices/${encodeURIComponent(id)}`);
-    if (!res.ok) throw new Error(await res.text());
-    return res.json() as Promise<DeviceData>;
-  });
+  const [data, { refetch }] = createResource(
+    () => udid,
+    async (id) => {
+      const res = await fetch(`/api/devices/${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json() as Promise<DeviceData>;
+    },
+  );
   const [allApps] = createResource(fetchApps);
 
   const [msg, setMsg] = createSignal<{ text: string; ok: boolean } | null>(null);
@@ -130,11 +133,18 @@ export default function DeviceDetail() {
   return (
     <>
       <div class="breadcrumb">
-        <A href="/">Devices</A> / <span class="mono" style="font-size:12px">{udid}</span>
+        <A href="/">Devices</A> /{" "}
+        <span class="mono" style="font-size:12px">
+          {udid}
+        </span>
       </div>
 
-      <Show when={data.loading}><p class="empty">Loading...</p></Show>
-      <Show when={data.error}><p class="error">Error: {String(data.error)}</p></Show>
+      <Show when={data.loading}>
+        <p class="empty">Loading...</p>
+      </Show>
+      <Show when={data.error}>
+        <p class="error">Error: {String(data.error)}</p>
+      </Show>
 
       <Show when={data()}>
         {(d) => {
@@ -153,12 +163,32 @@ export default function DeviceDetail() {
                   </Show>
                 </div>
                 <dl class="info-grid">
-                  <div class="info-item"><dt>UDID</dt><dd class="mono" style="font-size:11px">{dev.udid}</dd></div>
-                  <div class="info-item"><dt>Serial Number</dt><dd>{dev.serial_number ?? "—"}</dd></div>
-                  <div class="info-item"><dt>Model</dt><dd>{dev.model ?? "—"}</dd></div>
-                  <div class="info-item"><dt>OS Version</dt><dd>{dev.os_version ?? "—"}</dd></div>
-                  <div class="info-item"><dt>Enrolled At</dt><dd>{fmtDate(dev.enrolled_at)}</dd></div>
-                  <div class="info-item"><dt>Push Token</dt><dd>{dev.push_token ? "✓ Present" : "—"}</dd></div>
+                  <div class="info-item">
+                    <dt>UDID</dt>
+                    <dd class="mono" style="font-size:11px">
+                      {dev.udid}
+                    </dd>
+                  </div>
+                  <div class="info-item">
+                    <dt>Serial Number</dt>
+                    <dd>{dev.serial_number ?? "—"}</dd>
+                  </div>
+                  <div class="info-item">
+                    <dt>Model</dt>
+                    <dd>{dev.model ?? "—"}</dd>
+                  </div>
+                  <div class="info-item">
+                    <dt>OS Version</dt>
+                    <dd>{dev.os_version ?? "—"}</dd>
+                  </div>
+                  <div class="info-item">
+                    <dt>Enrolled At</dt>
+                    <dd>{fmtDate(dev.enrolled_at)}</dd>
+                  </div>
+                  <div class="info-item">
+                    <dt>Push Token</dt>
+                    <dd>{dev.push_token ? "✓ Present" : "—"}</dd>
+                  </div>
                 </dl>
               </div>
 
@@ -169,7 +199,12 @@ export default function DeviceDetail() {
                   <button
                     class="btn btn-secondary"
                     disabled={busy()}
-                    onClick={() => act(() => apiPost(`/devices/${encodeURIComponent(udid)}/sync`), "APNS push sent")}
+                    onClick={() =>
+                      act(
+                        () => apiPost(`/devices/${encodeURIComponent(udid)}/sync`),
+                        "APNS push sent",
+                      )
+                    }
                   >
                     Sync with APNS
                   </button>
@@ -179,7 +214,10 @@ export default function DeviceDetail() {
                       disabled={busy()}
                       onClick={() => {
                         if (confirm("Mark this device as unenrolled server-side?")) {
-                          act(() => apiPost(`/devices/${encodeURIComponent(udid)}/unenroll`), "Device unenrolled");
+                          void act(
+                            () => apiPost(`/devices/${encodeURIComponent(udid)}/unenroll`),
+                            "Device unenrolled",
+                          );
                         }
                       }}
                     >
@@ -198,11 +236,19 @@ export default function DeviceDetail() {
                 <div class="input-row">
                   <div class="col">
                     <label>Request Type</label>
-                    <input value={cmdType()} onInput={(e) => setCmdType(e.currentTarget.value)} placeholder="e.g. DeviceInformation" />
+                    <input
+                      value={cmdType()}
+                      onInput={(e) => setCmdType(e.currentTarget.value)}
+                      placeholder="e.g. DeviceInformation"
+                    />
                   </div>
                   <div class="col" style="flex:2">
                     <label>Payload (JSON)</label>
-                    <input value={cmdPayload()} onInput={(e) => setCmdPayload(e.currentTarget.value)} placeholder="{}" />
+                    <input
+                      value={cmdPayload()}
+                      onInput={(e) => setCmdPayload(e.currentTarget.value)}
+                      placeholder="{}"
+                    />
                   </div>
                   <div>
                     <label style="visibility:hidden">.</label>
@@ -212,9 +258,15 @@ export default function DeviceDetail() {
                       onClick={() =>
                         act(async () => {
                           let payload: Record<string, unknown>;
-                          try { payload = JSON.parse(cmdPayload() || "{}") as Record<string, unknown>; }
-                          catch { throw new Error("Invalid JSON payload"); }
-                          await apiPost(`/devices/${encodeURIComponent(udid)}/command`, { requestType: cmdType(), payload });
+                          try {
+                            payload = JSON.parse(cmdPayload() || "{}") as Record<string, unknown>;
+                          } catch {
+                            throw new Error("Invalid JSON payload");
+                          }
+                          await apiPost(`/devices/${encodeURIComponent(udid)}/command`, {
+                            requestType: cmdType(),
+                            payload,
+                          });
                         }, "Command queued")
                       }
                     >
@@ -245,9 +297,15 @@ export default function DeviceDetail() {
                       <For each={d().declarations}>
                         {(decl) => (
                           <tr>
-                            <td class="mono" style="font-size:11px">{decl.identifier}</td>
-                            <td class="mono" style="font-size:11px">{decl.type}</td>
-                            <td><span class="badge badge-gray">{decl.category}</span></td>
+                            <td class="mono" style="font-size:11px">
+                              {decl.identifier}
+                            </td>
+                            <td class="mono" style="font-size:11px">
+                              {decl.type}
+                            </td>
+                            <td>
+                              <span class="badge badge-gray">{decl.category}</span>
+                            </td>
                             <td style="font-size:12px;color:#555">{fmtDate(decl.created_at)}</td>
                             <td>
                               <button
@@ -255,7 +313,10 @@ export default function DeviceDetail() {
                                 disabled={busy()}
                                 onClick={() =>
                                   act(
-                                    () => apiDelete(`/devices/${encodeURIComponent(udid)}/declaration/${encodeURIComponent(decl.identifier)}`),
+                                    () =>
+                                      apiDelete(
+                                        `/devices/${encodeURIComponent(udid)}/declaration/${encodeURIComponent(decl.identifier)}`,
+                                      ),
                                     "Declaration removed",
                                   )
                                 }
@@ -279,15 +340,26 @@ export default function DeviceDetail() {
                     <div class="input-row">
                       <div class="col">
                         <label>Identifier</label>
-                        <input value={declId()} onInput={(e) => setDeclId(e.currentTarget.value)} placeholder="com.example.my-config" />
+                        <input
+                          value={declId()}
+                          onInput={(e) => setDeclId(e.currentTarget.value)}
+                          placeholder="com.example.my-config"
+                        />
                       </div>
                       <div class="col">
                         <label>Type</label>
-                        <input value={declType()} onInput={(e) => setDeclType(e.currentTarget.value)} placeholder="com.apple.configuration.restrictions" />
+                        <input
+                          value={declType()}
+                          onInput={(e) => setDeclType(e.currentTarget.value)}
+                          placeholder="com.apple.configuration.restrictions"
+                        />
                       </div>
                       <div class="col">
                         <label>Category</label>
-                        <select value={declCat()} onChange={(e) => setDeclCat(e.currentTarget.value)}>
+                        <select
+                          value={declCat()}
+                          onChange={(e) => setDeclCat(e.currentTarget.value)}
+                        >
                           <option value="activations">activations</option>
                           <option value="configurations">configurations</option>
                           <option value="assets">assets</option>
@@ -297,7 +369,10 @@ export default function DeviceDetail() {
                     </div>
                     <div class="mt-8">
                       <label>Payload (JSON)</label>
-                      <textarea value={declPayload()} onInput={(e) => setDeclPayload(e.currentTarget.value)} />
+                      <textarea
+                        value={declPayload()}
+                        onInput={(e) => setDeclPayload(e.currentTarget.value)}
+                      />
                     </div>
                     <div class="mt-8">
                       <button
@@ -306,10 +381,16 @@ export default function DeviceDetail() {
                         onClick={() =>
                           act(async () => {
                             let payload: Record<string, unknown>;
-                            try { payload = JSON.parse(declPayload()) as Record<string, unknown>; }
-                            catch { throw new Error("Invalid JSON payload"); }
+                            try {
+                              payload = JSON.parse(declPayload()) as Record<string, unknown>;
+                            } catch {
+                              throw new Error("Invalid JSON payload");
+                            }
                             await apiPost(`/devices/${encodeURIComponent(udid)}/declaration`, {
-                              identifier: declId(), type: declType(), payload, category: declCat(),
+                              identifier: declId(),
+                              type: declType(),
+                              payload,
+                              category: declCat(),
                             });
                           }, "Declaration pushed")
                         }
@@ -326,11 +407,19 @@ export default function DeviceDetail() {
                     <div class="input-row">
                       <div class="col">
                         <label>Declaration Identifier</label>
-                        <input value={profId()} onInput={(e) => setProfId(e.currentTarget.value)} placeholder="com.example.legacy-profile" />
+                        <input
+                          value={profId()}
+                          onInput={(e) => setProfId(e.currentTarget.value)}
+                          placeholder="com.example.legacy-profile"
+                        />
                       </div>
                       <div class="col" style="flex:2">
                         <label>Profile URL</label>
-                        <input value={profUrl()} onInput={(e) => setProfUrl(e.currentTarget.value)} placeholder="https://example.com/profile.mobileconfig" />
+                        <input
+                          value={profUrl()}
+                          onInput={(e) => setProfUrl(e.currentTarget.value)}
+                          placeholder="https://example.com/profile.mobileconfig"
+                        />
                       </div>
                     </div>
                     <div class="mt-8">
@@ -339,7 +428,11 @@ export default function DeviceDetail() {
                         disabled={busy() || !profId() || !profUrl()}
                         onClick={() =>
                           act(
-                            () => apiPost(`/devices/${encodeURIComponent(udid)}/profile`, { identifier: profId(), profileUrl: profUrl() }),
+                            () =>
+                              apiPost(`/devices/${encodeURIComponent(udid)}/profile`, {
+                                identifier: profId(),
+                                profileUrl: profUrl(),
+                              }),
                             "Legacy profile declaration pushed",
                           )
                         }
@@ -374,15 +467,28 @@ export default function DeviceDetail() {
                           <tr>
                             <td>{app.name}</td>
                             <td>{app.version}</td>
-                            <td class="mono" style="font-size:11px">{app.bundle_id}</td>
-                            <td><span class="badge badge-gray">{app.install_method}</span></td>
+                            <td class="mono" style="font-size:11px">
+                              {app.bundle_id}
+                            </td>
+                            <td>
+                              <span class="badge badge-gray">{app.install_method}</span>
+                            </td>
                             <td style="display:flex;gap:6px">
                               <button
                                 class="btn btn-danger btn-sm"
                                 disabled={busy()}
                                 onClick={() =>
                                   act(
-                                    () => fetch(`/api/devices/${encodeURIComponent(udid)}/application/${app.id}?method=command`, { method: "DELETE" }).then(async (r) => { if (!r.ok) { const e = (await r.json()) as {error:string}; throw new Error(e.error); } }),
+                                    () =>
+                                      fetch(
+                                        `/api/devices/${encodeURIComponent(udid)}/application/${app.id}?method=command`,
+                                        { method: "DELETE" },
+                                      ).then(async (r) => {
+                                        if (!r.ok) {
+                                          const e = (await r.json()) as { error: string };
+                                          throw new Error(e.error);
+                                        }
+                                      }),
                                     "Uninstall command queued",
                                   )
                                 }
@@ -404,16 +510,25 @@ export default function DeviceDetail() {
                   <summary>Install Application</summary>
                   <div class="form-section">
                     <Show when={(allApps() ?? []).length === 0}>
-                      <p class="empty">No applications uploaded yet. <A href="/applications">Upload one →</A></p>
+                      <p class="empty">
+                        No applications uploaded yet. <A href="/applications">Upload one →</A>
+                      </p>
                     </Show>
                     <Show when={(allApps() ?? []).length > 0}>
                       <div class="input-row">
                         <div class="col">
                           <label>Select Application</label>
-                          <select value={selectedApp()} onChange={(e) => setSelectedApp(e.currentTarget.value)}>
+                          <select
+                            value={selectedApp()}
+                            onChange={(e) => setSelectedApp(e.currentTarget.value)}
+                          >
                             <option value="">— choose —</option>
                             <For each={allApps()}>
-                              {(a) => <option value={a.id}>{a.name} {a.version} ({a.bundle_id})</option>}
+                              {(a) => (
+                                <option value={a.id}>
+                                  {a.name} {a.version} ({a.bundle_id})
+                                </option>
+                              )}
                             </For>
                           </select>
                         </div>
@@ -424,7 +539,10 @@ export default function DeviceDetail() {
                             disabled={busy() || !selectedApp()}
                             onClick={() =>
                               act(
-                                () => apiPost(`/devices/${encodeURIComponent(udid)}/application/${selectedApp()}`),
+                                () =>
+                                  apiPost(
+                                    `/devices/${encodeURIComponent(udid)}/application/${selectedApp()}`,
+                                  ),
                                 "InstallApplication command queued",
                               )
                             }
@@ -459,11 +577,19 @@ export default function DeviceDetail() {
                       <For each={d().commands}>
                         {(cmd) => (
                           <tr>
-                            <td class="mono" style="font-size:11px">{cmd.command_uuid}</td>
-                            <td class="mono" style="font-size:12px">{cmd.request_type}</td>
-                            <td><StatusBadge status={cmd.status} /></td>
+                            <td class="mono" style="font-size:11px">
+                              {cmd.command_uuid}
+                            </td>
+                            <td class="mono" style="font-size:12px">
+                              {cmd.request_type}
+                            </td>
+                            <td>
+                              <StatusBadge status={cmd.status} />
+                            </td>
                             <td style="font-size:12px;color:#555">{fmtDate(cmd.created_at)}</td>
-                            <td style="font-size:12px;color:#555">{cmd.completed_at ? fmtDate(cmd.completed_at) : "—"}</td>
+                            <td style="font-size:12px;color:#555">
+                              {cmd.completed_at ? fmtDate(cmd.completed_at) : "—"}
+                            </td>
                           </tr>
                         )}
                       </For>

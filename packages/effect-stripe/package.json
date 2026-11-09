@@ -9,6 +9,6 @@
   },
   "dependencies": {
     "effect": "catalog:",
-    "stripe": "^22.0.0"
+    "stripe": "^22.6.2"
   }
 }

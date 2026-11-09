@@ -101,11 +101,7 @@ interface GenContext {
   indent: string;
 }
 
-function generateFieldSchema(
-  key: ApplePayloadKey,
-  parentKeyPath: string,
-  ctx: GenContext
-): string {
+function generateFieldSchema(key: ApplePayloadKey, parentKeyPath: string, ctx: GenContext): string {
   const isOptional = key.presence !== "required";
   let schema = generateTypeSchema(key, parentKeyPath + "." + key.key, ctx);
 
@@ -116,11 +112,7 @@ function generateFieldSchema(
   return schema;
 }
 
-function generateTypeSchema(
-  key: ApplePayloadKey,
-  keyPath: string,
-  ctx: GenContext
-): string {
+function generateTypeSchema(key: ApplePayloadKey, keyPath: string, ctx: GenContext): string {
   const types = Array.isArray(key.type) ? key.type : [key.type];
   const type = types[0] ?? "<string>";
 
@@ -131,7 +123,7 @@ function generateTypeSchema(
     case "<string>": {
       if (key.rangelist && key.rangelist.length > 0) {
         const values = key.rangelist.map((v) =>
-          typeof v === "string" ? escapeStringForJs(v) : String(v)
+          typeof v === "string" ? escapeStringForJs(v) : String(v),
         );
         if (values.length === 1) {
           return `Schema.Literal(${values[0]})`;
@@ -152,7 +144,7 @@ function generateTypeSchema(
     case "<integer>": {
       if (key.rangelist && key.rangelist.length > 0) {
         const values = key.rangelist.map((v) =>
-          typeof v === "string" ? escapeStringForJs(v) : String(v)
+          typeof v === "string" ? escapeStringForJs(v) : String(v),
         );
         if (values.length === 1) {
           return `Schema.Literal(${values[0]})`;
@@ -194,11 +186,7 @@ function generateTypeSchema(
       if (key.subkeys && key.subkeys.length > 0) {
         const firstSub = key.subkeys[0];
         if (firstSub.key && key.subkeys.length === 1) {
-          const itemSchema = generateTypeSchema(
-            firstSub,
-            keyPath + "[]",
-            ctx
-          );
+          const itemSchema = generateTypeSchema(firstSub, keyPath + "[]", ctx);
           return `Schema.Array(${itemSchema})`;
         }
         const objSchema = generateObjectSchema(key.subkeys, keyPath, ctx);
@@ -224,7 +212,7 @@ function generateTypeSchema(
 function generateObjectSchema(
   subkeys: ApplePayloadKey[],
   keyPath: string,
-  ctx: GenContext
+  ctx: GenContext,
 ): string {
   // Check for circular reference
   if (ctx.visited.has(subkeys)) {
@@ -264,7 +252,7 @@ interface SchemaResult {
 
 function generateSchemaFromFile(
   filePath: string,
-  category: "declaration" | "profile" | "command" | "checkin"
+  category: "declaration" | "profile" | "command" | "checkin",
 ): SchemaResult | null {
   const content = fs.readFileSync(filePath, "utf-8");
   const data = parse(content) as AppleSchemaFile;
@@ -310,8 +298,8 @@ function generateSchemaFromFile(
       const schemaCode = generateObjectSchema(subkeys, id, subCtx);
       helperDecls.push(
         `const make${id} = (): Schema.Schema<any> => ${schemaCode};\n` +
-        `export const ${id} = make${id}();\n` +
-        `export type ${id} = typeof ${id}.Type;`
+          `export const ${id} = make${id}();\n` +
+          `export type ${id} = typeof ${id}.Type;`,
       );
     }
   }
@@ -337,7 +325,7 @@ function generateCategoryFile(
   category: "declaration" | "profile" | "command" | "checkin",
   sourceDir: string,
   outFileName: string,
-  allNamesAcrossCategories: Set<string>
+  allNamesAcrossCategories: Set<string>,
 ) {
   const files = fs.readdirSync(sourceDir).filter((f) => f.endsWith(".yaml"));
   const results: SchemaResult[] = [];
@@ -355,10 +343,7 @@ function generateCategoryFile(
           suffix++;
         }
         if (uniqueName !== result.name) {
-          result.code = result.code.replace(
-            new RegExp(`\\b${result.name}\\b`, "g"),
-            uniqueName
-          );
+          result.code = result.code.replace(new RegExp(`\\b${result.name}\\b`, "g"), uniqueName);
           result.name = uniqueName;
         }
         usedNames.add(result.name);
@@ -396,7 +381,10 @@ const allNames = new Set<string>();
 // If a later category has conflicts with earlier ones, we rename them.
 // But we need to know conflicts ahead of time. Let's do two passes.
 
-function collectNames(category: "declaration" | "profile" | "command" | "checkin", sourceDir: string): string[] {
+function collectNames(
+  category: "declaration" | "profile" | "command" | "checkin",
+  sourceDir: string,
+): string[] {
   const files = fs.readdirSync(sourceDir).filter((f) => f.endsWith(".yaml"));
   const names: string[] = [];
   for (const file of files) {
@@ -418,7 +406,9 @@ function collectNames(category: "declaration" | "profile" | "command" | "checkin
   return names;
 }
 
-const declarationNames = new Set(collectNames("declaration", path.join(APPLE_REPO, "declarative/declarations/configurations")));
+const declarationNames = new Set(
+  collectNames("declaration", path.join(APPLE_REPO, "declarative/declarations/configurations")),
+);
 const profileNames = new Set(collectNames("profile", path.join(APPLE_REPO, "mdm/profiles")));
 const commandNames = new Set(collectNames("command", path.join(APPLE_REPO, "mdm/commands")));
 const checkinNames = new Set(collectNames("checkin", path.join(APPLE_REPO, "mdm/checkin")));
@@ -428,7 +418,12 @@ const checkinNames = new Set(collectNames("checkin", path.join(APPLE_REPO, "mdm/
 // Lower priority categories get renamed when they conflict with higher priority ones.
 const crossCategoryRenames = new Map<string, { name: string; category: string }>();
 
-function addRenames(lowerNames: Set<string>, higherNames: Set<string>, lowerCategory: string, prefix: string) {
+function addRenames(
+  lowerNames: Set<string>,
+  higherNames: Set<string>,
+  lowerCategory: string,
+  prefix: string,
+) {
   for (const name of lowerNames) {
     if (higherNames.has(name)) {
       crossCategoryRenames.set(`${lowerCategory}:${name}`, prefix + name);
@@ -451,7 +446,7 @@ function generateCategoryFileWithRenames(
   category: "declaration" | "profile" | "command" | "checkin",
   sourceDir: string,
   outFileName: string,
-  renamePrefix: string
+  renamePrefix: string,
 ) {
   const files = fs.readdirSync(sourceDir).filter((f) => f.endsWith(".yaml"));
   const results: SchemaResult[] = [];
@@ -466,10 +461,7 @@ function generateCategoryFileWithRenames(
         if (crossCategoryRenames.has(renameKey)) {
           const newName = crossCategoryRenames.get(renameKey)!;
           // Replace all occurrences of the old name in the code
-          result.code = result.code.replace(
-            new RegExp(`\\b${result.name}\\b`, "g"),
-            newName
-          );
+          result.code = result.code.replace(new RegExp(`\\b${result.name}\\b`, "g"), newName);
           result.name = newName;
         }
 
@@ -481,10 +473,7 @@ function generateCategoryFileWithRenames(
           suffix++;
         }
         if (uniqueName !== result.name) {
-          result.code = result.code.replace(
-            new RegExp(`\\b${result.name}\\b`, "g"),
-            uniqueName
-          );
+          result.code = result.code.replace(new RegExp(`\\b${result.name}\\b`, "g"), uniqueName);
           result.name = uniqueName;
         }
         usedNames.add(result.name);
@@ -514,28 +503,28 @@ generateCategoryFileWithRenames(
   "declaration",
   path.join(APPLE_REPO, "declarative/declarations/configurations"),
   "declarations.ts",
-  "Declaration"
+  "Declaration",
 );
 
 generateCategoryFileWithRenames(
   "profile",
   path.join(APPLE_REPO, "mdm/profiles"),
   "profiles.ts",
-  "Profile"
+  "Profile",
 );
 
 generateCategoryFileWithRenames(
   "command",
   path.join(APPLE_REPO, "mdm/commands"),
   "commands.ts",
-  "Command"
+  "Command",
 );
 
 generateCategoryFileWithRenames(
   "checkin",
   path.join(APPLE_REPO, "mdm/checkin"),
   "checkin.ts",
-  "Checkin"
+  "Checkin",
 );
 
 console.log("Done!");

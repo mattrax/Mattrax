@@ -3,7 +3,9 @@ export { PlistParseError, PlistSerializeError } from "@mattrax/plist";
 
 export class MdmError extends Data.TaggedError("MdmError")<{ message: string; cause?: unknown }> {}
 export class DeviceNotFound extends Data.TaggedError("DeviceNotFound")<{ deviceId: string }> {}
-export class DeclarationNotFound extends Data.TaggedError("DeclarationNotFound")<{ declarationId: string }> {}
+export class DeclarationNotFound extends Data.TaggedError("DeclarationNotFound")<{
+  declarationId: string;
+}> {}
 
 export const AuthenticatePlist = Schema.Struct({
   MessageType: Schema.Literal("Authenticate"),
@@ -38,28 +40,42 @@ export const CommandResultPlist = Schema.Struct({
   UDID: Schema.String,
   Status: Schema.String,
   CommandUUID: Schema.String,
-  Command: Schema.optional(Schema.Struct({
-    RequestType: Schema.String,
-  })),
+  Command: Schema.optional(
+    Schema.Struct({
+      RequestType: Schema.String,
+    }),
+  ),
   QueryResponses: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
-  ErrorChain: Schema.optional(Schema.Array(Schema.Struct({
-    ErrorCode: Schema.Number,
-    ErrorDomain: Schema.optional(Schema.String),
-    localizedDescription: Schema.optional(Schema.String),
-  }))),
+  ErrorChain: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        ErrorCode: Schema.Number,
+        ErrorDomain: Schema.optional(Schema.String),
+        localizedDescription: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
 });
 export type CommandResultPlist = typeof CommandResultPlist.Type;
 
 export const DDMStatusReport = Schema.Struct({
   StatusItems: Schema.optional(Schema.Unknown),
-  Errors: Schema.optional(Schema.Array(Schema.Struct({
-    Identifier: Schema.String,
-    ServerToken: Schema.String,
-    Active: Schema.Boolean,
-    Valid: Schema.String,
-    Reasons: Schema.optional(Schema.Array(Schema.Struct({
-      Description: Schema.String,
-    }))),
-  }))),
+  Errors: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        Identifier: Schema.String,
+        ServerToken: Schema.String,
+        Active: Schema.Boolean,
+        Valid: Schema.String,
+        Reasons: Schema.optional(
+          Schema.Array(
+            Schema.Struct({
+              Description: Schema.String,
+            }),
+          ),
+        ),
+      }),
+    ),
+  ),
 });
 export type DDMStatusReport = typeof DDMStatusReport.Type;

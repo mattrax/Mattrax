@@ -37,7 +37,10 @@ export const exportPublicKeySpki = (key: CryptoKey): Effect.Effect<ArrayBuffer, 
     catch: (cause) => new ScepError({ message: "Failed to export public key", cause }),
   });
 
-export const signData = (key: CryptoKey, data: ArrayBuffer): Effect.Effect<ArrayBuffer, ScepError> =>
+export const signData = (
+  key: CryptoKey,
+  data: ArrayBuffer,
+): Effect.Effect<ArrayBuffer, ScepError> =>
   Effect.tryPromise({
     try: () => signDataRaw(key, data),
     catch: (cause) => new ScepError({ message: "Failed to sign data", cause }),

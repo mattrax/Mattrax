@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 import { scepRoutes } from "../routes.js";
 import { ScepService } from "../service.js";
 import { ScepRepository } from "../repository.js";
@@ -38,7 +38,10 @@ describe("SCEP routes", () => {
       const keyPair = await generateKeyPair();
       const caCert = await createTestCaCert(keyPair, "Route CA");
       const certPem = certToPem(caCert);
-      const privateKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.privateKey) as JsonWebKey;
+      const privateKeyJwk = (await crypto.subtle.exportKey(
+        "jwk",
+        keyPair.privateKey,
+      )) as JsonWebKey;
 
       const repo = mockScepRepository({
         getCa: () => Effect.succeed({ certPem, privateKeyJwk }),
@@ -74,13 +77,24 @@ describe("SCEP routes", () => {
       const caKeyPair = await generateKeyPair();
       const caCert = await createTestCaCert(caKeyPair, "Post CA");
       const caCertPem = certToPem(caCert);
-      const caPrivateKeyJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey) as JsonWebKey;
+      const caPrivateKeyJwk = (await crypto.subtle.exportKey(
+        "jwk",
+        caKeyPair.privateKey,
+      )) as JsonWebKey;
 
       const deviceKeyPair = await generateKeyPair();
       const signerCert = await createTestSignerCert(deviceKeyPair, "PostDevice");
       const csr = await buildTestCsr(deviceKeyPair, "PostDevice");
       const senderNonce = crypto.getRandomValues(new Uint8Array(16));
-      const pkcsReq = await buildPkcsReq(csr, caCert, signerCert, deviceKeyPair.privateKey, "txn-post-001", senderNonce, true);
+      const pkcsReq = await buildPkcsReq(
+        csr,
+        caCert,
+        signerCert,
+        deviceKeyPair.privateKey,
+        "txn-post-001",
+        senderNonce,
+        true,
+      );
 
       const repo = mockScepRepository({
         getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),
@@ -103,13 +117,24 @@ describe("SCEP routes", () => {
       const caKeyPair = await generateKeyPair();
       const caCert = await createTestCaCert(caKeyPair, "Post CA");
       const caCertPem = certToPem(caCert);
-      const caPrivateKeyJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey) as JsonWebKey;
+      const caPrivateKeyJwk = (await crypto.subtle.exportKey(
+        "jwk",
+        caKeyPair.privateKey,
+      )) as JsonWebKey;
 
       const deviceKeyPair = await generateKeyPair();
       const signerCert = await createTestSignerCert(deviceKeyPair, "PostDevice");
       const csr = await buildTestCsr(deviceKeyPair, "PostDevice");
       const senderNonce = crypto.getRandomValues(new Uint8Array(16));
-      const pkcsReq = await buildPkcsReq(csr, caCert, signerCert, deviceKeyPair.privateKey, "txn-post-002", senderNonce, true);
+      const pkcsReq = await buildPkcsReq(
+        csr,
+        caCert,
+        signerCert,
+        deviceKeyPair.privateKey,
+        "txn-post-002",
+        senderNonce,
+        true,
+      );
 
       const repo = mockScepRepository({
         getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),

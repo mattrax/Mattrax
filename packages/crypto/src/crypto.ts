@@ -8,7 +8,10 @@ const ALGORITHM: any = {
 };
 const SIGN_ALGORITHM: any = { name: "RSASSA-PKCS1-v1_5" };
 
-export class CryptoError extends Data.TaggedError("CryptoError")<{ message: string; cause?: unknown }> {}
+export class CryptoError extends Data.TaggedError("CryptoError")<{
+  message: string;
+  cause?: unknown;
+}> {}
 
 export async function generateCaKeyPair(): Promise<CryptoKeyPair> {
   return crypto.subtle.generateKey(ALGORITHM, true, ["sign", "verify"]) as Promise<CryptoKeyPair>;

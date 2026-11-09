@@ -18,9 +18,9 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "esbuild": "^0.27.3",
-    "postject": "^1.0.0-alpha.6",
-    "tsx": "^4.19.0",
-    "typescript": "~6.0.2"
+    "esbuild": "^0.27.7",
+    "postject": "1.0.0-alpha.6",
+    "tsx": "^4.23.15",
+    "typescript": "catalog:"
   }
 }

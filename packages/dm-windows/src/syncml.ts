@@ -1,17 +1,32 @@
 import { Effect } from "effect";
-import { deserializeSoapElement, serializeSoapElement, SyncML, type SyncML as SyncMLType } from "@mattrax/soap";
-import type { WindowsManagementRequest, WindowsManagementResponse } from "@mattrax/management-backend";
+import {
+  deserializeSoapElement,
+  serializeSoapElement,
+  SyncML,
+  type SyncML as SyncMLType,
+} from "@mattrax/soap";
+import type {
+  WindowsManagementRequest,
+  WindowsManagementResponse,
+} from "@mattrax/management-backend";
 
 export class SyncMLError {
   readonly _tag = "SyncMLError";
-  constructor(readonly message: string, readonly cause?: unknown) {}
+  constructor(
+    readonly message: string,
+    readonly cause?: unknown,
+  ) {}
 }
 
 export const parseSyncML = (xml: string): Effect.Effect<SyncMLType, SyncMLError> =>
-  deserializeSoapElement(xml, SyncML).pipe(Effect.mapError((cause) => new SyncMLError("Failed to parse SyncML", cause)));
+  deserializeSoapElement(xml, SyncML).pipe(
+    Effect.mapError((cause) => new SyncMLError("Failed to parse SyncML", cause)),
+  );
 
 export const serializeSyncML = (message: SyncMLType): Effect.Effect<string, SyncMLError> =>
-  serializeSoapElement(SyncML, message).pipe(Effect.mapError((cause) => new SyncMLError("Failed to serialize SyncML", cause)));
+  serializeSoapElement(SyncML, message).pipe(
+    Effect.mapError((cause) => new SyncMLError("Failed to serialize SyncML", cause)),
+  );
 
 export function toManagementRequest(message: SyncMLType): WindowsManagementRequest {
   return {
@@ -24,7 +39,10 @@ export function toManagementRequest(message: SyncMLType): WindowsManagementReque
   };
 }
 
-export function fromManagementResponse(request: SyncMLType, response: WindowsManagementResponse): SyncMLType {
+export function fromManagementResponse(
+  request: SyncMLType,
+  response: WindowsManagementResponse,
+): SyncMLType {
   return {
     syncHdr: {
       verDTD: request.syncHdr.verDTD,
@@ -35,10 +53,24 @@ export function fromManagementResponse(request: SyncMLType, response: WindowsMan
       source: { locURI: request.syncHdr.target.locURI },
     },
     syncBody: {
-      status: [{ cmdID: "1", msgRef: request.syncHdr.msgID, cmdRef: "0", cmd: "SyncHdr", data: "200" }],
-      get: response.commands.filter((c) => c.kind === "Get").map((c) => ({ cmdID: c.cmdID, items: [{ target: { locURI: c.locURI ?? "" } }] })),
-      replace: response.commands.filter((c) => c.kind === "Replace").map((c) => ({ cmdID: c.cmdID, items: [{ target: { locURI: c.locURI ?? "" }, data: c.data }] })),
-      exec: response.commands.filter((c) => c.kind === "Exec").map((c) => ({ cmdID: c.cmdID, items: [{ target: { locURI: c.locURI ?? "" }, data: c.data }] })),
+      status: [
+        { cmdID: "1", msgRef: request.syncHdr.msgID, cmdRef: "0", cmd: "SyncHdr", data: "200" },
+      ],
+      get: response.commands
+        .filter((c) => c.kind === "Get")
+        .map((c) => ({ cmdID: c.cmdID, items: [{ target: { locURI: c.locURI ?? "" } }] })),
+      replace: response.commands
+        .filter((c) => c.kind === "Replace")
+        .map((c) => ({
+          cmdID: c.cmdID,
+          items: [{ target: { locURI: c.locURI ?? "" }, data: c.data }],
+        })),
+      exec: response.commands
+        .filter((c) => c.kind === "Exec")
+        .map((c) => ({
+          cmdID: c.cmdID,
+          items: [{ target: { locURI: c.locURI ?? "" }, data: c.data }],
+        })),
       final: {},
     },
   };

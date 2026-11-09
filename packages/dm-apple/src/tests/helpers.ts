@@ -23,8 +23,7 @@ export function mockManagementBackend(
     ManagementBackend.of({
       appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),
       appleManagementCheckin:
-        overrides?.appleManagementCheckin ??
-        (() => Effect.succeed({ _tag: "Idle" } as const)),
+        overrides?.appleManagementCheckin ?? (() => Effect.succeed({ _tag: "Idle" } as const)),
       getAppleDeclarationTokens:
         overrides?.getAppleDeclarationTokens ??
         (() =>
@@ -43,27 +42,32 @@ export function mockManagementBackend(
             assets: [],
             management: [],
           })),
-    getAppleDeclaration:
-      overrides?.getAppleDeclaration ?? (() => Effect.succeed({})),
-    getAppleAsset:
-      overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
-    windowsDiscovery:
-      overrides?.windowsDiscovery ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
-    getWindowsEnrollmentPolicy:
-      overrides?.getWindowsEnrollmentPolicy ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
-    windowsEnroll:
-      overrides?.windowsEnroll ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
-    windowsManagementCheckin:
-      overrides?.windowsManagementCheckin ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
-    windowsDeviceEvent:
-      overrides?.windowsDeviceEvent ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
-  }),
+      getAppleDeclaration: overrides?.getAppleDeclaration ?? (() => Effect.succeed({})),
+      getAppleAsset: overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
+      windowsDiscovery:
+        overrides?.windowsDiscovery ??
+        (() => Effect.fail(new Error("Windows management not supported") as never)),
+      getWindowsEnrollmentPolicy:
+        overrides?.getWindowsEnrollmentPolicy ??
+        (() => Effect.fail(new Error("Windows management not supported") as never)),
+      windowsEnroll:
+        overrides?.windowsEnroll ??
+        (() => Effect.fail(new Error("Windows management not supported") as never)),
+      windowsManagementCheckin:
+        overrides?.windowsManagementCheckin ??
+        (() => Effect.fail(new Error("Windows management not supported") as never)),
+      windowsDeviceEvent:
+        overrides?.windowsDeviceEvent ??
+        (() => Effect.fail(new Error("Windows management not supported") as never)),
+    }),
   );
 }
 
 // ─── Plist Builders ────────────────────────────────────────────────
 
-export function buildAuthenticatePlist(overrides?: Partial<{ UDID: string; SerialNumber: string; Topic: string }>): string {
+export function buildAuthenticatePlist(
+  overrides?: Partial<{ UDID: string; SerialNumber: string; Topic: string }>,
+): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -84,7 +88,15 @@ export function buildAuthenticatePlist(overrides?: Partial<{ UDID: string; Seria
 </plist>`;
 }
 
-export function buildTokenUpdatePlist(overrides?: Partial<{ UDID: string; PushMagic: string; Token: string; Topic: string; UserID?: string }>): string {
+export function buildTokenUpdatePlist(
+  overrides?: Partial<{
+    UDID: string;
+    PushMagic: string;
+    Token: string;
+    Topic: string;
+    UserID?: string;
+  }>,
+): string {
   const userIdSection = overrides?.UserID
     ? `<key>UserID</key><string>${overrides.UserID}</string>`
     : "";
@@ -122,7 +134,9 @@ export function buildCheckOutPlist(overrides?: Partial<{ UDID: string; Topic: st
 </plist>`;
 }
 
-export function buildCommandResultPlist(overrides?: Partial<{ UDID: string; Status: string; CommandUUID: string }>): string {
+export function buildCommandResultPlist(
+  overrides?: Partial<{ UDID: string; Status: string; CommandUUID: string }>,
+): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -142,7 +156,9 @@ export function buildCommandResultPlist(overrides?: Partial<{ UDID: string; Stat
 </plist>`;
 }
 
-export function buildDeclarativeManagementTokensPlist(overrides?: Partial<{ UDID: string }>): string {
+export function buildDeclarativeManagementTokensPlist(
+  overrides?: Partial<{ UDID: string }>,
+): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -159,7 +175,9 @@ export function buildDeclarativeManagementTokensPlist(overrides?: Partial<{ UDID
 </plist>`;
 }
 
-export function buildDeclarativeManagementDeclarationItemsPlist(overrides?: Partial<{ UDID: string }>): string {
+export function buildDeclarativeManagementDeclarationItemsPlist(
+  overrides?: Partial<{ UDID: string }>,
+): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -176,7 +194,9 @@ export function buildDeclarativeManagementDeclarationItemsPlist(overrides?: Part
 </plist>`;
 }
 
-export function buildDeclarativeManagementStatusPlist(overrides?: Partial<{ UDID: string }>): string {
+export function buildDeclarativeManagementStatusPlist(
+  overrides?: Partial<{ UDID: string }>,
+): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -242,7 +262,12 @@ export async function generateTestCertPem(topic: string, useUid = true): Promise
 }
 
 async function generateRealTestCertPem(topic: string, oidUid: string): Promise<string> {
-  const algorithm = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]) };
+  const algorithm = {
+    name: "RSASSA-PKCS1-v1_5",
+    hash: "SHA-256",
+    modulusLength: 2048,
+    publicExponent: new Uint8Array([1, 0, 1]),
+  };
   const keyPair = await crypto.subtle.generateKey(algorithm as any, true, ["sign", "verify"]);
 
   // Build a minimal self-signed cert with pkijs

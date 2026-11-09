@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 import { AppleMdmService, AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
 import { ManagementBackend } from "@mattrax/management-backend";
 import { Env } from "@mattrax/enterprise-core";
@@ -13,7 +13,9 @@ async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
   const serviceLayer = AppleMdmServiceLive.pipe(
     Layer.provideMerge(backendLayer),
     Layer.provideMerge(Env.layer({ origin: TEST_CONFIG.origin })),
-    Layer.provideMerge(Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) }))),
+    Layer.provideMerge(
+      Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) })),
+    ),
   );
   const appLayer = appleMdmRoutes.pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer);
@@ -24,14 +26,25 @@ describe("Apple MDM handlers", () => {
   describe("enroll endpoint", () => {
     it("returns an enrollment profile plist", async () => {
       const backend = mockManagementBackend();
-      const profile = await Effect.runPromise(Effect.gen(function* () {
-        const service = yield* AppleMdmService;
-        return yield* service.generateEnrollmentProfile();
-      }).pipe(Effect.provide(AppleMdmServiceLive.pipe(
-        Layer.provideMerge(backend),
-        Layer.provideMerge(Env.layer({ origin: TEST_CONFIG.origin })),
-        Layer.provideMerge(Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) }))),
-      ))));
+      const profile = await Effect.runPromise(
+        Effect.gen(function* () {
+          const service = yield* AppleMdmService;
+          return yield* service.generateEnrollmentProfile();
+        }).pipe(
+          Effect.provide(
+            AppleMdmServiceLive.pipe(
+              Layer.provideMerge(backend),
+              Layer.provideMerge(Env.layer({ origin: TEST_CONFIG.origin })),
+              Layer.provideMerge(
+                Layer.succeed(
+                  AppleMdmTopic,
+                  AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) }),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
       expect(profile).toContain("com.mattrax.enrollment");
     });
   });
@@ -52,11 +65,13 @@ describe("Apple MDM handlers", () => {
 </dict>
 </plist>`;
 
-      const response = await handler(new Request("http://localhost/mdm/apple/mdm", {
-        method: "PUT",
-        body: plist,
-        headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
-      }));
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
       expect(response.status).toBe(200);
     });
   });
@@ -78,11 +93,13 @@ describe("Apple MDM handlers", () => {
 </dict>
 </plist>`;
 
-      const response = await handler(new Request("http://localhost/mdm/apple/mdm", {
-        method: "PUT",
-        body: plist,
-        headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
-      }));
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
       expect(response.status).toBe(200);
     });
   });
@@ -102,11 +119,13 @@ describe("Apple MDM handlers", () => {
 </dict>
 </plist>`;
 
-      const response = await handler(new Request("http://localhost/mdm/apple/mdm", {
-        method: "PUT",
-        body: plist,
-        headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
-      }));
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
       expect(response.status).toBe(200);
     });
   });
@@ -126,11 +145,13 @@ describe("Apple MDM handlers", () => {
 </dict>
 </plist>`;
 
-      const response = await handler(new Request("http://localhost/mdm/apple/mdm", {
-        method: "PUT",
-        body: plist,
-        headers: { "Content-Type": "application/x-apple-aspen-mdm" },
-      }));
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+        }),
+      );
       expect(response.status).toBe(200);
     });
   });
@@ -159,11 +180,13 @@ describe("Apple MDM handlers", () => {
 </dict>
 </plist>`;
 
-      const response = await handler(new Request("http://localhost/mdm/apple/mdm", {
-        method: "PUT",
-        body: plist,
-        headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
-      }));
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
       expect(response.status).toBe(200);
       const body = await response.text();
       expect(body).toContain("SyncTokens");
@@ -195,11 +218,13 @@ describe("Apple MDM handlers", () => {
 </dict>
 </plist>`;
 
-      const response = await handler(new Request("http://localhost/mdm/apple/mdm", {
-        method: "PUT",
-        body: plist,
-        headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
-      }));
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
       expect(response.status).toBe(200);
       const body = await response.text();
       expect(body).toContain("Declarations");
@@ -228,11 +253,13 @@ describe("Apple MDM handlers", () => {
 </dict>
 </plist>`;
 
-      const response = await handler(new Request("http://localhost/mdm/apple/mdm", {
-        method: "PUT",
-        body: plist,
-        headers: { "Content-Type": "application/x-apple-aspen-mdm" },
-      }));
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+        }),
+      );
       expect(response.status).toBe(200);
       const body = await response.text();
       expect(body).toContain("CommandUUID");
@@ -253,11 +280,13 @@ describe("Apple MDM handlers", () => {
 </dict>
 </plist>`;
 
-      const response = await handler(new Request("http://localhost/mdm/apple/mdm", {
-        method: "PUT",
-        body: plist,
-        headers: { "Content-Type": "application/x-apple-aspen-mdm" },
-      }));
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+        }),
+      );
       expect(response.status).toBe(200);
       const body = await response.text();
       expect(body).toContain("<dict></dict>");

@@ -19,6 +19,8 @@
     { "path": "./packages/soap" },
     { "path": "./packages/scep" },
     { "path": "./packages/dm-apple" },
+    { "path": "./packages/dm-windows" },
+    { "path": "./packages/azure-oidc" },
     { "path": "./packages/policy-apple" },
     { "path": "./packages/enterprise-domain" },
     { "path": "./packages/enterprise-backend" },

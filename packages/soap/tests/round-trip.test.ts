@@ -8,8 +8,7 @@ import {
 } from "../src/index.js";
 import { DiscoverRequest } from "../src/windows-mdm.js";
 
-const runPromise = <E, A>(effect: Effect.Effect<A, E>) =>
-  Effect.runPromise(effect);
+const runPromise = <E, A>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
 describe("Round-trip tests", () => {
   it("should round-trip a complex nested structure", async () => {
@@ -21,11 +20,13 @@ describe("Round-trip tests", () => {
     const Outer = Schema.Struct({
       name: Schema.String,
       inners: Schema.Array(Inner.pipe(Schema.annotateKey({ soapElementName: "Inner" }))).pipe(
-        Schema.annotateKey({ soapElementName: "Inners" })
+        Schema.annotateKey({ soapElementName: "Inners" }),
       ),
       meta: Schema.Struct({
         version: Schema.String.pipe(Schema.annotateKey({ soapElementName: "Version" })),
-        count: Schema.optional(Schema.Number).pipe(Schema.annotateKey({ soapElementName: "Count" })),
+        count: Schema.optional(Schema.Number).pipe(
+          Schema.annotateKey({ soapElementName: "Count" }),
+        ),
       }).pipe(Schema.annotate({ identifier: "Meta" })),
     }).pipe(Schema.annotate({ identifier: "Outer" }));
 
@@ -54,7 +55,7 @@ describe("Round-trip tests", () => {
           osEdition: 48,
           authPolicies: ["OnPremise"],
         },
-      })
+      }),
     );
 
     const envelope = serializeSoapEnvelope({
@@ -80,18 +81,20 @@ describe("Error handling", () => {
     }).pipe(Schema.annotate({ identifier: "Strict" }));
 
     const result = await Effect.runPromise(
-      serializeSoapElement(Strict, { required: undefined as unknown as string }).pipe(Effect.result)
+      serializeSoapElement(Strict, { required: undefined as unknown as string }).pipe(
+        Effect.result,
+      ),
     );
     expect(result._tag).toBe("Failure");
   });
 
   it("should return SoapParseError on malformed XML", async () => {
     const Simple = Schema.Struct({ a: Schema.String }).pipe(
-      Schema.annotate({ identifier: "Simple" })
+      Schema.annotate({ identifier: "Simple" }),
     );
 
     const result = await Effect.runPromise(
-      deserializeSoapElement("<<<not xml>>>", Simple).pipe(Effect.result)
+      deserializeSoapElement("<<<not xml>>>", Simple).pipe(Effect.result),
     );
     expect(result._tag).toBe("Failure");
   });

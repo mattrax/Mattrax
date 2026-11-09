@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { HttpApiBuilder } from "effect/unstable/httpapi";
+import { HttpApiBuilder } from "effect/http-api";
 import { platformApi } from "@mattrax/platform-api";
 
 export const platformHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typeof platformApi>) =>

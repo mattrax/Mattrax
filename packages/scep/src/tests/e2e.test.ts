@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
 import { privateDecrypt, constants } from "node:crypto";
@@ -32,7 +32,10 @@ async function makeScepHandler(repoLayer: Layer.Layer<ScepRepository>) {
   return handler;
 }
 
-async function decryptEnvelopedData(envelopedDataDer: ArrayBuffer, privateKeyJwk: JsonWebKey): Promise<ArrayBuffer> {
+async function decryptEnvelopedData(
+  envelopedDataDer: ArrayBuffer,
+  privateKeyJwk: JsonWebKey,
+): Promise<ArrayBuffer> {
   const contentInfo = pkijs.ContentInfo.fromBER(envelopedDataDer);
   const envelopedData = new pkijs.EnvelopedData({ schema: contentInfo.content });
 
@@ -46,17 +49,23 @@ async function decryptEnvelopedData(envelopedDataDer: ArrayBuffer, privateKeyJwk
     true,
     ["sign"],
   );
-  const pkcs8Der = await crypto.subtle.exportKey("pkcs8", signingKey) as ArrayBuffer;
+  const pkcs8Der = (await crypto.subtle.exportKey("pkcs8", signingKey)) as ArrayBuffer;
   const pkcs8Pem = pemEncode("PRIVATE KEY", pkcs8Der);
 
-  const sessionKeyBytes = privateDecrypt({ key: pkcs8Pem, padding: constants.RSA_PKCS1_PADDING }, encryptedKey);
+  const sessionKeyBytes = privateDecrypt(
+    { key: pkcs8Pem, padding: constants.RSA_PKCS1_PADDING },
+    encryptedKey,
+  );
 
-  const ivHex = (envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as any)
-    ?.valueBlock?.valueHex as ArrayBuffer;
+  const ivHex = (
+    envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as any
+  )?.valueBlock?.valueHex as ArrayBuffer;
   const iv = Buffer.from(ivHex);
   const encryptedContent = envelopedData.encryptedContentInfo.getEncryptedContent();
 
-  const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, ["decrypt"]);
+  const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, [
+    "decrypt",
+  ]);
   return crypto.subtle.decrypt({ name: "AES-CBC", iv }, aesKey, encryptedContent);
 }
 
@@ -67,7 +76,10 @@ describe("SCEP E2E", () => {
     const caCert = await createTestCaCert(caKeyPair, "E2E SCEP CA");
     const { certToPem } = await import("../pkcs7.js");
     const caCertPem = certToPem(caCert);
-    const caPrivateKeyJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey) as JsonWebKey;
+    const caPrivateKeyJwk = (await crypto.subtle.exportKey(
+      "jwk",
+      caKeyPair.privateKey,
+    )) as JsonWebKey;
 
     const repo = mockScepRepository({
       getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),
@@ -78,14 +90,18 @@ describe("SCEP E2E", () => {
     const handler = await makeScepHandler(repo);
 
     // ── Step 1: Get CA Caps ───────────────────────────────────────────
-    const capsRes = await handler(new Request("http://localhost/mdm/apple/scep?operation=GetCACaps"));
+    const capsRes = await handler(
+      new Request("http://localhost/mdm/apple/scep?operation=GetCACaps"),
+    );
     expect(capsRes.status).toBe(200);
     const capsText = await capsRes.text();
     expect(capsText).toContain("SHA-256");
     expect(capsText).toContain("POSTPKIOperation");
 
     // ── Step 2: Get CA Cert ───────────────────────────────────────────
-    const certRes = await handler(new Request("http://localhost/mdm/apple/scep?operation=GetCACert"));
+    const certRes = await handler(
+      new Request("http://localhost/mdm/apple/scep?operation=GetCACert"),
+    );
     expect(certRes.status).toBe(200);
     const certDer = await certRes.arrayBuffer();
     expect(certDer.byteLength).toBeGreaterThan(0);
@@ -96,13 +112,23 @@ describe("SCEP E2E", () => {
     const csr = await buildTestCsr(deviceKeyPair, "E2EDevice");
     const senderNonce = crypto.getRandomValues(new Uint8Array(16));
     const txnId = "txn-e2e-001";
-    const pkcsReq = await buildPkcsReq(csr, caCert, signerCert, deviceKeyPair.privateKey, txnId, senderNonce, true);
+    const pkcsReq = await buildPkcsReq(
+      csr,
+      caCert,
+      signerCert,
+      deviceKeyPair.privateKey,
+      txnId,
+      senderNonce,
+      true,
+    );
 
     // ── Step 4: POST PKIOperation ─────────────────────────────────────
-    const pkiRes = await handler(new Request("http://localhost/mdm/apple/scep?operation=PKIOperation", {
-      method: "POST",
-      body: pkcsReq,
-    }));
+    const pkiRes = await handler(
+      new Request("http://localhost/mdm/apple/scep?operation=PKIOperation", {
+        method: "POST",
+        body: pkcsReq,
+      }),
+    );
     expect(pkiRes.status).toBe(200);
     const certRepDer = await pkiRes.arrayBuffer();
     expect(certRepDer.byteLength).toBeGreaterThan(0);
@@ -132,7 +158,10 @@ describe("SCEP E2E", () => {
     const eContentNode = signedData.encapContentInfo.eContent!;
     const envelopedDer = (eContentNode as asn1js.OctetString).getValue() as ArrayBuffer;
 
-    const deviceJwk = await crypto.subtle.exportKey("jwk", deviceKeyPair.privateKey) as JsonWebKey;
+    const deviceJwk = (await crypto.subtle.exportKey(
+      "jwk",
+      deviceKeyPair.privateKey,
+    )) as JsonWebKey;
     const decryptedDer = await decryptEnvelopedData(envelopedDer, deviceJwk);
 
     // Decrypted bytes should be a degenerate PKCS#7 containing the device cert

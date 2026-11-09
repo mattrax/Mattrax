@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vp dev",
-    "build": "wrangler types --cwd src && vp build",
+    "build": "vp build",
     "preview": "vp preview",
-    "deploy:prod": "pnpm build && wrangler deploy",
+    "deploy": "cf deploy --prebuilt",
+    "deploy:prod": "pnpm build && cf deploy --prebuilt",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "cf:types": "cf workers types",
+    "typecheck": "cf workers types && tsc"
   },
   "dependencies": {
     "@effect/sql-pg": "catalog:",
@@ -31,17 +34,16 @@
     "fast-plist": "catalog:",
     "pg": "catalog:",
     "pkijs": "catalog:",
-    "stripe": "^22.0.0"
+    "stripe": "^22.6.2"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.0.0",
+    "@cloudflare/vite-plugin": "catalog:",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
-    "@types/pkijs": "catalog:",
+    "cf": "catalog:",
     "drizzle-kit": "catalog:",
-    "typescript": "~6.0.2",
+    "typescript": "catalog:",
     "vite": "catalog:",
-    "vite-plus": "catalog:",
-    "wrangler": "^4.0.0"
+    "vite-plus": "catalog:"
   }
 }

@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
 import { serializeSoapElement } from "../src/index.js";
 
-const runPromise = <E, A>(effect: Effect.Effect<A, E>) =>
-  Effect.runPromise(effect);
+const runPromise = <E, A>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
 describe("SOAP Serializer", () => {
   it("should serialize a simple struct with annotations", async () => {
@@ -26,7 +25,7 @@ describe("SOAP Serializer", () => {
         identifier: "Person",
         soapNamespace: "http://example.com/ns",
         soapNamespacePrefix: "ex",
-      })
+      }),
     );
 
     const xml = await runPromise(serializeSoapElement(Person, { name: "Bob" }));
@@ -36,9 +35,7 @@ describe("SOAP Serializer", () => {
 
   it("should serialize XML attributes", async () => {
     const Item = Schema.Struct({
-      id: Schema.Number.pipe(
-        Schema.annotateKey({ soapAttribute: true, soapAttributeName: "ID" })
-      ),
+      id: Schema.Number.pipe(Schema.annotateKey({ soapAttribute: true, soapAttributeName: "ID" })),
       name: Schema.String,
     }).pipe(Schema.annotate({ identifier: "Item" }));
 
@@ -50,7 +47,7 @@ describe("SOAP Serializer", () => {
   it("should serialize arrays with custom item names", async () => {
     const List = Schema.Struct({
       items: Schema.Array(Schema.String.pipe(Schema.annotateKey({ soapElementName: "Item" }))).pipe(
-        Schema.annotateKey({ soapElementName: "Items" })
+        Schema.annotateKey({ soapElementName: "Items" }),
       ),
     }).pipe(Schema.annotate({ identifier: "List" }));
 
@@ -64,7 +61,7 @@ describe("SOAP Serializer", () => {
     const Config = Schema.Struct({
       required: Schema.String,
       optional: Schema.optional(Schema.String).pipe(
-        Schema.annotateKey({ soapElementName: "Optional" })
+        Schema.annotateKey({ soapElementName: "Optional" }),
       ),
     }).pipe(Schema.annotate({ identifier: "Config" }));
 
@@ -77,7 +74,7 @@ describe("SOAP Serializer", () => {
     const Config = Schema.Struct({
       required: Schema.String,
       optional: Schema.optional(Schema.String).pipe(
-        Schema.annotateKey({ soapElementName: "Optional", soapOptionalNil: true })
+        Schema.annotateKey({ soapElementName: "Optional", soapOptionalNil: true }),
       ),
     }).pipe(Schema.annotate({ identifier: "Config" }));
 
@@ -91,7 +88,7 @@ describe("SOAP Serializer", () => {
     }).pipe(Schema.annotate({ identifier: "Message" }));
 
     const xml = await runPromise(serializeSoapElement(Message, { text: '<hello> & "world"' }));
-    expect(xml).toContain("&lt;hello&gt; &amp; \"world\"");
+    expect(xml).toContain('&lt;hello&gt; &amp; "world"');
   });
 
   it("should serialize nested structures", async () => {
@@ -106,7 +103,7 @@ describe("SOAP Serializer", () => {
     }).pipe(Schema.annotate({ identifier: "Person" }));
 
     const xml = await runPromise(
-      serializeSoapElement(Person, { name: "Alice", address: { city: "NYC", zip: "10001" } })
+      serializeSoapElement(Person, { name: "Alice", address: { city: "NYC", zip: "10001" } }),
     );
     expect(xml).toContain("<Person>");
     expect(xml).toContain("<Address>");

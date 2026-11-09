@@ -1,4 +1,4 @@
 export * as schema from "./schema.ts";
-export { Db } from "./db.ts";
-export { R2 } from "./r2.ts";
+export { Db, type EnterpriseDb } from "./db.ts";
+export { R2, type R2Bucket, type R2ObjectBody, type R2PutOptions } from "./r2.ts";
 export { Env } from "./env.ts";

@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { env as cfEnv } from "cloudflare:workers"
+import { env as cfEnv } from "cloudflare:workers";
 
 const nonEmptyString = Schema.String.check(Schema.isMinLength(1));
 const urlString = Schema.String.check(
@@ -23,7 +23,7 @@ const ApiEnvSchema = Schema.Struct({
   CLOUD_APPLE_VENDOR_KEY: Schema.optional(Schema.String),
 });
 
-const emptyStringAsUndefined = (value: unknown) => value === "" ? undefined : value;
+const emptyStringAsUndefined = (value: unknown) => (value === "" ? undefined : value);
 
 // For now this is only used for runtime validation, so transformations aren't safe.
 export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
@@ -31,7 +31,9 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   AUTH_SECRET: emptyStringAsUndefined(cfEnv.AUTH_SECRET),
   STRIPE_SECRET_KEY: emptyStringAsUndefined((cfEnv as any).STRIPE_SECRET_KEY),
   STRIPE_WEBHOOK_SECRET: emptyStringAsUndefined((cfEnv as any).STRIPE_WEBHOOK_SECRET),
-  STRIPE_DEVICE_MONTHLY_PRICE_ID: emptyStringAsUndefined((cfEnv as any).STRIPE_DEVICE_MONTHLY_PRICE_ID),
+  STRIPE_DEVICE_MONTHLY_PRICE_ID: emptyStringAsUndefined(
+    (cfEnv as any).STRIPE_DEVICE_MONTHLY_PRICE_ID,
+  ),
   CLOUD_APPLE_VENDOR_CERT: emptyStringAsUndefined(cfEnv.CLOUD_APPLE_VENDOR_CERT),
   CLOUD_APPLE_VENDOR_KEY: emptyStringAsUndefined(cfEnv.CLOUD_APPLE_VENDOR_KEY),
 });

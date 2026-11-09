@@ -13,15 +13,31 @@ export interface StripeErrorDetails {
 }
 
 export class StripeCardError extends Data.TaggedError("StripeCardError")<StripeErrorDetails> {}
-export class StripeRateLimitError extends Data.TaggedError("StripeRateLimitError")<StripeErrorDetails> {}
-export class StripeInvalidRequestError extends Data.TaggedError("StripeInvalidRequestError")<StripeErrorDetails> {}
+export class StripeRateLimitError extends Data.TaggedError(
+  "StripeRateLimitError",
+)<StripeErrorDetails> {}
+export class StripeInvalidRequestError extends Data.TaggedError(
+  "StripeInvalidRequestError",
+)<StripeErrorDetails> {}
 export class StripeApiError extends Data.TaggedError("StripeApiError")<StripeErrorDetails> {}
-export class StripeConnectionError extends Data.TaggedError("StripeConnectionError")<StripeErrorDetails> {}
-export class StripeAuthenticationError extends Data.TaggedError("StripeAuthenticationError")<StripeErrorDetails> {}
-export class StripePermissionError extends Data.TaggedError("StripePermissionError")<StripeErrorDetails> {}
-export class StripeIdempotencyError extends Data.TaggedError("StripeIdempotencyError")<StripeErrorDetails> {}
-export class StripeSignatureVerificationError extends Data.TaggedError("StripeSignatureVerificationError")<StripeErrorDetails> {}
-export class StripeUnknownError extends Data.TaggedError("StripeUnknownError")<StripeErrorDetails> {}
+export class StripeConnectionError extends Data.TaggedError(
+  "StripeConnectionError",
+)<StripeErrorDetails> {}
+export class StripeAuthenticationError extends Data.TaggedError(
+  "StripeAuthenticationError",
+)<StripeErrorDetails> {}
+export class StripePermissionError extends Data.TaggedError(
+  "StripePermissionError",
+)<StripeErrorDetails> {}
+export class StripeIdempotencyError extends Data.TaggedError(
+  "StripeIdempotencyError",
+)<StripeErrorDetails> {}
+export class StripeSignatureVerificationError extends Data.TaggedError(
+  "StripeSignatureVerificationError",
+)<StripeErrorDetails> {}
+export class StripeUnknownError extends Data.TaggedError(
+  "StripeUnknownError",
+)<StripeErrorDetails> {}
 
 export type StripeError =
   | StripeCardError
@@ -44,15 +60,25 @@ type BillingPortalSessionCreate = StripeClient["billingPortal"]["sessions"]["cre
 
 export interface EffectStripeClient {
   readonly client: StripeClient;
-  readonly effect: <A>(f: (client: StripeClient) => PromiseLike<A>) => Effect.Effect<A, StripeError>;
+  readonly effect: <A>(
+    f: (client: StripeClient) => PromiseLike<A>,
+  ) => Effect.Effect<A, StripeError>;
   readonly customers: {
-    readonly create: (...args: Parameters<CustomerCreate>) => Effect.Effect<Awaited<ReturnType<CustomerCreate>>, StripeError>;
-    readonly search: (...args: Parameters<CustomerSearch>) => Effect.Effect<Awaited<ReturnType<CustomerSearch>>, StripeError>;
-    readonly list: (...args: Parameters<CustomerList>) => Effect.Effect<Awaited<ReturnType<CustomerList>>, StripeError>;
+    readonly create: (
+      ...args: Parameters<CustomerCreate>
+    ) => Effect.Effect<Awaited<ReturnType<CustomerCreate>>, StripeError>;
+    readonly search: (
+      ...args: Parameters<CustomerSearch>
+    ) => Effect.Effect<Awaited<ReturnType<CustomerSearch>>, StripeError>;
+    readonly list: (
+      ...args: Parameters<CustomerList>
+    ) => Effect.Effect<Awaited<ReturnType<CustomerList>>, StripeError>;
   };
   readonly billingPortal: {
     readonly sessions: {
-      readonly create: (...args: Parameters<BillingPortalSessionCreate>) => Effect.Effect<Awaited<ReturnType<BillingPortalSessionCreate>>, StripeError>;
+      readonly create: (
+        ...args: Parameters<BillingPortalSessionCreate>
+      ) => Effect.Effect<Awaited<ReturnType<BillingPortalSessionCreate>>, StripeError>;
     };
   };
 }
@@ -73,15 +99,27 @@ const errorDetails = (error: unknown): StripeErrorDetails => {
   }
 
   const value = error as Record<string, unknown>;
-  const raw = typeof value.raw === "object" && value.raw !== null ? value.raw as Record<string, unknown> : undefined;
+  const raw =
+    typeof value.raw === "object" && value.raw !== null
+      ? (value.raw as Record<string, unknown>)
+      : undefined;
 
   return {
-    message: error instanceof Error ? error.message : getString(value, "message") ?? "Unknown Stripe error",
+    message:
+      error instanceof Error
+        ? error.message
+        : (getString(value, "message") ?? "Unknown Stripe error"),
     type: getString(value, "type") ?? (raw ? getString(raw, "type") : undefined),
     code: getString(value, "code") ?? (raw ? getString(raw, "code") : undefined),
-    declineCode: getString(value, "decline_code") ?? getString(value, "declineCode") ?? (raw ? getString(raw, "decline_code") : undefined),
+    declineCode:
+      getString(value, "decline_code") ??
+      getString(value, "declineCode") ??
+      (raw ? getString(raw, "decline_code") : undefined),
     param: getString(value, "param") ?? (raw ? getString(raw, "param") : undefined),
-    requestId: getString(value, "requestId") ?? getString(value, "request_id") ?? (raw ? getString(raw, "request_id") : undefined),
+    requestId:
+      getString(value, "requestId") ??
+      getString(value, "request_id") ??
+      (raw ? getString(raw, "request_id") : undefined),
     statusCode: getNumber(value, "statusCode") ?? (raw ? getNumber(raw, "statusCode") : undefined),
     cause: error,
   };
@@ -139,7 +177,9 @@ export const makeEffectStripeClient = (client: StripeClient): EffectStripeClient
   };
 };
 
-export class StripeService extends Context.Service<StripeService, EffectStripeClient>()("StripeService") {
+export class StripeService extends Context.Service<StripeService, EffectStripeClient>()(
+  "StripeService",
+) {
   static readonly make = (apiKey: string, config?: StripeConfig): EffectStripeClient =>
     makeEffectStripeClient(new Stripe(apiKey, config));
 

@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
+import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
 
 export const appleMdmApi = HttpApiGroup.make("AppleDM")
   // MDM Protocol endpoints

@@ -33,6 +33,7 @@ Thumbs.db
 
 # Cloudflare
 .wrangler
+.cloudflare
 
 # Environment
 .env

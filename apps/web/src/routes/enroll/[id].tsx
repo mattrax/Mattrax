@@ -10,7 +10,7 @@ import { enterprise, type EnrollmentResponse, type PlatformEnrollment } from "~/
 export default function EnrollPage() {
   const params = useParams();
   const [search, setSearch] = useSearchParams();
-  const searchCode = () => Array.isArray(search.code) ? search.code[0] : search.code;
+  const searchCode = () => (Array.isArray(search.code) ? search.code[0] : search.code);
   const [code, setCode] = createSignal(searchCode() ?? "");
   const enrollment = useQuery(() => ({
     queryKey: ["enterprise", "public-enrollment", params.id, searchCode()],
@@ -33,7 +33,12 @@ export default function EnrollPage() {
             <CardTitle>Enroll in Mattrax</CardTitle>
             <CardDescription>
               <Show when={enrollment.data} fallback="Verifying enrollment link...">
-                {(data) => <>Enroll a device into <span class="font-medium text-stone-900">{data().name}</span>.</>}
+                {(data) => (
+                  <>
+                    Enroll a device into{" "}
+                    <span class="font-medium text-stone-900">{data().name}</span>.
+                  </>
+                )}
               </Show>
             </CardDescription>
           </CardHeader>
@@ -46,17 +51,31 @@ export default function EnrollPage() {
 
             <Show when={enrollment.data?.authenticated === false}>
               <form class="space-y-3" onSubmit={submitCode}>
-                <p class="text-sm text-muted-foreground">Your administrator has set an enrollment password.</p>
-                <Input value={code()} onInput={(event) => setCode(event.currentTarget.value)} placeholder="Enrollment password" autofocus />
-                <Button type="submit" class="w-full">Continue</Button>
+                <p class="text-sm text-muted-foreground">
+                  Your administrator has set an enrollment password.
+                </p>
+                <Input
+                  value={code()}
+                  onInput={(event) => setCode(event.currentTarget.value)}
+                  placeholder="Enrollment password"
+                  autofocus
+                />
+                <Button type="submit" class="w-full">
+                  Continue
+                </Button>
                 <Show when={searchCode()}>
-                  <p class="text-center text-sm text-red-600">The enrollment password is invalid.</p>
+                  <p class="text-center text-sm text-red-600">
+                    The enrollment password is invalid.
+                  </p>
                 </Show>
               </form>
             </Show>
 
             <Show when={enrollment.data?.authenticated === true}>
-              <EnrollmentOptions enrollment={enrollment.data as Extract<EnrollmentResponse, { authenticated: true }>} id={params.id} />
+              <EnrollmentOptions
+                enrollment={enrollment.data as Extract<EnrollmentResponse, { authenticated: true }>}
+                id={params.id}
+              />
             </Show>
           </CardContent>
         </Card>
@@ -65,31 +84,62 @@ export default function EnrollPage() {
   );
 }
 
-function EnrollmentOptions(props: { id: string | undefined; enrollment: Extract<EnrollmentResponse, { authenticated: true }> }) {
+function EnrollmentOptions(props: {
+  id: string | undefined;
+  enrollment: Extract<EnrollmentResponse, { authenticated: true }>;
+}) {
   const [tab, setTab] = createSignal<"apple" | "windows" | "android">("apple");
   return (
     <div class="space-y-4">
       <div class="grid grid-cols-3 gap-1 rounded-lg bg-stone-100 p-1">
-        <TabButton active={tab() === "apple"} onClick={() => setTab("apple")}>Apple</TabButton>
-        <TabButton active={tab() === "windows"} onClick={() => setTab("windows")}>Windows</TabButton>
-        <TabButton active={tab() === "android"} onClick={() => setTab("android")}>Android</TabButton>
+        <TabButton active={tab() === "apple"} onClick={() => setTab("apple")}>
+          Apple
+        </TabButton>
+        <TabButton active={tab() === "windows"} onClick={() => setTab("windows")}>
+          Windows
+        </TabButton>
+        <TabButton active={tab() === "android"} onClick={() => setTab("android")}>
+          Android
+        </TabButton>
       </div>
       <Switch>
-        <Match when={tab() === "apple"}><ApplePane apple={props.enrollment.apple} /></Match>
-        <Match when={tab() === "windows"}><AvailabilityPane value={props.enrollment.windows} label="Windows enrollment" /></Match>
-        <Match when={tab() === "android"}><AndroidPane id={props.id} android={props.enrollment.android} /></Match>
+        <Match when={tab() === "apple"}>
+          <ApplePane apple={props.enrollment.apple} />
+        </Match>
+        <Match when={tab() === "windows"}>
+          <AvailabilityPane value={props.enrollment.windows} label="Windows enrollment" />
+        </Match>
+        <Match when={tab() === "android"}>
+          <AndroidPane id={props.id} android={props.enrollment.android} />
+        </Match>
       </Switch>
     </div>
   );
 }
 
 function TabButton(props: { active: boolean; onClick: () => void; children: string }) {
-  return <button type="button" onClick={props.onClick} class={props.active ? "rounded-md bg-white px-3 py-2 text-sm font-medium shadow-sm" : "rounded-md px-3 py-2 text-sm text-stone-600"}>{props.children}</button>;
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      class={
+        props.active
+          ? "rounded-md bg-white px-3 py-2 text-sm font-medium shadow-sm"
+          : "rounded-md px-3 py-2 text-sm text-stone-600"
+      }
+    >
+      {props.children}
+    </button>
+  );
 }
 
 function ApplePane(props: { apple: PlatformEnrollment }) {
-  if (typeof props.apple === "object" && "error" in props.apple) return <p class="text-center text-sm text-red-600">{props.apple.error}</p>;
-  if (typeof props.apple !== "object" || !("profile" in props.apple)) return <p class="text-center text-sm text-muted-foreground">Apple enrollment is unavailable.</p>;
+  if (typeof props.apple === "object" && "error" in props.apple)
+    return <p class="text-center text-sm text-red-600">{props.apple.error}</p>;
+  if (typeof props.apple !== "object" || !("profile" in props.apple))
+    return (
+      <p class="text-center text-sm text-muted-foreground">Apple enrollment is unavailable.</p>
+    );
   const profile = props.apple.profile;
   const download = () => {
     const link = document.createElement("a");
@@ -97,15 +147,44 @@ function ApplePane(props: { apple: PlatformEnrollment }) {
     link.download = "enroll.mobileconfig";
     link.click();
   };
-  return <div class="space-y-4"><Button class="w-full" onClick={download}>Download mobileconfig</Button><p class="text-center text-sm text-muted-foreground">Open the downloaded file, then follow the instructions in System Settings &gt; General &gt; Device Management.</p></div>;
+  return (
+    <div class="space-y-4">
+      <Button class="w-full" onClick={download}>
+        Download mobileconfig
+      </Button>
+      <p class="text-center text-sm text-muted-foreground">
+        Open the downloaded file, then follow the instructions in System Settings &gt; General &gt;
+        Device Management.
+      </p>
+    </div>
+  );
 }
 
 function AvailabilityPane(props: { value: PlatformEnrollment; label: string }) {
-  if (typeof props.value === "object" && "error" in props.value) return <p class="text-center text-sm text-red-600">{props.value.error}</p>;
-  return <p class="text-center text-sm text-muted-foreground">{props.label} is available. Follow your administrator's platform-specific instructions.</p>;
+  if (typeof props.value === "object" && "error" in props.value)
+    return <p class="text-center text-sm text-red-600">{props.value.error}</p>;
+  return (
+    <p class="text-center text-sm text-muted-foreground">
+      {props.label} is available. Follow your administrator's platform-specific instructions.
+    </p>
+  );
 }
 
 function AndroidPane(props: { id: string | undefined; android: PlatformEnrollment }) {
-  if (typeof props.android === "object" && "error" in props.android) return <p class="text-center text-sm text-red-600">{props.android.error}</p>;
-  return <div class="space-y-3 text-center text-sm text-muted-foreground"><p>Scan the QR code with Android Device Policy or open the setup link on the Android device.</p><Button as="a" href={`/api/v1/enrollment/${encodeURIComponent(props.id ?? "")}/android/link`} variant="outline">Open Android setup link</Button></div>;
+  if (typeof props.android === "object" && "error" in props.android)
+    return <p class="text-center text-sm text-red-600">{props.android.error}</p>;
+  return (
+    <div class="space-y-3 text-center text-sm text-muted-foreground">
+      <p>
+        Scan the QR code with Android Device Policy or open the setup link on the Android device.
+      </p>
+      <Button
+        as="a"
+        href={`/api/v1/enrollment/${encodeURIComponent(props.id ?? "")}/android/link`}
+        variant="outline"
+      >
+        Open Android setup link
+      </Button>
+    </div>
+  );
 }

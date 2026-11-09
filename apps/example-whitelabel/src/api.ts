@@ -1,6 +1,12 @@
 import { ApnsService, ApnsServiceLive } from "@mattrax/apns";
 import { Effect } from "effect";
-import { type ApplicationRow, type CommandRow, type DeclarationRow, type DeviceRow, sha256hex } from "./db.js";
+import {
+  type ApplicationRow,
+  type CommandRow,
+  type DeclarationRow,
+  type DeviceRow,
+  sha256hex,
+} from "./db.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -40,14 +46,22 @@ async function apnsPush(env: Env, device: DeviceRow): Promise<void> {
     Effect.provide(
       Effect.gen(function* () {
         const svc = yield* ApnsService;
-        yield* svc.push({ pushToken: device.push_token!, pushMagic: device.push_magic!, topic: device.apns_topic! });
+        yield* svc.push({
+          pushToken: device.push_token!,
+          pushMagic: device.push_magic!,
+          topic: device.apns_topic!,
+        });
       }).pipe(Effect.catchTag("ApnsError", () => Effect.void)),
       layer,
     ),
   );
 }
 
-export async function handleApi(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+export async function handleApi(
+  request: Request,
+  env: Env,
+  _ctx: ExecutionContext,
+): Promise<Response> {
   if (request.method === "OPTIONS") return new Response(null, { headers: cors });
 
   const path = new URL(request.url).pathname.slice("/api".length);
@@ -71,19 +85,27 @@ export async function handleApi(request: Request, env: Env, _ctx: ExecutionConte
     {
       const p = matchPath("/devices/:udid", path);
       if (p && m === "GET") {
-        const device = await env.DB.prepare("SELECT * FROM devices WHERE udid = ?").bind(p.udid).first<DeviceRow>();
+        const device = await env.DB.prepare("SELECT * FROM devices WHERE udid = ?")
+          .bind(p.udid)
+          .first<DeviceRow>();
         if (!device) return json({ error: "Device not found" }, 404);
         const { results: commands } = await env.DB.prepare(
           "SELECT * FROM pending_commands WHERE device_udid = ? ORDER BY created_at DESC",
-        ).bind(p.udid).all<CommandRow>();
+        )
+          .bind(p.udid)
+          .all<CommandRow>();
         const { results: declarations } = await env.DB.prepare(
           "SELECT * FROM device_declarations WHERE device_udid = ? ORDER BY created_at DESC",
-        ).bind(p.udid).all<DeclarationRow>();
+        )
+          .bind(p.udid)
+          .all<DeclarationRow>();
         const { results: apps } = await env.DB.prepare(
           `SELECT a.*, da.install_method FROM applications a
            JOIN device_applications da ON a.id = da.application_id
            WHERE da.device_udid = ? ORDER BY da.created_at DESC`,
-        ).bind(p.udid).all();
+        )
+          .bind(p.udid)
+          .all();
         return json({ device, commands, declarations, apps });
       }
     }
@@ -92,7 +114,9 @@ export async function handleApi(request: Request, env: Env, _ctx: ExecutionConte
     {
       const p = matchPath("/devices/:udid/sync", path);
       if (p && m === "POST") {
-        const device = await env.DB.prepare("SELECT * FROM devices WHERE udid = ?").bind(p.udid).first<DeviceRow>();
+        const device = await env.DB.prepare("SELECT * FROM devices WHERE udid = ?")
+          .bind(p.udid)
+          .first<DeviceRow>();
         if (!device) return json({ error: "Device not found" }, 404);
         if (!device.push_token || !device.push_magic || !device.apns_topic) {
           return json({ error: "Device has no push credentials yet" }, 422);
@@ -105,7 +129,11 @@ export async function handleApi(request: Request, env: Env, _ctx: ExecutionConte
           Effect.provide(
             Effect.gen(function* () {
               const svc = yield* ApnsService;
-              yield* svc.push({ pushToken: device.push_token!, pushMagic: device.push_magic!, topic: device.apns_topic! });
+              yield* svc.push({
+                pushToken: device.push_token!,
+                pushMagic: device.push_magic!,
+                topic: device.apns_topic!,
+              });
             }),
             layer,
           ),
@@ -133,7 +161,10 @@ export async function handleApi(request: Request, env: Env, _ctx: ExecutionConte
     {
       const p = matchPath("/devices/:udid/command", path);
       if (p && m === "POST") {
-        const body = (await request.json()) as { requestType?: string; payload?: Record<string, unknown> };
+        const body = (await request.json()) as {
+          requestType?: string;
+          payload?: Record<string, unknown>;
+        };
         if (!body.requestType) return json({ error: "requestType required" }, 400);
         const uuid = crypto.randomUUID();
         await env.DB.prepare(
@@ -180,7 +211,14 @@ export async function handleApi(request: Request, env: Env, _ctx: ExecutionConte
              type = excluded.type, payload = excluded.payload,
              server_token = excluded.server_token, category = excluded.category`,
         )
-          .bind(body.identifier, p.udid, body.type, JSON.stringify(fullDecl), serverToken, body.category)
+          .bind(
+            body.identifier,
+            p.udid,
+            body.type,
+            JSON.stringify(fullDecl),
+            serverToken,
+            body.category,
+          )
           .run();
         const device = await env.DB.prepare("SELECT * FROM devices WHERE udid = ?")
           .bind(p.udid)
@@ -194,7 +232,9 @@ export async function handleApi(request: Request, env: Env, _ctx: ExecutionConte
     {
       const p = matchPath("/devices/:udid/declaration/:identifier", path);
       if (p && m === "DELETE") {
-        await env.DB.prepare("DELETE FROM device_declarations WHERE device_udid = ? AND identifier = ?")
+        await env.DB.prepare(
+          "DELETE FROM device_declarations WHERE device_udid = ? AND identifier = ?",
+        )
           .bind(p.udid, p.identifier)
           .run();
         const device = await env.DB.prepare("SELECT * FROM devices WHERE udid = ?")
@@ -228,7 +268,14 @@ export async function handleApi(request: Request, env: Env, _ctx: ExecutionConte
              type = excluded.type, payload = excluded.payload,
              server_token = excluded.server_token`,
         )
-          .bind(body.identifier, p.udid, "com.apple.configuration.legacy", JSON.stringify(fullDecl), serverToken, "configurations")
+          .bind(
+            body.identifier,
+            p.udid,
+            "com.apple.configuration.legacy",
+            JSON.stringify(fullDecl),
+            serverToken,
+            "configurations",
+          )
           .run();
         const device = await env.DB.prepare("SELECT * FROM devices WHERE udid = ?")
           .bind(p.udid)
@@ -287,7 +334,9 @@ export async function handleApi(request: Request, env: Env, _ctx: ExecutionConte
             .first<DeviceRow>();
           if (device) await apnsPush(env, device).catch(() => undefined);
         }
-        await env.DB.prepare("DELETE FROM device_applications WHERE device_udid = ? AND application_id = ?")
+        await env.DB.prepare(
+          "DELETE FROM device_applications WHERE device_udid = ? AND application_id = ?",
+        )
           .bind(p.udid, p.appId)
           .run();
         return json({ ok: true });

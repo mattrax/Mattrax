@@ -19,7 +19,9 @@ describe("schema", () => {
         OSVersion: "14.0",
         Model: "MacBookPro18,1",
       };
-      const result = await Schema.decodeUnknownEffect(AuthenticatePlist)(data).pipe(Effect.runPromise);
+      const result = await Schema.decodeUnknownEffect(AuthenticatePlist)(data).pipe(
+        Effect.runPromise,
+      );
       expect(result.MessageType).toBe("Authenticate");
       expect(result.UDID).toBe("test-udid");
       expect(result.SerialNumber).toBe("ABC123");
@@ -27,7 +29,9 @@ describe("schema", () => {
 
     it("rejects missing required fields", async () => {
       const data = { MessageType: "Authenticate", UDID: "test" };
-      const result = await Schema.decodeUnknownEffect(AuthenticatePlist)(data).pipe(Effect.runPromiseExit);
+      const result = await Schema.decodeUnknownEffect(AuthenticatePlist)(data).pipe(
+        Effect.runPromiseExit,
+      );
       expect(result._tag).toBe("Failure");
     });
 
@@ -37,7 +41,9 @@ describe("schema", () => {
         Topic: "com.apple.mgmt.External",
         UDID: "test-udid",
       };
-      const result = await Schema.decodeUnknownEffect(AuthenticatePlist)(data).pipe(Effect.runPromise);
+      const result = await Schema.decodeUnknownEffect(AuthenticatePlist)(data).pipe(
+        Effect.runPromise,
+      );
       expect(result.SerialNumber).toBeUndefined();
       expect(result.OSVersion).toBeUndefined();
     });
@@ -52,7 +58,9 @@ describe("schema", () => {
         PushMagic: "magic-123",
         Token: "dGVzdA==",
       };
-      const result = await Schema.decodeUnknownEffect(TokenUpdatePlist)(data).pipe(Effect.runPromise);
+      const result = await Schema.decodeUnknownEffect(TokenUpdatePlist)(data).pipe(
+        Effect.runPromise,
+      );
       expect(result.MessageType).toBe("TokenUpdate");
       expect(result.UserID).toBeUndefined();
     });
@@ -66,7 +74,9 @@ describe("schema", () => {
         Token: "dGVzdA==",
         UserID: "user-123",
       };
-      const result = await Schema.decodeUnknownEffect(TokenUpdatePlist)(data).pipe(Effect.runPromise);
+      const result = await Schema.decodeUnknownEffect(TokenUpdatePlist)(data).pipe(
+        Effect.runPromise,
+      );
       expect(result.UserID).toBe("user-123");
     });
   });
@@ -90,7 +100,9 @@ describe("schema", () => {
         Status: "Acknowledged",
         CommandUUID: "cmd-001",
       };
-      const result = await Schema.decodeUnknownEffect(CommandResultPlist)(data).pipe(Effect.runPromise);
+      const result = await Schema.decodeUnknownEffect(CommandResultPlist)(data).pipe(
+        Effect.runPromise,
+      );
       expect(result.Status).toBe("Acknowledged");
       expect(result.Command).toBeUndefined();
     });
@@ -100,11 +112,11 @@ describe("schema", () => {
         UDID: "test-udid",
         Status: "Error",
         CommandUUID: "cmd-002",
-        ErrorChain: [
-          { ErrorCode: 89, ErrorDomain: "MDMClientError" },
-        ],
+        ErrorChain: [{ ErrorCode: 89, ErrorDomain: "MDMClientError" }],
       };
-      const result = await Schema.decodeUnknownEffect(CommandResultPlist)(data).pipe(Effect.runPromise);
+      const result = await Schema.decodeUnknownEffect(CommandResultPlist)(data).pipe(
+        Effect.runPromise,
+      );
       expect(result.ErrorChain).toHaveLength(1);
       expect(result.ErrorChain![0].ErrorCode).toBe(89);
     });
@@ -116,7 +128,9 @@ describe("schema", () => {
         CommandUUID: "cmd-003",
         QueryResponses: { DeviceName: "TestMac" },
       };
-      const result = await Schema.decodeUnknownEffect(CommandResultPlist)(data).pipe(Effect.runPromise);
+      const result = await Schema.decodeUnknownEffect(CommandResultPlist)(data).pipe(
+        Effect.runPromise,
+      );
       expect(result.QueryResponses).toEqual({ DeviceName: "TestMac" });
     });
   });
@@ -124,7 +138,9 @@ describe("schema", () => {
   describe("DDMStatusReport", () => {
     it("decodes a minimal status report", async () => {
       const data = { StatusItems: {} };
-      const result = await Schema.decodeUnknownEffect(DDMStatusReport)(data).pipe(Effect.runPromise);
+      const result = await Schema.decodeUnknownEffect(DDMStatusReport)(data).pipe(
+        Effect.runPromise,
+      );
       expect(result.StatusItems).toEqual({});
       expect(result.Errors).toBeUndefined();
     });
@@ -142,7 +158,9 @@ describe("schema", () => {
           },
         ],
       };
-      const result = await Schema.decodeUnknownEffect(DDMStatusReport)(data).pipe(Effect.runPromise);
+      const result = await Schema.decodeUnknownEffect(DDMStatusReport)(data).pipe(
+        Effect.runPromise,
+      );
       expect(result.Errors).toHaveLength(1);
       expect(result.Errors![0].Identifier).toBe("decl-1");
       expect(result.Errors![0].Reasons![0].Description).toBe("Something went wrong");

@@ -59,7 +59,9 @@ export default function Devices() {
       <div class="card">
         <div class="section-header">
           <h2>All Devices ({devices()?.length ?? 0})</h2>
-          <button class="btn btn-secondary btn-sm" onClick={() => refetch()}>Refresh</button>
+          <button class="btn btn-secondary btn-sm" onClick={() => refetch()}>
+            Refresh
+          </button>
         </div>
 
         <Show when={devices.loading}>
@@ -72,7 +74,9 @@ export default function Devices() {
 
         <Show when={devices() && !devices.loading}>
           <Show when={devices()!.length === 0}>
-            <p class="empty">No devices enrolled yet. Use the enrollment URL above to enroll your first device.</p>
+            <p class="empty">
+              No devices enrolled yet. Use the enrollment URL above to enroll your first device.
+            </p>
           </Show>
           <Show when={devices()!.length > 0}>
             <table>
@@ -91,7 +95,9 @@ export default function Devices() {
                 <For each={devices()}>
                   {(d) => (
                     <tr>
-                      <td class="mono" style="font-size:11px">{d.udid}</td>
+                      <td class="mono" style="font-size:11px">
+                        {d.udid}
+                      </td>
                       <td>{d.serial_number ?? "—"}</td>
                       <td>{d.model ?? "—"}</td>
                       <td>{d.os_version ?? "—"}</td>
@@ -105,7 +111,10 @@ export default function Devices() {
                       </td>
                       <td style="font-size:12px;color:#555">{fmtDate(d.enrolled_at)}</td>
                       <td>
-                        <A href={`/devices/${encodeURIComponent(d.udid)}`} class="btn btn-secondary btn-sm">
+                        <A
+                          href={`/devices/${encodeURIComponent(d.udid)}`}
+                          class="btn btn-secondary btn-sm"
+                        >
                           Details →
                         </A>
                       </td>

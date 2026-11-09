@@ -1,11 +1,7 @@
 import { Context, Effect, Layer } from "effect";
 import { ScepError } from "./schema.js";
 import { ScepRepository } from "./repository.js";
-import {
-  generateCaKeyPair,
-  exportPrivateKeyJwk,
-  importPrivateKeyJwk,
-} from "./crypto.js";
+import { generateCaKeyPair, exportPrivateKeyJwk, importPrivateKeyJwk } from "./crypto.js";
 import {
   parseScepPkcsReq,
   createDeviceCertificate,
@@ -43,7 +39,12 @@ export const ScepService = Layer.effect(
         });
         if (caCert) {
           const privateKey = yield* importPrivateKeyJwk(existing.privateKeyJwk);
-          return { privateKey, privateKeyJwk: existing.privateKeyJwk, caCert, certPem: existing.certPem };
+          return {
+            privateKey,
+            privateKeyJwk: existing.privateKeyJwk,
+            caCert,
+            certPem: existing.certPem,
+          };
         }
         // Stored cert is malformed (e.g. from old hand-written ASN.1 code) — regenerate
       }
@@ -86,7 +87,8 @@ export const ScepService = Layer.effect(
 
         const publicKey = yield* Effect.tryPromise({
           try: () => req.csr.getPublicKey(),
-          catch: (cause) => new ScepError({ message: "Failed to extract public key from CSR", cause }),
+          catch: (cause) =>
+            new ScepError({ message: "Failed to extract public key from CSR", cause }),
         });
 
         const subject: Array<{ type: string; value: string }> = [];
@@ -96,19 +98,17 @@ export const ScepService = Layer.effect(
             subject.push({ type: rdn.type, value: val.value });
           }
         }
-        if (!subject.some((item) => item.type === "2.5.4.3")) subject.push({ type: "2.5.4.3", value: "device" });
+        if (!subject.some((item) => item.type === "2.5.4.3"))
+          subject.push({ type: "2.5.4.3", value: "device" });
 
         const deviceCert = yield* Effect.tryPromise({
           try: () =>
-            createDeviceCertificate(
-              serial,
-              subject,
-              publicKey,
-              ca.caCert,
-              ca.privateKey,
-              { notBefore, notAfter },
-            ),
-          catch: (cause) => new ScepError({ message: "Failed to create device certificate", cause }),
+            createDeviceCertificate(serial, subject, publicKey, ca.caCert, ca.privateKey, {
+              notBefore,
+              notAfter,
+            }),
+          catch: (cause) =>
+            new ScepError({ message: "Failed to create device certificate", cause }),
         });
 
         const response = yield* Effect.tryPromise({

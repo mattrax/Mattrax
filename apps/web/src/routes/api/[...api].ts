@@ -1,9 +1,6 @@
 import { env } from "cloudflare:workers";
 
-const handleApiRequest = (event: { request: Request }) => {
-  if (import.meta.env.DEV) return env.API.fetch(event.request);
-  return new Response("Routing configuration is invalid!", { status: 500 });
-};
+const handleApiRequest = (event: { request: Request }) => env.API.fetch(event.request);
 
 export const GET = handleApiRequest;
 export const POST = handleApiRequest;

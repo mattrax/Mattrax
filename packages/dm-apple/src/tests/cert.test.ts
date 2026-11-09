@@ -5,7 +5,12 @@ import * as asn1js from "asn1js";
 import { pemEncode } from "@mattrax/crypto";
 
 async function generateTestCertWithTopic(topic: string, useUid = true): Promise<string> {
-  const algorithm = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]) };
+  const algorithm = {
+    name: "RSASSA-PKCS1-v1_5",
+    hash: "SHA-256",
+    modulusLength: 2048,
+    publicExponent: new Uint8Array([1, 0, 1]),
+  };
   const keyPair = await crypto.subtle.generateKey(algorithm as any, true, ["sign", "verify"]);
 
   const cert = new pkijs.Certificate();
@@ -55,7 +60,12 @@ describe("cert", () => {
     });
 
     it("returns null when neither UID nor CN is present", async () => {
-      const algorithm = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]) };
+      const algorithm = {
+        name: "RSASSA-PKCS1-v1_5",
+        hash: "SHA-256",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+      };
       const keyPair = await crypto.subtle.generateKey(algorithm as any, true, ["sign", "verify"]);
 
       const cert = new pkijs.Certificate();

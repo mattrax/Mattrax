@@ -13,6 +13,7 @@
     "@mattrax/effect-stripe": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
+    "@mattrax/management-backend-enterprise": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",

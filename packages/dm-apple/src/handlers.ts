@@ -1,6 +1,6 @@
 import { Effect, Layer, Schema } from "effect";
-import { HttpApiBuilder } from "effect/unstable/httpapi";
-import { HttpServerResponse, HttpRouter, HttpServerRequest } from "effect/unstable/http";
+import { HttpApiBuilder } from "effect/http-api";
+import { HttpServerResponse, HttpRouter, HttpServerRequest } from "effect/http";
 import { AppleMdmService } from "./service.js";
 import { parsePlist, serializePlist } from "@mattrax/plist";
 import {
@@ -14,28 +14,27 @@ import { appleMdmApi } from "./domain.js";
 import type { CheckinScope } from "@mattrax/management-backend";
 
 export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typeof appleMdmApi>) =>
-  handlers
-    .handle("enroll", () =>
-      Effect.gen(function* () {
-        const service = yield* AppleMdmService;
-        const profile = yield* service.generateEnrollmentProfile();
-        const plist = yield* serializePlist(JSON.parse(profile));
-        return HttpServerResponse.text(plist, {
-          contentType: "application/x-apple-aspen-config",
-          headers: {
-            "Content-Disposition": 'attachment; filename="enroll.mobileconfig"',
-          },
-        });
-      }).pipe(
-        Effect.match({
-          onSuccess: (val) => val,
-          onFailure: (err) => {
-            console.error("enroll error:", err);
-            return HttpServerResponse.text("", { status: 500 });
-          },
-        }),
-      ),
-    );
+  handlers.handle("enroll", () =>
+    Effect.gen(function* () {
+      const service = yield* AppleMdmService;
+      const profile = yield* service.generateEnrollmentProfile();
+      const plist = yield* serializePlist(JSON.parse(profile));
+      return HttpServerResponse.text(plist, {
+        contentType: "application/x-apple-aspen-config",
+        headers: {
+          "Content-Disposition": 'attachment; filename="enroll.mobileconfig"',
+        },
+      });
+    }).pipe(
+      Effect.match({
+        onSuccess: (val) => val,
+        onFailure: (err) => {
+          console.error("enroll error:", err);
+          return HttpServerResponse.text("", { status: 500 });
+        },
+      }),
+    ),
+  );
 
 // Raw MDM checkin/command handler — registered outside HttpApiBuilder so that
 // Apple's "application/x-apple-aspen-mdm-checkin" / "application/x-apple-aspen-mdm"
@@ -47,7 +46,9 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
     const text = new TextDecoder().decode(buf);
     const plist = yield* parsePlist(text);
 
-    const identityCertificate = request.headers["x-device-identity-certificate"] as string | undefined;
+    const identityCertificate = request.headers["x-device-identity-certificate"] as
+      | string
+      | undefined;
 
     const messageType = (plist as any)?.MessageType;
     const status = (plist as any)?.Status;
@@ -80,7 +81,12 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
           const udid = (plist as any).UDID;
           if (!udid) return HttpServerResponse.empty({ status: 200 });
 
-          const scope: CheckinScope = { _tag: "device", udid, identityCertificate, mdmOrigin: service.mdmOrigin };
+          const scope: CheckinScope = {
+            _tag: "device",
+            udid,
+            identityCertificate,
+            mdmOrigin: service.mdmOrigin,
+          };
 
           switch (endpoint) {
             case "tokens": {
@@ -127,7 +133,12 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
       const udid = (plist as any)?.UDID;
       if (!udid) return HttpServerResponse.empty({ status: 200 });
 
-      const scope: CheckinScope = { _tag: "device", udid, identityCertificate, mdmOrigin: service.mdmOrigin };
+      const scope: CheckinScope = {
+        _tag: "device",
+        udid,
+        identityCertificate,
+        mdmOrigin: service.mdmOrigin,
+      };
       const command = yield* service.handleCheckin(scope);
       if (!command) {
         const empty = yield* serializePlist({});
@@ -158,7 +169,9 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
 function handleAsset(request: HttpServerRequest.HttpServerRequest) {
   return Effect.gen(function* () {
     const service = yield* AppleMdmService;
-    const identityCertificate = request.headers["x-device-identity-certificate"] as string | undefined;
+    const identityCertificate = request.headers["x-device-identity-certificate"] as
+      | string
+      | undefined;
     const url = new URL(request.url, "http://localhost");
     const identifier = url.pathname.replace("/mdm/apple/assets/", "");
     if (!identifier) return HttpServerResponse.empty({ status: 404 });

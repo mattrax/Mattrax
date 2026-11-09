@@ -6,7 +6,7 @@ export class SoapParseError {
   readonly _tag = "SoapParseError";
   constructor(
     readonly message: string,
-    readonly cause?: unknown
+    readonly cause?: unknown,
   ) {}
 }
 
@@ -131,7 +131,8 @@ function deserializeToUnknown(ast: AST.AST, element: Element): unknown {
         // Array<T> - all children are items
         const itemAst = ast.rest[0];
         const itemName = getSoapElementName(itemAst, "item");
-        const children = element.localName === itemName ? [element] : findChildren(element, itemName);
+        const children =
+          element.localName === itemName ? [element] : findChildren(element, itemName);
         for (const child of children) {
           if (isPrimitiveAst(itemAst)) {
             result.push(deserializePrimitiveValue(itemAst, getTextContent(child)));
@@ -180,9 +181,14 @@ function deserializeToUnknown(ast: AST.AST, element: Element): unknown {
     case "Union": {
       // For unions, try each member and see which one succeeds
       // Special case: if one branch is Undefined, treat as optional
-      const nonUndefinedBranches = ast.types.filter((t) => t._tag !== "Undefined" && t._tag !== "Void");
-      
-      if (nonUndefinedBranches.length === 1 && ast.types.some((t) => t._tag === "Undefined" || t._tag === "Void")) {
+      const nonUndefinedBranches = ast.types.filter(
+        (t) => t._tag !== "Undefined" && t._tag !== "Void",
+      );
+
+      if (
+        nonUndefinedBranches.length === 1 &&
+        ast.types.some((t) => t._tag === "Undefined" || t._tag === "Void")
+      ) {
         // This is essentially an optional type
         const branch = nonUndefinedBranches[0];
         if (isPrimitiveAst(branch)) {
@@ -201,7 +207,7 @@ function deserializeToUnknown(ast: AST.AST, element: Element): unknown {
           // try next member
         }
       }
-      
+
       // Fallback: return text content
       return getTextContent(element);
     }
@@ -252,7 +258,7 @@ function deserializePrimitive(ast: AST.AST, text: string): unknown {
 
 export function deserializeSoapElement<T>(
   xml: string,
-  schema: Schema.Schema<T>
+  schema: Schema.Schema<T>,
 ): Effect.Effect<T, SoapParseError | Schema.SchemaError> {
   return Effect.gen(function* () {
     const doc = yield* Effect.try({
@@ -270,7 +276,7 @@ export function deserializeSoapElement<T>(
 
 export function deserializeSoapBody<T>(
   xml: string,
-  schema: Schema.Schema<T>
+  schema: Schema.Schema<T>,
 ): Effect.Effect<T, SoapParseError | Schema.SchemaError> {
   return Effect.gen(function* () {
     const doc = yield* Effect.try({

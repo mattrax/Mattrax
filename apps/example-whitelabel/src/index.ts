@@ -1,17 +1,24 @@
 import { Context, Layer } from "effect";
-import { HttpApi, HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi";
-import { HttpRouter, HttpServer } from "effect/unstable/http";
-import { AppleMdmService, AppleMdmTopic, appleMdmApi, appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
+import { HttpApi, HttpApiBuilder, HttpApiScalar } from "effect/http-api";
+import { HttpRouter, HttpServer } from "effect/http";
+import {
+  AppleMdmService,
+  AppleMdmTopic,
+  appleMdmApi,
+  appleMdmHandlers,
+  appleMdmRoutes,
+} from "@mattrax/dm-apple";
 import { ScepService, scepRoutes } from "@mattrax/scep";
 import { Env as CoreEnv } from "@mattrax/enterprise-core";
-import { managementWebhookGroup, managementWebhookHandlers } from "@mattrax/management-backend-http";
+import {
+  managementWebhookGroup,
+  managementWebhookHandlers,
+} from "@mattrax/management-backend-http";
 import { ManagementBackendD1 } from "./management.js";
 import { ScepRepositoryD1 } from "./scep-repo.js";
 import { handleApi } from "./api.js";
 
-const whitelabelApi = HttpApi.make("WhitelabelMDM")
-  .add(managementWebhookGroup)
-  .add(appleMdmApi);
+const whitelabelApi = HttpApi.make("WhitelabelMDM").add(managementWebhookGroup).add(appleMdmApi);
 
 function createMdmLayer(env: Env) {
   const managementBackend = ManagementBackendD1(env.DB, env.APPS);

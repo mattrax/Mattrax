@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
-import { deserializeSoapElement, DiscoverRequest, serializeSoapElement, GetPoliciesResponse, SyncML } from "@mattrax/soap";
+import {
+  deserializeSoapElement,
+  DiscoverRequest,
+  serializeSoapElement,
+  GetPoliciesResponse,
+  SyncML,
+} from "@mattrax/soap";
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
@@ -12,15 +18,37 @@ describe("Windows SOAP schemas", () => {
   });
 
   it("serializes policy responses", async () => {
-    const xml = await run(serializeSoapElement(GetPoliciesResponse, {
-      response: {
-        policyFriendlyName: { xsi: "true" },
-        nextUpdateHours: { xsi: "true" },
-        policiesNotChanged: { xsi: "true" },
-        policies: { policy: { policyOIDReference: "0", cAs: { xsi: "true" }, attributes: { commonName: "Mattrax", policySchema: "3", hashAlgorithmOIDReference: "0", revision: { majorRevision: "101", minorRevision: "0" }, certificateValidity: { validityPeriodSeconds: "31536000", renewalPeriodSeconds: "2592000" }, permission: { enroll: "true", autoEnroll: "false" }, privateKeyAttributes: { minimalKeyLength: "2048", cryptoProviders: [{ content: "Microsoft Software Key Storage Provider" }] } } } },
-      },
-      oIDs: { oID: [{ value: "1.2.3", group: "4", oIDReferenceID: "0", defaultName: "test" }] },
-    }));
+    const xml = await run(
+      serializeSoapElement(GetPoliciesResponse, {
+        response: {
+          policyFriendlyName: { xsi: "true" },
+          nextUpdateHours: { xsi: "true" },
+          policiesNotChanged: { xsi: "true" },
+          policies: {
+            policy: {
+              policyOIDReference: "0",
+              cAs: { xsi: "true" },
+              attributes: {
+                commonName: "Mattrax",
+                policySchema: "3",
+                hashAlgorithmOIDReference: "0",
+                revision: { majorRevision: "101", minorRevision: "0" },
+                certificateValidity: {
+                  validityPeriodSeconds: "31536000",
+                  renewalPeriodSeconds: "2592000",
+                },
+                permission: { enroll: "true", autoEnroll: "false" },
+                privateKeyAttributes: {
+                  minimalKeyLength: "2048",
+                  cryptoProviders: [{ content: "Microsoft Software Key Storage Provider" }],
+                },
+              },
+            },
+          },
+        },
+        oIDs: { oID: [{ value: "1.2.3", group: "4", oIDReferenceID: "0", defaultName: "test" }] },
+      }),
+    );
     expect(xml).toContain("GetPoliciesResponse");
     expect(xml).toContain("minimalKeyLength");
   });

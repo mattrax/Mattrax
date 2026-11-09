@@ -21,12 +21,22 @@
     "jsxImportSource": "solid-js"
   },
   "references": [
-    { "path": "../../packages/management-backend" },
-    { "path": "../../packages/management-backend-http" },
-    { "path": "../../packages/dm-apple" },
-    { "path": "../../packages/scep" },
-    { "path": "../../packages/apns" }
+    {
+      "path": "../../packages/management-backend"
+    },
+    {
+      "path": "../../packages/management-backend-http"
+    },
+    {
+      "path": "../../packages/dm-apple"
+    },
+    {
+      "path": "../../packages/scep"
+    },
+    {
+      "path": "../../packages/apns"
+    }
   ],
-  "include": ["src", "package.json"],
+  "include": ["src", "package.json", "cloudflare.config.ts", ".cloudflare/types"],
   "exclude": ["vite.config.ts", "node_modules"]
 }

@@ -10,8 +10,7 @@ import {
   GetPolicies,
 } from "../src/windows-mdm.js";
 
-const runPromise = <E, A>(effect: Effect.Effect<A, E>) =>
-  Effect.runPromise(effect);
+const runPromise = <E, A>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
 describe("Windows MDM - Discovery", () => {
   it("should serialize a Discovery request", async () => {
@@ -27,7 +26,9 @@ describe("Windows MDM - Discovery", () => {
     };
 
     const xml = await runPromise(serializeSoapElement(DiscoverRequest, request));
-    expect(xml).toContain('<Discover xmlns="http://schemas.microsoft.com/windows/management/2012/01/enrollment">');
+    expect(xml).toContain(
+      '<Discover xmlns="http://schemas.microsoft.com/windows/management/2012/01/enrollment">',
+    );
     expect(xml).toContain("<request>");
     expect(xml).not.toContain("<EmailAddress");
     expect(xml).toContain("<RequestVersion>5.0</RequestVersion>");
@@ -71,10 +72,14 @@ describe("Windows MDM - Discovery", () => {
     };
 
     const xml = await runPromise(serializeSoapElement(DiscoverResponse, response));
-    expect(xml).toContain('<DiscoverResponse xmlns="http://schemas.microsoft.com/windows/management/2012/01/enrollment">');
+    expect(xml).toContain(
+      '<DiscoverResponse xmlns="http://schemas.microsoft.com/windows/management/2012/01/enrollment">',
+    );
     expect(xml).toContain("<AuthPolicy>OnPremise</AuthPolicy>");
     expect(xml).toContain("<EnrollmentVersion>4.0</EnrollmentVersion>");
-    expect(xml).toContain("<EnrollmentPolicyServiceUrl>https://example.com/policy</EnrollmentPolicyServiceUrl>");
+    expect(xml).toContain(
+      "<EnrollmentPolicyServiceUrl>https://example.com/policy</EnrollmentPolicyServiceUrl>",
+    );
     expect(xml).not.toContain("AuthenticationServiceUrl");
   });
 
@@ -108,7 +113,9 @@ describe("Windows MDM - GetPolicies", () => {
     };
 
     const xml = await runPromise(serializeSoapElement(GetPolicies, request));
-    expect(xml).toContain('<GetPolicies xmlns="http://schemas.microsoft.com/windows/pki/2009/01/enrollmentpolicy">');
+    expect(xml).toContain(
+      '<GetPolicies xmlns="http://schemas.microsoft.com/windows/pki/2009/01/enrollmentpolicy">',
+    );
     expect(xml).toContain("<client>");
     expect(xml).toContain('<lastUpdate xsi:nil="true"/>');
     expect(xml).toContain('<preferredLanguage xsi:nil="true"/>');
@@ -136,11 +143,13 @@ describe("Windows MDM - GetPolicies", () => {
 describe("Windows MDM - RequestSecurityToken", () => {
   it("should serialize RequestSecurityToken with attributes", async () => {
     const request: RequestSecurityToken = {
-      tokenType: "http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken",
+      tokenType:
+        "http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken",
       requestType: "http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue",
       binarySecurityToken: {
         valueType: "http://schemas.microsoft.com/windows/pki/2009/01/enrollment#PKCS10",
-        encodingType: "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#base64binary",
+        encodingType:
+          "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#base64binary",
         content: "MIIC5jCCAc4CAQAw",
       },
       additionalContext: {
@@ -152,10 +161,18 @@ describe("Windows MDM - RequestSecurityToken", () => {
     };
 
     const xml = await runPromise(serializeSoapElement(RequestSecurityToken, request));
-    expect(xml).toContain('<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512">');
-    expect(xml).toContain("<TokenType>http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken</TokenType>");
-    expect(xml).toContain('ValueType="http://schemas.microsoft.com/windows/pki/2009/01/enrollment#PKCS10"');
-    expect(xml).toContain('EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#base64binary"');
+    expect(xml).toContain(
+      '<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512">',
+    );
+    expect(xml).toContain(
+      "<TokenType>http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken</TokenType>",
+    );
+    expect(xml).toContain(
+      'ValueType="http://schemas.microsoft.com/windows/pki/2009/01/enrollment#PKCS10"',
+    );
+    expect(xml).toContain(
+      'EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#base64binary"',
+    );
     expect(xml).toContain("<ac:AdditionalContext");
     expect(xml).toContain('Name="DeviceName"');
     expect(xml).toContain("<Value>DESKTOP-H1T20J1</Value>");
@@ -185,12 +202,15 @@ describe("Windows MDM - RequestSecurityTokenResponseCollection", () => {
   it("should serialize enrollment response", async () => {
     const response: RequestSecurityTokenResponseCollection = {
       requestSecurityTokenResponse: {
-        tokenType: "http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken",
+        tokenType:
+          "http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken",
         dispositionMessage: "",
         requestedSecurityToken: {
           binarySecurityToken: {
-            valueType: "http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentProvisionDoc",
-            encodingType: "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#base64binary",
+            valueType:
+              "http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentProvisionDoc",
+            encodingType:
+              "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#base64binary",
             content: "BASE64DOC",
           },
         },
@@ -198,9 +218,13 @@ describe("Windows MDM - RequestSecurityTokenResponseCollection", () => {
       },
     };
 
-    const xml = await runPromise(serializeSoapElement(RequestSecurityTokenResponseCollection, response));
+    const xml = await runPromise(
+      serializeSoapElement(RequestSecurityTokenResponseCollection, response),
+    );
     expect(xml).toContain("<RequestSecurityTokenResponseCollection");
-    expect(xml).toContain("<TokenType>http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken</TokenType>");
+    expect(xml).toContain(
+      "<TokenType>http://schemas.microsoft.com/5.0.0.0/ConfigurationManager/Enrollment/DeviceEnrollmentToken</TokenType>",
+    );
     expect(xml).toContain("<RequestID>0</RequestID>");
     expect(xml).toContain("BASE64DOC");
   });

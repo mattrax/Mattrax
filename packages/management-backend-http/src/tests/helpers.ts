@@ -23,8 +23,7 @@ export function mockManagementBackend(
     ManagementBackend.of({
       appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),
       appleManagementCheckin:
-        overrides?.appleManagementCheckin ??
-        (() => Effect.succeed({ _tag: "Idle" } as const)),
+        overrides?.appleManagementCheckin ?? (() => Effect.succeed({ _tag: "Idle" } as const)),
       getAppleDeclarationTokens:
         overrides?.getAppleDeclarationTokens ??
         (() =>
@@ -43,20 +42,23 @@ export function mockManagementBackend(
             assets: [],
             management: [],
           })),
-    getAppleDeclaration:
-      overrides?.getAppleDeclaration ?? (() => Effect.succeed(null)),
-    getAppleAsset:
-      overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
-    windowsDiscovery:
-      overrides?.windowsDiscovery ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
-    getWindowsEnrollmentPolicy:
-      overrides?.getWindowsEnrollmentPolicy ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
-    windowsEnroll:
-      overrides?.windowsEnroll ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
-    windowsManagementCheckin:
-      overrides?.windowsManagementCheckin ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
-    windowsDeviceEvent:
-      overrides?.windowsDeviceEvent ?? (() => Effect.fail(new Error("Windows management not supported") as never)),
-  }),
+      getAppleDeclaration: overrides?.getAppleDeclaration ?? (() => Effect.succeed(null)),
+      getAppleAsset: overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
+      windowsDiscovery:
+        overrides?.windowsDiscovery ??
+        (() => Effect.fail(new Error("Windows management not supported") as never)),
+      getWindowsEnrollmentPolicy:
+        overrides?.getWindowsEnrollmentPolicy ??
+        (() => Effect.fail(new Error("Windows management not supported") as never)),
+      windowsEnroll:
+        overrides?.windowsEnroll ??
+        (() => Effect.fail(new Error("Windows management not supported") as never)),
+      windowsManagementCheckin:
+        overrides?.windowsManagementCheckin ??
+        (() => Effect.fail(new Error("Windows management not supported") as never)),
+      windowsDeviceEvent:
+        overrides?.windowsDeviceEvent ??
+        (() => Effect.fail(new Error("Windows management not supported") as never)),
+    }),
   );
 }

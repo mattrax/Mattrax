@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
 import { deserializeSoapElement } from "../src/index.js";
 
-const runPromise = <E, A>(effect: Effect.Effect<A, E>) =>
-  Effect.runPromise(effect);
+const runPromise = <E, A>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
 describe("SOAP Deserializer", () => {
   it("should deserialize a simple struct", async () => {
@@ -19,9 +18,7 @@ describe("SOAP Deserializer", () => {
 
   it("should deserialize with attributes", async () => {
     const Item = Schema.Struct({
-      id: Schema.Number.pipe(
-        Schema.annotateKey({ soapAttribute: true, soapAttributeName: "ID" })
-      ),
+      id: Schema.Number.pipe(Schema.annotateKey({ soapAttribute: true, soapAttributeName: "ID" })),
       name: Schema.String,
     }).pipe(Schema.annotate({ identifier: "Item" }));
 
@@ -33,7 +30,7 @@ describe("SOAP Deserializer", () => {
   it("should deserialize arrays", async () => {
     const List = Schema.Struct({
       items: Schema.Array(Schema.String.pipe(Schema.annotateKey({ soapElementName: "Item" }))).pipe(
-        Schema.annotateKey({ soapElementName: "Items" })
+        Schema.annotateKey({ soapElementName: "Items" }),
       ),
     }).pipe(Schema.annotate({ identifier: "List" }));
 
@@ -46,7 +43,7 @@ describe("SOAP Deserializer", () => {
     const Config = Schema.Struct({
       required: Schema.String,
       optional: Schema.optional(Schema.String).pipe(
-        Schema.annotateKey({ soapElementName: "Optional" })
+        Schema.annotateKey({ soapElementName: "Optional" }),
       ),
     }).pipe(Schema.annotate({ identifier: "Config" }));
 
@@ -59,7 +56,7 @@ describe("SOAP Deserializer", () => {
     const Config = Schema.Struct({
       required: Schema.String,
       optional: Schema.optional(Schema.String).pipe(
-        Schema.annotateKey({ soapElementName: "Optional", soapOptionalNil: true })
+        Schema.annotateKey({ soapElementName: "Optional", soapOptionalNil: true }),
       ),
     }).pipe(Schema.annotate({ identifier: "Config" }));
 
@@ -94,11 +91,11 @@ describe("SOAP Deserializer", () => {
 
   it("should fail on invalid XML", async () => {
     const Simple = Schema.Struct({ a: Schema.String }).pipe(
-      Schema.annotate({ identifier: "Simple" })
+      Schema.annotate({ identifier: "Simple" }),
     );
 
     const result = await Effect.runPromise(
-      deserializeSoapElement("<invalid", Simple).pipe(Effect.result)
+      deserializeSoapElement("<invalid", Simple).pipe(Effect.result),
     );
     expect(result._tag).toBe("Failure");
   });
@@ -109,7 +106,7 @@ describe("SOAP Deserializer", () => {
     }).pipe(Schema.annotate({ identifier: "Strict" }));
 
     const result = await Effect.runPromise(
-      deserializeSoapElement("<Strict></Strict>", Strict).pipe(Effect.result)
+      deserializeSoapElement("<Strict></Strict>", Strict).pipe(Effect.result),
     );
     expect(result._tag).toBe("Failure");
   });

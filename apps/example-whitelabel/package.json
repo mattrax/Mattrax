@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vp dev",
-    "build": "wrangler types --cwd src && vp build",
+    "build": "vp build",
     "preview": "vp preview",
-    "deploy": "wrangler deploy"
+    "deploy": "cf deploy --prebuilt",
+    "cf:types": "cf workers types",
+    "typecheck": "cf workers types && tsc"
   },
   "dependencies": {
     "@mattrax/apns": "workspace:*",
@@ -16,17 +18,17 @@
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
     "@mattrax/scep": "workspace:*",
-    "@solidjs/router": "^0.15.3",
+    "@solidjs/router": "^0.15.4",
     "effect": "catalog:",
-    "solid-js": "^1.9.7"
+    "solid-js": "^1.9.18"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.0.0",
+    "@cloudflare/vite-plugin": "catalog:",
     "@types/node": "catalog:",
-    "typescript": "~6.0.2",
+    "cf": "catalog:",
+    "typescript": "catalog:",
     "vite": "catalog:",
-    "vite-plugin-solid": "^2.11.6",
-    "vite-plus": "catalog:",
-    "wrangler": "^4.0.0"
+    "vite-plugin-solid": "^2.11.15",
+    "vite-plus": "catalog:"
   }
 }

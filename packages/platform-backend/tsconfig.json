@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "esnext",
-    "lib": ["es2023"],
+    "lib": ["es2023", "dom"],
     "moduleDetection": "force",
     "module": "nodenext",
     "moduleResolution": "nodenext",
@@ -19,8 +19,6 @@
     "skipLibCheck": true,
     "composite": true
   },
-  "references": [
-    { "path": "../platform-api" }
-  ],
+  "references": [{ "path": "../platform-api" }],
   "include": ["src"]
 }

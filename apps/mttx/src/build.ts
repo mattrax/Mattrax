@@ -63,7 +63,7 @@ try {
   execSync(`${postjectPath} ${args.map((a) => `"${a}"`).join(" ")}`, {
     stdio: "inherit",
   });
-} catch (error) {
+} catch {
   console.warn("postject injection may have failed. Trying with npx...");
   execSync(`npx postject ${args.map((a) => `"${a}"`).join(" ")}`, {
     stdio: "inherit",
@@ -73,9 +73,12 @@ try {
 // 6. Ad-hoc sign the binary on macOS (required after modifying a copied Node binary)
 if (process.platform === "darwin") {
   console.log("Ad-hoc signing binary for macOS...");
-  execSync(`codesign --sign - --force --preserve-metadata=entitlements,requirements,flags,runtime "${binaryPath}"`, {
-    stdio: "inherit",
-  });
+  execSync(
+    `codesign --sign - --force --preserve-metadata=entitlements,requirements,flags,runtime "${binaryPath}"`,
+    {
+      stdio: "inherit",
+    },
+  );
 }
 
 console.log(`SEA binary created at: ${binaryPath}`);

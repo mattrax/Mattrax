@@ -52,7 +52,9 @@ describe("plist", () => {
     });
 
     it("escapes XML entities in strings and keys", async () => {
-      const result = await serializePlist({ "x<y": `<script>alert("xss'or'1'='1")</script>` }).pipe(Effect.runPromise);
+      const result = await serializePlist({ "x<y": `<script>alert("xss'or'1'='1")</script>` }).pipe(
+        Effect.runPromise,
+      );
       expect(result).not.toContain("<script>");
       expect(result).toContain("<key>x&lt;y</key>");
       expect(result).toContain("&apos;or&apos;");
@@ -67,7 +69,7 @@ describe("plist", () => {
         Nested: { key: "value" },
       };
       const plist = await serializePlist(original).pipe(Effect.runPromise);
-      const parsed = await parsePlist(plist).pipe(Effect.runPromise) as Record<string, unknown>;
+      const parsed = (await parsePlist(plist).pipe(Effect.runPromise)) as Record<string, unknown>;
       expect(parsed.MessageType).toBe("Authenticate");
       expect(parsed.UDID).toBe("abc-123");
       expect(parsed.Tokens).toEqual(["one", "two"]);

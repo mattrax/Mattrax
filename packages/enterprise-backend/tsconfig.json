@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "esnext",
-    "lib": ["es2023"],
+    "lib": ["es2023", "dom"],
     "moduleDetection": "force",
     "module": "nodenext",
     "moduleResolution": "nodenext",
@@ -23,6 +23,7 @@
     { "path": "../enterprise-domain" },
     { "path": "../enterprise-core" },
     { "path": "../management-backend" },
+    { "path": "../management-backend-enterprise" },
     { "path": "../plist" },
     { "path": "../crypto" }
   ],

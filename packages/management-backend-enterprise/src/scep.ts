@@ -11,10 +11,16 @@ export class ScepRepositoryLive extends ScepRepository {
     ScepRepository.of({
       getCa: () =>
         Effect.gen(function* () {
-          const [row] = yield* db.select().from(schema.scepCa).where(eq(schema.scepCa.id, 1)).limit(1);
+          const [row] = yield* db
+            .select()
+            .from(schema.scepCa)
+            .where(eq(schema.scepCa.id, 1))
+            .limit(1);
           if (!row) return null;
           if (!isJsonWebKey(row.privateKeyJwk)) {
-            return yield* Effect.fail(new ScepError({ message: "Stored CA private key is invalid" }));
+            return yield* Effect.fail(
+              new ScepError({ message: "Stored CA private key is invalid" }),
+            );
           }
           return {
             certPem: row.certPem,
@@ -24,15 +30,18 @@ export class ScepRepositoryLive extends ScepRepository {
 
       saveCa: (certPem: string, privateKeyJwk: JsonWebKey) =>
         Effect.gen(function* () {
-          yield* db.insert(schema.scepCa).values({
-            id: 1,
-            certPem,
-            privateKeyJwk,
-            createdAt: new Date(),
-          }).onConflictDoUpdate({
-            target: schema.scepCa.id,
-            set: { certPem, privateKeyJwk },
-          });
+          yield* db
+            .insert(schema.scepCa)
+            .values({
+              id: 1,
+              certPem,
+              privateKeyJwk,
+              createdAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: schema.scepCa.id,
+              set: { certPem, privateKeyJwk },
+            });
         }).pipe(Effect.mapError((cause) => new ScepError({ message: "Failed to save CA", cause }))),
 
       authenticatePkcsReq: () => Effect.void,

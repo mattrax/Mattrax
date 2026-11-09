@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi";
+import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/http-api";
 import {
   CheckinScope,
   AppleDeviceEvent,
@@ -32,7 +32,12 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
     HttpApiEndpoint.post("appleManagementCheckin", "/apple/checkin", {
       payload: Schema.Struct({ scope: CheckinScope }),
       success: ManagementManifest,
-      error: Schema.Union([ManagementNotSupported, UnknownDevice, ServerInitiatedUnenrollment, InternalServerError]),
+      error: Schema.Union([
+        ManagementNotSupported,
+        UnknownDevice,
+        ServerInitiatedUnenrollment,
+        InternalServerError,
+      ]),
     }),
   )
   .add(
@@ -51,7 +56,11 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
   )
   .add(
     HttpApiEndpoint.post("getAppleDeclaration", "/apple/declaration", {
-      payload: Schema.Struct({ scope: CheckinScope, type: Schema.String, identifier: Schema.String }),
+      payload: Schema.Struct({
+        scope: CheckinScope,
+        type: Schema.String,
+        identifier: Schema.String,
+      }),
       success: Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown)),
       error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
     }),
@@ -62,10 +71,12 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
         identityCertificate: Schema.optional(Schema.String),
         identifier: Schema.String,
       }),
-      success: Schema.NullOr(Schema.Struct({
-        content: Schema.Uint8ArrayFromBase64,
-        contentType: Schema.String,
-      })),
+      success: Schema.NullOr(
+        Schema.Struct({
+          content: Schema.Uint8ArrayFromBase64,
+          contentType: Schema.String,
+        }),
+      ),
       error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
     }),
   )

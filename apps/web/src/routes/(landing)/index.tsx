@@ -1,4 +1,4 @@
-import type { JSX, ParentProps } from "solid-js";
+import type { JSX } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { Separator } from "~/components/ui/separator";
 

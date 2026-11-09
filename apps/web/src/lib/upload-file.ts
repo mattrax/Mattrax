@@ -3,7 +3,8 @@ export function selectFile(accept: string): Promise<File> {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = accept;
-    input.onchange = () => input.files?.[0] ? resolve(input.files[0]) : reject(new Error("No file selected"));
+    input.onchange = () =>
+      input.files?.[0] ? resolve(input.files[0]) : reject(new Error("No file selected"));
     input.click();
   });
 }

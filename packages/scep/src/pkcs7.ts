@@ -24,12 +24,12 @@ const SHA256_WITH_RSA_OID = "1.2.840.113549.1.1.11";
 const CMS_CONTENT_TYPE = "1.2.840.113549.1.9.3";
 const CMS_MESSAGE_DIGEST = "1.2.840.113549.1.9.4";
 // SCEP attributes (VeriSign/iPlanet arc) — OIDs per RFC 8894 / draft-gutmann-scep
-const SCEP_MESSAGE_TYPE    = "2.16.840.1.113733.1.9.2";
-const SCEP_PKI_STATUS      = "2.16.840.1.113733.1.9.3";
+const SCEP_MESSAGE_TYPE = "2.16.840.1.113733.1.9.2";
+const SCEP_PKI_STATUS = "2.16.840.1.113733.1.9.3";
 // OID .4 = failInfo (unused in success path)
-const SCEP_SENDER_NONCE    = "2.16.840.1.113733.1.9.5";
+const SCEP_SENDER_NONCE = "2.16.840.1.113733.1.9.5";
 const SCEP_RECIPIENT_NONCE = "2.16.840.1.113733.1.9.6";
-const SCEP_TRANSACTION_ID  = "2.16.840.1.113733.1.9.7";
+const SCEP_TRANSACTION_ID = "2.16.840.1.113733.1.9.7";
 
 // Content encryption algorithms
 const AES_128_CBC_OID = "2.16.840.1.101.3.4.1.2";
@@ -51,7 +51,9 @@ async function decryptEnvelopedData(
   envelopedData: pkijs.EnvelopedData,
   privateKeyJwk: JsonWebKey,
 ): Promise<ArrayBuffer> {
-  const recipientInfo = envelopedData.recipientInfos[0]?.value as pkijs.KeyTransRecipientInfo | undefined;
+  const recipientInfo = envelopedData.recipientInfos[0]?.value as
+    | pkijs.KeyTransRecipientInfo
+    | undefined;
   if (!recipientInfo) throw new Error("No recipient info in EnvelopedData");
 
   // Export JWK → PKCS8 DER so Node.js privateDecrypt can use it for PKCS#1 v1.5.
@@ -64,7 +66,7 @@ async function decryptEnvelopedData(
     true,
     ["sign"],
   );
-  const pkcs8Der = await crypto.subtle.exportKey("pkcs8", signingKey) as ArrayBuffer;
+  const pkcs8Der = (await crypto.subtle.exportKey("pkcs8", signingKey)) as ArrayBuffer;
   const pkcs8Pem = pemEncode("PRIVATE KEY", pkcs8Der);
 
   const encryptedSessionKey = Buffer.from(recipientInfo.encryptedKey.valueBlock.valueHexView);
@@ -74,20 +76,32 @@ async function decryptEnvelopedData(
   );
 
   const contentEncAlgId = envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmId;
-  const ivHex = (envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as any)
-    ?.valueBlock?.valueHex as ArrayBuffer | undefined;
+  const ivHex = (
+    envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as any
+  )?.valueBlock?.valueHex as ArrayBuffer | undefined;
   if (!ivHex) throw new Error("Missing IV in content encryption algorithm params");
   const iv = Buffer.from(ivHex);
   const encryptedContent = envelopedData.encryptedContentInfo.getEncryptedContent();
 
-  if (contentEncAlgId === AES_128_CBC_OID || contentEncAlgId === AES_192_CBC_OID || contentEncAlgId === AES_256_CBC_OID) {
-    const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, ["decrypt"]);
+  if (
+    contentEncAlgId === AES_128_CBC_OID ||
+    contentEncAlgId === AES_192_CBC_OID ||
+    contentEncAlgId === AES_256_CBC_OID
+  ) {
+    const aesKey = await crypto.subtle.importKey(
+      "raw",
+      sessionKeyBytes,
+      { name: "AES-CBC" },
+      false,
+      ["decrypt"],
+    );
     return crypto.subtle.decrypt({ name: "AES-CBC", iv }, aesKey, encryptedContent);
   }
 
   if (contentEncAlgId === DES3_CBC_OID) {
     const decipher = createDecipheriv("des-ede3-cbc", sessionKeyBytes, iv);
-    return Buffer.concat([decipher.update(Buffer.from(encryptedContent)), decipher.final()]).buffer as ArrayBuffer;
+    return Buffer.concat([decipher.update(Buffer.from(encryptedContent)), decipher.final()])
+      .buffer as ArrayBuffer;
   }
 
   throw new Error(`Unsupported content encryption algorithm: ${contentEncAlgId}`);
@@ -104,7 +118,9 @@ async function encryptForDevice(
   const sessionKeyBytes = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(16));
 
-  const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, ["encrypt"]);
+  const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, [
+    "encrypt",
+  ]);
   const encryptedContent = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, aesKey, plaintext);
 
   // Encrypt session key with recipient's RSA public key using PKCS#1 v1.5.
@@ -126,7 +142,12 @@ async function encryptForDevice(
       algorithmId: "1.2.840.113549.1.1.1", // rsaEncryption (PKCS#1 v1.5 key transport)
       algorithmParams: new asn1js.Null(),
     }),
-    encryptedKey: new asn1js.OctetString({ valueHex: encryptedSessionKey.buffer.slice(encryptedSessionKey.byteOffset, encryptedSessionKey.byteOffset + encryptedSessionKey.byteLength) as ArrayBuffer }),
+    encryptedKey: new asn1js.OctetString({
+      valueHex: encryptedSessionKey.buffer.slice(
+        encryptedSessionKey.byteOffset,
+        encryptedSessionKey.byteOffset + encryptedSessionKey.byteLength,
+      ) as ArrayBuffer,
+    }),
   });
 
   const envelopedData = new pkijs.EnvelopedData({
@@ -221,7 +242,10 @@ export async function buildScepCertRep(
   const signedData = new pkijs.SignedData({
     version: 1,
     digestAlgorithms: [
-      new pkijs.AlgorithmIdentifier({ algorithmId: SHA256_OID, algorithmParams: new asn1js.Null() }),
+      new pkijs.AlgorithmIdentifier({
+        algorithmId: SHA256_OID,
+        algorithmParams: new asn1js.Null(),
+      }),
     ],
     encapContentInfo,
     // Device cert first (client expects it first), then CA cert
@@ -293,7 +317,9 @@ export async function buildScepCertRep(
   return new pkijs.ContentInfo({
     contentType: pkijs.ContentInfo.SIGNED_DATA,
     content: signedData.toSchema(),
-  }).toSchema().toBER(false);
+  })
+    .toSchema()
+    .toBER(false);
 }
 
 // ─── Robust eContent Extraction ──────────────────────────────────
@@ -303,10 +329,7 @@ export async function buildScepCertRep(
 function extractOctetStringContent(node: any): ArrayBuffer {
   if (!node) return new ArrayBuffer(0);
 
-  const isOctetString =
-    node.idBlock &&
-    node.idBlock.tagClass === 1 &&
-    node.idBlock.tagNumber === 4;
+  const isOctetString = node.idBlock && node.idBlock.tagClass === 1 && node.idBlock.tagNumber === 4;
 
   if (isOctetString) {
     // Primitive OCTET STRING has valueHexView
@@ -367,7 +390,11 @@ function extractEContent(eContent: any): ArrayBuffer {
 
   // Best case: eContent is a constructed block with children.
   // This happens when pkijs preserves the [0] EXPLICIT wrapper.
-  if (eContent.valueBlock && Array.isArray(eContent.valueBlock.value) && eContent.valueBlock.value.length > 0) {
+  if (
+    eContent.valueBlock &&
+    Array.isArray(eContent.valueBlock.value) &&
+    eContent.valueBlock.value.length > 0
+  ) {
     const children = eContent.valueBlock.value;
 
     if (children.length === 1) {
@@ -549,12 +576,16 @@ export function parseScepPkcsReq(
       }
 
       if (messageType !== MSG_TYPE_PKCSREQ) {
-        throw new Error(`Unexpected SCEP message type: ${messageType}, expected ${MSG_TYPE_PKCSREQ}`);
+        throw new Error(
+          `Unexpected SCEP message type: ${messageType}, expected ${MSG_TYPE_PKCSREQ}`,
+        );
       }
 
       // Collect signer certificates for encrypting the CertRep response
       const signerCerts: pkijs.Certificate[] = signedData.certificates
-        ? (signedData.certificates as pkijs.Certificate[]).filter((c) => c instanceof pkijs.Certificate)
+        ? (signedData.certificates as pkijs.Certificate[]).filter(
+            (c) => c instanceof pkijs.Certificate,
+          )
         : [];
 
       // Extract eContent
@@ -579,7 +610,9 @@ export function parseScepPkcsReq(
         }
       } catch (decryptErr: any) {
         if (isEnveloped) {
-          throw new Error(`EnvelopedData decryption failed: ${decryptErr.message ?? String(decryptErr)}`);
+          throw new Error(
+            `EnvelopedData decryption failed: ${decryptErr.message ?? String(decryptErr)}`,
+          );
         }
         // Not EnvelopedData — innerBytes is already the CSR (or unencrypted)
       }
@@ -634,7 +667,9 @@ export async function createCaCertificate(
     new pkijs.Extension({
       extnID: "2.5.29.19",
       critical: true,
-      extnValue: new pkijs.BasicConstraints({ cA: true, pathLenConstraint: 3 }).toSchema().toBER(false),
+      extnValue: new pkijs.BasicConstraints({ cA: true, pathLenConstraint: 3 })
+        .toSchema()
+        .toBER(false),
       parsedValue: new pkijs.BasicConstraints({ cA: true, pathLenConstraint: 3 }),
     }),
     new pkijs.Extension({
@@ -666,10 +701,16 @@ export async function createDeviceCertificate(
   cert.issuer = caCert.subject;
 
   cert.subject = new pkijs.RelativeDistinguishedNames({
-    typesAndValues: (typeof subject === "string" ? [{ type: "2.5.4.3", value: subject }] : subject).map((item) => new pkijs.AttributeTypeAndValue({
-      type: item.type,
-      value: new asn1js.Utf8String({ value: item.value }),
-    })),
+    typesAndValues: (typeof subject === "string"
+      ? [{ type: "2.5.4.3", value: subject }]
+      : subject
+    ).map(
+      (item) =>
+        new pkijs.AttributeTypeAndValue({
+          type: item.type,
+          value: new asn1js.Utf8String({ value: item.value }),
+        }),
+    ),
   });
 
   cert.notBefore.value = validity.notBefore;

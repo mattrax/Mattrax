@@ -7,7 +7,12 @@ import { Card, CardContent } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 
-const slugify = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+const slugify = (value: string) =>
+  value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 
 export default function NewTenantPage() {
   const navigate = useNavigate();
@@ -23,15 +28,45 @@ export default function NewTenantPage() {
   }));
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">
-      <PageHeader title="Create tenant" description="Tenants scope all MDM resources and team access." />
-      <Card class="max-w-xl"><CardContent>
-        <form class="space-y-4" onSubmit={(event) => { event.preventDefault(); createTenant.mutate(); }}>
-          <Field label="Tenant name"><Input required value={name()} onInput={(event) => { setName(event.currentTarget.value); if (!slug()) setSlug(slugify(event.currentTarget.value)); }} placeholder="Acme Operations" /></Field>
-          <Field label="Slug"><Input required value={slug()} onInput={(event) => setSlug(slugify(event.currentTarget.value))} placeholder="acme-operations" /></Field>
-          <ErrorText error={createTenant.error} />
-          <Button type="submit" disabled={createTenant.isPending}>{createTenant.isPending ? "Creating..." : "Create tenant"}</Button>
-        </form>
-      </CardContent></Card>
+      <PageHeader
+        title="Create tenant"
+        description="Tenants scope all MDM resources and team access."
+      />
+      <Card class="max-w-xl">
+        <CardContent>
+          <form
+            class="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              createTenant.mutate();
+            }}
+          >
+            <Field label="Tenant name">
+              <Input
+                required
+                value={name()}
+                onInput={(event) => {
+                  setName(event.currentTarget.value);
+                  if (!slug()) setSlug(slugify(event.currentTarget.value));
+                }}
+                placeholder="Acme Operations"
+              />
+            </Field>
+            <Field label="Slug">
+              <Input
+                required
+                value={slug()}
+                onInput={(event) => setSlug(slugify(event.currentTarget.value))}
+                placeholder="acme-operations"
+              />
+            </Field>
+            <ErrorText error={createTenant.error} />
+            <Button type="submit" disabled={createTenant.isPending}>
+              {createTenant.isPending ? "Creating..." : "Create tenant"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

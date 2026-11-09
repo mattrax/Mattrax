@@ -31,13 +31,19 @@ const ALGORITHM = {
 };
 
 async function generateKeyPair(): Promise<CryptoKeyPair> {
-  return crypto.subtle.generateKey(ALGORITHM as any, true, ["sign", "verify"]) as Promise<CryptoKeyPair>;
+  return crypto.subtle.generateKey(ALGORITHM as any, true, [
+    "sign",
+    "verify",
+  ]) as Promise<CryptoKeyPair>;
 }
 
 // ─── Test Helpers ─────────────────────────────────────────────────
 
 // Build a minimal self-signed certificate for the SCEP signer key.
-async function createScepSignerCert(keyPair: CryptoKeyPair, cn: string): Promise<pkijs.Certificate> {
+async function createScepSignerCert(
+  keyPair: CryptoKeyPair,
+  cn: string,
+): Promise<pkijs.Certificate> {
   const cert = new pkijs.Certificate();
   cert.version = 2;
   cert.serialNumber = new asn1js.Integer({ value: 1 });
@@ -71,7 +77,9 @@ async function encryptTestEnvelopedData(
   const sessionKey = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(16));
 
-  const aesKey = await crypto.subtle.importKey("raw", sessionKey, { name: "AES-CBC" }, false, ["encrypt"]);
+  const aesKey = await crypto.subtle.importKey("raw", sessionKey, { name: "AES-CBC" }, false, [
+    "encrypt",
+  ]);
   const encryptedContent = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, aesKey, plaintext);
 
   const spkiDer = recipientCert.subjectPublicKeyInfo.toSchema().toBER(false);
@@ -91,7 +99,12 @@ async function encryptTestEnvelopedData(
       algorithmId: "1.2.840.113549.1.1.1",
       algorithmParams: new asn1js.Null(),
     }),
-    encryptedKey: new asn1js.OctetString({ valueHex: encryptedSessionKey.buffer.slice(encryptedSessionKey.byteOffset, encryptedSessionKey.byteOffset + encryptedSessionKey.byteLength) as ArrayBuffer }),
+    encryptedKey: new asn1js.OctetString({
+      valueHex: encryptedSessionKey.buffer.slice(
+        encryptedSessionKey.byteOffset,
+        encryptedSessionKey.byteOffset + encryptedSessionKey.byteLength,
+      ) as ArrayBuffer,
+    }),
   });
 
   const envelopedData = new pkijs.EnvelopedData({
@@ -110,7 +123,9 @@ async function encryptTestEnvelopedData(
   return new pkijs.ContentInfo({
     contentType: pkijs.ContentInfo.ENVELOPED_DATA,
     content: envelopedData.toSchema(),
-  }).toSchema().toBER(false);
+  })
+    .toSchema()
+    .toBER(false);
 }
 
 // Decrypt a ContentInfo(EnvelopedData) using PKCS#1 v1.5 and the given private key JWK.
@@ -131,17 +146,23 @@ async function decryptTestEnvelopedData(
     true,
     ["sign"],
   );
-  const pkcs8Der = await crypto.subtle.exportKey("pkcs8", signingKey) as ArrayBuffer;
+  const pkcs8Der = (await crypto.subtle.exportKey("pkcs8", signingKey)) as ArrayBuffer;
   const pkcs8Pem = pemEncode("PRIVATE KEY", pkcs8Der);
 
-  const sessionKeyBytes = privateDecrypt({ key: pkcs8Pem, padding: constants.RSA_PKCS1_PADDING }, encryptedKey);
+  const sessionKeyBytes = privateDecrypt(
+    { key: pkcs8Pem, padding: constants.RSA_PKCS1_PADDING },
+    encryptedKey,
+  );
 
-  const ivHex = (envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as any)
-    ?.valueBlock?.valueHex as ArrayBuffer;
+  const ivHex = (
+    envelopedData.encryptedContentInfo.contentEncryptionAlgorithm.algorithmParams as any
+  )?.valueBlock?.valueHex as ArrayBuffer;
   const iv = Buffer.from(ivHex);
   const encryptedContent = envelopedData.encryptedContentInfo.getEncryptedContent();
 
-  const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, ["decrypt"]);
+  const aesKey = await crypto.subtle.importKey("raw", sessionKeyBytes, { name: "AES-CBC" }, false, [
+    "decrypt",
+  ]);
   return crypto.subtle.decrypt({ name: "AES-CBC", iv }, aesKey, encryptedContent);
 }
 
@@ -220,7 +241,9 @@ async function buildFullPkcsReq(
   return new pkijs.ContentInfo({
     contentType: pkijs.ContentInfo.SIGNED_DATA,
     content: signedData.toSchema(),
-  }).toSchema().toBER(false);
+  })
+    .toSchema()
+    .toBER(false);
 }
 
 // Build a SCEP PKCSReq with raw (unencrypted) CSR in eContent (legacy / test-only path).
@@ -293,7 +316,9 @@ async function buildRawCsrPkcsReq(
   return new pkijs.ContentInfo({
     contentType: pkijs.ContentInfo.SIGNED_DATA,
     content: signedData.toSchema(),
-  }).toSchema().toBER(false);
+  })
+    .toSchema()
+    .toBER(false);
 }
 
 // ─── Tests ────────────────────────────────────────────────────────
@@ -421,9 +446,15 @@ describe("SCEP PKCS#7", () => {
       await csr.sign(deviceKeyPair.privateKey, "SHA-256");
 
       const senderNonce = crypto.getRandomValues(new Uint8Array(16));
-      const reqDer = await buildRawCsrPkcsReq(csr, signerCert, deviceKeyPair.privateKey, "txn-raw-001", senderNonce);
+      const reqDer = await buildRawCsrPkcsReq(
+        csr,
+        signerCert,
+        deviceKeyPair.privateKey,
+        "txn-raw-001",
+        senderNonce,
+      );
 
-      const caJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey) as JsonWebKey;
+      const caJwk = (await crypto.subtle.exportKey("jwk", caKeyPair.privateKey)) as JsonWebKey;
       const result = await parseScepPkcsReq(reqDer, caCert, caJwk).pipe(Effect.runPromise);
 
       expect(result.csr).toBeDefined();
@@ -448,9 +479,16 @@ describe("SCEP PKCS#7", () => {
       await csr.sign(deviceKeyPair.privateKey, "SHA-256");
 
       const senderNonce = crypto.getRandomValues(new Uint8Array(16));
-      const reqDer = await buildFullPkcsReq(csr, caCert, signerCert, deviceKeyPair.privateKey, "txn-env-001", senderNonce);
+      const reqDer = await buildFullPkcsReq(
+        csr,
+        caCert,
+        signerCert,
+        deviceKeyPair.privateKey,
+        "txn-env-001",
+        senderNonce,
+      );
 
-      const caJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey) as JsonWebKey;
+      const caJwk = (await crypto.subtle.exportKey("jwk", caKeyPair.privateKey)) as JsonWebKey;
       const result = await parseScepPkcsReq(reqDer, caCert, caJwk).pipe(Effect.runPromise);
 
       expect(result.csr).toBeDefined();
@@ -459,7 +497,9 @@ describe("SCEP PKCS#7", () => {
       expect(result.signerCerts).toHaveLength(1);
 
       // Verify the CSR subject
-      const cnAttr = result.csr.subject.typesAndValues.find((a: pkijs.AttributeTypeAndValue) => a.type === "2.5.4.3");
+      const cnAttr = result.csr.subject.typesAndValues.find(
+        (a: pkijs.AttributeTypeAndValue) => a.type === "2.5.4.3",
+      );
       expect((cnAttr?.value as asn1js.Utf8String).valueBlock.value).toBe("TestDevice");
     });
 
@@ -475,7 +515,9 @@ describe("SCEP PKCS#7", () => {
       const filePath = join(__dirname, "testdata", "PKCSReq.der");
       const data = readFileSync(filePath);
 
-      const contentInfo = pkijs.ContentInfo.fromBER(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+      const contentInfo = pkijs.ContentInfo.fromBER(
+        data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength),
+      );
       expect(contentInfo.contentType).toBe(pkijs.ContentInfo.SIGNED_DATA);
 
       const signedData = new pkijs.SignedData({ schema: contentInfo.content });
@@ -493,7 +535,7 @@ describe("SCEP PKCS#7", () => {
   describe("Full SCEP roundtrip with EnvelopedData", () => {
     it("issues a cert and builds a CertRep that the device can decrypt", async () => {
       const signerCert = await createScepSignerCert(deviceKeyPair, "MyDevice");
-      const caJwk = await crypto.subtle.exportKey("jwk", caKeyPair.privateKey) as JsonWebKey;
+      const caJwk = (await crypto.subtle.exportKey("jwk", caKeyPair.privateKey)) as JsonWebKey;
 
       // Build CSR
       const csr = new pkijs.CertificationRequest();
@@ -513,7 +555,14 @@ describe("SCEP PKCS#7", () => {
       const txnId = "txn-roundtrip-001";
 
       // Build PKCSReq (with encrypted CSR)
-      const reqDer = await buildFullPkcsReq(csr, caCert, signerCert, deviceKeyPair.privateKey, txnId, senderNonce);
+      const reqDer = await buildFullPkcsReq(
+        csr,
+        caCert,
+        signerCert,
+        deviceKeyPair.privateKey,
+        txnId,
+        senderNonce,
+      );
 
       // Parse on the server side
       const req = await parseScepPkcsReq(reqDer, caCert, caJwk).pipe(Effect.runPromise);
@@ -584,7 +633,10 @@ describe("SCEP PKCS#7", () => {
       // valueHexView is empty on the outer node. getValue() reassembles the chunks.
       const envelopedDer = (eContentNode as asn1js.OctetString).getValue() as ArrayBuffer;
 
-      const deviceJwk = await crypto.subtle.exportKey("jwk", deviceKeyPair.privateKey) as JsonWebKey;
+      const deviceJwk = (await crypto.subtle.exportKey(
+        "jwk",
+        deviceKeyPair.privateKey,
+      )) as JsonWebKey;
       const decryptedDer = await decryptTestEnvelopedData(envelopedDer, deviceJwk);
 
       // The decrypted bytes should be a degenerate PKCS#7 containing the device cert
@@ -693,8 +745,8 @@ describe("SCEP PKCS#7", () => {
       expect(si.signedAttrs).toBeDefined();
 
       const attrTypes = si.signedAttrs!.attributes.map((a) => a.type);
-      expect(attrTypes).toContain("1.2.840.113549.1.9.3");  // contentType
-      expect(attrTypes).toContain("1.2.840.113549.1.9.4");  // messageDigest
+      expect(attrTypes).toContain("1.2.840.113549.1.9.3"); // contentType
+      expect(attrTypes).toContain("1.2.840.113549.1.9.4"); // messageDigest
       expect(attrTypes).toContain("2.16.840.1.113733.1.9.2"); // messageType
       expect(attrTypes).toContain("2.16.840.1.113733.1.9.3"); // pkiStatus
       expect(attrTypes).toContain("2.16.840.1.113733.1.9.6"); // recipientNonce

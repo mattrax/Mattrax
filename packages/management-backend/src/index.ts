@@ -1,9 +1,18 @@
 import { Schema, Context, Effect } from "effect";
 
-export class ManagementNotSupported extends Schema.TaggedErrorClass<ManagementNotSupported>()("ManagementNotSupported", {}) {}
-export class UnknownDevice extends Schema.TaggedErrorClass<UnknownDevice>()("UnknownDevice", {}) {}
-export class ServerInitiatedUnenrollment extends Schema.TaggedErrorClass<ServerInitiatedUnenrollment>()("ServerInitiatedUnenrollment", {}) {}
-export class InternalServerError extends Schema.TaggedErrorClass<InternalServerError>()("InternalServerError", {}) {}
+export class ManagementNotSupported extends Schema.TaggedError<ManagementNotSupported>()(
+  "ManagementNotSupported",
+  {},
+) {}
+export class UnknownDevice extends Schema.TaggedError<UnknownDevice>()("UnknownDevice", {}) {}
+export class ServerInitiatedUnenrollment extends Schema.TaggedError<ServerInitiatedUnenrollment>()(
+  "ServerInitiatedUnenrollment",
+  {},
+) {}
+export class InternalServerError extends Schema.TaggedError<InternalServerError>()(
+  "InternalServerError",
+  {},
+) {}
 
 export class MdmOrigin extends Schema.Class<MdmOrigin>("MdmOrigin")({
   url: Schema.String,
@@ -50,15 +59,23 @@ export const AppleDeviceEvent = Schema.Union([
   }),
   Schema.TaggedStruct("DeclarationStatus", {
     statusItems: Schema.optional(Schema.Unknown),
-    errors: Schema.optional(Schema.Array(Schema.Struct({
-      identifier: Schema.String,
-      serverToken: Schema.String,
-      active: Schema.Boolean,
-      valid: Schema.String,
-      reasons: Schema.optional(Schema.Array(Schema.Struct({
-        description: Schema.String,
-      }))),
-    }))),
+    errors: Schema.optional(
+      Schema.Array(
+        Schema.Struct({
+          identifier: Schema.String,
+          serverToken: Schema.String,
+          active: Schema.Boolean,
+          valid: Schema.String,
+          reasons: Schema.optional(
+            Schema.Array(
+              Schema.Struct({
+                description: Schema.String,
+              }),
+            ),
+          ),
+        }),
+      ),
+    ),
   }),
 ]);
 export type AppleDeviceEvent = typeof AppleDeviceEvent.Type;
@@ -183,30 +200,86 @@ export type WindowsManagementResponse = typeof WindowsManagementResponse.Type;
 export const WindowsDeviceEvent = Schema.Union([
   Schema.TaggedStruct("Enrolled", { deviceId: Schema.String }),
   Schema.TaggedStruct("ManagementCheckin", { deviceId: Schema.String }),
-  Schema.TaggedStruct("CommandResult", { deviceId: Schema.String, status: Schema.String, commandRef: Schema.optional(Schema.String) }),
+  Schema.TaggedStruct("CommandResult", {
+    deviceId: Schema.String,
+    status: Schema.String,
+    commandRef: Schema.optional(Schema.String),
+  }),
 ]);
 export type WindowsDeviceEvent = typeof WindowsDeviceEvent.Type;
 
 export declare namespace ManagementBackend {
   export type Service = {
     // Device lifecycle and protocol events (device-initiated)
-    readonly appleDeviceEvent: (scope: CheckinScope, event: AppleDeviceEvent) => Effect.Effect<void, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    readonly appleDeviceEvent: (
+      scope: CheckinScope,
+      event: AppleDeviceEvent,
+    ) => Effect.Effect<void, ManagementNotSupported | UnknownDevice | InternalServerError>;
 
     // Regular device checkin: returns what the device should do next (imperative)
-    readonly appleManagementCheckin: (scope: CheckinScope) => Effect.Effect<ManagementManifest, ManagementNotSupported | UnknownDevice | ServerInitiatedUnenrollment | InternalServerError>;
+    readonly appleManagementCheckin: (
+      scope: CheckinScope,
+    ) => Effect.Effect<
+      ManagementManifest,
+      ManagementNotSupported | UnknownDevice | ServerInitiatedUnenrollment | InternalServerError
+    >;
 
     // DDM sub-endpoint handlers (device-initiated)
-    readonly getAppleDeclarationTokens: (scope: CheckinScope) => Effect.Effect<DdmTokens, ManagementNotSupported | UnknownDevice | InternalServerError>;
-    readonly getAppleDeclarationItems: (scope: CheckinScope) => Effect.Effect<DdmDeclarationItems, ManagementNotSupported | UnknownDevice | InternalServerError>;
-    readonly getAppleDeclaration: (scope: CheckinScope, type: string, identifier: string) => Effect.Effect<Record<string, unknown> | null, ManagementNotSupported | UnknownDevice | InternalServerError>;
-    readonly getAppleAsset: (identityCertificate: string | undefined, identifier: string) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    readonly getAppleDeclarationTokens: (
+      scope: CheckinScope,
+    ) => Effect.Effect<DdmTokens, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    readonly getAppleDeclarationItems: (
+      scope: CheckinScope,
+    ) => Effect.Effect<
+      DdmDeclarationItems,
+      ManagementNotSupported | UnknownDevice | InternalServerError
+    >;
+    readonly getAppleDeclaration: (
+      scope: CheckinScope,
+      type: string,
+      identifier: string,
+    ) => Effect.Effect<
+      Record<string, unknown> | null,
+      ManagementNotSupported | UnknownDevice | InternalServerError
+    >;
+    readonly getAppleAsset: (
+      identityCertificate: string | undefined,
+      identifier: string,
+    ) => Effect.Effect<
+      { content: Uint8Array; contentType: string } | null,
+      ManagementNotSupported | UnknownDevice | InternalServerError
+    >;
 
-    readonly windowsDiscovery: (request: WindowsDiscoveryRequest) => Effect.Effect<WindowsDiscoveryResponse, ManagementNotSupported | InternalServerError>;
-    readonly getWindowsEnrollmentPolicy: (authToken: string) => Effect.Effect<WindowsEnrollmentPolicy, ManagementNotSupported | UnknownDevice | InternalServerError>;
-    readonly windowsEnroll: (request: WindowsEnrollmentRequest) => Effect.Effect<WindowsEnrollmentResult, ManagementNotSupported | UnknownDevice | InternalServerError>;
-    readonly windowsManagementCheckin: (scope: WindowsManagementScope, request: WindowsManagementRequest) => Effect.Effect<WindowsManagementResponse, ManagementNotSupported | UnknownDevice | InternalServerError>;
-    readonly windowsDeviceEvent: (scope: WindowsManagementScope, event: WindowsDeviceEvent) => Effect.Effect<void, ManagementNotSupported | UnknownDevice | InternalServerError>;
+    readonly windowsDiscovery: (
+      request: WindowsDiscoveryRequest,
+    ) => Effect.Effect<WindowsDiscoveryResponse, ManagementNotSupported | InternalServerError>;
+    readonly getWindowsEnrollmentPolicy: (
+      authToken: string,
+    ) => Effect.Effect<
+      WindowsEnrollmentPolicy,
+      ManagementNotSupported | UnknownDevice | InternalServerError
+    >;
+    readonly windowsEnroll: (
+      request: WindowsEnrollmentRequest,
+    ) => Effect.Effect<
+      WindowsEnrollmentResult,
+      ManagementNotSupported | UnknownDevice | InternalServerError
+    >;
+    readonly windowsManagementCheckin: (
+      scope: WindowsManagementScope,
+      request: WindowsManagementRequest,
+    ) => Effect.Effect<
+      WindowsManagementResponse,
+      ManagementNotSupported | UnknownDevice | InternalServerError
+    >;
+    readonly windowsDeviceEvent: (
+      scope: WindowsManagementScope,
+      event: WindowsDeviceEvent,
+    ) => Effect.Effect<void, ManagementNotSupported | UnknownDevice | InternalServerError>;
   };
 }
 
-export class ManagementBackend extends Context.Service<ManagementBackend, ManagementBackend.Service>()("ManagementBackend") {}
+export class ManagementBackend extends Context.Service<
+  ManagementBackend,
+  ManagementBackend.Service
+>()("ManagementBackend") {}

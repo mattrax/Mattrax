@@ -12,7 +12,10 @@ export const ScepRepositoryD1 = (db: D1Database) =>
               .prepare("SELECT cert_pem, private_key_jwk FROM scep_ca WHERE id = 1")
               .first<{ cert_pem: string; private_key_jwk: string }>();
             if (!row) return null;
-            return { certPem: row.cert_pem, privateKeyJwk: JSON.parse(row.private_key_jwk) as JsonWebKey };
+            return {
+              certPem: row.cert_pem,
+              privateKeyJwk: JSON.parse(row.private_key_jwk) as JsonWebKey,
+            };
           },
           catch: (cause) => new ScepError({ message: "Failed to get CA", cause }),
         }),

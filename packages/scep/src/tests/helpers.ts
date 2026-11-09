@@ -22,10 +22,16 @@ const ALGORITHM = {
 };
 
 export async function generateKeyPair(): Promise<CryptoKeyPair> {
-  return crypto.subtle.generateKey(ALGORITHM as any, true, ["sign", "verify"]) as Promise<CryptoKeyPair>;
+  return crypto.subtle.generateKey(ALGORITHM as any, true, [
+    "sign",
+    "verify",
+  ]) as Promise<CryptoKeyPair>;
 }
 
-export async function createTestCaCert(keyPair: CryptoKeyPair, cn: string): Promise<pkijs.Certificate> {
+export async function createTestCaCert(
+  keyPair: CryptoKeyPair,
+  cn: string,
+): Promise<pkijs.Certificate> {
   const cert = new pkijs.Certificate();
   cert.version = 2;
   cert.serialNumber = new asn1js.Integer({ value: 1 });
@@ -54,7 +60,9 @@ export async function createTestCaCert(keyPair: CryptoKeyPair, cn: string): Prom
     new pkijs.Extension({
       extnID: "2.5.29.19",
       critical: true,
-      extnValue: new pkijs.BasicConstraints({ cA: true, pathLenConstraint: 3 }).toSchema().toBER(false),
+      extnValue: new pkijs.BasicConstraints({ cA: true, pathLenConstraint: 3 })
+        .toSchema()
+        .toBER(false),
       parsedValue: new pkijs.BasicConstraints({ cA: true, pathLenConstraint: 3 }),
     }),
     new pkijs.Extension({
@@ -70,7 +78,10 @@ export async function createTestCaCert(keyPair: CryptoKeyPair, cn: string): Prom
   return cert;
 }
 
-export async function createTestSignerCert(keyPair: CryptoKeyPair, cn: string): Promise<pkijs.Certificate> {
+export async function createTestSignerCert(
+  keyPair: CryptoKeyPair,
+  cn: string,
+): Promise<pkijs.Certificate> {
   const cert = new pkijs.Certificate();
   cert.version = 2;
   cert.serialNumber = new asn1js.Integer({ value: 1 });
@@ -95,7 +106,10 @@ export async function createTestSignerCert(keyPair: CryptoKeyPair, cn: string): 
   return cert;
 }
 
-export async function buildTestCsr(keyPair: CryptoKeyPair, cn: string): Promise<pkijs.CertificationRequest> {
+export async function buildTestCsr(
+  keyPair: CryptoKeyPair,
+  cn: string,
+): Promise<pkijs.CertificationRequest> {
   const csr = new pkijs.CertificationRequest();
   csr.version = 0;
   csr.subject = new pkijs.RelativeDistinguishedNames({
@@ -118,7 +132,9 @@ export async function encryptEnvelopedData(
   const sessionKey = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(16));
 
-  const aesKey = await crypto.subtle.importKey("raw", sessionKey, { name: "AES-CBC" }, false, ["encrypt"]);
+  const aesKey = await crypto.subtle.importKey("raw", sessionKey, { name: "AES-CBC" }, false, [
+    "encrypt",
+  ]);
   const encryptedContent = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, aesKey, plaintext);
 
   const spkiDer = recipientCert.subjectPublicKeyInfo.toSchema().toBER(false);
@@ -162,7 +178,9 @@ export async function encryptEnvelopedData(
   return new pkijs.ContentInfo({
     contentType: pkijs.ContentInfo.ENVELOPED_DATA,
     content: envelopedData.toSchema(),
-  }).toSchema().toBER(false);
+  })
+    .toSchema()
+    .toBER(false);
 }
 
 export async function buildPkcsReq(
@@ -237,7 +255,9 @@ export async function buildPkcsReq(
   return new pkijs.ContentInfo({
     contentType: pkijs.ContentInfo.SIGNED_DATA,
     content: signedData.toSchema(),
-  }).toSchema().toBER(false);
+  })
+    .toSchema()
+    .toBER(false);
 }
 
 export function mockScepRepository(

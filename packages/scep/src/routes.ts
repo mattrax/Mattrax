@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { HttpServerResponse, HttpRouter } from "effect/unstable/http";
+import { HttpServerResponse, HttpRouter } from "effect/http";
 import { ScepServiceTag } from "./service.js";
 
 export const scepRoutes = Layer.mergeAll(

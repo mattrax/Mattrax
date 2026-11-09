@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
-import { HttpRouter, HttpServer } from "effect/unstable/http";
-import { HttpApiBuilder } from "effect/unstable/httpapi";
+import { HttpRouter, HttpServer } from "effect/http";
+import { HttpApiBuilder } from "effect/http-api";
 import {
   ManagementNotSupported,
   UnknownDevice,
@@ -15,11 +15,7 @@ async function makeHandler(backendLayer: Layer.Layer<any>) {
     openapiPath: "/openapi.json",
   }).pipe(
     Layer.provide(
-      HttpApiBuilder.group(
-        managementApi,
-        "ManagementWebhook",
-        managementWebhookHandlers,
-      ),
+      HttpApiBuilder.group(managementApi, "ManagementWebhook", managementWebhookHandlers),
     ),
   );
   const appLayer = apiLayer.pipe(
@@ -30,7 +26,11 @@ async function makeHandler(backendLayer: Layer.Layer<any>) {
   return { handler, dispose };
 }
 
-const deviceScope = { _tag: "device" as const, udid: "test-udid-001", mdmOrigin: { url: "https://mdm.test" } };
+const deviceScope = {
+  _tag: "device" as const,
+  udid: "test-udid-001",
+  mdmOrigin: { url: "https://mdm.test" },
+};
 
 describe("Management Backend HTTP E2E", () => {
   it("handles apple device event", async () => {
@@ -86,7 +86,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body._tag).toBe("Command");
     expect(body.commandUUID).toBe("cmd-001");
     await dispose();
@@ -114,7 +114,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body.activationsToken).toBe("act-001");
     expect(body.configurationsToken).toBe("cfg-001");
     expect(body.assetsToken).toBe("asset-001");
@@ -144,7 +144,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body.activations).toHaveLength(1);
     expect(body.configurations).toHaveLength(1);
     expect(body.assets).toHaveLength(1);
@@ -177,7 +177,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBe(200);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body.Identifier).toBe("decl-001");
     expect(body.Type).toBe("com.apple.configuration");
     await dispose();
@@ -185,8 +185,7 @@ describe("Management Backend HTTP E2E", () => {
 
   it("propagates ManagementNotSupported errors", async () => {
     const backend = mockManagementBackend({
-      appleManagementCheckin: () =>
-        Effect.fail(new ManagementNotSupported()),
+      appleManagementCheckin: () => Effect.fail(new ManagementNotSupported()),
     });
 
     const { handler, dispose } = await makeHandler(backend);
@@ -200,7 +199,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body._tag).toBe("ManagementNotSupported");
     await dispose();
   });
@@ -221,7 +220,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body._tag).toBe("UnknownDevice");
     await dispose();
   });
@@ -242,7 +241,7 @@ describe("Management Backend HTTP E2E", () => {
     );
 
     expect(res.status).toBeGreaterThanOrEqual(400);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body._tag).toBe("InternalServerError");
     await dispose();
   });

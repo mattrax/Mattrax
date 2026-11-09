@@ -70,11 +70,11 @@ export type R2Bucket = {
   readonly list: (options?: R2ListOptions) => Promise<R2Objects>;
 };
 
-export class R2FileNotFound extends Schema.TaggedErrorClass<R2FileNotFound>()("R2FileNotFound", {
+export class R2FileNotFound extends Schema.TaggedError<R2FileNotFound>()("R2FileNotFound", {
   message: Schema.String,
 }) {}
 
-export class R2InternalError extends Schema.TaggedErrorClass<R2InternalError>()("R2InternalError", {
+export class R2InternalError extends Schema.TaggedError<R2InternalError>()("R2InternalError", {
   message: Schema.String,
 }) {}
 
@@ -82,8 +82,15 @@ export type R2Error = R2FileNotFound | R2InternalError;
 
 export declare namespace R2 {
   export type Service = {
-    readonly put: (key: string, value: R2PutValue, options?: R2PutOptions) => Effect.Effect<R2Object, R2InternalError>;
-    readonly get: (key: string, options?: R2GetOptions) => Effect.Effect<R2ObjectBody, R2FileNotFound | R2InternalError>;
+    readonly put: (
+      key: string,
+      value: R2PutValue,
+      options?: R2PutOptions,
+    ) => Effect.Effect<R2Object, R2InternalError>;
+    readonly get: (
+      key: string,
+      options?: R2GetOptions,
+    ) => Effect.Effect<R2ObjectBody, R2FileNotFound | R2InternalError>;
     readonly head: (key: string) => Effect.Effect<R2Object, R2FileNotFound | R2InternalError>;
     readonly delete: (keys: string | ReadonlyArray<string>) => Effect.Effect<void, R2InternalError>;
     readonly list: (options?: R2ListOptions) => Effect.Effect<R2Objects, R2InternalError>;
@@ -91,14 +98,20 @@ export declare namespace R2 {
   };
 }
 
-const stringField = (value: unknown, field: string) => typeof value === "object" && value !== null && typeof (value as Record<string, unknown>)[field] === "string"
-  ? (value as Record<string, string>)[field]
-  : undefined;
+const stringField = (value: unknown, field: string) =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as Record<string, unknown>)[field] === "string"
+    ? (value as Record<string, string>)[field]
+    : undefined;
 
 export const toR2Error = (cause: unknown): R2Error => {
   if (cause instanceof R2FileNotFound || cause instanceof R2InternalError) return cause;
 
-  const message = cause instanceof Error ? cause.message : stringField(cause, "message") ?? "R2 operation failed";
+  const message =
+    cause instanceof Error
+      ? cause.message
+      : (stringField(cause, "message") ?? "R2 operation failed");
   const code = stringField(cause, "code") ?? stringField(cause, "name");
 
   if (code === "NoSuchKey" || code === "NotFound" || code === "404" || /not found/i.test(message)) {
@@ -115,14 +128,14 @@ const toR2InternalError = (cause: unknown): R2InternalError => {
 
 export class R2 extends Context.Service<R2, R2.Service>()("@mattrax/enterprise-core/R2") {
   static readonly make = (bucket: R2Bucket): R2.Service => ({
-    put: Effect.fn("R2.put")(function*(key, value, options) {
+    put: Effect.fn("R2.put")(function* (key, value, options) {
       return yield* Effect.tryPromise({
         try: () => bucket.put(key, value, options),
         catch: toR2InternalError,
       });
     }),
 
-    get: Effect.fn("R2.get")(function*(key, options) {
+    get: Effect.fn("R2.get")(function* (key, options) {
       const object = yield* Effect.tryPromise({
         try: () => bucket.get(key, options),
         catch: toR2Error,
@@ -135,7 +148,7 @@ export class R2 extends Context.Service<R2, R2.Service>()("@mattrax/enterprise-c
       return object;
     }),
 
-    head: Effect.fn("R2.head")(function*(key) {
+    head: Effect.fn("R2.head")(function* (key) {
       const object = yield* Effect.tryPromise({
         try: () => bucket.head(key),
         catch: toR2Error,
@@ -148,21 +161,21 @@ export class R2 extends Context.Service<R2, R2.Service>()("@mattrax/enterprise-c
       return object;
     }),
 
-    delete: Effect.fn("R2.delete")(function*(keys) {
+    delete: Effect.fn("R2.delete")(function* (keys) {
       return yield* Effect.tryPromise({
         try: () => bucket.delete(keys),
         catch: toR2InternalError,
       });
     }),
 
-    list: Effect.fn("R2.list")(function*(options) {
+    list: Effect.fn("R2.list")(function* (options) {
       return yield* Effect.tryPromise({
         try: () => bucket.list(options),
         catch: toR2InternalError,
       });
     }),
 
-    arrayBuffer: Effect.fn("R2.arrayBuffer")(function*(object) {
+    arrayBuffer: Effect.fn("R2.arrayBuffer")(function* (object) {
       return yield* Effect.tryPromise({
         try: () => object.arrayBuffer(),
         catch: toR2InternalError,

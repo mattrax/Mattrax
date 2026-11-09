@@ -4,7 +4,6 @@
     "module": "ESNext",
     "types": ["vite/client"],
     "skipLibCheck": true,
-
     "moduleResolution": "bundler",
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
@@ -16,15 +15,13 @@
     "moduleDetection": "force",
     "isolatedModules": true,
     "noEmit": true,
-
     "strict": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-
     "paths": {
       "~/*": ["./src/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "cloudflare.config.ts", ".cloudflare/types"]
 }

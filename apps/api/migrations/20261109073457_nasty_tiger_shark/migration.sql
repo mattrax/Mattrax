@@ -3,13 +3,20 @@ CREATE TABLE "account" (
 	"account_id" text NOT NULL,
 	"provider_id" text NOT NULL,
 	"user_id" text NOT NULL,
-	"access_token" text,
-	"refresh_token" text,
-	"id_token" text,
-	"access_token_expires_at" timestamp,
-	"refresh_token_expires_at" timestamp,
-	"scope" text,
 	"password" text,
+	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "account_api_token" (
+	"id" text PRIMARY KEY,
+	"user_id" text NOT NULL,
+	"name" text NOT NULL,
+	"token_prefix" text NOT NULL,
+	"token_hash" text NOT NULL,
+	"last_used_at" timestamp,
+	"expires_at" timestamp,
+	"revoked_at" timestamp,
 	"created_at" timestamp NOT NULL,
 	"updated_at" timestamp NOT NULL
 );
@@ -110,7 +117,8 @@ CREATE TABLE "invitation" (
 	"role" text,
 	"status" text NOT NULL,
 	"expires_at" timestamp NOT NULL,
-	"created_at" timestamp NOT NULL
+	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "member" (
@@ -118,7 +126,8 @@ CREATE TABLE "member" (
 	"organization_id" text NOT NULL,
 	"user_id" text NOT NULL,
 	"role" text NOT NULL,
-	"created_at" timestamp NOT NULL
+	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "organization" (
@@ -128,7 +137,8 @@ CREATE TABLE "organization" (
 	"logo" text,
 	"metadata" text,
 	"stripe_customer_id" text,
-	"created_at" timestamp NOT NULL
+	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "organization_device_usage" (
@@ -160,14 +170,14 @@ CREATE TABLE "scep_ca" (
 --> statement-breakpoint
 CREATE TABLE "session" (
 	"id" text PRIMARY KEY,
+	"token_hash" text NOT NULL,
 	"expires_at" timestamp NOT NULL,
-	"token" text NOT NULL,
-	"created_at" timestamp NOT NULL,
-	"updated_at" timestamp NOT NULL,
 	"ip_address" text,
 	"user_agent" text,
 	"active_organization_id" text,
-	"user_id" text NOT NULL
+	"user_id" text NOT NULL,
+	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "subscription" (
@@ -180,14 +190,8 @@ CREATE TABLE "subscription" (
 	"period_start" timestamp,
 	"period_end" timestamp,
 	"cancel_at_period_end" boolean,
-	"cancel_at" timestamp,
-	"canceled_at" timestamp,
-	"ended_at" timestamp,
-	"seats" integer,
-	"trial_start" timestamp,
-	"trial_end" timestamp,
-	"billing_interval" text,
-	"stripe_schedule_id" text
+	"created_at" timestamp NOT NULL,
+	"updated_at" timestamp NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "user" (
@@ -204,7 +208,9 @@ CREATE TABLE "user" (
 CREATE TABLE "verification" (
 	"id" text PRIMARY KEY,
 	"identifier" text NOT NULL,
-	"value" text NOT NULL,
+	"value_hash" text NOT NULL,
+	"kind" text NOT NULL,
+	"metadata" jsonb,
 	"expires_at" timestamp NOT NULL,
 	"created_at" timestamp NOT NULL,
 	"updated_at" timestamp NOT NULL
@@ -212,6 +218,8 @@ CREATE TABLE "verification" (
 --> statement-breakpoint
 CREATE UNIQUE INDEX "account_provider_account_unique" ON "account" ("provider_id","account_id");--> statement-breakpoint
 CREATE INDEX "account_user_id_idx" ON "account" ("user_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "account_api_token_hash_unique" ON "account_api_token" ("token_hash");--> statement-breakpoint
+CREATE INDEX "account_api_token_user_id_idx" ON "account_api_token" ("user_id");--> statement-breakpoint
 CREATE INDEX "device_organization_id_idx" ON "device" ("organization_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "device_serial_unique" ON "device" ("serial");--> statement-breakpoint
 CREATE INDEX "enterprise_group_organization_id_idx" ON "enterprise_group" ("organization_id");--> statement-breakpoint
@@ -220,12 +228,14 @@ CREATE UNIQUE INDEX "member_user_organization_unique" ON "member" ("user_id","or
 CREATE INDEX "member_organization_id_idx" ON "member" ("organization_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "organization_slug_unique" ON "organization" ("slug");--> statement-breakpoint
 CREATE INDEX "policy_organization_id_idx" ON "policy" ("organization_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "session_token_unique" ON "session" ("token");--> statement-breakpoint
+CREATE UNIQUE INDEX "session_token_hash_unique" ON "session" ("token_hash");--> statement-breakpoint
 CREATE INDEX "session_user_id_idx" ON "session" ("user_id");--> statement-breakpoint
 CREATE INDEX "subscription_reference_id_idx" ON "subscription" ("reference_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "user_email_unique" ON "user" ("email");--> statement-breakpoint
 CREATE INDEX "verification_identifier_idx" ON "verification" ("identifier");--> statement-breakpoint
+CREATE UNIQUE INDEX "verification_value_hash_unique" ON "verification" ("value_hash");--> statement-breakpoint
 ALTER TABLE "account" ADD CONSTRAINT "account_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id") ON DELETE CASCADE;--> statement-breakpoint
+ALTER TABLE "account_api_token" ADD CONSTRAINT "account_api_token_user_id_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "user"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "apple_push_certificate" ADD CONSTRAINT "apple_push_certificate_organization_id_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "organization"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "configuration" ADD CONSTRAINT "configuration_policy_id_policy_id_fkey" FOREIGN KEY ("policy_id") REFERENCES "policy"("id") ON DELETE CASCADE;--> statement-breakpoint
 ALTER TABLE "device" ADD CONSTRAINT "device_organization_id_organization_id_fkey" FOREIGN KEY ("organization_id") REFERENCES "organization"("id") ON DELETE CASCADE;--> statement-breakpoint

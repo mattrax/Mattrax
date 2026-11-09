@@ -43,13 +43,24 @@ pnpm install
 
 ## Cloud
 
-Mattrax's Cloud deployment consists of two Cloudflare Workers.
+Mattrax's Cloud deployment consists of two Cloudflare Workers: a web Worker that serves the
+dashboard and documentation at `e.mattrax.app`, and an API Worker that is only reachable
+through the web Worker's service binding.
+
+Configuration lives in each app's `cloudflare.config.ts` and deployments use the
+[`cf` CLI](https://github.com/cloudflare/cf). Authenticate once with:
 
 ```bash
-# Deploys web and docs
+cf auth login
+```
+
+Then deploy:
+
+```bash
+# Deploy the web Worker (builds and copies the docs into the assets bundle)
 pnpm web deploy:prod
 
-# Deploys API
+# Deploy the API Worker
 pnpm api deploy:prod
 ```
 
@@ -57,6 +68,16 @@ To deploy both hosted surfaces:
 
 ```bash
 pnpm deploy:prod:all
+```
+
+Database migrations are managed with Drizzle Kit:
+
+```bash
+# Generate a migration after changing the schema
+pnpm api db:generate
+
+# Apply pending migrations (requires DATABASE_URL)
+DATABASE_URL=postgres://... pnpm api db:migrate
 ```
 
 ## Technologies
@@ -68,5 +89,6 @@ Mattrax is built on:
 - [Drizzle ORM](https://orm.drizzle.team)
 - [Stripe](https://stripe.com)
 - [Vite Plus](https://viteplus.dev)
+- [cf CLI](https://github.com/cloudflare/cf)
 - [SolidJS](https://solidjs.com)
 - [TailwindCSS](https://tailwindcss.com)

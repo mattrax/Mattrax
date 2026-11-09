@@ -1,6 +1,6 @@
 import https from "node:https";
 import { Context, Data, Effect, Layer } from "effect";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 export class ApnsError extends Data.TaggedError("ApnsError")<{
   message: string;
@@ -125,19 +125,21 @@ export const ApnsServiceLive = (certPem: string, keyPem: string) => {
               ),
             );
 
-            const response = yield* client.execute(request).pipe(
-              Effect.mapError(
-                (cause) => new ApnsError({ message: "APNS request failed", cause }),
-              ),
-            );
+            const response = yield* client
+              .execute(request)
+              .pipe(
+                Effect.mapError(
+                  (cause) => new ApnsError({ message: "APNS request failed", cause }),
+                ),
+              );
 
             if (response.status !== 200) {
-              const text = yield* response.text.pipe(
-                Effect.orElseSucceed(() => ""),
+              const text = yield* response.text.pipe(Effect.orElseSucceed(() => ""));
+              yield* Effect.fail(
+                new ApnsError({
+                  message: `APNS rejected push (HTTP ${response.status}): ${text}`,
+                }),
               );
-              yield* Effect.fail(new ApnsError({
-                message: `APNS rejected push (HTTP ${response.status}): ${text}`,
-              }));
             }
           }),
       });

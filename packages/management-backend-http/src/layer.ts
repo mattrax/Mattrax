@@ -1,7 +1,52 @@
 import { Effect, Layer } from "effect";
-import { HttpApiClient } from "effect/unstable/httpapi";
-import { ManagementBackend, ManagementNotSupported, UnknownDevice, ServerInitiatedUnenrollment, InternalServerError } from "@mattrax/management-backend";
+import { HttpApiClient } from "effect/http-api";
+import {
+  ManagementBackend,
+  ManagementNotSupported,
+  UnknownDevice,
+  ServerInitiatedUnenrollment,
+  InternalServerError,
+} from "@mattrax/management-backend";
 import { managementApi } from "./http.ts";
+
+type ManagementError = ManagementNotSupported | UnknownDevice | InternalServerError;
+
+const toManagementError = (error: { readonly _tag?: string }): ManagementError => {
+  switch (error._tag) {
+    case "ManagementNotSupported":
+      return new ManagementNotSupported();
+    case "UnknownDevice":
+      return new UnknownDevice();
+    default:
+      return new InternalServerError();
+  }
+};
+
+const toCheckinError = (error: {
+  readonly _tag?: string;
+}): ManagementError | ServerInitiatedUnenrollment =>
+  error._tag === "ServerInitiatedUnenrollment"
+    ? new ServerInitiatedUnenrollment()
+    : toManagementError(error);
+
+const normalize = <A, E extends { readonly _tag?: string | undefined }, R>(
+  effect: Effect.Effect<A, E, R>,
+) => effect.pipe(Effect.mapError(toManagementError));
+
+const normalizeNoDevice = <A, E extends { readonly _tag?: string | undefined }, R>(
+  effect: Effect.Effect<A, E, R>,
+) =>
+  effect.pipe(
+    Effect.mapError((error): ManagementNotSupported | InternalServerError =>
+      error._tag === "ManagementNotSupported"
+        ? new ManagementNotSupported()
+        : new InternalServerError(),
+    ),
+  );
+
+const normalizeCheckin = <A, E extends { readonly _tag?: string | undefined }, R>(
+  effect: Effect.Effect<A, E, R>,
+) => effect.pipe(Effect.mapError(toCheckinError));
 
 export const ManagementBackendHttp = (baseUrl: string) =>
   Layer.effect(
@@ -11,82 +56,47 @@ export const ManagementBackendHttp = (baseUrl: string) =>
 
       return ManagementBackend.of({
         appleDeviceEvent: (scope, event) =>
-          client.ManagementWebhook.appleDeviceEvent({ payload: { scope, event } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-            Effect.catchTag("UnknownDevice", () => Effect.fail(new UnknownDevice())),
-            Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
-          ),
+          normalize(client.ManagementWebhook.appleDeviceEvent({ payload: { scope, event } })),
 
         appleManagementCheckin: (scope) =>
-          client.ManagementWebhook.appleManagementCheckin({ payload: { scope } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-            Effect.catchTag("UnknownDevice", () => Effect.fail(new UnknownDevice())),
-            Effect.catchTag("ServerInitiatedUnenrollment", () => Effect.fail(new ServerInitiatedUnenrollment())),
-            Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
-          ),
+          normalizeCheckin(client.ManagementWebhook.appleManagementCheckin({ payload: { scope } })),
 
         getAppleDeclarationTokens: (scope) =>
-          client.ManagementWebhook.getAppleDeclarationTokens({ payload: { scope } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-            Effect.catchTag("UnknownDevice", () => Effect.fail(new UnknownDevice())),
-            Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
-          ),
+          normalize(client.ManagementWebhook.getAppleDeclarationTokens({ payload: { scope } })),
 
         getAppleDeclarationItems: (scope) =>
-          client.ManagementWebhook.getAppleDeclarationItems({ payload: { scope } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-            Effect.catchTag("UnknownDevice", () => Effect.fail(new UnknownDevice())),
-            Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
-          ),
+          normalize(client.ManagementWebhook.getAppleDeclarationItems({ payload: { scope } })),
 
         getAppleDeclaration: (scope, type, identifier) =>
-          client.ManagementWebhook.getAppleDeclaration({ payload: { scope, type, identifier } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-            Effect.catchTag("UnknownDevice", () => Effect.fail(new UnknownDevice())),
-            Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
+          normalize(
+            client.ManagementWebhook.getAppleDeclaration({ payload: { scope, type, identifier } }),
           ),
 
         getAppleAsset: (identityCertificate, identifier) =>
-          client.ManagementWebhook.getAppleAsset({ payload: { identityCertificate, identifier } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-            Effect.catchTag("UnknownDevice", () => Effect.fail(new UnknownDevice())),
-            Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
+          normalize(
+            client.ManagementWebhook.getAppleAsset({
+              payload: { identityCertificate, identifier },
+            }),
           ),
 
         windowsDiscovery: (request) =>
-          client.ManagementWebhook.windowsDiscovery({ payload: request }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-            Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
-          ),
+          normalizeNoDevice(client.ManagementWebhook.windowsDiscovery({ payload: request })),
 
         getWindowsEnrollmentPolicy: (authToken) =>
-          client.ManagementWebhook.getWindowsEnrollmentPolicy({ payload: { authToken } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-            Effect.catchTag("UnknownDevice", () => Effect.fail(new UnknownDevice())),
-            Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
+          normalizeNoDevice(
+            client.ManagementWebhook.getWindowsEnrollmentPolicy({ payload: { authToken } }),
           ),
 
         windowsEnroll: (request) =>
-          client.ManagementWebhook.windowsEnroll({ payload: request }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-            Effect.catchTag("UnknownDevice", () => Effect.fail(new UnknownDevice())),
-            Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
-          ),
+          normalize(client.ManagementWebhook.windowsEnroll({ payload: request })),
 
         windowsManagementCheckin: (scope, request) =>
-          client.ManagementWebhook.windowsManagementCheckin({ payload: { scope, request } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-            Effect.catchTag("UnknownDevice", () => Effect.fail(new UnknownDevice())),
-            Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
+          normalize(
+            client.ManagementWebhook.windowsManagementCheckin({ payload: { scope, request } }),
           ),
 
         windowsDeviceEvent: (scope, event) =>
-          client.ManagementWebhook.windowsDeviceEvent({ payload: { scope, event } }).pipe(
-            Effect.catchTag("ManagementNotSupported", () => Effect.fail(new ManagementNotSupported())),
-            Effect.catchTag("UnknownDevice", () => Effect.fail(new UnknownDevice())),
-            Effect.catchTag("InternalServerError", () => Effect.fail(new InternalServerError())),
-          ),
-
+          normalize(client.ManagementWebhook.windowsDeviceEvent({ payload: { scope, event } })),
       });
     }),
   );

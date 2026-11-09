@@ -30,15 +30,25 @@ export const ManagementBackendD1 = (db: D1Database, apps: R2Bucket) =>
                      os_version = excluded.os_version,
                      unenrolled_at = NULL`,
                 )
-                .bind(udid, event.serialNumber ?? null, event.model ?? null, event.osVersion ?? null)
+                .bind(
+                  udid,
+                  event.serialNumber ?? null,
+                  event.model ?? null,
+                  event.osVersion ?? null,
+                )
                 .run();
             } else if (event._tag === "TokenUpdate" && event.channel === "device") {
               await db
-                .prepare("UPDATE devices SET push_token = ?, push_magic = ?, apns_topic = ? WHERE udid = ?")
+                .prepare(
+                  "UPDATE devices SET push_token = ?, push_magic = ?, apns_topic = ? WHERE udid = ?",
+                )
                 .bind(event.pushToken, event.pushMagic, event.topic, udid)
                 .run();
             } else if (event._tag === "CheckOut") {
-              await db.prepare("UPDATE devices SET unenrolled_at = unixepoch() WHERE udid = ?").bind(udid).run();
+              await db
+                .prepare("UPDATE devices SET unenrolled_at = unixepoch() WHERE udid = ?")
+                .bind(udid)
+                .run();
             } else if (event._tag === "CommandResult") {
               await db
                 .prepare(
@@ -162,7 +172,9 @@ export const ManagementBackendD1 = (db: D1Database, apps: R2Bucket) =>
         Effect.tryPromise({
           try: async () => {
             const row = await db
-              .prepare("SELECT payload FROM device_declarations WHERE device_udid = ? AND identifier = ?")
+              .prepare(
+                "SELECT payload FROM device_declarations WHERE device_udid = ? AND identifier = ?",
+              )
               .bind(scope.udid, identifier)
               .first<{ payload: string }>();
             return row ? (JSON.parse(row.payload) as Record<string, unknown>) : null;

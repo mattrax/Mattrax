@@ -111,7 +111,9 @@ describe("plist", () => {
     });
 
     it("escapes XML entities in strings", async () => {
-      const result = await serializePlist(`<script>alert("xss'or'1'='1")</script>`).pipe(Effect.runPromise);
+      const result = await serializePlist(`<script>alert("xss'or'1'='1")</script>`).pipe(
+        Effect.runPromise,
+      );
       expect(result).not.toContain("<script>");
       expect(result).toContain("&apos;or&apos;");
       expect(result).toContain("&quot;");
@@ -125,19 +127,23 @@ describe("plist", () => {
     });
 
     it("serializes Uint8Array as base64 data", async () => {
-      const result = await serializePlist(new Uint8Array([72, 101, 108, 108, 111])).pipe(Effect.runPromise);
+      const result = await serializePlist(new Uint8Array([72, 101, 108, 108, 111])).pipe(
+        Effect.runPromise,
+      );
       expect(result).toContain("<data>SGVsbG8=</data>");
     });
 
     it("serializes Date in ISO format", async () => {
-      const result = await serializePlist(new Date("2024-01-15T10:30:00.000Z")).pipe(Effect.runPromise);
+      const result = await serializePlist(new Date("2024-01-15T10:30:00.000Z")).pipe(
+        Effect.runPromise,
+      );
       expect(result).toContain("<date>2024-01-15T10:30:00Z</date>");
     });
 
     it("produces a well-formed plist document", async () => {
       const result = await serializePlist({}).pipe(Effect.runPromise);
       expect(result).toContain('<?xml version="1.0" encoding="UTF-8"?>');
-      expect(result).toContain('<!DOCTYPE plist');
+      expect(result).toContain("<!DOCTYPE plist");
       expect(result).toContain('<plist version="1.0">');
     });
 
@@ -149,7 +155,7 @@ describe("plist", () => {
         Nested: { key: "value" },
       };
       const plist = await serializePlist(original).pipe(Effect.runPromise);
-      const parsed = await parsePlist(plist).pipe(Effect.runPromise) as Record<string, unknown>;
+      const parsed = (await parsePlist(plist).pipe(Effect.runPromise)) as Record<string, unknown>;
       expect(parsed.MessageType).toBe("Authenticate");
       expect(parsed.UDID).toBe("abc-123");
       expect(parsed.Tokens).toEqual(["one", "two"]);

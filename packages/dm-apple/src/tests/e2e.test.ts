@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 import { AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
 import { ManagementBackend } from "@mattrax/management-backend";
 import { Env } from "@mattrax/enterprise-core";
@@ -14,7 +14,9 @@ async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
   const serviceLayer = AppleMdmServiceLive.pipe(
     Layer.provideMerge(backendLayer),
     Layer.provideMerge(Env.layer({ origin: TEST_CONFIG.origin })),
-    Layer.provideMerge(Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) }))),
+    Layer.provideMerge(
+      Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) })),
+    ),
   );
   const appLayer = appleMdmRoutes.pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer);
@@ -56,11 +58,13 @@ describe("Apple MDM E2E", () => {
 </dict>
 </plist>`;
 
-    const authRes = await handler(new Request("http://localhost/mdm/apple/mdm", {
-      method: "PUT",
-      body: authPlist,
-      headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
-    }));
+    const authRes = await handler(
+      new Request("http://localhost/mdm/apple/mdm", {
+        method: "PUT",
+        body: authPlist,
+        headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+      }),
+    );
     expect(authRes.status).toBe(200);
 
     // ── Step 2: TokenUpdate ───────────────────────────────────────────
@@ -76,11 +80,13 @@ describe("Apple MDM E2E", () => {
 </dict>
 </plist>`;
 
-    const tokenRes = await handler(new Request("http://localhost/mdm/apple/mdm", {
-      method: "PUT",
-      body: tokenPlist,
-      headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
-    }));
+    const tokenRes = await handler(
+      new Request("http://localhost/mdm/apple/mdm", {
+        method: "PUT",
+        body: tokenPlist,
+        headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+      }),
+    );
     expect(tokenRes.status).toBe(200);
 
     // ── Step 3: Checkin (receive command) ─────────────────────────────
@@ -92,15 +98,20 @@ describe("Apple MDM E2E", () => {
 </dict>
 </plist>`;
 
-    const checkinRes = await handler(new Request("http://localhost/mdm/apple/mdm", {
-      method: "PUT",
-      body: checkinPlist,
-      headers: { "Content-Type": "application/x-apple-aspen-mdm" },
-    }));
+    const checkinRes = await handler(
+      new Request("http://localhost/mdm/apple/mdm", {
+        method: "PUT",
+        body: checkinPlist,
+        headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+      }),
+    );
     expect(checkinRes.status).toBe(200);
 
     const checkinBody = await checkinRes.text();
-    const commandPlist = await parsePlist(checkinBody).pipe(Effect.runPromise) as Record<string, unknown>;
+    const commandPlist = (await parsePlist(checkinBody).pipe(Effect.runPromise)) as Record<
+      string,
+      unknown
+    >;
     expect(commandPlist.CommandUUID).toBe("cmd-enroll-001");
     expect((commandPlist.Command as any).RequestType).toBe("DeviceInformation");
 
@@ -120,11 +131,13 @@ describe("Apple MDM E2E", () => {
 </dict>
 </plist>`;
 
-    const resultRes = await handler(new Request("http://localhost/mdm/apple/mdm", {
-      method: "PUT",
-      body: resultPlist,
-      headers: { "Content-Type": "application/x-apple-aspen-mdm" },
-    }));
+    const resultRes = await handler(
+      new Request("http://localhost/mdm/apple/mdm", {
+        method: "PUT",
+        body: resultPlist,
+        headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+      }),
+    );
     expect(resultRes.status).toBe(200);
 
     // ── Step 5: CheckOut ──────────────────────────────────────────────
@@ -138,11 +151,13 @@ describe("Apple MDM E2E", () => {
 </dict>
 </plist>`;
 
-    const checkoutRes = await handler(new Request("http://localhost/mdm/apple/mdm", {
-      method: "PUT",
-      body: checkoutPlist,
-      headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
-    }));
+    const checkoutRes = await handler(
+      new Request("http://localhost/mdm/apple/mdm", {
+        method: "PUT",
+        body: checkoutPlist,
+        headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+      }),
+    );
     expect(checkoutRes.status).toBe(200);
 
     // ── Verify events were recorded in order ──────────────────────────
@@ -196,14 +211,19 @@ describe("Apple MDM E2E", () => {
 </dict>
 </plist>`;
 
-    const tokensRes = await handler(new Request("http://localhost/mdm/apple/mdm", {
-      method: "PUT",
-      body: tokensPlist,
-      headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
-    }));
+    const tokensRes = await handler(
+      new Request("http://localhost/mdm/apple/mdm", {
+        method: "PUT",
+        body: tokensPlist,
+        headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+      }),
+    );
     expect(tokensRes.status).toBe(200);
     const tokensBody = await tokensRes.text();
-    const tokensData = await parsePlist(tokensBody).pipe(Effect.runPromise) as Record<string, any>;
+    const tokensData = (await parsePlist(tokensBody).pipe(Effect.runPromise)) as Record<
+      string,
+      any
+    >;
     expect(tokensData.SyncTokens.Tokens).toHaveLength(4);
 
     // Request declaration items
@@ -218,14 +238,16 @@ describe("Apple MDM E2E", () => {
 </dict>
 </plist>`;
 
-    const itemsRes = await handler(new Request("http://localhost/mdm/apple/mdm", {
-      method: "PUT",
-      body: itemsPlist,
-      headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
-    }));
+    const itemsRes = await handler(
+      new Request("http://localhost/mdm/apple/mdm", {
+        method: "PUT",
+        body: itemsPlist,
+        headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+      }),
+    );
     expect(itemsRes.status).toBe(200);
     const itemsBody = await itemsRes.text();
-    const itemsData = await parsePlist(itemsBody).pipe(Effect.runPromise) as Record<string, any>;
+    const itemsData = (await parsePlist(itemsBody).pipe(Effect.runPromise)) as Record<string, any>;
     expect(itemsData.Declarations.Activations).toHaveLength(1);
     expect(itemsData.Declarations.Configurations).toHaveLength(1);
     expect(itemsData.Declarations.Assets).toHaveLength(1);

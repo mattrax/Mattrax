@@ -4,19 +4,36 @@ import { ManagementBackend, ManagementNotSupported } from "@mattrax/management-b
 type ManagementBackendType = InstanceType<typeof ManagementBackend>;
 
 export function mockManagementBackend(overrides?: Partial<ManagementBackendType>) {
-  return Layer.succeed(ManagementBackend, ManagementBackend.of({
-    appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),
-    appleManagementCheckin: overrides?.appleManagementCheckin ?? (() => Effect.succeed({ _tag: "Idle" } as const)),
-    getAppleDeclarationTokens: overrides?.getAppleDeclarationTokens ?? (() => Effect.succeed({ activationsToken: "a", configurationsToken: "c", assetsToken: "as", managementToken: "m" })),
-    getAppleDeclarationItems: overrides?.getAppleDeclarationItems ?? (() => Effect.succeed({ activations: [], configurations: [], assets: [], management: [] })),
-    getAppleDeclaration: overrides?.getAppleDeclaration ?? (() => Effect.succeed(null)),
-    getAppleAsset: overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
-    windowsDiscovery: overrides?.windowsDiscovery ?? (() => Effect.fail(new ManagementNotSupported())),
-    getWindowsEnrollmentPolicy: overrides?.getWindowsEnrollmentPolicy ?? (() => Effect.fail(new ManagementNotSupported())),
-    windowsEnroll: overrides?.windowsEnroll ?? (() => Effect.fail(new ManagementNotSupported())),
-    windowsManagementCheckin: overrides?.windowsManagementCheckin ?? (() => Effect.fail(new ManagementNotSupported())),
-    windowsDeviceEvent: overrides?.windowsDeviceEvent ?? (() => Effect.void),
-  }));
+  return Layer.succeed(
+    ManagementBackend,
+    ManagementBackend.of({
+      appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),
+      appleManagementCheckin:
+        overrides?.appleManagementCheckin ?? (() => Effect.succeed({ _tag: "Idle" } as const)),
+      getAppleDeclarationTokens:
+        overrides?.getAppleDeclarationTokens ??
+        (() =>
+          Effect.succeed({
+            activationsToken: "a",
+            configurationsToken: "c",
+            assetsToken: "as",
+            managementToken: "m",
+          })),
+      getAppleDeclarationItems:
+        overrides?.getAppleDeclarationItems ??
+        (() => Effect.succeed({ activations: [], configurations: [], assets: [], management: [] })),
+      getAppleDeclaration: overrides?.getAppleDeclaration ?? (() => Effect.succeed(null)),
+      getAppleAsset: overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
+      windowsDiscovery:
+        overrides?.windowsDiscovery ?? (() => Effect.fail(new ManagementNotSupported())),
+      getWindowsEnrollmentPolicy:
+        overrides?.getWindowsEnrollmentPolicy ?? (() => Effect.fail(new ManagementNotSupported())),
+      windowsEnroll: overrides?.windowsEnroll ?? (() => Effect.fail(new ManagementNotSupported())),
+      windowsManagementCheckin:
+        overrides?.windowsManagementCheckin ?? (() => Effect.fail(new ManagementNotSupported())),
+      windowsDeviceEvent: overrides?.windowsDeviceEvent ?? (() => Effect.void),
+    }),
+  );
 }
 
 export function soapEnvelope(body: string, security = "token-123") {
