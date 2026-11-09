@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
 import crypto from "node:crypto";
-import { bootstrapTenant } from "./helpers";
+import { bootstrapTenant, gotoHydrated } from "./helpers";
 
 test.describe("platform instances", () => {
   test("creates, edits, and revokes a product key", async ({ page }) => {
     await bootstrapTenant(page, "Instance Tenant");
-    await page.goto("/instances", { waitUntil: "networkidle" });
+    await gotoHydrated(page, "/instances");
     await expect(page.getByRole("heading", { name: "Instances", exact: true })).toBeVisible();
 
     await page

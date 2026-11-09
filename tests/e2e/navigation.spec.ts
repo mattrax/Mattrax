@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, createTenant } from "./helpers";
+import { bootstrapTenant, createTenant, gotoHydrated } from "./helpers";
 
 test.describe("sidebar navigation", () => {
   test("navigates between every tenant section", async ({ page }) => {
@@ -47,7 +47,7 @@ test.describe("sidebar navigation", () => {
     await bootstrapTenant(page, "First Tenant");
     const second = await createTenant(page, "Second Tenant");
 
-    await page.goto("/dashboard", { waitUntil: "networkidle" });
+    await gotoHydrated(page, "/dashboard");
     const trigger = page.locator("[data-slot=sidebar-header] [data-slot=dropdown-menu-trigger]");
     await trigger.click();
     await expect(page.locator("[data-slot=dropdown-menu-content]")).toBeVisible();
@@ -79,7 +79,7 @@ test.describe("collapsed tenant switcher", () => {
   test("opens and switches tenants while the sidebar is icon-only", async ({ page }) => {
     await bootstrapTenant(page, "Collapsed Tenant");
     const second = await createTenant(page, "Collapsed Second");
-    await page.goto("/dashboard", { waitUntil: "networkidle" });
+    await gotoHydrated(page, "/dashboard");
     await page.locator("[data-slot=sidebar-trigger]").click();
 
     await page.locator("[data-slot=sidebar-header] [data-slot=dropdown-menu-trigger]").click();

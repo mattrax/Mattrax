@@ -79,10 +79,19 @@ export async function createTenant(page: Page, name: string) {
   return { id, slug };
 }
 
+export async function gotoHydrated(page: Page, path: string) {
+  await page.goto(path, { waitUntil: "networkidle" });
+  await page.waitForFunction(
+    () => document.documentElement.dataset.hydrated === "true",
+    undefined,
+    { timeout: 20_000 },
+  );
+}
+
 export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
   await register(page);
   const tenant = await createTenant(page, `${name} ${Math.random().toString(36).slice(2, 6)}`);
-  await page.goto(`/t/${tenant.id}/devices`);
+  await gotoHydrated(page, `/t/${tenant.id}/devices`);
   await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
   return tenant;
 }

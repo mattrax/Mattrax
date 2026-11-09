@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant } from "./helpers";
+import { bootstrapTenant, gotoHydrated } from "./helpers";
 
 test.describe("account", () => {
   test("updates the profile and manages API tokens", async ({ page }) => {
     await bootstrapTenant(page, "Account Tenant");
-    await page.goto("/account", { waitUntil: "networkidle" });
+    await gotoHydrated(page, "/account");
     await expect(page.getByText("Active sessions")).toBeVisible();
     await expect(page.getByText("This session")).toBeVisible();
 
@@ -42,7 +42,7 @@ test.describe("account deletion", () => {
         return result;
       }),
     );
-    await page.goto("/account", { waitUntil: "networkidle" });
+    await gotoHydrated(page, "/account");
     await page.locator('input[placeholder="' + email + '"]').fill(email);
     await page.getByRole("button", { name: /delete account/i }).click();
     await expect(page).toHaveURL(/\/$/);

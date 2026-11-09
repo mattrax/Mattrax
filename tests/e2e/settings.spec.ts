@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant } from "./helpers";
+import { bootstrapTenant, gotoHydrated } from "./helpers";
 
 test.describe("tenant settings", () => {
   test("opens every settings tab and saves the tenant profile", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Settings Tenant");
-    await page.goto(`/t/${tenant.id}/settings`);
+    await gotoHydrated(page, `/t/${tenant.id}/settings`);
 
     const tabs = page.locator('nav[aria-label="Tenant settings sections"]');
     for (const [tab, text] of [

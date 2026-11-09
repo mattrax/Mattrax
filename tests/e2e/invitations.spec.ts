@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, PASSWORD, register } from "./helpers";
+import { api, bootstrapTenant, PASSWORD, register, gotoHydrated } from "./helpers";
 
 test.describe("invitations", () => {
   test("an invited user joins the tenant through the invite link", async ({ page, context }) => {
@@ -28,7 +28,7 @@ test.describe("invitations", () => {
 
     const invitee = await context.newPage();
     await register(invitee, { email, name: "Invited User" });
-    await invitee.goto(invitation.inviteUrl, { waitUntil: "networkidle" });
+    await gotoHydrated(invitee, invitation.inviteUrl);
     await expect(invitee).toHaveURL(new RegExp(`/t/${tenant.id}/devices`));
 
     const me = await invitee.evaluate(async () => (await fetch("/api/v1/me")).json());

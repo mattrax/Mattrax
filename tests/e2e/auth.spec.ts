@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { createTenant, register } from "./helpers";
+import { createTenant, register, gotoHydrated } from "./helpers";
 
 test.describe("authentication and onboarding", () => {
   test("registers, lands on the dashboard, and creates a tenant", async ({ page }) => {
@@ -32,7 +32,7 @@ test.describe("authentication and onboarding", () => {
   test("signs out and back in", async ({ page }) => {
     const { email } = await register(page);
     const tenant = await createTenant(page, "Session Tenant");
-    await page.goto(`/t/${tenant.id}/devices`, { waitUntil: "networkidle" });
+    await gotoHydrated(page, `/t/${tenant.id}/devices`);
     await page.waitForTimeout(300);
 
     await page.locator("[data-slot=sidebar-footer] [data-slot=dropdown-menu-trigger]").click();
