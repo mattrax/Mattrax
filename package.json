@@ -19,7 +19,7 @@
     "typescript": "catalog:",
     "vite-plus": "catalog:",
     "vitepress": "catalog:",
-    "vitest": "^3.2.7"
+    "vitest": "^5.1.0"
   },
   "engines": {
     "node": ">=22.12.0"

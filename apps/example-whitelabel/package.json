@@ -18,7 +18,7 @@
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
     "@mattrax/scep": "workspace:*",
-    "@solidjs/router": "^0.15.4",
+    "@solidjs/router": "^1.0.1",
     "effect": "catalog:",
     "solid-js": "^1.9.18"
   },
