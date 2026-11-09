@@ -547,12 +547,7 @@ export const createEnterpriseService = ({
         }
 
         yield* db
-          .update(schema.auditLog)
-          .set({ actorUserId: null })
-          .where(eq(schema.auditLog.actorUserId, user.id));
-        yield* db
-          .update(schema.platformInstance)
-          .set({ issuedByUserId: null })
+          .delete(schema.platformInstance)
           .where(eq(schema.platformInstance.issuedByUserId, user.id));
         yield* db.delete(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id));
         yield* db.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
