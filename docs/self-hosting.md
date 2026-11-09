@@ -281,10 +281,10 @@ Apple MDM push is per tenant and uses the tenant's APNs client certificate.
 | Hosted multi-tenant Cloud        | `RelayPushTransport` — HMAC-signed requests to a push relay.      |
 
 A Cloud Worker cannot select a different client certificate per tenant request, so hosted
-Cloud must use a relay. `@mattrax/apns` exports the transport and signing helper, but the
-Cloud Worker in this tree does not configure one yet. Until it is wired up, pushes are
-reported as unavailable and Apple devices fall back to polling at check-in. The gateway
-itself never pushes; your whitelabel management backend owns push delivery.
+Cloud uses a relay. Set `APNS_RELAY_URL` and `APNS_RELAY_SECRET` on the API Worker to
+enable it; without them the transport reports unavailable and Apple devices fall back to
+polling at check-in. The gateway itself never pushes; your whitelabel management backend
+owns push delivery.
 
 When wiring the relay, treat the relay secret as production key material:
 

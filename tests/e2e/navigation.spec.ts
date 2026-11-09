@@ -78,3 +78,20 @@ test.describe("mobile sidebar", () => {
     await expect(drawer).toBeHidden();
   });
 });
+
+test.describe("collapsed tenant switcher", () => {
+  test("opens and switches tenants while the sidebar is icon-only", async ({ page }) => {
+    await bootstrapTenant(page, "Collapsed Tenant");
+    const second = await createTenant(page, "Collapsed Second");
+    await page.goto("/dashboard", { waitUntil: "networkidle" });
+    await page.locator("[data-slot=sidebar-trigger]").click();
+
+    await page.locator("[data-slot=sidebar-header] [data-slot=dropdown-menu-trigger]").click();
+    const item = page.getByRole("menuitem", { name: /Collapsed Second/i });
+    await expect(item).toBeVisible();
+    const box = await item.boundingBox();
+    expect(box?.width ?? 0).toBeGreaterThan(80);
+    await item.click();
+    await expect(page).toHaveURL(new RegExp(`/t/${second.id}/devices`));
+  });
+});

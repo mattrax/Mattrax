@@ -21,6 +21,7 @@ export default function GroupsPage() {
       />
       <MdmTable<GroupRow>
         rows={groups.data?.rows}
+        loading={groups.isPending}
         storageKey="groups"
         onRowClick={(row) => navigate(`/t/${params.tenantId}/groups/${row.id}`)}
         actions={(selected, clear) => (

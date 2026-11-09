@@ -24,9 +24,11 @@ test.describe("authentication and onboarding", () => {
   test("signs out and back in", async ({ page }) => {
     const { email } = await register(page);
     const tenant = await createTenant(page, "Session Tenant");
-    await page.goto(`/t/${tenant.id}/devices`);
+    await page.goto(`/t/${tenant.id}/devices`, { waitUntil: "networkidle" });
+    await page.waitForTimeout(300);
 
     await page.locator("[data-slot=sidebar-footer] [data-slot=dropdown-menu-trigger]").click();
+    await expect(page.locator("[data-slot=dropdown-menu-content]")).toBeVisible();
     await page.getByRole("menuitem", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login/);
 

@@ -7,12 +7,21 @@ export default function RegisterPage() {
   const [name, setName] = createSignal("");
   const [email, setEmail] = createSignal("");
   const [password, setPassword] = createSignal("");
+  const [confirm, setConfirm] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
 
   const handleSubmit = async (e: SubmitEvent) => {
     e.preventDefault();
     setError(null);
+    if (password() !== confirm()) {
+      setError("Passwords do not match");
+      return;
+    }
+    if (password().length < 12) {
+      setError("Choose a password of at least 12 characters");
+      return;
+    }
     setPending(true);
 
     const result = await authClient.signUp.email({
@@ -90,6 +99,26 @@ export default function RegisterPage() {
               class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
             />
           </div>
+
+          <div class="space-y-1.5">
+            <label for="confirm-password" class="text-sm font-medium text-stone-700">
+              Confirm password
+            </label>
+            <input
+              id="confirm-password"
+              type="password"
+              required
+              autocomplete="new-password"
+              placeholder="••••••••"
+              value={confirm()}
+              onInput={(e) => setConfirm(e.currentTarget.value)}
+              class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
+            />
+          </div>
+
+          <p class="text-xs text-stone-400">
+            Use at least 12 characters. A longer passphrase is stronger.
+          </p>
 
           <Show when={error()}>{(msg) => <p class="text-sm text-red-600">{msg()}</p>}</Show>
 

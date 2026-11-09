@@ -186,7 +186,16 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         </div>
       </div>
 
-      <Show when={rows().length > 0} fallback={props.empty}>
+      <Show when={props.loading}>
+        <div class="overflow-hidden rounded-xl border bg-card">
+          <div class="space-y-2 p-4">
+            <For each={[0, 1, 2, 3]}>
+              {() => <div class="h-10 animate-pulse rounded-lg bg-muted/60" />}
+            </For>
+          </div>
+        </div>
+      </Show>
+      <Show when={!props.loading && rows().length > 0} fallback={!props.loading ? props.empty : undefined}>
         <div class="overflow-hidden rounded-xl border bg-card">
           <table class="w-full text-sm">
             <thead class="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">

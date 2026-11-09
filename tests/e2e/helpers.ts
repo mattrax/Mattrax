@@ -8,6 +8,8 @@ export function uniqueEmail(prefix = "e2e") {
 
 export async function register(page: Page, options: { name?: string; email?: string } = {}) {
   const email = options.email ?? uniqueEmail();
+  const health = await page.request.get("/api/health");
+  if (!health.ok()) throw new Error(`API health check failed (${health.status()})`);
   await page.goto("/register", { waitUntil: "networkidle" });
   // Solid hydration can reset controlled inputs; wait for the form to be
   // interactive and verify the values before submitting.
@@ -15,8 +17,19 @@ export async function register(page: Page, options: { name?: string; email?: str
   await page.locator("#name").fill(options.name ?? "E2E User");
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(PASSWORD);
+  await page.locator("#confirm-password").fill(PASSWORD);
   await expect(page.locator("#email")).toHaveValue(email);
+  await expect(page.locator("#password")).toHaveValue(PASSWORD);
   await page.getByRole("button", { name: /create account/i }).click();
+  await page.waitForTimeout(1_000);
+  if (page.url().includes("/register")) {
+    const message = await page
+      .locator("p.text-red-600")
+      .first()
+      .innerText()
+      .catch(() => "");
+    if (message) throw new Error(`Registration failed: ${message}`);
+  }
   await page.waitForURL(/\/dashboard/);
   return { email, password: PASSWORD };
 }

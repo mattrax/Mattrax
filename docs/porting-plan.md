@@ -96,3 +96,31 @@ The Cloud Worker is intended to use the relay when `APNS_RELAY_URL` is configure
 In the current tree the Cloud API does not instantiate a push transport, so push is
 reported as unavailable while devices still poll (DDM) and policy still converges. The
 whitelabel gateway never pushes; its management backend owns delivery.
+
+## Status
+
+Completed in this branch:
+
+- [x] Configurable origins, local dev secrets and HTTPS dev certificates.
+- [x] Persisted active tenant, working tenant switcher, collapsed sidebar and
+      mobile drawer, real dashboard and route error boundary.
+- [x] Playwright CDP suite for auth, navigation, tenant switching, settings,
+      CRUD, enrollment and the command palette.
+- [x] APNs CSR generation, certificate validation, sealed private keys and
+      per-tenant setup UI.
+- [x] Push transports (Node, Workers mTLS, hosted relay, no-op) and push on
+      token update, sync, unenroll and scope changes.
+- [x] Tabbed tenant settings, administrators/invitations, APNs wizard, billing,
+      account profile/tokens/sessions UI.
+- [x] Sidebar-first dashboards, tables (search/sort/columns/selection/loading),
+      group/policy editors, enrollment page and command palette.
+- [x] Production documentation, testing guide and CI workflow.
+
+Remaining after this branch:
+
+- [ ] Windows routes mounted in the Cloud and self-hosted apps (the protocol
+      package exists, enrollment certificate issuance is next).
+- [ ] Invitation acceptance emails and membership join flow.
+- [ ] Account deletion and passwordless email-code sign-in.
+- [ ] Hosted push relay deployment and whitelabel webhook HMAC signing.
+- [ ] Fleet-derived Apple suite expanded to real device fixtures in CI.

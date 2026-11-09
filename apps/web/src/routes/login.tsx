@@ -1,6 +1,7 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
+import { Eye, EyeOff } from "~/components/ui/icons";
 
 export default function LoginPage() {
   const [searchParams] = useSearchParams();
@@ -9,6 +10,7 @@ export default function LoginPage() {
   const [password, setPassword] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
+  const [showPassword, setShowPassword] = createSignal(false);
 
   const handleSubmit = async (e: SubmitEvent) => {
     e.preventDefault();
@@ -74,16 +76,26 @@ export default function LoginPage() {
                 Forgot password?
               </a>
             </div>
-            <input
-              id="password"
-              type="password"
-              required
-              autocomplete="current-password"
-              placeholder="••••••••"
-              value={password()}
-              onInput={(e) => setPassword(e.currentTarget.value)}
-              class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
-            />
+            <div class="relative">
+              <input
+                id="password"
+                type={showPassword() ? "text" : "password"}
+                required
+                autocomplete="current-password"
+                placeholder="••••••••"
+                value={password()}
+                onInput={(e) => setPassword(e.currentTarget.value)}
+                class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 pr-10 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((value) => !value)}
+                class="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-stone-400 hover:text-stone-700"
+                aria-label={showPassword() ? "Hide password" : "Show password"}
+              >
+                {showPassword() ? <EyeOff class="size-4" /> : <Eye class="size-4" />}
+              </button>
+            </div>
           </div>
 
           <Show when={error()}>{(msg) => <p class="text-sm text-red-600">{msg()}</p>}</Show>

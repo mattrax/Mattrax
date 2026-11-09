@@ -186,10 +186,15 @@ function DashboardContent(props: { tenantId: string; tenantName: string; tenantS
                 </Button>
               }
             >
-              <p class="flex items-center gap-2 text-sm text-green-700">
+              <div class="flex flex-wrap items-center gap-2 text-sm text-green-700">
                 <CheckCircle2 class="size-4" />
-                {apns.data?.topic ?? "Topic configured"}
-              </p>
+                <span>{apns.data?.topic ?? "Topic configured"}</span>
+                <Show when={apns.data?.expiresAt}>
+                  <span class="text-xs text-muted-foreground">
+                    expires {new Date(apns.data!.expiresAt!).toLocaleDateString()}
+                  </span>
+                </Show>
+              </div>
             </Show>
           </div>
         </section>

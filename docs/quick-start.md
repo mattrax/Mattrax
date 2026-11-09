@@ -138,9 +138,8 @@ implement Android management. The enrollment toggle does not create a working fl
    check-in.
 
 ::: warning Device actions
-The API exposes a device action endpoint, but it is currently a no-op. Do not expect
-remote lock, wipe, or restart from this tree. Unenroll is implemented as a status change
-to `unenrolling`; protocol-specific removal still depends on the management backend.
+Sync and unenroll are implemented (they push Apple devices and update the device status).
+Remote lock, wipe, restart and app installation are not exposed yet.
 :::
 
 ## Troubleshooting

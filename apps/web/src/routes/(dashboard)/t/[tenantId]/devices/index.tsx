@@ -32,6 +32,7 @@ export default function DevicesPage() {
       />
       <MdmTable<DeviceRow>
         rows={devices.data?.rows}
+        loading={devices.isPending}
         storageKey="devices"
         onRowClick={(row) => navigate(`/t/${params.tenantId}/devices/${row.id}`)}
         actions={(selected, clear) => (
