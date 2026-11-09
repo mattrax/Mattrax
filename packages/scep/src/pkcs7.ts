@@ -454,6 +454,7 @@ interface ScepRequest {
   // Certificates from the PKCSReq SignedData — used to encrypt the CertRep for the device
   signerCerts: pkijs.Certificate[];
   challengePassword?: string;
+  renewal: boolean;
 }
 
 // ASN.1 universal tag numbers (avoid instanceof across bundle boundaries)
