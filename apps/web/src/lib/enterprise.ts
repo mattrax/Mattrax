@@ -19,6 +19,7 @@ import {
 
 export type {
   ApnsInfo,
+  AuditLogEntry,
   BillingSummary,
   DeviceRow,
   DownloadPolicyApplicationResponse as PolicyApplicationDownload,
@@ -62,6 +63,7 @@ export const enterpriseKeys = {
   apns: (tenantId: RouteParam) => ["enterprise", "apns", tenantId ?? ""] as const,
   billing: (tenantId: RouteParam) => ["enterprise", "billing", tenantId ?? ""] as const,
   enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", tenantId ?? ""] as const,
+  auditLog: (tenantId: RouteParam) => ["enterprise", "audit-log", tenantId ?? ""] as const,
 };
 
 const required = (value: RouteParam, name: string) => {
@@ -351,6 +353,8 @@ export const enterprise = {
     endpoint((api) =>
       api.uploadApns({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
+  listAuditLog: (tenantId: RouteParam) =>
+    endpoint((api) => api.listAuditLog({ params: { tenantId: required(tenantId, "tenantId") } })),
   listUsers: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.listTenantUsers({ params: { tenantId: required(tenantId, "tenantId") } }),
@@ -423,6 +427,12 @@ export const enterpriseQueries = {
       queryKey: enterpriseKeys.item(tenantId, entity, id),
       queryFn: () => enterprise.get(tenantId, entity, id),
       enabled: Boolean(tenantId && id),
+    }),
+  auditLog: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.auditLog(tenantId),
+      queryFn: () => enterprise.listAuditLog(tenantId),
+      enabled: Boolean(tenantId),
     }),
   users: (tenantId: RouteParam) =>
     enterpriseQueryOptions({

@@ -180,6 +180,31 @@ export const accountApiToken = mysqlTable(
   ],
 );
 
+/**
+ * Tenant-scoped audit trail. Entries are append-only from the application's
+ * perspective; deleting a tenant removes its history with it.
+ */
+export const auditLog = mysqlTable(
+  "audit_log",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    actorUserId: id("actor_user_id").references(() => user.id, { onDelete: "set null" }),
+    actorEmail: varchar("actor_email", { length: 320 }),
+    action: shortText("action").notNull(),
+    targetType: shortText("target_type").notNull(),
+    targetId: shortText("target_id"),
+    metadata: json("metadata"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    index("audit_log_organization_created_idx").on(table.organizationId, table.createdAt),
+    index("audit_log_organization_action_idx").on(table.organizationId, table.action),
+  ],
+);
+
 export const enterpriseEnrollment = mysqlTable("enterprise_enrollment", {
   id: id().primaryKey(),
   organizationId: id("organization_id")
@@ -401,6 +426,7 @@ export const relations = defineRelations(
     invitation,
     subscription,
     accountApiToken,
+    auditLog,
     enterpriseEnrollment,
     device,
     deviceApple,

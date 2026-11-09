@@ -216,6 +216,19 @@ export const TenantInvitationsResponse = Schema.Struct({
 
 export const PatchTenantUserRequest = Schema.Struct({ role: Schema.String });
 
+export const AuditLogEntry = Schema.Struct({
+  id: Schema.String,
+  action: Schema.String,
+  targetType: Schema.String,
+  targetId: Schema.optional(NullableString),
+  actorEmail: Schema.optional(NullableString),
+  metadata: Schema.optional(Schema.NullOr(Schema.Unknown)),
+  createdAt: Schema.String,
+});
+export type AuditLogEntry = typeof AuditLogEntry.Type;
+
+export const AuditLogResponse = Schema.Struct({ entries: Schema.Array(AuditLogEntry) });
+
 export const CreateInvitationResponse = Schema.Struct({
   id: Schema.String,
   /** Present when the server can build an invite link (always in this build). */
@@ -604,6 +617,13 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantDeleteErrors,
       params: TenantParam,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("listAuditLog", "/v1/tenants/:tenantId/audit-log", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: AuditLogResponse,
     }),
   )
   .add(

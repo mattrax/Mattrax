@@ -161,7 +161,7 @@ const makeAppLayer = (env: Env, request: Request) => {
   }).pipe(Layer.provide(Db.layer));
 
   const servicesLayer = Layer.mergeAll(
-    EnterpriseService.pipe(
+    EnterpriseService({ email: (env as any).EMAIL }).pipe(
       Layer.provide(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
       Layer.provide(StripeService.layer(env.STRIPE_SECRET_KEY)),
