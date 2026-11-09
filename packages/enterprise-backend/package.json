@@ -9,7 +9,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@effect/sql-pg": "catalog:",
+    "@effect/sql-mysql2": "catalog:",
     "@mattrax/effect-stripe": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
@@ -19,7 +19,7 @@
     "@yielded/auth-platform-workerd": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
-    "pg": "catalog:"
+    "mysql2": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:"

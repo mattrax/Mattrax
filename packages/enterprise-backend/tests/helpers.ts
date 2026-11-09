@@ -220,7 +220,15 @@ class InsertBuilder {
     return this;
   }
 
+  ignore() {
+    return this;
+  }
+
   onConflictDoNothing() {
+    return this;
+  }
+
+  onDuplicateKeyUpdate() {
     return this;
   }
 

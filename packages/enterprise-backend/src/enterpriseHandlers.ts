@@ -331,7 +331,7 @@ export const createEnterpriseService = ({
       if (existing) return existing;
       const timestamp = now();
       const enrollment = { id: id(), organizationId, createdAt: timestamp, updatedAt: timestamp };
-      yield* db.insert(schema.enterpriseEnrollment).values(enrollment).onConflictDoNothing();
+      yield* db.insert(schema.enterpriseEnrollment).ignore().values(enrollment);
       return (
         (yield* db.query.enterpriseEnrollment.findFirst({
           where: { organizationId: organizationId },
@@ -423,15 +423,12 @@ export const createEnterpriseService = ({
           createdAt: timestamp,
           updatedAt: timestamp,
         });
-        yield* db
-          .insert(schema.enterpriseEnrollment)
-          .values({
-            id: tenantId,
-            organizationId: tenantId,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          })
-          .onConflictDoNothing();
+        yield* db.insert(schema.enterpriseEnrollment).ignore().values({
+          id: tenantId,
+          organizationId: tenantId,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
         return { id: tenantId };
       }),
     getTenant: (request, tenantId) =>
@@ -719,8 +716,7 @@ export const createEnterpriseService = ({
             topic,
             updatedAt: now(),
           })
-          .onConflictDoUpdate({
-            target: schema.applePushCertificate.organizationId,
+          .onDuplicateKeyUpdate({
             set: { email: body.email, certPem: body.cert, topic, updatedAt: now() },
           });
         return ok;
@@ -797,13 +793,13 @@ export const createEnterpriseService = ({
         if (body.devices?.length)
           yield* db
             .insert(schema.groupDevice)
-            .values(body.devices.map((deviceId) => ({ groupId, deviceId })))
-            .onConflictDoNothing();
+            .ignore()
+            .values(body.devices.map((deviceId) => ({ groupId, deviceId })));
         if (body.policies?.length)
           yield* db
             .insert(schema.groupPolicy)
-            .values(body.policies.map((policyId) => ({ groupId, policyId })))
-            .onConflictDoNothing();
+            .ignore()
+            .values(body.policies.map((policyId) => ({ groupId, policyId })));
         return { id: groupId };
       }),
     deleteGroups: (request, tenantId, ids) =>
@@ -812,17 +808,24 @@ export const createEnterpriseService = ({
         const deleted: Array<string> = [];
         const failed: Array<{ id: string; reason: string }> = [];
         for (const groupId of ids) {
-          const result = yield* db
+          // MySQL has no `DELETE ... RETURNING`; probe the tenant-scoped row
+          // first, then delete it by the same predicate.
+          const existing = yield* db.query.enterpriseGroup.findFirst({
+            where: { id: groupId, organizationId: ctx.organization.id },
+          });
+          if (!existing) {
+            failed.push({ id: groupId, reason: "notFound" });
+            continue;
+          }
+          yield* db
             .delete(schema.enterpriseGroup)
             .where(
               and(
                 eq(schema.enterpriseGroup.id, groupId),
                 eq(schema.enterpriseGroup.organizationId, ctx.organization.id),
               ),
-            )
-            .returning({ id: schema.enterpriseGroup.id });
-          if (result.length) deleted.push(groupId);
-          else failed.push({ id: groupId, reason: "notFound" });
+            );
+          deleted.push(groupId);
         }
         return { deleted, failed };
       }),
@@ -860,13 +863,13 @@ export const createEnterpriseService = ({
         if (body.assign?.devices?.length)
           yield* db
             .insert(schema.groupDevice)
-            .values(body.assign.devices.map((deviceId) => ({ groupId, deviceId })))
-            .onConflictDoNothing();
+            .ignore()
+            .values(body.assign.devices.map((deviceId) => ({ groupId, deviceId })));
         if (body.assign?.policies?.length)
           yield* db
             .insert(schema.groupPolicy)
-            .values(body.assign.policies.map((policyId) => ({ groupId, policyId })))
-            .onConflictDoNothing();
+            .ignore()
+            .values(body.assign.policies.map((policyId) => ({ groupId, policyId })));
         if (body.unassign?.devices?.length)
           yield* db
             .delete(schema.groupDevice)
@@ -950,17 +953,24 @@ export const createEnterpriseService = ({
         const deleted: Array<string> = [];
         const failed: Array<{ id: string; reason: string }> = [];
         for (const policyId of ids) {
-          const result = yield* db
+          // MySQL has no `DELETE ... RETURNING`; probe the tenant-scoped row
+          // first, then delete it by the same predicate.
+          const existing = yield* db.query.policy.findFirst({
+            where: { id: policyId, organizationId: ctx.organization.id },
+          });
+          if (!existing) {
+            failed.push({ id: policyId, reason: "notFound" });
+            continue;
+          }
+          yield* db
             .delete(schema.policy)
             .where(
               and(
                 eq(schema.policy.id, policyId),
                 eq(schema.policy.organizationId, ctx.organization.id),
               ),
-            )
-            .returning({ id: schema.policy.id });
-          if (result.length) deleted.push(policyId);
-          else failed.push({ id: policyId, reason: "notFound" });
+            );
+          deleted.push(policyId);
         }
         return { deleted, failed };
       }),
@@ -996,10 +1006,7 @@ export const createEnterpriseService = ({
             yield* db
               .insert(schema.configuration)
               .values({ policyId, kind, data, hash })
-              .onConflictDoUpdate({
-                target: [schema.configuration.kind, schema.configuration.policyId],
-                set: { data, hash },
-              });
+              .onDuplicateKeyUpdate({ set: { data, hash } });
           }
         }
         return ok;

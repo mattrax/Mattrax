@@ -76,8 +76,9 @@ Database migrations are managed with Drizzle Kit:
 # Generate a migration after changing the schema
 pnpm api db:generate
 
-# Apply pending migrations (requires DATABASE_URL)
-DATABASE_URL=postgres://... pnpm api db:migrate
+# Apply pending migrations (MySQL connection fields)
+DATABASE_HOST=localhost DATABASE_PORT=3306 DATABASE_USER=mattrax \
+  DATABASE_PASSWORD=mattrax DATABASE_NAME=mattrax pnpm api db:migrate
 ```
 
 ## Technologies

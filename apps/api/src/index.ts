@@ -26,7 +26,7 @@ import {
   ScepRepositoryLive,
 } from "@mattrax/management-backend-enterprise";
 import { Db, Env as CoreEnv, R2 } from "@mattrax/enterprise-core";
-import { PgClient } from "@effect/sql-pg";
+import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
 import { env as apiEnv } from "./env.js";
 
@@ -133,8 +133,21 @@ const makeAppLayer = (env: Env, request: Request) => {
     Layer.provide(proofContextLayer),
     Layer.provide(Db.layer),
     Layer.provide(
-      PgClient.layer({
-        url: Redacted.make(env.HYPERDRIVE.connectionString),
+      MysqlClient.layer({
+        // Hyperdrive exposes individual connection fields for MySQL. Do not
+        // pass `url`: `@effect/sql-mysql2` ignores `poolConfig` when it is set,
+        // which would silently drop `disableEval` and break Workers builds.
+        host: env.HYPERDRIVE.host,
+        port: env.HYPERDRIVE.port,
+        username: env.HYPERDRIVE.user,
+        password: Redacted.make(env.HYPERDRIVE.password),
+        database: env.HYPERDRIVE.database,
+        // `mysql2` uses `eval` for some protocol decoding; Workers forbids it.
+        // `timezone: "Z"` keeps `DATETIME(3)` reads/writes UTC, matching the
+        // `toISOString()` encoding Drizzle uses for `datetime` columns.
+        poolConfig: { disableEval: true, timezone: "Z" },
+        // Hyperdrive rejects MySQL `COM_STMT_PREPARE`; use the text protocol.
+        disablePreparedStatements: true,
       }),
     ),
   );

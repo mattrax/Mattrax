@@ -15,7 +15,7 @@
     "typecheck": "cf workers types && tsc"
   },
   "dependencies": {
-    "@effect/sql-pg": "catalog:",
+    "@effect/sql-mysql2": "catalog:",
     "@mattrax/dm-apple": "workspace:*",
     "@mattrax/effect-stripe": "workspace:*",
     "@mattrax/enterprise-backend": "workspace:*",
@@ -34,14 +34,13 @@
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "fast-plist": "catalog:",
-    "pg": "catalog:",
+    "mysql2": "catalog:",
     "pkijs": "catalog:",
     "stripe": "^23.1.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "catalog:",
     "@types/node": "catalog:",
-    "@types/pg": "catalog:",
     "cf": "catalog:",
     "drizzle-kit": "catalog:",
     "typescript": "catalog:",
