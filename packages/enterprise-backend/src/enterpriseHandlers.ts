@@ -1296,41 +1296,55 @@ export const createEnterpriseService = ({
               );
             const commandId = crypto.randomUUID();
             const timestamp = now();
+            const randomPin = String(Math.floor(100000 + Math.random() * 900000));
             const request = (() => {
               if (device.proto === "win") {
                 if (action === "wipe")
                   return {
                     requestType: "WindowsWipe",
-                    payload: { locURI: "./Vendor/MSFT/RemoteWipe/1/doWipe" },
+                    payload: { locURI: "./Device/Vendor/MSFT/RemoteWipe/doWipeProtected" },
                   };
                 if (action === "restart")
                   return {
                     requestType: "WindowsReboot",
-                    payload: { locURI: "./Vendor/MSFT/Reboot/1/RebootNow" },
+                    payload: { locURI: "./Device/Vendor/MSFT/Reboot/RebootNow" },
                   };
                 return null;
               }
               switch (action) {
                 case "lock":
-                  return { requestType: "DeviceLock", payload: {} };
+                  return { requestType: "DeviceLock", payload: { PIN: randomPin } };
                 case "wipe":
-                  return { requestType: "EraseDevice", payload: {} };
+                  return {
+                    requestType: "EraseDevice",
+                    payload: { PIN: randomPin, ObliterationBehavior: "Default" },
+                  };
                 case "restart":
                   return { requestType: "RestartDevice", payload: {} };
                 case "shutdown":
                   return { requestType: "ShutdownDevice", payload: {} };
                 case "clear-passcode":
-                  return { requestType: "ClearPasscode", payload: {} };
+                  return { requestType: "ClearPasscode", payload: { UnlockToken: "__STORED__" } };
                 case "install-app":
                   if (body.manifestUrl)
                     return {
                       requestType: "InstallApplication",
-                      payload: { ManifestURL: body.manifestUrl, ManagementFlags: 1 },
+                      payload: {
+                        ManifestURL: body.manifestUrl,
+                        ManagementFlags: 1,
+                        InstallAsManaged: true,
+                        Options: { PurchaseMethod: 1 },
+                      },
                     };
                   if (body.iTunesStoreId)
                     return {
                       requestType: "InstallApplication",
-                      payload: { iTunesStoreID: body.iTunesStoreId, ManagementFlags: 1 },
+                      payload: {
+                        iTunesStoreID: body.iTunesStoreId,
+                        ManagementFlags: 1,
+                        InstallAsManaged: true,
+                        Options: { PurchaseMethod: 1 },
+                      },
                     };
                   return null;
                 default:
@@ -1346,6 +1360,20 @@ export const createEnterpriseService = ({
                       : "Unknown device action",
                 }),
               );
+            if (action === "clear-passcode") {
+              const [apple] = yield* db
+                .select({ unlockToken: schema.deviceApple.unlockToken })
+                .from(schema.deviceApple)
+                .where(eq(schema.deviceApple.deviceId, device.id))
+                .limit(1);
+              if (!apple?.unlockToken)
+                return yield* Effect.fail(
+                  new EnterpriseBadRequest({
+                    message: "This device has not provided an unlock token",
+                  }),
+                );
+              request.payload = { UnlockToken: apple.unlockToken };
+            }
             yield* db.insert(schema.deviceCommand).values({
               id: commandId,
               organizationId: ctx.organization.id,

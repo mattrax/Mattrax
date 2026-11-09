@@ -103,6 +103,7 @@ describe("Management Backend HTTP E2E", () => {
           configurationsToken: "cfg-001",
           assetsToken: "asset-001",
           managementToken: "mgmt-001",
+          declarationsToken: "decl-001",
         }),
     });
 

@@ -128,6 +128,8 @@ export type WindowsBackendOptions = {
    */
   readonly windowsOrganizationId?: string;
   readonly enrollmentTokenTtlSeconds?: number;
+  /** Require a verified client certificate on SyncML check-in. */
+  readonly requireDeviceIdentity?: boolean;
 };
 
 type WindowsBackend = Pick<
@@ -140,7 +142,7 @@ type WindowsBackend = Pick<
 >;
 
 export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBackend => {
-  const { db, origin, authSecret, windowsOrganizationId } = options;
+  const { db, origin, authSecret, windowsOrganizationId, requireDeviceIdentity } = options;
   const ttlSeconds = options.enrollmentTokenTtlSeconds ?? DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS;
   const internal = () => new InternalServerError();
 
@@ -226,7 +228,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         return {
           minimalKeyLength: "2048",
           certificateValidityPeriodSeconds: "31536000",
-          renewalPeriodSeconds: "3628800",
+          renewalPeriodSeconds: "15552000",
           authToken: issued,
         };
       }).pipe(Effect.mapError(internal)),
@@ -297,6 +299,17 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
     ): Effect.Effect<WindowsManagementResponse, UnknownDevice | InternalServerError> =>
       Effect.gen(function* () {
         const organizationId = yield* resolveOrganizationId();
+        if (requireDeviceIdentity) {
+          const certificate = scope.identityCertificate ?? "";
+          const subjectOu = certificate.match(/(?:^|[,/\n])\s*OU\s*=\s*([^,/\n]+)/i)?.[1]?.trim();
+          const subjectCn = certificate.match(/(?:^|[,/\n])\s*CN\s*=\s*([^,/\n]+)/i)?.[1]?.trim();
+          if (!certificate || subjectOu !== organizationId) {
+            return yield* Effect.fail(new UnknownDevice());
+          }
+          if (subjectCn && subjectCn !== scope.deviceId) {
+            return yield* Effect.fail(new UnknownDevice());
+          }
+        }
         const device = yield* findDevice(organizationId, scope.deviceId);
         if (!device) return yield* Effect.fail(new UnknownDevice());
         yield* touchDevice(device.id, new Date());
@@ -354,7 +367,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           commands.push({
             kind: "Exec",
             cmdID: String(index++),
-            locURI: payload.locURI ?? "./Vendor/MSFT/RemoteWipe/1/doWipe",
+            locURI: payload.locURI ?? "./Device/Vendor/MSFT/RemoteWipe/doWipeProtected",
             data: payload.data ?? "",
           });
           yield* db

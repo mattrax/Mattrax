@@ -33,6 +33,7 @@ export function mockManagementBackend(
             configurationsToken: "cfg-token",
             assetsToken: "asset-token",
             managementToken: "mgmt-token",
+            declarationsToken: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
           })),
       getAppleDeclarationItems:
         overrides?.getAppleDeclarationItems ??

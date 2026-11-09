@@ -192,6 +192,41 @@ export const accountApiToken = mysqlTable(
  * Tenant-scoped audit trail. Entries are append-only from the application's
  * perspective; deleting a tenant removes its history with it.
  */
+/** Per-user Apple MDM push credentials (macOS user channel). */
+export const deviceAppleUser = mysqlTable(
+  "device_apple_user",
+  {
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    userId: shortText("user_id").notNull(),
+    token: text("token"),
+    pushMagic: shortText("push_magic"),
+    topic: shortText("topic"),
+    unlockToken: text("unlock_token"),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.deviceId, table.userId] })],
+);
+
+/** Last reported status for each DDM declaration on a device. */
+export const deviceDeclaration = mysqlTable(
+  "device_declaration",
+  {
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    identifier: id("identifier").notNull(),
+    declarationType: shortText("declaration_type").notNull(),
+    active: boolean("active").notNull().default(false),
+    valid: shortText("valid").notNull(),
+    serverToken: text("server_token"),
+    reasons: json("reasons"),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.deviceId, table.identifier] })],
+);
+
 /** Groups provisioned by SCIM for future role/access assignment. */
 export const userGroup = mysqlTable(
   "user_group",
@@ -519,7 +554,9 @@ export const relations = defineRelations(
     enterpriseEnrollment,
     device,
     deviceCommand,
+    deviceDeclaration,
     deviceApple,
+    deviceAppleUser,
     applePushCertificate,
     applePushKey,
     enterpriseGroup,

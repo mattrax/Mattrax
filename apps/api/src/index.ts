@@ -179,6 +179,8 @@ const makeAppLayer = (env: Env, request: Request) => {
     // Windows discovery/enrollment has no tenant identity. Cloud falls back to
     // the earliest organization; set this to pin Windows devices to one tenant.
     windowsOrganizationId: apiEnv.WINDOWS_ORGANIZATION_ID,
+    requireWindowsDeviceIdentity: true,
+    requireAppleDeviceIdentity: true,
   }).pipe(Layer.provide(Db.layer));
 
   const servicesLayer = Layer.mergeAll(
@@ -196,7 +198,13 @@ const makeAppLayer = (env: Env, request: Request) => {
       Layer.provide(appleMdmConfigLayer),
     ),
     WindowsMdmServiceLive({ origin: env.ORIGIN }).pipe(Layer.provide(managementBackendLayer)),
-    ScepService.pipe(Layer.provide(ScepRepositoryLive.layer.pipe(Layer.provide(Db.layer)))),
+    ScepService.pipe(
+      Layer.provide(
+        ScepRepositoryLive.layerWithOptions({ authSecret: env.AUTH_SECRET }).pipe(
+          Layer.provide(Db.layer),
+        ),
+      ),
+    ),
     PlatformServiceLive({
       cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
       cloudAppleVendorKey: env.CLOUD_APPLE_VENDOR_KEY,
@@ -240,9 +248,22 @@ const makeAppLayer = (env: Env, request: Request) => {
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-    const { handler, dispose } = HttpRouter.toWebHandler(makeAppLayer(env, request) as any);
+    // Device identity must come from the verified mTLS handshake, never from a
+    // caller-supplied header. Cloudflare exposes the certificate subject here.
+    const headers = new Headers(request.headers);
+    headers.delete("x-device-identity-certificate");
+    const tls = (
+      request as unknown as {
+        cf?: { tlsClientAuth?: { certVerified?: string; certSubjectDN?: string } };
+      }
+    ).cf?.tlsClientAuth;
+    if (tls?.certVerified === "SUCCESS" && tls.certSubjectDN)
+      headers.set("x-device-identity-certificate", tls.certSubjectDN);
+    const deviceRequest = new Request(request, { headers });
+
+    const { handler, dispose } = HttpRouter.toWebHandler(makeAppLayer(env, deviceRequest) as any);
     const context = Context.makeUnsafe<any>(new Map());
-    const response = await handler(request, context);
+    const response = await handler(deviceRequest, context);
     waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));
     return response;
   },

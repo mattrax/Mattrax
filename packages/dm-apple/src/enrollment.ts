@@ -38,9 +38,11 @@ export const buildAppleEnrollmentProfile = (
   options: AppleEnrollmentProfileOptions,
 ): AppleEnrollmentProfile => {
   const origin = trimTrailingSlash(options.origin);
-  const scepUuid = crypto.randomUUID();
-  const mdmUuid = crypto.randomUUID();
-  const profileUuid = crypto.randomUUID();
+  // Stable payload UUIDs let a re-served profile replace the existing MDM
+  // payload instead of installing a second management profile.
+  const scepUuid = "6D7C9A0E-1B2F-4C3D-8E4A-5F6B7C8D9E0F";
+  const mdmUuid = "A1B2C3D4-E5F6-4789-9ABC-DEF012345678";
+  const profileUuid = "F0E1D2C3-B4A5-4968-8776-655443322110";
   const displayName = options.displayName ?? `${options.organizationName} Enrollment`;
 
   return {

@@ -48,7 +48,8 @@ export function fromManagementResponse(
       verDTD: request.syncHdr.verDTD,
       verProto: request.syncHdr.verProto,
       sessionID: request.syncHdr.sessionID,
-      msgID: String(Number(request.syncHdr.msgID || "0") + 1),
+      // OMA-DM requires the response to reuse the request MsgID.
+      msgID: request.syncHdr.msgID,
       target: { locURI: request.syncHdr.source.locURI },
       source: { locURI: request.syncHdr.target.locURI },
     },

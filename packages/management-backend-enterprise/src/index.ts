@@ -107,16 +107,24 @@ const jsonHash = async (value: unknown) => hashToken([JSON.stringify(value)]);
 
 type DeviceRow = typeof s.device.$inferSelect;
 
-const findDeviceByScope = (scope: CheckinScope): Effect.Effect<DeviceRow | null, unknown, Db> =>
+const findDeviceByScope = (
+  scope: CheckinScope,
+  requireIdentity = false,
+): Effect.Effect<DeviceRow | null, unknown, Db> =>
   Effect.gen(function* () {
     const db = yield* Db;
-    const [byUdid] = yield* db
+    const organizationId = certificateOu(scope.identityCertificate);
+    if (requireIdentity && !organizationId) return null;
+    const [device] = yield* db
       .select()
       .from(s.device)
-      .where(eq(s.device.dmIdentifier, scope.udid))
+      .where(
+        organizationId
+          ? and(eq(s.device.dmIdentifier, scope.udid), eq(s.device.organizationId, organizationId))
+          : eq(s.device.dmIdentifier, scope.udid),
+      )
       .limit(1);
-    if (byUdid) return byUdid;
-    return null;
+    return device ?? null;
   });
 
 const scopedConfigurations = (deviceId: string) =>
@@ -235,23 +243,64 @@ const updateInventoryFromStatus = (
   Effect.gen(function* () {
     if (!statusItems || typeof statusItems !== "object") return;
     const root = statusItems as Record<string, unknown>;
-    const device = record(root.device);
-    const identifier = record(device?.identifier);
-    const model = record(device?.model);
-    const operatingSystem = record(device?.["operating-system"]);
+    const text = (key: string) => {
+      const value = root[key];
+      return typeof value === "string" ? value : undefined;
+    };
     const update: Record<string, unknown> = { lastSeenAt: now() };
-    if (stringField(identifier, "serial-number"))
-      update.serial = stringField(identifier, "serial-number");
-    if (stringField(model, "marketing-name")) update.model = stringField(model, "marketing-name");
-    if (stringField(model, "identifier")) update.modelIdentifier = stringField(model, "identifier");
-    if (stringField(operatingSystem, "marketing-name"))
-      update.osEdition = stringField(operatingSystem, "marketing-name");
-    if (stringField(operatingSystem, "version"))
-      update.osVersion = stringField(operatingSystem, "version");
-    if (stringField(operatingSystem, "build-version"))
-      update.osBuild = stringField(operatingSystem, "build-version");
+    const serial = text("device.identifier.serial-number");
+    const model = text("device.model.marketing-name");
+    const modelIdentifier = text("device.model.identifier");
+    const osEdition = text("device.operating-system.marketing-name");
+    const osVersion = text("device.operating-system.version");
+    const osBuild = text("device.operating-system.build-version");
+    if (serial) update.serial = serial;
+    if (model) update.model = model;
+    if (modelIdentifier) update.modelIdentifier = modelIdentifier;
+    if (osEdition) update.osEdition = osEdition;
+    if (osVersion) update.osVersion = osVersion;
+    if (osBuild) update.osBuild = osBuild;
     const db = yield* Db;
     yield* db.update(s.device).set(update).where(eq(s.device.id, deviceId));
+
+    const declarations = record(root["management.declarations"]);
+    if (!declarations) return;
+    const timestamp = now();
+    for (const declarationType of ["activations", "configurations", "assets", "management"]) {
+      const values = declarations[declarationType];
+      if (!Array.isArray(values)) continue;
+      for (const item of values) {
+        const entry = record(item);
+        const identifier = stringField(entry, "Identifier") ?? stringField(entry, "identifier");
+        if (!entry || !identifier) continue;
+        const valid = stringField(entry, "Valid") ?? stringField(entry, "valid") ?? "unknown";
+        const active = entry.Active === true || entry.active === true;
+        const serverToken =
+          stringField(entry, "ServerToken") ?? stringField(entry, "server-token") ?? null;
+        yield* db
+          .insert(s.deviceDeclaration)
+          .values({
+            deviceId,
+            identifier,
+            declarationType,
+            active,
+            valid,
+            serverToken,
+            reasons: entry.Reasons ?? entry.reasons ?? null,
+            updatedAt: timestamp,
+          })
+          .onDuplicateKeyUpdate({
+            set: {
+              declarationType,
+              active,
+              valid,
+              serverToken,
+              reasons: entry.Reasons ?? entry.reasons ?? null,
+              updatedAt: timestamp,
+            },
+          });
+      }
+    }
   });
 
 export class ManagementBackendEnterpriseLive extends ManagementBackend {
@@ -270,6 +319,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
      * dedicated organization.
      */
     readonly windowsOrganizationId?: string;
+    readonly requireWindowsDeviceIdentity?: boolean;
+    readonly requireAppleDeviceIdentity?: boolean;
   }): ManagementBackend.Service => {
     const { db, origin, apns, authSecret } = options;
     const provideDb = <A, E>(effect: Effect.Effect<A, E, Db>) =>
@@ -324,7 +375,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       );
 
     const requireDevice = (scope: CheckinScope) =>
-      findDeviceByScope(scope).pipe(
+      findDeviceByScope(scope, options.requireAppleDeviceIdentity).pipe(
         Effect.flatMap((device) =>
           device ? Effect.succeed(device) : Effect.fail(new UnknownDevice()),
         ),
@@ -400,19 +451,47 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 return;
               }
 
-              const device = yield* findDeviceByScope(scope);
+              const device = yield* findDeviceByScope(scope, options.requireAppleDeviceIdentity);
               if (!device) return yield* Effect.fail(new UnknownDevice());
 
               if (event._tag === "TokenUpdate") {
-                yield* db
-                  .update(s.deviceApple)
-                  .set({
-                    token: event.pushToken,
-                    pushMagic: event.pushMagic,
-                    topic: event.topic,
-                    tokenUpdatedAt: now(),
-                  })
-                  .where(eq(s.deviceApple.deviceId, device.id));
+                if (event.channel === "user" && event.userId) {
+                  yield* db
+                    .insert(s.deviceAppleUser)
+                    .values({
+                      deviceId: device.id,
+                      userId: event.userId,
+                      token: event.pushToken,
+                      pushMagic: event.pushMagic,
+                      topic: event.topic,
+                      unlockToken: event.unlockToken ?? null,
+                      updatedAt: now(),
+                    })
+                    .onDuplicateKeyUpdate({
+                      set: {
+                        token: event.pushToken,
+                        pushMagic: event.pushMagic,
+                        topic: event.topic,
+                        unlockToken: event.unlockToken ?? null,
+                        updatedAt: now(),
+                      },
+                    });
+                } else {
+                  yield* db
+                    .update(s.deviceApple)
+                    .set({
+                      token: event.pushToken,
+                      pushMagic: event.pushMagic,
+                      topic: event.topic,
+                      ...(event.unlockToken ? { unlockToken: event.unlockToken } : {}),
+                      ...(event.enrollmentId ? { enrollmentId: event.enrollmentId } : {}),
+                      ...(event.awaitingConfiguration !== undefined
+                        ? { configured: !event.awaitingConfiguration }
+                        : {}),
+                      tokenUpdatedAt: now(),
+                    })
+                    .where(eq(s.deviceApple.deviceId, device.id));
+                }
                 if (event.channel === "device" && device.status === "enrolling") {
                   yield* db
                     .update(s.device)
@@ -424,6 +503,21 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               }
 
               if (event._tag === "CheckOut") {
+                if (event.userId) {
+                  yield* db
+                    .delete(s.deviceAppleUser)
+                    .where(
+                      and(
+                        eq(s.deviceAppleUser.deviceId, device.id),
+                        eq(s.deviceAppleUser.userId, event.userId),
+                      ),
+                    );
+                  yield* db
+                    .update(s.device)
+                    .set({ lastSeenAt: now() })
+                    .where(eq(s.device.id, device.id));
+                  return;
+                }
                 yield* db
                   .update(s.device)
                   .set({ status: "unenrolled", lastSeenAt: now() })
@@ -445,7 +539,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 yield* db
                   .update(s.deviceCommand)
                   .set({
-                    status: event.status === "Acknowledged" ? "succeeded" : "failed",
+                    status:
+                      event.status === "Acknowledged"
+                        ? "succeeded"
+                        : event.status === "NotNow"
+                          ? "queued"
+                          : event.status === "Idle"
+                            ? "sent"
+                            : "failed",
                     resultStatus: event.status,
                     resultDetail: event.errorDetail ?? null,
                     updatedAt: now(),
@@ -560,6 +661,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 configurationsToken: await categoryToken("configurations"),
                 assetsToken: await categoryToken("assets"),
                 managementToken: await categoryToken("management"),
+                declarationsToken: await hashToken(
+                  [
+                    ...items.activations,
+                    ...items.configurations,
+                    ...items.assets,
+                    ...items.management,
+                  ].map((item) => `${item.identifier}_MTTX_${item.serverToken}`),
+                ),
               }),
               catch: internal,
             });
@@ -749,6 +858,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         origin,
         authSecret,
         windowsOrganizationId: options.windowsOrganizationId,
+        requireDeviceIdentity: options.requireWindowsDeviceIdentity,
       }),
     });
   };
@@ -759,6 +869,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       readonly apns?: ApnsService.Service;
       readonly authSecret?: string;
       readonly windowsOrganizationId?: string;
+      readonly requireWindowsDeviceIdentity?: boolean;
+      readonly requireAppleDeviceIdentity?: boolean;
     },
   ) =>
     Layer.effect(

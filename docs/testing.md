@@ -12,12 +12,17 @@ pnpm test
 Vitest projects live beside each package (`packages/*/vitest.config.ts` and
 `apps/*/vitest.config.ts`). They cover:
 
-- Apple MDM check-in, token update, declarative management, checkout and
-  enrollment-profile shape (including the `com.apple.mdm.token` capability that
-  Fleet requires).
-- SCEP capabilities, PKCS#7 handling, certificate issuance and challenge
-  validation.
-- Windows WSTEP/SyncML serialization and enrollment.
+- Apple MDM check-in, token update, checkout, JSON declarative-management
+  tokens/declaration items, base64 DDM status reports, declaration status
+  persistence and enrollment-profile shape (including stable payload UUIDs and
+  the `com.apple.mdm.token` capability that Fleet requires).
+- Remote command delivery: queued commands on check-in, `Idle`/`NotNow` result
+  handling, lock/erase/restart/shutdown/clear-passcode/InstallApplication
+  payloads, and per-user Apple push credentials.
+- SCEP capabilities, PKCS#7 handling, CSR signature verification, certificate
+  issuance, client-auth EKU and challenge validation.
+- Windows WSTEP/SyncML serialization, enrollment, SyncML policy delivery,
+  response message IDs, certificate-required check-in and remote erase/reboot.
 - APNs CSR generation, certificate parsing, secret sealing and every push
   transport (Node, Workers mTLS, hosted relay, no-op).
 - Enterprise handlers: tenant scoping, device/group/policy CRUD, APNs
@@ -50,10 +55,51 @@ public enrollment page.
 
 The Apple tests are adapted from Fleet's
 [`server/mdm/apple`](https://github.com/fleetdm/fleet/tree/main/server/mdm/apple)
-suite. Fleet's assertions around enrollment-profile payload structure, the
-`com.apple.mdm.token` capability and SCEP capabilities are ported into the
-`dm-apple` and `scep` Vitest projects. Keep those tests aligned when changing
-the enrollment profile or SCEP surface.
+suite and Fleet's integration MDM tests. The ported cases live in:
+
+- `packages/dm-apple/src/tests/fleet-port.test.ts` — enrollment profile
+  structure, stable payload UUIDs, SCEP identity reference, server capabilities
+  (`TestGenerateEnrollmentProfileMobileconfig`,
+  `TestEnrollmentProfileServerCapabilities`).
+- `packages/dm-apple/src/tests/handlers.test.ts` — check-in, command polling,
+  JSON DDM endpoints and DDM status decoding.
+- `packages/management-backend-enterprise/src/tests/policy.test.ts` — profile
+  validation, Windows OMA-URI policy validation, asset declarations.
+- `packages/management-backend-enterprise/src/tests/scep.test.ts` — SCEP
+  challenge authentication and tenant binding.
+- `packages/management-backend-enterprise/src/tests/windows.test.ts` — WSTEP
+  enrollment, Windows policy/commands and certificate-required check-in.
+
+Fleet is a Go project. To inspect or run its own suite:
+
+```bash
+git clone --depth 1 https://github.com/fleetdm/fleet.git ~/gh/fleetdm/fleet
+cd ~/gh/fleetdm/fleet
+go test ./server/mdm/apple/... ./server/mdm/scep/...
+```
+
+The machine running these tests needs Go 1.23+ and Fleet's database setup for
+the integration tests (`server/service/*_test.go`). Our CI does not run the Go
+suite; it runs the ported Vitest cases so protocol regressions fail in
+`pnpm test`.
+
+## Real-device checklist
+
+Before shipping an MDM change, exercise these on a disposable macOS/iOS device
+and a Windows VM:
+
+1. Enroll through a tenant enrollment link; verify the profile installs one
+   SCEP payload and one MDM payload.
+2. Confirm `Authenticate`, `TokenUpdate` and a DDM `tokens` /
+   `declaration-items` sync succeed.
+3. Verify declarations appear as `active`/`valid` in `device_declaration` after
+   a status report.
+4. Change a policy and confirm the device re-syncs.
+5. Queue lock/erase/restart/shutdown/clear-passcode and an app install; confirm
+   each command result updates `device_command`.
+6. On Windows, enroll, verify policy `Replace` commands and run erase/restart.
+7. Renew or re-enroll the SCEP identity and confirm the new certificate keeps
+   the tenant OU.
 
 ## CI
 

@@ -15,6 +15,8 @@ export const AuthenticatePlist = Schema.Struct({
   OSVersion: Schema.optional(Schema.String),
   Model: Schema.optional(Schema.String),
   ModelName: Schema.optional(Schema.String),
+  ProductName: Schema.optional(Schema.String),
+  EnrollmentID: Schema.optional(Schema.String),
 });
 export type AuthenticatePlist = typeof AuthenticatePlist.Type;
 
@@ -26,6 +28,10 @@ export const TokenUpdatePlist = Schema.Struct({
   Token: Schema.String,
   UnlockToken: Schema.optional(Schema.String),
   UserID: Schema.optional(Schema.String),
+  EnrollmentID: Schema.optional(Schema.String),
+  AwaitingConfiguration: Schema.optional(Schema.Boolean),
+  UserShortName: Schema.optional(Schema.String),
+  UserLongName: Schema.optional(Schema.String),
 });
 export type TokenUpdatePlist = typeof TokenUpdatePlist.Type;
 
@@ -33,13 +39,15 @@ export const CheckOutPlist = Schema.Struct({
   MessageType: Schema.Literal("CheckOut"),
   Topic: Schema.String,
   UDID: Schema.String,
+  UserID: Schema.optional(Schema.String),
+  EnrollmentID: Schema.optional(Schema.String),
 });
 export type CheckOutPlist = typeof CheckOutPlist.Type;
 
 export const CommandResultPlist = Schema.Struct({
   UDID: Schema.String,
   Status: Schema.String,
-  CommandUUID: Schema.String,
+  CommandUUID: Schema.optional(Schema.String),
   Command: Schema.optional(
     Schema.Struct({
       RequestType: Schema.String,
@@ -59,18 +67,18 @@ export const CommandResultPlist = Schema.Struct({
 export type CommandResultPlist = typeof CommandResultPlist.Type;
 
 export const DDMStatusReport = Schema.Struct({
-  StatusItems: Schema.optional(Schema.Unknown),
+  /** Flat map of Apple status item paths to their values. */
+  StatusItems: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   Errors: Schema.optional(
     Schema.Array(
       Schema.Struct({
-        Identifier: Schema.String,
-        ServerToken: Schema.String,
-        Active: Schema.Boolean,
-        Valid: Schema.String,
+        StatusItem: Schema.optional(Schema.String),
         Reasons: Schema.optional(
           Schema.Array(
             Schema.Struct({
-              Description: Schema.String,
+              Code: Schema.optional(Schema.String),
+              Description: Schema.optional(Schema.String),
+              Details: Schema.optional(Schema.Unknown),
             }),
           ),
         ),

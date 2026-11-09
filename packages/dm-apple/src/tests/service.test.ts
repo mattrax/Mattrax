@@ -60,23 +60,24 @@ describe("AppleMdmService", () => {
       expect(ev.model).toBe("MacBookPro18,1");
     });
 
-    it("silently handles UnknownDevice", async () => {
+    it("rejects UnknownDevice", async () => {
       const backend = mockManagementBackend({
         appleDeviceEvent: () => Effect.fail(new UnknownDevice()),
       });
 
-      await runWithService(
-        backend,
-        Effect.gen(function* () {
-          const service = yield* AppleMdmService;
-          return yield* service.handleAuthenticate({
-            MessageType: "Authenticate",
-            Topic: TEST_CONFIG.topic,
-            UDID: "unknown-udid",
-          });
-        }),
-      );
-      // Should not throw
+      await expect(
+        runWithService(
+          backend,
+          Effect.gen(function* () {
+            const service = yield* AppleMdmService;
+            return yield* service.handleAuthenticate({
+              MessageType: "Authenticate",
+              Topic: TEST_CONFIG.topic,
+              UDID: "unknown-udid",
+            });
+          }),
+        ),
+      ).rejects.toThrow("Failed to send Authenticate event");
     });
 
     it("silently handles ManagementNotSupported", async () => {
@@ -395,6 +396,7 @@ describe("AppleMdmService", () => {
             configurationsToken: "cfg-1",
             assetsToken: "asset-1",
             managementToken: "mgmt-1",
+            declarationsToken: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
           }),
       });
 
@@ -409,9 +411,8 @@ describe("AppleMdmService", () => {
           });
         }),
       );
-      expect(result.SyncTokens.Tokens).toHaveLength(4);
-      const cfg = result.SyncTokens.Tokens.find((t) => t.Type === "configurations");
-      expect(cfg?.Token).toBe("cfg-1");
+      expect(result.SyncTokens.DeclarationsToken).toMatch(/^[A-F0-9]{64}$/);
+      expect(result.SyncTokens.Timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
     it("fails for unknown devices", async () => {
@@ -528,11 +529,8 @@ describe("AppleMdmService", () => {
               StatusItems: { test: true },
               Errors: [
                 {
-                  Identifier: "decl-1",
-                  ServerToken: "tok-1",
-                  Active: true,
-                  Valid: "invalid",
-                  Reasons: [{ Description: "Test error" }],
+                  StatusItem: "management.declarations",
+                  Reasons: [{ Code: "Error", Description: "Test error" }],
                 },
               ],
             },
@@ -543,7 +541,7 @@ describe("AppleMdmService", () => {
       const ev = receivedEvent as { _tag: string; statusItems: unknown; errors: any[] };
       expect(ev._tag).toBe("DeclarationStatus");
       expect(ev.errors).toHaveLength(1);
-      expect(ev.errors[0].identifier).toBe("decl-1");
+      expect(ev.errors[0].statusItem).toBe("management.declarations");
       expect(ev.errors[0].reasons[0].description).toBe("Test error");
     });
   });

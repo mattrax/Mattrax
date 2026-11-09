@@ -136,6 +136,8 @@ export const ManagementBackendD1 = (db: D1Database, apps: R2Bucket) =>
               configurationsToken: await hashCat("configurations"),
               assetsToken: await hashCat("assets"),
               managementToken: await hashCat("management"),
+              declarationsToken:
+                results.length > 0 ? await sha256hex(JSON.stringify(results)) : "empty",
             };
           },
           catch: (cause) => (console.error("[management]", cause), new InternalServerError()),

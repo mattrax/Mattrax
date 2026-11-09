@@ -49,8 +49,14 @@ export const AppleDeviceEvent = Schema.Union([
     pushMagic: Schema.String,
     topic: Schema.String,
     channel: Schema.Literals(["user", "device"]),
+    userId: Schema.optional(Schema.String),
+    unlockToken: Schema.optional(Schema.String),
+    enrollmentId: Schema.optional(Schema.String),
+    awaitingConfiguration: Schema.optional(Schema.Boolean),
+    userShortName: Schema.optional(Schema.String),
+    userLongName: Schema.optional(Schema.String),
   }),
-  Schema.TaggedStruct("CheckOut", {}),
+  Schema.TaggedStruct("CheckOut", { userId: Schema.optional(Schema.String) }),
   Schema.TaggedStruct("CommandResult", {
     commandUUID: Schema.String,
     status: Schema.String,
@@ -58,18 +64,17 @@ export const AppleDeviceEvent = Schema.Union([
     queryResponses: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   }),
   Schema.TaggedStruct("DeclarationStatus", {
-    statusItems: Schema.optional(Schema.Unknown),
+    statusItems: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
     errors: Schema.optional(
       Schema.Array(
         Schema.Struct({
-          identifier: Schema.String,
-          serverToken: Schema.String,
-          active: Schema.Boolean,
-          valid: Schema.String,
+          statusItem: Schema.optional(Schema.String),
           reasons: Schema.optional(
             Schema.Array(
               Schema.Struct({
-                description: Schema.String,
+                code: Schema.optional(Schema.String),
+                description: Schema.optional(Schema.String),
+                details: Schema.optional(Schema.Unknown),
               }),
             ),
           ),
@@ -100,6 +105,8 @@ export const DdmTokens = Schema.Struct({
   configurationsToken: Schema.String,
   assetsToken: Schema.String,
   managementToken: Schema.String,
+  /** Combined token that equals the DdmSync server token. */
+  declarationsToken: Schema.String,
 });
 export type DdmTokens = typeof DdmTokens.Type;
 

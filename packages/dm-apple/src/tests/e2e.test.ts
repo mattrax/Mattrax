@@ -186,6 +186,7 @@ describe("Apple MDM E2E", () => {
           configurationsToken: "cfg-e2e",
           assetsToken: "asset-e2e",
           managementToken: "mgmt-e2e",
+          declarationsToken: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         }),
       getAppleDeclarationItems: () =>
         Effect.succeed({
@@ -219,12 +220,9 @@ describe("Apple MDM E2E", () => {
       }),
     );
     expect(tokensRes.status).toBe(200);
-    const tokensBody = await tokensRes.text();
-    const tokensData = (await parsePlist(tokensBody).pipe(Effect.runPromise)) as Record<
-      string,
-      any
-    >;
-    expect(tokensData.SyncTokens.Tokens).toHaveLength(4);
+    const tokensData = (await tokensRes.json()) as Record<string, any>;
+    expect(tokensData.SyncTokens.DeclarationsToken).toMatch(/^[A-F0-9]{64}$/);
+    expect(tokensData.SyncTokens.Timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
     // Request declaration items
     const itemsPlist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -246,8 +244,7 @@ describe("Apple MDM E2E", () => {
       }),
     );
     expect(itemsRes.status).toBe(200);
-    const itemsBody = await itemsRes.text();
-    const itemsData = (await parsePlist(itemsBody).pipe(Effect.runPromise)) as Record<string, any>;
+    const itemsData = (await itemsRes.json()) as Record<string, any>;
     expect(itemsData.Declarations.Activations).toHaveLength(1);
     expect(itemsData.Declarations.Configurations).toHaveLength(1);
     expect(itemsData.Declarations.Assets).toHaveLength(1);

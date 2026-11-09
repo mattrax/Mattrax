@@ -126,6 +126,12 @@ const sha256Hex = async (value: string | Uint8Array): Promise<string> => {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
+const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+};
+
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
   isRecord(value) ? value : undefined;
 
@@ -181,9 +187,25 @@ export const validateConfiguration = (kind: string, data: unknown): Effect.Effec
         );
         if (!isRecord(plist))
           return yield* Effect.fail(`"${kind}.content" must contain a plist dictionary`);
-        const hasMdm = payloadsFromMobileconfig(plist).some(
-          (payload) => payload.PayloadType === "com.apple.mdm",
-        );
+        if (plist.PayloadType !== "Configuration")
+          return yield* Effect.fail(
+            `"${kind}.content" must have a top-level PayloadType of Configuration`,
+          );
+        if (typeof plist.PayloadIdentifier !== "string" || plist.PayloadIdentifier.length === 0)
+          return yield* Effect.fail(`"${kind}.content" must have a PayloadIdentifier`);
+        if (typeof plist.PayloadDisplayName !== "string" || plist.PayloadDisplayName.length === 0)
+          return yield* Effect.fail(`"${kind}.content" must have a PayloadDisplayName`);
+        if (
+          plist.PayloadScope !== undefined &&
+          !["System", "User"].includes(String(plist.PayloadScope))
+        )
+          return yield* Effect.fail(`"${kind}.content" PayloadScope must be System or User`);
+        const payloads = payloadsFromMobileconfig(plist);
+        if (payloads.length === 0)
+          return yield* Effect.fail(
+            `"${kind}.content" must contain at least one PayloadContent entry`,
+          );
+        const hasMdm = payloads.some((payload) => payload.PayloadType === "com.apple.mdm");
         if (hasMdm)
           return yield* Effect.fail(
             `"${kind}.content" contains a com.apple.mdm payload, which cannot be deployed as a managed profile`,
@@ -360,24 +382,37 @@ export const buildAssetDeclaration = async (
     Payload: {
       Reference: {
         DataURL: `${origin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(assetToken)}`,
-        ContentType: "application/pem",
-        "Hash-SHA-256": await sha256Hex(pemBytes),
+        ContentType: "application/pem-certificate-chain",
+        "Hash-SHA-256": bytesToBase64(
+          new Uint8Array(await crypto.subtle.digest("SHA-256", pemBytes)),
+        ),
         Size: pemBytes.byteLength,
       },
     },
   };
 };
 
-const legacyDeviceProfile = (row: PolicyConfigurationRow) => {
+const stableUuid = async (value: string): Promise<string> => {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
+  ).slice(0, 16);
+  digest[6] = (digest[6]! & 0x0f) | 0x50;
+  digest[8] = (digest[8]! & 0x3f) | 0x80;
+  const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+const legacyDeviceProfile = async (row: PolicyConfigurationRow) => {
   const data = row.data as Record<string, unknown>;
   const allowCamera = data.camera !== false;
+  const uuid = await stableUuid(`mattrax:${row.policyId}:${row.kind}`);
   return {
     PayloadContent: [
       {
         allowCamera,
         PayloadIdentifier: `app.mattrax.p.${row.policyId}.${row.kind}.applicationaccess`,
         PayloadType: "com.apple.applicationaccess",
-        PayloadUUID: `${row.policyId}-${row.kind}`,
+        PayloadUUID: await stableUuid(`mattrax:${row.policyId}:${row.kind}:payload`),
         PayloadVersion: 1,
       },
     ],
@@ -385,7 +420,7 @@ const legacyDeviceProfile = (row: PolicyConfigurationRow) => {
     PayloadIdentifier: `app.mattrax.p.${row.policyId}.${row.kind}`,
     PayloadOrganization: "Mattrax",
     PayloadType: "Configuration",
-    PayloadUUID: `${row.policyId}-${row.kind}`,
+    PayloadUUID: uuid,
     PayloadVersion: 1,
   };
 };
@@ -407,7 +442,7 @@ export const buildLegacyProfile = async (
     };
   }
   if (parsed.type === "device") {
-    const plist = await Effect.runPromise(serializePlist(legacyDeviceProfile(row)));
+    const plist = await Effect.runPromise(serializePlist(await legacyDeviceProfile(row)));
     return {
       content: encoder.encode(plist),
       contentType: "application/x-apple-aspen-config",

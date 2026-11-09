@@ -165,6 +165,7 @@ describe("Apple MDM handlers", () => {
             configurationsToken: "cfg-tok",
             assetsToken: "asset-tok",
             managementToken: "mgmt-tok",
+            declarationsToken: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
           }),
       });
       const handler = await makeMdmHandler(backend);
@@ -188,9 +189,11 @@ describe("Apple MDM handlers", () => {
         }),
       );
       expect(response.status).toBe(200);
-      const body = await response.text();
-      expect(body).toContain("SyncTokens");
-      expect(body).toContain("configurations");
+      const body = (await response.json()) as {
+        SyncTokens: { DeclarationsToken: string; Timestamp: string };
+      };
+      expect(body.SyncTokens.DeclarationsToken).toMatch(/^[A-F0-9]{64}$/);
+      expect(body.SyncTokens.Timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
   });
 
@@ -226,9 +229,94 @@ describe("Apple MDM handlers", () => {
         }),
       );
       expect(response.status).toBe(200);
-      const body = await response.text();
-      expect(body).toContain("Declarations");
-      expect(body).toContain("act-1");
+      const body = (await response.json()) as {
+        Declarations: { Activations: Array<{ Identifier: string }> };
+        DeclarationsToken: string;
+      };
+      expect(body.Declarations.Activations[0]?.Identifier).toBe("act-1");
+      expect(body.DeclarationsToken).toMatch(/^[A-F0-9]{64}$/);
+    });
+  });
+
+  describe("PUT /mdm/apple/mdm - command result polling", () => {
+    it("returns the next command after an Idle result", async () => {
+      const events: Array<unknown> = [];
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+          Effect.sync(() => {
+            events.push(event);
+          }),
+        appleManagementCheckin: () =>
+          Effect.succeed({
+            _tag: "Command" as const,
+            commandUUID: "cmd-next",
+            requestType: "DeviceInformation",
+            payload: {},
+          }),
+      });
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>UDID</key><string>udid-idle-001</string>
+  <key>Status</key><string>Idle</string>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain("cmd-next");
+      // Idle has no CommandUUID and must not be reported as a command result.
+      expect(events).toHaveLength(0);
+    });
+  });
+
+  describe("PUT /mdm/apple/mdm - DDM status", () => {
+    it("decodes the base64 JSON status report and forwards it", async () => {
+      let report: unknown;
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (_scope: unknown, event: unknown) =>
+          Effect.sync(() => {
+            report = event;
+          }),
+      });
+      const handler = await makeMdmHandler(backend);
+      // {"StatusItems":{"device.identifier.serial-number":"SN-1"}}
+      const data = btoa(
+        JSON.stringify({ StatusItems: { "device.identifier.serial-number": "SN-1" } }),
+      );
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>MessageType</key><string>DeclarativeManagement</string>
+  <key>UDID</key><string>udid-ddm-status</string>
+  <key>Endpoint</key><string>status</string>
+  <key>Data</key><data>${data}</data>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(report).toMatchObject({
+        _tag: "DeclarationStatus",
+        statusItems: { "device.identifier.serial-number": "SN-1" },
+      });
     });
   });
 

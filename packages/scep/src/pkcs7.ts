@@ -764,6 +764,18 @@ export async function createDeviceCertificate(
       extnValue: new pkijs.BasicConstraints({ cA: false }).toSchema().toBER(false),
       parsedValue: new pkijs.BasicConstraints({ cA: false }),
     }),
+    new pkijs.Extension({
+      extnID: "2.5.29.37",
+      critical: false,
+      extnValue: new pkijs.ExtKeyUsage({
+        keyPurposes: ["1.3.6.1.5.5.7.3.2"],
+      })
+        .toSchema()
+        .toBER(false),
+      parsedValue: new pkijs.ExtKeyUsage({
+        keyPurposes: ["1.3.6.1.5.5.7.3.2"],
+      }),
+    }),
     ...(validity.extensions ?? []),
   ];
 

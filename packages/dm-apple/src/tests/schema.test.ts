@@ -150,11 +150,10 @@ describe("schema", () => {
         StatusItems: {},
         Errors: [
           {
-            Identifier: "decl-1",
-            ServerToken: "token-1",
-            Active: true,
-            Valid: "invalid",
-            Reasons: [{ Description: "Something went wrong" }],
+            StatusItem: "management.declarations",
+            Reasons: [
+              { Code: "Error", Description: "Something went wrong", Details: { id: "decl-1" } },
+            ],
           },
         ],
       };
@@ -162,8 +161,8 @@ describe("schema", () => {
         Effect.runPromise,
       );
       expect(result.Errors).toHaveLength(1);
-      expect(result.Errors![0].Identifier).toBe("decl-1");
-      expect(result.Errors![0].Reasons![0].Description).toBe("Something went wrong");
+      expect(result.Errors![0].StatusItem).toBe("management.declarations");
+      expect(result.Errors![0].Reasons![0]?.Description).toBe("Something went wrong");
     });
   });
 });

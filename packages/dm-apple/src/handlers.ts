@@ -13,25 +13,29 @@ import {
 import { appleMdmApi } from "./domain.js";
 import type { CheckinScope } from "@mattrax/management-backend";
 
+const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
+
+const decodeBase64 = (value: string): Uint8Array => {
+  const cleaned = value.replace(/\s/g, "");
+  const padded = cleaned.padEnd(cleaned.length + ((4 - (cleaned.length % 4)) % 4), "=");
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+};
+
+const commandBytes = (command: { commandUUID: string; requestType: string; payload: unknown }) =>
+  serializePlist({
+    CommandUUID: command.commandUUID,
+    Command: { RequestType: command.requestType, ...(command.payload as object) },
+  });
+
 export const appleMdmHandlers = (handlers: HttpApiBuilder.Handlers.FromGroup<typeof appleMdmApi>) =>
   handlers.handle("enroll", () =>
-    Effect.gen(function* () {
-      const service = yield* AppleMdmService;
-      const profile = yield* service.generateEnrollmentProfile();
-      const plist = yield* serializePlist(JSON.parse(profile));
-      return HttpServerResponse.text(plist, {
-        contentType: "application/x-apple-aspen-config",
-        headers: {
-          "Content-Disposition": 'attachment; filename="enroll.mobileconfig"',
-        },
-      });
-    }).pipe(
-      Effect.match({
-        onSuccess: (val) => val,
-        onFailure: (err) => {
-          console.error("enroll error:", err);
-          return HttpServerResponse.text("", { status: 500 });
-        },
+    // Enrollment profiles must be tenant-scoped and carry a bound SCEP
+    // challenge. The product issues them through /v1/enrollment/:id; the raw
+    // worker endpoint cannot safely mint an identity certificate.
+    Effect.succeed(
+      HttpServerResponse.text("Use the tenant enrollment link to enroll this device.", {
+        status: 410,
       }),
     ),
   );
@@ -52,6 +56,14 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
 
     const messageType = (plist as any)?.MessageType;
     const status = (plist as any)?.Status;
+    const udid = (plist as any)?.UDID ?? (plist as any)?.EnrollmentID;
+
+    const scope = (): CheckinScope => ({
+      _tag: "device",
+      udid: udid ?? "",
+      identityCertificate,
+      mdmOrigin: service.mdmOrigin,
+    });
 
     if (messageType) {
       switch (messageType) {
@@ -78,89 +90,82 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
         }
         case "DeclarativeManagement": {
           const endpoint = (plist as any).Endpoint;
-          const udid = (plist as any).UDID;
-          if (!udid) return HttpServerResponse.empty({ status: 200 });
+          if (!udid) return HttpServerResponse.empty({ status: 400 });
+          const checkinScope = scope();
 
-          const scope: CheckinScope = {
-            _tag: "device",
-            udid,
-            identityCertificate,
-            mdmOrigin: service.mdmOrigin,
-          };
-
-          switch (endpoint) {
-            case "tokens": {
-              const tokens = yield* service.handleDeclarativeTokens(scope);
-              const response = yield* serializePlist(tokens);
-              return HttpServerResponse.text(response, { contentType: "application/xml" });
-            }
-            case "declaration-items": {
-              const items = yield* service.handleDeclarationItems(scope);
-              const response = yield* serializePlist(items);
-              return HttpServerResponse.text(response, { contentType: "application/xml" });
-            }
-            case "status": {
-              const report = (plist as any).Data;
-              const decoded = yield* Schema.decodeUnknownEffect(DDMStatusReport)(report).pipe(
-                Effect.mapError((err) => new Error(String(err))),
-              );
-              yield* service.handleStatusReport(scope, decoded);
-              return HttpServerResponse.empty({ status: 200 });
-            }
-            default: {
-              if (typeof endpoint === "string" && endpoint.startsWith("declaration/")) {
-                const parts = endpoint.split("/");
-                const type = parts[1] ?? "";
-                const identifier = parts[2] ?? "";
-                const decl = yield* service.handleDeclaration(scope, type, identifier);
-                const response = yield* serializePlist(decl);
-                return HttpServerResponse.text(response, { contentType: "application/xml" });
-              }
-              return HttpServerResponse.empty({ status: 200 });
-            }
+          if (endpoint === "tokens") {
+            const tokens = yield* service.handleDeclarativeTokens(checkinScope);
+            return json(tokens);
           }
+          if (endpoint === "declaration-items") {
+            const items = yield* service.handleDeclarationItems(checkinScope);
+            return json(items);
+          }
+          if (endpoint === "status") {
+            const data = (plist as any).Data;
+            if (typeof data !== "string") return HttpServerResponse.empty({ status: 400 });
+            const parsed = yield* Effect.try({
+              try: () => JSON.parse(new TextDecoder().decode(decodeBase64(data))) as unknown,
+              catch: (cause) => new Error(`Invalid DDM status report: ${String(cause)}`),
+            });
+            const decoded = yield* Schema.decodeUnknownEffect(DDMStatusReport)(parsed).pipe(
+              Effect.mapError((err) => new Error(String(err))),
+            );
+            yield* service.handleStatusReport(checkinScope, decoded);
+            return HttpServerResponse.empty({ status: 200 });
+          }
+          if (typeof endpoint === "string" && endpoint.startsWith("declaration/")) {
+            const parts = endpoint.split("/");
+            if (parts.length !== 3) return HttpServerResponse.empty({ status: 400 });
+            const [, type, identifier] = parts;
+            if (!["activation", "configuration", "asset", "management"].includes(type!))
+              return HttpServerResponse.empty({ status: 404 });
+            const decl = yield* service.handleDeclaration(checkinScope, type!, identifier!);
+            return json(decl);
+          }
+          return HttpServerResponse.empty({ status: 404 });
         }
+        case "SetBootstrapToken":
+        case "GetBootstrapToken":
+        case "GetToken":
+          return HttpServerResponse.empty({ status: 400 });
+        case "UserAuthenticate":
+          return HttpServerResponse.empty({ status: 410 });
         default:
-          return HttpServerResponse.empty({ status: 200 });
+          return HttpServerResponse.empty({ status: 400 });
       }
-    } else if (status !== undefined) {
+    }
+
+    if (status !== undefined) {
       const result = yield* Schema.decodeUnknownEffect(CommandResultPlist)(plist).pipe(
         Effect.mapError((err) => new Error(String(err))),
       );
-      yield* service.handleCommandResult(result, identityCertificate);
-      return HttpServerResponse.empty({ status: 200 });
-    } else {
-      const udid = (plist as any)?.UDID;
-      if (!udid) return HttpServerResponse.empty({ status: 200 });
-
-      const scope: CheckinScope = {
-        _tag: "device",
-        udid,
-        identityCertificate,
-        mdmOrigin: service.mdmOrigin,
-      };
-      const command = yield* service.handleCheckin(scope);
-      if (!command) {
-        const empty = yield* serializePlist({});
-        return HttpServerResponse.text(empty, { contentType: "application/xml" });
+      if (result.CommandUUID) {
+        yield* service.handleCommandResult(result, identityCertificate);
       }
-
-      const commandPlist = {
-        CommandUUID: command.commandUUID,
-        Command: {
-          RequestType: command.requestType,
-          ...(command.payload as object),
-        },
-      };
-      const response = yield* serializePlist(commandPlist);
-      return HttpServerResponse.text(response, { contentType: "application/xml" });
+      if (!udid) return HttpServerResponse.empty({ status: 200 });
+      const command = yield* service.handleCheckin(scope());
+      if (!command) return HttpServerResponse.empty({ status: 200 });
+      return HttpServerResponse.text(yield* commandBytes(command), {
+        contentType: "application/xml",
+      });
     }
+
+    if (!udid) return HttpServerResponse.empty({ status: 400 });
+    const command = yield* service.handleCheckin(scope());
+    if (!command) {
+      const empty = yield* serializePlist({});
+      return HttpServerResponse.text(empty, { contentType: "application/xml" });
+    }
+    return HttpServerResponse.text(yield* commandBytes(command), {
+      contentType: "application/xml",
+    });
   }).pipe(
     Effect.match({
       onSuccess: (val) => val,
       onFailure: (err) => {
         console.error("mdm error:", err);
-        return HttpServerResponse.empty({ status: 200 });
+        return HttpServerResponse.empty({ status: 400 });
       },
     }),
   );

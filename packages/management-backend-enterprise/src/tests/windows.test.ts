@@ -4,7 +4,7 @@ import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { arrayBufferToBase64, exportPrivateKeyJwk, generateCaKeyPair } from "@mattrax/crypto";
 import { certToPem, createCaCertificate, pemToCert, signScepCsr } from "@mattrax/scep";
-import { MdmOrigin } from "@mattrax/management-backend";
+import { MdmOrigin, UnknownDevice } from "@mattrax/management-backend";
 import {
   createWindowsEnrollmentToken,
   makeWindowsBackend,
@@ -62,7 +62,9 @@ const organizationRow = (id: string, createdAt: Date) => ({
   updatedAt: createdAt,
 });
 
-const setup = async (overrides: { windowsOrganizationId?: string } = {}) => {
+const setup = async (
+  overrides: { windowsOrganizationId?: string; requireDeviceIdentity?: boolean } = {},
+) => {
   const ca = await makeCa();
   const db = makeDb({
     [tableName(schema.organization)]: [
@@ -78,6 +80,7 @@ const setup = async (overrides: { windowsOrganizationId?: string } = {}) => {
     origin,
     authSecret,
     windowsOrganizationId: overrides.windowsOrganizationId,
+    requireDeviceIdentity: overrides.requireDeviceIdentity,
   });
   return { ca, db, backend };
 };
@@ -120,7 +123,7 @@ describe("Windows enterprise backend", () => {
 
     expect(policy.minimalKeyLength).toBe("2048");
     expect(policy.certificateValidityPeriodSeconds).toBe("31536000");
-    expect(policy.renewalPeriodSeconds).toBe("3628800");
+    expect(policy.renewalPeriodSeconds).toBe("15552000");
     const verification = await verifyWindowsEnrollmentToken(policy.authToken, authSecret);
     expect(verification).not.toBeNull();
     expect(verification!.subject).toBeTruthy();
@@ -238,6 +241,47 @@ describe("Windows enterprise backend", () => {
     expect(response).toEqual({ commands: [] });
     const device = db.store[tableName(schema.device)]![0]!;
     expect(device.lastSeenAt.getTime()).toBeGreaterThan(old.getTime());
+  });
+
+  it("requires a matching client certificate when configured", async () => {
+    const { backend } = await setup({ requireDeviceIdentity: true });
+    const policy = await run(backend.getWindowsEnrollmentPolicy("client-token"));
+    await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+
+    await expect(
+      run(
+        backend.windowsManagementCheckin(
+          { deviceId: "device-1", mdmOrigin },
+          {
+            sessionID: "1",
+            msgID: "1",
+            source: "device-1",
+            target: origin,
+            statuses: [],
+            alerts: [],
+          },
+        ),
+      ),
+    ).rejects.toBeInstanceOf(UnknownDevice);
+
+    const response = await run(
+      backend.windowsManagementCheckin(
+        {
+          deviceId: "device-1",
+          identityCertificate: "O=Mattrax, OU=org-early, CN=device-1",
+          mdmOrigin,
+        },
+        {
+          sessionID: "1",
+          msgID: "1",
+          source: "device-1",
+          target: origin,
+          statuses: [],
+          alerts: [],
+        },
+      ),
+    );
+    expect(response.commands).toEqual([]);
   });
 
   it("rejects management check-in from an unknown device", async () => {

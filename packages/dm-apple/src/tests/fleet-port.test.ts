@@ -76,6 +76,20 @@ describe("Apple enrollment profile (Fleet parity)", () => {
     );
   });
 
+  it("uses stable payload UUIDs across re-serves", () => {
+    const first = build();
+    const second = build();
+    expect(second.PayloadUUID).toBe(first.PayloadUUID);
+    for (let index = 0; index < first.PayloadContent.length; index++) {
+      expect(second.PayloadContent[index]!.PayloadUUID).toBe(
+        first.PayloadContent[index]!.PayloadUUID,
+      );
+    }
+    expect(first.PayloadUUID).toMatch(
+      /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i,
+    );
+  });
+
   it("uses the configured display name, identifier and organization", () => {
     const profile = buildAppleEnrollmentProfile({
       origin: "https://mdm.example.com/",

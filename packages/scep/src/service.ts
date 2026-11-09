@@ -78,10 +78,19 @@ export const ScepService = Layer.effect(
 
         const req = yield* parseScepPkcsReq(message, ca.caCert, ca.privateKeyJwk);
 
+        const csrValid = yield* Effect.tryPromise({
+          try: () => req.csr.verify(),
+          catch: (cause) => new ScepError({ message: "Failed to verify the CSR signature", cause }),
+        });
+        if (!csrValid)
+          return yield* Effect.fail(new ScepError({ message: "Invalid CSR signature" }));
+
         // Allow repository to authenticate/validate the incoming request before issuance.
         const authentication = yield* repo.authenticatePkcsReq(req);
 
-        const notBefore = new Date();
+        // Allow ten minutes of clock skew between the CA and device, matching
+        // Fleet and common SCEP clients.
+        const notBefore = new Date(Date.now() - 10 * 60 * 1000);
         const notAfter = new Date(notBefore.getTime() + 365 * 24 * 60 * 60 * 1000);
         const serial = Math.floor(Math.random() * 0x7fffffff);
 
