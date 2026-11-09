@@ -75,6 +75,7 @@ jobs:
           STRIPE_SECRET_KEY=sk_test_ci
           STRIPE_WEBHOOK_SECRET=whsec_ci
           STRIPE_DEVICE_MONTHLY_PRICE_ID=price_ci
+          DEV_MAILBOX=true
           VARS
           cp apps/api/.dev.vars apps/web/.dev.vars
       - run: pnpm api db:migrate

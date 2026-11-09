@@ -28,6 +28,8 @@ export const apiWorker = {
     CLOUD_APPLE_VENDOR_KEY: bindings.secret(),
     APNS_RELAY_URL: bindings.secret(),
     APNS_RELAY_SECRET: bindings.secret(),
+    /** Local-only mailbox flag. Never set in production. */
+    DEV_MAILBOX: bindings.secret(),
     HYPERDRIVE: bindings.hyperdrive({
       id: "239e6b5c776b47a2bcdd180e8798ce7a",
       // Local dev only. The Worker reads the individual host/port/user/password/

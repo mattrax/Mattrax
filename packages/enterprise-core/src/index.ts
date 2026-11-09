@@ -2,6 +2,7 @@ export * as schema from "./schema.ts";
 export {
   AuthPersistenceConfig,
   authCredentials,
+  authEmailCredentials,
   authIdentifiers,
   authPasswords,
   authPending,

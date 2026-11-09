@@ -2,6 +2,8 @@ import type { AnyAuthContract } from "@yielded/auth/AuthContract";
 import {
   Auth,
   AuthContract,
+  Email,
+  Operations,
   Password,
   Proofs,
   Schema as AuthSchema,
@@ -28,6 +30,31 @@ export type Registration = typeof Registration.Type;
 const email = Schema.String.check(Schema.isMaxLength(320)).pipe(Schema.decodeTo(AuthSchema.Email));
 const password = Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(4096)));
 const secret = Schema.RedactedFromValue(Schema.String.check(Schema.isMaxLength(4096)));
+
+export const EmailCodeFailure = Schema.Union([
+  Email.EmailRejected,
+  Email.EmailUnavailable,
+  Email.EmailActionRequired,
+  Email.EmailMethodUnsupported,
+]);
+
+const EmailSignInBase = {
+  flowId: Operations.RequestBindingFlowId,
+  email,
+  returnTarget: Schema.String.check(Schema.isMaxLength(2048)),
+};
+
+export const RequestEmailCodeInput = Schema.Struct({
+  ...EmailSignInBase,
+  requestId: Proofs.ProofRequestId,
+  locale: Schema.String.check(Schema.isMaxLength(32)),
+});
+
+export const CompleteEmailCodeInput = Schema.Struct({
+  ...EmailSignInBase,
+  reference: Proofs.ProofReference,
+  secret,
+});
 
 export const PasswordFailure = Schema.Union([
   Password.PasswordRejected,
@@ -95,6 +122,51 @@ export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
       strategy: "password",
     }),
 
+    beginEmailSignIn: AuthContract.action({
+      payload: Schema.Struct({ flowId: Operations.RequestBindingFlowId }),
+      success: Operations.RequestBindingPublic,
+      error: EmailCodeFailure,
+      mode: "mutation",
+      credentials: true,
+      replay: "non-idempotent",
+      method: "beginSignIn",
+      strategy: "email",
+    }),
+
+    requestEmailCode: AuthContract.action({
+      payload: RequestEmailCodeInput,
+      success: Proofs.ProofRequestReceipt,
+      error: EmailCodeFailure,
+      mode: "mutation",
+      replay: "non-idempotent",
+      method: "signIn",
+      strategy: "email",
+      requestFields: { requestBinding: "request-binding" },
+    }),
+
+    completeEmailCode: AuthContract.action({
+      payload: CompleteEmailCodeInput,
+      success: Schema.Struct({
+        completion: sessions.CompletionResult,
+        returnTarget: Email.SafeReturnTarget,
+      }),
+      error: EmailCodeFailure,
+      mode: "mutation",
+      credentials: true,
+      replay: "single-use",
+      method: "completeSignIn",
+      strategy: "email",
+      requestFields: { requestBinding: "request-binding" },
+      subject: {
+        fromSuccess: (value) =>
+          value.completion._tag === "Authenticated"
+            ? value.completion.session.subjectId
+            : undefined,
+        sessionFromSuccess: (value) =>
+          value.completion._tag === "Authenticated" ? value.completion.session : undefined,
+      },
+    }),
+
     changePassword: AuthContract.action({
       payload: Schema.Struct({
         commandId: Password.PasswordCommandId,
@@ -129,6 +201,7 @@ export const makeAppAuth = (origin: string, resetUrl?: string): any =>
         registration: Registration,
         reset: Password.resetLink({ url: resetUrl ?? `${origin}/reset-password` }),
       }),
+      email: Email.makeCode({ digits: 6 }),
     },
     defaultStrategy: "password",
   });

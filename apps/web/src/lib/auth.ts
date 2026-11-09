@@ -127,6 +127,53 @@ export const authClient = {
         return { user };
       }),
   },
+  emailCode: {
+    /** Start a passwordless browser flow and ask the server to email a code. */
+    request: (payload: { email: string; returnTo?: string }) =>
+      result(async () => {
+        const flowId = crypto.randomUUID();
+        await request("/beginEmailSignIn", {
+          method: "POST",
+          body: authBody({ flowId }),
+        });
+        const receipt = await request<{
+          requestId: string;
+          reference: { proofId: string; purpose: string; keyId: string };
+        }>("/requestEmailCode", {
+          method: "POST",
+          body: authBody({
+            flowId,
+            email: payload.email,
+            returnTarget: payload.returnTo ?? "/dashboard",
+            requestId: crypto.randomUUID(),
+            locale: "en",
+          }),
+        });
+        return { flowId, email: payload.email, reference: receipt.reference };
+      }),
+    complete: (payload: {
+      flowId: string;
+      email: string;
+      returnTarget?: string;
+      reference: { proofId: string; purpose: string; keyId: string };
+      code: string;
+    }) =>
+      result(async () => {
+        const response = await request<{ completion: unknown }>("/completeEmailCode", {
+          method: "POST",
+          body: authBody({
+            flowId: payload.flowId,
+            email: payload.email,
+            returnTarget: payload.returnTarget ?? "/dashboard",
+            reference: payload.reference,
+            secret: payload.code,
+          }),
+        });
+        const user = completionUser(response.completion);
+        if (!user) throw new Error("Additional authentication is required");
+        return { user };
+      }),
+  },
   signUp: {
     email: (payload: { name: string; email: string; password: string }) =>
       result(async () => {

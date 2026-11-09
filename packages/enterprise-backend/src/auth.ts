@@ -1,7 +1,9 @@
-import { EmailDelivery, Hooks, Password, Sessions } from "@yielded/auth";
+import { Auth, Email, EmailDelivery, Hooks, Password, Proofs, Sessions } from "@yielded/auth";
 import { makeAppAuth, type AuthClaims } from "@mattrax/enterprise-domain";
 import {
   Db,
+  authCredentials,
+  authEmailCredentials,
   authRequirement,
   authStorage,
   AuthPersistenceConfig,
@@ -31,6 +33,8 @@ export type AuthLiveOptions = {
   readonly proofSchedulerLayer?: Layer.Layer<any, any, any>;
   readonly email?: EmailBinding;
   readonly emailFrom?: string;
+  /** Application secret used to sign passwordless request bindings. */
+  readonly authSecret?: string;
 };
 
 export const makeAuthLive = ({
@@ -39,6 +43,7 @@ export const makeAuthLive = ({
   proofSchedulerLayer,
   email,
   emailFrom,
+  authSecret,
 }: AuthLiveOptions) => {
   const ClaimsLive = Layer.effect(
     appAuth.strategies.password.SessionClaims,
@@ -112,6 +117,46 @@ export const makeAuthLive = ({
       }),
   });
 
+  const ensureEmailCredential = (db: any, subjectId: string) =>
+    Effect.gen(function* () {
+      const user = yield* db.query.user
+        .findFirst({ where: { id: subjectId } })
+        .pipe(Effect.catch(() => Effect.succeed(undefined)));
+      if (!user) return;
+      const moduleId = appAuth.strategies.email.persistence.moduleId as string;
+      const [existing] = yield* db
+        .select({ credentialId: authCredentials.credentialId })
+        .from(authCredentials)
+        .innerJoin(
+          authEmailCredentials as any,
+          eq((authEmailCredentials as any).credentialId, authCredentials.credentialId),
+        )
+        .where(
+          and(
+            eq(authCredentials.subjectId, subjectId),
+            eq((authEmailCredentials as any).moduleId, moduleId),
+          ),
+        )
+        .limit(1);
+      if (existing) return;
+
+      const credentialId = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+      const revision = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+      yield* db
+        .insert(authCredentials)
+        .ignore()
+        .values({ credentialId, subjectId, revision, active: true });
+      yield* db.insert(schema.authEmailCredentials).ignore().values({
+        moduleId,
+        subjectId,
+        credentialId,
+        identifierNamespace: "email",
+        identifierValue: user.email,
+        credentialRevision: revision,
+        active: true,
+      });
+    }).pipe(Effect.catch(() => Effect.void)) as Effect.Effect<void, never, never>;
+
   const LifecycleHooksLive = Layer.effect(
     Hooks.LifecycleHooks,
     Effect.gen(function* () {
@@ -134,6 +179,7 @@ export const makeAuthLive = ({
                   ),
                 )
                 .pipe(Effect.catch(() => Effect.void));
+              yield* ensureEmailCredential(db, event.snapshot.subjectId);
             }
             return [];
           }),
@@ -192,6 +238,32 @@ export const makeAuthLive = ({
       }),
   });
 
+  const resolveClaims = (subjectId: string) =>
+    Effect.gen(function* () {
+      const db = yield* Db;
+      const user = yield* db.query.user
+        .findFirst({ where: { id: subjectId } })
+        .pipe(Effect.catch(() => Effect.succeed(undefined)));
+      if (!user || user.disabled) return yield* Password.PasswordUnavailable.make({});
+      return {
+        name: user.name,
+        email: user.email,
+        emailVerified: user.emailVerified,
+      } satisfies AuthClaims;
+    });
+
+  const EmailClaimsLive = Layer.effect(
+    appAuth.strategies.email.SessionClaims,
+    Effect.succeed({ resolve: ({ subjectId }: { subjectId: string }) => resolveClaims(subjectId) }),
+  );
+
+  const EmailReturnTargetsLive = Email.EmailReturnTargets.exactRoutes([
+    "/",
+    "/dashboard",
+    "/account",
+    "/login",
+  ]);
+
   const PersistenceLive = AuthPersistenceConfig.layer.pipe(
     Layer.provide(AuthPersistenceConfig.Config.layer(authStorage)),
     Layer.provide(ProvisioningLive),
@@ -205,8 +277,42 @@ export const makeAuthLive = ({
     Layer.provide(ActionEvidenceLive),
     Layer.provide(LifecycleHooksLive),
     Layer.provide(Password.PasswordAttemptLimiter.layer),
+    Layer.provide(EmailClaimsLive),
+    Layer.provide(EmailReturnTargetsLive),
     Layer.provide(cryptoLayer),
   );
 
-  return proofSchedulerLayer ? layer.pipe(Layer.provide(proofSchedulerLayer)) : layer;
+  const keyring = authSecret
+    ? {
+        activeKeyId: "default",
+        keys: [
+          {
+            id: "default",
+            material: Redacted.make(
+              btoa(authSecret).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, ""),
+            ),
+          },
+        ],
+      }
+    : undefined;
+
+  const withRequestBinding =
+    keyring === undefined
+      ? layer
+      : layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Auth.RequestBindingConfig.layer({
+                lifetimeMillis: 10 * 60 * 1000,
+                generation: 1,
+                keyring,
+              }),
+              Proofs.ProofKeys.layer(keyring),
+            ),
+          ),
+        );
+
+  return proofSchedulerLayer
+    ? withRequestBinding.pipe(Layer.provide(proofSchedulerLayer))
+    : withRequestBinding;
 };

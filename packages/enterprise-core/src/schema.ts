@@ -56,6 +56,13 @@ export const authRequirement: Sessions.AuthenticationRequirement = {
       phishingResistant: false,
       minimumCredentials: 1,
     },
+    {
+      // Passwordless email-code sign-in proves possession of the mailbox.
+      factors: ["possession"],
+      userVerified: false,
+      phishingResistant: false,
+      minimumCredentials: 1,
+    },
   ],
   maximumAgeMillis: 365 * 24 * 60 * 60 * 1000,
 };
@@ -79,6 +86,7 @@ export const authSchema: any = authStorage.schema;
 export const authIdentifiers: any = authSchema.identifiers;
 export const authCredentials: any = authSchema.credentials;
 export const authPasswords: any = authSchema.passwords;
+export const authEmailCredentials: any = authSchema.emailCredentials;
 export const authSessions: any = authSchema.sessions;
 export const authPending: any = authSchema.pending;
 export const authProofs: any = authSchema.proofs;

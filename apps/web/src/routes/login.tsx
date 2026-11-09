@@ -11,6 +11,53 @@ export default function LoginPage() {
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
   const [showPassword, setShowPassword] = createSignal(false);
+  const [mode, setMode] = createSignal<"password" | "emailCode">("password");
+  const [flow, setFlow] = createSignal<{
+    flowId: string;
+    email: string;
+    reference: { proofId: string; purpose: string; keyId: string };
+  } | null>(null);
+  const [code, setCode] = createSignal("");
+
+  const returnTo = () =>
+    searchParams.returnTo && Array.isArray(searchParams.returnTo)
+      ? searchParams.returnTo[0]
+      : searchParams.returnTo;
+
+  const requestCode = async (e: SubmitEvent) => {
+    e.preventDefault();
+    setError(null);
+    setPending(true);
+    const result = await authClient.emailCode.request({
+      email: email(),
+      returnTo: returnTo() ?? "/dashboard",
+    });
+    setPending(false);
+    if (result.error) {
+      setError(result.error.message ?? "Could not send a sign-in code");
+      return;
+    }
+    setFlow(result.data!);
+  };
+
+  const completeCode = async (e: SubmitEvent) => {
+    e.preventDefault();
+    setError(null);
+    const current = flow();
+    if (!current) return;
+    setPending(true);
+    const result = await authClient.emailCode.complete({
+      ...current,
+      returnTarget: returnTo() ?? "/dashboard",
+      code: code(),
+    });
+    setPending(false);
+    if (result.error) {
+      setError(result.error.message ?? "That code is not valid");
+      return;
+    }
+    navigate(returnTo() ?? "/dashboard", { replace: true });
+  };
 
   const handleSubmit = async (e: SubmitEvent) => {
     e.preventDefault();
@@ -29,11 +76,7 @@ export default function LoginPage() {
       return;
     }
 
-    const returnTo =
-      searchParams.returnTo && Array.isArray(searchParams.returnTo)
-        ? searchParams.returnTo[0]
-        : searchParams.returnTo;
-    navigate(returnTo ?? "/dashboard", { replace: true });
+    navigate(returnTo() ?? "/dashboard", { replace: true });
   };
 
   return (
@@ -47,67 +90,162 @@ export default function LoginPage() {
           <p class="text-stone-500 text-sm mt-1">Sign in to your account</p>
         </div>
 
-        <form onSubmit={handleSubmit} class="space-y-4">
-          <div class="space-y-1.5">
-            <label for="email" class="text-sm font-medium text-stone-700">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              autocomplete="email"
-              placeholder="you@example.com"
-              value={email()}
-              onInput={(e) => setEmail(e.currentTarget.value)}
-              class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
-            />
-          </div>
-
-          <div class="space-y-1.5">
-            <div class="flex items-center justify-between">
-              <label for="password" class="text-sm font-medium text-stone-700">
-                Password
+        <Show
+          when={mode() === "password"}
+          fallback={
+            <Show
+              when={!flow()}
+              fallback={
+                <form onSubmit={completeCode} class="space-y-4">
+                  <p class="text-sm text-muted-foreground">
+                    Enter the 6-digit code sent to <strong>{flow()!.email}</strong>.
+                  </p>
+                  <div class="space-y-1.5">
+                    <label for="code" class="text-sm font-medium text-stone-700">
+                      Sign-in code
+                    </label>
+                    <input
+                      id="code"
+                      autocomplete="one-time-code"
+                      required
+                      placeholder="000000"
+                      value={code()}
+                      onInput={(e) => setCode(e.currentTarget.value)}
+                      class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-center text-lg tracking-[0.4em] text-stone-900 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
+                    />
+                  </div>
+                  <Show when={error()}>{(msg) => <p class="text-sm text-red-600">{msg()}</p>}</Show>
+                  <button
+                    type="submit"
+                    disabled={pending()}
+                    class="w-full rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors"
+                  >
+                    {pending() ? "Verifying…" : "Sign in"}
+                  </button>
+                  <button
+                    type="button"
+                    class="w-full text-center text-xs text-stone-500 hover:text-stone-900"
+                    onClick={() => {
+                      setFlow(null);
+                      setCode("");
+                      setError(null);
+                    }}
+                  >
+                    Use a different email
+                  </button>
+                </form>
+              }
+            >
+              <form onSubmit={requestCode} class="space-y-4">
+                <div class="space-y-1.5">
+                  <label for="email-code" class="text-sm font-medium text-stone-700">
+                    Email
+                  </label>
+                  <input
+                    id="email-code"
+                    type="email"
+                    required
+                    autocomplete="email"
+                    placeholder="you@example.com"
+                    value={email()}
+                    onInput={(e) => setEmail(e.currentTarget.value)}
+                    class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
+                  />
+                </div>
+                <Show when={error()}>{(msg) => <p class="text-sm text-red-600">{msg()}</p>}</Show>
+                <button
+                  type="submit"
+                  disabled={pending()}
+                  class="w-full rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors"
+                >
+                  {pending() ? "Sending…" : "Email me a sign-in code"}
+                </button>
+                <button
+                  type="button"
+                  class="w-full text-center text-xs text-stone-500 hover:text-stone-900"
+                  onClick={() => {
+                    setMode("password");
+                    setError(null);
+                  }}
+                >
+                  Use a password instead
+                </button>
+              </form>
+            </Show>
+          }
+        >
+          <form onSubmit={handleSubmit} class="space-y-4">
+            <div class="space-y-1.5">
+              <label for="email" class="text-sm font-medium text-stone-700">
+                Email
               </label>
-              <a
-                href="/forgot-password"
-                class="text-xs text-stone-500 hover:text-stone-900 transition-colors"
-              >
-                Forgot password?
-              </a>
-            </div>
-            <div class="relative">
               <input
-                id="password"
-                type={showPassword() ? "text" : "password"}
+                id="email"
+                type="email"
                 required
-                autocomplete="current-password"
-                placeholder="••••••••"
-                value={password()}
-                onInput={(e) => setPassword(e.currentTarget.value)}
-                class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 pr-10 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
+                autocomplete="email"
+                placeholder="you@example.com"
+                value={email()}
+                onInput={(e) => setEmail(e.currentTarget.value)}
+                class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword((value) => !value)}
-                class="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-stone-400 hover:text-stone-700"
-                aria-label={showPassword() ? "Hide password" : "Show password"}
-              >
-                {showPassword() ? <EyeOff class="size-4" /> : <Eye class="size-4" />}
-              </button>
             </div>
-          </div>
 
-          <Show when={error()}>{(msg) => <p class="text-sm text-red-600">{msg()}</p>}</Show>
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label for="password" class="text-sm font-medium text-stone-700">
+                  Password
+                </label>
+                <a
+                  href="/forgot-password"
+                  class="text-xs text-stone-500 hover:text-stone-900 transition-colors"
+                >
+                  Forgot password?
+                </a>
+              </div>
+              <div class="relative">
+                <input
+                  id="password"
+                  type={showPassword() ? "text" : "password"}
+                  required
+                  autocomplete="current-password"
+                  placeholder="••••••••"
+                  value={password()}
+                  onInput={(e) => setPassword(e.currentTarget.value)}
+                  class="w-full rounded-lg border border-stone-300 bg-white px-3 py-2 pr-10 text-sm text-stone-900 placeholder:text-stone-400 outline-none focus:border-stone-500 focus:ring-2 focus:ring-stone-200 transition-colors"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((value) => !value)}
+                  class="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-stone-400 hover:text-stone-700"
+                  aria-label={showPassword() ? "Hide password" : "Show password"}
+                >
+                  {showPassword() ? <EyeOff class="size-4" /> : <Eye class="size-4" />}
+                </button>
+              </div>
+            </div>
 
-          <button
-            type="submit"
-            disabled={pending()}
-            class="w-full rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors"
-          >
-            {pending() ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
+            <Show when={error()}>{(msg) => <p class="text-sm text-red-600">{msg()}</p>}</Show>
+
+            <button
+              type="submit"
+              disabled={pending()}
+              class="w-full rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-800 disabled:opacity-50 transition-colors"
+            >
+              {pending() ? "Signing in…" : "Sign in"}
+            </button>
+            <button
+              type="button"
+              class="w-full text-center text-xs text-stone-500 hover:text-stone-900"
+              onClick={() => {
+                setMode("emailCode");
+                setError(null);
+              }}
+            >
+              Email me a sign-in code instead
+            </button>
+          </form>
+        </Show>
 
         <p class="mt-6 text-center text-sm text-stone-500">
           Don't have an account?{" "}

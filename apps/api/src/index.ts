@@ -31,6 +31,7 @@ import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } f
 import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
 import { env as apiEnv } from "./env.js";
+import { listDevEmails, recordDevEmail } from "./devMailbox.js";
 
 const appAuth = makeAppAuth(apiEnv.ORIGIN, apiEnv.AUTH_RESET_URL);
 const authHttp = AuthContract.httpGroup(AuthApi);
@@ -123,11 +124,28 @@ const makeAppLayer = (env: Env, request: Request) => {
   );
   const apnsLayer = Layer.succeed(ApnsService, apns);
 
+  const devMailbox = (env as unknown as { DEV_MAILBOX?: string }).DEV_MAILBOX === "true";
+  const devEmail = devMailbox
+    ? {
+        send: async (message: { to: string; subject: string; text?: string; html?: string }) => {
+          recordDevEmail({
+            to: message.to,
+            subject: message.subject,
+            text: message.text ?? "",
+            html: message.html,
+          });
+          console.log("DEV EMAIL", message.to, message.subject, message.text);
+        },
+      }
+    : undefined;
+  const email = devEmail ?? (env as any).EMAIL;
+
   const authLive = makeAuthLive({
     appAuth,
     cryptoLayer: Workerd.layer,
     proofSchedulerLayer,
-    email: (env as any).EMAIL,
+    email,
+    authSecret: env.AUTH_SECRET,
   }).pipe(Layer.provide(Db.layer));
 
   const enterpriseAuthLive = makeEnterpriseAuthLive({
@@ -161,7 +179,7 @@ const makeAppLayer = (env: Env, request: Request) => {
   }).pipe(Layer.provide(Db.layer));
 
   const servicesLayer = Layer.mergeAll(
-    EnterpriseService({ email: (env as any).EMAIL }).pipe(
+    EnterpriseService({ email }).pipe(
       Layer.provide(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
       Layer.provide(StripeService.layer(env.STRIPE_SECRET_KEY)),
@@ -182,7 +200,16 @@ const makeAppLayer = (env: Env, request: Request) => {
     }).pipe(Layer.provide(enterpriseAuthLive), Layer.provide(Db.layer)),
   );
 
-  return appLayer.pipe(
+  const appWithDevRoutes = devMailbox
+    ? Layer.mergeAll(
+        appLayer,
+        HttpRouter.add("GET", "/api/debug/emails", HttpServerResponse.json(listDevEmails())).pipe(
+          Layer.provide(HttpServer.layerServices),
+        ),
+      )
+    : appLayer;
+
+  return appWithDevRoutes.pipe(
     Layer.provide(servicesLayer),
     Layer.provide(authLive),
     Layer.provide(proofContextLayer),
