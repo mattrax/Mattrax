@@ -43,6 +43,21 @@ export function fromManagementResponse(
   request: SyncMLType,
   response: WindowsManagementResponse,
 ): SyncMLType {
+  const inbound = [
+    ...(request.syncBody.alert ?? []).map((command) => ({ command, cmd: "Alert" })),
+    ...(request.syncBody.get ?? []).map((command) => ({ command, cmd: "Get" })),
+    ...(request.syncBody.add ?? []).map((command) => ({ command, cmd: "Add" })),
+    ...(request.syncBody.replace ?? []).map((command) => ({ command, cmd: "Replace" })),
+    ...(request.syncBody.delete ?? []).map((command) => ({ command, cmd: "Delete" })),
+    ...(request.syncBody.exec ?? []).map((command) => ({ command, cmd: "Exec" })),
+  ];
+  const acknowledgements = inbound.map(({ command, cmd }, index) => ({
+    cmdID: String(1000 + index),
+    msgRef: request.syncHdr.msgID,
+    cmdRef: command.cmdID,
+    cmd,
+    data: "200",
+  }));
   return {
     syncHdr: {
       verDTD: request.syncHdr.verDTD,
@@ -56,6 +71,7 @@ export function fromManagementResponse(
     syncBody: {
       status: [
         { cmdID: "1", msgRef: request.syncHdr.msgID, cmdRef: "0", cmd: "SyncHdr", data: "200" },
+        ...acknowledgements,
       ],
       get: response.commands
         .filter((c) => c.kind === "Get")
@@ -64,13 +80,25 @@ export function fromManagementResponse(
         .filter((c) => c.kind === "Replace")
         .map((c) => ({
           cmdID: c.cmdID,
-          items: [{ target: { locURI: c.locURI ?? "" }, data: c.data }],
+          items: [
+            {
+              target: { locURI: c.locURI ?? "" },
+              ...(c.format ? { meta: { format: c.format, type: "text/plain" } } : {}),
+              data: c.data,
+            },
+          ],
         })),
       exec: response.commands
         .filter((c) => c.kind === "Exec")
         .map((c) => ({
           cmdID: c.cmdID,
-          items: [{ target: { locURI: c.locURI ?? "" }, data: c.data }],
+          items: [
+            {
+              target: { locURI: c.locURI ?? "" },
+              ...(c.format ? { meta: { format: c.format, type: "text/plain" } } : {}),
+              data: c.data,
+            },
+          ],
         })),
       final: {},
     },

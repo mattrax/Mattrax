@@ -1,0 +1,1 @@
+ALTER TABLE `device` ADD `ddm_declarations_token` text;

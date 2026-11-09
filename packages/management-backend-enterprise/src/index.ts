@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { and, eq } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
 import { ApnsService } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
@@ -243,8 +243,17 @@ const updateInventoryFromStatus = (
   Effect.gen(function* () {
     if (!statusItems || typeof statusItems !== "object") return;
     const root = statusItems as Record<string, unknown>;
-    const text = (key: string) => {
-      const value = root[key];
+    const valueAt = (path: string): unknown => {
+      const parts = path.split(".");
+      let current: unknown = root;
+      for (const part of parts) {
+        current = record(current)?.[part];
+        if (current === undefined) break;
+      }
+      return current ?? root[path];
+    };
+    const text = (path: string) => {
+      const value = valueAt(path);
       return typeof value === "string" ? value : undefined;
     };
     const update: Record<string, unknown> = { lastSeenAt: now() };
@@ -263,7 +272,10 @@ const updateInventoryFromStatus = (
     const db = yield* Db;
     yield* db.update(s.device).set(update).where(eq(s.device.id, deviceId));
 
-    const declarations = record(root["management.declarations"]);
+    // Apple sends status items as a nested path tree; some clients flatten the
+    // keys. Accept both shapes.
+    const declarations =
+      record(record(root.management)?.declarations) ?? record(root["management.declarations"]);
     if (!declarations) return;
     const timestamp = now();
     for (const declarationType of ["activations", "configurations", "assets", "management"]) {
@@ -543,7 +555,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       event.status === "Acknowledged"
                         ? "succeeded"
                         : event.status === "NotNow"
-                          ? "queued"
+                          ? "not-now"
                           : event.status === "Idle"
                             ? "sent"
                             : "failed",
@@ -593,6 +605,17 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             if (device.status === "unenrolling")
               return yield* Effect.fail(new ServerInitiatedUnenrollment());
             if (device.status !== "enrolled") return { _tag: "Idle" as const };
+            // Retry commands the device deferred for a while.
+            yield* db
+              .update(s.deviceCommand)
+              .set({ status: "queued", updatedAt: now() })
+              .where(
+                and(
+                  eq(s.deviceCommand.deviceId, device.id),
+                  eq(s.deviceCommand.status, "not-now"),
+                  lt(s.deviceCommand.updatedAt, new Date(Date.now() - 10 * 60 * 1000)),
+                ),
+              );
             const [command] = yield* db
               .select()
               .from(s.deviceCommand)
@@ -630,6 +653,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 ),
               catch: internal,
             });
+            if (device.ddmDeclarationsToken === token) return { _tag: "Idle" as const };
+            yield* db
+              .update(s.device)
+              .set({ ddmDeclarationsToken: token })
+              .where(eq(s.device.id, device.id));
             return { _tag: "DdmSync" as const, serverToken: token };
           }).pipe(
             Effect.mapError((cause) =>

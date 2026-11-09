@@ -382,7 +382,7 @@ export const buildAssetDeclaration = async (
     Payload: {
       Reference: {
         DataURL: `${origin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(assetToken)}`,
-        ContentType: "application/pem-certificate-chain",
+        ContentType: "application/pem",
         "Hash-SHA-256": bytesToBase64(
           new Uint8Array(await crypto.subtle.digest("SHA-256", pemBytes)),
         ),

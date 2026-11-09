@@ -343,6 +343,8 @@ export const device = mysqlTable(
     diskUsed: shortText("disk_used"),
     dmIdentifier: shortText("dm_identifier"),
     dmCertHash: shortText("dm_cert_hash"),
+    /** Last declarations token sent to the device, to avoid DDM sync loops. */
+    ddmDeclarationsToken: text("ddm_declarations_token"),
   },
   (table) => [
     index("device_organization_id_idx").on(table.organizationId),

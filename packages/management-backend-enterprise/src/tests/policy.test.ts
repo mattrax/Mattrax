@@ -99,7 +99,7 @@ describe("enterprise policy compiler", () => {
       Identifier: "policy-1.mttx.apple.certificate.root.asset",
     });
     const reference = (asset!.Payload as any).Reference;
-    expect(reference.ContentType).toBe("application/pem-certificate-chain");
+    expect(reference.ContentType).toBe("application/pem");
     const url = new URL(reference.DataURL);
     expect(url.pathname).toBe("/mdm/apple/assets/policy-1.mttx.apple.certificate.root.asset");
     const token = url.searchParams.get("token")!;

@@ -365,9 +365,16 @@ export const SyncMLTarget = Schema.Struct({
 export const SyncMLSource = Schema.Struct({
   locURI: Schema.String.pipe(Schema.annotateKey({ soapElementName: "LocURI" })),
 }).pipe(Schema.annotate({ identifier: "Source" }));
+export const SyncMLMeta = Schema.Struct({
+  format: Schema.optional(Schema.String.pipe(Schema.annotateKey({ soapElementName: "Format" }))),
+  type: Schema.optional(Schema.String.pipe(Schema.annotateKey({ soapElementName: "Type" }))),
+}).pipe(Schema.annotate({ identifier: "Meta" }));
+export type SyncMLMeta = typeof SyncMLMeta.Type;
+
 export const SyncMLItem = Schema.Struct({
   target: Schema.optional(SyncMLTarget.pipe(Schema.annotateKey({ soapElementName: "Target" }))),
   source: Schema.optional(SyncMLSource.pipe(Schema.annotateKey({ soapElementName: "Source" }))),
+  meta: Schema.optional(SyncMLMeta.pipe(Schema.annotateKey({ soapElementName: "Meta" }))),
   data: Schema.optional(Schema.String.pipe(Schema.annotateKey({ soapElementName: "Data" }))),
 }).pipe(Schema.annotate({ identifier: "Item" }));
 export type SyncMLItem = typeof SyncMLItem.Type;

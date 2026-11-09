@@ -295,7 +295,7 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
 
     windowsManagementCheckin: (
       scope: WindowsManagementScope,
-      _request: WindowsManagementRequest,
+      checkinRequest: WindowsManagementRequest,
     ): Effect.Effect<WindowsManagementResponse, UnknownDevice | InternalServerError> =>
       Effect.gen(function* () {
         const organizationId = yield* resolveOrganizationId();
@@ -313,6 +313,21 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
         const device = yield* findDevice(organizationId, scope.deviceId);
         if (!device) return yield* Effect.fail(new UnknownDevice());
         yield* touchDevice(device.id, new Date());
+
+        for (const status of checkinRequest.statuses) {
+          const entry = status as { cmdRef?: unknown; data?: unknown };
+          const commandId = typeof entry.cmdRef === "string" ? entry.cmdRef : undefined;
+          if (!commandId) continue;
+          const data = String(entry.data ?? "");
+          yield* db
+            .update(s.deviceCommand)
+            .set({
+              status: data === "200" ? "succeeded" : data === "418" ? "queued" : "failed",
+              resultStatus: data,
+              updatedAt: new Date(),
+            })
+            .where(and(eq(s.deviceCommand.id, commandId), eq(s.deviceCommand.deviceId, device.id)));
+        }
 
         const configurations = yield* db
           .select({
@@ -333,7 +348,8 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           data?: string;
           format?: string;
         }> = [];
-        let index = 1;
+        // 1 is reserved for the SyncHdr status; server commands start at 2.
+        let index = 2;
         for (const configuration of configurations) {
           for (const node of windowsPolicyNodes({
             policyId: "",
@@ -366,9 +382,10 @@ export const makeWindowsBackend = (options: WindowsBackendOptions): WindowsBacke
           const payload = (command.payload ?? {}) as { locURI?: string; data?: string };
           commands.push({
             kind: "Exec",
-            cmdID: String(index++),
+            cmdID: command.id,
             locURI: payload.locURI ?? "./Device/Vendor/MSFT/RemoteWipe/doWipeProtected",
             data: payload.data ?? "",
+            format: "chr",
           });
           yield* db
             .update(s.deviceCommand)
