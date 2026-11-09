@@ -1,14 +1,19 @@
-import { Context, Layer, Redacted } from "effect";
+import { Context, Effect, Layer, Redacted } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiScalar, OpenApi } from "effect/http-api";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { waitUntil } from "cloudflare:workers";
 import { version } from "../package.json" with { type: "json" };
-import { enterpriseApi } from "@mattrax/enterprise-domain";
+import { AuthContract, Http, Proofs } from "@yielded/auth";
+import * as Workerd from "@yielded/auth-platform-workerd";
+import { AuthApi, enterpriseApi } from "@mattrax/enterprise-domain";
 import { appleMdmApi } from "@mattrax/dm-apple";
 import {
-  EnterpriseAuthLive,
   EnterpriseService,
   enterpriseHandlers,
+  makeAppAuth,
+  makeAuthLive,
+  makeEnterpriseAuthLive,
+  sessionCookie,
 } from "@mattrax/enterprise-backend";
 import { platformApi } from "@mattrax/platform-api";
 import { platformHandlers } from "@mattrax/platform-backend";
@@ -23,10 +28,18 @@ import {
 import { Db, Env as CoreEnv, R2 } from "@mattrax/enterprise-core";
 import { PgClient } from "@effect/sql-pg";
 import { StripeService } from "@mattrax/effect-stripe";
-import "./env.js";
+import { env as apiEnv } from "./env.js";
+
+const appAuth = makeAppAuth(apiEnv.ORIGIN);
+const authHttp = AuthContract.httpGroup(AuthApi);
+const authHttps = Http.make(appAuth, {
+  origin: apiEnv.ORIGIN,
+  cookie: { name: sessionCookie },
+});
 
 const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseApi)
+  .add(authHttp)
   .add(appleMdmApi)
   .add(platformApi)
   .annotateMerge(
@@ -38,10 +51,15 @@ const apiRoot = HttpApi.make("Mattrax")
     }),
   );
 
-const handlersLayer = Layer.mergeAll(
+const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseApi", enterpriseHandlers),
   HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
   HttpApiBuilder.group(apiRoot, "PlatformApi", platformHandlers),
+).pipe(authHttps.middleware);
+
+const handlersLayer = Layer.mergeAll(
+  applicationHandlers,
+  authHttps.handlers(apiRoot),
   HttpRouter.add("GET", "/api/health", HttpServerResponse.text("ok")),
   HttpRouter.add("GET", "/health", HttpServerResponse.text("ok")),
 );
@@ -57,11 +75,31 @@ const apiLayer = Layer.mergeAll(
 
 const appLayer = apiLayer.pipe(Layer.provide(HttpServer.layerServices));
 
-const makeAppLayer = (env: Env) => {
+const makeAppLayer = (env: Env, request: Request) => {
   const staticEnvLayer = CoreEnv.layer({
     origin: env.ORIGIN,
     cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
   });
+
+  const authLive = makeAuthLive({
+    appAuth,
+    cryptoLayer: Workerd.layer,
+    email: (env as any).EMAIL,
+  }).pipe(Layer.provide(Db.layer));
+
+  const enterpriseAuthLive = makeEnterpriseAuthLive({
+    appAuth,
+    origin: env.ORIGIN,
+    authSecret: env.AUTH_SECRET,
+    email: (env as any).EMAIL,
+  });
+
+  const proofContextLayer: Layer.Layer<Proofs.ProofRequestContext> = Layer.succeed(
+    Proofs.ProofRequestContext,
+    Effect.succeed({
+      networkKey: Redacted.make(request.headers.get("cf-connecting-ip") ?? "local"),
+    }),
+  );
 
   const storageBucket: Parameters<typeof R2.layer>[0] = {
     head: (key) => env.STORAGE.head(key),
@@ -73,7 +111,7 @@ const makeAppLayer = (env: Env) => {
 
   const servicesLayer = Layer.mergeAll(
     EnterpriseService.pipe(
-      Layer.provide(EnterpriseAuthLive),
+      Layer.provide(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
       Layer.provide(StripeService.layer(env.STRIPE_SECRET_KEY)),
       Layer.provide(R2.layer(storageBucket)),
@@ -91,6 +129,9 @@ const makeAppLayer = (env: Env) => {
 
   return appLayer.pipe(
     Layer.provide(servicesLayer),
+    Layer.provide(authLive),
+    Layer.provide(proofContextLayer),
+    Layer.provide(Db.layer),
     Layer.provide(
       PgClient.layer({
         url: Redacted.make(env.HYPERDRIVE.connectionString),
@@ -101,7 +142,7 @@ const makeAppLayer = (env: Env) => {
 
 export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-    const { handler, dispose } = HttpRouter.toWebHandler(makeAppLayer(env));
+    const { handler, dispose } = HttpRouter.toWebHandler(makeAppLayer(env, request) as any);
     const context = Context.makeUnsafe<any>(new Map());
     const response = await handler(request, context);
     waitUntil(dispose().catch((cause) => console.error("Layer dispose failed", cause)));

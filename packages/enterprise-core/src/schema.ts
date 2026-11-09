@@ -1,4 +1,7 @@
-import { defineRelations } from "drizzle-orm";
+import { AuthPersistence } from "@yielded/auth-persistence-drizzle/Postgres";
+import { Schema as AuthSchema, Sessions } from "@yielded/auth";
+import { AuthDefinition } from "@mattrax/enterprise-domain";
+import { defineRelations, sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -11,6 +14,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { Effect } from "effect";
 
 export const user = pgTable(
   "user",
@@ -21,69 +25,55 @@ export const user = pgTable(
     emailVerified: boolean("email_verified").notNull().default(false),
     image: text("image"),
     stripeCustomerId: text("stripe_customer_id"),
+    disabled: boolean("disabled").notNull().default(false),
+    authRevision: text("auth_revision")
+      .notNull()
+      .default(sql`gen_random_uuid()::text`),
     createdAt: timestamp("created_at", { mode: "date" }).notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).notNull(),
   },
   (table) => [uniqueIndex("user_email_unique").on(table.email)],
 );
 
-export const session = pgTable(
-  "session",
-  {
-    id: text("id").primaryKey(),
-    tokenHash: text("token_hash").notNull(),
-    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
-    ipAddress: text("ip_address"),
-    userAgent: text("user_agent"),
-    activeOrganizationId: text("active_organization_id"),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    createdAt: timestamp("created_at", { mode: "date" }).notNull(),
-    updatedAt: timestamp("updated_at", { mode: "date" }).notNull(),
-  },
-  (table) => [
-    uniqueIndex("session_token_hash_unique").on(table.tokenHash),
-    index("session_user_id_idx").on(table.userId),
+/**
+ * Yielded Auth owns identifiers, credentials, passwords, sessions, pending
+ * authentication and password reset proofs. The application owns `user` above;
+ * Yielded maps it as the subject table so user IDs remain stable.
+ */
+export const authRequirement: Sessions.AuthenticationRequirement = {
+  alternatives: [
+    {
+      factors: ["knowledge"],
+      userVerified: false,
+      phishingResistant: false,
+      minimumCredentials: 1,
+    },
   ],
-);
+  maximumAgeMillis: 365 * 24 * 60 * 60 * 1000,
+};
 
-export const account = pgTable(
-  "account",
-  {
-    id: text("id").primaryKey(),
-    accountId: text("account_id").notNull(),
-    providerId: text("provider_id").notNull(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    password: text("password"),
-    createdAt: timestamp("created_at", { mode: "date" }).notNull(),
-    updatedAt: timestamp("updated_at", { mode: "date" }).notNull(),
+export const AuthPersistenceConfig: any = AuthPersistence.make(AuthDefinition);
+export const authStorage: any = AuthPersistenceConfig.managed({
+  subjects: {
+    table: user,
+    id: "id",
+    status: "disabled",
+    activeValue: false,
+    securityRevision: "authRevision",
+    idCodec: AuthSchema.SubjectId,
+    requirements: () => Effect.succeed(authRequirement),
+    actionRequirements: () => Effect.succeed(authRequirement),
   },
-  (table) => [
-    uniqueIndex("account_provider_account_unique").on(table.providerId, table.accountId),
-    index("account_user_id_idx").on(table.userId),
-  ],
-);
+  prefix: "auth",
+});
+export const authSchema: any = authStorage.schema;
 
-export const verification = pgTable(
-  "verification",
-  {
-    id: text("id").primaryKey(),
-    identifier: text("identifier").notNull(),
-    valueHash: text("value_hash").notNull(),
-    kind: text("kind").notNull(),
-    metadata: jsonb("metadata"),
-    expiresAt: timestamp("expires_at", { mode: "date" }).notNull(),
-    createdAt: timestamp("created_at", { mode: "date" }).notNull(),
-    updatedAt: timestamp("updated_at", { mode: "date" }).notNull(),
-  },
-  (table) => [
-    index("verification_identifier_idx").on(table.identifier),
-    uniqueIndex("verification_value_hash_unique").on(table.valueHash),
-  ],
-);
+export const authIdentifiers: any = authSchema.identifiers;
+export const authCredentials: any = authSchema.credentials;
+export const authPasswords: any = authSchema.passwords;
+export const authSessions: any = authSchema.sessions;
+export const authPending: any = authSchema.pending;
+export const authProofs: any = authSchema.proofs;
 
 export const organization = pgTable(
   "organization",
@@ -351,9 +341,6 @@ export const scepCa = pgTable("scep_ca", {
 export const relations = defineRelations(
   {
     user,
-    session,
-    account,
-    verification,
     organization,
     member,
     invitation,
@@ -373,17 +360,9 @@ export const relations = defineRelations(
   },
   (r) => ({
     user: {
-      sessions: r.many.session({ from: r.user.id, to: r.session.userId }),
-      accounts: r.many.account({ from: r.user.id, to: r.account.userId }),
       memberships: r.many.member({ from: r.user.id, to: r.member.userId }),
       invitations: r.many.invitation({ from: r.user.id, to: r.invitation.inviterId }),
       apiTokens: r.many.accountApiToken({ from: r.user.id, to: r.accountApiToken.userId }),
-    },
-    session: {
-      user: r.one.user({ from: r.session.userId, to: r.user.id }),
-    },
-    account: {
-      user: r.one.user({ from: r.account.userId, to: r.user.id }),
     },
     organization: {
       members: r.many.member({ from: r.organization.id, to: r.member.organizationId }),

@@ -28,6 +28,8 @@
     "@mattrax/platform-backend": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "@mattrax/scep": "workspace:*",
+    "@yielded/auth": "catalog:",
+    "@yielded/auth-platform-workerd": "catalog:",
     "asn1js": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",

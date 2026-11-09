@@ -16,7 +16,6 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
-import { createEnterpriseAuth } from "./auth.ts";
 import {
   R2Storage,
   R2StorageLive,
@@ -104,7 +103,8 @@ export const createEnterpriseService = ({
   storage,
   auth: authService,
 }: EnterpriseServiceConfig) => {
-  const auth = authService ?? createEnterpriseAuth({ db, schema, origin });
+  if (!authService) throw new Error("EnterpriseAuth service is required");
+  const auth = authService;
   const stripe = isEffectStripeClient(stripeClient)
     ? stripeClient
     : makeEffectStripeClient(stripeClient as StripeClientLike);
@@ -356,11 +356,7 @@ export const createEnterpriseService = ({
         const resolved = yield* auth.requireUser({ headers: request.headers });
         const { user } = resolved;
         const tenants = yield* listTenantInfo(user.id);
-        const activeOrganizationId =
-          "session" in resolved ? resolved.session.activeOrganizationId : undefined;
-        const activeTenant =
-          tenants.find((tenant: { id: string }) => tenant.id === activeOrganizationId) ??
-          tenants[0];
+        const activeTenant = tenants[0];
         return {
           user: {
             id: user.id,
@@ -1157,19 +1153,9 @@ export const createEnterpriseService = ({
         });
         return { url: result.url ?? body.returnUrl };
       }),
-    authSession: (request) => auth.authSession(webRequestFromRequest(request, origin)),
-    authRegister: (request, payload) =>
-      auth.authRegister(webRequestFromRequest(request, origin), payload),
-    authLogin: (request, payload) =>
-      auth.authLogin(webRequestFromRequest(request, origin), payload),
-    authLogout: (request) => auth.authLogout(webRequestFromRequest(request, origin)),
-    authForgotPassword: (_request, payload) => auth.authForgotPassword(payload),
-    authResetPassword: (_request, payload) => auth.authResetPassword(payload),
-    authChangePassword: (request, payload) =>
-      auth.authChangePassword(webRequestFromRequest(request, origin), payload),
-    authChangeEmail: (request, payload) =>
-      auth.authChangeEmail(webRequestFromRequest(request, origin), payload),
-    authVerifyEmailChange: (_request, payload) => auth.authVerifyEmailChange(payload),
+    requestEmailChange: (request, payload) =>
+      auth.requestEmailChange(webRequestFromRequest(request, origin), payload),
+    verifyEmailChange: (_request, payload) => auth.verifyEmailChange(payload),
     listApiTokens: (request) => auth.listApiTokens(webRequestFromRequest(request, origin)),
     createApiToken: (request, payload) =>
       auth.createApiToken(webRequestFromRequest(request, origin), payload),
@@ -1184,34 +1170,11 @@ export const enterpriseHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseApi>,
 ) =>
   handlers
-    .handle("authSession", ({ request }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.authSession(request)),
+    .handle("requestEmailChange", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.requestEmailChange(request, payload)),
     )
-    .handle("authRegister", ({ request, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.authRegister(request, payload)),
-    )
-    .handle("authLogin", ({ request, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.authLogin(request, payload)),
-    )
-    .handle("authLogout", ({ request }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.authLogout(request)),
-    )
-    .handle("authForgotPassword", ({ request, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.authForgotPassword(request, payload)),
-    )
-    .handle("authResetPassword", ({ request, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.authResetPassword(request, payload)),
-    )
-    .handle("authChangePassword", ({ request, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.authChangePassword(request, payload)),
-    )
-    .handle("authChangeEmail", ({ request, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.authChangeEmail(request, payload)),
-    )
-    .handle("authVerifyEmailChange", ({ request, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.authVerifyEmailChange(request, payload),
-      ),
+    .handle("verifyEmailChange", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.verifyEmailChange(request, payload)),
     )
     .handle("listApiTokens", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) => service.listApiTokens(request)),

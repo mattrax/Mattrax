@@ -1,9 +1,19 @@
-import { createEffect, createResource, createSignal, For, Show } from "solid-js";
+import { useSearchParams } from "@solidjs/router";
+import { createEffect, createResource, createSignal, For, onMount, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
 
 export default function AccountPage() {
   const session = authClient.useSession();
+  const [searchParams, setSearchParams] = useSearchParams();
   const user = () => session().data?.user;
+
+  onMount(async () => {
+    const token = searchParams.emailToken;
+    if (!token || Array.isArray(token)) return;
+    const result = await authClient.verifyEmailChange({ token });
+    setSearchParams({ emailToken: undefined }, { replace: true });
+    if (!result.error) await session().refetch();
+  });
 
   const [name, setName] = createSignal("");
   const [namePending, setNamePending] = createSignal(false);

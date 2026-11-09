@@ -1,29 +1,48 @@
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { createEnterpriseAuth } from "../src/auth.js";
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
-import { cookieFrom, makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
 const makeContext = async () => {
   const db = makeDb();
-  const stripeClient = makeStripeClient();
+  const now = new Date();
+  const user = {
+    id: "user-1",
+    name: "Owner",
+    email: "owner@example.com",
+    emailVerified: true,
+    image: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.store.user.push(user);
+
+  const auth = {
+    requireUser: (input: any) => {
+      const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
+      return headers.cookie
+        ? Effect.succeed({ user })
+        : Effect.fail({ _tag: "EnterpriseUnauthorized", message: "Unauthenticated" });
+    },
+    listApiTokens: () => Effect.succeed({ tokens: [] }),
+    createApiToken: () => Effect.die("not used"),
+    revokeApiToken: () => Effect.succeed({ status: "ok" }),
+    requestEmailChange: () => Effect.succeed({ status: "ok" }),
+    verifyEmailChange: () => Effect.succeed({ status: "ok" }),
+  };
+
   const service = createEnterpriseService({
     db: db as any,
     schema,
     origin,
-    stripeClient,
+    stripeClient: makeStripeClient(),
     storage: {} as any,
+    auth: auth as any,
   });
-  const auth = createEnterpriseAuth({ db: db as any, schema, origin });
-  const response = await runEffect(
-    auth.authRegister(new Request(origin), {
-      name: "Owner",
-      email: "owner@example.com",
-      password: "password",
-    }),
-  );
-  return { db, service, auth, headers: { cookie: cookieFrom(response) } };
+
+  return { db, service, auth, headers: { cookie: "mattrax_session=test" } };
 };
 
 describe("enterprise service tenant flow", () => {
@@ -253,6 +272,7 @@ describe("enterprise service billing flow", () => {
       origin,
       stripeClient,
       storage: {} as any,
+      auth: auth as any,
     });
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),

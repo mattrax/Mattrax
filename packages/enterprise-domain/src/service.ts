@@ -13,7 +13,7 @@ export type EnterpriseAuthUser = {
 
 export type EnterpriseAuthResolved = {
   readonly user: EnterpriseAuthUser;
-  readonly session?: { readonly activeOrganizationId?: string | null };
+  readonly session?: Dynamic;
   readonly apiToken?: Dynamic;
 };
 
@@ -23,27 +23,6 @@ export class EnterpriseAuth extends Context.Service<
     readonly requireUser: (
       requestLike: Request | { readonly headers: HeadersRecord },
     ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
-    readonly authSession: (request: Request) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
-    readonly authRegister: (
-      request: Request,
-      payload: Dynamic,
-    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
-    readonly authLogin: (
-      request: Request,
-      payload: Dynamic,
-    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
-    readonly authLogout: (request: Request) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
-    readonly authForgotPassword: (payload: Dynamic) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
-    readonly authResetPassword: (payload: Dynamic) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
-    readonly authChangePassword: (
-      request: Request,
-      payload: Dynamic,
-    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
-    readonly authChangeEmail: (
-      request: Request,
-      payload: Dynamic,
-    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
-    readonly authVerifyEmailChange: (payload: Dynamic) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
     readonly listApiTokens: (request: Request) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
     readonly createApiToken: (
       request: Request,
@@ -53,6 +32,11 @@ export class EnterpriseAuth extends Context.Service<
       request: Request,
       tokenId: string,
     ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    readonly requestEmailChange: (
+      request: Request,
+      payload: Dynamic,
+    ) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
+    readonly verifyEmailChange: (payload: Dynamic) => Effect.Effect<Dynamic, Dynamic, Dynamic>;
   }
 >()("@mattrax/enterprise-domain/EnterpriseAuth") {}
 

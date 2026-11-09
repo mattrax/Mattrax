@@ -10,6 +10,9 @@
   },
   "dependencies": {
     "@effect/sql-pg": "catalog:",
+    "@mattrax/enterprise-domain": "workspace:*",
+    "@yielded/auth": "catalog:",
+    "@yielded/auth-persistence-drizzle": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },

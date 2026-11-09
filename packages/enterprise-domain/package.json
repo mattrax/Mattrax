@@ -8,6 +8,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@yielded/auth": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

@@ -1,490 +1,200 @@
-import { and, eq } from "drizzle-orm";
-import { Effect, Layer } from "effect";
-import { HttpServerResponse } from "effect/http";
+import { EmailDelivery, Hooks, Password, Sessions } from "@yielded/auth";
+import { makeAppAuth, type AuthClaims } from "@mattrax/enterprise-domain";
 import {
-  EnterpriseAuth,
-  EnterpriseBadRequest,
-  EnterpriseUnauthorized,
-} from "@mattrax/enterprise-domain";
-import { Db, Env, schema } from "@mattrax/enterprise-core";
-import type {
-  EnterpriseApiToken,
-  EnterpriseDb,
-  EnterpriseSchema,
-  EnterpriseUser,
-} from "./schema.ts";
+  Db,
+  authRequirement,
+  authStorage,
+  AuthPersistenceConfig,
+  schema,
+} from "@mattrax/enterprise-core";
+import { and, eq } from "drizzle-orm";
+import { DateTime } from "effect";
+import { Effect, Layer, Redacted } from "effect";
+import { SecureRandom } from "effect/crypto";
 
-export type EnterpriseAuthConfig = {
-  readonly db: EnterpriseDb;
-  readonly schema: EnterpriseSchema;
-  readonly origin: string;
+export const sessionCookie = "__Host-mattrax_session";
+type EmailBinding = {
+  send(message: {
+    to: string;
+    from: { name: string; email: string };
+    subject: string;
+    text?: string;
+    html?: string;
+  }): Promise<unknown>;
 };
 
-const sessionCookie = "mattrax_session";
-const sessionDays = 30;
-// Workers caps PBKDF2 at 100,000 iterations.
-const passwordIterations = 100_000;
-const ok = { status: "ok" as const };
+export type AppAuthService = ReturnType<typeof makeAppAuth>;
 
-const now = () => new Date();
-const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
-const normalizeEmail = (email: string) => email.trim().toLowerCase();
-const iso = (date: Date | null | undefined) => (date ? date.toISOString() : null);
+export type AuthLiveOptions = {
+  readonly appAuth: AppAuthService;
+  readonly cryptoLayer: Layer.Layer<any, any, any>;
+  readonly email?: EmailBinding;
+  readonly emailFrom?: string;
+};
 
-const bytesToBase64Url = (bytes: Uint8Array) =>
-  btoa(String.fromCharCode(...bytes))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replaceAll("=", "");
-const base64UrlToBytes = (value: string) =>
-  Uint8Array.from(atob(value.replaceAll("-", "+").replaceAll("_", "/")), (char) =>
-    char.charCodeAt(0),
+export const makeAuthLive = ({ appAuth, cryptoLayer, email, emailFrom }: AuthLiveOptions) => {
+  const ClaimsLive = Layer.effect(
+    appAuth.strategies.password.SessionClaims,
+    Effect.gen(function* () {
+      const db = yield* Db;
+
+      return {
+        resolve: ({ subjectId }: { subjectId: string }) =>
+          Effect.gen(function* () {
+            const user = yield* db.query.user
+              .findFirst({ where: { id: subjectId } })
+              .pipe(Effect.catch(() => Effect.succeed(undefined)));
+            if (!user || user.disabled) return yield* Password.PasswordUnavailable.make({});
+            return {
+              name: user.name,
+              email: user.email,
+              emailVerified: user.emailVerified,
+            } satisfies AuthClaims;
+          }),
+      };
+    }),
   );
-const randomToken = (prefix = "") =>
-  `${prefix}${bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)))}`;
 
-export const sha256 = (value: string) =>
-  Effect.promise(() => crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))).pipe(
-    Effect.map((digest) =>
-      Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""),
-    ),
-  );
+  const ProvisioningLive = Layer.effect(
+    AuthPersistenceConfig.Provisioning,
+    Effect.gen(function* () {
+      const random = yield* SecureRandom.SecureRandom;
 
-const importPasswordKey = (password: string) =>
-  crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, [
-    "deriveBits",
-  ]);
-
-export const hashPassword = (password: string) =>
-  Effect.gen(function* () {
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    const key = yield* Effect.promise(() => importPasswordKey(password));
-    const bits = yield* Effect.promise(() =>
-      crypto.subtle.deriveBits(
-        { name: "PBKDF2", hash: "SHA-256", salt, iterations: passwordIterations },
-        key,
-        256,
-      ),
-    );
-    return `pbkdf2-sha256$${passwordIterations}$${bytesToBase64Url(salt)}$${bytesToBase64Url(new Uint8Array(bits))}`;
-  });
-
-export const verifyPassword = (password: string, stored: string | null | undefined) =>
-  Effect.gen(function* () {
-    if (!stored) return false;
-    const [kind, iterations, saltValue, hashValue] = stored.split("$");
-    if (kind !== "pbkdf2-sha256" || !iterations || !saltValue || !hashValue) return false;
-    const key = yield* Effect.promise(() => importPasswordKey(password));
-    const bits = yield* Effect.promise(() =>
-      crypto.subtle.deriveBits(
-        {
-          name: "PBKDF2",
-          hash: "SHA-256",
-          salt: base64UrlToBytes(saltValue),
-          iterations: Number(iterations),
+      return {
+        password: {
+          values: ({ identifier, registration }: any) =>
+            Effect.gen(function* () {
+              const id = yield* random.uuidV4();
+              const revision = yield* random.uuidV4();
+              const now = new Date();
+              return {
+                id,
+                name: registration.name,
+                email: identifier.value,
+                emailVerified: true,
+                image: null,
+                stripeCustomerId: null,
+                disabled: false,
+                authRevision: revision,
+                createdAt: now,
+                updatedAt: now,
+              };
+            }),
         },
-        key,
-        256,
-      ),
-    );
-    const actual = bytesToBase64Url(new Uint8Array(bits));
-    return actual === hashValue;
-  });
-
-const parseCookies = (header: string | null | undefined) =>
-  Object.fromEntries(
-    (header ?? "")
-      .split(";")
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map((part) => {
-        const index = part.indexOf("=");
-        return index === -1
-          ? [part, ""]
-          : [part.slice(0, index), decodeURIComponent(part.slice(index + 1))];
-      }),
+      };
+    }),
   );
 
-const cookieHeader = (token: string) => {
-  const maxAge = sessionDays * 24 * 60 * 60;
-  return `${sessionCookie}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
-};
-
-const clearCookieHeader = () =>
-  `${sessionCookie}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
-
-const headersFromRecord = (record: Record<string, string | string[] | undefined>) => {
-  const headers = new Headers();
-  for (const [key, value] of Object.entries(record)) {
-    if (Array.isArray(value)) {
-      for (const item of value) headers.append(key, item);
-    } else if (value !== undefined) {
-      headers.set(key, value);
-    }
-  }
-  return headers;
-};
-
-export const userInfo = (user: EnterpriseUser) => ({
-  id: user.id,
-  name: user.name,
-  email: user.email,
-  emailVerified: user.emailVerified,
-  image: user.image,
-});
-
-export const createEnterpriseAuth = ({ db, schema, origin }: EnterpriseAuthConfig) => {
-  const createSession = (request: Request, userId: string) =>
-    Effect.gen(function* () {
-      const token = randomToken();
-      const createdAt = now();
-      const tokenHash = yield* sha256(token);
-      yield* db.insert(schema.session).values({
-        id: id(),
-        tokenHash,
-        userId,
-        expiresAt: new Date(createdAt.getTime() + sessionDays * 24 * 60 * 60 * 1000),
-        ipAddress: request.headers.get("cf-connecting-ip"),
-        userAgent: request.headers.get("user-agent"),
-        createdAt,
-        updatedAt: createdAt,
-      });
-      return token;
-    });
-
-  const resolveSession = (request: Request) =>
-    Effect.gen(function* () {
-      const token = parseCookies(request.headers.get("cookie"))[sessionCookie];
-      if (!token) return undefined;
-      const tokenHash = yield* sha256(token);
-      const session = yield* db.query.session.findFirst({ where: { tokenHash: tokenHash } });
-      if (!session || session.expiresAt <= now()) return undefined;
-      const user = yield* db.query.user.findFirst({ where: { id: session.userId } });
-      return user ? { session, user } : undefined;
-    });
-
-  const resolveApiToken = (request: Request) =>
-    Effect.gen(function* () {
-      const authorization = request.headers.get("authorization") ?? "";
-      const match = authorization.match(/^Bearer\s+(.+)$/i);
-      if (!match) return undefined;
-      const tokenHash = yield* sha256(match[1]);
-      const item = yield* db.query.accountApiToken.findFirst({
-        where: { tokenHash: tokenHash, revokedAt: { isNull: true } },
-      });
-      if (!item || (item.expiresAt && item.expiresAt <= now())) return undefined;
-      yield* db
-        .update(schema.accountApiToken)
-        .set({ lastUsedAt: now(), updatedAt: now() })
-        .where(eq(schema.accountApiToken.id, item.id));
-      const user = yield* db.query.user.findFirst({ where: { id: item.userId } });
-      return user ? { apiToken: item, user } : undefined;
-    });
-
-  const requireUser = (
-    requestLike: Request | { headers: Record<string, string | string[] | undefined> },
-  ) =>
-    Effect.gen(function* () {
-      const request =
-        requestLike instanceof Request
-          ? requestLike
-          : new Request(origin, { headers: headersFromRecord(requestLike.headers) });
-      const session = yield* resolveSession(request);
-      const resolved = session ?? (yield* resolveApiToken(request));
-      if (!resolved?.user)
-        return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
-      return resolved;
-    });
-
-  const issueVerification = (identifier: string, kind: string, metadata?: unknown) =>
-    Effect.gen(function* () {
-      const token = randomToken("vrf_");
-      const createdAt = now();
-      const valueHash = yield* sha256(token);
-      yield* db.insert(schema.verification).values({
-        id: id(),
-        identifier,
-        kind,
-        valueHash,
-        metadata,
-        expiresAt: new Date(createdAt.getTime() + 60 * 60 * 1000),
-        createdAt,
-        updatedAt: createdAt,
-      });
-      return token;
-    });
-
-  const tokenInfo = (item: EnterpriseApiToken) => ({
-    id: item.id,
-    name: item.name,
-    tokenPrefix: item.tokenPrefix,
-    createdAt: item.createdAt.toISOString(),
-    updatedAt: item.updatedAt.toISOString(),
-    lastUsedAt: iso(item.lastUsedAt),
-    expiresAt: iso(item.expiresAt),
-    revokedAt: iso(item.revokedAt),
+  const EmailDeliveryLive = Layer.succeed(EmailDelivery.EmailDelivery, {
+    send: (message) =>
+      Effect.tryPromise({
+        try: async () => {
+          if (!email) {
+            console.log("EMAIL", message.to, message.subject, Redacted.value(message.text));
+            return;
+          }
+          await email.send({
+            to: message.to,
+            from: { name: "Mattrax", email: emailFrom ?? "hello@mattrax.cloud" },
+            subject: message.subject,
+            text: Redacted.value(message.text),
+            ...(message.html ? { html: Redacted.value(message.html) } : {}),
+          });
+        },
+        catch: () => EmailDelivery.EmailNotAccepted.make({}),
+      }),
   });
 
-  const listApiTokens = (request: Request) =>
+  const LifecycleHooksLive = Layer.effect(
+    Hooks.LifecycleHooks,
     Effect.gen(function* () {
-      const { user } = yield* requireUser(request);
-      const rows = yield* db
-        .select()
-        .from(schema.accountApiToken)
-        .where(eq(schema.accountApiToken.userId, user.id));
-      return { tokens: rows.map(tokenInfo) };
-    });
-
-  const createApiToken = (request: Request, body: { name: string; expiresAt?: string | null }) =>
-    Effect.gen(function* () {
-      const { user } = yield* requireUser(request);
-      const raw = randomToken("mtx_");
-      const createdAt = now();
-      const tokenHash = yield* sha256(raw);
-      const item = {
-        id: id(),
-        userId: user.id,
-        name: body.name,
-        tokenPrefix: raw.slice(0, 12),
-        tokenHash,
-        lastUsedAt: null,
-        expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
-        revokedAt: null,
-        createdAt,
-        updatedAt: createdAt,
-      };
-      yield* db.insert(schema.accountApiToken).values(item);
-      return { token: raw, item: tokenInfo(item) };
-    });
-
-  const revokeApiToken = (request: Request, tokenId: string) =>
-    Effect.gen(function* () {
-      const { user } = yield* requireUser(request);
-      yield* db
-        .update(schema.accountApiToken)
-        .set({ revokedAt: now(), updatedAt: now() })
-        .where(
-          and(eq(schema.accountApiToken.id, tokenId), eq(schema.accountApiToken.userId, user.id)),
-        );
-      return ok;
-    });
-
-  const authSession = (request: Request) =>
-    Effect.gen(function* () {
-      const resolved = yield* resolveSession(request);
-      return { user: resolved?.user ? userInfo(resolved.user) : undefined };
-    });
-
-  const authRegister = (
-    request: Request,
-    body: { name: string; email: string; password: string },
-  ) =>
-    Effect.gen(function* () {
-      const email = normalizeEmail(body.email);
-      const createdAt = now();
-      const user = {
-        id: id(),
-        name: body.name,
-        email,
-        emailVerified: false,
-        image: null,
-        stripeCustomerId: null,
-        createdAt,
-        updatedAt: createdAt,
-      };
-      yield* db.insert(schema.user).values(user);
-      const password = yield* hashPassword(body.password);
-      yield* db.insert(schema.account).values({
-        id: id(),
-        accountId: email,
-        providerId: "credential",
-        userId: user.id,
-        password,
-        createdAt,
-        updatedAt: createdAt,
+      const db = yield* Db;
+      return Hooks.LifecycleHooks.of({
+        before: () => Effect.void,
+        after: (event) =>
+          Effect.gen(function* () {
+            if (event.snapshot.action === "registration" && event.snapshot.subjectId) {
+              yield* db
+                .update((schema as any).authIdentifiers)
+                .set({ verifiedAt: Date.now() })
+                .where(
+                  and(
+                    eq((schema as any).authIdentifiers.subjectId, event.snapshot.subjectId),
+                    eq((schema as any).authIdentifiers.namespace, "email"),
+                  ),
+                )
+                .pipe(Effect.catch(() => Effect.void));
+            }
+            return [];
+          }),
       });
-      const sessionToken = yield* createSession(request, user.id);
-      return yield* HttpServerResponse.json(
-        { user: userInfo(user) },
-        { headers: { "set-cookie": cookieHeader(sessionToken) } },
-      );
-    });
+    }),
+  );
 
-  const authLogin = (request: Request, body: { email: string; password: string }) =>
-    Effect.gen(function* () {
-      const email = normalizeEmail(body.email);
-      const account = yield* db.query.account.findFirst({
-        where: { providerId: "credential", accountId: email },
-      });
-      const valid = account ? yield* verifyPassword(body.password, account.password) : false;
-      if (!account || !valid) {
-        return yield* Effect.fail(
-          new EnterpriseUnauthorized({ message: "Invalid email or password" }),
-        );
-      }
-      const user = yield* db.query.user.findFirst({ where: { id: account.userId } });
-      if (!user)
-        return yield* Effect.fail(
-          new EnterpriseUnauthorized({ message: "Invalid email or password" }),
-        );
-      const sessionToken = yield* createSession(request, user.id);
-      return yield* HttpServerResponse.json(
-        { user: userInfo(user) },
-        { headers: { "set-cookie": cookieHeader(sessionToken) } },
-      );
-    });
+  const CompromisedPasswordsLive = Layer.succeed(Password.CompromisedPasswords, {
+    check: () => Effect.succeed({ _tag: "Allowed" as const }),
+  });
 
-  const authLogout = (request: Request) =>
-    Effect.gen(function* () {
-      const token = parseCookies(request.headers.get("cookie"))[sessionCookie];
-      if (token) {
-        const tokenHash = yield* sha256(token);
-        yield* db.delete(schema.session).where(eq(schema.session.tokenHash, tokenHash));
-      }
-      return yield* HttpServerResponse.json(ok, { headers: { "set-cookie": clearCookieHeader() } });
-    });
+  const NewPasswordCheckLive = Password.NewPasswordCheck.layer(Password.defaultPasswordPolicy).pipe(
+    Layer.provide(CompromisedPasswordsLive),
+  );
 
-  const authForgotPassword = (body: { email: string; redirectTo?: string }) =>
-    Effect.gen(function* () {
-      const email = normalizeEmail(body.email);
-      const user = yield* db.query.user.findFirst({ where: { email: email } });
-      if (user) {
-        const token = yield* issueVerification(email, "password-reset");
-        console.log(
-          "RESET EMAIL",
-          email,
-          `${origin}${body.redirectTo ?? "/reset-password"}?token=${token}`,
-        );
-      }
-      return ok;
-    });
+  const ActionEvidenceLive = Layer.succeed(Password.PasswordActionEvidence, {
+    verify: ({ challenge, currentPasswordEvidence, recovery }) =>
+      Effect.gen(function* () {
+        if (currentPasswordEvidence) {
+          return {
+            evidence: {
+              ...currentPasswordEvidence,
+              flowId: Sessions.AuthenticationFlowId.make(challenge.commandId),
+              bindingDigest: challenge.bindingDigest,
+              revision: challenge.revision,
+            },
+            requirement: authRequirement,
+          };
+        }
 
-  const authResetPassword = (body: { token: string; newPassword: string }) =>
-    Effect.gen(function* () {
-      const tokenHash = yield* sha256(body.token);
-      const verification = yield* db.query.verification.findFirst({
-        where: { kind: "password-reset", valueHash: tokenHash },
-      });
-      if (!verification || verification.expiresAt <= now()) {
-        return yield* Effect.fail(
-          new EnterpriseBadRequest({ message: "Invalid or expired token" }),
-        );
-      }
-      const password = yield* hashPassword(body.newPassword);
-      yield* db
-        .update(schema.account)
-        .set({ password, updatedAt: now() })
-        .where(
-          and(
-            eq(schema.account.providerId, "credential"),
-            eq(schema.account.accountId, verification.identifier),
-          ),
-        );
-      yield* db.delete(schema.verification).where(eq(schema.verification.id, verification.id));
-      return ok;
-    });
+        if (recovery) {
+          const credentialId =
+            challenge.targetCredentialId ?? challenge.revision.credentials[0]?.credentialId;
+          if (!credentialId) return yield* Password.PasswordActionRequired.make({});
+          return {
+            evidence: {
+              revision: challenge.revision,
+              flowId: Sessions.AuthenticationFlowId.make(challenge.commandId),
+              bindingDigest: challenge.bindingDigest,
+              proofs: [
+                {
+                  method: "password-reset",
+                  credentialId,
+                  factors: ["knowledge"] as Array<"knowledge" | "possession" | "inherence">,
+                  userVerified: false,
+                  phishingResistant: false,
+                  verifiedAt: DateTime.nowUnsafe(),
+                },
+              ],
+            },
+            requirement: authRequirement,
+          };
+        }
 
-  const authChangePassword = (
-    request: Request,
-    body: { currentPassword: string; newPassword: string; revokeOtherSessions?: boolean },
-  ) =>
-    Effect.gen(function* () {
-      const { user } = yield* requireUser(request);
-      const account = yield* db.query.account.findFirst({
-        where: { providerId: "credential", userId: user.id },
-      });
-      const valid = account ? yield* verifyPassword(body.currentPassword, account.password) : false;
-      if (!account || !valid) {
-        return yield* Effect.fail(
-          new EnterpriseBadRequest({ message: "Current password is incorrect" }),
-        );
-      }
-      const password = yield* hashPassword(body.newPassword);
-      yield* db
-        .update(schema.account)
-        .set({ password, updatedAt: now() })
-        .where(eq(schema.account.id, account.id));
-      if (body.revokeOtherSessions)
-        yield* db.delete(schema.session).where(eq(schema.session.userId, user.id));
-      return ok;
-    });
+        return yield* Password.PasswordActionRequired.make({});
+      }),
+  });
 
-  const authChangeEmail = (request: Request, body: { newEmail: string; callbackURL?: string }) =>
-    Effect.gen(function* () {
-      const { user } = yield* requireUser(request);
-      const newEmail = normalizeEmail(body.newEmail);
-      const token = yield* issueVerification(user.id, "email-change", { newEmail });
-      console.log(
-        "CHANGE EMAIL VERIFICATION",
-        user.email,
-        "->",
-        newEmail,
-        `${origin}${body.callbackURL ?? "/account"}?token=${token}`,
-      );
-      return ok;
-    });
+  const PersistenceLive = AuthPersistenceConfig.layer.pipe(
+    Layer.provide(AuthPersistenceConfig.Config.layer(authStorage)),
+    Layer.provide(ProvisioningLive),
+  );
 
-  const authVerifyEmailChange = (body: { token: string }) =>
-    Effect.gen(function* () {
-      const tokenHash = yield* sha256(body.token);
-      const verification = yield* db.query.verification.findFirst({
-        where: { kind: "email-change", valueHash: tokenHash },
-      });
-      if (!verification || verification.expiresAt <= now()) {
-        return yield* Effect.fail(
-          new EnterpriseBadRequest({ message: "Invalid or expired token" }),
-        );
-      }
-      const metadata = verification.metadata;
-      const newEmail =
-        typeof metadata === "object" &&
-        metadata !== null &&
-        typeof (metadata as Record<string, unknown>).newEmail === "string"
-          ? (metadata as Record<string, string>).newEmail
-          : undefined;
-      if (!newEmail)
-        return yield* Effect.fail(
-          new EnterpriseBadRequest({ message: "Invalid email change metadata" }),
-        );
-      yield* db
-        .update(schema.user)
-        .set({ email: newEmail, emailVerified: true, updatedAt: now() })
-        .where(eq(schema.user.id, verification.identifier));
-      yield* db
-        .update(schema.account)
-        .set({ accountId: newEmail, updatedAt: now() })
-        .where(
-          and(
-            eq(schema.account.providerId, "credential"),
-            eq(schema.account.userId, verification.identifier),
-          ),
-        );
-      yield* db.delete(schema.verification).where(eq(schema.verification.id, verification.id));
-      return ok;
-    });
-
-  return {
-    requireUser,
-    authSession,
-    authRegister,
-    authLogin,
-    authLogout,
-    authForgotPassword,
-    authResetPassword,
-    authChangePassword,
-    authChangeEmail,
-    authVerifyEmailChange,
-    listApiTokens,
-    createApiToken,
-    revokeApiToken,
-  };
+  return appAuth.layer.pipe(
+    Layer.provide(PersistenceLive),
+    Layer.provide(ClaimsLive),
+    Layer.provide(EmailDeliveryLive),
+    Layer.provide(NewPasswordCheckLive),
+    Layer.provide(ActionEvidenceLive),
+    Layer.provide(LifecycleHooksLive),
+    Layer.provide(Password.PasswordAttemptLimiter.layer),
+    Layer.provide(cryptoLayer),
+  );
 };
-
-export const EnterpriseAuthLive = Layer.effect(
-  EnterpriseAuth,
-  Effect.gen(function* () {
-    const db = yield* Db;
-    const env = yield* Env;
-    return EnterpriseAuth.of(createEnterpriseAuth({ db, schema, origin: env.origin }));
-  }),
-);

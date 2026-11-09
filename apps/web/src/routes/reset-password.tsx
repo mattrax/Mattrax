@@ -1,14 +1,45 @@
-import { useNavigate, useSearchParams } from "@solidjs/router";
-import { createSignal, Show } from "solid-js";
+import { useNavigate } from "@solidjs/router";
+import { Effect, Redacted } from "effect";
+import { onMount, createSignal, Show } from "solid-js";
+import { parseLinkFragment } from "@yielded/auth/EmailDelivery";
 import { authClient } from "~/lib/auth";
 
+type ResetLink = {
+  flowId: string;
+  email: string;
+  reference: unknown;
+  secret: string;
+};
+
 export default function ResetPasswordPage() {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [password, setPassword] = createSignal("");
   const [confirm, setConfirm] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal(false);
+  const [link, setLink] = createSignal<ResetLink | null>(null);
+
+  onMount(async () => {
+    const flow = authClient.resetFlow();
+    const fragment = window.location.hash.replace(/^#/, "");
+    if (!flow || !fragment) {
+      setError("Invalid or expired reset link. Please request a new one.");
+      return;
+    }
+
+    try {
+      const parsed = await Effect.runPromise(parseLinkFragment(Redacted.make(fragment)));
+      setLink({
+        flowId: flow.flowId,
+        email: flow.email,
+        reference: parsed.reference,
+        secret: Redacted.value(parsed.secret),
+      });
+      history.replaceState(null, "", window.location.pathname);
+    } catch {
+      setError("Invalid or expired reset link. Please request a new one.");
+    }
+  });
 
   const handleSubmit = async (e: SubmitEvent) => {
     e.preventDefault();
@@ -19,22 +50,20 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    const token =
-      searchParams.token && Array.isArray(searchParams.token)
-        ? searchParams.token[0]
-        : searchParams.token;
-    if (!token) {
+    const current = link();
+    if (!current) {
       setError("Invalid or missing reset token. Please request a new reset link.");
       return;
     }
 
     setPending(true);
-
     const result = await authClient.resetPassword({
       newPassword: password(),
-      token,
+      flowId: current.flowId,
+      email: current.email,
+      reference: current.reference,
+      secret: current.secret,
     });
-
     setPending(false);
 
     if (result.error) {
@@ -42,6 +71,7 @@ export default function ResetPasswordPage() {
       return;
     }
 
+    authClient.clearResetFlow();
     navigate("/login", { replace: true });
   };
 
@@ -57,7 +87,7 @@ export default function ResetPasswordPage() {
         </div>
 
         <Show
-          when={searchParams.token}
+          when={link()}
           fallback={
             <div class="rounded-lg border border-red-200 bg-red-50 p-5 text-center space-y-2">
               <p class="text-sm font-medium text-red-800">Invalid reset link</p>

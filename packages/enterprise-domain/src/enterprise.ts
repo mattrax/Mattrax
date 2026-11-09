@@ -76,12 +76,6 @@ const EnterpriseAuthRequiredErrors = [
   EnterpriseUnauthorized.pipe(HttpApiSchema.status(401)),
 ] as const;
 const EnterpriseDbErrors = [EnterpriseDbError.pipe(HttpApiSchema.status(500))] as const;
-const EnterpriseBadRequestErrors = [EnterpriseBadRequest.pipe(HttpApiSchema.status(400))] as const;
-const EnterpriseAuthBadRequestErrors = [
-  ...EnterpriseAuthRequiredErrors,
-  ...EnterpriseDbErrors,
-  ...EnterpriseBadRequestErrors,
-] as const;
 const EnterpriseTenantReadErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
@@ -436,32 +430,8 @@ export const BillingPortalRequest = Schema.Struct({ returnUrl: Schema.String });
 export const BillingPortalResponse = Schema.Struct({ url: Schema.String });
 
 export const AuthUser = UserInfo;
-export const SessionResponse = Schema.Struct({ user: Schema.optional(AuthUser) });
-export const RegisterRequest = Schema.Struct({
-  name: Schema.String,
-  email: Schema.String,
-  password: Schema.String,
-});
-export const LoginRequest = Schema.Struct({ email: Schema.String, password: Schema.String });
-export const ForgotPasswordRequest = Schema.Struct({
-  email: Schema.String,
-  redirectTo: Schema.optional(Schema.String),
-});
-export const ResetPasswordRequest = Schema.Struct({
-  token: Schema.String,
-  newPassword: Schema.String,
-});
-export const ChangePasswordRequest = Schema.Struct({
-  currentPassword: Schema.String,
-  newPassword: Schema.String,
-  revokeOtherSessions: Schema.optional(Schema.Boolean),
-});
-export const ChangeEmailRequest = Schema.Struct({
-  newEmail: Schema.String,
-  callbackURL: Schema.optional(Schema.String),
-});
+export const ChangeEmailRequest = Schema.Struct({ newEmail: Schema.String });
 export const VerifyEmailChangeRequest = Schema.Struct({ token: Schema.String });
-export const AuthResponse = Schema.Struct({ user: AuthUser });
 
 export const ApiTokenInfo = Schema.Struct({
   id: Schema.String,
@@ -482,62 +452,15 @@ export const CreateApiTokenResponse = Schema.Struct({ token: Schema.String, item
 
 export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   .add(
-    HttpApiEndpoint.get("authSession", "/v1/auth/session", {
-      error: EnterpriseNoDomainErrors,
-      success: SessionResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("authRegister", "/v1/auth/register", {
-      error: EnterpriseNoDomainErrors,
-      payload: RegisterRequest,
-      success: AuthResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("authLogin", "/v1/auth/login", {
-      error: EnterpriseAuthRequiredErrors,
-      payload: LoginRequest,
-      success: AuthResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("authLogout", "/v1/auth/logout", {
-      error: EnterpriseNoDomainErrors,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("authForgotPassword", "/v1/auth/forgot-password", {
-      error: EnterpriseNoDomainErrors,
-      payload: ForgotPasswordRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("authResetPassword", "/v1/auth/reset-password", {
-      error: EnterpriseBadRequestErrors,
-      payload: ResetPasswordRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("authChangePassword", "/v1/auth/change-password", {
-      error: EnterpriseAuthBadRequestErrors,
-      payload: ChangePasswordRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("authChangeEmail", "/v1/auth/change-email", {
+    HttpApiEndpoint.post("requestEmailChange", "/v1/account/email-change", {
       error: EnterpriseAuthRequiredErrors,
       payload: ChangeEmailRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )
   .add(
-    HttpApiEndpoint.post("authVerifyEmailChange", "/v1/auth/verify-email-change", {
-      error: EnterpriseBadRequestErrors,
+    HttpApiEndpoint.post("verifyEmailChange", "/v1/account/email-change/verify", {
+      error: EnterpriseNoDomainErrors,
       payload: VerifyEmailChangeRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
