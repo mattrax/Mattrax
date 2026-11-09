@@ -61,6 +61,7 @@ function TopNavigation() {
             active={isActive("/#enterprise")}
           />
           <NavigationLink href="/#pricing" label="Pricing" active={isActive("/#pricing")} />
+          <NavigationLink href="/designer" label="Policy designer" active={isActive("/designer")} />
           <NavigationLink href="/docs" label="Docs" target="_self" active={isActive("/docs")} />
         </nav>
 

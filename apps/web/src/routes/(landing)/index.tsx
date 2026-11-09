@@ -25,13 +25,13 @@ export default function Page() {
                 Get started free
               </Button>
             </a>
-            <a href="/dashboard">
+            <a href="/designer">
               <Button
                 variant="outline"
                 size="lg"
                 class="border-stone-300 text-stone-600 hover:bg-stone-100 rounded-full px-10 h-12"
               >
-                Open Dashboard →
+                Design a policy →
               </Button>
             </a>
           </div>
@@ -39,6 +39,66 @@ export default function Page() {
       </section>
 
       <Separator class="bg-stone-200" />
+
+      <section id="designer" class="py-16 px-8">
+        <div class="mx-auto max-w-7xl rounded-3xl border bg-white p-8 md:p-10">
+          <div class="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+            <div>
+              <p class="text-xs text-stone-400 uppercase tracking-[0.2em] mb-4">
+                Try it without an account
+              </p>
+              <h2 class="text-4xl font-light tracking-tight text-stone-900 leading-tight">
+                Design your first policy
+                <br />
+                <em class="italic">before</em> you sign up.
+              </h2>
+              <p class="mt-4 max-w-xl text-stone-500 leading-relaxed">
+                Browse Apple, Windows and Android settings, search the same catalogue our dashboard
+                uses, and export a ready-to-use profile or SyncML artifact. Sign in only when you
+                want to save and deploy it.
+              </p>
+              <div class="mt-6 flex flex-wrap gap-3">
+                <a href="/designer">
+                  <Button size="lg" class="rounded-full px-8">
+                    Open the policy designer →
+                  </Button>
+                </a>
+                <a href="/docs/quick-start">
+                  <Button variant="outline" size="lg" class="rounded-full px-8">
+                    See deployment guide
+                  </Button>
+                </a>
+              </div>
+            </div>
+            <div class="rounded-2xl border bg-stone-50 p-5">
+              <div class="flex items-center justify-between text-xs uppercase tracking-wide text-stone-400">
+                <span>Available settings</span>
+                <span>Updated from vendor sources</span>
+              </div>
+              <div class="mt-4 grid grid-cols-3 gap-3 text-center">
+                <div class="rounded-xl border bg-white p-4">
+                  <p class="text-2xl font-semibold text-stone-900">4.3k</p>
+                  <p class="mt-1 text-xs text-stone-500">Apple</p>
+                </div>
+                <div class="rounded-xl border bg-white p-4">
+                  <p class="text-2xl font-semibold text-stone-900">15k</p>
+                  <p class="mt-1 text-xs text-stone-500">Windows</p>
+                </div>
+                <div class="rounded-xl border bg-white p-4">
+                  <p class="text-2xl font-semibold text-stone-900">340</p>
+                  <p class="mt-1 text-xs text-stone-500">Android</p>
+                </div>
+              </div>
+              <ul class="mt-4 space-y-2 text-sm text-stone-600">
+                <li>Search by name, key, OMA-URI or payload type.</li>
+                <li>Type-aware forms with defaults and descriptions.</li>
+                <li>Export mobileconfig, DDM JSON, SyncML or Android policy.</li>
+                <li>Sign in to save and deploy it to a Mattrax workspace.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section id="product" class="py-20 px-8">
         <div class="mx-auto max-w-7xl">

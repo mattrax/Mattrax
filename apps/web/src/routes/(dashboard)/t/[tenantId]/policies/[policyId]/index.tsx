@@ -107,10 +107,16 @@ export default function PolicyDetailPage() {
         actions={
           <>
             <LinkButton
+              href={`/t/${params.tenantId}/policies/${params.policyId}/design`}
+              variant="outline"
+            >
+              Designer
+            </LinkButton>
+            <LinkButton
               href={`/t/${params.tenantId}/policies/${params.policyId}/editor`}
               variant="outline"
             >
-              Open editor
+              Advanced editor
             </LinkButton>
             <Button variant="outline" onClick={() => sync.mutate()} disabled={sync.isPending}>
               {sync.isPending ? "Syncing…" : "Sync"}

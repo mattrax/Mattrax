@@ -82,7 +82,10 @@ function breadcrumbForPath(path: string, tenantName?: string): Crumb[] {
                 ? id.charAt(0).toUpperCase() + id.slice(1)
                 : "Detail",
         });
-      if (sub) crumbs.push({ label: sub === "editor" ? "Editor" : sub });
+      if (sub)
+        crumbs.push({
+          label: sub === "editor" ? "Editor" : sub === "design" ? "Designer" : sub,
+        });
     }
   }
   if (crumbs.length === 0) crumbs.push({ label: "Dashboard" });
@@ -183,7 +186,11 @@ export default function DashboardLayout(props: ParentProps) {
   ];
 
   createEffect(
-    () => ({ pending: session().isPending, user: user(), path: location.pathname }),
+    () => ({
+      pending: session().isPending,
+      user: user(),
+      path: `${location.pathname}${location.search}`,
+    }),
     ({ pending, user, path }) => {
       if (!pending && !user) {
         navigate(`/login?returnTo=${encodeURIComponent(path)}`, { replace: true });

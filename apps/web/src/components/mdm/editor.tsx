@@ -89,6 +89,13 @@ export function PolicyConfigurationEditor() {
           <>
             <Button
               as="a"
+              href={`/t/${params.tenantId}/policies/${params.policyId}/design`}
+              variant="outline"
+            >
+              Open designer
+            </Button>
+            <Button
+              as="a"
               href="https://configure.mattrax.app"
               target="_blank"
               rel="noreferrer"

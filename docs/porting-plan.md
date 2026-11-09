@@ -135,3 +135,5 @@ Completed:
 - [x] Hosted push relay (`apps/apns-relay`) and whitelabel webhook HMAC signing.
 - [x] Remote Apple lock/erase/restart/shutdown/clear-passcode/app install.
 - [x] Tenant audit logs, SCIM 2.0 user/group provisioning and Entra ID SSO.
+- [x] Shared Apple/Windows/Android policy designer on the landing page and in the
+      dashboard, with templates, search, artifact export and workspace deployment.

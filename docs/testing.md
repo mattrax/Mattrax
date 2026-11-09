@@ -48,8 +48,9 @@ staging database. Set:
 
 Coverage includes registration and login, tenant creation and switching,
 collapsed-sidebar persistence, every sidebar section, the mobile drawer, tenant
-settings tabs, the APNs wizard, group/policy CRUD, the policy editor and the
-public enrollment page.
+settings tabs, the APNs wizard, group/policy CRUD, the policy editor, the shared
+policy designer (catalogue search, templates, export, public-to-dashboard handoff
+and the replace-configuration guard) and the public enrollment page.
 
 ## Apple MDM parity suite
 

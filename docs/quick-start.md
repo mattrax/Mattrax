@@ -124,6 +124,26 @@ implement Android management. The enrollment toggle does not create a working fl
 
 ### Policies
 
+The fastest route is the **policy designer**, which is the same editor on the public site
+and in the dashboard:
+
+1. Open [`/designer`](https://mattrax.app/designer) without signing in. Pick Apple,
+   Windows or Android, apply a baseline template, and tune individual settings.
+2. **Export** produces a `.mobileconfig`, DDM declaration JSON, Windows SyncML XML, or
+   Android policy JSON. Nothing is uploaded until you sign in.
+3. **Deploy in Mattrax** stores the draft in your browser and sends you through sign-in
+   to the workspace picker, which creates the policy and opens the same draft in the
+   dashboard designer.
+4. In the dashboard, **Save policy** writes the generated artifact to the policy as
+   `mttx.apple.custom.designer` or `mttx.windows.custom.designer`. The source draft is
+   kept alongside it, so the designer reopens with your selections on any device.
+
+Android policies can be exported but not deployed; Android management is not available
+yet. Policies created in the advanced editor can still be opened in the designer, but
+saving replaces their configurations after you confirm the warning.
+
+To configure a policy without the designer:
+
 1. Open **Policies → Create policy**.
 2. Open the policy editor and configure what is available:
    - **Security** — upload a PEM certificate.
