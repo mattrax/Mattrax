@@ -7,6 +7,7 @@ import {
   createDeviceCertificate,
   createCaCertificate,
   buildScepCertRep,
+  buildScepCertFailure,
   certToPem,
   pemToCert,
 } from "./pkcs7.js";
@@ -82,8 +83,14 @@ export const ScepService = Layer.effect(
           try: () => req.csr.verify(),
           catch: (cause) => new ScepError({ message: "Failed to verify the CSR signature", cause }),
         });
-        if (!csrValid)
-          return yield* Effect.fail(new ScepError({ message: "Invalid CSR signature" }));
+        if (!csrValid) {
+          return yield* Effect.tryPromise({
+            try: () =>
+              buildScepCertFailure(ca.caCert, ca.privateKey, req.transactionId, req.senderNonce),
+            catch: (cause) =>
+              new ScepError({ message: "Failed to build SCEP failure response", cause }),
+          });
+        }
 
         // Renewals carry a currently-valid identity certificate signed by this
         // CA instead of the original enrollment challenge.
@@ -107,7 +114,18 @@ export const ScepService = Layer.effect(
           authentication = value ? { organizationalUnit: value } : undefined;
         } else {
           // Allow repository to authenticate/validate the incoming request before issuance.
-          authentication = yield* repo.authenticatePkcsReq(req);
+          const authenticated = yield* repo
+            .authenticatePkcsReq(req)
+            .pipe(Effect.match({ onFailure: () => null, onSuccess: (value) => value ?? {} }));
+          if (authenticated === null) {
+            return yield* Effect.tryPromise({
+              try: () =>
+                buildScepCertFailure(ca.caCert, ca.privateKey, req.transactionId, req.senderNonce),
+              catch: (cause) =>
+                new ScepError({ message: "Failed to build SCEP failure response", cause }),
+            });
+          }
+          authentication = authenticated;
         }
 
         // Allow ten minutes of clock skew between the CA and device, matching

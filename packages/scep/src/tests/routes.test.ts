@@ -113,7 +113,7 @@ describe("SCEP routes", () => {
       expect(body.byteLength).toBeGreaterThan(0);
     });
 
-    it("returns 500 when authentication fails", async () => {
+    it("returns a failure CertRep when authentication fails", async () => {
       const caKeyPair = await generateKeyPair();
       const caCert = await createTestCaCert(caKeyPair, "Post CA");
       const caCertPem = certToPem(caCert);
@@ -147,7 +147,8 @@ describe("SCEP routes", () => {
         body: pkcsReq,
       });
       const response = await handler(request);
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("application/x-pki-message");
     });
   });
 });

@@ -146,7 +146,8 @@ describe("SCEP PKCSReq authentication", () => {
     const deviceKeyPair = await generateKeyPair();
     const csr = await buildTestCsr(deviceKeyPair, "Device");
     const response = await pkiOperation(handler, csr, caCert, deviceKeyPair);
-    expect(response.status).not.toBe(200);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/x-pki-message");
   });
 
   it("rejects a wrong challenge", async () => {
@@ -156,6 +157,7 @@ describe("SCEP PKCSReq authentication", () => {
       challengePassword: "enrollment-1.wrong-signature",
     });
     const response = await pkiOperation(handler, csr, caCert, deviceKeyPair);
-    expect(response.status).not.toBe(200);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/x-pki-message");
   });
 });

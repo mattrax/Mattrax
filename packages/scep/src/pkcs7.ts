@@ -44,6 +44,8 @@ const MSG_TYPE_PKCSREQ = "19";
 const MSG_TYPE_RENEWAL = "17";
 const MSG_TYPE_CERTREP = "3";
 const PKI_STATUS_SUCCESS = "0";
+const PKI_STATUS_FAILURE = "2";
+const SCEP_FAIL_INFO = "2.16.840.1.113733.1.9.4";
 
 // ─── EnvelopedData Decryption ─────────────────────────────────────
 
@@ -218,6 +220,86 @@ export function buildPkcs7Degenerate(cert: pkijs.Certificate): ArrayBuffer {
 //     certificates = [deviceCert, caCert]
 //     SignerInfo signed by CA
 //   }
+/** Minimal SCEP CertRep carrying pkiStatus=failure. */
+export async function buildScepCertFailure(
+  caCert: pkijs.Certificate,
+  caPrivateKey: CryptoKey,
+  transactionId: string,
+  senderNonce: ArrayBuffer,
+): Promise<ArrayBuffer> {
+  const empty = new ArrayBuffer(0);
+  const encapContentInfo = new pkijs.EncapsulatedContentInfo({
+    eContentType: pkijs.ContentInfo.DATA,
+    eContent: new asn1js.OctetString({ valueHex: empty }),
+  });
+  const signedData = new pkijs.SignedData({
+    version: 1,
+    digestAlgorithms: [
+      new pkijs.AlgorithmIdentifier({
+        algorithmId: SHA256_OID,
+        algorithmParams: new asn1js.Null(),
+      }),
+    ],
+    encapContentInfo,
+    certificates: [caCert],
+    signerInfos: [],
+  });
+  const cryptoEngine = pkijs.getCrypto(true);
+  const messageDigest = await cryptoEngine.digest({ name: "SHA-256" }, empty);
+  signedData.signerInfos.push(
+    new pkijs.SignerInfo({
+      version: 1,
+      sid: new pkijs.IssuerAndSerialNumber({
+        issuer: caCert.issuer,
+        serialNumber: caCert.serialNumber,
+      }),
+      digestAlgorithm: new pkijs.AlgorithmIdentifier({
+        algorithmId: SHA256_OID,
+        algorithmParams: new asn1js.Null(),
+      }),
+      signedAttrs: new pkijs.SignedAndUnsignedAttributes({
+        type: 0,
+        attributes: [
+          new pkijs.Attribute({
+            type: CMS_CONTENT_TYPE,
+            values: [new asn1js.ObjectIdentifier({ value: pkijs.ContentInfo.DATA })],
+          }),
+          new pkijs.Attribute({
+            type: CMS_MESSAGE_DIGEST,
+            values: [new asn1js.OctetString({ valueHex: messageDigest })],
+          }),
+          new pkijs.Attribute({
+            type: SCEP_TRANSACTION_ID,
+            values: [new asn1js.PrintableString({ value: transactionId })],
+          }),
+          new pkijs.Attribute({
+            type: SCEP_MESSAGE_TYPE,
+            values: [new asn1js.PrintableString({ value: MSG_TYPE_CERTREP })],
+          }),
+          new pkijs.Attribute({
+            type: SCEP_PKI_STATUS,
+            values: [new asn1js.PrintableString({ value: PKI_STATUS_FAILURE })],
+          }),
+          new pkijs.Attribute({
+            type: SCEP_FAIL_INFO,
+            values: [new asn1js.PrintableString({ value: "2" })],
+          }),
+          new pkijs.Attribute({
+            type: SCEP_RECIPIENT_NONCE,
+            values: [new asn1js.OctetString({ valueHex: senderNonce })],
+          }),
+        ],
+      }),
+      signatureAlgorithm: new pkijs.AlgorithmIdentifier({
+        algorithmId: SHA256_WITH_RSA_OID,
+        algorithmParams: new asn1js.Null(),
+      }),
+    }),
+  );
+  await signedData.sign(caPrivateKey, 0, "SHA-256");
+  return signedData.toSchema(true).toBER(false);
+}
+
 export async function buildScepCertRep(
   deviceCert: pkijs.Certificate,
   caCert: pkijs.Certificate,

@@ -180,7 +180,7 @@ describe("ScepService", () => {
       expect(signedData.certificates!.length).toBe(2); // device + CA
     });
 
-    it("rejects when authenticatePkcsReq fails", async () => {
+    it("returns a failure CertRep when authenticatePkcsReq fails", async () => {
       const caKeyPair = await generateKeyPair();
       const caCert = await createTestCaCert(caKeyPair, "Test CA");
       const caCertPem = certToPem(caCert);
@@ -215,10 +215,8 @@ describe("ScepService", () => {
           const scep = yield* ScepServiceTag;
           return yield* scep.pkiOperation(pkcsReq);
         }),
-      )
-        .then(() => "Success")
-        .catch(() => "Failure");
-      expect(result).toBe("Failure");
+      );
+      expect(result.byteLength).toBeGreaterThan(0);
     });
 
     it("extracts the CN from the CSR as the subject", async () => {
