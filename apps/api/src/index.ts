@@ -37,6 +37,16 @@ const authHttps = Http.make(appAuth, {
   cookie: { name: sessionCookie },
 });
 
+// Proof delivery (password reset email) is queued by Auth with no remaining
+// services. Hand it to `waitUntil` so the Worker stays alive after the response
+// instead of interrupting the request-scoped auth layer.
+const proofSchedulerLayer = Layer.succeed(Proofs.ProofDispatchScheduler, {
+  schedule: (work: Effect.Effect<void>) =>
+    Effect.sync(() => {
+      waitUntil(Effect.runPromise(work));
+    }),
+});
+
 const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseApi)
   .add(authHttp)
@@ -84,6 +94,7 @@ const makeAppLayer = (env: Env, request: Request) => {
   const authLive = makeAuthLive({
     appAuth,
     cryptoLayer: Workerd.layer,
+    proofSchedulerLayer,
     email: (env as any).EMAIL,
   }).pipe(Layer.provide(Db.layer));
 

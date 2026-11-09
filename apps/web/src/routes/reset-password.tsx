@@ -21,25 +21,25 @@ export default function ResetPasswordPage() {
 
   onSettled(() => {
     void (async () => {
-    const flow = authClient.resetFlow();
-    const fragment = window.location.hash.replace(/^#/, "");
-    if (!flow || !fragment) {
-      setError("Invalid or expired reset link. Please request a new one.");
-      return;
-    }
+      const flow = authClient.resetFlow();
+      const fragment = window.location.hash;
+      if (!flow || !fragment) {
+        setError("Invalid or expired reset link. Please request a new one.");
+        return;
+      }
 
-    try {
-      const parsed = await Effect.runPromise(parseLinkFragment(Redacted.make(fragment)));
-      setLink({
-        flowId: flow.flowId,
-        email: flow.email,
-        reference: parsed.reference,
-        secret: Redacted.value(parsed.secret),
-      });
-      history.replaceState(null, "", window.location.pathname);
-    } catch {
-      setError("Invalid or expired reset link. Please request a new one.");
-    }
+      try {
+        const parsed = await Effect.runPromise(parseLinkFragment(Redacted.make(fragment)));
+        setLink({
+          flowId: flow.flowId,
+          email: flow.email,
+          reference: parsed.reference,
+          secret: Redacted.value(parsed.secret),
+        });
+        history.replaceState(null, "", window.location.pathname);
+      } catch {
+        setError("Invalid or expired reset link. Please request a new one.");
+      }
     })();
   });
 

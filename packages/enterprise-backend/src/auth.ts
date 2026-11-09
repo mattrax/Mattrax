@@ -28,11 +28,18 @@ export type AppAuthService = ReturnType<typeof makeAppAuth>;
 export type AuthLiveOptions = {
   readonly appAuth: AppAuthService;
   readonly cryptoLayer: Layer.Layer<any, any, any>;
+  readonly proofSchedulerLayer?: Layer.Layer<any, any, any>;
   readonly email?: EmailBinding;
   readonly emailFrom?: string;
 };
 
-export const makeAuthLive = ({ appAuth, cryptoLayer, email, emailFrom }: AuthLiveOptions) => {
+export const makeAuthLive = ({
+  appAuth,
+  cryptoLayer,
+  proofSchedulerLayer,
+  email,
+  emailFrom,
+}: AuthLiveOptions) => {
   const ClaimsLive = Layer.effect(
     appAuth.strategies.password.SessionClaims,
     Effect.gen(function* () {
@@ -114,8 +121,7 @@ export const makeAuthLive = ({ appAuth, cryptoLayer, email, emailFrom }: AuthLiv
         after: (event) =>
           Effect.gen(function* () {
             if (
-              (event.snapshot.action === "registration" ||
-                event.snapshot.action === "sign-in") &&
+              (event.snapshot.action === "registration" || event.snapshot.action === "sign-in") &&
               event.snapshot.subjectId
             ) {
               yield* db
@@ -191,7 +197,7 @@ export const makeAuthLive = ({ appAuth, cryptoLayer, email, emailFrom }: AuthLiv
     Layer.provide(ProvisioningLive),
   );
 
-  return appAuth.layer.pipe(
+  const layer = appAuth.layer.pipe(
     Layer.provide(PersistenceLive),
     Layer.provide(ClaimsLive),
     Layer.provide(EmailDeliveryLive),
@@ -201,4 +207,6 @@ export const makeAuthLive = ({ appAuth, cryptoLayer, email, emailFrom }: AuthLiv
     Layer.provide(Password.PasswordAttemptLimiter.layer),
     Layer.provide(cryptoLayer),
   );
+
+  return proofSchedulerLayer ? layer.pipe(Layer.provide(proofSchedulerLayer)) : layer;
 };

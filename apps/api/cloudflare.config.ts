@@ -29,7 +29,11 @@ export const apiWorker = {
       dev: { connectionString: "mysql://mattrax:mattrax@localhost:3306/mattraxe" },
     }),
     STORAGE: bindings.r2({ name: "mattrax" }),
-    EMAIL: bindings.sendEmail({ allowedSenderAddresses: ["hello@mattrax.cloud"] }),
+    EMAIL: bindings.sendEmail({
+      allowedSenderAddresses: ["hello@mattrax.cloud"],
+      // Keep local test mail in the local explorer instead of the remote service.
+      dev: { remote: false },
+    }),
   },
 };
 
