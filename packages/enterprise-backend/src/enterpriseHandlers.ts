@@ -356,7 +356,8 @@ export const createEnterpriseService = ({
         const resolved = yield* auth.requireUser({ headers: request.headers });
         const { user } = resolved;
         const tenants = yield* listTenantInfo(user.id);
-        const activeTenant = tenants[0];
+        const activeTenant =
+          tenants.find((tenant) => tenant.id === user.activeTenantId) ?? tenants[0];
         return {
           user: {
             id: user.id,
@@ -373,12 +374,25 @@ export const createEnterpriseService = ({
     updateMe: (request, payload) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
-        const body = payload as { name?: string; image?: string | null };
+        const body = payload as {
+          name?: string;
+          image?: string | null;
+          activeTenantId?: string | null;
+        };
+        if (body.activeTenantId) {
+          const membership = yield* db.query.member.findFirst({
+            where: { userId: user.id, organizationId: body.activeTenantId },
+          });
+          if (!membership)
+            return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found" }));
+        }
         yield* db
           .update(schema.user)
           .set({
             name: body.name ?? user.name,
             image: body.image === undefined ? user.image : body.image,
+            activeTenantId:
+              body.activeTenantId === undefined ? user.activeTenantId : body.activeTenantId,
             updatedAt: now(),
           })
           .where(eq(schema.user.id, user.id));

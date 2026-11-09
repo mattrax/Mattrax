@@ -48,16 +48,14 @@ const DropdownMenuContent = <T extends ValidComponent = "div">(
 ) => {
   const [local, others] = splitProps(props as DropdownMenuContentProps, ["class"]);
   return (
-    <DropdownMenuPrimitive.Portal>
-      <DropdownMenuPrimitive.Content
-        data-slot="dropdown-menu-content"
-        class={cn(
-          "z-50 z-dropdown-menu-content z-menu-target max-h-(--kb-popper-available-height) min-w-32 origin-(--kb-menu-content-transform-origin) overflow-y-auto overflow-x-hidden outline-none data-closed:overflow-hidden",
-          local.class,
-        )}
-        {...others}
-      />
-    </DropdownMenuPrimitive.Portal>
+    <DropdownMenuPrimitive.Content
+      data-slot="dropdown-menu-content"
+      class={cn(
+        "z-50 z-dropdown-menu-content z-menu-target max-h-(--kb-popper-available-height) min-w-32 origin-(--kb-menu-content-transform-origin) overflow-y-auto overflow-x-hidden outline-none data-closed:overflow-hidden",
+        local.class,
+      )}
+      {...others}
+    />
   );
 };
 

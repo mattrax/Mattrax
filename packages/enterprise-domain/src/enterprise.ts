@@ -217,6 +217,8 @@ export const PatchTenantUserRequest = Schema.Struct({ role: Schema.String });
 export const UpdateMeRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   image: Schema.optional(NullableString),
+  /** Persist the tenant selected in the tenant switcher. */
+  activeTenantId: Schema.optional(NullableString),
 });
 
 export const DeviceProtocol = Schema.Literals(["apple", "win", "android"]);

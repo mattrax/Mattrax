@@ -1,0 +1,1 @@
+ALTER TABLE `user` ADD `active_tenant_id` varchar(255);

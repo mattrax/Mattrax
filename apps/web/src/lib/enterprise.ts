@@ -14,6 +14,7 @@ import {
   type PolicyRow,
   type RowFor,
   type TenantEnrollmentInfo,
+  type TenantInfo,
 } from "@mattrax/enterprise-domain";
 
 export type {
@@ -125,6 +126,11 @@ const enterpriseQueryOptions = <
 
 export const enterprise = {
   me: () => endpoint((api) => api.me({})),
+  updateMe: (payload: {
+    name?: string;
+    image?: string | null;
+    activeTenantId?: string | null;
+  }) => endpoint((api) => api.updateMe({ payload })),
   getEnrollment: (id: RouteParam, code?: string) =>
     endpoint((api) => api.getEnrollment({ params: { id: required(id, "id") }, query: { code } })),
   listTenants: () => endpoint((api) => api.listTenants({})),
@@ -462,3 +468,15 @@ export const enterpriseQueries = {
 };
 
 export const enabledTenant = (tenantId: Accessor<string | undefined>) => () => Boolean(tenantId());
+
+/**
+ * Pick the tenant the UI should show: the one named in the URL, then the
+ * persisted active tenant from `/me`, then the first membership.
+ */
+export function resolveActiveTenant(
+  me: { tenants: readonly TenantInfo[]; activeTenant?: TenantInfo } | undefined,
+  tenantId?: string,
+) {
+  if (!me) return undefined;
+  return me.tenants.find((tenant) => tenant.id === tenantId) ?? me.activeTenant ?? me.tenants[0];
+}

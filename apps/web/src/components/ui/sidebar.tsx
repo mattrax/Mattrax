@@ -39,6 +39,14 @@ const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
+function readSidebarCookie(): boolean | undefined {
+  if (typeof document === "undefined") return undefined;
+  const match = document.cookie.match(
+    new RegExp(`(?:^|;\\s*)${SIDEBAR_COOKIE_NAME}=(true|false)`),
+  );
+  return match ? match[1] === "true" : undefined;
+}
+
 type SidebarContextProps = {
   state: Accessor<"expanded" | "collapsed">;
   open: Accessor<boolean>;
@@ -85,14 +93,17 @@ const SidebarProvider = (props: SidebarProviderProps) => {
   const [_open, _setOpen] = createSignal(local.defaultOpen);
   const open = () => local.open ?? _open();
   const setOpen = (value: boolean | ((value: boolean) => boolean)) => {
+    const next = typeof value === "function" ? value(open()) : value;
     if (local.onOpenChange) {
-      return local.onOpenChange?.(typeof value === "function" ? value(open()) : value);
+      return local.onOpenChange(next);
     }
-    _setOpen(value);
+    _setOpen(next);
 
-    // This sets the cookie to keep the sidebar state.
+    // This sets the cookie to keep the sidebar state. Compute the next value
+    // up front: reading the signal immediately after writing is not guaranteed
+    // to observe the write within the same batch.
     // biome-ignore lint/suspicious/noDocumentCookie: <waiting for better solution>
-    document.cookie = `${SIDEBAR_COOKIE_NAME}=${open()}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+    document.cookie = `${SIDEBAR_COOKIE_NAME}=${next}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
   };
 
   // Helper to toggle the sidebar.
@@ -102,6 +113,11 @@ const SidebarProvider = (props: SidebarProviderProps) => {
 
   // Adds a keyboard shortcut to toggle the sidebar.
   onSettled(() => {
+    // Restore the persisted desktop state after hydration. Reading the cookie
+    // during render would make the server and client disagree.
+    const stored = readSidebarCookie();
+    if (stored !== undefined) _setOpen(stored);
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === SIDEBAR_KEYBOARD_SHORTCUT && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
@@ -700,6 +716,7 @@ export {
   SidebarMenuAction,
   SidebarMenuBadge,
   SidebarMenuButton,
+  sidebarMenuButtonVariants,
   SidebarMenuItem,
   SidebarMenuSkeleton,
   SidebarMenuSub,
