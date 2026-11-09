@@ -77,6 +77,11 @@ const handlersLayer = Layer.mergeAll(
   authHttps.handlers(apiRoot),
   HttpRouter.add("GET", "/api/health", HttpServerResponse.text("ok")),
   HttpRouter.add("GET", "/health", HttpServerResponse.text("ok")),
+  HttpRouter.add(
+    "GET",
+    "/api/version",
+    HttpServerResponse.json({ version } satisfies { version: string }),
+  ),
 );
 
 const apiLayer = Layer.mergeAll(
