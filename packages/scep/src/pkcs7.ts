@@ -747,10 +747,10 @@ export async function createDeviceCertificate(
   cert.notBefore.value = validity.notBefore;
   cert.notAfter.value = validity.notAfter;
 
-  // KeyUsage: digitalSignature
+  // KeyUsage: digitalSignature | keyEncipherment (bit 0 and bit 2).
   const keyUsage = new asn1js.BitString({
-    unusedBits: 1,
-    valueHex: new Uint8Array([0x80]).buffer,
+    unusedBits: 5,
+    valueHex: new Uint8Array([0xa0]).buffer,
   });
 
   cert.extensions = [

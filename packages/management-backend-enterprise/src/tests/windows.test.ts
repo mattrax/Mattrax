@@ -144,7 +144,7 @@ describe("Windows enterprise backend", () => {
 
     const certificate = pemToCert(result.signedCertificate);
     expect(await certificate.verify(pemToCert(ca.certPem))).toBe(true);
-    expect(certificate.subject.typesAndValues[0]!.value.valueBlock.value).toBe("DESKTOP-TEST");
+    expect(certificate.subject.typesAndValues[0]!.value.valueBlock.value).toBe("device-1");
     const extensionIds = certificate.extensions?.map((extension) => extension.extnID) ?? [];
     // ExtendedKeyUsage (clientAuth) and the Microsoft DeviceID extension.
     expect(extensionIds).toContain("2.5.29.37");

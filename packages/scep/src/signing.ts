@@ -101,7 +101,11 @@ export const signScepCsr = (options: SignCsrOptions): Effect.Effect<SignedCsr, S
 
       const caCert = pemToCert(options.caCertPem);
       const caPrivateKey = await importPrivateKeyJwk(options.caPrivateKeyJwk);
-      const subject = subjectFromCsr(csr, options.deviceId ?? "Windows Device");
+      const deviceId = options.deviceId ?? "Windows Device";
+      // Windows emits a CN containing `!` and NULs in its CSR. Normalize to the
+      // enrollment DeviceID so check-in can bind the certificate to the device.
+      const subject = subjectFromCsr(csr, deviceId).filter((item) => item.type !== "2.5.4.3");
+      subject.push({ type: "2.5.4.3", value: deviceId });
 
       if (options.organizationalUnit) {
         const filtered = subject.filter((item) => item.type !== "2.5.4.11");
