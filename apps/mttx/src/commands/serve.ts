@@ -23,6 +23,11 @@ export const serveCommand = Command.make(
     webhookUrl: Flag.String("webhook-url").pipe(
       Flag.withDescription("URL of the management webhook backend"),
     ),
+    webhookSecret: Flag.String("webhook-secret").pipe(
+      Flag.withDefault(process.env.MATTRAX_WEBHOOK_SECRET ?? ""),
+      Flag.withDescription("HMAC secret for management webhook requests"),
+      Flag.optional,
+    ),
     dataDir: Flag.String("data-dir").pipe(
       Flag.withDefault(defaultDataDir),
       Flag.withDescription("Directory for filesystem data storage"),
@@ -54,6 +59,7 @@ export const serveCommand = Command.make(
       const appLayer = createAppLayer({
         origin: config.origin,
         webhookUrl: config.webhookUrl,
+        webhookSecret: Option.getOrUndefined(config.webhookSecret) || undefined,
         dataDir: config.dataDir,
         appleVendorCert: Option.getOrUndefined(config.appleVendorCert),
         authSecret: config.authSecret || undefined,

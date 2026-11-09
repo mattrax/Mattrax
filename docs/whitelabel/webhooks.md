@@ -16,23 +16,27 @@ Every endpoint below is relative to that base URL.
 
 ## Authentication and signing
 
-::: danger Current transport is unsigned
-`@mattrax/management-backend-http` does **not** add a bearer token, HMAC signature, or
-mTLS client certificate in this tree. The only authentication is whatever you put in
-front of the URL.
-:::
+Set the same secret on the gateway (`--webhook-secret` or
+`MATTRAX_WEBHOOK_SECRET`) and on your management backend. When set, every gateway
+request carries:
 
-Treat the webhook base URL as a secret and restrict who can reach it:
+```http
+x-mattrax-timestamp: <unix seconds>
+x-mattrax-signature: <hex HMAC-SHA256(secret, "<operation>.<timestamp>.<sha256(json payload)>")>
+```
 
-- Serve it over HTTPS only.
-- Put it on a private network or behind a proxy that requires mTLS or a shared bearer
-  token.
-- Do not expose the webhook host publicly without an authenticating proxy.
-- Validate the `scope` (`udid` / `deviceId`) against your own records; a caller who can
-  reach the endpoint can impersonate any device identifier.
+`operation` is the contract method name (for example `appleDeviceEvent`). The
+backend rejects missing, stale (±5 minutes), or invalid signatures. Use
+`managementWebhookHandlers(handlers, { secret })` on the server side;
+`ManagementBackendHttp({ baseUrl, secret })` signs the client side.
 
-If you need gateway-side signing, it has to be added to `management-backend-http`; the
-docs describe the current contract, not a planned security model.
+Also:
+
+- Serve the webhook over HTTPS only.
+- Put it on a private network or behind a proxy that requires mTLS or a shared
+  bearer token as defence in depth.
+- Validate the `scope` (`udid` / `deviceId`) against your own records; a caller
+  with the secret can impersonate any device identifier.
 
 ## Endpoints
 

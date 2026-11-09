@@ -27,7 +27,11 @@ function createMdmLayer(env: Env) {
     HttpApiBuilder.layer(whitelabelApi, { openapiPath: "/openapi.json" }).pipe(
       Layer.provide(
         Layer.mergeAll(
-          HttpApiBuilder.group(whitelabelApi, "ManagementWebhook", managementWebhookHandlers),
+          HttpApiBuilder.group(whitelabelApi, "ManagementWebhook", (handlers) =>
+            managementWebhookHandlers(handlers, {
+              secret: (env as unknown as { WEBHOOK_SECRET?: string }).WEBHOOK_SECRET,
+            }),
+          ),
           HttpApiBuilder.group(whitelabelApi, "AppleDM", appleMdmHandlers),
         ),
       ),

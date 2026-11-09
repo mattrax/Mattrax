@@ -14,11 +14,12 @@ pnpm mserver dev serve \
 
 Defaults in development:
 
-| Option       | Default                 |
-| ------------ | ----------------------- |
-| `--port`     | `3000`                  |
-| `--origin`   | `http://localhost:3000` |
-| `--data-dir` | `./.data`               |
+| Option             | Default                   |
+| ------------------ | ------------------------- |
+| `--port`           | `3000`                    |
+| `--origin`         | `http://localhost:3000`   |
+| `--webhook-secret` | `$MATTRAX_WEBHOOK_SECRET` |
+| `--data-dir`       | `./.data`                 |
 
 `--webhook-url` is required: the MDM service delegates every product decision to your
 backend.
@@ -46,6 +47,7 @@ That Worker listens on port `9051` by default.
 | `--port`              | No       | HTTP port. Defaults to `3000`.                                                                     |
 | `--origin`            | No       | Public origin used in enrollment and asset URLs. Defaults to `http://localhost:3000`.              |
 | `--webhook-url`       | Yes      | Base URL for your management webhook backend.                                                      |
+| `--webhook-secret`    | No       | HMAC secret for webhook requests. Defaults to `MATTRAX_WEBHOOK_SECRET`.                            |
 | `--data-dir`          | No       | Directory for filesystem-backed state. Defaults to `./.data`, or `/opt/mattrax` in bundled builds. |
 | `--apple-vendor-cert` | No       | Path to an Apple vendor certificate PEM used to derive the MDM topic.                              |
 
@@ -56,6 +58,7 @@ pnpm mserver dev serve \
   --port 3000 \
   --origin https://mdm.example.com \
   --webhook-url https://api.example.com \
+  --webhook-secret "$MATTRAX_WEBHOOK_SECRET" \
   --data-dir ./data \
   --apple-vendor-cert ./certs/apple-vendor.pem
 ```

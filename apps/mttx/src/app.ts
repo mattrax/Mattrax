@@ -14,6 +14,8 @@ import { ScepRepositoryLive } from "./repositories/scepRepository.ts";
 export interface ServerConfig {
   readonly origin: string;
   readonly webhookUrl: string;
+  /** Optional HMAC secret used to sign management webhook requests. */
+  readonly webhookSecret?: string;
   readonly dataDir: string;
   readonly appleVendorCert?: string;
   /** Shared with the management backend so SCEP challenges can be verified. */
@@ -68,11 +70,15 @@ export const createAppLayer = (config: ServerConfig) => {
   const appleMdmServiceResolved = AppleMdmService.layer.pipe(
     Layer.provideMerge(AppleMdmTopic.layer),
     Layer.provideMerge(appleMdmConfigLayer),
-    Layer.provide(ManagementBackendHttp(config.webhookUrl)),
+    Layer.provide(
+      ManagementBackendHttp({ baseUrl: config.webhookUrl, secret: config.webhookSecret }),
+    ),
   );
 
   const windowsMdmServiceResolved = WindowsMdmServiceLive({ origin: config.origin }).pipe(
-    Layer.provide(ManagementBackendHttp(config.webhookUrl)),
+    Layer.provide(
+      ManagementBackendHttp({ baseUrl: config.webhookUrl, secret: config.webhookSecret }),
+    ),
   );
 
   const scepServiceResolved = ScepService.pipe(
