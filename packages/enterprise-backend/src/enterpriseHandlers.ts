@@ -16,7 +16,9 @@ import type { Stripe } from "@mattrax/effect-stripe";
 import { and, count, eq, inArray } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
+import { createScepChallenge, validateConfiguration } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
+import { parseMobileconfigPreview } from "./mobileconfig.ts";
 import {
   ApnsService,
   NoopPushTransport,
@@ -29,6 +31,7 @@ import {
 } from "@mattrax/apns";
 import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
 import { makeApplePush } from "./push.ts";
+import { listUserSessions, revokeUserSession } from "./sessions.ts";
 import {
   R2Storage,
   R2StorageLive,
@@ -436,7 +439,12 @@ export const createEnterpriseService = ({
       const timestamp = now();
       yield* db
         .insert(schema.applePushKey)
-        .values({ organizationId, encryptedPrivateKeyJwk, createdAt: timestamp, updatedAt: timestamp })
+        .values({
+          organizationId,
+          encryptedPrivateKeyJwk,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
         .onDuplicateKeyUpdate({
           set: { encryptedPrivateKeyJwk, updatedAt: timestamp },
         });
@@ -499,10 +507,68 @@ export const createEnterpriseService = ({
           .where(eq(schema.user.id, user.id));
         return ok;
       }),
-    deleteMe: () =>
-      Effect.succeed({
-        error:
-          "Delete user is currently not supported while organizations and billing are managed by Mattrax.",
+    deleteMe: (request) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+
+        // Remove solo tenants with the account; keep shared tenants for the
+        // remaining administrators.
+        const memberships = yield* db.query.member.findMany({
+          where: { userId: user.id },
+        });
+        for (const membership of memberships) {
+          const [members] = yield* db
+            .select({ value: count() })
+            .from(schema.member)
+            .where(eq(schema.member.organizationId, membership.organizationId));
+          if ((members?.value ?? 0) <= 1) {
+            yield* db
+              .delete(schema.organization)
+              .where(eq(schema.organization.id, membership.organizationId));
+          } else {
+            yield* db.delete(schema.member).where(eq(schema.member.id, membership.id));
+          }
+        }
+
+        yield* db.delete(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id));
+        yield* db.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
+        yield* db.delete(schema.member).where(eq(schema.member.userId, user.id));
+
+        // Yielded Auth owns these tables; remove the subject's auth state.
+        // `authProofs` has no subject column (its binding is JSON), so those
+        // short-lived rows are left to expire naturally.
+        const authTables = [
+          (schema as any).authPending,
+          (schema as any).authSessions,
+          (schema as any).authPasswords,
+          (schema as any).authCredentials,
+          (schema as any).authIdentifiers,
+        ];
+        for (const table of authTables) {
+          if (table) yield* db.delete(table).where(eq((table as any).subjectId, user.id));
+        }
+
+        yield* db.delete(schema.user).where(eq(schema.user.id, user.id));
+        return ok;
+      }),
+    listAccountSessions: (request) =>
+      Effect.gen(function* () {
+        const resolved = yield* auth.requireUser({ headers: request.headers });
+        return {
+          sessions: yield* listUserSessions(
+            db,
+            resolved.user.id,
+            resolved.session?.sessionId as string | undefined,
+          ),
+        };
+      }),
+    revokeAccountSession: (request, sessionId) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const revoked = yield* revokeUserSession(db, user.id, sessionId);
+        if (!revoked)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Session not found" }));
+        return ok;
       }),
     listTenants: (request) =>
       Effect.gen(function* () {
@@ -545,6 +611,12 @@ export const createEnterpriseService = ({
           createdAt: timestamp,
           updatedAt: timestamp,
         });
+        // Make the newly created tenant the creator's active tenant so the
+        // dashboard and sidebar immediately point at it.
+        yield* db
+          .update(schema.user)
+          .set({ activeTenantId: tenantId, updatedAt: timestamp })
+          .where(eq(schema.user.id, user.id));
         yield* db.insert(schema.enterpriseEnrollment).ignore().values({
           id: tenantId,
           organizationId: tenantId,
@@ -628,6 +700,13 @@ export const createEnterpriseService = ({
         const body = payload as { email: string; role?: string; resend?: boolean };
         const invitationId = id();
         const timestamp = now();
+        const rawToken = bytesToBase64(crypto.getRandomValues(new Uint8Array(32)))
+          .replaceAll("+", "-")
+          .replaceAll("/", "_")
+          .replace(/=+$/, "");
+        const tokenHash = yield* sha256Hex(
+          new TextEncoder().encode(rawToken).buffer as ArrayBuffer,
+        );
         yield* db.insert(schema.invitation).values({
           id: invitationId,
           organizationId: tenantId,
@@ -635,11 +714,60 @@ export const createEnterpriseService = ({
           email: body.email,
           role: body.role ?? "member",
           status: "pending",
+          tokenHash,
           expiresAt: new Date(timestamp.getTime() + 7 * 24 * 60 * 60 * 1000),
           createdAt: timestamp,
           updatedAt: timestamp,
         });
-        return { id: invitationId };
+        return {
+          id: invitationId,
+          inviteUrl: `${origin}/accept-invitation?token=${encodeURIComponent(rawToken)}`,
+        };
+      }),
+    acceptInvitation: (request, payload) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const body = payload as { token: string };
+        const tokenHash = yield* sha256Hex(
+          new TextEncoder().encode(body.token).buffer as ArrayBuffer,
+        );
+        const invitation = yield* db.query.invitation.findFirst({
+          where: { tokenHash },
+        });
+        if (!invitation || invitation.status !== "pending")
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Invitation not found or already used" }),
+          );
+        if (invitation.expiresAt <= now())
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: "Invitation expired" }));
+        if (invitation.email.toLowerCase() !== user.email.toLowerCase())
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Sign in with the email address this invitation was sent to",
+            }),
+          );
+        const existing = yield* db.query.member.findFirst({
+          where: { userId: user.id, organizationId: invitation.organizationId },
+        });
+        if (!existing) {
+          yield* db.insert(schema.member).values({
+            id: id(),
+            organizationId: invitation.organizationId,
+            userId: user.id,
+            role: invitation.role ?? "member",
+            createdAt: now(),
+            updatedAt: now(),
+          });
+        }
+        yield* db
+          .update(schema.invitation)
+          .set({ status: "accepted", updatedAt: now() })
+          .where(eq(schema.invitation.id, invitation.id));
+        yield* db
+          .update(schema.user)
+          .set({ activeTenantId: invitation.organizationId, updatedAt: now() })
+          .where(eq(schema.user.id, user.id));
+        return { tenantId: invitation.organizationId };
       }),
     listTenantInvitations: (request, tenantId) =>
       Effect.gen(function* () {
@@ -738,6 +866,16 @@ export const createEnterpriseService = ({
           .from(schema.device)
           .where(eq(schema.device.organizationId, organization.id));
         const enabled = (deviceCount?.value ?? 0) <= enrollment.maxDevices;
+        const challenge = yield* Effect.tryPromise({
+          try: () =>
+            createScepChallenge(enrollment.id, authSecret ?? "", {
+              // Enrollment profiles are shareable links; allow a week before
+              // the challenge goes stale, without a schema migration.
+              ttlSeconds: 7 * 24 * 60 * 60,
+            }),
+          catch: (cause) =>
+            new EnterpriseBadRequest({ message: "Could not create the SCEP challenge" }),
+        });
         return {
           name: organization.name,
           authenticated: true as const,
@@ -751,6 +889,8 @@ export const createEnterpriseService = ({
                         origin,
                         topic: apns.topic,
                         organizationId: organization.id,
+                        organizationName: organization.name,
+                        challenge,
                       }),
                     ),
                   }
@@ -1259,11 +1399,20 @@ export const createEnterpriseService = ({
         });
         if (!policy)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
+        const configurations = Object.entries(body.configurations ?? {});
+        // Validate the whole patch before mutating anything so a bad
+        // configuration cannot leave the policy half-updated.
+        for (const [kind, data] of configurations) {
+          if (data === null) continue;
+          yield* validateConfiguration(kind, data).pipe(
+            Effect.mapError((message) => new EnterpriseBadRequest({ message })),
+          );
+        }
         yield* db
           .update(schema.policy)
           .set({ name: body.name, notes: body.notes, updatedAt: now() })
           .where(eq(schema.policy.id, policyId));
-        for (const [kind, data] of Object.entries(body.configurations ?? {})) {
+        for (const [kind, data] of configurations) {
           if (data === null) {
             yield* db
               .delete(schema.configuration)
@@ -1369,7 +1518,17 @@ export const createEnterpriseService = ({
           );
         return { id: newId };
       }),
-    previewMobileconfig: (payload) => Effect.succeed({ payload }),
+    previewMobileconfig: (payload) =>
+      Effect.gen(function* () {
+        const body = payload as { mobileconfig: string };
+        return yield* Effect.tryPromise({
+          try: () => parseMobileconfigPreview(body.mobileconfig),
+          catch: (cause) =>
+            new EnterpriseBadRequest({
+              message: cause instanceof Error ? cause.message : "Invalid mobileconfig",
+            }),
+        });
+      }),
     listDevices: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -1476,6 +1635,14 @@ export const enterpriseHandlers = (
         service.revokeApiToken(request, params.tokenId),
       ),
     )
+    .handle("listAccountSessions", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.listAccountSessions(request)),
+    )
+    .handle("revokeAccountSession", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.revokeAccountSession(request, params.sessionId),
+      ),
+    )
     .handle("me", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) => service.me(request)),
     )
@@ -1513,6 +1680,9 @@ export const enterpriseHandlers = (
       Effect.flatMap(EnterpriseService, (service) =>
         service.inviteTenantUser(request, params.tenantId, payload),
       ),
+    )
+    .handle("acceptInvitation", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.acceptInvitation(request, payload)),
     )
     .handle("listTenantInvitations", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
@@ -1556,9 +1726,7 @@ export const enterpriseHandlers = (
       Effect.flatMap(EnterpriseService, (service) => service.getApns(request, params.tenantId)),
     )
     .handle("getApnsCsr", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.getApnsCsr(request, params.tenantId),
-      ),
+      Effect.flatMap(EnterpriseService, (service) => service.getApnsCsr(request, params.tenantId)),
     )
     .handle("uploadApns", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>

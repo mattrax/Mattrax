@@ -52,6 +52,7 @@ export default defineConfig({
         items: [
           { text: "Overview", link: "/enterprise/overview" },
           { text: "API and OpenAPI", link: "/enterprise/api" },
+          { text: "Self-hosted instances", link: "/enterprise/instances" },
           {
             text: "OpenAPI reference",
             link: `${origin}/api/docs`,

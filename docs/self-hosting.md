@@ -3,10 +3,10 @@
 There are two different self-hosting stories in this repository. Pick the one that
 matches what you are trying to run.
 
-| You want to run…                                         | Deploy                                     | Data                                       |
-| -------------------------------------------------------- | ------------------------------------------ | ------------------------------------------ |
-| The full Enterprise product with dashboard, API and billing | **Cloud on Cloudflare** (`apps/api`, `apps/web`) | MySQL, R2, Cloudflare Email, Stripe        |
-| Your own product on top of Mattrax's Apple MDM gateway   | **Whitelabel gateway** (`apps/mttx`)       | Your management backend; SCEP CA on disk   |
+| You want to run…                                            | Deploy                                           | Data                                     |
+| ----------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------- |
+| The full Enterprise product with dashboard, API and billing | **Cloud on Cloudflare** (`apps/api`, `apps/web`) | MySQL, R2, Cloudflare Email, Stripe      |
+| Your own product on top of Mattrax's Apple MDM gateway      | **Whitelabel gateway** (`apps/mttx`)             | Your management backend; SCEP CA on disk |
 
 The whitelabel gateway is not a cut-down Enterprise server. It has no tenants, devices,
 groups, policies, billing, or dashboard. See [Whitelabel](./whitelabel/) before choosing
@@ -62,17 +62,17 @@ the placeholder `e.mattrax.app` to the hostname you control.
 
 Cloud validates these at startup. `ORIGIN` must be the public dashboard origin.
 
-| Secret                           | Required | Purpose                                                          |
-| -------------------------------- | -------- | ---------------------------------------------------------------- |
-| `ORIGIN`                         | Yes      | Canonical public origin used in enrollment profiles and emails.  |
-| `AUTH_SECRET`                    | Yes      | Signs sessions and seals APNs private keys. Back this up.        |
-| `AUTH_RESET_URL`                 | No       | Public URL used in password-reset emails. Defaults to `ORIGIN`.  |
-| `TRUSTED_ORIGINS`                | No       | Extra comma-separated browser origins for split-origin setups.   |
-| `STRIPE_SECRET_KEY`              | Yes      | Stripe API key.                                                  |
-| `STRIPE_WEBHOOK_SECRET`          | Yes      | Stripe webhook verification secret.                              |
-| `STRIPE_DEVICE_MONTHLY_PRICE_ID` | Yes      | Stripe price used for per-device billing.                        |
-| `CLOUD_APPLE_VENDOR_CERT`        | No       | Apple MDM vendor certificate used to sign APNs CSRs.             |
-| `CLOUD_APPLE_VENDOR_KEY`         | No       | Vendor private key paired with the certificate.                  |
+| Secret                           | Required | Purpose                                                         |
+| -------------------------------- | -------- | --------------------------------------------------------------- |
+| `ORIGIN`                         | Yes      | Canonical public origin used in enrollment profiles and emails. |
+| `AUTH_SECRET`                    | Yes      | Signs sessions and seals APNs private keys. Back this up.       |
+| `AUTH_RESET_URL`                 | No       | Public URL used in password-reset emails. Defaults to `ORIGIN`. |
+| `TRUSTED_ORIGINS`                | No       | Extra comma-separated browser origins for split-origin setups.  |
+| `STRIPE_SECRET_KEY`              | Yes      | Stripe API key.                                                 |
+| `STRIPE_WEBHOOK_SECRET`          | Yes      | Stripe webhook verification secret.                             |
+| `STRIPE_DEVICE_MONTHLY_PRICE_ID` | Yes      | Stripe price used for per-device billing.                       |
+| `CLOUD_APPLE_VENDOR_CERT`        | No       | Apple MDM vendor certificate used to sign APNs CSRs.            |
+| `CLOUD_APPLE_VENDOR_KEY`         | No       | Vendor private key paired with the certificate.                 |
 
 ```bash
 cf auth login
@@ -171,13 +171,13 @@ pnpm mserver dev serve \
   --apple-vendor-cert ./certs/apple-vendor.pem
 ```
 
-| Flag                  | Required | Default                 | Purpose                                                        |
-| --------------------- | -------- | ----------------------- | -------------------------------------------------------------- |
-| `--port`              | No       | `3000`                  | HTTP listen port.                                              |
-| `--origin`            | No       | `http://localhost:3000` | Public origin embedded in enrollment and asset URLs.           |
-| `--webhook-url`       | Yes      | —                       | Base URL of your management backend.                           |
+| Flag                  | Required | Default                    | Purpose                                                               |
+| --------------------- | -------- | -------------------------- | --------------------------------------------------------------------- |
+| `--port`              | No       | `3000`                     | HTTP listen port.                                                     |
+| `--origin`            | No       | `http://localhost:3000`    | Public origin embedded in enrollment and asset URLs.                  |
+| `--webhook-url`       | Yes      | —                          | Base URL of your management backend.                                  |
 | `--data-dir`          | No       | `./.data` / `/opt/mattrax` | Filesystem state (SCEP CA). Bundled builds default to `/opt/mattrax`. |
-| `--apple-vendor-cert` | No       | —                       | PEM used to derive the Apple MDM topic for enrollment profiles. |
+| `--apple-vendor-cert` | No       | —                          | PEM used to derive the Apple MDM topic for enrollment profiles.       |
 
 ### Build a standalone binary
 
@@ -259,13 +259,13 @@ Terminate TLS at a reverse proxy or load balancer and forward to port 3000.
 
 ## Ports
 
-| Port | Process                                          |
-| ---- | ------------------------------------------------ |
-| 443  | Public HTTPS (proxy or Cloudflare).              |
-| 3000 | `mttx serve` default listen port.                |
+| Port | Process                                              |
+| ---- | ---------------------------------------------------- |
+| 443  | Public HTTPS (proxy or Cloudflare).                  |
+| 3000 | `mttx serve` default listen port.                    |
 | 9050 | Cloud dashboard and API during local `pnpm web dev`. |
-| 9051 | Example whitelabel Worker during local dev.      |
-| 3306 | MySQL for Cloud.                                 |
+| 9051 | Example whitelabel Worker during local dev.          |
+| 3306 | MySQL for Cloud.                                     |
 
 The gateway does not use the old multi-port layout (9051/9052/9054). It is a single HTTP
 listener that serves Apple MDM, SCEP, assets and health.
@@ -274,11 +274,11 @@ listener that serves Apple MDM, SCEP, assets and health.
 
 Apple MDM push is per tenant and uses the tenant's APNs client certificate.
 
-| Deployment                       | Transport                                                         |
-| -------------------------------- | ----------------------------------------------------------------- |
-| Self-hosted Node / single tenant | `NodePushTransport` — direct delivery with the tenant certificate.  |
-| Single-tenant Worker whitelabel  | `MtlsPushTransport` — a per-certificate Workers mTLS binding.    |
-| Hosted multi-tenant Cloud        | `RelayPushTransport` — HMAC-signed requests to a push relay.      |
+| Deployment                       | Transport                                                          |
+| -------------------------------- | ------------------------------------------------------------------ |
+| Self-hosted Node / single tenant | `NodePushTransport` — direct delivery with the tenant certificate. |
+| Single-tenant Worker whitelabel  | `MtlsPushTransport` — a per-certificate Workers mTLS binding.      |
+| Hosted multi-tenant Cloud        | `RelayPushTransport` — HMAC-signed requests to a push relay.       |
 
 A Cloud Worker cannot select a different client certificate per tenant request, so hosted
 Cloud uses a relay. Set `APNS_RELAY_URL` and `APNS_RELAY_SECRET` on the API Worker to
@@ -324,12 +324,12 @@ sudo systemctl restart mattrax-gateway
 
 ## Backups
 
-| Deployment | Back up                                                                                                        |
-| ---------- | -------------------------------------------------------------------------------------------------------------- |
-| Cloud      | MySQL (tenants, devices, policies, declarations), R2 bucket (policy assets and other objects), Worker secrets. |
-| Cloud      | `AUTH_SECRET`. Losing it invalidates sessions and makes stored APNs private keys undecryptable.                 |
+| Deployment | Back up                                                                                                               |
+| ---------- | --------------------------------------------------------------------------------------------------------------------- |
+| Cloud      | MySQL (tenants, devices, policies, declarations), R2 bucket (policy assets and other objects), Worker secrets.        |
+| Cloud      | `AUTH_SECRET`. Losing it invalidates sessions and makes stored APNs private keys undecryptable.                       |
 | Gateway    | `--data-dir/scep-ca.json` (SCEP CA certificate and private key). Losing it breaks continuity for existing enrolments. |
-| Gateway    | The Apple vendor certificate/key if you supplied one, and your management backend's own data.                   |
+| Gateway    | The Apple vendor certificate/key if you supplied one, and your management backend's own data.                         |
 
 Restore the database and R2 objects before bringing the API Worker back. For the gateway,
 restore `scep-ca.json` with restrictive permissions before restarting.

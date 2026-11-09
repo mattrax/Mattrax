@@ -41,17 +41,17 @@ at the production reset page during local development because the auth library
 refuses non-HTTPS reset links. To run the dev server over HTTPS instead, run
 `pnpm dev:cert` and `DEV_HTTPS=1 pnpm web dev`, then set `ORIGIN=https://localhost:9050`.
 
-| Command            | Description                                        |
-| ------------------ | -------------------------------------------------- |
-| `pnpm test`        | Run the Vitest suites.                             |
-| `pnpm test:e2e`    | Run the Playwright browser tests over CDP.         |
-| `pnpm typecheck`   | Typecheck the workspace.                           |
-| `pnpm format`      | Run formatting and linting through Vite Plus.      |
-| `pnpm doc`         | Start the documentation site locally.              |
-| `pnpm doc:build`   | Build the documentation site.                      |
-| `pnpm web dev`     | Run only the web app (and its API Worker).         |
-| `pnpm api dev`     | Run only the API app.                              |
-| `pnpm mserver dev` | Run only the whitelabel/self-hosted server app.    |
+| Command            | Description                                     |
+| ------------------ | ----------------------------------------------- |
+| `pnpm test`        | Run the Vitest suites.                          |
+| `pnpm test:e2e`    | Run the Playwright browser tests over CDP.      |
+| `pnpm typecheck`   | Typecheck the workspace.                        |
+| `pnpm format`      | Run formatting and linting through Vite Plus.   |
+| `pnpm doc`         | Start the documentation site locally.           |
+| `pnpm doc:build`   | Build the documentation site.                   |
+| `pnpm web dev`     | Run only the web app (and its API Worker).      |
+| `pnpm api dev`     | Run only the API app.                           |
+| `pnpm mserver dev` | Run only the whitelabel/self-hosted server app. |
 
 The browser suite drives a real Chrome via CDP by default. Set
 `E2E_BASE_URL` to test an already-running deployment, or `E2E_CHANNEL=bundled`
@@ -63,20 +63,19 @@ users and tenants, so it is safe to point at a disposable database.
 The repository is split into layers so the hosted product and the whitelabel
 gateway share protocol code without sharing product decisions:
 
-| Layer | Packages / apps |
-| --- | --- |
-| Protocol | `dm-apple`, `dm-windows`, `scep`, `soap`, `plist`, `policy-apple` |
-| Management contract | `management-backend`, `management-backend-http` |
-| Hosted management | `management-backend-enterprise`, `apps/api` |
-| Product contracts | `enterprise-domain`, `platform-api` |
-| Product backends | `enterprise-backend`, `platform-backend` |
-| Data | `enterprise-core` (Drizzle/MySQL, R2, secrets) |
-| Surfaces | `apps/web` (dashboard, landing, docs), `apps/mttx` (self-hosted) |
+| Layer               | Packages / apps                                                   |
+| ------------------- | ----------------------------------------------------------------- |
+| Protocol            | `dm-apple`, `dm-windows`, `scep`, `soap`, `plist`, `policy-apple` |
+| Management contract | `management-backend`, `management-backend-http`                   |
+| Hosted management   | `management-backend-enterprise`, `apps/api`                       |
+| Product contracts   | `enterprise-domain`, `platform-api`                               |
+| Product backends    | `enterprise-backend`, `platform-backend`                          |
+| Data                | `enterprise-core` (Drizzle/MySQL, R2, secrets)                    |
+| Surfaces            | `apps/web` (dashboard, landing, docs), `apps/mttx` (self-hosted)  |
 
 Whitelabel deployments run `apps/mttx`, which imports only the protocol and
 management layers and talks to a customer-owned webhook. They must never import
 `@mattrax/enterprise-*`.
-
 
 ## Cloud
 

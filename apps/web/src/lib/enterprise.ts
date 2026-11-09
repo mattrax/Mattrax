@@ -126,11 +126,8 @@ const enterpriseQueryOptions = <
 
 export const enterprise = {
   me: () => endpoint((api) => api.me({})),
-  updateMe: (payload: {
-    name?: string;
-    image?: string | null;
-    activeTenantId?: string | null;
-  }) => endpoint((api) => api.updateMe({ payload })),
+  updateMe: (payload: { name?: string; image?: string | null; activeTenantId?: string | null }) =>
+    endpoint((api) => api.updateMe({ payload })),
   getEnrollment: (id: RouteParam, code?: string) =>
     endpoint((api) => api.getEnrollment({ params: { id: required(id, "id") }, query: { code } })),
   listTenants: () => endpoint((api) => api.listTenants({})),

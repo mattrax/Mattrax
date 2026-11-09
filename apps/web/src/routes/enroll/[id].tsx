@@ -86,7 +86,8 @@ export default function EnrollPage() {
 
 type Platform = "apple" | "windows" | "android";
 
-const isAvailable = (value: PlatformEnrollment) => value === "available" || (typeof value === "object" && "profile" in value);
+const isAvailable = (value: PlatformEnrollment) =>
+  value === "available" || (typeof value === "object" && "profile" in value);
 
 function EnrollmentOptions(props: {
   id: string | undefined;
@@ -108,24 +109,24 @@ function EnrollmentOptions(props: {
   return (
     <div class="space-y-4">
       <div class="flex justify-center gap-1 rounded-lg bg-stone-100 p-1">
-          <For each={platforms()}>
-            {(platform) => (
-              <TabButton active={active() === platform} onClick={() => setTab(platform)}>
-                {platform === "apple" ? "Apple" : platform === "windows" ? "Windows" : "Android"}
-              </TabButton>
-            )}
-          </For>
+        <For each={platforms()}>
+          {(platform) => (
+            <TabButton active={active() === platform} onClick={() => setTab(platform)}>
+              {platform === "apple" ? "Apple" : platform === "windows" ? "Windows" : "Android"}
+            </TabButton>
+          )}
+        </For>
       </div>
       <Switch>
-          <Match when={active() === "apple"}>
-            <ApplePane apple={props.enrollment.apple} />
-          </Match>
-          <Match when={active() === "windows"}>
-            <AvailabilityPane value={props.enrollment.windows} label="Windows enrollment" />
-          </Match>
-          <Match when={active() === "android"}>
-            <AndroidPane id={props.id} android={props.enrollment.android} />
-          </Match>
+        <Match when={active() === "apple"}>
+          <ApplePane apple={props.enrollment.apple} />
+        </Match>
+        <Match when={active() === "windows"}>
+          <AvailabilityPane value={props.enrollment.windows} label="Windows enrollment" />
+        </Match>
+        <Match when={active() === "android"}>
+          <AndroidPane id={props.id} android={props.enrollment.android} />
+        </Match>
       </Switch>
     </div>
   );

@@ -1,0 +1,1 @@
+ALTER TABLE `invitation` ADD `token_hash` varchar(255);

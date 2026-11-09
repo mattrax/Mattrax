@@ -69,7 +69,9 @@ export const makeApplePush = ({ db, schema, apns, authSecret }: ApplePushOptions
     });
 
   /** Device ids assigned to any of the given groups, including unenrolled ones. */
-  const deviceIdsInGroups = (groupIds: ReadonlyArray<string>): Effect.Effect<Array<string>, unknown> =>
+  const deviceIdsInGroups = (
+    groupIds: ReadonlyArray<string>,
+  ): Effect.Effect<Array<string>, unknown> =>
     Effect.gen(function* () {
       if (groupIds.length === 0) return [];
       const rows = yield* db
@@ -80,16 +82,16 @@ export const makeApplePush = ({ db, schema, apns, authSecret }: ApplePushOptions
     });
 
   /** Device ids affected by any of the given policies, through their groups. */
-  const deviceIdsInPolicies = (policyIds: ReadonlyArray<string>): Effect.Effect<Array<string>, unknown> =>
+  const deviceIdsInPolicies = (
+    policyIds: ReadonlyArray<string>,
+  ): Effect.Effect<Array<string>, unknown> =>
     Effect.gen(function* () {
       if (policyIds.length === 0) return [];
       const associations = yield* db
         .select()
         .from(schema.groupPolicy)
         .where(inArray(schema.groupPolicy.policyId, [...policyIds]));
-      return yield* deviceIdsInGroups(
-        associations.map((row: { groupId: string }) => row.groupId),
-      );
+      return yield* deviceIdsInGroups(associations.map((row: { groupId: string }) => row.groupId));
     });
 
   return { pushAppleDevice, pushAppleDevices, deviceIdsInGroups, deviceIdsInPolicies };

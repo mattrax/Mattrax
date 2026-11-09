@@ -6,12 +6,12 @@ gateway used by whitelabel deployments.
 
 ## Products
 
-| Surface                    | What it is                                                                                                                     | Where it runs                          |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
-| **Mattrax Cloud**          | The hosted Enterprise product: dashboard, REST API, tenant enrollment, Apple MDM and SCEP.                                      | Cloudflare Workers (`apps/api`, `apps/web`) |
-| **Mattrax Enterprise**     | The product layer for tenants, members, devices, groups, policies, billing and API tokens.                                      | `packages/enterprise-*`, served by Cloud |
-| **Mattrax Whitelabel**     | A protocol gateway for building your own MDM product. It terminates Apple MDM and SCEP traffic and calls your management backend. | `apps/mttx` (Node) or a Worker (example) |
-| **Mattrax Platform API**   | Endpoints for platform services such as licensing and MDM root certificates. Currently only a health/status stub.               | `apps/api`                             |
+| Surface                  | What it is                                                                                                                        | Where it runs                               |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **Mattrax Cloud**        | The hosted Enterprise product: dashboard, REST API, tenant enrollment, Apple MDM and SCEP.                                        | Cloudflare Workers (`apps/api`, `apps/web`) |
+| **Mattrax Enterprise**   | The product layer for tenants, members, devices, groups, policies, billing and API tokens.                                        | `packages/enterprise-*`, served by Cloud    |
+| **Mattrax Whitelabel**   | A protocol gateway for building your own MDM product. It terminates Apple MDM and SCEP traffic and calls your management backend. | `apps/mttx` (Node) or a Worker (example)    |
+| **Mattrax Platform API** | Endpoints for platform services such as licensing and MDM root certificates. Currently only a health/status stub.                 | `apps/api`                                  |
 
 ::: warning Whitelabel data-layer separation
 The whitelabel gateway is **not** an Enterprise deployment. It contains no device,
@@ -22,11 +22,11 @@ All product decisions are delegated to the management backend you control. See
 
 ## Supported platforms
 
-| Platform        | Status                                                                                                                                                            |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Apple**       | Supported. Enrollment profile, SCEP identity certificate, MDM check-in, APNs credentials and declarative management (DDM) configuration delivery.                 |
-| **Windows**     | Preview. Discovery, WSTEP certificate issuance and SyncML check-in are implemented in `packages/dm-windows` and exposed by the management webhook contract, but the HTTP routes are not mounted in `apps/api` or `apps/mttx` yet. |
-| **Android**     | Not available. There is no Android device-management backend in this repository. The enrollment toggle is present but does not provide a working enrollment flow.   |
+| Platform    | Status                                                                                                                                                                                                                                    |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Apple**   | Supported. Enrollment profile, SCEP identity certificate, MDM check-in, APNs credentials and declarative management (DDM) configuration delivery.                                                                                         |
+| **Windows** | Preview. Discovery, WSTEP certificate issuance and SyncML check-in are mounted in `apps/api` and `apps/mttx`. Policy/command delivery is the next phase; configure `WINDOWS_ORGANIZATION_ID` so Windows devices land in the right tenant. |
+| **Android** | Not available. There is no Android device-management backend in this repository. The enrollment toggle is present but does not provide a working enrollment flow.                                                                         |
 
 ## How the pieces fit
 
@@ -37,6 +37,7 @@ Cloud dashboard (apps/web)
 Cloud API Worker (apps/api)
         ├── Enterprise API        tenants, devices, groups, policies, billing, tokens
         ├── Apple MDM + SCEP      /mdm/apple/*
+        ├── Windows MDM          /mdm/windows/*
         └── management backend    DB-backed implementation (@mattrax/management-backend-enterprise)
 
 Whitelabel gateway (apps/mttx)

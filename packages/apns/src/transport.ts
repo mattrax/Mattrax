@@ -232,7 +232,9 @@ export function RelayPushTransport(options: RelayPushTransportOptions): ApnsPush
 }
 
 /** Fallback used when no transport is configured (Cloud without a relay). */
-export function NoopPushTransport(reason = "No APNs push transport is configured"): ApnsPushTransport {
+export function NoopPushTransport(
+  reason = "No APNs push transport is configured",
+): ApnsPushTransport {
   return {
     name: "noop",
     available: false,

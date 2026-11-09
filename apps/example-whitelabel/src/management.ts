@@ -182,7 +182,7 @@ export const ManagementBackendD1 = (db: D1Database, apps: R2Bucket) =>
           catch: (cause) => (console.error("[management]", cause), new InternalServerError()),
         }),
 
-      getAppleAsset: (_cert: string | undefined, identifier: string) =>
+      getAppleAsset: (_cert: string | undefined, identifier: string, _token?: string) =>
         Effect.tryPromise({
           try: async () => {
             const obj = await apps.get(identifier);
@@ -195,6 +195,8 @@ export const ManagementBackendD1 = (db: D1Database, apps: R2Bucket) =>
           },
           catch: (cause) => (console.error("[management]", cause), new InternalServerError()),
         }),
+      // Whitelabel deployments serve legacy profiles from their own app layer.
+      getAppleProfile: () => Effect.succeed(null),
       windowsDiscovery: () => Effect.fail(new ManagementNotSupported()),
       getWindowsEnrollmentPolicy: () => Effect.fail(new ManagementNotSupported()),
       windowsEnroll: () => Effect.fail(new ManagementNotSupported()),

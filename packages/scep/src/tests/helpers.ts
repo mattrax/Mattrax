@@ -2,7 +2,7 @@ import { Layer, Effect } from "effect";
 import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
 import { publicEncrypt, constants } from "node:crypto";
-import { ScepRepository, type ScepPkcsReq } from "../repository.js";
+import { ScepRepository, type ScepAuthentication, type ScepPkcsReq } from "../repository.js";
 import { ScepError } from "../schema.js";
 import { pemEncode } from "../crypto.js";
 
@@ -109,17 +109,41 @@ export async function createTestSignerCert(
 export async function buildTestCsr(
   keyPair: CryptoKeyPair,
   cn: string,
+  options: { challengePassword?: string; organizationalUnit?: string; organization?: string } = {},
 ): Promise<pkijs.CertificationRequest> {
   const csr = new pkijs.CertificationRequest();
   csr.version = 0;
-  csr.subject = new pkijs.RelativeDistinguishedNames({
-    typesAndValues: [
+  const typesAndValues = [
+    new pkijs.AttributeTypeAndValue({
+      type: "2.5.4.3",
+      value: new asn1js.Utf8String({ value: cn }),
+    }),
+  ];
+  if (options.organizationalUnit) {
+    typesAndValues.push(
       new pkijs.AttributeTypeAndValue({
-        type: "2.5.4.3",
-        value: new asn1js.Utf8String({ value: cn }),
+        type: "2.5.4.11",
+        value: new asn1js.Utf8String({ value: options.organizationalUnit }),
       }),
-    ],
-  });
+    );
+  }
+  if (options.organization) {
+    typesAndValues.push(
+      new pkijs.AttributeTypeAndValue({
+        type: "2.5.4.10",
+        value: new asn1js.Utf8String({ value: options.organization }),
+      }),
+    );
+  }
+  csr.subject = new pkijs.RelativeDistinguishedNames({ typesAndValues });
+  if (options.challengePassword) {
+    csr.attributes = [
+      new pkijs.Attribute({
+        type: "1.2.840.113549.1.9.7",
+        values: [new asn1js.PrintableString({ value: options.challengePassword })],
+      }),
+    ];
+  }
   await csr.subjectPublicKeyInfo.importKey(keyPair.publicKey);
   await csr.sign(keyPair.privateKey, "SHA-256");
   return csr;
@@ -264,7 +288,7 @@ export function mockScepRepository(
   overrides?: Partial<{
     getCa: () => Effect.Effect<{ certPem: string; privateKeyJwk: JsonWebKey } | null, ScepError>;
     saveCa: (certPem: string, privateKeyJwk: JsonWebKey) => Effect.Effect<void, ScepError>;
-    authenticatePkcsReq: (req: ScepPkcsReq) => Effect.Effect<void, ScepError>;
+    authenticatePkcsReq: (req: ScepPkcsReq) => Effect.Effect<ScepAuthentication | void, ScepError>;
   }>,
 ) {
   return Layer.succeed(

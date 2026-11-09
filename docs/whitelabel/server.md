@@ -36,8 +36,8 @@ backend and persistence differ.
 
 The Node gateway persists only SCEP CA state:
 
-| File                     | Purpose                                                         |
-| ------------------------ | --------------------------------------------------------------- |
+| File                      | Purpose                                                         |
+| ------------------------- | --------------------------------------------------------------- |
 | `<data-dir>/scep-ca.json` | SCEP CA certificate and private key used for device enrollment. |
 
 Treat the data directory as sensitive production state. Back it up before replacing hosts

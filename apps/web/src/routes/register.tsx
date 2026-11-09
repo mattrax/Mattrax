@@ -1,9 +1,10 @@
-import { useNavigate } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [name, setName] = createSignal("");
   const [email, setEmail] = createSignal("");
   const [password, setPassword] = createSignal("");
@@ -37,7 +38,11 @@ export default function RegisterPage() {
       return;
     }
 
-    navigate("/dashboard", { replace: true });
+    const returnTo =
+      searchParams.returnTo && Array.isArray(searchParams.returnTo)
+        ? searchParams.returnTo[0]
+        : searchParams.returnTo;
+    navigate(returnTo ?? "/dashboard", { replace: true });
   };
 
   return (

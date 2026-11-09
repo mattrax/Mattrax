@@ -225,6 +225,121 @@ describe("Management Backend HTTP E2E", () => {
     await dispose();
   });
 
+  it("maps getAppleProfile over the webhook", async () => {
+    const backend = mockManagementBackend({
+      getAppleProfile: (policyId: string, kind: string) =>
+        Effect.succeed({
+          content: new TextEncoder().encode(`${policyId}:${kind}`),
+          contentType: "application/x-apple-aspen-config",
+        }),
+    });
+
+    const { handler, dispose } = await makeHandler(backend);
+    const res = await handler(
+      new Request("http://localhost/webhook/apple/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ policyId: "policy-1", kind: "mttx.apple.device" }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.contentType).toBe("application/x-apple-aspen-config");
+    expect(atob(body.content)).toBe("policy-1:mttx.apple.device");
+    await dispose();
+  });
+
+  it("maps windows discovery over the webhook", async () => {
+    const backend = mockManagementBackend({
+      windowsDiscovery: () =>
+        Effect.succeed({
+          authPolicy: "OnPremise",
+          enrollmentVersion: "4.0",
+          enrollmentPolicyServiceUrl: "https://mdm.test/mdm/windows/policy",
+          enrollmentServiceUrl: "https://mdm.test/mdm/windows/enroll",
+        }),
+    });
+
+    const { handler, dispose } = await makeHandler(backend);
+    const res = await handler(
+      new Request("http://localhost/webhook/windows/discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestVersion: "5.0",
+          deviceType: "CIMClient_Windows",
+          applicationVersion: "10.0",
+          osEdition: 48,
+          authPolicies: ["OnPremise"],
+          mdmOrigin: { url: "https://mdm.test" },
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.authPolicy).toBe("OnPremise");
+    expect(body.enrollmentServiceUrl).toBe("https://mdm.test/mdm/windows/enroll");
+    await dispose();
+  });
+
+  it("maps windows management check-in over the webhook", async () => {
+    const backend = mockManagementBackend({
+      windowsManagementCheckin: () => Effect.succeed({ commands: [] }),
+    });
+
+    const { handler, dispose } = await makeHandler(backend);
+    const res = await handler(
+      new Request("http://localhost/webhook/windows/checkin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: { deviceId: "device-1", mdmOrigin: { url: "https://mdm.test" } },
+          request: {
+            sessionID: "1",
+            msgID: "1",
+            source: "device-1",
+            target: "https://mdm.test",
+            statuses: [],
+            alerts: [],
+          },
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ commands: [] });
+    await dispose();
+  });
+
+  it("propagates unsupported windows management", async () => {
+    const backend = mockManagementBackend({
+      windowsDiscovery: () => Effect.fail(new ManagementNotSupported()),
+    });
+
+    const { handler, dispose } = await makeHandler(backend);
+    const res = await handler(
+      new Request("http://localhost/webhook/windows/discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestVersion: "5.0",
+          deviceType: "CIMClient_Windows",
+          applicationVersion: "10.0",
+          osEdition: 48,
+          authPolicies: ["OnPremise"],
+          mdmOrigin: { url: "https://mdm.test" },
+        }),
+      }),
+    );
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    const body = (await res.json()) as any;
+    expect(body._tag).toBe("ManagementNotSupported");
+    await dispose();
+  });
+
   it("propagates InternalServerError errors", async () => {
     const backend = mockManagementBackend({
       getAppleDeclarationItems: () => Effect.fail(new InternalServerError()),

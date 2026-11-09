@@ -42,9 +42,7 @@ describe("APNs CSR generation", () => {
     expect(plist.PushCertSignature).toBe("");
     expect(typeof plist.PushCertRequestCSR).toBe("string");
 
-    const der = Uint8Array.from(atob(plist.PushCertRequestCSR as string), (c) =>
-      c.charCodeAt(0),
-    );
+    const der = Uint8Array.from(atob(plist.PushCertRequestCSR as string), (c) => c.charCodeAt(0));
     const csr = pkijs.CertificationRequest.fromBER(der.buffer as ArrayBuffer);
     expect(csr.subject.typesAndValues.length).toBeGreaterThan(0);
 

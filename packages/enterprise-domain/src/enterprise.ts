@@ -218,6 +218,14 @@ export const TenantInvitationsResponse = Schema.Struct({
 
 export const PatchTenantUserRequest = Schema.Struct({ role: Schema.String });
 
+export const CreateInvitationResponse = Schema.Struct({
+  id: Schema.String,
+  /** Present when the server can build an invite link (always in this build). */
+  inviteUrl: Schema.optional(NullableString),
+});
+export const AcceptInvitationRequest = Schema.Struct({ token: Schema.String });
+export const AcceptInvitationResponse = Schema.Struct({ tenantId: Schema.String });
+
 export const UpdateMeRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   image: Schema.optional(NullableString),
@@ -359,6 +367,31 @@ export const DownloadPolicyApplicationResponse = Schema.Struct({
 });
 export type DownloadPolicyApplicationResponse = typeof DownloadPolicyApplicationResponse.Type;
 
+export const MobileconfigPayloadPreview = Schema.Struct({
+  type: Schema.String,
+  identifier: Schema.optional(Schema.String),
+  displayName: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
+  /** Friendly category name (for example "Wi-Fi" or "Restrictions"). */
+  category: Schema.optional(Schema.String),
+});
+export type MobileconfigPayloadPreview = typeof MobileconfigPayloadPreview.Type;
+
+export const MobileconfigPreview = Schema.Struct({
+  displayName: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
+  organization: Schema.optional(Schema.String),
+  identifier: Schema.optional(Schema.String),
+  uuid: Schema.optional(Schema.String),
+  type: Schema.optional(Schema.String),
+  /** Compatibility aliases for the dashboard's existing preview component. */
+  payloadDisplayName: Schema.optional(Schema.String),
+  payloadDescription: Schema.optional(Schema.String),
+  payloadOrganization: Schema.optional(Schema.String),
+  payloads: Schema.Array(MobileconfigPayloadPreview),
+});
+export type MobileconfigPreview = typeof MobileconfigPreview.Type;
+
 export const DuplicateRequest = Schema.Struct({ name: Schema.optional(Schema.String) });
 export const IdsRequest = Schema.Array(Schema.String);
 export const IdResponse = Schema.Struct({ id: Schema.String });
@@ -461,6 +494,17 @@ export const CreateApiTokenRequest = Schema.Struct({
 });
 export const CreateApiTokenResponse = Schema.Struct({ token: Schema.String, item: ApiTokenInfo });
 
+export const AccountSessionInfo = Schema.Struct({
+  id: Schema.String,
+  current: Schema.Boolean,
+  createdAt: Schema.String,
+  expiresAt: Schema.String,
+  method: Schema.optional(NullableString),
+});
+export const AccountSessionsResponse = Schema.Struct({
+  sessions: Schema.Array(AccountSessionInfo),
+});
+
 export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   .add(
     HttpApiEndpoint.post("requestEmailChange", "/v1/account/email-change", {
@@ -497,6 +541,19 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("listAccountSessions", "/v1/account/sessions", {
+      error: EnterpriseAuthRequiredErrors,
+      success: AccountSessionsResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("revokeAccountSession", "/v1/account/sessions/:sessionId", {
+      error: EnterpriseAuthRequiredErrors,
+      params: { sessionId: Schema.String },
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
+    }),
+  )
+  .add(
     HttpApiEndpoint.get("me", "/v1/me", {
       error: EnterpriseAuthRequiredErrors,
       success: MeResponse,
@@ -512,7 +569,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   .add(
     HttpApiEndpoint.delete("deleteMe", "/v1/me", {
       error: EnterpriseNoDomainErrors,
-      success: Schema.Struct({ error: Schema.String }),
+      success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )
   .add(
@@ -565,7 +622,19 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
       payload: InviteTenantUserRequest,
-      success: IdResponse,
+      success: CreateInvitationResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("acceptInvitation", "/v1/invitations/accept", {
+      error: [
+        ...EnterpriseAuthRequiredErrors,
+        ...EnterpriseDbErrors,
+        EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
+        EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+      ],
+      payload: AcceptInvitationRequest,
+      success: AcceptInvitationResponse,
     }),
   )
   .add(
@@ -838,9 +907,9 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.post("previewMobileconfig", "/v1/policy/preview-mobileconfig", {
-      error: EnterpriseNoDomainErrors,
+      error: [...EnterpriseNoDomainErrors, EnterpriseBadRequest.pipe(HttpApiSchema.status(400))],
       payload: Schema.Struct({ mobileconfig: Schema.String }),
-      success: JsonRecord,
+      success: MobileconfigPreview,
     }),
   )
   .add(

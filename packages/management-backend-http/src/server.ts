@@ -40,7 +40,18 @@ export const managementWebhookHandlers = (
     .handle("getAppleAsset", ({ payload }) =>
       Effect.gen(function* () {
         const backend = yield* ManagementBackend;
-        return yield* backend.getAppleAsset(payload.identityCertificate, payload.identifier);
+        return yield* backend.getAppleAsset(
+          payload.identityCertificate,
+          payload.identifier,
+          payload.token,
+        );
+      }),
+    )
+    .handle("getAppleProfile", ({ payload }) =>
+      Effect.gen(function* () {
+        const backend = yield* ManagementBackend;
+        if (!backend.getAppleProfile) return null;
+        return yield* backend.getAppleProfile(payload.policyId, payload.kind);
       }),
     )
     .handle("windowsDiscovery", ({ payload }) =>

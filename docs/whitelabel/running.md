@@ -33,11 +33,11 @@ That Worker listens on port `9051` by default.
 
 ## CLI
 
-| Command   | Purpose                                              |
-| --------- | ---------------------------------------------------- |
-| `version` | Prints the package version.                          |
-| `serve`   | Starts the HTTP server.                              |
-| `update`  | Placeholder; prints that it is not implemented yet.  |
+| Command   | Purpose                                             |
+| --------- | --------------------------------------------------- |
+| `version` | Prints the package version.                         |
+| `serve`   | Starts the HTTP server.                             |
+| `update`  | Placeholder; prints that it is not implemented yet. |
 
 `serve` flags:
 

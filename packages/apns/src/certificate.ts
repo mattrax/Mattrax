@@ -95,8 +95,7 @@ export async function validateApnsCertificate(
   options: ValidateApnsCertificateOptions = {},
 ): Promise<ParsedApnsCertificate> {
   const parsed = parseApnsCertificate(pem);
-  if (!isApnsMdmTopic(parsed.topic))
-    throw new Error(`Invalid APNs topic: ${parsed.topic}`);
+  if (!isApnsMdmTopic(parsed.topic)) throw new Error(`Invalid APNs topic: ${parsed.topic}`);
 
   const now = options.now ?? new Date();
   if (parsed.notBefore.getTime() > now.getTime())

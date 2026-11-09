@@ -8,7 +8,10 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@mattrax/enterprise-core": "workspace:*",
+    "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/platform-api": "workspace:*",
+    "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

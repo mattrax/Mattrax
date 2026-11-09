@@ -2,9 +2,7 @@
   "version": "6",
   "dialect": "mysql",
   "id": "69c1919b-7e21-4443-ab5d-2bd04f36d3a5",
-  "prevIds": [
-    "00000000-0000-0000-0000-000000000000"
-  ],
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
   "ddl": [
     {
       "name": "account_api_token",
@@ -2635,153 +2633,111 @@
     {
       "table": "configuration",
       "name": "PRIMARY",
-      "columns": [
-        "kind",
-        "policy_id"
-      ],
+      "columns": ["kind", "policy_id"],
       "entityType": "pks"
     },
     {
       "table": "group_device",
       "name": "PRIMARY",
-      "columns": [
-        "group_id",
-        "device_id"
-      ],
+      "columns": ["group_id", "device_id"],
       "entityType": "pks"
     },
     {
       "table": "group_policy",
       "name": "PRIMARY",
-      "columns": [
-        "group_id",
-        "policy_id"
-      ],
+      "columns": ["group_id", "policy_id"],
       "entityType": "pks"
     },
     {
       "table": "organization_device_usage",
       "name": "PRIMARY",
-      "columns": [
-        "organization_id",
-        "period"
-      ],
+      "columns": ["organization_id", "period"],
       "entityType": "pks"
     },
     {
       "table": "account_api_token",
       "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "entityType": "pks"
     },
     {
       "table": "apple_push_certificate",
       "name": "PRIMARY",
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "entityType": "pks"
     },
     {
       "table": "device",
       "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "entityType": "pks"
     },
     {
       "table": "device_apple",
       "name": "PRIMARY",
-      "columns": [
-        "device_id"
-      ],
+      "columns": ["device_id"],
       "entityType": "pks"
     },
     {
       "table": "enterprise_enrollment",
       "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "entityType": "pks"
     },
     {
       "table": "enterprise_group",
       "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "entityType": "pks"
     },
     {
       "table": "invitation",
       "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "entityType": "pks"
     },
     {
       "table": "member",
       "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "entityType": "pks"
     },
     {
       "table": "organization",
       "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "entityType": "pks"
     },
     {
       "table": "policy",
       "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "entityType": "pks"
     },
     {
       "table": "scep_ca",
       "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "entityType": "pks"
     },
     {
       "table": "subscription",
       "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "entityType": "pks"
     },
     {
       "table": "user",
       "name": "PRIMARY",
-      "columns": [
-        "id"
-      ],
+      "columns": ["id"],
       "entityType": "pks"
     },
     {
       "table": "account_api_token",
       "name": "account_api_token_user_id_user_id_fkey",
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2790,13 +2746,9 @@
     {
       "table": "apple_push_certificate",
       "name": "apple_push_certificate_organization_id_organization_id_fkey",
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2805,13 +2757,9 @@
     {
       "table": "configuration",
       "name": "configuration_policy_id_policy_id_fkey",
-      "columns": [
-        "policy_id"
-      ],
+      "columns": ["policy_id"],
       "tableTo": "policy",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2820,13 +2768,9 @@
     {
       "table": "device",
       "name": "device_organization_id_organization_id_fkey",
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2835,13 +2779,9 @@
     {
       "table": "device_apple",
       "name": "device_apple_device_id_device_id_fkey",
-      "columns": [
-        "device_id"
-      ],
+      "columns": ["device_id"],
       "tableTo": "device",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2850,13 +2790,9 @@
     {
       "table": "enterprise_enrollment",
       "name": "enterprise_enrollment_organization_id_organization_id_fkey",
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2865,13 +2801,9 @@
     {
       "table": "enterprise_group",
       "name": "enterprise_group_organization_id_organization_id_fkey",
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2880,13 +2812,9 @@
     {
       "table": "group_device",
       "name": "group_device_group_id_enterprise_group_id_fkey",
-      "columns": [
-        "group_id"
-      ],
+      "columns": ["group_id"],
       "tableTo": "enterprise_group",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2895,13 +2823,9 @@
     {
       "table": "group_device",
       "name": "group_device_device_id_device_id_fkey",
-      "columns": [
-        "device_id"
-      ],
+      "columns": ["device_id"],
       "tableTo": "device",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2910,13 +2834,9 @@
     {
       "table": "group_policy",
       "name": "group_policy_group_id_enterprise_group_id_fkey",
-      "columns": [
-        "group_id"
-      ],
+      "columns": ["group_id"],
       "tableTo": "enterprise_group",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2925,13 +2845,9 @@
     {
       "table": "group_policy",
       "name": "group_policy_policy_id_policy_id_fkey",
-      "columns": [
-        "policy_id"
-      ],
+      "columns": ["policy_id"],
       "tableTo": "policy",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2940,13 +2856,9 @@
     {
       "table": "invitation",
       "name": "invitation_organization_id_organization_id_fkey",
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2955,13 +2867,9 @@
     {
       "table": "invitation",
       "name": "invitation_inviter_id_user_id_fkey",
-      "columns": [
-        "inviter_id"
-      ],
+      "columns": ["inviter_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2970,13 +2878,9 @@
     {
       "table": "member",
       "name": "member_organization_id_organization_id_fkey",
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -2985,13 +2889,9 @@
     {
       "table": "member",
       "name": "member_user_id_user_id_fkey",
-      "columns": [
-        "user_id"
-      ],
+      "columns": ["user_id"],
       "tableTo": "user",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3000,13 +2900,9 @@
     {
       "table": "organization_device_usage",
       "name": "organization_device_usage_organization_id_organization_id_fkey",
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,
@@ -3015,13 +2911,9 @@
     {
       "table": "policy",
       "name": "policy_organization_id_organization_id_fkey",
-      "columns": [
-        "organization_id"
-      ],
+      "columns": ["organization_id"],
       "tableTo": "organization",
-      "columnsTo": [
-        "id"
-      ],
+      "columnsTo": ["id"],
       "onUpdate": "NO ACTION",
       "onDelete": "CASCADE",
       "nameExplicit": false,

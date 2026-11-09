@@ -276,7 +276,10 @@ export default function Page() {
                 </Button>
               </a>
               <ul class="space-y-3 text-sm text-stone-500">
-                <PricingFeatureItem text="Unlimited devices during alpha" iconClass="text-stone-400" />
+                <PricingFeatureItem
+                  text="Unlimited devices during alpha"
+                  iconClass="text-stone-400"
+                />
                 <PricingFeatureItem text="Core policies" iconClass="text-stone-400" />
                 <PricingFeatureItem text="Email support" iconClass="text-stone-400" />
               </ul>

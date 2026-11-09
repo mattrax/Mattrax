@@ -101,6 +101,13 @@ export function TenantSwitcher() {
           <Plus class="mr-2 size-4" />
           Create tenant
         </DropdownMenuItem>
+        <Show when={switchTenant.error}>
+          <p class="px-3 py-2 text-xs text-red-600">
+            {switchTenant.error instanceof Error
+              ? switchTenant.error.message
+              : "Could not switch tenant"}
+          </p>
+        </Show>
         <Show when={state() === "collapsed"}>
           <DropdownMenuSeparator class="my-1" />
           <p class="px-3 py-1 text-[11px] text-muted-foreground">

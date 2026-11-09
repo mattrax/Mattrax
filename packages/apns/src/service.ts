@@ -52,5 +52,4 @@ export const ApnsServiceRelay = (options: RelayPushTransportOptions) =>
   ApnsServiceLayer(RelayPushTransport(options));
 
 /** Fallback when no push transport is configured. */
-export const ApnsServiceNoop = (reason?: string) =>
-  ApnsServiceLayer(NoopPushTransport(reason));
+export const ApnsServiceNoop = (reason?: string) => ApnsServiceLayer(NoopPushTransport(reason));

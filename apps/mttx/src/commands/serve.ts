@@ -31,6 +31,12 @@ export const serveCommand = Command.make(
       Flag.withDescription("Path to Apple vendor certificate PEM file"),
       Flag.optional,
     ),
+    authSecret: Flag.String("auth-secret").pipe(
+      Flag.withDefault(process.env.MATTRAX_AUTH_SECRET ?? ""),
+      Flag.withDescription(
+        "Shared secret used to verify per-enrollment SCEP challenges and signed profile URLs",
+      ),
+    ),
     rateLimit: Flag.Int("rate-limit").pipe(
       Flag.withDefault(Number(process.env.MATTRAX_RATE_LIMIT ?? 0)),
       Flag.withDescription(
@@ -50,6 +56,7 @@ export const serveCommand = Command.make(
         webhookUrl: config.webhookUrl,
         dataDir: config.dataDir,
         appleVendorCert: Option.getOrUndefined(config.appleVendorCert),
+        authSecret: config.authSecret || undefined,
       });
 
       const fullLayer = appLayer.pipe(

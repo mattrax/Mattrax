@@ -5,7 +5,13 @@ import { ErrorText, Field, PageHeader } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "~/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import {
   enterprise,
   enterpriseKeys,
@@ -145,7 +151,11 @@ export default function GroupDetailPage() {
             <Button variant="outline" onClick={() => dup.mutate()} disabled={dup.isPending}>
               Duplicate
             </Button>
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)} disabled={del.isPending}>
+            <Button
+              variant="destructive"
+              onClick={() => setDeleteOpen(true)}
+              disabled={del.isPending}
+            >
               Delete
             </Button>
           </>

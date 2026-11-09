@@ -86,10 +86,7 @@ export function pemDecode(label: string, pem: string): ArrayBuffer {
 
 const sealKey = async (secret: string): Promise<CryptoKey> => {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
-  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, [
-    "encrypt",
-    "decrypt",
-  ]);
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 };
 
 const bytesToBase64 = (bytes: Uint8Array): string => {

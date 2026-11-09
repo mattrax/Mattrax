@@ -72,12 +72,15 @@ export const ManagementBackendHttp = (baseUrl: string) =>
             client.ManagementWebhook.getAppleDeclaration({ payload: { scope, type, identifier } }),
           ),
 
-        getAppleAsset: (identityCertificate, identifier) =>
+        getAppleAsset: (identityCertificate, identifier, token) =>
           normalize(
             client.ManagementWebhook.getAppleAsset({
-              payload: { identityCertificate, identifier },
+              payload: { identityCertificate, identifier, token },
             }),
           ),
+
+        getAppleProfile: (policyId, kind) =>
+          normalize(client.ManagementWebhook.getAppleProfile({ payload: { policyId, kind } })),
 
         windowsDiscovery: (request) =>
           normalizeNoDevice(client.ManagementWebhook.windowsDiscovery({ payload: request })),

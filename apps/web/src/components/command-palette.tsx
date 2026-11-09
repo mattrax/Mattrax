@@ -2,7 +2,15 @@ import { useLocation, useNavigate, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
-import { Laptop, LayoutDashboard, LinkIcon, Search, Settings, ShieldCheck, UsersRound } from "~/components/ui/icons";
+import {
+  Laptop,
+  LayoutDashboard,
+  LinkIcon,
+  Search,
+  Settings,
+  ShieldCheck,
+  UsersRound,
+} from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
 
@@ -53,12 +61,48 @@ export function CommandPalette() {
   }));
 
   const navigation = createMemo<Item[]>(() => [
-    { id: "nav-dashboard", label: "Dashboard", group: "Navigation", href: "/dashboard", icon: LayoutDashboard },
-    { id: "nav-devices", label: "Devices", group: "Navigation", href: `${base()}/devices`, icon: Laptop },
-    { id: "nav-groups", label: "Groups", group: "Navigation", href: `${base()}/groups`, icon: UsersRound },
-    { id: "nav-policies", label: "Policies", group: "Navigation", href: `${base()}/policies`, icon: ShieldCheck },
-    { id: "nav-enrollment", label: "Enrollment", group: "Navigation", href: `${base()}/settings/enrollment`, icon: LinkIcon },
-    { id: "nav-settings", label: "Tenant settings", group: "Navigation", href: `${base()}/settings`, icon: Settings },
+    {
+      id: "nav-dashboard",
+      label: "Dashboard",
+      group: "Navigation",
+      href: "/dashboard",
+      icon: LayoutDashboard,
+    },
+    {
+      id: "nav-devices",
+      label: "Devices",
+      group: "Navigation",
+      href: `${base()}/devices`,
+      icon: Laptop,
+    },
+    {
+      id: "nav-groups",
+      label: "Groups",
+      group: "Navigation",
+      href: `${base()}/groups`,
+      icon: UsersRound,
+    },
+    {
+      id: "nav-policies",
+      label: "Policies",
+      group: "Navigation",
+      href: `${base()}/policies`,
+      icon: ShieldCheck,
+    },
+    {
+      id: "nav-enrollment",
+      label: "Enrollment",
+      group: "Navigation",
+      href: `${base()}/settings/enrollment`,
+      icon: LinkIcon,
+    },
+    {
+      id: "nav-settings",
+      label: "Tenant settings",
+      group: "Navigation",
+      href: `${base()}/settings`,
+      icon: Settings,
+    },
     { id: "nav-account", label: "Account", group: "Navigation", href: "/account", icon: Settings },
   ]);
 
@@ -97,14 +141,17 @@ export function CommandPalette() {
     if (!term) {
       const recentItems = recents().map((item) => ({
         ...item,
-        icon: (item.group === "Devices" ? Laptop : item.group === "Groups" ? UsersRound : ShieldCheck) as Item["icon"],
+        icon: (item.group === "Devices"
+          ? Laptop
+          : item.group === "Groups"
+            ? UsersRound
+            : ShieldCheck) as Item["icon"],
       }));
       const seen = new Set(recentItems.map((item) => item.id));
       return [...recentItems, ...all.filter((item) => !seen.has(item.id))];
     }
     return all.filter(
-      (item) =>
-        item.label.toLowerCase().includes(term) || item.hint?.toLowerCase().includes(term),
+      (item) => item.label.toLowerCase().includes(term) || item.hint?.toLowerCase().includes(term),
     );
   });
 
@@ -208,7 +255,9 @@ export function CommandPalette() {
           <div class="max-h-[55vh] overflow-auto p-2">
             <Show
               when={items().length > 0}
-              fallback={<p class="px-3 py-6 text-center text-sm text-muted-foreground">No results.</p>}
+              fallback={
+                <p class="px-3 py-6 text-center text-sm text-muted-foreground">No results.</p>
+              }
             >
               <For each={grouped()}>
                 {([group, groupItems]) => (
@@ -226,7 +275,9 @@ export function CommandPalette() {
                           onClick={() => run(item)}
                           class={cn(
                             "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm",
-                            active() === items().indexOf(item) ? "bg-stone-100" : "hover:bg-stone-50",
+                            active() === items().indexOf(item)
+                              ? "bg-stone-100"
+                              : "hover:bg-stone-50",
                           )}
                         >
                           <Show when={item.icon}>

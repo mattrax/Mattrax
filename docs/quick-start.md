@@ -55,12 +55,12 @@ https://your-mattrax-domain/enroll/<enrollment-id>
 If an enrollment password is configured, share it separately. The password is not part
 of the default link.
 
-| Setting            | Effect                                                       |
-| ------------------ | ------------------------------------------------------------ |
-| Enrollment password | Required before the platform options are returned.           |
+| Setting             | Effect                                                                |
+| ------------------- | --------------------------------------------------------------------- |
+| Enrollment password | Required before the platform options are returned.                    |
 | Maximum devices     | Caps enrollments for this tenant. Set a high value for a large fleet. |
-| Apple / Windows     | Enables the platform tab. Windows remains preview-only.      |
-| Ask for asset tag   | Returns an asset-tag flag in the enrollment response.        |
+| Apple / Windows     | Enables the platform tab. Windows remains preview-only.               |
+| Ask for asset tag   | Returns an asset-tag flag in the enrollment response.                 |
 
 Resetting the enrollment link invalidates the old id. Existing devices stay enrolled.
 
@@ -90,11 +90,11 @@ check-in happen sooner.
 ## 4. Windows (preview)
 
 `packages/dm-windows` implements Windows discovery, WSTEP certificate issuance, SyncML
-check-in, and the corresponding management webhook operations. The enrollment page
-currently reports Windows as available, but the Windows HTTP routes are not mounted in
-`apps/api` or `apps/mttx` in this tree. Treat Windows enrollment as **not end-to-end
-functional** until those routes are mounted and the management backend implements the
-Windows webhook methods.
+check-in, and the corresponding management webhook operations. The routes are mounted in
+both `apps/api` and `apps/mttx`, and Cloud signs the WSTEP identity certificate with the
+tenant's device CA. Windows enrollment carries no tenant identity, so set
+`WINDOWS_ORGANIZATION_ID` on the API Worker; otherwise the earliest tenant is used
+deterministically. Policy/command delivery is the next phase.
 
 Intended WSTEP flow once mounted:
 

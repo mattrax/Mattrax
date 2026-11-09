@@ -110,8 +110,8 @@ Completed in this branch:
       per-tenant setup UI.
 - [x] Push transports (Node, Workers mTLS, hosted relay, no-op) and push on
       token update, sync, unenroll and scope changes.
-- [x] Tabbed tenant settings, administrators/invitations, APNs wizard, billing,
-      account profile/tokens/sessions UI.
+- [x] Tabbed tenant settings, administrators/invitations (secure acceptance
+      links), APNs wizard, billing, account profile/tokens/sessions/deletion.
 - [x] Sidebar-first dashboards, tables (search/sort/columns/selection/loading),
       group/policy editors, enrollment page and command palette.
 - [x] Production documentation, testing guide and CI workflow.
@@ -120,7 +120,8 @@ Remaining after this branch:
 
 - [ ] Windows routes mounted in the Cloud and self-hosted apps (the protocol
       package exists, enrollment certificate issuance is next).
-- [ ] Invitation acceptance emails and membership join flow.
-- [ ] Account deletion and passwordless email-code sign-in.
+- [ ] Invitation delivery email (links are generated and can be shared).
+- [ ] Passwordless email-code sign-in.
+- [x] Self-hosted instance product keys, listing, revocation and HMAC verify.
 - [ ] Hosted push relay deployment and whitelabel webhook HMAC signing.
 - [ ] Fleet-derived Apple suite expanded to real device fixtures in CI.

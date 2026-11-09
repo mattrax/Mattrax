@@ -23,7 +23,10 @@
     { "path": "../enterprise-domain" },
     { "path": "../enterprise-core" },
     { "path": "../apns" },
-    { "path": "../crypto" }
+    { "path": "../crypto" },
+    { "path": "../dm-apple" },
+    { "path": "../plist" },
+    { "path": "../scep" }
   ],
   "include": ["src"]
 }

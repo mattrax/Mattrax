@@ -12,10 +12,7 @@ declare module "virtual:solid-ssr-handler" {
    * Renders a page request with the app, or returns the `Response` an authored
    * server entry or `start.middleware` produced.
    */
-  export function handleRequest(
-    request: Request,
-    options?: SolidHandlerOptions,
-  ): Promise<Response>;
+  export function handleRequest(request: Request, options?: SolidHandlerOptions): Promise<Response>;
 
   const handler: { fetch(request: Request): Promise<Response> };
   export default handler;

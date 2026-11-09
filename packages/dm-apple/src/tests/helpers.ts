@@ -11,6 +11,7 @@ export function mockManagementBackend(
     getAppleDeclarationItems: ManagementBackendType["getAppleDeclarationItems"];
     getAppleDeclaration: ManagementBackendType["getAppleDeclaration"];
     getAppleAsset: ManagementBackendType["getAppleAsset"];
+    getAppleProfile: ManagementBackendType["getAppleProfile"];
     windowsDiscovery: ManagementBackendType["windowsDiscovery"];
     getWindowsEnrollmentPolicy: ManagementBackendType["getWindowsEnrollmentPolicy"];
     windowsEnroll: ManagementBackendType["windowsEnroll"];
@@ -44,6 +45,7 @@ export function mockManagementBackend(
           })),
       getAppleDeclaration: overrides?.getAppleDeclaration ?? (() => Effect.succeed({})),
       getAppleAsset: overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
+      getAppleProfile: overrides?.getAppleProfile ?? (() => Effect.succeed(null)),
       windowsDiscovery:
         overrides?.windowsDiscovery ??
         (() => Effect.fail(new Error("Windows management not supported") as never)),

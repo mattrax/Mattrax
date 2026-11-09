@@ -10,19 +10,19 @@ own product on the gateway, see [Whitelabel](../whitelabel/).
 
 ## Core concepts
 
-| Concept       | Meaning                                                                                                          |
-| ------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Tenant        | An organisation boundary. Devices, groups, policies, APNs, members, billing and enrolment belong to a tenant.     |
-| User          | A signed-in person. A user can belong to more than one tenant.                                                   |
-| Member        | The relationship between a user and a tenant. The member role controls access.                                   |
-| Invitation    | A pending email invitation to join a tenant.                                                                     |
-| Enrollment    | Tenant-owned settings controlling which platforms can enrol, the optional password, and the device cap.          |
-| Device        | An enrolled endpoint. Apple is functional; Windows is preview; Android has no backend.                            |
-| Group         | A collection of devices and policies. Policies become effective through group assignment.                        |
-| Policy        | A named management intent containing configurations.                                                             |
-| Configuration | A typed payload inside a policy, stored by `kind`.                                                               |
-| APNs          | The Apple push certificate and MDM topic required for Apple management.                                          |
-| Billing       | The tenant's plan, subscription status, and billable enrolled-device count.                                      |
+| Concept       | Meaning                                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------- |
+| Tenant        | An organisation boundary. Devices, groups, policies, APNs, members, billing and enrolment belong to a tenant. |
+| User          | A signed-in person. A user can belong to more than one tenant.                                                |
+| Member        | The relationship between a user and a tenant. The member role controls access.                                |
+| Invitation    | A pending email invitation to join a tenant.                                                                  |
+| Enrollment    | Tenant-owned settings controlling which platforms can enrol, the optional password, and the device cap.       |
+| Device        | An enrolled endpoint. Apple is functional; Windows is preview; Android has no backend.                        |
+| Group         | A collection of devices and policies. Policies become effective through group assignment.                     |
+| Policy        | A named management intent containing configurations.                                                          |
+| Configuration | A typed payload inside a policy, stored by `kind`.                                                            |
+| APNs          | The Apple push certificate and MDM topic required for Apple management.                                       |
+| Billing       | The tenant's plan, subscription status, and billable enrolled-device count.                                   |
 
 ## Tenancy and roles
 
@@ -50,12 +50,12 @@ Additional rules enforced by the backend:
 Billing is tenant-scoped and backed by Stripe. `GET /api/v1/tenants/:tenantId/billing`
 returns:
 
-| Field             | Meaning                                              |
-| ----------------- | ---------------------------------------------------- |
-| `plan`            | Subscription plan identifier, when present.          |
-| `status`          | Stripe subscription status.                          |
-| `subscriptionId`  | Stripe subscription id.                              |
-| `billableDevices` | Devices currently in the `enrolled` state.           |
+| Field             | Meaning                                     |
+| ----------------- | ------------------------------------------- |
+| `plan`            | Subscription plan identifier, when present. |
+| `status`          | Stripe subscription status.                 |
+| `subscriptionId`  | Stripe subscription id.                     |
+| `billableDevices` | Devices currently in the `enrolled` state.  |
 
 `POST /api/v1/tenants/:tenantId/billing/portal` returns a Stripe billing-portal URL so an
 owner or admin can manage payment details.
@@ -69,10 +69,10 @@ not include billing.
 API tokens are **account-scoped**, not tenant-scoped. A request authenticated with a token
 still goes through the normal tenant-membership checks.
 
-| Operation | Endpoint                              |
-| --------- | ------------------------------------- |
-| List      | `GET /api/v1/account/api-tokens`      |
-| Create    | `POST /api/v1/account/api-tokens`     |
+| Operation | Endpoint                                     |
+| --------- | -------------------------------------------- |
+| List      | `GET /api/v1/account/api-tokens`             |
+| Create    | `POST /api/v1/account/api-tokens`            |
 | Revoke    | `DELETE /api/v1/account/api-tokens/:tokenId` |
 
 Create a token:
@@ -100,18 +100,18 @@ See [API and OpenAPI](./api) for the generated reference and request conventions
 
 A device has a protocol, lifecycle status, inventory fields, and editable operator fields.
 
-| Protocol  | Status                                                                                                  |
-| --------- | ------------------------------------------------------------------------------------------------------- |
-| `apple`   | Supported: enrolment, SCEP, MDM check-in, DDM configurations, APNs.                                     |
-| `win`     | Preview: protocol code and webhook methods exist, HTTP routes are not mounted, Cloud returns unsupported. |
-| `android` | Not implemented. The protocol value exists in the schema but there is no management backend.             |
+| Protocol  | Status                                                                                       |
+| --------- | -------------------------------------------------------------------------------------------- |
+| `apple`   | Supported: enrolment, SCEP, MDM check-in, DDM configurations, APNs.                          |
+| `win`     | Preview: WSTEP enrollment and SyncML check-in; policy management is next.                    |
+| `android` | Not implemented. The protocol value exists in the schema but there is no management backend. |
 
-| Status        | Meaning                                              |
-| ------------- | ---------------------------------------------------- |
-| `enrolling`   | Enrolment started but not complete.                  |
-| `enrolled`    | Actively managed and billable.                       |
-| `unenrolling` | Unenrolment requested.                               |
-| `unenrolled`  | No longer actively managed.                          |
+| Status        | Meaning                             |
+| ------------- | ----------------------------------- |
+| `enrolling`   | Enrolment started but not complete. |
+| `enrolled`    | Actively managed and billable.      |
+| `unenrolling` | Unenrolment requested.              |
+| `unenrolled`  | No longer actively managed.         |
 
 Operators can update `name`, `notes`, and `assetTag`. Unenrolment sets an enrolled device
 to `unenrolling`; the protocol-specific removal is completed by the management layer.
@@ -157,19 +157,19 @@ from every policy assigned to every group it belongs to.
 
 Policy records contain a `configurations` map keyed by configuration kind:
 
-| Kind                             | Purpose                                      |
-| -------------------------------- | -------------------------------------------- |
-| `mttx.apple.device`              | Device restrictions.                         |
-| `mttx.apple.certificate.default` | PEM certificate.                             |
-| `mttx.apple.application.default` | Uploaded installer metadata (storage only).  |
-| `mttx.apple.custom.default`      | Uploaded `.mobileconfig`.                    |
+| Kind                             | Purpose                                     |
+| -------------------------------- | ------------------------------------------- |
+| `mttx.apple.device`              | Device restrictions.                        |
+| `mttx.apple.certificate.default` | PEM certificate.                            |
+| `mttx.apple.application.default` | Uploaded installer metadata (storage only). |
+| `mttx.apple.custom.default`      | Uploaded `.mobileconfig`.                   |
 
 Patch semantics:
 
-| Input                     | Result                                            |
-| ------------------------- | ------------------------------------------------- |
-| `{ "kind": { ... } }`     | Creates or replaces that configuration.           |
-| `{ "kind": null }`        | Deletes that configuration.                       |
+| Input                 | Result                                  |
+| --------------------- | --------------------------------------- |
+| `{ "kind": { ... } }` | Creates or replaces that configuration. |
+| `{ "kind": null }`    | Deletes that configuration.             |
 
 For Apple, configurations are converted into declarative device management declarations
 and delivered at the next check-in. Application uploads are stored and downloadable from
@@ -194,3 +194,18 @@ Remaining limitations:
 - [API and OpenAPI](./api)
 - [Quick start](../quick-start)
 - [Self-hosting](../self-hosting)
+
+## Team and invitations
+
+Owners can invite administrators from **Tenant settings → Administrators**. The
+invite response contains a one-time link (normally delivered by email). The
+recipient must sign in or register with the invited email address before opening
+the link; the link then joins them to the tenant with the chosen role. Invites
+expire after seven days and can be cancelled from the same page.
+
+## Account sessions
+
+**Account → Active sessions** lists every browser session for the signed-in
+account. Other sessions can be revoked individually; revoking the current
+session signs the browser out. Account deletion removes solo tenants owned by the
+account and leaves shared tenants to their remaining administrators.

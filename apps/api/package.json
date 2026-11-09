@@ -18,6 +18,7 @@
     "@effect/sql-mysql2": "catalog:",
     "@mattrax/apns": "workspace:*",
     "@mattrax/dm-apple": "workspace:*",
+    "@mattrax/dm-windows": "workspace:*",
     "@mattrax/effect-stripe": "workspace:*",
     "@mattrax/enterprise-backend": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",

@@ -23,11 +23,13 @@ export default function AdministratorsSettingsPage() {
   }));
   const [email, setEmail] = createSignal("");
   const [role, setRole] = createSignal("member");
+  const [inviteUrl, setInviteUrl] = createSignal<string | null>(null);
 
   const invite = useMutation(() => ({
     mutationFn: () => enterprise.inviteUser(params.tenantId, { email: email(), role: role() }),
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       setEmail("");
+      setInviteUrl(result.inviteUrl ?? null);
       await qc.invalidateQueries({ queryKey: enterpriseKeys.invitations(params.tenantId) });
     },
   }));
@@ -86,9 +88,24 @@ export default function AdministratorsSettingsPage() {
             <Button disabled={invite.isPending}>Send invitation</Button>
           </form>
           <ErrorText error={invite.error} />
+          <Show when={inviteUrl()}>
+            <div class="mt-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+              <p class="font-medium">Share this invitation link with the new administrator</p>
+              <code class="mt-2 block break-all rounded bg-white p-2 text-xs">{inviteUrl()}</code>
+              <Button
+                size="sm"
+                class="mt-2"
+                variant="outline"
+                onClick={() => navigator.clipboard.writeText(inviteUrl()!)}
+              >
+                Copy link
+              </Button>
+            </div>
+          </Show>
           <p class="mt-3 text-xs text-muted-foreground">
-            Invitations expire after 7 days. Administrators can manage devices and policies; owners
-            can also manage billing and the team.
+            Invitations expire after 7 days. The recipient must sign in with the invited email
+            address. Administrators can manage devices and policies; owners can also manage billing
+            and the team.
           </p>
         </CardContent>
       </Card>

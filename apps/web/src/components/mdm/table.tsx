@@ -50,7 +50,9 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const [selected, setSelected] = createSignal<Record<string, true>>({});
   const [search, setSearch] = createSignal("");
   const [sort, setSort] = createSignal<SortState>(null);
-  const [hidden, setHidden] = createSignal<Record<string, boolean>>(readVisibility(props.storageKey));
+  const [hidden, setHidden] = createSignal<Record<string, boolean>>(
+    readVisibility(props.storageKey),
+  );
   let searchInput: HTMLInputElement | undefined;
 
   // Cmd/Ctrl+F focuses the table search, matching the production UI.
@@ -106,11 +108,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     );
   const toggleSort = (id: string) =>
     setSort((value) =>
-      value?.id !== id
-        ? { id, dir: "asc" }
-        : value.dir === "asc"
-          ? { id, dir: "desc" }
-          : null,
+      value?.id !== id ? { id, dir: "asc" } : value.dir === "asc" ? { id, dir: "desc" } : null,
     );
   const toggleRow = (row: T, checked: boolean) => {
     setSelected((value) => {
@@ -195,7 +193,10 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
           </div>
         </div>
       </Show>
-      <Show when={!props.loading && rows().length > 0} fallback={!props.loading ? props.empty : undefined}>
+      <Show
+        when={!props.loading && rows().length > 0}
+        fallback={!props.loading ? props.empty : undefined}
+      >
         <div class="overflow-hidden rounded-xl border bg-card">
           <table class="w-full text-sm">
             <thead class="bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -213,10 +214,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                     <th class={cn("px-4 py-3", col.class)}>
                       <button
                         type="button"
-                        class={cn(
-                          "uppercase tracking-wide",
-                          col.sort && "hover:text-stone-900",
-                        )}
+                        class={cn("uppercase tracking-wide", col.sort && "hover:text-stone-900")}
                         onClick={() => col.sort && toggleSort(col.id)}
                       >
                         {col.header}

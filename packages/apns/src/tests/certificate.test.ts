@@ -21,9 +21,7 @@ describe("APNs certificate parsing", () => {
     const parsed = parseApnsCertificate(pem);
     expect(parsed.topic).toBe("com.apple.mgmt.External.abc123");
     expect(parsed.commonName).toBe("Acme MDM");
-    expect(Math.floor(parsed.notAfter.getTime() / 1000)).toBe(
-      Math.floor(expires.getTime() / 1000),
-    );
+    expect(Math.floor(parsed.notAfter.getTime() / 1000)).toBe(Math.floor(expires.getTime() / 1000));
   });
 
   it("accepts only MDM-shaped topics", () => {

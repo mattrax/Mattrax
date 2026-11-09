@@ -55,8 +55,8 @@ export default function BillingSettingsPage() {
           <CardTitle>Usage</CardTitle>
         </CardHeader>
         <CardContent class="text-sm text-muted-foreground">
-          Billing is based on enrolled devices. Devices that check out stop counting toward the
-          next billing period. Usage reporting and invoices are managed in Stripe.
+          Billing is based on enrolled devices. Devices that check out stop counting toward the next
+          billing period. Usage reporting and invoices are managed in Stripe.
         </CardContent>
       </Card>
     </div>

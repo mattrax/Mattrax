@@ -6,7 +6,13 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
-import { CircleAlert, CheckCircle2, Download, Smartphone, MonitorSmartphone } from "~/components/ui/icons";
+import {
+  CircleAlert,
+  CheckCircle2,
+  Download,
+  Smartphone,
+  MonitorSmartphone,
+} from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { selectFile } from "~/lib/upload-file";
 

@@ -79,7 +79,7 @@ export const ScepService = Layer.effect(
         const req = yield* parseScepPkcsReq(message, ca.caCert, ca.privateKeyJwk);
 
         // Allow repository to authenticate/validate the incoming request before issuance.
-        yield* repo.authenticatePkcsReq(req);
+        const authentication = yield* repo.authenticatePkcsReq(req);
 
         const notBefore = new Date();
         const notAfter = new Date(notBefore.getTime() + 365 * 24 * 60 * 60 * 1000);
@@ -100,6 +100,19 @@ export const ScepService = Layer.effect(
         }
         if (!subject.some((item) => item.type === "2.5.4.3"))
           subject.push({ type: "2.5.4.3", value: "device" });
+        // Pin the certificate to the authenticated tenant. This mirrors mttx's
+        // SCEP challenge middleware, which overwrites the CSR subject OU with the
+        // tenant id resolved from the challenge.
+        const organizationalUnit =
+          authentication && typeof authentication === "object"
+            ? authentication.organizationalUnit
+            : undefined;
+        if (organizationalUnit) {
+          const filtered = subject.filter((item) => item.type !== "2.5.4.11");
+          filtered.push({ type: "2.5.4.11", value: organizationalUnit });
+          subject.length = 0;
+          subject.push(...filtered);
+        }
 
         const deviceCert = yield* Effect.tryPromise({
           try: () =>

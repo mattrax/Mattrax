@@ -21,27 +21,27 @@ include `/webhook` yourself.
 
 ## Configuration checklist
 
-| Setting               | Production guidance                                                                          |
-| --------------------- | -------------------------------------------------------------------------------------------- |
-| `--origin`            | Public HTTPS origin devices can reach. Required for correct profile and asset URLs.          |
-| `--webhook-url`       | Base URL of your management backend, reachable only by the gateway.                          |
-| `--data-dir`          | Persistent, backed-up directory or volume. Bundled builds default to `/opt/mattrax`.         |
-| `--apple-vendor-cert` | Apple MDM vendor certificate PEM, so profiles use the correct topic.                         |
-| TLS                   | Terminate HTTPS at a load balancer, reverse proxy, or hosting platform.                      |
-| Supervisor            | Restart the process automatically; `serve` exits after 24 hours.                             |
-| Webhook security      | Require mTLS or a shared bearer token at your proxy; the gateway does not sign requests.     |
+| Setting               | Production guidance                                                                      |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| `--origin`            | Public HTTPS origin devices can reach. Required for correct profile and asset URLs.      |
+| `--webhook-url`       | Base URL of your management backend, reachable only by the gateway.                      |
+| `--data-dir`          | Persistent, backed-up directory or volume. Bundled builds default to `/opt/mattrax`.     |
+| `--apple-vendor-cert` | Apple MDM vendor certificate PEM, so profiles use the correct topic.                     |
+| TLS                   | Terminate HTTPS at a load balancer, reverse proxy, or hosting platform.                  |
+| Supervisor            | Restart the process automatically; `serve` exits after 24 hours.                         |
+| Webhook security      | Require mTLS or a shared bearer token at your proxy; the gateway does not sign requests. |
 
 ## Persistent data
 
 The gateway stores SCEP CA material in `scep-ca.json` under `--data-dir`. It contains
 private key material.
 
-| Requirement                     | Reason                                                    |
-| ------------------------------- | --------------------------------------------------------- |
-| Restrict filesystem permissions | Prevent access to SCEP private key material.              |
-| Back up the data directory      | Preserve enrollment continuity across host replacement.   |
-| Mount persistent storage        | Avoid regenerating CA state on every deploy.              |
-| Exclude from source control     | Prevent accidental key disclosure.                        |
+| Requirement                     | Reason                                                  |
+| ------------------------------- | ------------------------------------------------------- |
+| Restrict filesystem permissions | Prevent access to SCEP private key material.            |
+| Back up the data directory      | Preserve enrollment continuity across host replacement. |
+| Mount persistent storage        | Avoid regenerating CA state on every deploy.            |
+| Exclude from source control     | Prevent accidental key disclosure.                      |
 
 The gateway has no device database. Back up your management backend separately; it owns
 all inventory, policy, command, and push state.

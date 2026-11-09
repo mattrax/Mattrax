@@ -44,6 +44,9 @@
       "path": "../../packages/dm-apple"
     },
     {
+      "path": "../../packages/dm-windows"
+    },
+    {
       "path": "../../packages/management-backend"
     },
     {

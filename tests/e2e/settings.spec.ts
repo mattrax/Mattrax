@@ -19,7 +19,7 @@ test.describe("tenant settings", () => {
       await expect(page.getByText(text).first()).toBeVisible();
     }
 
-    const name = page.locator('input').first();
+    const name = page.locator("input").first();
     await name.fill("Renamed Tenant");
     await page.getByRole("button", { name: /save changes/i }).click();
     await expect(name).toHaveValue("Renamed Tenant");

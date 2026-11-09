@@ -30,6 +30,8 @@ const SCEP_PKI_STATUS = "2.16.840.1.113733.1.9.3";
 const SCEP_SENDER_NONCE = "2.16.840.1.113733.1.9.5";
 const SCEP_RECIPIENT_NONCE = "2.16.840.1.113733.1.9.6";
 const SCEP_TRANSACTION_ID = "2.16.840.1.113733.1.9.7";
+// PKCS#9 challengePassword, carried in the CSR attributes (not signedAttrs).
+const PKCS9_CHALLENGE_PASSWORD = "1.2.840.113549.1.9.7";
 
 // Content encryption algorithms
 const AES_128_CBC_OID = "2.16.840.1.101.3.4.1.2";
@@ -450,6 +452,7 @@ interface ScepRequest {
   senderNonce: ArrayBuffer;
   // Certificates from the PKCSReq SignedData — used to encrypt the CertRep for the device
   signerCerts: pkijs.Certificate[];
+  challengePassword?: string;
 }
 
 // ASN.1 universal tag numbers (avoid instanceof across bundle boundaries)
@@ -509,6 +512,26 @@ function getOctetStringValue(node: any): ArrayBuffer {
     if (hex) return hex.slice(0);
   }
   return new ArrayBuffer(0);
+}
+
+function extractChallengePassword(csr: pkijs.CertificationRequest): string | undefined {
+  const attributes = (csr as unknown as { attributes?: Array<{ type: string; values?: any[] }> })
+    .attributes;
+  if (!Array.isArray(attributes)) return undefined;
+  for (const attribute of attributes) {
+    if (attribute.type !== PKCS9_CHALLENGE_PASSWORD) continue;
+    const value = attribute.values?.[0];
+    if (!value) continue;
+    // PrintableString and UTF8String are the common encodings. Some clients
+    // wrap the password in an OCTET STRING.
+    if (isUniversalTag(value, TAG_OCTET_STRING)) {
+      const bytes = getOctetStringValue(value);
+      return new TextDecoder().decode(bytes);
+    }
+    const text = getStringValue(value);
+    if (text) return text;
+  }
+  return undefined;
 }
 
 function parseCsr(bytes: ArrayBuffer): pkijs.CertificationRequest {
@@ -619,7 +642,13 @@ export function parseScepPkcsReq(
 
       try {
         const csr = parseCsr(csrBytes);
-        return { csr, transactionId, senderNonce, signerCerts };
+        return {
+          csr,
+          transactionId,
+          senderNonce,
+          signerCerts,
+          challengePassword: extractChallengePassword(csr),
+        };
       } catch (csrErr: any) {
         throw new Error(
           `Failed to parse CSR (isEnveloped=${isEnveloped}, csrBytes.length=${csrBytes.byteLength}): ${csrErr.message ?? String(csrErr)}`,
@@ -692,7 +721,7 @@ export async function createDeviceCertificate(
   publicKey: CryptoKey,
   caCert: pkijs.Certificate,
   caPrivateKey: CryptoKey,
-  validity: { notBefore: Date; notAfter: Date },
+  validity: { notBefore: Date; notAfter: Date; extensions?: pkijs.Extension[] },
 ): Promise<pkijs.Certificate> {
   const cert = new pkijs.Certificate();
   cert.version = 2;
@@ -735,6 +764,7 @@ export async function createDeviceCertificate(
       extnValue: new pkijs.BasicConstraints({ cA: false }).toSchema().toBER(false),
       parsedValue: new pkijs.BasicConstraints({ cA: false }),
     }),
+    ...(validity.extensions ?? []),
   ];
 
   await cert.subjectPublicKeyInfo.importKey(publicKey);

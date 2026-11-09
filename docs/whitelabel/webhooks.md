@@ -36,19 +36,19 @@ docs describe the current contract, not a planned security model.
 
 ## Endpoints
 
-| Method | Path                                 | Purpose                                                            |
-| ------ | ------------------------------------ | ------------------------------------------------------------------ |
-| `POST` | `/webhook/apple/event`               | Apple lifecycle and status events.                                 |
-| `POST` | `/webhook/apple/checkin`             | Next management action for a device check-in.                      |
-| `POST` | `/webhook/apple/declaration-tokens`  | Declarative management tokens.                                     |
-| `POST` | `/webhook/apple/declaration-items`   | Declarative item identifiers and server tokens.                    |
-| `POST` | `/webhook/apple/declaration`         | One declarative declaration.                                       |
-| `POST` | `/webhook/apple/asset`               | One asset by identifier.                                           |
-| `POST` | `/webhook/windows/discovery`         | Windows discovery response (preview contract).                     |
-| `POST` | `/webhook/windows/policy`            | Windows enrollment policy (preview contract).                      |
-| `POST` | `/webhook/windows/enroll`            | Windows WSTEP enrollment (preview contract).                       |
-| `POST` | `/webhook/windows/checkin`           | Windows SyncML management (preview contract).                      |
-| `POST` | `/webhook/windows/event`             | Windows lifecycle events (preview contract).                       |
+| Method | Path                                | Purpose                                         |
+| ------ | ----------------------------------- | ----------------------------------------------- |
+| `POST` | `/webhook/apple/event`              | Apple lifecycle and status events.              |
+| `POST` | `/webhook/apple/checkin`            | Next management action for a device check-in.   |
+| `POST` | `/webhook/apple/declaration-tokens` | Declarative management tokens.                  |
+| `POST` | `/webhook/apple/declaration-items`  | Declarative item identifiers and server tokens. |
+| `POST` | `/webhook/apple/declaration`        | One declarative declaration.                    |
+| `POST` | `/webhook/apple/asset`              | One asset by identifier.                        |
+| `POST` | `/webhook/windows/discovery`        | Windows discovery response (preview contract).  |
+| `POST` | `/webhook/windows/policy`           | Windows enrollment policy (preview contract).   |
+| `POST` | `/webhook/windows/enroll`           | Windows WSTEP enrollment (preview contract).    |
+| `POST` | `/webhook/windows/checkin`          | Windows SyncML management (preview contract).   |
+| `POST` | `/webhook/windows/event`            | Windows lifecycle events (preview contract).    |
 
 The Windows methods are defined and typed, but the gateway does not expose Windows device
 routes yet. Implementing them in your backend is not enough to enrol a Windows device in
@@ -121,13 +121,13 @@ Windows scope uses `deviceId` instead of `udid`:
 }
 ```
 
-| Tag                 | Fields                                                                 | Meaning                                                    |
-| ------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `Authenticate`      | `serialNumber?`, `model?`, `osVersion?`                                | Enrollment authentication data.                            |
-| `TokenUpdate`       | `pushToken`, `pushMagic`, `topic`, `channel` (`device` or `user`)      | Push credentials. Store these if you push.                 |
-| `CheckOut`          | —                                                                      | Device unenrolled.                                         |
-| `CommandResult`     | `commandUUID`, `status`, `errorDetail?`, `queryResponses?`             | Result for a previously issued imperative command.         |
-| `DeclarationStatus` | `statusItems?`, `errors?`                                              | Declarative management status report.                      |
+| Tag                 | Fields                                                            | Meaning                                            |
+| ------------------- | ----------------------------------------------------------------- | -------------------------------------------------- |
+| `Authenticate`      | `serialNumber?`, `model?`, `osVersion?`                           | Enrollment authentication data.                    |
+| `TokenUpdate`       | `pushToken`, `pushMagic`, `topic`, `channel` (`device` or `user`) | Push credentials. Store these if you push.         |
+| `CheckOut`          | —                                                                 | Device unenrolled.                                 |
+| `CommandResult`     | `commandUUID`, `status`, `errorDetail?`, `queryResponses?`        | Result for a previously issued imperative command. |
+| `DeclarationStatus` | `statusItems?`, `errors?`                                         | Declarative management status report.              |
 
 `pushToken` is hex-encoded by the gateway before it is sent to your backend.
 
@@ -221,13 +221,13 @@ The gateway decodes `content` and serves the bytes from
 
 ## Windows contract (preview)
 
-| Endpoint                | Request                                                                                  | Response                                                                                       |
-| ----------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Endpoint                     | Request                                                                                                         | Response                                                                                                   |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `/webhook/windows/discovery` | `emailAddress?`, `requestVersion`, `deviceType`, `applicationVersion`, `osEdition`, `authPolicies`, `mdmOrigin` | `authPolicy`, `enrollmentVersion`, `enrollmentPolicyServiceUrl`, `enrollmentServiceUrl`, `authServiceUrl?` |
-| `/webhook/windows/policy`    | `authToken`                                                                            | `minimalKeyLength`, `certificateValidityPeriodSeconds`, `renewalPeriodSeconds`, `authToken`    |
-| `/webhook/windows/enroll`    | `authToken`, `csr`, `deviceId?`, `deviceName?`, `enrollmentType?`, `context`, `mdmOrigin` | `deviceId`, `signedCertificate`, `identityCertificate`, `username`, `secret`, `providerId`     |
-| `/webhook/windows/checkin`  | `scope`, `request` (`sessionID`, `msgID`, `source`, `target`, `statuses`, `alerts`)        | `commands`: array of `kind`, `cmdID`, `locURI?`, `data?`, `format?`                             |
-| `/webhook/windows/event`    | `scope`, `event` (`Enrolled`, `ManagementCheckin`, `CommandResult`)                       | Empty on success                                                                               |
+| `/webhook/windows/policy`    | `authToken`                                                                                                     | `minimalKeyLength`, `certificateValidityPeriodSeconds`, `renewalPeriodSeconds`, `authToken`                |
+| `/webhook/windows/enroll`    | `authToken`, `csr`, `deviceId?`, `deviceName?`, `enrollmentType?`, `context`, `mdmOrigin`                       | `deviceId`, `signedCertificate`, `identityCertificate`, `username`, `secret`, `providerId`                 |
+| `/webhook/windows/checkin`   | `scope`, `request` (`sessionID`, `msgID`, `source`, `target`, `statuses`, `alerts`)                             | `commands`: array of `kind`, `cmdID`, `locURI?`, `data?`, `format?`                                        |
+| `/webhook/windows/event`     | `scope`, `event` (`Enrolled`, `ManagementCheckin`, `CommandResult`)                                             | Empty on success                                                                                           |
 
 The current Cloud management backend answers all Windows methods with
 `ManagementNotSupported`.
@@ -236,12 +236,12 @@ The current Cloud management backend answers all Windows methods with
 
 Webhook endpoints may return typed errors understood by the gateway:
 
-| Error                         | Meaning                                                   |
-| ----------------------------- | --------------------------------------------------------- |
-| `ManagementNotSupported`      | The requested management feature is not supported.        |
-| `UnknownDevice`               | The device or user is unknown to your backend.            |
-| `ServerInitiatedUnenrollment` | Unenroll the device during check-in.                      |
-| `InternalServerError`         | Generic backend failure.                                  |
+| Error                         | Meaning                                            |
+| ----------------------------- | -------------------------------------------------- |
+| `ManagementNotSupported`      | The requested management feature is not supported. |
+| `UnknownDevice`               | The device or user is unknown to your backend.     |
+| `ServerInitiatedUnenrollment` | Unenroll the device during check-in.               |
+| `InternalServerError`         | Generic backend failure.                           |
 
 The HTTP client maps these tags into gateway protocol behaviour. Unknown or malformed
 responses are treated as internal errors.

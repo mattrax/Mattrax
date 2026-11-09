@@ -109,6 +109,9 @@ importers:
       '@mattrax/dm-apple':
         specifier: workspace:*
         version: link:../../packages/dm-apple
+      '@mattrax/dm-windows':
+        specifier: workspace:*
+        version: link:../../packages/dm-windows
       '@mattrax/effect-stripe':
         specifier: workspace:*
         version: link:../../packages/effect-stripe
@@ -252,6 +255,9 @@ importers:
       '@mattrax/dm-apple':
         specifier: workspace:*
         version: link:../../packages/dm-apple
+      '@mattrax/dm-windows':
+        specifier: workspace:*
+        version: link:../../packages/dm-windows
       '@mattrax/enterprise-core':
         specifier: workspace:*
         version: link:../../packages/enterprise-core
@@ -407,9 +413,6 @@ importers:
       '@mattrax/crypto':
         specifier: workspace:*
         version: link:../crypto
-      '@mattrax/enterprise-core':
-        specifier: workspace:*
-        version: link:../enterprise-core
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../management-backend
@@ -490,6 +493,9 @@ importers:
       '@yielded/auth-platform-workerd':
         specifier: 'catalog:'
         version: 0.1.0-beta.47(effect@4.1.2)
+      asn1js:
+        specifier: 'catalog:'
+        version: 4.0.0
       drizzle-orm:
         specifier: 'catalog:'
         version: 1.0.0-rc.5(@effect/sql-mysql2@4.1.2(@types/node@26.6.6)(effect@4.1.2))(@effect/sql-pg@4.1.2(effect@4.1.2))(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.9.0)(effect@4.1.2)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1)(valibot@1.4.0(typescript@7.0.2))(zod@4.6.7)
@@ -499,16 +505,13 @@ importers:
       mysql2:
         specifier: 'catalog:'
         version: 3.24.6(@types/node@26.6.6)
+      pkijs:
+        specifier: 'catalog:'
+        version: 4.0.1(asn1js@4.0.0)
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.6
-      asn1js:
-        specifier: 'catalog:'
-        version: 4.0.0
-      pkijs:
-        specifier: 'catalog:'
-        version: 4.0.1(asn1js@4.0.0)
 
   packages/enterprise-core:
     dependencies:
@@ -566,12 +569,18 @@ importers:
       '@mattrax/crypto':
         specifier: workspace:*
         version: link:../crypto
+      '@mattrax/dm-apple':
+        specifier: workspace:*
+        version: link:../dm-apple
       '@mattrax/enterprise-core':
         specifier: workspace:*
         version: link:../enterprise-core
       '@mattrax/management-backend':
         specifier: workspace:*
         version: link:../management-backend
+      '@mattrax/plist':
+        specifier: workspace:*
+        version: link:../plist
       '@mattrax/scep':
         specifier: workspace:*
         version: link:../scep
@@ -585,6 +594,12 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.6.6
+      asn1js:
+        specifier: 'catalog:'
+        version: 4.0.0
+      pkijs:
+        specifier: 'catalog:'
+        version: 4.0.1(asn1js@4.0.0)
 
   packages/management-backend-http:
     dependencies:
@@ -611,9 +626,18 @@ importers:
 
   packages/platform-backend:
     dependencies:
+      '@mattrax/enterprise-core':
+        specifier: workspace:*
+        version: link:../enterprise-core
+      '@mattrax/enterprise-domain':
+        specifier: workspace:*
+        version: link:../enterprise-domain
       '@mattrax/platform-api':
         specifier: workspace:*
         version: link:../platform-api
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 1.0.0-rc.5(@effect/sql-mysql2@4.1.2(@types/node@26.6.6)(effect@4.1.2))(@effect/sql-pg@4.1.2(effect@4.1.2))(@types/better-sqlite3@7.6.13)(@types/pg@8.23.1)(better-sqlite3@12.9.0)(effect@4.1.2)(mysql2@3.24.6(@types/node@26.6.6))(pg@8.23.1)(valibot@1.4.0(typescript@7.0.2))(zod@4.6.7)
       effect:
         specifier: 'catalog:'
         version: 4.1.2

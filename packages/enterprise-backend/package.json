@@ -19,13 +19,13 @@
     "@mattrax/plist": "workspace:*",
     "@yielded/auth": "catalog:",
     "@yielded/auth-platform-workerd": "catalog:",
+    "asn1js": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
-    "mysql2": "catalog:"
+    "mysql2": "catalog:",
+    "pkijs": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "catalog:",
-    "asn1js": "catalog:",
-    "pkijs": "catalog:"
+    "@types/node": "catalog:"
   }
 }

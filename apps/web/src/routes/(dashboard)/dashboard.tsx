@@ -26,10 +26,7 @@ export default function DashboardPage() {
       when={tenant()}
       fallback={
         <div class="flex flex-1 flex-col gap-6 p-6">
-          <PageHeader
-            title="Dashboard"
-            description="Create a tenant to start managing devices."
-          />
+          <PageHeader title="Dashboard" description="Create a tenant to start managing devices." />
           <Show when={me.isSuccess}>
             <EmptyState
               title="No tenant yet"
@@ -45,7 +42,13 @@ export default function DashboardPage() {
         </div>
       }
     >
-      {(active) => <DashboardContent tenantId={active().id} tenantName={active().name} tenantSlug={active().slug} />}
+      {(active) => (
+        <DashboardContent
+          tenantId={active().id}
+          tenantName={active().name}
+          tenantSlug={active().slug}
+        />
+      )}
     </Show>
   );
 }
@@ -100,7 +103,10 @@ function DashboardContent(props: { tenantId: string; tenantName: string; tenantS
         title={props.tenantName}
         description={`Overview for the ${props.tenantSlug} tenant.`}
         actions={
-          <Button variant="outline" onClick={() => navigate(`/t/${props.tenantId}/settings/enrollment`)}>
+          <Button
+            variant="outline"
+            onClick={() => navigate(`/t/${props.tenantId}/settings/enrollment`)}
+          >
             <LinkIcon class="size-4" />
             Enroll a device
           </Button>

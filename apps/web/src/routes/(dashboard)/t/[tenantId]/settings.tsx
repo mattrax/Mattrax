@@ -57,9 +57,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
           </For>
         </nav>
       </div>
-      <div class="flex-1 p-6">
-        {props.children}
-      </div>
+      <div class="flex-1 p-6">{props.children}</div>
     </div>
   );
 }

@@ -2,16 +2,8 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
-import {
-  exportPrivateKeyJwk,
-  generateCaKeyPair,
-  pemEncode,
-  sealSecret,
-} from "@mattrax/crypto";
-import {
-  generateApnsKeyPair,
-  makeApnsService,
-} from "@mattrax/apns";
+import { exportPrivateKeyJwk, generateCaKeyPair, pemEncode, sealSecret } from "@mattrax/crypto";
+import { generateApnsKeyPair, makeApnsService } from "@mattrax/apns";
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
@@ -563,7 +555,13 @@ describe("enterprise service policy flow", () => {
       service.patchPolicy(request(headers), tenant.id, policy.id, {
         name: "Baseline v2",
         notes: "Updated",
-        configurations: { passcode: { minLength: 8 }, wifi: { ssid: "Corp" } },
+        configurations: {
+          "mttx.apple.device": { camera: false },
+          "mttx.apple.declaration.files": {
+            kind: "com.apple.configuration.services.configuration-files",
+            configuration: { ServiceType: "com.apple.servicemanagement" },
+          },
+        },
       }),
     );
 
@@ -574,8 +572,15 @@ describe("enterprise service policy flow", () => {
       notes: "Updated",
     });
     expect(db.store.configuration).toMatchObject([
-      { policyId: policy.id, kind: "passcode", data: { minLength: 8 } },
-      { policyId: policy.id, kind: "wifi", data: { ssid: "Corp" } },
+      { policyId: policy.id, kind: "mttx.apple.device", data: { camera: false } },
+      {
+        policyId: policy.id,
+        kind: "mttx.apple.declaration.files",
+        data: {
+          kind: "com.apple.configuration.services.configuration-files",
+          configuration: { ServiceType: "com.apple.servicemanagement" },
+        },
+      },
     ]);
 
     const result = await runEffect(service.getPolicy(request(headers), tenant.id, policy.id));
@@ -583,7 +588,13 @@ describe("enterprise service policy flow", () => {
       id: policy.id,
       name: "Baseline v2",
       notes: "Updated",
-      configurations: { passcode: { minLength: 8 }, wifi: { ssid: "Corp" } },
+      configurations: {
+        "mttx.apple.device": { camera: false },
+        "mttx.apple.declaration.files": {
+          kind: "com.apple.configuration.services.configuration-files",
+          configuration: { ServiceType: "com.apple.servicemanagement" },
+        },
+      },
     });
   });
 
@@ -619,7 +630,7 @@ describe("enterprise service policy flow", () => {
     );
     await runEffect(
       service.patchPolicy(request(headers), tenant.id, policy.id, {
-        configurations: { passcode: { minLength: 8 } },
+        configurations: { "mttx.apple.device": { camera: false } },
       }),
     );
 
@@ -633,8 +644,8 @@ describe("enterprise service policy flow", () => {
     expect(db.store.configuration).toContainEqual(
       expect.objectContaining({
         policyId: duplicated.id,
-        kind: "passcode",
-        data: { minLength: 8 },
+        kind: "mttx.apple.device",
+        data: { camera: false },
       }),
     );
 
@@ -815,7 +826,7 @@ describe("enterprise service APNs", () => {
     expect(pushes).toHaveLength(1);
 
     await runEffect(service.deviceUnenroll(request(headers), tenant.id, "device-1"));
-    expect(db.store.device.find((item: any) => item.id === "device-1").status).toBe("unenrolling");
+    expect(db.store.device.find((item: any) => item.id === "device-1")?.status).toBe("unenrolling");
     expect(pushes).toHaveLength(2);
   });
 
@@ -864,7 +875,7 @@ describe("enterprise service APNs", () => {
 
     await runEffect(
       service.patchPolicy(request(headers), tenant.id, policy.id, {
-        configurations: { passcode: { minLength: 12 } },
+        configurations: { "mttx.apple.device": { camera: true } },
       }),
     );
     expect(pushes).toHaveLength(2);
@@ -905,5 +916,108 @@ describe("enterprise service APNs", () => {
     const beforeDelete = pushes.length;
     await runEffect(service.deleteGroups(request(headers), tenant.id, [group.id]));
     expect(pushes.length).toBe(beforeDelete + 2);
+  });
+});
+
+describe("enterprise policy validation and enrollment", () => {
+  it("rejects undeployable policy configurations", async () => {
+    const { service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, { name: "Baseline" }),
+    );
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { passcode: { minLength: 8 } },
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.application.office": { fileName: "Office.pkg" } },
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
+  });
+
+  it("embeds a per-enrollment SCEP challenge in the Apple profile", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    Object.assign(db.store.enterprise_enrollment[0], {
+      enabledApple: true,
+      enabledWindows: true,
+      enabledAndroid: false,
+      enabledAssetTag: false,
+      maxDevices: 100,
+    });
+    db.store.apple_push_certificate.push({
+      organizationId: tenant.id,
+      email: "admin@example.com",
+      topic: "com.apple.mgmt.External.acme",
+      certPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+      encryptedKey: null,
+      updatedAt: new Date(),
+    });
+
+    const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
+    const result = await runEffect(service.getEnrollment(enrollment.id, undefined));
+    expect(result.authenticated).toBe(true);
+    if (!result.authenticated || !("profile" in result.apple)) throw new Error("expected profile");
+    const profile = result.apple.profile;
+    expect(profile).toContain("com.apple.security.scep");
+    expect(profile).toContain("Acme Identity");
+    expect(profile).toContain("<string>OU</string>");
+    expect(profile).toContain(tenant.id);
+    expect(profile).toContain("<key>Challenge</key>");
+    expect(profile).toContain(`<string>${enrollment.id}.`);
+    expect(profile).toContain("com.apple.mdm.token");
+  });
+
+  it("previews a mobileconfig with friendly payload categories", async () => {
+    const { service } = await makeContext();
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>PayloadType</key><string>Configuration</string>
+<key>PayloadDisplayName</key><string>Acme Profile</string>
+<key>PayloadDescription</key><string>Corporate settings</string>
+<key>PayloadOrganization</key><string>Acme</string>
+<key>PayloadIdentifier</key><string>app.acme.profile</string>
+<key>PayloadUUID</key><string>11111111-1111-1111-1111-111111111111</string>
+<key>PayloadVersion</key><integer>1</integer>
+<key>PayloadContent</key><array>
+<dict>
+<key>PayloadType</key><string>com.apple.wifi.managed</string>
+<key>PayloadDisplayName</key><string>Corporate Wi-Fi</string>
+<key>PayloadIdentifier</key><string>app.acme.wifi</string>
+</dict>
+</array>
+</dict></plist>`;
+    const preview = await runEffect(service.previewMobileconfig({ mobileconfig: btoa(xml) }));
+    expect(preview).toMatchObject({
+      displayName: "Acme Profile",
+      description: "Corporate settings",
+      organization: "Acme",
+      identifier: "app.acme.profile",
+      type: "Configuration",
+    });
+    expect(preview.payloads).toEqual([
+      expect.objectContaining({ type: "com.apple.wifi.managed", category: "Wi-Fi" }),
+    ]);
+  });
+
+  it("rejects an invalid mobileconfig preview", async () => {
+    const { service } = await makeContext();
+    await expect(
+      runEffect(service.previewMobileconfig({ mobileconfig: "not base64!" })),
+    ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
   });
 });

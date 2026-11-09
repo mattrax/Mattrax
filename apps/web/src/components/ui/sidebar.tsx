@@ -41,9 +41,7 @@ const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 
 function readSidebarCookie(): boolean | undefined {
   if (typeof document === "undefined") return undefined;
-  const match = document.cookie.match(
-    new RegExp(`(?:^|;\\s*)${SIDEBAR_COOKIE_NAME}=(true|false)`),
-  );
+  const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${SIDEBAR_COOKIE_NAME}=(true|false)`));
   return match ? match[1] === "true" : undefined;
 }
 

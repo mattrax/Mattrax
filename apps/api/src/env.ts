@@ -32,6 +32,11 @@ const ApiEnvSchema = Schema.Struct({
   TRUSTED_ORIGINS: Schema.optional(Schema.String),
   /** HTTPS landing URL for password-reset emails; defaults to `ORIGIN`. */
   AUTH_RESET_URL: Schema.optional(Schema.String),
+  /**
+   * Organization that owns Windows devices. Windows discovery/enrollment has no
+   * tenant identity, so when unset the backend uses the earliest organization.
+   */
+  WINDOWS_ORGANIZATION_ID: Schema.optional(nonEmptyString),
 });
 
 const emptyStringAsUndefined = (value: unknown) => (value === "" ? undefined : value);
@@ -51,4 +56,5 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   APNS_RELAY_SECRET: emptyStringAsUndefined((cfEnv as any).APNS_RELAY_SECRET),
   TRUSTED_ORIGINS: emptyStringAsUndefined((cfEnv as any).TRUSTED_ORIGINS),
   AUTH_RESET_URL: emptyStringAsUndefined((cfEnv as any).AUTH_RESET_URL),
+  WINDOWS_ORGANIZATION_ID: emptyStringAsUndefined((cfEnv as any).WINDOWS_ORGANIZATION_ID),
 });

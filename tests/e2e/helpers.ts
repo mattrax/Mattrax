@@ -83,7 +83,7 @@ export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
 
 export async function api<T = unknown>(page: Page, path: string, init?: RequestInit): Promise<T> {
   return page.evaluate(
-    async ({ path, init }) => {
+    async ({ path, init }: { path: string; init?: any }) => {
       const response = await fetch(path, {
         ...init,
         headers: {

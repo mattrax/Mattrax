@@ -56,7 +56,8 @@ function breadcrumbForPath(path: string, tenantName?: string): Crumb[] {
   if (path === "/dashboard") return [{ label: "Dashboard" }];
   if (path === "/account") return [{ label: "Account" }];
   if (path === "/settings") return [{ label: "Settings" }];
-  if (path === "/tenants/new") return [{ label: "Tenants", href: "/dashboard" }, { label: "New tenant" }];
+  if (path === "/tenants/new")
+    return [{ label: "Tenants", href: "/dashboard" }, { label: "New tenant" }];
 
   const match = path.match(/^\/t\/([^/]+)(?:\/(.*))?$/);
   if (match) {
@@ -156,6 +157,13 @@ export default function DashboardLayout(props: ParentProps) {
       icon: Settings,
       active: location.pathname.includes("/settings") && Boolean(routeTenantId()),
       disabled: !hasTenant(),
+    },
+    {
+      href: "/instances",
+      label: "Instances",
+      icon: Boxes,
+      active: location.pathname === "/instances",
+      disabled: false,
     },
     {
       href: "/docs",
@@ -275,6 +283,14 @@ export default function DashboardLayout(props: ParentProps) {
                     <User class="size-4" />
                     Account
                   </DropdownMenuItem>
+                  <DropdownMenuItem
+                    as="a"
+                    href="mailto:hello@mattrax.app?subject=Mattrax%20feedback"
+                    class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-stone-700 hover:bg-stone-50"
+                  >
+                    <LinkIcon class="size-4" />
+                    Feedback
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator class="my-1" />
                   <DropdownMenuItem
                     onSelect={handleSignOut}
@@ -315,11 +331,11 @@ export default function DashboardLayout(props: ParentProps) {
           <button
             type="button"
             onClick={() => window.dispatchEvent(new Event("mattrax:open-command-palette"))}
-            class="ml-auto hidden items-center gap-2 rounded-lg border bg-white px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-stone-50 sm:flex"
+            class="ml-auto flex items-center gap-2 rounded-lg border bg-white px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-stone-50 sm:px-3"
           >
             <SearchIcon class="size-4" />
-            <span>Search</span>
-            <kbd class="rounded border px-1.5 py-0.5 text-[10px]">⌘K</kbd>
+            <span class="hidden sm:inline">Search</span>
+            <kbd class="hidden rounded border px-1.5 py-0.5 text-[10px] sm:inline">⌘K</kbd>
           </button>
         </header>
         {props.children}

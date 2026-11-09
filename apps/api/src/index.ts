@@ -16,22 +16,18 @@ import {
   sessionCookie,
 } from "@mattrax/enterprise-backend";
 import { platformApi } from "@mattrax/platform-api";
-import { platformHandlers } from "@mattrax/platform-backend";
+import { PlatformServiceLive, platformHandlers } from "@mattrax/platform-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
+import { windowsMdmRoutes, WindowsMdmServiceLive } from "@mattrax/dm-windows";
 import { scepRoutes } from "@mattrax/scep";
-import { AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
+import { AppleMdmConfig, AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
 import { ScepService } from "@mattrax/scep";
 import {
   ManagementBackendEnterpriseLive,
   ScepRepositoryLive,
 } from "@mattrax/management-backend-enterprise";
 import { Db, Env as CoreEnv, R2 } from "@mattrax/enterprise-core";
-import {
-  ApnsService,
-  NoopPushTransport,
-  RelayPushTransport,
-  makeApnsService,
-} from "@mattrax/apns";
+import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } from "@mattrax/apns";
 import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
 import { env as apiEnv } from "./env.js";
@@ -89,6 +85,7 @@ const apiLayer = Layer.mergeAll(
   ),
   HttpApiScalar.layerCdn(apiRoot, { path: "/api/docs" }),
   appleMdmRoutes,
+  windowsMdmRoutes,
   scepRoutes,
 );
 
@@ -96,6 +93,13 @@ const appLayer = apiLayer.pipe(Layer.provide(HttpServer.layerServices));
 
 const makeAppLayer = (env: Env, request: Request) => {
   const staticEnvLayer = CoreEnv.layer({
+    origin: env.ORIGIN,
+    cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
+    cloudAppleVendorKey: env.CLOUD_APPLE_VENDOR_KEY,
+    authSecret: env.AUTH_SECRET,
+  });
+
+  const appleMdmConfigLayer = AppleMdmConfig.layer({
     origin: env.ORIGIN,
     cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
     cloudAppleVendorKey: env.CLOUD_APPLE_VENDOR_KEY,
@@ -143,6 +147,14 @@ const makeAppLayer = (env: Env, request: Request) => {
     list: () => env.STORAGE.list(),
   };
 
+  const managementBackendLayer = ManagementBackendEnterpriseLive.layer(env.ORIGIN, {
+    apns,
+    authSecret: env.AUTH_SECRET,
+    // Windows discovery/enrollment has no tenant identity. Cloud falls back to
+    // the earliest organization; set this to pin Windows devices to one tenant.
+    windowsOrganizationId: apiEnv.WINDOWS_ORGANIZATION_ID,
+  }).pipe(Layer.provide(Db.layer));
+
   const servicesLayer = Layer.mergeAll(
     EnterpriseService.pipe(
       Layer.provide(enterpriseAuthLive),
@@ -154,15 +166,12 @@ const makeAppLayer = (env: Env, request: Request) => {
     ),
     AppleMdmService.layer.pipe(
       Layer.provide(AppleMdmTopic.layer),
-      Layer.provide(
-        ManagementBackendEnterpriseLive.layer(env.ORIGIN, {
-          apns,
-          authSecret: env.AUTH_SECRET,
-        }).pipe(Layer.provide(Db.layer)),
-      ),
-      Layer.provide(staticEnvLayer),
+      Layer.provide(managementBackendLayer),
+      Layer.provide(appleMdmConfigLayer),
     ),
+    WindowsMdmServiceLive({ origin: env.ORIGIN }).pipe(Layer.provide(managementBackendLayer)),
     ScepService.pipe(Layer.provide(ScepRepositoryLive.layer.pipe(Layer.provide(Db.layer)))),
+    PlatformServiceLive.pipe(Layer.provide(enterpriseAuthLive), Layer.provide(Db.layer)),
   );
 
   return appLayer.pipe(

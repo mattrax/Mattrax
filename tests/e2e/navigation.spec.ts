@@ -14,13 +14,12 @@ test.describe("sidebar navigation", () => {
       ["Enrollment", `${base}/settings/enrollment`, "Tenant settings"],
       ["Tenant settings", `${base}/settings`, "Tenant settings"],
     ] as const) {
-      await page
-        .locator("[data-slot=sidebar-content]")
-        .getByRole("link", { name: label })
-        .click();
+      await page.locator("[data-slot=sidebar-content]").getByRole("link", { name: label }).click();
       await expect(page).toHaveURL(new RegExp(path.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&")));
       if (typeof heading === "string") {
-        await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
+        await expect(
+          page.getByRole("heading", { name: heading, exact: true }).first(),
+        ).toBeVisible();
       }
     }
   });

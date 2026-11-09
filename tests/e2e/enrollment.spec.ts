@@ -15,7 +15,9 @@ test.describe("device enrollment", () => {
       await expect(page.getByRole("button", { name: new RegExp(`^${platform}$`) })).toBeVisible();
     }
     await page.getByRole("button", { name: /^Apple$/ }).click();
-    await expect(page.getByText(/Apple management is not configured|Apple enrollment is disabled/i)).toBeVisible();
+    await expect(
+      page.getByText(/Apple management is not configured|Apple enrollment is disabled/i),
+    ).toBeVisible();
   });
 
   test("requires the enrollment password when one is configured", async ({ page }) => {

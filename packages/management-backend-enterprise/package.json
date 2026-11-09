@@ -10,13 +10,17 @@
   "dependencies": {
     "@mattrax/apns": "workspace:*",
     "@mattrax/crypto": "workspace:*",
+    "@mattrax/dm-apple": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
+    "@mattrax/plist": "workspace:*",
     "@mattrax/scep": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "catalog:"
+    "@types/node": "catalog:",
+    "asn1js": "catalog:",
+    "pkijs": "catalog:"
   }
 }

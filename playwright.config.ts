@@ -17,7 +17,8 @@ export default defineConfig({
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:9050",
     // Locally we drive the installed Chrome over CDP; CI uses the bundled
     // Chromium build (also CDP) so no system browser is required.
-    channel: process.env.E2E_CHANNEL === "bundled" ? undefined : (process.env.E2E_CHANNEL ?? "chrome"),
+    channel:
+      process.env.E2E_CHANNEL === "bundled" ? undefined : (process.env.E2E_CHANNEL ?? "chrome"),
     headless: true,
     ignoreHTTPSErrors: true,
     viewport: { width: 1440, height: 900 },

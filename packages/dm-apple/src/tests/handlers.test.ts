@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
 import { AppleMdmService, AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
+import { AppleMdmConfig } from "../config.js";
 import { ManagementBackend } from "@mattrax/management-backend";
-import { Env } from "@mattrax/enterprise-core";
 import { appleMdmRoutes } from "../handlers.js";
 import { mockManagementBackend } from "./helpers.js";
 
@@ -12,7 +12,7 @@ const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt
 async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
   const serviceLayer = AppleMdmServiceLive.pipe(
     Layer.provideMerge(backendLayer),
-    Layer.provideMerge(Env.layer({ origin: TEST_CONFIG.origin })),
+    Layer.provideMerge(AppleMdmConfig.layer({ origin: TEST_CONFIG.origin })),
     Layer.provideMerge(
       Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) })),
     ),
@@ -34,7 +34,7 @@ describe("Apple MDM handlers", () => {
           Effect.provide(
             AppleMdmServiceLive.pipe(
               Layer.provideMerge(backend),
-              Layer.provideMerge(Env.layer({ origin: TEST_CONFIG.origin })),
+              Layer.provideMerge(AppleMdmConfig.layer({ origin: TEST_CONFIG.origin })),
               Layer.provideMerge(
                 Layer.succeed(
                   AppleMdmTopic,

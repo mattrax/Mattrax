@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect";
-import { ScepRepository, ScepError } from "@mattrax/scep";
+import { ScepError, ScepRepository, verifyScepChallenge } from "@mattrax/scep";
 
-export const ScepRepositoryD1 = (db: D1Database) =>
+export const ScepRepositoryD1 = (db: D1Database, options: { authSecret?: string } = {}) =>
   Layer.succeed(
     ScepRepository,
     ScepRepository.of({
@@ -31,6 +31,23 @@ export const ScepRepositoryD1 = (db: D1Database) =>
           },
           catch: (cause) => new ScepError({ message: "Failed to save CA", cause }),
         }),
-      authenticatePkcsReq: () => Effect.void,
+      authenticatePkcsReq: (req) =>
+        Effect.gen(function* () {
+          const secret = options.authSecret;
+          if (!secret) {
+            // The example deployment may run without a shared secret. Keep the
+            // legacy open behaviour in that case; configuring AUTH_SECRET
+            // enables per-enrollment challenge verification.
+            return;
+          }
+          const verification = yield* Effect.tryPromise({
+            try: () => verifyScepChallenge(req.challengePassword, secret),
+            catch: (cause) => new ScepError({ message: "Failed to verify SCEP challenge", cause }),
+          });
+          if (!verification) {
+            return yield* Effect.fail(new ScepError({ message: "Invalid SCEP challenge" }));
+          }
+          return { organizationalUnit: undefined };
+        }),
     }),
   );

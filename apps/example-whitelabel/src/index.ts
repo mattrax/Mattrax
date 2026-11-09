@@ -2,6 +2,7 @@ import { Context, Layer } from "effect";
 import { HttpApi, HttpApiBuilder, HttpApiScalar } from "effect/http-api";
 import { HttpRouter, HttpServer } from "effect/http";
 import {
+  AppleMdmConfig,
   AppleMdmService,
   AppleMdmTopic,
   appleMdmApi,
@@ -9,7 +10,6 @@ import {
   appleMdmRoutes,
 } from "@mattrax/dm-apple";
 import { ScepService, scepRoutes } from "@mattrax/scep";
-import { Env as CoreEnv } from "@mattrax/enterprise-core";
 import {
   managementWebhookGroup,
   managementWebhookHandlers,
@@ -37,13 +37,25 @@ function createMdmLayer(env: Env) {
     scepRoutes,
   );
 
+  const appleMdmConfigLayer = AppleMdmConfig.layer({
+    origin: env.ORIGIN,
+    cloudAppleVendorCert: env.APNS_CERT,
+    authSecret: (env as unknown as { AUTH_SECRET?: string }).AUTH_SECRET,
+  });
+
   const appleMdmService = AppleMdmService.layer.pipe(
     Layer.provideMerge(AppleMdmTopic.layer),
-    Layer.provideMerge(CoreEnv.layer({ origin: env.ORIGIN, cloudAppleVendorCert: env.APNS_CERT })),
+    Layer.provideMerge(appleMdmConfigLayer),
     Layer.provideMerge(managementBackend),
   );
 
-  const scepService = ScepService.pipe(Layer.provideMerge(ScepRepositoryD1(env.DB)));
+  const scepService = ScepService.pipe(
+    Layer.provideMerge(
+      ScepRepositoryD1(env.DB, {
+        authSecret: (env as unknown as { AUTH_SECRET?: string }).AUTH_SECRET,
+      }),
+    ),
+  );
 
   return apiLayer.pipe(
     Layer.provideMerge(Layer.mergeAll(appleMdmService, scepService, managementBackend)),

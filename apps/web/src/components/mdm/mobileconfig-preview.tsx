@@ -96,7 +96,10 @@ export function MobileconfigPreview(props: { content: string }) {
             <h4 class="text-sm font-medium">Payloads</h4>
             <Badge variant="secondary">{rows().length} payloads</Badge>
           </div>
-          <Show when={rows().length > 0} fallback={<p class="text-sm text-muted-foreground">No payloads found.</p>}>
+          <Show
+            when={rows().length > 0}
+            fallback={<p class="text-sm text-muted-foreground">No payloads found.</p>}
+          >
             <For each={rows()}>
               {(item) => (
                 <div class="space-y-1 border-b py-2 text-sm last:border-0">

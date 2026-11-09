@@ -157,11 +157,7 @@ export default function EnrollmentSettingsPage() {
             >
               {edit() ? (save.isPending ? "Saving…" : "Save") : "Edit settings"}
             </Button>
-            <Button
-              variant="destructive"
-              onClick={() => reset.mutate()}
-              disabled={reset.isPending}
-            >
+            <Button variant="destructive" onClick={() => reset.mutate()} disabled={reset.isPending}>
               {reset.isPending ? "Resetting…" : "Reset enrollment URL"}
             </Button>
           </div>

@@ -3,11 +3,11 @@
 The Enterprise API is defined by `packages/enterprise-domain` and served by the Cloud API
 Worker under `/api`.
 
-| Resource        | URL                                              |
-| --------------- | ------------------------------------------------ |
-| Interactive API | `https://mdm.example.com/api/docs`               |
-| OpenAPI JSON    | `https://mdm.example.com/api/openapi.json`       |
-| Health          | `https://mdm.example.com/api/health`             |
+| Resource        | URL                                        |
+| --------------- | ------------------------------------------ |
+| Interactive API | `https://mdm.example.com/api/docs`         |
+| OpenAPI JSON    | `https://mdm.example.com/api/openapi.json` |
+| Health          | `https://mdm.example.com/api/health`       |
 
 The interactive reference is also linked from the docs sidebar as **OpenAPI**.
 
@@ -21,10 +21,10 @@ Apple protocol API, and `/mdm/apple/*`. It does not serve the Enterprise API. Se
 
 Two mechanisms are accepted:
 
-| Mechanism     | How                                                      |
-| ------------- | -------------------------------------------------------- |
-| Session cookie | Sign in through the dashboard.                          |
-| API token      | `Authorization: Bearer mtx_...`                          |
+| Mechanism      | How                             |
+| -------------- | ------------------------------- |
+| Session cookie | Sign in through the dashboard.  |
+| API token      | `Authorization: Bearer mtx_...` |
 
 Create a token from **Account → API tokens** or with `POST /api/v1/account/api-tokens`.
 Tokens are account-scoped; tenant membership checks still apply to every tenant route.
