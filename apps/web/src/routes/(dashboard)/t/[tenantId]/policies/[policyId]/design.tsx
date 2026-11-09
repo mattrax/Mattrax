@@ -31,7 +31,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isDesignerDeclaration = (kind: string, value: unknown) =>
-  kind.startsWith("mttx.apple.declaration.") && isRecord(value) && "draft" in value;
+  kind.startsWith("mttx.apple.declaration.") && isRecord(value) && value.designer === true;
 
 const isDesignerConfiguration = (kind: string, value: unknown) =>
   CUSTOM_DESIGNER_KINDS.has(kind) || isDesignerDeclaration(kind, value);

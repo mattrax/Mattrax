@@ -299,6 +299,7 @@ export const artifactToConfigurations = (draft: Draft): Record<string, unknown> 
       configurations[declarationConfigKind(selection.identifier, index)] = {
         kind: selection.identifier,
         configuration: payloadValues(selection),
+        designer: true,
         ...(profiles.length === 0 && index === 0 ? { draft: draftWithTime } : {}),
       };
     });

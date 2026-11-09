@@ -157,5 +157,6 @@ test.describe("policy designer", () => {
     await expect(
       page.getByRole("button", { name: "Remove Activation:Simple", exact: true }),
     ).toBeVisible();
+    await expect(page.getByText("This policy already has settings")).toHaveCount(0);
   });
 });
