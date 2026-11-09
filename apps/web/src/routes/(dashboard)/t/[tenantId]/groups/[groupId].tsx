@@ -6,6 +6,13 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import {
   enterprise,
   enterpriseKeys,
   type DeviceRow,
@@ -31,6 +38,8 @@ export default function GroupDetailPage() {
   }));
   const row = () => group.data as GroupNode | undefined;
   const [edit, setEdit] = createSignal(false);
+  const [deleteOpen, setDeleteOpen] = createSignal(false);
+  const [deleteConfirm, setDeleteConfirm] = createSignal("");
   const [tab, setTab] = createSignal<"overview" | "devices" | "policies">("overview");
   const [name, setName] = createSignal("");
   const [notes, setNotes] = createSignal("");
@@ -96,6 +105,9 @@ export default function GroupDetailPage() {
       await invalidate();
     },
   }));
+  const sync = useMutation(() => ({
+    mutationFn: () => enterprise.syncGroups(params.tenantId, [params.groupId!]),
+  }));
   const dup = useMutation(() => ({
     mutationFn: () => enterprise.duplicateGroup(params.tenantId, params.groupId),
     onSuccess: async ({ id }) => {
@@ -133,16 +145,33 @@ export default function GroupDetailPage() {
             >
               {!edit() ? "Edit" : dirty() ? "Save" : "Done"}
             </Button>
+            <Button variant="outline" onClick={() => sync.mutate()} disabled={sync.isPending}>
+              {sync.isPending ? "Syncing…" : "Sync"}
+            </Button>
             <Button variant="outline" onClick={() => dup.mutate()} disabled={dup.isPending}>
               Duplicate
             </Button>
-            <Button variant="destructive" onClick={() => del.mutate()} disabled={del.isPending}>
+            <Button
+              variant="destructive"
+              onClick={() => setDeleteOpen(true)}
+              disabled={del.isPending}
+            >
               Delete
             </Button>
           </>
         }
       />
-      <div class="flex gap-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="mr-4 flex gap-6 text-sm">
+          <span>
+            <span class="font-semibold text-stone-900">{row()?.devices?.length ?? 0}</span>
+            <span class="text-muted-foreground"> devices</span>
+          </span>
+          <span>
+            <span class="font-semibold text-stone-900">{row()?.policies?.length ?? 0}</span>
+            <span class="text-muted-foreground"> policies</span>
+          </span>
+        </div>
         <For each={["overview", "devices", "policies"] as const}>
           {(item) => (
             <Button variant={tab() === item ? "secondary" : "ghost"} onClick={() => setTab(item)}>
@@ -179,7 +208,7 @@ export default function GroupDetailPage() {
                   onInput={(e) => setNotes(e.currentTarget.value)}
                 />
               </Field>
-              <ErrorText error={save.error || dup.error || del.error} />
+              <ErrorText error={save.error || dup.error || del.error || sync.error} />
             </form>
           </CardContent>
         </Card>
@@ -200,6 +229,32 @@ export default function GroupDetailPage() {
           href={(id) => `/t/${params.tenantId}/policies/${id}`}
         />
       </Show>
+
+      <Dialog open={deleteOpen()} onOpenChange={setDeleteOpen}>
+        <DialogContent class="max-w-md rounded-xl bg-white p-6">
+          <DialogHeader>
+            <DialogTitle>Delete {row()?.name ?? "group"}?</DialogTitle>
+          </DialogHeader>
+          <p class="text-sm text-muted-foreground">
+            Devices keep their other group memberships. Type{" "}
+            <span class="font-mono font-medium">{row()?.name}</span> to confirm.
+          </p>
+          <Input value={deleteConfirm()} onInput={(e) => setDeleteConfirm(e.currentTarget.value)} />
+          <ErrorText error={del.error} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteConfirm() !== row()?.name || del.isPending}
+              onClick={() => del.mutate()}
+            >
+              Delete group
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

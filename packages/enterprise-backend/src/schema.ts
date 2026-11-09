@@ -19,6 +19,8 @@ export type EnterpriseGroupDevice = typeof schema.groupDevice.$inferSelect;
 export type EnterpriseGroupPolicy = typeof schema.groupPolicy.$inferSelect;
 export type EnterprisePolicy = typeof schema.policy.$inferSelect;
 export type EnterpriseConfiguration = typeof schema.configuration.$inferSelect;
+export type EnterpriseApplePushCertificate = typeof schema.applePushCertificate.$inferSelect;
+export type EnterpriseApplePushKey = typeof schema.applePushKey.$inferSelect;
 
 /** Used by tests to construct a schema-aware in-memory database. */
 export const createEnterpriseSchema = (): EnterpriseSchema => schema;

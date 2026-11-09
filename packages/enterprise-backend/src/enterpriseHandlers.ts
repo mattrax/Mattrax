@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { HttpApiBuilder } from "effect/http-api";
 import {
+  EnterpriseBadRequest,
   EnterpriseForbidden,
   EnterpriseLastTenantUser,
   EnterpriseNotFound,
@@ -15,7 +16,22 @@ import type { Stripe } from "@mattrax/effect-stripe";
 import { and, count, eq, inArray } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import { enterpriseEnrollmentProfile } from "@mattrax/management-backend-enterprise";
+import { createScepChallenge, validateConfiguration } from "@mattrax/management-backend-enterprise";
 import { serializePlist } from "@mattrax/plist";
+import { parseMobileconfigPreview } from "./mobileconfig.ts";
+import {
+  ApnsService,
+  NoopPushTransport,
+  buildApnsCsr,
+  generateApnsKeyPair,
+  importApnsKeyJwk,
+  makeApnsService,
+  parseApnsCertificate,
+  validateApnsCertificate,
+} from "@mattrax/apns";
+import { exportPrivateKeyJwk, openSecret, sealSecret } from "@mattrax/crypto";
+import { makeApplePush } from "./push.ts";
+import { listUserSessions, revokeUserSession } from "./sessions.ts";
 import {
   R2Storage,
   R2StorageLive,
@@ -41,6 +57,13 @@ export type EnterpriseHandlersConfig = {
   readonly origin: string;
   readonly stripeClient: RawStripeClientLike | ReturnType<typeof makeEffectStripeClient>;
   readonly storage: R2Bucket;
+  /** Application secret used to seal/unseal APNs private keys. */
+  readonly authSecret?: string;
+  /** Apple MDM vendor certificate/key used to sign APNs CSRs (optional). */
+  readonly cloudAppleVendorCert?: string;
+  readonly cloudAppleVendorKey?: string;
+  /** Push transport. Defaults to a no-op transport when omitted (tests). */
+  readonly apns?: ApnsService.Service;
 };
 
 type EnterpriseServiceConfig = EnterpriseHandlersConfig & {
@@ -102,9 +125,15 @@ export const createEnterpriseService = ({
   stripeClient,
   storage,
   auth: authService,
+  authSecret,
+  cloudAppleVendorCert,
+  cloudAppleVendorKey,
+  apns: apnsService,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
   const auth = authService;
+  const apns = apnsService ?? makeApnsService(NoopPushTransport());
+  const applePush = makeApplePush({ db, schema, apns, authSecret });
   const stripe = isEffectStripeClient(stripeClient)
     ? stripeClient
     : makeEffectStripeClient(stripeClient as StripeClientLike);
@@ -347,6 +376,86 @@ export const createEnterpriseService = ({
       );
     });
 
+  const requireApnsSecret = () =>
+    Effect.gen(function* () {
+      if (!authSecret)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message: "APNs certificate management is not configured on this server",
+          }),
+        );
+      return authSecret;
+    });
+
+  /**
+   * Return the private key for the tenant's in-progress CSR. We reuse the
+   * pending key (multiple tabs) or the key from an existing certificate
+   * (renewal) before generating a fresh one.
+   */
+  const loadApnsKey = (organizationId: string) =>
+    Effect.gen(function* () {
+      const secret = yield* requireApnsSecret();
+      const pending = yield* db.query.applePushKey.findFirst({
+        where: { organizationId },
+      });
+      if (pending) {
+        const jwk = JSON.parse(
+          yield* Effect.tryPromise({
+            try: () => openSecret(secret, pending.encryptedPrivateKeyJwk),
+            catch: (cause) =>
+              new EnterpriseBadRequest({ message: "Could not read the pending APNs key" }),
+          }),
+        ) as JsonWebKey;
+        return { jwk, pending: true };
+      }
+
+      const certificate = yield* db.query.applePushCertificate.findFirst({
+        where: { organizationId },
+      });
+      if (certificate?.encryptedKey) {
+        const jwk = JSON.parse(
+          yield* Effect.tryPromise({
+            try: () => openSecret(secret, certificate.encryptedKey!),
+            catch: (cause) =>
+              new EnterpriseBadRequest({ message: "Could not read the existing APNs key" }),
+          }),
+        ) as JsonWebKey;
+        return { jwk, pending: false };
+      }
+
+      const keyPair = yield* Effect.tryPromise({
+        try: () => generateApnsKeyPair(),
+        catch: (cause) =>
+          new EnterpriseBadRequest({ message: "Could not generate an APNs key pair" }),
+      });
+      const jwk = yield* Effect.tryPromise({
+        try: () => exportPrivateKeyJwk(keyPair.privateKey),
+        catch: (cause) => new EnterpriseBadRequest({ message: "Could not export the APNs key" }),
+      });
+      const encryptedPrivateKeyJwk = yield* Effect.tryPromise({
+        try: () => sealSecret(secret, JSON.stringify(jwk)),
+        catch: (cause) => new EnterpriseBadRequest({ message: "Could not seal the APNs key" }),
+      });
+      const timestamp = now();
+      yield* db
+        .insert(schema.applePushKey)
+        .values({
+          organizationId,
+          encryptedPrivateKeyJwk,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })
+        .onDuplicateKeyUpdate({
+          set: { encryptedPrivateKeyJwk, updatedAt: timestamp },
+        });
+      return { jwk, pending: true };
+    });
+
+  const remoteApnsVendor = () =>
+    cloudAppleVendorCert && cloudAppleVendorKey
+      ? { certificatePem: cloudAppleVendorCert, privateKeyPem: cloudAppleVendorKey }
+      : undefined;
+
   const service: Record<
     string,
     (...args: Array<Dynamic>) => Effect.Effect<Dynamic, Dynamic, Dynamic>
@@ -356,7 +465,6 @@ export const createEnterpriseService = ({
         const resolved = yield* auth.requireUser({ headers: request.headers });
         const { user } = resolved;
         const tenants = yield* listTenantInfo(user.id);
-        const activeTenant = tenants[0];
         return {
           user: {
             id: user.id,
@@ -365,9 +473,7 @@ export const createEnterpriseService = ({
             emailVerified: user.emailVerified,
             image: user.image,
           },
-          activeTenant,
           tenants,
-          billing: activeTenant ? yield* billingSummary(activeTenant.id) : undefined,
         };
       }),
     updateMe: (request, payload) =>
@@ -384,10 +490,68 @@ export const createEnterpriseService = ({
           .where(eq(schema.user.id, user.id));
         return ok;
       }),
-    deleteMe: () =>
-      Effect.succeed({
-        error:
-          "Delete user is currently not supported while organizations and billing are managed by Mattrax.",
+    deleteMe: (request) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+
+        // Remove solo tenants with the account; keep shared tenants for the
+        // remaining administrators.
+        const memberships = yield* db.query.member.findMany({
+          where: { userId: user.id },
+        });
+        for (const membership of memberships) {
+          const [members] = yield* db
+            .select({ value: count() })
+            .from(schema.member)
+            .where(eq(schema.member.organizationId, membership.organizationId));
+          if ((members?.value ?? 0) <= 1) {
+            yield* db
+              .delete(schema.organization)
+              .where(eq(schema.organization.id, membership.organizationId));
+          } else {
+            yield* db.delete(schema.member).where(eq(schema.member.id, membership.id));
+          }
+        }
+
+        yield* db.delete(schema.accountApiToken).where(eq(schema.accountApiToken.userId, user.id));
+        yield* db.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
+        yield* db.delete(schema.member).where(eq(schema.member.userId, user.id));
+
+        // Yielded Auth owns these tables; remove the subject's auth state.
+        // `authProofs` has no subject column (its binding is JSON), so those
+        // short-lived rows are left to expire naturally.
+        const authTables = [
+          (schema as any).authPending,
+          (schema as any).authSessions,
+          (schema as any).authPasswords,
+          (schema as any).authCredentials,
+          (schema as any).authIdentifiers,
+        ];
+        for (const table of authTables) {
+          if (table) yield* db.delete(table).where(eq((table as any).subjectId, user.id));
+        }
+
+        yield* db.delete(schema.user).where(eq(schema.user.id, user.id));
+        return ok;
+      }),
+    listAccountSessions: (request) =>
+      Effect.gen(function* () {
+        const resolved = yield* auth.requireUser({ headers: request.headers });
+        return {
+          sessions: yield* listUserSessions(
+            db,
+            resolved.user.id,
+            resolved.session?.sessionId as string | undefined,
+          ),
+        };
+      }),
+    revokeAccountSession: (request, sessionId) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const revoked = yield* revokeUserSession(db, user.id, sessionId);
+        if (!revoked)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Session not found" }));
+        return ok;
       }),
     listTenants: (request) =>
       Effect.gen(function* () {
@@ -404,6 +568,13 @@ export const createEnterpriseService = ({
           logo?: string | null;
           metadata?: Record<string, unknown>;
         };
+        const existing = yield* db.query.organization.findFirst({
+          where: { slug: body.slug },
+        });
+        if (existing)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({ message: "That tenant slug is already in use" }),
+          );
         const tenantId = id();
         const timestamp = now();
         yield* db.insert(schema.organization).values({
@@ -506,6 +677,13 @@ export const createEnterpriseService = ({
         const body = payload as { email: string; role?: string; resend?: boolean };
         const invitationId = id();
         const timestamp = now();
+        const rawToken = bytesToBase64(crypto.getRandomValues(new Uint8Array(32)))
+          .replaceAll("+", "-")
+          .replaceAll("/", "_")
+          .replace(/=+$/, "");
+        const tokenHash = yield* sha256Hex(
+          new TextEncoder().encode(rawToken).buffer as ArrayBuffer,
+        );
         yield* db.insert(schema.invitation).values({
           id: invitationId,
           organizationId: tenantId,
@@ -513,11 +691,56 @@ export const createEnterpriseService = ({
           email: body.email,
           role: body.role ?? "member",
           status: "pending",
+          tokenHash,
           expiresAt: new Date(timestamp.getTime() + 7 * 24 * 60 * 60 * 1000),
           createdAt: timestamp,
           updatedAt: timestamp,
         });
-        return { id: invitationId };
+        return {
+          id: invitationId,
+          inviteUrl: `${origin}/accept-invitation?token=${encodeURIComponent(rawToken)}`,
+        };
+      }),
+    acceptInvitation: (request, payload) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const body = payload as { token: string };
+        const tokenHash = yield* sha256Hex(
+          new TextEncoder().encode(body.token).buffer as ArrayBuffer,
+        );
+        const invitation = yield* db.query.invitation.findFirst({
+          where: { tokenHash },
+        });
+        if (!invitation || invitation.status !== "pending")
+          return yield* Effect.fail(
+            new EnterpriseNotFound({ message: "Invitation not found or already used" }),
+          );
+        if (invitation.expiresAt <= now())
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: "Invitation expired" }));
+        if (invitation.email.toLowerCase() !== user.email.toLowerCase())
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: "Sign in with the email address this invitation was sent to",
+            }),
+          );
+        const existing = yield* db.query.member.findFirst({
+          where: { userId: user.id, organizationId: invitation.organizationId },
+        });
+        if (!existing) {
+          yield* db.insert(schema.member).values({
+            id: id(),
+            organizationId: invitation.organizationId,
+            userId: user.id,
+            role: invitation.role ?? "member",
+            createdAt: now(),
+            updatedAt: now(),
+          });
+        }
+        yield* db
+          .update(schema.invitation)
+          .set({ status: "accepted", updatedAt: now() })
+          .where(eq(schema.invitation.id, invitation.id));
+        return { tenantId: invitation.organizationId };
       }),
     listTenantInvitations: (request, tenantId) =>
       Effect.gen(function* () {
@@ -616,6 +839,16 @@ export const createEnterpriseService = ({
           .from(schema.device)
           .where(eq(schema.device.organizationId, organization.id));
         const enabled = (deviceCount?.value ?? 0) <= enrollment.maxDevices;
+        const challenge = yield* Effect.tryPromise({
+          try: () =>
+            createScepChallenge(enrollment.id, authSecret ?? "", {
+              // Enrollment profiles are shareable links; allow a week before
+              // the challenge goes stale, without a schema migration.
+              ttlSeconds: 7 * 24 * 60 * 60,
+            }),
+          catch: (cause) =>
+            new EnterpriseBadRequest({ message: "Could not create the SCEP challenge" }),
+        });
         return {
           name: organization.name,
           authenticated: true as const,
@@ -629,6 +862,8 @@ export const createEnterpriseService = ({
                         origin,
                         topic: apns.topic,
                         organizationId: organization.id,
+                        organizationName: organization.name,
+                        challenge,
                       }),
                     ),
                   }
@@ -695,30 +930,139 @@ export const createEnterpriseService = ({
         const apns = yield* db.query.applePushCertificate.findFirst({
           where: { organizationId: ctx.organization.id },
         });
+        let expiresAt: string | null = null;
+        let commonName: string | null = null;
+        if (apns) {
+          try {
+            const parsed = parseApnsCertificate(apns.certPem);
+            expiresAt = parsed.notAfter.toISOString();
+            commonName = parsed.commonName;
+          } catch {
+            // A historical certificate may be unparseable; still report it as configured.
+          }
+        }
         return {
           configured: apns !== undefined,
           email: apns?.email ?? null,
           topic: apns?.topic ?? null,
+          expiresAt,
+          commonName,
         };
+      }),
+    getApnsCsr: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const key = yield* loadApnsKey(ctx.organization.id);
+        const keyPair = yield* Effect.tryPromise({
+          try: async () => {
+            const privateKey = await importApnsKeyJwk(key.jwk);
+            // WebCrypto cannot derive the public key from a private JWK, but the
+            // JWK contains the public parameters; derive a key pair by importing
+            // both halves.
+            const publicKey = await crypto.subtle.importKey(
+              "jwk",
+              { kty: key.jwk.kty, n: key.jwk.n, e: key.jwk.e, ext: true },
+              { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+              true,
+              ["verify"],
+            );
+            return { privateKey, publicKey } as CryptoKeyPair;
+          },
+          catch: (cause) =>
+            new EnterpriseBadRequest({ message: "Could not load the pending APNs key" }),
+        });
+        const result = yield* Effect.tryPromise({
+          try: () =>
+            buildApnsCsr({
+              keyPair,
+              subject: {
+                organization: ctx.organization.name,
+                organizationalUnit: ctx.organization.id,
+              },
+              vendor: remoteApnsVendor(),
+            }),
+          catch: (cause) =>
+            new EnterpriseBadRequest({ message: "Could not generate the APNs CSR" }),
+        });
+        return { plist: result.plist };
       }),
     uploadApns: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const body = payload as { email: string; cert: string };
-        const topic =
-          body.cert.match(/UID=([^,\n]+)/)?.[1] ?? `com.apple.mgmt.External.${ctx.organization.id}`;
+
+        // Find the private key this certificate should correspond to. A pending
+        // CSR key is the normal case; an existing certificate key covers renewals.
+        const pending = yield* db.query.applePushKey.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+        const existing = yield* db.query.applePushCertificate.findFirst({
+          where: { organizationId: ctx.organization.id },
+        });
+
+        let encryptedKey: string | undefined;
+        if (authSecret && (pending || existing?.encryptedKey)) {
+          const encrypted = pending?.encryptedPrivateKeyJwk ?? existing?.encryptedKey;
+          if (encrypted) {
+            const jwk = JSON.parse(
+              yield* Effect.tryPromise({
+                try: () => openSecret(authSecret, encrypted),
+                catch: (cause) =>
+                  new EnterpriseBadRequest({ message: "Could not read the pending APNs key" }),
+              }),
+            ) as JsonWebKey;
+            const privateKey = yield* Effect.tryPromise({
+              try: () => importApnsKeyJwk(jwk),
+              catch: (cause) =>
+                new EnterpriseBadRequest({ message: "Could not import the pending APNs key" }),
+            });
+            yield* Effect.tryPromise({
+              try: () => validateApnsCertificate(body.cert, { privateKey }),
+              catch: (cause) =>
+                new EnterpriseBadRequest({
+                  message: cause instanceof Error ? cause.message : "Invalid APNs certificate",
+                }),
+            });
+            // Re-seal at rest even though the underlying key is unchanged.
+            encryptedKey = yield* Effect.tryPromise({
+              try: () => sealSecret(authSecret, JSON.stringify(jwk)),
+              catch: (cause) =>
+                new EnterpriseBadRequest({ message: "Could not seal the APNs key" }),
+            });
+          }
+        }
+
+        const parsed = yield* Effect.tryPromise({
+          try: () => validateApnsCertificate(body.cert),
+          catch: (cause) =>
+            new EnterpriseBadRequest({
+              message: cause instanceof Error ? cause.message : "Invalid APNs certificate",
+            }),
+        });
+
+        const value = {
+          organizationId: ctx.organization.id,
+          email: body.email,
+          certPem: body.cert,
+          topic: parsed.topic,
+          updatedAt: now(),
+        };
         yield* db
           .insert(schema.applePushCertificate)
-          .values({
-            organizationId: ctx.organization.id,
-            email: body.email,
-            certPem: body.cert,
-            topic,
-            updatedAt: now(),
-          })
+          .values({ ...value, encryptedKey: encryptedKey ?? null })
           .onDuplicateKeyUpdate({
-            set: { email: body.email, certPem: body.cert, topic, updatedAt: now() },
+            set: {
+              email: value.email,
+              certPem: value.certPem,
+              topic: value.topic,
+              updatedAt: value.updatedAt,
+              ...(encryptedKey ? { encryptedKey } : {}),
+            },
           });
+        if (pending)
+          yield* db
+            .delete(schema.applePushKey)
+            .where(eq(schema.applePushKey.organizationId, ctx.organization.id));
         return ok;
       }),
     deleteDevices: (request, tenantId, ids) =>
@@ -750,24 +1094,40 @@ export const createEnterpriseService = ({
           );
         return ok;
       }),
-    deviceAction: (request, tenantId) =>
+    deviceAction: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
-        yield* requireTenant(request, tenantId, "write");
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        if (device.status === "enrolled") yield* applePush.pushAppleDevice(device.id);
         return ok;
       }),
     deviceUnenroll: (request, tenantId, deviceId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* db
-          .update(schema.device)
-          .set({ status: "unenrolling" })
-          .where(
-            and(
-              eq(schema.device.id, deviceId),
-              eq(schema.device.organizationId, ctx.organization.id),
-              eq(schema.device.status, "enrolled"),
-            ),
-          );
+        const device = yield* db.query.device.findFirst({
+          where: { id: deviceId, organizationId: ctx.organization.id },
+        });
+        if (!device)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+        if (device.status === "enrolled")
+          yield* db
+            .update(schema.device)
+            .set({ status: "unenrolling" })
+            .where(
+              and(
+                eq(schema.device.id, deviceId),
+                eq(schema.device.organizationId, ctx.organization.id),
+                eq(schema.device.status, "enrolled"),
+              ),
+            );
+        // mttx pushes both enrolled and already-unenrolling devices so repeated
+        // requests still nudge the device.
+        if (device.status === "enrolled" || device.status === "unenrolling")
+          yield* applePush.pushAppleDevice(device.id, true);
         return ok;
       }),
     createGroup: (request, tenantId, payload) =>
@@ -807,6 +1167,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         const deleted: Array<string> = [];
         const failed: Array<{ id: string; reason: string }> = [];
+        const affectedDevices: Array<string> = [];
         for (const groupId of ids) {
           // MySQL has no `DELETE ... RETURNING`; probe the tenant-scoped row
           // first, then delete it by the same predicate.
@@ -817,6 +1178,7 @@ export const createEnterpriseService = ({
             failed.push({ id: groupId, reason: "notFound" });
             continue;
           }
+          affectedDevices.push(...(yield* applePush.deviceIdsInGroups([groupId])));
           yield* db
             .delete(schema.enterpriseGroup)
             .where(
@@ -827,6 +1189,8 @@ export const createEnterpriseService = ({
             );
           deleted.push(groupId);
         }
+        // Devices in a deleted group lose policies and must re-sync.
+        yield* applePush.pushAppleDevices(affectedDevices);
         return { deleted, failed };
       }),
     patchGroup: (request, tenantId, groupId, payload) =>
@@ -888,11 +1252,29 @@ export const createEnterpriseService = ({
                 inArray(schema.groupPolicy.policyId, body.unassign.policies),
               ),
             );
+
+        // Device membership changes affect those devices; policy membership
+        // changes affect every device in the group. Deduplicate in the helper.
+        const affectedDevices = [
+          ...(body.assign?.devices ?? []),
+          ...(body.unassign?.devices ?? []),
+        ];
+        if (body.assign?.policies?.length || body.unassign?.policies?.length)
+          affectedDevices.push(...(yield* applePush.deviceIdsInGroups([groupId])));
+        yield* applePush.pushAppleDevices(affectedDevices);
         return ok;
       }),
-    syncGroups: (request, tenantId) =>
+    syncGroups: (request, tenantId, ids) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId, "write");
+        const affected: Array<string> = [];
+        for (const groupId of ids) {
+          const group = yield* db.query.enterpriseGroup.findFirst({
+            where: { id: groupId, organizationId: tenantId },
+          });
+          if (group) affected.push(...(yield* applePush.deviceIdsInGroups([groupId])));
+        }
+        yield* applePush.pushAppleDevices(affected);
         return ok;
       }),
     duplicateGroup: (request, tenantId, groupId, payload) =>
@@ -952,6 +1334,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         const deleted: Array<string> = [];
         const failed: Array<{ id: string; reason: string }> = [];
+        const affectedDevices: Array<string> = [];
         for (const policyId of ids) {
           // MySQL has no `DELETE ... RETURNING`; probe the tenant-scoped row
           // first, then delete it by the same predicate.
@@ -962,6 +1345,7 @@ export const createEnterpriseService = ({
             failed.push({ id: policyId, reason: "notFound" });
             continue;
           }
+          affectedDevices.push(...(yield* applePush.deviceIdsInPolicies([policyId])));
           yield* db
             .delete(schema.policy)
             .where(
@@ -972,6 +1356,7 @@ export const createEnterpriseService = ({
             );
           deleted.push(policyId);
         }
+        yield* applePush.pushAppleDevices(affectedDevices);
         return { deleted, failed };
       }),
     patchPolicy: (request, tenantId, policyId, payload) =>
@@ -987,11 +1372,20 @@ export const createEnterpriseService = ({
         });
         if (!policy)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Policy not found" }));
+        const configurations = Object.entries(body.configurations ?? {});
+        // Validate the whole patch before mutating anything so a bad
+        // configuration cannot leave the policy half-updated.
+        for (const [kind, data] of configurations) {
+          if (data === null) continue;
+          yield* validateConfiguration(kind, data).pipe(
+            Effect.mapError((message) => new EnterpriseBadRequest({ message })),
+          );
+        }
         yield* db
           .update(schema.policy)
           .set({ name: body.name, notes: body.notes, updatedAt: now() })
           .where(eq(schema.policy.id, policyId));
-        for (const [kind, data] of Object.entries(body.configurations ?? {})) {
+        for (const [kind, data] of configurations) {
           if (data === null) {
             yield* db
               .delete(schema.configuration)
@@ -1009,6 +1403,8 @@ export const createEnterpriseService = ({
               .onDuplicateKeyUpdate({ set: { data, hash } });
           }
         }
+        const affectedDevices = yield* applePush.deviceIdsInPolicies([policyId]);
+        yield* applePush.pushAppleDevices(affectedDevices);
         return ok;
       }),
     uploadPolicyApplication: (request, tenantId, policyId, payload) =>
@@ -1049,9 +1445,17 @@ export const createEnterpriseService = ({
           content: bytesToBase64(new Uint8Array(bytes)),
         };
       }).pipe(Effect.provide(r2Layer)),
-    syncPolicies: (request, tenantId) =>
+    syncPolicies: (request, tenantId, ids) =>
       Effect.gen(function* () {
         yield* requireTenant(request, tenantId, "write");
+        const affected: Array<string> = [];
+        for (const policyId of ids) {
+          const policy = yield* db.query.policy.findFirst({
+            where: { id: policyId, organizationId: tenantId },
+          });
+          if (policy) affected.push(...(yield* applePush.deviceIdsInPolicies([policyId])));
+        }
+        yield* applePush.pushAppleDevices(affected);
         return ok;
       }),
     duplicatePolicy: (request, tenantId, policyId, payload) =>
@@ -1087,7 +1491,17 @@ export const createEnterpriseService = ({
           );
         return { id: newId };
       }),
-    previewMobileconfig: (payload) => Effect.succeed({ payload }),
+    previewMobileconfig: (payload) =>
+      Effect.gen(function* () {
+        const body = payload as { mobileconfig: string };
+        return yield* Effect.tryPromise({
+          try: () => parseMobileconfigPreview(body.mobileconfig),
+          catch: (cause) =>
+            new EnterpriseBadRequest({
+              message: cause instanceof Error ? cause.message : "Invalid mobileconfig",
+            }),
+        });
+      }),
     listDevices: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -1194,6 +1608,14 @@ export const enterpriseHandlers = (
         service.revokeApiToken(request, params.tokenId),
       ),
     )
+    .handle("listAccountSessions", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.listAccountSessions(request)),
+    )
+    .handle("revokeAccountSession", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.revokeAccountSession(request, params.sessionId),
+      ),
+    )
     .handle("me", ({ request }) =>
       Effect.flatMap(EnterpriseService, (service) => service.me(request)),
     )
@@ -1231,6 +1653,9 @@ export const enterpriseHandlers = (
       Effect.flatMap(EnterpriseService, (service) =>
         service.inviteTenantUser(request, params.tenantId, payload),
       ),
+    )
+    .handle("acceptInvitation", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.acceptInvitation(request, payload)),
     )
     .handle("listTenantInvitations", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
@@ -1272,6 +1697,9 @@ export const enterpriseHandlers = (
     )
     .handle("getApns", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) => service.getApns(request, params.tenantId)),
+    )
+    .handle("getApnsCsr", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.getApnsCsr(request, params.tenantId)),
     )
     .handle("uploadApns", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>

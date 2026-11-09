@@ -245,6 +245,19 @@ export declare namespace ManagementBackend {
     readonly getAppleAsset: (
       identityCertificate: string | undefined,
       identifier: string,
+      token?: string,
+    ) => Effect.Effect<
+      { content: Uint8Array; contentType: string } | null,
+      ManagementNotSupported | UnknownDevice | InternalServerError
+    >;
+    /**
+     * Fetch the legacy `.mobileconfig` behind a DDM `com.apple.configuration.legacy`
+     * declaration. The device-facing route verifies the signed URL before calling
+     * this, so this lookup only resolves policy content.
+     */
+    readonly getAppleProfile?: (
+      policyId: string,
+      kind: string,
     ) => Effect.Effect<
       { content: Uint8Array; contentType: string } | null,
       ManagementNotSupported | UnknownDevice | InternalServerError

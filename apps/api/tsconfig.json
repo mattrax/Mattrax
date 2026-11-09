@@ -26,6 +26,9 @@
       "path": "../../packages/enterprise-backend"
     },
     {
+      "path": "../../packages/apns"
+    },
+    {
       "path": "../../packages/enterprise-core"
     },
     {
@@ -39,6 +42,9 @@
     },
     {
       "path": "../../packages/dm-apple"
+    },
+    {
+      "path": "../../packages/dm-windows"
     },
     {
       "path": "../../packages/management-backend"

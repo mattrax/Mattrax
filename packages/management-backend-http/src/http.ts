@@ -70,6 +70,22 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
       payload: Schema.Struct({
         identityCertificate: Schema.optional(Schema.String),
         identifier: Schema.String,
+        token: Schema.optional(Schema.String),
+      }),
+      success: Schema.NullOr(
+        Schema.Struct({
+          content: Schema.Uint8ArrayFromBase64,
+          contentType: Schema.String,
+        }),
+      ),
+      error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("getAppleProfile", "/apple/profile", {
+      payload: Schema.Struct({
+        policyId: Schema.String,
+        kind: Schema.String,
       }),
       success: Schema.NullOr(
         Schema.Struct({

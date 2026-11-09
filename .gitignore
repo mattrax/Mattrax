@@ -48,3 +48,14 @@ client-ext.cnf
 
 # SQLite
 *.db
+
+# Local Cloudflare dev secrets
+**/.dev.vars*
+
+# Local dev TLS certificates
+apps/web/.certs
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/

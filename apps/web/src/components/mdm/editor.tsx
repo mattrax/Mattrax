@@ -1,6 +1,6 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createEffect, createMemo, createSignal, Match, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, Match, onSettled, Show, Switch } from "solid-js";
 import { ErrorText, PageHeader } from "~/components/mdm/common";
 import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
 import { Button } from "~/components/ui/button";
@@ -10,8 +10,9 @@ import { arrayBufferToBase64, base64ToArrayBuffer, selectFile } from "~/lib/uplo
 
 const keys = {
   cert: "mttx.apple.certificate.default",
-  app: "mttx.apple.application",
-  custom: "mttx.apple.custom.og",
+  app: "mttx.apple.application.default",
+  custom: "mttx.apple.custom.default",
+  device: "mttx.apple.device",
 } as const;
 
 type Config = Record<string, any>;
@@ -28,6 +29,7 @@ export function PolicyConfigurationEditor() {
   const [active, setActive] = createSignal("security");
   const [config, setConfig] = createSignal<Config>({});
   const [initial, setInitial] = createSignal("{}");
+  const [raw, setRaw] = createSignal("{}");
 
   createEffect(
     () => row()?.configurations,
@@ -35,6 +37,7 @@ export function PolicyConfigurationEditor() {
       if (!configurations) return;
       setConfig(configurations);
       setInitial(JSON.stringify(configurations));
+      setRaw(JSON.stringify(configurations, null, 2));
     },
   );
 
@@ -59,8 +62,21 @@ export function PolicyConfigurationEditor() {
   };
   const cancel = () => {
     setConfig(JSON.parse(initial()));
+    setRaw(JSON.stringify(JSON.parse(initial()), null, 2));
     setCanEdit(false);
   };
+
+  onSettled(() => {
+    const handler = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (canEdit() && dirty()) save.mutate();
+      }
+      if (event.key === "Escape" && canEdit()) cancel();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  });
 
   return (
     <div class="flex flex-1 flex-col gap-6 p-6">
@@ -100,12 +116,36 @@ export function PolicyConfigurationEditor() {
                     policyId={params.policyId}
                   />
                 </Match>
+                <Match when={active() === "device"}>
+                  <DeviceSection config={config()} setKey={setKey} />
+                </Match>
                 <Match when={active() === "custom"}>
                   <CustomSection
                     config={config()}
                     setKey={setKey}
                     policyId={params.policyId ?? "policy"}
                   />
+                </Match>
+                <Match when={active() === "raw"}>
+                  <div class="space-y-3">
+                    <p class="text-sm text-muted-foreground">
+                      Edit the raw configuration map. Values use Mattrax configuration kinds.
+                    </p>
+                    <textarea
+                      class="min-h-80 w-full rounded-lg border bg-white p-3 font-mono text-xs"
+                      value={raw()}
+                      onInput={(event) => setRaw(event.currentTarget.value)}
+                      onChange={(event) => {
+                        try {
+                          const parsed = JSON.parse(event.currentTarget.value);
+                          setConfig(parsed);
+                          setRaw(JSON.stringify(parsed, null, 2));
+                        } catch {
+                          // Keep the raw text; the save button will stay disabled.
+                        }
+                      }}
+                    />
+                  </div>
                 </Match>
               </Switch>
             </fieldset>
@@ -119,7 +159,9 @@ export function PolicyConfigurationEditor() {
 
 function activeTitle(active: string) {
   if (active === "applications") return "Applications";
-  if (active === "custom") return "Custom Policy";
+  if (active === "custom") return "Custom profile";
+  if (active === "device") return "Device restrictions";
+  if (active === "raw") return "Advanced JSON";
   return "Security";
 }
 
@@ -137,13 +179,25 @@ function EditorNav(props: { active: string; setActive: (value: string) => void }
           variant={props.active === "applications" ? "secondary" : "ghost"}
           onClick={() => props.setActive("applications")}
         >
-          Applications
+          Applications <span class="ml-2 text-[10px] uppercase text-muted-foreground">Soon</span>
+        </Button>
+        <Button
+          variant={props.active === "device" ? "secondary" : "ghost"}
+          onClick={() => props.setActive("device")}
+        >
+          Device
         </Button>
         <Button
           variant={props.active === "custom" ? "secondary" : "ghost"}
           onClick={() => props.setActive("custom")}
         >
-          Custom Policy
+          Custom profile
+        </Button>
+        <Button
+          variant={props.active === "raw" ? "secondary" : "ghost"}
+          onClick={() => props.setActive("raw")}
+        >
+          Advanced JSON
         </Button>
       </CardContent>
     </Card>
@@ -184,74 +238,45 @@ function SecuritySection(props: { config: Config; setKey: (key: string, value: u
   );
 }
 
-function ApplicationSection(props: {
+function ApplicationSection(_props: {
   config: Config;
   setKey: (key: string, value: unknown) => void;
   tenantId?: string;
   policyId?: string;
 }) {
-  const app = () =>
-    props.config[keys.app] as
-      | { sha256?: string; fileName?: string; contentType?: string | null; size?: number }
-      | null
-      | undefined;
-  const upload = async () => {
-    const file = await selectFile(
-      ".pkg,.dmg,.zip,application/octet-stream,application/x-apple-diskimage,application/zip",
-    );
-    const uploaded = await enterprise.uploadPolicyApplication(props.tenantId, props.policyId, {
-      fileName: file.name,
-      contentType: file.type || undefined,
-      content: arrayBufferToBase64(await file.arrayBuffer()),
-    });
-    props.setKey(keys.app, uploaded);
-  };
-  const download = async () => {
-    const sha256 = app()?.sha256;
-    if (!sha256) return;
-    const file = await enterprise.downloadPolicyApplication(props.tenantId, props.policyId, sha256);
-    const url = URL.createObjectURL(
-      new Blob([base64ToArrayBuffer(file.content)], {
-        type: file.contentType ?? "application/octet-stream",
-      }),
-    );
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = file.fileName;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
   return (
-    <Show
-      when={app()}
-      fallback={
-        <div class="space-y-3">
-          <p class="text-sm text-muted-foreground">
-            Upload an application installer for this policy. Delivery is not connected to MDM yet.
-          </p>
-          <Button onClick={upload}>Upload application</Button>
-        </div>
-      }
-    >
-      {(value) => (
-        <div class="space-y-4">
-          <div class="rounded-lg border p-3 text-sm">
-            <p class="font-medium">{value().fileName}</p>
-            <p class="text-muted-foreground">SHA-256: {value().sha256}</p>
-            <Show when={value().size !== undefined}>
-              <p class="text-muted-foreground">Size: {value().size} bytes</p>
-            </Show>
-          </div>
-          <div class="flex gap-2">
-            <Button onClick={download}>Download</Button>
-            <Button onClick={upload}>Replace</Button>
-            <Button variant="outline" onClick={() => props.setKey(keys.app, null)}>
-              Remove
-            </Button>
-          </div>
-        </div>
-      )}
-    </Show>
+    <div class="space-y-3">
+      <p class="text-sm font-medium">Application deployment</p>
+      <p class="text-sm text-muted-foreground">
+        Remote app installers are not wired into Apple declarative management yet. Packages can
+        still be uploaded to the policy API for future use, but they will not be delivered to
+        devices.
+      </p>
+    </div>
+  );
+}
+
+function DeviceSection(props: { config: Config; setKey: (key: string, value: unknown) => void }) {
+  const device = () => (props.config[keys.device] ?? { camera: true }) as { camera?: boolean };
+  return (
+    <div class="space-y-4">
+      <p class="text-sm text-muted-foreground">
+        Basic restrictions applied to every device in this policy's scope.
+      </p>
+      <label class="flex items-center justify-between gap-4 rounded-lg border p-3 text-sm">
+        <span>
+          <strong class="block">Allow camera</strong>
+          <span class="text-muted-foreground">Disable the camera on managed devices.</span>
+        </span>
+        <input
+          type="checkbox"
+          checked={device().camera !== false}
+          onChange={(event) =>
+            props.setKey(keys.device, { ...device(), camera: event.currentTarget.checked })
+          }
+        />
+      </label>
+    </div>
   );
 }
 

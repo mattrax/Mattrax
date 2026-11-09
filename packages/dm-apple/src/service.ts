@@ -1,5 +1,4 @@
 import { Context, Effect, Layer } from "effect";
-import { Env as CoreEnv } from "@mattrax/enterprise-core";
 import {
   type AuthenticatePlist,
   type CheckOutPlist,
@@ -10,6 +9,9 @@ import {
 } from "./schema.js";
 import { ManagementBackend, MdmOrigin, type CheckinScope } from "@mattrax/management-backend";
 import { extractTopicFromCertPem } from "./cert.js";
+import { AppleMdmConfig } from "./config.js";
+import { buildAppleEnrollmentProfile } from "./enrollment.js";
+import { verifyAppleProfileToken } from "./tokens.js";
 
 function base64ToHex(base64: string): string {
   const cleaned = base64.replace(/\s/g, "");
@@ -41,17 +43,22 @@ export class AppleMdmService extends Context.Service<AppleMdmService, AppleMdmSe
 ) {
   static readonly make = (options: {
     readonly backend: ManagementBackend.Service;
-    readonly env: CoreEnv.Service;
+    readonly config: AppleMdmConfig.Service;
     readonly topic: string;
-  }): AppleMdmService.Service => makeAppleMdmService(options.backend, options.env, options.topic);
+  }): AppleMdmService.Service =>
+    makeAppleMdmService(options.backend, options.config, options.topic);
 
+  /**
+   * Hosts must provide `AppleMdmConfig` (origin, vendor certificate, auth
+   * secret). Tests and the standalone apps wire their own config layer.
+   */
   static readonly layer = Layer.effect(
     AppleMdmService,
     Effect.gen(function* () {
       const backend = yield* ManagementBackend;
-      const env = yield* CoreEnv;
+      const config = yield* AppleMdmConfig;
       const topic = yield* AppleMdmTopic;
-      return AppleMdmService.make({ backend, env, topic: yield* topic.get });
+      return AppleMdmService.make({ backend, config, topic: yield* topic.get });
     }),
   );
 }
@@ -110,8 +117,21 @@ export declare namespace AppleMdmService {
     readonly handleAsset: (
       identityCertificate: string | undefined,
       identifier: string,
+      token?: string,
     ) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError>;
-    readonly generateEnrollmentProfile: () => Effect.Effect<string, MdmError>;
+    readonly handleProfile: (
+      deviceToken: string,
+      policyId: string,
+      kind: string,
+      token: string | undefined,
+    ) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError>;
+    readonly generateEnrollmentProfile: (options?: {
+      readonly challenge?: string;
+      readonly organizationId?: string;
+      readonly organizationName?: string;
+      readonly displayName?: string;
+      readonly identifier?: string;
+    }) => Effect.Effect<string, MdmError>;
   };
 }
 
@@ -120,12 +140,12 @@ const placeholderTopic = "com.apple.mgmt.External.placeholder";
 export class AppleMdmTopic extends Context.Service<AppleMdmTopic, AppleMdmTopic.Service>()(
   "AppleMdmTopic",
 ) {
-  static readonly make = (env: CoreEnv.Service): AppleMdmTopic.Service => {
+  static readonly make = (config: AppleMdmConfig.Service): AppleMdmTopic.Service => {
     let cached: string | undefined;
     return AppleMdmTopic.of({
       get: Effect.sync(() => {
-        cached ??= env.cloudAppleVendorCert
-          ? (extractTopicFromCertPem(env.cloudAppleVendorCert) ?? placeholderTopic)
+        cached ??= config.cloudAppleVendorCert
+          ? (extractTopicFromCertPem(config.cloudAppleVendorCert) ?? placeholderTopic)
           : placeholderTopic;
         return cached;
       }),
@@ -135,8 +155,8 @@ export class AppleMdmTopic extends Context.Service<AppleMdmTopic, AppleMdmTopic.
   static readonly layer = Layer.effect(
     AppleMdmTopic,
     Effect.gen(function* () {
-      const env = yield* CoreEnv;
-      return AppleMdmTopic.make(env);
+      const config = yield* AppleMdmConfig;
+      return AppleMdmTopic.make(config);
     }),
   );
 }
@@ -149,12 +169,12 @@ export declare namespace AppleMdmTopic {
 
 const makeAppleMdmService = (
   backend: ManagementBackend.Service,
-  env: CoreEnv.Service,
+  config: AppleMdmConfig.Service,
   topic: string,
 ): AppleMdmService.Service => {
   const toMdmError = (message: string) => () => new MdmError({ message });
 
-  const mdmOrigin = new MdmOrigin({ url: env.origin });
+  const mdmOrigin = new MdmOrigin({ url: config.origin });
 
   const handleAuthenticate = (
     auth: AuthenticatePlist,
@@ -331,12 +351,39 @@ const makeAppleMdmService = (
   const handleAsset = (
     identityCertificate: string | undefined,
     identifier: string,
+    token?: string,
   ): Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError> =>
-    backend.getAppleAsset(identityCertificate, identifier).pipe(
+    backend.getAppleAsset(identityCertificate, identifier, token).pipe(
       Effect.catchTag("ManagementNotSupported", () => Effect.succeed(null)),
       Effect.catchTag("UnknownDevice", () => Effect.succeed(null)),
       Effect.mapError(toMdmError("Failed to fetch asset")),
     );
+
+  const profileSecret = (): string | undefined => config.authSecret;
+
+  const handleProfile = (
+    deviceToken: string,
+    policyId: string,
+    kind: string,
+    token: string | undefined,
+  ): Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError> =>
+    Effect.gen(function* () {
+      const secret = profileSecret();
+      // DDM profile fetches are unauthenticated at the transport level, so a
+      // valid signature is mandatory. Fail closed when the host has not
+      // configured a secret.
+      if (!secret || !token) return null;
+      const valid = yield* Effect.promise(() =>
+        verifyAppleProfileToken(secret, token, { policyId, kind, deviceToken }),
+      );
+      if (!valid) return null;
+      if (!backend.getAppleProfile) return null;
+      return yield* backend.getAppleProfile(policyId, kind).pipe(
+        Effect.catchTag("ManagementNotSupported", () => Effect.succeed(null)),
+        Effect.catchTag("UnknownDevice", () => Effect.succeed(null)),
+        Effect.mapError(toMdmError("Failed to fetch profile")),
+      );
+    });
 
   const handleStatusReport = (
     scope: CheckinScope,
@@ -360,54 +407,26 @@ const makeAppleMdmService = (
         Effect.mapError(toMdmError("Failed to send DeclarationStatus event")),
       );
 
-  const generateEnrollmentProfile = (): Effect.Effect<string, MdmError> =>
-    Effect.gen(function* () {
-      const scepUuid = crypto.randomUUID();
-      const mdmUuid = crypto.randomUUID();
-      const topUuid = crypto.randomUUID();
-      const profile = {
-        PayloadContent: [
-          {
-            PayloadContent: {
-              Challenge: "mattrax-scep-challenge",
-              "Key Type": "RSA",
-              "Key Usage": 5,
-              Keysize: 2048,
-              Subject: [[["O", "Mattrax"]], [["CN", "Mattrax Identity"]]],
-              URL: `${env.origin}/mdm/apple/scep`,
-            },
-            PayloadIdentifier: "com.mattrax.scep",
-            PayloadType: "com.apple.security.scep",
-            PayloadUUID: scepUuid,
-            PayloadVersion: 1,
-          },
-          {
-            AccessRights: 8191,
-            CheckInURL: `${env.origin}/mdm/apple/mdm`,
-            CheckOutWhenRemoved: true,
-            IdentityCertificateUUID: scepUuid,
-            PayloadIdentifier: "com.mattrax.mdm",
-            PayloadType: "com.apple.mdm",
-            PayloadUUID: mdmUuid,
-            PayloadVersion: 1,
-            ServerCapabilities: [
-              "com.apple.mdm.per-user-connections",
-              "com.apple.mdm.bootstraptoken",
-            ],
-            ServerURL: `${env.origin}/mdm/apple/mdm`,
-            SignMessage: true,
-            Topic: topic,
-          },
-        ],
-        PayloadDisplayName: "Mattrax Enrollment",
-        PayloadIdentifier: "com.mattrax.enrollment",
-        PayloadOrganization: "Mattrax",
-        PayloadType: "Configuration",
-        PayloadUUID: topUuid,
-        PayloadVersion: 1,
-      };
-      return JSON.stringify(profile);
-    });
+  const generateEnrollmentProfile = (options?: {
+    readonly challenge?: string;
+    readonly organizationId?: string;
+    readonly organizationName?: string;
+    readonly displayName?: string;
+    readonly identifier?: string;
+  }): Effect.Effect<string, MdmError> =>
+    Effect.sync(() =>
+      JSON.stringify(
+        buildAppleEnrollmentProfile({
+          origin: config.origin,
+          topic,
+          organizationId: options?.organizationId ?? config.organizationId ?? "",
+          organizationName: options?.organizationName ?? config.organizationName ?? "Mattrax",
+          challenge: options?.challenge ?? crypto.randomUUID(),
+          displayName: options?.displayName,
+          identifier: options?.identifier,
+        }),
+      ),
+    );
 
   return AppleMdmService.of({
     mdmOrigin,
@@ -421,6 +440,7 @@ const makeAppleMdmService = (
     handleDeclarationItems,
     handleDeclaration,
     handleAsset,
+    handleProfile,
     generateEnrollmentProfile,
   });
 };

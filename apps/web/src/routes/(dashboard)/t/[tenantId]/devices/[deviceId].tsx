@@ -12,6 +12,14 @@ import {
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "~/components/ui/dialog";
 import { enterprise, enterpriseKeys, type DeviceRow } from "~/lib/enterprise";
 
 export default function DeviceDetailPage() {
@@ -26,6 +34,8 @@ export default function DeviceDetailPage() {
   const [name, setName] = createSignal("");
   const [assetTag, setAssetTag] = createSignal("");
   const [notes, setNotes] = createSignal("");
+  const [confirmAction, setConfirmAction] = createSignal<"unenroll" | "delete" | null>(null);
+  const [confirmName, setConfirmName] = createSignal("");
   createEffect(
     () => row(),
     (row) => {
@@ -100,15 +110,15 @@ export default function DeviceDetailPage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => unenroll.mutate()}
+              onClick={() => setConfirmAction("unenroll")}
               disabled={unenroll.isPending || row()?.status !== "enrolled"}
             >
               Unenroll
             </Button>
             <Button
               variant="destructive"
-              onClick={() => remove.mutate()}
-              disabled={remove.isPending}
+              onClick={() => setConfirmAction("delete")}
+              disabled={remove.isPending || row()?.status === "enrolled"}
             >
               Delete
             </Button>
@@ -182,6 +192,46 @@ export default function DeviceDetailPage() {
           </Card>
         </div>
       </Show>
+
+      <Dialog
+        open={confirmAction() !== null}
+        onOpenChange={(open) => !open && setConfirmAction(null)}
+      >
+        <DialogContent class="max-w-md rounded-xl bg-white p-6">
+          <DialogHeader>
+            <DialogTitle>
+              {confirmAction() === "delete" ? "Delete device" : "Unenroll device"}?
+            </DialogTitle>
+            <DialogDescription>
+              {confirmAction() === "delete"
+                ? "The device record and its history will be removed."
+                : "The device will be asked to remove its management profile."}
+            </DialogDescription>
+          </DialogHeader>
+          <p class="text-sm text-muted-foreground">
+            Type <span class="font-mono font-medium">{row()?.name}</span> to confirm.
+          </p>
+          <Input value={confirmName()} onInput={(e) => setConfirmName(e.currentTarget.value)} />
+          <ErrorText error={unenroll.error || remove.error} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmAction(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={confirmName() !== row()?.name}
+              onClick={() => {
+                if (confirmAction() === "delete") remove.mutate();
+                else unenroll.mutate();
+                setConfirmName("");
+                setConfirmAction(null);
+              }}
+            >
+              {confirmAction() === "delete" ? "Delete device" : "Unenroll device"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,0 +1,227 @@
+import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
+import { verifyAppleAssetToken, verifyAppleProfileToken } from "@mattrax/dm-apple";
+import {
+  buildAssetDeclaration,
+  buildConfigurationDeclaration,
+  buildLegacyProfile,
+  certificateAllowsOrganization,
+  configurationAssetIdentifier,
+  configurationProfileUrl,
+  configurationServerToken,
+  splitConfigurationAssetIdentifier,
+  splitConfigurationDeclarationIdentifier,
+  validateConfiguration,
+  type DeclarationContext,
+  type PolicyConfigurationRow,
+} from "../policy.js";
+
+const context: DeclarationContext = {
+  origin: "https://mdm.example.com",
+  authSecret: "test-secret",
+  deviceToken: "device-token-1",
+};
+
+const row = (overrides: Partial<PolicyConfigurationRow> = {}): PolicyConfigurationRow => ({
+  policyId: "policy-1",
+  kind: "mttx.apple.device",
+  data: { camera: false },
+  hash: "hash-1",
+  organizationId: "tenant-1",
+  ...overrides,
+});
+
+const mobileconfig = (payloadTypes: string[]) => {
+  const payloads = payloadTypes
+    .map(
+      (type) =>
+        `<dict><key>PayloadType</key><string>${type}</string><key>PayloadIdentifier</key><string>test.${type}</string></dict>`,
+    )
+    .join("");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>PayloadType</key><string>Configuration</string><key>PayloadIdentifier</key><string>test.profile</string><key>PayloadUUID</key><string>11111111-1111-1111-1111-111111111111</string><key>PayloadVersion</key><integer>1</integer><key>PayloadContent</key><array>${payloads}</array></dict></plist>`;
+  return btoa(xml);
+};
+
+const certificatePem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+
+describe("enterprise policy compiler", () => {
+  it("maps device kinds to a legacy profile declaration", async () => {
+    const declaration = await buildConfigurationDeclaration(row(), context);
+    expect(declaration).toMatchObject({
+      Type: "com.apple.configuration.legacy",
+      Identifier: "policy-1:mttx.apple.device",
+    });
+    const url = new URL((declaration!.Payload as any).ProfileURL);
+    expect(url.origin).toBe("https://mdm.example.com");
+    expect(url.pathname).toBe("/mdm/apple/profiles/device-token-1/policy-1/mttx.apple.device");
+    const token = url.searchParams.get("token")!;
+    await expect(
+      verifyAppleProfileToken(context.authSecret, token, {
+        policyId: "policy-1",
+        kind: "mttx.apple.device",
+        deviceToken: "device-token-1",
+      }),
+    ).resolves.toBe(true);
+    // A token for one device is not valid for another.
+    await expect(
+      verifyAppleProfileToken(context.authSecret, token, {
+        policyId: "policy-1",
+        kind: "mttx.apple.device",
+        deviceToken: "device-token-2",
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it("maps certificate kinds to an asset plus security.certificate declaration", async () => {
+    const certificate = row({
+      kind: "mttx.apple.certificate.root",
+      data: { pem: certificatePem },
+      hash: "cert-hash",
+    });
+    const declaration = await buildConfigurationDeclaration(certificate, context);
+    expect(declaration).toMatchObject({
+      Type: "com.apple.configuration.security.certificate",
+      Identifier: "policy-1:mttx.apple.certificate.root",
+      Payload: {
+        CredentialAssetReference: configurationAssetIdentifier(
+          "policy-1",
+          "mttx.apple.certificate.root",
+        ),
+      },
+    });
+
+    const asset = await buildAssetDeclaration(certificate, context);
+    expect(asset).toMatchObject({
+      Type: "com.apple.asset.credential.certificate",
+      Identifier: "policy-1.mttx.apple.certificate.root.asset",
+    });
+    const reference = (asset!.Payload as any).Reference;
+    expect(reference.ContentType).toBe("application/pem");
+    const url = new URL(reference.DataURL);
+    expect(url.pathname).toBe("/mdm/apple/assets/policy-1.mttx.apple.certificate.root.asset");
+    const token = url.searchParams.get("token")!;
+    await expect(
+      verifyAppleAssetToken(context.authSecret, token, "policy-1", "mttx.apple.certificate.root"),
+    ).resolves.toBe(true);
+    await expect(
+      verifyAppleAssetToken(context.authSecret, token, "policy-1", "mttx.apple.certificate.other"),
+    ).resolves.toBe(false);
+  });
+
+  it("passes through custom declarations with the supplied kind", async () => {
+    const declaration = await buildConfigurationDeclaration(
+      row({
+        kind: "mttx.apple.declaration.files",
+        data: {
+          kind: "com.apple.configuration.services.configuration-files",
+          configuration: { ServiceType: "com.apple.servicemanagement" },
+        },
+      }),
+      context,
+    );
+    expect(declaration).toMatchObject({
+      Type: "com.apple.configuration.services.configuration-files",
+      Payload: { ServiceType: "com.apple.servicemanagement" },
+    });
+  });
+
+  it("never emits the legacy com.apple.configuration.mttx.* type", async () => {
+    const declaration = await buildConfigurationDeclaration(row(), context);
+    expect(declaration!.Type.startsWith("com.apple.configuration.mttx")).toBe(false);
+  });
+
+  it("recomputes server tokens when content changes", async () => {
+    const first = await configurationServerToken(row({ hash: "hash-1" }), context);
+    const second = await configurationServerToken(row({ hash: "hash-2" }), context);
+    expect(first).not.toBe(second);
+  });
+
+  it("includes origin and device token in legacy profile tokens", async () => {
+    const otherDevice = await configurationServerToken(row(), { ...context, deviceToken: "other" });
+    expect(await configurationServerToken(row(), context)).not.toBe(otherDevice);
+  });
+
+  it("renders the device camera restriction as a legacy mobileconfig", async () => {
+    const profile = await buildLegacyProfile(row({ data: { camera: false } }));
+    expect(profile?.contentType).toBe("application/x-apple-aspen-config");
+    const text = new TextDecoder().decode(profile!.content);
+    expect(text).toContain("com.apple.applicationaccess");
+    expect(text).toContain("<key>allowCamera</key><false/>");
+  });
+
+  it("renders custom mobileconfigs verbatim", async () => {
+    const content = mobileconfig(["com.apple.wifi.managed"]);
+    const profile = await buildLegacyProfile(
+      row({ kind: "mttx.apple.custom.wifi", data: { content } }),
+    );
+    const text = new TextDecoder().decode(profile!.content);
+    expect(text).toContain("com.apple.wifi.managed");
+    expect(profile?.contentType).toBe("application/x-apple-aspen-config");
+  });
+
+  it("builds signed profile URLs", async () => {
+    const url = new URL(await configurationProfileUrl(row(), context));
+    expect(url.searchParams.get("token")).toBeTruthy();
+  });
+
+  it("splits declaration and asset identifiers", () => {
+    expect(splitConfigurationDeclarationIdentifier("policy-1:mttx.apple.custom.foo")).toEqual({
+      policyId: "policy-1",
+      kind: "mttx.apple.custom.foo",
+    });
+    expect(splitConfigurationAssetIdentifier("policy-1.mttx.apple.certificate.root.asset")).toEqual(
+      {
+        policyId: "policy-1",
+        kind: "mttx.apple.certificate.root",
+      },
+    );
+  });
+
+  it("rejects cross-tenant asset access", () => {
+    expect(certificateAllowsOrganization("CN=device, OU=tenant-1", "tenant-1")).toBe(true);
+    expect(certificateAllowsOrganization("CN=device, OU=tenant-2", "tenant-1")).toBe(false);
+    expect(certificateAllowsOrganization(undefined, "tenant-1")).toBe(false);
+  });
+});
+
+describe("policy configuration validation", () => {
+  const validate = (kind: string, data: unknown) =>
+    Effect.runPromise(validateConfiguration(kind, data).pipe(Effect.flip));
+
+  it("accepts supported kinds", async () => {
+    await expect(
+      validateConfiguration("mttx.apple.device", { camera: false }).pipe(Effect.runPromise),
+    ).resolves.toBeUndefined();
+    await expect(
+      validateConfiguration("mttx.apple.certificate.root", { pem: certificatePem }).pipe(
+        Effect.runPromise,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects unknown kinds", async () => {
+    await expect(validate("passcode", { minLength: 8 })).resolves.toContain(
+      "Unknown configuration kind",
+    );
+  });
+
+  it("rejects unsupported application kinds with a clear message", async () => {
+    await expect(
+      validate("mttx.apple.application.office", { fileName: "Office.pkg" }),
+    ).resolves.toContain("not supported");
+  });
+
+  it("rejects custom profiles that contain an MDM payload", async () => {
+    await expect(
+      validate("mttx.apple.custom.mdm", { content: mobileconfig(["com.apple.mdm"]) }),
+    ).resolves.toContain("com.apple.mdm");
+  });
+
+  it("rejects malformed certificates", async () => {
+    await expect(
+      validate("mttx.apple.certificate.root", { pem: "not a certificate" }),
+    ).resolves.toContain("exactly one PEM certificate");
+  });
+});

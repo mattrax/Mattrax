@@ -13,9 +13,7 @@ export default function Document(props: { children?: JSX.Element }) {
         <HydrationScript />
       </head>
 
-      <body>
-        {props.children}
-      </body>
+      <body>{props.children}</body>
     </html>
   );
 }

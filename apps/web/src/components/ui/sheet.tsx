@@ -67,7 +67,7 @@ const SheetContent = <T extends ValidComponent = "div">(props: SheetContentProps
   );
   const [local, others] = splitProps(mergedProps, ["class", "children", "side", "showCloseButton"]);
   return (
-    <SheetPortal>
+    <>
       <SheetOverlay />
       <SheetPrimitive.Content
         data-slot="sheet-content"
@@ -89,7 +89,7 @@ const SheetContent = <T extends ValidComponent = "div">(props: SheetContentProps
           </SheetPrimitive.CloseButton>
         </Show>
       </SheetPrimitive.Content>
-    </SheetPortal>
+    </>
   );
 };
 

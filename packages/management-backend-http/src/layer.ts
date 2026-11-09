@@ -48,11 +48,76 @@ const normalizeCheckin = <A, E extends { readonly _tag?: string | undefined }, R
   effect: Effect.Effect<A, E, R>,
 ) => effect.pipe(Effect.mapError(toCheckinError));
 
-export const ManagementBackendHttp = (baseUrl: string) =>
+const encoder = new TextEncoder();
+const toHex = (bytes: ArrayBuffer) =>
+  Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+
+const sha256 = (value: string) =>
+  Effect.promise(() => crypto.subtle.digest("SHA-256", encoder.encode(value))).pipe(
+    Effect.map(toHex),
+  );
+
+const hmac = (secret: string, value: string) =>
+  Effect.gen(function* () {
+    const key = yield* Effect.promise(() =>
+      crypto.subtle.importKey(
+        "raw",
+        encoder.encode(secret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"],
+      ),
+    );
+    return toHex(
+      yield* Effect.promise(() => crypto.subtle.sign("HMAC", key, encoder.encode(value))),
+    );
+  });
+
+export type ManagementBackendHttpOptions = {
+  readonly baseUrl: string;
+  /** When set, every webhook request is HMAC-signed. */
+  readonly secret?: string;
+};
+
+const signRequest = (secret: string, operation: string, payload: unknown) =>
+  Effect.gen(function* () {
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const digest = yield* sha256(JSON.stringify(payload ?? null));
+    const signature = yield* hmac(secret, `${operation}.${timestamp}.${digest}`);
+    return {
+      "x-mattrax-timestamp": timestamp,
+      "x-mattrax-signature": signature,
+    } as Record<string, string>;
+  });
+
+const signingClient = <Client extends { ManagementWebhook: Record<string, unknown> }>(
+  client: Client,
+  secret: string,
+): Client =>
+  ({
+    ...client,
+    ManagementWebhook: new Proxy(client.ManagementWebhook, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (typeof value !== "function") return value;
+        return (options: Record<string, unknown> = {}) =>
+          Effect.flatMap(signRequest(secret, String(property), options.payload), (headers) =>
+            value({
+              ...options,
+              headers: { ...(options.headers as object | undefined), ...headers },
+            }),
+          );
+      },
+    }),
+  }) as Client;
+
+export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptions) =>
   Layer.effect(
     ManagementBackend,
     Effect.gen(function* () {
-      const client = yield* HttpApiClient.make(managementApi, { baseUrl });
+      const options = typeof input === "string" ? { baseUrl: input } : input;
+      const raw = yield* HttpApiClient.make(managementApi, { baseUrl: options.baseUrl });
+      const client = options.secret ? signingClient(raw, options.secret) : raw;
 
       return ManagementBackend.of({
         appleDeviceEvent: (scope, event) =>
@@ -72,12 +137,15 @@ export const ManagementBackendHttp = (baseUrl: string) =>
             client.ManagementWebhook.getAppleDeclaration({ payload: { scope, type, identifier } }),
           ),
 
-        getAppleAsset: (identityCertificate, identifier) =>
+        getAppleAsset: (identityCertificate, identifier, token) =>
           normalize(
             client.ManagementWebhook.getAppleAsset({
-              payload: { identityCertificate, identifier },
+              payload: { identityCertificate, identifier, token },
             }),
           ),
+
+        getAppleProfile: (policyId, kind) =>
+          normalize(client.ManagementWebhook.getAppleProfile({ payload: { policyId, kind } })),
 
         windowsDiscovery: (request) =>
           normalizeNoDevice(client.ManagementWebhook.windowsDiscovery({ payload: request })),

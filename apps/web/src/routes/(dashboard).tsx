@@ -1,5 +1,7 @@
 import { useLocation, useNavigate } from "@solidjs/router";
+import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, For, type ParentProps, Show } from "solid-js";
+import { CommandPalette } from "~/components/command-palette";
 import { TenantSwitcher } from "~/components/mdm/tenant-switcher";
 import {
   Boxes,
@@ -8,6 +10,7 @@ import {
   LinkIcon,
   LogOut,
   Settings,
+  Search as SearchIcon,
   ShieldCheck,
   User,
   UsersRound,
@@ -17,6 +20,7 @@ import {
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
+  BreadcrumbSeparator,
 } from "~/components/ui/breadcrumb";
 import {
   DropdownMenu,
@@ -38,69 +42,135 @@ import {
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
+  sidebarMenuButtonVariants,
+  useSidebar,
 } from "~/components/ui/sidebar";
+import { enterprise, enterpriseKeys, resolveActiveTenant } from "~/lib/enterprise";
+import { cn } from "~/lib/utils";
 import { authClient } from "~/lib/auth";
 
-function breadcrumbForPath(path: string) {
-  if (path === "/dashboard") return "Dashboard";
-  if (path === "/account") return "Account";
-  if (path === "/settings") return "Settings";
-  if (path.includes("/devices")) return "Devices";
-  if (path.includes("/groups")) return "Groups";
-  if (path.includes("/policies")) return "Policies";
-  if (path.includes("/enrollment")) return "Enrollment";
-  if (path.includes("/tenants/new")) return "Create tenant";
-  return "Dashboard";
+type Crumb = { label: string; href?: string };
+
+function breadcrumbForPath(path: string, tenantName?: string): Crumb[] {
+  const crumbs: Crumb[] = [];
+  if (path === "/dashboard") return [{ label: "Dashboard" }];
+  if (path === "/account") return [{ label: "Account" }];
+  if (path === "/settings") return [{ label: "Settings" }];
+  if (path === "/tenants/new")
+    return [{ label: "Tenants", href: "/dashboard" }, { label: "New tenant" }];
+
+  const match = path.match(/^\/t\/([^/]+)(?:\/(.*))?$/);
+  if (match) {
+    const [, tenantId, rest = ""] = match;
+    crumbs.push({ label: tenantName ?? "Tenant", href: `/t/${tenantId}/devices` });
+    const [section, id, sub] = rest.split("/").filter(Boolean);
+    const labels: Record<string, string> = {
+      devices: "Devices",
+      groups: "Groups",
+      policies: "Policies",
+      enrollment: "Enrollment",
+      settings: "Settings",
+    };
+    if (section) {
+      crumbs.push({ label: labels[section] ?? section });
+      if (id)
+        crumbs.push({
+          label:
+            id === "new"
+              ? "New"
+              : section === "settings"
+                ? id.charAt(0).toUpperCase() + id.slice(1)
+                : "Detail",
+        });
+      if (sub) crumbs.push({ label: sub === "editor" ? "Editor" : sub });
+    }
+  }
+  if (crumbs.length === 0) crumbs.push({ label: "Dashboard" });
+  return crumbs;
+}
+
+/** Close the mobile drawer whenever the route changes. */
+function CloseMobileSidebarOnNavigate() {
+  const location = useLocation();
+  const { isMobile, setOpenMobile } = useSidebar();
+  createEffect(
+    () => location.pathname,
+    () => {
+      if (isMobile()) setOpenMobile(false);
+    },
+  );
+  return null;
 }
 
 export default function DashboardLayout(props: ParentProps) {
   const session = authClient.useSession();
   const navigate = useNavigate();
   const location = useLocation();
+  const me = useQuery(() => ({ queryKey: enterpriseKeys.me(), queryFn: enterprise.me }));
   const user = () => session().data?.user;
-  const tenantId = createMemo(() => location.pathname.match(/^\/t\/([^/]+)/)?.[1]);
-  const tenantBase = () => (tenantId() ? `/t/${tenantId()}` : "/dashboard");
+  const routeTenantId = createMemo(() => location.pathname.match(/^\/t\/([^/]+)/)?.[1]);
+  const activeTenant = createMemo(() => resolveActiveTenant(me.data, routeTenantId()));
+  const tenantId = () => activeTenant()?.id;
+  const tenantBase = () => (tenantId() ? `/t/${tenantId()}` : "");
+  const hasTenant = () => Boolean(tenantId());
+  const crumbs = () => breadcrumbForPath(location.pathname, activeTenant()?.name);
+
   const navItems = () => [
     {
-      href: "/dashboard",
+      href: hasTenant() ? tenantBase() : "/dashboard",
       label: "Dashboard",
       icon: LayoutDashboard,
-      active: location.pathname === "/dashboard",
+      active: location.pathname === "/dashboard" || /^\/t\/[^/]+$/.test(location.pathname),
+      disabled: false,
     },
     {
       href: `${tenantBase()}/devices`,
       label: "Devices",
       icon: Laptop,
       active: location.pathname.includes("/devices"),
-      disabled: !tenantId(),
+      disabled: !hasTenant(),
     },
     {
       href: `${tenantBase()}/groups`,
       label: "Groups",
       icon: UsersRound,
       active: location.pathname.includes("/groups"),
-      disabled: !tenantId(),
+      disabled: !hasTenant(),
     },
     {
       href: `${tenantBase()}/policies`,
       label: "Policies",
       icon: ShieldCheck,
       active: location.pathname.includes("/policies"),
-      disabled: !tenantId(),
+      disabled: !hasTenant(),
     },
     {
-      href: `${tenantBase()}/enrollment`,
+      href: `${tenantBase()}/settings/enrollment`,
       label: "Enrollment",
       icon: LinkIcon,
-      active: location.pathname.includes("/enrollment"),
-      disabled: !tenantId(),
+      active: location.pathname.includes("/settings/enrollment"),
+      disabled: !hasTenant(),
     },
     {
       href: `${tenantBase()}/settings`,
       label: "Tenant settings",
       icon: Settings,
-      active: location.pathname.includes("/settings") && Boolean(tenantId()),
-      disabled: !tenantId(),
+      active: location.pathname.includes("/settings") && Boolean(routeTenantId()),
+      disabled: !hasTenant(),
+    },
+    {
+      href: "/instances",
+      label: "Instances",
+      icon: Boxes,
+      active: location.pathname === "/instances",
+      disabled: false,
+    },
+    {
+      href: "/docs",
+      label: "Documentation",
+      icon: LinkIcon,
+      active: false,
+      disabled: false,
     },
   ];
 
@@ -126,6 +196,7 @@ export default function DashboardLayout(props: ParentProps) {
 
   return (
     <SidebarProvider>
+      <CloseMobileSidebarOnNavigate />
       <Sidebar collapsible="icon">
         <SidebarHeader class="border-b border-sidebar-border">
           <SidebarMenu>
@@ -137,8 +208,10 @@ export default function DashboardLayout(props: ParentProps) {
                 class="gap-2.5 px-2 hover:bg-sidebar-accent"
                 tooltip="Mattrax"
               >
-                <Boxes class="size-5" />
-                <span class="font-semibold tracking-tight">Mattrax</span>
+                <Boxes class="size-5 shrink-0" />
+                <span class="truncate font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+                  Mattrax
+                </span>
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
@@ -148,7 +221,7 @@ export default function DashboardLayout(props: ParentProps) {
         </SidebarHeader>
 
         <SidebarContent>
-          <SidebarMenu>
+          <SidebarMenu class="gap-0.5 p-1">
             <For each={navItems()}>
               {(item) => (
                 <SidebarMenuItem>
@@ -156,10 +229,12 @@ export default function DashboardLayout(props: ParentProps) {
                     as="a"
                     href={item.disabled ? "/tenants/new" : item.href}
                     isActive={item.active}
-                    tooltip={item.label}
+                    tooltip={item.disabled ? `${item.label} — create a tenant first` : item.label}
+                    aria-disabled={item.disabled ? "true" : undefined}
+                    class={item.disabled ? "opacity-50" : undefined}
                   >
                     <item.icon />
-                    <span>{item.label}</span>
+                    <span class="truncate group-data-[collapsible=icon]:hidden">{item.label}</span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
@@ -170,12 +245,13 @@ export default function DashboardLayout(props: ParentProps) {
         <SidebarFooter class="border-t border-sidebar-border">
           <SidebarMenu>
             <SidebarMenuItem>
-              <DropdownMenu placement="top-start">
+              <DropdownMenu>
                 <DropdownMenuTrigger
-                  as={SidebarMenuButton}
-                  size="lg"
-                  class="gap-2 data-expanded:bg-sidebar-accent"
-                  tooltip={user()?.name ?? "Account"}
+                  class={cn(
+                    sidebarMenuButtonVariants({ size: "lg" }),
+                    "gap-2 data-expanded:bg-sidebar-accent",
+                  )}
+                  title={user()?.name ?? "Account"}
                 >
                   <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-stone-900 text-stone-50 text-xs font-semibold">
                     <Show
@@ -189,29 +265,36 @@ export default function DashboardLayout(props: ParentProps) {
                       />
                     </Show>
                   </span>
-                  <div class="min-w-0 flex-1 text-left">
+                  <div class="min-w-0 flex-1 text-left group-data-[collapsible=icon]:hidden">
                     <p class="truncate text-sm font-medium leading-none">{user()?.name}</p>
-                    <p class="truncate text-xs text-muted-foreground mt-0.5">{user()?.email}</p>
+                    <p class="mt-0.5 truncate text-xs text-muted-foreground">{user()?.email}</p>
                   </div>
                 </DropdownMenuTrigger>
 
                 <DropdownMenuContent class="w-52 rounded-xl border bg-white p-1 shadow-lg">
-                  <div class="px-3 py-2 border-b border-stone-100 mb-1">
-                    <p class="text-sm font-medium text-stone-900 truncate">{user()?.name}</p>
-                    <p class="text-xs text-stone-500 truncate mt-0.5">{user()?.email}</p>
+                  <div class="mb-1 border-b border-stone-100 px-3 py-2">
+                    <p class="truncate text-sm font-medium text-stone-900">{user()?.name}</p>
+                    <p class="mt-0.5 truncate text-xs text-stone-500">{user()?.email}</p>
                   </div>
                   <DropdownMenuItem
-                    as="a"
-                    href="/account"
-                    class="rounded-lg px-3 py-2 text-sm text-stone-700 hover:bg-stone-50 flex items-center gap-2"
+                    onSelect={() => navigate("/account")}
+                    class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-stone-700 hover:bg-stone-50"
                   >
                     <User class="size-4" />
                     Account
                   </DropdownMenuItem>
+                  <DropdownMenuItem
+                    as="a"
+                    href="mailto:hello@mattrax.app?subject=Mattrax%20feedback"
+                    class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-stone-700 hover:bg-stone-50"
+                  >
+                    <LinkIcon class="size-4" />
+                    Feedback
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator class="my-1" />
                   <DropdownMenuItem
                     onSelect={handleSignOut}
-                    class="rounded-lg px-3 py-2 text-sm text-stone-700 hover:bg-stone-50 flex items-center gap-2"
+                    class="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-stone-700 hover:bg-stone-50"
                   >
                     <LogOut class="size-4" />
                     Sign out
@@ -231,14 +314,33 @@ export default function DashboardLayout(props: ParentProps) {
           <Separator orientation="vertical" class="mr-2 data-[orientation=vertical]:h-4" />
           <Breadcrumb>
             <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbPage>{breadcrumbForPath(location.pathname)}</BreadcrumbPage>
-              </BreadcrumbItem>
+              <For each={crumbs()}>
+                {(crumb, index) => (
+                  <>
+                    <Show when={index() > 0}>
+                      <BreadcrumbSeparator />
+                    </Show>
+                    <BreadcrumbItem>
+                      <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                    </BreadcrumbItem>
+                  </>
+                )}
+              </For>
             </BreadcrumbList>
           </Breadcrumb>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event("mattrax:open-command-palette"))}
+            class="ml-auto flex items-center gap-2 rounded-lg border bg-white px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-stone-50 sm:px-3"
+          >
+            <SearchIcon class="size-4" />
+            <span class="hidden sm:inline">Search</span>
+            <kbd class="hidden rounded border px-1.5 py-0.5 text-[10px] sm:inline">⌘K</kbd>
+          </button>
         </header>
         {props.children}
       </SidebarInset>
+      <CommandPalette />
     </SidebarProvider>
   );
 }

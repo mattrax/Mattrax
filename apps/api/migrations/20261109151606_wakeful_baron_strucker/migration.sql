@@ -1,0 +1,1 @@
+ALTER TABLE `user` DROP COLUMN `active_tenant_id`;

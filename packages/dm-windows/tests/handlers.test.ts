@@ -44,7 +44,7 @@ describe("Windows MDM handlers", () => {
           authToken: "token-123",
           minimalKeyLength: "2048",
           certificateValidityPeriodSeconds: "31536000",
-          renewalPeriodSeconds: "2592000",
+          renewalPeriodSeconds: "3628800",
         }),
     });
     const body = soapEnvelope(
@@ -54,7 +54,32 @@ describe("Windows MDM handlers", () => {
       new Request("http://localhost/mdm/windows/policy", { method: "POST", body }),
     );
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("GetPoliciesResponse");
+    const text = await res.text();
+    expect(text).toContain("GetPoliciesResponse");
+    expect(text).toContain("minimalKeyLength");
+    expect(text).toContain("31536000");
+    expect(text).toContain("3628800");
+  });
+
+  it("returns configured service URLs in discovery", async () => {
+    const h = await handler({
+      windowsDiscovery: () =>
+        Effect.succeed({
+          authPolicy: "OnPremise",
+          enrollmentVersion: "4.0",
+          enrollmentPolicyServiceUrl: `${config.origin}/mdm/windows/policy`,
+          enrollmentServiceUrl: `${config.origin}/mdm/windows/enroll`,
+        }),
+    });
+    const body = soapEnvelope(
+      `<Discover xmlns="http://schemas.microsoft.com/windows/management/2012/01/enrollment"><request><RequestVersion>5.0</RequestVersion><DeviceType>CIMClient_Windows</DeviceType><ApplicationVersion>10.0</ApplicationVersion><OSEdition>48</OSEdition><AuthPolicies><AuthPolicy>OnPremise</AuthPolicy></AuthPolicies></request></Discover>`,
+    );
+    const res = await h(
+      new Request("http://localhost/mdm/windows/discovery", { method: "POST", body }),
+    );
+    const text = await res.text();
+    expect(text).toContain(`${config.origin}/mdm/windows/policy`);
+    expect(text).toContain(`${config.origin}/mdm/windows/enroll`);
   });
 
   it("handles enroll", async () => {
@@ -76,7 +101,20 @@ describe("Windows MDM handlers", () => {
       new Request("http://localhost/mdm/windows/enroll", { method: "POST", body }),
     );
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("RequestSecurityTokenResponseCollection");
+    const text = await res.text();
+    expect(text).toContain("RequestSecurityTokenResponseCollection");
+    expect(text).toContain("DeviceEnrollmentProvisionDoc");
+
+    const encoded = text.match(
+      /<[^>]*BinarySecurityToken\b[^>]*>([\s\S]*?)<\/[^>]*BinarySecurityToken>/i,
+    )?.[1];
+    expect(encoded).toBeTruthy();
+    const provisioning = new TextDecoder().decode(
+      Uint8Array.from(atob(encoded!.replace(/\s/g, "")), (char) => char.charCodeAt(0)),
+    );
+    expect(provisioning).toContain("wap-provisioningdoc");
+    expect(provisioning).toContain("PROVIDER-ID");
+    expect(provisioning).toContain(`${config.origin}/mdm/windows/management`);
   });
 
   it("handles management SyncML", async () => {

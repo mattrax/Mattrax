@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { useNavigate, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { EmptyState, formatDate, LinkButton, PageHeader } from "~/components/mdm/common";
 import { EntityActions } from "~/components/mdm/entity-actions";
@@ -7,6 +7,7 @@ import { enterprise, enterpriseKeys, type GroupRow } from "~/lib/enterprise";
 
 export default function GroupsPage() {
   const params = useParams();
+  const navigate = useNavigate();
   const groups = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "group"),
     queryFn: () => enterprise.list(params.tenantId, "group"),
@@ -20,6 +21,9 @@ export default function GroupsPage() {
       />
       <MdmTable<GroupRow>
         rows={groups.data?.rows}
+        loading={groups.isPending}
+        storageKey="groups"
+        onRowClick={(row) => navigate(`/t/${params.tenantId}/groups/${row.id}`)}
         actions={(selected, clear) => (
           <EntityActions entity="group" selected={selected} clear={clear} />
         )}

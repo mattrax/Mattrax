@@ -10,6 +10,7 @@
   "dependencies": {
     "@effect/platform-node": "catalog:",
     "@mattrax/dm-apple": "workspace:*",
+    "@mattrax/dm-windows": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",

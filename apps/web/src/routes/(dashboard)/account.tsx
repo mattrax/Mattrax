@@ -1,10 +1,11 @@
-import { useSearchParams } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import { isServer } from "@solidjs/web";
 import { authClient } from "~/lib/auth";
 
 export default function AccountPage() {
   const session = authClient.useSession();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const user = () => session().data?.user;
 
@@ -17,6 +18,27 @@ export default function AccountPage() {
       if (!result.error) await session().refetch();
     })();
   });
+
+  const [deleteConfirm, setDeleteConfirm] = createSignal("");
+  const [deleteError, setDeleteError] = createSignal<string | null>(null);
+  const deleteAccount = async () => {
+    setDeleteError(null);
+    const response = await fetch("/api/v1/me", {
+      method: "DELETE",
+      credentials: "include",
+      headers: { "x-effect-auth-csrf": "1" },
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => undefined)) as
+        | { message?: string; error?: { message?: string } }
+        | undefined;
+      setDeleteError(
+        body?.message ?? body?.error?.message ?? `Request failed (${response.status})`,
+      );
+      return;
+    }
+    window.location.href = "/";
+  };
 
   const [name, setName] = createSignal("");
   const [namePending, setNamePending] = createSignal(false);
@@ -94,6 +116,42 @@ export default function AccountPage() {
   onSettled(() => {
     if (!isServer) void refetchTokens();
   });
+  type Sessions = {
+    sessions: Array<{
+      id: string;
+      current: boolean;
+      createdAt: string;
+      expiresAt: string;
+      method?: string;
+    }>;
+  };
+  const [sessions, setSessions] = createSignal<Sessions>();
+  const refetchSessions = async () => {
+    try {
+      const response = await fetch("/api/v1/account/sessions", { credentials: "include" });
+      if (!response.ok) return;
+      setSessions((await response.json()) as Sessions);
+    } catch {
+      // Session management is optional for older deployments.
+    }
+  };
+  onSettled(() => {
+    if (!isServer) void refetchSessions();
+  });
+  const revokeSession = async (id: string, current: boolean) => {
+    if (current) {
+      await authClient.signOut();
+      navigate("/login", { replace: true });
+      return;
+    }
+    await fetch(`/api/v1/account/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: { "x-effect-auth-csrf": "1" },
+    });
+    await refetchSessions();
+  };
+
   const [tokenName, setTokenName] = createSignal("");
   const [newToken, setNewToken] = createSignal<string | null>(null);
   const [tokenError, setTokenError] = createSignal<string | null>(null);
@@ -319,6 +377,72 @@ export default function AccountPage() {
           </div>
         </form>
       </section>
+
+      <section class="rounded-xl border border-red-200 bg-card p-6">
+        <h2 class="text-sm font-semibold text-red-700 mb-1">Delete account</h2>
+        <p class="text-sm text-muted-foreground mb-4">
+          This removes your account and solo tenants you own. Tenants with other administrators are
+          kept. Type your email address to confirm.
+        </p>
+        <div class="flex flex-col gap-2 sm:flex-row">
+          <input
+            type="email"
+            class={inputClass}
+            placeholder={user()?.email}
+            value={deleteConfirm()}
+            onInput={(event) => setDeleteConfirm(event.currentTarget.value)}
+          />
+          <button
+            type="button"
+            disabled={deleteConfirm() !== user()?.email}
+            onClick={deleteAccount}
+            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+          >
+            Delete account
+          </button>
+        </div>
+        <Show when={deleteError()}>
+          {(msg) => <p class="mt-2 text-sm text-red-600">{msg()}</p>}
+        </Show>
+      </section>
+
+      <Show when={(sessions()?.sessions.length ?? 0) > 0}>
+        <section class="rounded-xl border border-border bg-card p-6">
+          <h2 class="text-sm font-semibold mb-1">Active sessions</h2>
+          <p class="text-sm text-muted-foreground mb-4">
+            Devices and browsers currently signed in to your account.
+          </p>
+          <div class="space-y-2">
+            <For each={sessions()?.sessions ?? []}>
+              {(item) => (
+                <div class="flex items-center justify-between rounded-lg border border-stone-200 p-3 text-sm">
+                  <div>
+                    <p class="font-medium text-stone-900">
+                      {item.method ?? "Password"}{" "}
+                      <Show when={item.current}>
+                        <span class="ml-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
+                          This session
+                        </span>
+                      </Show>
+                    </p>
+                    <p class="text-xs text-muted-foreground">
+                      Signed in {new Date(item.createdAt).toLocaleString()} · expires{" "}
+                      {new Date(item.expiresAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
+                    onClick={() => revokeSession(item.id, item.current)}
+                  >
+                    {item.current ? "Sign out" : "Revoke"}
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+        </section>
+      </Show>
 
       <section class="rounded-xl border border-border bg-card p-6">
         <h2 class="text-sm font-semibold mb-1">API tokens</h2>

@@ -1,7 +1,7 @@
 import { Meta, Title } from "@solidjs/meta";
 import { useParams, useSearchParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
-import { createSignal, Match, Show, Switch } from "solid-js";
+import { createSignal, For, Match, Show, Switch } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
@@ -84,32 +84,47 @@ export default function EnrollPage() {
   );
 }
 
+type Platform = "apple" | "windows" | "android";
+
+const isAvailable = (value: PlatformEnrollment) =>
+  value === "available" || (typeof value === "object" && "profile" in value);
+
 function EnrollmentOptions(props: {
   id: string | undefined;
   enrollment: Extract<EnrollmentResponse, { authenticated: true }>;
 }) {
-  const [tab, setTab] = createSignal<"apple" | "windows" | "android">("apple");
+  // Always show every platform tab so an administrator can explain why a
+  // platform is unavailable (the payload carries the backend error).
+  const platforms = (): Platform[] => ["apple", "windows", "android"];
+  const firstAvailable = () =>
+    (
+      [
+        ["apple", props.enrollment.apple],
+        ["windows", props.enrollment.windows],
+        ["android", props.enrollment.android],
+      ] as const
+    ).find(([, value]) => isAvailable(value))?.[0] ?? "apple";
+  const [tab, setTab] = createSignal<Platform>(firstAvailable());
+  const active = () => tab();
   return (
     <div class="space-y-4">
-      <div class="grid grid-cols-3 gap-1 rounded-lg bg-stone-100 p-1">
-        <TabButton active={tab() === "apple"} onClick={() => setTab("apple")}>
-          Apple
-        </TabButton>
-        <TabButton active={tab() === "windows"} onClick={() => setTab("windows")}>
-          Windows
-        </TabButton>
-        <TabButton active={tab() === "android"} onClick={() => setTab("android")}>
-          Android
-        </TabButton>
+      <div class="flex justify-center gap-1 rounded-lg bg-stone-100 p-1">
+        <For each={platforms()}>
+          {(platform) => (
+            <TabButton active={active() === platform} onClick={() => setTab(platform)}>
+              {platform === "apple" ? "Apple" : platform === "windows" ? "Windows" : "Android"}
+            </TabButton>
+          )}
+        </For>
       </div>
       <Switch>
-        <Match when={tab() === "apple"}>
+        <Match when={active() === "apple"}>
           <ApplePane apple={props.enrollment.apple} />
         </Match>
-        <Match when={tab() === "windows"}>
+        <Match when={active() === "windows"}>
           <AvailabilityPane value={props.enrollment.windows} label="Windows enrollment" />
         </Match>
-        <Match when={tab() === "android"}>
+        <Match when={active() === "android"}>
           <AndroidPane id={props.id} android={props.enrollment.android} />
         </Match>
       </Switch>
@@ -152,9 +167,13 @@ function ApplePane(props: { apple: PlatformEnrollment }) {
       <Button class="w-full" onClick={download}>
         Download mobileconfig
       </Button>
-      <p class="text-center text-sm text-muted-foreground">
-        Open the downloaded file, then follow the instructions in System Settings &gt; General &gt;
-        Device Management.
+      <ol class="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+        <li>Download the enrollment profile.</li>
+        <li>Open Settings and install the profile.</li>
+        <li>Return here after the device checks in.</li>
+      </ol>
+      <p class="text-center text-xs text-muted-foreground">
+        On macOS, open the file from Downloads. On iOS, allow the profile download in Settings.
       </p>
     </div>
   );
@@ -164,9 +183,13 @@ function AvailabilityPane(props: { value: PlatformEnrollment; label: string }) {
   if (typeof props.value === "object" && "error" in props.value)
     return <p class="text-center text-sm text-red-600">{props.value.error}</p>;
   return (
-    <p class="text-center text-sm text-muted-foreground">
-      {props.label} is available. Follow your administrator's platform-specific instructions.
-    </p>
+    <div class="space-y-2 text-center text-sm text-muted-foreground">
+      <p>{props.label} is available.</p>
+      <p class="text-xs">
+        Open Settings &gt; Accounts &gt; Access work or school &gt; Connect and enter the enrollment
+        URL from this page.
+      </p>
+    </div>
   );
 }
 

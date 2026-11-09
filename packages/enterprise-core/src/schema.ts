@@ -131,6 +131,8 @@ export const invitation = mysqlTable(
     email: varchar("email", { length: 320 }).notNull(),
     role: varchar("role", { length: 32 }),
     status: varchar("status", { length: 32 }).notNull(),
+    /** SHA-256 of the one-time acceptance token; the raw token is only in the invite link. */
+    tokenHash: varchar("token_hash", { length: 255 }),
     expiresAt: timestamp("expires_at").notNull(),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
@@ -257,6 +259,21 @@ export const applePushCertificate = mysqlTable("apple_push_certificate", {
   updatedAt: timestamp("updated_at").notNull(),
 });
 
+/**
+ * A pending APNs CSR key pair. The CSR endpoint generates an RSA key pair and
+ * stores it here while the administrator uploads Apple's signed certificate.
+ * The private key is encrypted with the application secret; plaintext keys are
+ * never persisted.
+ */
+export const applePushKey = mysqlTable("apple_push_key", {
+  organizationId: id("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  encryptedPrivateKeyJwk: text("encrypted_private_key_jwk").notNull(),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
 export const enterpriseGroup = mysqlTable(
   "enterprise_group",
   {
@@ -342,6 +359,33 @@ export const organizationDeviceUsage = mysqlTable(
   (table) => [primaryKey({ columns: [table.organizationId, table.period] })],
 );
 
+/**
+ * Product keys for self-hosted/whitelabel instances. The plaintext key is only
+ * shown once at creation; the server stores a SHA-256 hash and a display prefix.
+ */
+export const platformInstance = mysqlTable(
+  "platform_instance",
+  {
+    id: id().primaryKey(),
+    keyPrefix: shortText("key_prefix").notNull(),
+    keyHash: varchar("key_hash", { length: 255 }).notNull(),
+    description: text("description"),
+    issuedByUserId: id("issued_by_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    userCount: int("user_count").notNull().default(0),
+    deviceCount: int("device_count").notNull().default(0),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+    lastSeenAt: timestamp("last_seen_at"),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (table) => [
+    uniqueIndex("platform_instance_key_hash_unique").on(table.keyHash),
+    index("platform_instance_issued_by_idx").on(table.issuedByUserId),
+  ],
+);
+
 export const scepCa = mysqlTable("scep_ca", {
   id: int("id").autoincrement().primaryKey(),
   certPem: text("cert_pem").notNull(),
@@ -361,12 +405,14 @@ export const relations = defineRelations(
     device,
     deviceApple,
     applePushCertificate,
+    applePushKey,
     enterpriseGroup,
     policy,
     configuration,
     groupDevice,
     groupPolicy,
     organizationDeviceUsage,
+    platformInstance,
     scepCa,
   },
   (r) => ({
@@ -386,6 +432,10 @@ export const relations = defineRelations(
       applePushCertificate: r.one.applePushCertificate({
         from: r.organization.id,
         to: r.applePushCertificate.organizationId,
+      }),
+      applePushKey: r.one.applePushKey({
+        from: r.organization.id,
+        to: r.applePushKey.organizationId,
       }),
       groups: r.many.enterpriseGroup({
         from: r.organization.id,
@@ -431,6 +481,12 @@ export const relations = defineRelations(
         to: r.organization.id,
       }),
     },
+    applePushKey: {
+      organization: r.one.organization({
+        from: r.applePushKey.organizationId,
+        to: r.organization.id,
+      }),
+    },
     enterpriseGroup: {
       organization: r.one.organization({
         from: r.enterpriseGroup.organizationId,
@@ -460,6 +516,9 @@ export const relations = defineRelations(
         from: r.organizationDeviceUsage.organizationId,
         to: r.organization.id,
       }),
+    },
+    platformInstance: {
+      issuedBy: r.one.user({ from: r.platformInstance.issuedByUserId, to: r.user.id }),
     },
   }),
 );

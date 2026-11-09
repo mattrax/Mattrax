@@ -3,10 +3,10 @@ import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiGroup, OpenApi } from 
 import { HttpServer } from "effect/http";
 import { appleMdmApi } from "@mattrax/dm-apple";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
+import { windowsMdmRoutes, WindowsMdmServiceLive } from "@mattrax/dm-windows";
 import { scepRoutes } from "@mattrax/scep";
-import { AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
+import { AppleMdmConfig, AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
 import { ScepService } from "@mattrax/scep";
-import { Env as CoreEnv } from "@mattrax/enterprise-core";
 import { ManagementBackendHttp } from "@mattrax/management-backend-http";
 import { FsDb } from "./db.ts";
 import { ScepRepositoryLive } from "./repositories/scepRepository.ts";
@@ -14,8 +14,12 @@ import { ScepRepositoryLive } from "./repositories/scepRepository.ts";
 export interface ServerConfig {
   readonly origin: string;
   readonly webhookUrl: string;
+  /** Optional HMAC secret used to sign management webhook requests. */
+  readonly webhookSecret?: string;
   readonly dataDir: string;
   readonly appleVendorCert?: string;
+  /** Shared with the management backend so SCEP challenges can be verified. */
+  readonly authSecret?: string;
 }
 
 export const createAppLayer = (config: ServerConfig) => {
@@ -53,23 +57,39 @@ export const createAppLayer = (config: ServerConfig) => {
       Layer.provide(handlersLayer),
     ),
     appleMdmRoutes,
+    windowsMdmRoutes,
     scepRoutes,
   );
 
-  const coreEnvLayer = CoreEnv.layer({
+  const appleMdmConfigLayer = AppleMdmConfig.layer({
     origin: config.origin,
     cloudAppleVendorCert: config.appleVendorCert,
+    authSecret: config.authSecret,
   });
 
   const appleMdmServiceResolved = AppleMdmService.layer.pipe(
     Layer.provideMerge(AppleMdmTopic.layer),
-    Layer.provideMerge(coreEnvLayer),
-    Layer.provide(ManagementBackendHttp(config.webhookUrl)),
+    Layer.provideMerge(appleMdmConfigLayer),
+    Layer.provide(
+      ManagementBackendHttp({ baseUrl: config.webhookUrl, secret: config.webhookSecret }),
+    ),
   );
 
-  const scepServiceResolved = ScepService.pipe(Layer.provide(ScepRepositoryLive(db)));
+  const windowsMdmServiceResolved = WindowsMdmServiceLive({ origin: config.origin }).pipe(
+    Layer.provide(
+      ManagementBackendHttp({ baseUrl: config.webhookUrl, secret: config.webhookSecret }),
+    ),
+  );
 
-  const allServicesLayer = Layer.mergeAll(appleMdmServiceResolved, scepServiceResolved);
+  const scepServiceResolved = ScepService.pipe(
+    Layer.provide(ScepRepositoryLive(db, { authSecret: config.authSecret })),
+  );
+
+  const allServicesLayer = Layer.mergeAll(
+    appleMdmServiceResolved,
+    windowsMdmServiceResolved,
+    scepServiceResolved,
+  );
 
   return apiLayer.pipe(
     Layer.provideMerge(allServicesLayer),

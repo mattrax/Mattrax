@@ -1,10 +1,12 @@
 import { Effect, Layer } from "effect";
 import { and, eq } from "drizzle-orm";
 import { Db, schema as s } from "@mattrax/enterprise-core";
+import { ApnsService } from "@mattrax/apns";
+import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
+import { buildAppleEnrollmentProfile } from "@mattrax/dm-apple";
 import {
   InternalServerError,
   ManagementBackend,
-  ManagementNotSupported,
   ServerInitiatedUnenrollment,
   UnknownDevice,
   type AppleDeviceEvent,
@@ -13,6 +15,25 @@ import {
   type DdmTokens,
   type ManagementManifest,
 } from "@mattrax/management-backend";
+import { makeWindowsBackend } from "./windows.ts";
+import {
+  buildAssetContent,
+  buildAssetDeclaration,
+  buildConfigurationDeclaration,
+  buildLegacyProfile,
+  certificateAllowsOrganization,
+  configurationAssetIdentifier,
+  configurationAssetServerToken,
+  configurationDeclarationIdentifier,
+  configurationServerToken,
+  isCertificateKind,
+  parseConfigurationKind,
+  splitConfigurationAssetIdentifier,
+  splitConfigurationDeclarationIdentifier,
+  verifyAssetRequestToken,
+  type DeclarationContext,
+  type PolicyConfigurationRow,
+} from "./policy.ts";
 
 const DEVICE_INFORMATION_ACTIVATION_ID = "DAAF574F-36D4-4089-B2E3-D2008B65D5BE";
 const DEVICE_INFORMATION_ACTIVATION_SERVER_TOKEN = "660CF896-1647-4FAD-B8A8-7A2190B5B554";
@@ -84,16 +105,7 @@ const hashToken = async (parts: Iterable<string>) => {
 
 const jsonHash = async (value: unknown) => hashToken([JSON.stringify(value)]);
 
-const declarationIdentifier = (policyId: string, kind: string) => `${policyId}:${kind}`;
 type DeviceRow = typeof s.device.$inferSelect;
-
-const splitDeclarationIdentifier = (identifier: string) => {
-  const [policyId, ...rest] = identifier.split(":");
-  return { policyId, kind: rest.join(":") };
-};
-
-const declarationType = (kind: string) =>
-  kind.startsWith("com.apple.") ? kind : `com.apple.configuration.${kind}`;
 
 const findDeviceByScope = (scope: CheckinScope): Effect.Effect<DeviceRow | null, unknown, Db> =>
   Effect.gen(function* () {
@@ -116,23 +128,36 @@ const scopedConfigurations = (deviceId: string) =>
         policyId: s.configuration.policyId,
         data: s.configuration.data,
         hash: s.configuration.hash,
+        organizationId: s.policy.organizationId,
         groupId: s.groupDevice.groupId,
       })
       .from(s.configuration)
+      .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
       .innerJoin(s.groupPolicy, eq(s.groupPolicy.policyId, s.configuration.policyId))
       .innerJoin(s.groupDevice, eq(s.groupDevice.groupId, s.groupPolicy.groupId))
       .where(eq(s.groupDevice.deviceId, deviceId));
   });
 
+const deviceTokenFor = (deviceId: string) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+    const [apple] = yield* db
+      .select({ deviceToken: s.deviceApple.deviceToken })
+      .from(s.deviceApple)
+      .where(eq(s.deviceApple.deviceId, deviceId))
+      .limit(1);
+    return apple?.deviceToken ?? deviceId;
+  }).pipe(Effect.mapError(internal));
+
+type ScopedConfiguration = PolicyConfigurationRow & { readonly groupId: string };
+
 const declarationItemsForDevice = (
   deviceId: string,
+  deviceToken: string,
+  context: Pick<DeclarationContext, "origin" | "authSecret">,
 ): Effect.Effect<DdmDeclarationItems, unknown, Db> =>
   Effect.gen(function* () {
-    const rows = yield* scopedConfigurations(deviceId) as Effect.Effect<
-      Array<{ kind: string; policyId: string; hash: string; groupId: string }>,
-      unknown,
-      Db
-    >;
+    const rows = (yield* scopedConfigurations(deviceId)) as Array<ScopedConfiguration>;
     const groups = new Map<string, Array<{ kind: string; policyId: string }>>();
     for (const row of rows) {
       const group = groups.get(row.groupId) ?? [];
@@ -150,31 +175,53 @@ const declarationItemsForDevice = (
       activations.push({
         identifier: groupId,
         serverToken: yield* Effect.promise(() =>
-          hashToken(configurations.map((row) => declarationIdentifier(row.policyId, row.kind))),
+          hashToken(
+            configurations.map((row) => configurationDeclarationIdentifier(row.policyId, row.kind)),
+          ),
         ),
       });
     }
 
-    const uniqueConfigurations = new Map<
-      string,
-      { kind: string; policyId: string; hash: string }
-    >();
+    const uniqueConfigurations = new Map<string, ScopedConfiguration>();
     for (const row of rows)
-      uniqueConfigurations.set(declarationIdentifier(row.policyId, row.kind), row);
+      uniqueConfigurations.set(configurationDeclarationIdentifier(row.policyId, row.kind), row);
+
+    const configurations = [
+      {
+        identifier: DEVICE_INFORMATION_CONFIGURATION_ID,
+        serverToken: DEVICE_INFORMATION_CONFIGURATION_SERVER_TOKEN,
+      },
+      ...(yield* Effect.promise(() =>
+        Promise.all(
+          [...uniqueConfigurations].map(async ([identifier, row]) => ({
+            identifier,
+            serverToken: await configurationServerToken(row, {
+              origin: context.origin,
+              deviceToken,
+            }),
+          })),
+        ),
+      )),
+    ];
+
+    const assets = yield* Effect.promise(() =>
+      Promise.all(
+        [...uniqueConfigurations.values()]
+          .filter((row) => isCertificateKind(row.kind))
+          .map(async (row) => ({
+            identifier: configurationAssetIdentifier(row.policyId, row.kind),
+            serverToken: await configurationAssetServerToken(row, {
+              origin: context.origin,
+              deviceToken,
+            }),
+          })),
+      ),
+    );
 
     return {
       activations,
-      configurations: [
-        {
-          identifier: DEVICE_INFORMATION_CONFIGURATION_ID,
-          serverToken: DEVICE_INFORMATION_CONFIGURATION_SERVER_TOKEN,
-        },
-        ...[...uniqueConfigurations].map(([identifier, row]) => ({
-          identifier,
-          serverToken: row.hash,
-        })),
-      ],
-      assets: [],
+      configurations,
+      assets,
       management: [
         { identifier: MANAGEMENT_DECLARATION_ID, serverToken: MANAGEMENT_DECLARATION_SERVER_TOKEN },
       ],
@@ -211,10 +258,71 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
   static readonly make = (options: {
     readonly db: Db["Service"];
     readonly origin: string;
+    /** Push transport for the immediate post-enrollment check-in. */
+    readonly apns?: ApnsService.Service;
+    /** Application secret used to unseal the tenant APNs private key and sign Windows WSTEP tokens. */
+    readonly authSecret?: string;
+    /**
+     * Tenant that owns Windows devices. When omitted, Windows enrollment uses the
+     * earliest organization (ordered by `createdAt`, then `id`). Windows
+     * discovery/enrollment carries no tenant identity, so this makes the choice
+     * deterministic and lets multi-tenant deployments route Windows to a
+     * dedicated organization.
+     */
+    readonly windowsOrganizationId?: string;
   }): ManagementBackend.Service => {
-    const { db, origin } = options;
+    const { db, origin, apns, authSecret } = options;
     const provideDb = <A, E>(effect: Effect.Effect<A, E, Db>) =>
       effect.pipe(Effect.provideService(Db, db));
+
+    /**
+     * mttx pushes a check-in immediately after a device first reports its push
+     * token, so the freshly enrolled device receives its configuration without
+     * waiting for the next poll. Failures are logged and ignored.
+     */
+    const pushEnrolledDevice = (deviceId: string, organizationId: string) =>
+      Effect.gen(function* () {
+        if (!apns || !authSecret) return;
+        const [apple] = yield* db
+          .select()
+          .from(s.deviceApple)
+          .where(eq(s.deviceApple.deviceId, deviceId))
+          .limit(1);
+        if (!apple?.token || !apple.pushMagic) return;
+        const [certificate] = yield* db
+          .select()
+          .from(s.applePushCertificate)
+          .where(eq(s.applePushCertificate.organizationId, organizationId))
+          .limit(1);
+        if (!certificate?.encryptedKey) return;
+
+        const jwk = JSON.parse(
+          yield* Effect.tryPromise({
+            try: () => openSecret(authSecret, certificate.encryptedKey!),
+            catch: () => new Error("Failed to decrypt the APNs private key"),
+          }),
+        ) as JsonWebKey;
+        const key = yield* Effect.tryPromise({
+          try: () => importPrivateKeyJwk(jwk),
+          catch: () => new Error("Failed to import the APNs private key"),
+        });
+        const pkcs8 = yield* Effect.tryPromise({
+          try: () => crypto.subtle.exportKey("pkcs8", key),
+          catch: () => new Error("Failed to export the APNs private key"),
+        });
+        yield* apns.push({
+          pushToken: apple.token,
+          pushMagic: apple.pushMagic,
+          topic: apple.topic ?? certificate.topic,
+          certPem: certificate.certPem,
+          privateKeyPem: pemEncode("PRIVATE KEY", pkcs8),
+        });
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(`Failed to send post-enrollment APNs push: ${String(error)}`),
+        ),
+      );
+
     const requireDevice = (scope: CheckinScope) =>
       findDeviceByScope(scope).pipe(
         Effect.flatMap((device) =>
@@ -310,6 +418,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     .update(s.device)
                     .set({ status: "enrolled", lastSeenAt: now() })
                     .where(eq(s.device.id, device.id));
+                  yield* pushEnrolledDevice(device.id, device.organizationId);
                 }
                 return;
               }
@@ -361,9 +470,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             if (device.status === "unenrolling")
               return yield* Effect.fail(new ServerInitiatedUnenrollment());
             if (device.status !== "enrolled") return { _tag: "Idle" };
-            const items = yield* declarationItemsForDevice(device.id).pipe(
-              Effect.mapError(internal),
-            );
+            const deviceToken = yield* deviceTokenFor(device.id);
+            const items = yield* declarationItemsForDevice(device.id, deviceToken, {
+              origin,
+              authSecret: authSecret ?? "",
+            }).pipe(Effect.mapError(internal));
             const token = yield* Effect.tryPromise({
               try: () =>
                 hashToken(
@@ -386,9 +497,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         provideDb(
           Effect.gen(function* () {
             const device = yield* requireDevice(scope);
-            const items = yield* declarationItemsForDevice(device.id).pipe(
-              Effect.mapError(internal),
-            );
+            const deviceToken = yield* deviceTokenFor(device.id);
+            const items = yield* declarationItemsForDevice(device.id, deviceToken, {
+              origin,
+              authSecret: authSecret ?? "",
+            }).pipe(Effect.mapError(internal));
             const categoryToken = (category: keyof DdmDeclarationItems) =>
               hashToken(
                 items[category].map((item) => `${item.identifier}_MTTX_${item.serverToken}`),
@@ -411,7 +524,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         provideDb(
           Effect.gen(function* () {
             const device = yield* requireDevice(scope);
-            return yield* declarationItemsForDevice(device.id).pipe(Effect.mapError(internal));
+            const deviceToken = yield* deviceTokenFor(device.id);
+            return yield* declarationItemsForDevice(device.id, deviceToken, {
+              origin,
+              authSecret: authSecret ?? "",
+            }).pipe(Effect.mapError(internal));
           }),
         ),
 
@@ -419,6 +536,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         provideDb(
           Effect.gen(function* () {
             const device = yield* requireDevice(scope);
+            const deviceToken = yield* deviceTokenFor(device.id);
+            const context: DeclarationContext = {
+              origin,
+              authSecret: authSecret ?? "",
+              deviceToken,
+            };
             if (type === "activation" && identifier === DEVICE_INFORMATION_ACTIVATION_ID) {
               return {
                 Type: "com.apple.activation.simple",
@@ -428,16 +551,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               };
             }
             if (type === "activation") {
-              const rows = yield* scopedConfigurations(device.id).pipe(
+              const rows = (yield* scopedConfigurations(device.id).pipe(
                 Effect.mapError(internal),
-              ) as Effect.Effect<
-                Array<{ groupId: string; kind: string; policyId: string }>,
-                InternalServerError,
-                Db
-              >;
+              )) as Array<ScopedConfiguration>;
               const configurations = rows
                 .filter((row) => row.groupId === identifier)
-                .map((row) => declarationIdentifier(row.policyId, row.kind));
+                .map((row) => configurationDeclarationIdentifier(row.policyId, row.kind));
               if (configurations.length === 0) return null;
               return {
                 Type: "com.apple.activation.simple",
@@ -458,22 +577,31 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               };
             }
             if (type === "configuration") {
-              const { policyId, kind } = splitDeclarationIdentifier(identifier);
-              const rows = yield* scopedConfigurations(device.id).pipe(
+              const { policyId, kind } = splitConfigurationDeclarationIdentifier(identifier);
+              const rows = (yield* scopedConfigurations(device.id).pipe(
                 Effect.mapError(internal),
-              ) as Effect.Effect<
-                Array<{ policyId: string; kind: string; data: unknown; hash: string }>,
-                InternalServerError,
-                Db
-              >;
+              )) as Array<ScopedConfiguration>;
               const row = rows.find((item) => item.policyId === policyId && item.kind === kind);
               if (!row) return null;
-              return {
-                Type: declarationType(row.kind),
-                Identifier: identifier,
-                ServerToken: row.hash,
-                Payload: row.data,
-              };
+              return yield* Effect.tryPromise({
+                try: () => buildConfigurationDeclaration(row, context),
+                catch: internal,
+              });
+            }
+            if (type === "asset") {
+              const parsed = splitConfigurationAssetIdentifier(identifier);
+              if (!parsed) return null;
+              const rows = (yield* scopedConfigurations(device.id).pipe(
+                Effect.mapError(internal),
+              )) as Array<ScopedConfiguration>;
+              const row = rows.find(
+                (item) => item.policyId === parsed.policyId && item.kind === parsed.kind,
+              );
+              if (!row || !isCertificateKind(row.kind)) return null;
+              return yield* Effect.tryPromise({
+                try: () => buildAssetDeclaration(row, context),
+                catch: internal,
+              });
             }
             if (type === "management" && identifier === MANAGEMENT_DECLARATION_ID) {
               const [organization] = yield* db
@@ -497,22 +625,99 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           }),
         ),
 
-      getAppleAsset: (_identityCertificate, _identifier) => Effect.succeed(null),
+      getAppleAsset: (identityCertificate, identifier, token) =>
+        provideDb(
+          Effect.gen(function* () {
+            const parsed = splitConfigurationAssetIdentifier(identifier);
+            if (!parsed) return null;
+            const [row] = (yield* db
+              .select()
+              .from(s.configuration)
+              .innerJoin(s.policy, eq(s.policy.id, s.configuration.policyId))
+              .where(
+                and(
+                  eq(s.configuration.policyId, parsed.policyId),
+                  eq(s.configuration.kind, parsed.kind),
+                ),
+              )
+              .limit(1)
+              .pipe(Effect.mapError(internal))) as Array<{
+              configuration: typeof s.configuration.$inferSelect;
+              policy: typeof s.policy.$inferSelect;
+            }>;
+            if (!row || !isCertificateKind(row.configuration.kind)) return null;
 
-      windowsDiscovery: () => Effect.fail(new ManagementNotSupported()),
-      getWindowsEnrollmentPolicy: () => Effect.fail(new ManagementNotSupported()),
-      windowsEnroll: () => Effect.fail(new ManagementNotSupported()),
-      windowsManagementCheckin: () => Effect.fail(new ManagementNotSupported()),
-      windowsDeviceEvent: () => Effect.fail(new ManagementNotSupported()),
+            const configRow: PolicyConfigurationRow = {
+              policyId: row.configuration.policyId,
+              kind: row.configuration.kind,
+              data: row.configuration.data,
+              hash: row.configuration.hash,
+              organizationId: row.policy.organizationId,
+            };
+
+            // Tenant-scoped: either the device presents an identity
+            // certificate from the owning tenant, or the DDM asset URL carries
+            // a valid signature.
+            const tenantAllowed =
+              identityCertificate !== undefined &&
+              certificateAllowsOrganization(identityCertificate, row.policy.organizationId);
+            const tokenAllowed = yield* Effect.tryPromise({
+              try: () => verifyAssetRequestToken(authSecret ?? "", token, configRow),
+              catch: internal,
+            });
+            if (!tenantAllowed && !tokenAllowed) return null;
+
+            return buildAssetContent(configRow);
+          }),
+        ),
+
+      getAppleProfile: (policyId, kind) =>
+        provideDb(
+          Effect.gen(function* () {
+            const [row] = (yield* db
+              .select()
+              .from(s.configuration)
+              .where(and(eq(s.configuration.policyId, policyId), eq(s.configuration.kind, kind)))
+              .limit(1)
+              .pipe(Effect.mapError(internal))) as Array<typeof s.configuration.$inferSelect>;
+            if (!row) return null;
+            const parsed = parseConfigurationKind(row.kind);
+            if (parsed.type !== "device" && parsed.type !== "custom") return null;
+            return yield* Effect.tryPromise({
+              try: () =>
+                buildLegacyProfile({
+                  policyId: row.policyId,
+                  kind: row.kind,
+                  data: row.data,
+                  hash: row.hash,
+                }),
+              catch: internal,
+            });
+          }),
+        ),
+
+      ...makeWindowsBackend({
+        db,
+        origin,
+        authSecret,
+        windowsOrganizationId: options.windowsOrganizationId,
+      }),
     });
   };
 
-  static readonly layer = (origin: string) =>
+  static readonly layer = (
+    origin: string,
+    options?: {
+      readonly apns?: ApnsService.Service;
+      readonly authSecret?: string;
+      readonly windowsOrganizationId?: string;
+    },
+  ) =>
     Layer.effect(
       ManagementBackend,
       Effect.gen(function* () {
         const db = yield* Db;
-        return ManagementBackendEnterpriseLive.make({ db, origin });
+        return ManagementBackendEnterpriseLive.make({ db, origin, ...options });
       }),
     );
 }
@@ -521,53 +726,23 @@ export const enterpriseEnrollmentProfile = (config: {
   origin: string;
   topic: string;
   organizationId: string;
-}) => {
-  const scepUuid = crypto.randomUUID();
-  const mdmUuid = crypto.randomUUID();
-  const topUuid = crypto.randomUUID();
-  return {
-    PayloadContent: [
-      {
-        PayloadContent: {
-          Challenge: "mattrax-scep-challenge",
-          "Key Type": "RSA",
-          "Key Usage": 5,
-          Keysize: 2048,
-          Subject: [
-            [["O", "Mattrax"]],
-            [["OU", config.organizationId]],
-            [["CN", "Mattrax Identity"]],
-          ],
-          URL: `${config.origin}/mdm/apple/scep`,
-        },
-        PayloadIdentifier: "com.mattrax.scep",
-        PayloadType: "com.apple.security.scep",
-        PayloadUUID: scepUuid,
-        PayloadVersion: 1,
-      },
-      {
-        AccessRights: 8191,
-        CheckInURL: `${config.origin}/mdm/apple/mdm`,
-        CheckOutWhenRemoved: true,
-        IdentityCertificateUUID: scepUuid,
-        PayloadIdentifier: "com.mattrax.mdm",
-        PayloadType: "com.apple.mdm",
-        PayloadUUID: mdmUuid,
-        PayloadVersion: 1,
-        ServerCapabilities: ["com.apple.mdm.per-user-connections", "com.apple.mdm.bootstraptoken"],
-        ServerURL: `${config.origin}/mdm/apple/mdm`,
-        SignMessage: true,
-        Topic: config.topic,
-      },
-    ],
-    PayloadDisplayName: "Mattrax Enrollment",
-    PayloadIdentifier: "com.mattrax.enrollment",
-    PayloadOrganization: "Mattrax",
-    PayloadType: "Configuration",
-    PayloadUUID: topUuid,
-    PayloadVersion: 1,
-  };
-};
+  organizationName?: string;
+  challenge?: string;
+  displayName?: string;
+  identifier?: string;
+}) =>
+  buildAppleEnrollmentProfile({
+    origin: config.origin,
+    topic: config.topic,
+    organizationId: config.organizationId,
+    organizationName: config.organizationName ?? "Mattrax",
+    challenge: config.challenge ?? crypto.randomUUID(),
+    displayName: config.displayName,
+    identifier: config.identifier,
+  });
 
 export const policyHash = jsonHash;
+export { createScepChallenge, verifyScepChallenge } from "@mattrax/scep";
 export { ScepRepositoryLive } from "./scep.ts";
+export * from "./policy.ts";
+export * from "./windows.ts";

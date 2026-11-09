@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { arrayBufferToBase64, sha256 } from "@mattrax/crypto";
+import { arrayBufferToBase64, pemDecode } from "@mattrax/crypto";
 import {
   serializeSoapElement,
   WapProvisioningDoc,
@@ -25,16 +25,40 @@ export const BASE64_ENCODING_TYPE =
   "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd#base64binary";
 export const ISSUE_REQUEST_TYPE = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue";
 
+const certificateDer = (certificate: string): ArrayBuffer | null => {
+  try {
+    return pemDecode("CERTIFICATE", certificate);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Windows uses the certificate thumbprint (SHA-1 over DER) as the WAP
+ * provisioning characteristic name. Non-PEM input is hashed verbatim so callers
+ * that pass placeholder strings still produce a document.
+ */
 export function certificateFingerprint(certificate: string): Effect.Effect<string, WstepError> {
   return Effect.tryPromise({
     try: async () => {
-      const digest = await sha256(new TextEncoder().encode(certificate).buffer as ArrayBuffer);
+      const der = certificateDer(certificate);
+      const bytes = der ?? (new TextEncoder().encode(certificate).buffer as ArrayBuffer);
+      const digest = await crypto.subtle.digest("SHA-1", bytes);
       return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0"))
         .join("")
         .toUpperCase();
     },
     catch: (cause) => new WstepError("Failed to fingerprint certificate", cause),
   });
+}
+
+/**
+ * `EncodedCertificate` in a WAP provisioning document is base64 DER, not PEM.
+ * Fall back to the input unchanged when it is not a PEM certificate.
+ */
+export function encodedCertificate(certificate: string): string {
+  const der = certificateDer(certificate);
+  return der ? arrayBufferToBase64(der) : certificate;
 }
 
 export function buildProvisioningDoc(
@@ -58,7 +82,12 @@ export function buildProvisioningDoc(
                   characteristics: [
                     {
                       type: rootFingerprint,
-                      params: [{ name: "EncodedCertificate", value: result.identityCertificate }],
+                      params: [
+                        {
+                          name: "EncodedCertificate",
+                          value: encodedCertificate(result.identityCertificate),
+                        },
+                      ],
                     },
                   ],
                 },
@@ -72,7 +101,12 @@ export function buildProvisioningDoc(
                   characteristics: [
                     {
                       type: clientFingerprint,
-                      params: [{ name: "EncodedCertificate", value: result.signedCertificate }],
+                      params: [
+                        {
+                          name: "EncodedCertificate",
+                          value: encodedCertificate(result.signedCertificate),
+                        },
+                      ],
                     },
                     { type: "PrivateKeyContainer" },
                   ],

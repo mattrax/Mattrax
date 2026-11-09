@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Layer } from "effect";
 import { AppleMdmService, AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
+import { AppleMdmConfig } from "../config.js";
 import {
   ManagementBackend,
   ManagementNotSupported,
   UnknownDevice,
   MdmOrigin,
 } from "@mattrax/management-backend";
-import { Env } from "@mattrax/enterprise-core";
 import { mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
@@ -19,7 +19,7 @@ function runWithService<A, E>(
 ) {
   const layer = AppleMdmServiceLive.pipe(
     Layer.provideMerge(backendLayer),
-    Layer.provideMerge(Env.layer({ origin: TEST_CONFIG.origin })),
+    Layer.provideMerge(AppleMdmConfig.layer({ origin: TEST_CONFIG.origin })),
     Layer.provideMerge(
       Layer.succeed(AppleMdmTopic, AppleMdmTopic.of({ get: Effect.succeed(TEST_CONFIG.topic) })),
     ),
@@ -556,7 +556,11 @@ describe("AppleMdmService", () => {
         backend,
         Effect.gen(function* () {
           const service = yield* AppleMdmService;
-          return yield* service.generateEnrollmentProfile();
+          return yield* service.generateEnrollmentProfile({
+            challenge: "enrollment-123.signature",
+            organizationId: "tenant-123",
+            organizationName: "Acme",
+          });
         }),
       );
       const parsed = JSON.parse(profile);
@@ -570,7 +574,12 @@ describe("AppleMdmService", () => {
       );
       expect(scepPayload).toBeDefined();
       expect(scepPayload.PayloadContent.URL).toBe(`${TEST_CONFIG.origin}/mdm/apple/scep`);
-      expect(scepPayload.PayloadContent.Challenge).toBe("mattrax-scep-challenge");
+      expect(scepPayload.PayloadContent.Challenge).toBe("enrollment-123.signature");
+      expect(scepPayload.PayloadContent.Subject).toEqual([
+        [["O", "Acme"]],
+        [["OU", "tenant-123"]],
+        [["CN", "Acme Identity"]],
+      ]);
 
       const mdmPayload = parsed.PayloadContent.find((p: any) => p.PayloadType === "com.apple.mdm");
       expect(mdmPayload).toBeDefined();
@@ -578,6 +587,7 @@ describe("AppleMdmService", () => {
       expect(mdmPayload.Topic).toBe(TEST_CONFIG.topic);
       expect(mdmPayload.AccessRights).toBe(8191);
       expect(mdmPayload.ServerCapabilities).toContain("com.apple.mdm.bootstraptoken");
+      expect(mdmPayload.ServerCapabilities).toContain("com.apple.mdm.token");
     });
   });
 });

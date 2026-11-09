@@ -176,7 +176,8 @@ function handleAsset(request: HttpServerRequest.HttpServerRequest) {
     const identifier = url.pathname.replace("/mdm/apple/assets/", "");
     if (!identifier) return HttpServerResponse.empty({ status: 404 });
 
-    const asset = yield* service.handleAsset(identityCertificate, identifier);
+    const token = url.searchParams.get("token") ?? undefined;
+    const asset = yield* service.handleAsset(identityCertificate, identifier, token);
     if (!asset) return HttpServerResponse.empty({ status: 404 });
 
     return HttpServerResponse.uint8Array(asset.content, { contentType: asset.contentType });
@@ -191,7 +192,47 @@ function handleAsset(request: HttpServerRequest.HttpServerRequest) {
   );
 }
 
+// DDM `ProfileURL` targets. Signed URLs authenticate without the MDM check-in
+// identity certificate, because Declarative Management fetches them directly.
+function handleProfile(request: HttpServerRequest.HttpServerRequest) {
+  return Effect.gen(function* () {
+    const service = yield* AppleMdmService;
+    const url = new URL(request.url, "http://localhost");
+    const prefix = "/mdm/apple/profiles/";
+    if (!url.pathname.startsWith(prefix)) return HttpServerResponse.empty({ status: 404 });
+    const [deviceToken, policyId, kind] = url.pathname
+      .slice(prefix.length)
+      .split("/")
+      .map((part) => decodeURIComponent(part));
+    if (!deviceToken || !policyId || !kind) return HttpServerResponse.empty({ status: 404 });
+
+    const profile = yield* service.handleProfile(
+      deviceToken,
+      policyId,
+      kind,
+      url.searchParams.get("token") ?? undefined,
+    );
+    if (!profile) return HttpServerResponse.empty({ status: 404 });
+
+    return HttpServerResponse.uint8Array(profile.content, {
+      contentType: profile.contentType,
+      headers: {
+        "Content-Disposition": `attachment; filename="${policyId}.mobileconfig"`,
+      },
+    });
+  }).pipe(
+    Effect.match({
+      onSuccess: (val) => val,
+      onFailure: (err) => {
+        console.error("profile error:", err);
+        return HttpServerResponse.empty({ status: 500 });
+      },
+    }),
+  );
+}
+
 export const appleMdmRoutes = Layer.mergeAll(
   HttpRouter.add("PUT", "/mdm/apple/mdm", handleMdm),
   HttpRouter.add("GET", "/mdm/apple/assets/:identifier", handleAsset),
+  HttpRouter.add("GET", "/mdm/apple/profiles/:deviceToken/:policyId/:kind", handleProfile),
 );

@@ -1,68 +1,94 @@
-# Running Locally
+# Running locally
 
-The server package is in the `mttx` CLI.
+The gateway source is in `apps/mttx` and is implemented as the `mttx` CLI
+(`@mattrax/server`).
 
 ## Development
 
-Run the TypeScript entrypoint with:
+```bash
+pnpm install
 
-```sh
-pnpm --filter @mattrax/server dev -- serve --webhook-url http://localhost:8787/webhook
+pnpm mserver dev serve \
+  --webhook-url http://localhost:8787
 ```
 
-By default, development mode uses:
+Defaults in development:
 
-| Option       | Default                 |
-| ------------ | ----------------------- |
-| `--port`     | `3000`                  |
-| `--origin`   | `http://localhost:3000` |
-| `--data-dir` | `./.data`               |
+| Option             | Default                   |
+| ------------------ | ------------------------- |
+| `--port`           | `3000`                    |
+| `--origin`         | `http://localhost:3000`   |
+| `--webhook-secret` | `$MATTRAX_WEBHOOK_SECRET` |
+| `--data-dir`       | `./.data`                 |
 
-`--webhook-url` is required because the MDM service delegates management decisions to your backend.
+`--webhook-url` is required: the MDM service delegates every product decision to your
+backend.
+
+To run a complete example, including a management backend and dashboard, use:
+
+```bash
+pnpm --filter @mattrax/example-whitelabel dev
+```
+
+That Worker listens on port `9051` by default.
 
 ## CLI
 
-The CLI command is `mttx` and supports these subcommands:
+| Command   | Purpose                                             |
+| --------- | --------------------------------------------------- |
+| `version` | Prints the package version.                         |
+| `serve`   | Starts the HTTP server.                             |
+| `update`  | Placeholder; prints that it is not implemented yet. |
 
-| Command   | Purpose                                     |
-| --------- | ------------------------------------------- |
-| `version` | Prints the package version.                 |
-| `serve`   | Starts the HTTP server.                     |
-| `update`  | Placeholder for future self-update support. |
-
-`serve` accepts:
+`serve` flags:
 
 | Flag                  | Required | Description                                                                                        |
 | --------------------- | -------- | -------------------------------------------------------------------------------------------------- |
 | `--port`              | No       | HTTP port. Defaults to `3000`.                                                                     |
-| `--origin`            | No       | Public origin used when generating enrollment and asset URLs. Defaults to `http://localhost:3000`. |
+| `--origin`            | No       | Public origin used in enrollment and asset URLs. Defaults to `http://localhost:3000`.              |
 | `--webhook-url`       | Yes      | Base URL for your management webhook backend.                                                      |
-| `--data-dir`          | No       | Directory for filesystem-backed server state.                                                      |
-| `--apple-vendor-cert` | No       | Path to an Apple vendor certificate PEM file used to derive the MDM topic.                         |
+| `--webhook-secret`    | No       | HMAC secret for webhook requests. Defaults to `MATTRAX_WEBHOOK_SECRET`.                            |
+| `--data-dir`          | No       | Directory for filesystem-backed state. Defaults to `./.data`, or `/opt/mattrax` in bundled builds. |
+| `--apple-vendor-cert` | No       | Path to an Apple vendor certificate PEM used to derive the MDM topic.                              |
 
 Example:
 
-```sh
-pnpm --filter @mattrax/server dev -- serve \
+```bash
+pnpm mserver dev serve \
   --port 3000 \
   --origin https://mdm.example.com \
-  --webhook-url https://api.example.com/webhook \
+  --webhook-url https://api.example.com \
+  --webhook-secret "$MATTRAX_WEBHOOK_SECRET" \
   --data-dir ./data \
   --apple-vendor-cert ./certs/apple-vendor.pem
 ```
 
 ## Building
 
-Build the standalone server binary with:
-
-```sh
-pnpm --filter @mattrax/server build
+```bash
+pnpm mserver build
 ```
 
-The build script bundles the TypeScript server with esbuild, creates a Node single executable application blob, injects it into a copied Node binary, and writes the result to:
+The build script:
 
-```text
-mttx
-```
+1. Bundles the TypeScript server with esbuild to `apps/mttx/dist/server.cjs`.
+2. Generates a Node single-executable-application blob.
+3. Copies the current Node binary, injects the blob with `postject`, and writes
+   `apps/mttx/dist/mttx`.
+4. Ad-hoc signs the binary on macOS.
 
-For bundled production builds, the default data directory changes to `/opt/mattrax`.
+Bundled builds have `MATTRAX_SERVER_BUNDLED=1` baked in, so the default data directory is
+`/opt/mattrax`. You can still override it with `--data-dir`.
+
+## Runtime limits
+
+The current `serve` command intentionally shuts down after 24 hours and applies a
+per-process rate limit of about 5 requests per second. Run it under systemd, Docker, or
+another supervisor with automatic restart. See [Deployment](./deployment) for a unit file
+and container example.
+
+## Next steps
+
+- [HTTP surface](./endpoints)
+- [Management webhooks](./webhooks)
+- [Deployment](./deployment)

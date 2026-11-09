@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vp run dev",
+    "dev:cert": "node scripts/dev-cert.mjs",
+    "db:up": "docker compose up -d mysql",
+    "db:migrate": "pnpm api db:migrate",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "format": "vp fmt && vp lint",
     "typecheck": "pnpm -r --if-present run cf:types && tsc -b",
     "api": "pnpm --filter @mattrax/api --",
@@ -16,6 +20,7 @@
     "deploy:prod:all": "pnpm api deploy:prod && pnpm web deploy:prod"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
     "typescript": "catalog:",
     "vite-plus": "catalog:",
     "vitepress": "catalog:",

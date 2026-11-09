@@ -64,7 +64,7 @@ const DialogContent = <T extends ValidComponent = "div">(props: DialogContentPro
   const mergedProps = mergeProps({ showCloseButton: true } as DialogContentProps, props);
   const [local, others] = splitProps(mergedProps, ["class", "children", "showCloseButton"]);
   return (
-    <DialogPortal>
+    <>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
@@ -88,7 +88,7 @@ const DialogContent = <T extends ValidComponent = "div">(props: DialogContentPro
           </DialogPrimitive.CloseButton>
         </Show>
       </DialogPrimitive.Content>
-    </DialogPortal>
+    </>
   );
 };
 

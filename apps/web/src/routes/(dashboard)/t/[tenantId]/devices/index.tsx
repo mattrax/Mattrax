@@ -1,9 +1,10 @@
-import { useParams } from "@solidjs/router";
+import { useNavigate, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import {
   DeviceStatusBadge,
   EmptyState,
   formatDate,
+  LinkButton,
   PageHeader,
   PlatformBadge,
 } from "~/components/mdm/common";
@@ -13,6 +14,7 @@ import { enterprise, enterpriseKeys, type DeviceRow } from "~/lib/enterprise";
 
 export default function DevicesPage() {
   const params = useParams();
+  const navigate = useNavigate();
   const devices = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "device"),
     queryFn: () => enterprise.list(params.tenantId, "device"),
@@ -22,9 +24,17 @@ export default function DevicesPage() {
       <PageHeader
         title="Devices"
         description="Inventory, sync, and retire enrolled Apple, Windows, and Android devices."
+        actions={
+          <LinkButton href={`/t/${params.tenantId}/settings/enrollment`} variant="outline">
+            Enroll device
+          </LinkButton>
+        }
       />
       <MdmTable<DeviceRow>
         rows={devices.data?.rows}
+        loading={devices.isPending}
+        storageKey="devices"
+        onRowClick={(row) => navigate(`/t/${params.tenantId}/devices/${row.id}`)}
         actions={(selected, clear) => (
           <EntityActions entity="device" selected={selected} clear={clear} />
         )}

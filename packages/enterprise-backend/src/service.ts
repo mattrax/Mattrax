@@ -4,6 +4,7 @@ import {
   EnterpriseAuth,
   EnterpriseService as EnterpriseServiceTag,
 } from "@mattrax/enterprise-domain";
+import { ApnsService } from "@mattrax/apns";
 import { StripeService } from "@mattrax/effect-stripe";
 import { createEnterpriseService } from "./enterpriseHandlers.ts";
 
@@ -17,6 +18,7 @@ export const EnterpriseService = Layer.effect(
     const auth = yield* EnterpriseAuth;
     const stripeClient = yield* StripeService;
     const r2 = yield* R2;
+    const apns = yield* ApnsService;
 
     const storage: R2Bucket = {
       head: (key) =>
@@ -40,6 +42,10 @@ export const EnterpriseService = Layer.effect(
         stripeClient,
         storage,
         auth,
+        authSecret: env.authSecret,
+        cloudAppleVendorCert: env.cloudAppleVendorCert,
+        cloudAppleVendorKey: env.cloudAppleVendorKey,
+        apns,
       }),
     );
   }),

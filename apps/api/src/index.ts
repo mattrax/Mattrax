@@ -16,25 +16,30 @@ import {
   sessionCookie,
 } from "@mattrax/enterprise-backend";
 import { platformApi } from "@mattrax/platform-api";
-import { platformHandlers } from "@mattrax/platform-backend";
+import { PlatformServiceLive, platformHandlers } from "@mattrax/platform-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
+import { windowsMdmRoutes, WindowsMdmServiceLive } from "@mattrax/dm-windows";
 import { scepRoutes } from "@mattrax/scep";
-import { AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
+import { AppleMdmConfig, AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
 import { ScepService } from "@mattrax/scep";
 import {
   ManagementBackendEnterpriseLive,
   ScepRepositoryLive,
 } from "@mattrax/management-backend-enterprise";
 import { Db, Env as CoreEnv, R2 } from "@mattrax/enterprise-core";
+import { ApnsService, NoopPushTransport, RelayPushTransport, makeApnsService } from "@mattrax/apns";
 import { MysqlClient } from "@effect/sql-mysql2";
 import { StripeService } from "@mattrax/effect-stripe";
 import { env as apiEnv } from "./env.js";
 
-const appAuth = makeAppAuth(apiEnv.ORIGIN);
+const appAuth = makeAppAuth(apiEnv.ORIGIN, apiEnv.AUTH_RESET_URL);
 const authHttp = AuthContract.httpGroup(AuthApi);
 const authHttps = Http.make(appAuth, {
   origin: apiEnv.ORIGIN,
   cookie: { name: sessionCookie },
+  trustedOrigins: apiEnv.TRUSTED_ORIGINS?.split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
 });
 
 // Proof delivery (password reset email) is queued by Auth with no remaining
@@ -72,6 +77,11 @@ const handlersLayer = Layer.mergeAll(
   authHttps.handlers(apiRoot),
   HttpRouter.add("GET", "/api/health", HttpServerResponse.text("ok")),
   HttpRouter.add("GET", "/health", HttpServerResponse.text("ok")),
+  HttpRouter.add(
+    "GET",
+    "/api/version",
+    HttpServerResponse.json({ version } satisfies { version: string }),
+  ),
 );
 
 const apiLayer = Layer.mergeAll(
@@ -80,6 +90,7 @@ const apiLayer = Layer.mergeAll(
   ),
   HttpApiScalar.layerCdn(apiRoot, { path: "/api/docs" }),
   appleMdmRoutes,
+  windowsMdmRoutes,
   scepRoutes,
 );
 
@@ -89,7 +100,28 @@ const makeAppLayer = (env: Env, request: Request) => {
   const staticEnvLayer = CoreEnv.layer({
     origin: env.ORIGIN,
     cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
+    cloudAppleVendorKey: env.CLOUD_APPLE_VENDOR_KEY,
+    authSecret: env.AUTH_SECRET,
   });
+
+  const appleMdmConfigLayer = AppleMdmConfig.layer({
+    origin: env.ORIGIN,
+    cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
+    cloudAppleVendorKey: env.CLOUD_APPLE_VENDOR_KEY,
+    authSecret: env.AUTH_SECRET,
+  });
+
+  // Hosted Cloud cannot attach a per-tenant client certificate to `fetch`, so
+  // pushes go through the HMAC-signed relay. Without a relay the service is a
+  // no-op: devices still poll for DDM changes, so policy still converges.
+  const apns = makeApnsService(
+    env.APNS_RELAY_URL && env.APNS_RELAY_SECRET
+      ? RelayPushTransport({ url: env.APNS_RELAY_URL, secret: env.APNS_RELAY_SECRET })
+      : NoopPushTransport(
+          "APNs push relay is not configured; devices will poll for changes instead",
+        ),
+  );
+  const apnsLayer = Layer.succeed(ApnsService, apns);
 
   const authLive = makeAuthLive({
     appAuth,
@@ -120,22 +152,34 @@ const makeAppLayer = (env: Env, request: Request) => {
     list: () => env.STORAGE.list(),
   };
 
+  const managementBackendLayer = ManagementBackendEnterpriseLive.layer(env.ORIGIN, {
+    apns,
+    authSecret: env.AUTH_SECRET,
+    // Windows discovery/enrollment has no tenant identity. Cloud falls back to
+    // the earliest organization; set this to pin Windows devices to one tenant.
+    windowsOrganizationId: apiEnv.WINDOWS_ORGANIZATION_ID,
+  }).pipe(Layer.provide(Db.layer));
+
   const servicesLayer = Layer.mergeAll(
     EnterpriseService.pipe(
       Layer.provide(enterpriseAuthLive),
       Layer.provide(staticEnvLayer),
       Layer.provide(StripeService.layer(env.STRIPE_SECRET_KEY)),
       Layer.provide(R2.layer(storageBucket)),
+      Layer.provide(apnsLayer),
       Layer.provide(Db.layer),
     ),
     AppleMdmService.layer.pipe(
       Layer.provide(AppleMdmTopic.layer),
-      Layer.provide(
-        ManagementBackendEnterpriseLive.layer(env.ORIGIN).pipe(Layer.provide(Db.layer)),
-      ),
-      Layer.provide(staticEnvLayer),
+      Layer.provide(managementBackendLayer),
+      Layer.provide(appleMdmConfigLayer),
     ),
+    WindowsMdmServiceLive({ origin: env.ORIGIN }).pipe(Layer.provide(managementBackendLayer)),
     ScepService.pipe(Layer.provide(ScepRepositoryLive.layer.pipe(Layer.provide(Db.layer)))),
+    PlatformServiceLive({
+      cloudAppleVendorCert: env.CLOUD_APPLE_VENDOR_CERT,
+      cloudAppleVendorKey: env.CLOUD_APPLE_VENDOR_KEY,
+    }).pipe(Layer.provide(enterpriseAuthLive), Layer.provide(Db.layer)),
   );
 
   return appLayer.pipe(

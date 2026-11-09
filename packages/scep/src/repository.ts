@@ -7,6 +7,17 @@ export interface ScepPkcsReq {
   readonly transactionId: string;
   readonly senderNonce: ArrayBuffer;
   readonly signerCerts: pkijs.Certificate[];
+  /** PKCS#9 challengePassword attribute from the CSR, if present. */
+  readonly challengePassword?: string;
+}
+
+/**
+ * Information the repository learned while authenticating a PKCSReq. The
+ * service uses the organizational unit to pin the issued certificate to the
+ * authenticated tenant, regardless of what the CSR requested.
+ */
+export interface ScepAuthentication {
+  readonly organizationalUnit?: string;
 }
 
 export class ScepRepository extends Context.Service<
@@ -18,6 +29,8 @@ export class ScepRepository extends Context.Service<
     >;
     readonly saveCa: (certPem: string, privateKeyJwk: JsonWebKey) => Effect.Effect<void, ScepError>;
     /** Hook for authenticating incoming SCEP PKCSReq messages. Throw/return a failed Effect to reject. */
-    readonly authenticatePkcsReq: (req: ScepPkcsReq) => Effect.Effect<void, ScepError>;
+    readonly authenticatePkcsReq: (
+      req: ScepPkcsReq,
+    ) => Effect.Effect<ScepAuthentication | void, ScepError>;
   }
 >()("ScepRepository") {}

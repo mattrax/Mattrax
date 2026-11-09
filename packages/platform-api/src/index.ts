@@ -1,1 +1,1 @@
-export { platformApi } from "./platform.js";
+export * from "./platform.js";

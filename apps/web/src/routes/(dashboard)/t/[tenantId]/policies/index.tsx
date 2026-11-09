@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { useNavigate, useParams } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { EmptyState, formatDate, LinkButton, PageHeader } from "~/components/mdm/common";
 import { EntityActions } from "~/components/mdm/entity-actions";
@@ -7,6 +7,7 @@ import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
 
 export default function PoliciesPage() {
   const params = useParams();
+  const navigate = useNavigate();
   const policies = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "policy"),
     queryFn: () => enterprise.list(params.tenantId, "policy"),
@@ -20,6 +21,9 @@ export default function PoliciesPage() {
       />
       <MdmTable<PolicyRow>
         rows={policies.data?.rows}
+        loading={policies.isPending}
+        storageKey="policies"
+        onRowClick={(row) => navigate(`/t/${params.tenantId}/policies/${row.id}`)}
         actions={(selected, clear) => (
           <EntityActions entity="policy" selected={selected} clear={clear} />
         )}
