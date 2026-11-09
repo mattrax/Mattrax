@@ -72,6 +72,19 @@ export function buildProvisioningDoc(
       version: "1.1",
       characteristics: [
         {
+          type: "WSTEP",
+          characteristics: [
+            {
+              type: "Renew",
+              params: [
+                { name: "ROBOSupport", value: "true", datatype: "boolean" },
+                { name: "RenewPeriod", value: "180", datatype: "integer" },
+                { name: "RetryInterval", value: "4", datatype: "integer" },
+              ],
+            },
+          ],
+        },
+        {
           type: "CertificateStore",
           characteristics: [
             {
@@ -123,6 +136,9 @@ export function buildProvisioningDoc(
             { name: "NAME", value: result.providerId },
             { name: "ADDR", value: managementUrl },
             { name: "DEFAULTENCODING", value: "application/vnd.syncml.dm+xml" },
+            { name: "CONNRETRYFREQ", value: "1" },
+            { name: "INITIALBACKOFFTIME", value: "16000" },
+            { name: "MAXBACKOFFTIME", value: "120000" },
           ],
           characteristics: [
             {
@@ -157,7 +173,12 @@ export function buildProvisioningDoc(
                   characteristics: [
                     {
                       type: "Poll",
-                      params: [{ name: "PollOnLogin", value: "true", datatype: "boolean" }],
+                      params: [
+                        { name: "AllUsersPollOnFirstLogin", value: "true", datatype: "boolean" },
+                        { name: "PollOnLogin", value: "true", datatype: "boolean" },
+                        { name: "NumberOfFirstRetries", value: "0", datatype: "integer" },
+                        { name: "IntervalForFirstSetOfRetries", value: "1", datatype: "integer" },
+                      ],
                     },
                   ],
                 },

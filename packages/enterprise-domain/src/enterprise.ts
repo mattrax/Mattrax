@@ -306,6 +306,12 @@ export const DeviceRow = Schema.Struct({
 });
 export type DeviceRow = typeof DeviceRow.Type;
 
+export const DeviceActionResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  /** Present for a lock command so the administrator can unlock the device. */
+  pin: Schema.optional(Schema.String),
+});
+
 export const DeviceActionRequest = Schema.Struct({
   action: Schema.optional(
     Schema.Literals([
@@ -878,7 +884,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantWriteErrors,
       params: TenantIdParam,
       payload: DeviceActionRequest,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: DeviceActionResponse,
     }),
   )
   .add(

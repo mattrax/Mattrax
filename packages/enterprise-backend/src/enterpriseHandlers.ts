@@ -1337,6 +1337,7 @@ export const createEnterpriseService = ({
           iTunesStoreId?: number;
         };
         const action = body.action ?? "sync";
+        let lockPin: string | undefined;
         if (device.status === "enrolled") {
           if (action !== "sync") {
             const windowsCommand =
@@ -1369,6 +1370,7 @@ export const createEnterpriseService = ({
               }
               switch (action) {
                 case "lock":
+                  lockPin = randomPin;
                   return { requestType: "DeviceLock", payload: { PIN: randomPin } };
                 case "wipe":
                   return {
@@ -1446,7 +1448,7 @@ export const createEnterpriseService = ({
           yield* applePush.pushAppleDevice(device.id);
         }
         yield* audit(ctx, "device.action", "device", deviceId, { action });
-        return ok;
+        return lockPin ? { ...ok, pin: lockPin } : ok;
       }),
     deviceUnenroll: (request, tenantId, deviceId) =>
       Effect.gen(function* () {

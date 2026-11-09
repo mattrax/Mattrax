@@ -68,12 +68,16 @@ export default function DeviceDetailPage() {
     onSuccess: invalidate,
   }));
   const [manifestUrl, setManifestUrl] = createSignal("");
+  const [lockPin, setLockPin] = createSignal<string | null>(null);
   const command = useMutation(() => ({
     mutationFn: (payload: {
       action: "lock" | "wipe" | "restart" | "shutdown" | "clear-passcode" | "install-app";
       manifestUrl?: string;
     }) => enterprise.deviceAction(params.tenantId, params.deviceId, payload),
-    onSuccess: invalidate,
+    onSuccess: async (result) => {
+      setLockPin(result.pin ?? null);
+      await invalidate();
+    },
   }));
   const unenroll = useMutation(() => ({
     mutationFn: () => enterprise.deviceUnenroll(params.tenantId, params.deviceId),
@@ -244,6 +248,13 @@ export default function DeviceDetailPage() {
                       </Button>
                     </div>
                   </Field>
+                </Show>
+                <Show when={lockPin()}>
+                  {(pin) => (
+                    <p class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      Device lock PIN: <strong class="font-mono">{pin()}</strong>
+                    </p>
+                  )}
                 </Show>
                 <ErrorText error={command.error} />
               </CardContent>
