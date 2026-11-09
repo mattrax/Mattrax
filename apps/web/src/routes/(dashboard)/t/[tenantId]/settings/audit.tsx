@@ -4,7 +4,7 @@ import { For, Show } from "solid-js";
 import { ErrorText } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 
 const formatAction = (action: string) =>
   action
@@ -20,7 +20,10 @@ const formatDate = (value: string) => {
 
 export default function AuditSettingsPage() {
   const params = useParams();
-  const log = useQuery(() => enterpriseQueries.auditLog(params.tenantId));
+  const log = useQuery(() => ({
+    queryKey: enterpriseKeys.auditLog(params.tenantId),
+    queryFn: () => enterprise.listAuditLog(params.tenantId),
+  }));
 
   return (
     <div class="space-y-6">

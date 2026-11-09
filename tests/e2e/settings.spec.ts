@@ -2,6 +2,13 @@ import { expect, test } from "@playwright/test";
 import { bootstrapTenant, gotoHydrated } from "./helpers";
 
 test.describe("tenant settings", () => {
+  test("shows tenant audit events", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Audit Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/settings/audit`);
+    await expect(page.getByText("Audit log", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/Tenant · created/i)).toBeVisible();
+  });
+
   test("opens every settings tab and saves the tenant profile", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Settings Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings`);
