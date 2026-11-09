@@ -25,15 +25,15 @@ export default function Page() {
                 Get started free
               </Button>
             </a>
-            <a href="/designer">
-              <Button
-                variant="outline"
-                size="lg"
-                class="border-stone-300 text-stone-600 hover:bg-stone-100 rounded-full px-10 h-12"
-              >
-                Design a policy →
-              </Button>
-            </a>
+            <Button
+              as="a"
+              href="/designer"
+              variant="outline"
+              size="lg"
+              class="border-stone-300 text-stone-600 hover:bg-stone-100 rounded-full px-10 h-12"
+            >
+              Design a policy →
+            </Button>
           </div>
         </div>
       </section>
@@ -58,16 +58,18 @@ export default function Page() {
                 want to save and deploy it.
               </p>
               <div class="mt-6 flex flex-wrap gap-3">
-                <a href="/designer">
-                  <Button size="lg" class="rounded-full px-8">
-                    Open the policy designer →
-                  </Button>
-                </a>
-                <a href="/docs/quick-start">
-                  <Button variant="outline" size="lg" class="rounded-full px-8">
-                    See deployment guide
-                  </Button>
-                </a>
+                <Button as="a" href="/designer" size="lg" class="rounded-full px-8">
+                  Open the policy designer →
+                </Button>
+                <Button
+                  as="a"
+                  href="/docs/quick-start"
+                  variant="outline"
+                  size="lg"
+                  class="rounded-full px-8"
+                >
+                  See deployment guide
+                </Button>
               </div>
             </div>
             <div class="rounded-2xl border bg-stone-50 p-5">

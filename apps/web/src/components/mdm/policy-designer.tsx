@@ -16,6 +16,7 @@ import { Input } from "~/components/ui/input";
 import { Check, Download, Plus, Search, ShieldCheck, X } from "~/components/ui/icons";
 import { authClient } from "~/lib/auth";
 import {
+  collectionProperties,
   loadManifest,
   loadPlatform,
   resetPlatformCache,
@@ -30,6 +31,7 @@ import {
 import {
   buildArtifact,
   defaultValues,
+  valueKey,
   type Draft,
   type Selection,
 } from "~/lib/policy-designer/build";
@@ -55,11 +57,11 @@ const templateSets: Record<
   windows: [
     {
       label: "Windows security baseline",
-      description: "BitLocker, Defender, password and firewall.",
+      description: "BitLocker, Defender, device lock and firewall.",
       keys: [
         "windows/settings/bitlocker#BitLocker",
         "windows/settings/defender#Defender",
-        "windows/settings/password#Password",
+        "windows/settings/device-lock#Device Lock",
         "windows/settings/firewall#Firewall",
       ],
     },
@@ -112,8 +114,9 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const [query, setQuery] = createSignal("");
   const [activeKey, setActiveKey] = createSignal<string | null>(null);
   const [manifest, setManifest] = createSignal<CatalogManifest | null>(null);
+  const [manifestError, setManifestError] = createSignal<string | null>(null);
   const [catalogs, setCatalogs] = createSignal<Partial<Record<PlatformId, PlatformData>>>({});
-  const [catalogError, setCatalogError] = createSignal<string | null>(null);
+  const [catalogErrors, setCatalogErrors] = createSignal<Partial<Record<PlatformId, string>>>({});
   const [selectionMap, setSelectionMap] = createSignal<Record<PlatformId, Selection[]>>({
     apple: [],
     android: [],
@@ -125,23 +128,37 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   let requestId = 0;
 
   const data = () => catalogs()[platform()] ?? null;
+  const catalogError = () => catalogErrors()[platform()] ?? null;
   // A platform is loading until its catalogue has arrived or failed.
   const loading = () => !data() && !catalogError();
 
-  const beginLoad = (next: PlatformId, force = false) => {
-    if (force) resetPlatformCache(next);
-    if (!force && catalogs()[next]) return;
+  const beginLoad = (target: PlatformId, force = false) => {
+    if (force) resetPlatformCache(target);
+    setCatalogErrors((current) => {
+      const next = { ...current };
+      delete next[target];
+      return next;
+    });
+    if (!force && catalogs()[target]) return;
     const id = ++requestId;
-    setCatalogError(null);
-    void loadPlatform(next)
+    void loadPlatform(target)
       .then((value) => {
         if (id !== requestId) return;
-        setCatalogs((current) => ({ ...current, [next]: value }));
+        setCatalogs((current) => ({ ...current, [target]: value }));
       })
       .catch((error) => {
         if (id !== requestId) return;
-        setCatalogError(messageOf(error));
+        setCatalogErrors((current) => ({ ...current, [target]: messageOf(error) }));
       });
+  };
+
+  const retryCatalogue = () => {
+    setManifestError(null);
+    if (!manifest())
+      void loadManifest()
+        .then(setManifest)
+        .catch((error) => setManifestError(messageOf(error)));
+    beginLoad(platform(), true);
   };
 
   const choosePlatform = (next: PlatformId) => {
@@ -161,7 +178,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   onSettled(() => {
     void loadManifest()
       .then(setManifest)
-      .catch((error) => setCatalogError(messageOf(error)));
+      .catch((error) => setManifestError(messageOf(error)));
 
     if (!initialDraft) {
       const stored = parseStoredDraft(localStorage.getItem(storageKey));
@@ -254,6 +271,23 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const addCollection = (collection: Collection) => {
     const key = keyOf(collection);
     if (selected().has(key)) return;
+    // A single Apple policy is either a configuration profile or a set of DDM
+    // declarations. Mixing them silently drops one half of the draft.
+    if (
+      platform() === "apple" &&
+      collection.kind !== "profile" &&
+      collection.kind !== "declaration"
+    )
+      return;
+    if (
+      platform() === "apple" &&
+      selections().some((selection) => selection.kind !== collection.kind)
+    ) {
+      setNotice(
+        "Apple profiles and declarations are separate policies. Remove the other kind first, or start a new policy.",
+      );
+      return;
+    }
     setSelections((current) => [
       ...current,
       {
@@ -262,7 +296,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         kind: collection.kind,
         surface: collection.surface,
         name: collection.name,
-        properties: collection.properties,
+        properties: collectionProperties(collection),
         values: defaultValues(collection),
       },
     ]);
@@ -282,7 +316,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     setSelections((current) =>
       current.map((selection) =>
         selection.collectionId === key
-          ? { ...selection, values: { ...selection.values, [property.key]: value } }
+          ? {
+              ...selection,
+              values: { ...selection.values, [valueKey(property, platform())]: value },
+            }
           : selection,
       ),
     );
@@ -337,6 +374,18 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     selections().length > 0 &&
     platform() !== "android" &&
     !props.saveDisabled;
+  const disabledHint = () => {
+    if (props.saveDisabled) return "Confirm the replacement above before saving.";
+    if (selections().length === 0) return "Add a template or a setting to get started.";
+    if (platform() === "android") return "Android policies can be exported but not deployed yet.";
+    return null;
+  };
+  const platforms = (): Array<{ id: PlatformId; short: string }> =>
+    manifest()?.platforms ?? [
+      { id: "apple", short: "Apple" },
+      { id: "android", short: "Android" },
+      { id: "windows", short: "Windows" },
+    ];
   const platformName = () =>
     manifest()?.platforms.find((item) => item.id === platform())?.name ?? platform();
   const loadingLabel = () => {
@@ -358,7 +407,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           >
             <strong class="block text-sm text-stone-900">{template.label}</strong>
             <span class="mt-1 block text-stone-500">{template.description}</span>
-            <span class="mt-2 inline-flex rounded-full bg-stone-900 px-2 py-0.5 text-[10px] font-medium text-white">
+            <span class="mt-2 inline-flex whitespace-nowrap rounded-full bg-stone-900 px-2 py-0.5 text-[10px] font-medium text-white">
               Recommended
             </span>
           </button>
@@ -390,54 +439,59 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               : "Browse Apple, Windows and Android settings and export a ready-to-use artifact. No account is needed to export; sign in only to deploy."}
           </p>
         </div>
-        <div class="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={download}
-            disabled={selections().length === 0}
-            title={selections().length === 0 ? "Add a setting to enable export" : undefined}
-          >
-            <Download class="mr-1 size-4" /> Export
-          </Button>
-          <Show
-            when={props.onSave}
-            fallback={
-              <Button
-                onClick={deploy}
-                disabled={selections().length === 0 || platform() === "android"}
-                title={
-                  platform() === "android"
-                    ? "Android policies can be exported, not deployed yet"
-                    : selections().length === 0
-                      ? "Add a setting to enable deploy"
-                      : undefined
-                }
-              >
-                Deploy in Mattrax →
-              </Button>
-            }
-          >
+        <div class="flex flex-col items-start gap-1 lg:items-end">
+          <div class="flex flex-wrap gap-2">
             <Button
-              disabled={!canSave() || props.saving}
-              title={
-                props.saveDisabled
-                  ? "Confirm the replacement above before saving"
-                  : platform() === "android"
-                    ? "Android policies can only be exported"
-                    : selections().length === 0
-                      ? "Add a setting to enable save"
-                      : undefined
-              }
-              onClick={() => void props.onSave?.(draft())}
+              variant="outline"
+              onClick={download}
+              disabled={selections().length === 0}
+              title={selections().length === 0 ? "Add a setting to enable export" : undefined}
             >
-              {props.saving ? "Saving…" : "Save policy"}
+              <Download class="mr-1 size-4" /> Export
             </Button>
+            <Show
+              when={props.onSave}
+              fallback={
+                <Button
+                  onClick={deploy}
+                  disabled={selections().length === 0 || platform() === "android"}
+                  title={
+                    platform() === "android"
+                      ? "Android policies can be exported, not deployed yet"
+                      : selections().length === 0
+                        ? "Add a setting to enable deploy"
+                        : undefined
+                  }
+                >
+                  Deploy in Mattrax →
+                </Button>
+              }
+            >
+              <Button
+                disabled={!canSave() || props.saving}
+                title={
+                  props.saveDisabled
+                    ? "Confirm the replacement above before saving"
+                    : platform() === "android"
+                      ? "Android policies can only be exported"
+                      : selections().length === 0
+                        ? "Add a setting to enable save"
+                        : undefined
+                }
+                onClick={() => void props.onSave?.(draft())}
+              >
+                {props.saving ? "Saving…" : "Save policy"}
+              </Button>
+            </Show>
+          </div>
+          <Show when={disabledHint()}>
+            {(hint) => <p class="text-xs text-stone-400">{hint()}</p>}
           </Show>
         </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <For each={manifest()?.platforms ?? []}>
+        <For each={platforms()}>
           {(item) => (
             <button
               type="button"
@@ -455,9 +509,23 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             </button>
           )}
         </For>
-        <span class="ml-auto text-xs text-stone-400">
-          {manifest()?.stats[platform()]?.properties.toLocaleString() ?? "…"} settings
-        </span>
+        <Show
+          when={manifestError()}
+          fallback={
+            <span class="ml-auto text-xs text-stone-400">
+              {manifest()?.stats[platform()]?.properties.toLocaleString() ?? "…"} settings
+            </span>
+          }
+        >
+          {(error) => (
+            <span role="alert" class="ml-auto text-xs text-red-600">
+              {error()}{" "}
+              <button type="button" class="underline" onClick={retryCatalogue}>
+                Retry
+              </button>
+            </span>
+          )}
+        </Show>
       </div>
 
       <div class="grid gap-4 xl:grid-cols-[300px_1fr_290px]">
@@ -492,13 +560,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                           <p role="alert" class="text-red-600">
                             {error()}
                           </p>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              beginLoad(platform(), true);
-                            }}
-                          >
+                          <Button size="sm" variant="outline" onClick={retryCatalogue}>
                             Retry
                           </Button>
                         </div>
@@ -612,17 +674,27 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                   >
                     {(selection) => (
                       <div class="space-y-4">
-                        <For each={selection().properties}>
+                        <For
+                          each={selection().properties.filter(
+                            (property) => property.category !== "Envelope",
+                          )}
+                        >
                           {(property) => (
                             <PropertyField
                               property={property}
-                              value={selection().values[property.key]}
+                              platform={platform()}
+                              value={selection().values[valueKey(property, platform())]}
                               onChange={(value) =>
                                 updateValue(selection().collectionId, property, value)
                               }
                             />
                           )}
                         </For>
+                        <Show when={selection().kind === "declaration"}>
+                          <p class="text-xs text-stone-400">
+                            Type, identifier and server token are generated when you export or save.
+                          </p>
+                        </Show>
                       </div>
                     )}
                   </Show>
@@ -732,39 +804,96 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
 function PropertyField(props: {
   property: Property;
+  platform: PlatformId;
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
   const id = () => `designer-${props.property.key.replace(/[^A-Za-z0-9_-]+/g, "-")}`;
+  const isBoolean = () => props.property.type === "boolean" && !props.property.enum;
+  const isArrayEnum = () => props.property.type === "array" && Boolean(props.property.enum);
+  const enumValues = () => (props.property.type !== "array" ? props.property.enum : undefined);
+  const arrayEnumValues = () => (props.property.type === "array" ? props.property.enum : undefined);
+  const isGrouped = () => isBoolean() || isArrayEnum();
+
+  /**
+   * The catalogue serializes enum options as strings even for on/off and
+   * numeric CSPs. Use the option domain (not just the default) so the stored
+   * value keeps the type the plist/SyncML payload expects.
+   */
+  const enumKind = () => {
+    const values = props.property.enum?.map((option) => option.value) ?? [];
+    if (values.length > 0 && values.every((value) => value === "true" || value === "false"))
+      return "boolean";
+    if (
+      values.length > 0 &&
+      values.every((value) => value.trim() !== "" && Number.isFinite(Number(value)))
+    )
+      return "number";
+    return "string";
+  };
+  const coerce = (value: string) => {
+    const kind = enumKind();
+    if (kind === "boolean") return value === "true";
+    if (kind === "number") return Number(value);
+    return value;
+  };
+  const arrayValue = () => (Array.isArray(props.value) ? (props.value as unknown[]) : []);
+  const toggleArrayValue = (option: string, checked: boolean) => {
+    const current = arrayValue().map(String);
+    props.onChange(
+      checked
+        ? [...current.filter((value) => value !== option), option]
+        : current.filter((value) => value !== option),
+    );
+  };
+
   return (
     <div class="space-y-1.5 rounded-lg border p-3">
       <div class="flex items-start justify-between gap-3">
-        <label for={id()} class="text-sm font-medium text-stone-800">
-          {props.property.name}
-          <Show when={props.property.required}>
-            <span class="ml-1 text-red-500" aria-hidden="true">
-              *
+        <Show
+          when={!isGrouped()}
+          fallback={
+            <span class="text-sm font-medium text-stone-800">
+              {props.property.name}
+              <Show when={props.property.required}>
+                <span class="ml-1 text-red-500" aria-hidden="true">
+                  *
+                </span>
+              </Show>
             </span>
-          </Show>
-        </label>
+          }
+        >
+          <label for={id()} class="text-sm font-medium text-stone-800">
+            {props.property.name}
+            <Show when={props.property.required}>
+              <span class="ml-1 text-red-500" aria-hidden="true">
+                *
+              </span>
+            </Show>
+          </label>
+        </Show>
         <Badge variant="secondary" class="shrink-0 text-[10px]">
           {typeLabel(props.property.type)}
         </Badge>
       </div>
       <p class="text-xs leading-relaxed text-stone-500">{props.property.description}</p>
+      <Show when={props.property.address}>
+        {(address) => <p class="break-all font-mono text-[10px] text-stone-400">{address()}</p>}
+      </Show>
       <Show when={props.property.defaultValue !== undefined}>
         <p class="text-[11px] text-stone-400">
           Default: {String(props.property.defaultValue)} ·{" "}
           <button
             type="button"
             class="underline"
+            aria-label={`Reset ${props.property.name} to its default`}
             onClick={() => props.onChange(props.property.defaultValue)}
           >
             reset
           </button>
         </p>
       </Show>
-      <Show when={props.property.enum}>
+      <Show when={enumValues()}>
         {(values) => (
           <select
             id={id()}
@@ -772,17 +901,7 @@ function PropertyField(props: {
             value={props.value === undefined ? "" : String(props.value)}
             onChange={(event) => {
               const selected = event.currentTarget.value;
-              if (selected === "") return props.onChange(undefined);
-              // Enum options are serialized as strings in the catalogue, but
-              // numeric and boolean settings must stay typed for plist/SyncML.
-              const fallback = props.property.defaultValue;
-              props.onChange(
-                typeof fallback === "number"
-                  ? Number(selected)
-                  : typeof fallback === "boolean"
-                    ? selected === "true"
-                    : selected,
-              );
+              props.onChange(selected === "" ? undefined : coerce(selected));
             }}
           >
             <option value="">Not configured</option>
@@ -794,11 +913,37 @@ function PropertyField(props: {
           </select>
         )}
       </Show>
-      <Show when={!props.property.enum && props.property.type === "boolean"}>
+      <Show when={arrayEnumValues()}>
+        {(values) => (
+          <div
+            class="max-h-48 space-y-1 overflow-auto rounded-lg border bg-white p-2"
+            role="group"
+            aria-label={props.property.name}
+          >
+            <For each={values()}>
+              {(option) => (
+                <label class="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={arrayValue().includes(option.value)}
+                    onChange={(event) =>
+                      toggleArrayValue(option.value, event.currentTarget.checked)
+                    }
+                  />
+                  <span>{option.description ?? option.value}</span>
+                </label>
+              )}
+            </For>
+          </div>
+        )}
+      </Show>
+      <Show when={isBoolean()}>
         <label class="flex items-center gap-2 text-sm">
           <input
             id={id()}
             type="checkbox"
+            aria-label={props.property.name}
             checked={props.value === true}
             onChange={(event) => props.onChange(event.currentTarget.checked)}
           />
@@ -830,10 +975,24 @@ function PropertyField(props: {
           }}
         />
       </Show>
+      <Show when={!props.property.enum && props.property.type === "date"}>
+        <Input
+          id={id()}
+          type="date"
+          value={props.value === undefined ? "" : String(props.value).slice(0, 10)}
+          onInput={(event) =>
+            props.onChange(
+              event.currentTarget.value === ""
+                ? undefined
+                : new Date(`${event.currentTarget.value}T00:00:00Z`).toISOString(),
+            )
+          }
+        />
+      </Show>
       <Show
         when={
           !props.property.enum &&
-          !["boolean", "integer", "real", "array", "dictionary", "data"].includes(
+          !["boolean", "integer", "real", "array", "dictionary", "data", "date"].includes(
             props.property.type,
           )
         }
@@ -844,7 +1003,7 @@ function PropertyField(props: {
           onInput={(event) => props.onChange(event.currentTarget.value)}
         />
       </Show>
-      <Show when={["array", "dictionary", "data"].includes(props.property.type)}>
+      <Show when={["array", "dictionary", "data"].includes(props.property.type) && !isArrayEnum()}>
         <textarea
           id={id()}
           class="min-h-20 w-full rounded-lg border bg-white p-2 font-mono text-xs"

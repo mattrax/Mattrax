@@ -94,5 +94,68 @@ test.describe("policy designer", () => {
     await expect(page.getByRole("button", { name: /^Save policy$/ })).toBeDisabled();
     await page.getByLabel("Replace the existing configurations when I save").check();
     await expect(page.getByRole("button", { name: /^Save policy$/ })).toBeEnabled();
+    await page.getByRole("button", { name: /^Save policy$/ }).click();
+    await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
+    await expect(page.getByText(/mttx.apple.custom.designer/)).toBeVisible();
+    await expect(page.getByText("Device restrictions")).toHaveCount(0);
+  });
+
+  test("exports Android array enums as arrays", async ({ page }) => {
+    await gotoHydrated(page, "/designer");
+    await page.getByRole("button", { name: "Android", exact: true }).click();
+    await expect(
+      page.getByText("Android Management API policy", { exact: false }).first(),
+    ).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByRole("button", { name: /Android baseline/i }).click();
+    await page
+      .getByRole("checkbox", { name: /Disable the camera on secure keyguard screens/ })
+      .check();
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: /^Export$/ }).click();
+    const file = await download;
+    const policy = JSON.parse(await readFile((await file.path())!, "utf8"));
+    expect(policy.keyguardDisabledFeatures).toContain("CAMERA");
+  });
+
+  test("saves a Windows baseline with only applicable OMA-URIs", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Windows Tenant");
+    await page.goto(`/t/${tenant.id}/policies/new`);
+    await page.locator("form input").first().fill("Windows policy");
+    await page.getByRole("button", { name: /^create policy$/i }).click();
+    await expect(page).toHaveURL(/\/editor$/);
+    const policyUrl = page.url().replace(/\/editor$/, "");
+    await gotoHydrated(page, `${policyUrl}/design`);
+    await page.getByRole("button", { name: "Windows", exact: true }).click();
+    await expect(page.getByText("BitLocker", { exact: true }).first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByRole("button", { name: /security baseline/i }).click();
+    await page.getByRole("button", { name: /^Save policy$/ }).click();
+    await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
+    await expect(page.getByText(/mttx.windows.custom.designer/)).toBeVisible();
+  });
+
+  test("saves and rehydrates an Apple DDM declaration", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Declaration Tenant");
+    await page.goto(`/t/${tenant.id}/policies/new`);
+    await page.locator("form input").first().fill("Declaration policy");
+    await page.getByRole("button", { name: /^create policy$/i }).click();
+    await expect(page).toHaveURL(/\/editor$/);
+    const policyUrl = page.url().replace(/\/editor$/, "");
+    await gotoHydrated(page, `${policyUrl}/design`);
+    await page.getByPlaceholder("Search settings…").fill("Activation:Simple");
+    await page.getByRole("button", { name: /Activation:Simple/ }).click();
+    await page.getByRole("button", { name: /^Add to policy$/ }).click();
+    await page.getByRole("button", { name: /^Save policy$/ }).click();
+    await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
+    await expect(page.getByText(/mttx.apple.declaration/)).toBeVisible();
+
+    await page.evaluate(() => localStorage.clear());
+    await gotoHydrated(page, `${policyUrl}/design`);
+    await expect(
+      page.getByRole("button", { name: "Remove Activation:Simple", exact: true }),
+    ).toBeVisible();
   });
 });

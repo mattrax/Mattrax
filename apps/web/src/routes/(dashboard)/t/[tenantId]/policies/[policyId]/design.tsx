@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, onSettled, Show } from "solid-js";
 import { LinkButton } from "~/components/mdm/common";
 import { PolicyDesigner } from "~/components/mdm/policy-designer";
+import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { enterprise, enterpriseKeys, type PolicyRow } from "~/lib/enterprise";
 import { artifactToConfigurations, type Draft } from "~/lib/policy-designer/build";
@@ -21,10 +22,19 @@ const parseDraft = (value: unknown): Draft | undefined => {
   return draft?.version === 1 && Array.isArray(draft.selections) ? draft : undefined;
 };
 
-const DESIGNER_CONFIGURATIONS = new Set([
+const CUSTOM_DESIGNER_KINDS = new Set([
   "mttx.apple.custom.designer",
   "mttx.windows.custom.designer",
 ]);
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isDesignerDeclaration = (kind: string, value: unknown) =>
+  kind.startsWith("mttx.apple.declaration.") && isRecord(value) && "draft" in value;
+
+const isDesignerConfiguration = (kind: string, value: unknown) =>
+  CUSTOM_DESIGNER_KINDS.has(kind) || isDesignerDeclaration(kind, value);
 
 export default function PolicyDesignerPage() {
   const params = useParams();
@@ -36,6 +46,7 @@ export default function PolicyDesignerPage() {
     queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
   const row = () => policy.data as PolicyRow | undefined;
+  const configurations = () => row()?.configurations ?? {};
   const [ready, setReady] = createSignal(false);
   const [replaceExisting, setReplaceExisting] = createSignal(false);
 
@@ -46,14 +57,14 @@ export default function PolicyDesignerPage() {
    * localStorage copy, so fall back to that first.
    */
   const configurationDraft = () => {
-    const configurations = row()?.configurations;
-    if (!configurations) return undefined;
-    for (const kind of DESIGNER_CONFIGURATIONS) {
-      const value = configurations[kind];
-      if (value && typeof value === "object" && !Array.isArray(value))
-        return parseDraft((value as Record<string, unknown>).draft);
+    let latest: Draft | undefined;
+    for (const [kind, value] of Object.entries(configurations())) {
+      if (!isDesignerConfiguration(kind, value)) continue;
+      const draft = parseDraft(isRecord(value) ? value.draft : undefined);
+      if (!draft) continue;
+      if (!latest || (draft.savedAt ?? 0) > (latest.savedAt ?? 0)) latest = draft;
     }
-    return undefined;
+    return latest;
   };
   const designerDraft = () =>
     (typeof localStorage === "undefined"
@@ -61,23 +72,36 @@ export default function PolicyDesignerPage() {
       : parseDraft(localStorage.getItem(storageKey()))) ?? configurationDraft();
 
   const foreignConfigurations = () =>
-    Object.keys(row()?.configurations ?? {}).filter((kind) => !DESIGNER_CONFIGURATIONS.has(kind))
-      .length;
-  const blocked = () => foreignConfigurations() > 0 && !replaceExisting();
+    Object.entries(configurations())
+      .filter(([kind, value]) => !isDesignerConfiguration(kind, value))
+      .map(([kind]) => kind);
+  const blocked = () => foreignConfigurations().length > 0 && !replaceExisting();
 
   onSettled(() => {
     setReady(true);
   });
 
   const save = useMutation(() => ({
-    mutationFn: (draft: Draft) =>
-      enterprise.patchPolicy(params.tenantId, params.policyId, {
+    mutationFn: (draft: Draft) => {
+      const next = artifactToConfigurations(draft);
+      // Designer declaration configurations are replaced as a set; delete the
+      // ones that disappeared. Advanced-editor configurations are only deleted
+      // after the explicit replacement confirmation.
+      for (const [kind, value] of Object.entries(configurations())) {
+        if (kind in next) continue;
+        if (
+          isDesignerDeclaration(kind, value) ||
+          (replaceExisting() && !isDesignerConfiguration(kind, value))
+        )
+          next[kind] = null;
+      }
+      return enterprise.patchPolicy(params.tenantId, params.policyId, {
         name: row()?.name,
-        configurations: artifactToConfigurations(draft),
-      }),
+        configurations: next,
+      });
+    },
     onSuccess: async (_result, draft) => {
       localStorage.setItem(storageKey(), JSON.stringify(draft));
-      localStorage.removeItem("mattrax:designer-draft");
       await qc.invalidateQueries({
         queryKey: enterpriseKeys.item(params.tenantId, "policy", params.policyId),
       });
@@ -111,12 +135,24 @@ export default function PolicyDesignerPage() {
       <Show
         when={ready() && policy.data}
         fallback={
-          <div class="rounded-xl border bg-white p-6 text-sm text-stone-500">
-            Loading the policy…
-          </div>
+          <Show
+            when={policy.isError}
+            fallback={
+              <div class="rounded-xl border bg-white p-6 text-sm text-stone-500">
+                Loading the policy…
+              </div>
+            }
+          >
+            <div class="space-y-3 rounded-xl border bg-white p-6 text-sm text-stone-600">
+              <p>Could not load this policy.</p>
+              <Button variant="outline" onClick={() => void policy.refetch()}>
+                Retry
+              </Button>
+            </div>
+          </Show>
         }
       >
-        <Show when={foreignConfigurations() > 0}>
+        <Show when={foreignConfigurations().length > 0}>
           <Card class="border-amber-200 bg-amber-50">
             <CardHeader>
               <CardTitle class="text-base text-amber-900">

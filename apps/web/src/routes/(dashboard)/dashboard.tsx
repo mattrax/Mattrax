@@ -46,9 +46,15 @@ export default function DashboardPage() {
       const tenant = tenantId() || me.data?.tenants[0]?.id;
       if (!current || !tenant) throw new Error("Choose a workspace first");
       const policy = await enterprise.createPolicy(tenant, { name: current.name });
-      await enterprise.patchPolicy(tenant, policy.id, {
-        configurations: artifactToConfigurations(current),
-      });
+      try {
+        await enterprise.patchPolicy(tenant, policy.id, {
+          configurations: artifactToConfigurations(current),
+        });
+      } catch (error) {
+        // Do not leave an empty policy behind when the draft cannot be saved.
+        await enterprise.deletePolicies(tenant, [policy.id]).catch(() => undefined);
+        throw error;
+      }
       localStorage.setItem(`mattrax:designer:${policy.id}`, JSON.stringify(current));
       localStorage.removeItem("mattrax:designer-draft");
       return { tenant, policyId: policy.id };
@@ -134,7 +140,11 @@ export default function DashboardPage() {
               </div>
             </Show>
             <Show when={deployDraft.error}>
-              {(error) => <p class="mt-2 text-sm text-red-300">{String(error())}</p>}
+              {(error) => (
+                <p class="mt-2 text-sm text-red-300">
+                  {error() instanceof Error ? error().message : String(error())}
+                </p>
+              )}
             </Show>
           </div>
         )}

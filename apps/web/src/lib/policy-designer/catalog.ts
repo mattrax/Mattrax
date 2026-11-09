@@ -144,10 +144,28 @@ export const searchCollections = (
 
 export const resetPlatformCache = (platform: PlatformId) => platformPromises.delete(platform);
 
+/**
+ * The raw catalogue repeats Windows properties that differ only by vector
+ * placeholders (`{0}`), which cannot be applied as literal OMA-URIs, and it
+ * repeats identical keys in a few CSPs. Keep one usable property per address or
+ * key so a value maps to one SyncML command.
+ */
+export const collectionProperties = (collection: { properties: Property[] }): Property[] => {
+  const seen = new Set<string>();
+  return collection.properties.filter((property) => {
+    if (property.address && /[{}]/.test(property.address)) return false;
+    const identity = property.address ?? property.key;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+};
+
 export const searchProperties = (collection: Collection, query: string): Property[] => {
   const term = query.trim().toLowerCase();
-  if (!term) return collection.properties;
-  return collection.properties.filter((property) =>
+  const properties = collectionProperties(collection);
+  if (!term) return properties;
+  return properties.filter((property) =>
     `${property.name} ${property.key} ${property.address ?? ""} ${property.description}`
       .toLowerCase()
       .includes(term),
