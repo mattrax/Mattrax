@@ -164,8 +164,13 @@ export function CommandPalette() {
         run(items()[active()]);
       }
     };
+    const openEvent = () => setOpen(true);
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    window.addEventListener("mattrax:open-command-palette", openEvent);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      window.removeEventListener("mattrax:open-command-palette", openEvent);
+    };
   });
 
   let input: HTMLInputElement | undefined;

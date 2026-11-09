@@ -65,3 +65,16 @@ test.describe("sidebar navigation", () => {
     expect(me.activeTenant.id).toBe(second.id);
   });
 });
+
+test.describe("mobile sidebar", () => {
+  test("opens the drawer and navigates", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const tenant = await bootstrapTenant(page, "Mobile Tenant");
+    await page.locator("[data-slot=sidebar-trigger]").click();
+    const drawer = page.locator('[data-sidebar="sidebar"]');
+    await expect(drawer).toBeVisible();
+    await drawer.getByRole("link", { name: "Groups" }).click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.id}/groups`));
+    await expect(drawer).toBeHidden();
+  });
+});

@@ -10,6 +10,7 @@ import {
   LinkIcon,
   LogOut,
   Settings,
+  Search as SearchIcon,
   ShieldCheck,
   User,
   UsersRound,
@@ -42,6 +43,7 @@ import {
   SidebarRail,
   SidebarTrigger,
   sidebarMenuButtonVariants,
+  useSidebar,
 } from "~/components/ui/sidebar";
 import { enterprise, enterpriseKeys, resolveActiveTenant } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
@@ -84,6 +86,19 @@ function breadcrumbForPath(path: string, tenantName?: string): Crumb[] {
   }
   if (crumbs.length === 0) crumbs.push({ label: "Dashboard" });
   return crumbs;
+}
+
+/** Close the mobile drawer whenever the route changes. */
+function CloseMobileSidebarOnNavigate() {
+  const location = useLocation();
+  const { isMobile, setOpenMobile } = useSidebar();
+  createEffect(
+    () => location.pathname,
+    () => {
+      if (isMobile()) setOpenMobile(false);
+    },
+  );
+  return null;
 }
 
 export default function DashboardLayout(props: ParentProps) {
@@ -173,6 +188,7 @@ export default function DashboardLayout(props: ParentProps) {
 
   return (
     <SidebarProvider>
+      <CloseMobileSidebarOnNavigate />
       <Sidebar collapsible="icon">
         <SidebarHeader class="border-b border-sidebar-border">
           <SidebarMenu>
@@ -296,6 +312,15 @@ export default function DashboardLayout(props: ParentProps) {
               </For>
             </BreadcrumbList>
           </Breadcrumb>
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event("mattrax:open-command-palette"))}
+            class="ml-auto hidden items-center gap-2 rounded-lg border bg-white px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-stone-50 sm:flex"
+          >
+            <SearchIcon class="size-4" />
+            <span>Search</span>
+            <kbd class="rounded border px-1.5 py-0.5 text-[10px]">⌘K</kbd>
+          </button>
         </header>
         {props.children}
       </SidebarInset>

@@ -179,7 +179,7 @@ function EditorNav(props: { active: string; setActive: (value: string) => void }
           variant={props.active === "applications" ? "secondary" : "ghost"}
           onClick={() => props.setActive("applications")}
         >
-          Applications
+          Applications <span class="ml-2 text-[10px] uppercase text-muted-foreground">Soon</span>
         </Button>
         <Button
           variant={props.active === "device" ? "secondary" : "ghost"}
@@ -238,74 +238,21 @@ function SecuritySection(props: { config: Config; setKey: (key: string, value: u
   );
 }
 
-function ApplicationSection(props: {
+function ApplicationSection(_props: {
   config: Config;
   setKey: (key: string, value: unknown) => void;
   tenantId?: string;
   policyId?: string;
 }) {
-  const app = () =>
-    props.config[keys.app] as
-      | { sha256?: string; fileName?: string; contentType?: string | null; size?: number }
-      | null
-      | undefined;
-  const upload = async () => {
-    const file = await selectFile(
-      ".pkg,.dmg,.zip,application/octet-stream,application/x-apple-diskimage,application/zip",
-    );
-    const uploaded = await enterprise.uploadPolicyApplication(props.tenantId, props.policyId, {
-      fileName: file.name,
-      contentType: file.type || undefined,
-      content: arrayBufferToBase64(await file.arrayBuffer()),
-    });
-    props.setKey(keys.app, uploaded);
-  };
-  const download = async () => {
-    const sha256 = app()?.sha256;
-    if (!sha256) return;
-    const file = await enterprise.downloadPolicyApplication(props.tenantId, props.policyId, sha256);
-    const url = URL.createObjectURL(
-      new Blob([base64ToArrayBuffer(file.content)], {
-        type: file.contentType ?? "application/octet-stream",
-      }),
-    );
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = file.fileName;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
   return (
-    <Show
-      when={app()}
-      fallback={
-        <div class="space-y-3">
-          <p class="text-sm text-muted-foreground">
-            Upload an application installer for this policy. Delivery is not connected to MDM yet.
-          </p>
-          <Button onClick={upload}>Upload application</Button>
-        </div>
-      }
-    >
-      {(value) => (
-        <div class="space-y-4">
-          <div class="rounded-lg border p-3 text-sm">
-            <p class="font-medium">{value().fileName}</p>
-            <p class="text-muted-foreground">SHA-256: {value().sha256}</p>
-            <Show when={value().size !== undefined}>
-              <p class="text-muted-foreground">Size: {value().size} bytes</p>
-            </Show>
-          </div>
-          <div class="flex gap-2">
-            <Button onClick={download}>Download</Button>
-            <Button onClick={upload}>Replace</Button>
-            <Button variant="outline" onClick={() => props.setKey(keys.app, null)}>
-              Remove
-            </Button>
-          </div>
-        </div>
-      )}
-    </Show>
+    <div class="space-y-3">
+      <p class="text-sm font-medium">Application deployment</p>
+      <p class="text-sm text-muted-foreground">
+        Remote app installers are not wired into Apple declarative management yet. Packages can
+        still be uploaded to the policy API for future use, but they will not be delivered to
+        devices.
+      </p>
+    </div>
   );
 }
 

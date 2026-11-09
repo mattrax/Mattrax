@@ -16,8 +16,8 @@ export default function Page() {
             from <em class="italic">one</em> place.
           </h1>
           <p class="text-lg text-stone-500 leading-relaxed mb-10 max-w-xl mx-auto">
-            Mattrax gives you complete visibility and control over your Apple, Windows, and Android
-            fleet. Enroll, configure, and secure devices at scale — without the complexity.
+            Mattrax gives you visibility and control over your Apple and Windows fleet. Enroll,
+            configure, and secure devices at scale — hosted, self-hosted, or white-labelled.
           </p>
           <div class="flex flex-wrap justify-center gap-3 mb-12">
             <a href="/register">
@@ -68,8 +68,8 @@ export default function Page() {
                   <line x1="6" x2="6.01" y1="18" y2="18" />
                 </svg>
               }
-              title="Cross-Platform Fleet"
-              desc="Manage Apple, Windows, and Android devices from a single dashboard. One policy engine, every platform."
+              title="Apple & Windows"
+              desc="Manage macOS, iOS, Windows and iPadOS from one dashboard. Android management is in development."
             />
             <CapabilityCard
               icon={
@@ -87,8 +87,8 @@ export default function Page() {
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
                 </svg>
               }
-              title="Zero-Touch Enrollment"
-              desc="Ship devices directly to users. They power on, authenticate, and are automatically configured to your policies."
+              title="Profile Enrollment"
+              desc="Send a single enrollment link. Devices install the management profile and start checking in immediately."
             />
             <CapabilityCard
               icon={
@@ -109,8 +109,8 @@ export default function Page() {
                   <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
                 </svg>
               }
-              title="Real-Time Sync"
-              desc="Policy changes propagate in seconds, not minutes. See device compliance status as it happens."
+              title="Push-Driven Sync"
+              desc="APNs wakes Apple devices as soon as a policy changes, with polling as a reliable fallback."
             />
             <CapabilityCard
               icon={
@@ -129,8 +129,8 @@ export default function Page() {
                   <path d="m9 12 2 2 4-4" />
                 </svg>
               }
-              title="Compliance & Security"
-              desc="Enforce encryption, passcode policies, and app restrictions. Get alerted the moment a device falls out of compliance."
+              title="Policy Enforcement"
+              desc="Deploy restrictions, certificates, and custom mobileconfig profiles to groups of devices."
             />
             <CapabilityCard
               icon={
@@ -151,7 +151,8 @@ export default function Page() {
                 </svg>
               }
               title="App Management"
-              desc="Deploy, update, and remove apps remotely. Support for VPP, managed Google Play, and custom enterprise apps."
+              desc="Upload installers today; remote app deployment is on the roadmap."
+              soon
             />
             <CapabilityCard
               icon={
@@ -172,8 +173,8 @@ export default function Page() {
                   <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                 </svg>
               }
-              title="Role-Based Access"
-              desc="Grant admins, helpdesk, and viewers precisely the permissions they need. Audit every action."
+              title="Team & Roles"
+              desc="Invite administrators and scope access per tenant, with API tokens for automation."
             />
           </div>
         </div>
@@ -184,19 +185,19 @@ export default function Page() {
           <p class="text-xs text-stone-600 uppercase tracking-[0.2em] mb-12">Scale</p>
           <div class="grid md:grid-cols-3 gap-12">
             <ScaleStat
-              value="10,000+"
-              unit="devices managed"
-              description="across enterprise and education customers"
+              value="2"
+              unit="platforms"
+              description="Apple and Windows today; Android in development"
             />
             <ScaleStat
-              value="99.99%"
-              unit="policy delivery"
-              description="measured across all enrolled devices"
+              value="CSR"
+              unit="APNs setup"
+              description="generate a signing request and upload the certificate"
             />
             <ScaleStat
-              value="< 30s"
-              unit="enrollment time"
-              description="from unboxing to fully configured"
+              value="< 5m"
+              unit="to first device"
+              description="create a tenant, enroll, and deploy a policy"
             />
           </div>
         </div>
@@ -236,14 +237,14 @@ export default function Page() {
             </div>
           </div>
           <div>
-            <EnterpriseFeatureRow label="SSO (SAML 2.0, OIDC)" />
-            <EnterpriseFeatureRow label="SCIM provisioning & deprovisioning" withSeparator />
+            <EnterpriseFeatureRow label="Multi-tenant workspaces" />
             <EnterpriseFeatureRow label="Role-based access control" withSeparator />
-            <EnterpriseFeatureRow label="Immutable audit trail" withSeparator />
-            <EnterpriseFeatureRow label="Custom data residency" withSeparator />
-            <EnterpriseFeatureRow label="On-premise deployment" withSeparator />
+            <EnterpriseFeatureRow label="API tokens for automation" withSeparator />
+            <EnterpriseFeatureRow label="Self-hosted and whitelabel deployment" withSeparator />
+            <EnterpriseFeatureRow label="Open management webhook contract" withSeparator />
+            <EnterpriseFeatureRow label="Bring-your-own APNs certificate" withSeparator />
+            <EnterpriseFeatureRow label="SSO and SCIM (coming soon)" withSeparator />
             <EnterpriseFeatureRow label="Dedicated SLA & priority support" withSeparator />
-            <EnterpriseFeatureRow label="Volume licensing & invoice billing" withSeparator />
           </div>
         </div>
       </section>
@@ -275,7 +276,7 @@ export default function Page() {
                 </Button>
               </a>
               <ul class="space-y-3 text-sm text-stone-500">
-                <PricingFeatureItem text="Up to 25 devices" iconClass="text-stone-400" />
+                <PricingFeatureItem text="Unlimited devices during alpha" iconClass="text-stone-400" />
                 <PricingFeatureItem text="Core policies" iconClass="text-stone-400" />
                 <PricingFeatureItem text="Email support" iconClass="text-stone-400" />
               </ul>
@@ -289,10 +290,11 @@ export default function Page() {
                 </span>
               </div>
               <div class="flex items-baseline gap-1 mb-1">
-                <span class="text-4xl font-light text-stone-50">$3</span>
-                <span class="text-stone-500 text-sm">/ device / mo</span>
+                <span class="text-4xl font-light text-stone-50">Alpha</span>
               </div>
-              <p class="text-xs text-stone-500 mb-8">Everything you need for a growing fleet.</p>
+              <p class="text-xs text-stone-500 mb-8">
+                Advanced management for growing fleets. Billing is not enabled during alpha.
+              </p>
               <a href="/register">
                 <Button class="w-full rounded-full bg-stone-50 text-stone-900 hover:bg-white mb-8">
                   Get started
@@ -343,7 +345,7 @@ export default function Page() {
             <span class="italic">your fleet?</span>
           </h2>
           <p class="text-stone-500 mb-10">
-            Start enrolling devices in under five minutes. Free for up to 25 devices.
+            Start enrolling devices in under five minutes. Free during alpha.
           </p>
           <div class="flex flex-col sm:flex-row justify-center gap-4">
             <a href="/register">

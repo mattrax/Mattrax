@@ -23,23 +23,60 @@ Requirements:
 
 - Node.js `>=22.12.0`
 - pnpm `10.33.2`
+- MySQL 8 (local development uses `mysql://mattrax:mattrax@localhost:3306/mattraxe`)
 
-Install dependencies with:
+Install dependencies, apply migrations and start the dashboard + API Worker:
 
 ```bash
 pnpm install
+cp .dev.vars.example apps/api/.dev.vars
+cp .dev.vars.example apps/web/.dev.vars
+pnpm api db:migrate
+pnpm web dev
 ```
 
-| Command            | Description                                   |
-| ------------------ | --------------------------------------------- |
-| `pnpm test`        | Run the Vitest suite.                         |
-| `pnpm typecheck`   | Typecheck the workspace.                      |
-| `pnpm format`      | Run formatting and linting through Vite Plus. |
-| `pnpm doc`         | Start the documentation site locally.         |
-| `pnpm doc:build`   | Build the documentation site.                 |
-| `pnpm web dev`     | Run only the web app.                         |
-| `pnpm api dev`     | Run only the API app.                         |
-| `pnpm mserver dev` | Run only the whitelabel server app.           |
+`ORIGIN` in `.dev.vars` must match the URL you open in the browser
+(`http://localhost:9050` by default). `AUTH_RESET_URL` must be HTTPS; it points
+at the production reset page during local development because the auth library
+refuses non-HTTPS reset links. To run the dev server over HTTPS instead, run
+`pnpm dev:cert` and `DEV_HTTPS=1 pnpm web dev`, then set `ORIGIN=https://localhost:9050`.
+
+| Command            | Description                                        |
+| ------------------ | -------------------------------------------------- |
+| `pnpm test`        | Run the Vitest suites.                             |
+| `pnpm test:e2e`    | Run the Playwright browser tests over CDP.         |
+| `pnpm typecheck`   | Typecheck the workspace.                           |
+| `pnpm format`      | Run formatting and linting through Vite Plus.      |
+| `pnpm doc`         | Start the documentation site locally.              |
+| `pnpm doc:build`   | Build the documentation site.                      |
+| `pnpm web dev`     | Run only the web app (and its API Worker).         |
+| `pnpm api dev`     | Run only the API app.                              |
+| `pnpm mserver dev` | Run only the whitelabel/self-hosted server app.    |
+
+The browser suite drives a real Chrome via CDP by default. Set
+`E2E_BASE_URL` to test an already-running deployment, or `E2E_CHANNEL=bundled`
+to use Playwright's bundled Chromium (as CI does). The suite creates its own
+users and tenants, so it is safe to point at a disposable database.
+
+## Architecture
+
+The repository is split into layers so the hosted product and the whitelabel
+gateway share protocol code without sharing product decisions:
+
+| Layer | Packages / apps |
+| --- | --- |
+| Protocol | `dm-apple`, `dm-windows`, `scep`, `soap`, `plist`, `policy-apple` |
+| Management contract | `management-backend`, `management-backend-http` |
+| Hosted management | `management-backend-enterprise`, `apps/api` |
+| Product contracts | `enterprise-domain`, `platform-api` |
+| Product backends | `enterprise-backend`, `platform-backend` |
+| Data | `enterprise-core` (Drizzle/MySQL, R2, secrets) |
+| Surfaces | `apps/web` (dashboard, landing, docs), `apps/mttx` (self-hosted) |
+
+Whitelabel deployments run `apps/mttx`, which imports only the protocol and
+management layers and talks to a customer-owned webhook. They must never import
+`@mattrax/enterprise-*`.
+
 
 ## Cloud
 
