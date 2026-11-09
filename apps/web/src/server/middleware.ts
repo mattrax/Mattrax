@@ -29,7 +29,7 @@ async function preloadSession(request: Request): Promise<void> {
 
   try {
     const response = await env.API.fetch(
-      new Request(new URL("/api/v1/auth/getSession", url), {
+      new Request(new URL("/api/v1/getSession", url), {
         method: "POST",
         headers,
         body: "{}",
