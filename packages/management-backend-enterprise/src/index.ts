@@ -441,6 +441,28 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 return;
               }
 
+              if (event._tag === "CommandResult") {
+                yield* db
+                  .update(s.deviceCommand)
+                  .set({
+                    status: event.status === "Acknowledged" ? "succeeded" : "failed",
+                    resultStatus: event.status,
+                    resultDetail: event.errorDetail ?? null,
+                    updatedAt: now(),
+                  })
+                  .where(
+                    and(
+                      eq(s.deviceCommand.id, event.commandUUID),
+                      eq(s.deviceCommand.deviceId, device.id),
+                    ),
+                  );
+                yield* db
+                  .update(s.device)
+                  .set({ lastSeenAt: now() })
+                  .where(eq(s.device.id, device.id));
+                return;
+              }
+
               if (event._tag === "DeclarationStatus") {
                 yield* updateInventoryFromStatus(device.id, event.statusItems);
                 return;
@@ -469,7 +491,27 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             const device = yield* requireDevice(scope);
             if (device.status === "unenrolling")
               return yield* Effect.fail(new ServerInitiatedUnenrollment());
-            if (device.status !== "enrolled") return { _tag: "Idle" };
+            if (device.status !== "enrolled") return { _tag: "Idle" as const };
+            const [command] = yield* db
+              .select()
+              .from(s.deviceCommand)
+              .where(
+                and(eq(s.deviceCommand.deviceId, device.id), eq(s.deviceCommand.status, "queued")),
+              )
+              .orderBy(s.deviceCommand.createdAt)
+              .limit(1);
+            if (command) {
+              yield* db
+                .update(s.deviceCommand)
+                .set({ status: "sent", updatedAt: now() })
+                .where(eq(s.deviceCommand.id, command.id));
+              return {
+                _tag: "Command" as const,
+                commandUUID: command.id,
+                requestType: command.requestType,
+                payload: command.payload ?? {},
+              };
+            }
             const deviceToken = yield* deviceTokenFor(device.id);
             const items = yield* declarationItemsForDevice(device.id, deviceToken, {
               origin,
@@ -487,8 +529,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 ),
               catch: internal,
             });
-            return { _tag: "DdmSync", serverToken: token };
-          }),
+            return { _tag: "DdmSync" as const, serverToken: token };
+          }).pipe(
+            Effect.mapError((cause) =>
+              cause instanceof UnknownDevice || cause instanceof ServerInitiatedUnenrollment
+                ? cause
+                : internal(cause),
+            ),
+          ),
         ),
 
       getAppleDeclarationTokens: (

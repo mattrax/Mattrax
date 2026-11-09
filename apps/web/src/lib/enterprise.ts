@@ -210,10 +210,19 @@ export const enterprise = {
     endpoint((api) =>
       api.deleteDevices({ params: { tenantId: required(tenantId, "tenantId") }, payload: ids }),
     ),
-  deviceAction: (tenantId: RouteParam, id: RouteParam) =>
+  deviceAction: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: {
+      action?: "sync" | "lock" | "wipe" | "restart" | "shutdown" | "clear-passcode" | "install-app";
+      manifestUrl?: string;
+      iTunesStoreId?: number;
+    } = { action: "sync" },
+  ) =>
     endpoint((api) =>
       api.deviceAction({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        payload,
       }),
     ),
   deviceUnenroll: (tenantId: RouteParam, id: RouteParam) =>

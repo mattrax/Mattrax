@@ -67,6 +67,14 @@ export default function DeviceDetailPage() {
     mutationFn: () => enterprise.deviceAction(params.tenantId, params.deviceId),
     onSuccess: invalidate,
   }));
+  const [manifestUrl, setManifestUrl] = createSignal("");
+  const command = useMutation(() => ({
+    mutationFn: (payload: {
+      action: "lock" | "wipe" | "restart" | "shutdown" | "clear-passcode" | "install-app";
+      manifestUrl?: string;
+    }) => enterprise.deviceAction(params.tenantId, params.deviceId, payload),
+    onSuccess: invalidate,
+  }));
   const unenroll = useMutation(() => ({
     mutationFn: () => enterprise.deviceUnenroll(params.tenantId, params.deviceId),
     onSuccess: invalidate,
@@ -155,6 +163,82 @@ export default function DeviceDetailPage() {
               </dl>
             </CardContent>
           </Card>
+          <Show when={row()?.proto === "apple" && row()?.status === "enrolled"}>
+            <Card>
+              <CardHeader>
+                <CardTitle>Remote actions</CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-3">
+                <p class="text-sm text-muted-foreground">
+                  Commands are queued and delivered on the device's next check-in.
+                </p>
+                <div class="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    disabled={command.isPending}
+                    onClick={() => command.mutate({ action: "lock" })}
+                  >
+                    Lock
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={command.isPending}
+                    onClick={() => command.mutate({ action: "restart" })}
+                  >
+                    Restart
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={command.isPending}
+                    onClick={() => command.mutate({ action: "shutdown" })}
+                  >
+                    Shut down
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={command.isPending}
+                    onClick={() => command.mutate({ action: "clear-passcode" })}
+                  >
+                    Clear passcode
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    class="col-span-2"
+                    disabled={command.isPending}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Erase this device? This cannot be undone and will wipe all data.",
+                        )
+                      )
+                        command.mutate({ action: "wipe" });
+                    }}
+                  >
+                    Erase device
+                  </Button>
+                </div>
+                <Field label="Install app from manifest URL">
+                  <div class="flex gap-2">
+                    <Input
+                      value={manifestUrl()}
+                      placeholder="https://example.com/manifest.plist"
+                      onInput={(event) => setManifestUrl(event.currentTarget.value)}
+                    />
+                    <Button
+                      variant="outline"
+                      disabled={command.isPending || !manifestUrl()}
+                      onClick={() =>
+                        command.mutate({ action: "install-app", manifestUrl: manifestUrl() })
+                      }
+                    >
+                      Install
+                    </Button>
+                  </div>
+                </Field>
+                <ErrorText error={command.error} />
+              </CardContent>
+            </Card>
+          </Show>
           <Card>
             <CardHeader>
               <CardTitle>Edit details</CardTitle>

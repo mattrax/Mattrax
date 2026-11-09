@@ -266,6 +266,35 @@ export const device = mysqlTable(
   ],
 );
 
+/**
+ * Queued imperative MDM commands. DDM is the long-term policy channel, but
+ * remote actions (lock, wipe, app install) still use the classic command
+ * protocol and are delivered on the next device check-in.
+ */
+export const deviceCommand = mysqlTable(
+  "device_command",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    requestType: shortText("request_type").notNull(),
+    payload: json("payload"),
+    status: varchar("status", { length: 32 }).notNull().default("queued"),
+    resultStatus: shortText("result_status"),
+    resultDetail: text("result_detail"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("device_command_device_status_idx").on(table.deviceId, table.status),
+    index("device_command_organization_idx").on(table.organizationId, table.createdAt),
+  ],
+);
+
 export const deviceApple = mysqlTable("device_apple", {
   deviceId: id("device_id")
     .primaryKey()
@@ -437,6 +466,7 @@ export const relations = defineRelations(
     auditLog,
     enterpriseEnrollment,
     device,
+    deviceCommand,
     deviceApple,
     applePushCertificate,
     applePushKey,

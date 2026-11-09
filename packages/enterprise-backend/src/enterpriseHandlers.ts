@@ -1203,7 +1203,7 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "device.updated", "device", deviceId, { fields: Object.keys(body) });
         return ok;
       }),
-    deviceAction: (request, tenantId, deviceId) =>
+    deviceAction: (request, tenantId, deviceId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const device = yield* db.query.device.findFirst({
@@ -1211,8 +1211,75 @@ export const createEnterpriseService = ({
         });
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
-        if (device.status === "enrolled") yield* applePush.pushAppleDevice(device.id);
-        yield* audit(ctx, "device.action", "device", deviceId);
+        const body = (payload ?? {}) as {
+          action?: string;
+          manifestUrl?: string;
+          iTunesStoreId?: number;
+        };
+        const action = body.action ?? "sync";
+        if (device.status === "enrolled") {
+          if (action !== "sync") {
+            if (device.proto !== "apple")
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message: "Remote commands are only supported for Apple devices",
+                }),
+              );
+            const commandId = crypto.randomUUID();
+            const timestamp = now();
+            const request = (() => {
+              switch (action) {
+                case "lock":
+                  return { requestType: "DeviceLock", payload: {} };
+                case "wipe":
+                  return { requestType: "EraseDevice", payload: {} };
+                case "restart":
+                  return { requestType: "RestartDevice", payload: {} };
+                case "shutdown":
+                  return { requestType: "ShutdownDevice", payload: {} };
+                case "clear-passcode":
+                  return { requestType: "ClearPasscode", payload: {} };
+                case "install-app":
+                  if (body.manifestUrl)
+                    return {
+                      requestType: "InstallApplication",
+                      payload: { ManifestURL: body.manifestUrl, ManagementFlags: 1 },
+                    };
+                  if (body.iTunesStoreId)
+                    return {
+                      requestType: "InstallApplication",
+                      payload: { iTunesStoreID: body.iTunesStoreId, ManagementFlags: 1 },
+                    };
+                  return null;
+                default:
+                  return null;
+              }
+            })();
+            if (!request)
+              return yield* Effect.fail(
+                new EnterpriseBadRequest({
+                  message:
+                    action === "install-app"
+                      ? "Provide a manifest URL or iTunes Store ID to install an app"
+                      : "Unknown device action",
+                }),
+              );
+            yield* db.insert(schema.deviceCommand).values({
+              id: commandId,
+              organizationId: ctx.organization.id,
+              deviceId: device.id,
+              requestType: request.requestType,
+              payload: request.payload,
+              status: "queued",
+              resultStatus: null,
+              resultDetail: null,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            });
+          }
+          yield* applePush.pushAppleDevice(device.id);
+        }
+        yield* audit(ctx, "device.action", "device", deviceId, { action });
         return ok;
       }),
     deviceUnenroll: (request, tenantId, deviceId) =>
@@ -1867,9 +1934,9 @@ export const enterpriseHandlers = (
         service.patchDevice(request, params.tenantId, params.id, payload),
       ),
     )
-    .handle("deviceAction", ({ request, params }) =>
+    .handle("deviceAction", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>
-        service.deviceAction(request, params.tenantId, params.id),
+        service.deviceAction(request, params.tenantId, params.id, payload),
       ),
     )
     .handle("deviceUnenroll", ({ request, params }) =>

@@ -280,6 +280,22 @@ export const DeviceRow = Schema.Struct({
 });
 export type DeviceRow = typeof DeviceRow.Type;
 
+export const DeviceActionRequest = Schema.Struct({
+  action: Schema.optional(
+    Schema.Literals([
+      "sync",
+      "lock",
+      "wipe",
+      "restart",
+      "shutdown",
+      "clear-passcode",
+      "install-app",
+    ]),
+  ),
+  manifestUrl: Schema.optional(Schema.String),
+  iTunesStoreId: Schema.optional(Schema.Number),
+});
+
 export const PatchDeviceRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   notes: Schema.optional(NullableString),
@@ -798,6 +814,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     HttpApiEndpoint.post("deviceAction", "/v1/tenants/:tenantId/devices/:id/action", {
       error: EnterpriseTenantWriteErrors,
       params: TenantIdParam,
+      payload: DeviceActionRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
   )
