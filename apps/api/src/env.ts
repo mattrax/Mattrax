@@ -43,7 +43,10 @@ const emptyStringAsUndefined = (value: unknown) => (value === "" ? undefined : v
 
 // For now this is only used for runtime validation, so transformations aren't safe.
 export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
-  ORIGIN: emptyStringAsUndefined(cfEnv.ORIGIN),
+  // Keep the hosted default so existing deployments that have not set the
+  // newly-configurable secret keep working. Local dev overrides it via
+  // `.dev.vars`; whitelabel deployments set their own origin.
+  ORIGIN: emptyStringAsUndefined(cfEnv.ORIGIN) ?? "https://e.mattrax.app",
   AUTH_SECRET: emptyStringAsUndefined(cfEnv.AUTH_SECRET),
   STRIPE_SECRET_KEY: emptyStringAsUndefined((cfEnv as any).STRIPE_SECRET_KEY),
   STRIPE_WEBHOOK_SECRET: emptyStringAsUndefined((cfEnv as any).STRIPE_WEBHOOK_SECRET),
